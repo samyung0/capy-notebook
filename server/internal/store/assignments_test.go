@@ -149,7 +149,7 @@ func TestQuestionReports(t *testing.T) {
 		t.Fatal(err)
 	}
 	attempts[0].graded["q3"] = stored
-	reports, rows := questionReports(frozenFixture(t), attempts)
+	reports, rows := questionReports(frozenFixture(t), attempts, nil)
 	if got := reports[0].Parts[0].Options; got[0] != 1 || got[1] != 3 {
 		t.Fatalf("options = %v", got)
 	}
@@ -175,7 +175,7 @@ func TestQuestionReports(t *testing.T) {
 
 	attempts = append(attempts, attempts[3])
 	attempts[4].userID = "ue"
-	reports, _ = questionReports(frozenFixture(t), attempts)
+	reports, _ = questionReports(frozenFixture(t), attempts, nil)
 	if reports[0].Percent == nil || *reports[0].Percent != 0.8 {
 		t.Fatalf("percent = %v", reports[0].Percent)
 	}
@@ -927,6 +927,218 @@ func TestAssignmentLatePenalty(t *testing.T) {
 	again, err := f.s.GetAssignmentAttempt(ctx, f.other, late.ID, past)
 	if err != nil || again.Mark != 3 || again.LatePenaltyPct != 50 {
 		t.Fatalf("after changing the penalty = %+v, err %v", again, err)
+	}
+}
+
+// TestCountedAttemptIsTheHighest (Epo 2026-11-05): a member's row and the report
+// read the highest mark after any late penalty, a tie going to the latest; marks
+// not fully approved compare on those decided so far, and the other submission's
+// waiting answer stays on the owner's list until marking it changes which counts.
+func TestCountedAttemptIsTheHighest(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-counted")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	due := now.Add(time.Hour)
+	form := f.form(t, due)
+	form.Attempts, form.LatePenaltyPct = 5, 20
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	take := func(at time.Time, answers map[string]any) string {
+		t.Helper()
+		run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.ID, answers, at.Add(time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		return run.ID
+	}
+	counts := func(at time.Time, want string, mark float64, late int) (AssignmentMemberRow, AssignmentReport) {
+		t.Helper()
+		got, err := f.s.GetAssignment(ctx, f.viewer, created.ID, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mine := got.Mine
+		if mine == nil || mine.CountedAttemptID == nil || *mine.CountedAttemptID != want || *mine.Mark != mark || mine.LatePenaltyPct != late {
+			t.Fatalf("their row = %+v, want %s at %v", mine, want, mark)
+		}
+		report, err := f.s.GetAssignmentReport(ctx, f.user, created.ID, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, row := range report.Members {
+			if row.UserID == f.viewer {
+				if row.AttemptID == nil || *row.AttemptID != want || *row.Mark != mark || row.LatePenaltyPct != late {
+					t.Fatalf("the report's row = %+v, want %s at %v", row, want, mark)
+				}
+				return row, report
+			}
+		}
+		t.Fatal("no row in the report")
+		return AssignmentMemberRow{}, report
+	}
+	right := map[string]any{"p1": []any{float64(1)}, "p2": "osmosis"}
+	one := map[string]any{"p1": []any{float64(1)}}
+
+	take(now, one)
+	high := take(now.Add(time.Minute), right)
+	counts(now.Add(2*time.Minute), high, 3, 0)
+	// A lower one later leaves the higher one counting.
+	take(now.Add(2*time.Minute), one)
+	counts(now.Add(3*time.Minute), high, 3, 0)
+	// A tie goes to the latest.
+	tied := take(now.Add(3*time.Minute), right)
+	counts(now.Add(4*time.Minute), tied, 3, 0)
+
+	// Late at 3 marks decided it reads 2.4, under the 3 on time, with 3 waiting.
+	past := due.Add(time.Hour)
+	late := take(past, map[string]any{"p1": []any{float64(1)}, "p2": "osmosis", "p3": "Water moves in"})
+	row, report := counts(past, tied, 3, 0)
+	if row.WaitingAnswers != 1 {
+		t.Fatalf("their row waits on %d answers, want the other submission's 1", row.WaitingAnswers)
+	}
+	waiting := -1
+	for i, answer := range report.Answers {
+		if answer.AttemptID == late {
+			waiting = i
+		}
+	}
+	if len(report.Answers) != 2 || waiting < 0 || !report.Answers[waiting].Waiting || report.Answers[waiting].AttemptNumber != 5 {
+		t.Fatalf("answers to approve = %+v", report.Answers)
+	}
+	if got, err := f.s.GetAssignment(ctx, f.user, created.ID, past); err != nil || got.Manage.ToApprove != 1 {
+		t.Fatalf("to approve = %+v, err %v", got.Manage, err)
+	}
+	for _, question := range report.Questions {
+		if question.Submitted != 1 {
+			t.Fatalf("a question counts %d answers, want one per member", question.Submitted)
+		}
+	}
+
+	// Marked, the late one reads 4.8 and counts, off the list as nothing waits.
+	if _, err := f.s.MarkAssignmentAnswer(ctx, f.editor, late, AssignmentMark{
+		QuestionID: "q3", Parts: []AssignmentPartMark{{PartID: "p3", Items: []float64{2, 1}}},
+	}, past); err != nil {
+		t.Fatal(err)
+	}
+	row, report = counts(past, late, 4.8, 20)
+	if row.WaitingAnswers != 0 || len(report.Answers) != 1 || report.Answers[0].AttemptID != late || report.Answers[0].Waiting {
+		t.Fatalf("after marking: %+v, answers %+v", row, report.Answers)
+	}
+	// A higher penalty set later reads through: 3 ties the 3 on time, to the latest.
+	form.LatePenaltyPct = 50
+	if _, err := f.s.UpdateAssignment(ctx, f.user, created.ID, form, past); err != nil {
+		t.Fatal(err)
+	}
+	counts(past, late, 3, 50)
+	// A mark changed down hands it back.
+	if _, err := f.s.MarkAssignmentAnswer(ctx, f.editor, late, AssignmentMark{
+		QuestionID: "q3", Parts: []AssignmentPartMark{{PartID: "p3", Items: []float64{1, 1}}},
+	}, past); err != nil {
+		t.Fatal(err)
+	}
+	counts(past, tied, 3, 0)
+}
+
+// TestAverageReadsTheCountedAttempts: the class average takes each member's
+// highest mark, not their latest.
+func TestAverageReadsTheCountedAttempts(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-counted-average")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	form := f.form(t, now.Add(time.Hour))
+	form.Attempts = 2
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	members := []string{f.viewer, f.other}
+	for i := 0; i < 3; i++ {
+		user := newBlobTestUser(t, f.s, "assignment-counted-"+uid("m"))
+		if _, err := f.s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'viewer')`, f.ws.ID, user); err != nil {
+			t.Fatal(err)
+		}
+		members = append(members, user)
+	}
+	for _, user := range members {
+		for i, answers := range []map[string]any{
+			{"p1": []any{float64(1)}, "p2": "osmosis"},
+			{"p1": []any{float64(1)}},
+		} {
+			at := now.Add(time.Duration(i) * time.Minute)
+			run, err := f.s.StartAssignment(ctx, user, created.ID, at)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.s.SubmitAssignmentAttempt(ctx, user, run.ID, answers, at.Add(time.Second)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	got, err := f.s.GetAssignment(ctx, f.user, created.ID, now.Add(time.Hour))
+	if err != nil || got.Manage == nil || got.Manage.Average == nil || got.Manage.Done != 5 {
+		t.Fatalf("manage = %+v, err %v", got.Manage, err)
+	}
+	if diff := *got.Manage.Average - 0.5; diff > 0.0001 || diff < -0.0001 {
+		t.Fatalf("average = %v, want each member's 3 of 6", *got.Manage.Average)
+	}
+}
+
+// TestReviewsRateTheLatestSubmission: reviews ask what a member knows now, so the
+// release rates their latest submission whichever counts, and marking an earlier
+// one afterwards moves its mark alone.
+func TestReviewsRateTheLatestSubmission(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-rate-latest")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	form := f.form(t, now.Add(time.Hour))
+	form.Attempts = 2
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	take := func(at time.Time, answers map[string]any) string {
+		t.Helper()
+		run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.ID, answers, at.Add(time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		return run.ID
+	}
+	earlier := take(now, map[string]any{"p1": []any{float64(1)}, "p2": "osmosis", "p3": "Water moves in"})
+	take(now.Add(time.Minute), map[string]any{"p1": []any{float64(1)}})
+	rated := func() int {
+		t.Helper()
+		var n int
+		if err := f.s.pool.QueryRow(ctx, `SELECT count(*) FROM review_states WHERE user_id=$1 AND material_id=$2`, f.viewer, f.quiz.ID).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	later := now.Add(2 * time.Hour)
+	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, later); err != nil {
+		t.Fatal(err)
+	}
+	if _, released, err := f.s.SweepAssignments(ctx, 50, later); err != nil || released != 1 {
+		t.Fatalf("released %d, err %v", released, err)
+	}
+	if got := rated(); got != 1 {
+		t.Fatalf("rated %d questions, want the latest submission's one", got)
+	}
+	if _, err := f.s.MarkAssignmentAnswer(ctx, f.editor, earlier, AssignmentMark{
+		QuestionID: "q3", Parts: []AssignmentPartMark{{PartID: "p3", Items: []float64{2, 1}}},
+	}, later); err != nil {
+		t.Fatal(err)
+	}
+	if got := rated(); got != 1 {
+		t.Fatalf("marking an earlier submission rated it: %d", got)
 	}
 }
 

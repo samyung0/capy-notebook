@@ -474,8 +474,8 @@ function MemberList({ workspaceId }: { workspaceId: string }) {
     navigate({
       search: {
         assignment: row.id,
-        ...(row.kind === 'marked' && row.mine?.latestAttemptId
-          ? { attempt: row.mine.latestAttemptId }
+        ...(row.kind === 'marked' && row.mine?.countedAttemptId
+          ? { attempt: row.mine.countedAttemptId }
           : {}),
         study: 'assignments' as const,
       },

@@ -505,13 +505,24 @@ const assignedTo = (row: Row, viewer: Viewer) => {
   ];
 };
 
-function latest(assignmentId: string, userId: string) {
+function submissions(assignmentId: string, userId: string) {
   return [...attempts.values()]
     .filter(
       (a) =>
         a.assignmentId === assignmentId && a.userId === userId && a.submittedAt
     )
-    .sort((a, b) => Date.parse(b.submittedAt!) - Date.parse(a.submittedAt!))[0];
+    .sort((a, b) => Date.parse(a.submittedAt!) - Date.parse(b.submittedAt!));
+}
+
+/** The submission that counts: the highest mark after any late penalty, a tie
+ * to the latest (`countedAttemptOrder`). */
+function counted(row: Row, userId: string) {
+  const mark = (a: Attempt) =>
+    penalised(totals(a.graded).correct, penaltyOf(row, a.submittedAt));
+  return submissions(row.id, userId).reduce<Attempt | undefined>(
+    (best, a) => (!best || mark(a) >= mark(best) ? a : best),
+    undefined
+  );
 }
 
 function totals(graded: AssignmentGradedQuestion[]) {
@@ -561,16 +572,16 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
     0
   );
   const assigned = assignedTo(row, viewer);
-  const latestRows = assigned.flatMap((id) => {
-    const a = latest(row.id, id);
+  const countedRows = assigned.flatMap((id) => {
+    const a = counted(row, id);
     return a ? [a] : [];
   });
   const ticked = [...(done.get(row.id)?.keys() ?? [])].filter((id) =>
     assigned.includes(id)
   );
-  const decided = latestRows.map((a) => totals(a.graded));
+  const decided = countedRows.map((a) => totals(a.graded));
   const mine = assigned.includes(db.user.id)
-    ? latest(row.id, db.user.id)
+    ? counted(row, db.user.id)
     : undefined;
   const running = [...attempts.values()].find(
     (a) =>
@@ -632,12 +643,14 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
                     0
                   ) / decided.length
                 : undefined,
-            done: row.kind === 'marked' ? latestRows.length : ticked.length,
+            done: row.kind === 'marked' ? countedRows.length : ticked.length,
             quizId: row.quizId,
             quizTitle: material?.title,
             showAnswers: row.showAnswers,
             shuffle: row.shuffle,
-            toApprove: decided.reduce((sum, d) => sum + d.waitingAnswers, 0),
+            toApprove: assigned
+              .flatMap((id) => submissions(row.id, id))
+              .reduce((sum, a) => sum + totals(a.graded).waitingAnswers, 0),
           },
         }
       : {}),
@@ -651,11 +664,11 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
                 a.submittedAt
             ).length,
             correct: myTotals?.correct,
+            countedAttemptId: mine?.id,
             done: !!mine || !!tick,
             doneAt: mine?.submittedAt ?? tick,
             late: isLate(row, mine?.submittedAt),
             latePenaltyPct: penaltyOf(row, mine?.submittedAt),
-            latestAttemptId: mine?.id,
             mark:
               myTotals &&
               penalised(myTotals.correct, penaltyOf(row, mine?.submittedAt)),
@@ -791,13 +804,13 @@ function report(row: Row, viewer: Viewer): AssignmentReport {
       avatarUrl: db.user.avatarUrl,
       name: db.user.name,
     };
-  const counted = assigned.flatMap((id) => {
-    const a = latest(row.id, id);
+  const countedRows = assigned.flatMap((id) => {
+    const a = counted(row, id);
     return a ? [a] : [];
   });
   const members: AssignmentMemberRow[] = assigned
     .map((id): AssignmentMemberRow => {
-      const a = latest(row.id, id);
+      const a = counted(row, id);
       const sum = a ? totals(a.graded) : undefined;
       const tick = done.get(row.id)?.get(id);
       const person = nameOf(id);
@@ -828,7 +841,10 @@ function report(row: Row, viewer: Viewer): AssignmentReport {
         submittedAt: a?.submittedAt ?? tick,
         total: sum?.total,
         userId: id,
-        waitingAnswers: sum?.waitingAnswers ?? 0,
+        waitingAnswers: submissions(row.id, id).reduce(
+          (n, x) => n + totals(x.graded).waitingAnswers,
+          0
+        ),
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -836,7 +852,7 @@ function report(row: Row, viewer: Viewer): AssignmentReport {
   const questions: AssignmentQuestionReport[] = (row.questions ?? []).map(
     (question) => {
       const isOpen = question.parts.some((p) => p.answer.type === 'open');
-      const graded = counted.flatMap((a) => {
+      const graded = countedRows.flatMap((a) => {
         const q = a.graded.find((g) => g.id === question.id);
         return q ? [{ attempt: a, q }] : [];
       });
@@ -844,23 +860,43 @@ function report(row: Row, viewer: Viewer): AssignmentReport {
       const score = (q: AssignmentGradedQuestion) =>
         q.parts.reduce((n, p) => n + (p.awarded ?? 0), 0);
       const marks = question.parts.reduce((n, p) => n + p.marks, 0);
-      if (isOpen)
+      const number = (a: Attempt) =>
+        submissions(row.id, a.userId).indexOf(a) + 1;
+      if (isOpen) {
         for (const { attempt, q } of graded)
           answers.push({
             attemptId: attempt.id,
+            attemptNumber: number(attempt),
             awarded: score(q),
             marks,
             questionId: question.id,
             userId: attempt.userId,
             waiting: q.parts.some((p) => p.pending),
           });
+        // Another submission's answer still waiting: it can still become the highest.
+        for (const attempt of assigned.flatMap((id) =>
+          submissions(row.id, id)
+        )) {
+          const q = attempt.graded.find((g) => g.id === question.id);
+          if (q?.parts.some((p) => p.pending) && !countedRows.includes(attempt))
+            answers.push({
+              attemptId: attempt.id,
+              attemptNumber: number(attempt),
+              awarded: score(q),
+              marks,
+              questionId: question.id,
+              userId: attempt.userId,
+              waiting: true,
+            });
+        }
+      }
       const enough = marked.length >= 5;
       return {
         average:
           enough && isOpen
             ? marked.reduce((n, { q }) => n + score(q), 0) / marked.length
             : undefined,
-        parts: question.parts.map((p) => partReport(p, counted)),
+        parts: question.parts.map((p) => partReport(p, countedRows)),
         percent:
           enough && !isOpen
             ? marked.filter(({ q }) => score(q) >= marks).length / marked.length

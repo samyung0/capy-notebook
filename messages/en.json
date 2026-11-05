@@ -2827,6 +2827,7 @@
   "assignment_marking_points": "Marking points",
   "assignment_marking_points_title": "Marking points",
   "assignment_not_answered": "Not answered",
+  "assignment_attempt_number": "Attempt {number}",
   "assignment_attempt_again": "Try again",
   "assignment_comment_for": "Comment for {name}",
   "assignment_save_marks": "Save marks",

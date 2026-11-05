@@ -115,10 +115,11 @@ type AssignmentManage struct {
 	// Assigned counts who it went to; Done those who submitted or ticked it.
 	Assigned int `json:"assigned"`
 	Done     int `json:"done"`
-	// Average is the submitted members' marks, after any late penalty, over the
-	// marks decided so far (0 to 1), once at least five submitted.
+	// Average is the submitted members' counted marks, after any late penalty, over
+	// the marks decided so far (0 to 1), once at least five submitted.
 	Average *float64 `json:"average,omitempty"`
-	// ToApprove counts answers waiting for the owner.
+	// ToApprove counts answers waiting for the owner, in any submission of a
+	// member's: one that does not count yet can still become the highest.
 	ToApprove int `json:"toApprove"`
 }
 
@@ -130,8 +131,9 @@ type AssignmentMine struct {
 	// RunningAttemptID is the attempt in progress.
 	RunningAttemptID *string `json:"runningAttemptId,omitempty"`
 	AttemptsUsed     int     `json:"attemptsUsed"`
-	// LatestAttemptID is the submission that counts (the latest).
-	LatestAttemptID *string `json:"latestAttemptId,omitempty"`
+	// CountedAttemptID is the submission that counts (countedAttemptOrder), which
+	// the rest of this reads.
+	CountedAttemptID *string `json:"countedAttemptId,omitempty"`
 	// Correct is the marks decided; Mark the same after any late penalty, which
 	// is what counts.
 	Correct        *float64 `json:"correct,omitempty"`
@@ -322,6 +324,17 @@ func penalisedMark(correct float64, pct int) float64 {
 	return math.Round(correct*float64(100-pct)) / 100
 }
 
+// attemptMarkSQL is a submission's mark after any late penalty (attempts t of
+// assignments a), as assignmentLate and penalisedMark have it.
+const attemptMarkSQL = `round(t.correct * (100 - CASE WHEN NOT a.no_late AND t.submitted_at > a.due_at
+	THEN a.late_penalty_pct ELSE 0 END) / 100.0, 2)`
+
+// countedAttemptOrder puts first the submission of a member's that counts (Epo
+// 2026-11-05): the highest mark after any late penalty, a tie to the latest. It
+// reads live: correct is the marks decided so far, so marking an open part or
+// changing the penalty or due date can change which one it is.
+const countedAttemptOrder = attemptMarkSQL + ` DESC, t.submitted_at DESC`
+
 // fillAssignmentFiles adds each unmarked assignment's files the caller can see,
 // in the order added, and takes its topics from them, the most used first.
 func (s *Store) fillAssignmentFiles(ctx context.Context, userID string, ids []string, at map[string]int, list []Assignment) error {
@@ -378,20 +391,22 @@ const assigneesSQL = `SELECT a.id AS assignment_id, wm.user_id
 func (s *Store) fillAssignmentManage(ctx context.Context, ids []string, at map[string]int, list []Assignment) error {
 	rows, err := s.pool.Query(ctx, `WITH e AS (`+assigneesSQL+`),
 		l AS (
-			SELECT DISTINCT ON (t.assignment_id, t.user_id) t.assignment_id, t.total, t.waiting_marks, t.waiting_answers,
-				t.correct * CASE WHEN t.submitted_at > s.due_at THEN (100 - s.late_penalty_pct) / 100.0 ELSE 1 END AS mark
+			SELECT DISTINCT ON (t.assignment_id, t.user_id) t.assignment_id, t.total, t.waiting_marks, `+attemptMarkSQL+` AS mark
 			FROM attempts t JOIN e ON e.assignment_id=t.assignment_id AND e.user_id=t.user_id
-			JOIN assignments s ON s.id=t.assignment_id
+			JOIN assignments a ON a.id=t.assignment_id
 			WHERE t.submitted_at IS NOT NULL
-			ORDER BY t.assignment_id, t.user_id, t.submitted_at DESC),
+			ORDER BY t.assignment_id, t.user_id, `+countedAttemptOrder+`),
 		c AS (SELECT assignment_id, count(*) AS n FROM e GROUP BY 1),
 		d AS (SELECT d.assignment_id, count(*) AS n FROM assignment_done d
 			JOIN e ON e.assignment_id=d.assignment_id AND e.user_id=d.user_id GROUP BY 1),
-		r AS (SELECT assignment_id, count(*) AS n, avg(mark / NULLIF(total - waiting_marks, 0))::float8 AS mean,
-				sum(waiting_answers)::int AS waiting
-			FROM l GROUP BY 1)
-		SELECT c.assignment_id, c.n, COALESCE(d.n, 0), COALESCE(r.n, 0), r.mean, COALESCE(r.waiting, 0)
-		FROM c LEFT JOIN d ON d.assignment_id=c.assignment_id LEFT JOIN r ON r.assignment_id=c.assignment_id`, ids)
+		r AS (SELECT assignment_id, count(*) AS n, avg(mark / NULLIF(total - waiting_marks, 0))::float8 AS mean
+			FROM l GROUP BY 1),
+		w AS (SELECT t.assignment_id, sum(t.waiting_answers)::int AS n
+			FROM attempts t JOIN e ON e.assignment_id=t.assignment_id AND e.user_id=t.user_id
+			WHERE t.submitted_at IS NOT NULL GROUP BY 1)
+		SELECT c.assignment_id, c.n, COALESCE(d.n, 0), COALESCE(r.n, 0), r.mean, COALESCE(w.n, 0)
+		FROM c LEFT JOIN d ON d.assignment_id=c.assignment_id LEFT JOIN r ON r.assignment_id=c.assignment_id
+		LEFT JOIN w ON w.assignment_id=c.assignment_id`, ids)
 	if err != nil {
 		return err
 	}
@@ -444,8 +459,9 @@ func (s *Store) fillAssignmentMine(ctx context.Context, userID string, ids []str
 			l.id, l.correct::float8, l.total::float8, COALESCE(l.waiting_marks, 0)::float8, COALESCE(l.waiting_answers, 0), l.submitted_at
 		FROM e
 		LEFT JOIN LATERAL (SELECT t.id, t.correct, t.total, t.waiting_marks, t.waiting_answers, t.submitted_at
-			FROM attempts t WHERE t.assignment_id=e.assignment_id AND t.user_id=$2 AND t.submitted_at IS NOT NULL
-			ORDER BY t.submitted_at DESC LIMIT 1) l ON true
+			FROM attempts t JOIN assignments a ON a.id=t.assignment_id
+			WHERE t.assignment_id=e.assignment_id AND t.user_id=$2 AND t.submitted_at IS NOT NULL
+			ORDER BY `+countedAttemptOrder+` LIMIT 1) l ON true
 		WHERE e.user_id=$2`, ids, userID)
 	if err != nil {
 		return err
@@ -456,7 +472,7 @@ func (s *Store) fillAssignmentMine(ctx context.Context, userID string, ids []str
 		var mine AssignmentMine
 		var submittedAt *time.Time
 		if err := rows.Scan(&id, &mine.DoneAt, &mine.RunningAttemptID, &mine.AttemptsUsed,
-			&mine.LatestAttemptID, &mine.Correct, &mine.Total, &mine.WaitingMarks, &mine.WaitingAnswers, &submittedAt); err != nil {
+			&mine.CountedAttemptID, &mine.Correct, &mine.Total, &mine.WaitingMarks, &mine.WaitingAnswers, &submittedAt); err != nil {
 			return err
 		}
 		a := &list[at[id]]
@@ -1793,10 +1809,17 @@ func (s *Store) MarkAssignmentAnswer(ctx context.Context, actorID, attemptID str
 		if err := logAnswerPartsTx(ctx, tx, r.userID, mt, question, given, answerSourceAssignment, attemptID, now, changed); err != nil {
 			return err
 		}
-		if r.released != nil && waited && !questionWaiting(question) {
-			return s.rateAttemptTx(ctx, tx, r.userID, r.sourceID, []map[string]any{question}, given, now)
+		if r.released == nil || !waited || questionWaiting(question) {
+			return nil
 		}
-		return nil
+		// Reviews rate a member's latest submission (latestAttempts): an earlier one
+		// marked now moves its mark alone.
+		var latest bool
+		if err := tx.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM attempts
+			WHERE assignment_id=$1 AND user_id=$2 AND submitted_at > $3)`, r.assignmentID, r.userID, r.submitted).Scan(&latest); err != nil || !latest {
+			return err
+		}
+		return s.rateAttemptTx(ctx, tx, r.userID, r.sourceID, []map[string]any{question}, given, now)
 	})
 	if err != nil {
 		return AssignmentAttempt{}, err
@@ -1864,8 +1887,9 @@ func applyPartMarks(question map[string]any, marks []AssignmentPartMark, actorID
 type AssignmentReport struct {
 	Members   []AssignmentMemberRow      `json:"members" nullable:"false"`
 	Questions []AssignmentQuestionReport `json:"questions" nullable:"false"`
-	// Answers lists every submitted answer to a question with an open part,
-	// one row per member, for the Approve AI marks tab.
+	// Answers lists, for the Approve AI marks tab, each member's counted answer to
+	// a question with an open part, and any other submission's answer still
+	// waiting: once marked it can become the highest.
 	Answers []AssignmentAnswerRow `json:"answers" nullable:"false"`
 }
 
@@ -1875,19 +1899,21 @@ type AssignmentMemberRow struct {
 	Name      string  `json:"name"`
 	AvatarURL string  `json:"avatarUrl,omitempty"`
 	AttemptID *string `json:"attemptId,omitempty"`
-	// SubmittedAt: the latest submission, which counts; an unmarked one's tick.
+	// AttemptID and SubmittedAt: the submission that counts (countedAttemptOrder),
+	// which the rest of this reads; an unmarked one's tick.
 	SubmittedAt *time.Time `json:"submittedAt,omitempty"`
 	// Minutes taken, whole minutes rounded up.
 	Minutes *int `json:"minutes,omitempty"`
 	// Correct is the marks decided; Mark the same after any late penalty, which
 	// is what counts.
-	Correct        *float64 `json:"correct,omitempty"`
-	Mark           *float64 `json:"mark,omitempty"`
-	Total          *float64 `json:"total,omitempty"`
-	WaitingAnswers int      `json:"waitingAnswers"`
-	Late           bool     `json:"late"`
-	LatePenaltyPct int      `json:"latePenaltyPct"`
-	Running        bool     `json:"running"`
+	Correct *float64 `json:"correct,omitempty"`
+	Mark    *float64 `json:"mark,omitempty"`
+	Total   *float64 `json:"total,omitempty"`
+	// WaitingAnswers counts every submission of theirs (AssignmentReport.Answers).
+	WaitingAnswers int  `json:"waitingAnswers"`
+	Late           bool `json:"late"`
+	LatePenaltyPct int  `json:"latePenaltyPct"`
+	Running        bool `json:"running"`
 	// Missing: past due, nothing submitted.
 	Missing bool `json:"missing"`
 }
@@ -1935,6 +1961,8 @@ type AssignmentAnswerRow struct {
 	QuestionID string `json:"questionId"`
 	UserID     string `json:"userId"`
 	AttemptID  string `json:"attemptId"`
+	// AttemptNumber is which of the member's submissions it is, the first being 1.
+	AttemptNumber int `json:"attemptNumber"`
 	// Waiting: an open part still waits for the owner.
 	Waiting bool    `json:"waiting"`
 	Awarded float64 `json:"awarded"`
@@ -1979,7 +2007,7 @@ func (s *Store) GetAssignmentReport(ctx context.Context, userID, id string, now 
 	if kind != AssignmentMarked {
 		return out, nil
 	}
-	attempts, err := reportAttempts(ctx, s.pool, id)
+	attempts, err := countedAttempts(ctx, s.pool, id)
 	if err != nil {
 		return out, err
 	}
@@ -1988,7 +2016,9 @@ func (s *Store) GetAssignmentReport(ctx context.Context, userID, id string, now 
 		at[m.UserID] = i
 	}
 	var counted []reportAttempt
+	countedIDs := make([]string, 0, len(attempts))
 	for _, attempt := range attempts {
+		countedIDs = append(countedIDs, attempt.id)
 		i, ok := at[attempt.userID]
 		if !ok {
 			continue
@@ -1996,7 +2026,7 @@ func (s *Store) GetAssignmentReport(ctx context.Context, userID, id string, now 
 		counted = append(counted, attempt)
 		row := &out.Members[i]
 		row.AttemptID, row.SubmittedAt, row.Correct, row.Total = &attempt.id, &attempt.submitted, &attempt.correct, &attempt.total
-		row.WaitingAnswers = attempt.waitingAnswers
+		row.WaitingAnswers += attempt.waitingAnswers
 		row.Late = assignmentLate(noLate, due, attempt.submitted)
 		row.LatePenaltyPct = penaltyFor(row.Late, penalty)
 		mark := penalisedMark(attempt.correct, row.LatePenaltyPct)
@@ -2010,7 +2040,18 @@ func (s *Store) GetAssignmentReport(ctx context.Context, userID, id string, now 
 			row.Minutes = &minutes
 		}
 	}
-	out.Questions, out.Answers = questionReports(frozen, counted)
+	others, err := waitingAttempts(ctx, s.pool, id, countedIDs)
+	if err != nil {
+		return out, err
+	}
+	var waiting []reportAttempt
+	for _, attempt := range others {
+		if i, ok := at[attempt.userID]; ok {
+			waiting = append(waiting, attempt)
+			out.Members[i].WaitingAnswers += attempt.waitingAnswers
+		}
+	}
+	out.Questions, out.Answers = questionReports(frozen, counted, waiting)
 	return out, nil
 }
 
@@ -2041,6 +2082,7 @@ func (s *Store) reportMembers(ctx context.Context, id, kind string, due *time.Ti
 
 type reportAttempt struct {
 	id, userID     string
+	number         int
 	started        *time.Time
 	submitted      time.Time
 	correct, total float64
@@ -2049,11 +2091,33 @@ type reportAttempt struct {
 	graded         map[string]map[string]any
 }
 
-// reportAttempts reads each member's latest submission.
-func reportAttempts(ctx context.Context, q rowsQueryer, id string) ([]reportAttempt, error) {
-	rows, err := q.Query(ctx, `SELECT DISTINCT ON (user_id) id, user_id, started_at, submitted_at, correct::float8, total::float8,
-			waiting_answers, answers, questions
-		FROM attempts WHERE assignment_id=$1 AND submitted_at IS NOT NULL ORDER BY user_id, submitted_at DESC`, id)
+const reportAttemptCols = `t.id, t.user_id, (SELECT count(*) FROM attempts x
+		WHERE x.assignment_id=t.assignment_id AND x.user_id=t.user_id AND x.submitted_at <= t.submitted_at),
+	t.started_at, t.submitted_at, t.correct::float8, t.total::float8, t.waiting_answers, t.answers, t.questions`
+
+// countedAttempts reads each member's submission that counts.
+func countedAttempts(ctx context.Context, q rowsQueryer, id string) ([]reportAttempt, error) {
+	return readReportAttempts(ctx, q, `SELECT DISTINCT ON (t.user_id) `+reportAttemptCols+`
+		FROM attempts t JOIN assignments a ON a.id=t.assignment_id
+		WHERE t.assignment_id=$1 AND t.submitted_at IS NOT NULL ORDER BY t.user_id, `+countedAttemptOrder, id)
+}
+
+// waitingAttempts reads the other submissions with an answer still waiting.
+func waitingAttempts(ctx context.Context, q rowsQueryer, id string, counted []string) ([]reportAttempt, error) {
+	return readReportAttempts(ctx, q, `SELECT `+reportAttemptCols+` FROM attempts t
+		WHERE t.assignment_id=$1 AND t.submitted_at IS NOT NULL AND t.waiting_answers > 0 AND t.id <> ALL($2)
+		ORDER BY t.user_id, t.submitted_at`, id, counted)
+}
+
+// latestAttempts reads each member's latest submission, which reviews rate: what
+// they know now, whichever submission scored highest.
+func latestAttempts(ctx context.Context, q rowsQueryer, id string) ([]reportAttempt, error) {
+	return readReportAttempts(ctx, q, `SELECT DISTINCT ON (t.user_id) `+reportAttemptCols+` FROM attempts t
+		WHERE t.assignment_id=$1 AND t.submitted_at IS NOT NULL ORDER BY t.user_id, t.submitted_at DESC`, id)
+}
+
+func readReportAttempts(ctx context.Context, q rowsQueryer, sql string, args ...any) ([]reportAttempt, error) {
+	rows, err := q.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -2062,7 +2126,7 @@ func reportAttempts(ctx context.Context, q rowsQueryer, id string) ([]reportAtte
 	for rows.Next() {
 		var a reportAttempt
 		var rawAnswers, rawQuestions []byte
-		if err := rows.Scan(&a.id, &a.userID, &a.started, &a.submitted, &a.correct, &a.total, &a.waitingAnswers, &rawAnswers, &rawQuestions); err != nil {
+		if err := rows.Scan(&a.id, &a.userID, &a.number, &a.started, &a.submitted, &a.correct, &a.total, &a.waitingAnswers, &rawAnswers, &rawQuestions); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal(rawAnswers, &a.answers); err != nil {
@@ -2082,8 +2146,9 @@ func reportAttempts(ctx context.Context, q rowsQueryer, id string) ([]reportAtte
 	return out, rows.Err()
 }
 
-// questionReports works out each question's numbers from the submissions.
-func questionReports(frozen []map[string]any, attempts []reportAttempt) ([]AssignmentQuestionReport, []AssignmentAnswerRow) {
+// questionReports works out each question's numbers from the counted submissions,
+// and its answer rows from those and the waiting answers of the others.
+func questionReports(frozen []map[string]any, attempts, others []reportAttempt) ([]AssignmentQuestionReport, []AssignmentAnswerRow) {
 	reports := make([]AssignmentQuestionReport, 0, len(frozen))
 	rows := []AssignmentAnswerRow{}
 	for _, q := range frozen {
@@ -2115,8 +2180,16 @@ func questionReports(frozen []map[string]any, attempts []reportAttempt) ([]Assig
 				}
 			}
 			if open {
-				rows = append(rows, AssignmentAnswerRow{QuestionID: id, UserID: attempt.userID, AttemptID: attempt.id,
+				rows = append(rows, AssignmentAnswerRow{QuestionID: id, UserID: attempt.userID, AttemptID: attempt.id, AttemptNumber: attempt.number,
 					Waiting: waiting, Awarded: awarded, Marks: marks})
+			}
+		}
+		for _, attempt := range others {
+			graded := attempt.graded[id]
+			if graded != nil && questionWaiting(graded) {
+				awarded, marks := questionMarks(graded)
+				rows = append(rows, AssignmentAnswerRow{QuestionID: id, UserID: attempt.userID, AttemptID: attempt.id, AttemptNumber: attempt.number,
+					Waiting: true, Awarded: awarded, Marks: marks})
 			}
 		}
 		if marked >= assignmentAggregateMin {
@@ -2321,7 +2394,7 @@ func (s *Store) releaseAssignment(ctx context.Context, id string, now time.Time)
 				return err
 			}
 		}
-		attempts, err := reportAttempts(ctx, tx, id)
+		attempts, err := latestAttempts(ctx, tx, id)
 		if err != nil {
 			return err
 		}

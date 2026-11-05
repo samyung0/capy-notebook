@@ -79,8 +79,8 @@ export function TodoSection({
     navigate({
       search: {
         assignment: a.id,
-        ...(a.mine?.latestAttemptId && a.kind === 'marked'
-          ? { attempt: a.mine.latestAttemptId }
+        ...(a.mine?.countedAttemptId && a.kind === 'marked'
+          ? { attempt: a.mine.countedAttemptId }
           : {}),
         ...(manages ? { own: true as const } : {}),
         study: 'assignments' as const,

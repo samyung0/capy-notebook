@@ -2827,6 +2827,7 @@
   "assignment_marking_points": "评分点",
   "assignment_marking_points_title": "评分点",
   "assignment_not_answered": "未作答",
+  "assignment_attempt_number": "第 {number} 次",
   "assignment_attempt_again": "再试一次",
   "assignment_comment_for": "给 {name} 的评语",
   "assignment_save_marks": "保存分数",

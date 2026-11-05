@@ -459,6 +459,9 @@ components:
       properties:
         attemptId:
           type: string
+        attemptNumber:
+          format: int64
+          type: integer
         awarded:
           format: double
           type: number
@@ -475,6 +478,7 @@ components:
         - questionId
         - userId
         - attemptId
+        - attemptNumber
         - waiting
         - awarded
         - marks
@@ -873,6 +877,8 @@ components:
         correct:
           format: double
           type: number
+        countedAttemptId:
+          type: string
         done:
           type: boolean
         doneAt:
@@ -883,8 +889,6 @@ components:
         latePenaltyPct:
           format: int64
           type: integer
-        latestAttemptId:
-          type: string
         mark:
           format: double
           type: number

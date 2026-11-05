@@ -28,9 +28,13 @@ import { questionLine } from '../practice/practiceText';
 import type { AssignmentsSearch } from './AssignmentsPage';
 import { markSteps, markText } from './assignmentText';
 
-type Selected = { questionId: string; userId: string };
+type Selected = { attemptId: string; questionId: string };
 const same = (row: AssignmentAnswerRow, s: Selected | null) =>
-  row.questionId === s?.questionId && row.userId === s?.userId;
+  row.questionId === s?.questionId && row.attemptId === s?.attemptId;
+const selection = ({ attemptId, questionId }: AssignmentAnswerRow) => ({
+  attemptId,
+  questionId,
+});
 
 /** Waiting answers first, then the marked ones, keeping the given order. */
 const waitingFirst = (rows: AssignmentAnswerRow[]) => [
@@ -79,16 +83,13 @@ export function ApproveTab({
         row.waiting
     );
     const row = wanted ?? rows[0];
-    return row ? { questionId: row.questionId, userId: row.userId } : null;
+    return row ? selection(row) : null;
   });
   const current = report.answers.find((row) => same(row, selected));
   // The list changed under the selection: take its first row.
   useEffect(() => {
     if (rows.length && !rows.some((row) => same(row, selected)))
-      setSelected({
-        questionId: rows[0].questionId,
-        userId: rows[0].userId,
-      });
+      setSelected(selection(rows[0]));
   }, [rows, selected]);
 
   if (openQuestions.length === 0)
@@ -104,16 +105,21 @@ export function ApproveTab({
   const step = (delta: number) => {
     const i = rows.findIndex((row) => same(row, selected));
     const next = rows[i + delta];
-    if (next) setSelected({ questionId: next.questionId, userId: next.userId });
+    if (next) setSelected(selection(next));
   };
   const moveOn = () => {
     const waiting = rows.filter((row) => row.waiting && !same(row, selected));
-    if (waiting[0])
-      setSelected({
-        questionId: waiting[0].questionId,
-        userId: waiting[0].userId,
-      });
+    if (waiting[0]) setSelected(selection(waiting[0]));
   };
+  // A member with two answers listed: a submission that doesn't count yet still
+  // waits, so each says which it is.
+  const repeated = (row: AssignmentAnswerRow) =>
+    rows.some(
+      (other) =>
+        other !== row &&
+        other.userId === row.userId &&
+        other.questionId === row.questionId
+    );
   const trigger = member
     ? `${names.get(member)?.name ?? ''} · ${m.assignment_to_approve({ count: toApprove })}`
     : m.assignment_question_marks({
@@ -173,24 +179,21 @@ export function ApproveTab({
             const person = names.get(row.userId);
             const on = same(row, selected);
             return (
-              <li key={`${row.questionId}/${row.userId}`}>
+              <li key={`${row.questionId}/${row.attemptId}`}>
                 <button
                   aria-current={on || undefined}
                   className={cn(
                     'flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2.5 text-left font-semibold outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action',
                     on && 'bg-page-hover hover:bg-page-hover'
                   )}
-                  onClick={() =>
-                    setSelected({
-                      questionId: row.questionId,
-                      userId: row.userId,
-                    })
-                  }
+                  onClick={() => setSelected(selection(row))}
                   type="button"
                 >
                   {member ? (
                     <span className="min-w-0 flex-1 truncate">
                       {`Q${questionNumber(row.questionId)} · `}
+                      {repeated(row) &&
+                        `${m.assignment_attempt_number({ number: row.attemptNumber })} · `}
                       <TextView
                         className="whitespace-nowrap"
                         text={questionLine(questionOf(row.questionId))}
@@ -205,7 +208,9 @@ export function ApproveTab({
                         src={person?.avatarUrl || undefined}
                       />
                       <span className="min-w-0 flex-1 truncate">
-                        {person?.name}
+                        {repeated(row)
+                          ? `${person?.name} · ${m.assignment_attempt_number({ number: row.attemptNumber })}`
+                          : person?.name}
                       </span>
                     </>
                   )}
@@ -276,6 +281,7 @@ function MarkPane({
       answers={attempt.answers}
       assignment={assignment}
       attemptId={attempt.id}
+      attemptNumber={row.attemptNumber}
       avatar={avatar}
       canGoBack={canGoBack}
       name={name}
@@ -291,6 +297,7 @@ function MarkForm({
   answers,
   assignment,
   attemptId,
+  attemptNumber,
   avatar,
   canGoBack,
   name,
@@ -302,6 +309,7 @@ function MarkForm({
   answers: Record<string, unknown>;
   assignment: Assignment;
   attemptId: string;
+  attemptNumber: number;
   avatar?: string;
   canGoBack: boolean;
   name: string;
@@ -369,6 +377,11 @@ function MarkForm({
           src={avatar || undefined}
         />
         <span className="font-semibold">{name}</span>
+        {assignment.attempts > 1 && (
+          <span className="t-meta text-fg-muted">
+            {m.assignment_attempt_number({ number: attemptNumber })}
+          </span>
+        )}
       </div>
       {parts.map((part) => {
         const text = answers[part.id];

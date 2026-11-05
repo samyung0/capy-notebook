@@ -883,7 +883,18 @@ has no Advanced at all.
 Nothing submitted past the due date reads Missing for staff and Overdue for the
 member, with the penalty on it (Overdue −20%). An unmarked assignment has no policy
 and leaves the open list at its due date. Attempts default to 1. With more than
-one, the latest submission counts (Claude's pick).
+one, the highest counts (Epo 2026-11-05, `countedAttemptOrder`): the highest mark
+after any late penalty, a tie to the latest. A mark not fully approved compares on
+the marks decided so far, in marks rather than a share (Claude's reading), and it
+reads live, so marking an open part or changing the penalty or due date can change
+which one counts. The member's row, the report and its question numbers, the class
+Average and every link to a member's results read that submission.
+
+An answer still waiting in another submission stays on Approve AI marks and in the
+to-approve counts (Claude's pick), since marking it can make it the highest; a
+member with two rows on a question reads "Attempt 2" on each. Reviews still rate a
+member's latest submission (`latestAttempts`, Claude's pick), as what they know now,
+and an earlier one marked after the release moves its mark alone.
 
 **Results** (A5). The mark top right is marks decided over marks decided, so a
 waiting part never reads as lost; Submitted (A4) says the same as "Your mark so
