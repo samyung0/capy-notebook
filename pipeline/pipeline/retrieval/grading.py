@@ -65,9 +65,9 @@ Reply with JSON only, in this shape, with one entry per marking item in the give
 
 # The bench's limits (round 3) and times (2026-11-04 concurrency run): a part
 # with working thinks, at p95 33-57 s, so it gets 120 s; the rest answer in under
-# 30 s.
+# 30 s. Each adds the up to 60 s a call waits its turn in the model's line.
 _MAX_TOKENS = {"thinking": 16000, "plain": 2000}
-_TIMEOUT_S = {"thinking": 120.0, "plain": 30.0}
+_TIMEOUT_S = {"thinking": 180.0, "plain": 90.0}
 _SHARES = {"none": 0.0, "partial": 0.5, "full": 1.0}
 _COMMENT_MAX = 300
 
@@ -89,6 +89,16 @@ _COPIED_COMMENT = {
     "en": "Copied whole sentences from the passage.",
     "zh": "抄錄了原文的整段內容。",
 }
+# An answer that tries to instruct the marker gets this, never the model's own
+# words: asked to, the model could repeat the marking scheme in its comment.
+_INSTRUCTIONS_COMMENT = {
+    "en": "The answer asks the marker for marks.",
+    "zh": "答案要求評卷人給分。",
+}
+
+
+def _language(answer: str) -> str:
+    return "zh" if _CJK.search(answer) else "en"
 
 
 def has_working(question: str, items: list[dict[str, Any]]) -> bool:
@@ -173,11 +183,17 @@ def decode(content: Any, items: list[dict[str, Any]], answer: str) -> dict[str, 
         shares.append(share if evidenced else 0.0)
     if data.get("vocabulary_only") is True:
         shares = [0.0] * len(items)
+    if data.get("injection_suspected") is True:
+        return {
+            "shares": shares,
+            "comment": _INSTRUCTIONS_COMMENT[_language(answer)],
+            "flag": "instructions",
+        }
     comment = data.get("comment")
     return {
         "shares": shares,
         "comment": comment[:_COMMENT_MAX].strip() if isinstance(comment, str) else "",
-        "injectionSuspected": data.get("injection_suspected") is True,
+        "flag": "",
     }
 
 
@@ -189,11 +205,10 @@ async def grade_part(
     model: ModelConfig,
 ) -> dict[str, Any]:
     if _copied_share(question, answer) >= _COPY_SHARE:
-        language = "zh" if _CJK.search(answer) else "en"
         return {
             "shares": [0.0] * len(items),
-            "comment": _COPIED_COMMENT[language],
-            "injectionSuspected": False,
+            "comment": _COPIED_COMMENT[_language(answer)],
+            "flag": "copied",
         }
     kind = "thinking" if has_working(question, items) else "plain"
     settings: dict[str, Any] = (

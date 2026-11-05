@@ -9,9 +9,10 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
-// How long one run may take: thirty members handing in one paper together take
-// about 15 minutes (2026-11-04 concurrency run).
-const markingRunTimeout = 30 * time.Minute
+// markingAttemptTimeout bounds one attempt from when its turn comes, however long
+// the line of attempts before it (thirty members handing in one paper took about
+// 15 minutes in the 2026-11-04 concurrency run). A 40-part paper took under 90 s.
+const markingAttemptTimeout = 10 * time.Minute
 
 // assignmentMarking is what the gateway is marking: the run's progress per
 // assignment, and one lock per payer, since a payer's sessions are few
@@ -92,45 +93,54 @@ func (m *assignmentMarking) progress(assignmentID string) *AssignmentMarkingProg
 // for it, and a submission never fails for it. Whatever it leaves (no credits, a
 // failed part, a restart) stays "Not marked" for Mark with AI (Epo 2026-11-03).
 func (a *api) markAnswersSoon(assignmentID, attemptID string) {
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), markingRunTimeout)
-		defer cancel()
-		if _, err := a.markAnswers(ctx, assignmentID, attemptID); err != nil {
-			obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz, "stage": "assignment_marking"})
-		}
-	}()
+	go a.markAnswers(context.Background(), assignmentID, attemptID)
 }
 
-// markAnswers marks an assignment's waiting answers, or one attempt's, one
-// attempt at a time per payer, and returns how many it found.
-func (a *api) markAnswers(ctx context.Context, assignmentID, attemptID string) (int, error) {
-	payer, workspaceID, answers, err := a.s.AnswersToMark(ctx, assignmentID, attemptID)
-	if err != nil || len(answers) == 0 {
-		return 0, err
+// markAnswers marks an assignment's waiting answers, or one attempt's, one attempt
+// at a time per payer. It reads each attempt again once its turn comes, so a
+// repeated submit or a second press of Mark with AI finds it marked and pays for
+// nothing. One attempt's failure leaves the rest to go on.
+func (a *api) markAnswers(ctx context.Context, assignmentID, attemptID string) {
+	report := func(err error) {
+		obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz, "stage": "assignment_marking"})
 	}
-	a.marking.start(assignmentID, len(answers))
+	payer, _, listed, err := a.s.AnswersToMark(ctx, assignmentID, attemptID)
+	if err != nil {
+		report(err)
+		return
+	}
+	if len(listed) == 0 {
+		return
+	}
+	a.marking.start(assignmentID, len(listed))
 	defer a.marking.finish(assignmentID)
-	byAttempt := map[string][]store.AnswerToMark{}
 	var order []string
-	for _, answer := range answers {
-		if byAttempt[answer.AttemptID] == nil {
+	counts := map[string]int{}
+	for _, answer := range listed {
+		if counts[answer.AttemptID] == 0 {
 			order = append(order, answer.AttemptID)
 		}
-		byAttempt[answer.AttemptID] = append(byAttempt[answer.AttemptID], answer)
+		counts[answer.AttemptID]++
 	}
 	lock := a.marking.payer(payer)
 	for _, id := range order {
 		lock.Lock()
-		err := a.markAttemptAnswers(ctx, assignmentID, payer, workspaceID, id, byAttempt[id])
+		err := a.markAttemptAnswers(ctx, assignmentID, id)
 		lock.Unlock()
 		if err != nil {
-			return len(answers), err
+			report(err)
 		}
+		a.marking.progressed(assignmentID, counts[id])
 	}
-	return len(answers), nil
 }
 
-func (a *api) markAttemptAnswers(ctx context.Context, assignmentID, payer, workspaceID, attemptID string, answers []store.AnswerToMark) error {
+func (a *api) markAttemptAnswers(ctx context.Context, assignmentID, attemptID string) error {
+	marking, cancel := context.WithTimeout(ctx, markingAttemptTimeout)
+	defer cancel()
+	payer, workspaceID, answers, err := a.s.AnswersToMark(marking, assignmentID, attemptID)
+	if err != nil || len(answers) == 0 {
+		return err
+	}
 	parts := make(map[string]openPart, len(answers))
 	byPart := make(map[string]store.AnswerToMark, len(answers))
 	for _, answer := range answers {
@@ -139,12 +149,16 @@ func (a *api) markAttemptAnswers(ctx context.Context, assignmentID, payer, works
 		}
 		byPart[answer.PartID] = answer
 	}
-	grades := a.gradeWithModel(ctx, payer, workspaceID, parts)
+	grades := a.gradeWithModel(marking, payer, workspaceID, parts)
 	marks := make([]store.AIMark, 0, len(grades))
 	for id, grade := range grades {
 		answer := byPart[id]
-		marks = append(marks, store.AIMark{QuestionID: answer.QuestionID, PartID: id, Items: grade.Items, Comment: grade.Comment})
+		marks = append(marks, store.AIMark{
+			QuestionID: answer.QuestionID, PartID: id, Items: grade.Items, Comment: grade.Comment, Flag: grade.Flag,
+		})
 	}
-	a.marking.progressed(assignmentID, len(answers))
-	return a.s.SaveAIMarks(ctx, attemptID, marks, time.Now())
+	// Paid for, so they are kept even if the attempt's time ran out meanwhile.
+	saving, done := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer done()
+	return a.s.SaveAIMarks(saving, attemptID, marks, time.Now())
 }

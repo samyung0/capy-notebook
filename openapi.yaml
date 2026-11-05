@@ -491,6 +491,8 @@ components:
           type: number
         aiMarked:
           type: boolean
+        aiWarning:
+          type: string
         attemptId:
           type: string
         attemptNumber:
@@ -516,6 +518,7 @@ components:
         - waiting
         - aiMarked
         - aiAwarded
+        - aiWarning
         - awarded
         - marks
       type: object
@@ -845,6 +848,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        clearWarning:
+          type: boolean
         comment:
           maxLength: 2000
           type: string

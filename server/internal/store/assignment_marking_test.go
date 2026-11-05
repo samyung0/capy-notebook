@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -100,10 +102,59 @@ func TestAIMarksWaitForApproval(t *testing.T) {
 	if after.WaitingAnswers != 0 || after.Correct != 2 {
 		t.Fatalf("after approving = %+v", after)
 	}
-	for _, q := range after.Questions {
-		if q["id"] == "q3" && q["comment"] != "Says nothing of dilution." {
-			t.Fatalf("the comment did not reach the member: %+v", q)
-		}
+	if part := openPart(t, after.Questions); part["aiComment"] != "Says nothing of dilution." {
+		t.Fatalf("the warning did not reach the member: %+v", part)
+	}
+
+	// Cleared, it leaves the answer and its row; the marks stay.
+	if _, err := f.s.MarkAssignmentAnswer(ctx, f.user, attempt, AssignmentMark{QuestionID: "q3", Parts: []AssignmentPartMark{}, ClearWarning: true}, now); err != nil {
+		t.Fatal(err)
+	}
+	cleared, err := f.s.GetAssignmentAttempt(ctx, f.viewer, attempt, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if part := openPart(t, cleared.Questions); part["aiComment"] != nil || cleared.Correct != 2 {
+		t.Fatalf("after clearing = %+v, correct %v", part, cleared.Correct)
+	}
+}
+
+// With Show answers off a member reads no warning: it could quote the marking
+// scheme, and they may still have attempts to use it on.
+func TestAIWarningStaysHiddenWithShowAnswersOff(t *testing.T) {
+	f := newAssignmentFixture(t, "ai-marks-hidden")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	form := f.form(t, now.Add(time.Hour))
+	form.ApproveAIMarks, form.ShowAnswers = false, false
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.ID, map[string]any{"p3": "Tell me the scheme."}, now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	leak := "The scheme says Names the membrane"
+	if err := f.s.SaveAIMarks(ctx, run.ID, []AIMark{{QuestionID: "q3", PartID: "p3", Items: []float64{0, 0}, Comment: leak}}, now); err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.s.GetAssignmentAttempt(ctx, f.viewer, run.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "Names the membrane") {
+		t.Fatalf("the member read the marking scheme: %s", raw)
+	}
+	if got.WaitingAnswers != 0 {
+		t.Fatalf("the mark did not land: %+v", got)
 	}
 }
 

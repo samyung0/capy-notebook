@@ -14,6 +14,7 @@ import type {
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
+import { Icon } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
 import {
   Select,
@@ -23,6 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/Select';
 import { userToast } from '@/components/ui/userToast';
+import { AiWarning } from '@/features/questions/AiWarning';
 import { TextView } from '@/features/questions/QuestionView';
 import { type Question, questionMarks } from '@/features/questions/types';
 import { formatPoints } from '@/features/quizzes/grade';
@@ -187,9 +189,9 @@ export function ApproveTab({
               onClick={() =>
                 question &&
                 approveAll(question, {
-                  onError: () =>
+                  onError: (error) =>
                     userToast({
-                      title: m.assignment_mark_failed(),
+                      title: errorCopy(error, m.assignment_mark_failed()),
                       variant: 'error',
                     }),
                 })
@@ -214,9 +216,9 @@ export function ApproveTab({
             disabled={marking}
             onClick={() =>
               markWithAI(undefined, {
-                onError: () =>
+                onError: (error) =>
                   userToast({
-                    title: m.assignment_mark_failed(),
+                    title: errorCopy(error, m.assignment_mark_failed()),
                     variant: 'error',
                   }),
               })
@@ -266,6 +268,17 @@ export function ApproveTab({
                           : person?.name}
                       </span>
                     </>
+                  )}
+                  {row.aiWarning && (
+                    <Icon
+                      className={cn(
+                        'size-4.5 shrink-0',
+                        row.aiWarning === 'error'
+                          ? 'text-tint-error-fg'
+                          : 'text-tint-warning-fg'
+                      )}
+                      name="alert"
+                    />
                   )}
                   {row.waiting && row.aiMarked ? (
                     <span className="shrink-0 font-semibold text-fg-secondary">
@@ -391,13 +404,7 @@ function MarkForm({
       ])
     )
   );
-  const [comment, setComment] = useState(
-    question.comment ??
-      parts
-        .map((p) => p.aiComment)
-        .filter(Boolean)
-        .join(' ')
-  );
+  const [comment, setComment] = useState(question.comment ?? '');
   const { mutate, isPending } = useMarkAssignmentAnswer(
     assignment.workspaceId,
     assignment.id
@@ -407,6 +414,26 @@ function MarkForm({
   const total = flat.reduce<number>((sum, v) => sum + (v ?? 0), 0);
   const marks = parts.reduce((sum, p) => sum + p.marks, 0);
   const first = name.split(' ')[0] ?? name;
+  // Off this answer and its row at once; the owner's typing stays (Epo 2026-11-05).
+  const clearWarning = () =>
+    mutate(
+      {
+        attemptId,
+        mark: {
+          clearWarning: true,
+          comment: '',
+          parts: [],
+          questionId: question.id,
+        },
+      },
+      {
+        onError: (error) =>
+          userToast({
+            title: errorCopy(error, m.assignment_mark_failed()),
+            variant: 'error',
+          }),
+      }
+    );
   const approve = () =>
     mutate(
       {
@@ -464,6 +491,13 @@ function MarkForm({
                 </span>
               )}
             </p>
+            {part.aiComment && (
+              <AiWarning
+                className="mt-3"
+                flag={part.aiFlag}
+                message={part.aiComment}
+              />
+            )}
             <div className="mt-5 grid grid-cols-[minmax(0,1fr)_100px] items-center sm:grid-cols-[minmax(0,1fr)_92px_100px]">
               <p className="pb-2 font-semibold">
                 {m.assignment_marking_points_title()}
@@ -553,6 +587,17 @@ function MarkForm({
         wrapperClassName="mt-4"
       />
       <div className="mt-4 flex justify-end gap-2">
+        {parts.some((p) => p.aiComment) && (
+          // Pulled left by its padding, so its label lines up with the column.
+          <Button
+            className="mr-auto -ml-3.5 border-none sm:-ml-5"
+            disabled={isPending}
+            onClick={clearWarning}
+            variant="danger-light"
+          >
+            {m.assignment_clear_warning()}
+          </Button>
+        )}
         <Button
           disabled={!canGoBack}
           iconLeft="arrowLeft"

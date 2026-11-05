@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/Select';
 import { Textarea } from '@/components/ui/TextArea';
+import { AiWarning } from '@/features/questions/AiWarning';
 import {
   AnswerView,
   answerBoxClass,
@@ -435,7 +436,14 @@ function OpenVerdict({
   answered: boolean;
   part: QuestionPart;
 }) {
-  const { awarded, comment, itemAwards = [], markscheme = [], marks } = part;
+  const {
+    aiComment,
+    aiFlag,
+    awarded,
+    itemAwards = [],
+    markscheme = [],
+    marks,
+  } = part;
   if (awarded == null) return null;
   // No credits, or the model failed: not wrong, just not marked (Epo 2026-11-03).
   if (part.pending)
@@ -484,7 +492,9 @@ function OpenVerdict({
         <strong className={cn('mr-1.5 font-bold', tone)}>{label}</strong>
         {detail}
       </p>
-      {comment && <p className="mb-2 text-fg-secondary text-sm">{comment}</p>}
+      {aiComment && (
+        <AiWarning className="mb-2" flag={aiFlag} message={aiComment} />
+      )}
     </>
   );
 }

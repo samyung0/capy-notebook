@@ -208,6 +208,7 @@ export const markAssignmentAnswerBodyCommentMax = 2000;
 
 
 export const MarkAssignmentAnswerBody = zod.object({
+  "clearWarning": zod.boolean().optional(),
   "comment": zod.string().max(markAssignmentAnswerBodyCommentMax),
   "parts": zod.array(zod.object({
   "items": zod.array(zod.number()).nullish(),
@@ -650,6 +651,7 @@ export const GetAssignmentReportResponse = zod.object({
   "answers": zod.array(zod.object({
   "aiAwarded": zod.number(),
   "aiMarked": zod.boolean(),
+  "aiWarning": zod.string(),
   "attemptId": zod.string(),
   "attemptNumber": zod.int(),
   "awarded": zod.number(),

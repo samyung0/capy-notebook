@@ -2935,6 +2935,7 @@
   "assignment_marking_progress": "Marking {done} of {total} answers…",
   "assignment_ai_mark": "AI {mark}",
   "assignment_marked_by_ai": "Marked by AI",
+  "assignment_clear_warning": "Clear warning",
   "assignment_ai_not_marked": "Not marked by AI",
   "assignment_mark_of": "Mark {total} of {marks}",
   "assignment_approve": "Approve",

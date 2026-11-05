@@ -156,7 +156,7 @@ func TestQuizCheckGradesOnTheServer(t *testing.T) {
 	}); rec.Code != http.StatusConflict {
 		t.Fatalf("repeated check → %d %s", rec.Code, rec.Body.String())
 	}
-	if got := gradedParts(t, detail.Questions)["open-a"]["comment"]; got != "Offered two answers for one point." {
+	if got := gradedParts(t, detail.Questions)["open-a"]["aiComment"]; got != "Offered two answers for one point." {
 		t.Fatalf("the AI's comment = %v", got)
 	}
 	// A blank open answer earns 0 on every item without a model call.

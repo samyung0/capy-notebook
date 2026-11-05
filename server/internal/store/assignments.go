@@ -1983,6 +1983,9 @@ type AssignmentMark struct {
 	QuestionID string               `json:"questionId"`
 	Parts      []AssignmentPartMark `json:"parts" nullable:"false"`
 	Comment    string               `json:"comment" maxLength:"2000"`
+	// ClearWarning takes the AI's warning off the question; with an empty Parts it
+	// changes nothing else.
+	ClearWarning bool `json:"clearWarning,omitempty"`
 }
 
 type AssignmentPartMark struct {
@@ -2043,9 +2046,12 @@ func (s *Store) MarkAssignmentAnswer(ctx context.Context, actorID, attemptID str
 		if err != nil {
 			return err
 		}
+		if mark.ClearWarning {
+			clearAIWarning(question)
+		}
 		if mark.Comment != "" {
 			question["comment"], question["commentBy"] = mark.Comment, actorID
-		} else {
+		} else if !mark.ClearWarning || len(mark.Parts) > 0 {
 			delete(question, "comment")
 			delete(question, "commentBy")
 		}
@@ -2232,6 +2238,8 @@ type AssignmentAnswerRow struct {
 	AIMarked bool `json:"aiMarked"`
 	// AIAwarded is the question's marks if the AI's are approved as they stand.
 	AIAwarded float64 `json:"aiAwarded"`
+	// AIWarning is what the row's warning icon shows: "warning", "error" or empty.
+	AIWarning string  `json:"aiWarning"`
 	Awarded   float64 `json:"awarded"`
 	Marks     float64 `json:"marks"`
 }
@@ -2500,7 +2508,7 @@ func questionReports(frozen []map[string]any, attempts, others []reportAttempt) 
 			// By their own copy: a republish may have changed the question since.
 			if hasOpenPart(graded) {
 				rows = append(rows, AssignmentAnswerRow{QuestionID: id, UserID: attempt.userID, AttemptID: attempt.id, AttemptNumber: attempt.number,
-					Waiting: waiting, AIMarked: waiting && questionAIMarked(graded), AIAwarded: questionAIAwarded(graded), Awarded: awarded, Marks: marks})
+					Waiting: waiting, AIMarked: waiting && questionAIMarked(graded), AIAwarded: questionAIAwarded(graded), AIWarning: questionAIWarning(graded), Awarded: awarded, Marks: marks})
 			}
 		}
 		for _, attempt := range others {
@@ -2508,7 +2516,7 @@ func questionReports(frozen []map[string]any, attempts, others []reportAttempt) 
 			if graded != nil && questionWaiting(graded) {
 				awarded, marks := questionMarks(graded)
 				rows = append(rows, AssignmentAnswerRow{QuestionID: id, UserID: attempt.userID, AttemptID: attempt.id, AttemptNumber: attempt.number,
-					Waiting: true, AIMarked: questionAIMarked(graded), AIAwarded: questionAIAwarded(graded), Awarded: awarded, Marks: marks})
+					Waiting: true, AIMarked: questionAIMarked(graded), AIAwarded: questionAIAwarded(graded), AIWarning: questionAIWarning(graded), Awarded: awarded, Marks: marks})
 			}
 		}
 		if marked >= assignmentAggregateMin {

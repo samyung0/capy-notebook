@@ -11,6 +11,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
+	"github.com/samyung0/capy-notebook/server/internal/review"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -407,6 +408,10 @@ func (a *api) checkReviewItem(ctx context.Context, in *reviewCheckInput) (*grade
 	graded, correct, total, err := a.gradeSignedIn(ctx, plan, workspaceID)
 	if err != nil {
 		return nil, err
+	}
+	// A part left Not marked says nothing about recall: nothing is rated.
+	if _, scored := review.QuestionScore(graded[0]); !scored {
+		return &gradedQuestionOutput{Body: apimodel.GradedQuestion{Correct: correct, Total: total, Question: graded[0]}}, nil
 	}
 	score := correct / total
 	if session != nil {

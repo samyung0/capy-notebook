@@ -211,8 +211,10 @@ export type QuestionPart = {
   itemAwards?: number[];
   /** Open parts no one has marked yet ("Not marked"). */
   pending?: boolean;
-  /** Open parts: the AI's plain-words comment. */
-  comment?: string;
+  /** Open parts: a rule the answer broke, in the AI's plain words, and what code
+   * told apart (`copied`, `instructions`), which shows as an error. */
+  aiComment?: string;
+  aiFlag?: string;
   /** Matching and gaps parts: whether each pair or gap was right. */
   itemResults?: boolean[];
 };

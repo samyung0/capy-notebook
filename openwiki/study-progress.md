@@ -914,8 +914,9 @@ already open to them, the same short window a No late due date has.
 Go scoring as a quiz (`questions.Graded`). An answered open part is left
 `pending` ("Not marked"), and the AI then marks it in the background, on the
 workspace owner's credits (`markAnswersSoon`); a blank one earns 0. With Approve
-AI marks on, its mark waits beside the answer (`aiAwards`, `aiComment`) where only
-staff read it; off, it is the mark at once (`markedBy: "ai"`). At zero the
+AI marks on, its mark waits beside the answer (`aiAwards`, `aiComment`, `aiFlag`)
+where only staff read it; off, it is the mark at once (`markedBy: "ai"`). A part left
+Not marked joins no review. At zero the
 page submits; a closed tab is the server's: 15 s past `deadline_at`, a No late
 submissions due date or its closing by hand, the next request or
 `SweepAssignments` (each minute, in `cmd/api`) submits what was saved,
@@ -991,6 +992,11 @@ average and the table's Average need five results (§11.8). The links
 in half marks up to each point's or closed part's marks, and its comment.
 Totals move in the same transaction. A row the AI marked reads its mark and its
 pane starts from it, so Approve saves what shows; changing a mark approves it too.
+A rule the answer broke shows as a warning above its marking points (red for copying
+and instructions to the marker, amber for any other), with an icon on its row. Clear
+warning takes it off at once (`clearWarning`), and Approve keeps it for the member
+unless it was cleared; with Show answers off a member reads no warning, since it
+could quote the marking scheme.
 `POST /api/assignments/{id}/approve-ai-marks` takes every AI mark on one question
 (Approve all). A row it has not marked (no credits, a failed part, a restart, or a
 submission the sweep made, which starts no marking) reads Not marked, its AI column

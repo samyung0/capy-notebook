@@ -746,7 +746,7 @@ credits a suggestion and a few hundred suggestions an hour of steady writing
 (`todo-ghost-text.md`).
 
 Open quiz parts signed in are graded on the `grading` slot's pin, OpenRouter's
-`deepseek/deepseek-v4.1-flash-1017` on its default route (migration `0152`; Epo
+`deepseek/deepseek-v4.1-flash-1017` on its default route (migration `0153`; Epo
 2026-11-04), through the pipeline's `POST /grade`
 (`pipeline/pipeline/retrieval/grading.py`). The server loads the marking scheme
 from the stored quiz, so no endpoint grades arbitrary text. One call per answered

@@ -714,9 +714,9 @@ class GradeReq(LLMPin):
 
 @app.post("/grade")
 async def grade(req: GradeReq) -> dict[str, Any]:
-    """Mark one open answer (todo-study-tracking.md §9): each item's share and a
-    comment. Go computes the marks. Its call waits in the model's line as a
-    chat's do; a failure leaves the part unmarked, and nothing retries it."""
+    """Mark one open answer (todo-study-tracking.md §9): each item's share, a
+    comment and a flag. Go computes the marks. Its call waits in the model's line
+    as a chat's do; a failure leaves the part unmarked, and nothing retries it."""
     _bind_llm(req)
     slots_token = limits.bind_call_slots(
         limits.CallSlotPolicy(wait_s=limits.CHAT_SLOT_WAIT_S)

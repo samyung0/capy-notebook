@@ -417,9 +417,8 @@ export type {
  * owner is `pending`; a comment and who wrote it sit on the question. */
 export type AssignmentGradedPart = QuestionPart & {
   markedBy?: string;
-  /** Staff only: the AI's marks per marking point and its comment, waiting. */
+  /** Staff only: the AI's marks per marking point. */
   aiAwards?: number[];
-  aiComment?: string;
 };
 export type AssignmentGradedQuestion = Omit<Question, 'parts'> & {
   parts: AssignmentGradedPart[];

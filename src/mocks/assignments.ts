@@ -518,6 +518,11 @@ const aiRow = (q: AssignmentGradedQuestion) => ({
     0
   ),
   aiMarked: q.parts.every((p) => !p.pending || p.aiAwards),
+  aiWarning: q.parts.some((p) => p.aiFlag)
+    ? 'error'
+    : q.parts.some((p) => p.aiComment)
+      ? 'warning'
+      : '',
 });
 
 function submissions(assignmentId: string, userId: string) {
@@ -1281,7 +1286,6 @@ export const assignmentHandlers = (viewer: Viewer) => {
             if (!part.pending) return part;
             const { pending: _, ...rest } = part;
             const items = part.aiAwards ?? [];
-            if (part.aiComment) q.comment ??= part.aiComment;
             return {
               ...rest,
               awarded: items.reduce((sum, v) => sum + v, 0),
@@ -1341,6 +1345,14 @@ export const assignmentHandlers = (viewer: Viewer) => {
           (q) => q.id === mark.questionId
         );
         if (!question) return gone();
+        if (mark.clearWarning)
+          question.parts = question.parts.map(
+            ({ aiComment: _c, aiFlag: _f, ...part }) => part
+          );
+        if (mark.clearWarning && !mark.parts.length)
+          return HttpResponse.json(
+            attemptView(found.attempt, found.row, viewer)
+          );
         question.parts = question.parts.map((part) => {
           const change = mark.parts.find((p) => p.partId === part.id);
           if (!change) return part;

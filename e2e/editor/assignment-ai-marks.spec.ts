@@ -27,6 +27,20 @@ test('Mark with AI fills the waiting marks, and Approve all takes them', async (
   });
   await expect(approveAll).toBeEnabled();
 
+  // A broken rule shows above the marking points, and clears from the answer.
+  const warning = page.locator('[data-ai-warning]');
+  await expect(warning).toHaveText('Offered two answers for one point.');
+  await page
+    .getByRole('button', { exact: true, name: m.assignment_clear_warning() })
+    .click();
+  await expect(warning).toHaveCount(0);
+  await expect(
+    page.getByRole('button', {
+      exact: true,
+      name: m.assignment_clear_warning(),
+    })
+  ).toHaveCount(0);
+
   await approveAll.click();
   await expect(list.first()).not.toContainText(m.assignment_col_ai(), {
     timeout: 15_000,

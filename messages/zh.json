@@ -2935,6 +2935,7 @@
   "assignment_marking_progress": "正在评分第 {done} 份，共 {total} 份答案…",
   "assignment_ai_mark": "AI {mark}",
   "assignment_marked_by_ai": "由 AI 评分",
+  "assignment_clear_warning": "清除警告",
   "assignment_ai_not_marked": "AI 未评分",
   "assignment_mark_of": "得分 {total} / {marks}",
   "assignment_approve": "批准",

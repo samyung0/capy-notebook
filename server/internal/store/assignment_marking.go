@@ -96,6 +96,7 @@ type AIMark struct {
 	PartID     string
 	Items      []float64
 	Comment    string
+	Flag       string
 }
 
 // SaveAIMarks stores marks the AI gave an attempt. With approval on they wait
@@ -153,7 +154,6 @@ func (s *Store) takeAIMarksTx(ctx context.Context, tx pgx.Tx, r attemptRow, grad
 	parts, _ := question["parts"].([]any)
 	waited := questionWaiting(question)
 	var apply []AssignmentPartMark
-	var comments []string
 	for _, mark := range marks {
 		for _, raw := range parts {
 			p, _ := raw.(map[string]any)
@@ -164,7 +164,9 @@ func (s *Store) takeAIMarksTx(ctx context.Context, tx pgx.Tx, r attemptRow, grad
 			p["aiAwards"] = mark.Items
 			if mark.Comment != "" {
 				p["aiComment"] = mark.Comment
-				comments = append(comments, mark.Comment)
+				if mark.Flag != "" {
+					p["aiFlag"] = mark.Flag
+				}
 			}
 			apply = append(apply, AssignmentPartMark{PartID: mark.PartID, Items: mark.Items})
 		}
@@ -175,9 +177,6 @@ func (s *Store) takeAIMarksTx(ctx context.Context, tx pgx.Tx, r attemptRow, grad
 	changed, err := applyPartMarks(question, apply, MarkedByAI, now)
 	if err != nil {
 		return fmt.Errorf("apply AI marks: %w", err)
-	}
-	if _, commented := question["comment"]; !commented && len(comments) > 0 {
-		question["comment"] = strings.Join(comments, " ")
 	}
 	return s.storeQuestionMarksTx(ctx, tx, r, graded, question, given, changed, waited, now)
 }
@@ -247,7 +246,6 @@ func (s *Store) approveAttemptQuestionTx(ctx context.Context, tx pgx.Tx, r attem
 		waited := questionWaiting(question)
 		parts, _ := question["parts"].([]any)
 		var apply []AssignmentPartMark
-		var comments []string
 		for _, raw := range parts {
 			p, _ := raw.(map[string]any)
 			pending, _ := p["pending"].(bool)
@@ -260,9 +258,6 @@ func (s *Store) approveAttemptQuestionTx(ctx context.Context, tx pgx.Tx, r attem
 			}
 			id, _ := p["id"].(string)
 			apply = append(apply, AssignmentPartMark{PartID: id, Items: items})
-			if comment, _ := p["aiComment"].(string); comment != "" {
-				comments = append(comments, comment)
-			}
 		}
 		if len(apply) == 0 {
 			return false, nil
@@ -270,9 +265,6 @@ func (s *Store) approveAttemptQuestionTx(ctx context.Context, tx pgx.Tx, r attem
 		changed, err := applyPartMarks(question, apply, actorID, now)
 		if err != nil {
 			return false, err
-		}
-		if _, commented := question["comment"]; !commented && len(comments) > 0 {
-			question["comment"], question["commentBy"] = strings.Join(comments, " "), actorID
 		}
 		return true, s.storeQuestionMarksTx(ctx, tx, r, graded, question, given, changed, waited, now)
 	}
@@ -295,14 +287,46 @@ func aiAwards(p map[string]any) ([]float64, bool) {
 	return items, true
 }
 
-// withoutAIMarks takes the AI's waiting marks out of what a member reads.
+// withoutAIMarks takes out of what a member reads the AI's marks, and its warning
+// while its mark waits for the owner. With Show answers off gradedWithoutKeys
+// leaves the warning out too: it could quote the marking scheme.
 func withoutAIMarks(graded []map[string]any) {
 	for _, q := range graded {
 		parts, _ := q["parts"].([]any)
 		for _, raw := range parts {
 			p, _ := raw.(map[string]any)
 			delete(p, "aiAwards")
-			delete(p, "aiComment")
+			if pending, _ := p["pending"].(bool); pending {
+				delete(p, "aiComment")
+				delete(p, "aiFlag")
+			}
 		}
 	}
+}
+
+// clearAIWarning takes the AI's warning off a question's parts (Epo 2026-11-05).
+func clearAIWarning(q map[string]any) {
+	parts, _ := q["parts"].([]any)
+	for _, raw := range parts {
+		p, _ := raw.(map[string]any)
+		delete(p, "aiComment")
+		delete(p, "aiFlag")
+	}
+}
+
+// questionAIWarning is the report row's warning: "error" where code told what
+// happened (copying, instructions to the marker), "warning" for any other.
+func questionAIWarning(q map[string]any) string {
+	warning := ""
+	parts, _ := q["parts"].([]any)
+	for _, raw := range parts {
+		p, _ := raw.(map[string]any)
+		if _, flagged := p["aiFlag"]; flagged {
+			return "error"
+		}
+		if _, commented := p["aiComment"]; commented {
+			warning = "warning"
+		}
+	}
+	return warning
 }

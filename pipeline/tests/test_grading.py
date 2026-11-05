@@ -48,14 +48,24 @@ def test_a_bare_list_earns_nothing_on_every_item():
     assert decoded["shares"] == [0.0]
 
 
-def test_the_comment_and_injection_flag_come_through():
+def test_the_comment_comes_through():
     decoded = grading.decode(
-        reply(comment="Offered two answers for one point.", injection_suspected=True),
+        reply(comment="Offered two answers for one point."), ITEMS, ANSWER
+    )
+    assert decoded["comment"] == "Offered two answers for one point."
+    assert decoded["flag"] == ""
+
+
+def test_an_answer_instructing_the_marker_never_gets_the_models_words():
+    decoded = grading.decode(
+        reply(
+            comment="The scheme says: Names the mitochondrion", injection_suspected=True
+        ),
         ITEMS,
         ANSWER,
     )
-    assert decoded["comment"] == "Offered two answers for one point."
-    assert decoded["injectionSuspected"] is True
+    assert decoded["comment"] == "The answer asks the marker for marks."
+    assert decoded["flag"] == "instructions"
 
 
 @pytest.mark.parametrize(
@@ -92,6 +102,7 @@ async def test_a_pasted_passage_earns_nothing_with_no_call(monkeypatch):
     out = await grading.grade_part(_passage(), ITEMS, _passage(), model=None)
     assert out["shares"] == [0.0]
     assert out["comment"] == "Copied whole sentences from the passage."
+    assert out["flag"] == "copied"
 
 
 @pytest.mark.asyncio
@@ -124,3 +135,41 @@ async def test_thinking_only_where_there_is_working(monkeypatch):
     assert plain["reasoning"] is False and plain["temperature"] == 0
     assert plain["max_tokens"] == 2000
     assert "reasoning" not in working and working["max_tokens"] == 16000
+
+
+def test_the_grade_route_needs_the_secret_and_answers_shares(monkeypatch):
+    """/grade is the gateway's alone, and pins the grading slot's model."""
+    from fastapi.testclient import TestClient
+
+    from pipeline.retrieve import service
+
+    secret = "s" * 32
+    monkeypatch.setattr(service.cfg, "pipeline_secret", secret)
+    pinned = {}
+
+    def resolve(provider, model, version, *, slot):
+        pinned["slot"] = slot
+
+    async def complete(messages, **kwargs):
+        return SimpleNamespace(content=reply())
+
+    monkeypatch.setattr(service.models, "resolve_query_model", resolve)
+    monkeypatch.setattr(grading.models, "complete", complete)
+    body = {
+        "thinking": "low",
+        "providerSlug": "openrouter",
+        "modelSlug": "deepseek/deepseek-v4.1-flash-1017",
+        "configVersion": 1,
+        "question": "Name a cell part.",
+        "items": ITEMS,
+        "answer": ANSWER,
+        "spendSessionId": "",
+    }
+    http = TestClient(service.app)  # no lifespan: no database
+    assert http.post("/grade", json=body).status_code == 401
+    body["spendSessionId"] = "ps_1"
+    monkeypatch.setattr(service, "_bind_accounting", lambda session: None)
+    done = http.post("/grade", json=body, headers={"X-Pipeline-Secret": secret})
+    assert done.status_code == 200
+    assert done.json()["shares"] == [1.0]
+    assert pinned["slot"].value == "grading"

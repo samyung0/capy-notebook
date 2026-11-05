@@ -172,9 +172,15 @@ func (a *api) reserveGrading(ctx context.Context, parts int) error {
 	return nil
 }
 
-// gradingPartTimeout bounds one part: its turn in the model's line (up to 60 s),
-// then a part with working's 120 s in the pipeline.
-const gradingPartTimeout = 3 * time.Minute
+const (
+	// gradingPartTimeout bounds one part just past the pipeline's own bound: its
+	// turn in the model's line (up to 60 s), then a part with working's 120 s.
+	gradingPartTimeout = 3*time.Minute + 15*time.Second
+	// gradingCheckTimeout bounds a check someone waits on, inside the 100 s the
+	// proxy in front allows: a part still running then stays Not marked, and the
+	// parts done are kept.
+	gradingCheckTimeout = 90 * time.Second
+)
 
 // gradingLLM is the grading slot's pin. A part with working thinks at low; the
 // pipeline turns thinking off for the rest.
@@ -191,10 +197,12 @@ func (a *api) gradingLLM(ctx context.Context, userID string) (resolvedLLM, error
 	return out, nil
 }
 
-// partGrade is a part's marks per marking item, and the AI's comment on it.
+// partGrade is a part's marks per marking item, and the AI's comment on it; Flag
+// names what code told apart ("copied", "instructions"), which shows as an error.
 type partGrade struct {
 	Items   []float64
 	Comment string
+	Flag    string
 }
 
 // gradeWithModel marks open parts on the payer's credits, ten at once (Epo
@@ -222,11 +230,16 @@ func (a *api) gradeWithModel(ctx context.Context, payerID, workspaceID string, p
 	var mu sync.Mutex
 	var group errgroup.Group
 	group.SetLimit(10)
+	// One report a run: a line of failures has one cause, such as credits running
+	// out partway.
+	var report sync.Once
 	for id, part := range parts {
 		group.Go(func() error {
 			grade, err := a.gradePart(ctx, llm, charge.id, part)
 			if err != nil {
-				obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz, "stage": "grade_part"})
+				report.Do(func() {
+					obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz, "stage": "grade_part"})
+				})
 				return nil
 			}
 			mu.Lock()
@@ -255,6 +268,7 @@ func (a *api) gradePart(ctx context.Context, llm resolvedLLM, sessionID string, 
 	var reply struct {
 		Shares  []float64 `json:"shares"`
 		Comment string    `json:"comment"`
+		Flag    string    `json:"flag"`
 	}
 	if err := json.Unmarshal(raw, &reply); err != nil {
 		return partGrade{}, err
@@ -267,7 +281,7 @@ func (a *api) gradePart(ctx context.Context, llm resolvedLLM, sessionID string, 
 	for i, share := range reply.Shares {
 		marks[i] = share * part.itemMarks[i]
 	}
-	return partGrade{Items: marks, Comment: reply.Comment}, nil
+	return partGrade{Items: marks, Comment: reply.Comment, Flag: reply.Flag}, nil
 }
 
 // gradedWithModel applies the model's marks to the plan's questions. An answered
@@ -294,7 +308,10 @@ func gradedWithModel(plan gradePlan, grades map[string]partGrade) ([]map[string]
 				p["pending"] = true
 				delete(p, "itemAwards")
 			} else if grade.Comment != "" {
-				p["comment"] = grade.Comment
+				p["aiComment"] = grade.Comment
+				if grade.Flag != "" {
+					p["aiFlag"] = grade.Flag
+				}
 			}
 		}
 		graded[i] = out
@@ -312,7 +329,9 @@ func (a *api) gradeSignedIn(ctx context.Context, plan gradePlan, workspaceID str
 			return nil, 0, 0, err
 		}
 	}
-	graded, correct, total := gradedWithModel(plan, a.gradeWithModel(ctx, userID(ctx), workspaceID, plan.open))
+	marking, cancel := context.WithTimeout(ctx, gradingCheckTimeout)
+	defer cancel()
+	graded, correct, total := gradedWithModel(plan, a.gradeWithModel(marking, userID(ctx), workspaceID, plan.open))
 	if total <= 0 {
 		return nil, 0, 0, huma.Error422UnprocessableEntity("there are no questions to grade")
 	}

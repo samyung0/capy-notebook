@@ -1,7 +1,8 @@
 -- Quiz grading leaves Jev for a model slot of its own, `grading`, on the same
 -- OpenRouter pin as extraction and captions (Epo 2026-11-04,
 -- bench/grading/reports/2026-11-03-deepseek-grading-round3.md), on the pin's
--- default route: Wafer's US endpoint, then InferenceNet, then Cloudflare. It needs
+-- default route: Wafer's US endpoint, then InferenceNet, then Cloudflare. Deploy
+-- the pipeline, ingest and Ops with it (deployment-runbook.md). It needs
 -- no vision: parts with working think at low, the rest not at all.
 
 CREATE OR REPLACE FUNCTION model_configs_thinking_ok(
@@ -68,7 +69,7 @@ BEGIN
   ORDER BY version DESC LIMIT 1;
   IF FOUND THEN
     UPDATE model_configs SET enabled = false, is_default_for = '{}',
-      updated_at = now(), updated_by = 'migration:0152'
+      updated_at = now(), updated_by = 'migration:0153'
     WHERE provider_slug = current_config.provider_slug
       AND model_slug = current_config.model_slug AND version = current_config.version;
     SELECT max(version) + 1 INTO current_config.version FROM model_configs
@@ -77,8 +78,8 @@ BEGIN
     current_config.is_default_for := array_append(current_config.is_default_for, 'grading');
     current_config.created_at := now();
     current_config.updated_at := now();
-    current_config.created_by := 'migration:0152';
-    current_config.updated_by := 'migration:0152';
+    current_config.created_by := 'migration:0153';
+    current_config.updated_by := 'migration:0153';
     INSERT INTO model_configs SELECT current_config.*;
   END IF;
   UPDATE model_registry_state SET version = version + 1, updated_at = now();

@@ -586,8 +586,10 @@ marks" earns nothing; an answer that is only a list of subject vocabulary earns 
 every item. An answer with at least half the question's text copied into it, in runs
 of 8+ words or 12+ CJK characters, earns 0 with no call. A part with LaTeX or method
 and accuracy marks (M1, A1) thinks at low with 120 s; the rest don't think and have
-30 s. A rule that cost credit becomes the AI's comment in plain words. A part it
-could not mark stays `pending` ("Not marked"). The part's award is the sum and the
+30 s, each plus up to 60 s waiting its turn in the model's line; a check someone
+waits on stops at 90 s. A rule that cost credit becomes the AI's warning in plain
+words; an answer instructing the marker gets a fixed one, never the model's words.
+A part it could not mark stays `pending` ("Not marked") and is not scored. The part's award is the sum and the
 snapshot keeps `itemAwards`. Signed-out checks stay on Jev until shared pages stop
 AI marking. The grading text
 is built in Go (`questions.GradingText`) from the stem, earlier parts and the

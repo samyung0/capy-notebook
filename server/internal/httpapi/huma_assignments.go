@@ -299,15 +299,26 @@ func (a *api) markAssignmentWithAI(ctx context.Context, in *assignmentIDInput) (
 	if _, err := a.s.GetAssignmentReport(ctx, userID(ctx), in.ID, time.Now()); err != nil {
 		return nil, assignmentError(err)
 	}
-	_, _, answers, err := a.s.AnswersToMark(ctx, in.ID, "")
+	payer, workspaceID, answers, err := a.s.AnswersToMark(ctx, in.ID, "")
 	if err != nil {
 		return nil, assignmentError(err)
 	}
 	out := &markAssignmentWithAIOutput{}
 	out.Body.Total = len(answers)
-	if len(answers) > 0 {
-		a.markAnswersSoon(in.ID, "")
+	if len(answers) == 0 {
+		return out, nil
 	}
+	// Refused here while the page waits: no credits, or a suspended owner.
+	llm, err := a.gradingLLM(ctx, payer)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	charge, err := a.beginProviderSession(ctx, payer, workspaceID, store.SurfaceQuiz, llm.Rates, store.TokenRates{}, llm.Thinking)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	charge.release(ctx)
+	a.markAnswersSoon(in.ID, "")
 	return out, nil
 }
 
@@ -356,11 +367,13 @@ func (a *api) submitAssignmentAttempt(ctx context.Context, in *assignmentAnswers
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
-	res, err := a.s.SubmitAssignmentAttempt(ctx, userID(ctx), in.ID, in.Body.Answers, time.Now())
+	now := time.Now()
+	res, err := a.s.SubmitAssignmentAttempt(ctx, userID(ctx), in.ID, in.Body.Answers, now)
 	if err != nil {
 		return nil, assignmentError(err)
 	}
-	if res.WaitingAnswers > 0 {
+	// Only the submit that did it: a repeated one is answered from the attempt.
+	if res.WaitingAnswers > 0 && res.SubmittedAt != nil && !res.SubmittedAt.Before(now.Add(-time.Millisecond)) {
 		a.markAnswersSoon(res.AssignmentID, res.ID)
 	}
 	return &assignmentAttemptOutput{Body: res}, nil
