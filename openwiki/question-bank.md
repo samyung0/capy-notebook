@@ -303,7 +303,8 @@ the question's ⋮, Edit all details: the question dialog on the same question. 
 question added and left blank goes when another opens or the page is left, before
 its rooms close, while the page can still write; anything anyone wrote in it since,
 a co-editor included, keeps it (`removeUnchangedQuestion`). A note's quiz embed
-keeps the list of questions with Edit and Remove (`QuizForm`).
+keeps the list of questions with Edit and Remove (`QuizForm`); a question added
+there and left blank goes when its dialog closes, under the same check.
 
 `QuestionDialog` is shared by the bank and the quiz editor. Its outline
 column (min 15rem, nudged 4px left to line up with the dialog title) keeps
