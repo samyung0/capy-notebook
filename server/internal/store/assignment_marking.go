@@ -289,7 +289,7 @@ func aiAwards(p map[string]any) ([]float64, bool) {
 
 // withoutAIMarks takes out of what a member reads the AI's marks, and its warning
 // while its mark waits for the owner. With Show answers off gradedWithoutKeys
-// leaves the warning out too: it could quote the marking scheme.
+// also holds the warning back until the assignment has closed.
 func withoutAIMarks(graded []map[string]any) {
 	for _, q := range graded {
 		parts, _ := q["parts"].([]any)

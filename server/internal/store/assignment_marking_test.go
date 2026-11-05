@@ -119,8 +119,9 @@ func TestAIMarksWaitForApproval(t *testing.T) {
 	}
 }
 
-// With Show answers off a member reads no warning: it could quote the marking
-// scheme, and they may still have attempts to use it on.
+// With Show answers off a member reads no warning while the assignment is open: it
+// could quote the marking scheme, and they may still have attempts to use it on.
+// Once it closes they read it, and reopening hides it again (Epo 2026-11-05).
 func TestAIWarningStaysHiddenWithShowAnswersOff(t *testing.T) {
 	f := newAssignmentFixture(t, "ai-marks-hidden")
 	ctx := context.Background()
@@ -155,6 +156,31 @@ func TestAIWarningStaysHiddenWithShowAnswersOff(t *testing.T) {
 	}
 	if got.WaitingAnswers != 0 {
 		t.Fatalf("the mark did not land: %+v", got)
+	}
+
+	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now); err != nil {
+		t.Fatal(err)
+	}
+	closed, err := f.s.GetAssignmentAttempt(ctx, f.viewer, run.ID, now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if part := openPart(t, closed.Questions); part["aiComment"] != leak {
+		t.Fatalf("after closing, the warning = %+v", part)
+	}
+	if part := openPart(t, closed.Questions); part["markscheme"] != nil {
+		t.Fatalf("closing showed the keys: %+v", part)
+	}
+
+	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, false, now); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := f.s.GetAssignmentAttempt(ctx, f.viewer, run.ID, now.Add(2*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if part := openPart(t, reopened.Questions); part["aiComment"] != nil {
+		t.Fatalf("after reopening, the warning = %+v", part)
 	}
 }
 

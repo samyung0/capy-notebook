@@ -995,8 +995,9 @@ pane starts from it, so Approve saves what shows; changing a mark approves it to
 A rule the answer broke shows as a warning above its marking points (red for copying
 and instructions to the marker, amber for any other), with an icon on its row. Clear
 warning takes it off at once (`clearWarning`), and Approve keeps it for the member
-unless it was cleared; with Show answers off a member reads no warning, since it
-could quote the marking scheme.
+unless it was cleared. With Show answers off a member reads no warning until the
+assignment closes, since it could quote the marking scheme while they can still
+resubmit; reopening hides it again.
 `POST /api/assignments/{id}/approve-ai-marks` takes every AI mark on one question
 (Approve all). A row it has not marked (no credits, a failed part, a restart, or a
 submission the sweep made, which starts no marking) reads Not marked, its AI column

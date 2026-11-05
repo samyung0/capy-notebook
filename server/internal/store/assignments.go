@@ -1908,7 +1908,7 @@ func (s *Store) attemptView(ctx context.Context, r attemptRow, staff bool, now t
 		withoutAIMarks(graded)
 	}
 	if !v.ShowAnswers {
-		graded = gradedWithoutKeys(graded)
+		graded = gradedWithoutKeys(graded, assignmentClosedAt(r.noLate, r.dueAt, r.closedAt, now) != nil)
 	}
 	v.Questions = graded
 	return v, nil
@@ -1948,8 +1948,11 @@ func (s *Store) nameCommenters(ctx context.Context, graded []map[string]any) err
 }
 
 // gradedWithoutKeys is a graded copy as a member sees it with Show answers off:
-// the learner's question with each part's marks and the owner's comment.
-func gradedWithoutKeys(graded []map[string]any) []map[string]any {
+// the learner's question with each part's marks and the owner's comment. The AI's
+// warning could quote the marking scheme, so it waits until the assignment has
+// closed (Epo 2026-11-05): nothing can be resubmitted then, and the quiz turns
+// practice, keys and all. Reopening hides it again.
+func gradedWithoutKeys(graded []map[string]any, closed bool) []map[string]any {
 	out := make([]map[string]any, len(graded))
 	for i, q := range graded {
 		view := questions.LearnerView(q)
@@ -1966,6 +1969,13 @@ func gradedWithoutKeys(graded []map[string]any) []map[string]any {
 			for _, key := range []string{"awarded", "pending"} {
 				if value, ok := source[key]; ok {
 					p[key] = value
+				}
+			}
+			if closed {
+				for _, key := range []string{"aiComment", "aiFlag"} {
+					if value, ok := source[key]; ok {
+						p[key] = value
+					}
 				}
 			}
 		}
