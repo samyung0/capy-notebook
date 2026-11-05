@@ -91,6 +91,7 @@ import {
 } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { unexpectedErrorId } from '@/lib/errors';
 import { iconUrl } from '@/lib/icon-catalog';
 import { useOnlineStatus } from '@/lib/online';
 import { dropDeviceCopies } from '@/lib/sourceCache';
@@ -576,6 +577,7 @@ function MaterialContentBody({
     data: loaded,
     error,
     isPending,
+    refetch,
   } = useMaterial(materialId, {
     errorBoundary: false,
   });
@@ -600,7 +602,13 @@ function MaterialContentBody({
   const seed = useRoomSeed(materialId, staticNote ? null : me?.id);
   // An item's last read, painting until this one answers.
   const copied = useMaterialCopy(materialId, staticNote ? null : me?.id);
-  const refused = isApiError(error) && error.status < 500;
+  // A rate limit or a timeout says nothing about this item: such a read could
+  // not answer, as a server error could not.
+  const refused =
+    isApiError(error) &&
+    error.status < 500 &&
+    error.status !== 408 &&
+    error.status !== 429;
   // No access, or gone: what this device kept of it goes too.
   const lost =
     isApiError(error) && (error.status === 403 || error.status === 404);
@@ -655,7 +663,10 @@ function MaterialContentBody({
         }
       />
     ) : (
-      <FileError />
+      <FileError
+        errorId={refused ? null : unexpectedErrorId(error)}
+        onRetry={refused ? undefined : () => void refetch()}
+      />
     );
   }
   // The highest mode this reader may have.

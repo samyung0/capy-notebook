@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { prerenderToNodeStream } from 'react-dom/static';
 import { describe, expect, it, vi } from 'vitest';
 import type { Material } from '@/api/types';
+import { m } from '@/i18n';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { MaterialContent } from './CenterContent';
 
@@ -76,6 +77,13 @@ const materials: Record<string, Partial<Material>> = {
     } as Material['content'],
     kind: 'note',
   },
+  noteLimited: {
+    content: {
+      schemaVersion: 1,
+      value: [{ children: [{ text: 'Note body' }], id: 'p1', type: 'p' }],
+    } as Material['content'],
+    kind: 'note',
+  },
   noteRefused: {
     content: {
       schemaVersion: 1,
@@ -117,14 +125,26 @@ const materials: Record<string, Partial<Material>> = {
 
 vi.mock('@/api/hooks', async () => {
   const { ApiError } = await import('@/api/client');
+  // Reads that failed with nothing to show.
+  const failedReads: Record<string, Error> = {
+    limited: new ApiError(429, 'Too Many Requests'),
+    serverError: new ApiError(
+      503,
+      'Service Unavailable',
+      undefined,
+      null,
+      't_1'
+    ),
+    unreadable: new ApiError(422, 'Unprocessable Entity', undefined, {
+      code: 'material_content_unreadable',
+    }),
+  };
   return {
     useMaterial: (id: string) =>
-      id === 'unreadable'
+      failedReads[id]
         ? {
             data: undefined,
-            error: new ApiError(422, 'Unprocessable Entity', undefined, {
-              code: 'material_content_unreadable',
-            }),
+            error: failedReads[id],
             isPending: false,
           }
         : {
@@ -140,9 +160,11 @@ vi.mock('@/api/hooks', async () => {
             error:
               id === 'noteFailed'
                 ? new ApiError(503, 'Service Unavailable')
-                : id === 'noteRefused'
-                  ? new ApiError(404, 'Not Found')
-                  : null,
+                : id === 'noteLimited'
+                  ? new ApiError(429, 'Too Many Requests')
+                  : id === 'noteRefused'
+                    ? new ApiError(404, 'Not Found')
+                    : null,
             isPending: false,
           },
     useMe: () => ({ data: { id: 'u_1' } }),
@@ -266,6 +288,24 @@ it('keeps showing what it read while a refresh cannot answer', async () => {
   const html = await opened('noteFailed');
   expect(html).toContain('Note body');
   expect(html).not.toContain('data-error-surface');
+});
+
+it('keeps showing what it read when a refresh is rate limited', async () => {
+  const html = await opened('noteLimited');
+  expect(html).toContain('Note body');
+  expect(html).not.toContain('data-error-surface');
+});
+
+it('offers Retry and the error id when a read fails with nothing to show', async () => {
+  const html = await opened('serverError');
+  expect(html).toContain('data-error-surface="panel"');
+  expect(html).toContain(m.error_action_retry());
+  expect(html).toContain('t_1');
+});
+
+it('offers Retry on a first read that was rate limited', async () => {
+  const html = await opened('limited');
+  expect(html).toContain(m.error_action_retry());
 });
 
 it('shows the center file error, not what it read, once a refresh is refused', async () => {

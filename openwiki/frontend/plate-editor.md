@@ -2477,7 +2477,7 @@ copy (`src/features/collaboration/deviceCopy.ts`, stored by
 Epo decided on 2026-11-04 that a note opens one way (`NoteBody`). It paints at
 once, static and read-only: from the device copy when there is one, before its
 material read answers and while that read cannot answer (the browser offline, the
-server down; a refusal shows its panel), else the stored projection, else a
+server down, a timeout or rate limit; a refusal shows its panel), else the stored projection, else a
 wordless skeleton (`NoteSkeleton`). Offline with nothing to paint it reads "Waiting
 for connection" (C9).
 
