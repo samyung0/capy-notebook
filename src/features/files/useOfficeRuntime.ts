@@ -1104,6 +1104,7 @@ export function useOfficeRuntime({
     presenting,
     readOnly: source.readOnly,
     ready,
+    render,
     replaced: source.replaced,
     retryView,
     runMenuCommand,

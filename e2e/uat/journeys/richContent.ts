@@ -408,7 +408,8 @@ export function assertRichPreserved(
   const info = strFromU8(after[sheetPart(after, 'CC info')]);
   assert(/<pane\b[^>]*topLeftCell="C3"[^>]*state="frozen"/.test(info));
   assert(info.includes('<conditionalFormatting sqref="I1">'));
-  // Summary -> drawing -> chart, the chart part unchanged.
+  // Summary -> drawing -> chart, the chart part unchanged but for its stored values:
+  // they follow the cells it reads since 0.5.1, so CC info!H5 moves CCHU's average.
   const drawing = [...relationships(after, summaryPart).values()].find((part) =>
     part.startsWith('xl/drawings/')
   );
@@ -417,7 +418,18 @@ export function assertRichPreserved(
     part.startsWith('xl/charts/')
   );
   assert.equal(chart, 'xl/charts/chart1.xml');
-  same(chart);
+  const stored = /<c:v>[^<]*<\/c:v>/g;
+  const chartBefore = strFromU8(before[chart]);
+  const chartAfter = strFromU8(after[chart]);
+  assert.equal(
+    chartAfter.replaceAll(stored, ''),
+    chartBefore.replaceAll(stored, '')
+  );
+  assert(
+    chartBefore.includes('<c:v>5.2</c:v>') &&
+      chartAfter.includes('<c:v>5.4</c:v>'),
+    'the chart does not follow CC info!H5'
+  );
 }
 
 // Paragraph texts of a WordprocessingML (`w`) or DrawingML (`a`) part.
