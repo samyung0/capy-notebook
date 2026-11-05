@@ -120,3 +120,71 @@ func TestARoomsSaveStoresWhatItAdmittedFromSomeoneWhoLostTheirRole(t *testing.T)
 		t.Fatal("a save naming a suspended contributor was stored")
 	}
 }
+
+// Security regression (Q634, review F3): the room's access check names a lost
+// role, for the recheck to close that person as a revoke does, and only then: a
+// removed member, a lowered writer, a link visitor after the link goes, a public
+// visitor with no link after public turns to link, a viewer of a hidden file. A
+// file gone or a gone owner is plain not found. Everyone reads it as not found.
+// Fails if a lost role goes unnamed, or a gone file or owner reads as one.
+func TestCheckSourceAccessNamesALostRole(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_role_lost_owner")
+	member := newBlobTestUser(t, s, "u_role_lost_member")
+	linked := newBlobTestUser(t, s, "u_role_lost_linked")
+	visitor := newBlobTestUser(t, s, "u_role_lost_visitor")
+	ws, file := sourceTestFile(t, s, owner, "notes.txt", "txt")
+	doc := sourceTestSeed(t, s, owner, file.ID)
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := s.pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	lost := func(actor string, edit bool) {
+		t.Helper()
+		if err := s.CheckSourceAccess(ctx, actor, file.ID, doc.Epoch, edit); !errors.Is(err, ErrSourceRoleLost) || !errors.Is(err, ErrNotFound) {
+			t.Fatalf("%s edit=%v = %v, want the role lost, read as not found", actor, edit, err)
+		}
+	}
+	allowed := func(actor string, edit bool) {
+		t.Helper()
+		if err := s.CheckSourceAccess(ctx, actor, file.ID, doc.Epoch, edit); err != nil {
+			t.Fatalf("%s edit=%v = %v, want allowed", actor, edit, err)
+		}
+	}
+	gone := func(actor string) {
+		t.Helper()
+		if err := s.CheckSourceAccess(ctx, actor, file.ID, doc.Epoch, false); !errors.Is(err, ErrNotFound) || errors.Is(err, ErrSourceRoleLost) {
+			t.Fatalf("%s = %v, want plain not found", actor, err)
+		}
+	}
+	exec(`INSERT INTO workspace_members (workspace_id,user_id,role) VALUES ($1,$2,'editor')`, ws.ID, member)
+	allowed(member, true)
+	exec(`UPDATE workspace_members SET role='viewer' WHERE workspace_id=$1 AND user_id=$2`, ws.ID, member)
+	lost(member, true)
+	allowed(member, false)
+
+	exec(`UPDATE files SET hidden=true WHERE id=$1`, file.ID)
+	lost(member, false)
+	exec(`UPDATE files SET hidden=false WHERE id=$1`, file.ID)
+
+	exec(`DELETE FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, ws.ID, member)
+	lost(member, false)
+
+	exec(`UPDATE workspaces SET privacy='public' WHERE id=$1`, ws.ID)
+	allowed(visitor, false)
+	exec(`INSERT INTO workspace_link_grants (workspace_id,user_id) VALUES ($1,$2)`, ws.ID, linked)
+	exec(`UPDATE workspaces SET privacy='link' WHERE id=$1`, ws.ID)
+	lost(visitor, false)
+	allowed(linked, false)
+	exec(`UPDATE workspaces SET privacy='private' WHERE id=$1`, ws.ID)
+	lost(linked, false)
+
+	exec(`UPDATE users SET deletion_requested_at=now(), purge_after=now()+interval '30 days' WHERE id=$1`, owner)
+	gone(member)
+	exec(`UPDATE users SET deletion_requested_at=NULL, purge_after=NULL WHERE id=$1`, owner)
+	exec(`UPDATE files SET trashed_at=now(), trash_episode_id='ep_role_lost', purge_after=now()+interval '30 days' WHERE id=$1`, file.ID)
+	gone(member)
+}

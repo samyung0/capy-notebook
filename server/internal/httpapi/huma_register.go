@@ -158,6 +158,14 @@ func mapHTTPError(err error) error {
 	if errors.Is(err, store.ErrPaymentMethodNotInstant) {
 		return conflictError("payment_method_not_instant", err.Error())
 	}
+	if errors.Is(err, store.ErrSourceRoleLost) {
+		return &huma.ErrorModel{
+			Status: http.StatusNotFound,
+			Title:  http.StatusText(http.StatusNotFound),
+			Detail: "not found",
+			Errors: []*huma.ErrorDetail{{Message: "role_lost"}},
+		}
+	}
 	if errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrForbidden) {
 		return huma.Error404NotFound("not found")
 	}

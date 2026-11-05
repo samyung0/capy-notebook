@@ -473,6 +473,9 @@ func (s *Store) CheckSourceAccess(ctx context.Context, actor, fileID string, epo
 		return err
 	}
 	if err = sourceActorsAllowed(ctx, tx, fileID, ws, payer, []string{actor}, edit, false); err != nil {
+		if ws != "" && errors.Is(err, ErrNotFound) && sourceActorsAllowed(ctx, tx, fileID, ws, payer, []string{actor}, edit, true) == nil {
+			return ErrSourceRoleLost
+		}
 		return err
 	}
 	if err = checkAccountSessions(ctx, tx, false, owner, actor); err != nil {

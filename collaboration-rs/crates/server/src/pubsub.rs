@@ -364,7 +364,7 @@ async fn revoke_local(app: &Shared, room: &str) -> Result<(), String> {
                 "room_access_revoked",
                 json!({ "room": room, "user_id": user }),
             );
-            let close = RoomCmd::CloseUser(user, 4403, "collaboration access changed".into());
+            let close = RoomCmd::CloseUser(user, 4403, access::ACCESS_CHANGED.into());
             let _ = handle.tx.send(close).await;
         }
     }
@@ -398,7 +398,9 @@ async fn keeps_access(
             };
             match AccessError::from_source(&error) {
                 AccessError::ReadOnly(_) => Ok(true),
-                AccessError::NotFound(_) | AccessError::Forbidden(_) => Ok(false),
+                AccessError::NotFound(_) | AccessError::Forbidden(_) | AccessError::Revoked(_) => {
+                    Ok(false)
+                }
                 // The epoch moved: whatever moved it closes this room.
                 AccessError::Database(_) if error.status() == Some(409) => Ok(true),
                 AccessError::Database(error) => Err(error),

@@ -10,6 +10,8 @@ use crate::auth::Access;
 pub const NOT_FOUND_REASON: &str = "collaboration-not-found";
 pub const FORBIDDEN_REASON: &str = "collaboration-forbidden";
 pub const READ_ONLY_REASON: &str = "collaboration-read-only";
+/// Why a connection closed with 4403, its person's role gone (Q634).
+pub const ACCESS_CHANGED: &str = "collaboration access changed";
 
 /// Go's renewalTolerance: an entitling period stays live this long past
 /// current_period_end, so a late renewal webhook never lapses a paying owner.
@@ -23,6 +25,10 @@ pub enum AccessError {
     NotFound(String),
     #[error("{0}")]
     Forbidden(String),
+    /// The actor's role no longer covers it. A join hears it as forbidden; an
+    /// open connection closes with 4403 and no notice (Q634).
+    #[error("{0}")]
+    Revoked(String),
     /// The room turned read-only for this writer: the editor drops to view.
     #[error("{0}")]
     ReadOnly(String),
@@ -35,7 +41,7 @@ impl AccessError {
     pub fn reason(&self) -> Option<&'static str> {
         match self {
             AccessError::NotFound(_) => Some(NOT_FOUND_REASON),
-            AccessError::Forbidden(_) => Some(FORBIDDEN_REASON),
+            AccessError::Forbidden(_) | AccessError::Revoked(_) => Some(FORBIDDEN_REASON),
             AccessError::ReadOnly(_) => Some(READ_ONLY_REASON),
             AccessError::Database(_) => None,
         }
@@ -50,7 +56,7 @@ impl AccessError {
     pub fn incident_reason(&self) -> &'static str {
         match self {
             AccessError::NotFound(_) => "not_found",
-            AccessError::Forbidden(_) => "forbidden",
+            AccessError::Forbidden(_) | AccessError::Revoked(_) => "forbidden",
             AccessError::ReadOnly(_) => "read_only",
             AccessError::Database(_) => "error",
         }
@@ -185,7 +191,7 @@ pub async fn live_access<C: GenericClient>(
     // the owners' and editors' alone (Go's materialEffectiveAccess, Epo
     // 2026-11-03, 2026-11-04).
     if live.hidden && !live.editor {
-        return Err(AccessError::Forbidden("material access was revoked".into()));
+        return Err(AccessError::Revoked("material access was revoked".into()));
     }
     Ok(live)
 }
@@ -299,7 +305,7 @@ pub async fn live_role<C: GenericClient>(
     };
     // Viewers hold read channels only; anyone else holds nothing.
     if rank(&role) < rank("viewer") {
-        return Err(AccessError::Forbidden("material access was revoked".into()));
+        return Err(AccessError::Revoked("material access was revoked".into()));
     }
     Ok(LiveAccess {
         editor: rank(&role) >= rank("editor"),
@@ -320,7 +326,7 @@ pub async fn assert_access<C: GenericClient>(
 ) -> Result<LiveAccess, AccessError> {
     let live = live_access(client, material_id, actor).await?;
     if requested == Access::Write && live.access() != Access::Write {
-        return Err(AccessError::ReadOnly("collaboration access changed".into()));
+        return Err(AccessError::ReadOnly(ACCESS_CHANGED.into()));
     }
     Ok(live)
 }
@@ -476,6 +482,10 @@ mod tests {
         );
         assert_eq!(
             AccessError::Forbidden(String::new()).reason(),
+            Some(FORBIDDEN_REASON)
+        );
+        assert_eq!(
+            AccessError::Revoked(String::new()).reason(),
             Some(FORBIDDEN_REASON)
         );
         assert_eq!(
