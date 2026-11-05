@@ -1,5 +1,7 @@
 import { useQueries } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import { extractionQuery, useExtraction } from '@/api/hooks';
+import { isMissing } from '@/api/queryClient';
 import { Button } from '@/components/ui/Button';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { m } from '@/i18n';
@@ -9,11 +11,23 @@ import {
   runProgress,
   savedCount,
 } from './makeQuiz';
-import { type QuizRun, quizRunLinks, useQuizRuns } from './quizRuns';
+import {
+  forgetQuizRun,
+  type QuizRun,
+  quizRunLinks,
+  useQuizRuns,
+} from './quizRuns';
 import { openQuizWait, type QuizWaitState } from './quizWaits';
 
 function QuizRunRow({ run: picked }: { run: QuizRun }) {
-  const { data: run } = useExtraction(picked.id, { errorBoundary: false });
+  const { data: run, error } = useExtraction(picked.id, {
+    errorBoundary: false,
+  });
+  // A saved run the server no longer has; a passing error keeps it.
+  const gone = isMissing(error);
+  useEffect(() => {
+    if (gone) forgetQuizRun(picked.id);
+  }, [gone, picked.id]);
   if (!run) return null;
   const links = quizRunLinks();
   if (run.status === 'done' && run.quizId) {
@@ -155,7 +169,11 @@ function QuizWaitRow({ state }: { state: QuizWaitState }) {
 export function QuizRunRows({ waits }: { waits: QuizWaitState[] }) {
   const runs = useQuizRuns((state) => state.runs);
   const done = useQueries({
-    queries: runs.map((run) => extractionQuery(run.id)),
+    // The panel sits over every page: a run it can't read is the row's to deal with.
+    queries: runs.map((run) => ({
+      ...extractionQuery(run.id),
+      meta: { errorBoundary: false },
+    })),
   }).filter(({ data }) => data && data.status !== 'running').length;
   if (runs.length + waits.length === 0) return null;
   return (

@@ -1,6 +1,7 @@
 import { useQueries } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { filesQuery } from '@/api/hooks';
+import { isMissing } from '@/api/queryClient';
 import type { SourceFile } from '@/api/types';
 import { userToast } from '@/components/ui/userToast';
 import {
@@ -103,12 +104,19 @@ export function useQuizWaitStates(): QuizWaitState[] {
     queries: workspaces.map((workspaceId) => ({
       ...filesQuery(workspaceId),
       refetchInterval: 4000,
+      // The panel sits over every page: a list it can't read mustn't take it down.
+      throwOnError: false,
     })),
   });
   const states = waits.map((wait): QuizWaitState => {
-    // A list stored from the last visit may not have the file yet.
+    // A list stored from the last visit may not have the file yet, and one that failed
+    // says nothing about it unless the workspace is gone.
     const list = lists[workspaces.indexOf(wait.workspaceId)];
-    const files = list?.isFetchedAfterMount ? (list.data ?? []) : undefined;
+    const files = isMissing(list?.error)
+      ? []
+      : list?.isFetchedAfterMount && !list.error
+        ? list.data
+        : undefined;
     const transferOf = (row: WaitingFile) =>
       transfers.find((item) => item.key === row.key);
     const stateOf = (row: WaitingFile) =>
@@ -118,8 +126,9 @@ export function useQuizWaitStates(): QuizWaitState[] {
     const all = [...wait.paper, ...wait.answers];
     return {
       answers: idsOf(wait.answers),
-      failures: all.flatMap(({ key, name }) => {
-        const state = stateOf({ key, name });
+      failures: all.flatMap((row) => {
+        const { key, name } = row;
+        const state = stateOf(row);
         if (state === 'gone')
           return [{ key, name, reason: m.source_transfer_not_added() }];
         return state === 'failed'
@@ -127,9 +136,7 @@ export function useQuizWaitStates(): QuizWaitState[] {
               {
                 key,
                 name,
-                reason:
-                  transferOf({ key, name })?.error ??
-                  m.make_quiz_not_readable(),
+                reason: transferOf(row)?.error ?? m.make_quiz_not_readable(),
               },
             ]
           : [];

@@ -320,26 +320,28 @@ test('a reload finds the waiting files, and one that never finished sending offe
       'capy.quiz.waits',
       JSON.stringify({
         owner: null,
-        waits: [
-          {
-            announced: true,
-            answers: [],
-            id: 'read',
-            paper: [{ fileId: 'f_paper_2025', key: 'a', name: 'read.pdf' }],
-            title: 'All read',
-            workspaceId: 'ws_bio',
-          },
-          {
-            announced: false,
-            answers: [
-              { fileId: 'f_paper_scheme', key: 'b', name: 'scheme.pdf' },
-            ],
-            id: 'lost',
-            paper: [{ key: 'c', name: 'lost.pdf' }],
-            title: 'Cut short',
-            workspaceId: 'ws_bio',
-          },
-        ],
+        state: {
+          waits: [
+            {
+              announced: true,
+              answers: [],
+              id: 'read',
+              paper: [{ fileId: 'f_paper_2025', key: 'a', name: 'read.pdf' }],
+              title: 'All read',
+              workspaceId: 'ws_bio',
+            },
+            {
+              announced: false,
+              answers: [
+                { fileId: 'f_paper_scheme', key: 'b', name: 'scheme.pdf' },
+              ],
+              id: 'lost',
+              paper: [{ key: 'c', name: 'lost.pdf' }],
+              title: 'Cut short',
+              workspaceId: 'ws_bio',
+            },
+          ],
+        },
       })
     );
   });
@@ -350,6 +352,11 @@ test('a reload finds the waiting files, and one that never finished sending offe
       name: m.make_quiz_make_action(),
     })
   ).toBeVisible({ timeout: 30_000 });
+  await expect(
+    panel
+      .locator('[data-quiz-wait=ready]')
+      .getByText(m.source_transfer_not_added())
+  ).toHaveCount(0);
   const failed = panel.locator('[data-quiz-wait=failed]');
   await expect(
     failed.getByText(
@@ -368,6 +375,63 @@ test('a reload finds the waiting files, and one that never finished sending offe
     dialog(page).getByRole('button', { name: m.action_continue() })
   ).toBeDisabled();
   await expect(panel.locator('[data-quiz-wait=failed]')).toHaveCount(0);
+});
+
+test('a reload finds the runs the panel follows, and forgets one the server no longer has', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      'capy.quiz.runs',
+      JSON.stringify({
+        owner: null,
+        state: {
+          runs: [
+            {
+              answers: [],
+              id: 'ex_alive',
+              paper: ['p'],
+              workspaceId: 'ws_bio',
+            },
+            { answers: [], id: 'ex_gone', paper: ['p'], workspaceId: 'ws_bio' },
+          ],
+        },
+      })
+    );
+    // The mock's runs live in the page, so this one stands in for the server's.
+    const real = window.fetch;
+    window.fetch = (input, init) =>
+      String(input instanceof Request ? input.url : input).endsWith(
+        '/api/extractions/ex_alive'
+      )
+        ? Promise.resolve(
+            Response.json({
+              answered: 0,
+              confirmed: 12,
+              createdAt: '2026-11-05T10:00:00Z',
+              id: 'ex_alive',
+              recorded: 8,
+              status: 'running',
+              title: 'Still copying',
+              workspaceId: 'ws_bio',
+            })
+          )
+        : real(input, init);
+  });
+  await page.goto('/workspaces/ws_bio');
+  const panel = page.getByTestId('source-transfer-panel');
+  await expect(panel.getByText('Still copying')).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(
+    panel.getByText(m.make_quiz_panel_copying({ count: 8, total: 12 }))
+  ).toBeVisible();
+  await expect(
+    panel.getByText(m.make_quiz_panel_heading({ count: 1, done: 0 }))
+  ).toBeVisible({ timeout: 30_000 });
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem('capy.quiz.runs')))
+    .not.toContain('ex_gone');
 });
 
 test('several question files share the 40 pages, and the list divides them from the answers', async ({

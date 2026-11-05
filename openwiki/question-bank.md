@@ -262,7 +262,9 @@ step is an address, `?make=files`, `?make=pages&paper=…&answers=…&quizFile=�
   reads; its row comes back when it ends. The wait's file names and ids stay in `localStorage`
   (`capy.quiz.waits`, with the account they belong to, dropped when another signs in), so a
   reload finds it and takes the statuses from the server; a file whose bytes a reload cut off
-  has no id, so it counts as failed. Another tab that loads meanwhile reads the same list, so
+  has no id, so it counts as failed. The runs the panel follows stay the same way
+  (`capy.quiz.runs`, ids only, progress from the server), until the panel is closed or the
+  server no longer has the run. Another tab that loads meanwhile reads the same list, so
   a file still sending there shows as failed in that tab. An
   upload has the Add dialog's checks: size, compression, name length and the workspace's file
   room. One that would be stored with no text (a password, too many pages, or no credits for

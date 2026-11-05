@@ -1,5 +1,5 @@
-import { create } from 'zustand';
-import { PREF_KEYS, readPref, writePref } from '@/lib/localPrefs';
+import { PREF_KEYS } from '@/lib/localPrefs';
+import { savedForAccount } from './savedForAccount';
 
 /** A chosen file, by its upload's row until it has an id. */
 export interface WaitingFile {
@@ -19,16 +19,9 @@ export interface QuizWait {
   workspaceId: string;
 }
 
-interface StoredWaits {
-  owner: string | null;
-  waits: QuizWait[];
-}
-
-function isStoredWaits(value: unknown): value is StoredWaits {
-  if (typeof value !== 'object' || value === null) return false;
-  const { owner, waits } = value as Partial<StoredWaits>;
+function isSavedWaits(value: unknown): value is { waits: QuizWait[] } {
+  const waits = (value as { waits?: QuizWait[] } | null)?.waits;
   return (
-    (owner === null || typeof owner === 'string') &&
     Array.isArray(waits) &&
     waits.every(
       (wait) => Array.isArray(wait?.paper) && Array.isArray(wait?.answers)
@@ -36,25 +29,12 @@ function isStoredWaits(value: unknown): value is StoredWaits {
   );
 }
 
-const stored = readPref(
-  PREF_KEYS.quizWaits,
-  { owner: null, waits: [] },
-  isStoredWaits
-);
-let owner = stored.owner;
-
 /** Kept in this browser, so a reload finds them (Epo 2026-11-05): the ids go in as soon as
  * they are known, and the files' statuses come from the server. */
-export const useQuizWaits = create<{ waits: QuizWait[] }>(() => ({
-  waits: stored.waits,
-}));
-useQuizWaits.subscribe(({ waits }) =>
-  writePref(PREF_KEYS.quizWaits, { owner, waits })
+const saved = savedForAccount(
+  PREF_KEYS.quizWaits,
+  { waits: [] as QuizWait[] },
+  isSavedWaits
 );
-
-/** Runs when the signed-in account is known: another account's file names go. */
-export function claimQuizWaits(next: string | null) {
-  if (owner === next) return;
-  owner = next;
-  useQuizWaits.setState({ waits: [] });
-}
+export const useQuizWaits = saved.store;
+export const claimQuizWaits = saved.claim;

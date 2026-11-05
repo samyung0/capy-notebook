@@ -1,4 +1,5 @@
 import { forgetPersistedQueries } from '@/api/queryPersistence';
+import { claimQuizRuns } from '@/features/makeQuiz/quizRuns';
 import { claimQuizWaits } from '@/features/makeQuiz/quizWaitStore';
 import { deleteAccountDrafts } from './editDrafts';
 import { claimSourceCache } from './sourceCache';
@@ -8,11 +9,12 @@ import { claimUndoPayloads } from './undoPayloads';
  * What this browser keeps for the signed-in account beside the query cache:
  * the source bytes (sourceCache.ts) and the agent Undo payloads, which hold
  * document content (undoPayloads.ts), and the names of Make a quiz files still reading
- * (quizWaitStore.ts). Claimed when the account is known,
+ * (quizWaitStore.ts) with the runs the panel follows (quizRuns.ts). Claimed when the account is known,
  * before any read: another account's, or anyone's once signed out (`null`),
  * are deleted (r1 M1).
  */
 export async function claimAccountData(owner: string | null): Promise<void> {
+  claimQuizRuns(owner);
   claimQuizWaits(owner);
   await Promise.all([claimSourceCache(owner), claimUndoPayloads(owner)]);
 }

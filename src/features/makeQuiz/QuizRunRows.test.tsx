@@ -9,12 +9,14 @@ vi.mock('@/api/hooks', () => ({
   extractionQuery: () => ({ queryKey: ['x'] }),
   useExtraction: () => read.value,
 }));
+vi.mock('@/api/queryClient', () => ({ isMissing: () => false }));
 vi.mock('@tanstack/react-query', () => ({
   useQueries: () => [read.value],
 }));
 // The server render reads a store's first state, so the run is the mock's.
 vi.mock('./quizWaits', () => ({ openQuizWait: vi.fn() }));
 vi.mock('./quizRuns', () => ({
+  forgetQuizRun: vi.fn(),
   quizRunLinks: () => undefined,
   useQuizRuns: () => [
     { answers: [], id: 'ex_1', paper: ['p'], workspaceId: 'ws_1' },
