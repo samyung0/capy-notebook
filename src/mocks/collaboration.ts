@@ -259,8 +259,12 @@ function materialRoom(name: string, initialValue: MaterialValue): Room {
   const materialId = name.split(':')[1] ?? '';
   const room = createRoom(name, { id: materialId, kind: 'material' });
   if (!checkpoints.has(name)) {
-    // A device copy of a load-test note merges with its reseeded room.
-    if (import.meta.env.VITE_LOAD_TEST_SEED === 'true')
+    // A device copy of a load-test or scenario note merges with its reseeded
+    // room: the same items, not a second copy of the note.
+    if (
+      import.meta.env.VITE_LOAD_TEST_SEED === 'true' ||
+      materialId.startsWith('mock-scenario-')
+    )
       room.document.clientID = 7;
     room.document
       .get('content', Y.XmlText)

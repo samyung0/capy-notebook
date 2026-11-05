@@ -412,8 +412,14 @@ async function expectRichBlocksShown(page: Page, tag: string, value: Node[]) {
     page.locator(
       `[data-block-id="${value.filter((node) => node.type === type)[n].id}"]`
     );
-  await expect(page.getByText(`${tag} field notes`)).toBeVisible();
-  await expect(page.getByText(`${tag} low marsh`)).toBeVisible();
+  // The hidden paint stays in the DOM a moment after the editor shows (Epo
+  // 2026-11-04), holding the same text.
+  await expect(
+    page.getByText(`${tag} field notes`).locator('visible=true')
+  ).toBeVisible();
+  await expect(
+    page.getByText(`${tag} low marsh`).locator('visible=true')
+  ).toBeVisible();
   await block('material_ref', 0).scrollIntoViewIfNeeded();
   await expect(
     page.getByText(`${tag}: which zone floods daily?`).first()

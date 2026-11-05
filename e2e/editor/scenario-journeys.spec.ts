@@ -703,7 +703,10 @@ test('a frozen account or full storage mid-edit drops open editors to view and d
   await expect(
     page.getByRole('textbox', { name: m.source_edit_raw() })
   ).toHaveCount(0);
-  await expect(page.getByRole('alert')).toHaveCount(0);
+  // Nothing beside the frozen account's entry toast, an error toast's alert.
+  await expect(
+    page.getByRole('alert').and(page.locator(':not([data-toast])'))
+  ).toHaveCount(0);
   await expect(page.getByText(savedMarker)).toBeVisible();
   await expect(page.getByText(marker)).toHaveCount(0);
   await expect(page.locator('[data-source-status]')).not.toHaveAttribute(

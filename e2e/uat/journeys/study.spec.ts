@@ -225,7 +225,9 @@ test('study progress: a quiz finished, a set studied and a short review are reco
       await clicked(page, '/api/review/check', m.review_check()),
       200
     );
-    await expect(page.getByText(m.question_ui_your_answer())).toBeVisible();
+    await expect(
+      page.getByText(m.question_ui_result_right(), { exact: true })
+    ).toBeVisible();
     await page
       .getByRole('button', { exact: true, name: m.action_next() })
       .click();

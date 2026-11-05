@@ -5,6 +5,7 @@ import type { QuestionFigureElement } from '@/features/materials/document';
 import { GraphError, renderGraphSvg } from '@/features/questions/graph';
 import { repairFigureBlock } from '@/features/questions/repair';
 import type { GraphBlock } from '@/features/questions/types';
+import { writeNoEdit } from '../roomBinding';
 
 /** A top-level figure's index and block, found by its id. */
 function figureAt(
@@ -59,10 +60,12 @@ export function useGraphRedraw(element: TElement, readOnly: boolean) {
       // A newer change redraws on its own.
       if (cancelled || !now || now[1] !== held) return;
       if ('svg' in held.image && held.image.svg === svg) return;
-      editor.tf.withoutSaving(() =>
-        editor.tf.setNodes({ block: { ...held, image: { svg } } } as never, {
-          at: [now[0]],
-        })
+      writeNoEdit(editor, () =>
+        editor.tf.withoutSaving(() =>
+          editor.tf.setNodes({ block: { ...held, image: { svg } } } as never, {
+            at: [now[0]],
+          })
+        )
       );
     };
     const run = () => void redraw();

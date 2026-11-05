@@ -203,7 +203,8 @@ test.describe('workspace sharing', () => {
     );
     await viewerPage.goto(`/workspaces/${seed.privateWorkspace.id}`);
     await viewerPage
-      .getByRole('button', { exact: true, name: seed.privateWorkspace.name })
+      .getByRole('navigation', { name: m.workspace_rail_label() })
+      .getByRole('button', { name: m.workspace_account_menu() })
       .click();
     await viewerPage
       .getByRole('menuitem', { name: m.action_clone_workspace() })
