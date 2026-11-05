@@ -65,10 +65,19 @@ export function useFilePages(
         if (kind === 'pdf') return pdfPageCount(url);
         const input = policy && storedSourceAnalysisInput(file, url, policy);
         if (!input) return null;
+        // The analysis worker takes only same-origin URLs, and a file's link is the
+        // bucket's, so its bytes go to it.
+        const bytes = await fetch(url);
+        if (!bytes.ok) return null;
+        const source = { file: new File([await bytes.blob()], file.name) };
         const queue = new SourceAnalysisQueue();
         try {
-          return (await queue.enqueue({ id: file.id, input }).promise)
-            .pageCount;
+          return (
+            await queue.enqueue({
+              id: file.id,
+              input: { ...input, source },
+            }).promise
+          ).pageCount;
         } finally {
           queue.dispose();
         }
@@ -76,6 +85,8 @@ export function useFilePages(
     queryKey: ['file-pages', file?.id, file?.revision],
     retry: false,
     staleTime: Number.POSITIVE_INFINITY,
+    // A count that can't be read is no count, not a crash on the page.
+    throwOnError: false,
   });
   return kind === 'image' ? 1 : (data ?? undefined);
 }

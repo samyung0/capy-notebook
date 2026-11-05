@@ -51,3 +51,10 @@ const (
 	OfficeIDsPerCall = officeIDsPerCall
 	OfficeIDBytes    = officeIDBytes
 )
+
+// SetMarkingAttemptTimeout shortens the AI's time on one attempt for one test.
+func SetMarkingAttemptTimeout(t *testing.T, d time.Duration) {
+	previous := markingAttemptTimeout
+	markingAttemptTimeout = d
+	t.Cleanup(func() { markingAttemptTimeout = previous })
+}

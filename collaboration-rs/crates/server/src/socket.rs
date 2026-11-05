@@ -402,7 +402,8 @@ pub async fn authenticate(
     ))
 }
 
-/// The writer recheck of `accessRecheck`.
+/// The writer recheck of `accessRecheck`: `Revoked` when the role is gone, as
+/// opposed to being frozen or at the storage limit (read-only).
 async fn recheck(app: &Shared, name: &RoomName, context: &Context) -> Result<(), AccessError> {
     match name {
         RoomName::Material { material_id, .. } => {
@@ -411,9 +412,14 @@ async fn recheck(app: &Shared, name: &RoomName, context: &Context) -> Result<(),
                 .get()
                 .await
                 .map_err(|error| AccessError::Database(error.to_string()))?;
-            access::assert_access(&client, material_id, &context.user_id, Access::Write)
-                .await
-                .map(|_| ())
+            let live = access::live_access(&client, material_id, &context.user_id).await?;
+            if !live.editor {
+                return Err(AccessError::Revoked(access::ACCESS_CHANGED.into()));
+            }
+            if live.access() != Access::Write {
+                return Err(AccessError::ReadOnly(access::ACCESS_CHANGED.into()));
+            }
+            Ok(())
         }
         RoomName::Source { .. } => {
             let Some(source) = name.source_room() else {
@@ -422,7 +428,13 @@ async fn recheck(app: &Shared, name: &RoomName, context: &Context) -> Result<(),
             app.sources
                 .assert_access(&source, &context.user_id, true)
                 .await
-                .map_err(|error| AccessError::from_source(&error))
+                .map_err(|error| {
+                    if error.role_lost() {
+                        AccessError::Revoked(access::ACCESS_CHANGED.into())
+                    } else {
+                        AccessError::from_source(&error)
+                    }
+                })
         }
     }
 }
@@ -983,7 +995,9 @@ impl Connection {
     }
 
     /// A writer whose access changed: `room-read-only` for a read-only
-    /// refusal, then the channel closes; lost write access is an incident.
+    /// refusal, then the channel closes; lost write access is an incident. A
+    /// lost role closes as the outbox's revoke does, whichever comes first:
+    /// 4403, no notice, no incident (Q634).
     async fn recheck_refused(
         &mut self,
         channel: u64,
@@ -997,7 +1011,8 @@ impl Connection {
             let payload = json!({ "room": name.to_string(), "type": "room-read-only" }).to_string();
             self.send(channel, Kind::Stateless, &protocol::text(&payload));
         }
-        if error.lost_write() {
+        let revoked = matches!(error, AccessError::Revoked(_));
+        if error.lost_write() && !revoked {
             incidents::record(
                 &self.app,
                 vec![Incident {
@@ -1008,11 +1023,12 @@ impl Connection {
                 }],
             );
         }
-        self.send(
-            channel,
-            Kind::Closed,
-            &protocol::closed(0, &error.to_string()),
-        );
+        let closed = if revoked {
+            protocol::closed(4403, access::ACCESS_CHANGED)
+        } else {
+            protocol::closed(0, &error.to_string())
+        };
+        self.send(channel, Kind::Closed, &closed);
         self.remove_joined(channel).await;
         self.timers
             .retain(|(_, timer_channel), _| *timer_channel != channel);

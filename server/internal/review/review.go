@@ -140,6 +140,10 @@ func QuestionScore(q map[string]any) (score float64, ok bool) {
 	parts, _ := q["parts"].([]any)
 	for _, raw := range parts {
 		p, _ := raw.(map[string]any)
+		// Not marked says nothing about recall.
+		if pending, _ := p["pending"].(bool); pending {
+			return 0, false
+		}
 		a, _ := p["awarded"].(float64)
 		m, _ := p["marks"].(float64)
 		awarded, max = awarded+a, max+m

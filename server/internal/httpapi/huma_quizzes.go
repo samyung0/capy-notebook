@@ -13,6 +13,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
+	"github.com/samyung0/capy-notebook/server/internal/review"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -259,14 +260,17 @@ func (a *api) checkQuizQuestion(ctx context.Context, in *checkQuizQuestionInput)
 		return nil, noAnswersConfiguredError()
 	}
 	// A repeated check (a lost response, a second tab) is refused before it
-	// costs a grading call.
+	// costs a grading call, unless a part of it is still Not marked.
 	if in.Body.AttemptID != "" {
-		checked, err := a.s.QuizQuestionChecked(ctx, userID(ctx), in.ID, in.Body.AttemptID, in.Body.QuestionID)
+		held, answers, err := a.s.QuizCheckedQuestion(ctx, userID(ctx), in.ID, in.Body.AttemptID, in.Body.QuestionID)
 		if err != nil {
 			return nil, hErr(err)
 		}
-		if checked {
-			return nil, huma.Error409Conflict(store.ErrQuestionChecked.Error())
+		if held != nil {
+			if _, scored := review.QuestionScore(held); scored {
+				return nil, huma.Error409Conflict(store.ErrQuestionChecked.Error())
+			}
+			return a.recheckQuizQuestion(ctx, in, quiz.WorkspaceID, held, answers, order, marks)
 		}
 	}
 	answers := projectedAnswers([]map[string]any{q}, in.Body.Answers)
@@ -274,13 +278,58 @@ func (a *api) checkQuizQuestion(ctx context.Context, in *checkQuizQuestionInput)
 	if err != nil {
 		return nil, gradeRequestError(err)
 	}
-	graded, _, _, err := a.gradeSignedIn(ctx, plan, quiz.WorkspaceID, map[string]any{"quizId": quiz.ID})
+	graded, _, _, err := a.gradeSignedIn(ctx, plan, quiz.WorkspaceID)
 	if err != nil {
 		return nil, err
 	}
 	res, err := a.s.CheckQuizQuestion(ctx, userID(ctx), in.ID, store.QuizCheck{
 		AttemptID: in.Body.AttemptID, StartedAt: in.Body.StartedAt,
 		Answers: answers, Question: graded[0], Order: order, Marks: marks,
+	}, time.Now())
+	if errors.Is(err, store.ErrQuestionChecked) {
+		return nil, huma.Error409Conflict(err.Error())
+	}
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &attemptDetailOutput{Body: apimodel.FromAttemptDetail(res)}, nil
+}
+
+// recheckQuizQuestion marks what a check left Not marked, once credits are back or
+// a failure has passed (Epo 2026-11-05). Only those parts are marked and paid for,
+// from the answers first given: the check already showed its key, so a new answer
+// is ignored.
+func (a *api) recheckQuizQuestion(ctx context.Context, in *checkQuizQuestionInput, workspaceID string, held, answers map[string]any, order []string, marks map[string]float64) (*attemptDetailOutput, error) {
+	open := map[string]openPart{}
+	parts, _ := held["parts"].([]any)
+	for i, raw := range parts {
+		p, _ := raw.(map[string]any)
+		if pending, _ := p["pending"].(bool); !pending {
+			continue
+		}
+		id, _ := p["id"].(string)
+		text, _ := answers[id].(string)
+		items, itemMarks := questions.MarkItems(p)
+		open[id] = openPart{question: questions.GradingText(held, i), markscheme: items, itemMarks: itemMarks, answer: text}
+	}
+	if err := a.reserveGrading(ctx, len(open)); err != nil {
+		return nil, err
+	}
+	marking, cancel := context.WithTimeout(ctx, gradingCheckTimeout)
+	defer cancel()
+	grades := a.gradeWithModel(marking, userID(ctx), workspaceID, open)
+	remarked := make(map[string]bool, len(grades))
+	for _, raw := range parts {
+		p, _ := raw.(map[string]any)
+		id, _ := p["id"].(string)
+		if grade, marked := grades[id]; marked {
+			applyPartGrade(p, grade)
+			remarked[id] = true
+		}
+	}
+	res, err := a.s.CheckQuizQuestion(ctx, userID(ctx), in.ID, store.QuizCheck{
+		AttemptID: in.Body.AttemptID, StartedAt: in.Body.StartedAt,
+		Answers: answers, Question: held, Order: order, Marks: marks, Remarked: remarked,
 	}, time.Now())
 	if errors.Is(err, store.ErrQuestionChecked) {
 		return nil, huma.Error409Conflict(err.Error())

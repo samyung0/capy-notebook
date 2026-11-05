@@ -695,11 +695,12 @@ func (s *Store) assignmentPayer(ctx context.Context, id string) (string, *string
 	return wsID, payer, err
 }
 
-// lockAssignmentPayerStaffTx admits staff to a write that moves a frozen copy's
-// charge off its payer. The payer's row is held with the others in id order, as
-// the meter's foreign key needs it, but their account state decides nothing: a
-// publisher suspended or leaving must not hide the assignment from the class's staff.
-func (s *Store) lockAssignmentPayerStaffTx(ctx context.Context, tx pgx.Tx, wsID, actorID string, payer *string) error {
+// lockAssignmentPayerRowsTx holds the workspace and, in id order, the rows of the
+// owner, the actor and whoever a frozen copy is charged to, for a write that moves
+// that charge. The meter's foreign key needs the payer's row held, but their account
+// state decides nothing: a publisher suspended or leaving must not hide the
+// assignment from the class's staff.
+func (s *Store) lockAssignmentPayerRowsTx(ctx context.Context, tx pgx.Tx, wsID, actorID string, payer *string) error {
 	ownerID, err := s.storageOwnerTx(ctx, tx, wsID)
 	if err != nil {
 		return err
@@ -708,10 +709,8 @@ func (s *Store) lockAssignmentPayerStaffTx(ctx context.Context, tx pgx.Tx, wsID,
 	if payer != nil {
 		ids = append(ids, *payer)
 	}
-	if _, err := tx.Exec(ctx, `SELECT 1 FROM users WHERE id=ANY($1::text[]) ORDER BY id FOR NO KEY UPDATE`, ids); err != nil {
-		return err
-	}
-	return s.lockAssignmentStaffTx(ctx, tx, wsID, actorID)
+	_, err = tx.Exec(ctx, `SELECT 1 FROM users WHERE id=ANY($1::text[]) ORDER BY id FOR NO KEY UPDATE`, ids)
+	return err
 }
 
 // assignmentOpenSQL is a published assignment row a still taking work: neither
@@ -1012,7 +1011,10 @@ func (s *Store) RepublishAssignment(ctx context.Context, actorID, id string, qs 
 		return Assignment{}, err
 	}
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
-		if err := s.lockAssignmentPayerStaffTx(ctx, tx, wsID, actorID, payer); err != nil {
+		if err := s.lockAssignmentPayerRowsTx(ctx, tx, wsID, actorID, payer); err != nil {
+			return err
+		}
+		if err := s.lockAssignmentStaffTx(ctx, tx, wsID, actorID); err != nil {
 			return err
 		}
 		// The counters before the row, as reconciliation takes them.
@@ -1244,8 +1246,19 @@ func (s *Store) DeleteAssignment(ctx context.Context, actorID, id string) error 
 		return err
 	}
 	return s.inTx(ctx, func(tx pgx.Tx) error {
-		if err := s.lockAssignmentPayerStaffTx(ctx, tx, wsID, actorID, payer); err != nil {
+		if err := s.lockAssignmentPayerRowsTx(ctx, tx, wsID, actorID, payer); err != nil {
 			return err
+		}
+		// Deleting is one of the things a frozen account keeps (Epo 2026-11-05).
+		if _, err := s.lockWorkspaceEditorRecoveryTx(ctx, tx, wsID, actorID); err != nil {
+			return err
+		}
+		staff, err := s.assignmentStaff(ctx, tx, actorID, wsID)
+		if err != nil {
+			return err
+		}
+		if !staff {
+			return ErrNotFound
 		}
 		// The counter before the row, as reconciliation takes them.
 		if payer != nil {
@@ -1738,6 +1751,37 @@ func (s *Store) rateAttemptTx(ctx context.Context, tx pgx.Tx, userID, quizID str
 	return nil
 }
 
+// questionAIMarked: every open part waiting in q holds the AI's mark.
+func questionAIMarked(q map[string]any) bool {
+	parts, _ := q["parts"].([]any)
+	for _, raw := range parts {
+		p, _ := raw.(map[string]any)
+		if pending, _ := p["pending"].(bool); pending {
+			if _, marked := p["aiAwards"]; !marked {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// questionAIAwarded is what q's parts hold counting the AI's waiting marks.
+func questionAIAwarded(q map[string]any) float64 {
+	var total float64
+	parts, _ := q["parts"].([]any)
+	for _, raw := range parts {
+		p, _ := raw.(map[string]any)
+		if items, marked := aiAwards(p); marked {
+			for _, item := range items {
+				total += item
+			}
+		} else if awarded, ok := p["awarded"].(float64); ok {
+			total += awarded
+		}
+	}
+	return total
+}
+
 func questionWaiting(q map[string]any) bool {
 	parts, _ := q["parts"].([]any)
 	for _, raw := range parts {
@@ -1873,8 +1917,11 @@ func (s *Store) attemptView(ctx context.Context, r attemptRow, staff bool, now t
 	if err := s.nameCommenters(ctx, graded); err != nil {
 		return v, err
 	}
+	if !staff {
+		withoutAIMarks(graded)
+	}
 	if !v.ShowAnswers {
-		graded = gradedWithoutKeys(graded)
+		graded = gradedWithoutKeys(graded, assignmentClosedAt(r.noLate, r.dueAt, r.closedAt, now) != nil)
 	}
 	v.Questions = graded
 	return v, nil
@@ -1914,8 +1961,11 @@ func (s *Store) nameCommenters(ctx context.Context, graded []map[string]any) err
 }
 
 // gradedWithoutKeys is a graded copy as a member sees it with Show answers off:
-// the learner's question with each part's marks and the owner's comment.
-func gradedWithoutKeys(graded []map[string]any) []map[string]any {
+// the learner's question with each part's marks and the owner's comment. The AI's
+// warning could quote the marking scheme, so it waits until the assignment has
+// closed (Epo 2026-11-05): nothing can be resubmitted then, and the quiz turns
+// practice, keys and all. Reopening hides it again.
+func gradedWithoutKeys(graded []map[string]any, closed bool) []map[string]any {
 	out := make([]map[string]any, len(graded))
 	for i, q := range graded {
 		view := questions.LearnerView(q)
@@ -1934,6 +1984,13 @@ func gradedWithoutKeys(graded []map[string]any) []map[string]any {
 					p[key] = value
 				}
 			}
+			if closed {
+				for _, key := range []string{"aiComment", "aiFlag"} {
+					if value, ok := source[key]; ok {
+						p[key] = value
+					}
+				}
+			}
 		}
 		out[i] = view
 	}
@@ -1949,6 +2006,9 @@ type AssignmentMark struct {
 	QuestionID string               `json:"questionId"`
 	Parts      []AssignmentPartMark `json:"parts" nullable:"false"`
 	Comment    string               `json:"comment" maxLength:"2000"`
+	// ClearWarning takes the AI's warning off the question; with an empty Parts it
+	// changes nothing else.
+	ClearWarning bool `json:"clearWarning,omitempty"`
 }
 
 type AssignmentPartMark struct {
@@ -2009,45 +2069,54 @@ func (s *Store) MarkAssignmentAnswer(ctx context.Context, actorID, attemptID str
 		if err != nil {
 			return err
 		}
+		if mark.ClearWarning {
+			clearAIWarning(question)
+		}
 		if mark.Comment != "" {
 			question["comment"], question["commentBy"] = mark.Comment, actorID
-		} else {
+		} else if !mark.ClearWarning || len(mark.Parts) > 0 {
 			delete(question, "comment")
 			delete(question, "commentBy")
 		}
-		correct, total, waitingMarks, waitingAnswers := attemptTotals(graded)
-		pct := 0
-		if total > 0 {
-			pct = int(correct / total * 100)
-		}
-		raw, err := json.Marshal(graded)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `UPDATE attempts SET questions=$2, correct=$3, total=$4, pct=$5, waiting_marks=$6, waiting_answers=$7 WHERE id=$1`,
-			attemptID, raw, correct, total, pct, waitingMarks, waitingAnswers); err != nil {
-			return err
-		}
-		mt := Material{ID: r.sourceID, WorkspaceID: r.wsID}
-		if err := logAnswerPartsTx(ctx, tx, r.userID, mt, question, given, answerSourceAssignment, attemptID, now, changed); err != nil {
-			return err
-		}
-		if r.released == nil || !waited || questionWaiting(question) {
-			return nil
-		}
-		// Reviews rate a member's latest submission (latestAttempts): an earlier one
-		// marked now moves its mark alone.
-		var latest bool
-		if err := tx.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM attempts
-			WHERE assignment_id=$1 AND user_id=$2 AND submitted_at > $3)`, r.assignmentID, r.userID, r.submitted).Scan(&latest); err != nil || !latest {
-			return err
-		}
-		return s.rateAttemptTx(ctx, tx, r.userID, r.sourceID, []map[string]any{question}, given, now)
+		return s.storeQuestionMarksTx(ctx, tx, r, graded, question, given, changed, waited, now)
 	})
 	if err != nil {
 		return AssignmentAttempt{}, err
 	}
 	return s.GetAssignmentAttempt(ctx, actorID, attemptID, now)
+}
+
+// storeQuestionMarksTx stores a question's changed marks: the attempt's totals,
+// its answer log and, once nothing waits, its reviews.
+func (s *Store) storeQuestionMarksTx(ctx context.Context, tx pgx.Tx, r attemptRow, graded []map[string]any, question map[string]any, given map[string]any, changed map[string]bool, waited bool, now time.Time) error {
+	correct, total, waitingMarks, waitingAnswers := attemptTotals(graded)
+	pct := 0
+	if total > 0 {
+		pct = int(correct / total * 100)
+	}
+	raw, err := json.Marshal(graded)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE attempts SET questions=$2, correct=$3, total=$4, pct=$5, waiting_marks=$6, waiting_answers=$7 WHERE id=$1`,
+		r.id, raw, correct, total, pct, waitingMarks, waitingAnswers); err != nil {
+		return err
+	}
+	mt := Material{ID: r.sourceID, WorkspaceID: r.wsID}
+	if err := logAnswerPartsTx(ctx, tx, r.userID, mt, question, given, answerSourceAssignment, r.id, now, changed); err != nil {
+		return err
+	}
+	if r.released == nil || !waited || questionWaiting(question) {
+		return nil
+	}
+	// Reviews rate a member's latest submission (latestAttempts): an earlier one
+	// marked now moves its mark alone.
+	var latest bool
+	if err := tx.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM attempts
+		WHERE assignment_id=$1 AND user_id=$2 AND submitted_at > $3)`, r.assignmentID, r.userID, r.submitted).Scan(&latest); err != nil || !latest {
+		return err
+	}
+	return s.rateAttemptTx(ctx, tx, r.userID, r.sourceID, []map[string]any{question}, given, now)
 }
 
 // applyPartMarks writes the marks into the graded question and returns which
@@ -2186,10 +2255,16 @@ type AssignmentAnswerRow struct {
 	AttemptID  string `json:"attemptId"`
 	// AttemptNumber is which of the member's submissions it is, the first being 1.
 	AttemptNumber int `json:"attemptNumber"`
-	// Waiting: an open part still waits for the owner.
-	Waiting bool    `json:"waiting"`
-	Awarded float64 `json:"awarded"`
-	Marks   float64 `json:"marks"`
+	// Waiting: an open part still waits for the owner. AIMarked: the AI has marked
+	// all of them, so Approve all can take it.
+	Waiting  bool `json:"waiting"`
+	AIMarked bool `json:"aiMarked"`
+	// AIAwarded is the question's marks if the AI's are approved as they stand.
+	AIAwarded float64 `json:"aiAwarded"`
+	// AIWarning is what the row's warning icon shows: "warning", "error" or empty.
+	AIWarning string  `json:"aiWarning"`
+	Awarded   float64 `json:"awarded"`
+	Marks     float64 `json:"marks"`
 }
 
 // wrongAnswersShown caps a short part's common wrong answers.
@@ -2456,7 +2531,7 @@ func questionReports(frozen []map[string]any, attempts, others []reportAttempt) 
 			// By their own copy: a republish may have changed the question since.
 			if hasOpenPart(graded) {
 				rows = append(rows, AssignmentAnswerRow{QuestionID: id, UserID: attempt.userID, AttemptID: attempt.id, AttemptNumber: attempt.number,
-					Waiting: waiting, Awarded: awarded, Marks: marks})
+					Waiting: waiting, AIMarked: waiting && questionAIMarked(graded), AIAwarded: questionAIAwarded(graded), AIWarning: questionAIWarning(graded), Awarded: awarded, Marks: marks})
 			}
 		}
 		for _, attempt := range others {
@@ -2464,7 +2539,7 @@ func questionReports(frozen []map[string]any, attempts, others []reportAttempt) 
 			if graded != nil && questionWaiting(graded) {
 				awarded, marks := questionMarks(graded)
 				rows = append(rows, AssignmentAnswerRow{QuestionID: id, UserID: attempt.userID, AttemptID: attempt.id, AttemptNumber: attempt.number,
-					Waiting: true, Awarded: awarded, Marks: marks})
+					Waiting: true, AIMarked: questionAIMarked(graded), AIAwarded: questionAIAwarded(graded), AIWarning: questionAIWarning(graded), Awarded: awarded, Marks: marks})
 			}
 		}
 		if marked >= assignmentAggregateMin {

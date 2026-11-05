@@ -92,7 +92,7 @@ func TestApplyPartMarks(t *testing.T) {
 func TestGradedWithoutKeys(t *testing.T) {
 	graded, _ := gradeAttempt(frozenFixture(t), map[string]any{"p1": []any{float64(1)}, "p3": "x"})
 	graded[0]["comment"] = "Well done"
-	raw, err := json.Marshal(gradedWithoutKeys(graded))
+	raw, err := json.Marshal(gradedWithoutKeys(graded, false))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1666,6 +1666,24 @@ func TestAssignmentLockedPublisherLeavesStaffWritesOpen(t *testing.T) {
 	}
 	if err := f.s.DeleteAssignment(ctx, f.user, deleted.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("second delete err=%v, want not found", err)
+	}
+}
+
+// Deleting is one of the things a frozen account keeps, for an assignment too:
+// frozen staff still delete one, and Republish, which writes, stays refused.
+func TestFrozenStaffDeleteAnAssignment(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-frozen-staff")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	created, err := f.s.CreateAssignment(ctx, f.editor, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pushFrozen(t, f.s, f.editor, f.ws.ID)
+	_, err = f.s.RepublishAssignment(ctx, f.editor, created.ID, frozenFixture(t)[:1], now)
+	wantOverQuotaLock(t, "frozen republish", err)
+	if err := f.s.DeleteAssignment(ctx, f.editor, created.ID); err != nil {
+		t.Fatalf("frozen delete err=%v", err)
 	}
 }
 

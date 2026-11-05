@@ -157,7 +157,7 @@ result body resetting the session's list.
 | `GET /api/learning/overview` | `LearningOverview`, Learning's Overview tab, below. |
 | `GET /api/workspaces/{id}/study/topics` | `StudyTopics`, Study → Summary: `enabled` and each topic's standing. Refused (403) to a class's owner and editors. |
 | `POST /api/review/ratings` | `{materialId, itemId, rating, session?, attempt?}` for a card; `attempt` (`{id, startedAt}`, minted by the study page when a run begins) adds the rating to that flashcard attempt for a workspace set, creating it with the first rating (`recordCardTx`, under the account lock, as quiz attempts, and the rating lock); another user's, another set's or a quiz attempt's id is 422 (`ErrFlashcardAttempt`); a question is 422 (it is rated by a check). Needs read access to the material, so standalone shared sets can be rated too; an embedded set is 422 (`ErrStudyEmbedded`), its study page sends nothing. |
-| `POST /api/review/check` | `{materialId, itemId, answers, session?}` for a question: grades it on the server (open parts with Jev), rates it from `correct / total` and returns `{correct, total, question}`, the question with its key and awards. A card is 422. |
+| `POST /api/review/check` | `{materialId, itemId, answers, session?}` for a question: grades it on the server (open parts by the grading model), rates it from `correct / total` and returns `{correct, total, question}`, the question with its key and awards. A card is 422. |
 | `POST /api/quizzes/{id}/check` | `{questionId, answers, attemptId?, startedAt?}`: grades one question on the server ([question-bank.md](question-bank.md#answer-keys-and-server-grading)) and adds it to the learner's attempt, whose `AttemptDetail` so far it returns; a missing or unknown `attemptId` (another user's, another quiz's, deleted) starts a new attempt, a question already checked in the attempt is 409. Its side effect is below. |
 
 Side effects, in the same transaction as the write:
@@ -798,7 +798,8 @@ published (Epo 2026-11-05, `frozen_by`, `frozen_bytes`,
 doesn't list them. A publisher whose account is suspended or leaving stops nobody:
 staff still delete, which ends the charge, and republish, which moves the questions
 JSON's charge to whoever republished; an image the assignment already holds keeps its
-payer. They resolve for staff, whoever it went to and whoever holds an
+payer (Epo 2026-11-05), so that payer's purge takes it out of the paper. Frozen staff
+still delete an assignment, and Republish, which writes, is refused for them. They resolve for staff, whoever it went to and whoever holds an
 attempt at it (`frozenAssetReadable`), never another member, and they paste for
 nobody (`AdoptEditorAssets`).
 Members are only ever served this copy:
@@ -833,9 +834,9 @@ minutes, and what is on screen stays as it was, with no error, toast or status
 (`ItemRoom.unavailable`; `useLiveQuizQuestions` keeps its last questions, and a quiz
 attempt page its opening read). The quiz's page in a workspace stays too: the next
 refetch of the file list changes nothing while it is open (`alreadyOpen` in
-`CenterContent`). A read of the material answering 404 can still show the error page
-when the browser comes back online and its data is over five minutes old. An
-unassigned member of a visible quiz keeps normal access with its
+`CenterContent`). A refused read still ends what shows (Epo 2026-11-05), so a refresh
+of the material answering 404, as when the connection comes back and its last read is
+over 5 seconds old, shows the error page. An unassigned member of a visible quiz keeps normal access with its
 checks. A signed-out browser on a public or link workspace's share page is
 nobody in particular, so an assignee could open it there. An attempt made before
 the assignment stays readable by whoever took it.
@@ -912,13 +913,17 @@ already open to them, the same short window a No late due date has.
 
 **Submitting.** `POST …/submit` grades closed parts with the same deterministic
 Go scoring as a quiz (`questions.Graded`). An answered open part is left
-`pending` ("Not marked") with no model call; a blank one earns 0. At zero the
+`pending` ("Not marked"), and the AI then marks it in the background, on the
+workspace owner's credits (`markAnswersSoon`); a blank one earns 0. With Approve
+AI marks on, its mark waits beside the answer (`aiAwards`, `aiComment`, `aiFlag`)
+where only staff read it; off, it is the mark at once (`markedBy: "ai"`). A part left
+Not marked joins no review; a quiz check can check it again (below). At zero the
 page submits; a closed tab is the server's: 15 s past `deadline_at`, a No late
 submissions due date or its closing by hand, the next request or
 `SweepAssignments` (each minute, in `cmd/api`) submits what was saved,
 `auto_submitted` unless closing was the cause. The sweep logs a row that fails and
 passes over it, and picks each batch at random, so rows that keep failing never fill
-it and hold up the rest.
+it and hold up the rest. A panic in that run reports and leaves its answers Not marked; nothing above the run's goroutines would catch it, and the whole server would stop. A stack with no pipeline, like the e2e stack, marks nothing.
 
 **The due date's policy** (Epo 2026-11-04, supersedes §11.5's close by the owner
 alone). Set per assignment in New assignment's Advanced; marked work with a due
@@ -986,9 +991,20 @@ average and the table's Average need five results (§11.8). The links
 
 **Marks.** `POST /api/assignment-attempts/{id}/marks` sets one question's marks,
 in half marks up to each point's or closed part's marks, and its comment.
-Totals move in the same transaction. Until the grading switch no model marks
-anything: rows waiting read Not marked, the AI column reads "–", Approve saves the
-owner's marks and Approve all stays disabled with a reason.
+Totals move in the same transaction. A row the AI marked reads its mark and its
+pane starts from it, so Approve saves what shows; changing a mark approves it too.
+A rule the answer broke shows as a warning above its marking points (red for copying
+and instructions to the marker, amber for any other), with an icon on its row. Clear
+warning takes it off at once (`clearWarning`), and Approve keeps it for the member
+unless it was cleared. With Show answers off a member reads no warning until the
+assignment closes, since it could quote the marking scheme while they can still
+resubmit; reopening hides it again.
+`POST /api/assignments/{id}/approve-ai-marks` takes every AI mark on one question
+(Approve all). A row it has not marked (no credits, a failed part, a restart, or a
+submission the sweep made, which starts no marking) reads Not marked, its AI column
+"–": `POST /api/assignments/{id}/mark-with-ai` runs the AI over all of those, one
+attempt at a time per payer, with "Marking 12 of 40 answers…" from the report's
+`marking` while it runs. Nothing retries by itself (Epo 2026-11-03).
 
 **Closing becomes practice** (Epo 2026-11-03, 2026-11-04: closing, not the due date
 alone). Once it has closed, by hand or at a No late submissions due date, the sweep

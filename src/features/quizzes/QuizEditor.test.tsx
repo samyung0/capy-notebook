@@ -151,6 +151,15 @@ it('leaves the documents alone when the room went read-only', async () => {
   await addQuestion();
   docs.rooms = { access: 'read' };
   await act(async () => root.render(editor()));
+  expect(host.textContent).toContain(m.editor_read_only_strip());
   leave();
   expect(list()).toHaveLength(2);
+});
+
+it('stays mounted under a strip when its room refuses this person', async () => {
+  docs.rooms = { status: 'unavailable' };
+  await show();
+  expect(host.textContent).toContain(m.editor_access_lost());
+  leave();
+  expect(list()).toHaveLength(1);
 });

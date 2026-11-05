@@ -91,15 +91,14 @@ mints a `write` token. See [authorization](../authorization-permissions-lifecycl
 for the full matrix.
 
 ACL changes, sharing changes, and deletions publish room eviction events through
-Redis. Revocation, deletion, ownership/placement changes, and account locks use
-discard mode so rejected in-memory state cannot return. Provably monotonic
-ACL changes use drain mode: member insertion/promotion and privacy/share-role
-widening persist accepted pending edits before unload. Account and plan
+Redis. A widening of access publishes nothing, and a narrowing a `revoke` that
+closes only the people it took something from (Q634, see
+[authorization](../authorization-permissions-lifecycles.md)). Deletion, placement
+changes and account locks use discard mode so rejected in-memory state cannot
+return. A moved file and a hidden item use drain mode, persisting accepted
+pending edits before unload. Account and plan
 restoration instead flushes pending stores without closing connections or
 unloading the room; later edits continue through the normal save cycle.
-Workspace classification uses the effective nonmember grant: while privacy is
-`private`, a dormant share-role change cannot turn a later privacy widening
-into discard mode. A
 The restoration user event also acknowledges without closing that user's
 connections; account lock events still close them. The server checks token expiry
 on inbound messages and persistence rechecks actor/owner lifecycle in the
@@ -1337,15 +1336,18 @@ channel for a fresh token in band (`TOKEN_REQUEST`); the provider answers
 through its `token` function (`TOKEN`), and the server verifies it, rechecks
 access and re-arms both timers. A channel that cannot answer is closed at
 expiry with code 4401. A room closed on an open
-socket (expiry, eviction, an access recheck) only emits the provider's `close`,
+socket (expiry, eviction, an access recheck, one person's access change) only emits the provider's `close`,
 never `disconnect`, so `roomReconnector` (`src/features/notes/roomConnection.ts`)
 reconnects at once with a fresh token and backs off while refusals repeat.
 Authentication refusals carry reasons: `collaboration-read-only` drops to view
 under the read-only strip (it names no reason: a demoted viewer, a frozen
 account and a full owner all see it, and the account banner explains the
 account cases), `collaboration-not-found` (trashed or deleted) and
-`collaboration-forbidden` (lost access) replace the editor with the
-file-missing or no-access panel, `collaboration-outdated` stops the editor
+`collaboration-forbidden` (lost access) keep the page, a reader's as it was and
+an editor's read-only under the "You no longer have access" strip; with no 4403
+close before it the page asks for its read, and a refused read shows "This item
+is unavailable" (see [authorization](../authorization-permissions-lifecycles.md)),
+`collaboration-outdated` stops the editor
 for the page load (see [Client protocol](#client-protocol-and-the-release-nudge)),
 `collaboration-unassigned-id` is not retried (see [client ids](#client-ids)),
 and anything else (an expired token,
@@ -1941,8 +1943,8 @@ keep no sessions and their full history.
 - **A session is one Y.Doc**, named by its client id (see [client
   ids](#client-ids)): one editor in one tab, whose Undo stack lives as long.
   A viewer, who never edits, has none; one whose token turns writable (a
-  role change evicts the channel first, so only if that eviction is late)
-  gets one at its first write, at the version it last named.
+  raised role closes nothing, so a token refresh after it) gets one at its
+  first write, at the version it last named.
 - **Versions.** Every JOIN names the stored version its document holds after
   the client id (0: a new document that holds nothing; one that took stored
   drafts before its first JOIN names theirs, `unsentFrom`). A note room tells
@@ -3078,8 +3080,10 @@ either applied, the later one measured exactly without the earlier), the server
 broadcasts `document-rejected` to the room and evicts it; leaving the room
 loaded would mean it never persists again. A structurally invalid snapshot no
 repair fixes is discarded the same way (`document-rejected` with code
-`invalid_document`), and an `authorization-revoked` eviction makes every editor
-drop its copy too. `NoteEditor` responds to a `document-rejected` (its writer's
+`invalid_document`), and an `authorization-revoked` eviction (a discard: deletion,
+trash, a move, an account lock) makes every editor drop its copy too; an access
+change sends none, it closes only those who lost access, with 4403 and no notice
+([authorization](../authorization-permissions-lifecycles.md)). `NoteEditor` responds to a `document-rejected` (its writer's
 or the room's) by swapping in a new `NoteEditorCore` under a new generation key
 ([room swap](#room-swap)), which reconnects onto the room's state (after a
 discard, the last durable state). Unsaved edits are kept as one refused draft
@@ -3386,14 +3390,15 @@ rejected; the check reads the decoded update against the room rather than
 applying it to a copy, and also rejects an update that writes under the room's
 client, names it as an origin, or deletes past its held clock; otherwise one
 crafted update could erase or forge every later marker. A debounced store
-claims every live marker and rechecks every distinct contributor they name,
-not only the last editor. Its row holds the live markers deleted (no stored
+claims every live marker and rechecks the account of every distinct contributor
+they name, not only the last editor. Its row holds the live markers deleted (no stored
 row carries one), and after commit it clears only the claimed ones, so an update arriving during the
 store belongs to the next batch; a failed store unclaims them, so its retry
-keeps the same contributor set. If an authorization change races an already-applied in-memory Yjs update,
+keeps the same contributor set. If an account lock races an already-applied in-memory Yjs update,
 persistence rejects the whole snapshot and evicts the room; authorized clients
 then reload the last durable state rather than inheriting or later retrying the
-revoked user's update.
+locked user's update. A lost role does not reject it: what the room admitted saves
+(Q635), so up to about 5 s of a removed person's last edits can survive.
 
 None of this gates **opening** a document. Limits protect the collaboration
 service and the database on write; a document that already exists always opens.
@@ -3487,13 +3492,14 @@ already durable and remains eligible for the normal lag retry.
 The final durable store takes the material advisory lock, then follows the same
 SQL row-lock order as Go mutations: workspace row (when present), contributor
 and owner accounts in ID order, then the material row. It revalidates placement
-and every contributor only after those locks are held. It also validates the
+and every contributor's account only after those locks are held. It also validates the
 complete Plate structure and the custom block required by the material kind
 before committing Yjs state. Member removal, role
 demotion, lifecycle changes, standalone privacy changes, and clones therefore
-cannot form an account/material deadlock or slip a save across the revocation
-boundary: the save either commits first or observes the revoked access and is
-rejected without advancing Yjs state or the SQL projection.
+cannot form an account/material deadlock. A lifecycle change cannot slip a save
+across its boundary: the save either commits first or observes the lock and is
+rejected without advancing Yjs state or the SQL projection. A lost role is
+enforced at admission instead, so what the room admitted saves (Q634).
 
 Quiz `timeLimitMin` uses the same integer range in REST, collaboration, and Go
 projection validation: 1 through 180 minutes. Values outside that range never

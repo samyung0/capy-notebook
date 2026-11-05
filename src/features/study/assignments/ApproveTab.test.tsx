@@ -15,11 +15,13 @@ Object.assign(globalThis, { document, IS_REACT_ACT_ENVIRONMENT: true, window });
 
 const opened = vi.hoisted(() => ({ ids: [] as string[] }));
 vi.mock('@/api/hooks', () => ({
+  useApproveAssignmentAIMarks: () => ({ isPending: false, mutate: vi.fn() }),
   useAssignmentAttempt: (id: string) => {
     opened.ids.push(id);
     return { data: undefined, isPending: true };
   },
   useMarkAssignmentAnswer: () => ({ isPending: false, mutate: () => {} }),
+  useMarkAssignmentWithAI: () => ({ isPending: false, mutate: vi.fn() }),
 }));
 vi.mock('@/components/ui/Select', () => {
   const Pass = ({ children }: { children?: React.ReactNode }) => (

@@ -9,6 +9,7 @@ import type { AssignmentPartMark } from './assignmentPartMark.ts';
 export interface AssignmentMark {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  clearWarning?: boolean;
   /** @maxLength 2000 */
   comment: string;
   parts: AssignmentPartMark[];
