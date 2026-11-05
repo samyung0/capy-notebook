@@ -944,7 +944,7 @@ Updated 2026-11-03. Decided this round, no longer open: the join notice (not an 
 
 The batch is on `main` and UAT at bb1b3fb4a (`e2e/uat/journeys/study.spec.ts` hasn't run on UAT yet). The BetterOffice pin follows at 3464db68a. Study work is now all on the Mac (the Windows session stopped it there).
 
-**On `claude/study-followups`, pushed at 15d927699 for the Windows session to land after its review round (F1, F2, F3, F4 and F7 fixed, F5 didn't reproduce, F6 with the leftovers):**
+**On `claude/study-followups`, pushed at b513be1f4 for the Windows session to land once CI passes (review round done: F1, F2, F3, F4 and F7 fixed, F5 didn't reproduce, F6 with the leftovers):**
 - No kick (Epo: "a live room doesnt kick people becuase they receive update"): nothing closes a connection when an assignment is published, reopened or edited. Joining and tokens are still refused.
 - Closing sends `assignment_closed`; a member's open attempt submits what's on the page and goes straight to results. Closing has a 15 s grace, Claude's pick, so that submit counts.
 - Assignments keep the frozen copy, for assignments only; practice stays live. Republish (Epo: "i think republish button maybe more simpler") replaces it for an open marked assignment. Anyone in progress gets it on their next load, with answers to removed questions dropped; submitted attempts keep their marks.
@@ -953,6 +953,8 @@ The batch is on `main` and UAT at bb1b3fb4a (`e2e/uat/journeys/study.spec.ts` ha
 
 **Figures:** at most 5 per whole question (Epo, "cap at 5, i thought its per part, if whole quesiton then 5"), on the extraction branch.
 
-**Still with Epo:** whether "never reconnect" reaches the other drains (hiding an item, access changes, moving a file) and a 404 showing the error page in `CenterContent.tsx`; the Late badge; Summary counting open assignments; the picker's Coming soon rows; layout capacity and deploy; moving Attempts into Advanced.
+**On `claude/reconnect-cases`, local until the follow-ups land (d2cf6bab1 and on):** a room refusing someone keeps their page, a reader's as it was, an editor's read-only under a grey strip; a discard's notice asks for the read again; a refused read ends what shows, for materials and files (Epo: "if item is e.g. deleted then we hsouldnt letuser keep viewing"). Windows does the server side after the follow-ups land: adding someone or raising a role closes nothing, a removal or lowered role closes only that person's connections, a plan downgrade uses the read-only strip.
+
+**Still with Epo:** the Late badge; Summary counting open assignments; the picker's Coming soon rows; layout capacity and deploy; moving Attempts into Advanced.
 
 **Handed over by the Windows session, not started:** the first real UAT check of a question with no answers going through `insert_child`; dotted question ids in `quiz.rs`, on main too; locks in `source_imports.go:763-780`; the `StartAssignment` expired-attempt lock; `DeleteAssignment` returning 404; a cap on a whole run's figures; sweep starvation (200 rows with no ORDER BY). The rest are in the left-for-later lists of `FIXES.md` and `FIXES-2.md` under `2026-11-05-study-landing` in the harness. `assignments.go:327-336` is already handled.
