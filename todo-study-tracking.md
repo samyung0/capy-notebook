@@ -228,7 +228,7 @@ Earlier note, superseded: a single sidebar with Home, Files, Agent, Study, then 
   - Assignment tasks have no tick box: they complete when the member submits.
   - Ticks feed the owner's "x of 6 done".
 - **Done tasks show no status.** No check icon and no "Submitted" label: they drop out of the list. A "Show done" button (no count) at the top right of the section brings them back at the bottom, crossed out (H2 and H2b).
-- **Quizzes carry no check icon anywhere (Epo, 2026-11-03).** A quiz in the task list, done or not, shows no icon: its chip is text only, and the row's icon column is blank. Elsewhere (file trees, editor headers, pickers) the quiz file icon is a question mark in a square, so a check mark never reads as "done".
+- **Quizzes carry no check icon anywhere (Epo, 2026-11-03).** A quiz in the task list, done or not, shows no icon: its chip is text only, and the row's icon column is blank. Elsewhere (file trees, editor headers, pickers) the quiz icon is the bolt, as the app has always used, so a check mark never reads as "done". The square question mark is banned (Epo, 2026-11-05: "ban that icon"); this line named it by mistake.
 - **Layout (Epo, 2026-11-02):** a list without a header row. The section title "Tasks" sat right above a "Task" column header, which looked like a stutter. Each row reads "Do [Past paper 2025 P1] 60 min · Due Fri 7 Nov · 5 of 6 done". "Add a task" sits at the top right of the section, as actions do on other pages.
 - **Mocks follow a smaller global type and tighter lists** (Epo is reducing the app's global font size):
   - body 14 px (was 14.8);
@@ -953,10 +953,19 @@ The batch is on `main` and UAT at bb1b3fb4a (`e2e/uat/journeys/study.spec.ts` ha
 
 **Figures:** at most 5 per whole question (Epo, "cap at 5, i thought its per part, if whole quesiton then 5"), on the extraction branch. A run's first 40 figures are kept, on `main` at cfdd3d451; its CI failed on `e2e/editor/open-paint.spec.ts:108`, which looks flaky, and Windows has that spec.
 
-**Waiting for Windows' one review round, then landing once CI is green (all pushed 2026-11-05):** `claude/ui-updates` 1d032e214, `claude/study-leftovers` 50f1c38aa, `claude/study-leftovers-assignments` 2eb3f3b07, `claude/reconnect-cases` dca7efc53.
+**On `main` at b0b73308c:** `claude/ui-updates`, `claude/study-leftovers`, `claude/study-leftovers-assignments`, `claude/uat-make-quiz-journey`. UAT's quality run failed `e2e/uat/journeys/makeQuiz.spec.ts:211` on Office papers; Extraction has the fix.
+
+**Landing order, Windows' (2026-11-05):**
+1. One push and deploy: the room pair (`claude/room-acl-targeted`, `claude/reconnect-cases` d729b98b9, frozen delete 2d580489f, two test fixes, migration `0152_targeted_room_access.sql`) with Extraction's Office page-draw fix.
+2. `claude/grading-off-jev` 13a054701 (migration `0153_grading_slot.sql`), which merges `main` once the first lands. All its pushes are `[skip ci]` until then, because `0153` fails without `0152`. No real 1017 mark has run yet.
+3. Windows' removal of AI marking from shared pages (Q640 B).
+
+**New assignment's Quiz field (`claude/assignment-quiz-picker` eeb6035fc):** with no quizzes it shows "Make a quiz to begin." and no search. New quiz, Make a quiz from a file and Generate questions open the Add file, Make a quiz and generate dialogs. No next step after them (Epo: "nvm on the next step, i think we have clear buttons in the assignment page already").
 
 **On `claude/reconnect-cases`, landing before or with Windows' `claude/room-acl-targeted` (Epo's pick):** a room refusing someone keeps their page, a reader's as it was, an editor's read-only under a grey strip; a discard's notice asks for the read again; a refused read ends what shows, for materials and files (Epo: "if item is e.g. deleted then we hsouldnt letuser keep viewing"). A 4403 close joins again in every room kind, and the token says what the person has now (Claude's fix: item rooms stopped for good on it). Windows' side: adding someone or raising a role closes nothing, a removal or lowered role closes only that person's connections with no notice, a plan lapse closes nothing until the writer's next update brings `room-read-only`. `membership.spec.ts` needs a UAT run once both land; the mock has no 4403 close.
 
-**Still with Epo:** the Late badge; Summary counting open assignments; the picker's Coming soon rows; layout capacity and deploy; moving Attempts into Advanced.
+**Answered by Epo, 2026-11-05:** the Late badge stays; Attempts stays where it is; Summary keeps counting marks as they land, with no filter (Epo: unmarked work isn't in the data and a filter is needless complexity); with Show answers off, a warning shows once the assignment closes.
+
+**Still with Epo:** whether Windows deploys the layout service to the ingest host (`LAYOUT_WORKERS=2`, `LAYOUT_THREADS=2`; runbook §7.6; UAT has no `CAPY_LAYOUT_URL`, so Make a quiz uses the fallback box call until then).
 
 **Handed over by the Windows session, not started:** the first real UAT check of a question with no answers going through `insert_child`; dotted question ids in `quiz.rs`, on main too; locks in `source_imports.go:763-780`; the `StartAssignment` expired-attempt lock; `DeleteAssignment` returning 404; a cap on a whole run's figures; sweep starvation (200 rows with no ORDER BY). The rest are in the left-for-later lists of `FIXES.md` and `FIXES-2.md` under `2026-11-05-study-landing` in the harness. `assignments.go:327-336` is already handled.
