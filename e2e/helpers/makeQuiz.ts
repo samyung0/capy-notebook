@@ -126,7 +126,11 @@ export async function drawnSheets(page: Page, count: number) {
       `${request.failure()?.errorText} ${request.url().split('?')[0]}`
     );
   };
+  const onPageError = (error: Error) => {
+    heard.push(error.message.slice(0, 200));
+  };
   page.on('console', onConsole);
+  page.on('pageerror', onPageError);
   page.on('requestfailed', onFailed);
   try {
     await expect(sheets).toHaveCount(count, { timeout: 120_000 });
@@ -139,6 +143,7 @@ export async function drawnSheets(page: Page, count: number) {
     );
   } finally {
     page.off('console', onConsole);
+    page.off('pageerror', onPageError);
     page.off('requestfailed', onFailed);
   }
   await expect(page.locator('iframe[src*="office-runtime"]')).toHaveCount(0);

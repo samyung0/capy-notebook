@@ -110,6 +110,7 @@ type api struct {
 	wh                 webhookStore
 	blob               blob.Store
 	pipe               *pipeline.Client
+	marking            assignmentMarking
 	rdb                *redis.Client
 	parser             string
 	cfg                Config

@@ -100,12 +100,15 @@ func (a *api) bankCheck(ctx context.Context, in *bankCheckInput) (*gradedQuestio
 	if err != nil {
 		return nil, gradeRequestError(err)
 	}
-	graded, correct, total, err := a.gradeSignedIn(ctx, plan, "", map[string]any{"bankQuestionId": in.ID})
+	graded, correct, total, err := a.gradeSignedIn(ctx, plan, "")
 	if err != nil {
 		return nil, err
 	}
-	if err := a.s.RecordBankAnswer(ctx, userID(ctx), in.ID, q.TopicID, review.QuestionHash(q.Question), correct/total, time.Now()); err != nil {
-		return nil, hErr(err)
+	// A part left Not marked records no score.
+	if _, scored := review.QuestionScore(graded[0]); scored {
+		if err := a.s.RecordBankAnswer(ctx, userID(ctx), in.ID, q.TopicID, review.QuestionHash(q.Question), correct/total, time.Now()); err != nil {
+			return nil, hErr(err)
+		}
 	}
 	return &gradedQuestionOutput{Body: apimodel.GradedQuestion{Correct: correct, Total: total, Question: graded[0]}}, nil
 }

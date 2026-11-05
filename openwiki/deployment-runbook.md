@@ -66,6 +66,13 @@ the migration drops `model_capacities.interactive_reserve`, which the previous
 release's ingest workers and Ops registry still read, so they fail admissions
 and the registry until they run the new release.
 
+The release that brings migration `0153` (the grading slot) deploys the app, the
+retrieval pipeline, the ingest host and Ops together, right after the migration:
+the previous release's pipeline and ingest workers raise on the new slot, so calls
+pinned to 1017's new version fail (ghost text, Make a quiz, page reads), a restart
+of the old registry fails, and old Ops refuses the row. Deploying UAT and then
+ingest at the same commit leaves those failures for the minutes between the two.
+
 Where the two must be split (a manual rollout, a partial rollback), the
 gateway goes first or with the collaboration service, never after it. A text
 checkpoint now carries `preview` (2026-10-13, `thumbnails.md`): a gateway

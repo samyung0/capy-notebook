@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useAssignmentAttempt, useMarkAssignmentAnswer } from '@/api/hooks';
+import {
+  useApproveAssignmentAIMarks,
+  useAssignmentAttempt,
+  useMarkAssignmentAnswer,
+  useMarkAssignmentWithAI,
+} from '@/api/hooks';
 import type {
   Assignment,
   AssignmentAnswerRow,
@@ -9,6 +14,7 @@ import type {
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
+import { Icon } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
 import {
   Select,
@@ -18,6 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/Select';
 import { userToast } from '@/components/ui/userToast';
+import { AiWarning } from '@/features/questions/AiWarning';
 import { TextView } from '@/features/questions/QuestionView';
 import { type Question, questionMarks } from '@/features/questions/types';
 import { formatPoints } from '@/features/quizzes/grade';
@@ -43,9 +50,9 @@ const waitingFirst = (rows: AssignmentAnswerRow[]) => [
 ];
 
 /** Approve AI marks (boards A3, A3b; links §9): a question's answers member by
- * member, or with `member` one member's answers. Rows waiting read Not marked:
- * until the grading switch no model marks an answer, so the owner sets each
- * marking point and Approve saves it. Approve all waits for AI marks. */
+ * member, or with `member` one member's answers. A row the AI marked reads its
+ * mark, and a pane starts from it; Approve saves what shows. Rows it has not
+ * marked (no credits, a failure) read Not marked: Mark with AI runs it again. */
 export function ApproveTab({
   assignment,
   report,
@@ -63,6 +70,11 @@ export function ApproveTab({
     q.question.parts.some((p) => p.answer.type === 'open')
   );
   const firstWaiting = report.answers.find((row) => row.waiting);
+  const { isPending: marking, mutate: markWithAI } = useMarkAssignmentWithAI(
+    assignment.id
+  );
+  const { isPending: approving, mutate: approveAll } =
+    useApproveAssignmentAIMarks(assignment.workspaceId, assignment.id);
   // A3b: by member, entered from the Members tab's "2 to approve".
   const [member, setMember] = useState<string | undefined>(
     search.question ? undefined : search.member
@@ -98,6 +110,8 @@ export function ApproveTab({
     );
 
   const toApprove = rows.filter((row) => row.waiting).length;
+  // Approve all clears a question: by member there is none to clear.
+  const approvable = !member && rows.some((row) => row.waiting && row.aiMarked);
   const questionNumber = (id: string) =>
     report.questions.findIndex((q) => q.question.id === id) + 1;
   const questionOf = (id: string) =>
@@ -167,13 +181,54 @@ export function ApproveTab({
           <span className="t-meta text-fg-secondary">
             {m.assignment_to_approve({ count: toApprove })}
           </span>
-          {/* Waits for the grading switch: there are no AI marks to approve. */}
-          <span title={m.assignment_approve_all_waits()}>
-            <Button disabled size="sm" variant="outline">
+          <span
+            title={approvable ? undefined : m.assignment_approve_all_waits()}
+          >
+            <Button
+              disabled={!approvable || approving}
+              onClick={() =>
+                question &&
+                approveAll(question, {
+                  onError: (error) =>
+                    userToast({
+                      title: errorCopy(error, m.assignment_mark_failed()),
+                      variant: 'error',
+                    }),
+                })
+              }
+              size="sm"
+              variant="outline"
+            >
               {m.assignment_approve_all()}
             </Button>
           </span>
         </div>
+        {report.marking ? (
+          <p className="t-meta mt-2 px-2.5 text-fg-secondary">
+            {m.assignment_marking_progress({
+              done: report.marking.done,
+              total: report.marking.total,
+            })}
+          </p>
+        ) : report.answers.some((row) => row.waiting && !row.aiMarked) ? (
+          <Button
+            className="mt-2 w-full"
+            disabled={marking}
+            onClick={() =>
+              markWithAI(undefined, {
+                onError: (error) =>
+                  userToast({
+                    title: errorCopy(error, m.assignment_mark_failed()),
+                    variant: 'error',
+                  }),
+              })
+            }
+            size="sm"
+            variant="outline"
+          >
+            {m.assignment_mark_with_ai()}
+          </Button>
+        ) : null}
         <ul className="mt-2 flex flex-col gap-0.5 max-md:max-h-56 max-md:overflow-auto">
           {rows.map((row) => {
             const person = names.get(row.userId);
@@ -214,7 +269,24 @@ export function ApproveTab({
                       </span>
                     </>
                   )}
-                  {row.waiting ? (
+                  {row.aiWarning && (
+                    <Icon
+                      className={cn(
+                        'size-4.5 shrink-0',
+                        row.aiWarning === 'error'
+                          ? 'text-tint-error-fg'
+                          : 'text-tint-warning-fg'
+                      )}
+                      name="alert"
+                    />
+                  )}
+                  {row.waiting && row.aiMarked ? (
+                    <span className="shrink-0 font-semibold text-fg-secondary">
+                      {m.assignment_ai_mark({
+                        mark: markText(row.aiAwarded, row.marks),
+                      })}
+                    </span>
+                  ) : row.waiting ? (
                     <span className="inline-flex h-5.5 shrink-0 items-center rounded-md bg-tint-warning px-1.75 font-semibold text-tint-warning-fg text-xs">
                       {m.assignment_not_marked()}
                     </span>
@@ -235,7 +307,8 @@ export function ApproveTab({
             assignment={assignment}
             avatar={names.get(current.userId)?.avatarUrl}
             canGoBack={rows.findIndex((row) => same(row, selected)) > 0}
-            key={`${current.attemptId}/${current.questionId}`}
+            // Starts over from the AI's marks when they arrive.
+            key={`${current.attemptId}/${current.questionId}/${current.aiMarked}`}
             name={names.get(current.userId)?.name ?? ''}
             onApproved={moveOn}
             onPrevious={() => step(-1)}
@@ -284,6 +357,8 @@ function MarkPane({
       attemptNumber={row.attemptNumber}
       avatar={avatar}
       canGoBack={canGoBack}
+      // Starts over from the AI's marks when its read brings them.
+      key={question.parts.some((p) => p.aiAwards) ? 'ai' : 'none'}
       name={name}
       onApproved={onApproved}
       onPrevious={onPrevious}
@@ -324,7 +399,7 @@ function MarkForm({
       parts.map((p) => [
         p.id,
         (p.markscheme ?? []).map((_, i) =>
-          p.pending ? null : (p.itemAwards?.[i] ?? 0)
+          p.pending ? (p.aiAwards?.[i] ?? null) : (p.itemAwards?.[i] ?? 0)
         ),
       ])
     )
@@ -339,6 +414,26 @@ function MarkForm({
   const total = flat.reduce<number>((sum, v) => sum + (v ?? 0), 0);
   const marks = parts.reduce((sum, p) => sum + p.marks, 0);
   const first = name.split(' ')[0] ?? name;
+  // Off this answer and its row at once; the owner's typing stays (Epo 2026-11-05).
+  const clearWarning = () =>
+    mutate(
+      {
+        attemptId,
+        mark: {
+          clearWarning: true,
+          comment: '',
+          parts: [],
+          questionId: question.id,
+        },
+      },
+      {
+        onError: (error) =>
+          userToast({
+            title: errorCopy(error, m.assignment_mark_failed()),
+            variant: 'error',
+          }),
+      }
+    );
   const approve = () =>
     mutate(
       {
@@ -396,6 +491,13 @@ function MarkForm({
                 </span>
               )}
             </p>
+            {part.aiComment && (
+              <AiWarning
+                className="mt-3"
+                flag={part.aiFlag}
+                message={part.aiComment}
+              />
+            )}
             <div className="mt-5 grid grid-cols-[minmax(0,1fr)_100px] items-center sm:grid-cols-[minmax(0,1fr)_92px_100px]">
               <p className="pb-2 font-semibold">
                 {m.assignment_marking_points_title()}
@@ -413,7 +515,11 @@ function MarkForm({
                     <span className="text-fg-muted">{`(${item.marks})`}</span>
                   </div>
                   <div className="flex min-h-11 items-center border-divider border-t max-sm:hidden">
-                    <span className="t-meta text-fg-muted">–</span>
+                    <span className="t-meta text-fg-muted">
+                      {part.aiAwards
+                        ? markText(part.aiAwards[i] ?? 0, item.marks)
+                        : '–'}
+                    </span>
                   </div>
                   <div className="flex min-h-11 items-center border-divider border-t">
                     <Select
@@ -454,7 +560,16 @@ function MarkForm({
         );
       })}
       <p className="mt-4 border-divider border-t pt-3 text-fg-secondary">
-        {m.assignment_ai_not_marked()}
+        {parts.every((p) => p.aiAwards)
+          ? m.assignment_ai_mark({
+              mark: markText(
+                parts
+                  .flatMap((p) => p.aiAwards ?? [])
+                  .reduce((a, b) => a + b, 0),
+                marks
+              ),
+            })
+          : m.assignment_ai_not_marked()}
         {' · '}
         <b className="font-bold text-fg">
           {m.assignment_mark_of({
@@ -472,6 +587,17 @@ function MarkForm({
         wrapperClassName="mt-4"
       />
       <div className="mt-4 flex justify-end gap-2">
+        {parts.some((p) => p.aiComment) && (
+          // Pulled left by its padding, so its label lines up with the column.
+          <Button
+            className="mr-auto -ml-3.5 border-none sm:-ml-5"
+            disabled={isPending}
+            onClick={clearWarning}
+            variant="danger-light"
+          >
+            {m.assignment_clear_warning()}
+          </Button>
+        )}
         <Button
           disabled={!canGoBack}
           iconLeft="arrowLeft"
