@@ -11,7 +11,7 @@ Windows lands and deploys these, one landing per deploy.
 |---|---|---|
 | Room pair | On `main` and UAT at 57a62f208 | Done; `membership.spec.ts` passed its first real run |
 | Make a quiz on UAT: crash screen on both papers (`makeQuiz.spec.ts:211`, run 42067521199) | `claude/make-quiz-pages-crash` 8d1f59653 | CI, Windows landing it, then a UAT journey to prove it. Cause: the page count gave the worker a bucket link it refuses |
-| Grading off Jev | `claude/grading-off-jev` abb0ae70a, CI red: a submit crashed the server with no pipeline. Fix not pushed yet | Database tests, `e2e_stack` green, then the first real 1017 marks on UAT |
+| Grading off Jev | `claude/grading-off-jev` b08df4aff; `e2e_stack` green, crash fixed. One editor shard lost its runner | Windows landing it; then the first real 1017 marks on UAT |
 | Layout service on the ingest host | Built, not running; runbook §7.6 | Epo answering Windows' Q646; Windows wants the Make a quiz fix first |
 | Shared pages lose AI marking (Q640 B) | Windows | After grading |
 | New assignment's quiz picker | `claude/assignment-quiz-picker` eeb6035fc | Windows' review round |
