@@ -10,9 +10,9 @@ Windows lands and deploys these, one landing per deploy.
 | Item | Where it is | Waiting on |
 |---|---|---|
 | Room pair | On `main` and UAT at 57a62f208 | Done; `membership.spec.ts` passed its first real run |
-| Make a quiz on UAT: crash screen on both papers (`makeQuiz.spec.ts:211`, run 42067521199) | `claude/make-quiz-pages-crash` 8d1f59653 | CI, Windows landing it, then a UAT journey to prove it. Cause: the page count gave the worker a bucket link it refuses |
-| Grading off Jev | `claude/grading-off-jev` b08df4aff; `e2e_stack` green, crash fixed. One editor shard lost its runner | Windows landing it; then the first real 1017 marks on UAT |
-| Layout service on the ingest host | Built, not running; runbook §7.6 | Epo answering Windows' Q646; Windows wants the Make a quiz fix first |
+| Make a quiz on UAT: crash screen on both papers (`makeQuiz.spec.ts:211`, run 42067521199) | On `main` 8f184f0bb | CI, UAT deploy, then the quality run to prove it. Cause: the page count gave the worker a bucket link it refuses |
+| Grading off Jev | On `main` 8f184f0bb, migration 0153 | CI, UAT deploy; then the first real 1017 marks on UAT |
+| Layout service on the ingest host | Built, not running; runbook §7.6 | Next if Make a quiz passes this run; Epo answering Windows' Q646 |
 | Shared pages lose AI marking (Q640 B) | Windows | After grading |
 | New assignment's quiz picker | `claude/assignment-quiz-picker` eeb6035fc | Windows' review round |
 | Vendored BlockSuite, dev route only | `claude/drawing-answers` 9fbaf3afa | CI, comparing its build with `main`'s, Windows' review round |
