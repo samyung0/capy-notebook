@@ -2340,6 +2340,7 @@
   "workspace_section_agent": "Agent",
   "dashboard_make_quiz": "Make a quiz from a file",
   "make_quiz_title": "Make a quiz from a file",
+  "make_quiz_no_spreadsheets": "Excel files can't be used as question papers.",
   "make_quiz_question_paper": "Question paper",
   "make_quiz_choose_file": "Choose a file",
   "make_quiz_search_files": "Search files",

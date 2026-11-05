@@ -482,6 +482,9 @@ export function MakeQuizDialog({
           <p className="t-meta font-semibold text-fg-secondary">
             {m.make_quiz_question_paper()}
           </p>
+          <p className="t-meta text-fg-muted">
+            {m.make_quiz_no_spreadsheets()}
+          </p>
           {paper.length === 0 ? (
             <FileMenu
               files={paperFiles}

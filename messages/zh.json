@@ -2340,6 +2340,7 @@
   "workspace_section_agent": "助手",
   "dashboard_make_quiz": "从文件生成测验",
   "make_quiz_title": "从文件生成测验",
+  "make_quiz_no_spreadsheets": "Excel 文件不能用作试卷。",
   "make_quiz_question_paper": "试卷",
   "make_quiz_choose_file": "选择文件",
   "make_quiz_search_files": "搜索文件",
