@@ -125,7 +125,7 @@ function QuizWaitRow({ state }: { state: QuizWaitState }) {
             type="button"
             variant="outline"
           >
-            {m.make_quiz_choose_pages_action()}
+            {m.make_quiz_make_action()}
           </Button>
         )}
         {status === 'failed' && (

@@ -299,7 +299,7 @@ test('an uploaded paper is read first, and saved to Files hidden from members', 
   await expect(panel.getByText('new paper.pdf')).toBeVisible();
   await expect(panel.locator('[data-quiz-wait]')).toHaveCount(0);
   const choose = panel.getByRole('button', {
-    name: m.make_quiz_choose_pages_action(),
+    name: m.make_quiz_make_action(),
   });
   await expect(choose).toBeVisible({ timeout: 30_000 });
   await expect(panel.locator('[data-transfer-status]')).toHaveCount(0);
@@ -347,7 +347,7 @@ test('a reload finds the waiting files, and one that never finished sending offe
   const panel = page.getByTestId('source-transfer-panel');
   await expect(
     panel.locator('[data-quiz-wait=ready]').getByRole('button', {
-      name: m.make_quiz_choose_pages_action(),
+      name: m.make_quiz_make_action(),
     })
   ).toBeVisible({ timeout: 30_000 });
   const failed = panel.locator('[data-quiz-wait=failed]');

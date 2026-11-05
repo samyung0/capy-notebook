@@ -2343,7 +2343,7 @@
   "make_quiz_title": "从文件生成测验",
   "make_quiz_files_reading": "正在读取文件",
   "make_quiz_files_ready": "文件已就绪",
-  "make_quiz_choose_pages_action": "选择页面",
+  "make_quiz_make_action": "制作测验",
   "make_quiz_up_to": "最多 {count} 个",
   "make_quiz_remove": "移除",
   "make_quiz_choose_pages": "选择页面",

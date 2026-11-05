@@ -81,7 +81,7 @@ export interface QuizWaitState {
   wait: QuizWait;
 }
 
-/** Choose pages, or after a failure Try again, back on the files with those still good. */
+/** Make quiz, on to the pages, or after a failure Try again, back on the files with those still good. */
 export function openQuizWait({ answers, paper, status, wait }: QuizWaitState) {
   removeQuizWait(wait);
   quizRunLinks()?.pickAgain({
@@ -166,7 +166,7 @@ export function useQuizWaitStates(): QuizWaitState[] {
       }));
       userToast({
         button: {
-          label: m.make_quiz_choose_pages_action(),
+          label: m.make_quiz_make_action(),
           onClick: () => openQuizWait(state),
         },
         description: state.wait.title,

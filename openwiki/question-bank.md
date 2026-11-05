@@ -256,7 +256,7 @@ step is an address, `?make=files`, `?make=pages&paper=…&answers=…&quizFile=�
   removed. With every file read it goes on to the pages. With any still reading (Epo
   2026-11-05, "upload might take a while") the dialog closes and the upload panel follows
   them (`quizWaits.ts`), one row at a time: the files' upload rows while they read, then the
-  quiz's row, and a toast with it, offering Choose pages, anywhere in the app. Any file that
+  quiz's row, and a toast with it, offering Make quiz, which opens the pages, anywhere in the app. Any file that
   fails ends the wait: its reason goes on the quiz's row, with no upload toast, and Try again
   reopens the files step with those still good. The panel's close hides a wait while it
   reads; its row comes back when it ends. The wait's file names and ids stay in `localStorage`
