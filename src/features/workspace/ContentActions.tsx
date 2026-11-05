@@ -13,7 +13,7 @@ import {
   useUpdateFile,
   useUpdateMaterial,
 } from '@/api/hooks';
-import type { Chapter, SourceFile, UserColor } from '@/api/types';
+import type { SourceFile, Topic, UserColor } from '@/api/types';
 import { TrashConfirmDialog } from '@/components/app/TrashConfirmDialog';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { HoverActions } from '@/components/ui/HoverActions';
@@ -22,12 +22,13 @@ import { NameFormDialog } from '@/components/ui/NameFormDialog';
 import { userToast } from '@/components/ui/userToast';
 import { downloadFile, downloadNote } from '@/features/files/downloadItem';
 import { fileIsTranscribing, formatFileSize } from '@/features/files/fileUtils';
-import { MoveToChapterDialog } from '@/features/workspace/MoveToChapterDialog';
+import { MoveToTopicDialog } from '@/features/workspace/MoveToTopicDialog';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
 import { CloneItemDialog } from './CloneItemDialog';
 import type { ContentActionTarget } from './contentActionTarget';
+import { useToggleHidden } from './hiddenFromMembers';
 import { MoveFileDialog } from './MoveFileDialog';
 
 /** Why the server refused to trash a file, as the trash dialog shows it. */
@@ -81,7 +82,7 @@ export function ContentActions({
   showMove = true,
   canClone = false,
   canMoveTo = false,
-  chapters,
+  topics,
   color,
   confirmInMenu = false,
   content,
@@ -104,17 +105,16 @@ export function ContentActions({
   readOnly = false,
   canRename = true,
   workspaceId,
-  workspaceName,
 }: {
-  /** Offers the chapter-only Move (a file with `canMoveTo` gets Move to…). */
+  /** Offers the topic-only Move (a file with `canMoveTo` gets Move to…). */
   showMove?: boolean;
   /** Offers Clone, also to a read-only viewer who may copy (workspace.canClone). */
   canClone?: boolean;
-  /** Offers Move to… for a file: into another workspace or chapter. The
+  /** Offers Move to… for a file: into another workspace or topic. The
    * server lets the source workspace's owner or the file's payer move it
    * (a standalone file: its owner). */
   canMoveTo?: boolean;
-  chapters: Chapter[];
+  topics: Topic[];
   color?: UserColor;
   /** Delete asks again in the menu itself (a second click trashes) instead
    * of opening the confirmation dialog. */
@@ -130,7 +130,7 @@ export function ContentActions({
   menuTriggerIcon?: MenuProps['triggerIcon'];
   hoverIconContainerClassName?: string;
   onDeleted?: () => void;
-  onMove?: (chapterId: string | null) => void;
+  onMove?: (topicId: string | null) => void;
   /** After Move to… put the file into another workspace. */
   onMoved?: (file: SourceFile) => void;
   /** Offers Share after Rename; the caller owns the dialog. */
@@ -144,8 +144,6 @@ export function ContentActions({
   renameFieldLabel?: string;
   renameTitle?: string;
   workspaceId: string;
-  /** The item's workspace name, for Move to…'s progress confirmation. */
-  workspaceName?: string;
 }) {
   const { mutateAsync: updateFile } = useUpdateFile(workspaceId);
   const { mutate: moveFile } = useMoveFile(workspaceId);
@@ -156,6 +154,7 @@ export function ContentActions({
   const { mutateAsync: updateMaterial } = useUpdateMaterial(workspaceId);
   const { mutate: moveMaterial } = useMoveMaterial(workspaceId);
   const { mutate: deleteMaterial } = useDeleteMaterial(workspaceId);
+  const toggleHidden = useToggleHidden(workspaceId);
 
   const [renameOpen, setRenameOpen] = useState(false);
   const [propertiesOpen, setPropertiesOpen] = useState(false);
@@ -171,7 +170,8 @@ export function ContentActions({
     : [];
 
   // One order on every item menu (cards, rows, the open item's header):
-  // open or view, Rename, Share, Move, Clone, Download, Properties, Delete.
+  // open or view, Rename, Share, Move, Hide from members, Clone, Download,
+  // Properties, Delete.
   const items: MenuItem[] = [
     ...leadingItems,
     ...(!readOnly && canRename && content
@@ -199,6 +199,21 @@ export function ContentActions({
                 label: m.content_move_file(),
                 onClick: () => setMoveOpen(true),
               },
+        ]
+      : []),
+    // Hide from members (Epo 2026-11-03): a workspace item's owners and
+    // editors only; a standalone item has no members.
+    ...(!readOnly && content && workspaceId
+      ? [
+          {
+            icon: content.hidden
+              ? ('view' as const)
+              : ('viewOffSlash' as const),
+            label: content.hidden
+              ? m.content_show_to_members()
+              : m.content_hide_from_members(),
+            onClick: () => toggleHidden(content, !content.hidden),
+          },
         ]
       : []),
     ...(canClone && content
@@ -259,14 +274,14 @@ export function ContentActions({
     }
   };
 
-  const selectChapter = (chapterId: string | null) => {
+  const selectTopic = (topicId: string | null) => {
     if (!content) return;
     if (onMove) {
-      onMove(chapterId);
+      onMove(topicId);
     } else if (content.type === 'file') {
-      moveFile({ chapterId, id: content.id });
+      moveFile({ id: content.id, topicId });
     } else {
-      moveMaterial({ chapterId, id: content.id });
+      moveMaterial({ id: content.id, topicId });
     }
   };
 
@@ -337,11 +352,10 @@ export function ContentActions({
           {moveToOpen && (
             <MoveFileDialog
               file={{
-                chapterId: content.chapterId,
                 id: content.id,
                 name: content.name,
+                topicId: content.topicId,
                 workspaceId,
-                workspaceName,
               }}
               onClose={() => setMoveToOpen(false)}
               onMoved={onMoved}
@@ -384,13 +398,13 @@ export function ContentActions({
             />
           )}
 
-          <MoveToChapterDialog
-            chapters={chapters}
+          <MoveToTopicDialog
             color={color}
-            currentChapterId={content.chapterId}
+            currentTopicId={content.topicId}
             onClose={() => setMoveOpen(false)}
-            onSelect={selectChapter}
+            onSelect={selectTopic}
             open={moveOpen}
+            topics={topics}
           />
         </>
       )}

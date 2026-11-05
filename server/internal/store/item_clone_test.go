@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
@@ -67,7 +68,7 @@ func TestFileCloneCarriesSavedEditsIndexAndThumbnail(t *testing.T) {
 	baseRefs := blobRefCount(t, s, doc.BaseBlobPath)
 
 	clone, copies, err := s.CloneFile(ctx, owner, file.ID, CloneTarget{
-		WorkspaceID: target.ID, ChapterName: "Imported", Name: "Lesson copy.docx",
+		WorkspaceID: target.ID, TopicName: "Imported", Name: "Lesson copy.docx",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +88,7 @@ func TestFileCloneCarriesSavedEditsIndexAndThumbnail(t *testing.T) {
 	if got := blobRefCount(t, s, doc.BaseBlobPath); got != baseRefs+2 {
 		t.Fatalf("base blob refs = %d, want %d", got, baseRefs+2)
 	}
-	if clone.Name != "Lesson copy.docx" || clone.ChapterID == nil || clone.Provenance == nil ||
+	if clone.Name != "Lesson copy.docx" || clone.TopicID == nil || clone.Provenance == nil ||
 		clone.Provenance.Books[0].ID != "ahss" {
 		t.Fatalf("clone = %+v", clone)
 	}
@@ -182,7 +183,7 @@ func TestFileCloneCarriesUnfoldedSaves(t *testing.T) {
 	}
 }
 
-// A material clone lands in a chosen workspace and chapter (paid by its
+// A material clone lands in a chosen workspace and topic (paid by its
 // owner) or standalone; mentions stay live only for the destination's
 // members, scope is cleared outside the source's workspace, embedded rows are
 // copied with fresh ids, a taken title is refused and an embedded row is
@@ -205,7 +206,7 @@ func TestMaterialCloneDestinationsMentionsAndTitles(t *testing.T) {
 		t.Fatal(err)
 	}
 	itemCloneMember(t, s, target.ID, actor, "editor")
-	chapter, err := s.AddChapter(ctx, target.ID, owner, "Week 1")
+	topic, err := s.AddTopic(ctx, target.ID, owner, "Week 1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +223,7 @@ func TestMaterialCloneDestinationsMentionsAndTitles(t *testing.T) {
 	}
 	note, err := s.CreateMaterial(ctx, Material{
 		CreatedBy: owner, WorkspaceID: source.ID, WorkspaceName: source.Name, Kind: "note",
-		Title: "Lecture", Content: content, ScopeChapters: []string{"Old chapter"},
+		Title: "Lecture", Content: content, ScopeTopics: []string{"Old topic"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -248,12 +249,12 @@ func TestMaterialCloneDestinationsMentionsAndTitles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	clone, err := s.CloneMaterial(ctx, actor, note.ID, CloneTarget{WorkspaceID: target.ID, ChapterID: &chapter.ID, Name: "Lecture copy"})
+	clone, err := s.CloneMaterial(ctx, actor, note.ID, CloneTarget{WorkspaceID: target.ID, TopicID: &topic.ID, Name: "Lecture copy"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if clone.WorkspaceID != target.ID || clone.ChapterID == nil || *clone.ChapterID != chapter.ID ||
-		clone.OwnerUserID != actor || clone.CreatedBy != actor || len(clone.ScopeChapters) != 0 {
+	if clone.WorkspaceID != target.ID || clone.TopicID == nil || *clone.TopicID != topic.ID ||
+		clone.OwnerUserID != actor || clone.CreatedBy != actor || len(clone.ScopeTopics) != 0 {
 		t.Fatalf("workspace clone = %+v", clone)
 	}
 	if !strings.Contains(clone.Content, actor) || strings.Contains(clone.Content, outsider) ||
@@ -750,9 +751,9 @@ func TestCloneRefusesAFilePastThePayersCap(t *testing.T) {
 }
 
 // Concurrent clones into one workspace (repeatable read) stay under its file
-// cap and share one new chapter: both charge the payer's storage row, so the
+// cap and share one new topic: both charge the payer's storage row, so the
 // later one fails to serialize and retries on a snapshot holding the first.
-func TestConcurrentFileClonesKeepTheCapAndOneChapter(t *testing.T) {
+func TestConcurrentFileClonesKeepTheCapAndOneTopic(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "u_clone_race")
@@ -764,7 +765,7 @@ func TestConcurrentFileClonesKeepTheCapAndOneChapter(t *testing.T) {
 		for i := range errs {
 			wg.Go(func() {
 				_, _, errs[i] = s.CloneFile(ctx, owner, file.ID, CloneTarget{
-					WorkspaceID: workspaceID, ChapterName: "Race", Name: fmt.Sprintf("race %d.pdf", i),
+					WorkspaceID: workspaceID, TopicName: "Race", Name: fmt.Sprintf("race %d.pdf", i),
 				})
 			})
 		}
@@ -790,13 +791,50 @@ func TestConcurrentFileClonesKeepTheCapAndOneChapter(t *testing.T) {
 	if errs := race(roomy.ID); errs[0] != nil || errs[1] != nil {
 		t.Fatalf("clones with room = %v", errs)
 	}
-	var chapters int
-	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM chapters WHERE workspace_id=$1 AND name='Race'`,
-		roomy.ID).Scan(&chapters); err != nil {
+	var topics int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM topics WHERE workspace_id=$1 AND name='Race'`,
+		roomy.ID).Scan(&topics); err != nil {
 		t.Fatal(err)
 	}
-	if chapters != 1 {
-		t.Fatalf("chapters named Race = %d, want 1", chapters)
+	if topics != 1 {
+		t.Fatalf("topics named Race = %d, want 1", topics)
+	}
+}
+
+// Explore lists what its workspace shows everyone: a hidden quiz or flashcard
+// set stays off it, even in a public workspace.
+func TestExploreLeavesOutHiddenItems(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_explore_hidden_owner")
+	ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Public"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='public', share_role='viewer' WHERE id=$1`, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	shown, err := s.CreateQuiz(ctx, Quiz{UserID: owner, Name: "Shown", WorkspaceID: ws.ID, WorkspaceName: ws.Name, Questions: json.RawMessage(`[]`), Privacy: PrivacyPrivate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hidden, err := s.CreateQuiz(ctx, Quiz{UserID: owner, Name: "Hidden", WorkspaceID: ws.ID, WorkspaceName: ws.Name, Questions: json.RawMessage(`[]`), Privacy: PrivacyPrivate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET hidden=true WHERE id=$1`, hidden.ID); err != nil {
+		t.Fatal(err)
+	}
+	quizzes, _, err := s.ListPublicQuizzes(ctx, owner, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := map[string]bool{}
+	for _, quiz := range quizzes {
+		listed[quiz.ID] = true
+	}
+	if !listed[shown.ID] || listed[hidden.ID] {
+		t.Fatalf("listed %v, want %s and not %s", listed, shown.ID, hidden.ID)
 	}
 }
 
@@ -851,6 +889,26 @@ func TestExploreCanCloneFollowsTheCloneRule(t *testing.T) {
 		t.Fatal(err)
 	}
 	check("public editor", stranger, true)
+
+	// A class: its viewer member no longer clones, and while the quiz is under an
+	// open assignment neither does a public editor, only the owner.
+	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET kind='class', share_role='viewer' WHERE id=$1`, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	check("class viewer member", member, false)
+	check("class public viewer", stranger, false)
+	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET share_role='editor' WHERE id=$1`, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	check("class public editor", stranger, true)
+	now := time.Now().UTC()
+	due := now.Add(time.Hour)
+	if _, err := s.CreateAssignment(ctx, owner, ws.ID, AssignmentForm{Kind: AssignmentMarked, Title: "Paper", QuizID: inWorkspace.ID,
+		Questions: frozenFixture(t), DueAt: &due, Attempts: 1, AssignAll: true, Assignees: []string{}, Files: []AssignmentFileRef{}}, now); err != nil {
+		t.Fatal(err)
+	}
+	check("assigned, class public editor", stranger, false)
+	check("assigned, owner", owner, true)
 }
 
 // A file copy keeps its made-from names (scope_file_names), as a material

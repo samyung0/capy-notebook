@@ -9,7 +9,6 @@ import { IconButton } from '@/components/ui/IconButton';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { OwnAvatarButton } from './MemberAvatars';
 import { ProfilePillButton } from './ProfilePillButton';
 import { useThemeDrawer } from './themeDrawerSearch';
 
@@ -18,13 +17,13 @@ const CLERK_ACTIVE = !USE_MSW && !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 type Trigger = 'avatar' | 'own' | 'row';
 
 /** The account menu (Settings, Billing, Theme, Log out) behind the
- * sidebar's profile row, the phone avatar or your avatar in the workspace
- * panel's foot (the row and the foot open it upwards; the foot puts it under
- * the workspace's own section). */
+ * sidebar's profile row, the phone avatar or your avatar at the foot of the
+ * workspace rail (the row and the rail open it upwards; the rail puts it
+ * under the workspace's own section). */
 type ProfileMenuProps = {
   dot?: boolean;
   /** Adds a Notifications item first (the phone avatar and the workspace
-   * panel's foot, which have no bell). */
+   * rail, which have no bell). */
   notifications?: boolean;
   trigger: Trigger;
   /** A section above the account items, titled with the workspace name;
@@ -248,5 +247,49 @@ function ProfileIdentity({
         {name ?? '—'}
       </span>
     </>
+  );
+}
+
+/** Your avatar at the foot of the workspace rail, the menu trigger, with the
+ * unread dot. */
+function OwnAvatarButton({
+  avatarUrl,
+  className,
+  dot,
+  name,
+  pending = false,
+  ...props
+}: React.ComponentProps<'button'> & {
+  avatarUrl?: string;
+  dot?: boolean;
+  name?: string;
+  pending?: boolean;
+}) {
+  return (
+    <button
+      aria-busy={pending}
+      // The ring is the avatar's border, so focus shows as an outline.
+      className={cn(
+        'relative size-10 shrink-0 cursor-pointer rounded-full outline-none ring-1 ring-surface focus-visible:outline-2 focus-visible:outline-action focus-visible:outline-offset-2',
+        className
+      )}
+      title={name}
+      type="button"
+      {...props}
+    >
+      {pending ? (
+        <Skeleton className="size-10 rounded-full" />
+      ) : (
+        <Avatar
+          aria-hidden
+          className="size-10 text-[13px]"
+          name={name}
+          src={avatarUrl}
+        />
+      )}
+      {dot && (
+        <span className="absolute top-0 right-0 size-2.25 rounded-full bg-solid-error ring-2 ring-surface" />
+      )}
+    </button>
   );
 }

@@ -553,7 +553,6 @@ type ContextSummary struct {
 
 type CatalogConfig struct {
 	ConcurrencyTotal          *int            `json:"concurrencyTotal"`
-	InteractiveReserve        *int            `json:"interactiveReserve"`
 	Version                   int             `json:"version"`
 	ProviderName              string          `json:"providerName"`
 	ModelName                 string          `json:"modelName"`
@@ -608,7 +607,6 @@ type RegistrySnapshot struct {
 
 type DraftConfig struct {
 	ConcurrencyTotal    *int            `json:"concurrencyTotal"`
-	InteractiveReserve  *int            `json:"interactiveReserve"`
 	ProviderName        string          `json:"providerName"`
 	ModelName           string          `json:"modelName"`
 	ProviderSlug        string          `json:"providerSlug"`

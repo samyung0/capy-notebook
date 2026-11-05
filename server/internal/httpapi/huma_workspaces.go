@@ -143,7 +143,7 @@ func (a *api) createWorkspace(ctx context.Context, in *createWorkspaceInput) (*w
 func (a *api) updateWorkspace(ctx context.Context, in *updateWorkspaceInput) (*workspaceOutput, error) {
 	p := store.WorkspacePatch{
 		Name: apimodel.Str(in.Body.Name), IconID: apimodel.Str(in.Body.IconID), Description: apimodel.Str(in.Body.Description),
-		AutoProcess: in.Body.AutoProcess, Cover: in.Body.Cover,
+		AutoProcess: in.Body.AutoProcess, Cover: in.Body.Cover, Kind: in.Body.Kind,
 		ClearCover: in.Body.ClearCover != nil && *in.Body.ClearCover,
 	}
 	if p.Cover != nil {

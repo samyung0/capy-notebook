@@ -3,7 +3,7 @@ owned and member workspaces and their files with no workspace.
 
 Its tools are the contract's ``account`` scope (tools._offered). The tools
 that create (tools.DESTINATION_TOOLS) and list_sources take an optional
-``workspace_id`` here only (create_chapter a required one): this profile adds
+``workspace_id`` here only (create_topic a required one): this profile adds
 it to its copy of their schema, and tools.run moves it out before checking
 the call against Go's definition, which stays byte for byte. Omitted, the item lands outside workspaces.
 Skills (skills.text) and this profile's copies of the tool descriptions
@@ -34,7 +34,7 @@ WORKSPACE_ID = {
 # workspace chat's name (Q523): this copy's description and workspace_id,
 # which tools.run moves out as it does a create's.
 LIST_SOURCES = (
-    "List one of the user's workspaces by chapter (workspace_id), or without it "
+    "List one of the user's workspaces by topic (workspace_id), or without it "
     "their newest files and materials outside workspaces, with ids, kinds and "
     "whether the user can edit each."
 )
@@ -45,8 +45,8 @@ LISTED_WORKSPACE = {
     "type": "string",
 }
 
-# create_chapter adds to a workspace the user can edit; outside workspaces has none.
-CHAPTER_WORKSPACE = {
+# create_topic adds to a workspace the user can edit; outside workspaces has none.
+TOPIC_WORKSPACE = {
     "type": "string",
     "minLength": 1,
     "description": "The workspace to add it to: a workspace_id from list_workspaces, "
@@ -97,9 +97,9 @@ def schemas(ctx: ToolContext) -> list[dict[str, Any]]:
         if function["name"] == "list_sources":
             function["description"] = LIST_SOURCES
             function["parameters"]["properties"]["workspace_id"] = LISTED_WORKSPACE
-        elif function["name"] == "create_chapter":
+        elif function["name"] == "create_topic":
             parameters = function["parameters"]
-            parameters["properties"]["workspace_id"] = CHAPTER_WORKSPACE
+            parameters["properties"]["workspace_id"] = TOPIC_WORKSPACE
             parameters["required"] = [*parameters.get("required", []), "workspace_id"]
         elif function["name"] in tools.DESTINATION_TOOLS:
             function["parameters"]["properties"]["workspace_id"] = WORKSPACE_ID

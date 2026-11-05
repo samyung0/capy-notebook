@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/auth"
 	"github.com/samyung0/capy-notebook/server/internal/blob"
@@ -46,9 +47,8 @@ func openShareAPI(t *testing.T, pipe *pipeline.Client) http.Handler {
 	})
 }
 
-func generateBody(kind, title string) map[string]any {
+func generateBody(title string) map[string]any {
 	return map[string]any{
-		"kind":   kind,
 		"count":  1,
 		"levels": []string{"recall"},
 		"title":  title,
@@ -57,22 +57,9 @@ func generateBody(kind, title string) map[string]any {
 
 func stubRetrieval(t *testing.T) *pipeline.Client {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var in struct {
-			Kind string `json:"kind"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&in)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		switch in.Kind {
-		case "quiz":
-			_, _ = w.Write([]byte(`{"kind":"quiz","name":"n","questions":[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"Q?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]}`))
-		case "flashcards":
-			_, _ = w.Write([]byte(`{"kind":"flashcards","cards":[{"front":"a","back":"b"}]}`))
-		case "mindmap", "diagram":
-			_, _ = fmt.Fprintf(w, `{"kind":%q,"title":"t","content":"# t"}`, in.Kind)
-		default:
-			http.Error(w, "unsupported", http.StatusBadRequest)
-		}
+		_, _ = w.Write([]byte(`{"questions":[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"Q?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]}`))
 	}))
 	t.Cleanup(srv.Close)
 	return pipeline.New(srv.URL, "")
@@ -123,7 +110,7 @@ func TestShareHTTPReads(t *testing.T) {
 		{"anon link flashcards", "", "/api/flashcards/dk_e2e_link", 401},
 		{"anon public flashcards", "", "/api/flashcards/dk_e2e_public", 401},
 		{"anon link cards", "", "/api/flashcards/dk_e2e_link/cards", 401},
-		{"anon link chapters", "", "/api/workspaces/ws_e2e_link/chapters", 401},
+		{"anon link topics", "", "/api/workspaces/ws_e2e_link/topics", 401},
 		{"anon link files", "", "/api/workspaces/ws_e2e_link/files", 401},
 		{"anon link materials", "", "/api/workspaces/ws_e2e_link/materials", 401},
 		{"anon file", "", "/api/files/f_missing", 401},
@@ -539,6 +526,91 @@ func TestEditorPaysForTheImageItUploadsIntoAnotherPayersNote(t *testing.T) {
 	if owner, editor := usage("u_owner")-ownerBefore, usage("u_editor")-editorBefore; owner != 0 || editor != int64(len(image)) {
 		t.Fatalf("charged owner %d editor %d, want the image's %d bytes on the editor", owner, editor, len(image))
 	}
+}
+
+// An image resolves for who may read what it belongs to, not every reader of the
+// workspace (security regression): a hidden quiz's for its owner and editor, an
+// assigned quiz's not for its assignee, and a frozen copy's for staff and who it
+// went to, until a personal workspace hides it from all. Fails if resolve goes
+// back to workspace access.
+func TestResolveEditorAssetFollowsWhatItBelongsTo(t *testing.T) {
+	h, st, mem := openInternalHTTPWithBlob(t)
+	ctx := context.Background()
+	const questions = `[{"id":"q1","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"p1","blocks":[{"type":"text","text":"Pick"}],"answer":{"type":"mcq","options":["a","b"],"correct":[1]},"marks":1,"solution":[]}]}]`
+	ws, err := st.CreateWorkspace(ctx, "u_owner", store.WorkspaceCreate{Name: "Assets", Tags: []store.TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = st.Pool().Exec(context.Background(), `DELETE FROM workspaces WHERE id=$1`, ws.ID) })
+	if _, err := st.Pool().Exec(ctx, `UPDATE workspaces SET kind='class' WHERE id=$1`, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role)
+		VALUES ($1,'u_editor','editor'), ($1,'u_viewer','viewer'), ($1,'u_other','viewer')`, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	quiz := func(title string, hidden bool) store.Material {
+		t.Helper()
+		made, err := st.CreateMaterialDraft(ctx, store.MaterialDraft{
+			ActorUserID: "u_owner", WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: store.MaterialQuiz, Title: title, Hidden: hidden,
+			Questions: json.RawMessage(questions),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		cleanupMaterial(t, st, made.ID)
+		return made
+	}
+	image := func(id, materialID string) {
+		t.Helper()
+		path := "editor-assets/" + id + "/blob.png"
+		if _, _, err := mem.Put(path, bytes.NewReader(testPNG(10))); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.Pool().Exec(ctx, `INSERT INTO editor_assets
+			(id, workspace_id, material_id, user_id, created_by, name, purpose, object_path, content_type, size_bytes, status, completed_at)
+			VALUES ($1,$2,$3,'u_owner','u_owner','figure.png','image',$4,'image/png',10,'ready',now())`,
+			id, ws.ID, materialID, path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	resolves := func(what, assetID string, want map[string]int) {
+		t.Helper()
+		for user, status := range want {
+			expectStatus(t, doReq(t, h, http.MethodGet, "/api/editor-assets/"+assetID+"/resolve", user, nil), status, what+" for "+user)
+		}
+	}
+	suffix := strconv.FormatInt(time.Now().UnixNano(), 36)
+	hiddenAsset, assignedAsset := "asset_hidden_"+suffix, "asset_assigned_"+suffix
+	image(hiddenAsset, quiz("Hidden", true).ID)
+	assigned := quiz("Assigned", false)
+	image(assignedAsset, assigned.ID)
+	resolves("a hidden quiz's image", hiddenAsset, map[string]int{"u_owner": 200, "u_editor": 200, "u_viewer": 404, "u_other": 404})
+	resolves("a visible quiz's image", assignedAsset, map[string]int{"u_owner": 200, "u_viewer": 200, "u_other": 200})
+
+	var frozen []map[string]any
+	if err := json.Unmarshal([]byte(questions), &frozen); err != nil {
+		t.Fatal(err)
+	}
+	frozen[0]["stem"] = []any{map[string]any{"type": "image", "image": map[string]any{"assetId": assignedAsset}, "width": 10, "height": 10, "description": "Figure"}}
+	due := time.Now().Add(time.Hour)
+	made, err := st.CreateAssignment(ctx, "u_owner", ws.ID, store.AssignmentForm{
+		Kind: store.AssignmentMarked, Title: "Paper", QuizID: assigned.ID, Questions: frozen, DueAt: &due, Attempts: 1,
+		Assignees: []string{"u_viewer"}, ApproveAIMarks: true, ShowAnswers: true, Files: []store.AssignmentFileRef{},
+	}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var frozenAsset string
+	if err := st.Pool().QueryRow(ctx, `SELECT id FROM editor_assets WHERE assignment_id=$1`, made.ID).Scan(&frozenAsset); err != nil {
+		t.Fatal(err)
+	}
+	resolves("an assigned quiz's image", assignedAsset, map[string]int{"u_owner": 200, "u_viewer": 404, "u_other": 200})
+	resolves("a frozen copy's image", frozenAsset, map[string]int{"u_owner": 200, "u_editor": 200, "u_viewer": 200, "u_other": 404})
+	if _, err := st.Pool().Exec(ctx, `UPDATE workspaces SET kind='personal' WHERE id=$1`, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	resolves("a frozen copy's image in a personal workspace", frozenAsset, map[string]int{"u_owner": 404, "u_viewer": 404})
 }
 
 // Signed-out visitors read a standalone link quiz through its signed token; a

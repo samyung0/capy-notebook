@@ -6,8 +6,12 @@
  */
 
 export interface Topic {
+  /** A URL to the JSON Schema for this object. */
+  readonly $schema?: string;
+  description: string;
+  fileIds: string[];
   id: string;
-  label: string;
-  reviewed: number;
-  total: number;
+  name: string;
+  order: number;
+  workspaceId: string;
 }

@@ -28,9 +28,10 @@ import (
 // answered part and one award per marking item. The response carries the key
 // for what was just checked.
 
-// answersMaxBytes bounds a request of answers: twenty 5,000-character open
-// answers plus every closed answer of a 100-part quiz.
-const answersMaxBytes = 2 << 20
+// answersMaxBytes bounds a request of answers: a hundred 5,000-character open
+// answers at up to four bytes a character plus every closed answer of a
+// 100-part quiz.
+const answersMaxBytes = 4 << 20
 
 var errGradeRequest = errors.New("answers must name parts of these questions, give every ordering part an order, and keep an open answer to text of at most 5,000 characters")
 
@@ -104,7 +105,10 @@ func (a *api) gradeOpenParts(ctx context.Context, parts map[string]openPart) (ma
 	var usage jev.Usage
 	var mu sync.Mutex
 	group, ctx := errgroup.WithContext(ctx)
-	group.SetLimit(5)
+	// 10 parts at once (Epo 2026-11-04, after the 2026-11-04 grading
+	// concurrency bench: a 40-part paper took 28-86 s at 5, 10, 20 or 40 at
+	// once, its slowest part setting the wall time).
+	group.SetLimit(10)
 	for id, part := range parts {
 		group.Go(func() error {
 			awards, used, err := a.jev.GradePart(ctx, part.question, part.markscheme, part.answer)
@@ -284,7 +288,7 @@ func (a *api) gradeAnonymous(ctx context.Context, stored json.RawMessage, body a
 	}
 	q, _, _ := quizQuestion(qs, body.QuestionID)
 	if q == nil {
-		return nil, huma.Error404NotFound("the question is not in this quiz")
+		return nil, noAnswersConfiguredError()
 	}
 	plan, err := planGrading([]map[string]any{q}, body.Answers)
 	if err != nil {
@@ -378,7 +382,7 @@ func (a *api) checkSharedNoteQuiz(ctx context.Context, in *checkSharedNoteQuizIn
 	}
 	q, _, _ := quizQuestion(qs, in.Body.QuestionID)
 	if q == nil {
-		return nil, huma.Error404NotFound("the question is not in this quiz")
+		return nil, noAnswersConfiguredError()
 	}
 	plan, err := planGrading([]map[string]any{q}, in.Body.Answers)
 	if err != nil {

@@ -10,12 +10,12 @@ import type { Privacy } from './privacy.ts';
 export interface CreateQuizReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** @nullable */
-  chapters?: string[] | null;
   /** @maxLength 120 */
   name?: string;
   privacy?: Privacy;
   /** @nullable */
   questions?: CreateQuizReqQuestionsItem[] | null;
+  /** @nullable */
+  topics?: string[] | null;
   workspaceId?: string;
 }

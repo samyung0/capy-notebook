@@ -1,0 +1,74 @@
+# The layout model for Make a quiz's figure boxes. Runs only on the ingest host,
+# as its own compose project outside the release workflows and outside the UAT
+# and production projects: one pool serves both, with no split and no queue of
+# its own (Epo 2026-11-04). Runbook §7.6.
+#
+# Host networking, like the parser and the library database: the host firewall
+# drops forwarded traffic into Docker bridges, so the service itself listens on
+# the WireGuard address.
+services:
+  layout:
+    image: capy-layout:${LAYOUT_REVISION:?set the exact 40-character commit}
+    build:
+      context: ..
+      dockerfile: layout/Dockerfile
+    container_name: capy-layout
+    network_mode: host
+    # It decodes JPEGs sent over the network: no capabilities, no privilege
+    # gain, Docker's default seccomp profile, a read-only root and a limit on
+    # processes, as the parser. It writes no file.
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,nodev,size=16m,uid=10003,gid=10003,mode=0700
+    environment:
+      APP_ENV: production
+      CAPY_LAYOUT_TOKEN: ${CAPY_LAYOUT_TOKEN:?set CAPY_LAYOUT_TOKEN}
+      # Threads one inference uses, and inferences at once.
+      LAYOUT_THREADS: ${LAYOUT_THREADS:?set LAYOUT_THREADS}
+      LAYOUT_WORKERS: ${LAYOUT_WORKERS:?set LAYOUT_WORKERS}
+      # Requests in the service, running or waiting; one more is answered 429.
+      LAYOUT_QUEUE_DEPTH: ${LAYOUT_QUEUE_DEPTH:?set LAYOUT_QUEUE_DEPTH}
+      # One page: the windows' JPEG at a long side of 1,568 px is well under both.
+      LAYOUT_MAX_BYTES: ${LAYOUT_MAX_BYTES:?set LAYOUT_MAX_BYTES}
+      LAYOUT_MAX_PIXELS: ${LAYOUT_MAX_PIXELS:?set LAYOUT_MAX_PIXELS}
+    command:
+      [
+        "uvicorn",
+        "app:app",
+        "--app-dir",
+        "/app",
+        "--host",
+        "${LAYOUT_BIND_ADDRESS:?set the WireGuard bind address}",
+        "--port",
+        "8092",
+        "--workers",
+        "1",
+        "--no-access-log",
+        "--no-server-header",
+      ]
+    mem_limit: ${LAYOUT_MEMORY_LIMIT:?set LAYOUT_MEMORY_LIMIT}
+    memswap_limit: ${LAYOUT_MEMORY_LIMIT:?set LAYOUT_MEMORY_LIMIT}
+    cpus: ${LAYOUT_CPUS:?set LAYOUT_CPUS}
+    # Threads count: one inference's threads, the workers and uvicorn.
+    pids_limit: 128
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request as u; u.urlopen('http://${LAYOUT_BIND_ADDRESS:?set the WireGuard bind address}:8092/healthz', timeout=3)",
+        ]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 4
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped

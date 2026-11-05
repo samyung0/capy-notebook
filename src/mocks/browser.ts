@@ -1,4 +1,6 @@
 import { setupWorker } from 'msw/browser';
+import { claimSourceCache } from '@/lib/sourceCache';
+import { user } from './db';
 import { handlers } from './handlers';
 import {
   getMockScenarioHandlers,
@@ -18,4 +20,6 @@ export async function startMockServer() {
     onUnhandledRequest: 'bypass',
     quiet: true,
   });
+  // No sign-in here to claim the device's store (AuthProvider).
+  await claimSourceCache(user.id);
 }

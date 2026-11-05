@@ -99,7 +99,7 @@ export function invalidateForEffects(
       workspaceId &&
       (effect.operation === 'trashed' || effect.operation === 'restored')
     ) {
-      void qc.invalidateQueries({ queryKey: qk.chapters(workspaceId) });
+      void qc.invalidateQueries({ queryKey: qk.topics(workspaceId) });
       void qc.invalidateQueries({ queryKey: qk.workspaceStats(workspaceId) });
     }
   }
@@ -556,15 +556,15 @@ export function useChatStream(workspaceId: string | null) {
             void qc.invalidateQueries({ queryKey: ['workspaces'] });
             void qc.invalidateQueries({ queryKey: ['tags'] });
           }
-          // A chapter chat made has no effect either (Epo 2026-10-29); the
-          // account chat's names no workspace, so every chapter list refetches.
+          // A topic chat made has no effect either (Epo 2026-10-29); the
+          // account chat's names no workspace, so every topic list refetches.
           if (
-            toolNames.get(callId) === 'create_chapter' &&
+            toolNames.get(callId) === 'create_topic' &&
             result.outcome === 'succeeded'
           ) {
             void qc.invalidateQueries({
               predicate: ({ queryKey }) =>
-                queryKey[0] === 'workspace' && queryKey[2] === 'chapters',
+                queryKey[0] === 'workspace' && queryKey[2] === 'topics',
             });
           }
           setMessages((prev) =>

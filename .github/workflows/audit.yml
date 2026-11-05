@@ -72,7 +72,7 @@ jobs:
           set -euo pipefail
           uv export --quiet --frozen --no-hashes --no-dev --no-emit-project --format requirements-txt -o "$RUNNER_TEMP/uv-requirements.txt"
           ignored=$(awk '!/^#/ && NF { print "--ignore-vuln", $1 }' pip-audit-ignore.txt)
-          for file in "$RUNNER_TEMP/uv-requirements.txt" parser/requirements.txt pipeline/ppt-master-requirements.txt; do
+          for file in "$RUNNER_TEMP/uv-requirements.txt" parser/requirements.txt layout/requirements.txt pipeline/ppt-master-requirements.txt; do
             echo "== $file"
             # shellcheck disable=SC2086 # one flag per listed id
             uvx pip-audit==2.10.1 --no-deps --disable-pip --progress-spinner off $ignored -r "$file"
@@ -125,6 +125,12 @@ jobs:
               name: parser,
               context: .,
               file: parser/Dockerfile,
+              submodules: false,
+            }
+          - {
+              name: layout,
+              context: .,
+              file: layout/Dockerfile,
               submodules: false,
             }
     steps:

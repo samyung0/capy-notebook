@@ -59,8 +59,8 @@ type bankCopyInput struct {
 	Body struct {
 		QuestionIDs []string               `json:"questionIds" nullable:"false" minItems:"1" maxItems:"20" uniqueItems:"true" doc:"Bank questions to copy, in this order"`
 		WorkspaceID string                 `json:"workspaceId" minLength:"1"`
-		ChapterID   string                 `json:"chapterId,omitempty" doc:"Where a new quiz is filed; goes with quizName"`
-		ChapterName apimodel.ChapterName   `json:"chapterName,omitempty" doc:"Files a new quiz in the chapter of this name (any case), created when missing; goes with quizName, exclusive with chapterId"`
+		TopicID     string                 `json:"topicId,omitempty" doc:"Where a new quiz is filed; goes with quizName"`
+		TopicName   apimodel.TopicName     `json:"topicName,omitempty" doc:"Files a new quiz in the topic of this name (any case), created when missing; goes with quizName, exclusive with topicId"`
 		QuizID      string                 `json:"quizId,omitempty" doc:"An existing quiz in the workspace to append to; exclusive with quizName"`
 		QuizName    apimodel.MaterialTitle `json:"quizName,omitempty" doc:"Name of a new quiz; exclusive with quizId"`
 	}
@@ -175,14 +175,14 @@ func (a *api) bankCopy(ctx context.Context, in *bankCopyInput) (*bankCopyOutput,
 	}
 	b := in.Body
 	name := strings.TrimSpace(string(b.QuizName))
-	chapterName := strings.TrimSpace(string(b.ChapterName))
+	topicName := strings.TrimSpace(string(b.TopicName))
 	switch {
 	case (name == "") == (b.QuizID == ""):
 		return nil, huma.Error422UnprocessableEntity("give exactly one of quizId or quizName")
-	case (b.ChapterID != "" || chapterName != "") && b.QuizID != "":
-		return nil, huma.Error422UnprocessableEntity("chapterId and chapterName file a new quiz; they go with quizName")
-	case b.ChapterID != "" && chapterName != "":
-		return nil, huma.Error422UnprocessableEntity("give at most one of chapterId or chapterName")
+	case (b.TopicID != "" || topicName != "") && b.QuizID != "":
+		return nil, huma.Error422UnprocessableEntity("topicId and topicName file a new quiz; they go with quizName")
+	case b.TopicID != "" && topicName != "":
+		return nil, huma.Error422UnprocessableEntity("give at most one of topicId or topicName")
 	}
 	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
@@ -197,7 +197,7 @@ func (a *api) bankCopy(ctx context.Context, in *bankCopyInput) (*bankCopyOutput,
 	out := &bankCopyOutput{}
 	out.Body.WorkspaceID = b.WorkspaceID
 	if b.QuizID == "" {
-		out.Body.QuizID, err = a.bankCopyToNewQuiz(ctx, b.WorkspaceID, b.ChapterID, chapterName, name, copied, provenance)
+		out.Body.QuizID, err = a.bankCopyToNewQuiz(ctx, b.WorkspaceID, b.TopicID, topicName, name, copied, provenance)
 	} else {
 		out.Body.QuizID, err = b.QuizID, a.bankCopyIntoQuiz(ctx, b.WorkspaceID, b.QuizID, copied, provenance)
 	}
@@ -207,21 +207,21 @@ func (a *api) bankCopy(ctx context.Context, in *bankCopyInput) (*bankCopyOutput,
 	return out, nil
 }
 
-func (a *api) bankCopyToNewQuiz(ctx context.Context, workspaceID, chapterID, chapterName, name string, copied []map[string]any, provenance *store.Provenance) (string, error) {
+func (a *api) bankCopyToNewQuiz(ctx context.Context, workspaceID, topicID, topicName, name string, copied []map[string]any, provenance *store.Provenance) (string, error) {
 	ws, err := a.s.GetWorkspaceShared(ctx, workspaceID)
 	if err != nil {
 		return "", hErr(err)
 	}
-	var chapter *string
-	if chapterID != "" {
-		ok, err := a.s.ChapterInWorkspace(ctx, chapterID, workspaceID)
+	var topic *string
+	if topicID != "" {
+		ok, err := a.s.TopicInWorkspace(ctx, topicID, workspaceID)
 		if err != nil {
 			return "", hErr(err)
 		}
 		if !ok {
-			return "", huma.Error422UnprocessableEntity("chapterId is not a chapter of this workspace")
+			return "", huma.Error422UnprocessableEntity("topicId is not a topic of this workspace")
 		}
-		chapter = &chapterID
+		topic = &topicID
 	}
 	raw, err := json.Marshal(copied)
 	if err != nil {
@@ -229,7 +229,7 @@ func (a *api) bankCopyToNewQuiz(ctx context.Context, workspaceID, chapterID, cha
 	}
 	mt, err := a.s.CreateMaterialDraft(ctx, store.MaterialDraft{
 		ActorUserID: userID(ctx), WorkspaceID: workspaceID, WorkspaceName: ws.Name, Kind: "quiz",
-		Title: name, Questions: raw, ChapterID: chapter, ChapterName: chapterName, Provenance: provenance,
+		Title: name, Questions: raw, TopicID: topic, TopicName: topicName, Provenance: provenance,
 	})
 	if errors.Is(err, materialdoc.ErrInvalid) {
 		return "", huma.Error422UnprocessableEntity(err.Error())

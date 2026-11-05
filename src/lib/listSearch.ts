@@ -79,7 +79,7 @@ export function savedSort<S extends string>(
 export const WORKSPACE_SORTS = [
   'accessed',
   'created',
-  'chapters',
+  'topics',
   'files',
 ] as const;
 export type WorkspaceSort = (typeof WORKSPACE_SORTS)[number];

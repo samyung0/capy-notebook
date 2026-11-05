@@ -128,6 +128,7 @@ function Confetti() {
  */
 export function QuizScore({
   questions,
+  leftOut,
   awarded,
   max,
   minutes,
@@ -135,23 +136,29 @@ export function QuizScore({
 }: {
   /** Graded questions: every part carries the server's `awarded`. */
   questions: Question[];
+  /** Questions that keep their number but aren't scored (no answers). */
+  leftOut?: ReadonlySet<string>;
   awarded: number;
   max: number;
   /** "12 min" beside the score; absent where the start is unknown. */
   minutes?: string;
   confetti?: boolean;
 }) {
-  const results = questions.map(
-    (question, i): QuestionResult => ({
-      awarded: question.parts.reduce(
-        (sum, part) => sum + (part.awarded ?? 0),
-        0
-      ),
-      id: question.id,
-      marks: questionMarks(question),
-      number: i + 1,
-      type: question.parts[0].answer.type,
-    })
+  const results = questions.flatMap((question, i): QuestionResult[] =>
+    leftOut?.has(question.id)
+      ? []
+      : [
+          {
+            awarded: question.parts.reduce(
+              (sum, part) => sum + (part.awarded ?? 0),
+              0
+            ),
+            id: question.id,
+            marks: questionMarks(question),
+            number: i + 1,
+            type: question.parts[0].answer.type,
+          },
+        ]
   );
   return (
     <div className="grid gap-8">

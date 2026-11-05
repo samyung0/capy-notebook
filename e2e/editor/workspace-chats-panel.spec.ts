@@ -1,79 +1,106 @@
 import { expect, type Page, test } from '@playwright/test';
-import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 
 const leftPanel = (page: Page) => page.locator('[data-workspace-left-panel]');
+const composer = (page: Page) =>
+  leftPanel(page).getByRole('textbox', { name: m.chat_placeholder() });
 
-async function openWorkspace(page: Page, width: number) {
+async function openWorkspace(page: Page, width: number, search = '') {
   await page.setViewportSize({ height: 900, width });
-  await page.goto('/workspaces/ws_bio');
+  await page.goto(`/workspaces/ws_bio${search}`);
 }
 
-test.describe('with the default layout', () => {
-  test.use({ storageState: { cookies: [], origins: [] } });
+const railButton = (page: Page, name: string) =>
+  page
+    .getByRole('navigation', { name: m.workspace_rail_label() })
+    .getByRole('button', { exact: true, name });
 
-  test('the right panel starts closed; a chat row and the header toggle open it', async ({
-    page,
-  }) => {
-    await openWorkspace(page, 1600);
-    const left = leftPanel(page);
-    await expect(left.getByText(m.chat_group_pinned())).toBeVisible({
-      timeout: 60_000,
-    });
-    await expect(page.locator('#rail')).toBeHidden();
+/** Picks a section in the workspace rail; the landing shows the Dashboard. */
+async function openSection(page: Page, name: string) {
+  await railButton(page, name).click({ timeout: 60_000 });
+}
 
-    await left.getByRole('button', { name: 'What is a cell?' }).click();
-    await expect(page.locator('[data-panel-title]').last()).toHaveText(
-      m.workspace_tab_chat()
-    );
-    await expect(page.getByText('A cell is the basic')).toBeVisible();
-
-    await page
-      .getByRole('button', { name: m.workspace_close_right_panel() })
-      .click();
-    await expect(page.locator('#rail')).toBeHidden();
-    await page.reload();
-    await expect(
-      page.getByRole('button', { name: m.workspace_open_right_panel() })
-    ).toBeVisible({ timeout: 60_000 });
-    await expect(page.locator('#rail')).toBeHidden();
+/** Agent on one of its chats. */
+async function openChatRow(page: Page, name = 'What is a cell?') {
+  await openSection(page, m.workspace_section_agent());
+  await leftPanel(page).getByRole('button', { name }).click({
+    timeout: 60_000,
   });
+  await expect(leftPanel(page).getByRole('heading', { name })).toBeVisible();
+}
 
-  test('the members menu invites from the Sharing tab', async ({ page }) => {
-    await openWorkspace(page, 1600);
-    await leftPanel(page)
-      .getByRole('button', { name: m.workspace_account_menu() })
-      .click({ timeout: 60_000 });
-    await page
-      .getByRole('menuitem', { name: m.workspace_invite_member() })
-      .click();
-    await expect(page).toHaveURL(/settings=sharing/);
-    await expect(
-      page
-        .getByRole('dialog', { name: m.workspace_settings() })
-        .getByRole('tab', { name: m.workspace_sharing(), selected: true })
-    ).toBeVisible();
-  });
+const width = async (page: Page, id: string) =>
+  Math.round((await page.locator(`#${id}`).boundingBox())?.width ?? 0);
+
+test('the rail avatar menu invites from the Sharing tab', async ({ page }) => {
+  await openWorkspace(page, 1600);
+  await page
+    .getByRole('navigation', { name: m.workspace_rail_label() })
+    .getByRole('button', { name: m.workspace_account_menu() })
+    .click({ timeout: 60_000 });
+  await page
+    .getByRole('menuitem', { name: m.workspace_invite_member() })
+    .click();
+  await expect(page).toHaveURL(/settings=sharing/);
+  await expect(
+    page
+      .getByRole('dialog', { name: m.workspace_settings() })
+      .getByRole('tab', { name: m.workspace_sharing(), selected: true })
+  ).toBeVisible();
 });
 
-test('the left panel lists chats, opens them in the right panel and archives them', async ({
+test('a chat replaces the history in the same panel, at the same width, and back returns to it', async ({
   page,
 }) => {
   await openWorkspace(page, 1600);
+  await openSection(page, m.workspace_section_agent());
+  const left = leftPanel(page);
+  const pinned = left.getByText(m.chat_group_pinned());
+  await expect(pinned).toBeVisible({ timeout: 60_000 });
+  expect(await width(page, 'left')).toBe(340);
+
+  await left.getByRole('button', { name: 'What is a cell?' }).click();
+  await expect(
+    left.getByRole('heading', { name: 'What is a cell?' })
+  ).toBeVisible();
+  await expect(left.getByText('A cell is the basic')).toBeVisible();
+  await expect(pinned).toBeHidden();
+  expect(await width(page, 'left')).toBe(340);
+
+  await left.getByRole('button', { name: m.chat_history() }).click();
+  await expect(pinned).toBeVisible();
+  await expect(
+    left.getByRole('button', { name: 'What is a cell?' })
+  ).toHaveAttribute('aria-current', 'true');
+
+  await left.getByRole('button', { name: m.chat_new() }).click();
+  await expect(left.getByRole('heading', { name: m.chat_new() })).toBeVisible();
+  await expect(composer(page)).toBeVisible();
+  await expect(pinned).toBeHidden();
+});
+
+test('Get started opens a new chat in Agent', async ({ page }) => {
+  await openWorkspace(page, 1600, '?chat=new');
+  await expect(composer(page)).toBeVisible({ timeout: 60_000 });
+  await expect(railButton(page, m.workspace_section_agent())).toHaveAttribute(
+    'aria-current',
+    'page'
+  );
+  await expect(
+    leftPanel(page).getByRole('heading', { name: m.chat_new() })
+  ).toBeVisible();
+  await expect(page).not.toHaveURL(/chat=new/);
+});
+
+test('Agent lists chats and archives, restores and deletes them', async ({
+  page,
+}) => {
+  await openWorkspace(page, 1600);
+  await openSection(page, m.workspace_section_agent());
   const left = leftPanel(page);
   await expect(left.getByText(m.chat_group_pinned())).toBeVisible({
     timeout: 60_000,
   });
-  await expect(
-    left.getByRole('button', { name: 'Exam plan for the cell unit' })
-  ).toBeVisible();
-
-  await left.getByRole('button', { name: 'What is a cell?' }).click();
-  await expect(page.locator('[data-panel-title]').last()).toHaveText(
-    m.workspace_tab_chat()
-  );
-  await expect(page.getByText('A cell is the basic')).toBeVisible();
-
   const target = left.getByRole('button', { name: 'What is a cell?' });
   await target.hover();
   await target
@@ -103,69 +130,160 @@ test('the left panel lists chats, opens them in the right panel and archives the
   });
   await confirm.getByRole('button', { name: m.action_delete() }).click();
   await expect(target).toHaveCount(0);
+  // The history stays; the deleted chat left the chat panel for a new one.
+  await expect(left.getByText(m.chat_group_pinned())).toBeVisible();
 });
 
-test('the Files view searches the tree by name', async ({ page }) => {
-  await openWorkspace(page, 1600);
-  const left = leftPanel(page);
-  await left.locator('[data-panel-title]').click();
-  await page
-    .getByRole('menuitem', { exact: true, name: m.workspace_tab_files() })
-    .click();
-  await left.getByPlaceholder(m.workspace_search_files()).fill('mendel');
-  const tree = left.locator('[data-workspace-file-tree]');
-  await expect(tree.getByText('Mendelian genetics.pdf')).toBeVisible();
-  await expect(tree.getByText('Cell structure.pdf')).toHaveCount(0);
-  // The right panel keeps its own Files view while the left panel is open.
-  await showPanelView(page, m.workspace_tab_files());
-  await expect(page.locator('[data-workspace-file-tree]')).toHaveCount(2);
-});
-
-test('the panel starts open; closed, history lists archived chats', async ({
+test('a file stays open beside a chat, and a citation opens in the centre with the chat kept', async ({
   page,
 }) => {
-  await openWorkspace(page, 1366);
-  await showPanelView(page, m.workspace_tab_chat());
-  await expect(leftPanel(page)).toBeVisible();
-  // The rail offers Chat history only while the left panel is closed.
-  await page
-    .getByRole('button', { name: m.workspace_close_side_panel() })
+  await openWorkspace(page, 1600);
+  await openSection(page, m.workspace_tab_files());
+  await leftPanel(page)
+    .locator('[data-workspace-file-tree]')
+    .getByText('Mendelian genetics.pdf')
     .click();
-  await expect(leftPanel(page)).toHaveCount(0);
-  await page.getByRole('button', { name: m.chat_history() }).click();
-  const history = page.getByRole('dialog', { name: m.chat_history() });
+  const centre = page.locator('#viewer');
   await expect(
-    history.getByRole('button', { name: 'Exam plan for the cell unit' })
+    centre.getByRole('heading', { name: 'Mendelian genetics.pdf' })
   ).toBeVisible();
-  await history.getByRole('button', { name: m.chat_see_archived() }).click();
+
+  await openChatRow(page);
   await expect(
-    page
-      .getByRole('dialog', { name: m.chat_archived_title() })
-      .getByText('Lab report draft questions')
+    centre.getByRole('heading', { name: 'Mendelian genetics.pdf' })
   ).toBeVisible();
+
+  await leftPanel(page)
+    .getByRole('button', { name: /exchange-plan\.docx/ })
+    .click();
+  await expect(
+    centre.getByRole('heading', { name: 'exchange-plan.docx' })
+  ).toBeVisible();
+  await expect(leftPanel(page).getByText('A cell is the basic')).toBeVisible();
+  await expect(railButton(page, m.workspace_section_agent())).toHaveAttribute(
+    'aria-current',
+    'page'
+  );
 });
 
-test('a side panel handle trades width with the viewer alone, collapsing and restoring its own panel within one drag', async ({
+test('a chat sits beside the Dashboard, and a Practice page, which keep the centre', async ({
   page,
 }) => {
   await openWorkspace(page, 1440);
+  const dashboard = page
+    .locator('#viewer')
+    .getByRole('heading', { level: 1, name: 'Biology 101' });
+  await expect(dashboard).toBeVisible({ timeout: 60_000 });
+  // The Dashboard has no panel.
+  await expect(page.locator('#left')).toBeHidden();
+  await openChatRow(page);
+  await expect(dashboard).toBeVisible();
+
+  await openSection(page, m.workspace_tab_study());
+  await expect(
+    page
+      .locator('#viewer')
+      .getByRole('heading', { level: 1, name: m.study_panel_practice() })
+  ).toBeVisible();
+  await openSection(page, m.workspace_section_agent());
+  await expect(leftPanel(page).getByText('A cell is the basic')).toBeVisible();
+  await expect(
+    page
+      .locator('#viewer')
+      .getByRole('heading', { level: 1, name: m.study_panel_practice() })
+  ).toBeVisible();
+});
+
+test('a chat keeps its draft through other sections and streams on while hidden', async ({
+  page,
+}) => {
+  await openWorkspace(page, 1600);
+  await openChatRow(page);
+  await expect(leftPanel(page).getByText('A cell is the basic')).toBeVisible();
+  await composer(page).fill('A draft kept');
+
+  await openSection(page, m.workspace_tab_files());
+  await expect(
+    leftPanel(page).locator('[data-workspace-file-tree]')
+  ).toHaveCount(1);
+  await expect(composer(page)).toBeHidden();
+  await openSection(page, m.workspace_section_dashboard());
+  await expect(page.locator('#left')).toBeHidden();
+  await openSection(page, m.workspace_section_agent());
+  await expect(
+    leftPanel(page).getByRole('heading', { name: 'What is a cell?' })
+  ).toBeVisible();
+  await expect(composer(page)).toHaveValue('A draft kept');
+
+  // Sent, then left: the answer lands while the chat is hidden.
+  await composer(page).press('Enter');
+  const stop = leftPanel(page).getByRole('button', { name: m.chat_stop() });
+  await expect(stop).toBeVisible();
+  await openSection(page, m.workspace_tab_files());
+  await expect(composer(page)).toBeHidden();
+  await page.waitForTimeout(4000);
+  await openSection(page, m.workspace_section_agent());
+  await expect(stop).toBeHidden({ timeout: 30_000 });
+  await expect(
+    leftPanel(page).locator('[data-chat-answer]').last()
+  ).toBeInViewport();
+});
+
+test('Files shows one tree under its search; pressing the shown section closes and reopens its panel', async ({
+  page,
+}) => {
+  await openWorkspace(page, 1600);
+  await openSection(page, m.workspace_tab_files());
   const left = leftPanel(page);
-  await left.getByRole('button', { name: 'What is a cell?' }).click({
-    timeout: 60_000,
-  });
-  await expect(page.locator('#rail')).toBeVisible();
-  const width = async (id: string) =>
-    Math.round((await page.locator(`#${id}`).boundingBox())?.width ?? 0);
-  const files = await width('files');
-  const rail = await width('rail');
-  // Holds a handle and moves it to each offset in turn, then lets go.
-  const drag = async (
-    handle: number,
-    steps: [number, () => Promise<void>][]
-  ) => {
+  const tree = page.locator('[data-workspace-file-tree]');
+  await expect(tree).toHaveCount(1);
+  await expect(tree.getByText('Cell structure.pdf')).toBeVisible();
+  await left.getByPlaceholder(m.workspace_search_files()).fill('mendel');
+  await expect(tree.getByText('Mendelian genetics.pdf')).toBeVisible();
+  await expect(tree.getByText('Cell structure.pdf')).toHaveCount(0);
+
+  await openSection(page, m.workspace_tab_files());
+  await expect(page.locator('#left')).toBeHidden();
+  await expect(tree).toHaveCount(0);
+  await openSection(page, m.workspace_tab_files());
+  await expect(tree.getByText('Cell structure.pdf')).toBeVisible();
+});
+
+test('a page has one h1', async ({ page }) => {
+  await openWorkspace(page, 1440);
+  const headings = page.locator('h1');
+  await expect(
+    page.getByRole('heading', { exact: true, name: 'Biology 101' })
+  ).toBeVisible({ timeout: 60_000 });
+  await expect(headings).toHaveCount(1);
+  await openSection(page, m.workspace_tab_study());
+  await expect(
+    page.getByRole('heading', { level: 1, name: m.study_panel_practice() })
+  ).toBeVisible();
+  await expect(headings).toHaveCount(1);
+  await openSection(page, m.workspace_tab_files());
+  await page
+    .locator('[data-workspace-file-tree]')
+    .getByText('Cell structure.pdf')
+    .click();
+  await expect(
+    page.getByRole('heading', { name: 'Cell structure.pdf' })
+  ).toBeVisible();
+  await expect(headings).toHaveCount(1);
+});
+
+test('the panel handle trades width with the viewer up to half the group, collapsing and restoring within one drag', async ({
+  page,
+}) => {
+  await openWorkspace(page, 1366);
+  await openChatRow(page);
+  const start = await width(page, 'left');
+  expect(start).toBe(340);
+  const group = start + (await width(page, 'viewer'));
+  // Holds the handle and moves it to each offset in turn, then lets go.
+  const drag = async (steps: [number, () => Promise<void>][]) => {
     const box = await page
       .locator('[data-slot=resizable-handle]')
-      .nth(handle)
       .boundingBox();
     if (!box) throw new Error('No handle');
     const x = box.x + box.width / 2;
@@ -179,25 +297,25 @@ test('a side panel handle trades width with the viewer alone, collapsing and res
     await page.mouse.up();
   };
 
-  // The rail grows until the viewer is at its least width; the left panel
-  // keeps its width.
-  await drag(1, [[-600, async () => expect(await width('files')).toBe(files)]]);
-  const wide = await width('rail');
-  expect(wide).toBeGreaterThan(rail);
-  // Back and forth past its least width, the rail collapses and returns.
-  await drag(1, [
-    [wide, async () => expect(await width('rail')).toBe(0)],
-    [0, async () => expect(await width('rail')).toBe(wide)],
+  // Wider, the panel stops at half; the viewer keeps the rest.
+  await drag([
+    [
+      900,
+      async () => expect(await width(page, 'left')).toBe(Math.round(group / 2)),
+    ],
   ]);
-  // With the viewer at its least width the left panel cannot grow into the
-  // rail; back and forth past its own least width it collapses and returns,
-  // the rail keeping its width throughout.
-  await drag(0, [
-    [300, async () => expect(await width('rail')).toBe(wide)],
-    [-files, async () => expect(await width('files')).toBe(0)],
-    [0, async () => expect(await width('files')).toBe(files)],
-    [300, async () => expect(await width('rail')).toBe(wide)],
+  const wide = await width(page, 'left');
+  expect(await width(page, 'viewer')).toBeGreaterThan(400);
+  // The chat and history share that width.
+  await leftPanel(page).getByRole('button', { name: m.chat_history() }).click();
+  expect(await width(page, 'left')).toBe(wide);
+  await openSection(page, m.workspace_tab_files());
+  expect(await width(page, 'left')).toBe(wide);
+
+  // Back and forth past its least width, the panel collapses and returns.
+  await drag([
+    [-wide, async () => expect(await width(page, 'left')).toBe(0)],
+    [0, async () => expect(await width(page, 'left')).toBe(wide)],
   ]);
-  expect(await width('files')).toBe(files);
-  expect(await width('rail')).toBe(wide);
+  expect(await width(page, 'left')).toBe(wide);
 });

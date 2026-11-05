@@ -20,10 +20,12 @@ const (
 	// WorkspaceTags is a workspace's tag count (CreateWorkspaceReq's
 	// maxItems), a count rather than characters.
 	WorkspaceTags = 5
-	ChapterName   = 60
-	StudyPlanName = 60
-	FileName      = 120
-	MaterialTitle = FileName
+	TopicName     = 60
+	// TopicDescription is a topic's optional one line on what it covers.
+	TopicDescription = 200
+	FileName         = 120
+	MaterialTitle    = FileName
+	AssignmentTitle  = 120
 	// An agent-made material's or file's made-from line: at most
 	// MaterialSources entries of at most MaterialSource characters.
 	MaterialSources   = 20
@@ -92,14 +94,20 @@ const (
 	QuestionSVGBytes       = 256 << 10
 	QuestionImageDimension = 10_000
 	QuestionAssetURL       = 4_096
-	// User quizzes (not the question bank) are bounded tighter, so one
-	// attempt's open parts fit a single grading request: at most 20 open parts
-	// of at most 5 marking items each.
+	// User quizzes (not the question bank) are bounded tighter: 100 parts,
+	// all of which may be AI-marked (open) parts, so a whole past paper fits
+	// one quiz (Epo 2026-11-03; it was 20), each with at most 5 marking items.
+	// Each open part is graded in its own request.
 	QuizParts         = 100
 	QuizQuestionParts = 7
-	QuizOpenParts     = 20
+	QuizOpenParts     = 100
 	QuizMarkscheme    = 5
 	QuizOpenAnswer    = 5_000
+	// A Make a quiz run reads at most ExtractionPages selected pages from at
+	// most ExtractionFiles files, mark scheme and answer files included
+	// (todo-study-tracking.md §8, Epo 2026-11-03).
+	ExtractionPages = 40
+	ExtractionFiles = 10
 	// AnonymousLocalID bounds the reporting id a signed-out browser sends.
 	AnonymousLocalID = 64
 	// A flashcard's front and back (human/frontend/plate-editor.md for the
@@ -170,12 +178,14 @@ var Columns = map[string]int{
 	"users.email":                      Email,
 	"workspaces.name":                  WorkspaceName,
 	"workspaces.description":           WorkspaceDescription,
-	"chapters.name":                    ChapterName,
-	"study_plans.name":                 StudyPlanName,
+	"topics.name":                      TopicName,
+	"topics.description":               TopicDescription,
 	"files.name":                       FileName,
 	"materials.workspace_name":         WorkspaceName,
 	"materials.title":                  MaterialTitle,
+	"assignments.title":                AssignmentTitle,
 	"attempts.quiz_name":               MaterialTitle,
+	"question_extractions.title":       MaterialTitle,
 	"attempts.workspace_name":          WorkspaceName,
 	"tags.name":                        TagValue,
 	"labels.name":                      LabelName,
@@ -185,7 +195,7 @@ var Columns = map[string]int{
 	"workspace_invites.email":          Email,
 	"conversations.title":              ConversationTitle,
 	"editor_assets.name":               FileName,
-	"upload_sessions.chapter_name":     ChapterName,
+	"upload_sessions.topic_name":       TopicName,
 	"upload_sessions.name":             FileName,
 	"anonymous_grading_usage.local_id": AnonymousLocalID,
 	"reconcile_runs.requested_by_name": UserName,

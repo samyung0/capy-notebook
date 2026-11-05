@@ -176,7 +176,7 @@ const banner = (page: Page, title: string) =>
  * old on load). */
 async function dashboard(run: UatRun, page: Page) {
   await page.goto(run.env.appUrl);
-  await expect(page.getByText(m.dashboard_learn_today())).toBeVisible();
+  await expect(page.getByText(m.home_learn_today())).toBeVisible();
   return refocus(page);
 }
 

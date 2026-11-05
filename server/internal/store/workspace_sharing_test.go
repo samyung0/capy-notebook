@@ -990,3 +990,48 @@ func TestFilingALinkMaterialClearsItsGrants(t *testing.T) {
 		t.Fatalf("grants after filing = %d, %v; want none", grants, err)
 	}
 }
+
+// The sweep of a device's kept copies reads this in one query: it agrees with
+// MaterialEffectiveRole on a member, a stranger and a trashed material.
+func TestReadableMaterialIDsFollowsTheAccessRule(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx, ws := createSharingTestWorkspace(t, s, ShareEditor)
+	content, err := materialdoc.Marshal(materialdoc.Empty())
+	if err != nil {
+		t.Fatal(err)
+	}
+	create := func(title string) Material {
+		t.Helper()
+		mt, err := s.CreateMaterial(ctx, Material{
+			CreatedBy: "u_owner", WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: title,
+			Content: content, Privacy: PrivacyPrivate,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return mt
+	}
+	kept, gone := create("Kept"), create("Gone")
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET trashed_at=now(), trash_episode_id='ep_readable',
+		purge_after=now()+interval '30 days' WHERE id=$1`, gone.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id,user_id,role)
+		VALUES ($1,$2,'viewer')`, ws.ID, "u_other"); err != nil {
+		t.Fatal(err)
+	}
+	asked := []string{kept.ID, gone.ID, "mat_missing"}
+	for user, want := range map[string][]string{
+		"u_owner":    {kept.ID},
+		"u_other":    {kept.ID},
+		"u_stranger": {},
+	} {
+		got, err := s.ReadableMaterialIDs(ctx, user, asked)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("%s reads %v, want %v", user, got, want)
+		}
+	}
+}

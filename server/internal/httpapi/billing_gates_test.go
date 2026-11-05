@@ -151,7 +151,7 @@ func assertInteractiveCreditsForbidden(t *testing.T, fx billingFixture) {
 	}
 
 	gen := doReq(t, fx.handler, http.MethodPost, "/api/workspaces/"+ws+"/generate", fx.actorID,
-		generateBody("quiz", "Credits quiz"))
+		generateBody("Credits quiz"))
 	if gen.Code != http.StatusForbidden || errorCode(t, gen) != "llm_credits_exhausted" {
 		t.Fatalf("generate: %d %s", gen.Code, gen.Body.String())
 	}

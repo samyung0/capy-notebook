@@ -26,10 +26,8 @@ test.describe('workspace invitations', () => {
       .getByPlaceholder(m.members_invite_placeholder())
       .fill('viewer@capynotebook.test');
     await ownerPage
-      .getByRole('combobox', { name: m.members_invite_role() })
-      .click();
-    await ownerPage
-      .getByRole('option', { name: m.members_role_view() })
+      .getByRole('group', { name: m.members_invite_role() })
+      .getByRole('button', { name: m.members_role_view() })
       .click();
 
     const createResponse = waitForApi(

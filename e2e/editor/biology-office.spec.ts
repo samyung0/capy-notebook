@@ -7,27 +7,8 @@ import {
   postToOfficeRuntime,
   saveOffice,
 } from '../helpers/office';
-import { showPanelView } from '../helpers/panelView';
+import { showChatHistory, showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
-
-// These checks measure the Office viewer at 1280-1440px with the rail open
-// and the left panel closed, the layout they were written against; the
-// workspace now opens the left panel at every width that has it.
-test.use({
-  storageState: async ({ baseURL }, use) =>
-    use({
-      cookies: [],
-      origins: [
-        {
-          localStorage: [
-            { name: 'capy.workspace.rightPanel', value: 'true' },
-            { name: 'capy.workspace.leftPanel', value: 'false' },
-          ],
-          origin: baseURL!,
-        },
-      ],
-    }),
-});
 
 declare global {
   interface Window {
@@ -430,7 +411,7 @@ test('Office viewer keeps its iframe when the workspace layout changes', async (
 
   // One column below lg, two columns at lg: both switch the surrounding layout.
   // Below lg an open Office file keeps chat to its round button; at lg the
-  // right panel's title reads Files.
+  // rail offers Files.
   for (const [width, tools] of [
     [900, m.workspace_tab_chat()],
     [1280, m.workspace_tab_files()],
@@ -1471,8 +1452,7 @@ test('an Office citation highlights its passage again after the runtime reloads'
 }) => {
   test.setTimeout(180_000);
   await page.goto('/workspaces/ws_bio');
-  await showPanelView(page, m.workspace_tab_chat());
-  await page.getByRole('button', { name: m.chat_history() }).click();
+  await showChatHistory(page);
   await page.getByRole('button', { name: 'Answer: Office citation' }).click();
   await page.getByTitle(m.chat_source_number({ n: 1 })).click();
   const frame = page.frameLocator('iframe[src*="office-runtime"]');
@@ -1768,7 +1748,7 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
 
   await test.step('a newly opened editor leaves the focus in the chat box', async () => {
     await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
-    // The workspace panel opens on Files, also with a file in the URL.
+    // An open file shows Files; the chat box is in Agent.
     await showPanelView(page, m.workspace_tab_chat());
     await chat.click();
     await page.keyboard.type('hi');
@@ -1950,7 +1930,7 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
       .locator('..')
       .getByRole('button', {
         exact: true,
-        name: m.action_new_file_or_chapter(),
+        name: m.action_new_file_or_topic(),
       })
       .first()
       .click();

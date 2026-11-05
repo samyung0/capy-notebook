@@ -1,4 +1,4 @@
-import type { Chapter, MaterialRef, SourceFile } from '@/api/types';
+import type { MaterialRef, SourceFile, Topic } from '@/api/types';
 
 /** A file or material as the workspace tree lists it. */
 export type WorkspaceContentItem =
@@ -17,20 +17,18 @@ export type WorkspaceContentItem =
       data: MaterialRef;
     };
 
-/** One chapter's files and materials (unfiled for null), in tree order. */
+/** One topic's files and materials (unfiled for null), in tree order. */
 export function contentFor(
   files: SourceFile[] | undefined,
   materials: MaterialRef[] | undefined,
-  chapterId: string | null
+  topicId: string | null
 ): WorkspaceContentItem[] {
-  const chapterFiles =
-    files?.filter((file) => file.chapterId === chapterId) ?? [];
-  const chapterMaterials =
-    materials?.filter(
-      (material) => (material.chapterId ?? null) === chapterId
-    ) ?? [];
+  const topicFiles = files?.filter((file) => file.topicId === topicId) ?? [];
+  const topicMaterials =
+    materials?.filter((material) => (material.topicId ?? null) === topicId) ??
+    [];
   return [
-    ...chapterFiles.map(
+    ...topicFiles.map(
       (file): WorkspaceContentItem => ({
         createdAt: file.addedAt,
         data: file,
@@ -39,7 +37,7 @@ export function contentFor(
         type: 'file',
       })
     ),
-    ...chapterMaterials.map(
+    ...topicMaterials.map(
       (material): WorkspaceContentItem => ({
         createdAt: material.createdAt,
         data: material,
@@ -57,7 +55,7 @@ interface Ordered {
   type: 'file' | 'material';
 }
 
-/** Inside one chapter: by position, files first on ties, then newest. */
+/** Inside one topic: by position, files first on ties, then newest. */
 function treeOrder(a: Ordered, b: Ordered) {
   const positionDiff = a.position - b.position;
   if (positionDiff) return positionDiff;
@@ -65,31 +63,14 @@ function treeOrder(a: Ordered, b: Ordered) {
   return +new Date(b.createdAt) - +new Date(a.createdAt);
 }
 
-/**
- * readingOrder for items that carry their chapter (Learning's progress map):
- * chapters by order, then unfiled; items of an unknown chapter are left out,
- * as the tree leaves them out.
- */
-export function inReadingOrder<
-  T extends Ordered & { chapterId: string | null },
->(
-  chapters: readonly { id: string; order: number }[],
-  items: readonly T[]
-): T[] {
-  return [
-    ...[...chapters].sort((a, b) => a.order - b.order).map((ch) => ch.id),
-    null,
-  ].flatMap((id) => items.filter((it) => it.chapterId === id).sort(treeOrder));
-}
-
-/** Every item in reading order: chapters by position, then unfiled. */
+/** Every item in reading order: topics by position, then unfiled. */
 export function readingOrder(
-  chapters: Chapter[] | undefined,
+  topics: Topic[] | undefined,
   files: SourceFile[] | undefined,
   materials: MaterialRef[] | undefined
 ): WorkspaceContentItem[] {
   return [
-    ...[...(chapters ?? [])]
+    ...[...(topics ?? [])]
       .sort((a, b) => a.order - b.order)
       .flatMap((ch) => contentFor(files, materials, ch.id)),
     ...contentFor(files, materials, null),

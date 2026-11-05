@@ -192,9 +192,19 @@ pub async fn live_access<C: GenericClient>(
     // `owner` is the lifecycle owner (the workspace owner, or a standalone
     // material's owner); `payer` is owner_user_id, the account the material is
     // charged to (uploader pays): its frozen, locked or full state makes the
-    // material read-only (Go's canEditMaterial).
+    // material read-only (Go's canEditMaterial). `hidden` also holds a quiz under
+    // an open assignment that went to this viewer, who takes its frozen copy
+    // instead (Go's quizAssignedToSQL).
     let sql = format!(
-        "SELECT m.owner_user_id, m.privacy, m.workspace_id, owner.id AS owner_id,
+        "SELECT m.owner_user_id, m.privacy, m.workspace_id,
+           m.hidden OR (m.kind='quiz' AND EXISTS (SELECT 1 FROM assignments a
+             JOIN workspaces aw ON aw.id=a.workspace_id AND aw.kind='class'
+             JOIN workspace_members am ON am.workspace_id=a.workspace_id AND am.user_id=$2 AND am.role='viewer'
+             WHERE a.source_quiz_id=m.id AND NOT a.draft AND a.closed_at IS NULL
+               AND NOT (a.no_late AND a.due_at <= now())
+               AND (a.assign_all OR EXISTS (SELECT 1 FROM assignment_assignees x
+                 WHERE x.assignment_id=a.id AND x.user_id=$2)))) AS hidden,
+           owner.id AS owner_id,
            (owner.deleted_at IS NOT NULL OR owner.deletion_requested_at IS NOT NULL) AS owner_gone,
            (owner.suspended_at IS NOT NULL) AS owner_suspended,
            (actor.deleted_at IS NOT NULL OR actor.deletion_requested_at IS NOT NULL
@@ -267,8 +277,12 @@ pub async fn live_access<C: GenericClient>(
             shared
         }
     };
-    // Viewers hold read channels only; anyone else holds nothing.
-    if rank(&role) < rank("viewer") {
+    // Viewers hold read channels only; anyone else holds nothing. A material
+    // hidden from members, or a quiz assigned to this viewer, is the owners' and
+    // editors' alone (Go's materialEffectiveAccess, Epo 2026-11-03, 2026-11-04).
+    if rank(&role) < rank("viewer")
+        || (row.get::<_, bool>("hidden") && rank(&role) < rank("editor"))
+    {
         return Err(AccessError::Forbidden("material access was revoked".into()));
     }
     Ok(LiveAccess {

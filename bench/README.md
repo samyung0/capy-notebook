@@ -31,6 +31,7 @@ place (Epo 2026-10-10).
 | [`parity/`](parity/)       | Office feature parity per format against Google Docs, Sheets and Slides: hand-assigned view, edit, save and collab statuses, each Y backed by a test on the pin; ranked remaining work | `python3 bench/parity/scripts/parity.py` (CI: `--check`) |
 | [`parsers/`](parsers/)     | Ingest-host parser accuracy and capacity: OCR modes, concurrency, worker memory, OOM behavior    | `python bench/parsers/scripts/…` (needs VM) |
 | [`grading/`](grading/)     | Small local models against the production quiz-grading rubric, native and in-browser             | `python bench/grading/scripts/benchmark.py` |
+| [`extraction/`](extraction/) | Make a quiz: questions read from HKDSE past papers' pages with keys worked out where none is printed, paired with their mark schemes, against hand-built gold; labels, parts, marks, printed option order, worked-out key accuracy, pairing, cost, time per model | `python bench/extraction/scripts/run.py --paper … --model …` |
 | [`rag/`](rag/scripts/)     | Retrieval and chat-agent quality: live diagnostic plus six frozen experiments                    | see below                                   |
 
 ### editor
@@ -41,6 +42,13 @@ production promotion. Budgets are regression tripwires, not UX targets; snapshot
 deltas stay warn-only. Details: [editor-perf.md](../openwiki/editor-perf.md).
 Results land in the gitignored `editor/.results/`, so this family has no
 committed reports.
+
+`bench/editor/scripts/open-paint.mjs` measures a note's one way of opening on a
+production build with MSW, by hand (its header has the build): click or navigation
+to the note's text on screen, to an editable editor, its token's answer to that
+and the long tasks' blocking, first open and reopen from the device copy. MSW adds
+about 1.1 s to every `/api` call, so compare builds, not absolutes. Findings:
+[`editor/reports/2026-11-04-open-paint.md`](editor/reports/2026-11-04-open-paint.md).
 
 `pnpm bench:office` is the Office runtime's spec (`editor/scripts/runtime.office.ts`):
 a production build with MSW, the runtime on a second port of `localhost` (another
@@ -294,6 +302,48 @@ The [production contract report](grading/reports/2026-10-02-jev-production-contr
 runs [`jev_contract.py`](grading/scripts/jev_contract.py) on new held-out fixtures
 to choose the Jev request for open quiz parts (question type, batching, state
 fields) and the author-side computation warning, with a small LaTeX check.
+
+### extraction
+
+`extraction/scripts/run.py` runs the production Make a quiz pipeline
+(`pipeline/retrieval/extraction.py`, see
+[agentic-retrieval.md](../openwiki/agentic-retrieval.md), Make a quiz) over one
+past paper from the ignored `data/question-bank/references/hkdse-math-compulsory/`
+(`--refs`), with the model calls going to the providers (`--env-file` names a
+file with `DEEPSEEK_API_KEY` and `OPENROUTER_API_KEY`; nothing is printed) and
+every recorded question through Go's `quizcheck`. Pages are rendered by the
+capture renderer; each page's indexed text is its PDF text layer, or the
+production VLM page read on the captioning pin for a scanned page, cached in the
+gitignored `extraction/.results/text/` and not counted in the run's cost. The
+answers come from the paper's marking-scheme PDF read the same way, or from an
+answer list built from the gold keys. `fixtures/gold/` holds the hand-built gold
+per paper: labels, parts, per-part marks, answer types, and for multiple choice
+the key and the keyed option's signature (its numbers, signs, relations, roman
+numerals and trig names, hand-read from the page), so the score checks that the
+stored key points at the printed correct option. The model's own keys,
+before the scheme replaces them, are scored too: multiple-choice keys it
+worked out against the official ones, and its part marks against the gold.
+Figures are located and cropped as production does it, the crops written
+under `extraction/.results/crops/` and scored against hand-read gold boxes
+(`figure_boxes`). A fidelity check compares each saved question's text and
+each parsed scheme entry with the page's own text: the PDF text layer, else
+both the refs folder's Tesseract OCR and the cached VLM read, since the HKDSE
+scans have none. It counts numbers and units that neither reading has, or that
+both have and the extraction lacks, KaTeX parse failures and stray `$`, and
+scores 2022 Paper 1's gold tables cell by cell.
+Results land in `extraction/.results/<paper>-<model>-<n>.json`;
+[the first cut](extraction/reports/2026-11-03-first-cut.md) compares DeepSeek
+Flash with GLM-5.3-Flash,
+[keys in one prompt](extraction/reports/2026-11-03-keys-in-one-prompt.md)
+measures the round-2 prompt that works keys out, and
+[figures and fidelity](extraction/reports/2026-11-04-figures-and-fidelity.md)
+measures figure crops and the content against the page, and
+[window size](extraction/reports/2026-11-04-window-size.md) how many questions
+one call records (run on the windows the route has since replaced; tables from
+`scripts/window_table.py` and `scripts/window_crossing.py`), and
+[layout first](extraction/reports/2026-11-04-layout-first-trial.md) runs the layout
+service over HTTP through the real code (`scripts/layout_trial.py`; the service's
+venv and model file are in that report).
 
 ### rag
 

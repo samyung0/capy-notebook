@@ -18,20 +18,22 @@ var (
 )
 
 type EditorAsset struct {
-	ID          string     `json:"assetId"`
-	WorkspaceID string     `json:"workspaceId"`
-	MaterialID  string     `json:"materialId,omitempty"`
-	UserID      string     `json:"-"`
-	CreatedBy   *string    `json:"-"`
-	Name        string     `json:"name"`
-	Purpose     string     `json:"purpose"`
-	ObjectPath  string     `json:"-"`
-	ContentType string     `json:"contentType"`
-	SizeBytes   int64      `json:"sizeBytes"`
-	Status      string     `json:"status"`
-	ETag        string     `json:"-"`
-	CreatedAt   time.Time  `json:"createdAt"`
-	CompletedAt *time.Time `json:"completedAt,omitempty"`
+	ID          string `json:"assetId"`
+	WorkspaceID string `json:"workspaceId"`
+	MaterialID  string `json:"materialId,omitempty"`
+	// AssignmentID names the assignment a frozen copy's image belongs to.
+	AssignmentID string     `json:"-"`
+	UserID       string     `json:"-"`
+	CreatedBy    *string    `json:"-"`
+	Name         string     `json:"name"`
+	Purpose      string     `json:"purpose"`
+	ObjectPath   string     `json:"-"`
+	ContentType  string     `json:"contentType"`
+	SizeBytes    int64      `json:"sizeBytes"`
+	Status       string     `json:"status"`
+	ETag         string     `json:"-"`
+	CreatedAt    time.Time  `json:"createdAt"`
+	CompletedAt  *time.Time `json:"completedAt,omitempty"`
 	// Trashed: its material's save stopped using it; it is restored when the
 	// material uses it again and purged a day after (PurgeTrashedEditorAssets).
 	Trashed bool `json:"-"`
@@ -157,12 +159,12 @@ func (s *Store) assertMaterialNotFullTx(ctx context.Context, tx pgx.Tx, material
 	return s.storageFullErr(ctx, tx, payerID)
 }
 
-const editorAssetCols = `id, COALESCE(workspace_id,''), COALESCE(material_id,''), user_id, created_by, name, purpose, object_path,
+const editorAssetCols = `id, COALESCE(workspace_id,''), COALESCE(material_id,''), COALESCE(assignment_id,''), user_id, created_by, name, purpose, object_path,
 	content_type, size_bytes, status, COALESCE(etag,''), created_at, completed_at, trashed_at IS NOT NULL`
 
 func scanEditorAsset(row interface{ Scan(...any) error }) (EditorAsset, error) {
 	var asset EditorAsset
-	err := row.Scan(&asset.ID, &asset.WorkspaceID, &asset.MaterialID, &asset.UserID, &asset.CreatedBy, &asset.Name,
+	err := row.Scan(&asset.ID, &asset.WorkspaceID, &asset.MaterialID, &asset.AssignmentID, &asset.UserID, &asset.CreatedBy, &asset.Name,
 		&asset.Purpose, &asset.ObjectPath, &asset.ContentType, &asset.SizeBytes, &asset.Status,
 		&asset.ETag, &asset.CreatedAt, &asset.CompletedAt, &asset.Trashed)
 	return asset, err
@@ -442,8 +444,9 @@ func (s *Store) EditorImagesWithoutThumbnails(ctx context.Context, after string,
 // target's (restored when trashed), else a new ready row sharing the stored
 // object under blob refcounting and charged to the actor, who pasted it (M16);
 // a trashed source is copied too. A source that is unknown (purged), not
-// ready, or unreadable by the actor (the resolve rule) is left out, as is one
-// over the actor's plan cap for its purpose (limits.EditorAssetBytes).
+// ready, a frozen copy's image, or unreadable by the actor (the resolve rule) is
+// left out, as is one over the actor's plan cap for its purpose
+// (limits.EditorAssetBytes).
 // When the copies do not fit the actor's quota none is made and refused is
 // true; restores still land.
 func (s *Store) AdoptEditorAssets(
@@ -488,6 +491,9 @@ func (s *Store) AdoptEditorAssets(
 	var paths []string
 	var bytes int64
 	for _, asset := range sources {
+		if asset.AssignmentID != "" {
+			continue
+		}
 		if asset.MaterialID == materialID {
 			// Its node came back (undo, cut and paste): back out of the trash at
 			// once, so the node resolves it.
@@ -502,7 +508,7 @@ func (s *Store) AdoptEditorAssets(
 		if asset.Status != "ready" || asset.SizeBytes > limits.EditorAssetBytes(asset.Purpose) {
 			continue
 		}
-		readable, err := editorAssetReadableTx(ctx, tx, actorID, asset)
+		readable, err := s.editorAssetReadable(ctx, tx, actorID, asset)
 		if err != nil {
 			return nil, false, err
 		}
@@ -541,26 +547,50 @@ func (s *Store) AdoptEditorAssets(
 	return adopted, false, tx.Commit(ctx)
 }
 
-// editorAssetReadableTx is resolve's read rule: workspace access for a
-// workspace asset, material access for a standalone one.
-func editorAssetReadableTx(ctx context.Context, tx pgx.Tx, actorID string, asset EditorAsset) (bool, error) {
+// EditorAssetReadable is resolve's read rule; adopting a pasted image uses it too,
+// after leaving out a frozen copy's images.
+func (s *Store) EditorAssetReadable(ctx context.Context, actorID string, asset EditorAsset) (bool, error) {
+	return s.editorAssetReadable(ctx, s.pool, actorID, asset)
+}
+
+// editorAssetReadable admits the readers of what the asset belongs to: its
+// material, so a hidden item's and an assigned quiz's rules hold for its images;
+// a frozen copy's assignment; or for a row with neither, its workspace.
+func (s *Store) editorAssetReadable(ctx context.Context, q rowQueryer, actorID string, asset EditorAsset) (bool, error) {
 	var err error
+	readable := true
 	switch {
+	case asset.MaterialID != "":
+		_, err = materialEffectiveAccess(ctx, q, actorID, asset.MaterialID)
+	case asset.AssignmentID != "":
+		readable, err = s.frozenAssetReadable(ctx, q, actorID, asset)
 	case asset.WorkspaceID != "":
 		var effective WorkspaceRole
-		_, effective, err = workspaceRoles(ctx, tx, actorID, asset.WorkspaceID)
-		if err == nil && effective == "" {
-			return false, nil
-		}
-	case asset.MaterialID != "":
-		_, err = materialEffectiveAccess(ctx, tx, actorID, asset.MaterialID)
+		_, effective, err = workspaceRoles(ctx, q, actorID, asset.WorkspaceID)
+		readable = effective != ""
 	default:
 		return false, nil
 	}
 	if errors.Is(err, ErrNotFound) {
 		return false, nil
 	}
-	return err == nil, err
+	return readable && err == nil, err
+}
+
+// frozenAssetReadable admits who may read the assignment's questions: its staff,
+// who it went to, and anyone holding an attempt at it (GetAssignmentAttempt), as
+// after being taken off a named list. A personal workspace hides it from all.
+func (s *Store) frozenAssetReadable(ctx context.Context, q rowQueryer, actorID string, asset EditorAsset) (bool, error) {
+	staff, err := s.assignmentStaff(ctx, q, actorID, asset.WorkspaceID)
+	if err != nil || staff {
+		return staff, err
+	}
+	var readable bool
+	err = q.QueryRow(ctx, `WITH e AS (`+assigneesSQL+`)
+		SELECT EXISTS (SELECT 1 FROM e WHERE e.user_id=$2)
+			OR EXISTS (SELECT 1 FROM attempts t WHERE t.assignment_id=$3 AND t.user_id=$2)`,
+		[]string{asset.AssignmentID}, actorID, asset.AssignmentID).Scan(&readable)
+	return readable, err
 }
 
 // lockEditorAssetScopeTx admits an editor-asset write for the actor and returns

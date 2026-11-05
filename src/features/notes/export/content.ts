@@ -1,4 +1,4 @@
-import type { Question, QuestionBlock, QuestionPart } from '@/api/types';
+import type { QuestionBlock, QuestionPart } from '@/api/types';
 import type {
   MaterialElement,
   MaterialNode,
@@ -6,6 +6,11 @@ import type {
   MaterialValue,
   QuizQuestionElement,
 } from '@/features/materials/document';
+import {
+  fullPartLabel,
+  isLonePart,
+  questionItems,
+} from '@/features/questions/groups';
 import { parseMathText } from '@/features/questions/parseMathText';
 
 export interface ExportLabels {
@@ -142,12 +147,6 @@ function choices(part: QuestionPart, labels: ExportLabels): MaterialValue {
   return [paragraph(`${labels.answer}: ______________________________`)];
 }
 
-function partLabel(question: Question, index: number) {
-  return question.labels === 'letters'
-    ? `(${String.fromCharCode(97 + index)})`
-    : `${index + 1}.`;
-}
-
 /** One readable study handout representation for both serializers. */
 export function flattenStudyBlocks(
   value: MaterialValue,
@@ -168,16 +167,26 @@ export function flattenStudyBlocks(
       const prompts = questions.flatMap((question, i) => [
         heading(`${labels.question} ${i + 1}`),
         ...questionBlocks(question.stem),
-        ...question.parts.flatMap((part, j) => [
-          paragraph(`${partLabel(question, j)} ${labels.marks}: ${part.marks}`),
-          ...questionBlocks(part.blocks),
-          ...choices(part, labels),
-        ]),
+        ...questionItems(question).flatMap((item) => {
+          const part = (row: { label: string; part: QuestionPart }) => [
+            paragraph(`${row.label} ${labels.marks}: ${row.part.marks}`),
+            ...questionBlocks(row.part.blocks),
+            ...choices(row.part, labels),
+          ];
+          return item.kind === 'part'
+            ? part(item)
+            : // A group has text and figures, no marks of its own.
+              [
+                paragraph(item.label),
+                ...questionBlocks(item.group.blocks),
+                ...item.parts.flatMap(part),
+              ];
+        }),
       ]);
       const key = questions.flatMap((question, i) =>
-        question.parts.flatMap((part, j) => [
+        question.parts.flatMap((part) => [
           paragraph(
-            `${i + 1}${question.parts.length > 1 ? ` ${partLabel(question, j)}` : ''}. ${labels.answer}`,
+            `${i + 1}${isLonePart(question) ? '' : ` ${fullPartLabel(question, part.id)}`}. ${labels.answer}`,
             { exportBold: true }
           ),
           ...answerLines(part, labels).map((text) => paragraph(text)),

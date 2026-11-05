@@ -11,7 +11,6 @@ import {
   attemptsQuery,
   billingQuery,
   cardsQuery,
-  chaptersQuery,
   conversationsQuery,
   eventsQuery,
   exploreFlashcardSetsQuery,
@@ -21,7 +20,7 @@ import {
   filesQuery,
   flashcardSetQuery,
   labelsQuery,
-  learningProgressQuery,
+  learningOverviewQuery,
   materialQuery,
   materialsQuery,
   meQuery,
@@ -31,8 +30,8 @@ import {
   ownedMaterialsQuery,
   quizQuery,
   recentQuery,
-  reviewOverviewQuery,
   tasksQuery,
+  topicsQuery,
   usageQuery,
   workspaceQuery,
   workspacesQuery,
@@ -47,6 +46,7 @@ import { parseThemeSearch } from '@/components/app/themeDrawerSearch';
 import { prefetchOfficeFile } from '@/features/files/prefetchOfficeFile';
 import {
   parseDocumentModeSearch,
+  parseMaterialPageSearch,
   parseWorkspaceOpenSearch,
 } from '@/features/materials/openItem';
 import {
@@ -221,7 +221,7 @@ const blocksRedirect = <const T extends string>(path: T) =>
 
 const appRoutes = [
   createRoute({
-    component: lazyPage(() => import('@/routes/Dashboard')),
+    component: lazyPage(() => import('@/routes/Home')),
     getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
       qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
@@ -271,7 +271,7 @@ const appRoutes = [
       const id = params.workspaceId;
       qc.prefetchQuery(workspaceQuery(id));
       qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
-      qc.prefetchQuery(chaptersQuery(id));
+      qc.prefetchQuery(topicsQuery(id));
       qc.prefetchQuery(filesQuery(id));
       qc.prefetchQuery(materialsQuery(id));
       qc.prefetchQuery(conversationsQuery(id));
@@ -291,6 +291,24 @@ const appRoutes = [
     path: '/workspaces/$workspaceId',
     staticData: { hideSidebar: true },
     validateSearch: parseWorkspaceOpenSearch,
+  }),
+  // The report's links (todo-study-tracking.md §9): the page itself lives in
+  // the workspace's own URL, whose rail and panels stay mounted.
+  createRoute({
+    beforeLoad: ({ params, search }) => {
+      throw redirect({
+        params: { workspaceId: params.workspaceId },
+        replace: true,
+        search: {
+          ...(search as Record<string, unknown>),
+          assignment: params.assignmentId,
+          study: 'assignments',
+        },
+        to: '/workspaces/$workspaceId',
+      });
+    },
+    getParentRoute: () => authShellRoute,
+    path: '/workspaces/$workspaceId/study/assignments/$assignmentId',
   }),
   // Chat across all the user's files; the optional id keeps the page mounted
   // (and its streams running) while the shown conversation changes.
@@ -315,17 +333,18 @@ const appRoutes = [
   blocksRedirect('/flashcards'),
   createRoute({
     beforeLoad: ({ search }) => {
+      if (!features.learning) throw redirect({ replace: true, to: '/' });
       const saved =
         search.tab === 'results'
           ? savedSort('results', RESULT_SORTS, RESULT_SORT_DEFAULT, search)
-          : search.tab === 'review'
+          : search.tab === 'past'
             ? savedSort(
                 'pastReviews',
                 PAST_REVIEW_SORTS,
                 PAST_REVIEW_SORT_DEFAULT,
                 search
               )
-            : undefined;
+            : null;
       if (saved)
         throw redirect({
           replace: true,
@@ -337,8 +356,7 @@ const appRoutes = [
     getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
       void qc.prefetchInfiniteQuery(attemptsQuery());
-      void qc.prefetchQuery(learningProgressQuery());
-      void qc.prefetchQuery(reviewOverviewQuery());
+      void qc.prefetchQuery(learningOverviewQuery());
     },
     path: '/learning',
     validateSearch: (search: Record<string, unknown>) => {
@@ -347,11 +365,9 @@ const appRoutes = [
         ...tab,
         ...(tab.tab === 'results'
           ? parseResultsSearch(search)
-          : parsePastReviewsSearch(search)),
-        // The workspace a finish toast's Go check leads Progress's map with.
-        ...(typeof search.finished === 'string' && search.finished
-          ? { finished: search.finished }
-          : {}),
+          : tab.tab === 'past'
+            ? parsePastReviewsSearch(search)
+            : {}),
       };
     },
   }),
@@ -373,7 +389,7 @@ const appRoutes = [
       void queryClient.prefetchQuery(materialQuery(params.materialId));
     },
     path: '/materials/$materialId',
-    validateSearch: parseDocumentModeSearch,
+    validateSearch: parseMaterialPageSearch,
   }),
   createRoute({
     component: lazyPage(() => import('@/routes/MaterialOpen')),

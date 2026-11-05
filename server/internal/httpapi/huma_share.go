@@ -95,8 +95,8 @@ func (a *api) fileReadOrPayer(ctx context.Context, fileID string) (store.Workspa
 }
 
 // Resource-editor helpers gate writes addressed by a child id.
-func (a *api) assertChapterEditor(ctx context.Context, chapterID string) error {
-	wsID, err := a.s.ChapterWorkspaceID(ctx, chapterID)
+func (a *api) assertTopicEditor(ctx context.Context, topicID string) error {
+	wsID, err := a.s.TopicWorkspaceID(ctx, topicID)
 	if err != nil {
 		return err
 	}
@@ -185,29 +185,29 @@ func (a *api) copyCloneThumbnails(ctx context.Context, copies []store.ThumbnailC
 }
 
 // cloneTarget validates where a single-item copy lands; name is the copy's.
-func cloneTarget(workspaceID, chapterID, chapterName, name string) (store.CloneTarget, error) {
+func cloneTarget(workspaceID, topicID, topicName, name string) (store.CloneTarget, error) {
 	target := store.CloneTarget{
 		WorkspaceID: workspaceID,
-		ChapterName: strings.TrimSpace(chapterName),
+		TopicName:   strings.TrimSpace(topicName),
 		Name:        strings.TrimSpace(name),
 	}
 	switch {
 	case target.Name == "":
 		return target, huma.Error422UnprocessableEntity("the copy needs a name")
-	case chapterID != "" && target.ChapterName != "":
-		return target, huma.Error422UnprocessableEntity("give at most one of chapterId or chapterName")
-	case workspaceID == "" && (chapterID != "" || target.ChapterName != ""):
-		return target, huma.Error422UnprocessableEntity("a chapter goes with workspaceId")
+	case topicID != "" && target.TopicName != "":
+		return target, huma.Error422UnprocessableEntity("give at most one of topicId or topicName")
+	case workspaceID == "" && (topicID != "" || target.TopicName != ""):
+		return target, huma.Error422UnprocessableEntity("a topic goes with workspaceId")
 	}
-	if chapterID != "" {
-		target.ChapterID = &chapterID
+	if topicID != "" {
+		target.TopicID = &topicID
 	}
 	return target, nil
 }
 
 func (a *api) cloneFile(ctx context.Context, in *cloneFileInput) (*fileOutput, error) {
 	b := in.Body
-	target, err := cloneTarget(b.WorkspaceID, b.ChapterID, string(b.ChapterName), string(b.Name))
+	target, err := cloneTarget(b.WorkspaceID, b.TopicID, string(b.TopicName), string(b.Name))
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +221,7 @@ func (a *api) cloneFile(ctx context.Context, in *cloneFileInput) (*fileOutput, e
 
 func (a *api) cloneMaterial(ctx context.Context, in *cloneMaterialInput) (*materialOutput, error) {
 	b := in.Body
-	target, err := cloneTarget(b.WorkspaceID, b.ChapterID, string(b.ChapterName), string(b.Title))
+	target, err := cloneTarget(b.WorkspaceID, b.TopicID, string(b.TopicName), string(b.Title))
 	if err != nil {
 		return nil, err
 	}

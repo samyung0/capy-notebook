@@ -293,6 +293,14 @@
       "kind": "variable",
       "targets": ["ingest-production", "ingest-shared"]
     },
+    "CAPY_LAYOUT_TOKEN": {
+      "kind": "secret",
+      "targets": ["app", "local"]
+    },
+    "CAPY_LAYOUT_URL": {
+      "kind": "variable",
+      "targets": ["app", "local"]
+    },
     "CAPY_PARSER": {
       "kind": "variable",
       "targets": ["app"]
@@ -391,10 +399,6 @@
       "kind": "variable",
       "targets": ["ingest-queue"],
       "environments": ["uat"]
-    },
-    "CAPY_VLM_PAGE_CAPACITY": {
-      "kind": "variable",
-      "targets": ["ingest-production"]
     },
     "CAPY_VLM_PAGES_PER_JOB": {
       "kind": "variable",

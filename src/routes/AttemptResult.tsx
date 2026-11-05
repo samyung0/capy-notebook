@@ -20,6 +20,7 @@ import { QuizPageHeader } from '@/features/quizzes/QuizPageHeader';
 import { attemptMeta, attemptMinutes } from '@/features/study/attempts';
 import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
+import { features } from '@/lib/features';
 import { waitsForConnection } from '@/lib/online';
 
 /** A quiz or flashcard attempt's result, under Learning / All results. */
@@ -73,9 +74,15 @@ export default function AttemptResult() {
         <ErrorState
           action={
             <ErrorAction asChild back>
-              <Link preload="intent" to="/learning">
-                {m.quiz_back()}
-              </Link>
+              {features.learning ? (
+                <Link preload="intent" to="/learning">
+                  {m.quiz_back()}
+                </Link>
+              ) : (
+                <Link preload="intent" to="/">
+                  {m.quiz_back()}
+                </Link>
+              )}
             </ErrorAction>
           }
           errorId={unexpectedErrorId(error)}
@@ -88,6 +95,15 @@ export default function AttemptResult() {
 
   const answers = attempt.answers as Record<string, Answer>;
   const hasBreakdown = attempt.questions.length > 0;
+  // Learning is hidden: a result goes back to its workspace's Practice, or Home
+  // once it has no workspace.
+  const home = attempt.workspaceId
+    ? linkOptions({
+        params: { workspaceId: attempt.workspaceId },
+        search: { study: 'practice' as const },
+        to: '/workspaces/$workspaceId',
+      })
+    : linkOptions({ to: '/' });
 
   return (
     <PagePanel
@@ -97,19 +113,35 @@ export default function AttemptResult() {
           // The date and workspace match the score's minutes and stat line.
           metaClassName="text-fg-secondary text-sm"
           onBack={() =>
-            void navigate({ search: { tab: 'results' }, to: '/learning' })
+            features.learning
+              ? void navigate({ search: { tab: 'results' }, to: '/learning' })
+              : void navigate(home)
           }
           title={attempt.quizName}
-          trail={[
-            { label: m.nav_learning(), link: linkOptions({ to: '/learning' }) },
-            {
-              label: m.learning_tab_results(),
-              link: linkOptions({
-                search: { tab: 'results' },
-                to: '/learning',
-              }),
-            },
-          ]}
+          trail={
+            features.learning
+              ? [
+                  {
+                    label: m.nav_learning(),
+                    link: linkOptions({ to: '/learning' }),
+                  },
+                  {
+                    label: m.learning_tab_results(),
+                    link: linkOptions({
+                      search: { tab: 'results' },
+                      to: '/learning',
+                    }),
+                  },
+                ]
+              : [
+                  {
+                    label: attempt.workspaceId
+                      ? attempt.workspaceName
+                      : m.nav_home(),
+                    link: home,
+                  },
+                ]
+          }
         />
       }
     >

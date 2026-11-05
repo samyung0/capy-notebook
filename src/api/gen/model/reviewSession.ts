@@ -14,16 +14,14 @@ export interface ReviewSession {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   answered: number;
-  chapterId?: string;
   done: ReviewAnswer[];
   evidence?: ReviewEvidence;
   group: ReviewSessionGroup;
   items: ReviewItem[];
   /** Omitted for a review started from the workspace list */
   mode?: ReviewSessionMode;
-  /** The plan of a plan group */
-  planId?: string;
   /** @nullable */
   removedAssetIds?: string[] | null;
+  topicId?: string;
   total: number;
 }

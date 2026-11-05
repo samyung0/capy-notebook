@@ -8,13 +8,13 @@
 export interface UpdateMaterialReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** Chapter to file under; empty string unfiles; omit to leave unchanged */
-  chapterId?: string;
-  scopeChapters?: string[];
   scopeFileNames?: string[];
+  scopeTopics?: string[];
   /**
      * @minLength 1
      * @maxLength 120
      */
   title?: string;
+  /** Topic to file under; empty string unfiles; omit to leave unchanged */
+  topicId?: string;
 }

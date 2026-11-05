@@ -28,7 +28,7 @@ func TestASourceSaveIsCheckedAgainstTheWorkspaceItsRoomOpened(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.MoveFiles(ctx, owner, []string{file.ID}, MoveTarget{WorkspaceID: target.ID}, false); err != nil {
+	if _, err := s.MoveFiles(ctx, owner, []string{file.ID}, MoveTarget{WorkspaceID: target.ID}); err != nil {
 		t.Fatal(err)
 	}
 

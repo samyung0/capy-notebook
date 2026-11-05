@@ -6,7 +6,9 @@ import "github.com/danielgtaylor/huma/v2"
 // default pin; the user-selectable slots also hold a per-user preference.
 // Retrieval, captioning and rerank are separate slots because the row that
 // fills them is a different model from the text model: no single model both
-// runs the chat agent loop and emits vectors or relevance scores.
+// runs the chat agent loop and emits vectors or relevance scores. Extraction
+// (Make a quiz) reads page images with tools on its own pin, apart from chat
+// (Epo 2026-11-03: never direct DeepSeek, which costs too much).
 type Slot string
 
 // UserModelSlot is the subset exposed by the account model picker.
@@ -16,6 +18,7 @@ const (
 	SlotChat       = "chat"
 	SlotEditor     = "editor"
 	SlotIngest     = "ingest"
+	SlotExtraction = "extraction"
 	SlotRetrieval  = "retrieval"
 	SlotCaptioning = "captioning"
 	SlotRerank     = "rerank"
@@ -25,6 +28,7 @@ var allSlots = []Slot{
 	SlotChat,
 	SlotEditor,
 	SlotIngest,
+	SlotExtraction,
 	SlotRetrieval,
 	SlotCaptioning,
 	SlotRerank,
@@ -38,7 +42,7 @@ var userModelSlots = []UserModelSlot{
 
 // llmSlots are the slots served by a text model: they need a context window
 // and thinking levels. Retrieval, captioning and rerank rows omit both.
-var llmSlots = []Slot{SlotChat, SlotEditor, SlotIngest}
+var llmSlots = []Slot{SlotChat, SlotEditor, SlotIngest, SlotExtraction}
 
 // Capability is something a catalog row must be able to do to sit in a slot.
 // Vision, pdf, embedding and rerank are set by operators on the row. AgenticLoop is
@@ -62,9 +66,11 @@ var operatorCapabilities = []Capability{
 
 // slotRequirements is the only place the slot -> capability policy lives.
 // Chat needs vision because its tools attach images (capture_page, pending
-// Office images); the ops assignment check enforces it, not the runtime.
+// Office images), extraction because it reads the pages as images; the ops
+// assignment check enforces it, not the runtime.
 var slotRequirements = map[Slot][]Capability{
 	SlotChat:       {CapabilityAgenticLoop, CapabilityVision},
+	SlotExtraction: {CapabilityVision},
 	SlotRetrieval:  {CapabilityEmbedding},
 	SlotCaptioning: {CapabilityVision},
 	SlotRerank:     {CapabilityRerank},

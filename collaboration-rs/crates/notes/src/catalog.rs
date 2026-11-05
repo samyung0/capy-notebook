@@ -50,7 +50,7 @@ pub const QUESTION_TEXT_MAX: usize = 12000;
 pub const QUESTION_UNIT_MAX: usize = 100;
 pub const QUIZ_MARKSCHEME_MAX: usize = 5;
 pub const QUIZ_OPEN_ANSWER_MAX: usize = 5000;
-pub const QUIZ_OPEN_PARTS_MAX: usize = 20;
+pub const QUIZ_OPEN_PARTS_MAX: usize = 100;
 pub const QUIZ_PARTS_MAX: usize = 100;
 pub const QUIZ_QUESTION_PARTS_MAX: usize = 7;
 
@@ -764,7 +764,7 @@ pub const ELEMENTS: &[Element] = &[
         shared_text: &[],
         shared_map: &[],
         shared_lists: &[],
-        assets: &["question.stem[].image.assetId", "question.parts[].blocks[].image.assetId", "question.parts[].solution[].image.assetId"],
+        assets: &["question.stem[].image.assetId", "question.groups[].blocks[].image.assetId", "question.parts[].blocks[].image.assetId", "question.parts[].solution[].image.assetId"],
         resizable: false,
         children: &[],
         materials: &["quiz"],

@@ -135,14 +135,12 @@ func TestQuizBoundsCapPartsAndOpenParts(t *testing.T) {
 		}
 		return qs
 	}
-	if err := QuizBounds(many(100, 20)); err != nil {
-		t.Fatalf("100 parts with 20 open rejected: %v", err)
+	// Every part of a full quiz may be AI-marked (Epo 2026-11-03).
+	if err := QuizBounds(many(100, 100)); err != nil {
+		t.Fatalf("100 AI-marked parts rejected: %v", err)
 	}
 	if QuizBounds(many(101, 0)) == nil {
 		t.Fatal("accepted 101 parts")
-	}
-	if QuizBounds(many(30, 21)) == nil {
-		t.Fatal("accepted 21 open parts")
 	}
 }
 
@@ -164,6 +162,150 @@ func TestGradingTextIncludesStemEarlierPartsAndFigures(t *testing.T) {
 	want := "Source A\nPrices rose.\n\n[Figure: A demand curve]\n\n[Figure]\n\nSales (kg)\nShop: Jan=1.5, Feb=2, Mar=–\n\nEarlier part 1: a | b\nc | d\n\nPart to grade: Explain."
 	if got := GradingText(q, 1); got != want {
 		t.Fatalf("GradingText =\n%q\nwant\n%q", got, want)
+	}
+}
+
+// A part inside a group is graded with the group's text and figures (Epo
+// 2026-11-04), once, before the group's first part; a question with no group
+// reads byte for byte as before.
+func TestGradingTextIncludesAGroupsTextOnce(t *testing.T) {
+	text := func(s string) map[string]any { return map[string]any{"type": "text", "text": s} }
+	part := func(s, group string) map[string]any {
+		p := map[string]any{"blocks": []any{text(s)}}
+		if group != "" {
+			p["group"] = group
+		}
+		return p
+	}
+	q := map[string]any{
+		"stem": []any{text("Blood contains several types of cell.")},
+		"groups": []any{map[string]any{"id": "g", "blocks": []any{
+			text("Fig. 3.2 shows the stages of clotting."),
+			map[string]any{"type": "image", "description": "A flow chart"},
+		}}},
+		"parts": []any{
+			part("State the function of red blood cells.", ""),
+			part("Fill in the two empty boxes.", "g"),
+			part("State two roles of clotting.", "g"),
+			part("Explain why the wound stops bleeding.", ""),
+		},
+	}
+	const shared = "Shared context: Fig. 3.2 shows the stages of clotting.\n\n[Figure: A flow chart]"
+	const stem = "Blood contains several types of cell."
+	const a = "Earlier part 1: State the function of red blood cells."
+	for index, want := range []string{
+		stem + "\n\nPart to grade: State the function of red blood cells.",
+		stem + "\n\n" + a + "\n\n" + shared + "\n\nPart to grade: Fill in the two empty boxes.",
+		stem + "\n\n" + a + "\n\n" + shared + "\n\nEarlier part 2: Fill in the two empty boxes.\n\nPart to grade: State two roles of clotting.",
+		stem + "\n\n" + a + "\n\n" + shared + "\n\nEarlier part 2: Fill in the two empty boxes.\n\nEarlier part 3: State two roles of clotting.\n\nPart to grade: Explain why the wound stops bleeding.",
+	} {
+		if got := GradingText(q, index); got != want {
+			t.Errorf("part %d:\n%q\nwant\n%q", index, got, want)
+		}
+	}
+	// A group with no text adds nothing.
+	q["groups"] = []any{map[string]any{"id": "g", "blocks": []any{}}}
+	want := stem + "\n\n" + a + "\n\nPart to grade: Fill in the two empty boxes."
+	if got := GradingText(q, 1); got != want {
+		t.Errorf("no text:\n%q\nwant\n%q", got, want)
+	}
+	// With no group at all, nothing changes.
+	ungrouped := map[string]any{
+		"stem":  q["stem"],
+		"parts": []any{part("State the function of red blood cells.", ""), part("Fill in the two empty boxes.", "")},
+	}
+	if got := GradingText(ungrouped, 1); got != want {
+		t.Errorf("ungrouped:\n%q\nwant\n%q", got, want)
+	}
+}
+
+// A group's text and figures reach a learner; its parts keep their group.
+func TestLearnerViewKeepsGroups(t *testing.T) {
+	raw, err := os.ReadFile("testdata/group-valid.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct{ Question map[string]any }
+	if err := json.Unmarshal(raw, &f); err != nil {
+		t.Fatal(err)
+	}
+	learner := LearnerView(f.Question)
+	if !reflect.DeepEqual(learner["groups"], f.Question["groups"]) {
+		t.Fatalf("groups = %v", learner["groups"])
+	}
+	parts := learner["parts"].([]any)
+	if parts[1].(map[string]any)["group"] != "g1" {
+		t.Fatalf("part = %v", parts[1])
+	}
+	if _, ok := parts[0].(map[string]any)["group"]; ok {
+		t.Fatalf("ungrouped part = %v", parts[0])
+	}
+}
+
+// Scoring goes by part, so it needs no change for groups; what it returns keeps
+// them, as a stored attempt's snapshot does.
+func TestGradedAndAuthoredKeepGroups(t *testing.T) {
+	raw, err := os.ReadFile("testdata/group-valid.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct{ Question map[string]any }
+	if err := json.Unmarshal(raw, &f); err != nil {
+		t.Fatal(err)
+	}
+	graded, awarded, total := Graded(f.Question, map[string]any{"part-a": "oxygen", "part-b1": "fibrin"}, nil)
+	if awarded != 3 || total != 8 {
+		t.Fatalf("awarded %v of %v, want 3 of 8", awarded, total)
+	}
+	// As an attempt stores it.
+	encoded, err := json.Marshal(graded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot map[string]any
+	if err := json.Unmarshal(encoded, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if err := Validate(snapshot, Policy{Snapshot: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(snapshot["groups"], f.Question["groups"]) {
+		t.Fatalf("graded groups = %v", snapshot["groups"])
+	}
+	authored := Authored(snapshot)
+	if err := Validate(authored, Policy{}); err != nil {
+		t.Fatal(err)
+	}
+	if authored["parts"].([]any)[1].(map[string]any)["group"] != "g1" {
+		t.Fatalf("authored parts = %v", authored["parts"])
+	}
+	if !Blank(f.Question, map[string]any{}) {
+		t.Fatal("no answers should be blank")
+	}
+}
+
+// An image in a group counts as the question's, for clones and asset reads.
+func TestGroupImagesAreTheQuestions(t *testing.T) {
+	raw, err := os.ReadFile("testdata/group-valid.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct{ Question map[string]any }
+	if err := json.Unmarshal(raw, &f); err != nil {
+		t.Fatal(err)
+	}
+	if got := AssetIDs(f.Question); !reflect.DeepEqual(got, []string{"asset_clotting"}) {
+		t.Fatalf("AssetIDs = %v", got)
+	}
+	if !RewriteAssetIDs(f.Question, map[string]string{"asset_clotting": "asset_copy"}) {
+		t.Fatal("the question was lost")
+	}
+	if got := AssetIDs(f.Question); !reflect.DeepEqual(got, []string{"asset_copy"}) {
+		t.Fatalf("rewritten AssetIDs = %v", got)
+	}
+	RewriteAssetIDs(f.Question, map[string]string{})
+	if got := AssetIDs(f.Question); len(got) != 0 {
+		t.Fatalf("dropped AssetIDs = %v", got)
 	}
 }
 

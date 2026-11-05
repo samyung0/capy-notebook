@@ -67,19 +67,18 @@ export function seedScenarioFixtures() {
     return;
   db.workspaces.push({
     ...structuredClone(db.workspaces[0]),
-    chapterCount: 0,
     cover: undefined,
     fileCount: 5,
     id: scenarioWorkspace,
     name: 'User scenarios',
     tags: [],
+    topicCount: 0,
   });
   db.materials.push(
     db.makeMaterial({
       ...structuredClone(
         db.materials.find((material) => material.kind === 'note')!
       ),
-      chapterId: null,
       content: createMaterialDocument([
         {
           children: [{ text: 'A note for trying application errors.' }],
@@ -92,6 +91,7 @@ export function seedScenarioFixtures() {
       ]),
       id: scenarioNote,
       title: 'Scenario note',
+      topicId: null,
       workspaceId: scenarioWorkspace,
       workspaceName: 'User scenarios',
     })
@@ -148,10 +148,10 @@ export function seedScenarioFixtures() {
         ...structuredClone(
           db.materials.find((material) => material.kind === kind)!
         ),
-        chapterId: null,
         content: createMaterialDocument([content]),
         id,
         title: `Scenario ${kind}`,
+        topicId: null,
         workspaceId: scenarioWorkspace,
         workspaceName: 'User scenarios',
       })
@@ -178,21 +178,21 @@ export function seedScenarioFixtures() {
   ]) {
     db.files.push({
       ...structuredClone(template),
-      chapterId: null,
       id,
       indexed: true,
       kind: kind as SourceFile['kind'],
       name,
       status: 'ready',
+      topicId: null,
       workspaceId: scenarioWorkspace,
     });
     db.fileLinks[id] = { url };
   }
   const archived = {
     ...structuredClone(template),
-    chapterId: null,
     id: 'mock-scenario-trash',
     name: 'Scenario archived file',
+    topicId: null,
     workspaceId: scenarioWorkspace,
   };
   db.trash.unshift({
@@ -437,7 +437,7 @@ export async function resetScenarioFixtures(captureAccount: boolean) {
     delete db.fileLinks[fileId];
     sessionStorage.removeItem(`capy.scenario.epoch.${fileId}`);
   }
-  for (const rows of [db.files, db.materials, db.chapters, db.conversations]) {
+  for (const rows of [db.files, db.materials, db.topics, db.conversations]) {
     for (let i = rows.length - 1; i >= 0; i--)
       if (rows[i].workspaceId === scenarioWorkspace) rows.splice(i, 1);
   }

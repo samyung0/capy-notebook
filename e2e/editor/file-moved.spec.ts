@@ -12,7 +12,7 @@ const MOVED_TO = 'ws_bio';
 const MOVED_TO_NAME = 'Biology 101';
 
 function toast(page: Page, title: string) {
-  return page.locator('[data-sonner-toast]').filter({ hasText: title });
+  return page.locator('[data-toast]').filter({ hasText: title });
 }
 
 /** The mock file row moves to `workspaceId` (no room message). */
@@ -23,7 +23,7 @@ async function moveRow(page: Page, workspaceId: string) {
       const db = await import(path);
       const file = db.files.find((row: { id: string }) => row.id === id);
       file.workspaceId = to;
-      file.chapterId = null;
+      file.topicId = null;
     },
     { id: FILE, to: workspaceId }
   );

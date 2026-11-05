@@ -322,8 +322,9 @@ async def _note_identities(
     workspace_id: str | None, material_ids: list[str] | None
 ) -> list[tuple]:
     """Each note's published index content (None: not indexed), in id order;
-    material_ids None reads every note of the workspace, and workspace_id None
-    the named notes wherever they live."""
+    material_ids None reads every note of the workspace this request may see
+    (a hidden one only for its readers), and workspace_id None the named notes
+    wherever they live."""
     db = await store.pool()
     async with db.connection() as conn:
         cur = await conn.execute(
@@ -332,13 +333,22 @@ async def _note_identities(
             WHERE (%s::text IS NULL OR m.workspace_id = %s) AND m.kind = 'note'
               AND m.trashed_at IS NULL
               AND (%s::text[] IS NULL OR m.id = ANY(%s::text[]))
-            ORDER BY m.id""",
-            (workspace_id, workspace_id, material_ids, material_ids),
+              AND {visible}
+            ORDER BY m.id""".format(visible=store._visible("m")),
+            (
+                workspace_id,
+                workspace_id,
+                material_ids,
+                material_ids,
+                store.hidden_readers(),
+            ),
         )
         return [(row["id"], row["content_id"]) for row in await cur.fetchall()]
 
 
-def _note_changes(workspace_id: str, ids: list[str] | None) -> list[dict[str, Any]]:
+def _note_changes(workspace_id: str, ids: list[str]) -> list[dict[str, Any]]:
+    """The named notes' changes: Go knows nothing of who is asking, so the ids
+    are what this request may see."""
     response = requests.post(
         cfg.gateway_url.rstrip("/") + "/api/internal/note-changes",
         headers={"X-Pipeline-Secret": cfg.pipeline_secret},
@@ -426,7 +436,8 @@ async def _snapshot(
     workspace_id: str | None, file_ids: list[str] | None, *, evidence: bool = True
 ) -> list[dict[str, Any]]:
     """The files' unindexed state: a workspace's, or with workspace_id None
-    the named files wherever they live (account chat's, checked by Go)."""
+    the named files wherever they live (account chat's, checked by Go), a
+    hidden one only for its readers."""
     db = await store.pool()
     async with db.connection() as conn:
         cur = await conn.execute(
@@ -444,9 +455,18 @@ async def _snapshot(
             LEFT JOIN rag_file_contents fc ON fc.file_id=f.id
             WHERE (%s::text IS NULL OR f.workspace_id = %s) AND f.trashed_at IS NULL
               AND (%s::text[] IS NULL OR f.id = ANY(%s::text[]))
+              AND """
+            + store._visible("f")
+            + """
             ORDER BY f.id
             """,
-            (workspace_id, workspace_id, file_ids or None, file_ids or None),
+            (
+                workspace_id,
+                workspace_id,
+                file_ids or None,
+                file_ids or None,
+                store.hidden_readers(),
+            ),
         )
         return [dict(row) for row in await cur.fetchall()]
 
@@ -504,7 +524,7 @@ async def load(workspace_id: str, file_ids: list[str] | None = None) -> PendingS
     sources._note_ids = set(identities)
     sources._note_index = identities
     try:
-        notes = await asyncio.to_thread(_note_changes, workspace_id, selected)
+        notes = await asyncio.to_thread(_note_changes, workspace_id, list(identities))
     except (requests.RequestException, ValueError, KeyError) as exc:
         # Chat still answers from the index, saying it may be outdated.
         obs.capture_error(exc, surface="pending_notes")

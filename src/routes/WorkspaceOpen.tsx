@@ -6,8 +6,9 @@ import {
   useSearch,
 } from '@tanstack/react-router';
 import {
-  type ReactNode,
+  lazy,
   type RefObject,
+  Suspense,
   useCallback,
   useEffect,
   useRef,
@@ -17,21 +18,20 @@ import {
   type GroupImperativeHandle,
   useGroupRef,
 } from 'react-resizable-panels';
-import { createStore, type StoreApi, useStore } from 'zustand';
 import { isApiError } from '@/api/client';
-import { addChapterBodyNameMax } from '@/api/gen/validators';
+import { addTopicBodyNameMax } from '@/api/gen/validators';
 import {
-  useAddChapter,
-  useChapters,
+  useAddTopic,
   useFile,
   useFiles,
-  useUpdateChapter,
+  useMaterials,
+  useTopics,
+  useUpdateTopic,
   useVisitWorkspace,
   useWorkspace,
   workspaceQuery,
 } from '@/api/hooks';
 import type { Citation, Region, ResourceRef } from '@/api/types';
-import { AccountFooter } from '@/components/app/AccountFooter';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { LoadingLarge } from '@/components/app/LoadingLarge';
 import { Panel } from '@/components/app/layout';
@@ -61,6 +61,7 @@ import {
   registerTourPanels,
   type TourPanels,
 } from '@/features/guide/tourStore';
+import type { MakeQuizChoice } from '@/features/makeQuiz/MakeQuizDialog';
 import { CenterContent } from '@/features/materials/CenterContent';
 import type { OneColumnChrome } from '@/features/materials/CenterContentHeader';
 import {
@@ -70,6 +71,10 @@ import {
   searchFromOpenItem,
   type WorkspaceOpenSearch,
 } from '@/features/materials/openItem';
+import { SharingNotice } from '@/features/study/assignments/SharingNotice';
+import { StudyPanel } from '@/features/study/practice/StudyPanel';
+import { type StudyPage, studyView } from '@/features/study/practice/studyView';
+import { VoiceFooterButton } from '@/features/voice/VoiceCard';
 import {
   AddSourceDialog,
   type AddSourceMode,
@@ -84,180 +89,124 @@ import { CloneWorkspaceDialog } from '@/features/workspace/CloneWorkspaceDialog'
 import { ArchivedChatsDialog } from '@/features/workspace/chat/ArchivedChatsDialog';
 import { ConversationList } from '@/features/workspace/chat/ConversationList';
 import { FilesPanel } from '@/features/workspace/FilesPanel';
-import type { GenerateMode } from '@/features/workspace/GenerateForm';
-import { PanelTabRow, type TabAction } from '@/features/workspace/PanelTabRow';
-import {
-  PanelTitleMenu,
-  type PanelView,
-} from '@/features/workspace/PanelTitleMenu';
-import type { SettingsTab } from '@/features/workspace/settingsTabs';
+import type { TabAction } from '@/features/workspace/PanelTabRow';
+import type { SettingsView } from '@/features/workspace/settingsTabs';
+import { WorkspaceDashboard } from '@/features/workspace/WorkspaceDashboard';
 import { WorkspaceHealth } from '@/features/workspace/WorkspaceHealth';
-import { WorkspacePicker } from '@/features/workspace/WorkspacePicker';
+import {
+  SectionTitle,
+  WorkspaceRail,
+  type WorkspaceSection,
+} from '@/features/workspace/WorkspaceRail';
 import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsDialog';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/icon-catalog';
-import { isBoolean, PREF_KEYS, readPref, useLocalPref } from '@/lib/localPrefs';
+import {
+  isBoolean,
+  PREF_KEYS,
+  readPref,
+  removePref,
+  writePref,
+} from '@/lib/localPrefs';
 import { waitsForConnection } from '@/lib/online';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
-type PanelTab = 'files' | 'chat';
-type LeftView = 'chats' | 'files';
+const SummaryPage = lazy(() =>
+  import('@/features/study/practice/SummaryPage').then((mod) => ({
+    default: mod.SummaryPage,
+  }))
+);
+const MakeQuizDialog = lazy(() =>
+  import('@/features/makeQuiz/MakeQuizDialog').then((mod) => ({
+    default: mod.MakeQuizDialog,
+  }))
+);
+const PagePicker = lazy(() =>
+  import('@/features/makeQuiz/PagePicker').then((mod) => ({
+    default: mod.PagePicker,
+  }))
+);
+const ExtractionProgress = lazy(() =>
+  import('@/features/makeQuiz/ExtractionProgress').then((mod) => ({
+    default: mod.ExtractionProgress,
+  }))
+);
+/** A search value's ids: the paper's or the answer files'. */
+const splitIds = (ids: string | undefined) =>
+  ids ? ids.split(',').filter(Boolean) : [];
 
-const isPanelTab = (value: unknown): value is PanelTab =>
-  value === 'files' || value === 'chat';
-const isLeftView = (value: unknown): value is LeftView =>
-  value === 'chats' || value === 'files';
+const AssignmentsPage = lazy(() =>
+  import('@/features/study/assignments/AssignmentsPage').then((mod) => ({
+    default: mod.AssignmentsPage,
+  }))
+);
+const PracticePage = lazy(() =>
+  import('@/features/study/practice/PracticePage').then((mod) => ({
+    default: mod.PracticePage,
+  }))
+);
 
-/** The header's panel toggles while their panel is open: the icon's strip
- * fills in the accent. */
-const PANEL_TOGGLE_OPEN = 'text-action-accent hover:text-action-accent';
+// The section panel beside the rail: one default for every section (Epo
+// 2026-11-04). It can be dragged as wide as half the group, as the right panel
+// could, which from lg keeps the viewer above its least width.
 const LEFT_SIZE = 340;
-const LEFT_MIN = 300;
+const LEFT_MIN = 220;
+const LEFT_MAX = '50%';
 const VIEWER_MIN = 400;
-// The rail is 32% of the group from 1380px up (~438px at a 1400px window).
-// Narrower, it takes three quarters of the lost width down to 400px, the
-// least a rich chat answer (cards, tables, charts) reads well in.
-const RAIL_SHARE = 0.32;
-const RAIL_FULL_AT = 1380;
-const RAIL_MIN = 400;
-function railSize(groupWidth: number) {
-  if (groupWidth >= RAIL_FULL_AT) return RAIL_SHARE * groupWidth;
-  return Math.max(
-    RAIL_MIN,
-    RAIL_SHARE * RAIL_FULL_AT - 0.75 * (RAIL_FULL_AT - groupWidth)
-  );
-}
 
-type Side = 'files' | 'rail';
-
-/** The side panel whose handle is being dragged. A store, so a drag
- * re-renders the two side panels and not the workspace. */
-type HeldHandle = StoreApi<{ side: Side | null }>;
-
-/** A side panel. Closed, it collapses to nothing but stays mounted, so the
- * rail's chat keeps its thread, draft and stream. usePanelLayout places it;
- * dragging it under its least width closes it on release. While the other
- * side's handle is dragged it is disabled: the library otherwise takes space
- * past the viewer's least width from it, shrinking or collapsing the panel
- * across the viewer. Only during the drag: the library ignores a handle
- * beside a disabled panel, so the other handle could not be taken. */
-function SidePanel({
-  id,
-  held,
-  minSize,
-  maxSize,
-  className,
-  children,
-}: {
-  id: Side;
-  held: HeldHandle;
-  minSize: string;
-  maxSize: string;
-  className: string;
-  children: ReactNode;
-}) {
-  const otherHeld = useStore(
-    held,
-    (state) => !!state.side && state.side !== id
-  );
-  return (
-    <ResizablePanel
-      className={cn('overflow-visible!', className)}
-      collapsible
-      // Constant: a changing defaultSize re-registers the group.
-      defaultSize="0%"
-      disabled={otherHeld}
-      id={id}
-      maxSize={maxSize}
-      minSize={minSize}
-    >
-      {children}
-    </ResizablePanel>
-  );
-}
-
-/** Marks which side panel's handle a press took, until the pointer lets go.
- * The library hit-tests handles by geometry, not by the event's target, and
- * focuses the handle it took in its document capture listener: read in the
- * window's bubble phase, after it, the active element says which. */
-function useHeldHandle(held: HeldHandle) {
-  useEffect(() => {
-    const press = () => {
-      const side = (document.activeElement as HTMLElement | null)?.dataset.side;
-      if (side === 'files' || side === 'rail') held.setState({ side });
-    };
-    const release = () => held.setState({ side: null });
-    window.addEventListener('pointerdown', press);
-    window.addEventListener('pointerup', release, true);
-    window.addEventListener('pointercancel', release, true);
-    return () => {
-      window.removeEventListener('pointerdown', press);
-      window.removeEventListener('pointerup', release, true);
-      window.removeEventListener('pointercancel', release, true);
-    };
-  }, [held]);
-}
-
-/** Lays the side panels out whenever one opens or closes: the panel that did
- * not change keeps its width and the viewer takes the difference (the
- * library's own resize moves space to and from the farthest panel first, so
- * opening the rail collapsed the left panel). The left opens at 340px, the
- * rail at railSize, which it follows when the window resizes while it is the
- * only side panel open. When the viewer would drop under its least width, the
- * rail and then the left give way down to theirs. */
+/** Places the left panel whenever it opens or closes, as the library starts it
+ * at nothing. It comes back at the width it closed at; closed, it collapses but
+ * stays mounted, so Agent's chat keeps its thread, draft and stream. Dragging it
+ * under its least width closes it on release. */
 function usePanelLayout({
   group,
   groupRef,
-  left,
-  right,
+  open,
 }: {
   group: HTMLDivElement | null;
   groupRef: RefObject<GroupImperativeHandle | null>;
-  left: boolean;
-  right: boolean;
+  open: boolean;
 }) {
+  const kept = useRef(LEFT_SIZE);
   useEffect(() => {
     if (!group) return;
-    // The first callback lands after the group has registered its panels.
-    let first = true;
     const observer = new ResizeObserver(([entry]) => {
       const handle = groupRef.current;
       const width = entry.contentRect.width;
-      const fit = right && !left;
-      if (!(handle && width > 0 && (first || fit))) return;
+      if (!(handle && width > 0)) return;
       const current = handle.getLayout();
       // The library reads a layout's sizes by position, in the order its
       // panels registered (not the DOM's): the current layout's keys give
       // that order. None yet: the group has no size, wait for one.
       const order = Object.keys(current);
       if (order.length === 0) return;
-      // The first callback after a toggle keeps the rail's width; later
-      // ones are window resizes, which refit it.
-      const toggled = first;
-      first = false;
-      const kept = (id: string) => ((current[id] ?? 0) * width) / 100;
-      let files = left ? kept('files') || LEFT_SIZE : 0;
-      let rail = right ? (toggled ? kept('rail') : 0) || railSize(width) : 0;
-      let short = VIEWER_MIN - (width - files - rail);
-      if (short > 0 && rail > 0) {
-        const give = Math.min(short, rail - RAIL_MIN);
-        rail -= Math.max(give, 0);
-        short -= Math.max(give, 0);
-      }
-      if (short > 0 && files > 0) files -= Math.min(short, files - LEFT_MIN);
-      const share = (px: number) => (px / width) * 100;
-      const sizes: Record<string, number> = {
-        files: share(files),
-        rail: share(rail),
-        viewer: 100 - share(files) - share(rail),
-      };
+      // Only the callback that lands after the group registered its panels;
+      // a window resize keeps the panels' shares.
+      observer.disconnect();
+      const shown = ((current.left ?? 0) * width) / 100;
+      if (shown > 0) kept.current = shown;
+      const left = open ? (kept.current / width) * 100 : 0;
+      const sizes: Record<string, number> = { left, viewer: 100 - left };
       handle.setLayout(Object.fromEntries(order.map((id) => [id, sizes[id]])));
     });
     observer.observe(group);
     return () => observer.disconnect();
-  }, [group, groupRef, left, right]);
+  }, [group, groupRef, open]);
 }
+
+/** A panel's own actions as its title row's buttons. */
+const tabButtons = (actions: TabAction[]) =>
+  actions.map((action) => (
+    <ToolbarButton
+      disabled={action.disabled}
+      key={action.label}
+      label={action.label}
+      onClick={action.onClick}
+    >
+      <Icon name={action.icon} />
+    </ToolbarButton>
+  ));
 
 /** A read this user may not make (gone or forbidden). */
 function missing(error: unknown): boolean {
@@ -275,8 +224,8 @@ function missing(error: unknown): boolean {
  * storage, a read in flight or one seen fresh on another page never moves
  * the page. Opened PDFs never refetch their
  * file, so they follow on their next open. Every follow replaces history and
- * opens the file as a normal open does: its mode and the panels from this
- * device, out of full screen. */
+ * opens the file as a normal open does: its mode from this device, out of full
+ * screen. */
 function useFollowOpenFile(workspaceId: string, fileId: string | null) {
   const navigate = useNavigate();
   const {
@@ -391,57 +340,102 @@ function WorkspaceOpen() {
   useEffect(() => {
     if (loaded) visit({ id: workspaceId, visitor });
   }, [loaded, visit, visitor, workspaceId]);
-  const { data: chapters } = useChapters(workspaceId);
+  const { data: topics } = useTopics(workspaceId);
   const { data: files } = useFiles(workspaceId);
+  const { data: materials } = useMaterials(workspaceId, {
+    errorBoundary: false,
+  });
   const readOnly = isWorkspaceReadOnly(ws?.capabilities);
   const canClone = !!ws?.canClone;
-  const { mutateAsync: addChapter } = useAddChapter(workspaceId);
-  const { mutateAsync: updateChapter } = useUpdateChapter(workspaceId);
+  const { mutateAsync: addTopic } = useAddTopic(workspaceId);
+  const { mutateAsync: updateTopic } = useUpdateTopic(workspaceId);
   const [cloneOpen, setCloneOpen] = useState(false);
 
-  // Breakpoints: one column below 1260px, side panels from there, the left
-  // one only from xl up. The left starts open, the right closed (a chat row
-  // opens it); both toggles and both panels' views are remembered.
+  // Breakpoints: one column below 1260px; from there the rail with one panel
+  // beside it, whichever section shows.
   const lg = useMediaQuery('(min-width: 1260px)');
-  const xl = useMediaQuery('(min-width: 1280px)');
-  const [leftOpen, setLeftOpen] = useLocalPref(
-    PREF_KEYS.leftPanel,
-    true,
-    isBoolean
-  );
-  const [rightOpen, setRightOpen] = useLocalPref(
-    PREF_KEYS.rightPanel,
-    false,
-    isBoolean
-  );
   const oneColumnLayout = !lg;
-  const leftShown = xl && leftOpen;
-  const panelGroupRef = useGroupRef();
-  const [heldHandle] = useState<HeldHandle>(() =>
-    createStore(() => ({ side: null }))
+  const searchedOpenItem = openItemFromSearch(search);
+  const studyPage = !searchedOpenItem && !!search.study;
+  // Make a quiz's pages (X1 and the run) keep the rail and take the panel's
+  // place (Epo 2026-11-02).
+  const makePage =
+    !readOnly && !searchedOpenItem && !search.study && !!search.make;
+  // Agent shows its chat rather than the history (Epo 2026-11-04, option A). A
+  // chat on screen comes back after a reload or a closed tab, with the thread
+  // the chat panel keeps.
+  const [chatShown, setChatShown] = useState(() =>
+    readPref(PREF_KEYS.chatShown(workspaceId), false, isBoolean)
   );
-  useHeldHandle(heldHandle);
+  // The rail's section: that chat, a Study page in the URL shows Study, an open
+  // item or a Make a quiz page Files, else the Dashboard (no panel). Pressing the
+  // shown section again closes or reopens its panel.
+  const [section, setSection] = useState<WorkspaceSection>(() =>
+    chatShown
+      ? 'agent'
+      : studyPage
+        ? 'study'
+        : searchedOpenItem || makePage
+          ? 'files'
+          : 'dashboard'
+  );
+  const [panelOpen, setPanelOpen] = useState(true);
+  const openKey = searchedOpenItem
+    ? `${searchedOpenItem.kind}:${searchedOpenItem.id}`
+    : null;
+  // The centre moves on while Agent keeps its chat: a citation opens its file
+  // beside the chat, and so does anything else opened there. From the Dashboard
+  // or Study, an item shows in Files and a Study page in Study. Leaving Study for
+  // the landing (Back) shows the Dashboard.
+  useEffect(() => {
+    if (studyPage) setSection((was) => (was === 'agent' ? was : 'study'));
+    else if (makePage) setSection((was) => (was === 'agent' ? was : 'files'));
+  }, [makePage, studyPage]);
+  useEffect(() => {
+    if (openKey)
+      setSection((was) =>
+        was === 'dashboard' || was === 'study' ? 'files' : was
+      );
+    else if (!studyPage)
+      setSection((was) => (was === 'study' ? 'dashboard' : was));
+  }, [openKey, studyPage]);
+  const leftOpen = section !== 'dashboard' && panelOpen && !makePage;
+  const leftShown = lg && leftOpen;
+  const chatOnScreen = leftShown && section === 'agent' && chatShown;
+  useEffect(() => {
+    if (!chatOnScreen) return;
+    const key = PREF_KEYS.chatShown(workspaceId);
+    writePref(key, true);
+    return () => removePref(key);
+  }, [chatOnScreen, workspaceId]);
+  const panelGroupRef = useGroupRef();
   const [panelGroup, setPanelGroup] = useState<HTMLDivElement | null>(null);
   usePanelLayout({
-    // One column has no side panels to place.
+    // One column has no side panel to place.
     group: lg ? panelGroup : null,
     groupRef: panelGroupRef,
-    left: leftShown,
-    right: rightOpen,
+    open: leftShown,
   });
-  const [leftView, setLeftView] = useLocalPref(
-    PREF_KEYS.leftView,
-    'chats',
-    isLeftView
-  );
   const [archivedOpen, setArchivedOpen] = useState(false);
-  // The left panel's chat list drives the rail's chat, which reports back
-  // the thread it shows.
+  // Agent's list drives the chat, which reports back the thread it shows.
   const [chatRequest, setChatRequest] = useState<ChatRequest>();
   const [activeChat, setActiveChat] = useState<string | null>(null);
+  /** The chat opens that thread, or with a null id a new chat. */
+  function requestChat(id: string | null, prompt?: string) {
+    setChatRequest((previous) => ({
+      id,
+      prompt,
+      seq: (previous?.seq ?? 0) + 1,
+    }));
+  }
+  /** Every way into a chat: Agent's panel, showing that chat. */
+  function openChat(id: string | null, prompt?: string) {
+    setSection('agent');
+    setPanelOpen(true);
+    setChatShown(true);
+    requestChat(id, prompt);
+  }
 
-  const searchedOpenItem = openItemFromSearch(search);
-  const [tab, setTab] = useLocalPref(PREF_KEYS.rightView, 'files', isPanelTab);
   // One column: Files drops from the top, under the header it was opened from.
   const [filesOpen, setFilesOpen] = useState(false);
   // The Files dropdown hangs from the header, which lives in CenterContent.
@@ -467,12 +461,11 @@ function WorkspaceOpen() {
         }
       : searchedOpenItem;
 
-  /** `push` keeps the page behind in history (the Study page). */
-  function setOpenItem(item: OpenItem | null, push = false) {
+  function setOpenItem(item: OpenItem | null) {
     setCitationTarget(null);
     setFilesOpen(false);
     navigate({
-      replace: !push,
+      replace: true,
       search: searchFromOpenItem(item),
       to: '.',
     });
@@ -481,23 +474,79 @@ function WorkspaceOpen() {
   /** Workspace settings at `tab`, kept in the URL so a link can open it.
    * Opening, switching tabs and closing replace the entry, so the dialog
    * adds no history. */
-  function setSettingsTab(tab: SettingsTab | undefined) {
+  function setSettingsTab(tab: SettingsView | undefined) {
     // The live URL, not this render's: a dialog closing because the app is
     // leaving (Back, Clone, Delete) finds no settings there and stays put.
     const latest = router.latestLocation.search as WorkspaceOpenSearch;
     if (tab === latest.settings) return;
     navigate({
       replace: true,
-      search: (previous) => ({ ...previous, settings: tab }),
+      search: (previous) => ({
+        ...previous,
+        settings: tab,
+        settingsQuery: tab ? previous.settingsQuery : undefined,
+      }),
       to: '.',
     });
   }
 
-  /** The Study page takes the centre pane; Back returns here. */
-  function openProgress() {
+  /** Its search once settled, in the URL beside the tab; a search settling
+   * after the dialog closed stays out. */
+  function setSettingsQuery(query: string) {
+    const latest = router.latestLocation.search as WorkspaceOpenSearch;
+    if (!latest.settings || query === (latest.settingsQuery ?? '')) return;
+    navigate({
+      replace: true,
+      search: (previous) => ({
+        ...previous,
+        settingsQuery: query || undefined,
+      }),
+      to: '.',
+    });
+  }
+
+  /** A Study page takes the centre pane; Back returns here. */
+  function openStudy(page: StudyPage) {
+    if (page === 'members') return;
     setCitationTarget(null);
     setFilesOpen(false);
-    navigate({ search: { study: true }, to: '.' });
+    navigate({ search: { study: page }, to: '.' });
+  }
+  const openPractice = () => openStudy('practice');
+
+  /** The landing: the workspace's Dashboard. */
+  function openDashboard() {
+    setCitationTarget(null);
+    setFilesOpen(false);
+    setSection((was) => (was === 'agent' ? was : 'dashboard'));
+    navigate({ search: {}, to: '.' });
+  }
+
+  /** A rail section: the Dashboard has no panel and opens its page; Study
+   * opens Practice, its only page so far. Pressing the shown section closes
+   * or reopens its panel. */
+  function selectSection(next: WorkspaceSection) {
+    if (next === 'dashboard') {
+      setSection('dashboard');
+      if (searchedOpenItem || search.study || search.make) openDashboard();
+      return;
+    }
+    // A Make a quiz page has no panel: picking a section leaves it for that
+    // section's panel.
+    if (makePage) {
+      if (next === 'study') openPractice();
+      else openDashboard();
+      setSection(next);
+      setPanelOpen(true);
+      return;
+    }
+    if (next === section) {
+      setPanelOpen(!panelOpen);
+      return;
+    }
+    setSection(next);
+    setPanelOpen(true);
+    if (next === 'study' && !search.study) openPractice();
   }
 
   function openCitation(citation: Citation) {
@@ -516,7 +565,7 @@ function WorkspaceOpen() {
       navigate({
         replace: true,
         resetScroll: false,
-        search: { material: citation.materialId, mode: 'view' },
+        search: { material: citation.materialId },
         to: '.',
       });
       return;
@@ -552,11 +601,11 @@ function WorkspaceOpen() {
     navigate({ replace: true, resetScroll: false, search, to: '.' });
   }
 
-  const [generating, setGenerating] = useState<GenerateMode | null>(null);
-  const [chapterForm, setChapterForm] = useState<
+  const [topicForm, setTopicForm] = useState<
     { mode: 'add' } | { mode: 'rename'; id: string; name: string } | null
   >(null);
   const [resumeProvider] = useState(() => resumedConnect(workspaceId));
+  const [makeQuiz, setMakeQuiz] = useState<MakeQuizChoice | null>(null);
   const [addSource, setAddSource] = useState<AddSourceMode | null>(
     resumeProvider ? 'import' : null
   );
@@ -573,40 +622,50 @@ function WorkspaceOpen() {
     if (!loaded || linkTaken.current) return;
     linkTaken.current = true;
     if (add && !readOnly) setAddSource('upload');
-    if (chat) {
-      setTab('chat');
-      setRightOpen(true);
-      setChatRequest((previous) => ({
-        id: null,
-        seq: (previous?.seq ?? 0) + 1,
-      }));
-    }
+    if (chat) openChat(null);
     navigate({
       replace: true,
       search: (previous) => ({ ...previous, add: undefined, chat: undefined }),
       to: '.',
     });
-  }, [add, chat, loaded, navigate, readOnly, setRightOpen, setTab]);
+  }, [add, chat, loaded, navigate, readOnly]);
   // The tour (features/guide/Tour.tsx) opens panels through these while this
-  // page is open.
+  // page is open; when it stops, the panel goes back as it was before it, with
+  // the section fitting what the tour left in the centre.
   const tourPanels = useRef<TourPanels | null>(null);
+  const beforeTour = useRef<{
+    chatShown: boolean;
+    panelOpen: boolean;
+    section: WorkspaceSection;
+  } | null>(null);
   useEffect(() => {
+    const show = (next: WorkspaceSection) => {
+      beforeTour.current ??= { chatShown, panelOpen, section };
+      setSection(next);
+      setPanelOpen(true);
+    };
     tourPanels.current = {
-      // The tour wrote back what the panels were before it.
       restore: () => {
-        setLeftOpen(readPref(PREF_KEYS.leftPanel, true, isBoolean));
-        setLeftView(readPref(PREF_KEYS.leftView, 'chats', isLeftView));
-        setRightOpen(readPref(PREF_KEYS.rightPanel, false, isBoolean));
-        setTab(readPref(PREF_KEYS.rightView, 'files', isPanelTab));
+        const before = beforeTour.current;
+        if (!before) return;
+        beforeTour.current = null;
+        setChatShown(before.chatShown);
+        setPanelOpen(before.panelOpen);
+        setSection(
+          before.section === 'dashboard'
+            ? studyPage
+              ? 'study'
+              : openKey
+                ? 'files'
+                : 'dashboard'
+            : before.section
+        );
       },
       showChats: () => {
-        setLeftOpen(true);
-        setLeftView('chats');
+        show('agent');
+        setChatShown(false);
       },
-      showFiles: () => {
-        setTab('files');
-        setRightOpen(true);
-      },
+      showFiles: () => show('files'),
     };
   });
   useEffect(() => registerTourPanels(tourPanels), []);
@@ -637,41 +696,9 @@ function WorkspaceOpen() {
       <WorkspaceError backLabel={m.workspace_back_to()} backTo="/workspaces" />
     );
 
-  // Every role that can read the workspace studies (the centre Study page),
-  // browses and chats; AI generate lives in the Add file dialog. The rail's
-  // title switches views, Files included while the left panel is open too.
-  const railViews: PanelView<PanelTab>[] = [
-    { icon: 'filesNav', label: m.workspace_tab_files(), value: 'files' },
-    { icon: 'message', label: m.workspace_tab_chat(), value: 'chat' },
-  ];
-  function openChat(id: string | null) {
-    setTab('chat');
-    setRightOpen(true);
-    setChatRequest((previous) => ({ id, seq: (previous?.seq ?? 0) + 1 }));
-  }
-  // Both panels' title menus open the Study page in the centre.
-  const studyItem: MenuItem = {
-    icon: 'knowledge',
-    label: m.workspace_tab_study(),
-    onClick: openProgress,
-  };
-  const leftTitle = (
-    <PanelTitleMenu
-      extra={[studyItem]}
-      onChange={setLeftView}
-      value={leftView}
-      views={[
-        { icon: 'message', label: m.chat_chats(), value: 'chats' },
-        { icon: 'filesNav', label: m.workspace_tab_files(), value: 'files' },
-      ]}
-    />
-  );
-  // Everyone has settings: owner and editor members open on General, viewers
-  // and share-role visitors on their own Study tab.
-  const rowProps = {
-    onOpenSettings: () =>
-      setSettingsTab(canManageWorkspaceSettings(ws) ? 'general' : 'study'),
-  };
+  // Everyone has settings: phones open on the tab list, wider screens on the
+  // first tab (General for owner and editor members, else their own Study).
+  const openSettings = () => setSettingsTab('menu');
   // Below lg an open Office file keeps its bottom chrome (sheet tabs, slide
   // pager) clear: the chat dock stays a button above it.
   const openFile =
@@ -679,6 +706,14 @@ function WorkspaceOpen() {
       ? files?.find((file) => file.id === openItem.id)
       : undefined;
   const officeOpen = !!openFile && !!officeFormatOf(openFile);
+  // Added files start in the open item's topic, else Other files, and Files
+  // highlights that row while the dialog is open (Epo 2026-11-03, board T4).
+  const openTopicId =
+    (openItem?.kind === 'file'
+      ? openFile?.topicId
+      : openItem?.kind === 'material'
+        ? materials?.find((mt) => mt.id === openItem.id)?.topicId
+        : null) ?? null;
 
   // One column has no panels: the header title opens Files, and ⋮ carries
   // the workspace actions their tab rows held.
@@ -691,21 +726,46 @@ function WorkspaceOpen() {
           onClick: () => setAddSource('upload'),
         },
         {
-          icon: 'chapter',
-          label: m.action_add_chapter(),
-          onClick: () => setChapterForm({ mode: 'add' }),
+          icon: 'topic',
+          label: m.action_add_topic(),
+          onClick: () => setTopicForm({ mode: 'add' }),
         },
       ];
+  // One column has no rail: its menus carry the Dashboard and Study.
   const settingsItems: MenuItem[] = [
     {
-      icon: 'knowledge',
-      label: m.workspace_tab_study(),
-      onClick: openProgress,
+      icon: 'dashboard',
+      label: m.workspace_section_dashboard(),
+      onClick: openDashboard,
     },
+    {
+      icon: 'book',
+      label: m.workspace_tab_study(),
+      onClick: openPractice,
+    },
+    // Phones have no Study panel: the pages this person has sit beside Study.
+    ...(studyView(ws).pages.includes('summary')
+      ? [
+          {
+            icon: 'profile' as const,
+            label: m.study_panel_summary(),
+            onClick: () => openStudy('summary'),
+          },
+        ]
+      : []),
+    ...(studyView(ws).pages.includes('assignments')
+      ? [
+          {
+            icon: 'clipboard' as const,
+            label: m.study_panel_assignments(),
+            onClick: () => openStudy('assignments'),
+          },
+        ]
+      : []),
     {
       icon: 'settings',
       label: m.workspace_settings(),
-      onClick: rowProps.onOpenSettings,
+      onClick: openSettings,
     },
   ];
   function openFiles() {
@@ -715,9 +775,9 @@ function WorkspaceOpen() {
       ) ?? null;
     setFilesOpen(true);
   }
-  // The left panel foot's menu: Invite (sharing is managed by owners and
-  // editors), then the study and settings rows.
-  const footerItems: MenuItem[] = [
+  // The rail avatar's workspace part: Invite (sharing is managed by owners
+  // and editors), Workspace settings, and Clone for readers who may.
+  const accountItems: MenuItem[] = [
     ...(canManageWorkspaceSettings(ws)
       ? [
           {
@@ -728,7 +788,20 @@ function WorkspaceOpen() {
           },
         ]
       : []),
-    ...settingsItems,
+    {
+      icon: 'settings',
+      label: m.workspace_settings(),
+      onClick: openSettings,
+    },
+    ...(readOnly && canClone
+      ? [
+          {
+            icon: 'clone' as const,
+            label: m.action_clone_workspace(),
+            onClick: () => setCloneOpen(true),
+          },
+        ]
+      : []),
   ];
   const oneColumn: OneColumnChrome | undefined = oneColumnLayout
     ? {
@@ -741,63 +814,15 @@ function WorkspaceOpen() {
       }
     : undefined;
 
-  const railRow = (actions: TabAction[]) => (
-    <PanelTabRow
-      actions={actions}
-      title={
-        <PanelTitleMenu
-          extra={[studyItem]}
-          onChange={setTab}
-          value={tab}
-          views={railViews}
-        />
-      }
-      {...rowProps}
-    />
-  );
-  // The workspace switcher leads the file tree and scrolls with it.
-  const picker = (
-    <div className="mt-1 flex flex-col">
-      <WorkspacePicker
-        onClone={readOnly && canClone ? () => setCloneOpen(true) : undefined}
-        onOpenSettings={rowProps.onOpenSettings}
-        workspace={ws}
-      />
-    </div>
-  );
-
   const openChatResource = (ref: ResourceRef) =>
     setOpenItem(
       ref.kind === 'material'
         ? { id: ref.id, kind: 'material' }
         : { id: ref.id, kind: 'file' }
     );
-  const filesPanel = (renderTabRow: (actions: TabAction[]) => ReactNode) => (
-    <FilesPanel
-      generating={generating}
-      header={picker}
-      onAddChapter={
-        readOnly ? undefined : () => setChapterForm({ mode: 'add' })
-      }
-      onAddSource={readOnly ? undefined : setAddSource}
-      onNavigate={() => setCitationTarget(null)}
-      onOpenItem={setOpenItem}
-      onRenameChapter={(ch) =>
-        setChapterForm({ id: ch.id, mode: 'rename', name: ch.name })
-      }
-      openItem={openItem}
-      readOnly={readOnly}
-      renderTabRow={renderTabRow}
-      searchable
-      workspaceId={workspaceId}
-    />
-  );
-  // Every tab stays mounted so chat keeps its state while hidden; only the
-  // visible one draws the tab row.
-  const noRow = () => null;
   // The Files dropdown's tree: the workspace as a plain row the size of a file
   // row (no switcher; Back leaves the workspace), Add file, Workspace settings
-  // and Study pinned under it; Add chapter stays in the header's ⋮.
+  // and Study pinned under it; Add topic stays in the header's ⋮.
   const filesDropdown = (
     <FilesPanel
       className="h-auto flex-1"
@@ -831,7 +856,6 @@ function WorkspaceOpen() {
           ))}
         </div>
       }
-      generating={generating}
       header={
         <div className="mt-1.5 flex items-center gap-1.5 px-2 py-1.5">
           <img
@@ -849,172 +873,268 @@ function WorkspaceOpen() {
         setFilesOpen(false);
       }}
       onOpenItem={setOpenItem}
-      onRenameChapter={(ch) =>
-        setChapterForm({ id: ch.id, mode: 'rename', name: ch.name })
+      onRenameTopic={(ch) =>
+        setTopicForm({ id: ch.id, mode: 'rename', name: ch.name })
       }
       openItem={openItem}
       readOnly={readOnly}
-      renderTabRow={noRow}
+      renderTabRow={() => null}
       rowMenus={false}
+      uploadTopic={addSource ? openTopicId : undefined}
       workspaceId={workspaceId}
     />
   );
-  const rail = (
-    <>
-      <div className="min-h-0 flex-1" hidden={tab !== 'files'}>
-        {filesPanel(tab === 'files' ? railRow : noRow)}
-      </div>
-      <div className="min-h-0 flex-1" hidden={tab !== 'chat'}>
-        <AppErrorBoundary resetKeys={[workspaceId]}>
-          <ChatPanel
-            canReprocess={ws.isOwner}
-            color="purple"
-            historyButton={!leftShown}
-            onActiveChange={setActiveChat}
-            onOpenCitation={openCitation}
-            onOpenResource={openChatResource}
-            openResource={openItem}
-            renderTabRow={tab === 'chat' ? railRow : noRow}
-            request={chatRequest}
-            workspaceId={workspaceId}
-          />
-        </AppErrorBoundary>
-      </div>
-    </>
-  );
-
-  const viewer = (
-    <Panel className="w-full" frost="center" sectionClassName="h-full gap-0">
-      <h1 className="sr-only">{ws.name}</h1>
-      <WorkspaceHealth workspace={ws} />
-      <AppErrorBoundary resetKeys={[openItem?.kind, openItem?.id]}>
-        <CenterContent
-          chapters={chapters ?? []}
-          color="purple"
-          item={openItem}
-          leading={
-            <div className="flex items-center gap-0">
-              <ToolbarButton
-                label={m.workspace_back_to()}
-                onClick={() => navigate({ to: '/workspaces' })}
-              >
-                <Icon name="navigationBack" />
-              </ToolbarButton>
-              {xl && (
-                <ToolbarButton
-                  aria-pressed={leftOpen}
-                  className={cn(leftOpen && PANEL_TOGGLE_OPEN)}
-                  label={
-                    leftOpen
-                      ? m.workspace_close_side_panel()
-                      : m.workspace_open_side_panel()
-                  }
-                  onClick={() => setLeftOpen(!leftOpen)}
-                >
-                  <Icon name={leftOpen ? 'panelLeftOpen' : 'panelLeft'} />
-                </ToolbarButton>
-              )}
-            </div>
-          }
-          onAddFile={readOnly ? undefined : () => setAddSource('upload')}
-          onDeleted={() => setOpenItem(null)}
-          oneColumn={oneColumn}
-          onModeChange={(mode) => {
-            void navigate({
-              // The viewer has already completed its save/export checks.
-              ignoreBlocker: true,
-              replace: true,
-              search: (previous) => ({ ...previous, mode }),
-              to: '.',
-            });
+  // Study's pages fill the centre without a file header from lg (boards P1,
+  // P2); one column keeps its header for the Files dropdown and ⋮.
+  // A link to a page this person doesn't have opens Practice.
+  const studyShown: StudyPage =
+    search.study === 'assignments' ||
+    (search.study === 'summary' && studyView(ws).pages.includes('summary'))
+      ? search.study
+      : 'practice';
+  const studyContent =
+    studyPage &&
+    (studyShown === 'summary' ? (
+      <Suspense fallback={null}>
+        <SummaryPage workspaceId={workspaceId} />
+      </Suspense>
+    ) : studyShown === 'assignments' ? (
+      <Suspense fallback={null}>
+        <AssignmentsPage
+          search={{
+            assignment: search.assignment,
+            attempt: search.attempt,
+            member: search.member,
+            newFromQuiz: search.newFromQuiz,
+            own: search.own,
+            question: search.question,
+            tab: search.tab,
           }}
-          onOpenItem={(item) => setOpenItem(item, true)}
-          onOpenProgress={openProgress}
-          onOpenSettings={rowProps.onOpenSettings}
-          plan={search.plan}
-          readOnly={readOnly}
-          requestedMode={search.mode ?? null}
-          study={!!search.study}
-          trailing={
-            lg && (
-              <ToolbarButton
-                aria-pressed={rightOpen}
-                className={cn(rightOpen && PANEL_TOGGLE_OPEN)}
-                label={
-                  rightOpen
-                    ? m.workspace_close_right_panel()
-                    : m.workspace_open_right_panel()
-                }
-                onClick={() => setRightOpen(!rightOpen)}
-              >
-                <Icon name={rightOpen ? 'panelRightOpen' : 'panelRight'} />
-              </ToolbarButton>
-            )
-          }
           workspaceId={workspaceId}
         />
+      </Suspense>
+    ) : (
+      <Suspense fallback={null}>
+        <PracticePage
+          search={{
+            group: search.group,
+            review: search.review,
+            reviewMode: search.reviewMode,
+            topicId: search.topicId,
+          }}
+          workspaceId={workspaceId}
+        />
+      </Suspense>
+    ));
+  const makeSearch = {
+    answers: search.answers,
+    paper: search.paper,
+  };
+  const makeQuizContent =
+    makePage &&
+    (search.make === 'pages' ? (
+      <Suspense fallback={null}>
+        <PagePicker
+          answers={splitIds(search.answers)}
+          onBack={() => {
+            setMakeQuiz({
+              answers: splitIds(search.answers),
+              paper: splitIds(search.paper),
+            });
+            openDashboard();
+          }}
+          onCancel={openDashboard}
+          onStarted={(run) =>
+            void navigate({
+              replace: true,
+              search: { ...makeSearch, make: 'run', run },
+              to: '.',
+            })
+          }
+          paper={splitIds(search.paper)}
+          workspaceId={workspaceId}
+        />
+      </Suspense>
+    ) : (
+      search.run && (
+        <Suspense fallback={null}>
+          <ExtractionProgress
+            onBackToPages={
+              search.paper
+                ? () =>
+                    void navigate({
+                      replace: true,
+                      search: { ...makeSearch, make: 'pages' },
+                      to: '.',
+                    })
+                : undefined
+            }
+            onDone={(quizId) => {
+              void navigate({
+                replace: true,
+                search: { material: quizId },
+                to: '.',
+              });
+            }}
+            onLeave={openDashboard}
+            runId={search.run}
+          />
+        </Suspense>
+      )
+    ));
+  // The landing is the workspace's Dashboard (boards H1, H2).
+  const pageContent =
+    studyContent ||
+    makeQuizContent ||
+    (!openItem && (
+      <WorkspaceDashboard
+        onMakeQuiz={() => setMakeQuiz({ answers: [], paper: [] })}
+        onUpload={() => setAddSource('upload')}
+        workspace={ws}
+      />
+    ));
+  // The page's one h1: the Dashboard, Study's pages, a quiz and a flashcards set
+  // head themselves with theirs.
+  const openMaterialType =
+    openItem?.kind === 'material'
+      ? materials?.find((mt) => mt.id === openItem.id)?.type
+      : undefined;
+  const headsItself =
+    !!pageContent ||
+    openMaterialType === 'quiz' ||
+    openMaterialType === 'flashcards';
+  const viewer = (
+    <Panel className="w-full" frost="center" sectionClassName="h-full gap-0">
+      {!headsItself && <h1 className="sr-only">{ws.name}</h1>}
+      <WorkspaceHealth workspace={ws} />
+      <AppErrorBoundary resetKeys={[openItem?.kind, openItem?.id]}>
+        {lg && pageContent ? (
+          pageContent
+        ) : (
+          <CenterContent
+            color="purple"
+            item={openItem}
+            // From lg the rail carries Home and the section panels.
+            leading={
+              oneColumnLayout ? (
+                <ToolbarButton
+                  label={m.workspace_back_to()}
+                  onClick={() => navigate({ to: '/workspaces' })}
+                >
+                  <Icon name="navigationBack" />
+                </ToolbarButton>
+              ) : null
+            }
+            onDeleted={() => setOpenItem(null)}
+            oneColumn={oneColumn}
+            onModeChange={(mode) => {
+              void navigate({
+                // The viewer has already completed its save/export checks.
+                ignoreBlocker: true,
+                replace: true,
+                search: (previous) => ({ ...previous, mode }),
+                to: '.',
+              });
+            }}
+            page={pageContent || undefined}
+            readOnly={readOnly}
+            requestedMode={search.mode ?? null}
+            topics={topics ?? []}
+            workspaceId={workspaceId}
+          />
+        )}
       </AppErrorBoundary>
     </Panel>
   );
 
-  // The rail runs full height: the left panel's foot carries the account.
-  const railColumn = (
-    <Panel
-      className="h-full w-full"
-      frost="right"
-      sectionClassName="h-full gap-0 overflow-hidden"
-    >
-      {rail}
-    </Panel>
-  );
-  // The left panel: chats or the file tree, members at its foot.
-  const leftPanel = (
+  // The one panel beside the rail (boards T3, P1, P2): Files' tree with its add
+  // menu, Agent's chats or a chat, or Study's pages. The Dashboard has none. The
+  // chat stays mounted through all of them, closed too, so it keeps its thread,
+  // draft and stream.
+  const sectionPanel = (
     <Panel className="w-full" frost="left" sectionClassName="h-full gap-0">
       <div className="flex h-full min-h-0 flex-col" data-workspace-left-panel>
-        <div className="flex min-h-0 flex-1 flex-col">
-          {leftView === 'files' ? (
-            filesPanel((actions) => (
-              <PanelTabRow actions={actions} title={leftTitle} />
-            ))
-          ) : (
-            <>
-              <PanelTabRow
-                actions={[
-                  {
-                    icon: 'archive',
-                    label: m.chat_archived_title(),
-                    onClick: () => setArchivedOpen(true),
-                  },
-                ]}
-                title={leftTitle}
+        {leftOpen && section === 'files' && (
+          <FilesPanel
+            onAddSource={readOnly ? undefined : setAddSource}
+            onAddTopic={
+              readOnly ? undefined : () => setTopicForm({ mode: 'add' })
+            }
+            onNavigate={() => setCitationTarget(null)}
+            onOpenItem={setOpenItem}
+            onRenameTopic={(ch) =>
+              setTopicForm({ id: ch.id, mode: 'rename', name: ch.name })
+            }
+            openItem={openItem}
+            readOnly={readOnly}
+            renderTabRow={(actions) => (
+              <SectionTitle
+                actions={tabButtons(actions)}
+                title={m.workspace_tab_files()}
               />
-              <ConversationList
-                activeId={activeChat}
-                onNew={() => openChat(null)}
-                onOpen={openChat}
-                onRemoved={(id) => id === activeChat && openChat(null)}
-                workspaceId={workspaceId}
-              />
-            </>
-          )}
+            )}
+            searchable
+            uploadTopic={addSource ? openTopicId : undefined}
+            workspaceId={workspaceId}
+          />
+        )}
+        {leftOpen && section === 'agent' && !chatShown && (
+          <>
+            <SectionTitle
+              actions={
+                <>
+                  <VoiceFooterButton
+                    onSend={(prompt) => openChat(null, prompt)}
+                    workspaceId={workspaceId}
+                  />
+                  <ToolbarButton
+                    label={m.chat_archived_title()}
+                    onClick={() => setArchivedOpen(true)}
+                  >
+                    <Icon name="archive" />
+                  </ToolbarButton>
+                </>
+              }
+              title={m.workspace_section_agent()}
+            />
+            <ConversationList
+              activeId={activeChat}
+              onNew={() => openChat(null)}
+              onOpen={openChat}
+              onRemoved={(id) => id === activeChat && requestChat(null)}
+              workspaceId={workspaceId}
+            />
+          </>
+        )}
+        {leftOpen && section === 'study' && (
+          <StudyPanel
+            active={studyPage ? studyShown : null}
+            onOpen={openStudy}
+            workspace={ws}
+          />
+        )}
+        <div className="min-h-0 flex-1" hidden={!chatOnScreen}>
+          <AppErrorBoundary resetKeys={[workspaceId]}>
+            <ChatPanel
+              canReprocess={ws.isOwner}
+              color="purple"
+              hidden={!chatOnScreen}
+              onActiveChange={setActiveChat}
+              onOpenCitation={openCitation}
+              onOpenResource={openChatResource}
+              openResource={openItem}
+              renderTabRow={(actions, title) => (
+                <SectionTitle
+                  actions={tabButtons(actions)}
+                  onBack={() => setChatShown(false)}
+                  title={title}
+                />
+              )}
+              request={chatRequest}
+              workspaceId={workspaceId}
+            />
+          </AppErrorBoundary>
         </div>
-        <AccountFooter
-          canInvite={canManageWorkspaceSettings(ws)}
-          items={footerItems}
-          member={!!ws.role}
-          onOpenSettings={rowProps.onOpenSettings}
-          onVoiceSend={(prompt) => {
-            setTab('chat');
-            setRightOpen(true);
-            setChatRequest((previous) => ({
-              id: null,
-              prompt,
-              seq: (previous?.seq ?? 0) + 1,
-            }));
-          }}
-          workspaceId={workspaceId}
-          workspaceName={ws.name}
-        />
       </div>
     </Panel>
   );
@@ -1029,46 +1149,51 @@ function WorkspaceOpen() {
   // overflow-visible WITH important is so that shadow doesnt get clipped
   return (
     <>
-      <div className="flex h-full min-h-0 flex-col gap-2.5">
+      <div className="flex h-full min-h-0 gap-2">
+        {lg && (
+          <WorkspaceRail
+            accountItems={accountItems}
+            active={section}
+            onSelect={selectSection}
+            workspace={ws}
+          />
+        )}
         <ResizablePanelGroup
           className={cn(
-            'group/panels overflow-visible! flex min-h-0 flex-1',
-            // Collapsed, a side panel leaves no gap or handle behind.
-            'data-files-collapsed:[&>#files]:hidden! data-rail-collapsed:[&>#rail]:hidden!',
-            !leftOpen && '[&>#files]:hidden!',
-            !rightOpen && '[&>#rail]:hidden!'
+            'group/panels overflow-visible! flex min-h-0 min-w-0 flex-1',
+            // Collapsed, the left panel leaves no gap or handle behind.
+            'data-left-collapsed:[&>#left]:hidden!',
+            !leftOpen && '[&>#left]:hidden!'
           )}
           elementRef={setPanelGroup}
           groupRef={panelGroupRef}
-          // A drag can collapse a panel before the pointer lets go. Marked on
+          // A drag can collapse the panel before the pointer lets go. Marked on
           // the group without a render, its gap and handle go in the same
           // frame; it closes only on release, so dragging back reopens it.
           onLayoutChange={(layout) => {
-            panelGroup?.toggleAttribute('data-files-collapsed', !layout.files);
-            panelGroup?.toggleAttribute('data-rail-collapsed', !layout.rail);
+            panelGroup?.toggleAttribute('data-left-collapsed', !layout.left);
           }}
           onLayoutChanged={(layout, { isUserInteraction }) => {
-            if (!isUserInteraction) return;
-            if (leftOpen && layout.files === 0) setLeftOpen(false);
-            if (rightOpen && layout.rail === 0) setRightOpen(false);
+            if (isUserInteraction && leftOpen && layout.left === 0)
+              setPanelOpen(false);
           }}
           orientation="horizontal"
         >
-          {xl && (
+          {lg && (
             <>
-              <SidePanel
-                className="pr-1.5"
-                held={heldHandle}
-                id="files"
-                maxSize="420px"
+              <ResizablePanel
+                className="overflow-visible! pr-1"
+                collapsible
+                // Constant: a changing defaultSize re-registers the group.
+                defaultSize="0%"
+                id="left"
+                maxSize={LEFT_MAX}
                 minSize={`${LEFT_MIN}px`}
               >
-                {/* Unlike the rail's chat, nothing here needs to survive closing. */}
-                {leftOpen && leftPanel}
-              </SidePanel>
+                {sectionPanel}
+              </ResizablePanel>
               <ResizableHandle
-                className="group-data-files-collapsed/panels:[&>div]:hidden"
-                data-side="files"
+                className="group-data-left-collapsed/panels:[&>div]:hidden"
                 disabled={!leftOpen}
                 withHandle={leftOpen}
               />
@@ -1077,8 +1202,7 @@ function WorkspaceOpen() {
           <ResizablePanel
             className={cn(
               'overflow-visible!',
-              leftShown && 'pl-1.5 group-data-files-collapsed/panels:pl-0',
-              lg && rightOpen && 'pr-1.5 group-data-rail-collapsed/panels:pr-0'
+              leftShown && 'pl-1 group-data-left-collapsed/panels:pl-0'
             )}
             id="viewer"
             minSize={oneColumnLayout ? undefined : `${VIEWER_MIN}px`}
@@ -1101,10 +1225,13 @@ function WorkspaceOpen() {
                     canReprocess={ws.isOwner}
                     color="purple"
                     dock={{
-                      // The page's ⋮ keeps Add file, not Add chapter.
+                      // The page's ⋮ keeps Add file, not Add topic.
                       menuItems: [...addItems.slice(0, 1), ...settingsItems],
                       office: officeOpen,
                     }}
+                    // The page picker's footer takes the dock's corner on
+                    // phones; hidden, the chat keeps its draft and stream.
+                    hidden={makePage}
                     onOpenCitation={openCitation}
                     onOpenResource={openChatResource}
                     openResource={openItem}
@@ -1114,25 +1241,6 @@ function WorkspaceOpen() {
               )}
             </div>
           </ResizablePanel>
-          {lg && (
-            <>
-              <ResizableHandle
-                className="group-data-rail-collapsed/panels:[&>div]:hidden"
-                data-side="rail"
-                disabled={!rightOpen}
-                withHandle={rightOpen}
-              />
-              <SidePanel
-                className="pl-1.5"
-                held={heldHandle}
-                id="rail"
-                maxSize="50%"
-                minSize={`${RAIL_MIN}px`}
-              >
-                {railColumn}
-              </SidePanel>
-            </>
-          )}
         </ResizablePanelGroup>
         {oneColumnLayout && (
           <Popover modal onOpenChange={setFilesOpen} open={filesOpen}>
@@ -1167,11 +1275,14 @@ function WorkspaceOpen() {
       />
       <WorkspaceSettingsDialog
         onClose={() => setSettingsTab(undefined)}
+        onQueryChange={setSettingsQuery}
         onTabChange={setSettingsTab}
         open={!!search.settings}
+        query={search.settingsQuery}
         tab={search.settings}
         workspace={ws}
       />
+      <SharingNotice workspace={ws} />
       {canClone && (
         <CloneWorkspaceDialog
           open={cloneOpen}
@@ -1179,37 +1290,54 @@ function WorkspaceOpen() {
           workspace={ws}
         />
       )}
-      {chapterForm && (
+      {topicForm && (
         <NameFormDialog
-          defaultName={chapterForm.mode === 'rename' ? chapterForm.name : ''}
+          defaultName={topicForm.mode === 'rename' ? topicForm.name : ''}
           key={
-            chapterForm.mode === 'rename'
-              ? `rename-${chapterForm.id}`
-              : 'add-chapter'
+            topicForm.mode === 'rename' ? `rename-${topicForm.id}` : 'add-topic'
           }
-          maxLength={addChapterBodyNameMax}
-          onClose={() => setChapterForm(null)}
+          maxLength={addTopicBodyNameMax}
+          onClose={() => setTopicForm(null)}
           onSubmit={async (name) => {
-            if (chapterForm.mode === 'rename') {
-              await updateChapter({ id: chapterForm.id, name });
+            if (topicForm.mode === 'rename') {
+              await updateTopic({ id: topicForm.id, name });
             } else {
-              await addChapter(name);
+              await addTopic(name);
             }
           }}
           open
           submitLabel={
-            chapterForm.mode === 'add' ? m.action_create() : m.action_save()
+            topicForm.mode === 'add' ? m.action_create() : m.action_save()
           }
-          title={
-            chapterForm.mode === 'add' ? m.chapter_new() : m.chapter_rename()
-          }
+          title={topicForm.mode === 'add' ? m.topic_new() : m.topic_rename()}
         />
+      )}
+      {makeQuiz && (
+        <Suspense fallback={null}>
+          <MakeQuizDialog
+            initial={makeQuiz}
+            onClose={() => setMakeQuiz(null)}
+            onContinue={(choice) => {
+              setMakeQuiz(null);
+              void navigate({
+                search: {
+                  answers: choice.answers.join(',') || undefined,
+                  make: 'pages',
+                  paper: choice.paper.join(','),
+                },
+                to: '.',
+              });
+            }}
+            workspaceId={workspaceId}
+            workspaceName={ws.name}
+          />
+        </Suspense>
       )}
       {addSource && (
         <AddSourceDialog
+          defaultTopicId={openTopicId}
           initialMode={addSource}
           onClose={() => setAddSource(null)}
-          onGeneratingChange={setGenerating}
           onOpenItem={setOpenItem}
           open
           resumeProvider={resumeProvider}

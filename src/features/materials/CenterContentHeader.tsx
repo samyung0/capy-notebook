@@ -10,13 +10,14 @@ import {
 } from '@/api/hooks';
 import type {
   AccessCapabilities,
-  Chapter,
   Material,
   MaterialRef,
   SourceFile,
+  Topic,
   UserColor,
 } from '@/api/types';
 import { FileIcon, type FileIconName } from '@/components/ui/FileIcon';
+import { Spinner } from '@/components/ui/feedback';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import type { MenuItem } from '@/components/ui/Menu';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
@@ -35,6 +36,7 @@ import {
   IMAGE_MIN_ZOOM,
   IMAGE_ZOOM_STEP,
   isImageFile,
+  materialCanClone,
   officeFormatOf,
 } from '@/features/files/fileUtils';
 import {
@@ -42,12 +44,14 @@ import {
   type NoteEditorStatus,
   noteEditorStatusLabel,
 } from '@/features/notes/editorMode';
-import { useStudyActions, useStudyStates } from '@/features/study/studyItems';
+import { studyView } from '@/features/study/practice/studyView';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import {
   toFileActionTarget,
   toMaterialActionTarget,
 } from '@/features/workspace/contentActionTarget';
+import { HiddenChip } from '@/features/workspace/HiddenChip';
+import { useToggleHidden } from '@/features/workspace/hiddenFromMembers';
 import {
   OfflineStatus,
   WorkspaceStatusButton,
@@ -58,9 +62,7 @@ import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { useOnlineStatus } from '@/lib/online';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { usePointerDownPress } from '@/lib/usePointerDownPress';
-import { MaterialModeToggle } from './MaterialModeToggle';
 import { MaterialShareDialog } from './MaterialShareDialog';
-import { type MaterialMode, materialModePolicy } from './modePolicy';
 import type { OpenItem } from './openItem';
 import { RoomPresence } from './RoomPresence';
 
@@ -68,13 +70,23 @@ const STATUS_ICON = {
   connecting: 'cloudSync',
   error: 'cloudAlert',
   offline: 'cloudOff',
-  preparing: 'cloudSync',
   reconnecting: 'cloudSync',
   saved: 'CloudIcon',
   synced: 'CloudIcon',
   syncing: 'cloudSync',
   unsaved: 'cloudAlert',
-} satisfies Record<NoteEditorSaveState, IconName>;
+} satisfies Record<
+  Exclude<NoteEditorSaveState, 'opening' | 'syncing-draft'>,
+  IconName
+>;
+
+/** The status's mark: a spinner while a copy waits for its first sync or a
+ * draft is on its way (Epo 2026-11-04), else its cloud. */
+function StatusIcon({ state }: { state: NoteEditorSaveState }) {
+  if (state === 'opening' || state === 'syncing-draft')
+    return <Spinner className="size-4.5" />;
+  return <Icon className="size-4.5" name={STATUS_ICON[state]} />;
+}
 
 /* The header's labels follow its width. A size container breaks WebKit's
    scroll anchoring for a reader while blocks are added above (Q393), so
@@ -103,7 +115,7 @@ function measureHeader(header: HTMLDivElement | null) {
 /** The workspace below lg has no side panels: the title opens Files from the
  * top, and ⋮ carries the workspace actions the panels held. */
 export interface OneColumnChrome {
-  /** Add file and Add chapter, first in ⋮. */
+  /** Add file and Add topic, first in ⋮. */
   addItems: MenuItem[];
   filesOpen: boolean;
   onOpenFiles: () => void;
@@ -198,6 +210,7 @@ export function EditorSaveStatus({
   if (!(online && editorStatus && statusLabel)) return null;
   const failed =
     editorStatus.saveState === 'error' || editorStatus.saveState === 'unsaved';
+  const opening = editorStatus.saveState === 'opening';
   if (labelled)
     return (
       <span
@@ -210,8 +223,8 @@ export function EditorSaveStatus({
         role="status"
       >
         {/* Lifted 1px to Fustat's cap band, level with the label. */}
-        <Icon className="size-4.5" name={STATUS_ICON[editorStatus.saveState]} />
-        {statusLabel}
+        <StatusIcon state={editorStatus.saveState} />
+        {opening ? <span className="sr-only">{statusLabel}</span> : statusLabel}
       </span>
     );
   return (
@@ -232,11 +245,12 @@ export function EditorSaveStatus({
       >
         {/* Unlifted, a touch below the ⋮: the cloud's glyph leaves room
             under its base, so its ink centre reads high. */}
-        <Icon className="size-4.5" name={STATUS_ICON[editorStatus.saveState]} />
+        <StatusIcon state={editorStatus.saveState} />
         <span
           className={cn(
             'sr-only',
             labelWhenWide &&
+              !opening &&
               // Dropped 1px with the cloud.
               't-meta @xl/header:not-sr-only @xl/header:ml-2 translate-y-[1px] @xl/header:whitespace-nowrap group-data-roomy/header:not-sr-only group-data-roomy/header:ml-2 group-data-roomy/header:whitespace-nowrap'
           )}
@@ -247,9 +261,12 @@ export function EditorSaveStatus({
           <span className="sr-only">{m.editor_open_slowed()}</span>
         )}
       </TooltipTrigger>
-      <TooltipContent side="bottom">
-        {slowedLine ? m.editor_open_slowed() : statusLabel}
-      </TooltipContent>
+      {/* Opening has no words but the slowed line. */}
+      {(slowedLine || !opening) && (
+        <TooltipContent side="bottom">
+          {slowedLine ? m.editor_open_slowed() : statusLabel}
+        </TooltipContent>
+      )}
     </Tooltip>
   );
 }
@@ -271,8 +288,6 @@ function useHeader(
   material?: Material | MaterialRef;
   materialCapabilities?: AccessCapabilities;
   showImageZoom: boolean;
-  modes?: readonly MaterialMode[];
-  defaultMode?: MaterialMode;
 } {
   const { data: fileData } = useFile(item.kind === 'file' ? item.id : null, {
     errorBoundary: false,
@@ -332,61 +347,27 @@ function useHeader(
     };
   }
   const kind = 'type' in mt ? mt.type : mt.kind;
-  const policy = materialModePolicy(capabilities);
   const embedded = 'parentMaterialId' in mt && !!mt.parentMaterialId;
   return {
     canClone:
       !embedded &&
       (standalone
         ? !('workspaceId' in mt && mt.workspaceId)
-        : !!workspace?.canClone),
-    defaultMode: policy.defaultMode,
-    icon: materialIconName(kind),
+        : materialCanClone(workspace, listed?.assigned)),
+    icon: materialIconName(kind, listed?.assigned),
     material: mt,
     materialCapabilities: capabilities,
-    modes: policy.modes,
     showImageZoom: false,
     title: mt.title,
   };
 }
 
-/** Mark as read, right of the view/edit toggle: an open book with a check, a
- * closed one in the marks' green once read; clicking again marks it unread. */
-function ReadToggle({
-  item,
-  workspaceId,
-}: {
-  item: OpenItem;
-  workspaceId: string;
-}) {
-  const { enabled, states } = useStudyStates(workspaceId);
-  const { set } = useStudyActions(workspaceId);
-  if (!enabled) return null;
-  const done = states.get(item.id) === 'done';
-  return (
-    <ToolbarButton
-      label={done ? m.study_mark_unread() : m.study_mark_read()}
-      onClick={() =>
-        set({ id: item.id, kind: item.kind }, done ? null : 'done')
-      }
-    >
-      {/* Lifted 1px, level with the title, the ⋮ and the cloud beside it. */}
-      <Icon
-        className={cn(done && 'text-tint-success-fg')}
-        name={done ? 'bookCheck' : 'bookOpenCheck'}
-      />
-    </ToolbarButton>
-  );
-}
-
 export function Header({
-  chapters,
+  topics,
   color,
   item,
   imageZoom,
   onImageZoomChange,
-  materialMode,
-  onMaterialModeChange,
   isFullscreen,
   onDeleted,
   onToggleFullscreen,
@@ -394,7 +375,6 @@ export function Header({
   readOnly,
   workspaceId,
   leading,
-  trailing,
   standalone = false,
   fileControls,
   fileActions,
@@ -417,15 +397,11 @@ export function Header({
   presence: PresenceStore;
   /** Workspace chrome drawn before the file: layout toggle and workspace menu. */
   leading?: ReactNode;
-  /** Workspace chrome at the header's right end: the right panel toggle. */
-  trailing?: ReactNode;
-  chapters: Chapter[];
+  topics: Topic[];
   color?: UserColor;
   item: OpenItem;
   imageZoom: number;
   onImageZoomChange: (next: number) => void;
-  materialMode: MaterialMode | null;
-  onMaterialModeChange: (mode: MaterialMode) => void;
   isFullscreen: boolean;
   onDeleted: () => void;
   onToggleFullscreen: () => void;
@@ -442,21 +418,13 @@ export function Header({
     materialCapabilities,
     title,
     showImageZoom,
-    modes,
-    defaultMode,
   } = useHeader(item, workspaceId, standalone);
-  const activeMode = readOnly
-    ? 'view'
-    : materialMode && modes?.includes(materialMode)
-      ? materialMode
-      : defaultMode;
   const navigate = useNavigate();
+  const { data: studyWorkspace } = useWorkspace(standalone ? '' : workspaceId, {
+    errorBoundary: false,
+  });
   // Phones have no room to go fuller than the panel already is.
   const sm = useMediaQuery('(min-width: 640px)');
-  const { enabled: studying, states: studyStates } = useStudyStates(
-    standalone ? '' : workspaceId
-  );
-  const { menuItems: studyMenu } = useStudyActions(workspaceId);
   const office = !!file && !!officeFormatOf(file);
   // A standalone material's owner shares it from here as from its card.
   const shareable =
@@ -476,17 +444,36 @@ export function Header({
     'min-w-0 truncate',
     leading ? 't-body font-semibold' : 't-subtitle'
   );
+  // Owners and editors who may change the item show it to members from its
+  // chip as from the ⋮ menu; viewers never see a hidden item.
+  const itemReadOnly =
+    readOnly || (materialCapabilities ? !materialCapabilities.canEdit : false);
+  const toggleHidden = useToggleHidden(workspaceId);
+  const hiddenChip =
+    file?.hidden || material?.hidden ? (
+      <HiddenChip
+        onShow={
+          itemReadOnly || !workspaceId
+            ? undefined
+            : () => toggleHidden({ id: item.id, type: item.kind }, false)
+        }
+      />
+    ) : null;
   const name = oneColumn ? (
-    <h2 className="min-w-0">
-      <FilesTitleButton chrome={oneColumn}>
-        {fileIcon}
-        <span className={nameClassName}>{title ?? '--'}</span>
-      </FilesTitleButton>
-    </h2>
+    <>
+      <h2 className="min-w-0">
+        <FilesTitleButton chrome={oneColumn}>
+          {fileIcon}
+          <span className={nameClassName}>{title ?? '--'}</span>
+        </FilesTitleButton>
+      </h2>
+      {hiddenChip}
+    </>
   ) : (
     <>
       {fileIcon}
       <h2 className={nameClassName}>{title ?? '--'}</h2>
+      {hiddenChip}
     </>
   );
   const right = (
@@ -495,9 +482,6 @@ export function Header({
       {/* A live item's Undo and Redo portal here in Edit (live-items D5). */}
       {(item.kind === 'material' || office) && fileActions}
       {item.kind === 'file' && fileControls}
-      {!readOnly && modes && modes.length > 1 && activeMode && (
-        <MaterialModeToggle mode={activeMode} onChange={onMaterialModeChange} />
-      )}
       {showImageZoom && (
         <>
           <ToolbarButton
@@ -522,18 +506,14 @@ export function Header({
       )}
     </>
   );
-  // Mark as read and the file's ⋮ follow its name, the status icons after
-  // them; phones drop the read toggle and keep ⋮ at the row's end.
+  // The file's ⋮ follows its name, the status icons after it; phones keep
+  // ⋮ at the row's end.
   const menu = (
     <div className="flex items-center gap-0">
-      {!(standalone || compact) && (
-        <ReadToggle item={item} workspaceId={workspaceId} />
-      )}
       <ContentActions
         beforeDeleteItems={oneColumn?.settingsItems}
         canClone={canClone}
         canMoveTo={canMoveTo}
-        chapters={chapters}
         color={color}
         content={
           file
@@ -546,11 +526,24 @@ export function Header({
         key={`${item.kind}:${item.id}`}
         leadingItems={[
           ...(oneColumn?.addItems ?? []),
-          ...(studying && !standalone
-            ? studyMenu(
-                { id: item.id, kind: item.kind },
-                studyStates.get(item.id)
-              )
+          // A quiz opens New assignment with itself set (board A1).
+          ...(item.kind === 'material' &&
+          (icon === materialIconName('quiz') || icon === 'assignment') &&
+          studyView(studyWorkspace).manages
+            ? [
+                {
+                  icon: 'clipboard',
+                  label: m.assignment_new(),
+                  onClick: () =>
+                    void navigate({
+                      search: {
+                        newFromQuiz: item.id,
+                        study: 'assignments' as const,
+                      },
+                      to: '.',
+                    }),
+                } satisfies MenuItem,
+              ]
             : []),
           ...(sm
             ? [
@@ -580,12 +573,10 @@ export function Header({
           })
         }
         onShare={shareable?.sharePath ? () => setSharing(true) : undefined}
-        readOnly={
-          readOnly ||
-          (materialCapabilities ? !materialCapabilities.canEdit : false)
-        }
+        readOnly={itemReadOnly}
         renameFieldLabel={m.files_file_name()}
         showMove={!standalone}
+        topics={topics}
         workspaceId={workspaceId}
       />
       {sharing && shareable && (
@@ -678,7 +669,6 @@ export function Header({
         >
           {right}
           {compact && menu}
-          {trailing}
         </div>
       </div>
     );
@@ -711,6 +701,7 @@ export function Header({
           <>
             {fileIcon}
             <h2 className={cn(nameClassName, 'flex-1')}>{title ?? '--'}</h2>
+            {hiddenChip}
           </>
         )}
         {statusRow}
@@ -718,7 +709,6 @@ export function Header({
       <div className="ml-auto flex items-center gap-0">
         {right}
         {compact && menu}
-        {trailing}
       </div>
     </div>
   );

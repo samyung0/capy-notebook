@@ -486,10 +486,8 @@ func (s *Store) beginProviderSession(
 	// The session row's foreign key share-locks the workspace. Taken after the
 	// account, that lock waited on a workspace writer (FOR UPDATE) that waited
 	// on this account: workspace first, as every workspace write does.
-	if workspaceID != "" {
-		if _, err := tx.Exec(ctx, `SELECT 1 FROM workspaces WHERE id=$1 FOR KEY SHARE`, workspaceID); err != nil {
-			return "", err
-		}
+	if err := lockWorkspaceKeyShareTx(ctx, tx, workspaceID); err != nil {
+		return "", err
 	}
 	if err := s.lockAccountSessionsTx(ctx, tx, actorUserID); err != nil {
 		return "", err

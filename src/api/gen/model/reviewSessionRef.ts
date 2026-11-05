@@ -10,7 +10,6 @@ import type { ReviewSessionRefMode } from './reviewSessionRefMode.ts';
 import type { SessionItem } from './sessionItem.ts';
 
 export interface ReviewSessionRef {
-  chapterId?: string;
   evidence?: ReviewEvidence;
   group: ReviewSessionRefGroup;
   /** Minted by the browser when the session starts */
@@ -22,8 +21,7 @@ export interface ReviewSessionRef {
   items: SessionItem[];
   /** Omitted for a review started from the workspace list */
   mode?: ReviewSessionRefMode;
-  /** The plan of a plan group */
-  planId?: string;
+  topicId?: string;
   /** @minLength 1 */
   workspaceId: string;
 }

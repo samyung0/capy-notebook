@@ -8,7 +8,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import { toast } from 'sonner';
 import { fileLinksQuery, useFileLinks, useMe, useWorkspace } from '@/api/hooks';
 import type {
   Region,
@@ -20,7 +19,7 @@ import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { Button } from '@/components/ui/Button';
 import { OfficeInsetContext } from '@/components/ui/floatingBarContext';
 import { Icon } from '@/components/ui/Icon';
-import { userToast } from '@/components/ui/userToast';
+import { dismissToast, userToast } from '@/components/ui/userToast';
 import { ImageViewer } from '@/features/files/ImageViewer';
 import { onPhone, tabHidden } from '@/features/notes/roomSwap';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
@@ -224,7 +223,7 @@ function FileViewerContent({
       variant: 'error',
     });
     return () => {
-      toast.dismiss(id);
+      dismissToast(id);
     };
   }, [annotationsErrorUpdatedAt, annotationsFailed, file?.id, isPdf]);
   if (!file) {

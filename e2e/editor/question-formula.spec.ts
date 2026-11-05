@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { MathfieldElement } from 'mathlive';
+import { openQuestionDialog } from '../helpers/quizEditor';
 import { m } from '../i18n';
 import { openEditorNote } from './helpers';
 
@@ -154,7 +155,7 @@ test('a wide display formula scrolls in its own box with an edge fade, a fitting
   // The smallest supported phone: on narrow widths the stem runs the full
   // width under the number, and the reaction equation just fits at 390 px.
   await page.setViewportSize({ height: 844, width: 360 });
-  await page.goto('/materials/qz_1?mode=edit');
+  await page.goto('/quizzes/qz_1/attempt');
   // The first question's reaction equation is wider than a 360 px column.
   const formula = page
     .locator('[data-question-id]')
@@ -222,11 +223,8 @@ test('a wide display formula scrolls in its own box with an edge fade, a fitting
 test('a question formula selects on click for Delete and edits on double click', async ({
   page,
 }) => {
-  await page.goto('/materials/qz_1?mode=edit');
-  await page
-    .getByRole('button', { exact: true, name: m.action_edit() })
-    .first()
-    .click({ timeout: 30_000 });
+  await page.goto('/materials/qz_1');
+  await openQuestionDialog(page);
   const dialog = page.getByRole('dialog');
   // The stem's second block is the reaction's display formula.
   await dialog
@@ -251,7 +249,12 @@ test('a question formula selects on click for Delete and edits on double click',
   await expect(field).toBeVisible();
   await field.press('Enter');
   await expect(field).toHaveCount(0);
-  await formulas.first().click();
+  // Closing the field sends focus to the dialog for a moment, and a click in
+  // that moment leaves it there, where Delete misses the editor.
+  await expect(async () => {
+    await formulas.first().click();
+    await expect(editor).toBeFocused({ timeout: 200 });
+  }).toPass();
   await expect(field).toHaveCount(0);
   await page.keyboard.press('Delete');
   await expect(formulas).toHaveCount(count - 1);

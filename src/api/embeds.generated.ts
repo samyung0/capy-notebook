@@ -798,6 +798,7 @@ export const EMBED_CATALOG = {
       ],
       "assets": [
         "question.stem[].image.assetId",
+        "question.groups[].blocks[].image.assetId",
         "question.parts[].blocks[].image.assetId",
         "question.parts[].solution[].image.assetId"
       ],
@@ -1350,7 +1351,7 @@ export const EMBED_CATALOG = {
     "QUESTION_UNIT_MAX": 100,
     "QUIZ_MARKSCHEME_MAX": 5,
     "QUIZ_OPEN_ANSWER_MAX": 5000,
-    "QUIZ_OPEN_PARTS_MAX": 20,
+    "QUIZ_OPEN_PARTS_MAX": 100,
     "QUIZ_PARTS_MAX": 100,
     "QUIZ_QUESTION_PARTS_MAX": 7
   }

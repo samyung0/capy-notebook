@@ -2,6 +2,7 @@ import type { FileKind, MaterialRefType, SourceFile } from '@/api/types';
 
 /** Symbol ids in src/assets/catppuccin.svg. */
 export const FILE_ICON_NAMES = [
+  'assignment',
   '_folder',
   '_folder_open',
   '_file',
@@ -266,6 +267,11 @@ export function fileIconName({
     : KIND_ICON[kind];
 }
 
-export function materialIconName(type: MaterialRefType): FileIconName {
-  return MATERIAL_ICON[type];
+/** `assigned`: a quiz under an open assignment shows the assignment's icon in
+ * every list (Epo 2026-11-04). */
+export function materialIconName(
+  type: MaterialRefType,
+  assigned?: boolean
+): FileIconName {
+  return assigned ? 'assignment' : MATERIAL_ICON[type];
 }

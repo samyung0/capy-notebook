@@ -9,6 +9,8 @@
 //! item's loaded room, else its stored `materials.content`, through
 //! [item_from_content]).
 
+use std::collections::HashMap;
+
 use serde_json::Value;
 use yrs::ReadTxn;
 use yrs::branch::BranchPtr;
@@ -512,7 +514,14 @@ fn question(q: &Value) -> Vec<String> {
         push(out, lines.join("\n"));
     };
     blocks(&q["stem"], &mut out);
+    let mut groups: HashMap<&str, &Value> = objects(&q["groups"])
+        .filter_map(|group| Some((group["id"].as_str()?, &group["blocks"])))
+        .collect();
     for part in objects(&q["parts"]) {
+        // A group's text and figures, once, before its first part.
+        if let Some(group) = part["group"].as_str().and_then(|id| groups.remove(id)) {
+            blocks(group, &mut out);
+        }
         blocks(&part["blocks"], &mut out);
         let answer = &part["answer"];
         match answer["type"].as_str() {

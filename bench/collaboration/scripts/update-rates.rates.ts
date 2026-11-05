@@ -257,7 +257,7 @@ function headroom(events: Sent[]) {
 
 async function openNote(page: Page, note: { id: string; readyText: string }) {
   await page.goto(
-    `/workspaces/${PERF_WORKSPACE_ID}?material=${encodeURIComponent(note.id)}&mode=edit`
+    `/workspaces/${PERF_WORKSPACE_ID}?material=${encodeURIComponent(note.id)}`
   );
   if (note === PERF_LARGE_NOTE)
     await page.getByTestId('heavy-material-open').click({ timeout: 180_000 });

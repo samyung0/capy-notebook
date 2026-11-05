@@ -35,7 +35,7 @@ A caller's effective role is the more permissive of their membership and the
 share role. Roles are grants rather than caps: capping a member at their
 invited role would not restrain anyone, since the same link hands that access
 to every other signed-in account. Content authority (documents, comments,
-chapters, files, materials, generation, clone) follows the effective role;
+topics, files, materials, generation, clone) follows the effective role;
 workspace settings follow persisted membership only. */
 
 // workspaceRoles reads the actor's persisted membership and the role the
@@ -135,7 +135,7 @@ func (s *Store) WorkspaceEffectiveRole(ctx context.Context, userID, wsID string)
 	return effective, nil
 }
 
-// AssertWorkspaceEditor gates workspace content: chapters, files, materials,
+// AssertWorkspaceEditor gates workspace content: topics, files, materials,
 // generation. Member editors and link/public share-role editors both pass.
 func (s *Store) AssertWorkspaceEditor(ctx context.Context, userID, wsID string) error {
 	role, err := s.WorkspaceEffectiveRole(ctx, userID, wsID)
@@ -211,7 +211,10 @@ func CapabilitiesForRole(role WorkspaceRole, canView bool) AccessCapabilities {
 //   - signed-in nonmember of a link/public workspace: the share role
 //   - standalone link/public material: viewer
 //
-// The owner's lifecycle hides it as workspaceRoles does.
+// The owner's lifecycle hides it as workspaceRoles does. A workspace material
+// hidden from members is not found for a viewer (Epo 2026-11-03), nor is a quiz
+// for a viewer it is assigned to until that assignment closes (Epo 2026-11-04);
+// an embedded one follows its note.
 func materialEffectiveAccess(
 	ctx context.Context,
 	q rowQueryer,
@@ -225,10 +228,11 @@ func materialEffectiveAccess(
 	var workspacePrivacy *Privacy
 	var shareRole *ShareRole
 	var memberRole WorkspaceRole
-	var linkGranted bool
+	var linkGranted, hidden bool
 	err := q.QueryRow(ctx, `
 		SELECT m.owner_user_id, m.privacy, m.workspace_id, w.user_id, w.privacy, w.share_role,
 			COALESCE(wm.role, ''), m.parent_material_id,
+			m.hidden OR (m.kind='quiz' AND `+quizAssignedToSQL("m.id", "$2")+` IS NOT NULL),
 			EXISTS(SELECT 1 FROM workspace_link_grants g WHERE g.workspace_id=w.id AND g.user_id=$2)
 				OR EXISTS(SELECT 1 FROM material_link_grants g WHERE g.material_id=m.id AND g.user_id=$2)
 		FROM materials m
@@ -247,6 +251,7 @@ func materialEffectiveAccess(
 		&shareRole,
 		&memberRole,
 		&parentID,
+		&hidden,
 		&linkGranted,
 	)
 	if isNoRows(err) {
@@ -259,33 +264,101 @@ func materialEffectiveAccess(
 	if parentID != nil {
 		return materialEffectiveAccess(ctx, q, userID, *parentID)
 	}
-	// A workspace material's owner_user_id is its payer (uploader pays) and
-	// grants nothing: access follows the workspace.
-	if wsID == nil && materialOwner != nil && *materialOwner == userID {
-		return RoleOwner, nil
+	row := materialAccessRow{
+		materialOwner: materialOwner, materialPrivacy: materialPrivacy,
+		workspaceID: wsID, workspaceOwner: workspaceOwner, workspacePrivacy: workspacePrivacy,
+		shareRole: shareRole, memberRole: memberRole, hidden: hidden, linkGranted: linkGranted,
 	}
-	if workspaceOwner != nil && *workspaceOwner == userID {
-		return RoleOwner, nil
-	}
-
-	// A link resource reaches a nonmember only through a redeemed link.
-	workspaceShared := wsID != nil && workspacePrivacy != nil &&
-		(*workspacePrivacy == PrivacyPublic ||
-			(*workspacePrivacy == PrivacyLink && (memberRole != "" || linkGranted)))
-	materialShared := wsID == nil &&
-		(materialPrivacy == PrivacyPublic || (materialPrivacy == PrivacyLink && linkGranted))
-	var sharedRole WorkspaceRole
-	switch {
-	case workspaceShared && shareRole != nil:
-		sharedRole = shareRole.WorkspaceRole()
-	case workspaceShared, materialShared:
-		sharedRole = RoleViewer
-	}
-	role := MaxRole(memberRole, sharedRole)
+	role := row.role(userID)
 	if role == "" {
 		return "", ErrNotFound
 	}
 	return role, nil
+}
+
+// materialAccessRow is what a material's access depends on, read for its
+// caller; an embedded material's are its note's.
+type materialAccessRow struct {
+	materialOwner, workspaceID, workspaceOwner *string
+	materialPrivacy                            Privacy
+	workspacePrivacy                           *Privacy
+	shareRole                                  *ShareRole
+	memberRole                                 WorkspaceRole
+	hidden, linkGranted                        bool
+}
+
+// role is the caller's effective role, "" when the material is out of reach.
+func (r materialAccessRow) role(userID string) WorkspaceRole {
+	// A workspace material's owner_user_id is its payer (uploader pays) and
+	// grants nothing: access follows the workspace.
+	if r.workspaceID == nil && r.materialOwner != nil && *r.materialOwner == userID {
+		return RoleOwner
+	}
+	if r.workspaceOwner != nil && *r.workspaceOwner == userID {
+		return RoleOwner
+	}
+
+	// A link resource reaches a nonmember only through a redeemed link.
+	workspaceShared := r.workspaceID != nil && r.workspacePrivacy != nil &&
+		(*r.workspacePrivacy == PrivacyPublic ||
+			(*r.workspacePrivacy == PrivacyLink && (r.memberRole != "" || r.linkGranted)))
+	materialShared := r.workspaceID == nil &&
+		(r.materialPrivacy == PrivacyPublic || (r.materialPrivacy == PrivacyLink && r.linkGranted))
+	var sharedRole WorkspaceRole
+	switch {
+	case workspaceShared && r.shareRole != nil:
+		sharedRole = r.shareRole.WorkspaceRole()
+	case workspaceShared, materialShared:
+		sharedRole = RoleViewer
+	}
+	role := MaxRole(r.memberRole, sharedRole)
+	if role == "" || (r.hidden && !RoleCanEdit(role)) {
+		return ""
+	}
+	return role
+}
+
+// ReadableMaterialIDs lists which of ids the caller can read, by the same rule
+// as MaterialEffectiveRole, in one query: the sweep of a device's kept copies
+// asks at every page load, and a token per copy would cost seven reads each
+// (Epo 2026-11-04). The order is the store's.
+func (s *Store) ReadableMaterialIDs(ctx context.Context, userID string, ids []string) ([]string, error) {
+	if userID == "" {
+		return []string{}, nil
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT wanted.id, m.owner_user_id, m.privacy, m.workspace_id, w.user_id, w.privacy, w.share_role,
+			COALESCE(wm.role, ''), m.hidden OR (m.kind='quiz' AND `+quizAssignedToSQL("m.id", "$2")+` IS NOT NULL),
+			EXISTS(SELECT 1 FROM workspace_link_grants g WHERE g.workspace_id=w.id AND g.user_id=$2)
+				OR EXISTS(SELECT 1 FROM material_link_grants g WHERE g.material_id=m.id AND g.user_id=$2)
+		FROM materials wanted
+		JOIN materials m ON m.id=COALESCE(wanted.parent_material_id, wanted.id)
+		LEFT JOIN workspaces w ON w.id=m.workspace_id
+		JOIN users owner ON owner.id=COALESCE(w.user_id, m.owner_user_id)
+		LEFT JOIN workspace_members wm
+			ON wm.workspace_id=w.id AND wm.user_id=$2
+		WHERE wanted.id = ANY($1::text[]) AND wanted.trashed_at IS NULL AND m.trashed_at IS NULL
+			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
+			AND (owner.suspended_at IS NULL OR owner.id=$2)`, ids, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	readable := []string{}
+	for rows.Next() {
+		var id string
+		var row materialAccessRow
+		if err := rows.Scan(
+			&id, &row.materialOwner, &row.materialPrivacy, &row.workspaceID, &row.workspaceOwner,
+			&row.workspacePrivacy, &row.shareRole, &row.memberRole, &row.hidden, &row.linkGranted,
+		); err != nil {
+			return nil, err
+		}
+		if row.role(userID) != "" {
+			readable = append(readable, id)
+		}
+	}
+	return readable, rows.Err()
 }
 
 // UpdateStandaloneMaterialPrivacy is the only material-sharing write. It
@@ -338,27 +411,38 @@ func (s *Store) AssertMaterialEditor(ctx context.Context, userID, matID string) 
 // FileWorkspaceID resolves the owning workspace of a file (for access checks);
 // "" for a standalone file, whose access is FileEffectiveRole's.
 func (s *Store) FileWorkspaceID(ctx context.Context, fileID string) (string, error) {
-	var wsID string
-	err := s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id, '') FROM files WHERE id=$1 AND trashed_at IS NULL`, fileID).Scan(&wsID)
-	if isNoRows(err) {
-		return "", ErrNotFound
-	}
+	wsID, _, err := s.fileWorkspace(ctx, fileID)
 	return wsID, err
+}
+
+// fileWorkspace is a file's workspace ("" when standalone) and whether it is
+// hidden from members.
+func (s *Store) fileWorkspace(ctx context.Context, fileID string) (wsID string, hidden bool, err error) {
+	err = s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id, ''), hidden FROM files WHERE id=$1 AND trashed_at IS NULL`, fileID).Scan(&wsID, &hidden)
+	if isNoRows(err) {
+		return "", false, ErrNotFound
+	}
+	return wsID, hidden, err
 }
 
 // FileEffectiveRole is the caller's role on a file: its workspace role, or
 // for a standalone file owner to its payer alone (never shared, Epo
 // 2026-10-27), hidden by the owner's lifecycle as a standalone material is.
+// A file hidden from members is not found for a viewer (Epo 2026-11-03).
 func (s *Store) FileEffectiveRole(ctx context.Context, userID, fileID string) (WorkspaceRole, error) {
 	if userID == "" {
 		return "", ErrNotFound
 	}
-	wsID, err := s.FileWorkspaceID(ctx, fileID)
+	wsID, hidden, err := s.fileWorkspace(ctx, fileID)
 	if err != nil {
 		return "", err
 	}
 	if wsID != "" {
-		return s.WorkspaceEffectiveRole(ctx, userID, wsID)
+		role, err := s.WorkspaceEffectiveRole(ctx, userID, wsID)
+		if err == nil && hidden && !RoleCanEdit(role) {
+			return "", ErrNotFound
+		}
+		return role, err
 	}
 	var owned bool
 	if err := s.pool.QueryRow(ctx, `SELECT EXISTS (
@@ -374,10 +458,10 @@ func (s *Store) FileEffectiveRole(ctx context.Context, userID, fileID string) (W
 	return RoleOwner, nil
 }
 
-// ChapterWorkspaceID resolves the owning workspace of a chapter.
-func (s *Store) ChapterWorkspaceID(ctx context.Context, chapterID string) (string, error) {
+// TopicWorkspaceID resolves the owning workspace of a topic.
+func (s *Store) TopicWorkspaceID(ctx context.Context, topicID string) (string, error) {
 	var wsID string
-	err := s.pool.QueryRow(ctx, `SELECT workspace_id FROM chapters WHERE id=$1`, chapterID).Scan(&wsID)
+	err := s.pool.QueryRow(ctx, `SELECT workspace_id FROM topics WHERE id=$1`, topicID).Scan(&wsID)
 	if isNoRows(err) {
 		return "", ErrNotFound
 	}
@@ -479,19 +563,23 @@ func (s *Store) ListPublicWorkspaces(ctx context.Context, userID, cursor string)
 	return out, next, nil
 }
 
-// CanCloneFrom is who may copy what sits in a workspace, on roles already
-// read (assertCloneSourceTx): members of any role and effective editors.
-func CanCloneFrom(member, effective WorkspaceRole) bool {
+// CanCloneFrom is who may copy what sits in a workspace, on roles already read
+// (assertCloneSourceTx): members of any role and effective editors; of a class,
+// effective editors alone (Epo 2026-11-04), so never a viewer member.
+func CanCloneFrom(kind WorkspaceKind, member, effective WorkspaceRole) bool {
+	if kind == WorkspaceClass {
+		return RoleCanEdit(effective)
+	}
 	return member != "" || RoleCanEdit(effective)
 }
 
 // exploreCloneCols reads, after a materials row m joined to its workspace w
 // and the caller's ($1) membership me, whether the caller may clone it: a
 // standalone public item is open to every reader (exploreCanClone).
-const exploreCloneCols = memberRoleCol + `, COALESCE(w.privacy,'private'), COALESCE(w.share_role,'viewer')`
+const exploreCloneCols = memberRoleCol + `, COALESCE(w.privacy,'private'), COALESCE(w.share_role,'viewer'), COALESCE(w.kind,'personal')`
 
-func exploreCanClone(workspaceID string, member WorkspaceRole, privacy Privacy, shareRole ShareRole) bool {
-	return workspaceID == "" || CanCloneFrom(member, EffectiveRole(member, privacy, shareRole))
+func exploreCanClone(workspaceID string, kind WorkspaceKind, member WorkspaceRole, privacy Privacy, shareRole ShareRole) bool {
+	return workspaceID == "" || CanCloneFrom(kind, member, EffectiveRole(member, privacy, shareRole))
 }
 
 // ListPublicQuizzes lists a page of Explore quizzes, read from their stored
@@ -502,11 +590,11 @@ func (s *Store) ListPublicQuizzes(ctx context.Context, userID, cursor string) ([
 		return nil, "", err
 	}
 	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, COALESCE(m.workspace_id,''), (m.preview->>'questionCount')::int, m.created_at,
-			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0), `+exploreCloneCols+`
+			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0), `+exploreCloneCols+`, `+quizAssignmentOpenSQL("m.id")+`
 		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=COALESCE(w.user_id, m.owner_user_id)
 		LEFT JOIN material_clone_counts cc ON cc.material_id=m.id
 		LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1
-		WHERE m.kind='quiz' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
+		WHERE m.kind='quiz' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND NOT m.hidden
 		  AND ((m.workspace_id IS NULL AND m.privacy='public') OR w.privacy='public')
 		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL AND u.suspended_at IS NULL`+after,
 		append([]any{userID}, args...)...)
@@ -522,11 +610,13 @@ func (s *Store) ListPublicQuizzes(ctx context.Context, userID, cursor string) ([
 		var member WorkspaceRole
 		var privacy Privacy
 		var shareRole ShareRole
+		var kind WorkspaceKind
+		var assignedOpen bool
 		if err := rows.Scan(&q.ID, &q.Name, &q.WorkspaceID, &q.QuestionCount, &createdAt, &q.Author, &q.Clones,
-			&member, &privacy, &shareRole); err != nil {
+			&member, &privacy, &shareRole, &kind, &assignedOpen); err != nil {
 			return nil, "", err
 		}
-		q.CanClone = exploreCanClone(q.WorkspaceID, member, privacy, shareRole)
+		q.CanClone = exploreCanClone(q.WorkspaceID, kind, member, privacy, shareRole) && (!assignedOpen || RoleCanEdit(member))
 		out = append(out, q)
 		keys = append(keys, exploreKey{q.Clones, createdAt, q.ID})
 	}
@@ -549,7 +639,7 @@ func (s *Store) ListPublicFlashcardSets(ctx context.Context, userID, cursor stri
 		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=COALESCE(w.user_id, m.owner_user_id)
 		LEFT JOIN material_clone_counts cc ON cc.material_id=m.id
 		LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1
-		WHERE m.kind='flashcards' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
+		WHERE m.kind='flashcards' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND NOT m.hidden
 		  AND ((m.workspace_id IS NULL AND m.privacy='public') OR w.privacy='public')
 		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL AND u.suspended_at IS NULL`+after,
 		append([]any{userID}, args...)...)
@@ -564,13 +654,14 @@ func (s *Store) ListPublicFlashcardSets(ctx context.Context, userID, cursor stri
 		var member WorkspaceRole
 		var privacy Privacy
 		var shareRole ShareRole
+		var kind WorkspaceKind
 		var createdAt time.Time
-		set, err := scanFlashcardSetRow(rows, &item.Author, &item.Clones, &member, &privacy, &shareRole, &createdAt)
+		set, err := scanFlashcardSetRow(rows, &item.Author, &item.Clones, &member, &privacy, &shareRole, &kind, &createdAt)
 		if err != nil {
 			return nil, "", err
 		}
 		item.FlashcardSet = set
-		item.CanClone = exploreCanClone(set.WorkspaceID, member, privacy, shareRole)
+		item.CanClone = exploreCanClone(set.WorkspaceID, kind, member, privacy, shareRole)
 		out = append(out, item)
 		keys = append(keys, exploreKey{item.Clones, createdAt, item.ID})
 	}
@@ -662,20 +753,21 @@ func snapshotStandaloneCloneAssets(
 	return assets, assetMap, bytes, nil
 }
 
-type workspaceCloneChapter struct {
-	id       string
-	name     string
-	position int
+type workspaceCloneTopic struct {
+	id          string
+	name        string
+	description string
+	position    int
 }
 
 type workspaceCloneFile struct {
 	id, name, kind, status      string
-	chapterID, parser, blobPath *string
+	topicID, parser, blobPath   *string
 	sourceETag                  *string
 	contentHash, sourceSHA256   *string
 	sizeBytes                   int64
 	position                    int64
-	indexed, everParsed         bool
+	indexed, everParsed, hidden bool
 	parseMode                   string
 	indexLimit                  *string
 	provenance                  []byte
@@ -697,11 +789,11 @@ type workspaceCloneFile struct {
 // design Q2). indexed counts only an index that is ready.
 func snapshotCloneFilesTx(ctx context.Context, tx pgx.Tx, where string, arg any) ([]workspaceCloneFile, error) {
 	rows, err := tx.Query(ctx,
-		`SELECT f.id, f.chapter_id, f.position, f.name, f.kind, f.size_bytes, f.status,
+		`SELECT f.id, f.topic_id, f.position, f.name, f.kind, f.size_bytes, f.status,
 			i.served, f.parser, f.blob_path, f.source_etag,
 			f.content_hash, f.source_sha256, f.parse_mode, f.ever_parsed_successfully,
 			f.index_limit, f.provenance, f.thumbnail_key, f.preview, f.revision, f.scope_file_names,
-			d.base_blob_path, COALESCE(d.storage_bytes, 0)
+			d.base_blob_path, COALESCE(d.storage_bytes, 0), f.hidden
 		 FROM files f LEFT JOIN source_documents d ON d.file_id=f.id
 		 CROSS JOIN LATERAL (SELECT f.indexed AND EXISTS (
 				SELECT 1 FROM rag_file_contents fc
@@ -719,12 +811,12 @@ func snapshotCloneFilesTx(ctx context.Context, tx pgx.Tx, where string, arg any)
 	for rows.Next() {
 		var file workspaceCloneFile
 		if err := rows.Scan(
-			&file.id, &file.chapterID, &file.position, &file.name, &file.kind,
+			&file.id, &file.topicID, &file.position, &file.name, &file.kind,
 			&file.sizeBytes, &file.status, &file.indexed, &file.parser,
 			&file.blobPath, &file.sourceETag, &file.contentHash, &file.sourceSHA256,
 			&file.parseMode, &file.everParsed, &file.indexLimit, &file.provenance,
 			&file.thumbnailKey, &file.preview, &file.revision, &file.scopeFileNames,
-			&file.sourceBasePath, &file.sourceBytes,
+			&file.sourceBasePath, &file.sourceBytes, &file.hidden,
 		); err != nil {
 			return nil, err
 		}
@@ -737,26 +829,27 @@ func snapshotCloneFilesTx(ctx context.Context, tx pgx.Tx, where string, arg any)
 // published bytes, made-from names, published captions and saved edit state, which reopens at
 // epoch 1 on the same base (job, refresh and notice columns start empty; the
 // reprocess mark travels, so a copy of bytes an export-only publication left
-// unindexed is indexed like its source). Its thumbnail is copied under the new
-// id once the transaction commits.
+// unindexed is indexed like its source). It keeps the source's hidden flag (Epo
+// 2026-11-04), which means nothing without a workspace. Its thumbnail is copied
+// under the new id once the transaction commits.
 func insertCloneFileTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	f workspaceCloneFile,
 	newID, workspaceID, actorID string,
-	chapterID *string,
+	topicID *string,
 	name string,
 	position int64,
 ) (*ThumbnailCopy, error) {
 	// The cloner pays and is credited (uploader pays).
 	if _, err := tx.Exec(ctx, `INSERT INTO files
-		(id, workspace_id, user_id, created_by, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, parser, blob_path,
+		(id, workspace_id, user_id, created_by, topic_id, position, name, kind, size_bytes, added_at, status, indexed, parser, blob_path,
 		 source_etag, content_hash, source_sha256, parse_mode, ever_parsed_successfully, index_limit, provenance, preview, revision,
-		 scope_file_names)
-		VALUES ($1,NULLIF($2,''),$3,$3,$4,$5,$6,$7,$8,now(),$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
-		newID, workspaceID, actorID, chapterID, position, name, f.kind, f.sizeBytes, f.status, f.indexed, f.parser, f.blobPath,
+		 scope_file_names, hidden)
+		VALUES ($1,NULLIF($2,''),$3,$3,$4,$5,$6,$7,$8,now(),$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
+		newID, workspaceID, actorID, topicID, position, name, f.kind, f.sizeBytes, f.status, f.indexed, f.parser, f.blobPath,
 		f.sourceETag, f.contentHash, f.sourceSHA256, f.parseMode, f.everParsed, f.indexLimit, f.provenance, f.preview, f.revision,
-		f.scopeFileNames); err != nil {
+		f.scopeFileNames, f.hidden && workspaceID != ""); err != nil {
 		return nil, err
 	}
 	// Saved edits travel (Epo 2026-10-11): the base state, the rows saved over
@@ -844,7 +937,7 @@ func cloneMentions(content string, members map[string]bool) (string, error) {
 }
 
 type workspaceCloneSnapshot struct {
-	chapters    []workspaceCloneChapter
+	topics      []workspaceCloneTopic
 	files       []workspaceCloneFile
 	assets      []workspaceCloneAsset
 	materials   []workspaceCloneMaterial
@@ -926,8 +1019,18 @@ func (s *Store) snapshotWorkspaceForClone(
 	workspaceID, actorID string,
 ) (workspaceCloneSnapshot, error) {
 	var snapshot workspaceCloneSnapshot
+	// A viewer's clone leaves out what is hidden from members (Epo
+	// 2026-11-03); an owner's or editor's takes everything, each item keeping
+	// its flag (Epo 2026-11-04). A quiz under an open assignment goes only with
+	// a clone by the owner or a teaching assistant.
+	member, role, err := workspaceRoles(ctx, tx, actorID, workspaceID)
+	if err != nil {
+		return workspaceCloneSnapshot{}, err
+	}
+	seeHidden := RoleCanEdit(role)
+	takeAssigned := RoleCanEdit(member)
 	rows, err := tx.Query(ctx,
-		`SELECT id, name, position FROM chapters
+		`SELECT id, name, description, position FROM topics
 		 WHERE workspace_id=$1 ORDER BY position`,
 		workspaceID,
 	)
@@ -935,12 +1038,12 @@ func (s *Store) snapshotWorkspaceForClone(
 		return workspaceCloneSnapshot{}, err
 	}
 	for rows.Next() {
-		var chapter workspaceCloneChapter
-		if err := rows.Scan(&chapter.id, &chapter.name, &chapter.position); err != nil {
+		var topic workspaceCloneTopic
+		if err := rows.Scan(&topic.id, &topic.name, &topic.description, &topic.position); err != nil {
 			rows.Close()
 			return workspaceCloneSnapshot{}, err
 		}
-		snapshot.chapters = append(snapshot.chapters, chapter)
+		snapshot.topics = append(snapshot.topics, topic)
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
@@ -953,10 +1056,12 @@ func (s *Store) snapshotWorkspaceForClone(
 		`SELECT id, COALESCE(material_id,''), name, purpose, object_path, content_type, size_bytes,
 			status, COALESCE(etag,''), created_at, completed_at
 		 FROM editor_assets a
-		 WHERE workspace_id=$1 AND status='ready' AND trashed_at IS NULL AND (material_id IS NULL OR EXISTS (
-			SELECT 1 FROM materials m WHERE m.id=a.material_id AND m.trashed_at IS NULL))
+		 WHERE workspace_id=$1 AND status='ready' AND trashed_at IS NULL AND assignment_id IS NULL AND (material_id IS NULL OR EXISTS (
+			SELECT 1 FROM materials m LEFT JOIN materials p ON p.id=m.parent_material_id
+			WHERE m.id=a.material_id AND m.trashed_at IS NULL AND ($2 OR NOT COALESCE(p.hidden, m.hidden))
+				AND ($3 OR NOT `+quizAssignmentOpenSQL("m.id")+`)))
 		 ORDER BY created_at`,
-		workspaceID,
+		workspaceID, seeHidden, takeAssigned,
 	)
 	if err != nil {
 		return workspaceCloneSnapshot{}, err
@@ -989,18 +1094,33 @@ func (s *Store) snapshotWorkspaceForClone(
 	}
 	rows.Close()
 
+	hiddenFiles := ` AND NOT f.hidden`
+	if seeHidden {
+		hiddenFiles = ""
+	}
 	if snapshot.files, err = snapshotCloneFilesTx(ctx, tx,
-		`f.workspace_id=$1 ORDER BY f.added_at`, workspaceID); err != nil {
+		`f.workspace_id=$1`+hiddenFiles+` ORDER BY f.added_at`, workspaceID); err != nil {
 		return workspaceCloneSnapshot{}, err
 	}
 	for _, file := range snapshot.files {
 		snapshot.bytes += file.sizeBytes + file.sourceBytes
 	}
 
+	// What it leaves out for an open assignment counts in the toast.
+	if !takeAssigned {
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM materials m
+			WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND ($2 OR NOT m.hidden)
+				AND `+quizAssignmentOpenSQL("m.id"), workspaceID, seeHidden).Scan(&snapshot.skipped); err != nil {
+			return workspaceCloneSnapshot{}, err
+		}
+	}
 	rows, err = tx.Query(ctx,
-		`SELECT `+materialCols+`
-		 FROM materials WHERE workspace_id=$1 AND trashed_at IS NULL ORDER BY created_at`,
-		workspaceID,
+		`SELECT `+materialColsM+`
+		 FROM materials m LEFT JOIN materials p ON p.id=m.parent_material_id
+		 WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND ($2 OR NOT COALESCE(p.hidden, m.hidden))
+			AND ($3 OR NOT `+quizAssignmentOpenSQL("m.id")+`)
+		 ORDER BY m.created_at`,
+		workspaceID, seeHidden, takeAssigned,
 	)
 	if err != nil {
 		return workspaceCloneSnapshot{}, err
@@ -1148,7 +1268,7 @@ func (s *Store) snapshotWorkspaceForClone(
 	return snapshot, nil
 }
 
-// CloneWorkspace deep-copies a shared workspace (chapters, files, materials,
+// CloneWorkspace deep-copies a shared workspace (topics, files, materials,
 // fresh card stats, retrieval index) into a new workspace owned by userID. Blob
 // objects are shared rather than duplicated: the clone copies blob_path and
 // editor asset object paths, and locks their refcount rows through commit. The
@@ -1161,6 +1281,16 @@ func (s *Store) snapshotWorkspaceForClone(
 func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string, input WorkspaceCreate) (Workspace, error) {
 	workspace, _, _, err := s.CloneWorkspaceThumbnails(ctx, userID, srcID, input)
 	return workspace, err
+}
+
+// cloneKind is a clone's kind (Epo 2026-11-04, board U3): an owner's or editor
+// member's keeps the source's; anyone else's is personal, so a link or public
+// editor's copy of a class is theirs alone.
+func cloneKind(source WorkspaceKind, member WorkspaceRole) WorkspaceKind {
+	if RoleCanEdit(member) {
+		return source
+	}
+	return WorkspacePersonal
 }
 
 // ThumbnailCopy is a thumbnail a clone copies under its own file id once it
@@ -1380,6 +1510,10 @@ func (s *Store) cloneWorkspaceOnce(
 			Kind:        "workspace",
 		}
 	}
+	// The copy takes the cloner's plan's topic cap, as it takes the file cap.
+	if len(snapshot.topics) > limits.TopicsPerWorkspace {
+		return "", nil, 0, ErrTooManyTopics
+	}
 	if err := s.gateStorageTx(ctx, tx, userID, snapshot.bytes); err != nil {
 		return "", nil, 0, err
 	}
@@ -1398,21 +1532,25 @@ func (s *Store) cloneWorkspaceOnce(
 	).Scan(&srcEmbed.Pin.ProviderSlug, &srcEmbed.Pin.ModelSlug, &srcEmbed.Pin.Version, &srcEmbed.Dim); err != nil {
 		return "", nil, 0, err
 	}
-	if err := s.insertWorkspaceTx(ctx, tx, newID, userID, input.Name, input.Tags, srcEmbed); err != nil {
+	member, _, err := workspaceRoles(ctx, tx, userID, srcID)
+	if err != nil {
+		return "", nil, 0, err
+	}
+	if err := s.insertWorkspaceTx(ctx, tx, newID, userID, input.Name, input.Tags, cloneKind(src.Kind, member), srcEmbed); err != nil {
 		return "", nil, 0, err
 	}
 	if err := setWorkspaceAppearanceTx(ctx, tx, newID, input); err != nil {
 		return "", nil, 0, err
 	}
 
-	// Chapters (old id -> new id).
-	chapterMap := map[string]string{}
+	// Topics (old id -> new id).
+	topicMap := map[string]string{}
 	{
-		for _, c := range snapshot.chapters {
-			nid := uid("ch")
-			chapterMap[c.id] = nid
-			if _, err := tx.Exec(ctx, `INSERT INTO chapters (id, workspace_id, name, position) VALUES ($1,$2,$3,$4)`,
-				nid, newID, c.name, c.position); err != nil {
+		for _, c := range snapshot.topics {
+			nid := uid("tp")
+			topicMap[c.id] = nid
+			if _, err := tx.Exec(ctx, `INSERT INTO topics (id, workspace_id, name, description, position) VALUES ($1,$2,$3,$4,$5)`,
+				nid, newID, c.name, c.description, c.position); err != nil {
 				return "", nil, 0, err
 			}
 		}
@@ -1425,13 +1563,13 @@ func (s *Store) cloneWorkspaceOnce(
 	for _, f := range snapshot.files {
 		nid := uid("f")
 		fileMap[f.id] = nid
-		var chapterID *string
-		if f.chapterID != nil {
-			if mapped, ok := chapterMap[*f.chapterID]; ok {
-				chapterID = &mapped
+		var topicID *string
+		if f.topicID != nil {
+			if mapped, ok := topicMap[*f.topicID]; ok {
+				topicID = &mapped
 			}
 		}
-		thumbnail, err := insertCloneFileTx(ctx, tx, f, nid, newID, userID, chapterID, f.name, f.position)
+		thumbnail, err := insertCloneFileTx(ctx, tx, f, nid, newID, userID, topicID, f.name, f.position)
 		if err != nil {
 			return "", nil, 0, err
 		}
@@ -1468,10 +1606,10 @@ func (s *Store) cloneWorkspaceOnce(
 					}
 				}
 			}
-			var chapterID *string
-			if mt.ChapterID != nil {
-				if mapped, ok := chapterMap[*mt.ChapterID]; ok {
-					chapterID = &mapped
+			var topicID *string
+			if mt.TopicID != nil {
+				if mapped, ok := topicMap[*mt.TopicID]; ok {
+					topicID = &mapped
 				}
 			}
 			content := materialSnapshot.content
@@ -1488,12 +1626,12 @@ func (s *Store) cloneWorkspaceOnce(
 			}
 			if _, err := tx.Exec(ctx, `INSERT INTO materials
 				(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
-					 chapter_id, position, scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_at, revision, updated_by, provenance,
-					 parent_material_id, preview)
-				VALUES ($1,$2,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'private',$12,$13,$14,$15,$16,$2,$17,$18,$19)`,
-				nid, userID, newID, input.Name, mt.Kind, title, json.RawMessage(content), chapterID,
-				mt.Position, mt.ScopeChapters, mt.ScopeFileNames, mt.Color, metrics.NodeCount,
-				metrics.MaxDepth, createdAt, mt.Revision, provenance, parentID, materialSnapshot.preview); err != nil {
+					 topic_id, position, scope_topics, scope_file_names, privacy, color, node_count, max_depth, updated_at, revision, updated_by, provenance,
+					 parent_material_id, preview, hidden)
+				VALUES ($1,$2,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'private',$12,$13,$14,$15,$16,$2,$17,$18,$19,$20)`,
+				nid, userID, newID, input.Name, mt.Kind, title, json.RawMessage(content), topicID,
+				mt.Position, mt.ScopeTopics, mt.ScopeFileNames, mt.Color, metrics.NodeCount,
+				metrics.MaxDepth, createdAt, mt.Revision, provenance, parentID, materialSnapshot.preview, mt.Hidden); err != nil {
 				return "", nil, 0, err
 			}
 			for _, cid := range materialSnapshot.cardIDs {
@@ -1776,12 +1914,12 @@ func unzipIDs(m map[string]string) (old, fresh []string) {
 
 // CloneTarget is where a single file or material copy lands and what it is
 // called: a workspace the actor edits, optionally filed in one of its
-// chapters (ChapterID) or a chapter by name created when missing
-// (ChapterName), or no workspace for a standalone material.
+// topics (TopicID) or a topic by name created when missing
+// (TopicName), or no workspace for a standalone material.
 type CloneTarget struct {
 	WorkspaceID string
-	ChapterID   *string
-	ChapterName string
+	TopicID     *string
+	TopicName   string
 	Name        string
 }
 
@@ -1789,7 +1927,7 @@ type CloneTarget struct {
 type cloneDestination struct {
 	workspaceID, workspaceName string
 	payerID                    string // the copy's bytes are charged here
-	chapterID                  *string
+	topicID                    *string
 	members                    map[string]bool // mentions that stay live
 }
 
@@ -1818,7 +1956,7 @@ func (s *Store) lockCloneTargetTx(
 		return cloneDestination{}, err
 	}
 	dest := cloneDestination{workspaceID: target.WorkspaceID, payerID: actorID, members: map[string]bool{ownerID: true}}
-	if dest.chapterID, err = resolveUploadChapterID(ctx, tx, target.WorkspaceID, target.ChapterID, target.ChapterName); err != nil {
+	if dest.topicID, err = s.resolveUploadTopicID(ctx, tx, target.WorkspaceID, target.TopicID, target.TopicName); err != nil {
 		return cloneDestination{}, err
 	}
 	if err := tx.QueryRow(ctx, `SELECT name FROM workspaces WHERE id=$1`, target.WorkspaceID).
@@ -1854,7 +1992,32 @@ func assertCloneSourceTx(ctx context.Context, tx pgx.Tx, userID, workspaceID str
 	if effective == "" {
 		return ErrNotFound
 	}
-	if !CanCloneFrom(member, effective) {
+	var kind WorkspaceKind
+	if err := tx.QueryRow(ctx, `SELECT kind FROM workspaces WHERE id=$1`, workspaceID).Scan(&kind); err != nil {
+		return err
+	}
+	if !CanCloneFrom(kind, member, effective) {
+		return ErrForbidden
+	}
+	return nil
+}
+
+// assertAssignedQuizCloneTx refuses a quiz under an open assignment to all but
+// the workspace's owner and teaching assistants (Epo 2026-11-04): assertCloneSourceTx
+// still admits a link or public editor.
+func assertAssignedQuizCloneTx(ctx context.Context, tx pgx.Tx, userID, workspaceID, quizID string) error {
+	member, _, err := workspaceRoles(ctx, tx, userID, workspaceID)
+	if err != nil {
+		return err
+	}
+	if RoleCanEdit(member) {
+		return nil
+	}
+	var open bool
+	if err := tx.QueryRow(ctx, `SELECT `+quizAssignmentOpenSQL("$1"), quizID).Scan(&open); err != nil {
+		return err
+	}
+	if open {
 		return ErrForbidden
 	}
 	return nil
@@ -1911,10 +2074,12 @@ func (s *Store) cloneFileOnce(ctx context.Context, starter cloneTxStarter, userI
 	}
 	defer tx.Rollback(ctx)
 	var sourceWorkspaceID, sourceOwnerID string
-	if err := tx.QueryRow(ctx, `SELECT COALESCE(f.workspace_id, ''), COALESCE(w.user_id, f.user_id) FROM files f
+	var visible bool
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(f.workspace_id, ''), COALESCE(w.user_id, f.user_id),
+			workspace_item_visible(f.hidden, f.workspace_id, $2) FROM files f
 		LEFT JOIN workspaces w ON w.id=f.workspace_id
-		WHERE f.id=$1 AND f.trashed_at IS NULL`, fileID).
-		Scan(&sourceWorkspaceID, &sourceOwnerID); isNoRows(err) {
+		WHERE f.id=$1 AND f.trashed_at IS NULL`, fileID, userID).
+		Scan(&sourceWorkspaceID, &sourceOwnerID, &visible); isNoRows(err) {
 		return "", nil, ErrNotFound
 	} else if err != nil {
 		return "", nil, err
@@ -1925,12 +2090,19 @@ func (s *Store) cloneFileOnce(ctx context.Context, starter cloneTxStarter, userI
 		if userID != sourceOwnerID {
 			return "", nil, ErrNotFound
 		}
-	} else if err := assertCloneSourceTx(ctx, tx, userID, sourceWorkspaceID); err != nil {
-		// Its payer copies what it pays for after losing access (Epo
-		// 2026-10-27, D3).
-		var payer string
-		if scanErr := tx.QueryRow(ctx, `SELECT user_id FROM files WHERE id=$1`, fileID).Scan(&payer); scanErr != nil || payer != userID {
-			return "", nil, err
+	} else {
+		err := assertCloneSourceTx(ctx, tx, userID, sourceWorkspaceID)
+		// A viewer cannot reach a file hidden from members, so cannot copy it.
+		if err == nil && !visible {
+			err = ErrNotFound
+		}
+		if err != nil {
+			// Its payer copies what it pays for after losing access (Epo
+			// 2026-10-27, D3).
+			var payer string
+			if scanErr := tx.QueryRow(ctx, `SELECT user_id FROM files WHERE id=$1`, fileID).Scan(&payer); scanErr != nil || payer != userID {
+				return "", nil, err
+			}
 		}
 	}
 	dest, err := s.lockCloneTargetTx(ctx, tx, sourceOwnerID, userID, target)
@@ -1969,7 +2141,7 @@ func (s *Store) cloneFileOnce(ctx context.Context, starter cloneTxStarter, userI
 		return "", nil, err
 	}
 	nid := uid("f")
-	thumbnail, err := insertCloneFileTx(ctx, tx, f, nid, dest.workspaceID, userID, dest.chapterID,
+	thumbnail, err := insertCloneFileTx(ctx, tx, f, nid, dest.workspaceID, userID, dest.topicID,
 		target.Name, time.Now().UnixMicro())
 	if err != nil {
 		return "", nil, err
@@ -2055,7 +2227,7 @@ func (s *Store) queueCloneIngestTx(ctx context.Context, tx pgx.Tx, actorID, work
 }
 
 // CloneMaterial copies one material into a workspace the actor edits (and
-// one of its chapters) or, with no workspace, into a private standalone copy.
+// one of its topics) or, with no workspace, into a private standalone copy.
 // A note brings its embedded rows along under fresh ids; flashcards get fresh
 // card ids; editor assets get fresh rows over shared blobs. Comments, Yjs
 // state and study progress are not copied. The cloner pays.
@@ -2114,6 +2286,11 @@ func (s *Store) cloneMaterialOnce(
 	if src.WorkspaceID != "" {
 		if err := assertCloneSourceTx(ctx, tx, userID, src.WorkspaceID); err != nil {
 			return "", err
+		}
+		if src.Kind == "quiz" {
+			if err := assertAssignedQuizCloneTx(ctx, tx, userID, src.WorkspaceID, matID); err != nil {
+				return "", err
+			}
 		}
 	}
 	// Account lifecycle is the only source-side serialization. The material and
@@ -2234,12 +2411,12 @@ func (s *Store) cloneMaterialOnce(
 		return "", err
 	}
 
-	// Scope names chapters and files of the source's workspace: kept only in it.
-	scopeChapters, scopeFileNames := []string{}, []string{}
+	// Scope names topics and files of the source's workspace: kept only in it.
+	scopeTopics, scopeFileNames := []string{}, []string{}
 	if dest.workspaceID != "" && dest.workspaceID == src.WorkspaceID {
-		scopeChapters, scopeFileNames = src.ScopeChapters, src.ScopeFileNames
+		scopeTopics, scopeFileNames = src.ScopeTopics, src.ScopeFileNames
 	}
-	insert := func(clone materialClone, title string, chapterID, parentID *string, scopeChapters, scopeFileNames []string) error {
+	insert := func(clone materialClone, title string, topicID, parentID *string, scopeTopics, scopeFileNames []string) error {
 		// Attribution travels with the copy: dropping it would strip the
 		// source books' licence credit.
 		var provenance []byte
@@ -2251,13 +2428,13 @@ func (s *Store) cloneMaterialOnce(
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO materials
 			(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
-			 chapter_id, scope_chapters, scope_file_names, privacy, color, node_count, max_depth, revision, updated_by,
-			 parent_material_id, provenance, preview)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'private',$12,$13,$14,$15,$2,$16,$17,$18)`,
+			 topic_id, scope_topics, scope_file_names, privacy, color, node_count, max_depth, revision, updated_by,
+			 parent_material_id, provenance, preview, hidden)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'private',$12,$13,$14,$15,$2,$16,$17,$18,$19)`,
 			clone.newID, userID, dest.payerID, nullStr(dest.workspaceID), dest.workspaceName, clone.src.Kind,
-			title, json.RawMessage(clone.content), chapterID, scopeChapters, scopeFileNames, clone.src.Color,
+			title, json.RawMessage(clone.content), topicID, scopeTopics, scopeFileNames, clone.src.Color,
 			clone.metrics.NodeCount, clone.metrics.MaxDepth, clone.src.Revision, parentID, provenance,
-			clone.preview); err != nil {
+			clone.preview, clone.src.Hidden && dest.workspaceID != ""); err != nil {
 			if isUniqueViolation(err) {
 				return ErrTitleTaken
 			}
@@ -2271,7 +2448,7 @@ func (s *Store) cloneMaterialOnce(
 		}
 		return nil
 	}
-	if err := insert(root, target.Name, dest.chapterID, nil, scopeChapters, scopeFileNames); err != nil {
+	if err := insert(root, target.Name, dest.topicID, nil, scopeTopics, scopeFileNames); err != nil {
 		return "", err
 	}
 	if err := markCreatedTx(ctx, tx, userID, OpenMaterial, root.newID); err != nil {

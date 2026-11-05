@@ -41,20 +41,20 @@ func (a *api) createBlankFile(ctx context.Context, in *createBlankFileInput) (*f
 	}
 	name := fieldlimits.ClampFileName(title + "." + b.Format)
 	// Refused before the engine builds anything: access, the account, its
-	// storage, the workspace's file cap and then the chapter, as an upload's.
+	// storage, the workspace's file cap and then the topic, as an upload's.
 	// The insert gates them again.
 	if err := a.s.AssertSourceUploadRoom(ctx, in.ID, actor, 0); err != nil {
 		return nil, hErr(err)
 	}
-	var chapterID *string
-	if b.ChapterID != "" {
-		chapterWorkspace, err := a.s.ChapterWorkspaceID(ctx, b.ChapterID)
-		if err != nil || chapterWorkspace != in.ID {
-			return nil, huma.Error400BadRequest("chapter does not belong to this workspace")
+	var topicID *string
+	if b.TopicID != "" {
+		topicWorkspace, err := a.s.TopicWorkspaceID(ctx, b.TopicID)
+		if err != nil || topicWorkspace != in.ID {
+			return nil, huma.Error400BadRequest("topic does not belong to this workspace")
 		}
-		chapterID = &b.ChapterID
+		topicID = &b.TopicID
 	}
-	file, err := a.addBlankOfficeFile(ctx, actor, in.ID, b.Format, name, chapterID)
+	file, err := a.addBlankOfficeFile(ctx, actor, in.ID, b.Format, name, topicID)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +64,7 @@ func (a *api) createBlankFile(ctx context.Context, in *createBlankFileInput) (*f
 // addBlankOfficeFile builds a blank Office file from the engine's starter and
 // stores it in the workspace as the actor's unprocessed source: the Create
 // tab's Blank DOCX and XLSX, and the starter workspace's Word file.
-func (a *api) addBlankOfficeFile(ctx context.Context, actor, wsID, format, name string, chapterID *string) (store.File, error) {
+func (a *api) addBlankOfficeFile(ctx context.Context, actor, wsID, format, name string, topicID *string) (store.File, error) {
 	if a.blob == nil {
 		return store.File{}, huma.Error503ServiceUnavailable("blob store not configured")
 	}
@@ -89,7 +89,7 @@ func (a *api) addBlankOfficeFile(ctx context.Context, actor, wsID, format, name 
 	// have its file's object deleted.
 	ctx = context.WithoutCancel(ctx)
 	file, err := a.s.CreateBlankFile(ctx, store.BlankFileDraft{
-		WorkspaceID: wsID, ActorUserID: actor, Name: name, Kind: kind, ChapterID: chapterID,
+		WorkspaceID: wsID, ActorUserID: actor, Name: name, Kind: kind, TopicID: topicID,
 		SizeBytes: size, BlobPath: blobPath, Parser: a.parser, SHA256: hex.EncodeToString(sum[:]),
 	})
 	if err != nil {

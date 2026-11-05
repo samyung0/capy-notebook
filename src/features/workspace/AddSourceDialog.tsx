@@ -6,12 +6,13 @@ import { api } from '@/api/client';
 // A typed name has the file name limit, as a rename has it.
 import { updateFileBodyNameMax as fileNameMax } from '@/api/gen/validators';
 import {
-  useChapters,
+  useBilling,
   useImportSources,
   useInspectSourceImports,
   useIntegrations,
   useRetryFileProcessing,
   useSourceUploadPolicy,
+  useTopics,
   useUploadSource,
   useWorkspace,
 } from '@/api/hooks';
@@ -45,11 +46,13 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
+  SelectTrigger,
   SelectValue,
 } from '@/components/ui/Select';
 import { Separator } from '@/components/ui/Separator';
 import { Tabs } from '@/components/ui/Tabs';
 import { userToast } from '@/components/ui/userToast';
+import { outOfCredits } from '@/features/billing/credits';
 import { markGettingStarted } from '@/features/guide/gettingStarted';
 import type { OpenItem } from '@/features/materials/openItem';
 import { getLocale, m } from '@/i18n';
@@ -79,15 +82,7 @@ import {
   useProviderConnect,
 } from '@/lib/useProviderConnect';
 import { audioLengthOrRefuse } from './audioDuration';
-import {
-  ChapterSelect,
-  chapterByName,
-  NewChapterInput,
-  RowPickerTrigger,
-} from './ChapterSelect';
 import { CreateFilePanel } from './CreateFilePanel';
-import { GenerateFilePanel } from './GenerateFilePanel';
-import type { GenerateMode } from './GenerateForm';
 import { retryStartedToast } from './retryProcessing';
 import { ProviderIcon } from './SourceTransferPanel';
 import {
@@ -133,6 +128,12 @@ import {
   type ParseMode,
   parseModeIssues,
 } from './sourceUpload';
+import {
+  NewTopicInput,
+  RowPickerTrigger,
+  TopicSelect,
+  topicByName,
+} from './TopicSelect';
 import { YourFilesPanel } from './YourFilesPanel';
 
 function reportPickerFailure(
@@ -156,8 +157,6 @@ export interface PendingSource {
   audioDurationPending?: boolean;
   /** The length the browser read. A file it cannot read is refused. */
   audioDurationSeconds?: number;
-  chapterId: string | null;
-  chapterName: string | null;
   contentType: string;
   driveId?: string;
   file?: File;
@@ -170,6 +169,8 @@ export interface PendingSource {
   provider?: Provider;
   sizeBytes: number;
   sizeEstimate: boolean;
+  topicId: string | null;
+  topicName: string | null;
 }
 
 function formatSize(bytes: number, estimated = false) {
@@ -317,9 +318,10 @@ function SourceAnalysisNote({
   );
 }
 
-function localRows(
+export function localRows(
   selections: ReturnType<typeof validateLocalSourceSelection>['accepted'],
-  policy: SourceUploadPolicy
+  policy: SourceUploadPolicy,
+  noCredits: boolean
 ): PendingSource[] {
   const now = Date.now();
   return selections.map(({ file, kind }, index) => {
@@ -335,27 +337,22 @@ function localRows(
         policy
       ),
       audioDurationPending: kind === 'audio',
-      chapterId: null,
-      chapterName: null,
       contentType: file.type || 'application/octet-stream',
       file,
       key,
       kind,
       name: file.name,
       origin: 'local',
-      parseMode: defaultParseMode(file, kind, policy),
+      parseMode: noCredits ? 'none' : defaultParseMode(file, kind, policy),
       sizeBytes: file.size,
       sizeEstimate: false,
+      topicId: null,
+      topicName: null,
     };
   });
 }
 
-export type AddSourceMode =
-  | 'upload'
-  | 'import'
-  | 'create'
-  | 'files'
-  | 'generate';
+export type AddSourceMode = 'upload' | 'import' | 'create' | 'files';
 
 /* Connecting a drive sends the whole tab through the provider's consent
  * screen and back, which drops the dialog. The workspace page reopens it on
@@ -391,7 +388,7 @@ function setConnectResume(
 /** Expected cost of one source at the policy rates: audio by whole seconds,
  * fast-parsed documents by text-layer and vision-read page count, everything
  * else free. */
-function sourceCreditEstimate(
+export function sourceCreditEstimate(
   source: Pick<
     PendingSource,
     'analysisResult' | 'audioDurationSeconds' | 'kind' | 'parseMode'
@@ -418,7 +415,7 @@ type SourceBatch = ReturnType<typeof useSourceBatch>;
 
 /** One tab's pending sources: analysis and row settings. Upload and Import
  * each own one, so their lists never mix. */
-function useSourceBatch(
+export function useSourceBatch(
   uploadPolicy: SourceUploadPolicy | undefined,
   initialSources: PendingSource[]
 ) {
@@ -618,25 +615,25 @@ function SourceList({
   workspaceId,
 }: {
   batch: SourceBatch;
-  /** A stored file being retried: its chapter stays and it can't be removed. */
+  /** A stored file being retried: its topic stays and it can't be removed. */
   fixed?: boolean;
   uploadPolicy: SourceUploadPolicy;
-  /** null: standalone files, which have no chapter. */
+  /** null: standalone files, which have no topic. */
   workspaceId: string | null;
 }) {
-  const { data: chapters } = useChapters(workspaceId ?? '', {
+  const { data: topics } = useTopics(workspaceId ?? '', {
     errorBoundary: false,
   });
-  const pickChapter = !fixed && !!workspaceId;
+  const pickTopic = !fixed && !!workspaceId;
   const [creatingKey, setCreatingKey] = useState<string | null>(null);
-  const [newChapterName, setNewChapterName] = useState('');
+  const [newTopicName, setNewTopicName] = useState('');
 
-  function confirmCreateChapter(key: string) {
-    const name = newChapterName.trim();
+  function confirmCreateTopic(key: string) {
+    const name = newTopicName.trim();
     if (!name) return;
-    batch.patchSource(key, chapterByName(chapters, name));
+    batch.patchSource(key, topicByName(topics, name));
     setCreatingKey(null);
-    setNewChapterName('');
+    setNewTopicName('');
   }
 
   return (
@@ -705,35 +702,35 @@ function SourceList({
                 </span>
               )}
               <div className="ml-auto flex items-center">
-                {pickChapter ? (
+                {pickTopic ? (
                   creatingKey === source.key ? (
-                    <NewChapterInput
+                    <NewTopicInput
                       onCancel={() => setCreatingKey(null)}
-                      onChange={setNewChapterName}
-                      onConfirm={() => confirmCreateChapter(source.key)}
-                      value={newChapterName}
+                      onChange={setNewTopicName}
+                      onConfirm={() => confirmCreateTopic(source.key)}
+                      value={newTopicName}
                     />
                   ) : (
-                    <ChapterSelect
-                      chapterName={source.chapterName}
-                      chapters={chapters ?? []}
-                      onChange={(chapterId) =>
+                    <TopicSelect
+                      onChange={(topicId) =>
                         batch.patchSource(source.key, {
-                          chapterId,
-                          chapterName: null,
+                          topicId,
+                          topicName: null,
                         })
                       }
                       onCreateRequest={() => {
                         setCreatingKey(source.key);
-                        setNewChapterName('');
+                        setNewTopicName('');
                       }}
-                      value={source.chapterId}
+                      topicName={source.topicName}
+                      topics={topics ?? []}
+                      value={source.topicId}
                     />
                   )
                 ) : null}
                 {hasParseModes(source, uploadPolicy) && (
                   <>
-                    {pickChapter && (
+                    {pickTopic && (
                       <span
                         aria-hidden
                         className="size-0.75 shrink-0 translate-y-px rounded-full bg-fg-muted"
@@ -784,6 +781,55 @@ function SourceList({
         ))}
       </ul>
     </>
+  );
+}
+
+/** Who can see it (Epo 2026-11-04, V1): the submission's files start visible
+ * to everyone in the workspace or hidden from members, as the file's ⋮ menu
+ * and header chip mark it. The last field of the Upload and Import tabs;
+ * standalone files have no members, so they never show it. */
+function VisibilitySelect({
+  hidden,
+  onChange,
+}: {
+  hidden: boolean;
+  onChange: (hidden: boolean) => void;
+}) {
+  return (
+    <div className="flex shrink-0 flex-col gap-1.5">
+      <p
+        className="t-meta font-semibold text-fg-secondary"
+        id="source-visibility"
+      >
+        {m.source_visibility()}
+      </p>
+      <Select
+        onValueChange={(value) => onChange(value === 'hidden')}
+        value={hidden ? 'hidden' : 'everyone'}
+      >
+        <SelectTrigger aria-labelledby="source-visibility">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            <SelectItem
+              iconAndValue={{
+                icon: 'members',
+                label: m.source_visibility_everyone(),
+              }}
+              value="everyone"
+            />
+            <SelectItem
+              iconAndValue={{
+                icon: 'viewOffSlash',
+                label: m.content_hidden_from_members(),
+              }}
+              value="hidden"
+            />
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 
@@ -848,6 +894,177 @@ function SourceFooter({
   );
 }
 
+/** An Upload row's parse mode (Epo 2026-11-03): the default, else none when
+ * the payer is out of AI credits or the browser's analysis refuses fast
+ * parsing, since the Upload tab has no parse-mode choice. */
+export function uploadParseMode(
+  source: PendingSource,
+  policy: SourceUploadPolicy,
+  noCredits: boolean
+): ParseMode {
+  if (noCredits) return 'none';
+  const analysed =
+    source.analysisStatus === 'ready' || source.analysisStatus === 'error';
+  return source.parseMode === 'fast' &&
+    analysed &&
+    sourceAnalysisBlocksSubmit(source, policy)
+    ? 'none'
+    : source.parseMode;
+}
+
+/** The Upload tab's file list as board T4 draws it: one row per file with its
+ * icon, name, size and remove; a line under a row only for what stops or
+ * changes its upload. */
+function UploadList({
+  batch,
+  noCredits,
+  uploadPolicy,
+}: {
+  batch: SourceBatch;
+  noCredits: boolean;
+  uploadPolicy: SourceUploadPolicy;
+}) {
+  return (
+    <div className="flex min-h-0 flex-col gap-1.5">
+      <p className="t-meta font-semibold text-fg-secondary">
+        {m.source_upload_files()}
+      </p>
+      <ul className="flex min-h-0 flex-col overflow-y-auto">
+        {batch.sources.map((source) => {
+          const parseMode = uploadParseMode(source, uploadPolicy, noCredits);
+          const unparsed = parseMode === 'none' && source.parseMode === 'fast';
+          return (
+            <li
+              className="flex min-h-10 shrink-0 flex-col justify-center border-divider border-b py-1"
+              key={source.key}
+            >
+              <div className="flex items-center gap-2">
+                <FileIcon
+                  className="size-4 shrink-0"
+                  name={fileIconName(source)}
+                />
+                <span className="min-w-0 truncate font-semibold">
+                  {source.name}
+                </span>
+                {/* While a fast parse is analysed, its progress takes the
+                    size's place. */}
+                {parseMode === 'fast' &&
+                (source.analysisStatus === 'queued' ||
+                  source.analysisStatus === 'analyzing') ? (
+                  <ProgressBar
+                    className="ml-auto w-24 shrink-0"
+                    height={4}
+                    value={source.analysisProgress?.percent ?? 0}
+                  />
+                ) : (
+                  <span className="t-meta ml-auto shrink-0 text-fg-muted">
+                    {formatSize(source.sizeBytes, source.sizeEstimate)}
+                  </span>
+                )}
+                <IconButton
+                  className="shrink-0 text-fg-muted"
+                  icon="x"
+                  label={m.source_remove_file()}
+                  onClick={() => batch.remove(source)}
+                  size="xs"
+                  variant="ghost-hover"
+                />
+              </div>
+              {nameTooLong(source.name) && (
+                <p className="t-meta text-tint-error-fg">
+                  {m.source_name_too_long({ max: fileNameMax })}
+                </p>
+              )}
+              {unparsed && !noCredits && (
+                <p className="t-meta text-fg-muted">
+                  {m.source_upload_unparsed()}
+                </p>
+              )}
+              {parseMode === 'fast' && source.analysisStatus === 'ready' && (
+                <SourceAnalysisNote policy={uploadPolicy} source={source} />
+              )}
+              {source.kind === 'audio' && (
+                <p
+                  className={cn('t-meta text-fg-muted', {
+                    'text-tint-error-fg': audioTooLong(source, uploadPolicy),
+                  })}
+                >
+                  {audioDurationNote(source, uploadPolicy)}
+                </p>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/** Board T4's Topic: one dropdown for the whole upload, starting on the open
+ * topic, Other files last, no New topic. */
+function UploadTopicField({
+  onChange,
+  value,
+  workspaceId,
+}: {
+  onChange: (topicId: string | null) => void;
+  value: string | null;
+  workspaceId: string;
+}) {
+  const { data: topics } = useTopics(workspaceId, { errorBoundary: false });
+  return (
+    <div className="flex flex-col gap-1.5">
+      <p className="t-meta font-semibold text-fg-secondary">
+        {m.source_upload_topic()}
+      </p>
+      <TopicSelect
+        field="full"
+        onChange={onChange}
+        topics={topics ?? []}
+        value={value}
+      />
+    </div>
+  );
+}
+
+/** Board T4's footer: Cancel and Upload, held back while a row cannot go. */
+function UploadFooter({
+  batch,
+  noCredits,
+  onSubmit,
+  uploadPolicy,
+}: {
+  batch: SourceBatch;
+  noCredits: boolean;
+  onSubmit: () => void;
+  uploadPolicy: SourceUploadPolicy | undefined;
+}) {
+  const { sources } = batch;
+  const blocked =
+    !uploadPolicy ||
+    sources.some(
+      (source) =>
+        source.audioDurationPending ||
+        audioTooLong(source, uploadPolicy) ||
+        nameTooLong(source.name) ||
+        (uploadParseMode(source, uploadPolicy, noCredits) === 'fast' &&
+          sourceAnalysisBlocksSubmit(source, uploadPolicy))
+    );
+  return (
+    <DialogFooter className="shrink-0">
+      <DialogPrimary cancelSize="md">
+        <Button
+          disabled={sources.length === 0 || blocked}
+          onClick={onSubmit}
+          variant="dark"
+        >
+          {m.action_upload()}
+        </Button>
+      </DialogPrimary>
+    </DialogFooter>
+  );
+}
+
 function hasDraggedFiles(dataTransfer: DataTransfer) {
   return Array.from(dataTransfer.types).includes('Files');
 }
@@ -859,14 +1076,14 @@ export function AddSourceDialog({
   initialMode = 'upload',
   initialSources = [],
   onOpenItem,
-  onGeneratingChange,
   resumeProvider,
   retryFile,
+  defaultTopicId = null,
 }: {
   open: boolean;
   onClose: () => void;
   /** The destination; null adds standalone files (No workspace): no
-   * chapters, no workspace file room and no Create tab. */
+   * topics, no workspace file room and no Create tab. */
   workspaceId: string | null;
   /** Opens what the Create tab made. */
   onOpenItem?: (item: OpenItem) => void;
@@ -874,17 +1091,23 @@ export function AddSourceDialog({
   initialMode?: AddSourceMode;
   /** Rows to start with, for the dev dialog previews. */
   initialSources?: PendingSource[];
-  /** AI generate runs after the dialog closes; the tree shows it meanwhile. */
-  onGeneratingChange?: (mode: GenerateMode | null) => void;
   /** Provider the user just connected through a full-tab redirect. */
   resumeProvider?: Provider | null;
   /** A failed file to process again: the dialog shows only its row, read
    * from the stored bytes, and submits Retry processing. */
   retryFile?: SourceFile;
+  /** The open topic, which each added file starts in and the user can change
+   * (Epo 2026-11-03); null starts them in Other files. */
+  defaultTopicId?: string | null;
 }) {
   const { data: workspace } = useWorkspace(workspaceId ?? '', {
     errorBoundary: false,
   });
+  // The uploader pays for processing; out of credits, files go unprocessed.
+  const { data: billing } = useBilling({ errorBoundary: false });
+  const noCredits = !!billing && outOfCredits(billing);
+  // One topic for the whole upload, starting on the open one (board T4).
+  const [uploadTopic, setUploadTopic] = useState(defaultTopicId);
   const { data: uploadPolicy } = useSourceUploadPolicy(
     workspaceId ?? undefined,
     { errorBoundary: false }
@@ -925,6 +1148,8 @@ export function AddSourceDialog({
       ).length
   );
   const [isDragOver, setIsDragOver] = useState(false);
+  // Who can see it, for both tabs' files; everyone until changed.
+  const [hidden, setHidden] = useState(false);
   const [isPicking, setIsPicking] = useState(false);
   const [googlePickerOpen, setGooglePickerOpen] = useState(false);
   const pickerBusy = useRef(false);
@@ -949,6 +1174,7 @@ export function AddSourceDialog({
 
   useEffect(() => {
     if (!open) {
+      setHidden(false);
       inspectionGuard.invalidate();
       googlePicker.current?.dispose();
       googlePicker.current = null;
@@ -993,8 +1219,6 @@ export function AddSourceDialog({
               analysisInput,
               uploadPolicy
             ),
-            chapterId: retryFile.chapterId ?? null,
-            chapterName: null,
             contentType: '',
             fileId: retryFile.id,
             key: `retry-${retryFile.id}`,
@@ -1008,6 +1232,8 @@ export function AddSourceDialog({
             ),
             sizeBytes: retryFile.sizeBytes,
             sizeEstimate: false,
+            topicId: retryFile.topicId ?? null,
+            topicName: null,
           },
         ]);
       })
@@ -1039,33 +1265,34 @@ export function AddSourceDialog({
       startSourceTransfer({
         importSources,
         limits: uploadPolicy,
-        local: sources.flatMap((source): LocalTransferRequest[] =>
-          source.file
-            ? [
-                {
-                  chapterId: source.chapterId,
-                  chapterName: source.chapterName,
-                  durationSeconds:
-                    source.audioDurationSeconds == null
-                      ? undefined
-                      : Math.ceil(source.audioDurationSeconds),
-                  estimatedCreditMicros: sourceCreditEstimate(
-                    source,
-                    uploadPolicy
-                  ),
-                  file: source.file,
-                  key: source.key,
-                  kind: source.kind,
-                  name: source.name,
-                  pageCount:
-                    source.parseMode === 'fast'
-                      ? source.analysisResult?.pageCount
-                      : undefined,
-                  parseMode: source.parseMode,
-                },
-              ]
-            : []
-        ),
+        local: sources.flatMap((source): LocalTransferRequest[] => {
+          if (!source.file) return [];
+          const parseMode = uploadParseMode(source, uploadPolicy, noCredits);
+          return [
+            {
+              durationSeconds:
+                source.audioDurationSeconds == null
+                  ? undefined
+                  : Math.ceil(source.audioDurationSeconds),
+              estimatedCreditMicros: sourceCreditEstimate(
+                { ...source, parseMode },
+                uploadPolicy
+              ),
+              file: source.file,
+              hidden,
+              key: source.key,
+              kind: source.kind,
+              name: source.name,
+              pageCount:
+                parseMode === 'fast'
+                  ? source.analysisResult?.pageCount
+                  : undefined,
+              parseMode,
+              topicId: workspaceId ? uploadTopic : null,
+              topicName: null,
+            },
+          ];
+        }),
         uploadSource,
         workspaceId,
       });
@@ -1076,15 +1303,16 @@ export function AddSourceDialog({
           source.fileId && source.provider
             ? [
                 {
-                  chapterId: source.chapterId,
-                  chapterName: source.chapterName,
                   driveId: source.driveId,
                   fileId: source.fileId,
+                  hidden,
                   key: source.key,
                   kind: source.kind,
                   name: source.name,
                   parseMode: source.parseMode,
                   provider: source.provider,
+                  topicId: source.topicId,
+                  topicName: source.topicName,
                 },
               ]
             : []
@@ -1129,7 +1357,7 @@ export function AddSourceDialog({
     );
     if (capped.rejected > 0) workspaceRoomToast(workspaceRoom, filesLimit);
     if (capped.accepted.length > 0) {
-      uploads.add(localRows(capped.accepted, uploadPolicy));
+      uploads.add(localRows(capped.accepted, uploadPolicy, noCredits));
     }
     if (inputRef.current) inputRef.current.value = '';
   }
@@ -1205,8 +1433,6 @@ export function AddSourceDialog({
             analysisInput,
             uploadPolicy
           ),
-          chapterId: null,
-          chapterName: null,
           contentType: item.contentType,
           driveId: item.driveId,
           fileId: item.fileId,
@@ -1222,6 +1448,8 @@ export function AddSourceDialog({
           provider,
           sizeBytes: item.sizeBytes,
           sizeEstimate: item.sizeEstimate,
+          topicId: defaultTopicId,
+          topicName: null,
         };
       });
       if (!isCurrent()) return;
@@ -1512,8 +1740,6 @@ export function AddSourceDialog({
                   { label: m.source_tab_your_files(), value: 'files' },
                 ]
               : []),
-            // TODO: refine with agentic harness. AI generate is hidden until
-            // then; its panel below still opens for initialMode 'generate'.
           ]}
           value={mode}
         />
@@ -1575,12 +1801,29 @@ export function AddSourceDialog({
               ref={inputRef}
               type="file"
             />
+            {noCredits && (
+              <p className="t-meta mt-4 text-fg-muted">
+                {m.source_upload_no_credits()}
+              </p>
+            )}
             {uploadPolicy && uploads.sources.length > 0 && (
-              <SourceList
-                batch={uploads}
-                uploadPolicy={uploadPolicy}
-                workspaceId={workspaceId}
-              />
+              <div className="mt-4 flex min-h-0 flex-col gap-4">
+                <UploadList
+                  batch={uploads}
+                  noCredits={noCredits}
+                  uploadPolicy={uploadPolicy}
+                />
+                {workspaceId && (
+                  <>
+                    <UploadTopicField
+                      onChange={setUploadTopic}
+                      value={uploadTopic}
+                      workspaceId={workspaceId}
+                    />
+                    <VisibilitySelect hidden={hidden} onChange={setHidden} />
+                  </>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -1631,17 +1874,19 @@ export function AddSourceDialog({
                 workspaceId={workspaceId}
               />
             )}
+            {workspaceId && imports.sources.length > 0 && (
+              <div className="mt-4">
+                <VisibilitySelect hidden={hidden} onChange={setHidden} />
+              </div>
+            )}
           </div>
         )}
-        {workspaceId && mode === 'generate' ? (
-          <GenerateFilePanel
-            onClose={onClose}
-            onGeneratingChange={onGeneratingChange}
-            onOpenItem={onOpenItem}
+        {workspaceId && mode === 'files' ? (
+          <YourFilesPanel
+            defaultTopicId={defaultTopicId}
+            onMoved={onClose}
             workspaceId={workspaceId}
           />
-        ) : workspaceId && mode === 'files' ? (
-          <YourFilesPanel onMoved={onClose} workspaceId={workspaceId} />
         ) : workspaceId && mode === 'create' ? (
           <CreateFilePanel
             onCreated={(item) => {
@@ -1650,11 +1895,18 @@ export function AddSourceDialog({
             }}
             workspaceId={workspaceId}
           />
-        ) : (
+        ) : mode === 'import' ? (
           <SourceFooter
-            batch={mode === 'import' ? imports : uploads}
-            label={mode === 'import' ? m.action_import() : m.action_upload()}
-            onSubmit={() => submit(mode === 'import' ? 'remote' : 'local')}
+            batch={imports}
+            label={m.action_import()}
+            onSubmit={() => submit('remote')}
+            uploadPolicy={uploadPolicy}
+          />
+        ) : (
+          <UploadFooter
+            batch={uploads}
+            noCredits={noCredits}
+            onSubmit={() => submit('local')}
             uploadPolicy={uploadPolicy}
           />
         )}

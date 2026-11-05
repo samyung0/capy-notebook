@@ -2,10 +2,9 @@ import { onlineManager } from '@tanstack/react-query';
 import { HttpHandler, matchRequestUrl } from 'msw';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { toast } from 'sonner';
 import { qk } from '@/api/client';
 import { queryClient } from '@/api/queryClient';
-import { userToast } from '@/components/ui/userToast';
+import { dismissToast, userToast } from '@/components/ui/userToast';
 import { resetSourceTransfers } from '@/features/workspace/sourceTransfers';
 import { m } from '@/i18n';
 import { cancelMockAuthRequests } from '@/mocks/auth';
@@ -102,7 +101,7 @@ export default function MockScenarioPanel() {
         worker.resetHandlers();
         chaosPeers?.setChaosPeers(false);
         onlineManager.setOnline(true);
-        toast.dismiss();
+        dismissToast();
         queryClient.setQueryData(qk.eventStream, { status: 'connected' });
         // Stop the previous fixture's stream before its conversation is removed.
         if (router.state.location.pathname === '/workspaces/ws_scenarios')
@@ -222,7 +221,7 @@ export default function MockScenarioPanel() {
             await ui.wait(
               () =>
                 document.querySelector(
-                  '[role="alert"], [data-sonner-toast], [data-error-surface]'
+                  '[role="alert"], [data-toast], [data-error-surface]'
                 ),
               'application error rendered'
             );
@@ -387,7 +386,7 @@ export default function MockScenarioPanel() {
                 </button>
                 <button
                   className="h-8 flex-1 rounded-button border border-line px-2"
-                  onClick={() => toast.dismiss()}
+                  onClick={() => dismissToast()}
                   type="button"
                 >
                   Dismiss all

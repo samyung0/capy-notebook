@@ -8,7 +8,6 @@ import {
 } from '@/api/gen/validators';
 import type {
   Attempt,
-  Chapter,
   CloneFileReq,
   CloneMaterialReq,
   CreateBlankFileReq,
@@ -17,10 +16,9 @@ import type {
   EditableQuiz,
   FlashcardSet,
   GenerateOptions,
+  HiddenBody,
   Material,
   MaterialDiscussion,
-  MaterialRef,
-  MaterialRefType,
   ModelRef,
   MoveFilesReq,
   PDFAnnotation,
@@ -34,9 +32,12 @@ import type {
   Tag,
   TagInput,
   Task,
+  Topic,
   TrashItem,
   UpdateConversationReq,
   Workspace,
+  WorkspaceActivity,
+  WorkspaceDashboard,
   WorkspaceMember,
 } from '@/api/types';
 import { PLAN_LIMITS } from '@/features/billing/planLimits';
@@ -47,9 +48,9 @@ import {
   type FlashcardsElement,
   flashcardsElementToCards,
   flashcardsNode,
-  mermaidNode,
   quizNode,
 } from '@/features/materials/document';
+import { questionIssues } from '@/features/questions/issues';
 import {
   exampleAnswers,
   exampleQuestion,
@@ -64,6 +65,13 @@ import { getFileKind } from '@/features/workspace/sourceUpload';
 import { DEV_SHARE_LINK_SECRET, sharePath } from '@/lib/shareLink';
 import { accountChatHandlers } from './accountChat';
 import { gradeQuestions, learnerView } from './answerKeys';
+import {
+  assignmentActivity,
+  assignmentHandlers,
+  quizAssignmentFields,
+  recentFor,
+  workspaceMaterialRefs,
+} from './assignments';
 import { mockResumeStream } from './chatResume';
 import { mockChatStream } from './chatStream';
 import { mockUndo } from './chatUndo';
@@ -79,6 +87,7 @@ import {
 import * as db from './db';
 import { uid } from './db';
 import { editorAssetHandlers } from './editorAssets';
+import { extractionHandlers, seedExtractionFiles } from './extraction';
 import { questionBankHandlers } from './questionBank';
 import {
   blankOffice,
@@ -90,6 +99,7 @@ import {
 } from './scenarioFixtures';
 import { studyHandlers } from './study';
 import { voiceInputHandlers } from './voiceInput';
+import { mockWorkspaceMembers } from './workspaceMembers';
 
 /** Query parsing shared by the owner-scoped list mocks; the cursor is an offset. */
 function listParams(href: string) {
@@ -118,21 +128,12 @@ import { dialogFiles } from './dialogFiles';
 import { errorMaterials } from './errorMaterials';
 import { sourceUploadPolicy } from './sourceUploadPolicy';
 
-/** Map a material's storage kind to the left-panel ref type. */
-const refType = (kind: Material['kind']): MaterialRefType => kind;
-
 const latency = () => delay(1000 + Math.random() * 220);
 /** /me carries the account lifecycle, as the server's does. */
 const meBody = () => ({
   ...db.user,
   account: { ...db.accountStatus, userId: db.user.id },
 });
-const GENERATE_KINDS: GenerateOptions['kind'][] = [
-  'flashcards',
-  'quiz',
-  'mindmap',
-  'diagram',
-];
 function mockCatalogModels() {
   const thinking = {
     default: 'high',
@@ -208,70 +209,6 @@ interface MockInviteCandidate {
 
 const mockDiscussions = db.discussions;
 const mockWorkspaceInvites: MockWorkspaceInvite[] = [];
-export const mockWorkspaceMembers: WorkspaceMember[] = [
-  {
-    createdAt: new Date().toISOString(),
-    name: 'Morgan Lee',
-    role: 'editor',
-    userId: 'u_mock_collaborator',
-    workspaceId: 'ws_bio',
-  },
-  // A fuller Biology 101 roster so the panel foot's avatar group overflows.
-  {
-    avatarUrl: '/icons/avataaars-04.svg',
-    createdAt: new Date().toISOString(),
-    name: 'Priya Nair',
-    role: 'editor',
-    userId: 'u_mock_priya',
-    workspaceId: 'ws_bio',
-  },
-  {
-    createdAt: new Date().toISOString(),
-    name: 'Tom Becker',
-    role: 'viewer',
-    userId: 'u_mock_tom',
-    workspaceId: 'ws_bio',
-  },
-  {
-    avatarUrl: '/icons/avataaars-07.svg',
-    createdAt: new Date().toISOString(),
-    name: 'Aiko Tanaka',
-    role: 'editor',
-    userId: 'u_mock_aiko',
-    workspaceId: 'ws_bio',
-  },
-  {
-    avatarUrl: '/icons/avataaars-12.svg',
-    createdAt: new Date().toISOString(),
-    name: 'Diego Alvarez',
-    role: 'viewer',
-    userId: 'u_mock_diego',
-    workspaceId: 'ws_bio',
-  },
-  {
-    createdAt: new Date().toISOString(),
-    name: 'Sara Okafor',
-    role: 'viewer',
-    userId: 'u_mock_sara',
-    workspaceId: 'ws_bio',
-  },
-  {
-    avatarUrl: '/icons/avataaars-15.svg',
-    createdAt: new Date().toISOString(),
-    name: 'Liam Walsh',
-    role: 'editor',
-    userId: 'u_mock_liam',
-    workspaceId: 'ws_bio',
-  },
-  {
-    avatarUrl: '/icons/avataaars-18.svg',
-    createdAt: new Date().toISOString(),
-    name: 'Hana Kim',
-    role: 'viewer',
-    userId: 'u_mock_hana',
-    workspaceId: 'ws_bio',
-  },
-];
 const mockInviteCandidates: MockInviteCandidate[] = [
   {
     email: 'morgan@example.com',
@@ -424,12 +361,13 @@ function resolveTags(kind: string, refs: TagInput[] | null | undefined): Tag[] {
 }
 
 interface MockSourceImport {
-  chapterId: string | null;
   completed: boolean;
   fileId: string;
+  hidden: boolean;
   name: string;
   polls: number;
   sizeBytes: number;
+  topicId: string | null;
   workspaceId: string;
 }
 
@@ -456,8 +394,8 @@ function completeMockSourceImport(sourceImport: MockSourceImport) {
   };
   const file: (typeof db.files)[number] = {
     addedAt: new Date().toISOString(),
-    chapterId: sourceImport.chapterId,
     hasBytes: true,
+    hidden: sourceImport.hidden || undefined,
     id: sourceImport.fileId,
     indexed: true,
     ingestPct: 100,
@@ -466,11 +404,12 @@ function completeMockSourceImport(sourceImport: MockSourceImport) {
     name: sourceImport.name,
     position: db.nextContentPosition(
       sourceImport.workspaceId,
-      sourceImport.chapterId
+      sourceImport.topicId
     ),
     revision: 1,
     sizeBytes: sourceImport.sizeBytes,
     status: 'ready',
+    topicId: sourceImport.topicId,
     workspaceId: sourceImport.workspaceId,
   };
   db.files.unshift(file);
@@ -479,9 +418,9 @@ function completeMockSourceImport(sourceImport: MockSourceImport) {
   );
   if (workspace) workspace.fileCount += 1;
   db.accountStatus.storageUsedBytes += sourceImport.sizeBytes;
-  if (sourceImport.chapterId) {
-    db.chapters
-      .find((chapter) => chapter.id === sourceImport.chapterId)
+  if (sourceImport.topicId) {
+    db.topics
+      .find((topic) => topic.id === sourceImport.topicId)
       ?.fileIds.push(file.id);
   }
 }
@@ -524,6 +463,9 @@ function trashMaterial(id: string, kind?: string) {
 }
 
 const pdfAnnotations: Record<string, PDFAnnotation[]> = {};
+
+export { mockWorkspaceMembers } from './workspaceMembers';
+
 /** Clear only state created by the dedicated User scenarios workspace. */
 export function resetScenarioHandlerState(workspaceId: string) {
   for (const rows of [mockWorkspaceMembers, mockWorkspaceInvites]) {
@@ -614,38 +556,37 @@ function advanceChanges<T extends { id: string }>(
 }
 
 type SourceUploadMetadata = {
-  chapterId?: string | null;
-  chapterName?: string | null;
+  topicId?: string | null;
+  topicName?: string | null;
+  hidden?: boolean;
   kind: string;
   name: string;
 };
 
-/** A clone's chapter: the picked one, or one by name (any case), created
+/** A clone's topic: the picked one, or one by name (any case), created
  * when missing. */
-/** The progress_loss 409 shows once per page load (POST /files/move). */
-let mockProgressLossAsked = false;
-
-function mockCloneChapter(
+function mockCloneTopic(
   workspaceId: string,
-  { chapterId, chapterName }: { chapterId?: string; chapterName?: string }
+  { topicId, topicName }: { topicId?: string; topicName?: string }
 ): string | null {
-  const name = chapterName?.trim();
-  if (!name) return chapterId ?? null;
-  const existing = db.chapters.find(
-    (chapter) =>
-      chapter.workspaceId === workspaceId &&
-      chapter.name.trim().toLowerCase() === name.toLowerCase()
+  const name = topicName?.trim();
+  if (!name) return topicId ?? null;
+  const existing = db.topics.find(
+    (topic) =>
+      topic.workspaceId === workspaceId &&
+      topic.name.trim().toLowerCase() === name.toLowerCase()
   );
   if (existing) return existing.id;
-  const chapter: Chapter = {
+  const topic: Topic = {
+    description: '',
     fileIds: [],
-    id: uid('ch'),
+    id: uid('tp'),
     name,
-    order: db.chapters.filter((c) => c.workspaceId === workspaceId).length,
+    order: db.topics.filter((c) => c.workspaceId === workspaceId).length,
     workspaceId,
   };
-  db.chapters.push(chapter);
-  return chapter.id;
+  db.topics.push(topic);
+  return topic.id;
 }
 
 /** Explore's public quizzes and flashcards, as material clone sources. */
@@ -654,15 +595,15 @@ function publicCloneSource(id: string): Material | undefined {
   if (quiz) {
     return db.makeMaterial({
       ...ownerMaterialAccess,
-      chapterId: null,
       content: quizDocument(quiz.questions),
       createdAt: new Date().toISOString(),
       id,
       kind: 'quiz',
       privacy: 'public',
-      scopeChapters: [],
       scopeFileNames: [],
+      scopeTopics: [],
       title: quiz.name,
+      topicId: null,
       workspaceId: '',
       workspaceName: '',
     });
@@ -716,7 +657,35 @@ function gradeOne(
   });
 }
 
+seedExtractionFiles();
+
 export const handlers = [
+  ...extractionHandlers(
+    (workspaceId, title, questions) => {
+      const quiz = db.makeMaterial({
+        ...ownerMaterialAccess,
+        content: quizDocument(questions),
+        createdAt: new Date().toISOString(),
+        hidden: true,
+        id: uid('qz'),
+        kind: 'quiz',
+        privacy: 'private',
+        scopeFileNames: [],
+        scopeTopics: [],
+        title,
+        topicId: null,
+        workspaceId,
+        workspaceName:
+          db.workspaces.find((row) => row.id === workspaceId)?.name ?? '',
+      });
+      db.materials.unshift(quiz);
+      return quiz.id;
+    },
+    (workspaceId, title) =>
+      db.materials.some(
+        (row) => row.workspaceId === workspaceId && row.title === title
+      )
+  ),
   ...questionBankHandlers,
   ...editorAssetHandlers,
   ...voiceInputHandlers,
@@ -1304,7 +1273,6 @@ export const handlers = [
     return HttpResponse.json({
       attempts: att.length,
       avgScore: avg,
-      chapters: ws.chapterCount,
       fileChanges: advanceChanges(sourceFiles, db.fileChanges).map(
         ({ change, item }) => ({
           ...(change.state === 'failed' && { errorId: change.errorId }),
@@ -1333,6 +1301,7 @@ export const handlers = [
       notIndexable,
       notIndexed: sourceFiles.length - indexed - notIndexable,
       quizzes: wsQuizIds.size,
+      topics: ws.topicCount,
     });
   }),
   http.post('/api/workspaces', async ({ request }) => {
@@ -1350,7 +1319,6 @@ export const handlers = [
         canManageMembers: true,
         canView: true,
       },
-      chapterCount: 0,
       createdAt: new Date().toISOString(),
       description: body.description ?? '',
       fileCount: 0,
@@ -1360,12 +1328,14 @@ export const handlers = [
         `waves-${String(Math.floor(Math.random() * 11) + 1).padStart(2, '0')}`,
       id,
       isOwner: true,
+      kind: body.kind ?? 'personal',
       name: body.name ?? 'Untitled workspace',
       privacy: 'private',
       role: 'owner',
       sharePath: await sharePath(DEV_SHARE_LINK_SECRET, id),
       shareRole: 'viewer',
       tags: resolveTags('workspace', body.tags),
+      topicCount: 0,
     };
     db.workspaces.unshift(ws);
     return HttpResponse.json(ws, { status: 201 });
@@ -1377,10 +1347,12 @@ export const handlers = [
       tags?: TagInput[];
       clearCover?: boolean;
     };
-    // Auto process is the owner's alone; the gateway answers others 404.
-    if (body.autoProcess !== undefined) {
+    // Auto process and the kind are the owner's alone; the gateway answers
+    // others 404.
+    if (body.autoProcess !== undefined || body.kind !== undefined) {
       if (!ws.isOwner) return new HttpResponse(null, { status: 404 });
-      ws.autoProcess = body.autoProcess;
+      ws.autoProcess = body.autoProcess ?? ws.autoProcess;
+      ws.kind = body.kind ?? ws.kind;
     }
     if (body.tags !== undefined) ws.tags = resolveTags('workspace', body.tags);
     if (body.name !== undefined) ws.name = body.name;
@@ -1701,6 +1673,11 @@ export const handlers = [
       iconId: body.iconId ?? source.iconId,
       id: newId,
       isOwner: true,
+      // As the server: an owner's or editor's copy keeps its kind.
+      kind:
+        source.role === 'owner' || source.role === 'editor'
+          ? source.kind
+          : 'personal',
       name: body.name,
       privacy: 'private',
       sharePath: await sharePath(DEV_SHARE_LINK_SECRET, newId),
@@ -1708,13 +1685,13 @@ export const handlers = [
     };
     db.workspaces.unshift(workspace);
 
-    const chapterMap = new Map<string, string>();
-    db.chapters
-      .filter((chapter) => chapter.workspaceId === source.id)
-      .forEach((chapter) => {
-        const id = uid('ch');
-        chapterMap.set(chapter.id, id);
-        db.chapters.push({ ...chapter, fileIds: [], id, workspaceId: newId });
+    const topicMap = new Map<string, string>();
+    db.topics
+      .filter((topic) => topic.workspaceId === source.id)
+      .forEach((topic) => {
+        const id = uid('tp');
+        topicMap.set(topic.id, id);
+        db.topics.push({ ...topic, fileIds: [], id, workspaceId: newId });
       });
     const fileMap = new Map<string, string>();
     db.files
@@ -1726,10 +1703,8 @@ export const handlers = [
         if (links) db.fileLinks[id] = { ...links };
         db.files.push({
           ...file,
-          chapterId: file.chapterId
-            ? (chapterMap.get(file.chapterId) ?? null)
-            : null,
           id,
+          topicId: file.topicId ? (topicMap.get(file.topicId) ?? null) : null,
           workspaceId: newId,
         });
       });
@@ -1746,9 +1721,6 @@ export const handlers = [
             : [];
         const cloned = {
           ...material,
-          chapterId: material.chapterId
-            ? (chapterMap.get(material.chapterId) ?? null)
-            : null,
           content:
             material.kind === 'flashcards'
               ? flashcardsDocument(clonedCards, materialId)
@@ -1757,6 +1729,9 @@ export const handlers = [
           id: materialId,
           privacy: 'private',
           scopeFileNames: material.scopeFileNames,
+          topicId: material.topicId
+            ? (topicMap.get(material.topicId) ?? null)
+            : null,
           workspaceId: newId,
           workspaceName: workspace.name,
         } satisfies Material;
@@ -1787,11 +1762,11 @@ export const handlers = [
     const file = {
       ...source,
       addedAt: new Date().toISOString(),
-      chapterId: workspaceId ? mockCloneChapter(workspaceId, body) : null,
       id,
       // The cloner pays for the copy.
       isPayer: true,
       name: body.name.trim(),
+      topicId: workspaceId ? mockCloneTopic(workspaceId, body) : null,
       workspaceId,
     };
     db.files.push(file);
@@ -1801,29 +1776,28 @@ export const handlers = [
     const body = (await request.json()) as CreateBlankFileReq;
     const ws = db.workspaces.find((w) => w.id === params.id);
     if (!ws) return new HttpResponse(null, { status: 404 });
-    const chapterId = body.chapterId ?? null;
+    const topicId = body.topicId ?? null;
     const url = blankOffice[body.format].sourceURL;
     const file: (typeof db.files)[number] = {
       addedAt: new Date().toISOString(),
-      chapterId,
       hasBytes: true,
       id: uid('f'),
       indexed: false,
       isPayer: true,
       kind: body.format === 'docx' ? 'doc' : 'sheet',
       name: `${body.name.trim()}.${body.format}`,
-      position: db.nextContentPosition(ws.id, chapterId),
+      position: db.nextContentPosition(ws.id, topicId),
       revision: 1,
       sizeBytes: (await (await fetch(url)).arrayBuffer()).byteLength,
       status: 'ready',
+      topicId,
       workspaceId: ws.id,
     };
     db.fileLinks[file.id] = { url };
     await prepareBlankOffice(file.id, body.format);
     db.files.push(file);
     ws.fileCount += 1;
-    if (chapterId)
-      db.chapters.find((c) => c.id === chapterId)?.fileIds.push(file.id);
+    if (topicId) db.topics.find((c) => c.id === topicId)?.fileIds.push(file.id);
     return HttpResponse.json(file, { status: 201 });
   }),
   // Move into a workspace: the first move of f_1 out of Biology asks about
@@ -1852,69 +1826,58 @@ export const handlers = [
         { errors: [{ message: 'file_processing' }] },
         { status: 409 }
       );
-    if (
-      !body.confirmProgressLoss &&
-      !mockProgressLossAsked &&
-      moving.some((file) => file.id === 'f_1')
-    ) {
-      mockProgressLossAsked = true;
-      return HttpResponse.json(
-        {
-          errors: [
-            { message: 'progress_loss', value: { people: 3, planSteps: 2 } },
-          ],
-        },
-        { status: 409 }
-      );
-    }
-    const chapterId = mockCloneChapter(target.id, body);
+    const topicId = mockCloneTopic(target.id, body);
     for (const file of moving) {
       const source = db.workspaces.find((ws) => ws.id === file.workspaceId);
       if (source) source.fileCount = Math.max(0, source.fileCount - 1);
-      for (const c of db.chapters)
+      for (const c of db.topics)
         c.fileIds = c.fileIds.filter((id) => id !== file.id);
       file.workspaceId = target.id;
       if (file.workspaceName !== undefined) file.workspaceName = target.name;
-      file.chapterId = chapterId;
-      if (chapterId)
-        db.chapters.find((c) => c.id === chapterId)?.fileIds.push(file.id);
+      file.topicId = topicId;
+      if (topicId)
+        db.topics.find((c) => c.id === topicId)?.fileIds.push(file.id);
       target.fileCount += 1;
     }
     return HttpResponse.json(moving);
   }),
-  /* ---------------- chapters & files ---------------- */
-  http.get('/api/workspaces/:id/chapters', async ({ params }) =>
+  /* ---------------- topics & files ---------------- */
+  http.get('/api/workspaces/:id/topics', async ({ params }) =>
     HttpResponse.json(
-      db.chapters
+      db.topics
         .filter((c) => c.workspaceId === params.id)
         .sort((a, b) => a.order - b.order)
     )
   ),
-  http.post('/api/workspaces/:id/chapters', async ({ params, request }) => {
-    const body = (await request.json()) as { name: string };
-    const order = db.chapters.filter((c) => c.workspaceId === params.id).length;
-    const ch: Chapter = {
+  http.post('/api/workspaces/:id/topics', async ({ params, request }) => {
+    const body = (await request.json()) as {
+      description?: string;
+      name: string;
+    };
+    const order = db.topics.filter((c) => c.workspaceId === params.id).length;
+    const ch: Topic = {
+      description: body.description ?? '',
       fileIds: [],
-      id: uid('ch'),
+      id: uid('tp'),
       name: body.name,
       order,
       workspaceId: String(params.id),
     };
-    db.chapters.push(ch);
+    db.topics.push(ch);
     const ws = db.workspaces.find((w) => w.id === params.id);
-    if (ws) ws.chapterCount += 1;
+    if (ws) ws.topicCount += 1;
     return HttpResponse.json(ch, { status: 201 });
   }),
-  http.patch('/api/chapters/:id', async ({ params, request }) => {
-    const ch = db.chapters.find((c) => c.id === params.id);
+  http.patch('/api/topics/:id', async ({ params, request }) => {
+    const ch = db.topics.find((c) => c.id === params.id);
     if (!ch) return new HttpResponse(null, { status: 404 });
     Object.assign(ch, await request.json());
     return HttpResponse.json(ch);
   }),
-  http.post('/api/workspaces/:id/chapters/reorder', async ({ request }) => {
+  http.post('/api/workspaces/:id/topics/reorder', async ({ request }) => {
     const body = (await request.json()) as { ids: string[] };
     body.ids.forEach((id, idx) => {
-      const ch = db.chapters.find((c) => c.id === id);
+      const ch = db.topics.find((c) => c.id === id);
       if (ch) ch.order = idx;
     });
     return new HttpResponse(null, { status: 204 });
@@ -1923,17 +1886,17 @@ export const handlers = [
     '/api/workspaces/:id/content/reorder',
     async ({ params, request }) => {
       const body = (await request.json()) as {
-        chapterId: string | null;
+        topicId: string | null;
         items: { id: string; type: 'file' | 'material' }[];
       };
       body.items.forEach((item, position) => {
         if (item.type === 'file') {
-          db.chapters.forEach((chapter) => {
-            chapter.fileIds = chapter.fileIds.filter((id) => id !== item.id);
+          db.topics.forEach((topic) => {
+            topic.fileIds = topic.fileIds.filter((id) => id !== item.id);
           });
-          if (body.chapterId) {
-            db.chapters
-              .find((chapter) => chapter.id === body.chapterId)
+          if (body.topicId) {
+            db.topics
+              .find((topic) => topic.id === body.topicId)
               ?.fileIds.push(item.id);
           }
         }
@@ -1947,24 +1910,24 @@ export const handlers = [
                   material.id === item.id && material.workspaceId === params.id
               );
         if (content) {
-          content.chapterId = body.chapterId;
+          content.topicId = body.topicId;
           content.position = position;
         }
       });
       return new HttpResponse(null, { status: 204 });
     }
   ),
-  http.delete('/api/chapters/:id', async ({ params }) => {
-    const i = db.chapters.findIndex((c) => c.id === params.id);
+  http.delete('/api/topics/:id', async ({ params }) => {
+    const i = db.topics.findIndex((c) => c.id === params.id);
     if (i >= 0) {
       // keep files — just unfile them
       db.files.forEach((f) => {
-        if (f.chapterId === params.id) f.chapterId = null;
+        if (f.topicId === params.id) f.topicId = null;
       });
       db.materials.forEach((material) => {
-        if (material.chapterId === params.id) material.chapterId = null;
+        if (material.topicId === params.id) material.topicId = null;
       });
-      db.chapters.splice(i, 1);
+      db.topics.splice(i, 1);
     }
     return new HttpResponse(null, { status: 204 });
   }),
@@ -2011,7 +1974,7 @@ export const handlers = [
     });
   }),
   http.get('/api/recent', async ({ request }) =>
-    HttpResponse.json(db.listRecent(new URL(request.url)))
+    HttpResponse.json(recentFor(request.url, 'owner'))
   ),
   http.post('/api/files/:id/open', ({ params }) => {
     db.itemOpens.set(`file:${params.id}`, new Date().toISOString());
@@ -2024,6 +1987,68 @@ export const handlers = [
   http.get('/api/workspaces/:id/files', async ({ params }) =>
     HttpResponse.json(db.files.filter((f) => f.workspaceId === params.id))
   ),
+  // The Dashboard: the owner, the roster's size and the newest files and
+  // materials; the mock credits them to the roster in turn and its first
+  // flashcard set to the agent.
+  http.get('/api/workspaces/:id/dashboard', async ({ params }) => {
+    const ws = db.workspaces.find((w) => w.id === params.id);
+    if (!ws) return new HttpResponse(null, { status: 404 });
+    const roster = [
+      { avatarUrl: db.user.avatarUrl, name: db.user.name, userId: db.user.id },
+      ...mockWorkspaceMembers.filter((mb) => mb.workspaceId === ws.id),
+    ];
+    const all: WorkspaceActivity[] = [
+      ...db.files
+        .filter((f) => f.workspaceId === ws.id)
+        .map(
+          (f): WorkspaceActivity => ({
+            at: f.addedAt,
+            fileId: f.id,
+            hidden: f.hidden,
+            kind: 'uploaded',
+            title: f.name,
+          })
+        ),
+      ...db.materials
+        .filter((mt) => mt.workspaceId === ws.id && !mt.parentMaterialId)
+        .map(
+          (mt): WorkspaceActivity => ({
+            at: mt.createdAt,
+            hidden: mt.hidden,
+            kind: mt.kind === 'flashcards' ? 'agent' : 'added',
+            materialId: mt.id,
+            title: mt.title,
+          })
+        ),
+      ...assignmentActivity(ws.id),
+    ].sort(sortBy((row) => row.at, false));
+    // The newest four, plus the newest agent-made set so its row shows as on
+    // the boards (H2); the server takes the newest five.
+    const agent = all.find((row) => row.kind === 'agent');
+    const rows = [
+      ...all.filter((row) => row !== agent).slice(0, agent ? 4 : 5),
+      ...(agent ? [agent] : []),
+    ]
+      .sort(sortBy((row) => row.at, false))
+      .map((row, i) => {
+        const actor =
+          row.kind === 'agent' || row.kind === 'assigned'
+            ? roster[0]
+            : roster[i % roster.length];
+        return {
+          ...row,
+          actorAvatarUrl: actor.avatarUrl,
+          actorId: actor.userId,
+          actorName: actor.name,
+        };
+      });
+    return HttpResponse.json({
+      activity: rows,
+      members: roster.length,
+      ownerName:
+        ws.role === 'owner' ? db.user.name : (roster[1]?.name ?? db.user.name),
+    } satisfies WorkspaceDashboard);
+  }),
   http.get('/api/workspaces/:id/recent', async ({ params }) =>
     HttpResponse.json({
       files: db.files
@@ -2053,16 +2078,16 @@ export const handlers = [
     const f = db.files.find((x) => x.id === params.id);
     if (!f) return new HttpResponse(null, { status: 404 });
     const body = (await request.json()) as Partial<
-      Pick<SourceFile, 'name' | 'chapterId'>
+      Pick<SourceFile, 'name' | 'topicId'>
     >;
     if (body.name !== undefined) f.name = body.name;
-    if (body.chapterId !== undefined) {
+    if (body.topicId !== undefined) {
       // Empty-string sentinel unfiles (mirrors the Go gateway).
-      const next = body.chapterId === '' ? null : body.chapterId;
-      for (const c of db.chapters)
+      const next = body.topicId === '' ? null : body.topicId;
+      for (const c of db.topics)
         c.fileIds = c.fileIds.filter((id) => id !== f.id);
-      f.chapterId = next;
-      if (next) db.chapters.find((c) => c.id === next)?.fileIds.push(f.id);
+      f.topicId = next;
+      if (next) db.topics.find((c) => c.id === next)?.fileIds.push(f.id);
     }
     return HttpResponse.json(f);
   }),
@@ -2083,7 +2108,7 @@ export const handlers = [
       const [removed] = db.files.splice(i, 1);
       const ws = db.workspaces.find((w) => w.id === removed.workspaceId);
       if (ws) ws.fileCount = Math.max(0, ws.fileCount - 1);
-      for (const ch of db.chapters)
+      for (const ch of db.topics)
         ch.fileIds = ch.fileIds.filter((id) => id !== removed.id);
       db.trash.unshift({
         file: removed,
@@ -2127,7 +2152,7 @@ export const handlers = [
       db.files.push(entry.file);
       const ws = db.workspaces.find((w) => w.id === entry.file?.workspaceId);
       if (ws) ws.fileCount += 1;
-      const ch = db.chapters.find((c) => c.id === entry.file?.chapterId);
+      const ch = db.topics.find((c) => c.id === entry.file?.topicId);
       if (ch) ch.fileIds.push(entry.file.id);
     }
     if (entry.material) db.materials.push(entry.material);
@@ -2194,7 +2219,10 @@ export const handlers = [
         )
       );
     return HttpResponse.json({
-      items: rows.slice(offset, offset + limit).map(db.materialListItem),
+      items: rows.slice(offset, offset + limit).map((mt) => ({
+        ...db.materialListItem(mt),
+        ...quizAssignmentFields(mt.id, 'owner'),
+      })),
       nextCursor:
         offset + limit < rows.length ? String(offset + limit) : undefined,
     });
@@ -2213,39 +2241,24 @@ export const handlers = [
     }
     const mt = db.makeMaterial({
       ...ownerMaterialAccess,
-      chapterId: null,
       content: body.content ?? emptyMaterialDocument(),
       createdAt: new Date().toISOString(),
       id: uid('mat'),
       kind: 'note',
       privacy: 'private',
-      scopeChapters: [],
       scopeFileNames: [],
+      scopeTopics: [],
       title: body.title || copyText(db.user.locale, 'untitled_note'),
+      topicId: null,
       workspaceId: '',
       workspaceName: '',
     });
     db.materials.unshift(mt);
     return HttpResponse.json(mt, { status: 201 });
   }),
-  http.get('/api/workspaces/:id/materials', async ({ params }) => {
-    const wsId = String(params.id);
-    const refs: MaterialRef[] = db.materials
-      .filter((mt) => mt.workspaceId === wsId && !mt.parentMaterialId)
-      .map((mt) => ({
-        chapterId: mt.chapterId,
-        createdAt: mt.createdAt,
-        id: mt.id,
-        maxDepth: mt.maxDepth,
-        nodeCount: mt.nodeCount,
-        position: mt.position,
-        sizeBytes: mt.contentBytes,
-        title: mt.title,
-        type: refType(mt.kind),
-      }))
-      .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
-    return HttpResponse.json(refs);
-  }),
+  http.get('/api/workspaces/:id/materials', async ({ params }) =>
+    HttpResponse.json(workspaceMaterialRefs(String(params.id), 'owner'))
+  ),
   http.post('/api/workspaces/:id/materials', async ({ params, request }) => {
     const wsId = String(params.id);
     const ws = db.workspaces.find((w) => w.id === wsId);
@@ -2253,7 +2266,7 @@ export const handlers = [
       kind?: Material['kind'];
       title?: string;
       content?: Material['content'];
-      scopeChapters?: string[];
+      scopeTopics?: string[];
       scopeFileNames?: string[];
     };
     if (!body.kind) {
@@ -2264,15 +2277,15 @@ export const handlers = [
     }
     const mt = db.makeMaterial({
       ...ownerMaterialAccess,
-      chapterId: null,
       content: body.content ?? emptyMaterialDocument(),
       createdAt: new Date().toISOString(),
       id: uid('mat'),
       kind: body.kind,
       privacy: 'private',
-      scopeChapters: body.scopeChapters ?? [],
       scopeFileNames: body.scopeFileNames ?? [],
+      scopeTopics: body.scopeTopics ?? [],
       title: body.title || copyText(db.user.locale, 'untitled_note'),
+      topicId: null,
       workspaceId: wsId,
       workspaceName: ws?.name ?? '',
     });
@@ -2305,23 +2318,23 @@ export const handlers = [
           );
     const mt = db.makeMaterial({
       ...ownerMaterialAccess,
-      chapterId: null,
       content: { schemaVersion: 1, value: [block] },
       createdAt: new Date().toISOString(),
       id: uid('mat'),
       kind: body.kind,
       parentMaterialId: note.id,
       privacy: 'private',
-      scopeChapters: [],
       scopeFileNames: [],
+      scopeTopics: [],
       title: crypto.randomUUID(),
+      topicId: null,
       workspaceId: note.workspaceId,
       workspaceName: note.workspaceName,
     });
     db.materials.unshift(mt);
     return HttpResponse.json(mt, { status: 201 });
   }),
-  http.get('/api/materials/:id', async ({ params }) => {
+  http.get('/api/materials/:id', async ({ params, request }) => {
     const fixture = errorMaterials.find((item) => item.id === params.id);
     if (fixture?.failure) {
       return HttpResponse.json(
@@ -2338,12 +2351,19 @@ export const handlers = [
 
     await hydrateEditorState(String(params.id));
     const mt = db.materials.find((x) => x.id === params.id);
-    return mt
-      ? HttpResponse.json({
-          ...db.learnerMaterial(mt),
-          sharePath: db.mockSharePath(mt),
-        })
-      : new HttpResponse(null, { status: 404 });
+    if (!mt) return new HttpResponse(null, { status: 404 });
+    const read = { ...db.learnerMaterial(mt), sharePath: db.mockSharePath(mt) };
+    return HttpResponse.json(
+      new URL(request.url).searchParams.get('noContent') === 'true'
+        ? { ...read, content: { ...read.content, value: [] } }
+        : read
+    );
+  }),
+  http.post('/api/materials/readable', async ({ request }) => {
+    const { ids } = (await request.json()) as { ids: string[] };
+    return HttpResponse.json({
+      ids: ids.filter((id) => db.materials.some((item) => item.id === id)),
+    });
   }),
   http.post(
     '/api/materials/:id/collaboration-token',
@@ -2386,15 +2406,15 @@ export const handlers = [
     if (!mt) return new HttpResponse(null, { status: 404 });
     const body = (await request.json().catch(() => ({}))) as {
       title?: string;
-      chapterId?: string;
-      scopeChapters?: string[];
+      topicId?: string;
+      scopeTopics?: string[];
       scopeFileNames?: string[];
     };
     if (body.title != null) mt.title = body.title;
     // Empty-string sentinel unfiles; a real id files it; omitted leaves it.
-    if (body.chapterId != null)
-      mt.chapterId = body.chapterId === '' ? null : body.chapterId;
-    if (body.scopeChapters != null) mt.scopeChapters = body.scopeChapters;
+    if (body.topicId != null)
+      mt.topicId = body.topicId === '' ? null : body.topicId;
+    if (body.scopeTopics != null) mt.scopeTopics = body.scopeTopics;
     if (body.scopeFileNames != null) mt.scopeFileNames = body.scopeFileNames;
     mt.updatedAt = new Date().toISOString();
     await persistEditorState(mt.id);
@@ -2413,6 +2433,22 @@ export const handlers = [
     const body = (await request.json()) as Pick<Material, 'privacy'>;
     material.privacy = body.privacy;
     return HttpResponse.json(material);
+  }),
+  // Hidden from members: owners and editors switch a workspace item from its
+  // menu.
+  http.put('/api/files/:id/hidden', async ({ params, request }) => {
+    const file = db.files.find((item) => item.id === params.id);
+    if (!file?.workspaceId) return new HttpResponse(null, { status: 404 });
+    const body = (await request.json()) as HiddenBody;
+    file.hidden = body.hidden;
+    return HttpResponse.json(body);
+  }),
+  http.put('/api/materials/:id/hidden', async ({ params, request }) => {
+    const material = db.materials.find((item) => item.id === params.id);
+    if (!material?.workspaceId) return new HttpResponse(null, { status: 404 });
+    const body = (await request.json()) as HiddenBody;
+    material.hidden = body.hidden;
+    return HttpResponse.json(body);
   }),
   http.delete('/api/materials/:id', async ({ params }) => {
     trashMaterial(String(params.id));
@@ -2565,12 +2601,12 @@ export const handlers = [
       await delay(500);
       const name = body.name;
       const kind = body.kind as SourceKindFix;
-      let chapterId = body.chapterId ?? null;
-      const chapterName = body.chapterName ?? null;
+      let topicId = body.topicId ?? null;
+      const topicName = body.topicName ?? null;
       const expectedKind = getFileKind(name, sourceUploadPolicy);
-      if (chapterId && chapterName?.trim()) {
+      if (topicId && topicName?.trim()) {
         return HttpResponse.json(
-          { message: 'chapterId and chapterName cannot both be set' },
+          { message: 'topicId and topicName cannot both be set' },
           { status: 400 }
         );
       }
@@ -2580,54 +2616,57 @@ export const handlers = [
           { status: 400 }
         );
       }
-      // A standalone file has no chapter, so its metadata names none.
-      if (!wsId && ('chapterId' in body || 'chapterName' in body)) {
+      // A standalone file has no topic, so its metadata names none.
+      if (!wsId && ('topicId' in body || 'topicName' in body)) {
         return HttpResponse.json(
-          { message: 'a standalone file has no chapter' },
+          { message: 'a standalone file has no topic' },
           { status: 400 }
         );
       }
-      if (!chapterId && chapterName?.trim()) {
-        const normalizedName = chapterName.trim().toLowerCase();
-        const existing = db.chapters.find(
-          (chapter) =>
-            chapter.workspaceId === wsId &&
-            chapter.name.trim().toLowerCase() === normalizedName
+      if (!topicId && topicName?.trim()) {
+        const normalizedName = topicName.trim().toLowerCase();
+        const existing = db.topics.find(
+          (topic) =>
+            topic.workspaceId === wsId &&
+            topic.name.trim().toLowerCase() === normalizedName
         );
         if (existing) {
-          chapterId = existing.id;
+          topicId = existing.id;
         } else {
-          const order = db.chapters.filter(
-            (chapter) => chapter.workspaceId === wsId
+          const order = db.topics.filter(
+            (topic) => topic.workspaceId === wsId
           ).length;
-          const chapter: Chapter = {
+          const topic: Topic = {
+            description: '',
             fileIds: [],
-            id: uid('ch'),
-            name: chapterName.trim(),
+            id: uid('tp'),
+            name: topicName.trim(),
             order,
             workspaceId: wsId,
           };
-          db.chapters.push(chapter);
+          db.topics.push(topic);
           const ws = db.workspaces.find((workspace) => workspace.id === wsId);
-          if (ws) ws.chapterCount += 1;
-          chapterId = chapter.id;
+          if (ws) ws.topicCount += 1;
+          topicId = topic.id;
         }
       }
       const f: (typeof db.files)[number] = {
         addedAt: new Date().toISOString(),
-        chapterId,
         // Mirror the real backend: uploads start 'pending' until a worker
         // claims the ingest job, then the client animates progress.
         hasBytes: true,
+        // Who can see it: hidden from members from the start.
+        hidden: body.hidden || undefined,
         id: uid('f'),
         indexed: false,
         isPayer: true,
         kind,
         name,
-        position: db.nextContentPosition(wsId, chapterId),
+        position: db.nextContentPosition(wsId, topicId),
         revision: 1,
         sizeBytes: bytes.size,
         status: 'pending',
+        topicId,
         workspaceId: wsId,
       };
       db.fileLinks[f.id] = { url: URL.createObjectURL(bytes) };
@@ -2641,8 +2680,8 @@ export const handlers = [
       db.files.push(f);
       const ws = db.workspaces.find((w) => w.id === wsId);
       if (ws) ws.fileCount += 1;
-      if (f.chapterId)
-        db.chapters.find((c) => c.id === f.chapterId)?.fileIds.push(f.id);
+      if (f.topicId)
+        db.topics.find((c) => c.id === f.topicId)?.fileIds.push(f.id);
       // Finish the ingest before the client's animation (5 × 450 ms) refetches
       // the list; scenarios can rewrite the outcome on that read.
       setTimeout(() => {
@@ -2776,30 +2815,10 @@ export const handlers = [
     const wsId = String(params.id);
     const ws = db.workspaces.find((w) => w.id === wsId);
     if (!ws) return new HttpResponse(null, { status: 404 });
-    const count = 'count' in opts ? opts.count : 0;
-    if (!opts.kind || ('count' in opts && count < 1)) {
+    const { count } = opts;
+    if (!count || !opts.types?.length) {
       return HttpResponse.json(
-        { message: 'kind is required and count at least 1' },
-        { status: 400 }
-      );
-    }
-    // Like the server: a quiz or set takes the panel's count, never a study
-    // preference.
-    if ((opts.kind === 'quiz' || opts.kind === 'flashcards') && !count) {
-      return HttpResponse.json(
-        { message: 'count is required for a quiz or a flashcard set' },
-        { status: 400 }
-      );
-    }
-    if (!GENERATE_KINDS.includes(opts.kind)) {
-      return HttpResponse.json(
-        { message: `unsupported generate kind "${opts.kind}"` },
-        { status: 400 }
-      );
-    }
-    if (opts.kind === 'quiz' && !opts.types?.length) {
-      return HttpResponse.json(
-        { message: 'types is required' },
+        { message: 'count and types are required' },
         { status: 400 }
       );
     }
@@ -2813,25 +2832,25 @@ export const handlers = [
         { status: 400 }
       );
     }
-    const unknownChapter = (opts.chapters ?? []).find(
-      (id) => !db.chapters.some((ch) => ch.id === id && ch.workspaceId === wsId)
+    const unknownTopic = (opts.topics ?? []).find(
+      (id) => !db.topics.some((ch) => ch.id === id && ch.workspaceId === wsId)
     );
-    if (unknownChapter) {
+    if (unknownTopic) {
       return HttpResponse.json(
-        { message: `unknown chapter id "${unknownChapter}"` },
+        { message: `unknown topic id "${unknownTopic}"` },
         { status: 400 }
       );
     }
     const wsName = ws.name;
-    const chapters = opts.chapters ?? [];
+    const topics = opts.topics ?? [];
     const fileIds = opts.fileIds ?? [];
-    const scopeChapterNames = chapters
-      .map((cid) => db.chapters.find((c) => c.id === cid)?.name)
+    const scopeTopicNames = topics
+      .map((cid) => db.topics.find((c) => c.id === cid)?.name)
       .filter(Boolean) as string[];
     const selectedFileIds = new Set(fileIds);
-    for (const chapterId of chapters) {
-      const chapter = db.chapters.find((item) => item.id === chapterId);
-      for (const fileId of chapter?.fileIds ?? []) selectedFileIds.add(fileId);
+    for (const topicId of topics) {
+      const topic = db.topics.find((item) => item.id === topicId);
+      for (const fileId of topic?.fileIds ?? []) selectedFileIds.add(fileId);
     }
     const scopeFileNames = [...selectedFileIds]
       .map((fid) => db.files.find((f) => f.id === fid)?.name)
@@ -2864,66 +2883,6 @@ export const handlers = [
       );
     }
 
-    if (opts.kind === 'flashcards') {
-      // Persist a flashcards markdown material; its card -> set lookup lives in flashcardCards.
-      const id = uid('dk');
-      const name = title;
-      const cardContents = Array.from({ length: count }, (_, i) => ({
-        back: `Definition for term ${i + 1}.`,
-        front: `Term ${i + 1}`,
-        id: uid('c'),
-      }));
-      const material = db.makeMaterial({
-        ...ownerMaterialAccess,
-        chapterId: null,
-        color: 'green',
-        content: flashcardsDocument(cardContents, id),
-        createdAt: new Date().toISOString(),
-        id,
-        kind: 'flashcards',
-        privacy: 'private',
-        scopeChapters: scopeChapterNames,
-        scopeFileNames,
-        title: name,
-        workspaceId: wsId,
-        workspaceName: wsName,
-      });
-      db.materials.unshift(material);
-      for (const c of cardContents)
-        db.flashcardCards[c.id] = { materialId: id };
-      return HttpResponse.json({
-        cards: db.cardsFromMaterial(material),
-        kind: 'flashcards',
-        material: db.flashcardSetFromMaterial(material),
-      });
-    }
-
-    if (opts.kind === 'mindmap' || opts.kind === 'diagram') {
-      const material = db.makeMaterial({
-        ...ownerMaterialAccess,
-        chapterId: null,
-        content: createMaterialDocument([
-          mermaidNode(
-            opts.kind === 'mindmap'
-              ? 'mindmap\n  root((Topic))\n    Key idea A\n      Detail 1\n      Detail 2\n    Key idea B\n      Detail 3'
-              : 'flowchart LR\n  A[Start] --> B[Process]\n  B --> C{Decision}\n  C -->|Yes| D[Outcome 1]\n  C -->|No| E[Outcome 2]'
-          ),
-        ]),
-        createdAt: new Date().toISOString(),
-        id: uid('mat'),
-        kind: opts.kind,
-        privacy: 'private',
-        scopeChapters: scopeChapterNames,
-        scopeFileNames,
-        title,
-        workspaceId: wsId,
-        workspaceName: wsName,
-      });
-      db.materials.unshift(material);
-      return HttpResponse.json({ kind: opts.kind, material });
-    }
-
-    // quiz
     const qs: Question[] = Array.from({ length: count }, (_, i) => {
       const type = opts.types[i % opts.types.length];
       const answer = structuredClone(
@@ -2938,23 +2897,20 @@ export const handlers = [
     const name = title;
     const quizMat = db.makeMaterial({
       ...ownerMaterialAccess,
-      chapterId: null,
       content: quizDocument(qs),
       createdAt: new Date().toISOString(),
       id: uid('qz'),
       kind: 'quiz',
       privacy: 'private',
-      scopeChapters: scopeChapterNames,
       scopeFileNames,
+      scopeTopics: scopeTopicNames,
       title: name,
+      topicId: null,
       workspaceId: wsId,
       workspaceName: wsName,
     });
     db.materials.unshift(quizMat);
-    return HttpResponse.json({
-      kind: 'quiz',
-      quiz: db.quizFromMaterial(quizMat),
-    });
+    return HttpResponse.json({ quiz: db.quizFromMaterial(quizMat) });
   }),
   /* ---------------- quizzes & attempts ---------------- */
   http.post('/api/quizzes', async ({ request }) => {
@@ -2963,15 +2919,15 @@ export const handlers = [
     const name = body.name || copyText(db.user.locale, 'untitled_quiz');
     const material = db.makeMaterial({
       ...ownerMaterialAccess,
-      chapterId: null,
       content: quizDocument(body.questions ?? []),
       createdAt: new Date().toISOString(),
       id: uid('qz'),
       kind: 'quiz',
       privacy: body.privacy ?? 'private',
-      scopeChapters: body.chapters ?? [],
       scopeFileNames: [],
+      scopeTopics: body.topics ?? [],
       title: name,
+      topicId: null,
       workspaceId: body.workspaceId ?? '',
       workspaceName: ws?.name ?? '',
     });
@@ -3007,7 +2963,7 @@ export const handlers = [
     if (!material) return new HttpResponse(null, { status: 404 });
     const body = (await request.json()) as Partial<EditableQuiz>;
     if (body.name !== undefined) material.title = body.name;
-    if (body.chapters !== undefined) material.scopeChapters = body.chapters;
+    if (body.topics !== undefined) material.scopeTopics = body.topics;
     return HttpResponse.json(db.quizFromMaterial(material));
   }),
   http.patch('/api/quizzes/:id/sharing', async ({ params, request }) => {
@@ -3060,7 +3016,6 @@ export const handlers = [
         : [];
     const material = db.makeMaterial({
       ...ownerMaterialAccess,
-      chapterId: workspace ? mockCloneChapter(workspace.id, body) : null,
       color: source.color,
       content:
         source.kind === 'flashcards'
@@ -3071,9 +3026,10 @@ export const handlers = [
       isOwner: workspace ? workspace.isOwner : true,
       kind: source.kind,
       privacy: 'private',
-      scopeChapters: [],
       scopeFileNames: [],
+      scopeTopics: [],
       title,
+      topicId: workspace ? mockCloneTopic(workspace.id, body) : null,
       workspaceId,
       workspaceName: workspace?.name ?? '',
     });
@@ -3155,7 +3111,12 @@ export const handlers = [
     if (!quizMt) return new HttpResponse(null, { status: 404 });
     const quiz = db.quizFromMaterial(quizMt);
     const question = quiz.questions.find((q) => q.id === questionId);
-    if (!question) return new HttpResponse(null, { status: 404 });
+    // As the server: only complete questions are projected and marked.
+    if (!question || questionIssues(question).length > 0)
+      return HttpResponse.json(
+        { errors: [{ message: 'question_no_answers' }] },
+        { status: 404 }
+      );
     const [graded] = gradeQuestions([question], answers).questions;
     const order = quiz.questions.map((q) => q.id);
     const existing = db.attempts.find(
@@ -3173,7 +3134,6 @@ export const handlers = [
     const { awarded: correct, max: total } = runScore(quiz.questions, checked);
     const at = {
       answers: { ...existing?.answers, ...answers },
-      chapters: quiz.chapters,
       correct,
       id: existing?.id ?? uid('at'),
       kind: 'quiz' as const,
@@ -3183,6 +3143,7 @@ export const handlers = [
       quizName: quiz.name,
       startedAt: existing?.startedAt ?? startedAt ?? null,
       takenAt: new Date().toISOString(),
+      topics: quiz.topics,
       total,
       workspaceId: quizMt.workspaceId,
       workspaceName: quiz.workspaceName,
@@ -3202,16 +3163,16 @@ export const handlers = [
     const id = uid('dk');
     const material = db.makeMaterial({
       ...ownerMaterialAccess,
-      chapterId: null,
       color: body.color ?? 'green',
       content: flashcardsDocument([], id),
       createdAt: new Date().toISOString(),
       id,
       kind: 'flashcards',
       privacy: 'private',
-      scopeChapters: [],
       scopeFileNames: [],
+      scopeTopics: [],
       title: name,
+      topicId: null,
       workspaceId: body.workspaceId ?? '',
       workspaceName: ws?.name ?? body.workspaceName ?? '',
     });
@@ -3261,6 +3222,7 @@ export const handlers = [
   }),
   /* ---------------- study progress and review ---------------- */
   ...studyHandlers,
+  ...assignmentHandlers('owner'),
 
   /* ---------------- schedule ---------------- */
   http.get('/api/events', async () => HttpResponse.json(db.events)),
@@ -3594,10 +3556,11 @@ export const handlers = [
     http.post(path, async ({ params, request }) => {
       const wsId = typeof params.id === 'string' ? params.id : '';
       const body = (await request.json()) as {
-        chapterId?: string | null;
-        chapterName?: string | null;
+        topicId?: string | null;
+        topicName?: string | null;
         driveIds?: string[];
         fileIds: string[];
+        hidden?: boolean;
         parseMode?: 'fast' | 'none';
         provider: string;
         requestId?: string;
@@ -3614,12 +3577,13 @@ export const handlers = [
       const jobs = body.fileIds.map((_fileId, i) => {
         const jobId = uid('imp');
         const sourceImport: MockSourceImport = {
-          chapterId: body.chapterId ?? null,
           completed: false,
           fileId: uid('f'),
+          hidden: body.hidden === true,
           name: `${body.provider}-import-${i + 1}.pdf`,
           polls: 0,
           sizeBytes: 512 * 1024,
+          topicId: body.topicId ?? null,
           workspaceId: wsId,
         };
         sourceImports.set(jobId, sourceImport);

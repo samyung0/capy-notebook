@@ -101,8 +101,8 @@ func fileRightsCols(user string) string {
 	return `CASE WHEN f.workspace_id IS NULL THEN f.user_id=` + user + ` ELSE ` + edit + ` END,
 		f.user_id=` + user + ` OR (f.workspace_id IS NOT NULL AND ` + edit + `),
 		CASE WHEN f.workspace_id IS NULL THEN f.user_id=` + user + ` ELSE (f.user_id=` + user + ` OR w.user_id=` + user + `) AND ` + live + ` END,
-		CASE WHEN f.workspace_id IS NULL THEN f.user_id=` + user + ` ELSE ` + live + ` AND (w.user_id=` + user + `
-			OR EXISTS (SELECT 1 FROM workspace_members rm WHERE rm.workspace_id=f.workspace_id AND rm.user_id=` + user + `) OR ` + edit + `) END`
+		CASE WHEN f.workspace_id IS NULL THEN f.user_id=` + user + ` ELSE ` + live + ` AND (w.user_id=` + user + ` OR ` + edit + `
+			OR (w.kind<>'class' AND EXISTS (SELECT 1 FROM workspace_members rm WHERE rm.workspace_id=f.workspace_id AND rm.user_id=` + user + `))) END`
 }
 
 const listPageMax = 100
@@ -232,8 +232,8 @@ type MaterialListItem struct {
 	Title         string       `json:"title"`
 	WorkspaceID   string       `json:"workspaceId"`
 	WorkspaceName string       `json:"workspaceName"`
-	ChapterID     *string      `json:"chapterId"`
-	ChapterName   string       `json:"chapterName"`
+	TopicID       *string      `json:"topicId"`
+	TopicName     string       `json:"topicName"`
 	Privacy       Privacy      `json:"privacy"`
 	// SharePath is the signed share link of a standalone quiz or flashcard set.
 	SharePath     string          `json:"sharePath,omitempty"`
@@ -244,6 +244,19 @@ type MaterialListItem struct {
 	CardCount     *int            `json:"cardCount,omitempty"`
 	Preview       MaterialPreview `json:"preview,omitempty"`
 	LostAccess    bool            `json:"lostAccess,omitempty" doc:"The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it"`
+	// Hidden from members (Material.Hidden).
+	Hidden bool `json:"hidden,omitempty"`
+	// Assigned and AssignmentID as MaterialRef.
+	Assigned     bool   `json:"assigned,omitempty"`
+	AssignmentID string `json:"assignmentId,omitempty"`
+}
+
+// forAssignee keeps from a quiz's assignee that it is hidden from others and its
+// preview, a question they would otherwise see before their clock starts.
+func (item *MaterialListItem) forAssignee() {
+	if item.AssignmentID != "" {
+		item.Hidden, item.Preview = false, nil
+	}
 }
 
 type MaterialPage struct {
@@ -274,7 +287,8 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 	where := ` WHERE m.owner_user_id=$1`
 	if f.Member {
 		where = ` WHERE m.id IN (SELECT id FROM materials WHERE workspace_id IS NULL AND owner_user_id=$1
-			UNION ALL SELECT id FROM materials WHERE workspace_id IN (` + visibleWorkspacesSQL("$1") + `))`
+			UNION ALL SELECT id FROM materials WHERE workspace_id IN (` + visibleWorkspacesSQL("$1") + `))
+			AND (workspace_item_visible(m.hidden, m.workspace_id, $1) OR ` + quizAssignedToSQL("m.id", "$1") + ` IS NOT NULL)`
 	}
 	where += ` AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND m.kind = ANY($2)`
 	if len(f.WorkspaceIDs) > 0 {
@@ -304,14 +318,14 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 	args = append(args, cursorArgs...)
 	args = append(args, f.Limit+1)
 	rows, err := s.pool.Query(ctx, `SELECT m.id, m.kind, m.title, COALESCE(m.workspace_id,''), `+materialWorkspaceNameSQL+`,
-			m.chapter_id, COALESCE(c.name,''),
+			m.topic_id, COALESCE(c.name,''),
 			m.privacy, m.created_at, m.updated_at, m.size_bytes,
 			CASE WHEN m.kind='quiz' THEN (SELECT (SELECT count(*) FROM jsonb_array_elements(elem->'children') child WHERE child->>'type'='quiz_question')
 				FROM jsonb_array_elements(m.content->'value') elem WHERE elem->>'type'='quiz' LIMIT 1) END,
 			CASE WHEN m.kind='flashcards' THEN (SELECT count(*) FROM flashcard_cards fc WHERE fc.material_id=m.id) END,
-			m.preview, `+lostMaterialSQL+`
+			m.preview, `+lostMaterialSQL+`, m.hidden, `+materialAssignedCols("$1")+`
 		FROM materials m
-		LEFT JOIN chapters c ON c.id=m.chapter_id`+where+
+		LEFT JOIN topics c ON c.id=m.topic_id`+where+
 		orderClause(sort, "m.id", f.Ascending)+fmt.Sprintf(` LIMIT $%d`, len(args)), args...)
 	if err != nil {
 		return MaterialPage{}, err
@@ -321,11 +335,12 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 	for rows.Next() {
 		var item MaterialListItem
 		if err := rows.Scan(&item.ID, &item.Kind, &item.Title, &item.WorkspaceID, &item.WorkspaceName,
-			&item.ChapterID, &item.ChapterName,
+			&item.TopicID, &item.TopicName,
 			&item.Privacy, &item.CreatedAt, &item.UpdatedAt, &item.SizeBytes,
-			&item.QuestionCount, &item.CardCount, &item.Preview, &item.LostAccess); err != nil {
+			&item.QuestionCount, &item.CardCount, &item.Preview, &item.LostAccess, &item.Hidden, &item.Assigned, &item.AssignmentID); err != nil {
 			return MaterialPage{}, err
 		}
+		item.forAssignee()
 		item.SharePath = materialSharePath(s.shareLinkSecret, string(item.Kind), item.ID, item.WorkspaceID, "")
 		if item.LostAccess {
 			item = lostMaterialItem(item)
@@ -357,7 +372,7 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 
 // lostMaterialItem keeps what a payer needs to recognise and delete a row it
 // can no longer open: its name and size, where it sits, and when it was
-// created (Sam 2026-10-19). Chapter, counts, preview, share link and later
+// created (Sam 2026-10-19). Topic, counts, preview, share link and later
 // activity stay hidden.
 func lostMaterialItem(item MaterialListItem) MaterialListItem {
 	return MaterialListItem{
@@ -437,9 +452,11 @@ func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFi
 	switch {
 	case f.Member:
 		where = ` WHERE (f.workspace_id IN (` + visibleWorkspacesSQL("$1") + `)
-			OR (f.workspace_id IS NULL AND f.user_id=$1)) AND f.trashed_at IS NULL`
+			OR (f.workspace_id IS NULL AND f.user_id=$1)) AND f.trashed_at IS NULL
+			AND workspace_item_visible(f.hidden, f.workspace_id, $1)`
 	case f.All:
-		where = ` WHERE (f.user_id=$1 OR f.workspace_id IN (` + memberWorkspacesSQL("$1") + `)) AND f.trashed_at IS NULL`
+		where = ` WHERE (f.user_id=$1 OR f.workspace_id IN (` + memberWorkspacesSQL("$1") + `)) AND f.trashed_at IS NULL
+			AND workspace_item_visible(f.hidden, f.workspace_id, $1)`
 	}
 	if len(f.Kinds) > 0 {
 		args = append(args, f.Kinds)
@@ -529,11 +546,13 @@ type WorkspaceRecent struct {
 // ListWorkspaceRecent returns the newest live files (by added time) and
 // top-level materials (by created time) of one workspace. Callers check read
 // access first; the rows carry no share links.
-func (s *Store) ListWorkspaceRecent(ctx context.Context, wsID string, limit int) (WorkspaceRecent, error) {
+func (s *Store) ListWorkspaceRecent(ctx context.Context, userID, wsID string, limit int) (WorkspaceRecent, error) {
 	out := WorkspaceRecent{Files: []File{}, Materials: []MaterialListItem{}}
+	// Members' Dashboards leave out what is hidden from them.
 	rows, err := s.pool.Query(ctx, `SELECT `+fileListCols+` FROM files f
 		WHERE f.workspace_id=$1 AND f.trashed_at IS NULL
-		ORDER BY f.added_at DESC, f.id LIMIT $2`, wsID, limit)
+			AND workspace_item_visible(f.hidden, f.workspace_id, $3)
+		ORDER BY f.added_at DESC, f.id LIMIT $2`, wsID, limit, userID)
 	if err != nil {
 		return out, err
 	}
@@ -550,10 +569,11 @@ func (s *Store) ListWorkspaceRecent(ctx context.Context, wsID string, limit int)
 		return out, err
 	}
 	rows, err = s.pool.Query(ctx, `SELECT m.id, m.kind, m.title, m.workspace_id, m.workspace_name,
-			m.chapter_id, m.privacy, m.created_at, m.updated_at, m.size_bytes, m.preview
+			m.topic_id, m.privacy, m.created_at, m.updated_at, m.size_bytes, m.preview, m.hidden, `+materialAssignedCols("$3")+`
 		FROM materials m
 		WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
-		ORDER BY m.created_at DESC, m.id LIMIT $2`, wsID, limit)
+			AND (workspace_item_visible(m.hidden, m.workspace_id, $3) OR `+quizAssignedToSQL("m.id", "$3")+` IS NOT NULL)
+		ORDER BY m.created_at DESC, m.id LIMIT $2`, wsID, limit, userID)
 	if err != nil {
 		return out, err
 	}
@@ -561,9 +581,10 @@ func (s *Store) ListWorkspaceRecent(ctx context.Context, wsID string, limit int)
 	for rows.Next() {
 		var item MaterialListItem
 		if err := rows.Scan(&item.ID, &item.Kind, &item.Title, &item.WorkspaceID, &item.WorkspaceName,
-			&item.ChapterID, &item.Privacy, &item.CreatedAt, &item.UpdatedAt, &item.SizeBytes, &item.Preview); err != nil {
+			&item.TopicID, &item.Privacy, &item.CreatedAt, &item.UpdatedAt, &item.SizeBytes, &item.Preview, &item.Hidden, &item.Assigned, &item.AssignmentID); err != nil {
 			return out, err
 		}
+		item.forAssignee()
 		out.Materials = append(out.Materials, item)
 	}
 	return out, rows.Err()

@@ -109,7 +109,7 @@ func (u *user) addSources(ctx context.Context, f fixtures, ws string, first, cou
 		for k := range n {
 			src := f.source(first + start + k)
 			meta := map[string]any{
-				"batchId": batch, "batchTotal": n, "chapterId": nil, "chapterName": nil,
+				"batchId": batch, "batchTotal": n, "topicId": nil, "topicName": nil,
 				"contentType": src.contentType, "kind": src.kind, "name": src.name,
 				"parseMode": "none", "sizeBytes": len(src.data),
 			}
@@ -340,11 +340,11 @@ func (u *user) countOffset(ctx context.Context, path string) (int, error) {
 // per card, a graded check per question), then finish.
 func (u *user) finishReview(ctx context.Context, ws string) error {
 	var session struct {
-		ChapterID string          `json:"chapterId"`
-		Evidence  json.RawMessage `json:"evidence"`
-		Group     string          `json:"group"`
-		Mode      string          `json:"mode"`
-		Items     []struct {
+		TopicID  string          `json:"topicId"`
+		Evidence json.RawMessage `json:"evidence"`
+		Group    string          `json:"group"`
+		Mode     string          `json:"mode"`
+		Items    []struct {
 			ItemID     string `json:"itemId"`
 			MaterialID string `json:"materialId"`
 			Kind       string `json:"kind"`
@@ -369,8 +369,8 @@ func (u *user) finishReview(ctx context.Context, ws string) error {
 	if session.Mode != "" {
 		ref["mode"] = session.Mode
 	}
-	if session.ChapterID != "" {
-		ref["chapterId"] = session.ChapterID
+	if session.TopicID != "" {
+		ref["topicId"] = session.TopicID
 	}
 	if len(session.Evidence) > 0 && string(session.Evidence) != "null" {
 		ref["evidence"] = session.Evidence

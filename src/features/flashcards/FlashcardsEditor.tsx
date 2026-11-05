@@ -11,6 +11,7 @@ import type {
 } from '@/features/collaboration/itemRoom';
 import { UndoButtons } from '@/features/collaboration/LiveItemControls';
 import { FileActionsTarget } from '@/features/files/fileModeContext';
+import type { FlashcardContent } from '@/features/materials/blocks';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { CardDialog } from './CardDialog';
@@ -27,6 +28,42 @@ import { addCard, isBlank, readCards, removeCard, useCards } from './liveSet';
  * and removing a card change the set at once for everyone in it; there is
  * no Save, Reset or Done. A card added and left blank goes away when its
  * dialog closes, as the old save left blank cards out. */
+const scrollToCard = (node: HTMLLIElement | null) =>
+  node?.scrollIntoView({ block: 'center' });
+
+/** The editor's grid before its room synced: the same tiles, nothing to press. */
+export function PaintedCards({
+  action,
+  cards,
+  openCardId,
+  title,
+}: {
+  action?: ReactNode;
+  cards: FlashcardContent[];
+  openCardId?: string;
+  title: string;
+}) {
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex items-center gap-4">
+        <h1 className="t-large-card-title min-w-0 flex-1">{title}</h1>
+        {action}
+      </div>
+      <CardGrid>
+        {cards.map((card, index) => (
+          <CardTile
+            card={card}
+            headerImage
+            key={card.id}
+            n={index + 1}
+            ref={card.id === openCardId ? scrollToCard : undefined}
+          />
+        ))}
+      </CardGrid>
+    </div>
+  );
+}
+
 export function FlashcardsEditor({
   room,
   status,
@@ -34,6 +71,7 @@ export function FlashcardsEditor({
   title,
   action,
   onEmpty,
+  openCardId,
   showTitle = true,
   showUndo = true,
   compact = false,
@@ -47,6 +85,8 @@ export function FlashcardsEditor({
   /** Inside a note: removing the last card removes the embed block. A set
    * of its own keeps at least one card. */
   onEmpty?: () => void;
+  /** A card to scroll to at once (a link to it). */
+  openCardId?: string;
   /** Off where the page header already names the set. */
   showTitle?: boolean;
   /** Off inside a note (the card dialog carries them). */
@@ -134,7 +174,14 @@ export function FlashcardsEditor({
         createPortal(<UndoButtons header manager={undo} />, headerActions)}
       {(showTitle || (showUndo && !headerActions)) && (
         // Lined up with the set's View grid, so Study holds still across modes.
-        <div className={cn('flex items-center', action ? 'gap-4' : 'gap-2')}>
+        <div
+          className={cn(
+            'items-center',
+            action ? 'gap-4' : 'gap-2',
+            // With only Undo and Redo in it, phones have nothing to show.
+            showTitle || action ? 'flex' : 'hidden sm:flex'
+          )}
+        >
           {showTitle && (
             <h1 className="t-large-card-title min-w-0 flex-1">{title}</h1>
           )}
@@ -169,6 +216,7 @@ export function FlashcardsEditor({
               label={m.flashcards_edit_card()}
               n={index + 1}
               onOpen={() => setEditing({ added: false, id: card.id })}
+              ref={card.id === openCardId ? scrollToCard : undefined}
             />
           ))}
           {addTile}

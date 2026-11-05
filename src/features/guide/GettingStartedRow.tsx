@@ -22,13 +22,13 @@ import { startTour } from './tourStore';
 
 const STEP_LABEL: Record<GettingStartedStep, () => string> = {
   chat: m.getting_started_step_chat,
-  plan: m.getting_started_step_plan,
+  practice: m.getting_started_step_practice,
   upload: m.getting_started_step_upload,
 };
 
 const STEP_SEARCH: Record<GettingStartedStep, WorkspaceOpenSearch> = {
   chat: { chat: 'new' },
-  plan: { study: true },
+  practice: { study: 'practice' },
   upload: { add: 'upload' },
 };
 

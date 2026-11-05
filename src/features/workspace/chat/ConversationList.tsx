@@ -139,9 +139,7 @@ export function ConversationList({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <PanelSearch label={m.chat_search()} onChange={setQuery} value={query} />
-      {onNew && (
-        <PanelNewRow icon="newChat" label={m.chat_new()} onClick={onNew} />
-      )}
+      {onNew && <PanelNewRow icon="ai" label={m.chat_new()} onClick={onNew} />}
       <div
         className={cn(
           'scroll-fade-y min-h-0 flex-1 overflow-auto px-2.5 pt-2 pb-4 [--scroll-fade-bottom-padding:--spacing(4)]',

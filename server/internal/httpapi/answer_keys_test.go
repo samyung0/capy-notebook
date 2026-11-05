@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -48,6 +50,7 @@ func TestReviewSessionChecksQuestionsOnTheServer(t *testing.T) {
 	t.Cleanup(func() {
 		for _, q := range []string{
 			`DELETE FROM review_sessions WHERE user_id='u_viewer'`,
+			`DELETE FROM answer_events WHERE user_id='u_viewer' AND material_id='qz_e2e_private'`,
 			`DELETE FROM attempts WHERE user_id='u_viewer' AND material_id='qz_e2e_private'`,
 			`DELETE FROM review_log WHERE user_id='u_viewer' AND material_id='qz_e2e_private'`,
 			`DELETE FROM review_states WHERE user_id='u_viewer' AND material_id='qz_e2e_private'`,
@@ -111,6 +114,16 @@ func TestReviewSessionChecksQuestionsOnTheServer(t *testing.T) {
 		WHERE user_id='u_viewer' AND material_id='qz_e2e_private' AND item_id='q_priv_1'`).Scan(&ratings); err != nil || ratings != 2 {
 		t.Fatalf("ratings = %d %v, want the attempt's and the check's", ratings, err)
 	}
+	// Both checks log the part; the review's knows the attempt showed the key.
+	rows, err := st.Pool().Query(context.Background(), `SELECT source || ' ' || awarded || ' ' || key_seen FROM answer_events
+		WHERE user_id='u_viewer' AND material_id='qz_e2e_private' ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logged, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil || strings.Join(logged, ", ") != "quiz 0 false, review 1 true" {
+		t.Fatalf("answer events = %q %v", logged, err)
+	}
 	for _, tc := range []struct {
 		user   string
 		body   map[string]any
@@ -171,6 +184,7 @@ func TestAttemptLeavesAnswersToUnprojectedPartsUnmarked(t *testing.T) {
 	h, st, _ := openGradingAPI(t, "full")
 	t.Cleanup(func() {
 		for _, q := range []string{
+			`DELETE FROM answer_events WHERE user_id='u_viewer' AND material_id='qz_e2e_private'`,
 			`DELETE FROM attempts WHERE user_id='u_viewer' AND material_id='qz_e2e_private'`,
 			`DELETE FROM review_log WHERE user_id='u_viewer' AND material_id='qz_e2e_private'`,
 			`DELETE FROM review_states WHERE user_id='u_viewer' AND material_id='qz_e2e_private'`,
