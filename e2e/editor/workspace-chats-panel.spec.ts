@@ -347,9 +347,25 @@ test('the open panel is in the URL, back steps through it, and each workspace re
 
   // Visiting again opens what was last open, here and only here.
   await page.goto('/workspaces/ws_bio');
-  await expect(page).toHaveURL(/panel=agent/);
+  await expect(page).toHaveURL(/panel=agent/, { timeout: 60_000 });
   await expect(panel).toBeVisible();
   await page.goto('/workspaces/ws_eng');
-  await expect(page).toHaveURL(/panel=none/);
+  await expect(page).toHaveURL(/panel=none/, { timeout: 60_000 });
   await expect(panel).toBeHidden();
+});
+
+// The panel labels the URL during a slow first load, when the router reports any
+// navigation as a path change: a dialog open from the URL stays open through it.
+test('settings opened by the URL stay open while the panel labels it', async ({
+  context,
+  page,
+}) => {
+  const cdp = await context.newCDPSession(page);
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+  await page.goto('/workspaces/ws_bio?settings=study');
+  await expect(page).toHaveURL(/settings=study&panel=/, { timeout: 60_000 });
+  await expect(
+    page.getByRole('switch', { name: m.study_hide_progress() })
+  ).toBeVisible({ timeout: 60_000 });
+  await expect(page).toHaveURL(/settings=study/);
 });

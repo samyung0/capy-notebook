@@ -412,9 +412,14 @@ function SimpleDialog({
   > | null;
   React.useEffect(() => {
     if (!open) return;
-    return router?.subscribe('onBeforeNavigate', ({ pathChanged }) => {
-      if (pathChanged) onClose();
-    });
+    // Before the first load resolves there is no path to have left, though the
+    // router reports one: a page labelling its URL then stays open.
+    return router?.subscribe(
+      'onBeforeNavigate',
+      ({ fromLocation, pathChanged }) => {
+        if (fromLocation && pathChanged) onClose();
+      }
+    );
   }, [router, onClose, open]);
 
   const phone = useIsPhone();

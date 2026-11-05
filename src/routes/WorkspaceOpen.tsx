@@ -328,12 +328,45 @@ function sectionForCenter(
   return was === 'study' ? 'dashboard' : was;
 }
 
+/** The panel as the URL says, else as this workspace last had it. */
+function firstPanelOf(
+  workspaceId: string,
+  urlPanel: WorkspacePanel | undefined,
+  lg: boolean
+) {
+  return lg
+    ? (urlPanel ??
+        readPref<WorkspacePanel | null>(
+          PREF_KEYS.panel(workspaceId),
+          null,
+          (value): value is WorkspacePanel => isWorkspacePanel(value)
+        ))
+    : null;
+}
+
+function firstSectionOf(
+  panel: WorkspacePanel | null,
+  center: PanelCenter
+): WorkspaceSection {
+  const first = panel && panel !== 'none' ? panel : 'dashboard';
+  // Study's panel lists Study's pages: the sync below opens Practice.
+  if (
+    first === 'study' &&
+    !center.studyPage &&
+    !center.openKey &&
+    !center.makePage
+  )
+    return first;
+  return sectionForCenter(first, center);
+}
+
+const firstPanelOpenOf = (panel: WorkspacePanel | null, center: PanelCenter) =>
+  panel !== 'none' || (!center.openKey && !center.studyPage);
+
 export default function WorkspaceOpenPage() {
-  const params = useParams({ strict: false }) as { workspaceId: string };
   return (
     <>
-      {/* Its panels are each workspace's own. */}
-      <WorkspaceOpen key={params.workspaceId} />
+      <WorkspaceOpen />
       {/* After the page, so the follow's normal open (Q462) runs after the
           file view's effects and its URL wins. */}
       <FollowOpenFile />
@@ -395,28 +428,24 @@ function WorkspaceOpen() {
     ? `${searchedOpenItem.kind}:${searchedOpenItem.id}`
     : null;
   const center: PanelCenter = { makePage, openKey, studyPage };
-  // The panel opens as the URL says, else as this workspace last had it. These
-  // two states draw it; the effect below keeps the URL and the memory on them.
-  const [firstPanel] = useState(() =>
-    lg
-      ? (search.panel ??
-        readPref<WorkspacePanel | null>(
-          PREF_KEYS.panel(workspaceId),
-          null,
-          (value): value is WorkspacePanel => isWorkspacePanel(value)
-        ))
-      : null
+  // These two states draw the panel; the effect below keeps the URL and the
+  // memory on them.
+  const [section, setSection] = useState<WorkspaceSection>(() =>
+    firstSectionOf(firstPanelOf(workspaceId, search.panel, lg), center)
   );
-  const [section, setSection] = useState<WorkspaceSection>(() => {
-    const first =
-      firstPanel && firstPanel !== 'none' ? firstPanel : 'dashboard';
-    // Study's panel lists Study's pages: the sync below opens Practice.
-    if (first === 'study' && !studyPage && !openKey && !makePage) return first;
-    return sectionForCenter(first, center);
-  });
-  const [panelOpen, setPanelOpen] = useState(
-    () => firstPanel !== 'none' || (!openKey && !studyPage)
+  const [panelOpen, setPanelOpen] = useState(() =>
+    firstPanelOpenOf(firstPanelOf(workspaceId, search.panel, lg), center)
   );
+  // Panels are each workspace's own. The page stays mounted when a Move takes
+  // the open file to another: the file follows at once (Q467).
+  const [seenWorkspace, setSeenWorkspace] = useState(workspaceId);
+  if (workspaceId !== seenWorkspace) {
+    setSeenWorkspace(workspaceId);
+    const panel = firstPanelOf(workspaceId, search.panel, lg);
+    setChatShown(readPref(PREF_KEYS.chatShown(workspaceId), false, isBoolean));
+    setSection(firstSectionOf(panel, center));
+    setPanelOpen(firstPanelOpenOf(panel, center));
+  }
   // The centre moves on while Agent keeps its chat: a citation opens its file
   // beside the chat, and so does anything else opened there.
   const centerKey = `${openKey}|${studyPage}|${makePage}`;
