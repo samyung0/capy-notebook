@@ -11,6 +11,7 @@ import { useOnlineStatus } from '@/lib/online';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { Icon, type IconName } from '../ui/Icon';
+import { FileBanner } from './FileBanner';
 
 function formatDate(iso?: string) {
   if (!iso) return null;
@@ -25,12 +26,24 @@ function formatDate(iso?: string) {
   }
 }
 
+type AccountStatus = {
+  body: string;
+  icon: IconName;
+  kind: 'frozen' | 'grace' | 'full' | 'near' | 'offline' | 'reconnecting';
+  /** It carries the Subscription and Settings links. */
+  links: boolean;
+  title: string;
+  tone: 'warning' | 'error';
+  /** Storage used, 0 to 100, for the meter. */
+  usedPercent?: number;
+};
+
 /**
- * Home's banner slot, empty unless the viewer's own account or
- * connection has a problem, shown one at a time (frozen, grace, full, near
- * the limit, offline, reconnecting).
+ * The viewer's own account or connection problem, if any, one at a time: frozen,
+ * grace, full, near the limit, offline, reconnecting. Home's card and the
+ * Dashboard's strip both read it.
  */
-export default function HomeBanner() {
+function useAccountStatus(): AccountStatus | null {
   const { data: me } = useMe({ errorBoundary: false });
   const online = useOnlineStatus();
   const { data: stream } = useQuery<EventStreamState>({
@@ -40,9 +53,81 @@ export default function HomeBanner() {
     queryKey: qk.eventStream,
   });
   const account = me?.account;
-  const graceDate = formatDate(account?.graceEndsAt);
-  const accountLinks = (
-    <div className="mt-1.5 -ml-2 flex flex-wrap gap-1">
+  if (account?.state === AccountState.over_quota_frozen)
+    return {
+      body: m.account_banner_frozen_body(),
+      icon: 'error',
+      kind: 'frozen',
+      links: true,
+      title: m.account_banner_frozen_title(),
+      tone: 'error',
+    };
+  if (account?.state === AccountState.over_quota_grace) {
+    const graceDate = formatDate(account.graceEndsAt);
+    return {
+      body: graceDate
+        ? m.account_banner_grace_body({ date: graceDate })
+        : m.account_banner_grace_body_nodate(),
+      icon: 'database',
+      kind: 'grace',
+      links: true,
+      title: m.account_banner_grace_title(),
+      tone: 'warning',
+    };
+  }
+  const usage = account?.storageUsage;
+  if (
+    account &&
+    (usage === StorageUsageLevel.full || usage === StorageUsageLevel.near_limit)
+  ) {
+    const full = usage === StorageUsageLevel.full;
+    // Whole megabytes, rounded down so 95% never reads as the full limit.
+    const amounts = {
+      limit: storageLimitLabel(account.storageLimitBytes),
+      used: `${Math.floor(account.storageUsedBytes / 1_000_000)} MB`,
+    };
+    return {
+      body: full
+        ? m.account_banner_full_body(amounts)
+        : m.account_banner_near_body(amounts),
+      icon: 'database',
+      kind: full ? 'full' : 'near',
+      links: true,
+      title: full
+        ? m.account_banner_full_title()
+        : m.account_banner_near_title(),
+      tone: full ? 'error' : 'warning',
+      usedPercent: usagePercent(
+        account.storageUsedBytes,
+        0,
+        account.storageLimitBytes
+      ),
+    };
+  }
+  if (!online)
+    return {
+      body: m.connection_offline_body(),
+      icon: 'wifiOff',
+      kind: 'offline',
+      links: false,
+      title: m.connection_offline_title(),
+      tone: 'warning',
+    };
+  if (stream?.status === 'disconnected')
+    return {
+      body: m.connection_reconnecting_body(),
+      icon: 'wifiOff',
+      kind: 'reconnecting',
+      links: false,
+      title: m.connection_reconnecting_title(),
+      tone: 'warning',
+    };
+  return null;
+}
+
+function AccountLinks() {
+  return (
+    <>
       <Button
         asChild
         className="h-7 px-2 text-fg underline underline-offset-3 hover:bg-fg/5"
@@ -61,59 +146,27 @@ export default function HomeBanner() {
       >
         <Link to="/settings">{m.account_banner_settings()}</Link>
       </Button>
-    </div>
+    </>
   );
+}
 
-  if (account?.state === AccountState.over_quota_frozen)
-    return (
-      <SlotCard
-        body={m.account_banner_frozen_body()}
-        icon="error"
-        title={m.account_banner_frozen_title()}
-        tone="error"
-      >
-        {accountLinks}
-      </SlotCard>
-    );
-  if (account?.state === AccountState.over_quota_grace)
-    return (
-      <SlotCard
-        body={
-          graceDate
-            ? m.account_banner_grace_body({ date: graceDate })
-            : m.account_banner_grace_body_nodate()
-        }
-        icon="database"
-        title={m.account_banner_grace_title()}
-        tone="warning"
-      >
-        {accountLinks}
-      </SlotCard>
-    );
-  const usage = account?.storageUsage;
-  if (
-    account &&
-    (usage === StorageUsageLevel.full || usage === StorageUsageLevel.near_limit)
-  ) {
-    const full = usage === StorageUsageLevel.full;
-    // Whole megabytes, rounded down so 95% never reads as the full limit.
-    const amounts = {
-      limit: storageLimitLabel(account.storageLimitBytes),
-      used: `${Math.floor(account.storageUsedBytes / 1_000_000)} MB`,
-    };
-    return (
-      <SlotCard
-        body={
-          full
-            ? m.account_banner_full_body(amounts)
-            : m.account_banner_near_body(amounts)
-        }
-        icon="database"
-        title={
-          full ? m.account_banner_full_title() : m.account_banner_near_title()
-        }
-        tone={full ? 'error' : 'warning'}
-      >
+/** Home's banner slot, empty unless the viewer has an account status. */
+export default function HomeBanner() {
+  const status = useAccountStatus();
+  if (!status) return null;
+  return (
+    <SlotCard
+      body={status.body}
+      connection={
+        status.kind === 'offline' || status.kind === 'reconnecting'
+          ? status.kind
+          : undefined
+      }
+      icon={status.icon}
+      title={status.title}
+      tone={status.tone}
+    >
+      {status.usedPercent !== undefined && (
         <div
           aria-hidden
           className="mt-2.5 h-1.5 max-w-[260px] overflow-hidden rounded-full bg-current/18"
@@ -121,34 +174,38 @@ export default function HomeBanner() {
         >
           <div
             className="h-full rounded-full bg-current"
-            style={{
-              width: `${usagePercent(account.storageUsedBytes, 0, account.storageLimitBytes)}%`,
-            }}
+            style={{ width: `${status.usedPercent}%` }}
           />
         </div>
-        {accountLinks}
-      </SlotCard>
-    );
-  }
-  if (!online || stream?.status === 'disconnected')
-    return (
-      <SlotCard
-        body={
-          online
-            ? m.connection_reconnecting_body()
-            : m.connection_offline_body()
-        }
-        connection={online ? 'reconnecting' : 'offline'}
-        icon="wifiOff"
-        title={
-          online
-            ? m.connection_reconnecting_title()
-            : m.connection_offline_title()
-        }
-        tone="warning"
-      />
-    );
-  return null;
+      )}
+      {status.links && (
+        <div className="mt-1.5 -ml-2 flex flex-wrap gap-1">
+          <AccountLinks />
+        </div>
+      )}
+    </SlotCard>
+  );
+}
+
+/**
+ * The same status as one row at the top of a workspace's Dashboard (Epo
+ * 2026-11-05, Q631): its title, then its body scrolling sideways.
+ */
+export function AccountStatusStrip() {
+  const status = useAccountStatus();
+  if (!status) return null;
+  return (
+    <FileBanner
+      closeable={false}
+      heading={status.title}
+      inline
+      kind={status.kind}
+      links={status.links && <AccountLinks />}
+      message={status.body}
+      testId="account-status-strip"
+      tone={status.tone}
+    />
+  );
 }
 
 function SlotCard({

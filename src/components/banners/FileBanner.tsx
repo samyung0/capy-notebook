@@ -46,20 +46,25 @@ export function BannerStack({ children }: { children: ReactNode }) {
  * keeps it one row high: the message scrolls sideways and the actions take
  * the close button's place. `closeable={false}` leaves the button out.
  * Inside a `BannerStack` only the newest strip shows. `kind` names the
- * strip's state for tests (`data-kind`).
+ * strip's state for tests (`data-kind`). `heading` goes in bold before the
+ * message, and `links` beside any actions, for links rather than buttons.
  */
 export function FileBanner({
   message,
+  heading,
   tone = 'neutral',
   actions = [],
+  links,
   closeable = true,
   inline = false,
   kind,
   testId,
 }: {
   message: string;
-  tone?: 'neutral' | 'error';
+  heading?: string;
+  tone?: 'neutral' | 'warning' | 'error';
   actions?: FileBannerAction[];
+  links?: ReactNode;
   closeable?: boolean;
   inline?: boolean;
   kind?: string;
@@ -90,6 +95,12 @@ export function FileBanner({
       {action.label}
     </Button>
   ));
+  const text = (
+    <>
+      {heading && <b className="font-semibold">{heading} </b>}
+      {message}
+    </>
+  );
   const close = closeable && (
     <IconButton
       className="shrink-0 rounded-md opacity-75 hover:bg-fg/5 hover:opacity-100"
@@ -105,9 +116,9 @@ export function FileBanner({
         // Less inset on phones.
         'flex shrink-0 gap-3 border-b pr-1.5 pl-3 text-fg text-sm sm:pr-2 sm:pl-4',
         inline ? 'h-9 items-center' : 'items-start py-1',
-        tone === 'error'
-          ? 'border-solid-error/40 bg-tint-error'
-          : 'border-divider bg-surface-hover-bg'
+        tone === 'error' && 'border-solid-error/40 bg-tint-error',
+        tone === 'warning' && 'border-solid-warning/40 bg-tint-warning',
+        tone === 'neutral' && 'border-divider bg-surface-hover-bg'
       )}
       data-kind={kind}
       data-testid={testId}
@@ -119,10 +130,13 @@ export function FileBanner({
             className="scroll-fade-x min-w-0 flex-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             ref={scrollRef}
           >
-            {message}
+            {text}
           </div>
-          {buttons.length ? (
-            <div className="flex shrink-0 gap-1">{buttons}</div>
+          {buttons.length || links ? (
+            <div className="flex shrink-0 gap-1">
+              {buttons}
+              {links}
+            </div>
           ) : (
             close
           )}
@@ -130,10 +144,11 @@ export function FileBanner({
       ) : (
         <>
           <div className="min-w-0 flex-1 pt-0.5">
-            <p>{message}</p>
-            {buttons.length > 0 && (
+            <p>{text}</p>
+            {(buttons.length > 0 || links) && (
               <div className="mt-1 -mr-8.5 flex flex-wrap justify-end gap-1">
                 {buttons}
+                {links}
               </div>
             )}
           </div>

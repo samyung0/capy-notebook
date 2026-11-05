@@ -534,6 +534,15 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
       page.getByRole('dialog', { name: m.workspace_storage_near_self_title() })
     ).toBeVisible();
     await page.keyboard.press('Escape');
+    // A workspace opens on its Dashboard, which shows the status as a strip.
+    await page.goto('/workspaces/ws_scenarios');
+    const strip = page.getByTestId('account-status-strip');
+    await expect(strip).toHaveAttribute('data-kind', 'near', {
+      timeout: 30_000,
+    });
+    await expect(
+      strip.getByText(m.account_banner_near_title(), { exact: true })
+    ).toBeVisible();
     await page.goto('/');
     await expect(page.getByTestId('storage-usage-meter')).toBeVisible({
       timeout: 30_000,
@@ -607,6 +616,13 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
         page.getByRole('button', { exact: true, name })
       ).toHaveAttribute('data-storage-status', status);
     }
+    // The Dashboard's strip names the viewer's own frozen account there too.
+    await page.goto('/workspaces/ws_scenarios');
+    await expect(page.getByTestId('account-status-strip')).toHaveAttribute(
+      'data-kind',
+      'frozen',
+      { timeout: 30_000 }
+    );
     // A frozen viewer edits nowhere, a healthy owner's workspace included.
     await page.goto('/workspaces/ws_scenarios?material=mock-scenario-note');
     await expect(
