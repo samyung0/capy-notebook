@@ -2258,3 +2258,192 @@ func TestMovingAFileLeavesItsAssignments(t *testing.T) {
 		t.Fatalf("after the move: %d rows, files %+v", left, read.Files)
 	}
 }
+
+// TestRepublishReplacesTheFrozenCopy: a running attempt gets the new copy and
+// loses answers to what left it; a submission keeps its marks, and what left the
+// copy stays on the report while it holds an answer; a closed one is refused.
+func TestRepublishReplacesTheFrozenCopy(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-republish")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done, err := f.s.StartAssignment(ctx, f.other, created.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.SubmitAssignmentAttempt(ctx, f.other, done.ID, map[string]any{"p2": "osmosis", "p3": "A long answer"}, now); err != nil {
+		t.Fatal(err)
+	}
+	running, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := f.s.RepublishAssignment(ctx, f.viewer, created.ID, frozenFixture(t)[:1], now); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("a member republished: %v", err)
+	}
+	later := now.Add(time.Minute)
+	got, err := f.s.RepublishAssignment(ctx, f.editor, created.ID, frozenFixture(t)[:1], later)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Questions != 1 || got.Marks != 1 || !got.PostedAt.Equal(later) {
+		t.Fatalf("republished = %+v", got)
+	}
+
+	view, err := f.s.GetAssignmentAttempt(ctx, f.viewer, running.ID, later)
+	if err != nil || len(view.Questions) != 1 {
+		t.Fatalf("the running attempt = %+v, err %v", view, err)
+	}
+	finished, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, running.ID, map[string]any{"p1": []any{float64(1)}, "p3": "gone"}, later)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if finished.Total != 1 || finished.Correct != 1 {
+		t.Fatalf("submitted on the new copy = %+v", finished)
+	}
+
+	kept, err := f.s.GetAssignmentAttempt(ctx, f.other, done.ID, later)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(kept.Questions) != 3 || kept.Total != 6 || kept.Correct != 2 {
+		t.Fatalf("the earlier submission = %+v", kept)
+	}
+	report, err := f.s.GetAssignmentReport(ctx, f.user, created.ID, later)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waiting := false
+	for _, row := range report.Answers {
+		waiting = waiting || (row.QuestionID == "q3" && row.Waiting)
+	}
+	if len(report.Questions) != 3 || !waiting {
+		t.Fatalf("report questions = %d, q3 waiting = %v", len(report.Questions), waiting)
+	}
+
+	if _, err := f.s.RepublishAssignment(ctx, f.user, created.ID, nil, later); !errors.Is(err, ErrAssignmentQuizGone) {
+		t.Fatalf("no quiz = %v", err)
+	}
+	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, later); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.RepublishAssignment(ctx, f.user, created.ID, frozenFixture(t), later); !errors.Is(err, ErrAssignmentClosed) {
+		t.Fatalf("closed = %v", err)
+	}
+}
+
+// TestRepublishPaysOnlyForWhatItAdds: an image the assignment holds keeps its row,
+// and the questions' charge moves to who republished at the new size.
+func TestRepublishPaysOnlyForWhatItAdds(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-republish-pay")
+	ctx := context.Background()
+	now := time.Now().UTC()
+	assetID := uid("asset")
+	questions := `[{"id":"q1","stem":[{"type":"image","image":{"assetId":"` + assetID + `"},"width":10,"height":10,"description":"Figure"}],"layout":"paper","labels":"letters","parts":[{"id":"p1","blocks":[{"type":"text","text":"Pick"}],"answer":{"type":"mcq","options":["a","b"],"correct":[1]},"marks":1,"solution":[]}]}]`
+	if _, err := f.s.pool.Exec(ctx, `INSERT INTO editor_assets
+		(id, workspace_id, material_id, user_id, created_by, name, purpose, object_path, content_type, size_bytes, status, completed_at)
+		VALUES ($1,$2,$3,$4,$4,'figure.png','image',$5,'image/png',10,'ready',now())`,
+		assetID, f.ws.ID, f.quiz.ID, f.user, "editor-assets/assignment-republish/"+uid("blob")); err != nil {
+		t.Fatal(err)
+	}
+	decoded := func() []map[string]any {
+		t.Helper()
+		var qs []map[string]any
+		if err := json.Unmarshal([]byte(questions), &qs); err != nil {
+			t.Fatal(err)
+		}
+		return qs
+	}
+	used := func(user string) int64 {
+		t.Helper()
+		usage, err := f.s.unlockedStorageUsage(ctx, f.s.pool, user)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var recount, reserved int64
+		if err := f.s.pool.QueryRow(ctx, storageRecountSQL, user).Scan(&recount, &reserved); err != nil {
+			t.Fatal(err)
+		}
+		if usage.UsedBytes != recount {
+			t.Fatalf("the meter reads %d, the recount %d", usage.UsedBytes, recount)
+		}
+		return usage.UsedBytes
+	}
+	form := f.form(t, now.Add(time.Hour))
+	form.Questions = decoded()
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var held string
+	if err := f.s.pool.QueryRow(ctx, `SELECT id FROM editor_assets WHERE assignment_id=$1`, created.ID).Scan(&held); err != nil {
+		t.Fatal(err)
+	}
+	owner := used(f.user)
+	if _, err := f.s.RepublishAssignment(ctx, f.user, created.ID, decoded(), now); err != nil {
+		t.Fatal(err)
+	}
+	var rows int
+	var frozen string
+	if err := f.s.pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM editor_assets WHERE assignment_id=$1), questions::text FROM assignments WHERE id=$1`, created.ID).Scan(&rows, &frozen); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 || !strings.Contains(frozen, held) || used(f.user) != owner {
+		t.Fatalf("after the same quiz: %d image rows, meter %d, want 1 and %d", rows, used(f.user), owner)
+	}
+	var size int64
+	if err := f.s.pool.QueryRow(ctx, `SELECT frozen_bytes FROM assignments WHERE id=$1`, created.ID).Scan(&size); err != nil {
+		t.Fatal(err)
+	}
+	editor := used(f.editor)
+	if _, err := f.s.RepublishAssignment(ctx, f.editor, created.ID, decoded(), now); err != nil {
+		t.Fatal(err)
+	}
+	if used(f.editor) != editor+size || used(f.user) != owner-size {
+		t.Fatalf("after an editor's: editor %d, owner %d, want %d and %d", used(f.editor), used(f.user), editor+size, owner-size)
+	}
+}
+
+// TestCountedAttemptComparesShares: after a republish changes the total, the
+// highest share counts, not the most marks.
+func TestCountedAttemptComparesShares(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-shares")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	form := f.form(t, now.Add(time.Hour))
+	form.Attempts = 2
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 2 of 6.
+	if _, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, first.ID, map[string]any{"p2": "osmosis"}, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.RepublishAssignment(ctx, f.user, created.ID, frozenFixture(t)[:1], now); err != nil {
+		t.Fatal(err)
+	}
+	second, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 1 of 1, fewer marks and a higher share.
+	if _, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, second.ID, map[string]any{"p1": []any{float64(1)}}, now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.s.GetAssignment(ctx, f.viewer, created.ID, now.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Mine == nil || got.Mine.CountedAttemptID == nil || *got.Mine.CountedAttemptID != second.ID {
+		t.Fatalf("their row = %+v, want %s", got.Mine, second.ID)
+	}
+}

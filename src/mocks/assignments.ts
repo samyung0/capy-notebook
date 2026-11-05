@@ -1131,6 +1131,13 @@ export const assignmentHandlers = (viewer: Viewer) => {
       row.postedAt = new Date().toISOString();
       return HttpResponse.json(toAssignment(row, viewer));
     }),
+    http.post('/api/assignments/:id/republish', ({ params }) => {
+      const row = rowOf(params.id);
+      if (!row) return gone();
+      freeze(row);
+      row.postedAt = new Date().toISOString();
+      return HttpResponse.json(toAssignment(row, viewer));
+    }),
     http.put('/api/assignments/:id/closed', async ({ params, request }) => {
       const row = rowOf(params.id);
       if (!row) return gone();

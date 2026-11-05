@@ -852,17 +852,41 @@ press. A shuffled paper's order comes from a seed of the attempt's id, so a relo
 keeps it. Bookmarks stay in this browser. Taking it never joins a room, since it
 serves the frozen copy.
 
+**Settings** (Epo 2026-11-05, `AssignmentSettingsTab`). The report has no ⋮: its last
+tab, `tab=settings`, holds every action as a row. Unmarked ones have Members and
+Settings; a draft has no tabs and shows the rows under Publish. Edit quiz opens the
+quiz in its room (hidden with no quiz), Assignment details the edit dialog, then
+Close or Reopen and Delete, each confirming as the menu did.
+
+**Republish** (Epo 2026-11-05, `POST /api/assignments/{id}/republish`,
+`RepublishAssignment`). Editing a quiz never reaches its assignment by itself. An
+open marked assignment's Republish row, hinted "Last published {date}", replaces the
+frozen copy with the quiz as it is now, after a confirm, with the same projection and
+no-answers warning as publishing. `posted_at` moves, so members read the new Posted
+date and it rises in the lists. A running attempt reads the new copy on its next
+load, and `gradeAttempt` drops answers to parts it no longer has. A submitted attempt
+keeps its graded copy and marks, and a question it holds that left the copy stays
+last on the report (`withRemovedQuestions`), so its open answers can still be marked.
+Storage: an image the assignment already holds keeps its row (same `object_path`),
+so republishing the same image charges nothing; an image it stops using stays charged
+until the assignment is deleted, as submissions may show it. The questions' JSON
+charges who republished, gated on only what it adds to their own copy. As totals can
+then differ between a member's attempts, the highest share of each attempt's own
+total counts (`countedAttemptOrder`, Claude's pick), which is the highest mark when
+totals match.
+
 **Closing while someone takes it** (Epo 2026-11-05). Staff closing it tells whoever
 has an attempt running: `assignment_closed` with its id on the user's stream
 (`publishAssignmentClosed`, after the commit, best effort; reopening sends nothing).
 A page taking it (`AssignmentTake`) ends as it does at zero, submitting what is on
-the page, then Submitted and See results; anyone else ignores it. The close gets the
+the page, then goes straight to its results (`AttemptResults`, no Submitted); anyone
+else ignores it. The close gets the
 same 15 s grace as the time and a No late due date (`attemptRow.expired`, Claude's
 pick), or the page's submit would be ignored for what was saved. A tab that doesn't
 hear it, or answers past the grace, loses what wasn't saved: normally at most the
 2 s wait, more if saves were failing. Its next save or the sweep submits what was
 saved. `auto_submitted` now means the time ran out (`attemptRow.timedOut`), so closing
-never says so: Submitted reads "Closed {date}" instead. During the grace the quiz is
+never says so. During the grace the quiz is
 already open to them, the same short window a No late due date has.
 
 **Submitting.** `POST …/submit` grades closed parts with the same deterministic
@@ -888,11 +912,11 @@ phone. Editing a published assignment has no Draft only, and one with no due dat
 has no Advanced at all.
 
 - **No late submissions on.** It closes itself at the due date: nothing starts, an
-  attempt still running is submitted as saved, and nothing reads Late. The menu has
+  attempt still running is submitted as saved, and nothing reads Late. Settings has
   no Reopen once it has closed itself (`closedItself`), though staff can still close
   it early.
 - **Off, the default.** Late work is open until an owner or teaching assistant
-  closes it (report ⋮, with a confirm since it shows the keys, and reversible); a
+  closes it (report's Settings, with a confirm since it shows the keys, and reversible); a
   note on Members says so. The late penalty (No penalty, −20%, −50%) comes off the
   mark of a submission past the due date: `Mark` is `Correct` less the penalty,
   which stays raw. It reads live, so changing it or the due date applies to work

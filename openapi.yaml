@@ -8949,6 +8949,31 @@ paths:
       summary: "An assignment's report: its questions, members and answers to mark"
       tags:
         - Assignments
+  /api/assignments/{id}/republish:
+    post:
+      operationId: republishAssignment
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assignment"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Replace an open assignment's questions with its quiz as it is now
+      tags:
+        - Assignments
   /api/assignments/{id}/start:
     post:
       operationId: startAssignment

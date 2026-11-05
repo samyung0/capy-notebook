@@ -72,7 +72,7 @@ export type WorkspaceOpenSearch = {
   own?: true;
   /** An assignment's report: its tab, and on Approve AI marks a question or
    * member to open at. */
-  tab?: 'questions' | 'members' | 'approve';
+  tab?: 'questions' | 'members' | 'approve' | 'settings';
   question?: string;
   member?: string;
   /** Assignments' New assignment, opened with this quiz (board A1). */
@@ -229,7 +229,7 @@ const text = (value: unknown) =>
 const GROUPS = ['topic', 'others', 'workspace'] as const;
 const MODES: readonly ReviewMode[] = ['tricky', 'fading', 'learned'];
 
-const TABS = ['questions', 'members', 'approve'] as const;
+const TABS = ['questions', 'members', 'approve', 'settings'] as const;
 
 /** Assignments, one assignment (its report's view), or a try at one. Unknown
  * tabs clear; ids are the page's to answer. */

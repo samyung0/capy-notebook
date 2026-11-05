@@ -331,10 +331,11 @@ const attemptMarkSQL = `round(t.correct * (100 - CASE WHEN NOT a.no_late AND t.s
 	THEN a.late_penalty_pct ELSE 0 END) / 100.0, 2)`
 
 // countedAttemptOrder puts first the submission of a member's that counts (Epo
-// 2026-11-05): the highest mark after any late penalty, a tie to the latest. It
-// reads live: correct is the marks decided so far, so marking an open part or
-// changing the penalty or due date can change which one it is.
-const countedAttemptOrder = attemptMarkSQL + ` DESC, t.submitted_at DESC`
+// 2026-11-05): the highest share of its own total after any late penalty, as a
+// republish can change the total, a tie to the latest. It reads live: correct is
+// the marks decided so far, so marking an open part or changing the penalty or
+// due date can change which one it is.
+const countedAttemptOrder = attemptMarkSQL + ` / NULLIF(t.total, 0) DESC NULLS LAST, t.submitted_at DESC`
 
 // fillAssignmentFiles adds each unmarked assignment's files the caller can see,
 // in the order added, and takes its topics from them, the most used first.
@@ -778,6 +779,7 @@ func writeAssignmentLists(ctx context.Context, tx pgx.Tx, id string, form Assign
 // workspace with no material, so editing or deleting the quiz leaves them. The
 // actor pays for the copied images, as for a clone (Epo 2026-10-11), and for the
 // frozen questions (Epo 2026-11-05), so this is the last that fits their storage.
+// A republish pays only for what it adds to what it replaces.
 func (s *Store) publishAssignmentTx(ctx context.Context, tx pgx.Tx, id, wsID, actorID, kind string, qs []map[string]any, now time.Time) error {
 	if kind == AssignmentUnmarked {
 		_, err := tx.Exec(ctx, `UPDATE assignments SET draft=false, posted_at=$2 WHERE id=$1`, id, now)
@@ -813,7 +815,11 @@ func (s *Store) publishAssignmentTx(ctx context.Context, tx pgx.Tx, id, wsID, ac
 	if err != nil {
 		return err
 	}
-	if err := s.gateStorageTx(ctx, tx, actorID, size); err != nil {
+	var replaced int64
+	if err := tx.QueryRow(ctx, `SELECT COALESCE((SELECT frozen_bytes FROM assignments WHERE id=$1 AND frozen_by=$2), 0)`, id, actorID).Scan(&replaced); err != nil {
+		return err
+	}
+	if err := s.gateStorageTx(ctx, tx, actorID, max(size-replaced, 0)); err != nil {
 		return err
 	}
 	_, err = tx.Exec(ctx, `UPDATE assignments SET draft=false, posted_at=$2, questions=$3, question_count=$4, total_marks=$5,
@@ -823,26 +829,36 @@ func (s *Store) publishAssignmentTx(ctx context.Context, tx pgx.Tx, id, wsID, ac
 }
 
 // copyFrozenAssetsTx copies the quiz's ready images and returns old id → new id.
+// An image the assignment already holds from an earlier publish keeps its row.
 func (s *Store) copyFrozenAssetsTx(ctx context.Context, tx pgx.Tx, assignmentID, wsID, actorID string, ids []string, now time.Time) (map[string]string, error) {
 	idMap := map[string]string{}
 	if len(ids) == 0 {
 		return idMap, nil
 	}
-	rows, err := tx.Query(ctx, `SELECT id, object_path, size_bytes FROM editor_assets
-		WHERE id = ANY($1) AND workspace_id=$2 AND status='ready' AND trashed_at IS NULL`, uniqueStrings(ids), wsID)
+	rows, err := tx.Query(ctx, `SELECT s.id, s.object_path, s.size_bytes, h.id FROM editor_assets s
+		LEFT JOIN LATERAL (SELECT x.id FROM editor_assets x WHERE x.assignment_id=$3 AND x.object_path=s.object_path
+			AND x.status='ready' AND x.trashed_at IS NULL LIMIT 1) h ON true
+		WHERE s.id = ANY($1) AND s.workspace_id=$2 AND s.status='ready' AND s.trashed_at IS NULL`, uniqueStrings(ids), wsID, assignmentID)
 	if err != nil {
 		return nil, err
 	}
+	copies := map[string]string{}
 	var paths []string
 	var bytes int64
 	for rows.Next() {
 		var id, path string
 		var size int64
-		if err := rows.Scan(&id, &path, &size); err != nil {
+		var held *string
+		if err := rows.Scan(&id, &path, &size, &held); err != nil {
 			rows.Close()
 			return nil, err
 		}
+		if held != nil {
+			idMap[id] = *held
+			continue
+		}
 		idMap[id] = uid("asset")
+		copies[id] = idMap[id]
 		paths = append(paths, path)
 		bytes += size
 	}
@@ -858,7 +874,7 @@ func (s *Store) copyFrozenAssetsTx(ctx context.Context, tx pgx.Tx, assignmentID,
 	if err := lockCloneBlobPathsTx(ctx, tx, paths); err != nil {
 		return nil, err
 	}
-	for oldID, newID := range idMap {
+	for oldID, newID := range copies {
 		if _, err := tx.Exec(ctx, `INSERT INTO editor_assets
 			(id, workspace_id, material_id, assignment_id, user_id, created_by, name, purpose, object_path, content_type, size_bytes,
 			 status, etag, created_at, completed_at, thumbnail_key)
@@ -939,6 +955,63 @@ func (s *Store) PublishAssignment(ctx context.Context, actorID, id string, qs []
 			return assignmentInput("choose a due date")
 		}
 		if kind == AssignmentMarked && qs == nil {
+			return ErrAssignmentQuizGone
+		}
+		return s.publishAssignmentTx(ctx, tx, id, wsID, actorID, kind, qs, now)
+	})
+	if err != nil {
+		return Assignment{}, err
+	}
+	return s.GetAssignment(ctx, actorID, id, now)
+}
+
+// RepublishAssignment replaces an open marked assignment's frozen copy with its
+// quiz as it is now (Epo 2026-11-05). A running attempt reads the new copy on its
+// next load and answers to parts it no longer has go at submit; a submitted one
+// keeps its graded copy and marks. Images it stops using stay until it is deleted,
+// as submissions may show them. questions is nil when the quiz is gone.
+func (s *Store) RepublishAssignment(ctx context.Context, actorID, id string, qs []map[string]any, now time.Time) (Assignment, error) {
+	wsID, err := s.assignmentWorkspace(ctx, id)
+	if err != nil {
+		return Assignment{}, err
+	}
+	var payer *string
+	if err := s.pool.QueryRow(ctx, `SELECT frozen_by FROM assignments WHERE id=$1`, id).Scan(&payer); err != nil {
+		return Assignment{}, err
+	}
+	var also []string
+	if payer != nil {
+		also = append(also, *payer)
+	}
+	err = s.inTx(ctx, func(tx pgx.Tx) error {
+		if err := s.lockAssignmentStaffTx(ctx, tx, wsID, actorID, also...); err != nil {
+			return err
+		}
+		// The counters before the row, as reconciliation takes them.
+		counters := uniqueStrings(append([]string{actorID}, also...))
+		sort.Strings(counters)
+		for _, user := range counters {
+			if err := s.lockStorageRowTx(ctx, tx, user); err != nil {
+				return err
+			}
+		}
+		var kind string
+		var draft, noLate bool
+		var due, closed *time.Time
+		if err := tx.QueryRow(ctx, `SELECT kind, draft, no_late, due_at, closed_at FROM assignments WHERE id=$1 FOR UPDATE`, id).
+			Scan(&kind, &draft, &noLate, &due, &closed); err != nil {
+			if isNoRows(err) {
+				return ErrNotFound
+			}
+			return err
+		}
+		if kind != AssignmentMarked || draft {
+			return assignmentInput("only a published marked assignment can be republished")
+		}
+		if assignmentClosedAt(noLate, due, closed, now) != nil {
+			return ErrAssignmentClosed
+		}
+		if qs == nil {
 			return ErrAssignmentQuizGone
 		}
 		return s.publishAssignmentTx(ctx, tx, id, wsID, actorID, kind, qs, now)
@@ -2045,8 +2118,38 @@ func (s *Store) GetAssignmentReport(ctx context.Context, userID, id string, now 
 			out.Members[i].WaitingAnswers += attempt.waitingAnswers
 		}
 	}
-	out.Questions, out.Answers = questionReports(frozen, counted, waiting)
+	out.Questions, out.Answers = questionReports(withRemovedQuestions(frozen, counted, waiting), counted, waiting)
 	return out, nil
+}
+
+// withRemovedQuestions adds, last, the questions a republish took out that a
+// submission still holds: their marks stand and their open answers wait.
+func withRemovedQuestions(frozen []map[string]any, attempts ...[]reportAttempt) []map[string]any {
+	seen := make(map[string]bool, len(frozen))
+	for _, q := range frozen {
+		id, _ := q["id"].(string)
+		seen[id] = true
+	}
+	removed := map[string]map[string]any{}
+	for _, list := range attempts {
+		for _, attempt := range list {
+			for id, q := range attempt.graded {
+				if !seen[id] {
+					removed[id] = q
+				}
+			}
+		}
+	}
+	ids := make([]string, 0, len(removed))
+	for id := range removed {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	out := append([]map[string]any{}, frozen...)
+	for _, id := range ids {
+		out = append(out, removed[id])
+	}
+	return out
 }
 
 // reportMembers lists who it went to, by name; a member who ticked it reads as

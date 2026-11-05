@@ -3127,6 +3127,14 @@ export function usePublishAssignment(workspaceId: string, id: string) {
   });
 }
 
+export function useRepublishAssignment(workspaceId: string, id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<Assignment>(`/assignments/${id}/republish`, {}),
+    onSuccess: () => refreshAssignment(qc, workspaceId, id),
+  });
+}
+
 export function useSetAssignmentClosed(workspaceId: string, id: string) {
   const qc = useQueryClient();
   return useMutation({

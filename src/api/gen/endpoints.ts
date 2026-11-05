@@ -1021,6 +1021,56 @@ export const getAssignmentReport = async (id: string, options?: RequestInit): Pr
 
 
 
+export type republishAssignmentResponse200 = {
+  data: Assignment
+  status: 200
+}
+
+export type republishAssignmentResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type republishAssignmentResponseSuccess = (republishAssignmentResponse200) & {
+  headers: Headers;
+};
+export type republishAssignmentResponseError = (republishAssignmentResponseDefault) & {
+  headers: Headers;
+};
+
+export type republishAssignmentResponse = (republishAssignmentResponseSuccess | republishAssignmentResponseError)
+
+export const getRepublishAssignmentUrl = (id: string,) => {
+
+
+
+
+  return `/api/assignments/${id}/republish`
+}
+
+/**
+ * @summary Replace an open assignment's questions with its quiz as it is now
+ */
+export const republishAssignment = async (id: string, options?: RequestInit): Promise<republishAssignmentResponse> => {
+
+  const res = await fetch(getRepublishAssignmentUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: republishAssignmentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as republishAssignmentResponse
+}
+
+
+
 export type startAssignmentResponse200 = {
   data: AssignmentAttempt
   status: 200

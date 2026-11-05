@@ -76,6 +76,7 @@ func (a *api) registerAssignments(api huma.API) {
 	reg(api, http.MethodPut, "/api/assignments/{id}", "updateAssignment", tag, "Change an assignment's settings", http.StatusOK, a.updateAssignment)
 	reg(api, http.MethodDelete, "/api/assignments/{id}", "deleteAssignment", tag, "Delete an assignment with its results", http.StatusNoContent, a.deleteAssignment)
 	reg(api, http.MethodPost, "/api/assignments/{id}/publish", "publishAssignment", tag, "Give a draft to its members", http.StatusOK, a.publishAssignment)
+	reg(api, http.MethodPost, "/api/assignments/{id}/republish", "republishAssignment", tag, "Replace an open assignment's questions with its quiz as it is now", http.StatusOK, a.republishAssignment)
 	reg(api, http.MethodPut, "/api/assignments/{id}/closed", "setAssignmentClosed", tag, "Close an assignment to late submissions, or reopen it", http.StatusOK, a.setAssignmentClosed)
 	reg(api, http.MethodPut, "/api/assignments/{id}/done", "setAssignmentDone", tag, "A member's tick on an unmarked assignment", http.StatusNoContent, a.setAssignmentDone)
 	reg(api, http.MethodPost, "/api/assignments/{id}/start", "startAssignment", tag, "Start an attempt, starting its clock, or return the one running", http.StatusOK, a.startAssignment)
@@ -194,18 +195,27 @@ func (a *api) deleteAssignment(ctx context.Context, in *assignmentIDInput) (*Emp
 }
 
 func (a *api) publishAssignment(ctx context.Context, in *assignmentIDInput) (*assignmentOutput, error) {
+	return a.freezeAssignment(ctx, in.ID, a.s.PublishAssignment)
+}
+
+func (a *api) republishAssignment(ctx context.Context, in *assignmentIDInput) (*assignmentOutput, error) {
+	return a.freezeAssignment(ctx, in.ID, a.s.RepublishAssignment)
+}
+
+// freezeAssignment gives the store its quiz as it is now, to publish or republish.
+func (a *api) freezeAssignment(ctx context.Context, id string, freeze func(context.Context, string, string, []map[string]any, time.Time) (store.Assignment, error)) (*assignmentOutput, error) {
 	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
 	}
 	// Who may publish is checked before the quiz is read, and again in the store.
-	current, err := a.s.GetAssignment(ctx, userID(ctx), in.ID, time.Now())
+	current, err := a.s.GetAssignment(ctx, userID(ctx), id, time.Now())
 	if err != nil {
 		return nil, assignmentError(err)
 	}
 	if current.Manage == nil {
 		return nil, hErr(store.ErrNotFound)
 	}
-	quizID, err := a.s.AssignmentSourceQuiz(ctx, in.ID)
+	quizID, err := a.s.AssignmentSourceQuiz(ctx, id)
 	if err != nil {
 		return nil, assignmentError(err)
 	}
@@ -215,7 +225,7 @@ func (a *api) publishAssignment(ctx context.Context, in *assignmentIDInput) (*as
 			return nil, err
 		}
 	}
-	res, err := a.s.PublishAssignment(ctx, userID(ctx), in.ID, qs, time.Now())
+	res, err := freeze(ctx, userID(ctx), id, qs, time.Now())
 	if err != nil {
 		return nil, assignmentError(err)
 	}

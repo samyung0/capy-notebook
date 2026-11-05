@@ -27,7 +27,7 @@ import { MemberAssignment } from './MemberAssignment';
 import { NewAssignmentDialog } from './NewAssignmentDialog';
 import { useAssignmentStart } from './useAssignmentStart';
 
-export type ReportTab = 'questions' | 'members' | 'approve';
+export type ReportTab = 'questions' | 'members' | 'approve' | 'settings';
 
 /** The Assignments page's URL, under `study=assignments`. `assignment` opens
  * one: its report for a class's owner and teaching assistants (unless `own`, the
