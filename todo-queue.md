@@ -9,11 +9,13 @@ Windows lands and deploys these, one landing per deploy.
 
 | Item | Where it is | Waiting on |
 |---|---|---|
-| Room pair and Office page-draw fix | `main` 57a62f208 | CI, UAT deploy, UAT quality run (`makeQuiz.spec.ts:211`) |
+| Room pair | On `main` and UAT at 57a62f208 | Done; `membership.spec.ts` passed its first real run |
+| Make a quiz on UAT: crash screen on both papers (`makeQuiz.spec.ts:211`, run 42067521199) | Extraction, not fixed | Finding the throw; a render error on real data, not the frame position |
 | Grading off Jev | `claude/grading-off-jev` abb0ae70a | The deploy above reporting; then the first real 1017 marks on UAT |
-| Layout service on the ingest host | Built, not running; runbook §7.6 | Epo answering Windows' Q646; after grading, as its own landing |
+| Layout service on the ingest host | Built, not running; runbook §7.6 | Epo answering Windows' Q646; Windows wants the Make a quiz fix first |
 | Shared pages lose AI marking (Q640 B) | Windows | After grading |
 | New assignment's quiz picker | `claude/assignment-quiz-picker` eeb6035fc | Windows' review round |
+| Vendored BlockSuite, dev route only | `claude/drawing-answers` 9fbaf3afa | CI, comparing its build with `main`'s, Windows' review round |
 
 ## Next, in order (Epo, 2026-11-06)
 
