@@ -188,7 +188,7 @@ func (a *api) updateAssignment(ctx context.Context, in *updateAssignmentInput) (
 }
 
 func (a *api) deleteAssignment(ctx context.Context, in *assignmentIDInput) (*Empty, error) {
-	if err := a.requireAccountEdit(ctx); err != nil {
+	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
 	return &Empty{}, assignmentError(a.s.DeleteAssignment(ctx, userID(ctx), in.ID))
