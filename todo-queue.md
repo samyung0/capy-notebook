@@ -9,11 +9,11 @@ Windows lands and deploys these, one landing per deploy.
 
 | Item | Where it is | Waiting on |
 |---|---|---|
-| Room pair | On `main` and UAT at 57a62f208 | Done; `membership.spec.ts` passed its first real run |
-| Make a quiz on UAT: crash screen on both papers (`makeQuiz.spec.ts:211`, run 42067521199) | On `main` 8f184f0bb | CI, UAT deploy, then the quality run to prove it. Cause: the page count gave the worker a bucket link it refuses |
-| Grading off Jev | On `main` 8f184f0bb, migration 0153 | CI, UAT deploy; then the first real 1017 marks on UAT |
-| Layout service on the ingest host | Built, not running; runbook §7.6 | Next if Make a quiz passes this run; Epo answering Windows' Q646 |
-| Shared pages lose AI marking (Q640 B) | Windows | After grading |
+| Grading off Jev | On `main`, UAT at 8f184f0bb | Done: a real 1017 call in the study journey, through OpenRouter on Wafer, 0.34 credits, one award per marking item |
+| Make a quiz's crash | On `main`, UAT at 8f184f0bb | PowerPoint paper passed the whole journey; Word drew and ran, then failed on a race in the test. Test fixed in 0b45af688, run pending |
+| Layout service on the ingest host | Up, on UAT only; production has no GitHub environment yet | 0b45af688 is the first run with figures going through it |
+| `membership.spec.ts`: a real CLOSED frame on a bystander channel | Cause unknown; passed on an earlier run | The journey now records each close's code and reason |
+| Shared pages lose AI marking (Q640 B) | Windows | Next on its side |
 | New assignment's quiz picker | `claude/assignment-quiz-picker` eeb6035fc | Windows' review round |
 | Vendored BlockSuite, dev route only | `claude/drawing-answers` 9fbaf3afa | CI, comparing its build with `main`'s, Windows' review round |
 
