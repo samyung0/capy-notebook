@@ -15,6 +15,7 @@ const api = vi.hoisted(() => ({
   submit: vi.fn(),
 }));
 const closedListeners = vi.hoisted(() => new Set<(id: string) => void>());
+const closed = vi.hoisted(() => vi.fn());
 vi.mock('@/api/hooks', () => ({
   onAssignmentClosed: (listener: (id: string) => void) => {
     closedListeners.add(listener);
@@ -75,7 +76,9 @@ let root: ReturnType<typeof createRoot>;
 const show = (value: AssignmentAttempt) => {
   root = createRoot(host);
   return act(async () =>
-    root.render(<AssignmentTake attempt={value} workspaceId="ws1" />)
+    root.render(
+      <AssignmentTake attempt={value} onClosed={closed} workspaceId="ws1" />
+    )
   );
 };
 const typeAnswer = () =>
@@ -146,7 +149,9 @@ it('submits what is on the page when its assignment closes', async () => {
     });
   await close('as_other');
   expect(api.submit).not.toHaveBeenCalled();
+  expect(closed).not.toHaveBeenCalled();
   await close('as1');
+  expect(closed).toHaveBeenCalled();
   await close('as1');
   expect(api.submit).toHaveBeenCalledTimes(1);
   expect(api.submit.mock.calls[0][0]).toEqual({

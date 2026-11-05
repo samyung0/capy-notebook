@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { m } from '../i18n';
 
 // Epo 2026-11-05: staff closing an assignment ends the attempt open on a member's
-// page, which submits what it holds and goes on to its results.
+// page, which submits what it holds and shows its results.
 test('closing an assignment ends the attempt open on the page, keeping its answers', async ({
   page,
 }) => {
@@ -30,18 +30,13 @@ test('closing an assignment ends the attempt open on the page, keeping its answe
       method: 'PUT',
     })
   );
+  await expect(page.locator('[data-assignment-take]')).toHaveCount(0, {
+    timeout: 30_000,
+  });
+  // Its one mark is the answer only the page held.
+  await expect(page.getByText('1 / 40')).toBeVisible({ timeout: 30_000 });
   await expect(
     page.getByRole('heading', { name: m.assignment_submitted() })
-  ).toBeVisible({ timeout: 30_000 });
-  await expect(
-    page.getByText(
-      new RegExp(
-        m.assignment_answered_of({ answered: 1, total: 0 }).replace('0', '\\d+')
-      )
-    )
-  ).toBeVisible();
-  await expect(page.getByText(m.assignment_time_ran_out())).toHaveCount(0);
-  await page.getByText(m.assignment_see_results()).click();
+  ).toHaveCount(0);
   await expect(page.getByText(m.assignment_auto_submitted())).toHaveCount(0);
-  await expect(page.locator('[data-assignment-take]')).toHaveCount(0);
 });

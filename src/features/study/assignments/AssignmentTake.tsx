@@ -130,9 +130,12 @@ function clockText(ms: number) {
  * submits what was saved. */
 export function AssignmentTake({
   attempt,
+  onClosed,
   workspaceId,
 }: {
   attempt: AssignmentAttempt;
+  /** Staff closed it while it was open here: its results come next. */
+  onClosed: () => void;
   workspaceId: string;
 }) {
   const qc = useQueryClient();
@@ -242,9 +245,11 @@ export function AssignmentTake({
   useEffect(
     () =>
       onAssignmentClosed((id) => {
-        if (id === attempt.assignmentId) end();
+        if (id !== attempt.assignmentId) return;
+        onClosed();
+        end();
       }),
-    [attempt.assignmentId, end]
+    [attempt.assignmentId, end, onClosed]
   );
 
   const isAnswered = (q: (typeof questions)[number]) =>
