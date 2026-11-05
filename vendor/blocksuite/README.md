@@ -202,14 +202,14 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
    - `framework/store` `model/store/crud.ts`: `_findRoot` takes the root's
      id from its key; `addBlock` writes neither key.
 
+10. Subpath exports for the drawing board (2026-11-06, `todo-queue.md`), so it can
+    import only the editor parts it needs: `./widgets/edgeless-selected-rect`,
+    `./widgets/edgeless-zoom-toolbar` and their `/view`, and `./inlines/comment/view`
+    (`affine/all/package.json`, `affine/all/src/inlines/comment/view.ts`).
+
 Outside this directory, for BlockSuite:
 
 - `patches/@atlaskit__pragmatic-drag-and-drop@1.4.0.patch`: upstream's yarn
   patch for that package, as a pnpm patch.
 - Upstream's yarn patch for `yjs` 13.6.21 (53-bit client ids) is **not**
   carried: our rooms assign client ids.
-
-10. Subpath exports for the drawing board (2026-11-06, `todo-queue.md`), so it can
-    import only the editor parts it needs: `./widgets/edgeless-selected-rect`,
-    `./widgets/edgeless-zoom-toolbar` and their `/view`, and `./inlines/comment/view`
-    (`affine/all/package.json`, `affine/all/src/inlines/comment/view.ts`).
