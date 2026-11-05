@@ -1595,6 +1595,47 @@ func TestSharingNoticeIsToldOnce(t *testing.T) {
 
 // TestAssignmentSweepPassesOverABadRow: an attempt that cannot submit and an
 // assignment that cannot release leave the others' to go through.
+// A batch that a failing row fills still reaches the row behind it in a later sweep.
+func TestAssignmentSweepReachesARowBehindABadOne(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-sweep-starved")
+	ctx := context.Background()
+	now := time.Now().UTC()
+	open := func() (Assignment, AssignmentAttempt) {
+		t.Helper()
+		created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now); err != nil {
+			t.Fatal(err)
+		}
+		return created, run
+	}
+	bad, _ := open()
+	_, goodRun := open()
+	t.Cleanup(func() { _, _ = f.s.pool.Exec(ctx, `DELETE FROM assignments WHERE id=$1`, bad.ID) })
+	if _, err := f.s.pool.Exec(ctx, `UPDATE assignments SET questions='{"bad":true}' WHERE id=$1`, bad.ID); err != nil {
+		t.Fatal(err)
+	}
+	for range 200 {
+		if _, _, err := f.s.SweepAssignments(ctx, 1, now.Add(time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		var submitted bool
+		if err := f.s.pool.QueryRow(ctx, `SELECT submitted_at IS NOT NULL FROM attempts WHERE id=$1`, goodRun.ID).Scan(&submitted); err != nil {
+			t.Fatal(err)
+		}
+		if submitted {
+			return
+		}
+	}
+	t.Fatal("the good attempt never left the queue behind the bad one")
+}
+
 func TestAssignmentSweepPassesOverABadRow(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-sweep-bad")
 	ctx := context.Background()

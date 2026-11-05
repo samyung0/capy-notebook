@@ -2577,11 +2577,12 @@ func partReport(p map[string]any, attempts []reportAttempt) AssignmentPartReport
 // assignment's quiz as practice, once. A due date alone releases nothing (Epo
 // 2026-11-04).
 // The quiz stays hidden while another open assignment uses it. One row that
-// fails is logged and passed over, so it never holds up the rest.
+// fails is logged and passed over; each batch is a random pick, so rows that keep
+// failing never fill it every minute and hold up the rest.
 func (s *Store) SweepAssignments(ctx context.Context, limit int, now time.Time) (finished, released int, err error) {
 	rows, err := s.pool.Query(ctx, `SELECT t.id FROM attempts t JOIN assignments a ON a.id=t.assignment_id
 		WHERE t.assignment_id IS NOT NULL AND t.submitted_at IS NULL
-			AND (t.deadline_at <= $1 OR a.closed_at <= $1 OR (a.no_late AND a.due_at <= $1)) LIMIT $2`, now.Add(-assignmentGrace), limit)
+			AND (t.deadline_at <= $1 OR a.closed_at <= $1 OR (a.no_late AND a.due_at <= $1)) ORDER BY random() LIMIT $2`, now.Add(-assignmentGrace), limit)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -2598,7 +2599,7 @@ func (s *Store) SweepAssignments(ctx context.Context, limit int, now time.Time) 
 	}
 	rows, err = s.pool.Query(ctx, `SELECT id FROM assignments
 		WHERE released_at IS NULL AND kind='marked' AND NOT draft AND (closed_at IS NOT NULL OR (no_late AND due_at <= $1))
-		ORDER BY due_at LIMIT $2`, now, limit)
+		ORDER BY random() LIMIT $2`, now, limit)
 	if err != nil {
 		return finished, 0, err
 	}

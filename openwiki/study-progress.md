@@ -914,7 +914,8 @@ page submits; a closed tab is the server's: 15 s past `deadline_at`, a No late
 submissions due date or its closing by hand, the next request or
 `SweepAssignments` (each minute, in `cmd/api`) submits what was saved,
 `auto_submitted` unless closing was the cause. The sweep logs a row that fails and
-passes over it, so one bad row holds up nobody else.
+passes over it, and picks each batch at random, so rows that keep failing never fill
+it and hold up the rest.
 
 **The due date's policy** (Epo 2026-11-04, supersedes §11.5's close by the owner
 alone). Set per assignment in New assignment's Advanced; marked work with a due
