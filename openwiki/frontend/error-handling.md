@@ -96,6 +96,11 @@ follows the same rule: it stays open with a spinner while the delete runs
 and shows a refusal in its `FormAlert` (`trashErrorMessage`), such as an
 audio file still being transcribed (`audio_transcribing`).
 
+Submitting an assignment, Before you start, Make my own practice and deleting or
+leaving a workspace do the same. Start and Submit have no dialog when a timer or a
+closing assignment triggers them, or when there's no time limit to confirm, and then
+a refusal is a toast.
+
 ## Input length limits
 
 Limits come from the backend (`server/internal/fieldlimits`, generated into

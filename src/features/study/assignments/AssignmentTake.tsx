@@ -14,6 +14,7 @@ import {
   DialogFooter,
   DialogTitle,
 } from '@/components/ui/Dialog';
+import { FormAlert } from '@/components/ui/FormAlert';
 import { Icon } from '@/components/ui/Icon';
 import { userToast } from '@/components/ui/userToast';
 import {
@@ -36,7 +37,7 @@ import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import { keptAnswers, partsById } from '@/features/quizzes/stillAnswers';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { errorCopy } from '@/lib/errors';
+import { errorCopy, unexpectedErrorId } from '@/lib/errors';
 
 /** How long typing rests before answers save. */
 const SAVE_AFTER_MS = 2000;
@@ -147,6 +148,10 @@ export function AssignmentTake({
   const [answers, setAnswers] = useState<Answers>(attempt.answers);
   const [save, setSave] = useState<SaveState>('saved');
   const [confirming, setConfirming] = useState(false);
+  const [submitError, setSubmitError] = useState<{
+    errorId: string | null;
+    message: string;
+  } | null>(null);
   const { marks: bookmarks, toggle: toggleBookmark } = useBookmarks(attempt.id);
   const removed = useRemovedAssets(attempt.removedAssetIds);
   const { mutate: submitAttempt, isPending: submitting } =
@@ -230,24 +235,40 @@ export function AssignmentTake({
       }
   }, [question]);
 
-  const submit = useCallback(() => {
-    setConfirming(false);
-    dirty.current = false;
-    submitAttempt(
-      { answers: latest.current, id: attempt.id },
-      {
-        onError: (error) => {
-          if (isApiError(error) && error.status === 409) return reread();
-          dirty.current = true;
-          userToast({
-            description: errorCopy(error, m.assignment_submit_failed_body()),
-            title: m.assignment_submit_failed(),
-            variant: 'error',
-          });
-        },
-      }
-    );
-  }, [attempt.id, reread, submitAttempt]);
+  // Asked from the confirm dialog, a refusal stays in it; at zero or on closing
+  // there is no dialog to hold it, so it toasts.
+  const submit = useCallback(
+    (fromDialog = false) => {
+      setSubmitError(null);
+      dirty.current = false;
+      submitAttempt(
+        { answers: latest.current, id: attempt.id },
+        {
+          onError: (error) => {
+            if (isApiError(error) && error.status === 409) {
+              setConfirming(false);
+              return reread();
+            }
+            dirty.current = true;
+            if (fromDialog) {
+              setSubmitError({
+                errorId: unexpectedErrorId(error),
+                message: errorCopy(error, m.assignment_submit_failed_body()),
+              });
+              return;
+            }
+            userToast({
+              description: errorCopy(error, m.assignment_submit_failed_body()),
+              title: m.assignment_submit_failed(),
+              variant: 'error',
+            });
+          },
+          onSuccess: () => setConfirming(false),
+        }
+      );
+    },
+    [attempt.id, reread, submitAttempt]
+  );
   const timedOut = left !== null && left <= 0;
   const once = useRef(false);
   const end = useCallback(() => {
@@ -454,7 +475,14 @@ export function AssignmentTake({
         </div>
       </div>
       {confirming && (
-        <Dialog onOpenChange={(open) => !open && setConfirming(false)} open>
+        <Dialog
+          onOpenChange={(open) => {
+            if (open || submitting) return;
+            setConfirming(false);
+            setSubmitError(null);
+          }}
+          open
+        >
           <DialogContent
             aria-describedby={undefined}
             className="sm:max-w-115"
@@ -471,12 +499,23 @@ export function AssignmentTake({
                   ? m.assignment_submit_unanswered_one()
                   : m.assignment_submit_unanswered({ count: unanswered })}
             </p>
+            <FormAlert
+              errorId={submitError?.errorId}
+              message={submitError?.message ?? null}
+            />
             <DialogFooter>
-              <Button onClick={() => setConfirming(false)} variant="ghost">
+              <Button
+                disabled={submitting}
+                onClick={() => {
+                  setConfirming(false);
+                  setSubmitError(null);
+                }}
+                variant="ghost"
+              >
                 {m.action_cancel()}
               </Button>
-              <Button disabled={submitting} onClick={submit}>
-                {m.assignment_submit()}
+              <Button disabled={submitting} onClick={() => submit(true)}>
+                {submitting ? m.assignment_submitting() : m.assignment_submit()}
               </Button>
             </DialogFooter>
           </DialogContent>

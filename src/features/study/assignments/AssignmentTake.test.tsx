@@ -1,5 +1,5 @@
 import { parseHTML } from 'linkedom';
-import { act } from 'react';
+import { act, type ReactNode } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { AssignmentAttempt } from '@/api/types';
 import { getLocale, m } from '@/i18n';
@@ -31,6 +31,14 @@ vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: invalidate }),
 }));
 vi.mock('@/components/ui/userToast', () => ({ userToast: toast }));
+// No portals: the confirm dialog renders in place.
+const pass = ({ children }: { children?: ReactNode }) => children;
+vi.mock('@/components/ui/Dialog', () => ({
+  Dialog: pass,
+  DialogContent: pass,
+  DialogFooter: pass,
+  DialogTitle: pass,
+}));
 vi.mock('@/features/quizzes/QuestionRunner', () => ({
   QuestionRunner: ({
     onChange,
@@ -143,6 +151,27 @@ it('leaves Submit to press after the submit at zero failed', async () => {
     (item) => item.textContent === m.assignment_submit()
   );
   expect(button?.hasAttribute('disabled')).toBe(false);
+});
+
+it('keeps the confirm dialog open with a refused submit', async () => {
+  toast.mockClear();
+  api.submit.mockImplementation(
+    (_body: unknown, options: { onError: (error: Error) => void }) =>
+      options.onError(new Error('down'))
+  );
+  await show(attempt({}));
+  const named = () =>
+    [...document.querySelectorAll('button')].filter(
+      (item) => item.textContent === m.assignment_submit()
+    );
+  await act(async () => named()[0]?.click());
+  await act(async () => named().at(-1)?.click());
+  expect(api.submit).toHaveBeenCalledTimes(1);
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    m.assignment_submit_failed_body()
+  );
+  expect(toast).not.toHaveBeenCalled();
+  expect(named().at(-1)?.hasAttribute('disabled')).toBe(false);
 });
 
 // Epo 2026-11-05: staff closing the assignment ends the attempt open on the page,
