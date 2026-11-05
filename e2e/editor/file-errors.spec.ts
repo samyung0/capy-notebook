@@ -243,33 +243,32 @@ test('User scenarios opens seeded material errors in the workspace and survives 
 }) => {
   await openWorkspace(page);
   const panel = page.getByTestId('mock-scenario-panel');
-  for (const [label, id, message] of [
-    ['Material load error', 'mock-material-load', m.error_file_title()],
+  // An editor's diagram opens in the split editor, which marks the blamed line
+  // and shows no message (Epo 2026-10-09, 2026-11-04).
+  const blamedLine = page.locator('.cm-error-line');
+  for (const [label, id, shown] of [
+    [
+      'Material load error',
+      'mock-material-load',
+      page.getByText(m.error_file_title(), { exact: true }),
+    ],
     [
       'Unreadable material',
       'mock-material-unreadable',
-      m.material_decode_title(),
+      page.getByText(m.material_decode_title(), { exact: true }),
     ],
-    [
-      'Broken diagram',
-      'mock-material-diagram',
-      m.mermaid_syntax_error({ line: 2 }),
-    ],
-  ]) {
+    ['Broken diagram', 'mock-material-diagram', blamedLine],
+  ] as const) {
     await panel.locator('summary').click();
     await panel.getByRole('button', { exact: true, name: label }).click();
     await expect(page).toHaveURL(
       new RegExp(`/workspaces/ws_bio\\?material=${id}$`)
     );
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(page.getByText(message, { exact: true })).toBeVisible({
-      timeout: 30_000,
-    });
+    await expect(shown).toBeVisible({ timeout: 30_000 });
   }
   await page.reload();
-  await expect(
-    page.getByText(m.mermaid_syntax_error({ line: 2 }), { exact: true })
-  ).toBeVisible({ timeout: 30_000 });
+  await expect(blamedLine).toHaveText('  A[Unclosed node', { timeout: 30_000 });
 });
 
 // biome-ignore lint/suspicious/noSkippedTests: needs the PDF's Edit/View switch (ANNOTATION_TOOLS in PdfView.tsx).
