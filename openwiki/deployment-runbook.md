@@ -4135,7 +4135,9 @@ Steps:
 changes seeds deploys without the window (decision of 2026-10-18): its
 migration is the template's reset with no guard, for the formats whose seeds
 changed (DOCX in
-[`0103_docx_engine_round_reset.sql`](../server/migrations/0103_docx_engine_round_reset.sql)),
+[`0103_docx_engine_round_reset.sql`](../server/migrations/0103_docx_engine_round_reset.sql);
+all three formats in
+[`0150_office_051_reset.sql`](../server/migrations/0150_office_051_reset.sql)),
 and it drops their unpublished edits. The old collaboration server must be
 stopped before that migration runs and must not outlive it. Otherwise an open
 room's next save fails on the new epoch, the browser reopens the room at that

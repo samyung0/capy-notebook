@@ -659,10 +659,11 @@ export function setCollaborationSlowed(value: boolean) {
   window.dispatchEvent(new Event(REACHABILITY));
 }
 
-// A note whose collaboration-token requests hang, or answer after `delayMs`
-// (the join's 30 s, Epo 2026-10-23); kept across page loads, so a first open
-// starts held.
+// A note whose collaboration-token requests hang until let go, or answer after
+// `delayMs` (the join's 30 s, Epo 2026-10-23); kept across page loads, so a first
+// open starts held.
 const TOKENS_HELD = 'capy.mock.collaboration.tokensHeld';
+const TOKENS_LET_GO = 'capy:mock-collaboration-tokens-let-go';
 
 export function holdNoteTokens(materialId: string | null, delayMs?: number) {
   if (materialId)
@@ -670,18 +671,25 @@ export function holdNoteTokens(materialId: string | null, delayMs?: number) {
       TOKENS_HELD,
       JSON.stringify({ delayMs: delayMs ?? null, materialId })
     );
-  else sessionStorage.removeItem(TOKENS_HELD);
+  else {
+    sessionStorage.removeItem(TOKENS_HELD);
+    window.dispatchEvent(new Event(TOKENS_LET_GO));
+  }
 }
 
-/** How long a note's token request waits: null at once, Infinity for ever. */
-export function noteTokenDelay(materialId: string): number | null {
-  if (!browser) return null;
+/** Waits as long as a note's token request is held: at once when it isn't. */
+export async function noteTokenHold(materialId: string) {
+  if (!browser) return;
   const held = JSON.parse(sessionStorage.getItem(TOKENS_HELD) ?? 'null') as {
     delayMs: number | null;
     materialId: string;
   } | null;
-  if (held?.materialId !== materialId) return null;
-  return held.delayMs ?? Number.POSITIVE_INFINITY;
+  if (held?.materialId !== materialId) return;
+  await new Promise<void>((resolve) => {
+    if (held.delayMs === null)
+      window.addEventListener(TOKENS_LET_GO, () => resolve(), { once: true });
+    else setTimeout(resolve, held.delayMs);
+  });
 }
 
 // A note's current room schema, as the service's material_yjs_documents

@@ -408,12 +408,14 @@ const RICH_TYPES = [
 /** What the editor shows of the rich blocks in `value` once they are live.
  * Embeds join their rooms only near the screen, so each is scrolled to. */
 async function expectRichBlocksShown(page: Page, tag: string, value: Node[]) {
-  const block = (type: string, n = 0) =>
-    page.locator(
-      `[data-block-id="${value.filter((node) => node.type === type)[n].id}"]`
-    );
   // The hidden paint stays in the DOM a moment after the editor shows (Epo
-  // 2026-11-04), holding the same text.
+  // 2026-11-04), holding the same text and block ids.
+  const block = (type: string, n = 0) =>
+    page
+      .locator(
+        `[data-block-id="${value.filter((node) => node.type === type)[n].id}"]`
+      )
+      .locator('visible=true');
   await expect(
     page.getByText(`${tag} field notes`).locator('visible=true')
   ).toBeVisible();
