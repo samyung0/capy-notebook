@@ -366,6 +366,35 @@ components:
         - updatedAt
         - author
       type: object
+    ApproveAIMarksInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ApproveAIMarksInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        questionId:
+          type: string
+      required:
+        - questionId
+      type: object
+    ApproveAIMarksOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ApproveAIMarksOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        approved:
+          format: int64
+          type: integer
+      required:
+        - approved
+      type: object
     AssignableRole:
       enum:
         - editor
@@ -457,6 +486,11 @@ components:
     AssignmentAnswerRow:
       additionalProperties: false
       properties:
+        aiAwarded:
+          format: double
+          type: number
+        aiMarked:
+          type: boolean
         attemptId:
           type: string
         attemptNumber:
@@ -480,6 +514,8 @@ components:
         - attemptId
         - attemptNumber
         - waiting
+        - aiMarked
+        - aiAwarded
         - awarded
         - marks
       type: object
@@ -823,6 +859,19 @@ components:
         - parts
         - comment
       type: object
+    AssignmentMarkingProgress:
+      additionalProperties: false
+      properties:
+        done:
+          format: int64
+          type: integer
+        total:
+          format: int64
+          type: integer
+      required:
+        - done
+        - total
+      type: object
     AssignmentMemberRow:
       additionalProperties: false
       properties:
@@ -981,12 +1030,12 @@ components:
         - submitted
         - parts
       type: object
-    AssignmentReport:
+    AssignmentReportBody:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/AssignmentReport.json
+          example: https://example.com/schemas/AssignmentReportBody.json
           format: uri
           readOnly: true
           type: string
@@ -994,6 +1043,8 @@ components:
           items:
             $ref: "#/components/schemas/AssignmentAnswerRow"
           type: array
+        marking:
+          $ref: "#/components/schemas/AssignmentMarkingProgress"
         members:
           items:
             $ref: "#/components/schemas/AssignmentMemberRow"
@@ -3962,6 +4013,21 @@ components:
       required:
         - locale
       type: object
+    MarkAssignmentWithAIOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/MarkAssignmentWithAIOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        total:
+          format: int64
+          type: integer
+      required:
+        - total
+      type: object
     Material:
       additionalProperties: false
       properties:
@@ -6357,6 +6423,7 @@ components:
         - editor
         - ingest
         - extraction
+        - grading
         - retrieval
         - captioning
         - rerank
@@ -8898,6 +8965,37 @@ paths:
       summary: Change an assignment's settings
       tags:
         - Assignments
+  /api/assignments/{id}/approve-ai-marks:
+    post:
+      operationId: approveAssignmentAIMarks
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApproveAIMarksInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApproveAIMarksOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Approve every AI mark on one question
+      tags:
+        - Assignments
   /api/assignments/{id}/closed:
     put:
       operationId: setAssignmentClosed
@@ -8956,6 +9054,31 @@ paths:
       summary: A member's tick on an unmarked assignment
       tags:
         - Assignments
+  /api/assignments/{id}/mark-with-ai:
+    post:
+      operationId: markAssignmentWithAI
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarkAssignmentWithAIOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Have the AI mark the answers still waiting, in the background
+      tags:
+        - Assignments
   /api/assignments/{id}/publish:
     post:
       operationId: publishAssignment
@@ -8995,7 +9118,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AssignmentReport"
+                $ref: "#/components/schemas/AssignmentReportBody"
           description: OK
         default:
           content:

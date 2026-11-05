@@ -745,25 +745,30 @@ off (`instant`). It is the highest-call-volume path per user, about 0.08
 credits a suggestion and a few hundred suggestions an hour of steady writing
 (`todo-ghost-text.md`).
 
-Open quiz parts are graded by typesafe.ai's Jev (`server/internal/jev`, model
-pinned to `jev-1.13.0`, key `JEV_TYPESAFE_API_KEY`), which Go calls directly:
-it is not an EliteLLM provider and has no registry row (migration `0050`
-dropped the `quiz` slot). `POST /api/quizzes/{id}/grade` (signed in) and
-`POST /api/public/quizzes/{token}/grade` (anonymous, through the site Worker)
-take one question's part ids and answers only; the server loads the marking
-scheme from the stored quiz, so neither grades arbitrary text. One Jev request
-per answered open part, ten at a time (Epo 2026-11-04); any failure fails that check and the
-learner checks again. Jev costs $0.042 per million input tokens and nothing for
-output, so grading is **recorded, never charged**: signed-in requests write one
-`usage_events` row (surface `quiz`, provider `typesafe`, `credit_micros` 0,
-`units` = graded parts, `metadata.costMicroUsd`), and the author's
-`POST /api/questions/computation-check` writes one per check. Attempt points
-stay on the quiz snapshot for the taker and are not a trusted score.
+Open quiz parts signed in are graded on the `grading` slot's pin, OpenRouter's
+`deepseek/deepseek-v4.1-flash-1017` on its default route (migration `0152`; Epo
+2026-11-04), through the pipeline's `POST /grade`
+(`pipeline/pipeline/retrieval/grading.py`). The server loads the marking scheme
+from the stored quiz, so no endpoint grades arbitrary text. One call per answered
+open part, ten at a time per submission, waiting in the model's line. Each is
+**charged** to whoever started the job (Epo 2026-11-03): the learner for a check
+of their own practice, the workspace owner for an assignment's answers, about 32
+credits a 40-part paper (surface `quiz`). A part that fails, or every part when
+there is nothing to pay with, stays "Not marked" and is not retried; closed parts
+still mark and a submission never fails for it.
+
+Signed-out checks and a signed-in visitor's check on a shared page still go to
+typesafe.ai's Jev (`server/internal/jev`, model pinned to `jev-1.13.0`, key
+`JEV_TYPESAFE_API_KEY`), recorded and never charged, until shared pages stop AI
+marking (Epo 2026-11-03). The author's `POST /api/questions/computation-check`
+stays on Jev too, writing one `usage_events` row per check (surface `quiz`,
+provider `typesafe`, `credit_micros` 0). Attempt points stay on the quiz snapshot
+for the taker and are not a trusted score.
 
 A signed-in user's open parts are capped at 2,000 per UTC day
 (`grading_usage`, `store.SignedInGradingPartsPerDay`), shared by quiz
 attempts, review checks, bank checks and computation checks (one part each).
-Parts are reserved before any Jev call and stay counted when grading fails;
+Parts are reserved before any model call and stay counted when grading fails;
 past the cap the API answers 429 `grading_limit` and closed-only attempts are
 still graded.
 

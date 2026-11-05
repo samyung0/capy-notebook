@@ -31,6 +31,7 @@ from ..retrieval import (
     compact,
     contract,
     extraction,
+    grading,
     library,
     limits,
     models,
@@ -697,6 +698,46 @@ class ExtractFile(BaseModel):
     # A Word or PowerPoint paper's pages as the browser drew them, base64 JPEGs in
     # pages' order.
     images: list[str] = Field(default_factory=list)
+
+
+class GradeItem(BaseModel):
+    text: str
+    marks: float
+
+
+class GradeReq(LLMPin):
+    question: str
+    items: list[GradeItem] = Field(min_length=1)
+    answer: str = Field(min_length=1)
+    spendSessionId: str = Field(min_length=1)
+
+
+@app.post("/grade")
+async def grade(req: GradeReq) -> dict[str, Any]:
+    """Mark one open answer (todo-study-tracking.md §9): each item's share and a
+    comment. Go computes the marks. Its call waits in the model's line as a
+    chat's do; a failure leaves the part unmarked, and nothing retries it."""
+    _bind_llm(req)
+    slots_token = limits.bind_call_slots(
+        limits.CallSlotPolicy(wait_s=limits.CHAT_SLOT_WAIT_S)
+    )
+    accounting_token = None
+    try:
+        accounting_token = _bind_accounting(req.spendSessionId)
+        return await grading.grade_part(
+            req.question,
+            [item.model_dump() for item in req.items],
+            req.answer,
+            model=models.resolve_query_model(
+                req.providerSlug,
+                req.modelSlug,
+                req.configVersion,
+                slot=registry.Slot.GRADING,
+            ),
+        )
+    finally:
+        _reset_accounting(accounting_token)
+        limits.reset_call_slots(slots_token)
 
 
 class ExtractReq(LLMPin):

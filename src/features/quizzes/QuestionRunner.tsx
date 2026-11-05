@@ -435,8 +435,15 @@ function OpenVerdict({
   answered: boolean;
   part: QuestionPart;
 }) {
-  const { awarded, itemAwards = [], markscheme = [], marks } = part;
+  const { awarded, comment, itemAwards = [], markscheme = [], marks } = part;
   if (awarded == null) return null;
+  // No credits, or the model failed: not wrong, just not marked (Epo 2026-11-03).
+  if (part.pending)
+    return (
+      <p className="mb-2 font-bold text-fg-muted text-sm">
+        {m.assignment_not_marked()}
+      </p>
+    );
   const count = markscheme.length;
   const got = markscheme.filter(
     (item, i) => itemAwards[i] === item.marks
@@ -472,10 +479,13 @@ function OpenVerdict({
         m.question_ui_question_not_answered(),
       ];
   return (
-    <p className="mb-2 text-fg-secondary text-sm">
-      <strong className={cn('mr-1.5 font-bold', tone)}>{label}</strong>
-      {detail}
-    </p>
+    <>
+      <p className="mb-2 text-fg-secondary text-sm">
+        <strong className={cn('mr-1.5 font-bold', tone)}>{label}</strong>
+        {detail}
+      </p>
+      {comment && <p className="mb-2 text-fg-secondary text-sm">{comment}</p>}
+    </>
   );
 }
 

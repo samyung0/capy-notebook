@@ -15,6 +15,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/jev"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/pipeline"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
@@ -43,6 +44,20 @@ func openGradingAPIWith(t *testing.T, choice string, cfg httpapi.Config) (http.H
 		_ = json.NewEncoder(w).Encode(map[string]any{"model": jev.Model, "answers": answers, "usage": map[string]any{"input_tokens": 1000}})
 	}))
 	t.Cleanup(srv.Close)
+	// The grading slot's model, behind the pipeline: each item's share.
+	pipe := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		var body struct {
+			Items []any `json:"items"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		shares := make([]float64, len(body.Items))
+		for i := range shares {
+			shares[i] = map[string]float64{"zero": 0, "partial": 0.5, "full": 1}[choice]
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"shares": shares, "comment": "Offered two answers for one point."})
+	}))
+	t.Cleanup(pipe.Close)
 	ctx := context.Background()
 	st, err := store.New(ctx, testdb.URL(t))
 	if err != nil {
@@ -56,7 +71,7 @@ func openGradingAPIWith(t *testing.T, choice string, cfg httpapi.Config) (http.H
 	st.SetModelRegistry(reg)
 	cfg.E2EAuth, cfg.E2ESecret, cfg.E2EUserIDs = true, "e2e-test-secret", []string{"u_owner", "u_editor", "u_viewer", "u_other"}
 	cfg.ModelRegistry, cfg.Jev = reg, jev.NewForTest("key", srv.URL)
-	h := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", cfg)
+	h := httpapi.New(st, blob.NewMemory(), pipeline.New(pipe.URL, "secret"), nil, "docling", cfg)
 	return h, st, &calls
 }
 

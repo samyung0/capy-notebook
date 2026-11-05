@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useAssignmentAttempt, useMarkAssignmentAnswer } from '@/api/hooks';
+import {
+  useApproveAssignmentAIMarks,
+  useAssignmentAttempt,
+  useMarkAssignmentAnswer,
+  useMarkAssignmentWithAI,
+} from '@/api/hooks';
 import type {
   Assignment,
   AssignmentAnswerRow,
@@ -43,9 +48,9 @@ const waitingFirst = (rows: AssignmentAnswerRow[]) => [
 ];
 
 /** Approve AI marks (boards A3, A3b; links §9): a question's answers member by
- * member, or with `member` one member's answers. Rows waiting read Not marked:
- * until the grading switch no model marks an answer, so the owner sets each
- * marking point and Approve saves it. Approve all waits for AI marks. */
+ * member, or with `member` one member's answers. A row the AI marked reads its
+ * mark, and a pane starts from it; Approve saves what shows. Rows it has not
+ * marked (no credits, a failure) read Not marked: Mark with AI runs it again. */
 export function ApproveTab({
   assignment,
   report,
@@ -63,6 +68,11 @@ export function ApproveTab({
     q.question.parts.some((p) => p.answer.type === 'open')
   );
   const firstWaiting = report.answers.find((row) => row.waiting);
+  const { isPending: marking, mutate: markWithAI } = useMarkAssignmentWithAI(
+    assignment.id
+  );
+  const { isPending: approving, mutate: approveAll } =
+    useApproveAssignmentAIMarks(assignment.workspaceId, assignment.id);
   // A3b: by member, entered from the Members tab's "2 to approve".
   const [member, setMember] = useState<string | undefined>(
     search.question ? undefined : search.member
@@ -98,6 +108,8 @@ export function ApproveTab({
     );
 
   const toApprove = rows.filter((row) => row.waiting).length;
+  // Approve all clears a question: by member there is none to clear.
+  const approvable = !member && rows.some((row) => row.waiting && row.aiMarked);
   const questionNumber = (id: string) =>
     report.questions.findIndex((q) => q.question.id === id) + 1;
   const questionOf = (id: string) =>
@@ -167,9 +179,49 @@ export function ApproveTab({
           <span className="t-meta text-fg-secondary">
             {m.assignment_to_approve({ count: toApprove })}
           </span>
-          {/* Waits for the grading switch: there are no AI marks to approve. */}
-          <span title={m.assignment_approve_all_waits()}>
-            <Button disabled size="sm" variant="outline">
+          {report.marking ? (
+            <span className="t-meta text-fg-secondary">
+              {m.assignment_marking_progress({
+                done: report.marking.done,
+                total: report.marking.total,
+              })}
+            </span>
+          ) : report.answers.some((row) => row.waiting && !row.aiMarked) ? (
+            <Button
+              disabled={marking}
+              onClick={() =>
+                markWithAI(undefined, {
+                  onError: () =>
+                    userToast({
+                      title: m.assignment_mark_failed(),
+                      variant: 'error',
+                    }),
+                })
+              }
+              size="sm"
+              variant="outline"
+            >
+              {m.assignment_mark_with_ai()}
+            </Button>
+          ) : null}
+          <span
+            title={approvable ? undefined : m.assignment_approve_all_waits()}
+          >
+            <Button
+              disabled={!approvable || approving}
+              onClick={() =>
+                question &&
+                approveAll(question, {
+                  onError: () =>
+                    userToast({
+                      title: m.assignment_mark_failed(),
+                      variant: 'error',
+                    }),
+                })
+              }
+              size="sm"
+              variant="outline"
+            >
               {m.assignment_approve_all()}
             </Button>
           </span>
@@ -214,7 +266,13 @@ export function ApproveTab({
                       </span>
                     </>
                   )}
-                  {row.waiting ? (
+                  {row.waiting && row.aiMarked ? (
+                    <span className="shrink-0 font-semibold text-fg-secondary">
+                      {m.assignment_ai_mark({
+                        mark: markText(row.aiAwarded, row.marks),
+                      })}
+                    </span>
+                  ) : row.waiting ? (
                     <span className="inline-flex h-5.5 shrink-0 items-center rounded-md bg-tint-warning px-1.75 font-semibold text-tint-warning-fg text-xs">
                       {m.assignment_not_marked()}
                     </span>
@@ -324,12 +382,18 @@ function MarkForm({
       parts.map((p) => [
         p.id,
         (p.markscheme ?? []).map((_, i) =>
-          p.pending ? null : (p.itemAwards?.[i] ?? 0)
+          p.pending ? (p.aiAwards?.[i] ?? null) : (p.itemAwards?.[i] ?? 0)
         ),
       ])
     )
   );
-  const [comment, setComment] = useState(question.comment ?? '');
+  const [comment, setComment] = useState(
+    question.comment ??
+      parts
+        .map((p) => p.aiComment)
+        .filter(Boolean)
+        .join(' ')
+  );
   const { mutate, isPending } = useMarkAssignmentAnswer(
     assignment.workspaceId,
     assignment.id
@@ -413,7 +477,11 @@ function MarkForm({
                     <span className="text-fg-muted">{`(${item.marks})`}</span>
                   </div>
                   <div className="flex min-h-11 items-center border-divider border-t max-sm:hidden">
-                    <span className="t-meta text-fg-muted">–</span>
+                    <span className="t-meta text-fg-muted">
+                      {part.aiAwards
+                        ? markText(part.aiAwards[i] ?? 0, item.marks)
+                        : '–'}
+                    </span>
                   </div>
                   <div className="flex min-h-11 items-center border-divider border-t">
                     <Select
@@ -454,7 +522,16 @@ function MarkForm({
         );
       })}
       <p className="mt-4 border-divider border-t pt-3 text-fg-secondary">
-        {m.assignment_ai_not_marked()}
+        {parts.every((p) => p.aiAwards)
+          ? m.assignment_ai_mark({
+              mark: markText(
+                parts
+                  .flatMap((p) => p.aiAwards ?? [])
+                  .reduce((a, b) => a + b, 0),
+                marks
+              ),
+            })
+          : m.assignment_ai_not_marked()}
         {' · '}
         <b className="font-bold text-fg">
           {m.assignment_mark_of({

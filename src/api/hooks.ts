@@ -3090,6 +3090,8 @@ export const useAssignmentReport = (id: string, options?: QueryUiOptions) =>
     meta: queryMeta(options),
     queryFn: () => api.get<AssignmentReport>(`/assignments/${id}/report`),
     queryKey: qk.assignmentReport(id),
+    // The AI marks in the background: its progress shows while it does.
+    refetchInterval: (query) => (query.state.data?.marking ? 3000 : false),
   });
 
 export const useAssignmentAttempt = (
@@ -3243,6 +3245,39 @@ export function useMarkAssignmentAnswer(
         qc.invalidateQueries({ queryKey: qk.assignmentReport(assignmentId) }),
       ]);
     },
+  });
+}
+
+/** Runs the AI over the answers still waiting, in the background. */
+export function useMarkAssignmentWithAI(assignmentId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api.post<{ total: number }>(`/assignments/${assignmentId}/mark-with-ai`),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.assignmentReport(assignmentId) }),
+  });
+}
+
+/** Approves every AI mark on one question. */
+export function useApproveAssignmentAIMarks(
+  workspaceId: string,
+  assignmentId: string
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (questionId: string) =>
+      api.post<{ approved: number }>(
+        `/assignments/${assignmentId}/approve-ai-marks`,
+        { questionId }
+      ),
+    onSuccess: () =>
+      Promise.all([
+        refreshAssignment(qc, workspaceId, assignmentId),
+        qc.invalidateQueries({ queryKey: qk.assignmentReport(assignmentId) }),
+        // Each answer's pane read its attempt before these marks.
+        qc.invalidateQueries({ queryKey: ['assignment-attempt'] }),
+      ]),
   });
 }
 

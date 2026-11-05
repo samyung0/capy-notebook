@@ -869,6 +869,8 @@ function report(row: Row, viewer: Viewer): AssignmentReport {
       if (isOpen) {
         for (const { attempt, q } of graded)
           answers.push({
+            aiAwarded: 0,
+            aiMarked: false,
             attemptId: attempt.id,
             attemptNumber: number(attempt),
             awarded: score(q),
@@ -884,6 +886,8 @@ function report(row: Row, viewer: Viewer): AssignmentReport {
           const q = attempt.graded.find((g) => g.id === question.id);
           if (q?.parts.some((p) => p.pending) && !countedRows.includes(attempt))
             answers.push({
+              aiAwarded: 0,
+              aiMarked: false,
               attemptId: attempt.id,
               attemptNumber: number(attempt),
               awarded: score(q),
@@ -1209,6 +1213,14 @@ export const assignmentHandlers = (viewer: Viewer) => {
       };
       attempts.set(attempt.id, attempt);
       return HttpResponse.json(attemptView(attempt, row, viewer));
+    }),
+    http.post('/api/assignments/:id/mark-with-ai', ({ params }) => {
+      if (!rowOf(params.id) || viewer !== 'owner') return gone();
+      return HttpResponse.json({ total: 0 });
+    }),
+    http.post('/api/assignments/:id/approve-ai-marks', ({ params }) => {
+      if (!rowOf(params.id) || viewer !== 'owner') return gone();
+      return HttpResponse.json({ approved: 0 });
     }),
     http.get('/api/assignments/:id/report', ({ params }) => {
       const row = rowOf(params.id);

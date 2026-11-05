@@ -8,7 +8,8 @@ import "github.com/danielgtaylor/huma/v2"
 // fills them is a different model from the text model: no single model both
 // runs the chat agent loop and emits vectors or relevance scores. Extraction
 // (Make a quiz) reads page images with tools on its own pin, apart from chat
-// (Epo 2026-11-03: never direct DeepSeek, which costs too much).
+// (Epo 2026-11-03: never direct DeepSeek, which costs too much). Grading marks
+// open quiz answers (Epo 2026-11-04: the same pin).
 type Slot string
 
 // UserModelSlot is the subset exposed by the account model picker.
@@ -19,6 +20,7 @@ const (
 	SlotEditor     = "editor"
 	SlotIngest     = "ingest"
 	SlotExtraction = "extraction"
+	SlotGrading    = "grading"
 	SlotRetrieval  = "retrieval"
 	SlotCaptioning = "captioning"
 	SlotRerank     = "rerank"
@@ -29,6 +31,7 @@ var allSlots = []Slot{
 	SlotEditor,
 	SlotIngest,
 	SlotExtraction,
+	SlotGrading,
 	SlotRetrieval,
 	SlotCaptioning,
 	SlotRerank,
@@ -42,7 +45,7 @@ var userModelSlots = []UserModelSlot{
 
 // llmSlots are the slots served by a text model: they need a context window
 // and thinking levels. Retrieval, captioning and rerank rows omit both.
-var llmSlots = []Slot{SlotChat, SlotEditor, SlotIngest, SlotExtraction}
+var llmSlots = []Slot{SlotChat, SlotEditor, SlotIngest, SlotExtraction, SlotGrading}
 
 // Capability is something a catalog row must be able to do to sit in a slot.
 // Vision, pdf, embedding and rerank are set by operators on the row. AgenticLoop is

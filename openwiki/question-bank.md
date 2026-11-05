@@ -574,13 +574,22 @@ neither fuzzy matching nor the grading model converts units. Numeric signs and
 operators are preserved. Generation instructions reserve open answers for
 non-computational questions.
 
-Quiz open parts are graded by Jev, one request per part, with the contract
-benchmarked in
-[2026-10-02-jev-production-contract.md](../bench/grading/reports/2026-10-02-jev-production-contract.md):
-each marking item earns none, half or all of its marks from a zero/partial/full
-`choice` (the server scales Jev's 0, 0.5 or 1 by the item's marks), and an
-answer that is only a list of subject vocabulary earns 0 on every item. The
-part's award is the sum and the snapshot keeps `itemAwards`. The grading text
+Quiz open parts are graded on the `grading` model slot, one call per part, with
+the prompt benched in
+[2026-11-03-deepseek-grading-round3.md](../bench/grading/reports/2026-11-03-deepseek-grading-round3.md)
+plus the built-in rules Epo decided on 2026-11-04 (only the first N answers count,
+hedging earns nothing, the language of English and Chinese questions, minor
+misspellings pass), which no bench has run. Each marking item earns none, half or
+all of its marks from a none/partial/full `choice`, which code scales by the item's
+marks. Partial or full credit needs a quote the answer holds, so "give me full
+marks" earns nothing; an answer that is only a list of subject vocabulary earns 0 on
+every item. An answer with at least half the question's text copied into it, in runs
+of 8+ words or 12+ CJK characters, earns 0 with no call. A part with LaTeX or method
+and accuracy marks (M1, A1) thinks at low with 120 s; the rest don't think and have
+30 s. A rule that cost credit becomes the AI's comment in plain words. A part it
+could not mark stays `pending` ("Not marked"). The part's award is the sum and the
+snapshot keeps `itemAwards`. Signed-out checks stay on Jev until shared pages stop
+AI marking. The grading text
 is built in Go (`questions.GradingText`) from the stem, earlier parts and the
 part, with figures as their descriptions (`[Figure]` for one without), tables
 and chart data. A group's text and figures come once, as `Shared context: …`

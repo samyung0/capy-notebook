@@ -49,7 +49,13 @@ type assignmentDoneInput struct {
 	}
 }
 type assignmentReportOutput struct {
-	Body store.AssignmentReport
+	Body assignmentReportBody
+}
+
+// assignmentReportBody is the report, and what the AI is marking right now.
+type assignmentReportBody struct {
+	store.AssignmentReport
+	Marking *AssignmentMarkingProgress `json:"marking,omitempty"`
 }
 type assignmentAttemptOutput struct {
 	Body store.AssignmentAttempt
@@ -80,6 +86,8 @@ func (a *api) registerAssignments(api huma.API) {
 	reg(api, http.MethodPut, "/api/assignments/{id}/closed", "setAssignmentClosed", tag, "Close an assignment to late submissions, or reopen it", http.StatusOK, a.setAssignmentClosed)
 	reg(api, http.MethodPut, "/api/assignments/{id}/done", "setAssignmentDone", tag, "A member's tick on an unmarked assignment", http.StatusNoContent, a.setAssignmentDone)
 	reg(api, http.MethodPost, "/api/assignments/{id}/start", "startAssignment", tag, "Start an attempt, starting its clock, or return the one running", http.StatusOK, a.startAssignment)
+	reg(api, http.MethodPost, "/api/assignments/{id}/mark-with-ai", "markAssignmentWithAI", tag, "Have the AI mark the answers still waiting, in the background", http.StatusOK, a.markAssignmentWithAI)
+	reg(api, http.MethodPost, "/api/assignments/{id}/approve-ai-marks", "approveAssignmentAIMarks", tag, "Approve every AI mark on one question", http.StatusOK, a.approveAssignmentAIMarks)
 	reg(api, http.MethodGet, "/api/assignments/{id}/report", "getAssignmentReport", tag, "An assignment's report: its questions, members and answers to mark", http.StatusOK, a.getAssignmentReport)
 	reg(api, http.MethodGet, "/api/assignment-attempts/{id}", "getAssignmentAttempt", tag, "An attempt: running, or its results", http.StatusOK, a.getAssignmentAttempt)
 	regWithMaxBody(api, http.MethodPut, "/api/assignment-attempts/{id}/answers", "saveAssignmentAnswers", tag, "Save a running attempt's answers", http.StatusNoContent, answersMaxBytes, a.saveAssignmentAnswers)
@@ -273,7 +281,60 @@ func (a *api) getAssignmentReport(ctx context.Context, in *assignmentIDInput) (*
 	if err != nil {
 		return nil, assignmentError(err)
 	}
-	return &assignmentReportOutput{Body: res}, nil
+	return &assignmentReportOutput{Body: assignmentReportBody{AssignmentReport: res, Marking: a.marking.progress(in.ID)}}, nil
+}
+
+type markAssignmentWithAIOutput struct {
+	Body struct {
+		Total int `json:"total"`
+	}
+}
+
+// markAssignmentWithAI runs the AI over what still waits, as credits come back or
+// after a failure (Epo 2026-11-03). Staff only: reading the report checks that.
+func (a *api) markAssignmentWithAI(ctx context.Context, in *assignmentIDInput) (*markAssignmentWithAIOutput, error) {
+	if err := a.requireAccountEdit(ctx); err != nil {
+		return nil, err
+	}
+	if _, err := a.s.GetAssignmentReport(ctx, userID(ctx), in.ID, time.Now()); err != nil {
+		return nil, assignmentError(err)
+	}
+	_, _, answers, err := a.s.AnswersToMark(ctx, in.ID, "")
+	if err != nil {
+		return nil, assignmentError(err)
+	}
+	out := &markAssignmentWithAIOutput{}
+	out.Body.Total = len(answers)
+	if len(answers) > 0 {
+		a.markAnswersSoon(in.ID, "")
+	}
+	return out, nil
+}
+
+type approveAIMarksInput struct {
+	ID   string `path:"id"`
+	Body struct {
+		QuestionID string `json:"questionId"`
+	}
+}
+
+type approveAIMarksOutput struct {
+	Body struct {
+		Approved int `json:"approved"`
+	}
+}
+
+func (a *api) approveAssignmentAIMarks(ctx context.Context, in *approveAIMarksInput) (*approveAIMarksOutput, error) {
+	if err := a.requireAccountEdit(ctx); err != nil {
+		return nil, err
+	}
+	approved, err := a.s.ApproveAIMarks(ctx, userID(ctx), in.ID, in.Body.QuestionID, time.Now())
+	if err != nil {
+		return nil, assignmentError(err)
+	}
+	out := &approveAIMarksOutput{}
+	out.Body.Approved = approved
+	return out, nil
 }
 
 func (a *api) getAssignmentAttempt(ctx context.Context, in *assignmentIDInput) (*assignmentAttemptOutput, error) {
@@ -298,6 +359,9 @@ func (a *api) submitAssignmentAttempt(ctx context.Context, in *assignmentAnswers
 	res, err := a.s.SubmitAssignmentAttempt(ctx, userID(ctx), in.ID, in.Body.Answers, time.Now())
 	if err != nil {
 		return nil, assignmentError(err)
+	}
+	if res.WaitingAnswers > 0 {
+		a.markAnswersSoon(res.AssignmentID, res.ID)
 	}
 	return &assignmentAttemptOutput{Body: res}, nil
 }

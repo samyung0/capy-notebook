@@ -404,7 +404,7 @@ func (a *api) checkReviewItem(ctx context.Context, in *reviewCheckInput) (*grade
 	if err != nil {
 		return nil, gradeRequestError(err)
 	}
-	graded, correct, total, err := a.gradeSignedIn(ctx, plan, workspaceID, map[string]any{"quizId": in.Body.MaterialID})
+	graded, correct, total, err := a.gradeSignedIn(ctx, plan, workspaceID)
 	if err != nil {
 		return nil, err
 	}

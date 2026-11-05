@@ -28,7 +28,7 @@ import type {
   AnonymousQuiz as GenAnonymousQuiz,
   AssignmentAttempt as GenAssignmentAttempt,
   AssignmentQuestionReport as GenAssignmentQuestionReport,
-  AssignmentReport as GenAssignmentReport,
+  AssignmentReportBody as GenAssignmentReport,
   AttemptDetail as GenAttemptDetail,
   Citation as GenCitation,
   Comment as GenComment,
@@ -414,8 +414,10 @@ export type {
 /** A graded question of a submitted assignment: a part left waiting for the
  * owner is `pending`; a comment and who wrote it sit on the question. */
 export type AssignmentGradedPart = QuestionPart & {
-  pending?: boolean;
   markedBy?: string;
+  /** Staff only: the AI's marks per marking point and its comment, waiting. */
+  aiAwards?: number[];
+  aiComment?: string;
 };
 export type AssignmentGradedQuestion = Omit<Question, 'parts'> & {
   parts: AssignmentGradedPart[];

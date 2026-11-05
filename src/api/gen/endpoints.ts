@@ -13,6 +13,8 @@ import type {
   AnonymousFlashcards,
   AnonymousNote,
   AnonymousQuiz,
+  ApproveAIMarksInputBody,
+  ApproveAIMarksOutputBody,
   Assignment,
   AssignmentAnswersInputBody,
   AssignmentAttempt,
@@ -21,7 +23,7 @@ import type {
   AssignmentFormReq,
   AssignmentList,
   AssignmentMark,
-  AssignmentReport,
+  AssignmentReportBody,
   AttemptDetail,
   AttemptsOutputBody,
   AutoReloadReq,
@@ -123,6 +125,7 @@ import type {
   ListUsageEventsParams,
   ListWorkspacesParams,
   LocaleInputBody,
+  MarkAssignmentWithAIOutputBody,
   Material,
   MaterialChildrenInputBody,
   MaterialChildrenOutputBody,
@@ -792,6 +795,71 @@ const res = await fetch(getUpdateAssignmentUrl(id),
 
 
 
+export type approveAssignmentAIMarksResponse200 = {
+  data: ApproveAIMarksOutputBody
+  status: 200
+}
+
+export type approveAssignmentAIMarksResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type approveAssignmentAIMarksResponseSuccess = (approveAssignmentAIMarksResponse200) & {
+  headers: Headers;
+};
+export type approveAssignmentAIMarksResponseError = (approveAssignmentAIMarksResponseDefault) & {
+  headers: Headers;
+};
+
+export type approveAssignmentAIMarksResponse = (approveAssignmentAIMarksResponseSuccess | approveAssignmentAIMarksResponseError)
+
+export const getApproveAssignmentAIMarksUrl = (id: string,) => {
+
+
+
+
+  return `/api/assignments/${id}/approve-ai-marks`
+}
+
+/**
+ * @summary Approve every AI mark on one question
+ */
+export const approveAssignmentAIMarks = async (id: string,
+    approveAIMarksInputBody: NonReadonly<ApproveAIMarksInputBody>, options?: RequestInit): Promise<approveAssignmentAIMarksResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getApproveAssignmentAIMarksUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(approveAIMarksInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: approveAssignmentAIMarksResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as approveAssignmentAIMarksResponse
+}
+
+
+
 export type setAssignmentClosedResponse200 = {
   data: Assignment
   status: 200
@@ -922,6 +990,56 @@ const res = await fetch(getSetAssignmentDoneUrl(id),
 
 
 
+export type markAssignmentWithAIResponse200 = {
+  data: MarkAssignmentWithAIOutputBody
+  status: 200
+}
+
+export type markAssignmentWithAIResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type markAssignmentWithAIResponseSuccess = (markAssignmentWithAIResponse200) & {
+  headers: Headers;
+};
+export type markAssignmentWithAIResponseError = (markAssignmentWithAIResponseDefault) & {
+  headers: Headers;
+};
+
+export type markAssignmentWithAIResponse = (markAssignmentWithAIResponseSuccess | markAssignmentWithAIResponseError)
+
+export const getMarkAssignmentWithAIUrl = (id: string,) => {
+
+
+
+
+  return `/api/assignments/${id}/mark-with-ai`
+}
+
+/**
+ * @summary Have the AI mark the answers still waiting, in the background
+ */
+export const markAssignmentWithAI = async (id: string, options?: RequestInit): Promise<markAssignmentWithAIResponse> => {
+
+  const res = await fetch(getMarkAssignmentWithAIUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: markAssignmentWithAIResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as markAssignmentWithAIResponse
+}
+
+
+
 export type publishAssignmentResponse200 = {
   data: Assignment
   status: 200
@@ -973,7 +1091,7 @@ export const publishAssignment = async (id: string, options?: RequestInit): Prom
 
 
 export type getAssignmentReportResponse200 = {
-  data: AssignmentReport
+  data: AssignmentReportBody
   status: 200
 }
 

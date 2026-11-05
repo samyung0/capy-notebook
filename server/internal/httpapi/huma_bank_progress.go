@@ -100,7 +100,7 @@ func (a *api) bankCheck(ctx context.Context, in *bankCheckInput) (*gradedQuestio
 	if err != nil {
 		return nil, gradeRequestError(err)
 	}
-	graded, correct, total, err := a.gradeSignedIn(ctx, plan, "", map[string]any{"bankQuestionId": in.ID})
+	graded, correct, total, err := a.gradeSignedIn(ctx, plan, "")
 	if err != nil {
 		return nil, err
 	}

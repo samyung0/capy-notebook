@@ -209,6 +209,10 @@ export type QuestionPart = {
   awarded?: number;
   /** Open parts: none, half or all of each item's marks, summing to `awarded`. */
   itemAwards?: number[];
+  /** Open parts no one has marked yet ("Not marked"). */
+  pending?: boolean;
+  /** Open parts: the AI's plain-words comment. */
+  comment?: string;
   /** Matching and gaps parts: whether each pair or gap was right. */
   itemResults?: boolean[];
 };

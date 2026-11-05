@@ -274,7 +274,7 @@ func (a *api) checkQuizQuestion(ctx context.Context, in *checkQuizQuestionInput)
 	if err != nil {
 		return nil, gradeRequestError(err)
 	}
-	graded, _, _, err := a.gradeSignedIn(ctx, plan, quiz.WorkspaceID, map[string]any{"quizId": quiz.ID})
+	graded, _, _, err := a.gradeSignedIn(ctx, plan, quiz.WorkspaceID)
 	if err != nil {
 		return nil, err
 	}

@@ -529,6 +529,11 @@ function OpenPart({
           {m.assignment_not_marked()}
         </span>
       )}
+      {part.markedBy === 'ai' && !editing && (
+        <span className="t-meta text-fg-muted">
+          {m.assignment_marked_by_ai()}
+        </span>
+      )}
       {showKeys && scheme.length > 0 && (
         <div>
           <p className="t-label text-fg-muted uppercase">

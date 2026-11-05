@@ -6,6 +6,8 @@
  */
 
 export interface AssignmentAnswerRow {
+  aiAwarded: number;
+  aiMarked: boolean;
   attemptId: string;
   attemptNumber: number;
   awarded: number;
