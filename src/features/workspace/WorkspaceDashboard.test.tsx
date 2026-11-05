@@ -62,7 +62,7 @@ const render = (canEdit = true) =>
   );
 
 // Epo 2026-11-05, Q631: Home's status reaches a workspace that opens on this page.
-it('shows the viewer account status as a strip above the page', () => {
+it('shows the viewer account status as a small banner below the title', () => {
   page.account = {
     state: 'over_quota_frozen',
     storageLimitBytes: 100_000_000,
@@ -71,11 +71,11 @@ it('shows the viewer account status as a strip above the page', () => {
   };
   const html = render();
   expect(html).toContain(m.account_banner_frozen_title());
-  expect(html.indexOf('account-status-strip')).toBeLessThan(
+  expect(html.indexOf('account-status-banner')).toBeGreaterThan(
     html.indexOf('Biology 101')
   );
   page.account = undefined;
-  expect(render()).not.toContain('account-status-strip');
+  expect(render()).not.toContain('account-status-banner');
 });
 
 it('opens each activity row on its file or material', () => {

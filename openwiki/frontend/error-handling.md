@@ -401,15 +401,12 @@ or `"reconnecting"`. Suspended, deleted and deletion-pending accounts keep the
 full-screen `AccountBlockedScreen`.
 
 A workspace opens on its Dashboard, where the triangle isn't, so the Dashboard
-shows the same status small (Epo 2026-11-05, Q631): `AccountStatusStrip`, in the
+shows the same status small (Epo 2026-11-05, Q631): `AccountStatusBanner`, in the
 same file and reading the same `useAccountStatus`, the same states in the same order
-with the same words and links, at the top of the pane above its scrolling page
-(`[data-testid="account-status-strip"]`, `data-kind` naming the state). It is
-`FileBanner`'s one-row form, amber or red as the card is, with no meter and no close
-button: the title in bold, then the body, which scrolls sideways where it doesn't
-fit (at 360px, with the links, that is every account state's body). Only the
-Dashboard has it; Study and the other centre pages stay as they are, and the entry
-toast below still shows.
+with the same words and link, inside the page below its title
+(`[data-testid="account-status-banner"]`, `data-kind` naming the state). It is the
+tinted card in a smaller size, with no meter. Only the Dashboard has it; Study and
+the other centre pages stay as they are, and the entry toast below still shows.
 
 Inside a workspace, `WorkspaceHealth` raises one `userToast` per visit for the
 workspace storage status, and one while offline (also whenever the browser
@@ -542,7 +539,7 @@ instead of replacing the body with a full-page error.
 File and material banners share `FileBanner`: a flat full-width strip with no
 leading icon and `text-fg` on a grey (info, ingest progress, a text source's
 newer version, maintenance pause) or red-tint (error) background, `role="status"` or
-`role="alert"` respectively; the Dashboard's status strip adds an amber tone. Its close button hides it until the message
+`role="alert"` respectively. Its close button hides it until the message
 changes or the page remounts it. Actions are small ghost underlined buttons on a
 new line, aligned right. The save banner uses its one-row form (`inline`): the
 message scrolls sideways without a visible scrollbar (`scroll-fade-x`, the

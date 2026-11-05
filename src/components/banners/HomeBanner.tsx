@@ -11,7 +11,6 @@ import { useOnlineStatus } from '@/lib/online';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { Icon, type IconName } from '../ui/Icon';
-import { FileBanner } from './FileBanner';
 
 function formatDate(iso?: string) {
   if (!iso) return null;
@@ -30,7 +29,7 @@ type AccountStatus = {
   body: string;
   icon: IconName;
   kind: 'frozen' | 'grace' | 'full' | 'near' | 'offline' | 'reconnecting';
-  /** It carries the Subscription and Settings links. */
+  /** It carries the Subscription link. */
   links: boolean;
   title: string;
   tone: 'warning' | 'error';
@@ -41,7 +40,7 @@ type AccountStatus = {
 /**
  * The viewer's own account or connection problem, if any, one at a time: frozen,
  * grace, full, near the limit, offline, reconnecting. Home's card and the
- * Dashboard's strip both read it.
+ * Dashboard's small one both read it.
  */
 function useAccountStatus(): AccountStatus | null {
   const { data: me } = useMe({ errorBoundary: false });
@@ -125,28 +124,18 @@ function useAccountStatus(): AccountStatus | null {
   return null;
 }
 
-function AccountLinks() {
+function SubscriptionLink() {
   return (
-    <>
-      <Button
-        asChild
-        className="h-7 px-2 text-fg underline underline-offset-3 hover:bg-fg/5"
-        size="sm"
-        variant="ghost"
-      >
-        <Link search={{ tab: 'subscription' }} to="/billing">
-          {m.account_banner_subscription()}
-        </Link>
-      </Button>
-      <Button
-        asChild
-        className="h-7 px-2 text-fg underline underline-offset-3 hover:bg-fg/5"
-        size="sm"
-        variant="ghost"
-      >
-        <Link to="/settings">{m.account_banner_settings()}</Link>
-      </Button>
-    </>
+    <Button
+      asChild
+      className="h-7 px-2 text-fg underline underline-offset-3 hover:bg-fg/5"
+      size="sm"
+      variant="ghost"
+    >
+      <Link search={{ tab: 'subscription' }} to="/billing">
+        {m.account_banner_subscription()}
+      </Link>
+    </Button>
   );
 }
 
@@ -179,8 +168,8 @@ export default function HomeBanner() {
         </div>
       )}
       {status.links && (
-        <div className="mt-1.5 -ml-2 flex flex-wrap gap-1">
-          <AccountLinks />
+        <div className="mt-1.5 -ml-2">
+          <SubscriptionLink />
         </div>
       )}
     </SlotCard>
@@ -188,23 +177,32 @@ export default function HomeBanner() {
 }
 
 /**
- * The same status as one row at the top of a workspace's Dashboard (Epo
- * 2026-11-05, Q631): its title, then its body scrolling sideways.
+ * The same status small, inside a workspace's Dashboard below its title (Epo
+ * 2026-11-05, Q631): the same words and links, with no meter.
  */
-export function AccountStatusStrip() {
+export function AccountStatusBanner() {
   const status = useAccountStatus();
   if (!status) return null;
   return (
-    <FileBanner
-      closeable={false}
-      heading={status.title}
-      inline
+    <SlotCard
+      body={status.body}
+      connection={
+        status.kind === 'offline' || status.kind === 'reconnecting'
+          ? status.kind
+          : undefined
+      }
+      icon={status.icon}
       kind={status.kind}
-      links={status.links && <AccountLinks />}
-      message={status.body}
-      testId="account-status-strip"
+      small
+      title={status.title}
       tone={status.tone}
-    />
+    >
+      {status.links && (
+        <div className="-ml-2">
+          <SubscriptionLink />
+        </div>
+      )}
+    </SlotCard>
   );
 }
 
@@ -214,6 +212,8 @@ function SlotCard({
   icon,
   tone,
   connection,
+  kind,
+  small,
   children,
 }: {
   title: string;
@@ -221,30 +221,35 @@ function SlotCard({
   icon: IconName;
   tone: 'warning' | 'error';
   connection?: 'offline' | 'reconnecting';
+  kind?: AccountStatus['kind'];
+  small?: boolean;
   children?: React.ReactNode;
 }) {
   return (
     <Card
       className={cn(
         'relative block min-h-fit overflow-hidden',
+        small && 'px-4 py-3',
         tone === 'warning' &&
           'bg-tint-warning text-tint-warning-fg hover:bg-tint-warning',
         tone === 'error' &&
           'bg-tint-error text-tint-error-fg hover:bg-tint-error'
       )}
       data-connection-status={connection}
+      data-kind={kind}
+      data-testid={small ? 'account-status-banner' : undefined}
       radius="card-lg"
       role="status"
     >
       <div className="relative z-10 flex flex-col gap-1 xl:max-w-[80%]">
-        <p className="t-subtitle font-bold">{title}</p>
-        <p className="mt-1">{body}</p>
+        <p className={cn('font-bold', !small && 't-subtitle')}>{title}</p>
+        <p className={cn(small ? 't-meta' : 'mt-1')}>{body}</p>
         {children}
       </div>
       <Icon
         className="absolute -top-3 -right-4 opacity-15"
         name={icon}
-        size={120}
+        size={small ? 72 : 120}
         strokeWidth={1.3}
       />
     </Card>

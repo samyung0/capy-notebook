@@ -534,14 +534,14 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
       page.getByRole('dialog', { name: m.workspace_storage_near_self_title() })
     ).toBeVisible();
     await page.keyboard.press('Escape');
-    // A workspace opens on its Dashboard, which shows the status as a strip.
+    // A workspace opens on its Dashboard, which shows the status as a small banner.
     await page.goto('/workspaces/ws_scenarios');
-    const strip = page.getByTestId('account-status-strip');
-    await expect(strip).toHaveAttribute('data-kind', 'near', {
+    const banner = page.getByTestId('account-status-banner');
+    await expect(banner).toHaveAttribute('data-kind', 'near', {
       timeout: 30_000,
     });
     await expect(
-      strip.getByText(m.account_banner_near_title(), { exact: true })
+      banner.getByText(m.account_banner_near_title(), { exact: true })
     ).toBeVisible();
     await page.goto('/');
     await expect(page.getByTestId('storage-usage-meter')).toBeVisible({
@@ -616,9 +616,9 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
         page.getByRole('button', { exact: true, name })
       ).toHaveAttribute('data-storage-status', status);
     }
-    // The Dashboard's strip names the viewer's own frozen account there too.
+    // The Dashboard's banner names the viewer's own frozen account there too.
     await page.goto('/workspaces/ws_scenarios');
-    await expect(page.getByTestId('account-status-strip')).toHaveAttribute(
+    await expect(page.getByTestId('account-status-banner')).toHaveAttribute(
       'data-kind',
       'frozen',
       { timeout: 30_000 }
