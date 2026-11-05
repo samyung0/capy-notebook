@@ -341,7 +341,8 @@ measures figure crops and the content against the page, and
 [window size](extraction/reports/2026-11-04-window-size.md) how many questions
 one call records (run on the windows the route has since replaced; tables from
 `scripts/window_table.py` and `scripts/window_crossing.py`), and
-[layout first](extraction/reports/2026-11-04-layout-first-trial.md) runs the layout
+[answer files](extraction/reports/2026-11-05-answer-files.md) sends the mark scheme to
+the model as page images or text in place of the parse; [layout first](extraction/reports/2026-11-04-layout-first-trial.md) runs the layout
 service over HTTP through the real code (`scripts/layout_trial.py`; the service's
 venv and model file are in that report).
 

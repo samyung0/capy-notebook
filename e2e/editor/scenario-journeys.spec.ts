@@ -36,7 +36,9 @@ test('a ready file offers Clone and its copy opens in the workspace', async ({
     .getByRole('dialog', { name: m.action_clone_file() })
     .getByRole('button', { exact: true, name: m.action_clone() })
     .click();
-  await expect(page).toHaveURL(/\/workspaces\/ws_bio\?file=(?!f_1\b)\w+$/);
+  await expect(page).toHaveURL(
+    /\/workspaces\/ws_bio\?file=(?!f_1\b)\w+(&panel=\w+)?$/
+  );
 });
 
 test('a material cloned into a workspace opens there, not on the standalone page', async ({
@@ -54,7 +56,7 @@ test('a material cloned into a workspace opens there, not on the standalone page
     .click();
   // The copy lands in the source's workspace, with no topic by default.
   await expect(page).toHaveURL(
-    /\/workspaces\/ws_bio\?material=(?!mat_note_1\b)\w+$/
+    /\/workspaces\/ws_bio\?material=(?!mat_note_1\b)\w+(&panel=\w+)?$/
   );
 });
 
@@ -457,7 +459,7 @@ test('a new scenario cancels a pending auth request', async ({ page }) => {
       () => performance.getEntriesByName('scenario-auth-aborted').length
     )
   ).toBe(1);
-  await expect(page).toHaveURL(/\/workspaces\/ws_scenarios$/);
+  await expect(page).toHaveURL(/\/workspaces\/ws_scenarios(\?panel=\w+)?$/);
 });
 
 test('Office export failure keeps the editable iframe in Edit and draft download works', async ({

@@ -84,8 +84,10 @@ export type WorkspaceOpenSearch = {
   reviewMode?: ReviewMode;
   /** Practice's result of a finished topic session. */
   review?: string;
-  /** Make a quiz's pages while nothing is open: the page picker, or a run. */
-  make?: 'pages' | 'run';
+  /** Make a quiz's dialog while nothing is open: its files, pages or run. */
+  make?: 'files' | 'pages' | 'run';
+  /** The file whose pages it shows. */
+  quizFile?: string;
   /** The question paper's files and the mark scheme or answer files, comma
    * separated, kept so a reload or Back returns to the same choice. */
   paper?: string;
@@ -159,6 +161,7 @@ export function parseWorkspaceOpenSearch(
     answers: undefined,
     assignment: undefined,
     attempt: undefined,
+    file: undefined,
     group: undefined,
     make: undefined,
     member: undefined,
@@ -166,6 +169,7 @@ export function parseWorkspaceOpenSearch(
     own: undefined,
     paper: undefined,
     question: undefined,
+    quizFile: undefined,
     review: undefined,
     reviewMode: undefined,
     run: undefined,
@@ -218,8 +222,9 @@ function parseMakeQuiz(search: Record<string, unknown>): WorkspaceOpenSearch {
   const paper = text(search.paper);
   const answers = text(search.answers);
   const run = text(search.run);
+  if (search.make === 'files') return { answers, make: 'files', paper };
   if (search.make === 'pages' && paper)
-    return { answers, make: 'pages', paper };
+    return { answers, make: 'pages', paper, quizFile: text(search.quizFile) };
   if (search.make === 'run' && run) return { answers, make: 'run', paper, run };
   return {};
 }

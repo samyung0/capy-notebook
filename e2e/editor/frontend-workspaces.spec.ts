@@ -234,7 +234,7 @@ test('a route chunk answered with HTML shows the update fallback inside the shel
   page,
 }) => {
   await context.route(
-    (url) => url.pathname === '/src/routes/Home.tsx',
+    (url) => url.pathname === '/src/routes/Workspaces.tsx',
     (route) =>
       route.fulfill({
         body: '<div id="root">Loading...</div>',

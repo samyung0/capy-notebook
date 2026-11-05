@@ -4,17 +4,14 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { ExtractionPaperFile } from './extractionPaperFile.ts';
+import type { ExtractionFile } from './extractionFile.ts';
 
 export interface CreateExtractionReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  answerFileIds?: string[];
-  /**
-     * @minItems 1
-     * @nullable
-     */
-  paper: ExtractionPaperFile[] | null;
+  answers?: ExtractionFile[];
+  /** @minItems 1 */
+  paper: ExtractionFile[];
   /**
      * @minLength 1
      * @maxLength 120

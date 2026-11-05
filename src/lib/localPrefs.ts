@@ -41,6 +41,12 @@ export const PREF_KEYS = {
    * (`account`) or, signed out on a shared quiz, this browser's (`local`). */
   quizAttempt: (owner: 'account' | 'local', quizId: string) =>
     `capy.quizAttempt.${owner}.${quizId}`,
+  /** The Make a quiz runs the upload panel follows, by id (quizRuns.ts), with the account
+   * they belong to. */
+  quizRuns: 'capy.quiz.runs',
+  /** Make a quiz files still reading: their ids and names (quizWaitStore.ts), with the
+   * account they belong to. */
+  quizWaits: 'capy.quiz.waits',
   /** When each workspace, file and material open was last sent (sentOpens.ts). */
   sentOpens: 'capy.opens.sent',
   sort: (list: SortedList) => `capy.sort.${list}`,

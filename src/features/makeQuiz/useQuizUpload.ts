@@ -4,28 +4,58 @@ import {
   useImportSources,
   useSourceUploadPolicy,
   useUploadSource,
+  useWorkspace,
 } from '@/api/hooks';
-import type { SourceFile } from '@/api/types';
+import { FILE_NAME_CHARACTER_LIMIT } from '@/api/limits.generated';
+import type { SourceFile, SourceUploadPolicy } from '@/api/types';
 import { userToast } from '@/components/ui/userToast';
 import { outOfCredits } from '@/features/billing/credits';
 import {
   localRows,
+  nameTooLong,
   sourceCreditEstimate,
   uploadParseMode,
   useSourceBatch,
+  workspaceFileRoom,
+  workspaceRoomToast,
 } from '@/features/workspace/AddSourceDialog';
 import { validateLocalSourceSelection } from '@/features/workspace/sourceDetails';
 import {
   removeSourceTransfer,
   startSourceTransfer,
+  useSourceTransfers,
 } from '@/features/workspace/sourceTransfers';
+import {
+  capSourceUploads,
+  isTextKind,
+} from '@/features/workspace/sourceUpload';
 import { m } from '@/i18n';
-import { isPaperFile } from './makeQuiz';
+import { isQuizFile } from './makeQuiz';
+
+/** A file that would be stored with no text: a run can't read it, so it isn't kept (Epo
+ * 2026-11-05, "just show error saying that this file cannot be extracted"). Too many pages,
+ * a password or no credits for its parse end here; a text file needs no parse. */
+export function wouldStayUnread(
+  kind: SourceFile['kind'],
+  parseMode: string,
+  policy: SourceUploadPolicy
+) {
+  return parseMode === 'none' && !isTextKind(kind, policy);
+}
 
 /** A file being added in the Make a quiz dialog: the normal upload and reading
  * path, saved to Files, hidden from members from its first moment (Epo
- * 2026-11-04) and in no topic, so it sits in Other files. */
-export function useQuizUpload(workspaceId: string) {
+ * 2026-11-04) and in no topic, so it sits in Other files. `onRefused` takes back a row
+ * whose file turned out unreadable before it was sent. */
+export function useQuizUpload(
+  workspaceId: string,
+  onRefused: (key: string) => void
+) {
+  const refused = useRef(onRefused);
+  refused.current = onRefused;
+  const { data: workspace } = useWorkspace(workspaceId, {
+    errorBoundary: false,
+  });
   const { data: policy } = useSourceUploadPolicy(workspaceId, {
     errorBoundary: false,
   });
@@ -52,6 +82,18 @@ export function useQuizUpload(workspaceId: string) {
       if (waiting || !source.file || started.current.has(source.key)) continue;
       started.current.add(source.key);
       const parseMode = uploadParseMode(source, policy, noCredits);
+      if (wouldStayUnread(source.kind, parseMode, policy)) {
+        remove(source);
+        refused.current(source.key);
+        userToast({
+          description: source.name,
+          title: noCredits
+            ? m.source_upload_no_credits()
+            : m.make_quiz_cannot_extract(),
+          variant: 'error',
+        });
+        continue;
+      }
       startSourceTransfer({
         importSources,
         limits: policy,
@@ -75,6 +117,7 @@ export function useQuizUpload(workspaceId: string) {
             topicName: null,
           },
         ],
+        quietFailures: true,
         uploadSource,
         workspaceId,
       });
@@ -90,12 +133,23 @@ export function useQuizUpload(workspaceId: string) {
     workspaceId,
   ]);
 
-  /** Takes the picked files and returns their rows; a file over the plan's
-   * size says so and stays out. With `papersOnly`, so does one that can't be a
-   * question paper. */
+  // As in the Add dialog: rows waiting or on their way claim workspace room.
+  const inFlight = useSourceTransfers(
+    (state) =>
+      state.transfers.filter(
+        (row) =>
+          row.workspaceId === workspaceId &&
+          (row.stage === 'waiting' ||
+            row.stage === 'uploading' ||
+            row.stage === 'importing')
+      ).length
+  );
+
+  /** Takes the picked files and returns their rows; a file over the plan's size or name
+   * length says so and stays out, and so does one a run can't read or the workspace has
+   * no room for. */
   function add(
-    list: File[],
-    papersOnly = false
+    list: File[]
   ): { key: string; kind: SourceFile['kind']; name: string }[] {
     // Upload a file waits for the policy.
     if (!policy) return [];
@@ -108,10 +162,36 @@ export function useQuizUpload(workspaceId: string) {
         }),
         variant: 'error',
       });
-    const usable = papersOnly ? accepted.filter(isPaperFile) : accepted;
+    const usable = accepted.filter((item) =>
+      isQuizFile({ kind: item.kind, name: item.file.name })
+    );
     if (usable.length < accepted.length)
-      userToast({ title: m.make_quiz_paper_kinds(), variant: 'error' });
-    const rows = localRows(usable, policy, noCredits);
+      userToast({
+        description: accepted
+          .filter((item) => !usable.includes(item))
+          .map((item) => item.file.name)
+          .join(', '),
+        title: m.make_quiz_cannot_extract(),
+        variant: 'error',
+      });
+    const named = usable.filter((item) => !nameTooLong(item.file.name));
+    if (named.length < usable.length)
+      userToast({
+        description: usable
+          .filter((item) => !named.includes(item))
+          .map((item) => item.file.name)
+          .join(', '),
+        title: m.source_name_too_long({ max: FILE_NAME_CHARACTER_LIMIT }),
+        variant: 'error',
+      });
+    const { filesLimit, workspaceRoom } = workspaceFileRoom(workspace);
+    const capped = capSourceUploads(
+      sources.length + inFlight,
+      named,
+      workspaceRoom
+    );
+    if (capped.rejected > 0) workspaceRoomToast(workspaceRoom, filesLimit);
+    const rows = localRows(capped.accepted, policy, noCredits);
     batch.add(rows);
     return rows.map(({ key, kind, name }) => ({ key, kind, name }));
   }
