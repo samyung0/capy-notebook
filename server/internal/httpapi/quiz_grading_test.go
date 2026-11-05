@@ -81,7 +81,11 @@ func openGradingAPIWith(t *testing.T, choice string, cfg httpapi.Config) (http.H
 	st.SetModelRegistry(reg)
 	cfg.E2EAuth, cfg.E2ESecret, cfg.E2EUserIDs = true, "e2e-test-secret", []string{"u_owner", "u_editor", "u_viewer", "u_other"}
 	cfg.ModelRegistry, cfg.Jev = reg, jev.NewForTest("key", srv.URL)
-	h := httpapi.New(st, blob.NewMemory(), pipeline.New(pipe.URL, "secret"), nil, "docling", cfg)
+	client := pipeline.New(pipe.URL, "secret")
+	if choice == "no-pipeline" {
+		client = nil
+	}
+	h := httpapi.New(st, blob.NewMemory(), client, nil, "docling", cfg)
 	return h, st, &calls
 }
 

@@ -191,6 +191,23 @@ func TestMarkingKeepsPaidMarksWhenItsTimeRunsOut(t *testing.T) {
 	}
 }
 
+// A stack with no pipeline, like the e2e stack, has nothing to mark with: the
+// member's submit goes through and the answer stays Not marked.
+func TestSubmitWithNoPipelineStaysNotMarked(t *testing.T) {
+	h, _, _ := openGradingAPI(t, "no-pipeline")
+	id := markingAssignment(t, h)
+	attempt := startAndSubmit(t, h, id, map[string]any{"q1:part:1": "One."})
+	settledCalls(new(atomic.Int32))
+	rec := doReq(t, h, http.MethodGet, "/api/assignment-attempts/"+attempt, "u_owner", nil)
+	var got struct {
+		Questions []map[string]any `json:"questions"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if part := gradedParts(t, got.Questions)["q1:part:1"]; part["pending"] != true {
+		t.Fatalf("part = %+v", part)
+	}
+}
+
 // Mark with AI says so while the page waits when the owner cannot pay, and a
 // frozen caller is refused.
 func TestMarkWithAIRefusesWhenItCannotRun(t *testing.T) {

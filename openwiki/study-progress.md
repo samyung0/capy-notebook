@@ -923,7 +923,7 @@ submissions due date or its closing by hand, the next request or
 `SweepAssignments` (each minute, in `cmd/api`) submits what was saved,
 `auto_submitted` unless closing was the cause. The sweep logs a row that fails and
 passes over it, and picks each batch at random, so rows that keep failing never fill
-it and hold up the rest.
+it and hold up the rest. A panic in that run reports and leaves its answers Not marked; nothing above the run's goroutines would catch it, and the whole server would stop. A stack with no pipeline, like the e2e stack, marks nothing.
 
 **The due date's policy** (Epo 2026-11-04, supersedes §11.5's close by the owner
 alone). Set per assignment in New assignment's Advanced; marked work with a due

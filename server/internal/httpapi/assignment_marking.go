@@ -104,6 +104,13 @@ func (a *api) markAnswers(ctx context.Context, assignmentID, attemptID string) {
 	report := func(err error) {
 		obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz, "stage": "assignment_marking"})
 	}
+	// Nothing above this goroutine catches a panic, so one would stop the whole
+	// server for everyone. The answers stay Not marked instead.
+	defer func() {
+		if r := recover(); r != nil {
+			report(panicError("marking", r))
+		}
+	}()
 	payer, _, listed, err := a.s.AnswersToMark(ctx, assignmentID, attemptID)
 	if err != nil {
 		report(err)
@@ -124,14 +131,24 @@ func (a *api) markAnswers(ctx context.Context, assignmentID, attemptID string) {
 	}
 	lock := a.marking.payer(payer)
 	for _, id := range order {
-		lock.Lock()
-		err := a.markAttemptAnswers(ctx, assignmentID, id)
-		lock.Unlock()
-		if err != nil {
+		if err := a.markAttemptInTurn(ctx, lock, assignmentID, id); err != nil {
 			report(err)
 		}
 		a.marking.progressed(assignmentID, counts[id])
 	}
+}
+
+// markAttemptInTurn marks one attempt under its payer's lock. A panic is that
+// attempt's failure: it frees the lock for the payer's other runs, and the rest go on.
+func (a *api) markAttemptInTurn(ctx context.Context, lock *sync.Mutex, assignmentID, attemptID string) (err error) {
+	lock.Lock()
+	defer lock.Unlock()
+	defer func() {
+		if r := recover(); r != nil {
+			err = panicError("marking an attempt", r)
+		}
+	}()
+	return a.markAttemptAnswers(ctx, assignmentID, attemptID)
 }
 
 func (a *api) markAttemptAnswers(ctx context.Context, assignmentID, attemptID string) error {

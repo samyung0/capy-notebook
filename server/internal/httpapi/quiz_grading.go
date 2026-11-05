@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -186,8 +187,8 @@ const (
 // pipeline turns thinking off for the rest.
 func (a *api) gradingLLM(ctx context.Context, userID string) (resolvedLLM, error) {
 	var out resolvedLLM
-	if a.modelReg == nil {
-		return out, fmt.Errorf("%w: registry not configured", store.ErrModelUnavailable)
+	if a.modelReg == nil || a.pipe == nil {
+		return out, fmt.Errorf("%w: registry or pipeline not configured", store.ErrModelUnavailable)
 	}
 	cfg, err := a.modelReg.Default(ctx, models.SlotGrading)
 	if err != nil {
@@ -235,7 +236,7 @@ func (a *api) gradeWithModel(ctx context.Context, payerID, workspaceID string, p
 	var report sync.Once
 	for id, part := range parts {
 		group.Go(func() error {
-			grade, err := a.gradePart(ctx, llm, charge.id, part)
+			grade, err := a.gradePartSafely(ctx, llm, charge.id, part)
 			if err != nil {
 				report.Do(func() {
 					obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz, "stage": "grade_part"})
@@ -250,6 +251,23 @@ func (a *api) gradeWithModel(ctx context.Context, payerID, workspaceID string, p
 	}
 	_ = group.Wait()
 	return out
+}
+
+// gradePartSafely makes gradePart's panic that part's failure. It runs on a
+// goroutine of its own, where nothing above it catches one, so a panic would stop
+// the whole server for everyone.
+func (a *api) gradePartSafely(ctx context.Context, llm resolvedLLM, sessionID string, part openPart) (grade partGrade, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = panicError("grading a part", r)
+		}
+	}()
+	return a.gradePart(ctx, llm, sessionID, part)
+}
+
+// panicError turns a recovered panic into an error that keeps where it happened.
+func panicError(what string, recovered any) error {
+	return fmt.Errorf("%s panicked: %v\n%s", what, recovered, debug.Stack())
 }
 
 func (a *api) gradePart(ctx context.Context, llm resolvedLLM, sessionID string, part openPart) (partGrade, error) {
