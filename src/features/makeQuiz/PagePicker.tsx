@@ -284,7 +284,7 @@ interface OfficeDrawingProps {
   selected: ReadonlySet<string>;
 }
 
-/** The Office runtime draws every page in a frame off screen, with its print path, and
+/** The Office runtime draws every page in an unseen frame, with its print path, and
  * each becomes a JPEG the run is sent (Epo 2026-11-05, "draw those pages on client
  * side"). The frame is gone once it has drawn or failed: a render that timed out would
  * otherwise go on drawing, and it shares the app's main thread, so the wait is still. */
@@ -334,14 +334,16 @@ function OfficeDrawing({
   const stopped = failed || !!error;
   return (
     <>
-      {/* On the body: a hidden tab or step would leave the frame no layout to draw in. */}
+      {/* On the body: a hidden tab or step would leave the frame no layout to draw in. In the
+          viewport and unseen: Chromium stops animation frames in a cross-origin frame off
+          screen. */}
       {!stopped &&
         !pages &&
         createPortal(
           <iframe
             allow={iframeAllow}
             aria-hidden
-            className="pointer-events-none fixed top-0 left-[-200vw] h-[768px] w-[1024px] border-0"
+            className="pointer-events-none fixed top-0 left-0 -z-10 h-[768px] w-[1024px] border-0 opacity-0"
             inert
             key={iframeKey}
             ref={iframeRef}

@@ -2,7 +2,12 @@
 // The Make a quiz steps a Word or PowerPoint paper takes in the browser, shared by the
 // spec on the mock (e2e/editor/make-quiz-office.spec.ts) and the one on UAT
 // (e2e/uat/journeys/makeQuiz.spec.ts). Each reads data and attributes only.
-import { expect, type Page } from '@playwright/test';
+import {
+  type ConsoleMessage,
+  expect,
+  type Page,
+  type Request,
+} from '@playwright/test';
 import { m } from '../i18n';
 
 /** Two pages each: page 1 holds questions 1 and 2, page 2 question 3
@@ -110,7 +115,32 @@ export async function drawnSheets(page: Page, count: number) {
     timeout: 30_000,
   });
   const sheets = page.locator('[role=group]:not([hidden]) [data-page-sheet]');
-  await expect(sheets).toHaveCount(count, { timeout: 120_000 });
+  // What the page and its frame saw, for a failure on a deployed host, which keeps no
+  // trace of the frame.
+  const heard: string[] = [];
+  const onConsole = (message: ConsoleMessage) => {
+    if (message.type() === 'error') heard.push(message.text().slice(0, 200));
+  };
+  const onFailed = (request: Request) => {
+    heard.push(
+      `${request.failure()?.errorText} ${request.url().split('?')[0]}`
+    );
+  };
+  page.on('console', onConsole);
+  page.on('requestfailed', onFailed);
+  try {
+    await expect(sheets).toHaveCount(count, { timeout: 120_000 });
+  } catch (cause) {
+    const alerts = await page.getByRole('alert').allInnerTexts();
+    const frames = await page.locator('iframe[src*="office-runtime"]').count();
+    throw new Error(
+      `${count} pages not drawn: ${await sheets.count()} sheets, ${frames} frames, alerts ${JSON.stringify(alerts)}, heard ${JSON.stringify(heard.slice(-12))}`,
+      { cause }
+    );
+  } finally {
+    page.off('console', onConsole);
+    page.off('requestfailed', onFailed);
+  }
   await expect(page.locator('iframe[src*="office-runtime"]')).toHaveCount(0);
   const drawn: DrawnSheet[] = [];
   for (const sheet of await sheets.all()) {
