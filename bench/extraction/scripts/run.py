@@ -481,7 +481,7 @@ def plain(text: str) -> str:
     superscript is its digits, ^\circ is °, \text{cm} is cm, 1 000 is 1000."""
     t = text.replace("\\%", "%").replace("\\,", "").replace("\\ ", " ")
     t = re.sub(r"\^\s*\{?\s*\\circ\s*\}?", "°", t)
-    # A run of superscript or subscript digits is one number (4²² is 4^22).
+    # A run of superscript or subscript digits is one number (4²³ is 4^23).
     t = re.sub(r"[⁰¹²³⁴-⁹₀-₉]+", lambda m: " " + m.group().translate(_SCRIPTS), t)
     t = t.replace("−", "-").replace("–", "-")
     t = re.sub(r"\\(?:text|mathrm|textrm|mbox)\s*\{([^{}]*)\}", r" \1 ", t)
