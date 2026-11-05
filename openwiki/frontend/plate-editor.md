@@ -91,15 +91,14 @@ mints a `write` token. See [authorization](../authorization-permissions-lifecycl
 for the full matrix.
 
 ACL changes, sharing changes, and deletions publish room eviction events through
-Redis. Revocation, deletion, ownership/placement changes, and account locks use
-discard mode so rejected in-memory state cannot return. Provably monotonic
-ACL changes use drain mode: member insertion/promotion and privacy/share-role
-widening persist accepted pending edits before unload. Account and plan
+Redis. A widening of access publishes nothing, and a narrowing a `revoke` that
+closes only the people it took something from (Q634, see
+[authorization](../authorization-permissions-lifecycles.md)). Deletion, placement
+changes and account locks use discard mode so rejected in-memory state cannot
+return. A moved file and a hidden item use drain mode, persisting accepted
+pending edits before unload. Account and plan
 restoration instead flushes pending stores without closing connections or
 unloading the room; later edits continue through the normal save cycle.
-Workspace classification uses the effective nonmember grant: while privacy is
-`private`, a dormant share-role change cannot turn a later privacy widening
-into discard mode. A
 The restoration user event also acknowledges without closing that user's
 connections; account lock events still close them. The server checks token expiry
 on inbound messages and persistence rechecks actor/owner lifecycle in the
@@ -1941,8 +1940,8 @@ keep no sessions and their full history.
 - **A session is one Y.Doc**, named by its client id (see [client
   ids](#client-ids)): one editor in one tab, whose Undo stack lives as long.
   A viewer, who never edits, has none; one whose token turns writable (a
-  role change evicts the channel first, so only if that eviction is late)
-  gets one at its first write, at the version it last named.
+  raised role closes nothing, so a token refresh after it) gets one at its
+  first write, at the version it last named.
 - **Versions.** Every JOIN names the stored version its document holds after
   the client id (0: a new document that holds nothing; one that took stored
   drafts before its first JOIN names theirs, `unsentFrom`). A note room tells
@@ -3487,13 +3486,14 @@ already durable and remains eligible for the normal lag retry.
 The final durable store takes the material advisory lock, then follows the same
 SQL row-lock order as Go mutations: workspace row (when present), contributor
 and owner accounts in ID order, then the material row. It revalidates placement
-and every contributor only after those locks are held. It also validates the
+and every contributor's account only after those locks are held. It also validates the
 complete Plate structure and the custom block required by the material kind
 before committing Yjs state. Member removal, role
 demotion, lifecycle changes, standalone privacy changes, and clones therefore
-cannot form an account/material deadlock or slip a save across the revocation
-boundary: the save either commits first or observes the revoked access and is
-rejected without advancing Yjs state or the SQL projection.
+cannot form an account/material deadlock. A lifecycle change cannot slip a save
+across its boundary: the save either commits first or observes the lock and is
+rejected without advancing Yjs state or the SQL projection. A lost role is
+enforced at admission instead, so what the room admitted saves (Q634).
 
 Quiz `timeLimitMin` uses the same integer range in REST, collaboration, and Go
 projection validation: 1 through 180 minutes. Values outside that range never

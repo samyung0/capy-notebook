@@ -2366,8 +2366,9 @@ rechecks current source access, epoch and account state through a small
 access-only endpoint for incoming edits, at most every 5 s per connection. That
 check is a lock-free read (no file advisory lock, workspace or account row
 lock) on one snapshot; the checkpoint that saves the edits rechecks every
-contributor's role and locked account under `sourceLockTx`, while frozen and the
-storage limit stay admission-only (the 5 s recheck window). Checkpoint writes do not
+contributor's locked account under `sourceLockTx`, while the role, frozen and the
+storage limit stay admission-only (the 5 s recheck window, Q634; an agent edit
+with no room to admit it has its actor's role checked by its own checkpoint). Checkpoint writes do not
 check storage: a save only updates the ledger (see [storage quota](../backend-storage-quota.md)). The checkpoint answers with the new
 checkpoint and an agent edit's receipt only. The browser's editing session read
 carries neither the baseline nor pending effects, and a text state only: an
@@ -2588,11 +2589,11 @@ existed before the update, that the commit collected, and (Office) newer than
 the seed, whose content a delete only marks in the stored change. Overwrites,
 deletes and replaced pictures no longer drift the estimate toward refusals,
 and it stays an upper bound of the state. The writer's access is revalidated at most every
-5 s per connection. Membership, role and share changes, and a user's own
-account change, close that user's connections through the collaboration
-eviction outbox; anything else (such as the owner's account state for a
-collaborator) takes effect within those 5 s, and every checkpoint rechecks each
-writer. Each room has its own state cap (`sources::state_cap`, Epo
+5 s per connection. A narrowing membership, role or share change closes the
+connections of those it took the file from, through the collaboration eviction
+outbox's `revoke`, and a user's own account lock closes theirs; anything else
+(such as the owner's account state for a collaborator) takes effect within
+those 5 s, and every checkpoint rechecks each writer's account. Each room has its own state cap (`sources::state_cap`, Epo
 2026-10-17): its seed plus the export cap (the largest plan source file,
 `max(plan_limits.source_file_max_bytes)`, read with the room's stored rows)
 less the base file and a 1 MiB margin, within the 100 MiB ceiling every room
@@ -2729,7 +2730,7 @@ never count) the editor stops
 taking edits (`offlineLimit`: Office `canEdit: false`, a paused textarea)
 until it reconnects. When the collaboration service discards a source room
 that held unsaved state (a save refused for good, the 5-minute slow-save
-limit, a read-only or access refusal, an outbox access discard), it asks the
+limit, a read-only refusal, an outbox discard), it asks the
 gateway to move the file to its next editing epoch before the room opens
 again (`POST /internal/collaboration/files/{id}/epoch-reset`, an epoch that
 already moved on is left alone). A client that missed the discard then sees

@@ -385,8 +385,10 @@ Important boundaries:
   standalone material may be private, link-shared, or public on its own. The
   one narrowing is [Hidden from members](#hidden-from-members), which keeps a
   file or material to the workspace's editors.
-- Changing visibility or `shareRole` moves everyone's effective role, so it
-  evicts live collaboration connections the same way a membership change does.
+- Changing visibility or `shareRole` moves everyone's effective role. As with
+  a membership change, narrowing closes the live collaboration connections of
+  those it took something from, and widening closes nothing (see the eviction
+  outbox under [live collaboration](#comments-and-live-collaboration)).
 - Content writes lock the workspace and re-read the actor's current effective
   role in the same transaction as the mutation; settings writes re-read the
   persisted membership. A request that began while someone was an editor
@@ -786,8 +788,8 @@ topicName?}` (`MoveFiles` in `store/file_move.go`).
   the access check of the new place. Every source save names the workspace
   its room opened the file in (`workspaceId`, kept across the room's saves),
   and Go checks each actor there (Q459), so the drain's final save stores
-  the edits of people who are not in the target; someone removed from that
-  workspace still has their unsaved edits refused. A save that meets a moved
+  the edits of people who are not in the target; a role lost in that workspace
+  since does not refuse them either (Q634). A save that meets a moved
   checkpoint reads the file's session again as its owner's (`current`'s
   read: the checkpoint is what checks the writers), so its retry stores in
   the drain too. Right before the drain the room tells
@@ -921,12 +923,12 @@ and [material editor checks](../server/internal/store/share.go#L209).
   found to everyone but the owner. The collaboration
   server rechecks actor lifecycle,
   current membership/share role, owner lifecycle, and current quota state when
-  admitting a connection, synchronizing a refreshed token, and persisting each
-  save. Server-owned provenance travels in the same Yjs transaction as each
-  edit, and the durable store rechecks every contributor's role and account
-  lock in its exact debounced snapshot. A rejected raced update is never
-  committed; the room is evicted so its unauthorized in-memory state cannot be
-  retried later. Workspace saves
+  admitting a connection and synchronizing a refreshed token. Server-owned
+  provenance travels in the same Yjs transaction as each edit, and the durable
+  store rechecks every contributor's account lock in its exact debounced
+  snapshot, not their role: what the room admitted saves (Q634, below). A save
+  refused for a lock is never committed; the room is evicted so its in-memory
+  state cannot be retried later. Workspace saves
   lock workspace, ordered accounts, then material; standalone saves lock
   ordered accounts before material, matching the Go mutation order. The server
   treats Free-only subscription history as ordinary active Free access. It
@@ -946,29 +948,67 @@ and [material editor checks](../server/internal/store/share.go#L209).
   source recovery path). The store (and a source checkpoint, which takes
   `sourceLockTx` without the content admission that `CheckSourceAccess` adds
   for new edits) saves updates already admitted, so up to about 5 s of edits
-  may persist; neither refuses or evicts a room because a contributor froze or
-  the owner reached its limit. Removed members and locked
-  accounts still evict the whole room. The server also closes the connection
+  may persist; neither refuses or evicts a room because a contributor froze,
+  lost their role or the owner reached its limit. Locked accounts still evict
+  the whole room. The server also closes the connection
   when the short-lived token expires and checks expiry on every inbound update
   or stateless event.
 - ACL and lifecycle mutations enqueue room/user evictions transactionally in a
   database outbox. Redis delivery is retried with one stable eviction ID and is
   complete only after every active collaboration instance returns a positive
   acknowledgement. A negative or lost acknowledgement keeps the item retryable
-  and replays a deduplicated eviction. Revocation,
-  deletion, ownership/placement changes, plan downgrades, and account locks use
-  discard; a discard that throws unsaved room state away also moves the room
+  and replays a deduplicated eviction. An access change closes nothing for
+  people who did nothing wrong (Epo 2026-11-05, Q634, migration 0152):
+  - **Access widened: nothing queued.** Adding a member, raising a role and
+    widening sharing (privacy or the share role; a share role is dormant while
+    the workspace is private, so changing it, or widening from private, takes
+    nothing from anyone) close no room and no connection, not even for the
+    person who gained. They pick up edit at their next reload, with no hint.
+  - **Access narrowed: `revoke`, one row per room.** Removing a member, lowering
+    a role, narrowing sharing, a link going (`link` to `private`, which clears
+    its grants) and a transfer of ownership. Each instance holding the room
+    checks the people connected to it against the database, which the change
+    has committed to (`revoke_local` in `collaboration-rs/crates/server/src/pubsub.rs`:
+    `live_role` for a material room, the gateway's access check for a source
+    room), and closes those whose role no longer covers what they hold, every
+    channel of theirs, with `RoomCmd::CloseUser`, code 4403 and no notice. They
+    need no role left at all for a read channel; a write channel, a keys
+    channel and a material room's reading tab of an editor (which is in the
+    presence) need an editing role. Everyone else and the room carry on, so a
+    transfer closes nobody: the old owner stays an editor. A trigger names no
+    one, because a link or public visitor has no row to name; signed-out pages
+    are static and join no room, so every connection has a user id and is found
+    alike. A note's embedded items and a quiz's keys room go with the event as
+    in every room event (`evict_children`, `evict_material_epochs`). Frozen, the
+    storage limit and an assigned quiz are not revoked: the writer's recheck
+    answers the first two with the read-only strip, and a reader keeps an
+    assigned quiz until they leave. Delivery is idempotent: a repeat closes
+    nobody new, so a revoke is not deduplicated; a check that fails answers
+    negatively and the outbox retries it; a room on no instance acknowledges,
+    having no one to close, and every tab on every instance closes.
+  - **After a revoke.** A token held from before is refused at the join's live
+    check: a removed person as forbidden (`collaboration-forbidden`, or not found
+    in a source room), a lowered editor's write token as read-only
+    (`collaboration-read-only`, not found in a source room); Go then mints a
+    lowered editor a read token, a removed one nothing. A lowered editor's open
+    channel stops writing at the close, or, if the outbox has not delivered, at
+    the 5 s recheck of its next update. Up to about 5 s of the person's last
+    edits can survive, which Epo accepted; the store does not refuse them, since
+    that would discard the room under everyone else.
+  - **A lowered plan or a lapsed subscription: nothing queued.** A writer it puts
+    over the limit hears `room-read-only` at its next update and closes alone,
+    as at the storage limit (above).
+  Deletion, trash, placement changes and account locks use discard, and an
+  account lock closes that user everywhere; a discard that throws unsaved room
+  state away also moves the room
   (a material's `room_schema`, a source's epoch) so a disconnected client
   cannot resync it (see
   [plate-editor.md](frontend/plate-editor.md#document-limits-and-rejection)).
-  Provably monotonic ACL changes use drain: they block new room
+  A moved file and a hidden item use drain: they block new room
   traffic, persist accepted pending edits, and refuse acknowledgement when that
   final store fails. Account and plan restoration flushes pending stores but
-  leaves the room loaded and every connection open. Workspace monotonicity compares
-  the effective nonmember grant; a share role is dormant while the workspace is
-  private, so changing that role or widening privacy from private drains rather
-  than discarding accepted edits. Restoration user events do not close
-  connections. Material outbox
+  leaves the room loaded and every connection open. Restoration user events do
+  not close connections. Material outbox
   delivery resolves the current Yjs room epoch and rechecks it after eviction,
   so an event enqueued beside a discard cannot acknowledge only an obsolete
   room. A failed discard keeps the room blocked until a later retry verifies

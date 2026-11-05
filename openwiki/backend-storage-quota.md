@@ -1171,12 +1171,13 @@ keeping the state (see
 [plate-editor.md](frontend/plate-editor.md#document-limits-and-rejection)).
 
 Ordinary persistence embeds server-owned actor provenance in the same Yjs
-transaction as each edit and rechecks every contributor in the exact debounced
-snapshot, along with current membership/share role, workspace owner, and live
-subscription/storage state. Claimed markers are removed from the committed
-state; newer generations remain for the next save. A token minted before role
-removal, suspension, deletion, or plan expiry cannot bypass the database
-boundary. A rejected authorization-race save evicts the room so the uncommitted
+transaction as each edit and rechecks the account of every contributor in the
+exact debounced snapshot, along with the workspace owner. Claimed markers are
+removed from the committed state; newer generations remain for the next save.
+A token minted before suspension or deletion cannot bypass that boundary, and
+one minted before a role removal or plan expiry is refused at admission (the
+join and the 5 s writer recheck), so up to about 5 s of what such a writer sent
+saves (Q634). A save refused for a lock evicts the room so the uncommitted
 update is not retained in memory. Before writing authoritative Yjs state, the
 collaboration server applies the same structural and material-kind contract as Go. Invalid
 Plate content cannot become a durable state that projection will reject. The
