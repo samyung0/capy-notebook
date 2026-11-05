@@ -13,6 +13,7 @@ import type {
   AssignmentReport,
   MaterialRef,
   SharingNotice,
+  TodoList,
   WorkspaceActivity,
 } from '@/api/types';
 import type { Question, QuestionPart } from '@/features/questions/types';
@@ -1041,6 +1042,27 @@ export const assignmentHandlers = (viewer: Viewer) => {
     return attempt && row ? { attempt, row } : null;
   };
   return [
+    http.get('/api/todo', () => {
+      seed();
+      const workspaces = db.workspaces
+        .filter((ws) => ws.kind === 'class')
+        .map((ws) => ({
+          iconId: ws.iconId,
+          items: [...rows.values()]
+            .filter((row) => row.workspaceId === ws.id)
+            .map((row) => toAssignment(row, viewer))
+            .filter(
+              (a) =>
+                (a.manage?.toApprove ?? 0) > 0 ||
+                (a.mine && !a.draft && !a.closedAt)
+            ),
+          manages: viewer === 'owner',
+          name: ws.name,
+          workspaceId: ws.id,
+        }))
+        .filter((ws) => ws.items.length > 0);
+      return HttpResponse.json({ workspaces } satisfies TodoList);
+    }),
     http.get('/api/workspaces/:id/assignments', ({ params }) => {
       seed();
       const ws = db.workspaces.find((w) => w.id === params.id);

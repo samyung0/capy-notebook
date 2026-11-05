@@ -19,6 +19,8 @@ export const features = {
   explore: flag('VITE_FEATURE_EXPLORE', false),
   /** Learning page: rules and scores, no AI (Epo 2026-11-04). */
   learning: flag('VITE_FEATURE_LEARNING', true),
+  /** Question bank's nav entry; /qb still opens by URL (Epo 2026-11-05). */
+  questionBank: flag('VITE_FEATURE_QUESTION_BANK', false),
   /** Calendar / schedule page. */
   schedule: flag('VITE_FEATURE_SCHEDULE', false),
   /** Tasks page. */

@@ -7,7 +7,7 @@ import {
 } from '@/api/hooks';
 import type { Workspace, WorkspaceActivity } from '@/api/types';
 import { PreviewCard } from '@/components/app/PreviewCard';
-import { AccountStatusBanner } from '@/components/banners/HomeBanner';
+import { AccountStatusBanner } from '@/components/banners/AccountStatusBanner';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
@@ -54,7 +54,6 @@ export function WorkspaceDashboard({
   const items = mergeRecentItems(
     recent?.files ?? [],
     recent?.materials ?? [],
-    [],
     RECENT
   );
   const canAdd = !isWorkspaceReadOnly(workspace.capabilities);

@@ -1014,6 +1014,12 @@ row, so leaving and rejoining tells again. Staff and personal workspaces never s
 it. The board's own line about topic labels waits for topic summaries, and its Join
 step and "What members see" link for an invite preview and board G5.
 
+**To do page.** `/todo` (`src/routes/Todo.tsx`, `GET /api/todo`,
+`store/assignment_todo.go`) lists each class's Dashboard rows across the classes
+the viewer owns or belongs to, in `TodoRows`, the rows both share. A class with
+nothing to show is left out; those with answers waiting come first, then by the
+soonest due.
+
 **Dashboard.** `TodoSection` (H1, H2, H2b). A member's To do is what went to them:
 quizzes, and the rest with a tick; Show done brings finished ones back crossed
 out. Staff's holds answers to approve and anything they gave themselves, with New

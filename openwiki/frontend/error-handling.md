@@ -160,8 +160,8 @@ subscribes to those fields. A list that fails without data must never fall
 through to its empty state ("No workspaces yet" reads as data loss after a
 redeploy): a region that fills a page or a page tab renders `ErrorState`
 `variant="panel"` with Retry (Trash); anything smaller, and anything inside
-a dialog, renders `InlineErrorState`, one bold line and Retry (the dashboard
-recent workspaces and recents card, search results, Billing's invoices under
+a dialog, renders `InlineErrorState`, one bold line and Retry (To do's list,
+search results, Billing's invoices under
 the plan and its Details table, a question bank page that failed between loaded
 questions, workspace settings' Statistics tab and member list). Billing's Details table drops its loaded rows when any page fails,
 next pages included, and shows only the inline error. The /notifications page
@@ -394,25 +394,21 @@ stays a 500.
 ## Offline and paused work
 
 Nothing app-wide sits above the page, so connection and account state never
-shift the layout. Home's banner slot (`HomeBanner`) shows only the viewer's own
-account, one tinted card with a faint icon at a time, and is empty otherwise:
-frozen, over-quota grace, storage full (red), storage near the limit (amber),
-offline, reconnecting (stream disconnected). The full and near cards read
+shift the layout. `AccountStatusBanner` shows only the viewer's own account, one
+tinted card with a faint icon at a time, and is empty otherwise: frozen,
+over-quota grace, storage full (red), storage near the limit (amber), offline,
+reconnecting (stream disconnected). The full and near cards read
 `account.storageUsage` from `/me` and show "You've used X of Y" (whole
-megabytes, "96 MB of 100 MB") with a usage
-meter (`[data-testid="storage-usage-meter"]`) above the Subscription and
-Settings links. The connection card carries `[data-connection-status="offline"]`
+megabytes, "96 MB of 100 MB") with a Subscription link. The connection card carries `[data-connection-status="offline"]`
 or `"reconnecting"`. Suspended, deleted and deletion-pending accounts keep the
 full-screen `AccountBlockedScreen`.
 
-A workspace opens on its Dashboard, where the triangle isn't, so the Dashboard
-shows the same status small (Epo 2026-11-05, Q631): `AccountStatusBanner`, in the
-same file and reading the same `useAccountStatus`, the same states in the same order
-with the same words and link, inside the page below its title
-(`[data-testid="account-status-banner"]`, `data-kind` naming the state). It is the
-tinted card in a smaller size, with no meter; both link to Subscription with a solid
-dark button at the right, on its own right-aligned row on phones. Home's card is this small form on phones too. Only the Dashboard has it; Study and
-the other centre pages stay as they are, and the entry toast below still shows.
+It sits inside the page below the title of Workspaces and of a workspace's
+Dashboard (Epo 2026-11-05, Q631;
+`[data-testid="account-status-banner"]`, `data-kind` naming the state), with its
+link a solid dark button at the right, on its own right-aligned row on phones.
+Only those two pages have it; Study and the other centre pages stay as they are,
+and the entry toast below still shows.
 
 Inside a workspace, `WorkspaceHealth` raises one `userToast` per visit for the
 workspace storage status, and one while offline (also whenever the browser

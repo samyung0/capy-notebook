@@ -1245,7 +1245,9 @@ Free, 20 on Pro; `plan_limits.topics_per_workspace`, Epo 2026-11-03), checked
 under the workspace row's lock when a topic is added (the Files panel, chat's
 `create_topic`) and when an upload, move, clone into a workspace or bank copy
 creates one by name (`nextTopicPositionTx` in `store/upload_topics.go`); one
-past it is refused as 409 `too_many_topics`. A workspace past the cap after a
+past it is refused as 409 `too_many_topics`. An upload naming a new topic is refused
+at its ticket, before it waits in line or sends anything, and a Drive import when it
+is requested; both are checked again when the file arrives. A workspace past the cap after a
 downgrade keeps its topics and adds no more. A workspace clone copies its
 source's topics with their descriptions and is refused with
 `too_many_topics` when they are more than the cloner's plan allows, as it is

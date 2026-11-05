@@ -96,7 +96,7 @@ export async function invite(
 export async function fixture(
   name: string,
   marker: string,
-  set: 'basic' | 'rich-content' | 'toc' = 'basic'
+  set: 'basic' | 'make-quiz' | 'rich-content' | 'toc' = 'basic'
 ) {
   const bytes = await readFile(
     new URL(`../../fixtures/files/${set}/${name}`, import.meta.url)

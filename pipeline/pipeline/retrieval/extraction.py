@@ -96,6 +96,8 @@ OUTPUT_PER_PAGE = 8_000
 # thought its per part, if whole quesiton then 5"). A call past it is refused. Worked
 # solutions hold text alone, so they can't add one.
 QUESTION_FIGURES_MAX = 5
+# A whole run's figures (Epo 2026-11-05, "limit to 40 should be fine").
+RUN_FIGURES_MAX = 40
 # A figure is cropped at the scale that gives its page's long side this many
 # pixels (about 190 DPI on A4, against the page images' 1,568), so its labels read
 # and a small figure stays small; the crop's long side is still at most
@@ -1344,6 +1346,20 @@ async def locate(
     return [box for box in boxes if box is not None]
 
 
+def _capped_figures(held: list[Recorded]) -> list[str]:
+    """Keeps a run's first RUN_FIGURES_MAX figures in printed order and drops the rest
+    from their questions, whose labels it returns. It happens here because a batch
+    copying can't tell what the others recorded, so a refusal there couldn't be fixed."""
+    room = RUN_FIGURES_MAX
+    cut = []
+    for question in held:
+        if len(question.figures) > room:
+            question.figures = question.figures[:room]
+            cut.append(question.label)
+        room -= len(question.figures)
+    return cut
+
+
 async def locate_figures(held: list[Recorded], *, model: ModelConfig) -> list[str]:
     """Give each saved figure with no box the box a call seeing its page alone
     answers: coordinates asked of the window, beside two pages and the whole
@@ -1645,10 +1661,15 @@ async def run(
     answers_missing = [
         name for question in finals for name in _parts_with_no_answer(question)
     ]
-    figures_left_out = [
-        *current.figures_refused,
-        *await locate_figures(finals, model=model),
-    ]
+    figures_left_out = list(
+        dict.fromkeys(
+            [
+                *current.figures_refused,
+                *_capped_figures(finals),
+                *await locate_figures(finals, model=model),
+            ]
+        )
+    )
     crops: dict[str, str] = {}
     saved = []
     for question in finals:
@@ -1677,9 +1698,9 @@ async def run(
             # stopped first.
             "answersMissing": answers_missing,
             # Questions saved with figures cropped from the page, for the
-            # starter to check, and questions saved without theirs: they had
-            # no box and the box call for their page failed twice, or their crop
-            # failed (Go adds those whose figures did not fit in the starter's
+            # starter to check, and questions saved without theirs: past the run's
+            # cap, or they had no box and the box call for their page failed twice,
+            # or their crop failed (Go adds those whose figures did not fit in the starter's
             # storage).
             "figures": figures,
             "figuresLeftOut": figures_left_out,

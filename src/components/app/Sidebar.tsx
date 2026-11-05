@@ -40,22 +40,28 @@ function items(): {
     sections: [
       { items: general(), label: m.nav_section_general() },
       { items: tools(), label: m.nav_section_tools() },
-      {
-        items: [
-          { icon: 'quiz', label: m.question_ui_question_bank(), to: '/qb' },
-        ],
-        label: m.nav_section_explore(),
-      },
+      ...(features.questionBank
+        ? [
+            {
+              items: [
+                {
+                  icon: 'quiz' as IconName,
+                  label: m.question_ui_question_bank(),
+                  to: '/qb',
+                },
+              ],
+              label: m.nav_section_explore(),
+            },
+          ]
+        : []),
     ],
   };
 }
 
 function general(): NavItem[] {
   return [
-    { exact: true, icon: 'home', label: m.nav_home(), to: '/' },
-    // Chat across all the user's files (Epo 2026-10-27).
-    { icon: 'ai', label: m.nav_chat(), to: '/chat' },
-    { icon: 'workspaces', label: m.nav_workspaces(), to: '/workspaces' },
+    { exact: true, icon: 'workspaces', label: m.nav_workspaces(), to: '/' },
+    { icon: 'todo', label: m.nav_todo(), to: '/todo' },
     ...(features.learning
       ? [
           {
@@ -88,6 +94,8 @@ function general(): NavItem[] {
 
 function tools(): NavItem[] {
   return [
+    // Chat across all the user's files (Epo 2026-10-27).
+    { icon: 'ai', label: m.nav_chat(), to: '/chat' },
     { icon: 'filesNav', label: m.nav_files(), to: '/files' },
     ...(features.tasks
       ? [{ icon: 'todo' as IconName, label: m.nav_tasks(), to: '/tasks' }]
@@ -102,7 +110,7 @@ function isActive(pathname: string, item: NavItem): boolean {
 
 // Rows clip their own label so the 70px rail shows only the icon.
 const ROW_CLASS =
-  'flex h-fit w-full justify-start gap-3 overflow-hidden whitespace-nowrap px-3 py-2 leading-(--body-line-height) active:-rotate-1';
+  'flex h-9 w-full justify-start gap-3 overflow-hidden whitespace-nowrap px-3 leading-(--body-line-height) active:-rotate-1';
 
 /* The rail fades every `data-label` (row labels, the profile's name) in as it
    widens and out as it narrows. */
@@ -215,7 +223,7 @@ export function Sidebar({
         // The logo smokes out as the rail widens and the app name fades in
         // in line with the row icons, as on the full sidebar; narrowing drops
         // the name at once and the logo fades back.
-        <div className="relative flex items-center px-0.75 pb-5">
+        <div className="relative flex items-center px-0.75 pb-1">
           <span className="motion-smoke rail-open:motion-smoked shrink-0 group-hover/rail:delay-100">
             <LogoMark size={36} />
           </span>
@@ -245,7 +253,7 @@ export function Sidebar({
       )}
 
       {withAccount && (
-        <div className="mb-4 flex flex-col gap-1">
+        <div className={cn('flex flex-col gap-1', rail ? 'mb-1' : 'mb-4')}>
           <SearchRow />
           <Row
             active={pathname === NOTIFICATIONS}

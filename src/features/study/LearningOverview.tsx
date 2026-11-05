@@ -39,10 +39,7 @@ export function LearningOverviewTab() {
       >
         <InkBook />
         <p className="t-subtitle">{m.review_no_quizzes()}</p>
-        <Button
-          onClick={() => navigate({ to: '/workspaces' })}
-          variant="outline"
-        >
+        <Button onClick={() => navigate({ to: '/' })} variant="outline">
           {m.learning_go_workspaces()}
         </Button>
       </div>

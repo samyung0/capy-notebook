@@ -16,7 +16,7 @@ async function setOnline(page: Page, online: boolean) {
 
 async function openDashboard(page: Page) {
   await page.goto('/');
-  const cards = page.locator('section a[href^="/workspaces/"]');
+  const cards = page.locator('a[href^="/workspaces/"]');
   await expect(cards.first()).toBeVisible({ timeout: 30_000 });
   return cards;
 }
@@ -30,14 +30,12 @@ test('a page whose code is not loaded shows the offline state in the same page, 
     (window as unknown as { samePage: boolean }).samePage = true;
   });
   await setOnline(page, false);
-  await page
-    .getByRole('link', { exact: true, name: m.nav_workspaces() })
-    .click();
+  await page.getByRole('link', { exact: true, name: m.nav_todo() }).click();
   const offline = page
     .getByRole('alert')
     .getByText(m.error_offline_title(), { exact: true });
   await expect(offline).toBeVisible({ timeout: 30_000 });
-  expect(new URL(page.url()).pathname).toBe('/workspaces');
+  expect(new URL(page.url()).pathname).toBe('/todo');
   expect(
     await page.evaluate(
       () => (window as unknown as { samePage?: boolean }).samePage
@@ -56,7 +54,7 @@ test('a page whose code is not loaded shows the offline state in the same page, 
   await page
     .evaluate(() => setTimeout(() => window.dispatchEvent(new Event('online'))))
     .catch(() => undefined);
-  await expect(page.locator('button[data-sort]')).toBeVisible({
+  await expect(page.getByRole('heading', { name: m.nav_todo() })).toBeVisible({
     timeout: 30_000,
   });
   await expect(offline).toBeHidden();
