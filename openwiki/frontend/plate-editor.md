@@ -1089,6 +1089,9 @@ and reads them in one place (`plate::map_value`, behind
 refuses a crafted update that puts an unknown key, a wrong type, an oversize
 value or another shape into one (`figure_map.rs`; where the relaxed check for
 a merge's kept states runs: [embeds](../embeds.md#live-figures)).
+The write is no person's edit (`writeNoEdit`): it starts no checkpoint and brings
+no trailing paragraph, so a co-editor's graph edit adds none from everyone with
+the note open.
 
 Standalone mindmaps and diagrams render without Plate. View
 (`MermaidMaterialView`) draws the block's `MermaidView` straight from the
