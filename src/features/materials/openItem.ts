@@ -100,7 +100,7 @@ export type WorkspaceOpenSearch = {
   settingsQuery?: string;
   /** One-shot actions from the Get started list, dropped once taken: open the
    * Add file dialog, or a new chat. */
-  add?: 'upload';
+  add?: 'create' | 'upload';
   chat?: 'new';
 };
 
@@ -177,7 +177,10 @@ export function parseWorkspaceOpenSearch(
     tab: undefined,
     topicId: undefined,
     ...parseOpenPage(search),
-    add: search.add === 'upload' ? 'upload' : undefined,
+    add:
+      search.add === 'upload' || search.add === 'create'
+        ? search.add
+        : undefined,
     chat: search.chat === 'new' ? 'new' : undefined,
     panel: isWorkspacePanel(search.panel) ? search.panel : undefined,
     settings: isSettingsView(search.settings) ? search.settings : undefined,

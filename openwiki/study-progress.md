@@ -1035,6 +1035,13 @@ the viewer owns or belongs to, in `TodoRows`, the rows both share. A class with
 nothing to show is left out; those with answers waiting come first, then by the
 soonest due.
 
+**New assignment's Quiz field.** Its last rows make a quiz on the spot, wherever the
+dialog opens: New quiz opens Add file's Create tab (`?add=create`), Make a quiz from a
+file opens Make a quiz (`?make=files`), and Generate questions takes this dialog's place
+with the generate dialog. A frozen workspace shows no rows. With no quizzes the field
+says "Make a quiz to begin." and has no search; a list that couldn't be read says so,
+with Try again. Making a quiz either way refreshes `qk.practice`, which the field reads.
+
 **Dashboard.** `TodoSection` (H1, H2, H2b). A member's To do is what went to them:
 quizzes, and the rest with a tick; Show done brings finished ones back crossed
 out. Staff's holds answers to approve and anything they gave themselves, with New
@@ -1045,9 +1052,7 @@ went to and staff.
 
 **Not built.** The grading switch and everything behind it (AI marks, Mark with
 AI, Approve all, quoted highlights, charging). Home's To approve list and the bell. Topic labels and mastery on Results. Regrade one
-question. Per-member extra time and excused work. New quiz, Make a quiz from a
-file and Generate questions in the picker show Coming soon behind the `newQuiz`
-seam, which nothing fills yet.
+question. Per-member extra time and excused work.
 
 Sources: [store](../server/internal/store/assignments.go),
 [routes](../server/internal/httpapi/huma_assignments.go),

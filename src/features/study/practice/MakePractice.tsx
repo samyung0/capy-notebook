@@ -196,6 +196,13 @@ export function MakePractice({
     pickedTopics ?? (startTopic ? [startTopic.id] : ([] as string[]));
   const ready =
     from === 'topics' ? chosenTopics.length > 0 : pickedFiles.length > 0;
+  // Loaded, and nothing to generate from: says why Start stays off.
+  const nothingToRead =
+    !!topics &&
+    !!files &&
+    !!materials &&
+    sources.topics.length === 0 &&
+    sources.items.length === 0;
   const nameOf = (id?: string) =>
     (from === 'topics' ? sources.topics : sources.items).find(
       (o) => o.id === id
@@ -248,6 +255,11 @@ export function MakePractice({
           {m.practice_make_own()}
         </DialogTitle>
         <div className="mt-4 flex flex-col gap-4">
+          {nothingToRead && (
+            <p className="text-fg-secondary text-sm">
+              {m.practice_nothing_to_read()}
+            </p>
+          )}
           <Field
             label={m.practice_from()}
             onChange={(v) => setFrom(v as 'topics' | 'files')}

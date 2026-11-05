@@ -719,7 +719,7 @@ function WorkspaceOpen() {
     }
     if (!loaded || linkTaken.current) return;
     linkTaken.current = true;
-    if (add && !readOnly) setAddSource('upload');
+    if (add && !readOnly) setAddSource(add);
     if (chat) openChat(null);
     navigate({
       replace: true,
@@ -993,7 +993,6 @@ function WorkspaceOpen() {
     ) : studyShown === 'assignments' ? (
       <Suspense fallback={null}>
         <AssignmentsPage
-          onAddFile={() => setAddSource('create')}
           search={{
             assignment: search.assignment,
             attempt: search.attempt,

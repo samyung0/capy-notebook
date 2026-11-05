@@ -17,7 +17,6 @@ import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
-import { MakePractice } from '../practice/MakePractice';
 import { PracticeFrame, Td, Th } from '../practice/studyPage';
 import { studyView } from '../practice/studyView';
 import { AssignmentAttemptPage } from './AssignmentAttemptPage';
@@ -49,12 +48,9 @@ export type AssignmentsSearch = {
  * workspace's centre page while `study=assignments` is in its URL. Class only
  * (studyView, board U3): anywhere else the link opens Practice. */
 export function AssignmentsPage({
-  onAddFile,
   search,
   workspaceId,
 }: {
-  /** Opens the Add file dialog on its Create tab: New quiz. */
-  onAddFile: () => void;
   search: AssignmentsSearch;
   workspaceId: string;
 }) {
@@ -82,7 +78,6 @@ export function AssignmentsPage({
     <StaffList
       key={workspaceId}
       newFromQuiz={search.newFromQuiz}
-      onAddFile={onAddFile}
       workspaceId={workspaceId}
     />
   ) : (
@@ -189,11 +184,9 @@ const onTopic = (row: Assignment, filter: string | null) =>
  * closed ones behind Show closed. A row opens the report. */
 function StaffList({
   newFromQuiz,
-  onAddFile,
   workspaceId,
 }: {
   newFromQuiz?: string;
-  onAddFile: () => void;
   workspaceId: string;
 }) {
   const navigate = useNavigate();
@@ -205,7 +198,6 @@ function StaffList({
   );
   const { mutate: remove } = useDeleteAssignment(workspaceId);
   const [creating, setCreating] = useState(!!newFromQuiz);
-  const [generating, setGenerating] = useState(false);
   const [showClosed, setShowClosed] = useState(false);
   const [topic, setTopic] = useState<string | null | undefined>(undefined);
   const open = (id: string) =>
@@ -371,22 +363,8 @@ function StaffList({
           </ul>
         </>
       )}
-      {generating && (
-        <MakePractice
-          onClose={() => setGenerating(false)}
-          onlyYou={false}
-          workspaceId={workspaceId}
-        />
-      )}
       {creating && (
         <NewAssignmentDialog
-          newQuiz={(how) => {
-            closeNew();
-            if (how === 'file')
-              void navigate({ search: { make: 'files' as const }, to: '.' });
-            else if (how === 'generate') setGenerating(true);
-            else onAddFile();
-          }}
           onClose={closeNew}
           onDone={(created) => {
             closeNew();
