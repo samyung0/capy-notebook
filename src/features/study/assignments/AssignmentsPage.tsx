@@ -21,18 +21,13 @@ import { PracticeFrame, Td, Th } from '../practice/studyPage';
 import { studyView } from '../practice/studyView';
 import { AssignmentAttemptPage } from './AssignmentAttemptPage';
 import { AssignmentReport } from './AssignmentReport';
-import {
-  dayLabel,
-  kindLabel,
-  lateLabel,
-  markText,
-  percentText,
-} from './assignmentText';
+import { dayLabel, kindLabel, markText, percentText } from './assignmentText';
+import { LateBadge } from './LateBadge';
 import { MemberAssignment } from './MemberAssignment';
 import { NewAssignmentDialog } from './NewAssignmentDialog';
 import { useAssignmentStart } from './useAssignmentStart';
 
-export type ReportTab = 'questions' | 'members' | 'approve';
+export type ReportTab = 'questions' | 'members' | 'approve' | 'settings';
 
 /** The Assignments page's URL, under `study=assignments`. `assignment` opens
  * one: its report for a class's owner and teaching assistants (unless `own`, the
@@ -474,8 +469,8 @@ function MemberList({ workspaceId }: { workspaceId: string }) {
     navigate({
       search: {
         assignment: row.id,
-        ...(row.kind === 'marked' && row.mine?.latestAttemptId
-          ? { attempt: row.mine.latestAttemptId }
+        ...(row.kind === 'marked' && row.mine?.countedAttemptId
+          ? { attempt: row.mine.countedAttemptId }
           : {}),
         study: 'assignments' as const,
       },
@@ -636,11 +631,7 @@ function MemberTitle({ row }: { row: Assignment }) {
       >
         {row.title}
       </span>
-      {row.mine?.late && (
-        <span className="t-meta shrink-0 font-semibold text-tint-warning-fg">
-          {lateLabel(row.mine.latePenaltyPct)}
-        </span>
-      )}
+      {row.mine?.late && <LateBadge penaltyPct={row.mine.latePenaltyPct} />}
       {row.mine?.missing && !row.closedAt && (
         <span className="t-meta shrink-0 font-semibold text-tint-error-fg">
           {row.latePenaltyPct > 0

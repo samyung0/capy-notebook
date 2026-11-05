@@ -1,11 +1,6 @@
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
-import {
-  useAssignmentReport,
-  useDeleteAssignment,
-  usePublishAssignment,
-  useSetAssignmentClosed,
-} from '@/api/hooks';
+import { useAssignmentReport } from '@/api/hooks';
 import type {
   Assignment,
   AssignmentMemberRow,
@@ -20,33 +15,29 @@ import { Button } from '@/components/ui/Button';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
-import { Menu } from '@/components/ui/Menu';
 import { Tabs } from '@/components/ui/Tabs';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
-import { userToast } from '@/components/ui/userToast';
 import { answerLabels } from '@/features/questions/editorFields';
 import { optionLetter, TextView } from '@/features/questions/QuestionView';
 import { type Question, questionMarks } from '@/features/questions/types';
 import { formatPoints } from '@/features/quizzes/grade';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { errorCopy, unexpectedErrorId } from '@/lib/errors';
+import { unexpectedErrorId } from '@/lib/errors';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { questionLine } from '../practice/practiceText';
 import { PracticeFrame, Td, Th } from '../practice/studyPage';
 import { ApproveTab } from './ApproveTab';
 import { BackToAssignments } from './AssignmentAttemptPage';
+import { AssignmentSettingsTab } from './AssignmentSettingsTab';
 import type { AssignmentsSearch, ReportTab } from './AssignmentsPage';
 import {
-  closedItself,
   dayLabel,
-  lateLabel,
   markText,
   percentText,
   takesLateWork,
 } from './assignmentText';
-import { NewAssignmentDialog } from './NewAssignmentDialog';
-import { NoAnswersWarning } from './NoAnswersWarning';
+import { LateBadge } from './LateBadge';
 
 /** Questions the report opens with, as the board draws them. */
 const OPEN_FIRST = 3;
@@ -57,8 +48,9 @@ const CHIP =
   'inline-flex h-5.5 shrink-0 items-center rounded-md bg-page-hover px-1.75 font-semibold text-fg-secondary text-xs';
 
 /** An assignment's report (boards G3, G3m, A3): the facts as chips, then its
- * Questions, Members and Approve AI marks tabs, each with its own link. An
- * unmarked one lists who has ticked it; a draft waits to be published. */
+ * Questions, Members, Approve AI marks and Settings tabs, each with its own
+ * link. An unmarked one lists who has ticked it; a draft has its settings alone,
+ * Publish first. */
 export function AssignmentReport({
   assignment,
   search,
@@ -71,8 +63,9 @@ export function AssignmentReport({
     assignment.id,
     { errorBoundary: false }
   );
-  const [editing, setEditing] = useState(false);
-  const tab: ReportTab = search.tab ?? 'questions';
+  const marked = assignment.kind === 'marked';
+  const firstTab: ReportTab = marked ? 'questions' : 'members';
+  const tab: ReportTab = search.tab ?? firstTab;
   const go = (next: AssignmentsSearch) =>
     navigate({
       search: {
@@ -82,8 +75,9 @@ export function AssignmentReport({
       },
       to: '.',
     });
+  const pickTab = (value: string) =>
+    void go(value === firstTab ? {} : { tab: value as ReportTab });
   const manage = assignment.manage;
-  const marked = assignment.kind === 'marked';
   const chips = [
     assignment.draft ? m.assignment_draft() : null,
     assignment.timeLimitMin
@@ -129,26 +123,26 @@ export function AssignmentReport({
               {chip}
             </span>
           ))}
-          <ReportMenu assignment={assignment} onEdit={() => setEditing(true)} />
         </div>
       </div>
       {assignment.draft ? (
-        <DraftBody assignment={assignment} />
+        <AssignmentSettingsTab assignment={assignment} className="mt-6" />
       ) : marked ? (
         <>
           <Tabs
             className="mt-3.5"
-            onChange={(value) =>
-              void go(value === 'questions' ? {} : { tab: value as ReportTab })
-            }
+            onChange={pickTab}
             tabs={[
               { label: m.assignment_tab_questions(), value: 'questions' },
               { label: m.assignment_tab_members(), value: 'members' },
               { label: m.assignment_tab_approve(), value: 'approve' },
+              { label: m.assignment_tab_settings(), value: 'settings' },
             ]}
             value={tab}
           />
-          {isPending ? (
+          {tab === 'settings' ? (
+            <AssignmentSettingsTab assignment={assignment} className="mt-5" />
+          ) : isPending ? (
             <SkeletonList className="mt-5" count={6} rowHeight={44} />
           ) : isError ? (
             <ErrorState
@@ -179,108 +173,28 @@ export function AssignmentReport({
           )}
         </>
       ) : (
-        <UnmarkedBody
-          assignment={assignment}
-          loading={isPending}
-          members={data?.members ?? []}
-        />
-      )}
-      {editing && (
-        <NewAssignmentDialog
-          existing={assignment}
-          onClose={() => setEditing(false)}
-          onDone={() => setEditing(false)}
-          workspaceId={assignment.workspaceId}
-        />
+        <>
+          <Tabs
+            className="mt-3.5"
+            onChange={pickTab}
+            tabs={[
+              { label: m.assignment_tab_members(), value: 'members' },
+              { label: m.assignment_tab_settings(), value: 'settings' },
+            ]}
+            value={tab === 'settings' ? tab : 'members'}
+          />
+          {tab === 'settings' ? (
+            <AssignmentSettingsTab assignment={assignment} className="mt-5" />
+          ) : (
+            <UnmarkedBody
+              assignment={assignment}
+              loading={isPending}
+              members={data?.members ?? []}
+            />
+          )}
+        </>
       )}
     </PracticeFrame>
-  );
-}
-
-function ReportMenu({
-  assignment,
-  onEdit,
-}: {
-  assignment: Assignment;
-  onEdit: () => void;
-}) {
-  const navigate = useNavigate();
-  const { workspaceId, id } = assignment;
-  const { mutate: setClosed } = useSetAssignmentClosed(workspaceId, id);
-  const { mutate: remove } = useDeleteAssignment(workspaceId);
-  const failed = (error: unknown) =>
-    userToast({
-      title: errorCopy(error, m.assignment_save_failed()),
-      variant: 'error',
-    });
-  return (
-    <Menu
-      align="end"
-      items={[
-        { icon: 'pencil', label: m.action_edit(), onClick: onEdit },
-        ...(assignment.draft || closedItself(assignment)
-          ? []
-          : [
-              {
-                // Closing a marked one shows its quiz as practice, with its keys.
-                confirmLabel:
-                  assignment.kind === 'marked' && !assignment.closedAt
-                    ? m.assignment_close_confirm()
-                    : undefined,
-                icon: 'lock' as const,
-                label: assignment.closedAt
-                  ? m.assignment_reopen()
-                  : m.assignment_close(),
-                onClick: () =>
-                  setClosed(!assignment.closedAt, { onError: failed }),
-              },
-            ]),
-        {
-          confirmLabel: m.assignment_delete_confirm(),
-          danger: true,
-          icon: 'trash',
-          label: m.action_delete(),
-          onClick: () =>
-            remove(id, {
-              onError: failed,
-              onSuccess: () =>
-                void navigate({
-                  search: { study: 'assignments' as const },
-                  to: '.',
-                }),
-            }),
-        },
-      ]}
-    />
-  );
-}
-
-function DraftBody({ assignment }: { assignment: Assignment }) {
-  const { mutate, isPending } = usePublishAssignment(
-    assignment.workspaceId,
-    assignment.id
-  );
-  return (
-    <div className="mt-6 flex flex-col items-start gap-3">
-      <p className="text-fg-secondary">{m.assignment_draft_note()}</p>
-      {assignment.manage?.quizId && (
-        <NoAnswersWarning quizId={assignment.manage.quizId} />
-      )}
-      <Button
-        disabled={isPending}
-        onClick={() =>
-          mutate(undefined, {
-            onError: (error) =>
-              userToast({
-                title: errorCopy(error, m.assignment_save_failed()),
-                variant: 'error',
-              }),
-          })
-        }
-      >
-        {m.assignment_publish()}
-      </Button>
-    </div>
   );
 }
 
@@ -393,11 +307,7 @@ function MembersTab({
     member.submittedAt ? (
       <span className="flex items-center gap-2">
         {dayLabel(member.submittedAt)}
-        {member.late && (
-          <span className="font-semibold text-tint-warning-fg">
-            {lateLabel(member.latePenaltyPct)}
-          </span>
-        )}
+        {member.late && <LateBadge penaltyPct={member.latePenaltyPct} />}
       </span>
     ) : member.missing ? (
       <span className="font-semibold text-tint-error-fg">

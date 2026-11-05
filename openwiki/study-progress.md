@@ -812,18 +812,28 @@ due date):
 | --- | --- | --- |
 | Owner, teaching assistant | The assignment icon (`assigned`), and it opens their usual view | Theirs as always |
 | A link or public editor | The assignment icon, no Clone | Theirs to read and edit; they can't clone it |
-| A viewer it went to | The icon, listed even if the quiz is hidden, and it opens the assignment (`assignmentId`, the earliest due of several) | Refused: reads, checks, images, its room and the chat agent answer 404 (`materialEffectiveAccess`, `editorAssetReadable`, `live_access`, `AccountDocumentAccess`), a device drops its kept copy (`ReadableMaterialIDs`), and it is off Practice, reviews and new items. Publishing drains the quiz's live rooms, so one already reading is refused on reconnecting |
+| A viewer it went to | The icon, listed even if the quiz is hidden, and it opens the assignment (`assignmentId`, the earliest due of several) | Refused: reads, checks, images, its room and the chat agent answer 404 (`materialEffectiveAccess`, `editorAssetReadable`, `live_access`, `AccountDocumentAccess`), a device drops its kept copy (`ReadableMaterialIDs`), and it is off Practice, reviews and new items. New joins and token requests are refused; nothing about an assignment closes a connection (Epo 2026-11-05) |
 | A viewer it did not go to | A normal quiz if it is visible; no row if hidden | As it was, the owner's choice |
 
 `quizAssignedToSQL` and `quizAssignmentOpenSQL` in `store/assignments.go` are the
 two reads; `materialIconName(kind, assigned)` is the icon, a quill in the file-icon
 sprite, on the file tree, Recent, Blocks cards and the open file's header. A direct
-link to the quiz sends its assignee to the assignment (`CenterContent`). Delete
+link to the quiz, or any fresh open of it, sends its assignee to the assignment
+(`CenterContent`). Delete
 (the toast's Undo) restores nothing, since nothing changed. Clones: see
 [authorization](authorization-permissions-lifecycles.md#class-clones).
 
-What this leaves open: an unassigned member of a visible quiz keeps normal access
-with its checks. A signed-out browser on a public or link workspace's share page is
+What this leaves open: someone already connected when a quiz is assigned keeps
+seeing it, with no keys, until they leave or lose connection (Epo 2026-11-05). The
+room lets them be: their live updates stop when its token next renews, within five
+minutes, and what is on screen stays as it was, with no error, toast or status
+(`ItemRoom.unavailable`; `useLiveQuizQuestions` keeps its last questions, and a quiz
+attempt page its opening read). The quiz's page in a workspace stays too: the next
+refetch of the file list changes nothing while it is open (`alreadyOpen` in
+`CenterContent`). A read of the material answering 404 can still show the error page
+when the browser comes back online and its data is over five minutes old. An
+unassigned member of a visible quiz keeps normal access with its
+checks. A signed-out browser on a public or link workspace's share page is
 nobody in particular, so an assignee could open it there. An attempt made before
 the assignment stays readable by whoever took it.
 
@@ -841,16 +851,70 @@ the server's: that read failing asks to retry, while a later refresh failing lea
 the running attempt on the page. Nothing retries a failed save but the next change
 and Submit, which sends them all; a submit that fails at zero leaves Submit to
 press. A shuffled paper's order comes from a seed of the attempt's id, so a reload
-keeps it. Bookmarks stay in this browser.
+keeps it. Bookmarks stay in this browser. Taking it never joins a room, since it
+serves the frozen copy.
+
+**Settings** (Epo 2026-11-05, `AssignmentSettingsTab`). The report has no ⋮: its last
+tab, `tab=settings`, holds every action as a row. Unmarked ones have Members and
+Settings; a draft has no tabs, only the rows, with a Publish row and its dark button
+first. Edit quiz opens the quiz in its room (hidden with no quiz), Assignment details
+the edit dialog, then Close or Reopen and Delete, each confirming as the menu did. A
+quiz in the trash has no Edit quiz or Republish (`manage.quizTrashed`).
+Their buttons share one width, borderless (`ghost-hover`, `danger-light` for Delete).
+
+**Republish** (Epo 2026-11-05, `POST /api/assignments/{id}/republish`,
+`RepublishAssignment`). Editing a quiz never reaches its assignment by itself. An
+open marked assignment's Republish row, hinted "Last published {date}", replaces the
+frozen copy with the quiz as it is now, after a confirm, with the same projection and
+no-answers warning as publishing. `posted_at` moves, so members read the new Posted
+date and it rises in the lists.
+
+A running attempt takes the new copy. `assignment_republished` on the user's stream
+(`publishAssignmentRepublished`, after the commit, best effort) has a page taking it
+read the new questions and say "The questions were updated."; a tab that misses it
+shows the old ones until its next load, and its submit is graded on the new, where a
+question it never showed counts 0. Saved answers that no longer mean what the member
+chose go with practice's rule (D9, `stillAnswers` in Go and in
+`features/quizzes/stillAnswers.ts`): a chosen option gone or moved, a changed set of
+ordering items, a matching option gone, another number of gaps. A change to the key
+or the wording keeps them. `dropStaleAnswersTx` does this in the republish for what
+was saved, and the open page for what it holds.
+
+A submitted attempt keeps its graded copy and marks. What left the copy that a
+submission holds stays on the report (`withRemoved`), whole questions last and lost
+parts at the end of their question, so its open answers can still be marked. Approve
+lists a member only if their own copy of the question has an open part.
+
+Storage: an image the assignment already holds keeps its row (same `object_path`),
+so republishing the same image charges nothing; an image it stops using stays charged
+until the assignment is deleted, as submissions may show it. The questions' JSON
+charges who republished, gated on only what it adds to their own copy. As totals can
+then differ between a member's attempts, the highest share of each attempt's own
+total counts (`countedAttemptOrder`, Claude's pick), which is the highest mark when
+totals match.
+
+**Closing while someone takes it** (Epo 2026-11-05). Staff closing it tells whoever
+has an attempt running: `assignment_closed` with its id on the user's stream
+(`publishAssignmentClosed`, after the commit, best effort; reopening sends nothing).
+A page taking it (`AssignmentTake`) ends as it does at zero, submitting what is on
+the page, then goes straight to its results (`AttemptResults`, no Submitted); anyone
+else ignores it. The close gets the
+same 15 s grace as the time and a No late due date (`attemptRow.expired`, Claude's
+pick), or the page's submit would be ignored for what was saved. A tab that doesn't
+hear it, or answers past the grace, loses what wasn't saved: normally at most the
+2 s wait, more if saves were failing. Its next save or the sweep submits what was
+saved. `auto_submitted` now means the time ran out (`attemptRow.timedOut`), so closing
+never says so. During the grace the quiz is
+already open to them, the same short window a No late due date has.
 
 **Submitting.** `POST …/submit` grades closed parts with the same deterministic
 Go scoring as a quiz (`questions.Graded`). An answered open part is left
 `pending` ("Not marked") with no model call; a blank one earns 0. At zero the
-page submits; a closed tab is the server's: past `deadline_at` by a 15 s grace, or
-once it closes, by hand or at a No late submissions due date, the next request or
+page submits; a closed tab is the server's: 15 s past `deadline_at`, a No late
+submissions due date or its closing by hand, the next request or
 `SweepAssignments` (each minute, in `cmd/api`) submits what was saved,
-`auto_submitted`. The sweep logs a row that fails and passes over it, so one bad
-row holds up nobody else.
+`auto_submitted` unless closing was the cause. The sweep logs a row that fails and
+passes over it, so one bad row holds up nobody else.
 
 **The due date's policy** (Epo 2026-11-04, supersedes §11.5's close by the owner
 alone). Set per assignment in New assignment's Advanced; marked work with a due
@@ -866,24 +930,37 @@ phone. Editing a published assignment has no Draft only, and one with no due dat
 has no Advanced at all.
 
 - **No late submissions on.** It closes itself at the due date: nothing starts, an
-  attempt still running is submitted as saved, and nothing reads Late. The menu has
+  attempt still running is submitted as saved, and nothing reads Late. Settings has
   no Reopen once it has closed itself (`closedItself`), though staff can still close
   it early.
 - **Off, the default.** Late work is open until an owner or teaching assistant
-  closes it (report ⋮, with a confirm since it shows the keys, and reversible); a
+  closes it (report's Settings, with a confirm since it shows the keys, and reversible); a
   note on Members says so. The late penalty (No penalty, −20%, −50%) comes off the
   mark of a submission past the due date: `Mark` is `Correct` less the penalty,
   which stays raw. It reads live, so changing it or the due date applies to work
   already in, and an open part marked later is penalised with the rest. Late work
-  shows "Late −20%" on Results, Submitted and the report's Members, and Results adds
-  "30 / 40 before the late penalty"; the class Average uses the penalised mark. A
+  shows a warning badge, "Late −20%" or "Late" with no penalty (`LateBadge`, the
+  app's `Badge`): beside the score on Results (under it on phones) and Submitted, on
+  the report's Members and on the member's Assignments row. Results adds "30 / 40
+  before the late penalty"; the class Average uses the penalised mark. A
   timed attempt submitted after the due date counts as late, and answer events,
   per-part marks and reviews keep the raw marks.
 
 Nothing submitted past the due date reads Missing for staff and Overdue for the
 member, with the penalty on it (Overdue −20%). An unmarked assignment has no policy
 and leaves the open list at its due date. Attempts default to 1. With more than
-one, the latest submission counts (Claude's pick).
+one, the highest counts (Epo 2026-11-05, `countedAttemptOrder`): the highest mark
+after any late penalty, a tie to the latest. A mark not fully approved compares on
+the marks decided so far, in marks rather than a share (Claude's reading), and it
+reads live, so marking an open part or changing the penalty or due date can change
+which one counts. The member's row, the report and its question numbers, the class
+Average and every link to a member's results read that submission.
+
+An answer still waiting in another submission stays on Approve AI marks and in the
+to-approve counts (Claude's pick), since marking it can make it the highest; a
+member with two rows on a question reads "Attempt 2" on each. Reviews still rate a
+member's latest submission (`latestAttempts`, Claude's pick), as what they know now,
+and an earlier one marked after the release moves its mark alone.
 
 **Results** (A5). The mark top right is marks decided over marks decided, so a
 waiting part never reads as lost; Submitted (A4) says the same as "Your mark so
@@ -933,10 +1010,11 @@ it. The board's own line about topic labels waits for topic summaries, and its J
 step and "What members see" link for an invite preview and board G5.
 
 **Dashboard.** `TodoSection` (H1, H2, H2b). A member's To do is what went to them:
-quizzes with Start (Before you start opens over the Dashboard), the rest with a
-tick; Show done brings finished ones back crossed out. Staff's holds answers to
-approve and anything they gave themselves, with New assignment at its top right.
-Empty, the section doesn't show. Activity gains "assigned" rows, to whoever it
+quizzes, and the rest with a tick; Show done brings finished ones back crossed
+out. Staff's holds answers to approve and anything they gave themselves, with New
+assignment at its top right. A row is one button with a square hover and no action
+of its own (Epo 2026-11-05): it opens the assignment's page, which starts or
+continues it, or Approve AI marks. Empty, the section doesn't show. Activity gains "assigned" rows, to whoever it
 went to and staff.
 
 **Not built.** The grading switch and everything behind it (AI marks, Mark with

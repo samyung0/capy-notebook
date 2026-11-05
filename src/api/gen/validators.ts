@@ -326,6 +326,7 @@ export const GetAssignmentResponse = zod.object({
   "done": zod.int(),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
+  "quizTrashed": zod.boolean().optional(),
   "showAnswers": zod.boolean(),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
@@ -334,11 +335,11 @@ export const GetAssignmentResponse = zod.object({
   "mine": zod.object({
   "attemptsUsed": zod.int(),
   "correct": zod.number().optional(),
+  "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
-  "latestAttemptId": zod.string().optional(),
   "mark": zod.number().optional(),
   "missing": zod.boolean(),
   "runningAttemptId": zod.string().optional(),
@@ -426,6 +427,7 @@ export const UpdateAssignmentResponse = zod.object({
   "done": zod.int(),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
+  "quizTrashed": zod.boolean().optional(),
   "showAnswers": zod.boolean(),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
@@ -434,11 +436,11 @@ export const UpdateAssignmentResponse = zod.object({
   "mine": zod.object({
   "attemptsUsed": zod.int(),
   "correct": zod.number().optional(),
+  "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
-  "latestAttemptId": zod.string().optional(),
   "mark": zod.number().optional(),
   "missing": zod.boolean(),
   "runningAttemptId": zod.string().optional(),
@@ -494,6 +496,7 @@ export const SetAssignmentClosedResponse = zod.object({
   "done": zod.int(),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
+  "quizTrashed": zod.boolean().optional(),
   "showAnswers": zod.boolean(),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
@@ -502,11 +505,11 @@ export const SetAssignmentClosedResponse = zod.object({
   "mine": zod.object({
   "attemptsUsed": zod.int(),
   "correct": zod.number().optional(),
+  "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
-  "latestAttemptId": zod.string().optional(),
   "mark": zod.number().optional(),
   "missing": zod.boolean(),
   "runningAttemptId": zod.string().optional(),
@@ -572,6 +575,7 @@ export const PublishAssignmentResponse = zod.object({
   "done": zod.int(),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
+  "quizTrashed": zod.boolean().optional(),
   "showAnswers": zod.boolean(),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
@@ -580,11 +584,11 @@ export const PublishAssignmentResponse = zod.object({
   "mine": zod.object({
   "attemptsUsed": zod.int(),
   "correct": zod.number().optional(),
+  "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
-  "latestAttemptId": zod.string().optional(),
   "mark": zod.number().optional(),
   "missing": zod.boolean(),
   "runningAttemptId": zod.string().optional(),
@@ -615,6 +619,7 @@ export const GetAssignmentReportResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "answers": zod.array(zod.object({
   "attemptId": zod.string(),
+  "attemptNumber": zod.int(),
   "awarded": zod.number(),
   "marks": zod.number(),
   "questionId": zod.string(),
@@ -657,6 +662,71 @@ export const GetAssignmentReportResponse = zod.object({
   "question": zod.record(zod.string(), zod.unknown()),
   "submitted": zod.int()
 }))
+})
+
+
+/**
+ * @summary Replace an open assignment's questions with its quiz as it is now
+ */
+export const RepublishAssignmentParams = zod.object({
+  "id": zod.string()
+})
+
+export const RepublishAssignmentResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "attempts": zod.int(),
+  "closed": zod.boolean(),
+  "closedAt": zod.iso.datetime({"offset":true}).optional(),
+  "draft": zod.boolean(),
+  "dueAt": zod.iso.datetime({"offset":true}).optional(),
+  "files": zod.array(zod.object({
+  "fileId": zod.string().optional(),
+  "kind": zod.string(),
+  "materialId": zod.string().optional(),
+  "name": zod.string()
+})),
+  "id": zod.string(),
+  "kind": zod.enum(['marked', 'unmarked']),
+  "latePenaltyPct": zod.int(),
+  "manage": zod.object({
+  "approveAiMarks": zod.boolean(),
+  "assignAll": zod.boolean(),
+  "assigned": zod.int(),
+  "assignees": zod.array(zod.string()),
+  "average": zod.number().optional(),
+  "done": zod.int(),
+  "quizId": zod.string().optional(),
+  "quizTitle": zod.string().optional(),
+  "quizTrashed": zod.boolean().optional(),
+  "showAnswers": zod.boolean(),
+  "shuffle": zod.boolean(),
+  "toApprove": zod.int()
+}).optional(),
+  "marks": zod.number(),
+  "mine": zod.object({
+  "attemptsUsed": zod.int(),
+  "correct": zod.number().optional(),
+  "countedAttemptId": zod.string().optional(),
+  "done": zod.boolean(),
+  "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "late": zod.boolean(),
+  "latePenaltyPct": zod.int(),
+  "mark": zod.number().optional(),
+  "missing": zod.boolean(),
+  "runningAttemptId": zod.string().optional(),
+  "total": zod.number().optional(),
+  "waitingAnswers": zod.int(),
+  "waitingMarks": zod.number()
+}).optional(),
+  "noLate": zod.boolean(),
+  "postedAt": zod.iso.datetime({"offset":true}),
+  "postedBy": zod.string(),
+  "practiceQuizId": zod.string().optional(),
+  "questions": zod.int(),
+  "timeLimitMin": zod.int().optional(),
+  "title": zod.string(),
+  "topicIds": zod.array(zod.string()),
+  "workspaceId": zod.string()
 })
 
 
@@ -2300,10 +2370,26 @@ export const GetExtractionParams = zod.object({
 
 export const GetExtractionResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "answered": zod.int(),
+  "confirmed": zod.int().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "error": zod.string().optional(),
   "errorCode": zod.string().optional(),
   "finishedAt": zod.iso.datetime({"offset":true}).optional(),
+  "found": zod.object({
+  "answerFiles": zod.int(),
+  "availableCredits": zod.int(),
+  "chargedCredits": zod.int(),
+  "paperName": zod.string(),
+  "paperPages": zod.int(),
+  "questions": zod.array(zod.object({
+  "first": zod.int(),
+  "label": zod.string(),
+  "last": zod.int(),
+  "parts": zod.array(zod.string())
+})),
+  "unreadAnswers": zod.array(zod.string())
+}).optional(),
   "id": zod.string(),
   "quizId": zod.string().optional(),
   "recorded": zod.int(),
@@ -2312,19 +2398,118 @@ export const GetExtractionResponse = zod.object({
   "expected": zod.array(zod.string()),
   "figures": zod.array(zod.string()),
   "figuresLeftOut": zod.array(zod.string()),
-  "keyDisagreements": zod.array(zod.string()),
-  "marksDiffer": zod.array(zod.string()),
   "missing": zod.array(zod.string()),
   "pages": zod.int(),
   "recorded": zod.array(zod.string()),
-  "schemeFailed": zod.boolean().optional(),
-  "schemeRefused": zod.array(zod.string()),
-  "schemeRepeats": zod.array(zod.string()),
   "stopped": zod.enum(['', 'quiz_full', 'credits', 'output_limit']),
-  "unpaired": zod.array(zod.string()),
   "windows": zod.int()
 }).optional(),
-  "status": zod.enum(['running', 'done', 'failed']),
+  "status": zod.enum(['running', 'confirming', 'done', 'failed', 'cancelled']),
+  "title": zod.string(),
+  "workspaceId": zod.string()
+})
+
+
+/**
+ * @summary End a run waiting on its starter
+ */
+export const CancelExtractionParams = zod.object({
+  "id": zod.string()
+})
+
+export const CancelExtractionResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "answered": zod.int(),
+  "confirmed": zod.int().optional(),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "error": zod.string().optional(),
+  "errorCode": zod.string().optional(),
+  "finishedAt": zod.iso.datetime({"offset":true}).optional(),
+  "found": zod.object({
+  "answerFiles": zod.int(),
+  "availableCredits": zod.int(),
+  "chargedCredits": zod.int(),
+  "paperName": zod.string(),
+  "paperPages": zod.int(),
+  "questions": zod.array(zod.object({
+  "first": zod.int(),
+  "label": zod.string(),
+  "last": zod.int(),
+  "parts": zod.array(zod.string())
+})),
+  "unreadAnswers": zod.array(zod.string())
+}).optional(),
+  "id": zod.string(),
+  "quizId": zod.string().optional(),
+  "recorded": zod.int(),
+  "report": zod.object({
+  "answersMissing": zod.array(zod.string()).optional(),
+  "expected": zod.array(zod.string()),
+  "figures": zod.array(zod.string()),
+  "figuresLeftOut": zod.array(zod.string()),
+  "missing": zod.array(zod.string()),
+  "pages": zod.int(),
+  "recorded": zod.array(zod.string()),
+  "stopped": zod.enum(['', 'quiz_full', 'credits', 'output_limit']),
+  "windows": zod.int()
+}).optional(),
+  "status": zod.enum(['running', 'confirming', 'done', 'failed', 'cancelled']),
+  "title": zod.string(),
+  "workspaceId": zod.string()
+})
+
+
+/**
+ * @summary Make the first questions of a run waiting on its starter
+ */
+export const ConfirmExtractionParams = zod.object({
+  "id": zod.string()
+})
+
+
+
+
+export const ConfirmExtractionBody = zod.object({
+  "questions": zod.int().min(1)
+})
+
+export const ConfirmExtractionResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "answered": zod.int(),
+  "confirmed": zod.int().optional(),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "error": zod.string().optional(),
+  "errorCode": zod.string().optional(),
+  "finishedAt": zod.iso.datetime({"offset":true}).optional(),
+  "found": zod.object({
+  "answerFiles": zod.int(),
+  "availableCredits": zod.int(),
+  "chargedCredits": zod.int(),
+  "paperName": zod.string(),
+  "paperPages": zod.int(),
+  "questions": zod.array(zod.object({
+  "first": zod.int(),
+  "label": zod.string(),
+  "last": zod.int(),
+  "parts": zod.array(zod.string())
+})),
+  "unreadAnswers": zod.array(zod.string())
+}).optional(),
+  "id": zod.string(),
+  "quizId": zod.string().optional(),
+  "recorded": zod.int(),
+  "report": zod.object({
+  "answersMissing": zod.array(zod.string()).optional(),
+  "expected": zod.array(zod.string()),
+  "figures": zod.array(zod.string()),
+  "figuresLeftOut": zod.array(zod.string()),
+  "missing": zod.array(zod.string()),
+  "pages": zod.int(),
+  "recorded": zod.array(zod.string()),
+  "stopped": zod.enum(['', 'quiz_full', 'credits', 'output_limit']),
+  "windows": zod.int()
+}).optional(),
+  "status": zod.enum(['running', 'confirming', 'done', 'failed', 'cancelled']),
   "title": zod.string(),
   "workspaceId": zod.string()
 })
@@ -7347,6 +7532,7 @@ export const ListAssignmentsResponse = zod.object({
   "done": zod.int(),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
+  "quizTrashed": zod.boolean().optional(),
   "showAnswers": zod.boolean(),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
@@ -7355,11 +7541,11 @@ export const ListAssignmentsResponse = zod.object({
   "mine": zod.object({
   "attemptsUsed": zod.int(),
   "correct": zod.number().optional(),
+  "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
-  "latestAttemptId": zod.string().optional(),
   "mark": zod.number().optional(),
   "missing": zod.boolean(),
   "runningAttemptId": zod.string().optional(),
@@ -7449,6 +7635,7 @@ export const CreateAssignmentResponse = zod.object({
   "done": zod.int(),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
+  "quizTrashed": zod.boolean().optional(),
   "showAnswers": zod.boolean(),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
@@ -7457,11 +7644,11 @@ export const CreateAssignmentResponse = zod.object({
   "mine": zod.object({
   "attemptsUsed": zod.int(),
   "correct": zod.number().optional(),
+  "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
-  "latestAttemptId": zod.string().optional(),
   "mark": zod.number().optional(),
   "missing": zod.boolean(),
   "runningAttemptId": zod.string().optional(),
@@ -7734,20 +7921,41 @@ export const createExtractionBodyTitleMax = 120;
 
 
 export const CreateExtractionBody = zod.object({
-  "answerFileIds": zod.array(zod.string()).optional(),
+  "answers": zod.array(zod.object({
+  "fileId": zod.string().min(1),
+  "images": zod.array(zod.string()).optional(),
+  "pages": zod.array(zod.int()).optional()
+})).optional(),
   "paper": zod.array(zod.object({
   "fileId": zod.string().min(1),
-  "pages": zod.array(zod.int()).min(1).nullable()
-})).min(1).nullable(),
+  "images": zod.array(zod.string()).optional(),
+  "pages": zod.array(zod.int()).optional()
+})).min(1),
   "title": zod.string().min(1).max(createExtractionBodyTitleMax)
 })
 
 export const CreateExtractionResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "answered": zod.int(),
+  "confirmed": zod.int().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "error": zod.string().optional(),
   "errorCode": zod.string().optional(),
   "finishedAt": zod.iso.datetime({"offset":true}).optional(),
+  "found": zod.object({
+  "answerFiles": zod.int(),
+  "availableCredits": zod.int(),
+  "chargedCredits": zod.int(),
+  "paperName": zod.string(),
+  "paperPages": zod.int(),
+  "questions": zod.array(zod.object({
+  "first": zod.int(),
+  "label": zod.string(),
+  "last": zod.int(),
+  "parts": zod.array(zod.string())
+})),
+  "unreadAnswers": zod.array(zod.string())
+}).optional(),
   "id": zod.string(),
   "quizId": zod.string().optional(),
   "recorded": zod.int(),
@@ -7756,19 +7964,13 @@ export const CreateExtractionResponse = zod.object({
   "expected": zod.array(zod.string()),
   "figures": zod.array(zod.string()),
   "figuresLeftOut": zod.array(zod.string()),
-  "keyDisagreements": zod.array(zod.string()),
-  "marksDiffer": zod.array(zod.string()),
   "missing": zod.array(zod.string()),
   "pages": zod.int(),
   "recorded": zod.array(zod.string()),
-  "schemeFailed": zod.boolean().optional(),
-  "schemeRefused": zod.array(zod.string()),
-  "schemeRepeats": zod.array(zod.string()),
   "stopped": zod.enum(['', 'quiz_full', 'credits', 'output_limit']),
-  "unpaired": zod.array(zod.string()),
   "windows": zod.int()
 }).optional(),
-  "status": zod.enum(['running', 'done', 'failed']),
+  "status": zod.enum(['running', 'confirming', 'done', 'failed', 'cancelled']),
   "title": zod.string(),
   "workspaceId": zod.string()
 })

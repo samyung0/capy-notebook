@@ -8,11 +8,11 @@
 export interface AssignmentMine {
   attemptsUsed: number;
   correct?: number;
+  countedAttemptId?: string;
   done: boolean;
   doneAt?: string;
   late: boolean;
   latePenaltyPct: number;
-  latestAttemptId?: string;
   mark?: number;
   missing: boolean;
   runningAttemptId?: string;

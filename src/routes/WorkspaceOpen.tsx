@@ -11,6 +11,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useEffectEvent,
   useRef,
   useState,
 } from 'react';
@@ -62,14 +63,17 @@ import {
   type TourPanels,
 } from '@/features/guide/tourStore';
 import type { MakeQuizChoice } from '@/features/makeQuiz/MakeQuizDialog';
+import { addQuizRun, useQuizDialogKey } from '@/features/makeQuiz/quizRuns';
 import { CenterContent } from '@/features/materials/CenterContent';
 import type { OneColumnChrome } from '@/features/materials/CenterContentHeader';
 import {
+  isWorkspacePanel,
   type NoteCitationTarget,
   type OpenItem,
   openItemFromSearch,
   searchFromOpenItem,
   type WorkspaceOpenSearch,
+  type WorkspacePanel,
 } from '@/features/materials/openItem';
 import { SharingNotice } from '@/features/study/assignments/SharingNotice';
 import { StudyPanel } from '@/features/study/practice/StudyPanel';
@@ -122,19 +126,13 @@ const MakeQuizDialog = lazy(() =>
     default: mod.MakeQuizDialog,
   }))
 );
-const PagePicker = lazy(() =>
-  import('@/features/makeQuiz/PagePicker').then((mod) => ({
-    default: mod.PagePicker,
-  }))
-);
-const ExtractionProgress = lazy(() =>
-  import('@/features/makeQuiz/ExtractionProgress').then((mod) => ({
-    default: mod.ExtractionProgress,
-  }))
-);
 /** A search value's ids: the paper's or the answer files'. */
 const splitIds = (ids: string | undefined) =>
   ids ? ids.split(',').filter(Boolean) : [];
+const choiceSearch = ({ answers, paper }: MakeQuizChoice) => ({
+  answers: answers.join(',') || undefined,
+  paper: paper.join(',') || undefined,
+});
 
 const AssignmentsPage = lazy(() =>
   import('@/features/study/assignments/AssignmentsPage').then((mod) => ({
@@ -306,6 +304,53 @@ function FollowOpenFile() {
   return null;
 }
 
+type PanelCenter = {
+  openKey: string | null;
+  studyPage: boolean;
+};
+
+/** The rail's section after the centre moves: Agent stays, a Study page shows
+ * Study, an open item Files, and leaving Study for the landing (Back) shows the
+ * Dashboard. */
+function sectionForCenter(
+  was: WorkspaceSection,
+  { openKey, studyPage }: PanelCenter
+): WorkspaceSection {
+  if (was === 'agent') return was;
+  if (studyPage) return 'study';
+  if (openKey) return 'files';
+  return was === 'study' ? 'dashboard' : was;
+}
+
+/** The panel as the URL says, else as this workspace last had it. */
+function firstPanelOf(
+  workspaceId: string,
+  urlPanel: WorkspacePanel | undefined,
+  lg: boolean
+) {
+  return lg
+    ? (urlPanel ??
+        readPref<WorkspacePanel | null>(
+          PREF_KEYS.panel(workspaceId),
+          null,
+          (value): value is WorkspacePanel => isWorkspacePanel(value)
+        ))
+    : null;
+}
+
+function firstSectionOf(
+  panel: WorkspacePanel | null,
+  center: PanelCenter
+): WorkspaceSection {
+  const first = panel && panel !== 'none' ? panel : 'dashboard';
+  // Study's panel lists Study's pages: the sync below opens Practice.
+  if (first === 'study' && !center.studyPage && !center.openKey) return first;
+  return sectionForCenter(first, center);
+}
+
+const firstPanelOpenOf = (panel: WorkspacePanel | null, center: PanelCenter) =>
+  panel !== 'none' || (!center.openKey && !center.studyPage);
+
 export default function WorkspaceOpenPage() {
   return (
     <>
@@ -357,57 +402,107 @@ function WorkspaceOpen() {
   const oneColumnLayout = !lg;
   const searchedOpenItem = openItemFromSearch(search);
   const studyPage = !searchedOpenItem && !!search.study;
-  // Make a quiz's pages (X1 and the run) keep the rail and take the panel's
-  // place (Epo 2026-11-02).
-  const makePage =
+  // Make a quiz from a link: its dialog opens over the Dashboard, on its pages or run
+  // (Epo 2026-11-05).
+  const quizDialogKey = useQuizDialogKey((state) => state.key);
+  const makeLink =
     !readOnly && !searchedOpenItem && !search.study && !!search.make;
   // Agent shows its chat rather than the history (Epo 2026-11-04, option A). A
-  // chat on screen comes back after a reload or a closed tab, with the thread
-  // the chat panel keeps.
+  // chat on screen comes back on the next visit, with the thread the chat panel
+  // keeps.
   const [chatShown, setChatShown] = useState(() =>
     readPref(PREF_KEYS.chatShown(workspaceId), false, isBoolean)
   );
-  // The rail's section: that chat, a Study page in the URL shows Study, an open
-  // item or a Make a quiz page Files, else the Dashboard (no panel). Pressing the
-  // shown section again closes or reopens its panel.
-  const [section, setSection] = useState<WorkspaceSection>(() =>
-    chatShown
-      ? 'agent'
-      : studyPage
-        ? 'study'
-        : searchedOpenItem || makePage
-          ? 'files'
-          : 'dashboard'
-  );
-  const [panelOpen, setPanelOpen] = useState(true);
   const openKey = searchedOpenItem
     ? `${searchedOpenItem.kind}:${searchedOpenItem.id}`
     : null;
+  const center: PanelCenter = { openKey, studyPage };
+  // These two states draw the panel; the effect below keeps the URL and the
+  // memory on them.
+  const [section, setSection] = useState<WorkspaceSection>(() =>
+    firstSectionOf(firstPanelOf(workspaceId, search.panel, lg), center)
+  );
+  const [panelOpen, setPanelOpen] = useState(() =>
+    firstPanelOpenOf(firstPanelOf(workspaceId, search.panel, lg), center)
+  );
+  // Panels are each workspace's own. The page stays mounted when a Move takes
+  // the open file to another: the file follows at once (Q467).
+  const [seenWorkspace, setSeenWorkspace] = useState(workspaceId);
+  if (workspaceId !== seenWorkspace) {
+    setSeenWorkspace(workspaceId);
+    const panel = firstPanelOf(workspaceId, search.panel, lg);
+    setChatShown(readPref(PREF_KEYS.chatShown(workspaceId), false, isBoolean));
+    setSection(firstSectionOf(panel, center));
+    setPanelOpen(firstPanelOpenOf(panel, center));
+  }
   // The centre moves on while Agent keeps its chat: a citation opens its file
-  // beside the chat, and so does anything else opened there. From the Dashboard
-  // or Study, an item shows in Files and a Study page in Study. Leaving Study for
-  // the landing (Back) shows the Dashboard.
-  useEffect(() => {
-    if (studyPage) setSection((was) => (was === 'agent' ? was : 'study'));
-    else if (makePage) setSection((was) => (was === 'agent' ? was : 'files'));
-  }, [makePage, studyPage]);
-  useEffect(() => {
-    if (openKey)
-      setSection((was) =>
-        was === 'dashboard' || was === 'study' ? 'files' : was
-      );
-    else if (!studyPage)
-      setSection((was) => (was === 'study' ? 'dashboard' : was));
-  }, [openKey, studyPage]);
-  const leftOpen = section !== 'dashboard' && panelOpen && !makePage;
+  // beside the chat, and so does anything else opened there.
+  const centerKey = `${openKey}|${studyPage}`;
+  const [seenCenter, setSeenCenter] = useState(centerKey);
+  if (centerKey !== seenCenter) {
+    setSeenCenter(centerKey);
+    setSection((was) => sectionForCenter(was, center));
+  }
+  const leftOpen = section !== 'dashboard' && panelOpen;
   const leftShown = lg && leftOpen;
   const chatOnScreen = leftShown && section === 'agent' && chatShown;
   useEffect(() => {
-    if (!chatOnScreen) return;
+    if (!lg) return;
     const key = PREF_KEYS.chatShown(workspaceId);
-    writePref(key, true);
-    return () => removePref(key);
-  }, [chatOnScreen, workspaceId]);
+    if (chatOnScreen) writePref(key, true);
+    else removePref(key);
+  }, [chatOnScreen, lg, workspaceId]);
+  // The tour's panels aren't the learner's to remember.
+  const beforeTour = useRef<{
+    chatShown: boolean;
+    panelOpen: boolean;
+    section: WorkspaceSection;
+  } | null>(null);
+  const panelNow: WorkspacePanel | null = lg
+    ? section === 'dashboard' || !panelOpen
+      ? 'none'
+      : section
+    : null;
+  const panelPressed = useRef(false);
+  const seenUrlPanel = useRef(search.panel);
+  useEffect(() => {
+    if (!panelNow) return;
+    const urlPanel = search.panel;
+    const moved = urlPanel && urlPanel !== seenUrlPanel.current;
+    seenUrlPanel.current = urlPanel;
+    // Back, forward or a link moved the URL: the panel follows.
+    if (moved && urlPanel !== panelNow) {
+      if (urlPanel !== 'none') {
+        setSection(urlPanel);
+        setPanelOpen(true);
+      } else if (openKey || studyPage) setPanelOpen(false);
+      else {
+        setSection('dashboard');
+        setPanelOpen(true);
+      }
+      return;
+    }
+    if (!beforeTour.current) writePref(PREF_KEYS.panel(workspaceId), panelNow);
+    if (urlPanel === panelNow) return;
+    // A press adds a step for back; anything else only labels the entry, such
+    // as a navigation that left the panel out.
+    const pressed = panelPressed.current && !!urlPanel;
+    panelPressed.current = false;
+    navigate({
+      replace: !pressed,
+      search: (previous) => ({ ...previous, panel: panelNow }),
+      to: '.',
+    });
+  }, [navigate, openKey, panelNow, search.panel, studyPage, workspaceId]);
+  const openPracticeFirst = useEffectEvent(() => {
+    if (lg && section === 'study' && !studyPage && !openKey)
+      navigate({
+        replace: true,
+        search: (previous) => ({ ...previous, study: 'practice' as const }),
+        to: '.',
+      });
+  });
+  useEffect(() => openPracticeFirst(), []);
   const panelGroupRef = useGroupRef();
   const [panelGroup, setPanelGroup] = useState<HTMLDivElement | null>(null);
   usePanelLayout({
@@ -430,6 +525,7 @@ function WorkspaceOpen() {
   }
   /** Every way into a chat: Agent's panel, showing that chat. */
   function openChat(id: string | null, prompt?: string) {
+    panelPressed.current = true;
     setSection('agent');
     setPanelOpen(true);
     setChatShown(true);
@@ -469,6 +565,31 @@ function WorkspaceOpen() {
       search: searchFromOpenItem(item),
       to: '.',
     });
+  }
+
+  /** The chat page below the panels: `agent` in the URL. Opening adds a history
+   * entry for the back gesture to leave, and the page's back arrow takes that
+   * same step. */
+  const chatPagePushed = useRef(false);
+  function setChatPageOpen(open: boolean) {
+    const latest = router.latestLocation.search as WorkspaceOpenSearch;
+    if (open === (latest.panel === 'agent')) return;
+    if (open) {
+      chatPagePushed.current = true;
+      navigate({
+        search: (previous) => ({ ...previous, panel: 'agent' as const }),
+        to: '.',
+      });
+    } else if (chatPagePushed.current) {
+      chatPagePushed.current = false;
+      router.history.back();
+    } else {
+      navigate({
+        replace: true,
+        search: (previous) => ({ ...previous, panel: undefined }),
+        to: '.',
+      });
+    }
   }
 
   /** Workspace settings at `tab`, kept in the URL so a link can open it.
@@ -526,18 +647,10 @@ function WorkspaceOpen() {
    * opens Practice, its only page so far. Pressing the shown section closes
    * or reopens its panel. */
   function selectSection(next: WorkspaceSection) {
+    panelPressed.current = true;
     if (next === 'dashboard') {
       setSection('dashboard');
       if (searchedOpenItem || search.study || search.make) openDashboard();
-      return;
-    }
-    // A Make a quiz page has no panel: picking a section leaves it for that
-    // section's panel.
-    if (makePage) {
-      if (next === 'study') openPractice();
-      else openDashboard();
-      setSection(next);
-      setPanelOpen(true);
       return;
     }
     if (next === section) {
@@ -605,7 +718,6 @@ function WorkspaceOpen() {
     { mode: 'add' } | { mode: 'rename'; id: string; name: string } | null
   >(null);
   const [resumeProvider] = useState(() => resumedConnect(workspaceId));
-  const [makeQuiz, setMakeQuiz] = useState<MakeQuizChoice | null>(null);
   const [addSource, setAddSource] = useState<AddSourceMode | null>(
     resumeProvider ? 'import' : null
   );
@@ -633,11 +745,6 @@ function WorkspaceOpen() {
   // page is open; when it stops, the panel goes back as it was before it, with
   // the section fitting what the tour left in the centre.
   const tourPanels = useRef<TourPanels | null>(null);
-  const beforeTour = useRef<{
-    chatShown: boolean;
-    panelOpen: boolean;
-    section: WorkspaceSection;
-  } | null>(null);
   useEffect(() => {
     const show = (next: WorkspaceSection) => {
       beforeTour.current ??= { chatShown, panelOpen, section };
@@ -732,6 +839,11 @@ function WorkspaceOpen() {
         },
       ];
   // One column has no rail: its menus carry the Dashboard and Study.
+  const settingsItem: MenuItem = {
+    icon: 'settings',
+    label: m.workspace_settings(),
+    onClick: openSettings,
+  };
   const settingsItems: MenuItem[] = [
     {
       icon: 'dashboard',
@@ -762,11 +874,7 @@ function WorkspaceOpen() {
           },
         ]
       : []),
-    {
-      icon: 'settings',
-      label: m.workspace_settings(),
-      onClick: openSettings,
-    },
+    settingsItem,
   ];
   function openFiles() {
     filesAnchor.current =
@@ -926,69 +1034,13 @@ function WorkspaceOpen() {
         />
       </Suspense>
     ));
-  const makeSearch = {
-    answers: search.answers,
-    paper: search.paper,
-  };
-  const makeQuizContent =
-    makePage &&
-    (search.make === 'pages' ? (
-      <Suspense fallback={null}>
-        <PagePicker
-          answers={splitIds(search.answers)}
-          onBack={() => {
-            setMakeQuiz({
-              answers: splitIds(search.answers),
-              paper: splitIds(search.paper),
-            });
-            openDashboard();
-          }}
-          onCancel={openDashboard}
-          onStarted={(run) =>
-            void navigate({
-              replace: true,
-              search: { ...makeSearch, make: 'run', run },
-              to: '.',
-            })
-          }
-          paper={splitIds(search.paper)}
-          workspaceId={workspaceId}
-        />
-      </Suspense>
-    ) : (
-      search.run && (
-        <Suspense fallback={null}>
-          <ExtractionProgress
-            onBackToPages={
-              search.paper
-                ? () =>
-                    void navigate({
-                      replace: true,
-                      search: { ...makeSearch, make: 'pages' },
-                      to: '.',
-                    })
-                : undefined
-            }
-            onDone={(quizId) => {
-              void navigate({
-                replace: true,
-                search: { material: quizId },
-                to: '.',
-              });
-            }}
-            onLeave={openDashboard}
-            runId={search.run}
-          />
-        </Suspense>
-      )
-    ));
+  const makeChoice = { answers: search.answers, paper: search.paper };
   // The landing is the workspace's Dashboard (boards H1, H2).
   const pageContent =
     studyContent ||
-    makeQuizContent ||
     (!openItem && (
       <WorkspaceDashboard
-        onMakeQuiz={() => setMakeQuiz({ answers: [], paper: [] })}
+        onMakeQuiz={() => void navigate({ search: { make: 'files' }, to: '.' })}
         onUpload={() => setAddSource('upload')}
         workspace={ws}
       />
@@ -1225,13 +1277,15 @@ function WorkspaceOpen() {
                     canReprocess={ws.isOwner}
                     color="purple"
                     dock={{
-                      // The page's ⋮ keeps Add file, not Add topic.
-                      menuItems: [...addItems.slice(0, 1), ...settingsItems],
+                      // The chat page's ⋮: back leads to the rest (Epo 2026-11-05).
+                      menuItems: [settingsItem],
                       office: officeOpen,
+                      onPageOpen: setChatPageOpen,
+                      pageOpen: search.panel === 'agent',
                     }}
-                    // The page picker's footer takes the dock's corner on
-                    // phones; hidden, the chat keeps its draft and stream.
-                    hidden={makePage}
+                    // The dialog takes the screen on phones; hidden, the chat keeps
+                    // its draft and stream.
+                    hidden={makeLink}
                     onOpenCitation={openCitation}
                     onOpenResource={openChatResource}
                     openResource={openItem}
@@ -1312,22 +1366,62 @@ function WorkspaceOpen() {
           title={topicForm.mode === 'add' ? m.topic_new() : m.topic_rename()}
         />
       )}
-      {makeQuiz && (
+      {makeLink && search.make && (
         <Suspense fallback={null}>
           <MakeQuizDialog
-            initial={makeQuiz}
-            onClose={() => setMakeQuiz(null)}
-            onContinue={(choice) => {
-              setMakeQuiz(null);
-              void navigate({
-                search: {
-                  answers: choice.answers.join(',') || undefined,
-                  make: 'pages',
-                  paper: choice.paper.join(','),
-                },
-                to: '.',
-              });
+            file={search.quizFile}
+            initial={{
+              answers: splitIds(search.answers),
+              paper: splitIds(search.paper),
             }}
+            key={quizDialogKey}
+            onClose={openDashboard}
+            onConfirmed={(run, choice) => {
+              addQuizRun({ ...choice, id: run.id, workspaceId });
+              openDashboard();
+            }}
+            onDone={(quizId) =>
+              void navigate({
+                replace: true,
+                search: { material: quizId },
+                to: '.',
+              })
+            }
+            onFile={(file) =>
+              void navigate({
+                // A phone's Back returns to the list; wider, the list stays beside it.
+                replace: !window.matchMedia('(max-width: 639.98px)').matches,
+                search: { ...makeChoice, make: 'pages', quizFile: file },
+                to: '.',
+              })
+            }
+            onRunBack={() =>
+              void navigate({
+                replace: true,
+                search: { ...makeChoice, make: 'pages' },
+                to: '.',
+              })
+            }
+            onShowFiles={(choice) =>
+              void navigate({
+                search: { ...choiceSearch(choice), make: 'files' },
+                to: '.',
+              })
+            }
+            onShowPages={(choice) =>
+              void navigate({
+                search: { ...choiceSearch(choice), make: 'pages' },
+                to: '.',
+              })
+            }
+            onStarted={(run, choice) =>
+              void navigate({
+                search: { ...choiceSearch(choice), make: 'run', run },
+                to: '.',
+              })
+            }
+            runId={search.run}
+            step={search.make}
             workspaceId={workspaceId}
             workspaceName={ws.name}
           />

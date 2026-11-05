@@ -15,11 +15,7 @@ import { Button } from '@/components/ui/Button';
 import { InputError } from '@/components/ui/Input';
 import { userToast } from '@/components/ui/userToast';
 import { SourcesLine } from '@/features/materials/MaterialAttributionFooter';
-import type {
-  LearnerPart,
-  LearnerQuestion,
-  QuestionPart,
-} from '@/features/questions/types';
+import type { LearnerQuestion } from '@/features/questions/types';
 import { attemptMinutes } from '@/features/study/attempts';
 import { m } from '@/i18n';
 import { scoreBucket, track } from '@/lib/analytics';
@@ -36,47 +32,12 @@ import {
 } from './QuizPageHeader';
 import type { QuizRunControl } from './quizRun';
 import { ResetButton } from './ResetButton';
+import { keptAnswers, partsById } from './stillAnswers';
 
 /* Taking a quiz, shared by the app page and the public /share page. It knows
    no router or session: callers pass the frame, the top bar and how to grade. */
 
 type Answers = Record<string, Answer>;
-type AnyPart = LearnerPart | QuestionPart;
-
-/** Whether an answer still means what the learner chose after an editor
- * changed the part live (D9, Epo 2026-10-10): a chosen option, ordering item
- * or matching option that is gone, or a changed number of gaps, drops it. */
-function stillAnswers(before: AnyPart, after: AnyPart, value: Answer): boolean {
-  const a = before.answer;
-  const b = after.answer;
-  if (a.type !== b.type) return false;
-  if (a.type === 'mcq' && 'options' in b)
-    return (
-      Array.isArray(value) &&
-      value.every(
-        (i) =>
-          typeof i === 'number' &&
-          'options' in a &&
-          a.options[i] === b.options[i]
-      )
-    );
-  if (a.type === 'ordering' && 'items' in a && 'items' in b)
-    return (
-      [...a.items].sort().join('\u0000') === [...b.items].sort().join('\u0000')
-    );
-  if (
-    b.type === 'matching' &&
-    'options' in b &&
-    value &&
-    typeof value === 'object'
-  )
-    return Object.values(value).every((option) =>
-      b.options.includes(option as string)
-    );
-  if (a.type === 'gaps' && b.type === 'gaps')
-    return JSON.stringify(a) === JSON.stringify(b);
-  return true;
-}
 /** In place of a question's Check, under a question with no answers. */
 const NoAnswersLine = () => (
   <p className="t-meta text-right text-fg-muted">
@@ -160,33 +121,14 @@ export function AttemptBody({
   );
   // Questions update live under the learner (D9): answers that no longer
   // point at what the part holds go.
-  const partsById = useMemo(
-    () =>
-      new Map<string, AnyPart>(
-        questions.flatMap((question) =>
-          question.parts.map((part) => [part.id, part] as const)
-        )
-      ),
-    [questions]
-  );
-  const previousParts = useRef(partsById);
+  const parts = useMemo(() => partsById(questions), [questions]);
+  const previousParts = useRef(parts);
   useEffect(() => {
     const before = previousParts.current;
-    previousParts.current = partsById;
-    if (before === partsById) return;
-    setDrafts((current) => {
-      const kept = Object.fromEntries(
-        Object.entries(current).filter(([id, value]) => {
-          const was = before.get(id);
-          const now = partsById.get(id);
-          return !!(was && now && stillAnswers(was, now, value));
-        })
-      );
-      return Object.keys(kept).length === Object.keys(current).length
-        ? current
-        : kept;
-    });
-  }, [partsById]);
+    previousParts.current = parts;
+    if (before !== parts)
+      setDrafts((current) => keptAnswers(before, parts, current));
+  }, [parts]);
 
   const checkedById = useMemo(
     () => new Map(run.checked.map((q) => [q.id, q] as const)),

@@ -459,6 +459,9 @@ components:
       properties:
         attemptId:
           type: string
+        attemptNumber:
+          format: int64
+          type: integer
         awarded:
           format: double
           type: number
@@ -475,6 +478,7 @@ components:
         - questionId
         - userId
         - attemptId
+        - attemptNumber
         - waiting
         - awarded
         - marks
@@ -777,6 +781,8 @@ components:
           type: string
         quizTitle:
           type: string
+        quizTrashed:
+          type: boolean
         showAnswers:
           type: boolean
         shuffle:
@@ -873,6 +879,8 @@ components:
         correct:
           format: double
           type: number
+        countedAttemptId:
+          type: string
         done:
           type: boolean
         doneAt:
@@ -883,8 +891,6 @@ components:
         latePenaltyPct:
           format: int64
           type: integer
-        latestAttemptId:
-          type: string
         mark:
           format: double
           type: number
@@ -2017,6 +2023,22 @@ components:
         - computational
         - probability
       type: object
+    ConfirmExtractionReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ConfirmExtractionReq.json
+          format: uri
+          readOnly: true
+          type: string
+        questions:
+          format: int64
+          minimum: 1
+          type: integer
+      required:
+        - questions
+      type: object
     ContentOrderItem:
       additionalProperties: false
       properties:
@@ -2273,15 +2295,14 @@ components:
           format: uri
           readOnly: true
           type: string
-        answerFileIds:
+        answers:
           items:
-            type: string
+            $ref: "#/components/schemas/ExtractionFile"
           type: array
         paper:
           items:
-            $ref: "#/components/schemas/ExtractionPaperFile"
+            $ref: "#/components/schemas/ExtractionFile"
           minItems: 1
-          nullable: true
           type: array
         title:
           maxLength: 120
@@ -2845,6 +2866,12 @@ components:
           format: uri
           readOnly: true
           type: string
+        answered:
+          format: int64
+          type: integer
+        confirmed:
+          format: int64
+          type: integer
         createdAt:
           format: date-time
           type: string
@@ -2855,6 +2882,8 @@ components:
         finishedAt:
           format: date-time
           type: string
+        found:
+          $ref: "#/components/schemas/ExtractionFound"
         id:
           type: string
         quizId:
@@ -2867,8 +2896,10 @@ components:
         status:
           enum:
             - running
+            - confirming
             - done
             - failed
+            - cancelled
           type: string
         title:
           type: string
@@ -2880,24 +2911,81 @@ components:
         - title
         - status
         - recorded
+        - answered
         - createdAt
       type: object
-    ExtractionPaperFile:
+    ExtractionFile:
       additionalProperties: false
       properties:
         fileId:
           minLength: 1
           type: string
+        images:
+          items:
+            type: string
+          type: array
         pages:
           items:
             format: int64
             type: integer
-          minItems: 1
-          nullable: true
           type: array
       required:
         - fileId
-        - pages
+      type: object
+    ExtractionFound:
+      additionalProperties: false
+      properties:
+        answerFiles:
+          format: int64
+          type: integer
+        availableCredits:
+          format: int64
+          type: integer
+        chargedCredits:
+          format: int64
+          type: integer
+        paperName:
+          type: string
+        paperPages:
+          format: int64
+          type: integer
+        questions:
+          items:
+            $ref: "#/components/schemas/ExtractionFoundQuestion"
+          type: array
+        unreadAnswers:
+          items:
+            type: string
+          type: array
+      required:
+        - questions
+        - chargedCredits
+        - availableCredits
+        - unreadAnswers
+        - paperName
+        - paperPages
+        - answerFiles
+      type: object
+    ExtractionFoundQuestion:
+      additionalProperties: false
+      properties:
+        first:
+          format: int64
+          type: integer
+        label:
+          type: string
+        last:
+          format: int64
+          type: integer
+        parts:
+          items:
+            type: string
+          type: array
+      required:
+        - label
+        - first
+        - last
+        - parts
       type: object
     ExtractionReport:
       additionalProperties: false
@@ -2918,14 +3006,6 @@ components:
           items:
             type: string
           type: array
-        keyDisagreements:
-          items:
-            type: string
-          type: array
-        marksDiffer:
-          items:
-            type: string
-          type: array
         missing:
           items:
             type: string
@@ -2937,16 +3017,6 @@ components:
           items:
             type: string
           type: array
-        schemeFailed:
-          type: boolean
-        schemeRefused:
-          items:
-            type: string
-          type: array
-        schemeRepeats:
-          items:
-            type: string
-          type: array
         stopped:
           enum:
             - ""
@@ -2954,10 +3024,6 @@ components:
             - credits
             - output_limit
           type: string
-        unpaired:
-          items:
-            type: string
-          type: array
         windows:
           format: int64
           type: integer
@@ -2965,11 +3031,6 @@ components:
         - expected
         - missing
         - recorded
-        - keyDisagreements
-        - schemeRefused
-        - marksDiffer
-        - unpaired
-        - schemeRepeats
         - figures
         - figuresLeftOut
         - stopped
@@ -8945,6 +9006,31 @@ paths:
       summary: "An assignment's report: its questions, members and answers to mark"
       tags:
         - Assignments
+  /api/assignments/{id}/republish:
+    post:
+      operationId: republishAssignment
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assignment"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Replace an open assignment's questions with its quiz as it is now
+      tags:
+        - Assignments
   /api/assignments/{id}/start:
     post:
       operationId: startAssignment
@@ -10317,6 +10403,62 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: A Make a quiz run its starter began
+      tags:
+        - Generate
+  /api/extractions/{id}/cancel:
+    post:
+      operationId: cancelExtraction
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Extraction"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: End a run waiting on its starter
+      tags:
+        - Generate
+  /api/extractions/{id}/confirm:
+    post:
+      operationId: confirmExtraction
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmExtractionReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Extraction"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Make the first questions of a run waiting on its starter
       tags:
         - Generate
   /api/files:

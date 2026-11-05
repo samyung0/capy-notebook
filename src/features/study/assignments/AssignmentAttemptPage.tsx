@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useAssignment, useAssignmentAttempt } from '@/api/hooks';
 import { ErrorState } from '@/components/app/ErrorState';
 import { Button } from '@/components/ui/Button';
@@ -35,7 +35,8 @@ export function BackToAssignments({
 }
 
 /** One try, by its id: a running one to answer (A2), then Submitted (A4), or
- * its results (A5), a member's for the class's staff. */
+ * its results (A5), a member's for the class's staff. Staff closing it while it
+ * runs here goes straight to its results (Epo 2026-11-05). */
 export function AssignmentAttemptPage({
   attemptId,
   workspaceId,
@@ -52,6 +53,7 @@ export function AssignmentAttemptPage({
   // later, it goes straight to its results.
   const ranHere = useRef(false);
   const [seenResults, setSeenResults] = useState(false);
+  const closedHere = useCallback(() => setSeenResults(true), []);
   if (data?.status === 'running') ranHere.current = true;
   // Taking it starts only from this opening's read, never a cached one.
   const waitingForFresh = data?.status === 'running' && !isFetchedAfterMount;
@@ -81,7 +83,13 @@ export function AssignmentAttemptPage({
       </PracticeFrame>
     );
   if (data.status === 'running')
-    return <AssignmentTake attempt={data} workspaceId={workspaceId} />;
+    return (
+      <AssignmentTake
+        attempt={data}
+        onClosed={closedHere}
+        workspaceId={workspaceId}
+      />
+    );
   if (ranHere.current && !seenResults && assignment)
     return (
       <AssignmentSubmitted

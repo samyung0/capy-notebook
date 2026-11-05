@@ -63,6 +63,8 @@ const loaded = {
   isFetchedAfterMount: true,
   refetch: vi.fn(),
 };
+// What a later read of the quiz answers.
+const later: { read: Record<string, unknown> } = { read: {} };
 vi.mock('@/api/hooks', () => ({
   useAttempt: () => ({ data: undefined }),
   useCards: () => ({ data: [card], ...loaded }),
@@ -89,6 +91,7 @@ vi.mock('@/api/hooks', () => ({
       workspaceId: '',
     },
     ...loaded,
+    ...later.read,
   }),
   useRateReviewItem: () => ({ mutateAsync: vi.fn() }),
   useResumeReviewSession: () => ({ data: undefined }),
@@ -144,6 +147,26 @@ const render = (node: ReactNode) =>
 
 it('shows a removed image in a quiz attempt', () => {
   expect(render(<QuizAttempt />)).toContain(m.media_image_removed());
+});
+
+// Epo 2026-11-05: refused on a later read (assigned to them since), the attempt
+// stays; only the opening read refuses the page.
+it('keeps a quiz attempt open when a later read is refused', async () => {
+  const root = createRoot(document.getElementById('root') as never);
+  const page = () => (
+    <QueryClientProvider client={new QueryClient()}>
+      <QuizAttempt />
+    </QueryClientProvider>
+  );
+  await act(async () => root.render(page()));
+  const body = () => document.getElementById('root')?.textContent ?? '';
+  expect(body()).toContain(m.media_image_removed());
+  const { ApiError } = await import('@/api/client');
+  later.read = { error: new ApiError(404, 'Not Found'), isError: true };
+  await act(async () => root.render(page()));
+  later.read = {};
+  expect(body()).toContain(m.media_image_removed());
+  act(() => root.unmount());
 });
 
 it('shows a removed card image in flashcard study', () => {

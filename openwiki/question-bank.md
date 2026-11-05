@@ -236,41 +236,71 @@ names it (see [agentic-retrieval.md](agentic-retrieval.md), Make a quiz, and
 `src/features/makeQuiz`, from the Dashboard's Make a quiz from a file, for those
 who may edit the workspace (a viewer's `?make=` link shows the Dashboard).
 
-- **The dialog** (`MakeQuizDialog`, boards X0a, X0b): the question paper from a
-  menu of the workspace's PDFs and images or a new upload, and any mark scheme or
-  answer files the same way. A photographed paper can be several images. Files
-  have no stored page count, so the browser reads "16 pages" (`filePages.ts`): a
-  PDF's table through pdf.js with range requests once its row scrolls into view,
-  a Word or PowerPoint file through the upload analysis on the chosen rows only.
-  An upload takes the normal path (`useQuizUpload`, `startSourceTransfer`), hidden
-  from members and in no topic, and shows "Reading pages" until it is indexed.
-  Continue waits for the paper's pages and for each answer file to have an id; an
-  answer file may still be reading, and one that failed or was stored without
-  parsing holds it until removed. Files, mark scheme and answer files included,
-  stop at `EXTRACTION_FILES_MAX`.
-- **The page picker** (`PagePicker`, board X1, `?make=pages&paper=…&answers=…`):
-  pages shown large and drawn near the viewport only, one click selects one, up to
-  `EXTRACTION_PAGES_MAX`. Page numbers run across a paper's files. The footer's
-  "about 60 credits" is `estimatedCredits`, a fixed rate from the board. Extract
-  questions waits for answer files still reading (`pending` or `processing`) and
-  starts the run; a refusal, such as an answer file that failed after the dialog,
-  shows in the footer's `FormAlert`. The quiz takes the paper's name, the next
-  number when it is taken.
-- **The run** (`ExtractionProgress`, `?make=run&run=…`): reads
-  `GET /api/extractions/{id}` every 3 s while running, shows the questions read so
-  far, and on `done` opens the quiz, or on `failed` shows copy chosen by the run's
-  `errorCode` (`extractionFailure`; the row's `error` text never shows) with a way
-  back to the pages. A poll that fails leaves the run on screen and the next one
-  reads it again. It depends only on the row's status, `errorCode`, `recorded`,
-  `quizId` and `report`, never on how a run batches its calls. Leaving the page
-  leaves the run going: the stream's `extraction` event brings a toast with Open
-  (`extractionEnd.ts`). A report's left-out questions or early stop show as one
-  warning toast (`extractionNotice`); everything else about a saved quiz shows as
-  its normal issues.
-- **The pages keep the rail, without the section panel** (`makePage` in
-  `WorkspaceOpen`); a rail section leaves them. Phones hide the chat dock on the
-  pages, whose footer holds its corner; the chat stays mounted, so it keeps its
-  draft and stream.
+One dialog (`MakeQuizDialog`, Epo 2026-11-05, "make the select pages from files the same
+dialog rather than inside a page") runs from the files through their pages and the map to
+the questions found, over the Dashboard, then gives way to the upload panel. Each step
+gives the dialog its title, action and body (`DialogStep`); phones show it full screen. Each
+step is an address, `?make=files`, `?make=pages&paper=…&answers=…&quizFile=…` and
+`?make=run&run=…`, so the browser's Back walks them and a link or reload opens the step.
+
+- **Files.** Up to `EXTRACTION_PAPER_FILES_MAX` (5) question files, such as a photographed
+  paper's images, and up to `EXTRACTION_ANSWER_FILES_MAX` (3) mark scheme or answer files,
+  from a menu of the workspace's indexed files other than Excel and audio or a new upload.
+  Files have no stored page count, so the browser reads "16 pages"
+  (`filePages.ts`): a PDF's table through pdf.js with range requests once its row scrolls
+  into view, a Word or PowerPoint file through the upload analysis on the chosen rows only.
+  An upload takes the normal path (`useQuizUpload`, `startSourceTransfer`), hidden from
+  members and in no topic, and shows "Reading pages" until it is indexed. Continue waits for
+  each upload to have started, since the browser's page count happens in the dialog, and for
+  no file to have failed; one that failed or was stored without parsing holds it until
+  removed. With every file read it goes on to the pages. With any still reading (Epo
+  2026-11-05, "upload might take a while") the dialog closes and the upload panel follows
+  them (`quizWaits.ts`), one row at a time: the files' upload rows while they read, then the
+  quiz's row, and a toast with it, offering Make quiz, which opens the pages, anywhere in the app. Any file that
+  fails ends the wait: its reason goes on the quiz's row, with no upload toast, and Try again
+  reopens the files step with those still good. The panel's close hides a wait while it
+  reads; its row comes back when it ends. A toast's Make quiz with another Make a quiz dialog
+  open starts that dialog again on the new files (`useQuizDialogKey`); the panel's own button
+  sits under the dialog's overlay. The wait's file names and ids stay in `localStorage`
+  (`capy.quiz.waits`, with the account they belong to, dropped when another signs in), so a
+  reload finds it and takes the statuses from the server; a file whose bytes a reload cut off
+  has no id, so it counts as failed. The runs the panel follows stay the same way
+  (`capy.quiz.runs`, ids only, progress from the server), until the panel is closed or the
+  server no longer has the run. Another tab that loads meanwhile reads the same list, so
+  a file still sending there shows as failed in that tab. An
+  upload has the Add dialog's checks: size, compression, name length and the workspace's file
+  room. One that would be stored with no text (a password, too many pages, or no credits for
+  its parse) isn't sent: an error names it and its row goes.
+- **Pages** (`usePageStep`, Epo 2026-11-05, "use the 2 column design ... like what we did for
+  workspace settings"). Two columns in a tall frame: the files with their counts on the left, a
+  divider between Questions and Mark schemes and answers when there are both, one file's pages on the right, and on phones the same as settings, a list and then a file,
+  with Back returning to the list. A lone file needs no list. Every PDF, Word, PowerPoint and
+  image file picks pages, answer files too; an image is picked already, and a text file goes
+  whole and counts for none. One click selects a page, up to `EXTRACTION_PAGES_MAX` (40) across
+  the files, and Select all takes a whole file up to the cap. The bottom bar holds the total,
+  Change files, Cancel (not on phones) and Extract questions, and sticks on phones. Change
+  files goes back and keeps the picks of files left in. Extract waits for answer files still
+  reading, an answer file with no page picked and Word or PowerPoint pages still drawing. One
+  that failed after the dialog says so in the list and doesn't hold the run. A refusal shows
+  in the bar (`extractionRefusal`). The quiz takes the paper's name, the next number when it
+  is taken. A Word or PowerPoint file's drawing frame sits on the body, so a hidden step or
+  file still lays it out, and nothing draws before the pages first show.
+- **The run** (`useRunStep`). Reading until the map ends, closable: the run keeps going, and
+  a toast with Review reopens it when it has found the questions (`extractionEnd.ts`). Then
+  the questions found, their price at 4 credits each and what finding them cost, naming any
+  answer file left out unread. With credits short it offers the first questions they afford
+  and Get credits, in a new tab so the run waits and the balance reads again on return.
+  Only Cancel ends it, back to the pages with their picks: a stray click, Escape or route
+  change doesn't lose the map it paid for.
+- **The panel** (`QuizRunRows` in `SourceTransferPanel`, `quizRuns.ts`). Confirming adds the
+  run to the upload panel: Copying 8 of 12, then Answers 5 of 12, half the bar each, read
+  from `GET /api/extractions/{id}` every 3 s. It ends in Open quiz, with "Some questions may
+  be incomplete" when the report left anything out, or the failure chosen by `errorCode`
+  (`extractionFailure`; the row's `error` text never shows) with Try again. A run in the
+  panel gets no toast. It depends only on the row's status, `errorCode`, `recorded`,
+  `answered`, `confirmed`, `quizId` and `report`, never on how a run batches its calls.
+- **Phones hide the chat dock** while the dialog is open; the chat stays mounted, so it keeps
+  its draft and stream.
 
 Quiz materials remain Plate/Yjs documents. A void `quiz_question` node stores
 the question as an attribute, with the same ID and one empty text leaf. Part
@@ -303,7 +333,8 @@ the question's ⋮, Edit all details: the question dialog on the same question. 
 question added and left blank goes when another opens or the page is left, before
 its rooms close, while the page can still write; anything anyone wrote in it since,
 a co-editor included, keeps it (`removeUnchangedQuestion`). A note's quiz embed
-keeps the list of questions with Edit and Remove (`QuizForm`).
+keeps the list of questions with Edit and Remove (`QuizForm`); a question added
+there and left blank goes when its dialog closes, under the same check.
 
 `QuestionDialog` is shared by the bank and the quiz editor. Its outline
 column (min 15rem, nudged 4px left to line up with the dialog title) keeps

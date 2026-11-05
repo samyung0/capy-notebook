@@ -36,7 +36,9 @@ test('a ready file offers Clone and its copy opens in the workspace', async ({
     .getByRole('dialog', { name: m.action_clone_file() })
     .getByRole('button', { exact: true, name: m.action_clone() })
     .click();
-  await expect(page).toHaveURL(/\/workspaces\/ws_bio\?file=(?!f_1\b)\w+$/);
+  await expect(page).toHaveURL(
+    /\/workspaces\/ws_bio\?file=(?!f_1\b)\w+(&panel=\w+)?$/
+  );
 });
 
 test('a material cloned into a workspace opens there, not on the standalone page', async ({
@@ -54,7 +56,7 @@ test('a material cloned into a workspace opens there, not on the standalone page
     .click();
   // The copy lands in the source's workspace, with no topic by default.
   await expect(page).toHaveURL(
-    /\/workspaces\/ws_bio\?material=(?!mat_note_1\b)\w+$/
+    /\/workspaces\/ws_bio\?material=(?!mat_note_1\b)\w+(&panel=\w+)?$/
   );
 });
 
@@ -457,7 +459,7 @@ test('a new scenario cancels a pending auth request', async ({ page }) => {
       () => performance.getEntriesByName('scenario-auth-aborted').length
     )
   ).toBe(1);
-  await expect(page).toHaveURL(/\/workspaces\/ws_scenarios$/);
+  await expect(page).toHaveURL(/\/workspaces\/ws_scenarios(\?panel=\w+)?$/);
 });
 
 test('Office export failure keeps the editable iframe in Edit and draft download works', async ({
@@ -534,6 +536,15 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
       page.getByRole('dialog', { name: m.workspace_storage_near_self_title() })
     ).toBeVisible();
     await page.keyboard.press('Escape');
+    // A workspace opens on its Dashboard, which shows the status as a small banner.
+    await page.goto('/workspaces/ws_scenarios');
+    const banner = page.getByTestId('account-status-banner');
+    await expect(banner).toHaveAttribute('data-kind', 'near', {
+      timeout: 30_000,
+    });
+    await expect(
+      banner.getByText(m.account_banner_near_title(), { exact: true })
+    ).toBeVisible();
     await page.goto('/');
     await expect(page.getByTestId('storage-usage-meter')).toBeVisible({
       timeout: 30_000,
@@ -607,6 +618,13 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
         page.getByRole('button', { exact: true, name })
       ).toHaveAttribute('data-storage-status', status);
     }
+    // The Dashboard's banner names the viewer's own frozen account there too.
+    await page.goto('/workspaces/ws_scenarios');
+    await expect(page.getByTestId('account-status-banner')).toHaveAttribute(
+      'data-kind',
+      'frozen',
+      { timeout: 30_000 }
+    );
     // A frozen viewer edits nowhere, a healthy owner's workspace included.
     await page.goto('/workspaces/ws_scenarios?material=mock-scenario-note');
     await expect(

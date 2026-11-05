@@ -587,6 +587,20 @@ def _call_timeout() -> float:
     return cfg.ingest_provider_timeout_s
 
 
+# The first event can't come before the request has gone: a Make a quiz call with 28 page
+# images is 8.6 MB and took 20 to 58 s to start from a home connection, where a flat
+# 15 s failed every run.
+FIRST_EVENT_S_PER_MB = 8.0
+
+
+def _first_event_bound(body: dict[str, Any]) -> float:
+    """The wait for a stream's first event, with time to upload a large request. A
+    request of a megabyte or less keeps the flat bound."""
+    megabytes = len(json.dumps(body)) / 1_000_000
+    extra = FIRST_EVENT_S_PER_MB * megabytes if megabytes > 1 else 0.0
+    return _call_timeout() + extra
+
+
 def _stream_idle() -> float:
     """Silence allowed once a stream has sent its first event."""
     if _interactive():
@@ -722,7 +736,7 @@ async def _stream_sse(
     the receipt window is derived from. httpx's own read timeout is off so
     this timer decides.
     """
-    first_idle, later_idle = _call_timeout(), _stream_idle()
+    first_idle, later_idle = _first_event_bound(body), _stream_idle()
     loop = asyncio.get_running_loop()
     backstop = _stream_backstop()
     backstop_at = loop.time() + backstop

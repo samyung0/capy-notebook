@@ -127,6 +127,22 @@ test('chat docks as a button, keeps a draft, and grows into its page on send', a
   await expect(
     chat.getByRole('button', { name: m.chat_history() })
   ).toBeVisible();
+  // Its ⋮ is about the chat: back leads to the rest of the workspace.
+  await chat.getByRole('button', { name: m.a11y_open_menu() }).click();
+  await expect(page.getByRole('menuitem')).toHaveText([
+    m.chat_new(),
+    m.workspace_settings(),
+  ]);
+  await page.keyboard.press('Escape');
+
+  // The URL holds it open: the back gesture closes it and keeps the file.
+  await expect(page).toHaveURL(/panel=agent/);
+  await page.goBack();
+  await expect(chat).toBeHidden();
+  await expect(page).toHaveURL(/material=mat_note_1/);
+  await expect(page).not.toHaveURL(/panel=/);
+  await dock.getByRole('button').first().click();
+  await expect(chat).toBeVisible();
 
   // Back leaves a chip that reopens the conversation, or closes.
   await chat.getByRole('button', { name: m.action_back() }).click();
@@ -172,7 +188,8 @@ test('Make a quiz hides the dock, and the chat comes back with its draft and thr
   ).toBeVisible();
   await expect(dock).toHaveCount(0);
 
-  await page.getByRole('button', { name: m.action_cancel() }).click();
+  await page.getByRole('button', { name: m.action_back() }).click();
+  await dialog.getByRole('button', { name: m.action_close() }).click();
   await button.click();
   await expect(field).toHaveValue('And ATP?');
   await dock.getByRole('button').first().click();

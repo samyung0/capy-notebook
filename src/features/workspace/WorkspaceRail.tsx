@@ -32,7 +32,7 @@ const SECTIONS: {
    page-coloured glow keeps it readable over a dark page frame, and can't be
    seen without one. */
 const ITEM =
-  'flex w-14 cursor-pointer flex-col items-center gap-0.5 rounded-button-lg pt-1.5 pb-1 font-medium text-[11px] text-fg leading-[1.1] outline-none transition-colors drop-shadow-[0_0_3px_var(--color-page)] hover:bg-fg/6 focus-visible:ring-2 focus-visible:ring-action';
+  'flex w-[68px] cursor-pointer flex-col items-center gap-0.5 rounded-button-lg px-1 pt-1.5 pb-1 font-medium text-[11px] text-fg leading-[1.1] outline-none transition-colors drop-shadow-[0_0_3px_var(--color-page)] hover:bg-fg/6 focus-visible:ring-2 focus-visible:ring-action';
 
 function RailItem({
   active,
@@ -83,7 +83,7 @@ export function WorkspaceRail({
     // page frame shows straight through.
     <nav
       aria-label={m.workspace_rail_label()}
-      className="flex h-full w-15 shrink-0 flex-col items-center gap-0.5 overflow-y-auto overflow-x-hidden py-3"
+      className="flex h-full w-19 shrink-0 flex-col items-center gap-1.5 overflow-y-auto overflow-x-hidden py-3"
     >
       <Link className={cn(ITEM, 'mb-1')} preload="intent" to="/">
         <Icon name="navigationBack" size={20} />
