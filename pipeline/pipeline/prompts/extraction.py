@@ -27,7 +27,7 @@ First you are asked for a map of the questions, as plain text. Then you are aske
 
 Copying:
 - Keep the wording, numbers, symbols and language exactly as they appear. Write math as LaTeX between $ signs ($\\frac{{7(x-2)}}{{5}}$, $x^2$, $\\angle ABC$), and a dollar sign for money as \\$ ($\\$78$ or \\$78); never simplify or reword the text.
-- A table becomes a table block. Leave out answer lines, boxes for working, "Answers written in the margins will not be marked", page headers and footers.
+- A table becomes a table block. Leave out answer lines, boxes for working, working written under a question, "Answers written in the margins will not be marked", page headers and footers.
 - A question's parts follow its labels (a), (b), (b)(i). The quiz holds parts in one flat list, so (b)(i) and (b)(ii) are two parts labelled "b(i)" and "b(ii)". Text under (b) before (i), such as the data the sub-parts use, is never left out: give it as b(i)'s lead_in. A question without parts has an empty stem and one part labelled "".
 - At most {limits.QUIZ_QUESTION_PARTS_MAX} parts a question.
 - mcq: the options' text in order, without their letters A, B, C, D. Keep that order, and leave the options out of the part's blocks.
@@ -49,6 +49,22 @@ SYSTEM_NO_PAGE_TEXT = SYSTEM.replace(
     ", each with the page's indexed text, which may be rough: the image is what counts.",
     ".",
     1,
+)
+
+# A Word, PowerPoint or text paper (Epo 2026-11-05, "keep going"): only its indexed text
+# exists, so the opening says so and nothing asks for figures.
+SYSTEM_TEXT_ONLY = (
+    SYSTEM.split("\n\n", 1)[1]
+    .split("\n\nFigures:", 1)[0]
+    .join(
+        (
+            "You copy the questions in the selected files into a quiz, exactly as they "
+            "appear. You see their indexed text at once. After the questions may come "
+            "answer files: a mark scheme, an answer key or someone's own answers, in any "
+            "layout.\n\n",
+            "\n\nEach recorded" + SYSTEM.split("\n\nEach recorded", 1)[1],
+        )
+    )
 )
 
 MAP_ASK = (
@@ -91,7 +107,7 @@ _BLOCK = {
 
 _LABEL = {
     "type": "string",
-    "description": 'The question number, e.g. "7".',
+    "description": 'The question\'s label from the map, e.g. "7".',
 }
 
 _PART_LABEL = {
@@ -267,6 +283,11 @@ def page_text(image: int, number: int, file_name: str, text: str) -> str:
     return f"{heading}. Its indexed text:\n{source_block(text)}"
 
 
+def text_page(number: int, file_name: str, text: str) -> str:
+    """A question file with no page view: its heading and its indexed text."""
+    return f"Page {number} of {file_name}. Its indexed text:\n{source_block(text)}"
+
+
 def answer_image_heading(image: int, number: int, file_name: str) -> str:
     """An answer file's page sent as an image; ``image`` counts them across the files."""
     return f"Answer file page image {image}: page {number} of {file_name}."
@@ -278,13 +299,13 @@ def answer_text(file_name: str, text: str) -> str:
 
 
 def map_messages(
-    pages: list[tuple[str, str]],
+    pages: list[tuple[str, str | None]],
     boxes: list[dict[str, Any]],
     answers: list[dict[str, Any]],
     *,
-    with_text: bool,
+    system: str,
 ) -> list[dict[str, Any]]:
-    """``pages`` are (page text or heading, image data URL) pairs; ``boxes`` the
+    """``pages`` are (page text or heading, image data URL or None) pairs; ``boxes`` the
     layout model's, numbered once across the selection; ``answers`` the answer files'
     content blocks. They go after the boxes, so the figures paragraph's "After the
     pages comes what it found" holds. Every thread continues these messages, so a run
@@ -292,14 +313,19 @@ def map_messages(
     content: list[dict[str, Any]] = []
     for text, image in pages:
         content.append({"type": "text", "text": text})
-        content.append({"type": "image_url", "image_url": {"url": image}})
-    content.append(
-        {"type": "text", "text": f"Boxes on these pages, as JSON: {json.dumps(boxes)}"}
-    )
+        if image:
+            content.append({"type": "image_url", "image_url": {"url": image}})
+    if any(image for _, image in pages):
+        content.append(
+            {
+                "type": "text",
+                "text": f"Boxes on these pages, as JSON: {json.dumps(boxes)}",
+            }
+        )
     content.extend(answers)
     content.append({"type": "text", "text": MAP_ASK})
     return [
-        {"role": "system", "content": SYSTEM if with_text else SYSTEM_NO_PAGE_TEXT},
+        {"role": "system", "content": system},
         {"role": "user", "content": content},
     ]
 

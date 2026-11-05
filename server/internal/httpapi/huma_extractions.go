@@ -122,7 +122,8 @@ type extractionFile struct {
 }
 
 // extractionFiles checks each file is the workspace's, untrashed and indexed;
-// a paper is a PDF or an image (Office files come later, §8).
+// a paper is a PDF, an image, or a Word, PowerPoint or text file, the last read whole
+// from its indexed text (Epo 2026-11-05).
 func (a *api) extractionFiles(ctx context.Context, wsID string, req apimodel.CreateExtractionReq) (paper, answers []extractionFile, err error) {
 	paper, answers = []extractionFile{}, []extractionFile{}
 	read := func(id string) (store.File, error) {
@@ -143,11 +144,11 @@ func (a *api) extractionFiles(ctx context.Context, wsID string, req apimodel.Cre
 		if err != nil {
 			return nil, nil, err
 		}
-		if f.Kind != store.FilePDF && f.Kind != store.FileImage {
-			return nil, nil, huma.Error400BadRequest(fmt.Sprintf("%s: questions are read from PDF files and images for now.", f.Name))
+		if f.Kind == store.FileAudio || f.Kind == store.FileUnknown {
+			return nil, nil, huma.Error400BadRequest(fmt.Sprintf("%s: questions can't be read from this kind of file.", f.Name))
 		}
-		if f.Kind == store.FileImage && !slices.Equal(p.Pages, []int{1}) {
-			return nil, nil, huma.Error400BadRequest(fmt.Sprintf("%s is an image: its one page is page 1.", f.Name))
+		if f.Kind != store.FilePDF && !slices.Equal(p.Pages, []int{1}) {
+			return nil, nil, huma.Error400BadRequest(fmt.Sprintf("%s is read whole: its one page is page 1.", f.Name))
 		}
 		paper = append(paper, extractionFile{FileID: f.ID, Name: f.Name, Pages: p.Pages})
 	}

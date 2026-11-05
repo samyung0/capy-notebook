@@ -5725,7 +5725,8 @@ job. The screens (boards X0a, X0b, X1, X2) are in
   never page-picked. At most `fieldlimits.ExtractionPages` (40) selected pages
   and `ExtractionFiles` (10) files in all, answer files included (Epo
   2026-11-03); every file must be the workspace's, untrashed and indexed, and a
-  paper file a PDF or an image (Office files later). The gateway checks those,
+  paper file a PDF, an image, or a Word, PowerPoint or text file read whole as page 1
+  (the dialog offers only PDFs and images so far). The gateway checks those,
   that the title is free, the account can edit and has storage, then opens a
   provider session on surface `generate` (the starter pays, Epo 2026-11-03;
   its calls' purposes are `extraction_map`, `extraction_copy`,
@@ -5734,10 +5735,9 @@ job. The screens (boards X0a, X0b, X1, X2) are in
   posts `/extract` to the retrieval service and answers 202 with the run
   (`store.Extraction`) once the service has accepted it. The service refuses
   before streaming, as a 400 with its code, a page past its file's end
-  (`page_out_of_range`), a paper file with no page view or a file gone, an answer
-  file sent as text with no indexed text (`no_indexed_text`) or over 200,000
-  characters (`answers_too_long`), and more than 40 page images, paper and answer
-  pages together (`too_many_pages`);
+  (`page_out_of_range`), a file gone, a file sent as text with no indexed text
+  (`no_indexed_text`) or over 200,000 characters (`file_too_long`), and more than 40
+  page images, paper and answer pages together (`too_many_pages`);
   past its turn slots it answers provider_busy (503) at once, as for
   `/generate`.
 - **The run** (`pipeline/retrieval/extraction.py`, prompts in
@@ -5808,7 +5808,8 @@ job. The screens (boards X0a, X0b, X1, X2) are in
      its indexed text under `Answer file <name>. Its indexed text:` when it is a born-digital PDF
      (no page a scan, by the same test as the paper), Word, PowerPoint or text file, or its page
      images, each under `Answer file page image 1: page 3 of <name>.`, when it is a scan or an image
-     upload; a blank page is left out. Nothing in code reads or pairs it: the model takes each answer
+     upload; a blank page is left out. A scan whose pages don't fit the images the run has left goes
+     as its indexed text, and only one with none is refused. Nothing in code reads or pairs it: the model takes each answer
      and its marks from the files, in any layout, "even when your own working disagrees". That wording
      left 2 of 12 planted answers overridden on the bench, and nothing reports a disagreement.
   4. Code checks the copies: a map row with no copy, a number missing inside the map and
@@ -5925,7 +5926,14 @@ job. The screens (boards X0a, X0b, X1, X2) are in
   what those use. A run is one session, so one of `ConcurrentLLMLeases`, while its calls
   in flight run from 3 to 8 on a 45-question paper. Each
   waits its turn at the model's gate and for `CALL_SLOTS` like a chat's.
-- **Stops.** A run stops early when the quiz would pass `QUIZ_PARTS_MAX` (100)
+- **A paper with no page view** (Epo 2026-11-05): Word, PowerPoint or text. Its whole indexed text is
+  one page with no image: `Page 1 of <name>. Its indexed text:`, a system prompt that says so and has no
+  figures rule, no boxes, no layout call. Any page numbers the model gives are ignored, and a figure it
+  names is dropped, so a question that needs a picture loses it. The output budget counts one page for
+  each 500 characters, up to 40. Findings in
+  [`2026-11-05-remaining-selections.md`](../bench/extraction/reports/2026-11-05-remaining-selections.md).
+- **Stops.** A quiz that fills while copying stops the copying and still answers what it copied.
+  A run stops early when the quiz would pass `QUIZ_PARTS_MAX` (100)
   or `QUIZ_OPEN_PARTS_MAX` (100 AI-marked parts, raised from 20 for every quiz,
   Epo 2026-11-03) (`stopped: quiz_full`), when the starter's credits run
   out (`credits`), or when its calls have written more than 8,000

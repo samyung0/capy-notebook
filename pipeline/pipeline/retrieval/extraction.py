@@ -93,9 +93,11 @@ FIGURE_PAGE_EDGE = 2_200
 LOCATE_MAX_TOKENS = 1_000
 # Indexed text shown per page.
 PAGE_TEXT_CHARS = 6_000
-# The longest answer file a run sends as text, about 60 dense pages; a longer one is
-# refused rather than cut.
-ANSWER_TEXT_CHARS = 200_000
+# A file with no page view counts one page of output budget per this much text.
+TEXT_PAGE_CHARS = 500
+# The longest file a run sends as text, about 60 dense pages; a longer one is refused
+# rather than cut.
+FILE_TEXT_CHARS = 200_000
 
 # A busy, failing or silent provider costs a call one silent retry (Epo
 # 2026-11-03): the map or a thread's round runs once more. A
@@ -119,13 +121,14 @@ class Page:
     """One selected page: its number in its file, the file's name, the
     page's indexed text, its image as a data URL, a box on it as a JPEG with
     its pixel size, for a figure, what the layout model found on it, and what
-    it is (``page_layer``); what is not known counts as a scan."""
+    it is (``page_layer``); what is not known counts as a scan. A Word, PowerPoint or
+    text paper is one page with no image and no crop: its whole indexed text."""
 
     number: int
     file_name: str
     text: str
-    image: Callable[[], Awaitable[str]]
-    crop: Callable[[list[float]], Awaitable[tuple[bytes, tuple[int, int]]]]
+    image: Callable[[], Awaitable[str]] | None
+    crop: Callable[[list[float]], Awaitable[tuple[bytes, tuple[int, int]]]] | None
     regions: tuple[layout.Region, ...] = ()
     layer: str = SCAN
 
@@ -184,7 +187,9 @@ class MapRow:
 def label_key(label: str) -> str:
     """A printed label as pairing compares it: "Q3", "3." and "3" are one;
     "(b)(ii)", "b(ii)" and "b ii" are one."""
-    tokens = re.findall(r"[a-z]+|\d+", label.lower())
+    # Any other letter or number is a token too: 甲, or ① and ②, which a Chinese paper
+    # labels parts with, would otherwise all read as "".
+    tokens = re.findall(r"[a-z]+|\d+|[^\W\d_a-z]+", label.lower())
     if tokens and tokens[0] in ("q", "question", "no"):
         tokens = tokens[1:]
     return ".".join(tokens)
@@ -520,6 +525,10 @@ def read_figures(
     page image (for the box call), or the tool-result problem
     naming the first that cannot be read."""
     read: list[Figure] = []
+    # Only pages with an image can give a figure, and only they are counted.
+    pictured = [page for page in pages if page.image]
+    if not pictured:
+        return [], None
     parts = {label_key(label) for label in part_labels}
     for index, item in enumerate(raw if isinstance(raw, list) else []):
         name = f"figures[{index}]"
@@ -540,10 +549,10 @@ def read_figures(
         numbers = numbers if isinstance(numbers, list) else []
         if not numbers:
             image = _whole(item.get("image"))
-            if image is None or not 1 <= image <= len(pages):
-                choices = " or ".join(str(n + 1) for n in range(len(pages)))
+            if image is None or not 1 <= image <= len(pictured):
+                choices = " or ".join(str(n + 1) for n in range(len(pictured)))
                 return [], f"{name}: with boxes [] give image, {choices}"
-            read.append(Figure(pages[image - 1], part, description))
+            read.append(Figure(pictured[image - 1], part, description))
             continue
         unknown = [number for number in numbers if number not in boxes]
         if unknown:
@@ -608,6 +617,9 @@ def parse_map(text: str) -> list[MapRow]:
     for line in text.splitlines():
         match = _MAP_LINE.match(line)
         if not match:
+            continue
+        # "none | pages 1-1 | ..." is the model saying it found no question.
+        if match["label"].strip().lower() == "none":
             continue
         parts = match["parts"].strip()
         rows.append(
@@ -807,6 +819,8 @@ class Run:
     # Printed order: a label's place is the map's, or its first record attempt.
     order: dict[str, int] = field(default_factory=dict)
     full: bool = False
+    # The quiz filled while copying: what was copied still gets its answers.
+    filled_copying: bool = False
     credits_out: bool = False
     # The run's output budget and what it has spent.
     output_budget: int = 0
@@ -821,7 +835,7 @@ class Run:
         return self.full or self.credits_out or self.over_budget
 
     def stopped(self) -> str:
-        if self.full:
+        if self.full or self.filled_copying:
             return "quiz_full"
         if self.credits_out:
             return "credits"
@@ -868,6 +882,9 @@ class Run:
         key = label_key(checked.label)
         self.order.setdefault(key, len(self.order))
         sent = item.get("pages")
+        # A file with no page view has one page, whatever page numbers its text holds.
+        if not any(page.image for page in pages):
+            sent = [pages[0].number, pages[0].number]
         numbers = {page.number for page in pages}
         figures: list[Figure] = []
         problem = None
@@ -1084,17 +1101,24 @@ async def read_map(
     its rows, and its output tokens. A reply that calls a tool or is cut off is a
     failed attempt."""
     with_text = sends_page_text(pages)
+    pictured = [p for p in pages if p.image]
+    index = {id(p): n for n, p in enumerate(pictured, 1)}
     messages = prompts.map_messages(
         [
             (
+                prompts.text_page(p.number, p.file_name, p.text),
+                None,
+            )
+            if p.image is None
+            else (
                 prompts.page_text(
-                    index, p.number, p.file_name, p.text[:PAGE_TEXT_CHARS]
+                    index[id(p)], p.number, p.file_name, p.text[:PAGE_TEXT_CHARS]
                 )
                 if with_text
-                else prompts.page_heading(index, p.number, p.file_name),
+                else prompts.page_heading(index[id(p)], p.number, p.file_name),
                 await p.image(),
             )
-            for index, p in enumerate(pages, 1)
+            for p in pages
         ],
         [
             {
@@ -1107,7 +1131,11 @@ async def read_map(
             for number, (page, region) in boxes.items()
         ],
         await _answer_blocks(answers),
-        with_text=with_text,
+        system=prompts.SYSTEM_TEXT_ONLY
+        if not pictured
+        else prompts.SYSTEM
+        if with_text
+        else prompts.SYSTEM_NO_PAGE_TEXT,
     )
     response = await models.complete_response(
         messages,
@@ -1275,6 +1303,17 @@ async def locate_figures(held: list[Recorded], *, model: ModelConfig) -> list[st
     return left_out
 
 
+def _pages_worth(page: Page) -> int:
+    """What a selected page counts for in the run's output budget: a file with no page
+    view counts a page for each TEXT_PAGE_CHARS of its text, up to a whole run's pages. A
+    worksheet's page holds about 500 characters (2021 P1 Q1 to Q10: 3,856 on 7 pages) and
+    its one copy call wrote 9,400 tokens."""
+    if page.image:
+        return 1
+    worth = math.ceil(len(page.text) / TEXT_PAGE_CHARS)
+    return min(max(1, worth), limits.EXTRACTION_PAGES_MAX)
+
+
 def _credits_out() -> bool:
     state = accounting.current()
     return bool(state and state.credits_exhausted)
@@ -1289,15 +1328,17 @@ async def run(
 ) -> AsyncIterator[dict[str, Any]]:
     """Events: ``questions`` after each copy batch (every question copied so far,
     with no answers yet), then ``done`` with the quiz's questions and the report."""
-    found = await layout.read_regions([page.image for page in pages])
+    found = iter(
+        await layout.read_regions([page.image for page in pages if page.image])
+    )
     pages = [
-        dataclasses.replace(page, regions=regions)
-        for page, regions in zip(pages, found)
+        dataclasses.replace(page, regions=next(found)) if page.image else page
+        for page in pages
     ]
     current = Run(
         validate=validate,
         boxes=numbered_boxes(pages),
-        output_budget=OUTPUT_PER_PAGE * len(pages),
+        output_budget=OUTPUT_PER_PAGE * sum(_pages_worth(page) for page in pages),
     )
     try:
         base, rows, output = await _attempted(
@@ -1439,6 +1480,7 @@ async def run(
         current.in_printed_order()
         if failures and not current.copies:
             raise failures[0]
+        current.filled_copying, current.full = current.full, False
         # A thread that ended early gets one more call for what it left out.
         for _ in range(2):
             if current.stopping:
@@ -1581,15 +1623,35 @@ async def _crop(
     return jpeg, size
 
 
-def _text_goes(layers: dict[int, str]) -> bool:
-    """Whether a PDF's text goes to the model: as for question pages, only when no page
-    is a scan and one is born digital (Epo 2026-11-05)."""
-    return set(layers.values()) - {BLANK} == {BORN_DIGITAL}
+def _text_goes(layers: dict[int, str], room: int) -> bool:
+    """Whether a PDF's text goes to the model: as for question pages, when no page is a
+    scan and one is born digital (Epo 2026-11-05), and when its pages would not fit the
+    page images left, which is every run's cap and not a reason to refuse a long scheme."""
+    pictures = sum(layer != BLANK for layer in layers.values())
+    return set(layers.values()) - {BLANK} == {BORN_DIGITAL} or pictures > room
 
 
-async def _answer_file(workspace_id: str, file: dict[str, Any]) -> AnswerFile:
+def _whole_text(name: str, passages: list[dict[str, Any]]) -> str:
+    """A file's whole indexed text, refused when it has none or too much."""
+    text = "\n\n".join(str(p.get("text") or "") for p in passages).strip()
+    if not text:
+        raise ExtractionRefused(
+            "no_indexed_text", f"{name} has no indexed text to read from."
+        )
+    if len(text) > FILE_TEXT_CHARS:
+        raise ExtractionRefused(
+            "file_too_long",
+            f"{name} is longer than the {FILE_TEXT_CHARS:,} characters a run reads.",
+        )
+    return text
+
+
+async def _answer_file(
+    workspace_id: str, file: dict[str, Any], room: int
+) -> AnswerFile:
     """An answer file as it goes: indexed text for a born-digital PDF, Word, PowerPoint
-    or text file, page images for a scan or an image upload (Epo 2026-11-05)."""
+    or text file, page images for a scan or an image upload (Epo 2026-11-05). ``room`` is
+    the page images the run has left."""
     file_id, name = file["fileId"], file["name"]
     row = await store.file_page_source(workspace_id, file_id)
     if row is None:
@@ -1609,7 +1671,7 @@ async def _answer_file(workspace_id: str, file: dict[str, Any]) -> AnswerFile:
         indexed = page_texts(passages)
         texts = {number: indexed.get(number, "") for number in range(1, count + 1)}
         layers = await slots.render_thread(page_layers, pdf, texts)
-        if not _text_goes(layers):
+        if not _text_goes(layers, room):
             return AnswerFile(
                 name,
                 images=tuple(
@@ -1618,26 +1680,15 @@ async def _answer_file(workspace_id: str, file: dict[str, Any]) -> AnswerFile:
                     if layers[number] != BLANK
                 ),
             )
-    text = "\n\n".join(str(p.get("text") or "") for p in passages).strip()
-    if not text:
-        raise ExtractionRefused(
-            "no_indexed_text", f"{name} has no indexed text to read answers from."
-        )
-    if len(text) > ANSWER_TEXT_CHARS:
-        raise ExtractionRefused(
-            "answers_too_long",
-            f"{name} is longer than the {ANSWER_TEXT_CHARS:,} characters of answers a "
-            "run reads.",
-        )
-    return AnswerFile(name, text)
+    return AnswerFile(name, _whole_text(name, passages))
 
 
 async def prepare(
     workspace_id: str, paper: list[dict[str, Any]], answers: list[dict[str, Any]]
 ) -> tuple[list[Page], list[AnswerFile]]:
     """The selected pages and the answer files, checked before the run starts: a page
-    past its file's end, a file with no page view, or more page images than a run reads
-    is refused."""
+    past its file's end, a text file with no usable text, or more page images than a run
+    reads is refused."""
     pages: list[Page] = []
     for file in paper:
         file_id, name, numbers = file["fileId"], file["name"], file["pages"]
@@ -1656,9 +1707,18 @@ async def prepare(
         elif row.get("kind") == "image":
             count = 1
         else:
-            raise ExtractionRefused(
-                "no_page_view", f"{name} has no pages to read questions from."
+            # Word, PowerPoint or text: the whole file's indexed text, as one page.
+            pages.append(
+                Page(
+                    1,
+                    name,
+                    _whole_text(name, await store.file_passages(workspace_id, file_id)),
+                    None,
+                    None,
+                    layer=BORN_DIGITAL,
+                )
             )
+            continue
         past = [number for number in numbers if number > count]
         if past:
             raise ExtractionRefused(
@@ -1680,8 +1740,13 @@ async def prepare(
             )
             for number in numbers
         )
-    files = [await _answer_file(workspace_id, file) for file in answers]
-    images = len(pages) + sum(len(file.images) for file in files)
+    images = sum(1 for page in pages if page.image)
+    files: list[AnswerFile] = []
+    for file in answers:
+        files.append(
+            await _answer_file(workspace_id, file, limits.EXTRACTION_PAGES_MAX - images)
+        )
+        images += len(files[-1].images)
     if images > limits.EXTRACTION_PAGES_MAX:
         raise ExtractionRefused(
             "too_many_pages",
@@ -1692,10 +1757,23 @@ async def prepare(
 
 
 async def gateway_validate(question: dict[str, Any]) -> str | None:
-    """Go's quiz validator on one question: its refusal, or None."""
-    resp = await asyncio.to_thread(
-        tools._post_json, "/api/internal/questions/check", {"question": question}
-    )
-    if resp.status_code != 200:
-        raise RuntimeError(f"the question check answered {resp.status_code}")
-    return resp.json().get("problem") or None
+    """Go's quiz validator on one question: its refusal, or None. A check that fails
+    twice ends its thread as a failed call does, so a brief gateway or network failure
+    costs that thread and not the paid run; the model is told nothing."""
+
+    async def check() -> str | None:
+        try:
+            resp = await asyncio.to_thread(
+                tools._post_json,
+                "/api/internal/questions/check",
+                {"question": question},
+            )
+        except OSError as exc:
+            raise elitellm.ProviderError(f"the question check failed: {exc}") from exc
+        if resp.status_code != 200:
+            raise elitellm.ProviderError(
+                f"the question check answered {resp.status_code}"
+            )
+        return resp.json().get("problem") or None
+
+    return await _attempted(check)

@@ -448,6 +448,122 @@ def test_the_map_reads_its_lines_and_leaves_the_rest():
     ]
 
 
+async def test_a_quiz_filled_while_copying_still_answers_what_it_copied(monkeypatch):
+    """40 pages of past papers filled the quiz at 100 parts and left all of them with no
+    answers (bench/extraction/reports/2026-11-05-remaining-selections.md)."""
+    monkeypatch.setattr(extraction.limits, "QUIZ_PARTS_MAX", 1)
+    first, second = _mcq("1", ["p", "q"], 1), _mcq("2", ["r", "s"], 0)
+    script = Script(
+        "\n".join([_row("1"), _row("2")]),
+        {
+            "Copy questions 1 to 2 now.": [
+                _tools(
+                    ("record_question", _copy(first)),
+                    ("record_question", _copy(second)),
+                )
+            ],
+            "Give the answers to question 1 now.": [
+                _tools(("record_answers", _answers(first)))
+            ],
+        },
+    )
+    events = await _run(monkeypatch, script, [_page(5)])
+    done = events[-1]
+    assert done["report"]["stopped"] == "quiz_full"
+    assert done["report"]["missing"] == ["2"]
+    assert done["report"]["answersMissing"] == []
+    assert done["questions"][0]["parts"][0]["answer"]["correct"] == [1]
+
+
+async def test_a_failing_question_check_is_tried_again_then_fails_its_thread(
+    monkeypatch,
+):
+    monkeypatch.setattr(extraction, "ATTEMPT_WAIT_S", 0)
+    answers = iter(
+        [
+            OSError("connection reset"),
+            SimpleNamespace(status_code=200, json=lambda: {"problem": "bad"}),
+            SimpleNamespace(status_code=502, json=dict),
+            SimpleNamespace(status_code=502, json=dict),
+        ]
+    )
+
+    def post(path, body):
+        answer = next(answers)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(extraction.tools, "_post_json", post)
+    assert await extraction.gateway_validate({}) == "bad"
+    with pytest.raises(extraction.elitellm.ProviderError):
+        await extraction.gateway_validate({})
+
+
+def test_labels_keep_letters_and_numbers_of_any_script():
+    assert extraction.label_key("①") != extraction.label_key("②")
+    assert extraction.label_key("(b)(ii)") == "b.ii"
+    assert extraction.label_key("Q3.") == "3"
+
+
+def test_a_map_row_called_none_is_no_row():
+    assert extraction.parse_map("none | pages 1-1 | parts none | figures none") == []
+
+
+async def test_a_text_paper_goes_as_its_whole_text_with_no_images(monkeypatch):
+    """A Word, PowerPoint or text paper: its indexed text under its own heading, a system
+    prompt that says so with no figures rule, and no boxes. A figure it names is dropped."""
+    item = _mcq("1", ["p", "q"], 1)
+    script = Script(
+        _row("1", 1, 1),
+        {
+            "Copy question 1 now.": [
+                _tools(
+                    (
+                        "record_question",
+                        _copy(
+                            item,
+                            1,
+                            1,
+                            figures=[{"boxes": [], "part": "", "description": "Graph"}],
+                        ),
+                    )
+                )
+            ],
+            "Give the answers to question 1 now.": [
+                _tools(("record_answers", _answers(item)))
+            ],
+        },
+    )
+    paper = extraction.Page(
+        1, "paper.docx", "Question text.", None, None, layer="born_digital"
+    )
+    events = await _run(monkeypatch, script, [paper])
+    system, user = script.sent[0]["messages"][:2]
+    assert system["content"].startswith("You copy the questions in the selected files")
+    assert "Figures:" not in system["content"] and "Copying:" in system["content"]
+    assert system["content"].endswith(extraction.prompts.SOURCE_RULE)
+    assert [block["type"] for block in user["content"]] == ["text", "text"]
+    assert user["content"][0]["text"] == (
+        "Page 1 of paper.docx. Its indexed text:\n<source>\nQuestion text.\n</source>"
+    )
+    done = events[-1]
+    assert done["report"]["recorded"] == ["1"] and done["report"]["figures"] == []
+
+
+def test_a_text_paper_counts_its_whole_text_in_the_output_budget():
+    def worth(chars: int) -> int:
+        return extraction._pages_worth(extraction.Page(1, "a", "x" * chars, None, None))
+
+    assert (worth(1), worth(3_856)) == (1, 8)
+    assert worth(extraction.FILE_TEXT_CHARS) == extraction.limits.EXTRACTION_PAGES_MAX
+
+
+async def test_prepare_reads_a_word_paper_whole(monkeypatch):
+    pages = await _prepared(monkeypatch, "doc")
+    assert [(p.number, p.text, p.image) for p in pages] == [(1, LINE.strip(), None)]
+
+
 def test_copying_carries_no_answers_and_answers_require_a_model_answer():
     record_question, record_answers = extraction.prompts.TOOLS
     question = record_question["function"]["parameters"]
@@ -1387,11 +1503,27 @@ async def test_a_run_refuses_more_page_images_than_it_reads(monkeypatch):
     assert refused.value.code == "too_many_pages"
 
 
+async def test_a_scan_past_the_page_images_left_goes_as_its_text(monkeypatch, tmp_path):
+    """A long scheme with scanned pages goes as its indexed text, rather than being
+    refused or sending more images than a run takes (a 71-page one stalled the provider)."""
+    monkeypatch.setattr(extraction.limits, "EXTRACTION_PAGES_MAX", 1)
+    doc = pymupdf.open()
+    page = doc.new_page()
+    buffer = io.BytesIO()
+    Image.new("L", (40, 40), 200).save(buffer, "PNG")
+    page.insert_image(page.rect, stream=buffer.getvalue())
+    path = tmp_path / "scan.pdf"
+    with doc:
+        doc.save(path)
+    [scan] = await _answer_files(monkeypatch, "pdf", path)
+    assert (scan.text, scan.images) == (LINE.strip(), ())
+
+
 @pytest.mark.parametrize(
     ("text", "code"),
     [
         ("", "no_indexed_text"),
-        ("x" * (extraction.ANSWER_TEXT_CHARS + 1), "answers_too_long"),
+        ("x" * (extraction.FILE_TEXT_CHARS + 1), "file_too_long"),
     ],
 )
 async def test_an_answer_file_with_no_usable_text_is_refused(monkeypatch, text, code):
