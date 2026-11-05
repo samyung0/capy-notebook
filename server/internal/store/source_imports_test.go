@@ -435,6 +435,55 @@ func TestSourceImportFinalizeRejectsReplacedAttemptAtomically(t *testing.T) {
 
 }
 
+// Finalizing re-admits the actor under the workspace and account locks it takes
+// first, whatever the worker's attempt token says.
+func TestSourceImportFinalizeRefusesAnActorWhoLostAccess(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx, _, job := newSourceImportTestJob(t, s, 400, 800)
+	attempt, err := s.AcquireSourceImport(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actor := newBlobTestUser(t, s, "u_import_actor")
+	if _, err := s.pool.Exec(ctx, `UPDATE source_import_jobs SET actor_user_id=$2 WHERE id=$1`, job.ID, actor); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role)
+		VALUES ($1,$2,'viewer')`, job.WorkspaceID, actor); err != nil {
+		t.Fatal(err)
+	}
+	finalize := func() error {
+		_, err := s.FinalizeSourceImport(ctx, job.ID, attempt.LeaseToken, "etag", "", "default")
+		return err
+	}
+	if err := finalize(); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("viewer finalize err=%v, want forbidden", err)
+	}
+	if _, err := s.pool.Exec(ctx, `DELETE FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, job.WorkspaceID, actor); err != nil {
+		t.Fatal(err)
+	}
+	if err := finalize(); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("removed member finalize err=%v, want not found", err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role)
+		VALUES ($1,$2,'editor')`, job.WorkspaceID, actor); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET suspended_at=now(), suspended_reason='test' WHERE id=$1`, actor); err != nil {
+		t.Fatal(err)
+	}
+	var locked *AccountLockedError
+	if err := finalize(); !errors.As(err, &locked) || locked.State != AccountSuspended {
+		t.Fatalf("suspended finalize err=%v, want suspended account", err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET suspended_at=NULL, suspended_reason=NULL WHERE id=$1`, actor); err != nil {
+		t.Fatal(err)
+	}
+	if err := finalize(); err != nil {
+		t.Fatalf("editor finalize err=%v", err)
+	}
+}
+
 func TestSourceImportExpiredLeaseCanBeReacquired(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx, _, job := newSourceImportTestJob(t, s, 400, 800)
