@@ -798,7 +798,8 @@ published (Epo 2026-11-05, `frozen_by`, `frozen_bytes`,
 doesn't list them. A publisher whose account is suspended or leaving stops nobody:
 staff still delete, which ends the charge, and republish, which moves the questions
 JSON's charge to whoever republished; an image the assignment already holds keeps its
-payer. They resolve for staff, whoever it went to and whoever holds an
+payer (Epo 2026-11-05), so that payer's purge takes it out of the paper. Frozen staff
+still delete an assignment, and Republish, which writes, is refused for them. They resolve for staff, whoever it went to and whoever holds an
 attempt at it (`frozenAssetReadable`), never another member, and they paste for
 nobody (`AdoptEditorAssets`).
 Members are only ever served this copy:
@@ -833,9 +834,9 @@ minutes, and what is on screen stays as it was, with no error, toast or status
 (`ItemRoom.unavailable`; `useLiveQuizQuestions` keeps its last questions, and a quiz
 attempt page its opening read). The quiz's page in a workspace stays too: the next
 refetch of the file list changes nothing while it is open (`alreadyOpen` in
-`CenterContent`). A read of the material answering 404 can still show the error page
-when the browser comes back online and its data is over five minutes old. An
-unassigned member of a visible quiz keeps normal access with its
+`CenterContent`). A refused read still ends what shows (Epo 2026-11-05), so a refresh
+of the material answering 404, as when the connection comes back and its last read is
+over 5 seconds old, shows the error page. An unassigned member of a visible quiz keeps normal access with its
 checks. A signed-out browser on a public or link workspace's share page is
 nobody in particular, so an assignee could open it there. An attempt made before
 the assignment stays readable by whoever took it.

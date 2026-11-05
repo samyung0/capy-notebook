@@ -220,9 +220,10 @@ func editableSourceFormat(name, kind string) string {
 // sourceLockTx uses the same lock order as material rooms and workspace writes.
 // The actors are checked against `actorWS` when given (a room's save, Q459;
 // "" when the room opened the file with no workspace), else against the
-// file's workspace. ws is "" for a file with no workspace, whose owner is its
-// payer.
-func (s *Store) sourceLockTx(ctx context.Context, tx pgx.Tx, fileID string, actors []string, edit bool, actorWS *string) (string, string, error) {
+// file's workspace. admitted: the actors' edits were admitted already, so a role
+// lost since does not refuse them (sourceActorsAllowed). ws is "" for a file
+// with no workspace, whose owner is its payer.
+func (s *Store) sourceLockTx(ctx context.Context, tx pgx.Tx, fileID string, actors []string, edit bool, actorWS *string, admitted bool) (string, string, error) {
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, fileID); err != nil {
 		return "", "", err
 	}
@@ -238,7 +239,7 @@ func (s *Store) sourceLockTx(ctx context.Context, tx pgx.Tx, fileID string, acto
 	}
 	// Access first, so a caller who cannot reach the file learns nothing about
 	// the owner's account; checked again under the account locks below.
-	if err = sourceActorsAllowed(ctx, tx, fileID, *actorWS, payer, actors, edit); err != nil {
+	if err = sourceActorsAllowed(ctx, tx, fileID, *actorWS, payer, actors, edit, admitted); err != nil {
 		return "", "", err
 	}
 	accounts := append([]string{owner}, actors...)
@@ -251,7 +252,7 @@ func (s *Store) sourceLockTx(ctx context.Context, tx pgx.Tx, fileID string, acto
 	if err = s.lockAccountSessionsTx(ctx, tx, accounts...); err != nil {
 		return "", "", err
 	}
-	return ws, owner, sourceActorsAllowed(ctx, tx, fileID, *actorWS, payer, actors, edit)
+	return ws, owner, sourceActorsAllowed(ctx, tx, fileID, *actorWS, payer, actors, edit, admitted)
 }
 
 // sourceOwnerTx reads a file's workspace ("" for none), its owner and its
@@ -290,8 +291,9 @@ func filePayer(ctx context.Context, q rowQueryer, fileID string) (string, error)
 // link (Epo 2026-10-27), and not while its account is deleted or pending
 // deletion; its own suspension is refused by the account check that follows.
 // A workspace file hidden from members is read only by who can edit it (Epo
-// 2026-11-03).
-func sourceActorsAllowed(ctx context.Context, q rowQueryer, fileID, ws, payer string, actors []string, edit bool) error {
+// 2026-11-03). admitted skips the workspace role, for edits a room admitted
+// already; the owner's lifecycle still refuses them.
+func sourceActorsAllowed(ctx context.Context, q rowQueryer, fileID, ws, payer string, actors []string, edit, admitted bool) error {
 	if ws != "" && !edit {
 		err := q.QueryRow(ctx, `SELECT hidden FROM files WHERE id=$1`, fileID).Scan(&edit)
 		if isNoRows(err) {
@@ -316,7 +318,7 @@ func sourceActorsAllowed(ctx context.Context, q rowQueryer, fileID, ws, payer st
 			continue
 		}
 		var allowed bool
-		err := q.QueryRow(ctx, `SELECT (w.user_id=$2 OR EXISTS(SELECT 1 FROM workspace_members m WHERE m.workspace_id=w.id AND m.user_id=$2 AND (NOT $3 OR m.role IN ('owner','editor'))) OR (w.privacy IN ('link','public') AND (NOT $3 OR w.share_role='editor') AND `+linkReachSQL("w", "$2")+`)) AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND (owner.suspended_at IS NULL OR owner.id=$2) FROM workspaces w JOIN users owner ON owner.id=w.user_id WHERE w.id=$1`, ws, actor, edit).Scan(&allowed)
+		err := q.QueryRow(ctx, `SELECT ($4 OR w.user_id=$2 OR EXISTS(SELECT 1 FROM workspace_members m WHERE m.workspace_id=w.id AND m.user_id=$2 AND (NOT $3 OR m.role IN ('owner','editor'))) OR (w.privacy IN ('link','public') AND (NOT $3 OR w.share_role='editor') AND `+linkReachSQL("w", "$2")+`)) AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND (owner.suspended_at IS NULL OR owner.id=$2) FROM workspaces w JOIN users owner ON owner.id=w.user_id WHERE w.id=$1`, ws, actor, edit, admitted).Scan(&allowed)
 		if err != nil {
 			return err
 		}
@@ -334,7 +336,7 @@ func sourceActorsAllowed(ctx context.Context, q rowQueryer, fileID, ws, payer st
 // checkpoint saves edits the room already admitted, so it takes sourceLockTx
 // alone (frozen and the limit are enforced at admission only).
 func (s *Store) sourceEditLockTx(ctx context.Context, tx pgx.Tx, fileID string, actor string) (string, string, error) {
-	ws, owner, err := s.sourceLockTx(ctx, tx, fileID, []string{actor}, true, nil)
+	ws, owner, err := s.sourceLockTx(ctx, tx, fileID, []string{actor}, true, nil, false)
 	if err != nil {
 		return "", "", HideOtherAccountLock(err, actor)
 	}
@@ -355,7 +357,7 @@ func (s *Store) SourceSession(ctx context.Context, actor, fileID string) (Source
 		return SourceSession{}, err
 	}
 	defer tx.Rollback(ctx)
-	ws, _, err := s.sourceLockTx(ctx, tx, fileID, []string{actor}, false, nil)
+	ws, _, err := s.sourceLockTx(ctx, tx, fileID, []string{actor}, false, nil, false)
 	if err != nil {
 		return SourceSession{}, err
 	}
@@ -444,11 +446,12 @@ func (s *Store) ViewSourceSession(ctx context.Context, fileID string) (BrowserSo
 // concurrent ACL, account or publication change, and a change committing just
 // after the check is missed either way. Its reads share one snapshot, so the
 // owner it reads is the one whose account state it tests. The save that
-// persists the edit rechecks every contributor's role and locked account
-// (deleted, deletion pending, suspended) under sourceLockTx, and ACL and
-// account changes evict the room; frozen accounts and the storage limit are
-// enforced at admission only, so they rely on this 5 s recheck window. Locking
-// here serialized every writer's recheck with every write in the workspace.
+// persists the edit rechecks every contributor's locked account (deleted,
+// deletion pending, suspended) under sourceLockTx; the role, frozen accounts
+// and the storage limit are enforced at admission only, so they rely on this
+// 5 s recheck window (and a lost role on the room closing that person, the
+// eviction outbox's revoke). Locking here serialized every writer's recheck
+// with every write in the workspace.
 func (s *Store) CheckSourceAccess(ctx context.Context, actor, fileID string, epoch int64, edit bool) error {
 	if actor == "" {
 		return ErrForbidden
@@ -469,7 +472,10 @@ func (s *Store) CheckSourceAccess(ctx context.Context, actor, fileID string, epo
 	if err != nil {
 		return err
 	}
-	if err = sourceActorsAllowed(ctx, tx, fileID, ws, payer, []string{actor}, edit); err != nil {
+	if err = sourceActorsAllowed(ctx, tx, fileID, ws, payer, []string{actor}, edit, false); err != nil {
+		if ws != "" && errors.Is(err, ErrNotFound) && sourceActorsAllowed(ctx, tx, fileID, ws, payer, []string{actor}, edit, true) == nil {
+			return ErrSourceRoleLost
+		}
 		return err
 	}
 	if err = checkAccountSessions(ctx, tx, false, owner, actor); err != nil {
@@ -533,7 +539,11 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 		return out, err
 	}
 	defer tx.Rollback(ctx)
-	ws, _, err := s.sourceLockTx(ctx, tx, fileID, in.ActorIDs, true, &in.WorkspaceID)
+	// A room's save stores what its room admitted: a role lost since does not
+	// refuse it (up to about 5 s of edits, Epo 2026-11-05), since that would
+	// discard the room under everyone else. An agent edit with no room to hold
+	// it (its one Operation) is admitted by this save, so its actor's role counts.
+	ws, _, err := s.sourceLockTx(ctx, tx, fileID, in.ActorIDs, true, &in.WorkspaceID, in.Operation == nil)
 	if err != nil {
 		return out, err
 	}

@@ -1852,6 +1852,9 @@ async fn edit_in_room(
     if let Some(known) = known(app, &tx, room, operation, undo_of).await? {
         return Ok(Some(known));
     }
+    // The actor's role again: it may have gone during the compute (Q634), and
+    // the store no longer asks.
+    access::assert_access(&tx, material_id, actor, crate::auth::Access::Write).await?;
     let mut receipt = material_receipt(
         &tx,
         request,
@@ -2011,6 +2014,24 @@ async fn source_in_room(
             return refused_unless_known(app, room, operation, undo_of, refusal.into()).await;
         }
     };
+    // The actor's role again: it may have gone during the engine's call, up to
+    // 2 minutes (Q634), and the store no longer asks.
+    let source = sources::SourceRoom {
+        file_id: request.target.id.clone(),
+        epoch: session.epoch,
+    };
+    if let Err(error) = app
+        .sources
+        .assert_access(&source, &request.actor_user_id, true)
+        .await
+    {
+        let refusal = if error.read_only() || matches!(error.status(), Some(403 | 404)) {
+            sources::SourceError::request(403, sources::edit::NOT_EDITABLE, None)
+        } else {
+            error
+        };
+        return refused_unless_known(app, room, operation, undo_of, refusal.into()).await;
+    }
     let payload = edit.undo.map(|update| UndoPayload {
         epoch: edit.epoch,
         issued_at,

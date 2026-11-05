@@ -121,6 +121,12 @@ impl SourceError {
         )
     }
 
+    /// The gateway's answer that only the actor's role refuses this: the file
+    /// and its owner stand (Q634).
+    pub fn role_lost(&self) -> bool {
+        self.status() == Some(404) && self.code() == Some("role_lost")
+    }
+
     /// lostSourceAccess: the writers lost access or the file is gone, not an
     /// account lock: the browser drops its drafts.
     pub fn lost_access(&self) -> bool {

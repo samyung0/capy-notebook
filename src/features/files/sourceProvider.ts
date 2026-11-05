@@ -39,7 +39,7 @@ export interface SourceProviderConfig {
   name: string;
   onAuthenticationFailed?: (event: { reason: string }) => void;
   /** The room closed; on an open socket the server closed only this room. */
-  onClose?: () => void;
+  onClose?: (event: { code: number; reason: string }) => void;
   onDisconnect?: () => void;
   /** A room update as it arrived (`RoomProvider`, Q549). */
   onFrame?: (update: Uint8Array) => void;

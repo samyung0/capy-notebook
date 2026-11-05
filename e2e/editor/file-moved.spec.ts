@@ -222,7 +222,7 @@ test('nothing remembers a heard Move: the file unreadable later shows the file e
   await visit(page, '/workspaces/ws_scenarios');
   await page.waitForTimeout(5500);
   await visit(page, `/workspaces/ws_scenarios?file=${FILE}`);
-  await expect(page.getByText(m.error_file_body())).toBeVisible();
+  await expect(page.getByText(m.error_not_found_body())).toBeVisible();
   await expect(page).toHaveURL(
     new RegExp(`/workspaces/ws_scenarios\\?file=${FILE}(&panel=\\w+)?$`)
   );

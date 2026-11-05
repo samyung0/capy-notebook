@@ -1669,6 +1669,24 @@ func TestAssignmentLockedPublisherLeavesStaffWritesOpen(t *testing.T) {
 	}
 }
 
+// Deleting is one of the things a frozen account keeps, for an assignment too:
+// frozen staff still delete one, and Republish, which writes, stays refused.
+func TestFrozenStaffDeleteAnAssignment(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-frozen-staff")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	created, err := f.s.CreateAssignment(ctx, f.editor, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pushFrozen(t, f.s, f.editor, f.ws.ID)
+	_, err = f.s.RepublishAssignment(ctx, f.editor, created.ID, frozenFixture(t)[:1], now)
+	wantOverQuotaLock(t, "frozen republish", err)
+	if err := f.s.DeleteAssignment(ctx, f.editor, created.ID); err != nil {
+		t.Fatalf("frozen delete err=%v", err)
+	}
+}
+
 func TestAssignmentSweepPassesOverABadRow(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-sweep-bad")
 	ctx := context.Background()

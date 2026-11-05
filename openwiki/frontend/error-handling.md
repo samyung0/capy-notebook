@@ -458,9 +458,10 @@ disable their create controls, Schedule hides event and label Edit, the Canvas
 page is read-only, the dashboard calendar stops creating slots, and their page
 headers show the same red triangle (`AccountStatusButton`) that opens the
 storage details dialog. Flashcard study and quiz attempts only disable
-cloning. A room that turns read-only while open for a storage or frozen
-refusal (`room-read-only`, or a `collaboration-read-only` refusal on
-reconnect) drops the note or source editor to view mode under a grey strip
+cloning. A room that turns read-only while open for a storage, frozen or
+lapsed-plan refusal or a demotion (`room-read-only` on the writer's next update,
+or a read token or `collaboration-read-only` refusal on rejoining) drops the
+note or source editor to view mode under a grey strip
 reading "This file is read-only now" and discards its unsaved edits (a source
 also clears its local drafts without ever reporting Saved, and shows its
 latest saved state through the viewer's session); what was saved before
@@ -775,8 +776,13 @@ not for the account itself; `lostAccess` on the failure message) clears the
 drafts and reloads to the
 file-missing or no-access panel, with no download: the user may no longer see
 that content. A storage or frozen refusal at save drops every writer to view
-under the read-only strip. A trashed or deleted file, or lost access, replaces
-the editor with the file-missing or no-access panel. Drafts are written as
+under the read-only strip. A refused read (any 4xx but 408 and 429) replaces the
+page with "This item is unavailable", which never says blocked rather than gone.
+A room's refusal alone keeps the page (Epo 2026-11-05): a reader's as it was, an
+editor's mounted and read-only under the grey "You no longer have access" strip
+with no save status; with no 4403 close before it, the page also asks for its
+read, which may refuse (Q644; see
+[authorization](../authorization-permissions-lifecycles.md)). Drafts are written as
 each local edit happens, by a dedicated drafts worker, with the whole document
 once per offline episode and at unmount (see
 [plate-editor.md](plate-editor.md#offline-editing-and-drafts)). Draft storage

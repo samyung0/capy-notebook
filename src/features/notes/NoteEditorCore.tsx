@@ -36,6 +36,7 @@ import {
   getMaterialCollaborationToken,
   type useMaterialDiscussions,
 } from '@/api/hooks';
+import { queryClient } from '@/api/queryClient';
 import type {
   Material,
   MaterialCollaborationToken,
@@ -115,6 +116,7 @@ import {
 import { announceChildrenReady } from './childrenReady';
 import {
   COLLABORATION_READ_ONLY_REASON,
+  isDiscardNotice,
   type MaterialDocumentStats,
   type MaterialLimitCode,
   materialLimitMessage,
@@ -672,7 +674,7 @@ export function NoteEditorCore({
   onSaveDelayed?: (delayed: boolean) => void;
   /** The note was trashed or deleted, or this user lost access to it (its
    * stored edits went too, except for an account lock). */
-  onUnavailable?: (kind: 'notFound' | 'forbidden') => void;
+  onUnavailable?: () => void;
   /** The device copy this mount starts from: its document already holds the
    * state, and the JOIN names its version, so the room answers the
    * difference. Plate still stays hidden until the first sync (C5). */
@@ -771,6 +773,10 @@ export function NoteEditorCore({
   const [offlineLimit, setOfflineLimit] = useState(false);
   // The room refuses this build (the version gate): no reconnect, read-only.
   const [outdated, setOutdated] = useState(false);
+  // The room refused this person on rejoining.
+  const [accessLost, setAccessLost] = useState(false);
+  // Closed for this person's access change (4403), until it syncs again.
+  const accessChanged = useRef(false);
   const stale = useRef(false);
   const rejected = useRef(false);
   // After the first sync a dropped connection keeps the editor on screen.
@@ -879,7 +885,8 @@ export function NoteEditorCore({
   // A paused editor reports nothing; a standby one leaves the header's status
   // as it was, the paused note above it still on screen.
   const statusChange = useRef(onEditorStatusChange);
-  statusChange.current = phase === 'paused' ? undefined : onEditorStatusChange;
+  statusChange.current =
+    phase === 'paused' || accessLost ? undefined : onEditorStatusChange;
   // Stored steps of never-accepted sessions go through the draft send while
   // the room joins (Q319): view-only until it settles. Past DRAFT_SEND_WAIT_MS
   // the note applies them and edits on, nothing live and every JOIN waiting
@@ -1325,6 +1332,12 @@ export function NoteEditorCore({
 
   const handleStatelessEvent = useCallback(
     (payload: string) => {
+      // It may be gone: the page's read says, and a refusal ends what shows
+      // (Epo 2026-11-05).
+      if (isDiscardNotice(payload))
+        void queryClient.invalidateQueries({
+          queryKey: qk.material(material.id),
+        });
       const event = parseCollaborationEvent(payload);
       if (!event) return;
       if (
@@ -1509,7 +1522,19 @@ export function NoteEditorCore({
           ).catch((error) => console.warn('Draft storage failed:', error));
           void recorder.current?.discard();
         }
-        reportUnavailable.current?.(refusal);
+        // Not told as an access change, it may be gone: the page's read says,
+        // and a refused one ends what shows (Epo 2026-11-05, Q644).
+        if (!accessChanged.current)
+          void qc.invalidateQueries({ queryKey: qk.material(material.id) });
+        // The note stays as it is, read-only under a strip (Epo 2026-11-05):
+        // nothing rejoins, and it has no save status.
+        stale.current = true;
+        reconnector.current?.dispose();
+        roomProvider(editorRef.current)?.disconnect();
+        statusChange.current?.(null);
+        statusChange.current = undefined;
+        setAccessLost(true);
+        reportUnavailable.current?.();
       }
     };
     // While its never-accepted steps are held, a JOIN waits for the draft
@@ -1543,6 +1568,7 @@ export function NoteEditorCore({
           },
           onSyncChange: ({ isSynced }) => {
             roomSynced.current = isSynced;
+            if (isSynced) accessChanged.current = false;
             // A bind Plate tried before the first sync happens now.
             if (isSynced) {
               reportJoinFailed.current?.(false);
@@ -1604,7 +1630,8 @@ export function NoteEditorCore({
                     beforeJoin,
                     name: collaborationToken.room,
                     onAuthenticationFailed,
-                    onClose: () => {
+                    onClose: ({ code }: { code: number }) => {
+                      if (code === 4403) accessChanged.current = true;
                       roomSynced.current = false;
                       markSlowed(false);
                       reconnector.current?.closed(
@@ -2370,6 +2397,7 @@ export function NoteEditorCore({
     offlineLimit ||
     copyFull ||
     outdated ||
+    accessLost ||
     phase === 'paused' ||
     draftsSending ||
     lateMerging;
@@ -2458,6 +2486,7 @@ export function NoteEditorCore({
                                 offlineLimit ||
                                 copyFull ||
                                 outdated ||
+                                accessLost ||
                                 draftsSending
                               }
                               shouldShowStats={shouldShowDocumentStats(

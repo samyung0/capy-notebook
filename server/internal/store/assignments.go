@@ -695,11 +695,12 @@ func (s *Store) assignmentPayer(ctx context.Context, id string) (string, *string
 	return wsID, payer, err
 }
 
-// lockAssignmentPayerStaffTx admits staff to a write that moves a frozen copy's
-// charge off its payer. The payer's row is held with the others in id order, as
-// the meter's foreign key needs it, but their account state decides nothing: a
-// publisher suspended or leaving must not hide the assignment from the class's staff.
-func (s *Store) lockAssignmentPayerStaffTx(ctx context.Context, tx pgx.Tx, wsID, actorID string, payer *string) error {
+// lockAssignmentPayerRowsTx holds the workspace and, in id order, the rows of the
+// owner, the actor and whoever a frozen copy is charged to, for a write that moves
+// that charge. The meter's foreign key needs the payer's row held, but their account
+// state decides nothing: a publisher suspended or leaving must not hide the
+// assignment from the class's staff.
+func (s *Store) lockAssignmentPayerRowsTx(ctx context.Context, tx pgx.Tx, wsID, actorID string, payer *string) error {
 	ownerID, err := s.storageOwnerTx(ctx, tx, wsID)
 	if err != nil {
 		return err
@@ -708,10 +709,8 @@ func (s *Store) lockAssignmentPayerStaffTx(ctx context.Context, tx pgx.Tx, wsID,
 	if payer != nil {
 		ids = append(ids, *payer)
 	}
-	if _, err := tx.Exec(ctx, `SELECT 1 FROM users WHERE id=ANY($1::text[]) ORDER BY id FOR NO KEY UPDATE`, ids); err != nil {
-		return err
-	}
-	return s.lockAssignmentStaffTx(ctx, tx, wsID, actorID)
+	_, err = tx.Exec(ctx, `SELECT 1 FROM users WHERE id=ANY($1::text[]) ORDER BY id FOR NO KEY UPDATE`, ids)
+	return err
 }
 
 // assignmentOpenSQL is a published assignment row a still taking work: neither
@@ -1012,7 +1011,10 @@ func (s *Store) RepublishAssignment(ctx context.Context, actorID, id string, qs 
 		return Assignment{}, err
 	}
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
-		if err := s.lockAssignmentPayerStaffTx(ctx, tx, wsID, actorID, payer); err != nil {
+		if err := s.lockAssignmentPayerRowsTx(ctx, tx, wsID, actorID, payer); err != nil {
+			return err
+		}
+		if err := s.lockAssignmentStaffTx(ctx, tx, wsID, actorID); err != nil {
 			return err
 		}
 		// The counters before the row, as reconciliation takes them.
@@ -1244,8 +1246,19 @@ func (s *Store) DeleteAssignment(ctx context.Context, actorID, id string) error 
 		return err
 	}
 	return s.inTx(ctx, func(tx pgx.Tx) error {
-		if err := s.lockAssignmentPayerStaffTx(ctx, tx, wsID, actorID, payer); err != nil {
+		if err := s.lockAssignmentPayerRowsTx(ctx, tx, wsID, actorID, payer); err != nil {
 			return err
+		}
+		// Deleting is one of the things a frozen account keeps (Epo 2026-11-05).
+		if _, err := s.lockWorkspaceEditorRecoveryTx(ctx, tx, wsID, actorID); err != nil {
+			return err
+		}
+		staff, err := s.assignmentStaff(ctx, tx, actorID, wsID)
+		if err != nil {
+			return err
+		}
+		if !staff {
+			return ErrNotFound
 		}
 		// The counter before the row, as reconciliation takes them.
 		if payer != nil {

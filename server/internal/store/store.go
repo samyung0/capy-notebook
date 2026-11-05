@@ -74,6 +74,10 @@ var (
 	ErrCheckpointMoved = fmt.Errorf("%w: the source checkpoint moved", ErrConflict)
 	// A source checkpoint for an editing epoch that ended (a handoff).
 	ErrSourceEpochChanged = fmt.Errorf("%w: the source editing epoch changed", ErrConflict)
+	// An access check refused by the actor's role alone: the file and its owner
+	// stand, so the collaboration service closes that person as a revoke does
+	// (Q634). A caller reads it as not found.
+	ErrSourceRoleLost = fmt.Errorf("%w: the role no longer covers it", ErrNotFound)
 	// A source checkpoint request that can never be stored (malformed state,
 	// effects or seed binding); retrying it would fail the same way.
 	ErrInvalidCheckpoint = errors.New("invalid source checkpoint")

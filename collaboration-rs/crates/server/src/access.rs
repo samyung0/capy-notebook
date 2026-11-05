@@ -10,6 +10,8 @@ use crate::auth::Access;
 pub const NOT_FOUND_REASON: &str = "collaboration-not-found";
 pub const FORBIDDEN_REASON: &str = "collaboration-forbidden";
 pub const READ_ONLY_REASON: &str = "collaboration-read-only";
+/// Why a connection closed with 4403, its person's role gone (Q634).
+pub const ACCESS_CHANGED: &str = "collaboration access changed";
 
 /// Go's renewalTolerance: an entitling period stays live this long past
 /// current_period_end, so a late renewal webhook never lapses a paying owner.
@@ -23,6 +25,10 @@ pub enum AccessError {
     NotFound(String),
     #[error("{0}")]
     Forbidden(String),
+    /// The actor's role no longer covers it. A join hears it as forbidden; an
+    /// open connection closes with 4403 and no notice (Q634).
+    #[error("{0}")]
+    Revoked(String),
     /// The room turned read-only for this writer: the editor drops to view.
     #[error("{0}")]
     ReadOnly(String),
@@ -35,7 +41,7 @@ impl AccessError {
     pub fn reason(&self) -> Option<&'static str> {
         match self {
             AccessError::NotFound(_) => Some(NOT_FOUND_REASON),
-            AccessError::Forbidden(_) => Some(FORBIDDEN_REASON),
+            AccessError::Forbidden(_) | AccessError::Revoked(_) => Some(FORBIDDEN_REASON),
             AccessError::ReadOnly(_) => Some(READ_ONLY_REASON),
             AccessError::Database(_) => None,
         }
@@ -50,7 +56,7 @@ impl AccessError {
     pub fn incident_reason(&self) -> &'static str {
         match self {
             AccessError::NotFound(_) => "not_found",
-            AccessError::Forbidden(_) => "forbidden",
+            AccessError::Forbidden(_) | AccessError::Revoked(_) => "forbidden",
             AccessError::ReadOnly(_) => "read_only",
             AccessError::Database(_) => "error",
         }
@@ -149,6 +155,9 @@ pub struct LiveAccess {
     pub editor: bool,
     pub frozen: bool,
     pub full: bool,
+    /// Hidden from this actor unless they edit: the material itself, or a quiz
+    /// assigned to this viewer.
+    pub hidden: bool,
 }
 
 impl LiveAccess {
@@ -171,9 +180,26 @@ fn rank(role: &str) -> u8 {
 }
 
 /// `liveCollaborationAccess`: the actor's role on the material and the
-/// read-only narrowing. An embedded item (a note's quiz or set) is reachable
-/// exactly as its note is (Go `materialEffectiveAccess`).
+/// read-only narrowing; a material hidden from them is refused.
 pub async fn live_access<C: GenericClient>(
+    client: &C,
+    material_id: &str,
+    actor: &str,
+) -> Result<LiveAccess, AccessError> {
+    let live = live_role(client, material_id, actor).await?;
+    // A material hidden from members, or a quiz assigned to this viewer, is
+    // the owners' and editors' alone (Go's materialEffectiveAccess, Epo
+    // 2026-11-03, 2026-11-04).
+    if live.hidden && !live.editor {
+        return Err(AccessError::Revoked("material access was revoked".into()));
+    }
+    Ok(live)
+}
+
+/// The actor's role on the material, refused only when they hold none. An
+/// embedded item (a note's quiz or set) is reachable exactly as its note is
+/// (Go `materialEffectiveAccess`).
+pub async fn live_role<C: GenericClient>(
     client: &C,
     material_id: &str,
     actor: &str,
@@ -277,16 +303,13 @@ pub async fn live_access<C: GenericClient>(
             shared
         }
     };
-    // Viewers hold read channels only; anyone else holds nothing. A material
-    // hidden from members, or a quiz assigned to this viewer, is the owners' and
-    // editors' alone (Go's materialEffectiveAccess, Epo 2026-11-03, 2026-11-04).
-    if rank(&role) < rank("viewer")
-        || (row.get::<_, bool>("hidden") && rank(&role) < rank("editor"))
-    {
-        return Err(AccessError::Forbidden("material access was revoked".into()));
+    // Viewers hold read channels only; anyone else holds nothing.
+    if rank(&role) < rank("viewer") {
+        return Err(AccessError::Revoked("material access was revoked".into()));
     }
     Ok(LiveAccess {
         editor: rank(&role) >= rank("editor"),
+        hidden: row.get("hidden"),
         frozen: row.get::<_, bool>("payer_frozen")
             || row.get::<_, bool>("payer_locked")
             || row.get::<_, bool>("actor_frozen"),
@@ -303,22 +326,9 @@ pub async fn assert_access<C: GenericClient>(
 ) -> Result<LiveAccess, AccessError> {
     let live = live_access(client, material_id, actor).await?;
     if requested == Access::Write && live.access() != Access::Write {
-        return Err(AccessError::ReadOnly("collaboration access changed".into()));
+        return Err(AccessError::ReadOnly(ACCESS_CHANGED.into()));
     }
     Ok(live)
-}
-
-/// A writer in a store's snapshot must still hold an editing role (frozen
-/// and full are enforced at admission, so their admitted updates save).
-pub async fn assert_editor<C: GenericClient>(
-    client: &C,
-    material_id: &str,
-    actor: &str,
-) -> Result<(), AccessError> {
-    if !live_access(client, material_id, actor).await?.editor {
-        return Err(AccessError::Forbidden("material access was revoked".into()));
-    }
-    Ok(())
 }
 
 /// The advisory lock that serializes a material's Yjs writes.
@@ -446,6 +456,7 @@ mod tests {
             editor: true,
             frozen: false,
             full: false,
+            hidden: false,
         };
         assert_eq!(open.access(), Access::Write);
         for narrowed in [
@@ -471,6 +482,10 @@ mod tests {
         );
         assert_eq!(
             AccessError::Forbidden(String::new()).reason(),
+            Some(FORBIDDEN_REASON)
+        );
+        assert_eq!(
+            AccessError::Revoked(String::new()).reason(),
             Some(FORBIDDEN_REASON)
         );
         assert_eq!(

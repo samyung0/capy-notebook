@@ -24,9 +24,21 @@ export const COLLABORATION_OUTDATED_REASON = 'collaboration-outdated';
  * into a new session (`LATE_REASON` in collaboration-rs socket.rs). */
 export const COLLABORATION_LATE_REASON = 'collaboration-late';
 
-/** Why a room is read-only for this writer, when the room says: the stored
- * document holds a block this version cannot edit (Epo 2026-10-13). */
-export type ReadOnlyCode = 'unsupported_block';
+/** Why a room is read-only for this writer: the room says the stored document
+ * holds a block this version cannot edit (Epo 2026-10-13), or it refused this
+ * reader, whose page stays under a strip saying so (Epo 2026-11-05). */
+export type ReadOnlyCode = 'unsupported_block' | 'access_lost';
+
+/** Whether a room message is the notice of a discard, which comes just before
+ * its close and may mean the item is gone. One naming no mode is a discard. */
+export function isDiscardNotice(payload: string) {
+  try {
+    const raw = JSON.parse(payload) as { evictionId?: unknown; mode?: unknown };
+    return typeof raw.evictionId === 'string' && raw.mode !== 'drain';
+  } catch {
+    return false;
+  }
+}
 
 /** The code of a `room-read-only` notice; none for a plain one. */
 export function readOnlyCode(

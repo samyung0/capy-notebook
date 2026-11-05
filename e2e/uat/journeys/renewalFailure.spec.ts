@@ -177,7 +177,10 @@ const banner = (page: Page, title: string) =>
 async function dashboard(run: UatRun, page: Page) {
   await page.goto(run.env.appUrl);
   await expect(
-    page.getByRole('heading', { name: m.workspaces_title() })
+    page.getByRole('heading', {
+      includeHidden: true,
+      name: m.workspaces_title(),
+    })
   ).toBeVisible();
   return refocus(page);
 }

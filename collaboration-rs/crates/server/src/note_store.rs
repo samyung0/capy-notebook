@@ -295,9 +295,9 @@ fn collected_deletes(row: &tokio_postgres::Row, doc: Doc) -> Result<IdSet, Store
     }
 }
 
-/// One store: rechecks every contributor in the snapshot, then appends the
-/// row and advances `stored_version`, with the note sessions' changed rows
-/// (`sessions.rs`) and the agent steps the room admitted (`receipts`, Q402)
+/// One store: rechecks the accounts of every contributor in the snapshot, then
+/// appends the row and advances `stored_version`, with the note sessions'
+/// changed rows (`sessions.rs`) and the agent steps the room admitted (`receipts`, Q402)
 /// in the same transaction, so a held deletion and a step's receipt are
 /// durable with the state that holds them. Returns the new version.
 #[allow(clippy::too_many_arguments)]
@@ -323,12 +323,11 @@ pub async fn append(
     let mut session_users: Vec<String> = sessions.rows.iter().map(|row| row.user.clone()).collect();
     session_users.sort();
     session_users.dedup();
+    // Frozen, the storage limit and the role are enforced at admission, so
+    // updates already admitted save even if their writer froze or lost the role
+    // since (up to about 5 s of them, Epo 2026-11-05): refusing them would
+    // discard the room under everyone else.
     access::lock_boundary(&tx, material_id, actors, &session_users).await?;
-    // Frozen is enforced at admission, so updates already admitted save even
-    // if their writer froze since; a writer must still hold its role.
-    for actor in actors {
-        access::assert_editor(&tx, material_id, actor).await?;
-    }
     let current = tx
         .query(
             // No key update: a client id's first-write insert checks its key
