@@ -1089,6 +1089,9 @@ and reads them in one place (`plate::map_value`, behind
 refuses a crafted update that puts an unknown key, a wrong type, an oversize
 value or another shape into one (`figure_map.rs`; where the relaxed check for
 a merge's kept states runs: [embeds](../embeds.md#live-figures)).
+The write is no person's edit (`writeNoEdit`): it starts no checkpoint and brings
+no trailing paragraph, so a co-editor's graph edit adds none from everyone with
+the note open.
 
 Standalone mindmaps and diagrams render without Plate. View
 (`MermaidMaterialView`) draws the block's `MermaidView` straight from the
@@ -2474,7 +2477,7 @@ copy (`src/features/collaboration/deviceCopy.ts`, stored by
 Epo decided on 2026-11-04 that a note opens one way (`NoteBody`). It paints at
 once, static and read-only: from the device copy when there is one, before its
 material read answers and while that read cannot answer (the browser offline, the
-server down; a refusal shows its panel), else the stored projection, else a
+server down, a timeout or rate limit; a refusal shows its panel), else the stored projection, else a
 wordless skeleton (`NoteSkeleton`). Offline with nothing to paint it reads "Waiting
 for connection" (C9).
 

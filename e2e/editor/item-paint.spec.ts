@@ -106,9 +106,9 @@ test('a set paints its cards with nothing to press until its room syncs', async 
   await expect(add).toBeVisible({ timeout: 30_000 });
   await holdTokens(page, CARDS);
   await page.reload();
-  await expect(page.getByRole('heading', { level: 1 })).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'Scenario flashcards' })
+  ).toBeVisible({ timeout: 30_000 });
   await expect(status(page)).toHaveAttribute('data-save-state', 'opening');
   await expect(add).toHaveCount(0);
   await expect.poll(() => copies(page, CARDS)).toEqual(['content', 'read']);
@@ -207,8 +207,7 @@ test("an item's edits past the expiry leave it open, in a toast until dismissed"
   expect(download.suggestedFilename()).toMatch(/\.tsv$/);
   const path = await download.path();
   expect(readFileSync(path, 'utf8')).toContain('Old front');
-  const close = toast.getByRole('button', { name: m.action_close() });
-  if (await close.isVisible()) await close.click();
+  // Its action closes it too, and the rows go with it.
   await expect(toast).toHaveCount(0);
   await expect.poll(rows).toBe(0);
 });

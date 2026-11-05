@@ -377,8 +377,9 @@ test.describe('study progress', () => {
       session: { group: 'workspace', workspaceId: ws.id },
     });
     expect(checkBody.session.items).toHaveLength(2);
+    // A right choice reads Right; only a wrong one reads Your answer.
     await expect(
-      ownerPage.getByText(m.question_ui_your_answer())
+      ownerPage.getByText(m.question_ui_result_right(), { exact: true })
     ).toBeVisible();
     // Next after the last item opens the result: the question right with
     // its mark, the card rated Good.

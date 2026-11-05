@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
 import { expect, test } from '../fixtures/actors';
-import { expectEditorLive } from '../helpers/editor';
+import { clickTextEnd, expectEditorLive } from '../helpers/editor';
 import { openWorkspaceMaterial } from '../helpers/workspace';
 
 /* Against the real collaboration server (Epo 2026-11-04): opening writes
@@ -110,8 +110,7 @@ test('a reopen paints from the device copy before its token, then edits on', asy
   await openWorkspaceMaterial(ownerPage, workspaceId, note.id);
   await expectEditorLive(ownerPage);
   const editor = ownerPage.locator('[contenteditable="true"]').first();
-  await editor.getByText(body, { exact: true }).click();
-  await ownerPage.keyboard.press('End');
+  await clickTextEnd(editor.getByText(body, { exact: true }));
   await ownerPage.keyboard.type(' and typed');
   await expect(ownerPage.getByTestId('editor-save-state')).toHaveAttribute(
     'data-save-state',
@@ -133,8 +132,7 @@ test('a reopen paints from the device copy before its token, then edits on', asy
   await expect(editor).toBeHidden();
   release();
   await expectEditorLive(ownerPage);
-  await editor.getByText(`${body} and typed`).click();
-  await ownerPage.keyboard.press('End');
+  await clickTextEnd(editor.getByText(`${body} and typed`));
   await ownerPage.keyboard.type(', then more');
   await expect
     .poll(

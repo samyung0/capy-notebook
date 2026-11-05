@@ -9,6 +9,7 @@ import {
 } from '../helpers/office';
 import { showChatHistory, showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
+import { hideScenarioPanel } from './helpers';
 
 declare global {
   interface Window {
@@ -2042,6 +2043,8 @@ test('PPTX speaker notes start hidden, and one remembered toggle serves view and
     await expect(showNotes).toBeVisible();
   };
 
+  // The Notes button sits in the viewer's corner, under the mock panel.
+  await hideScenarioPanel(page);
   // View mode: the Notes button and View › Show speaker notes flip one state.
   await expect(notesButton).toBeVisible();
   await expect(viewNotes).toHaveCount(0);

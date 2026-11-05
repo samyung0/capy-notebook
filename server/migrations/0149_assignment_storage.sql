@@ -18,6 +18,7 @@ BEGIN
   RETURN NULL;
 END;
 $$;
+REVOKE EXECUTE ON FUNCTION account_assignment_storage() FROM PUBLIC;
 
 -- A row starts with no copy: only an update or its deletion moves the charge.
 CREATE TRIGGER assignments_storage_after

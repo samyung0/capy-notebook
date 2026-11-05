@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { MathfieldElement } from 'mathlive';
 import { m } from '../i18n';
-import { openEditorNote } from './helpers';
+import { hideScenarioPanel, openEditorNote } from './helpers';
 
 test('formula menus reopen after outside dismissal and replacing the editor', async ({
   page,
@@ -32,7 +32,11 @@ test('formula menus reopen after outside dismissal and replacing the editor', as
         field.getByRole('menuitem', { name: /Absolute Value/ })
       ).toBeVisible();
     }
-    await page.mouse.click(420, 350);
+    // Just above the formula, on the menu's scrim, which closes only the menu.
+    // A fixed point moved with the panels (Epo 2026-11-04); further out, the
+    // click leaves the formula.
+    const box = await field.boundingBox();
+    await page.mouse.click(box!.x + 40, box!.y - 9);
     await expect(field.getByRole('menu')).toHaveCount(0);
     await toggle.click();
     await expect(field.getByRole('menu')).toHaveCount(1);
@@ -167,6 +171,8 @@ test('text caret stays on the math baseline and physical arrow shortcuts survive
     'mat_note_bio_feature_matrix',
     'Editor feature matrix'
   );
+  // Over the equation, a click would scroll the note between the two carets.
+  await hideScenarioPanel(page);
   await editor
     .getByRole('button', { exact: true, name: m.editor_equation() })
     .last()
