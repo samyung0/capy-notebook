@@ -44,6 +44,35 @@ const report = {
 };
 const rows = () => renderToStaticMarkup(<QuizRunRows waits={[]} />);
 
+it('names the file a quiz stopped for and offers another try', () => {
+  read.value = { data: run({}) };
+  const html = renderToStaticMarkup(
+    <QuizRunRows
+      waits={[
+        {
+          answers: [],
+          failures: [{ key: 'k', name: 'scan.pdf', reason: 'Not added' }],
+          paper: [],
+          status: 'failed',
+          wait: {
+            announced: false,
+            answers: [],
+            id: 'w',
+            paper: [],
+            title: 'Past paper',
+            workspaceId: 'ws_1',
+          },
+        },
+      ]}
+    />
+  );
+  expect(html).toContain(m.make_quiz_panel_heading({ count: 2, done: 1 }));
+  expect(html).toContain(
+    m.source_import_file_error({ name: 'scan.pdf', reason: 'Not added' })
+  );
+  expect(html).toContain(m.make_quiz_try_again());
+});
+
 it('shows a running run with how far it has got', () => {
   read.value = { data: run({}) };
   const html = rows();

@@ -92,25 +92,32 @@ function QuizRunRow({ run: picked }: { run: QuizRun }) {
   );
 }
 
-/** Files still reading after Continue, then the way back to the dialog's pages. */
+/** Files read after Continue, with the way back to the dialog's pages; or what failed,
+ * with the way back to its files. Reading shows here only for files with no upload row. */
 function QuizWaitRow({ state }: { state: QuizWaitState }) {
+  const { failures, status, wait } = state;
   return (
     <li
       className="flex flex-col gap-2 border-divider border-b px-4 py-3 last:border-0"
-      data-quiz-wait={state.reading ? 'reading' : 'ready'}
+      data-quiz-wait={status}
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <span className="truncate font-medium text-sm">
-            {state.wait.title}
-          </span>
-          {!state.reading && (
+          <span className="truncate font-medium text-sm">{wait.title}</span>
+          {status === 'ready' && (
             <span className="t-meta text-fg-muted">
               {m.make_quiz_files_ready()}
             </span>
           )}
+          {failures.map(({ key, name, reason }) => (
+            <span className="t-meta break-words text-tint-error-fg" key={key}>
+              {name === wait.title
+                ? reason
+                : m.source_import_file_error({ name, reason })}
+            </span>
+          ))}
         </div>
-        {!state.reading && (
+        {status === 'ready' && (
           <Button
             iconRight="navigationForward"
             onClick={() => openQuizWait(state)}
@@ -121,8 +128,18 @@ function QuizWaitRow({ state }: { state: QuizWaitState }) {
             {m.make_quiz_choose_pages_action()}
           </Button>
         )}
+        {status === 'failed' && (
+          <Button
+            onClick={() => openQuizWait(state)}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {m.make_quiz_try_again()}
+          </Button>
+        )}
       </div>
-      {state.reading && (
+      {status === 'reading' && (
         <div className="flex items-center gap-3">
           <ProgressBar className="flex-1" height={4} indeterminate />
           <span className="t-meta shrink-0 text-fg-muted" role="status">
@@ -147,7 +164,8 @@ export function QuizRunRows({ waits }: { waits: QuizWaitState[] }) {
         <span className="t-label text-fg-muted">
           {m.make_quiz_panel_heading({
             count: runs.length + waits.length,
-            done,
+            done:
+              done + waits.filter((state) => state.status === 'failed').length,
           })}
         </span>
       </div>

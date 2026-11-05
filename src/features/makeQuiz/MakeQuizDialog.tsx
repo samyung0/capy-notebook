@@ -454,7 +454,11 @@ export function MakeQuizDialog({
   });
   const canContinue =
     paper.length > 0 && paper.every(usable) && answers.every(usable);
-  const waitingFile = ({ fileId, key }: Picked) => ({ fileId, key });
+  const waitingFile = ({ fileId, key, name }: Picked) => ({
+    fileId,
+    key,
+    name,
+  });
 
   // Which menu asked for the upload, kept past the menu closing.
   const uploadFor = useRef<'more' | 'paper'>('paper');

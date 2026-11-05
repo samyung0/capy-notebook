@@ -255,9 +255,15 @@ step is an address, `?make=files`, `?make=pages&paper=…&answers=…&quizFile=�
   no file to have failed; one that failed or was stored without parsing holds it until
   removed. With every file read it goes on to the pages. With any still reading (Epo
   2026-11-05, "upload might take a while") the dialog closes and the upload panel follows
-  them (`quizWaits.ts`): a toast and the panel's row offer Choose pages once they are read,
-  anywhere in the app. The wait lives in the page, so a reload loses it, and the uploads
-  carry on into Files. An
+  them (`quizWaits.ts`), one row at a time: the files' upload rows while they read, then the
+  quiz's row, and a toast with it, offering Choose pages, anywhere in the app. Any file that
+  fails ends the wait: its reason goes on the quiz's row, with no upload toast, and Try again
+  reopens the files step with those still good. The panel's close hides a wait while it
+  reads; its row comes back when it ends. The wait's file names and ids stay in `localStorage`
+  (`capy.quiz.waits`, with the account they belong to, dropped when another signs in), so a
+  reload finds it and takes the statuses from the server; a file whose bytes a reload cut off
+  has no id, so it counts as failed. Another tab that loads meanwhile reads the same list, so
+  a file still sending there shows as failed in that tab. An
   upload has the Add dialog's checks: size, compression, name length and the workspace's file
   room. One that would be stored with no text (a password, too many pages, or no credits for
   its parse) isn't sent: an error names it and its row goes.

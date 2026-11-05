@@ -30,7 +30,8 @@ export function isPanelRun(id: string) {
 /** Where a run's links go: the router lives above the panel, which stays outside it. */
 export interface QuizRunLinks {
   openQuiz: (workspaceId: string, quizId: string) => void;
-  pickAgain: (run: QuizRun) => void;
+  /** To its pages, or to the files when `step` says so. */
+  pickAgain: (run: QuizRun & { step?: 'files' }) => void;
   review: (workspaceId: string, runId: string) => void;
 }
 

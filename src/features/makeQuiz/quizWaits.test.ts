@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { waitingFileState } from './quizWaits';
+import { quizWaitStatus, waitingFileState } from './quizWaits';
 
 vi.mock('@/api/hooks', () => ({ filesQuery: vi.fn() }));
 
@@ -8,7 +8,7 @@ const file = (status: 'failed' | 'processing' | 'ready', indexed: boolean) => [
 ];
 
 it('follows a chosen file from its upload to its text', () => {
-  const row = { key: 'k' };
+  const row = {};
   const uploading = { stage: 'uploading' as const };
   const sent = { fileId: 'f', stage: 'added' as const };
   expect(waitingFileState(row, uploading, [])).toBe('reading');
@@ -21,9 +21,16 @@ it('follows a chosen file from its upload to its text', () => {
   expect(waitingFileState(row, sent, file('failed', false))).toBe('failed');
 });
 
-it('keeps a file by its id once its upload row has gone, and drops one removed', () => {
+it('keeps a file by its id once its upload row has gone, as after a reload', () => {
   expect(
-    waitingFileState({ fileId: 'f', key: 'k' }, undefined, file('ready', true))
+    waitingFileState({ fileId: 'f' }, undefined, file('ready', true))
   ).toBe('read');
-  expect(waitingFileState({ key: 'k' }, undefined, [])).toBe('gone');
+  expect(waitingFileState({}, undefined, [])).toBe('gone');
+});
+
+it('ends the wait on any file that fails, reading or not', () => {
+  expect(quizWaitStatus(['read', 'reading'])).toBe('reading');
+  expect(quizWaitStatus(['read', 'read'])).toBe('ready');
+  expect(quizWaitStatus(['reading', 'failed'])).toBe('failed');
+  expect(quizWaitStatus(['read', 'gone'])).toBe('failed');
 });

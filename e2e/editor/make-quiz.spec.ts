@@ -294,16 +294,80 @@ test('an uploaded paper is read first, and saved to Files hidden from members', 
   // Still reading: the dialog gives way to the panel until the pages can open.
   await next.click();
   await expect(dialog(page)).toHaveCount(0);
-  await page
-    .getByTestId('source-transfer-panel')
-    .getByRole('button', { name: m.make_quiz_choose_pages_action() })
-    .click({ timeout: 30_000 });
+  // One row at a time: the upload's while it reads, then the quiz's.
+  const panel = page.getByTestId('source-transfer-panel');
+  await expect(panel.getByText('new paper.pdf')).toBeVisible();
+  await expect(panel.locator('[data-quiz-wait]')).toHaveCount(0);
+  const choose = panel.getByRole('button', {
+    name: m.make_quiz_choose_pages_action(),
+  });
+  await expect(choose).toBeVisible({ timeout: 30_000 });
+  await expect(panel.locator('[data-transfer-status]')).toHaveCount(0);
+  await choose.click();
   await expect(pageSheet(page, 1)).toBeVisible({ timeout: 30_000 });
   const saved = await page.evaluate(async () => {
     const files = await (await fetch('/api/workspaces/ws_bio/files')).json();
     return files.find((row: { name: string }) => row.name === 'new paper.pdf');
   });
   expect(saved).toMatchObject({ hidden: true, topicId: null });
+});
+
+test('a reload finds the waiting files, and one that never finished sending offers Try again', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      'capy.quiz.waits',
+      JSON.stringify({
+        owner: null,
+        waits: [
+          {
+            announced: true,
+            answers: [],
+            id: 'read',
+            paper: [{ fileId: 'f_paper_2025', key: 'a', name: 'read.pdf' }],
+            title: 'All read',
+            workspaceId: 'ws_bio',
+          },
+          {
+            announced: false,
+            answers: [
+              { fileId: 'f_paper_scheme', key: 'b', name: 'scheme.pdf' },
+            ],
+            id: 'lost',
+            paper: [{ key: 'c', name: 'lost.pdf' }],
+            title: 'Cut short',
+            workspaceId: 'ws_bio',
+          },
+        ],
+      })
+    );
+  });
+  await page.goto('/workspaces/ws_bio');
+  const panel = page.getByTestId('source-transfer-panel');
+  await expect(
+    panel.locator('[data-quiz-wait=ready]').getByRole('button', {
+      name: m.make_quiz_choose_pages_action(),
+    })
+  ).toBeVisible({ timeout: 30_000 });
+  const failed = panel.locator('[data-quiz-wait=failed]');
+  await expect(
+    failed.getByText(
+      m.source_import_file_error({
+        name: 'lost.pdf',
+        reason: m.source_transfer_not_added(),
+      })
+    )
+  ).toBeVisible();
+  await failed.getByRole('button', { name: m.make_quiz_try_again() }).click();
+  await expect(page).toHaveURL(/make=files/);
+  await expect(dialog(page).getByText(/mark scheme/)).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(
+    dialog(page).getByRole('button', { name: m.action_continue() })
+  ).toBeDisabled();
+  await expect(panel.locator('[data-quiz-wait=failed]')).toHaveCount(0);
 });
 
 test('several question files share the 40 pages, and the list divides them from the answers', async ({

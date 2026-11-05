@@ -70,12 +70,12 @@ enableMocks().finally(() => {
           search: { material: quizId },
           to: '/workspaces/$workspaceId',
         }),
-      pickAgain: ({ answers, paper, workspaceId }) =>
+      pickAgain: ({ answers, paper, step, workspaceId }) =>
         void router.navigate({
           params: { workspaceId },
           search: {
             answers: answers.join(',') || undefined,
-            make: paper.length > 0 ? 'pages' : 'files',
+            make: step ?? (paper.length > 0 ? 'pages' : 'files'),
             paper: paper.join(',') || undefined,
           },
           to: '/workspaces/$workspaceId',

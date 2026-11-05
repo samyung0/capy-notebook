@@ -117,6 +117,7 @@ export function useQuizUpload(
             topicName: null,
           },
         ],
+        quietFailures: true,
         uploadSource,
         workspaceId,
       });
