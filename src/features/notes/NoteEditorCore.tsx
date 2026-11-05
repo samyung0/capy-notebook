@@ -36,6 +36,7 @@ import {
   getMaterialCollaborationToken,
   type useMaterialDiscussions,
 } from '@/api/hooks';
+import { queryClient } from '@/api/queryClient';
 import type {
   Material,
   MaterialCollaborationToken,
@@ -115,6 +116,7 @@ import {
 import { announceChildrenReady } from './childrenReady';
 import {
   COLLABORATION_READ_ONLY_REASON,
+  isDiscardNotice,
   type MaterialDocumentStats,
   type MaterialLimitCode,
   materialLimitMessage,
@@ -672,7 +674,7 @@ export function NoteEditorCore({
   onSaveDelayed?: (delayed: boolean) => void;
   /** The note was trashed or deleted, or this user lost access to it (its
    * stored edits went too, except for an account lock). */
-  onUnavailable?: (kind: 'notFound' | 'forbidden') => void;
+  onUnavailable?: () => void;
   /** The device copy this mount starts from: its document already holds the
    * state, and the JOIN names its version, so the room answers the
    * difference. Plate still stays hidden until the first sync (C5). */
@@ -1325,6 +1327,12 @@ export function NoteEditorCore({
 
   const handleStatelessEvent = useCallback(
     (payload: string) => {
+      // It may be gone: the page's read says, and a refusal ends what shows
+      // (Epo 2026-11-05).
+      if (isDiscardNotice(payload))
+        void queryClient.invalidateQueries({
+          queryKey: qk.material(material.id),
+        });
       const event = parseCollaborationEvent(payload);
       if (!event) return;
       if (
@@ -1509,7 +1517,7 @@ export function NoteEditorCore({
           ).catch((error) => console.warn('Draft storage failed:', error));
           void recorder.current?.discard();
         }
-        reportUnavailable.current?.(refusal);
+        reportUnavailable.current?.();
       }
     };
     // While its never-accepted steps are held, a JOIN waits for the draft

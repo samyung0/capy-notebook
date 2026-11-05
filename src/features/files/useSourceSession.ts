@@ -74,7 +74,9 @@ export type SourceSaveState =
   /** A save failed and the server is retrying; edits stay in the editor. */
   | 'unsaved'
   | 'error'
-  | 'recovery';
+  | 'recovery'
+  /** Its room refused this editor: the page stays, read-only under a strip. */
+  | 'access-lost';
 export const SOURCE_IFRAME_ORIGIN = Symbol('source-iframe');
 const RESTORE_ORIGIN = Symbol('restore');
 const LINEAGE_EPOCH = /:epoch:(\d+)@/;
@@ -174,6 +176,8 @@ export function sourceHeaderStatus(
       return 'syncing';
     case 'recovery':
       return 'error';
+    case 'access-lost':
+      return null;
   }
 }
 
@@ -375,6 +379,8 @@ export function useSourceSession(
     let disposed = false;
     const controller = new AbortController();
     let provider: SourceProvider | null = null;
+    // A discard's notice came: a refused rejoin may mean the file is gone.
+    let discardNotice = false;
     let doc: Y.Doc | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let goOffline = () => {};
@@ -893,7 +899,19 @@ export function useSourceSession(
               );
               void recorder?.discard();
             }
-            setUnavailable(refusal);
+            // A discard may mean the file is gone, which the panel says. Any
+            // other refusal keeps the page (Epo 2026-11-05): a reader as it
+            // was, an editor read-only under a strip saying so.
+            if (discardNotice) setUnavailable(refusal);
+            else if (session.access === 'write') {
+              clearTimeout(timer);
+              rejectWaiters(new SourceSessionError(m.editor_access_lost()));
+              setDirty(false);
+              setHandoff(false);
+              setStatus('access-lost');
+              setBanner('access-lost');
+              setOutdated(true);
+            }
           }
         },
         onClose: () => {
@@ -954,6 +972,7 @@ export function useSourceSession(
             room?: string;
             workspaceId?: string;
             evictionId?: string;
+            mode?: string;
           };
           try {
             event = JSON.parse(payload);
@@ -961,6 +980,7 @@ export function useSourceSession(
             return;
           }
           if (cancelled) return;
+          if (event.evictionId && event.mode !== 'drain') discardNotice = true;
           // The collaboration server names the room, not the file.
           if (event.type === 'room-read-only') {
             if (event.room === session.room) replace('readOnly');

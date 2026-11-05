@@ -447,7 +447,8 @@ unchanged.
   content write (`lockWorkspaceEditorMutationTx`); a frozen account is refused
   and a standalone or embedded item answers 404. Hiding drains the item's live
   collaboration rooms through the eviction outbox, so a viewer with the
-  document open is disconnected and cannot reconnect.
+  document open is disconnected and cannot reconnect. Their page stays as it
+  was until a read of it is refused (below).
 - **Uploading hidden.** The Add file dialog's Upload and Import tabs end with
   "Who can see it" under the files (Epo 2026-11-04, V1): "Everyone in the
   workspace" (the default, reset each time the dialog opens) or "Hidden from
@@ -951,6 +952,15 @@ and [material editor checks](../server/internal/store/share.go#L209).
   accounts still evict the whole room. The server also closes the connection
   when the short-lived token expires and checks expiry on every inbound update
   or stateless event.
+- **What a refusal shows** (Epo 2026-11-05). A room refusing someone on rejoining
+  leaves their page: a reader's as it was, an editor's read-only under a grey "You
+  no longer have access" strip with no save status (`access_lost` for notes,
+  quizzes, flashcards and diagrams; `access-lost` for Office and text files). A
+  discard's notice may mean the item is gone, so an item room or note asks for the
+  material's read again (`isDiscardNotice`) and a source session shows its missing
+  or no-access panel. A refused read ends what shows, a material's and a file's
+  alike (`isRefusedRead` in `CenterContent`), so nobody keeps viewing a deleted item
+  past their next read. A fresh open with nothing to show gets the panel.
 - ACL and lifecycle mutations enqueue room/user evictions transactionally in a
   database outbox. Redis delivery is retried with one stable eviction ID and is
   complete only after every active collaboration instance returns a positive

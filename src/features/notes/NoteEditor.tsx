@@ -330,23 +330,15 @@ function CollaborativeNoteEditor({
   );
   // Trashed, deleted, or access lost while open: the room refused to let the
   // editor back in.
-  const [unavailable, setUnavailable] = useState<
-    'notFound' | 'forbidden' | null
-  >(null);
   const storedKey = meData
     ? draftKey(meData.id, 'material', material.id)
     : null;
-  // The editor already dropped the stored edits (NoteEditorCore).
+  // The editor already dropped the stored edits (NoteEditorCore). The note
+  // stays on screen, read-only under a strip saying so (Epo 2026-11-05); only a
+  // refused read ends what shows, which this doesn't ask for.
   const onUnavailable = useCallback(
-    (kind: 'notFound' | 'forbidden') => {
-      setUnavailable(kind);
-      void qc.invalidateQueries({ queryKey: qk.material(material.id) });
-      if (material.workspaceId)
-        void qc.invalidateQueries({
-          queryKey: qk.materials(material.workspaceId),
-        });
-    },
-    [qc, material.id, material.workspaceId]
+    () => onReadOnly?.('access_lost'),
+    [onReadOnly]
   );
   const reportReadOnly = useCallback(
     (code?: ReadOnlyCode) => {
@@ -552,26 +544,6 @@ function CollaborativeNoteEditor({
     setSaveDelayed(false);
     setLateRetry(null);
   }, [swap.pending]);
-
-  if (unavailable === 'notFound')
-    return (
-      <Replacing onShown={onShown}>
-        <FileError
-          message={m.editor_note_deleted()}
-          title={m.editor_note_not_found()}
-        />
-      </Replacing>
-    );
-  if (unavailable === 'forbidden')
-    return (
-      <Replacing onShown={onShown}>
-        <FileError
-          icon="securityWarning"
-          message={m.editor_access_lost_body()}
-          title={m.editor_access_lost()}
-        />
-      </Replacing>
-    );
 
   // Hidden behind the painted note until there is an editor to show.
   if (meIsPending || discussionsIsPending || collaborationTokenIsPending)

@@ -68,7 +68,13 @@ const { createRoot } = await import('react-dom/client');
 const { QuizEditor } = await import('./QuizEditor');
 
 const editor = () => (
-  <QuizEditor copy={{ seed: null }} quizId="qz1" stored={[]} title="Cells" />
+  <QuizEditor
+    copy={{ seed: null }}
+    onAccessLost={() => {}}
+    quizId="qz1"
+    stored={[]}
+    title="Cells"
+  />
 );
 let host: HTMLElement;
 let root: ReturnType<typeof createRoot>;

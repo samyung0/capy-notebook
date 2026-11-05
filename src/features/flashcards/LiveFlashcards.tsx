@@ -38,6 +38,7 @@ export function LiveFlashcards({
   title,
   action,
   copy,
+  onAccessLost,
   onEmpty,
   onPresenceChange,
   onStatusChange,
@@ -59,6 +60,8 @@ export function LiveFlashcards({
   /** Sits right of the title. */
   action?: ReactNode;
   onEmpty?: () => void;
+  /** Its room refused this reader: a page goes to view mode. */
+  onAccessLost?: () => void;
   /** The room's other editors, for the header's avatar group. */
   onPresenceChange?: (connections: PresenceConnection[] | null) => void;
   onStatusChange?: (status: NoteEditorStatus | null) => void;
@@ -102,8 +105,12 @@ export function LiveFlashcards({
   useEffect(() => () => onStatusChange?.(null), [onStatusChange]);
   useReportPresence(onPresenceChange, snapshot.presence);
 
-  if (snapshot.status === 'unavailable')
-    return (
+  const refused = snapshot.status === 'unavailable';
+  useEffect(() => {
+    if (refused) onAccessLost?.();
+  }, [refused, onAccessLost]);
+  if (refused)
+    return onAccessLost ? null : (
       <p className="t-meta text-fg-muted">{m.material_ref_unavailable()}</p>
     );
   if (room && snapshot.recovery)

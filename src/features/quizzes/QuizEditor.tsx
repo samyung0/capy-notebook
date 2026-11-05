@@ -259,12 +259,15 @@ export function QuizEditor({
   title,
   action,
   copy,
+  onAccessLost,
   onPresenceChange,
   onStatusChange,
   sources,
   stored,
   target,
 }: {
+  /** Its room refused this reader: the page goes to view mode. */
+  onAccessLost: () => void;
   /** The device copy its rooms start from. */
   copy: RoomCopy;
   /** The questions as its read holds them, painted until the rooms sync. */
@@ -326,8 +329,11 @@ export function QuizEditor({
     question.scrollIntoView({ block: 'start' });
   });
 
-  if (rooms.status === 'unavailable')
-    return <p role="alert">{m.material_ref_unavailable()}</p>;
+  const refused = rooms.status === 'unavailable';
+  useEffect(() => {
+    if (refused) onAccessLost();
+  }, [refused, onAccessLost]);
+  if (refused) return null;
   // Everything but the live page: one column under the header's title.
   const column = (children: ReactNode) => (
     <div className="h-full overflow-y-auto px-4 py-6 sm:px-10">

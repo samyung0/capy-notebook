@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
-import { ApiError } from '@/api/client';
+import { ApiError, qk } from '@/api/client';
 import { COLLABORATION_LATE_REASON } from '@/features/notes/collaborationEvents';
 import { m } from '@/i18n';
 import type { RoomProviderConfig } from './roomProvider';
@@ -161,6 +161,8 @@ vi.mock('@/lib/editDrafts', () => ({
   }),
 }));
 vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
+const invalidateQueries = vi.hoisted(() => vi.fn());
+vi.mock('@/api/queryClient', () => ({ queryClient: { invalidateQueries } }));
 vi.mock('@/lib/appRelease', () => ({ markUpdateAvailable: vi.fn() }));
 
 const { ItemRoom, openItemRoom } = await import('./itemRoom');
@@ -668,6 +670,7 @@ it('rejoins after a drain eviction, keeping its edits', async () => {
   expect(provider.connects).toBe(2);
   expect(onReplace).not.toHaveBeenCalled();
   expect(drafts.refused).toBe(0);
+  expect(invalidateQueries).not.toHaveBeenCalled();
   room.destroy();
 });
 
@@ -685,6 +688,10 @@ it('ends after a discard eviction, keeping its edits stored', async () => {
   expect(provider.connects).toBe(1);
   expect(drafts.disposed).toBe(1);
   expect(drafts.refused).toBe(0);
+  // It may be gone: the page's read says (Epo 2026-11-05).
+  expect(invalidateQueries).toHaveBeenCalledWith({
+    queryKey: qk.material('q'),
+  });
   room.destroy();
 });
 

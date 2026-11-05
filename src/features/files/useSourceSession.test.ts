@@ -112,7 +112,10 @@ vi.mock('@/lib/editDrafts', async (load) => ({
 
 import * as Y from 'yjs';
 import type { SourceCollaborationToken, SourceSession } from '@/api/types';
-import { COLLABORATION_OUTDATED_REASON } from '@/features/notes/collaborationEvents';
+import {
+  COLLABORATION_NOT_FOUND_REASON,
+  COLLABORATION_OUTDATED_REASON,
+} from '@/features/notes/collaborationEvents';
 import {
   DRAFT_EXPIRY_MS,
   dropExpiredGroup,
@@ -160,13 +163,13 @@ const render = () => {
 
 /** Opens the file with its base still downloading; resolves to the room's
  * provider options once the provider exists. */
-async function open() {
+async function open(session: SourceSession = SESSION) {
   const base = deferred<Uint8Array<ArrayBuffer>>();
   base.promise.catch(() => {});
   takeSourceOpen.mockResolvedValue({
     base: base.promise,
     credentials: TOKEN,
-    session: SESSION,
+    session,
   });
   render();
   await vi.waitFor(() => {
@@ -223,6 +226,44 @@ describe('an Office edit session opening while its base downloads', () => {
     expect(render().bytes).toBeUndefined();
     base.resolve(new Uint8Array([8]));
     await vi.waitFor(() => expect(render().bytes).toEqual(new Uint8Array([8])));
+  });
+
+  it('leaves a reader refused on rejoining as it was', async () => {
+    const { options } = await open({ ...SESSION, access: 'read' });
+    options.onSynced?.({ state: true });
+    options.onAuthenticationFailed?.({
+      reason: COLLABORATION_NOT_FOUND_REASON,
+    });
+    expect(render()).toMatchObject({
+      banner: null,
+      outdated: false,
+      unavailable: null,
+    });
+  });
+
+  it('keeps an editor refused on rejoining read-only, on the page', async () => {
+    const { options } = await open({ ...SESSION, access: 'write' });
+    options.onSynced?.({ state: true });
+    options.onAuthenticationFailed?.({
+      reason: COLLABORATION_NOT_FOUND_REASON,
+    });
+    expect(render()).toMatchObject({
+      banner: 'access-lost',
+      outdated: true,
+      unavailable: null,
+    });
+  });
+
+  it('shows the missing panel when a discard came first: it may be gone', async () => {
+    const { options } = await open();
+    options.onSynced?.({ state: true });
+    options.onStateless?.({
+      payload: JSON.stringify({ evictionId: 'e', mode: 'discard' }),
+    });
+    options.onAuthenticationFailed?.({
+      reason: COLLABORATION_NOT_FOUND_REASON,
+    });
+    expect(render().unavailable).toBe('notFound');
   });
 
   it('ends the session with the file error when the base cannot be read', async () => {

@@ -37,6 +37,7 @@ import {
 } from '@/features/materials/document';
 import {
   COLLABORATION_LATE_REASON,
+  COLLABORATION_NOT_FOUND_REASON,
   COLLABORATION_OUTDATED_REASON,
 } from '@/features/notes/collaborationEvents';
 import { withoutBlanks } from '@/features/questions/types';
@@ -777,6 +778,7 @@ export function setMockReportedVersion(materialId: string, version: number) {
 }
 
 const outdated = { reason: COLLABORATION_OUTDATED_REASON };
+const refused = { reason: COLLABORATION_NOT_FOUND_REASON };
 // Set by refuseThisBuild(): a note room refuses every join until the page
 // reloads (the reloaded page is the new build).
 let buildRefused = false;
@@ -952,6 +954,11 @@ class MockCollaborationProvider implements UnifiedProvider {
   announceOutdated() {
     this.disconnect();
     this.options.onAuthenticationFailed?.(outdated);
+  }
+
+  announceRefused() {
+    this.disconnect();
+    this.options.onAuthenticationFailed?.(refused);
   }
 
   /** The service closed this note's channel (an eviction): the editor
@@ -1161,6 +1168,11 @@ class MockSourceProvider implements SourceProvider {
     this.config.onAuthenticationFailed?.(outdated);
   }
 
+  announceRefused() {
+    this.disconnect();
+    this.config.onAuthenticationFailed?.(refused);
+  }
+
   announceReadOnly() {
     // As for a note: the refused update never reaches the durable room.
     this.room.retired = true;
@@ -1293,6 +1305,13 @@ export function admitMockNoteDrafts(materialId: string, update: Uint8Array) {
   const room = rooms.get(mockMaterialRoom(materialId));
   if (!room) throw new Error(`Mock room for ${materialId} is not open`);
   Y.applyUpdate(room.document, update);
+}
+/** Every open room refuses this reader when it rejoins: it was hidden from
+ * them, or they lost their access. Returns how many there were. */
+export function refuseOpenRooms() {
+  const open = [...materialProviders, ...sourceProviders, ...itemProviders];
+  for (const provider of open) provider.announceRefused();
+  return open.length;
 }
 /** The collaboration service's refusal once the account freezes: every open
  * room turns read-only for its writer. */
@@ -1623,6 +1642,11 @@ class MockItemProvider implements ItemProvider {
   announceOutdated() {
     this.disconnect();
     this.config.onAuthenticationFailed?.(outdated);
+  }
+
+  announceRefused() {
+    this.disconnect();
+    this.config.onAuthenticationFailed?.(refused);
   }
 
   disconnect() {

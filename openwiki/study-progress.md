@@ -830,9 +830,9 @@ minutes, and what is on screen stays as it was, with no error, toast or status
 (`ItemRoom.unavailable`; `useLiveQuizQuestions` keeps its last questions, and a quiz
 attempt page its opening read). The quiz's page in a workspace stays too: the next
 refetch of the file list changes nothing while it is open (`alreadyOpen` in
-`CenterContent`). A read of the material answering 404 can still show the error page
-when the browser comes back online and its data is over five minutes old. An
-unassigned member of a visible quiz keeps normal access with its
+`CenterContent`). A refused read still ends what shows (Epo 2026-11-05), so a refresh
+of the material answering 404, as when the connection comes back and its last read is
+over 5 seconds old, shows the error page. An unassigned member of a visible quiz keeps normal access with its
 checks. A signed-out browser on a public or link workspace's share page is
 nobody in particular, so an assignee could open it there. An attempt made before
 the assignment stays readable by whoever took it.

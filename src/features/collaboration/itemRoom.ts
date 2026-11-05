@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
+import { qk } from '@/api/client';
 import { getMaterialCollaborationToken } from '@/api/hooks';
+import { queryClient } from '@/api/queryClient';
 import {
   isOutdatedBanner,
   type SaveBannerState,
@@ -422,7 +424,14 @@ export class ItemRoom {
           const drain = this.eviction === 'drain';
           this.eviction = null;
           if (drain) this.rejoin();
-          else this.moved();
+          else {
+            // It may be gone: the page's read says, and a refusal ends what
+            // shows (Epo 2026-11-05).
+            void queryClient.invalidateQueries({
+              queryKey: qk.material(this.materialId),
+            });
+            this.moved();
+          }
           return;
         }
         if (TRANSIENT_CLOSES.has(reason)) {
