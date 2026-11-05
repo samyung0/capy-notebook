@@ -21,13 +21,8 @@ import { PracticeFrame, Td, Th } from '../practice/studyPage';
 import { studyView } from '../practice/studyView';
 import { AssignmentAttemptPage } from './AssignmentAttemptPage';
 import { AssignmentReport } from './AssignmentReport';
-import {
-  dayLabel,
-  kindLabel,
-  lateLabel,
-  markText,
-  percentText,
-} from './assignmentText';
+import { dayLabel, kindLabel, markText, percentText } from './assignmentText';
+import { LateBadge } from './LateBadge';
 import { MemberAssignment } from './MemberAssignment';
 import { NewAssignmentDialog } from './NewAssignmentDialog';
 import { useAssignmentStart } from './useAssignmentStart';
@@ -636,11 +631,7 @@ function MemberTitle({ row }: { row: Assignment }) {
       >
         {row.title}
       </span>
-      {row.mine?.late && (
-        <span className="t-meta shrink-0 font-semibold text-tint-warning-fg">
-          {lateLabel(row.mine.latePenaltyPct)}
-        </span>
-      )}
+      {row.mine?.late && <LateBadge penaltyPct={row.mine.latePenaltyPct} />}
       {row.mine?.missing && !row.closedAt && (
         <span className="t-meta shrink-0 font-semibold text-tint-error-fg">
           {row.latePenaltyPct > 0

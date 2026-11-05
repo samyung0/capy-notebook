@@ -40,11 +40,11 @@ import type { AssignmentsSearch, ReportTab } from './AssignmentsPage';
 import {
   closedItself,
   dayLabel,
-  lateLabel,
   markText,
   percentText,
   takesLateWork,
 } from './assignmentText';
+import { LateBadge } from './LateBadge';
 import { NewAssignmentDialog } from './NewAssignmentDialog';
 import { NoAnswersWarning } from './NoAnswersWarning';
 
@@ -393,11 +393,7 @@ function MembersTab({
     member.submittedAt ? (
       <span className="flex items-center gap-2">
         {dayLabel(member.submittedAt)}
-        {member.late && (
-          <span className="font-semibold text-tint-warning-fg">
-            {lateLabel(member.latePenaltyPct)}
-          </span>
-        )}
+        {member.late && <LateBadge penaltyPct={member.latePenaltyPct} />}
       </span>
     ) : member.missing ? (
       <span className="font-semibold text-tint-error-fg">

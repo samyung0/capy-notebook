@@ -7,7 +7,8 @@ import type {
 import { Icon } from '@/components/ui/Icon';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { m } from '@/i18n';
-import { lateLabel, markText, minutesText } from './assignmentText';
+import { markText, minutesText } from './assignmentText';
+import { LateBadge } from './LateBadge';
 
 /** Submitted (A4): the mark so far, what still waits for the owner, and the
  * links on. */
@@ -56,14 +57,12 @@ export function AssignmentSubmitted({
           {m.assignment_time_ran_out()}
         </p>
       )}
-      <p className="mt-4 font-medium">
-        {m.assignment_mark_so_far()}{' '}
-        <b className="font-bold">{markText(attempt.mark, decided)}</b>
-        {attempt.late && (
-          <span className="ml-2 font-semibold text-tint-warning-fg">
-            {lateLabel(attempt.latePenaltyPct)}
-          </span>
-        )}
+      <p className="mt-4 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 font-medium">
+        <span>
+          {m.assignment_mark_so_far()}{' '}
+          <b className="font-bold">{markText(attempt.mark, decided)}</b>
+        </span>
+        {attempt.late && <LateBadge penaltyPct={attempt.latePenaltyPct} />}
       </p>
       {attempt.waitingAnswers > 0 && (
         <p className="t-meta mt-2 text-fg-secondary">

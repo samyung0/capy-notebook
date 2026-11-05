@@ -875,8 +875,10 @@ has no Advanced at all.
   mark of a submission past the due date: `Mark` is `Correct` less the penalty,
   which stays raw. It reads live, so changing it or the due date applies to work
   already in, and an open part marked later is penalised with the rest. Late work
-  shows "Late −20%" on Results, Submitted and the report's Members, and Results adds
-  "30 / 40 before the late penalty"; the class Average uses the penalised mark. A
+  shows a warning badge, "Late −20%" or "Late" with no penalty (`LateBadge`, the
+  app's `Badge`): beside the score on Results (under it on phones) and Submitted, on
+  the report's Members and on the member's Assignments row. Results adds "30 / 40
+  before the late penalty"; the class Average uses the penalised mark. A
   timed attempt submitted after the due date counts as late, and answer events,
   per-part marks and reviews keep the raw marks.
 
