@@ -3,7 +3,10 @@ import { insertLinkByQuickSearchCommand } from '@blocksuite/affine-block-bookmar
 import { addImages } from '@blocksuite/affine-block-image';
 import { DefaultTool } from '@blocksuite/affine-block-surface';
 import { MAX_IMAGE_WIDTH } from '@blocksuite/affine-model';
-import { TelemetryProvider } from '@blocksuite/affine-shared/services';
+import {
+  FeatureFlagService,
+  TelemetryProvider,
+} from '@blocksuite/affine-shared/services';
 import type { NoteChildrenFlavour } from '@blocksuite/affine-shared/types';
 import {
   getImageFilesFromLocal,
@@ -13,7 +16,7 @@ import { EdgelessToolbarToolMixin } from '@blocksuite/affine-widget-edgeless-too
 import { AttachmentIcon, ImageIcon, LinkIcon } from '@blocksuite/icons/lit';
 import type { ToolOptions } from '@blocksuite/std/gfx';
 import { effect } from '@preact/signals-core';
-import { css, html, LitElement } from 'lit';
+import { css, html, LitElement, nothing } from 'lit';
 import { property, state } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 
@@ -111,7 +114,8 @@ export class EdgelessNoteMenu extends EdgelessToolbarToolMixin(LitElement) {
     return html`
       <edgeless-slide-menu>
         <div class="menu-content">
-          <!-- add to edgeless -->
+          <!-- Capy (local change 12) -->
+          ${this.edgeless.std.get(FeatureFlagService).getFlag('enable_note_menu_media') ? html`          <!-- add to edgeless -->
           <div class="button-group-container">
             <edgeless-tool-icon-button
               .activeMode=${'background'}
@@ -159,6 +163,7 @@ export class EdgelessNoteMenu extends EdgelessToolbarToolMixin(LitElement) {
           </div>
 
           <div class="divider"></div>
+          ` : nothing}
 
           <!-- add to note -->
           <div class="button-group-container">

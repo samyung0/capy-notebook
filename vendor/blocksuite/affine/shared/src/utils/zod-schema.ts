@@ -206,7 +206,10 @@ export function makeDeepOptional(schema: ZodTypeAny): ZodTypeAny {
     );
     return z.object(deepOptionalShape).optional();
   } else if (schema instanceof ZodUnion) {
-    return schema.or(z.undefined());
+    // Capy (local change 11): zod 4 counts a key as optional only through
+    // `.optional()`; `.or(z.undefined())` left it required, so every partial edit
+    // of a stroke, shape, label or note threw in recordLastProps.
+    return schema.optional();
   } else if (schema instanceof ZodIntersection) {
     return z.intersection(
       makeDeepOptional(schema._def.left as ZodTypeAny),

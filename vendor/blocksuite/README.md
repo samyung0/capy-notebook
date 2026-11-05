@@ -208,6 +208,14 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
     `./widgets/edgeless-zoom-toolbar` and their `/view`, and `./inlines/comment/view`
     (`affine/all/package.json`, `affine/all/src/inlines/comment/view.ts`).
 
+11. `makeDeepOptional` (`affine/shared` `zod-schema.ts`, marked `Capy (local change
+    11)`): a union goes optional through `.optional()`. Zod 4 kept `.or(z.undefined())`
+    a required key, so every partial edit on the canvas threw in `recordLastProps`.
+
+12. `enable_note_menu_media` flag (`affine/shared` `feature-flag-service.ts`,
+    `affine/gfx/note` `note-menu.ts`, marked `Capy (local change 12)`): the board turns
+    off the note menu's image, link and file buttons, which upload or need a doc search.
+
 Outside this directory, for BlockSuite:
 
 - `patches/@atlaskit__pragmatic-drag-and-drop@1.4.0.patch`: upstream's yarn

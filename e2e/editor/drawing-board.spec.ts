@@ -9,6 +9,8 @@ import { expect, type Page, test } from '@playwright/test';
 const canvas = (page: Page) => page.evaluate('window.__board.stats().canvas');
 
 test('draws, labels, renders to an image and reopens', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/dev/drawing');
   await page.locator('edgeless-pen-tool-button').first().click();
 
@@ -30,6 +32,7 @@ test('draws, labels, renders to an image and reopens', async ({ page }) => {
   await page.keyboard.type('label');
   await page.mouse.click(...at(0.05, 0.9));
   await expect.poll(() => canvas(page)).toEqual(['brush', 'text']);
+  expect(errors).toEqual([]);
 
   const image = await page.evaluate('window.__board.toImage()');
   expect(image).toMatch(/^data:image\/png;base64,/);

@@ -1,4 +1,5 @@
 import '@toeverything/theme/style.css';
+import './drawingBoard.css';
 import { ImageStoreExtension } from '@blocksuite/affine/blocks/image/store';
 import { ImageViewExtension } from '@blocksuite/affine/blocks/image/view';
 import { ListStoreExtension } from '@blocksuite/affine/blocks/list/store';
@@ -54,11 +55,12 @@ import { TestWorkspace } from '@blocksuite/affine/store/test';
 import { EdgelessAutoConnectViewExtension } from '@blocksuite/affine/widgets/edgeless-auto-connect/view';
 import { EdgelessDraggingAreaViewExtension } from '@blocksuite/affine/widgets/edgeless-dragging-area/view';
 import { EdgelessSelectedRectViewExtension } from '@blocksuite/affine/widgets/edgeless-selected-rect/view';
+import { SeniorToolExtension } from '@blocksuite/affine/widgets/edgeless-toolbar';
 import { EdgelessToolbarViewExtension } from '@blocksuite/affine/widgets/edgeless-toolbar/view';
 import { EdgelessZoomToolbarViewExtension } from '@blocksuite/affine/widgets/edgeless-zoom-toolbar/view';
 import { ToolbarViewExtension } from '@blocksuite/affine/widgets/toolbar/view';
 import { ViewportOverlayViewExtension } from '@blocksuite/affine/widgets/viewport-overlay/view';
-import { html, render } from 'lit';
+import { html, render, svg } from 'lit';
 import * as Y from 'yjs';
 
 const stores = new StoreExtensionManager([
@@ -111,6 +113,34 @@ const views = new ViewExtensionManager([
   ViewportOverlayViewExtension,
 ]);
 
+const PHONE_WIDTH = 640;
+
+const arrow = (d: string) =>
+  html`<svg fill="none" height="20" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" viewBox="0 0 20 20" width="20">${svg`<path d=${d} />`}</svg>`;
+
+/** Undo and redo, at the toolbar's end as on board K7. BlockSuite keeps them on the
+ * keyboard only; a phone has none. */
+const historyTool = SeniorToolExtension('capy-history', ({ block }) => ({
+  content: html`<div
+    class="capy-board-history"
+    style="align-items:center;display:flex;gap:4px;height:100%;justify-content:center"
+  >
+    <edgeless-tool-icon-button
+      .tooltip=${'Undo'}
+      @click=${() => block.store.undo()}
+    >
+      ${arrow('M7.5 5 4 8.5 7.5 12M4 8.5h8a4 4 0 0 1 0 8H8')}
+    </edgeless-tool-icon-button>
+    <edgeless-tool-icon-button
+      .tooltip=${'Redo'}
+      @click=${() => block.store.redo()}
+    >
+      ${arrow('M12.5 5 16 8.5 12.5 12M16 8.5H8a4 4 0 0 0 0 8h4')}
+    </edgeless-tool-icon-button>
+  </div>`,
+  name: 'Undo and redo',
+}));
+
 /** The sheet an answer is drawn on, in the board's own coordinates. */
 const SHEET = { h: 520, w: 820, x: 0, y: 0 };
 
@@ -149,13 +179,17 @@ export function mountDrawingBoard(
     });
   }
   store.resetHistory();
-  const std = new BlockStdScope({ extensions: views.get('edgeless'), store });
+  const std = new BlockStdScope({
+    extensions: [...views.get('edgeless'), historyTool],
+    store,
+  });
   render(
-    html`<div class="affine-edgeless-viewport">${std.render()}</div>`,
+    html`<div class="affine-edgeless-viewport capy-board">${std.render()}</div>`,
     container
   );
   // A double click types on the canvas, so the label is in the exported image.
   store.get(FeatureFlagService).setFlag('enable_edgeless_text', false);
+  store.get(FeatureFlagService).setFlag('enable_note_menu_media', false);
   const gfx = std.get(GfxControllerIdentifier);
 
   // The sheet sits under the strokes and moves with the board, outside the
@@ -185,7 +219,7 @@ export function mountDrawingBoard(
     background.prepend(sheet);
     gfx.viewport.setViewportByBound(
       new Bound(SHEET.x, SHEET.y, SHEET.w, SHEET.h),
-      [90, 40, 130, 40]
+      gfx.viewport.width < PHONE_WIDTH ? [70, 12, 120, 12] : [90, 40, 130, 40]
     );
     place();
   });
@@ -215,13 +249,26 @@ export function mountDrawingBoard(
       ctx.drawImage(image, 0, 0);
       const blocks = gfx.getElementsByBound(bound, { type: 'block' });
       const elements = gfx.getElementsByBound(bound, { type: 'canvas' });
-      // Note cards are DOM, so BlockSuite's export draws them. It doesn't draw
-      // the sheet under them yet.
+      // Note cards are DOM, so BlockSuite's export draws them with the strokes, on
+      // a canvas with a 50 px margin at the device's scale.
       if (blocks.length) {
         const drawn = await std
           .get(ExportManager)
           .edgelessToCanvas(renderer, bound, gfx, blocks, elements);
-        return drawn?.toDataURL('image/png') ?? null;
+        if (!drawn) return null;
+        const scale = window.devicePixelRatio || 1;
+        ctx.drawImage(
+          drawn,
+          50 * scale,
+          50 * scale,
+          SHEET.w * scale,
+          SHEET.h * scale,
+          0,
+          0,
+          SHEET.w,
+          SHEET.h
+        );
+        return output.toDataURL('image/png');
       }
       ctx.drawImage(
         renderer.getCanvasByBound(bound, elements),
