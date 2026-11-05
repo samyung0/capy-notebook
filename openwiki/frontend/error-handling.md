@@ -406,7 +406,7 @@ same file and reading the same `useAccountStatus`, the same states in the same o
 with the same words and link, inside the page below its title
 (`[data-testid="account-status-banner"]`, `data-kind` naming the state). It is the
 tinted card in a smaller size, with no meter; both link to Subscription with a solid
-dark button at the right, on its own right-aligned row on phones. Only the Dashboard has it; Study and
+dark button at the right, on its own right-aligned row on phones. Home's card is this small form on phones too. Only the Dashboard has it; Study and
 the other centre pages stay as they are, and the entry toast below still shows.
 
 Inside a workspace, `WorkspaceHealth` raises one `userToast` per visit for the

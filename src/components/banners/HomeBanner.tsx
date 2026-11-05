@@ -8,6 +8,7 @@ import { storageLimitLabel, usagePercent } from '@/features/billing/format';
 import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useOnlineStatus } from '@/lib/online';
+import { useMediaQuery } from '@/lib/useMediaQuery';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { Icon, type IconName } from '../ui/Icon';
@@ -137,7 +138,10 @@ function SubscriptionLink({ small }: { small?: boolean }) {
 /** Home's banner slot, empty unless the viewer has an account status. */
 export default function HomeBanner() {
   const status = useAccountStatus();
+  // Phones get the small one (Epo 2026-11-05).
+  const phone = useMediaQuery('(max-width: 639px)');
   if (!status) return null;
+  if (phone) return <SmallStatus status={status} />;
   return (
     <SlotCard
       action={status.links && <SubscriptionLink />}
@@ -173,7 +177,10 @@ export default function HomeBanner() {
  */
 export function AccountStatusBanner() {
   const status = useAccountStatus();
-  if (!status) return null;
+  return status && <SmallStatus status={status} />;
+}
+
+function SmallStatus({ status }: { status: AccountStatus }) {
   return (
     <SlotCard
       action={status.links && <SubscriptionLink small />}
