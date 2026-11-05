@@ -537,6 +537,17 @@ async def test_solve_batches_run_a_few_at_a_time(monkeypatch):
     assert peak == 2
 
 
+def test_numbers_too_long_to_be_real_fail_nothing():
+    long = "9" * 5000
+    assert extraction._number(long) is None
+    assert extraction._whole(long) is None
+    rows = extraction.parse_map(
+        f"{long} | pages 1-1 | parts none | figures {long}\n"
+        f"2 | pages {long} | parts none | figures none\n"
+    )
+    assert [(row.label, row.figures) for row in rows] == [(long, [])]
+
+
 def test_a_map_row_called_none_is_no_row():
     assert extraction.parse_map("none | pages 1-1 | parts none | figures none") == []
 

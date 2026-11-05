@@ -215,7 +215,7 @@ def _text(value: Any, limit: int) -> str:
 
 def _whole(value: Any) -> int | None:
     """A mark count the model wrote as 2, 2.0 or "2"."""
-    if isinstance(value, str) and value.strip().isdigit():
+    if isinstance(value, str) and value.strip().isdigit() and len(value.strip()) < 10:
         value = int(value.strip())
     if isinstance(value, float) and value.is_integer():
         value = int(value)
@@ -611,7 +611,7 @@ async def placed(held: Recorded, crops: dict[str, str]) -> dict[str, Any]:
 
 
 _MAP_LINE = re.compile(
-    r"^\s*(?:\*\*)?(?P<label>[^|]+?)(?:\*\*)?\s*\|\s*pages?\s*(?P<first>\d+)(?:\s*-\s*(?P<last>\d+))?"
+    r"^\s*(?:\*\*)?(?P<label>[^|]+?)(?:\*\*)?\s*\|\s*pages?\s*(?P<first>\d{1,9})(?:\s*-\s*(?P<last>\d{1,9}))?"
     r"\s*\|\s*parts?\s*(?P<parts>[^|]*?)\s*\|\s*figures?\s*(?P<figures>.*?)\s*$",
     re.IGNORECASE,
 )
@@ -636,7 +636,7 @@ def parse_map(text: str) -> list[MapRow]:
                 []
                 if parts.lower() in ("none", "-", "")
                 else [p.strip() for p in parts.split(",") if p.strip()],
-                [int(n) for n in re.findall(r"\d+", match["figures"])],
+                [int(n) for n in re.findall(r"\b\d{1,9}\b", match["figures"])],
             )
         )
     return rows
@@ -644,7 +644,8 @@ def parse_map(text: str) -> list[MapRow]:
 
 def _number(label: str) -> int | None:
     digits = re.findall(r"\d+", label)
-    return int(digits[-1]) if digits else None
+    # Python refuses to read over 4,300 digits, and nothing that long is a number here.
+    return int(digits[-1]) if digits and len(digits[-1]) < 10 else None
 
 
 def _runs_of(labels: list[str]) -> list[list[str]]:
