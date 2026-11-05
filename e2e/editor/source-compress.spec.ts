@@ -43,8 +43,8 @@ function photo(page: Page, type: 'image/png' | 'image/jpeg') {
   }, type);
 }
 
-/** Picks files in the add-source dialog and uploads them. */
-async function upload(
+/** Picks files in the add-source dialog. */
+async function pick(
   page: Page,
   files: { buffer: Buffer; mimeType: string; name: string }[]
 ) {
@@ -62,6 +62,14 @@ async function upload(
     page.getByRole('button', { name: m.source_upload_computer() }).click(),
   ]);
   await chooser.setFiles(files);
+}
+
+/** Picks files in the add-source dialog and uploads them. */
+async function upload(
+  page: Page,
+  files: { buffer: Buffer; mimeType: string; name: string }[]
+) {
+  await pick(page, files);
   await page
     .getByRole('button', { exact: true, name: m.action_upload() })
     .click();
@@ -259,4 +267,23 @@ test('an image source arrives at 5 megapixels at most, HEIC, TIFF and JPEG 2000 
       .locator('[data-workspace-file-tree]')
       .getByRole('link', { name: 'heic-corrupt' })
   ).toHaveCount(0);
+});
+
+// Q629, Q630: the flat text cap, on every plan: a text file over it is refused
+// when picked, saying why, and one at it stays in the dialog.
+test('a text file over 2 MB is refused when picked, and one at it is kept', async ({
+  page,
+}) => {
+  const cap = 2 * 1024 * 1024;
+  const text = (name: string, size: number) => ({
+    buffer: Buffer.alloc(size, 'a'),
+    mimeType: 'text/plain',
+    name,
+  });
+  await pick(page, [text('over.md', cap + 1), text('full.csv', cap)]);
+  await expect(
+    page.getByText(m.source_text_files_too_large({ mb: 2 }))
+  ).toBeVisible();
+  await expect(page.getByRole('dialog').getByText('full.csv')).toBeVisible();
+  await expect(page.getByRole('dialog').getByText('over.md')).toHaveCount(0);
 });

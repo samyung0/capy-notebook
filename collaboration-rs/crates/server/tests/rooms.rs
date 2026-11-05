@@ -9123,7 +9123,6 @@ async fn a_source_undo_lands_while_a_person_keeps_typing() {
 #[tokio::test]
 async fn an_undo_too_large_for_the_room_is_not_offered() {
     let Some(env) = env() else { return };
-    let _cap = ExportCap::lower(&env).await;
     let gateway = gateway(&env).await;
     let server = start_with(&env, Some(&gateway.url)).await;
     // 600 KiB of room past the write reserve; the agent removes a 150 KB span
@@ -9131,7 +9130,7 @@ async fn an_undo_too_large_for_the_room_is_not_offered() {
     let first = format!("<{}>", "x".repeat(150_000));
     let second = format!("{{{}}}", "y".repeat(140_000));
     let growth = sources::STATE_WRITE_RESERVE_BYTES as usize + 600 * 1024;
-    let rest = LOWERED_EXPORT_CAP as usize
+    let rest = TEXT_FILE_CAP as usize
         - sources::STATE_GROWTH_MARGIN_BYTES as usize
         - growth
         - first.len()
@@ -10266,83 +10265,10 @@ async fn text_file_named(
     (user, file)
 }
 
-/// Lowers every plan's source file cap, the export cap a source room reads at
-/// load, for one test so its base stays small; restores it when dropped,
-/// panics included. Tests that lower it take turns, but it edits the whole
-/// test database's `plan_limits`: a source room another test loads meanwhile
-/// gets the lowered cap, so the suite needs `--test-threads=1` (as CI runs it)
-/// once such a test holds a base past 1 MiB.
-struct ExportCap {
-    database: String,
-    before: Vec<(String, i64)>,
-    _turn: tokio::sync::MutexGuard<'static, ()>,
-}
+/// The flat text cap a text room's export cap reads (`plan_limits`, Q629, Q630).
+const TEXT_FILE_CAP: i64 = 2 * 1024 * 1024;
 
-static EXPORT_CAP_TURN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
-/// The lowered cap: 1 MiB of growth for a small base, under the 1 MiB margin.
-const LOWERED_EXPORT_CAP: i64 = 2 * 1024 * 1024;
-
-impl ExportCap {
-    async fn lower(env: &Env) -> Self {
-        let turn = EXPORT_CAP_TURN.lock().await;
-        let client = db(env).await;
-        let before = client
-            .query(
-                "SELECT plan_tier, source_file_max_bytes FROM plan_limits",
-                &[],
-            )
-            .await
-            .expect("plan limits")
-            .iter()
-            .map(|row| (row.get(0), row.get(1)))
-            .collect();
-        client
-            .execute(
-                "UPDATE plan_limits SET source_file_max_bytes=$1",
-                &[&LOWERED_EXPORT_CAP],
-            )
-            .await
-            .expect("lower the cap");
-        ExportCap {
-            database: env.database.clone(),
-            before,
-            _turn: turn,
-        }
-    }
-}
-
-impl Drop for ExportCap {
-    fn drop(&mut self) {
-        let (database, before) = (self.database.clone(), std::mem::take(&mut self.before));
-        std::thread::spawn(move || {
-            tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("runtime")
-                .block_on(async move {
-                    let (client, connection) =
-                        tokio_postgres::connect(&database, tokio_postgres::NoTls)
-                            .await
-                            .expect("postgres");
-                    tokio::spawn(connection);
-                    for (tier, bytes) in before {
-                        client
-                            .execute(
-                                "UPDATE plan_limits SET source_file_max_bytes=$2 WHERE plan_tier=$1",
-                                &[&tier, &bytes],
-                            )
-                            .await
-                            .expect("restore the cap");
-                    }
-                });
-        })
-        .join()
-        .expect("restore the plan limits");
-    }
-}
-
-/// A text source of `growth` bytes of room under the lowered export cap
+/// A text source of `growth` bytes of room under the text cap
 /// (less the margin), joined by a writer; returns the writer, user and file.
 async fn capped_text_source(
     env: &Env,
@@ -10353,7 +10279,7 @@ async fn capped_text_source(
     let base = format!(
         "{}END",
         "a".repeat(
-            LOWERED_EXPORT_CAP as usize - sources::STATE_GROWTH_MARGIN_BYTES as usize - growth - 3
+            TEXT_FILE_CAP as usize - sources::STATE_GROWTH_MARGIN_BYTES as usize - growth - 3
         )
     );
     let (user, file) = text_file(env, gateway, &base).await;
@@ -10384,14 +10310,13 @@ fn closed_for_size(closed: Option<Vec<u8>>) {
     );
 }
 
-/// Epo 2026-10-17: a source room grows by at most the export cap (the
-/// largest plan source file) less its base file and a margin, not up to the
-/// ceiling every room shares. A base that leaves no room refuses the first
+/// Epo 2026-10-17, Q629, Q630: a source room grows by at most the export cap
+/// (a text room's flat text cap) less its base file and a margin, not up to
+/// the ceiling every room shares. A base that leaves no room refuses the first
 /// keystroke.
 #[tokio::test]
 async fn a_source_room_refuses_growth_past_its_export_cap() {
     let Some(env) = env() else { return };
-    let _cap = ExportCap::lower(&env).await;
     let gateway = gateway(&env).await;
     let server = start_with(&env, Some(&gateway.url)).await;
     let (mut client, ..) = capped_text_source(&env, &gateway, &server, 0).await;
@@ -10510,7 +10435,6 @@ async fn a_sessions_worker_client_id_binds_with_its_own_and_is_recorded_when_it_
 #[tokio::test]
 async fn an_agent_edit_counts_toward_a_source_rooms_cap() {
     let Some(env) = env() else { return };
-    let _cap = ExportCap::lower(&env).await;
     let gateway = gateway(&env).await;
     let server = start_with(&env, Some(&gateway.url)).await;
     // 100 KiB of room past the write reserve.
@@ -16809,7 +16733,6 @@ async fn a_quiz_edit_is_admitted_by_both_its_rooms_or_neither() {
 #[tokio::test]
 async fn an_open_room_refuses_an_agent_edit_as_it_refuses_a_persons() {
     let Some(env) = env() else { return };
-    let _cap = ExportCap::lower(&env).await;
     let gateway = gateway(&env).await;
     let server = start_with(&env, Some(&gateway.url)).await;
     let growth = sources::STATE_WRITE_RESERVE_BYTES as usize + 100 * 1024;

@@ -750,6 +750,50 @@ func TestCloneRefusesAFilePastThePayersCap(t *testing.T) {
 	}
 }
 
+// Q629, Q630: a text file past the flat cap is refused or left out of a clone
+// whoever pays, where an Excel file of its size is copied. Nothing over it can
+// be uploaded any more, so only older files meet this.
+func TestCloneRefusesATextFilePastTheTextCap(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_clone_text_cap")
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET plan_tier='pro' WHERE id=$1`, owner); err != nil {
+		t.Fatal(err)
+	}
+	limit := mustPlanLimits(t, s, PlanPro).TextFileBytes
+	source, text := sourceTestFile(t, s, owner, "big.md", "md")
+	sheet, err := s.createReadyFile(ctx, source.ID, owner, "big.xlsx", "sheet", nil, "", limit+1, "sources/"+uid("base"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE files SET size_bytes=$2 WHERE id=$1`, text.ID, limit+1); err != nil {
+		t.Fatal(err)
+	}
+	target, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Text cap target"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tooLarge *FileTooLargeError
+	if _, _, err := s.CloneFile(ctx, owner, text.ID, CloneTarget{WorkspaceID: target.ID, Name: "big.md"}); !errors.As(err, &tooLarge) || tooLarge.LimitBytes != limit || !tooLarge.Text {
+		t.Fatalf("clone of the text file = %v, want FileTooLargeError at the text cap", err)
+	}
+	if _, _, err := s.CloneFile(ctx, owner, sheet.ID, CloneTarget{WorkspaceID: target.ID, Name: "big.xlsx"}); err != nil {
+		t.Fatalf("clone of the Excel file: %v", err)
+	}
+	copied, _, skipped, err := s.CloneWorkspaceThumbnails(ctx, owner, source.ID, WorkspaceCreate{Name: "Text cap copy"})
+	if err != nil {
+		t.Fatalf("workspace clone: %v", err)
+	}
+	var names []string
+	if err := s.pool.QueryRow(ctx, `SELECT COALESCE(array_agg(name ORDER BY name), '{}') FROM files WHERE workspace_id=$1`,
+		copied.ID).Scan(&names); err != nil {
+		t.Fatal(err)
+	}
+	if skipped != 1 || len(names) != 1 || names[0] != "big.xlsx" {
+		t.Fatalf("workspace clone copied %q and skipped %d, want big.xlsx and 1", names, skipped)
+	}
+}
+
 // Concurrent clones into one workspace (repeatable read) stay under its file
 // cap and share one new topic: both charge the payer's storage row, so the
 // later one fails to serialize and retries on a snapshot holding the first.

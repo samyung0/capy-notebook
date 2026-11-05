@@ -2599,7 +2599,8 @@ code `role_lost`); anything else (such as the owner's account state for a
 collaborator, which the read-only strip answers) takes effect within those 5 s,
 and every checkpoint rechecks each writer's account. Each room has its own state cap (`sources::state_cap`, Epo
 2026-10-17): its seed plus the export cap (the largest plan source file,
-`max(plan_limits.source_file_max_bytes)`, read with the room's stored rows)
+`max(plan_limits.source_file_max_bytes)`, or in a text room the flat
+`text_file_max_bytes`, Q629, Q630; read with the room's stored rows)
 less the base file and a 1 MiB margin, within the 100 MiB ceiling every room
 shares (WebSocket frames, downloads, offline drafts).
 Pictures that came with the file are references in the seed but bytes in the
@@ -2629,7 +2630,8 @@ durable state's over seed(base) as the room's estimate counts it
 (`sourceGrowthSQL`): an Office state and its rows are the change, and a text
 state, the whole text with its history, less its seed (`seed_bytes`). A base
 within the margin and the reserve of the export cap leaves no growth, so a
-Pro upload between about 28.94 and 30 MiB opens view-only from the start. An
+Pro upload between about 28.94 and 30 MiB opens view-only from the start,
+and so does a text file between about 0.94 and 2 MiB. An
 image picked once the replica exists waits for its first measure; one picked
 before is refused with the budget notice. A
 save's whole state and an agent edit's are held to the same cap. Only when

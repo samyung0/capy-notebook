@@ -70,10 +70,12 @@ func (e *FileLimitExceededError) Code() string {
 	return "files_limit_exceeded"
 }
 
-// FileTooLargeError refuses a file past the per-file cap (plan
-// SourceFileBytes) of the account that pays for it, as an upload is refused.
+// FileTooLargeError refuses a file past the per-file cap (plan FileBytes) of
+// the account that pays for it, as an upload is refused. Text: the cap was the
+// flat text cap.
 type FileTooLargeError struct {
 	LimitBytes int64
+	Text       bool
 }
 
 func (e *FileTooLargeError) Error() string {

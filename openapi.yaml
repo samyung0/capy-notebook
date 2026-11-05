@@ -7115,6 +7115,10 @@ components:
           items:
             $ref: "#/components/schemas/SourceUploadParseModePolicy"
           type: array
+        textMaxBytes:
+          description: The flat cap on one text file (txt, md, json, source code, CSV, TSV), on every plan
+          format: int64
+          type: integer
         vlmIngestPageCreditMicros:
           format: int64
           type: integer
@@ -7124,6 +7128,7 @@ components:
         - accept
         - maxBytes
         - imageMaxBytes
+        - textMaxBytes
         - allowNoExtension
         - digitalParsePageCreditMicros
         - vlmIngestPageCreditMicros

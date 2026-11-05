@@ -46,9 +46,9 @@ pub const MAX_SOURCE_STATE_BYTES: usize = 100 * 1024 * 1024;
 /// server/internal/store/source_documents.go
 pub const STATE_GROWTH_MARGIN_BYTES: u64 = 1024 * 1024;
 
-/// A room's state cap: its seed plus the export cap (the largest plan source
-/// file) less the base file and a margin, within [`MAX_SOURCE_STATE_BYTES`]
-/// (Epo 2026-10-17). Pictures that came with the file are references in the
+/// A room's state cap: its seed plus the export cap (a text room's flat text
+/// cap, an Office room's largest plan source file) less the base file and a
+/// margin, within [`MAX_SOURCE_STATE_BYTES`] (Epo 2026-10-17). Pictures that came with the file are references in the
 /// seed but bytes in the export; inserted images are bytes in both. So a
 /// room's edits keep its export under the plan limit. Publication still
 /// takes an export over it, up to the ceiling (Epo 2026-10-19); its base

@@ -14,7 +14,7 @@ This page is the accounting contract.
 
 ## Product plan limits
 
-`plan_limits` (`server/migrations/0001_init.sql`, image cap added in `0069`, 2 MiB on every plan since `0114`, topics per workspace in `0136`) is the canonical backend
+`plan_limits` (`server/migrations/0001_init.sql`, image cap added in `0069`, 2 MiB on every plan since `0114`, topics per workspace in `0136`, text file cap in `0154`) is the canonical backend
 catalog for every numeric limit that may vary by subscription plan:
 
 | Limit                           |                       Free |                        Pro |
@@ -27,6 +27,7 @@ catalog for every numeric limit that may vary by subscription plan:
 | Files per workspace             |                        100 |                        100 |
 | Files per upload/import request |                         20 |                         20 |
 | One uploaded image              |                      2 MiB |                      2 MiB |
+| One text file                   |                      2 MiB |                      2 MiB |
 | Topics per workspace            |                         10 |                         20 |
 
 Files per workspace counts nothing outside a workspace: a standalone file
@@ -204,6 +205,38 @@ carries the reader's own editor caps, since what it adds is charged to it
 its own checks. Uploads stream through the API host, which Cloudflare
 proxies with a 100 MB request body limit; the 30 MiB largest per-file cap stays
 well under it.
+
+**Text files** take a flat cap instead of the per-file cap (Epo 2026-11-05, Q629,
+Q630; `plan_limits.text_file_max_bytes`, `planlimits.Limits.FileBytes`): 2 MiB on
+every plan for txt, md, json, source code, CSV and TSV
+(`sourceupload.IsTextFile`), since 30 MiB of text is too much to send to a model.
+Excel files and names Capy does not recognize keep the per-file cap. It holds at:
+
+- uploads: the policy carries it as `textMaxBytes`, and the add-source and Make a
+  quiz dialogs refuse a larger pick with "Text files must be 2 MB or smaller"
+  (`toastRejectedSources`). The ticket and the upload refuse it again, 400 "text
+  files can be at most 2 MB". Make a quiz keeps its own 200,000-character limit.
+- imports: `file_too_large` at the inspection and the request, and a provider file
+  that names no size stops at the same cap as it downloads (`source_import_jobs`).
+- agent-created files: `storeAgentFile` takes the same cap, though no agent tool
+  creates a text file today (`create_deck` makes PPTX, `edit_office_document`'s
+  create XLSX and DOCX).
+- clones: a single file clone answers `file_too_large` with `maxBytes` and `text`
+  (the dialog shows the same message), and a workspace clone leaves it out and
+  counts it in `skippedMaterials`.
+- saved edits: a text room's export cap is this cap, not the largest plan's source
+  cap (`Stored.export_cap`, `Catalog.SourceExportCap`). The room's state cap and
+  growth budget then follow the usual rule ([Reservations and
+  clones](#reservations-and-clones) below; the 1 MiB margin and 64 KiB reserve
+  included, so editing stops at about 0.94 MiB of state). An update past it gets
+  the unrecoverable `source-checkpoint-failed` and closes for size; the editor
+  shows the unsaved text read-only to copy ("These changes couldn't be saved."),
+  and Reload returns to the last saved version. An agent edit past it answers 413.
+
+A text file already over the cap, or within the margin and reserve of it, keeps
+its bytes and stays readable: it opens view-only with the size-limit notice and
+its mode control disabled (`atSizeLimit`, `growthBudgetBytes` 0), as any source
+at its size limit does.
 
 Office parsing keeps its structured handoff temporarily on the ingest host, with
 no durable B2 parse cache or preview PDF. Temporary parse output is a platform
@@ -569,8 +602,8 @@ Edits a publication captured are charged once, in the file:
   change in the file's size: the published text is in the file's bytes now,
   and Yjs stores text as its UTF-8 bytes. What stays charged is Yjs history
   (deleted structs and item metadata; source states are never compacted, and
-  a room's state cap bounds them: its seed plus the 30 MiB export cap less
-  the base file and a 1 MiB margin) and edits after the capture. Migration
+  a room's state cap bounds them: its seed plus the 2 MiB text cap less the
+  base file and a 1 MiB margin) and edits after the capture. Migration
   0054 gave every existing text state the seed size of its file (seed(text) is
   the text plus 15–18 bytes). `seed_bytes` is recorded for text only (a CHECK
   keeps it 0 for Office rows).
@@ -722,7 +755,7 @@ clone of its material, and a trashed material's assets are left out), and reuse 
 paths under reference counting. `ready` source files are copied, and partial
 ones (`failed` with a served index, parts design Q2) under the same gates;
 pending, processing, and other failed files are omitted. A file past the cloner's per-file
-plan cap (`plan_limits.source_file_max_bytes`, the upload cap) is left out of
+cap (`Limits.FileBytes`, the upload cap: the plan's, or a text file's flat cap) is left out of
 the copy and counted in the answer's `skippedMaterials`, as is a material
 whose stored content the current rules refuse or that is over the material
 size caps (Epo 2026-10-20); the clone's other limits still refuse it whole. Material nodes (and quiz image blocks; a card keeps its text and loses only its image) referring to a pending,
@@ -742,9 +775,9 @@ copy lands (`files.user_id`, `source_documents.user_id`,
 `materials.owner_user_id` and `editor_assets.user_id`); the quota gate runs on the payer
 with the copy's bytes (a file's size plus its saved edit state; a material's
 content, its embedded rows and its copied assets), and a file copy also passes
-the destination's file-count gate and the payer's per-file plan cap, as an
+the destination's file-count gate and the payer's per-file cap, as an
 upload into that workspace does (`FileTooLargeError`, 400 `file_too_large`
-with `maxBytes`; the dialog shows the upload's size message). A copy queued
+with `maxBytes` and `text`; the dialog shows the upload's size message). A copy queued
 for ingest on an embedding-pin mismatch stays `pending` and charged: file
 bytes are charged whatever the file's status. A material clone copies only ready editor
 assets referenced by the current SQL projection, gives each asset a fresh

@@ -153,7 +153,7 @@ func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*br
 		}
 		// On the current base only: the view read heads no blob.
 		if session.BaseBytes != nil {
-			exportCap, err := a.s.MaxSourceFileBytes()
+			exportCap, err := a.s.SourceExportCap(session.Format)
 			if err != nil {
 				return nil, hErr(err)
 			}
@@ -195,7 +195,7 @@ func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*br
 // is the file's current revision unless editing stays on an older one, whose
 // size the bucket answers.
 func (a *api) sourceGrowthBudget(ctx context.Context, session store.BrowserSourceSession) (int64, error) {
-	exportCap, err := a.s.MaxSourceFileBytes()
+	exportCap, err := a.s.SourceExportCap(session.Format)
 	if err != nil {
 		return 0, hErr(err)
 	}

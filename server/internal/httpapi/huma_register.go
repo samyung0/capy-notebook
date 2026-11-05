@@ -363,7 +363,7 @@ func mapHTTPError(err error) error {
 			Detail: fmt.Sprintf("uploads support files up to %d MB", tooLarge.LimitBytes>>20),
 			Errors: []*huma.ErrorDetail{{
 				Message: "file_too_large",
-				Value:   map[string]any{"maxBytes": tooLarge.LimitBytes},
+				Value:   map[string]any{"maxBytes": tooLarge.LimitBytes, "text": tooLarge.Text},
 			}},
 		}
 	}

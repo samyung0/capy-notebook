@@ -108,8 +108,7 @@ const sourceCeilingBytes = 100 << 20
 const sourceWriteReserveBytes = 64 << 10
 
 // SourceGrowthBudget is what a source room may still admit: the export cap
-// (the largest plan source file) less the base file, the margin, admission's
-// write reserve and the durable growth over seed(base) (Epo 2026-10-17; the
+// (SourceExportCap) less the base file, the margin, admission's write reserve and the durable growth over seed(base) (Epo 2026-10-17; the
 // collaboration server's admission_cap of state_cap). Never negative; 0
 // means nothing would be admitted, so the file opens to view only.
 func SourceGrowthBudget(exportCap, baseBytes, grownBytes int64) int64 {
