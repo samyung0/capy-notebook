@@ -1,6 +1,7 @@
 import { delay, HttpResponse, http } from 'msw';
 import { EXTRACTION_PAGES_MAX } from '@/api/limits.generated';
 import type {
+  ConfirmExtractionReq,
   CreateExtractionReq,
   Extraction,
   ExtractionReport,
@@ -154,6 +155,19 @@ export function seedExtractionFiles() {
   );
   seedFile('f_worksheet', 'Worksheet photo.jpg', 'image', 320, WORKSHEET);
   seedFile(
+    'f_scheme_unread',
+    'Unreadable mark scheme.pdf',
+    'pdf',
+    210,
+    paperPdf('Unreadable', 2)
+  );
+  // Failed after it was chosen: reached from a link, as the menus leave it out.
+  const unread = db.files.at(-1);
+  if (unread) {
+    unread.indexed = false;
+    unread.status = 'failed';
+  }
+  seedFile(
     'f_worked',
     'Worked answers.docx',
     'doc',
@@ -304,15 +318,10 @@ function reportFor(
     expected: [...recorded, ...missing],
     figures: [],
     figuresLeftOut: [],
-    keyDisagreements: [],
-    marksDiffer: [],
     missing,
     pages,
     recorded,
-    schemeRefused: [],
-    schemeRepeats: [],
     stopped: '',
-    unpaired: [],
     windows: Math.ceil(pages / 2),
   };
   return report as ExtractionReport;
@@ -320,7 +329,21 @@ function reportFor(
 
 /** How fast a run reads, so its progress can be watched. */
 const QUESTION_MS = 900;
+const MAP_MS = 1500;
 const runs = new Map<string, Extraction>();
+/** What a paused run does once its starter confirms. */
+const starts = new Map<string, (confirmed: number) => void>();
+
+const announce = (run: Extraction, status: string) =>
+  window.dispatchEvent(
+    new CustomEvent('capy:mock-stream', {
+      detail: { extractionId: run.id, status, type: 'extraction' },
+    })
+  );
+
+/** What the confirm dialog says the starter has; a test sets it to see it run short. */
+const mockCredits = () =>
+  Number(localStorage.getItem('capy:mock-quiz-credits') ?? 500);
 
 /** What a quiz's rooms start from instead of its saved questions, so the mock
  * can show board X2's issue: question 7 waiting for its image. A real run only
@@ -356,8 +379,8 @@ export function extractionHandlers(
         await delay();
         const workspaceId = String(params.id);
         const body = (await request.json()) as CreateExtractionReq;
-        const paper = body.paper ?? [];
-        const pages = paper.reduce(
+        const files = [...body.paper, ...(body.answers ?? [])];
+        const pages = files.reduce(
           (sum, file) => sum + (file.pages?.length ?? 0),
           0
         );
@@ -374,6 +397,7 @@ export function extractionHandlers(
             { status: 409 }
           );
         const run: Extraction = {
+          answered: 0,
           createdAt: new Date().toISOString(),
           id: uid('ex'),
           recorded: 0,
@@ -382,42 +406,99 @@ export function extractionHandlers(
           workspaceId,
         };
         runs.set(run.id, run);
-        const fails = paper.some((file) => file.fileId === FAILS);
-        const leaves = paper.some((file) => file.fileId === LEAVES_ONE_OUT);
+        const paperName = body.paper
+          .map(
+            (paper) => db.files.find((file) => file.id === paper.fileId)?.name
+          )
+          .join(', ');
         const questions = extractedQuestions();
         const labels = questions.map((_, i) => String(i + 1));
-        const end = (status: 'done' | 'failed') => {
-          clearInterval(timer);
-          run.status = status;
-          run.finishedAt = new Date().toISOString();
-          if (status === 'done') {
-            const kept = leaves ? questions.slice(0, -1) : questions;
-            run.quizId = saveQuiz(workspaceId, body.title, kept);
-            draftQuizQuestions.set(run.quizId, withMissingFigure(kept));
-            run.report = reportFor(
-              labels.slice(0, kept.length),
-              pages,
-              leaves ? labels.slice(-1) : []
+        const unread = (body.answers ?? []).flatMap((answer) => {
+          const file = db.files.find((row) => row.id === answer.fileId);
+          return file && !file.indexed ? [file.name] : [];
+        });
+        const answerFiles = (body.answers ?? []).length - unread.length;
+        // The map's call: then the run waits on its starter (Epo 2026-11-05).
+        setTimeout(() => {
+          run.status = 'confirming';
+          run.found = {
+            answerFiles,
+            availableCredits: mockCredits(),
+            chargedCredits: 4,
+            paperName,
+            paperPages: body.paper.reduce(
+              (sum, file) => sum + (file.pages?.length ?? 0),
+              0
+            ),
+            questions: questions.map((question, i) => ({
+              first: i + 2,
+              label: labels[i] ?? '',
+              last: i + 2,
+              parts: question.parts.length > 1 ? ['a', 'b'] : [],
+            })),
+            unreadAnswers: unread,
+          };
+          starts.set(run.id, (confirmed) => {
+            const fails = body.paper.some((file) => file.fileId === FAILS);
+            const leaves = body.paper.some(
+              (file) => file.fileId === LEAVES_ONE_OUT
             );
-          } else {
-            run.errorCode = 'extraction_failed';
-            run.error =
-              'The pages could not be read. Try again in a few minutes.';
-          }
-          window.dispatchEvent(
-            new CustomEvent('capy:mock-stream', {
-              detail: { extractionId: run.id, status, type: 'extraction' },
-            })
-          );
-        };
-        const timer = setInterval(() => {
-          run.recorded += 1;
-          if (fails && run.recorded === 4) end('failed');
-          else if (run.recorded >= questions.length) end('done');
-        }, QUESTION_MS);
+            const end = (status: 'done' | 'failed') => {
+              clearInterval(timer);
+              run.status = status;
+              run.finishedAt = new Date().toISOString();
+              if (status === 'done') {
+                const chosen = questions.slice(0, confirmed);
+                const kept = leaves ? chosen.slice(0, -1) : chosen;
+                run.quizId = saveQuiz(workspaceId, body.title, kept);
+                draftQuizQuestions.set(run.quizId, withMissingFigure(kept));
+                run.report = reportFor(
+                  labels.slice(0, kept.length),
+                  pages,
+                  leaves ? labels.slice(confirmed - 1, confirmed) : []
+                );
+              } else {
+                run.errorCode = 'extraction_failed';
+                run.error =
+                  'The pages could not be read. Try again in a few minutes.';
+              }
+              announce(run, status);
+            };
+            const timer = setInterval(() => {
+              if (run.recorded < confirmed) run.recorded += 1;
+              else run.answered += 1;
+              if (fails && run.recorded === 4) end('failed');
+              else if (run.answered >= confirmed) end('done');
+            }, QUESTION_MS);
+          });
+          announce(run, 'confirming');
+        }, MAP_MS);
         return HttpResponse.json(run, { status: 202 });
       }
     ),
+    http.post('/api/extractions/:id/confirm', async ({ params, request }) => {
+      await delay();
+      const run = runs.get(String(params.id));
+      const start = starts.get(String(params.id));
+      if (!(run && start)) return new HttpResponse(null, { status: 404 });
+      const { questions } = (await request.json()) as ConfirmExtractionReq;
+      run.status = 'running';
+      run.confirmed = questions;
+      run.found = undefined;
+      starts.delete(run.id);
+      start(questions);
+      return HttpResponse.json(run);
+    }),
+    http.post('/api/extractions/:id/cancel', async ({ params }) => {
+      await delay();
+      const run = runs.get(String(params.id));
+      if (!run) return new HttpResponse(null, { status: 404 });
+      run.status = 'cancelled';
+      run.found = undefined;
+      run.finishedAt = new Date().toISOString();
+      starts.delete(run.id);
+      return HttpResponse.json(run);
+    }),
     http.get('/api/extractions/:id', async ({ params }) => {
       await delay();
       const run = runs.get(String(params.id));

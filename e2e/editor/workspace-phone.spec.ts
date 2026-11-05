@@ -172,7 +172,8 @@ test('Make a quiz hides the dock, and the chat comes back with its draft and thr
   ).toBeVisible();
   await expect(dock).toHaveCount(0);
 
-  await page.getByRole('button', { name: m.action_cancel() }).click();
+  await page.getByRole('button', { name: m.action_back() }).click();
+  await dialog.getByRole('button', { name: m.action_close() }).click();
   await button.click();
   await expect(field).toHaveValue('And ATP?');
   await dock.getByRole('button').first().click();

@@ -4,16 +4,20 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { ExtractionFound } from './extractionFound.ts';
 import type { ExtractionReport } from './extractionReport.ts';
 import type { ExtractionStatus } from './extractionStatus.ts';
 
 export interface Extraction {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  answered: number;
+  confirmed?: number;
   createdAt: string;
   error?: string;
   errorCode?: string;
   finishedAt?: string;
+  found?: ExtractionFound;
   id: string;
   quizId?: string;
   recorded: number;

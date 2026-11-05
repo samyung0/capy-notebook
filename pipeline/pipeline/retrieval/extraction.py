@@ -8,21 +8,20 @@ solve; bench/extraction/reports/2026-11-05-copy-first-structured.md):
    number the boxes figures are picked from, once across the selection.
 1. The map: one call sees every selected page and its boxes and answers one
    line a question: label, pages, parts, figures.
+   The answer files go with it (Epo 2026-11-05, "dont use code for pairing, send the
+   files directly"), as indexed text or page images, so every later call reads them
+   from the cache. The run then waits for its starter to confirm the questions found
+   (``confirm``, Epo 2026-11-05): the map is charged by its tokens, and they pay per
+   question from here.
 2. Copy batches of 16 of the map's questions, at most 4 at once, each continuing
    the map's conversation at low reasoning. ``record_question`` carries no answers.
-   The mark scheme and answer files are parsed as text from the moment the map
-   ends, each on its own and never beside the pages, naming entries by the map's
-   labels and parts.
 3. Code checks the copies against the map and sends a repair for a question left
    out: a map row not copied, a gap in the numbers, or the next number printed on
    a page no row covers. A figure the map lists and a batch left out is added
    from the map's boxes.
-4. Code pairs the scheme with the copies by label: a question whose every part
-   it covers needs no model call. Solve batches of up to 8 of the rest, in
-   parallel at medium reasoning, each continue the copy batch holding their
-   questions and give ``record_answers``: copied when the page prints them,
-   otherwise worked out (Epo 2026-11-03). A printed key stays, a scheme's replaces
-   a worked-out one, and any disagreement is named in the report.
+4. Solve batches of up to 8 questions, in parallel at medium reasoning, each continue
+   the copy batch holding their questions and give ``record_answers``: taken from the
+   answer files or the page when they give them, otherwise worked out.
 
 Every recorded question and answer goes through the Go validator at once and a
 problem goes back to the model. A call that fails is tried once more where it is
@@ -31,8 +30,7 @@ stay, and a part left with no answer is named in the report.
 
 The printed option order is kept (``add_questions`` shuffles; this does not),
 and option lines the model also copied into a part's text are taken out. No
-question is left out for want of a key. A worked-out solution carries an
-"AI-written" label. Each figure a question needs is recorded by box number (Epo
+question is left out for want of a key. Each figure a question needs is recorded by box number (Epo
 2026-11-04). One with no box is boxed at the end by a call that sees its page
 alone. Each is cropped from its page and placed after the text of the part it
 names, as an image block whose asset is ``figure:<id>``; the ``done`` event
@@ -47,10 +45,12 @@ import base64
 import copy
 import dataclasses
 import functools
+import io
 import json
 import logging
 import math
 import re
+import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
@@ -75,8 +75,6 @@ SOLVE_BATCH = 8
 # credits ran out stops a thread only before its next call, and a long map is many
 # batches (500 rows, 32): the ones still waiting here stop without spending anything.
 BATCHES_AT_ONCE = 4
-# Figures one question may record: one constant, so a lower limit changes one line.
-QUESTION_FIGURES_MAX = limits.QUESTION_BLOCKS_MAX
 # Model calls a thread may make: the first records, the rest send again what the
 # validator refused or what was not valid JSON, or what a reply cut off at the
 # output cap left out.
@@ -94,7 +92,10 @@ COPY_REPAIR_PASSES = 2
 # page and cost 17 times a normal run
 # (bench/extraction/reports/2026-11-03-keys-in-one-prompt.md, Epo 2026-11-04).
 OUTPUT_PER_PAGE = 8_000
-SCHEME_MAX_TOKENS = 12_000
+# Figures a whole question holds, stem and parts together (Epo 2026-11-05, "cap at 5, i
+# thought its per part, if whole quesiton then 5"). A call past it is refused. Worked
+# solutions hold text alone, so they can't add one.
+QUESTION_FIGURES_MAX = 5
 # A figure is cropped at the scale that gives its page's long side this many
 # pixels (about 190 DPI on A4, against the page images' 1,568), so its labels read
 # and a small figure stays small; the crop's long side is still at most
@@ -102,20 +103,29 @@ SCHEME_MAX_TOKENS = 12_000
 FIGURE_PAGE_EDGE = 2_200
 # The locate call's reply: a few boxes.
 LOCATE_MAX_TOKENS = 1_000
-# Indexed text shown per page, and scheme text per parse call.
+# Indexed text shown per page.
 PAGE_TEXT_CHARS = 6_000
-SCHEME_CHUNK_CHARS = 12_000
-# The longest mark scheme or answer file a run reads, about 60 dense pages;
-# a longer one is refused rather than cut.
-SCHEME_TEXT_CHARS = 200_000
+# A file with no page view counts one page of output budget per this much text.
+TEXT_PAGE_CHARS = 500
+# The most whole-file and answer text a run sends, about 60 dense pages (Epo
+# 2026-11-05); more is refused rather than cut.
+RUN_TEXT_CHARS = 200_000
+# How long a run waits for its starter to confirm the questions found, and how often it
+# looks at their answer. The wait holds a turn slot.
+CONFIRM_WAIT_S = 600
+CONFIRM_POLL_S = 1.0
+# How often a run says how far it has got, for its panel.
+PROGRESS_EVERY_S = 2.0
 
 # A busy, failing or silent provider costs a call one silent retry (Epo
-# 2026-11-03): the map, a thread's round or a scheme piece runs once more. A
+# 2026-11-03): the map or a thread's round runs once more. A
 # definitive client error does not retry.
 ATTEMPTS = 2
 ATTEMPT_WAIT_S = 20.0
 
 Validate = Callable[[dict[str, Any]], Awaitable[str | None]]
+# Given how many questions the map found, how many to make; None ends the run.
+Confirm = Callable[[int], Awaitable[int | None]]
 
 # What a selected page is, for whether its text goes to the model (Epo 2026-11-05).
 BORN_DIGITAL, SCAN, BLANK = "born_digital", "scan", "blank"
@@ -131,13 +141,14 @@ class Page:
     """One selected page: its number in its file, the file's name, the
     page's indexed text, its image as a data URL, a box on it as a JPEG with
     its pixel size, for a figure, what the layout model found on it, and what
-    it is (``page_layer``); what is not known counts as a scan."""
+    it is (``page_layer``); what is not known counts as a scan. A text paper is one page
+    with no image and no crop: its whole indexed text."""
 
     number: int
     file_name: str
     text: str
-    image: Callable[[], Awaitable[str]]
-    crop: Callable[[list[float]], Awaitable[tuple[bytes, tuple[int, int]]]]
+    image: Callable[[], Awaitable[str]] | None
+    crop: Callable[[list[float]], Awaitable[tuple[bytes, tuple[int, int]]]] | None
     regions: tuple[layout.Region, ...] = ()
     layer: str = SCAN
 
@@ -159,9 +170,13 @@ class Figure:
 
 
 @dataclass(frozen=True)
-class SchemeFile:
+class AnswerFile:
+    """A mark scheme, answer key or someone's answers, as the map's message carries it:
+    its page images, each with its number, or else its indexed text."""
+
     name: str
-    text: str
+    text: str = ""
+    images: tuple[tuple[int, Callable[[], Awaitable[str]]], ...] = ()
 
 
 @dataclass
@@ -172,8 +187,6 @@ class Recorded:
     question: dict[str, Any]
     part_labels: list[str]
     figures: list[Figure] = field(default_factory=list)
-    # The question's printed total, when the page prints only a total.
-    total: int | None = None
 
 
 @dataclass(frozen=True)
@@ -188,22 +201,15 @@ class MapRow:
     figures: list[int]
 
 
-@dataclass
-class Entry:
-    question: str
-    part: str
-    answer: str = ""
-    points: list[dict[str, Any]] = field(default_factory=list)
-    solution: str = ""
-
-
 # ---------------------------------------------------------------- labels
 
 
 def label_key(label: str) -> str:
     """A printed label as pairing compares it: "Q3", "3." and "3" are one;
     "(b)(ii)", "b(ii)" and "b ii" are one."""
-    tokens = re.findall(r"[a-z]+|\d+", label.lower())
+    # Any other letter or number is a token too: 甲, or ① and ②, which a Chinese paper
+    # labels parts with, would otherwise all read as "".
+    tokens = re.findall(r"[a-z]+|\d+|[^\W\d_a-z]+", label.lower())
     if tokens and tokens[0] in ("q", "question", "no"):
         tokens = tokens[1:]
     return ".".join(tokens)
@@ -223,7 +229,7 @@ def _text(value: Any, limit: int) -> str:
 
 def _whole(value: Any) -> int | None:
     """A mark count the model wrote as 2, 2.0 or "2"."""
-    if isinstance(value, str) and value.strip().isdigit():
+    if isinstance(value, str) and value.strip().isdigit() and len(value.strip()) < 10:
         value = int(value.strip())
     if isinstance(value, float) and value.is_integer():
         value = int(value)
@@ -504,7 +510,6 @@ def record(item: Any) -> Recorded:
         label=str(item.get("label") or "").strip(),
         question=question,
         part_labels=labels,
-        total=_whole(item.get("total_marks")),
     )
 
 
@@ -540,11 +545,13 @@ def read_figures(
     page image (for the box call), or the tool-result problem
     naming the first that cannot be read."""
     items = raw if isinstance(raw, list) else []
-    if len(items) > QUESTION_FIGURES_MAX:
-        return [], (
-            f"too many figures, a question holds at most {QUESTION_FIGURES_MAX}"
-        )
     read: list[Figure] = []
+    # Only pages with an image can give a figure, and only they are counted.
+    pictured = [page for page in pages if page.image]
+    if not pictured:
+        return [], None
+    if len(items) > QUESTION_FIGURES_MAX:
+        return [], f"too many figures, a question holds at most {QUESTION_FIGURES_MAX}"
     parts = {label_key(label) for label in part_labels}
     for index, item in enumerate(items):
         name = f"figures[{index}]"
@@ -565,10 +572,10 @@ def read_figures(
         numbers = numbers if isinstance(numbers, list) else []
         if not numbers:
             image = _whole(item.get("image"))
-            if image is None or not 1 <= image <= len(pages):
-                choices = " or ".join(str(n + 1) for n in range(len(pages)))
+            if image is None or not 1 <= image <= len(pictured):
+                choices = " or ".join(str(n + 1) for n in range(len(pictured)))
                 return [], f"{name}: with boxes [] give image, {choices}"
-            read.append(Figure(pages[image - 1], part, description))
+            read.append(Figure(pictured[image - 1], part, description))
             continue
         unknown = [number for number in numbers if number not in boxes]
         if unknown:
@@ -627,7 +634,7 @@ async def placed(held: Recorded, crops: dict[str, str]) -> dict[str, Any]:
 
 
 _MAP_LINE = re.compile(
-    r"^\s*(?:\*\*)?(?P<label>[^|]+?)(?:\*\*)?\s*\|\s*pages?\s*(?P<first>\d+)(?:\s*-\s*(?P<last>\d+))?"
+    r"^\s*(?:\*\*)?(?P<label>[^|]+?)(?:\*\*)?\s*\|\s*pages?\s*(?P<first>\d{1,9})(?:\s*-\s*(?P<last>\d{1,9}))?"
     r"\s*\|\s*parts?\s*(?P<parts>[^|]*?)\s*\|\s*figures?\s*(?P<figures>.*?)\s*$",
     re.IGNORECASE,
 )
@@ -640,6 +647,9 @@ def parse_map(text: str) -> list[MapRow]:
         match = _MAP_LINE.match(line)
         if not match:
             continue
+        # "none | pages 1-1 | ..." is the model saying it found no question.
+        if match["label"].strip().lower() == "none":
+            continue
         parts = match["parts"].strip()
         rows.append(
             MapRow(
@@ -649,7 +659,7 @@ def parse_map(text: str) -> list[MapRow]:
                 []
                 if parts.lower() in ("none", "-", "")
                 else [p.strip() for p in parts.split(",") if p.strip()],
-                [int(n) for n in re.findall(r"\d+", match["figures"])],
+                [int(n) for n in re.findall(r"\b\d{1,9}\b", match["figures"])],
             )
         )
     return rows
@@ -657,7 +667,8 @@ def parse_map(text: str) -> list[MapRow]:
 
 def _number(label: str) -> int | None:
     digits = re.findall(r"\d+", label)
-    return int(digits[-1]) if digits else None
+    # Python refuses to read over 4,300 digits, and nothing that long is a number here.
+    return int(digits[-1]) if digits and len(digits[-1]) < 10 else None
 
 
 def _runs_of(labels: list[str]) -> list[list[str]]:
@@ -677,6 +688,12 @@ def _chunks_of(items: list[Any], size: int) -> list[list[Any]]:
     return [items[i : i + size] for i in range(0, len(items), size)]
 
 
+def _as_list(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    return value if isinstance(value, list) else [value]
+
+
 def _keyless(item: dict[str, Any]) -> dict[str, Any]:
     """A copy call as code keeps it, anything it sent of a key taken out."""
     out = copy.deepcopy(item)
@@ -690,12 +707,17 @@ def _keyless(item: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _with_placeholders(item: dict[str, Any]) -> dict[str, Any]:
+def _with_placeholders(
+    item: dict[str, Any], only: set[str] | None = None
+) -> dict[str, Any]:
     """A copy with placeholder keys, so the validator checks what was copied and
-    nothing that comes later. It is never saved."""
+    nothing that comes later; ``only`` limits them to those parts, by label key. It is
+    never saved."""
     out = copy.deepcopy(item)
     for part in out.get("parts") or []:
         if not isinstance(part, dict) or not isinstance(part.get("answer"), dict):
+            continue
+        if only is not None and label_key(str(part.get("label") or "")) not in only:
             continue
         answer = part["answer"]
         kind = answer.get("type")
@@ -727,23 +749,6 @@ def _parts_with_no_answer(held: Recorded) -> list[str]:
         for label, part in zip(held.part_labels, held.question["parts"])
         if not _has_key(part)
     ]
-
-
-def _with_keys_filled(question: dict[str, Any]) -> dict[str, Any]:
-    """A saved question with placeholder keys on the parts with none, so a check
-    looks at what it holds. It is never saved."""
-    out = copy.deepcopy(question)
-    for part in out["parts"]:
-        if _has_key(part):
-            continue
-        answer = part["answer"]
-        if answer["type"] == "mcq":
-            answer["correct"] = [0]
-        elif answer["type"] == "short":
-            answer["accepted"] = ["0"]
-        else:
-            part["markscheme"] = [{"text": "-", "marks": part["marks"]}]
-    return out
 
 
 # A code span, math already between $ signs, or math between \( \) or \[ \].
@@ -836,154 +841,6 @@ def _counts(question: dict[str, Any]) -> tuple[int, int]:
     return len(parts), sum(1 for p in parts if p["answer"].get("type") == "open")
 
 
-# ------------------------------------------------------------------ pairing
-
-
-def entries_from(data: Any) -> list[Entry]:
-    entries: list[Entry] = []
-    rows = data.get("entries") if isinstance(data, dict) else None
-    for row in rows if isinstance(rows, list) else []:
-        if not isinstance(row, dict) or not str(row.get("question") or "").strip():
-            continue
-        entries.append(
-            Entry(
-                question=str(row["question"]).strip(),
-                part=str(row.get("part") or "").strip(),
-                answer=_text(row.get("answer"), limits.QUIZ_OPEN_ANSWER_MAX),
-                points=_points(row.get("points")),
-                solution=_text(row.get("solution"), limits.QUESTION_TEXT_MAX),
-            )
-        )
-    return entries
-
-
-def _merged(
-    pieces: list[list[Entry]],
-) -> tuple[dict[tuple[str, str], Entry], list[str]]:
-    """Entries by label, from each scheme piece's entries in order. An entry
-    the scheme split across two pieces (the last of one piece and the first
-    of the next, under one label) becomes one. Any other repeat of a label is
-    another question's entry the parse named wrongly (the bench saw a later
-    question's solution named 2021 Q8(b)(ii), doubling its marks): the first
-    stays, and the repeats are returned by name."""
-    out: dict[tuple[str, str], Entry] = {}
-    repeats: list[str] = []
-    last: tuple[str, str] | None = None
-    for piece in pieces:
-        for index, entry in enumerate(piece):
-            key = (label_key(entry.question), label_key(entry.part))
-            held = out.get(key)
-            if held is None:
-                out[key] = Entry(
-                    entry.question,
-                    entry.part,
-                    entry.answer,
-                    list(entry.points),
-                    entry.solution,
-                )
-            elif index == 0 and key == last:
-                held.answer = held.answer or entry.answer
-                held.points.extend(entry.points)
-                held.solution = "\n".join(
-                    s for s in (held.solution, entry.solution) if s
-                )
-            else:
-                repeats.append(part_name(entry.question, entry.part))
-        if piece:
-            last = (label_key(piece[-1].question), label_key(piece[-1].part))
-    return out, repeats
-
-
-def _letters(answer: str, count: int) -> list[int]:
-    found = re.findall(r"(?<![A-Za-z])([A-H])(?![A-Za-z])", answer.upper())
-    indexes = sorted({ord(letter) - ord("A") for letter in found})
-    return indexes if indexes and indexes[-1] < count else []
-
-
-def _same(a: str, b: str) -> bool:
-    """Two short answers that differ only in spacing, case, $ signs or a full
-    stop."""
-
-    def norm(value: str) -> str:
-        return re.sub(r"[\s$]", "", value).rstrip(".").lower()
-
-    return norm(a) == norm(b)
-
-
-def _entry_for(
-    entries: dict[tuple[str, str], Entry], label: str, part_label: str, single: bool
-) -> Entry | None:
-    question = label_key(label)
-    found = entries.get((question, label_key(part_label)))
-    if found is None and single:
-        found = entries.get((question, ""))
-    return found
-
-
-@dataclass
-class Paired:
-    """A question after pairing: the paired copy, whether any entry matched,
-    the parts whose key disagreed with the scheme, and whether it filled every part."""
-
-    held: Recorded
-    matched: bool
-    disagreed: list[str]
-    covered: bool
-
-
-def pair(held: Recorded, entries: dict[tuple[str, str], Entry]) -> Paired:
-    """A copy of the question with its scheme entries applied: a scheme's key,
-    marking points and solution replace the model's, and a key that differs from
-    the scheme's is named. A part the model has no key for has nothing to differ."""
-    out = copy.deepcopy(held)
-    matched = False
-    disagreed: list[str] = []
-    filled = 0
-    single = len(out.part_labels) == 1
-    for part_label, part in zip(out.part_labels, out.question["parts"]):
-        entry = _entry_for(entries, out.label, part_label, single)
-        if entry is None:
-            continue
-        matched = True
-        name = part_name(out.label, part_label)
-        replaced = False
-        answer = part["answer"]
-        if answer["type"] == "mcq":
-            letters = _letters(entry.answer, len(answer["options"]))
-            if letters and answer["correct"] and letters != sorted(answer["correct"]):
-                disagreed.append(name)
-            if letters:
-                answer["correct"], replaced = letters, True
-        elif answer["type"] == "short" and entry.answer:
-            value = entry.answer
-            unit = answer.get("unit", "")
-            if unit and value.endswith(unit):
-                value = value[: -len(unit)].strip()
-            differs = answer["accepted"] and not _same(value, answer["accepted"][0])
-            answer["accepted"], replaced = [value[: limits.QUESTION_TEXT_MAX]], True
-            # The scheme's marks, as on an open part.
-            marks = sum(item["marks"] for item in _items(entry.points))
-            if entry.points and marks <= limits.QUESTION_MARKS_MAX:
-                differs = differs or marks != part["marks"]
-                part["marks"] = marks
-            if differs:
-                disagreed.append(name)
-        elif answer["type"] == "open" and entry.points:
-            items = _items(entry.points)
-            marks = sum(item["marks"] for item in items)
-            if marks <= limits.QUESTION_MARKS_MAX:
-                if marks != part["marks"]:
-                    disagreed.append(name)
-                part["markscheme"], part["marks"], replaced = items, marks, True
-                if entry.answer:
-                    answer["accepted"] = [entry.answer]
-        if replaced:
-            filled += 1
-            if entry.solution:
-                part["solution"] = [{"type": "text", "text": entry.solution}]
-    return Paired(out, matched, disagreed, filled == len(out.part_labels))
-
-
 # --------------------------------------------------------------- the run
 
 
@@ -998,11 +855,18 @@ class Run:
     # What each question's copy call sent, its keys taken out, and its pages.
     copies: dict[str, dict[str, Any]] = field(default_factory=dict)
     spans: dict[str, tuple[int, int]] = field(default_factory=dict)
-    # Questions with their answers recorded, or wholly covered by the scheme.
+    # The starter confirmed fewer questions than the map found: these keys alone are
+    # kept, whatever a batch copies.
+    only: set[str] | None = None
+    # Questions whose map boxes could not fill in for what their batch left out.
+    figures_refused: list[str] = field(default_factory=list)
+    # Questions with their answers recorded.
     answered: set[str] = field(default_factory=set)
     # Printed order: a label's place is the map's, or its first record attempt.
     order: dict[str, int] = field(default_factory=dict)
     full: bool = False
+    # The quiz filled while copying: what was copied still gets its answers.
+    filled_copying: bool = False
     credits_out: bool = False
     # The run's output budget and what it has spent.
     output_budget: int = 0
@@ -1017,7 +881,7 @@ class Run:
         return self.full or self.credits_out or self.over_budget
 
     def stopped(self) -> str:
-        if self.full:
+        if self.full or self.filled_copying:
             return "quiz_full"
         if self.credits_out:
             return "credits"
@@ -1025,7 +889,12 @@ class Run:
 
     def held(self) -> list[Recorded]:
         return sorted(
-            self.recorded.values(), key=lambda h: self.order[label_key(h.label)]
+            (
+                held
+                for key, held in self.recorded.items()
+                if self.only is None or key in self.only
+            ),
+            key=lambda h: self.order[label_key(h.label)],
         )
 
     def counts(self, leaving_out: str = "") -> tuple[int, int]:
@@ -1058,12 +927,15 @@ class Run:
         checked = record(_with_placeholders(kept))
         if not checked.label or not checked.question["parts"]:
             return (
-                "A question needs its printed label and at least one part, given "
+                "A question needs its label and at least one part, given "
                 "as the call's arguments themselves."
             )
         key = label_key(checked.label)
         self.order.setdefault(key, len(self.order))
         sent = item.get("pages")
+        # A file with no page view has one page, whatever page numbers its text holds.
+        if not any(page.image for page in pages):
+            sent = [pages[0].number, pages[0].number]
         numbers = {page.number for page in pages}
         figures: list[Figure] = []
         problem = None
@@ -1073,7 +945,7 @@ class Run:
             and all(type(n) is int and n in numbers for n in sent)
             and sent[0] <= sent[1]
         ):
-            problem = "pages: expected [first, last], the page numbers it is printed on"
+            problem = "pages: expected [first, last], the page numbers it is on"
         elif "figures" not in item:
             problem = "figures: give [] when it needs none"
         else:
@@ -1107,6 +979,9 @@ class Run:
             )
         merged = copy.deepcopy(kept)
         by_part = {label_key(str(p.get("label") or "")): p for p in merged["parts"]}
+        # A part sent with no answer at all is skipped (Epo 2026-11-05, "skip the answer
+        # if there not enough information"): it stays as copied, and the report names it.
+        skipped: set[str] = set()
         for given in args.get("parts") or []:
             given = given if isinstance(given, dict) else {}
             name = str(given.get("label") or "")
@@ -1121,6 +996,13 @@ class Run:
                 )
             answer = part["answer"] if isinstance(part.get("answer"), dict) else {}
             part["answer"] = answer
+            if not any(
+                str(value).strip()
+                for field_name in ("correct", "accepted", "points")
+                for value in _as_list(given.get(field_name))
+            ):
+                skipped.add(label_key(name))
+                continue
             for field_name in ("correct", "accepted", "points"):
                 if field_name in given:
                     value = given[field_name]
@@ -1133,6 +1015,7 @@ class Run:
             for p in merged["parts"]
             if isinstance(p.get("answer"), dict)
             and p["answer"].get("type") == "open"
+            and label_key(str(p.get("label") or "")) not in skipped
             and not any(str(v).strip() for v in p["answer"].get("accepted") or [])
         ]
         if no_model_answer:
@@ -1144,7 +1027,8 @@ class Run:
         new.figures, problem = read_figures(
             merged.get("figures"), pages, new.part_labels, self.boxes
         )
-        problem = problem or await self.validate(new.question)
+        checked = record(_with_placeholders(merged, skipped))
+        problem = problem or await self.validate(checked.question)
         if problem:
             return f"Question {new.label}: {problem}. Fix it and record it again."
         if not self._fits(key, new.question):
@@ -1156,9 +1040,11 @@ class Run:
 
     def uncopied(self, rows: list[MapRow], pages: list[Page]) -> list[str]:
         """What a repair should copy: map rows with no copy, numbers missing inside
-        the map and the copies, and the next number when it is printed on a page past
+        the map and the copies, and the next number when it is on a page past
         the last question's: a page no row covers."""
         out = [row.label for row in rows if label_key(row.label) not in self.copies]
+        if self.only is not None:
+            return out
         labels = [*(row.label for row in rows), *self.copies]
         numbers = {_number(label) for label in labels} - {None}
         if not numbers:
@@ -1183,6 +1069,14 @@ class Run:
             out.append(str(max(numbers) + 1))
         return sorted(out, key=lambda label: _number(label) or 0)
 
+    def progress(self) -> dict[str, Any]:
+        """How far the run has got, for its panel."""
+        return {
+            "type": "progress",
+            "copied": len(self.copies),
+            "answered": len(self.answered),
+        }
+
     def fill_figures(self, rows: list[MapRow], pages: list[Page]) -> None:
         """A question the map gives figures and its batch gave none takes the map's
         boxes, one figure a page (28 of 536 bench rows left one out). The boxes go in
@@ -1192,10 +1086,11 @@ class Run:
             held = self.recorded.get(key)
             if held is None or held.figures:
                 continue
+            # By the page itself: two files both have a page 1.
             by_page: dict[int, list[int]] = {}
             for number in row.figures:
                 if number in self.boxes:
-                    by_page.setdefault(self.boxes[number][0].number, []).append(number)
+                    by_page.setdefault(id(self.boxes[number][0]), []).append(number)
             if not by_page:
                 continue
             items = [
@@ -1206,6 +1101,8 @@ class Run:
             if problem is None:
                 held.figures = figures
                 self.copies[key]["figures"] = items
+            else:
+                self.figures_refused.append(held.label)
 
     def in_printed_order(self) -> None:
         """By number once repairs may have come late, unless numbers repeat."""
@@ -1217,56 +1114,6 @@ class Run:
 
     def labels(self) -> list[str]:
         return [held.label for held in self.held()]
-
-
-def _chunks(text: str) -> list[str]:
-    """Scheme text in pieces of at most SCHEME_CHUNK_CHARS, cut at line ends."""
-    pieces: list[str] = []
-    current = ""
-    for line in text.splitlines(keepends=True):
-        if current and len(current) + len(line) > SCHEME_CHUNK_CHARS:
-            pieces.append(current)
-            current = ""
-        current += line
-    if current.strip():
-        pieces.append(current)
-    return pieces
-
-
-async def parse_schemes(
-    files: list[SchemeFile],
-    *,
-    model: ModelConfig,
-    labels: list[tuple[str, list[str]]],
-) -> list[list[Entry]]:
-    """Each scheme or answer file piece's entries, one parse call per piece,
-    in order. ``labels`` are the map's labels with their part labels, so entries
-    are named as the questions are (Epo 2026-11-03: 2024 Q3(b) was read as b(ii))."""
-
-    async def one(name: str, text: str) -> list[Entry]:
-        message = await models.complete(
-            prompts.scheme_messages(name, text, labels),
-            model=model,
-            response_format={"type": "json_object"},
-            max_tokens=SCHEME_MAX_TOKENS,
-            reasoning=False,
-            call_purpose="extraction_scheme",
-        )
-        data = extract_json(getattr(message, "content", "") or "")
-        if not isinstance(data, dict) or not isinstance(data.get("entries"), list):
-            # A reply cut off at the cap or not JSON is a failed attempt, not
-            # a scheme without answers.
-            raise elitellm.ProviderError(
-                "the mark scheme reply was cut off or not JSON"
-            )
-        return entries_from(data)
-
-    calls = [
-        _attempted(functools.partial(one, f.name, piece))
-        for f in files
-        for piece in _chunks(f.text)
-    ]
-    return list(await asyncio.gather(*calls))
 
 
 async def _attempted(call: Callable[[], Awaitable[Any]]) -> Any:
@@ -1305,8 +1152,26 @@ class EmptyMap(elitellm.ProviderError):
     """The map reply held no question."""
 
 
+async def _answer_blocks(answers: list[AnswerFile]) -> list[dict[str, Any]]:
+    """The answer files as the map's message carries them."""
+    blocks: list[dict[str, Any]] = []
+    shown = 0
+    for file in answers:
+        if not file.images:
+            blocks.append(
+                {"type": "text", "text": prompts.answer_text(file.name, file.text)}
+            )
+        for number, image in file.images:
+            shown += 1
+            heading = prompts.answer_image_heading(shown, number, file.name)
+            blocks.append({"type": "text", "text": heading})
+            blocks.append({"type": "image_url", "image_url": {"url": await image()}})
+    return blocks
+
+
 async def read_map(
     pages: list[Page],
+    answers: list[AnswerFile],
     boxes: dict[int, tuple[Page, layout.Region]],
     *,
     model: ModelConfig,
@@ -1315,17 +1180,24 @@ async def read_map(
     its rows, and its output tokens. A reply that calls a tool or is cut off is a
     failed attempt."""
     with_text = sends_page_text(pages)
+    pictured = [p for p in pages if p.image]
+    index = {id(p): n for n, p in enumerate(pictured, 1)}
     messages = prompts.map_messages(
         [
             (
+                prompts.text_page(p.number, p.file_name, p.text),
+                None,
+            )
+            if p.image is None
+            else (
                 prompts.page_text(
-                    index, p.number, p.file_name, p.text[:PAGE_TEXT_CHARS]
+                    index[id(p)], p.number, p.file_name, p.text[:PAGE_TEXT_CHARS]
                 )
                 if with_text
-                else prompts.page_heading(index, p.number, p.file_name),
+                else prompts.page_heading(index[id(p)], p.number, p.file_name),
                 await p.image(),
             )
-            for index, p in enumerate(pages, 1)
+            for p in pages
         ],
         [
             {
@@ -1337,7 +1209,12 @@ async def read_map(
             }
             for number, (page, region) in boxes.items()
         ],
-        with_text=with_text,
+        await _answer_blocks(answers),
+        system=prompts.SYSTEM_TEXT_ONLY
+        if not pictured
+        else prompts.SYSTEM
+        if with_text
+        else prompts.SYSTEM_NO_PAGE_TEXT,
     )
     response = await models.complete_response(
         messages,
@@ -1518,6 +1395,17 @@ async def locate_figures(held: list[Recorded], *, model: ModelConfig) -> list[st
     return left_out
 
 
+def _pages_worth(page: Page) -> int:
+    """What a selected page counts for in the run's output budget: a file with no page
+    view counts a page for each TEXT_PAGE_CHARS of its text, up to a whole run's pages. A
+    worksheet's page holds about 500 characters (2021 P1 Q1 to Q10: 3,856 on 7 pages) and
+    its one copy call wrote 9,400 tokens."""
+    if page.image:
+        return 1
+    worth = math.ceil(len(page.text) / TEXT_PAGE_CHARS)
+    return min(max(1, worth), limits.EXTRACTION_PAGES_MAX)
+
+
 def _credits_out() -> bool:
     state = accounting.current()
     return bool(state and state.credits_exhausted)
@@ -1525,30 +1413,60 @@ def _credits_out() -> bool:
 
 async def run(
     pages: list[Page],
-    schemes: list[SchemeFile],
+    answers: list[AnswerFile],
     *,
     model: ModelConfig,
     validate: Validate,
+    confirm: Confirm | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
-    """Events: ``questions`` after each copy batch (every question copied so far,
-    with no answers yet), then ``done`` with the quiz's questions and the report."""
-    found = await layout.read_regions([page.image for page in pages])
+    """Events: ``map`` with the questions found when ``confirm`` is given, which then
+    says how many to make (None ends the run), and ``progress`` while it copies and
+    solves; with no starter, as on the bench, ``questions`` after each copy batch (every
+    question copied so far, with no answers yet). Then ``done`` with the quiz's questions
+    and the report."""
+    found = iter(
+        await layout.read_regions([page.image for page in pages if page.image])
+    )
     pages = [
-        dataclasses.replace(page, regions=regions)
-        for page, regions in zip(pages, found)
+        dataclasses.replace(page, regions=next(found)) if page.image else page
+        for page in pages
     ]
     current = Run(
         validate=validate,
         boxes=numbered_boxes(pages),
-        output_budget=OUTPUT_PER_PAGE * len(pages),
+        output_budget=OUTPUT_PER_PAGE * sum(_pages_worth(page) for page in pages),
     )
     try:
         base, rows, output = await _attempted(
-            functools.partial(read_map, pages, current.boxes, model=model)
+            functools.partial(read_map, pages, answers, current.boxes, model=model)
         )
     except EmptyMap:
         base, rows, output = [], [], 0
     current.output_tokens += output
+    if confirm and rows:
+        yield {
+            "type": "map",
+            "questions": [
+                {
+                    "label": row.label,
+                    "first": row.first,
+                    "last": row.last,
+                    "parts": row.parts,
+                }
+                for row in rows
+            ],
+        }
+        chosen = await confirm(len(rows))
+        if chosen is None:
+            return
+        # Fewer than the map found: what the starter afforded is all it copies.
+        if chosen < len(rows):
+            rows = rows[:chosen]
+            current.only = {label_key(row.label) for row in rows}
+        # Confirming took the credits to pay for it: a map that crossed zero is over.
+        state = accounting.current()
+        if state:
+            state.credits_exhausted = False
     current.order = {label_key(row.label): n for n, row in enumerate(rows)}
     batches = [[row.label for row in group] for group in _chunks_of(rows, COPY_BATCH)]
     threads: list[list[dict[str, Any]]] = [list(base) for _ in batches]
@@ -1635,35 +1553,33 @@ async def run(
         ]
 
     tasks: list[asyncio.Task[Any]] = []
-    parsing: asyncio.Task[list[list[Entry]]] | None = None
-    if schemes and rows:
-        parsing = asyncio.create_task(
-            parse_schemes(
-                schemes,
-                model=model,
-                labels=[(row.label, row.parts) for row in rows],
-            )
-        )
-        tasks.append(parsing)
     failures: list[BaseException] = []
-    pieces: list[list[Entry]] = []
-    scheme_failed = False
     try:
         copies = [
             asyncio.create_task(copy_batch(index, [labels]))
             for index, labels in enumerate(batches)
         ]
         tasks.extend(copies)
-        for finished in asyncio.as_completed(copies):
-            try:
-                await finished
-            except _THREAD_FAILURES as exc:
-                failures.append(exc)
-                log.warning("extraction copy batch failed: %s", exc)
-            yield {
-                "type": "questions",
-                "questions": [held.question for held in current.held()],
-            }
+        copying_now = set(copies)
+        while copying_now:
+            finished, copying_now = await asyncio.wait(
+                copying_now,
+                timeout=PROGRESS_EVERY_S,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in finished:
+                try:
+                    task.result()
+                except _THREAD_FAILURES as exc:
+                    failures.append(exc)
+                    log.warning("extraction copy batch failed: %s", exc)
+                if not confirm:
+                    yield {
+                        "type": "questions",
+                        "questions": [held.question for held in current.held()],
+                    }
+            if confirm:
+                yield current.progress()
         tried: set[str] = set()
         for _ in range(COPY_REPAIR_PASSES):
             missing = [
@@ -1692,26 +1608,18 @@ async def run(
             failures += _kept_going(
                 await asyncio.gather(*repairs, return_exceptions=True)
             )
-            yield {
-                "type": "questions",
-                "questions": [held.question for held in current.held()],
-            }
+            if confirm:
+                yield current.progress()
+            else:
+                yield {
+                    "type": "questions",
+                    "questions": [held.question for held in current.held()],
+                }
         current.fill_figures(rows, pages)
         current.in_printed_order()
         if failures and not current.copies:
             raise failures[0]
-        if parsing is not None:
-            try:
-                pieces = await parsing
-            except _THREAD_FAILURES as exc:
-                # The copies stay and the model works every answer out.
-                log.warning("extraction scheme failed: %s", exc)
-                scheme_failed = True
-        known, _ = _merged(pieces)
-        for held in current.held():
-            paired = pair(held, known)
-            if paired.covered and not await validate(paired.held.question):
-                current.answered.add(label_key(held.label))
+        current.filled_copying, current.full = current.full, False
         # A thread that ended early gets one more call for what it left out.
         for _ in range(2):
             if current.stopping:
@@ -1720,38 +1628,27 @@ async def run(
             if not solves:
                 break
             tasks.extend(solves)
+            solving_now = set(solves)
+            while solving_now:
+                _, solving_now = await asyncio.wait(
+                    solving_now, timeout=PROGRESS_EVERY_S
+                )
+                if confirm:
+                    yield current.progress()
             _kept_going(await asyncio.gather(*solves, return_exceptions=True))
     except BaseException:
         await _cancelled(tasks)
         raise
     if _credits_out():
         current.credits_out = True
-    held = current.held()
-    entries, repeats = _merged(pieces)
-    used: set[tuple[str, str]] = set()
-    disagreements: list[str] = []
-    refused: list[str] = []
-    marks_differ: list[str] = []
-    answers_missing: list[str] = []
-    finals: list[Recorded] = []
-    for question in held:
-        paired = pair(question, entries)
-        if paired.matched:
-            key = label_key(question.label)
-            used.update(k for k in entries if k[0] == key)
-            disagreements.extend(paired.disagreed)
-        # The scheme's version is checked as the quiz's creation will check it; a
-        # refusal keeps the page's keys rather than losing the question.
-        if paired.matched and await validate(_with_keys_filled(paired.held.question)):
-            refused.append(question.label)
-        else:
-            question = paired.held
-        answers_missing.extend(_parts_with_no_answer(question))
-        finals.append(question)
-        parts_total = sum(part["marks"] for part in question.question["parts"])
-        if question.total is not None and parts_total != question.total:
-            marks_differ.append(question.label)
-    figures_left_out = await locate_figures(finals, model=model)
+    finals = current.held()
+    answers_missing = [
+        name for question in finals for name in _parts_with_no_answer(question)
+    ]
+    figures_left_out = [
+        *current.figures_refused,
+        *await locate_figures(finals, model=model),
+    ]
     crops: dict[str, str] = {}
     saved = []
     for question in finals:
@@ -1776,28 +1673,9 @@ async def run(
                 label for label in expected if label_key(label) not in recorded
             ],
             "recorded": current.labels(),
-            # Parts saved with no answer, a marking note in its place, because their
-            # solve call failed or the run stopped first.
+            # Parts saved with no answer, because their solve call failed or the run
+            # stopped first.
             "answersMissing": answers_missing,
-            # The answer files could not be parsed, so every answer was worked out.
-            "schemeFailed": scheme_failed,
-            # Questions with a part whose key the model worked out and no
-            # scheme replaced: their solutions carry the AI-written label.
-            # Parts whose printed or worked-out key differs from the scheme's.
-            "keyDisagreements": disagreements,
-            # Questions the validator refused with the scheme's keys; they keep
-            # the page's.
-            "schemeRefused": refused,
-            # Saved questions whose part marks do not add up to the total
-            # printed on the page.
-            "marksDiffer": marks_differ,
-            "unpaired": sorted(
-                {entries[key].question for key in entries if key not in used},
-                key=lambda label: (len(label), label),
-            ),
-            # Scheme entries named like an earlier one and not its
-            # continuation: left out rather than merged into it.
-            "schemeRepeats": repeats,
             # Questions saved with figures cropped from the page, for the
             # starter to check, and questions saved without theirs: they had
             # no box and the box call for their page failed twice, or their crop
@@ -1814,6 +1692,28 @@ async def run(
 
 
 # ------------------------------------------------- the request, from the store
+
+
+class ConfirmExpired(Exception):
+    """The starter did not answer in time."""
+
+
+async def starter_confirm(run_id: str, found: int) -> int | None:
+    """How many questions the starter confirmed, read from the run's row: None when
+    they cancelled. ``found`` is what the map found, which the row's answer can't pass."""
+    deadline = time.monotonic() + CONFIRM_WAIT_S
+    while time.monotonic() < deadline:
+        try:
+            status, confirmed = await store.extraction_decision(run_id)
+        except Exception as exc:  # noqa: BLE001 - a blip mustn't lose the paid map
+            log.warning("extraction confirm read failed: %s", exc)
+        else:
+            if confirmed is not None:
+                return min(confirmed, found)
+            if status not in ("running", "confirming"):
+                return None
+        await asyncio.sleep(CONFIRM_POLL_S)
+    raise ConfirmExpired
 
 
 class ExtractionRefused(ValueError):
@@ -1900,13 +1800,128 @@ async def _crop(
     return jpeg, size
 
 
+def _text_goes(layers: dict[int, str]) -> bool:
+    """Whether a PDF's text goes to the model: as for question pages, when no page is a
+    scan and one is born digital (Epo 2026-11-05)."""
+    return set(layers.values()) - {BLANK} == {BORN_DIGITAL}
+
+
+def _usable_text(name: str, text: str) -> str:
+    """A file's indexed text, refused when it has none."""
+    text = text.strip()
+    if not text:
+        raise ExtractionRefused(
+            "no_indexed_text", f"{name} has no indexed text to read from."
+        )
+    return text
+
+
+def _whole_text(name: str, passages: list[dict[str, Any]]) -> str:
+    return _usable_text(name, "\n\n".join(str(p.get("text") or "") for p in passages))
+
+
+async def _answer_file(workspace_id: str, file: dict[str, Any]) -> AnswerFile:
+    """An answer file's picked pages as they go: indexed text for a born-digital PDF,
+    page images for a scan, an image upload or a Word or PowerPoint file the browser
+    drew; a text file goes whole (Epo 2026-11-05)."""
+    file_id, name, numbers = file["fileId"], file["name"], file["pages"]
+    if file.get("images"):
+        return AnswerFile(
+            name,
+            images=tuple(
+                (number, functools.partial(_drawn_image, jpeg))
+                for number, jpeg in zip(
+                    numbers, (base64.b64decode(image) for image in file["images"])
+                )
+            ),
+        )
+    row = await store.file_page_source(workspace_id, file_id)
+    if row is None:
+        raise ExtractionRefused(
+            "file_unavailable", f"{name} is no longer in the workspace."
+        )
+    render = functools.partial(_render, workspace_id, file_id)
+    if row.get("kind") == "image":
+        return AnswerFile(name, images=((1, functools.partial(render, 1)),))
+    passages = await store.file_passages(workspace_id, file_id)
+    if row.get("kind") == "pdf":
+        try:
+            pdf = await capture.pdf_path(workspace_id, file_id)
+        except capture.CaptureUnavailable as exc:
+            raise ExtractionRefused(exc.code, f"{name}: {exc}.") from exc
+        count = await slots.render_thread(_page_count, pdf)
+        past = [number for number in numbers if number > count]
+        if past:
+            raise ExtractionRefused(
+                "page_out_of_range",
+                f"{name} has {count} pages; page {past[0]} is past its end.",
+            )
+        indexed = page_texts(passages)
+        texts = {number: indexed.get(number, "") for number in numbers}
+        layers = await slots.render_thread(page_layers, pdf, texts)
+        if _text_goes(layers):
+            return AnswerFile(
+                name, _usable_text(name, "\n\n".join(texts[n] for n in numbers))
+            )
+        return AnswerFile(
+            name,
+            images=tuple(
+                (number, functools.partial(render, number))
+                for number in numbers
+                if layers[number] != BLANK
+            ),
+        )
+    return AnswerFile(name, _whole_text(name, passages))
+
+
+async def _drawn_image(jpeg: bytes) -> str:
+    """Shrunk as any image on its way to a model is (Epo 2026-11-05): the picker already
+    draws at this size, and a larger one sent by hand costs no more than a page."""
+    small, _box, _size = await slots.render_thread(
+        capture.image_jpeg, io.BytesIO(jpeg), None, cfg.capture_max_edge
+    )
+    return capture.data_url(small)
+
+
+async def _drawn_crop(jpeg: bytes, box: list[float]) -> tuple[bytes, tuple[int, int]]:
+    """A box on a page the browser drew: the page's own pixels, so a figure is only as
+    sharp as the page sent."""
+    piece, _box, size = await slots.render_thread(
+        capture.image_jpeg, io.BytesIO(jpeg), box, cfg.capture_max_edge
+    )
+    return piece, size
+
+
+def _drawn_pages(file: dict[str, Any]) -> list[Page]:
+    """A Word or PowerPoint paper's selected pages, as the browser drew them (Epo
+    2026-11-05, "draw those pages on client side"). They go as a scan's do: their page
+    breaks are the browser's, which the indexed text's need not match."""
+    return [
+        Page(
+            number,
+            file["name"],
+            "",
+            functools.partial(_drawn_image, jpeg),
+            functools.partial(_drawn_crop, jpeg),
+            layer=SCAN,
+        )
+        for number, jpeg in zip(
+            file["pages"], (base64.b64decode(image) for image in file["images"])
+        )
+    ]
+
+
 async def prepare(
     workspace_id: str, paper: list[dict[str, Any]], answers: list[dict[str, Any]]
-) -> tuple[list[Page], list[SchemeFile]]:
-    """The selected pages and the scheme texts, checked before the run starts:
-    a page past its file's end or a file with no page view is refused."""
+) -> tuple[list[Page], list[AnswerFile]]:
+    """The picked pages and the answer files, checked before the run starts: a page
+    past its file's end, a file with no usable text, or more text than a run reads is
+    refused. Go holds the run to its picked pages."""
     pages: list[Page] = []
     for file in paper:
+        if file.get("images"):
+            pages.extend(_drawn_pages(file))
+            continue
         file_id, name, numbers = file["fileId"], file["name"], file["pages"]
         row = await store.file_page_source(workspace_id, file_id)
         if row is None:
@@ -1923,9 +1938,18 @@ async def prepare(
         elif row.get("kind") == "image":
             count = 1
         else:
-            raise ExtractionRefused(
-                "no_page_view", f"{name} has no pages to read questions from."
+            # A text file: its whole indexed text, as one page.
+            pages.append(
+                Page(
+                    1,
+                    name,
+                    _whole_text(name, await store.file_passages(workspace_id, file_id)),
+                    None,
+                    None,
+                    layer=BORN_DIGITAL,
+                )
             )
+            continue
         past = [number for number in numbers if number > count]
         if past:
             raise ExtractionRefused(
@@ -1947,30 +1971,37 @@ async def prepare(
             )
             for number in numbers
         )
-    schemes: list[SchemeFile] = []
-    for file in answers:
-        passages = await store.file_passages(workspace_id, file["fileId"])
-        text = "\n\n".join(str(p.get("text") or "") for p in passages).strip()
-        if not text:
-            raise ExtractionRefused(
-                "no_indexed_text",
-                f"{file['name']} has no indexed text to read answers from.",
-            )
-        if len(text) > SCHEME_TEXT_CHARS:
-            raise ExtractionRefused(
-                "scheme_too_long",
-                f"{file['name']} is longer than the {SCHEME_TEXT_CHARS:,} characters "
-                "of mark scheme a run reads.",
-            )
-        schemes.append(SchemeFile(file["name"], text))
-    return pages, schemes
+    files = [await _answer_file(workspace_id, file) for file in answers]
+    text = sum(len(file.text) for file in files) + sum(
+        len(page.text) for page in pages if not page.image
+    )
+    if text > RUN_TEXT_CHARS:
+        raise ExtractionRefused(
+            "too_much_text",
+            f"A run reads at most {RUN_TEXT_CHARS:,} characters of text; "
+            f"these files hold {text:,}.",
+        )
+    return pages, files
 
 
 async def gateway_validate(question: dict[str, Any]) -> str | None:
-    """Go's quiz validator on one question: its refusal, or None."""
-    resp = await asyncio.to_thread(
-        tools._post_json, "/api/internal/questions/check", {"question": question}
-    )
-    if resp.status_code != 200:
-        raise RuntimeError(f"the question check answered {resp.status_code}")
-    return resp.json().get("problem") or None
+    """Go's quiz validator on one question: its refusal, or None. A check that fails
+    twice ends its thread as a failed call does, so a brief gateway or network failure
+    costs that thread and not the paid run; the model is told nothing."""
+
+    async def check() -> str | None:
+        try:
+            resp = await asyncio.to_thread(
+                tools._post_json,
+                "/api/internal/questions/check",
+                {"question": question},
+            )
+        except OSError as exc:
+            raise elitellm.ProviderError(f"the question check failed: {exc}") from exc
+        if resp.status_code != 200:
+            raise elitellm.ProviderError(
+                f"the question check answered {resp.status_code}"
+            )
+        return resp.json().get("problem") or None
+
+    return await _attempted(check)

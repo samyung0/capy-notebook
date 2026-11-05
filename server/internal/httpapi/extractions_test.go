@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"image"
@@ -15,8 +16,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
+	"github.com/samyung0/capy-notebook/server/internal/auth"
 	"github.com/samyung0/capy-notebook/server/internal/blob"
-	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/pipeline"
@@ -32,22 +33,31 @@ func TestCheckExtractionRequestHoldsTheRunCaps(t *testing.T) {
 		}
 		return out
 	}
+	paper := func(n ...int) []apimodel.ExtractionFile {
+		return []apimodel.ExtractionFile{{FileID: "p", Pages: n}}
+	}
 	ok := apimodel.CreateExtractionReq{
-		Paper:         []apimodel.ExtractionPaperFile{{FileID: "p", Pages: pages(30)}, {FileID: "q", Pages: pages(10)}},
-		AnswerFileIDs: []string{"s1", "s2"},
+		Paper: []apimodel.ExtractionFile{
+			{FileID: "p1", Pages: pages(10)}, {FileID: "p2", Pages: pages(10)}, {FileID: "p3", Pages: pages(10)},
+			{FileID: "p4"}, {FileID: "p5"},
+		},
+		Answers: []apimodel.ExtractionFile{{FileID: "s1", Pages: pages(10)}, {FileID: "s2"}, {FileID: "s3"}},
 	}
 	if err := checkExtractionRequest(ok); err != nil {
-		t.Fatalf("40 pages in 4 files refused: %v", err)
+		t.Fatalf("40 pages in 8 files refused: %v", err)
 	}
 	for name, req := range map[string]apimodel.CreateExtractionReq{
-		"41 pages": {Paper: []apimodel.ExtractionPaperFile{{FileID: "p", Pages: pages(fieldlimits.ExtractionPages + 1)}}},
-		"11 files": {
-			Paper:         []apimodel.ExtractionPaperFile{{FileID: "p", Pages: []int{1}}},
-			AnswerFileIDs: []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"},
+		"41 pages": {Paper: paper(pages(30)...), Answers: []apimodel.ExtractionFile{{FileID: "s", Pages: pages(11)}}},
+		"6 question files": {Paper: []apimodel.ExtractionFile{
+			{FileID: "1"}, {FileID: "2"}, {FileID: "3"}, {FileID: "4"}, {FileID: "5"}, {FileID: "6"},
+		}},
+		"4 answer files": {
+			Paper:   paper(1),
+			Answers: []apimodel.ExtractionFile{{FileID: "1"}, {FileID: "2"}, {FileID: "3"}, {FileID: "4"}},
 		},
-		"page 0":          {Paper: []apimodel.ExtractionPaperFile{{FileID: "p", Pages: []int{0}}}},
-		"page twice":      {Paper: []apimodel.ExtractionPaperFile{{FileID: "p", Pages: []int{2, 2}}}},
-		"paper as answer": {Paper: []apimodel.ExtractionPaperFile{{FileID: "p", Pages: []int{1}}}, AnswerFileIDs: []string{"p"}},
+		"page 0":          {Paper: paper(0)},
+		"page twice":      {Paper: paper(2, 2)},
+		"paper as answer": {Paper: paper(1), Answers: []apimodel.ExtractionFile{{FileID: "p"}}},
 	} {
 		if err := checkExtractionRequest(req); err == nil {
 			t.Errorf("%s: accepted", name)
@@ -106,7 +116,7 @@ func TestFinishedExtractionStoresItsFiguresAsTheQuizsAssets(t *testing.T) {
 	}
 	mem := blob.NewMemory()
 	a := &api{s: st, blob: mem}
-	run, err := st.CreateExtraction(ctx, "ws_e2e_private", "u_editor", "Figures "+uuid.NewString())
+	run, err := st.CreateExtraction(ctx, store.ExtractionStart{ID: uuid.NewString(), WorkspaceID: "ws_e2e_private", UserID: "u_editor", Title: "Figures " + uuid.NewString()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,24 +174,22 @@ func TestFiguresLeftOutOfAQuiz(t *testing.T) {
 	}
 }
 
-// The report names parts saved with no answer and a scheme that could not be
-// parsed, and says nothing of either when they did not happen; a question with
-// no key travels as an open part whose one marking item says so, which the
-// quiz's validator takes.
+// The report names parts saved with no answer, and says nothing of them when
+// there are none.
 func TestAReportNamesMissingAnswers(t *testing.T) {
 	var report store.ExtractionReport
-	raw := `{"recorded":["1","2"],"answersMissing":["2(a)"],"schemeFailed":true,"windows":1}`
+	raw := `{"recorded":["1","2"],"answersMissing":["2(a)"],"windows":1}`
 	if err := json.Unmarshal([]byte(raw), &report); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(report.AnswersMissing, ",") != "2(a)" || !report.SchemeFailed {
+	if strings.Join(report.AnswersMissing, ",") != "2(a)" {
 		t.Fatalf("report = %+v", report)
 	}
 	empty, err := json.Marshal(store.ExtractionReport{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(empty), "answersMissing") || strings.Contains(string(empty), "schemeFailed") {
+	if strings.Contains(string(empty), "answersMissing") {
 		t.Fatalf("empty report = %s", empty)
 	}
 }
@@ -255,7 +263,7 @@ func TestAQuizWithNoAnswersSavesAndGoesToTheRoom(t *testing.T) {
 		`{"id":"q2","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"p2",` +
 		`"blocks":[{"type":"text","text":"Name."}],"answer":{"type":"short","accepted":[]},"marks":1,"solution":[]}]}]`
 	finish := func(title string) store.Extraction {
-		run, err := st.CreateExtraction(ctx, "ws_e2e_private", "u_editor", title+" "+uuid.NewString())
+		run, err := st.CreateExtraction(ctx, store.ExtractionStart{ID: uuid.NewString(), WorkspaceID: "ws_e2e_private", UserID: "u_editor", Title: title + " " + uuid.NewString()})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -329,7 +337,7 @@ func TestAFullStarterGetsTheQuizWithoutItsFigures(t *testing.T) {
 	}
 	mem := blob.NewMemory()
 	a := &api{s: st, blob: mem}
-	run, err := st.CreateExtraction(ctx, ws.ID, user, "Full "+uuid.NewString())
+	run, err := st.CreateExtraction(ctx, store.ExtractionStart{ID: uuid.NewString(), WorkspaceID: ws.ID, UserID: user, Title: "Full " + uuid.NewString()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -360,5 +368,75 @@ func TestAFullStarterGetsTheQuizWithoutItsFigures(t *testing.T) {
 	}
 	if listing, err := mem.ListObjects(ctx, "editor-assets/", "", 10); err != nil || len(listing.Keys) != 0 {
 		t.Fatalf("stored objects = %+v (%v)", listing, err)
+	}
+}
+
+func drawnPage(t *testing.T, side int) string {
+	t.Helper()
+	var out bytes.Buffer
+	if err := jpeg.Encode(&out, image.NewGray(image.Rect(0, 0, side, side)), nil); err != nil {
+		t.Fatal(err)
+	}
+	return base64.StdEncoding.EncodeToString(out.Bytes())
+}
+
+// A flat page is small in bytes whatever its size, so its pixels are held too.
+func TestDrawnPagesAreHeldToTheirPixels(t *testing.T) {
+	file := store.File{Name: "paper.docx"}
+	if err := checkDrawnPages(file, apimodel.ExtractionFile{Pages: []int{1}, Images: []string{drawnPage(t, 1568)}}); err != nil {
+		t.Fatalf("a page as the picker draws it: %v", err)
+	}
+	if err := checkDrawnPages(file, apimodel.ExtractionFile{Pages: []int{1}, Images: []string{drawnPage(t, 3000)}}); err == nil {
+		t.Fatal("a 9 megapixel page was taken")
+	}
+}
+
+// The wait can outlast the role that started the run: confirming checks it again, and
+// the run stays waiting, so its starter can still cancel.
+func TestARemovedEditorCannotConfirmARun(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, testdb.URL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(st.Close)
+	if err := st.LoadPlanLimits(ctx); err != nil {
+		t.Fatal(err)
+	}
+	owner, editor := "u_confirm_owner_"+uuid.NewString()[:8], "u_confirm_editor_"+uuid.NewString()[:8]
+	for _, user := range []string{owner, editor} {
+		if _, err := st.Pool().Exec(ctx, `INSERT INTO users (id,name,email) VALUES ($1,'Confirm',$2)`, user, user+"@example.test"); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _, _ = st.Pool().Exec(context.Background(), `DELETE FROM users WHERE id=$1`, user) })
+	}
+	ws, err := st.CreateWorkspace(ctx, owner, store.WorkspaceCreate{Name: "Quiz", Tags: []store.TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = st.Pool().Exec(context.Background(), `DELETE FROM workspaces WHERE id=$1`, ws.ID) })
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO workspace_members (workspace_id,user_id,role) VALUES ($1,$2,'editor')`, ws.ID, editor); err != nil {
+		t.Fatal(err)
+	}
+	run, err := st.CreateExtraction(ctx, store.ExtractionStart{ID: uuid.NewString(), WorkspaceID: ws.ID, UserID: editor, Title: "Paper"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := json.RawMessage(`[{"label":"1","first":1,"last":1,"parts":[]}]`)
+	if err := st.AwaitExtractionConfirm(ctx, run.ID, found); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Pool().Exec(ctx, `DELETE FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, ws.ID, editor); err != nil {
+		t.Fatal(err)
+	}
+	a := &api{s: st, blob: blob.NewMemory()}
+	asEditor := auth.WithUserID(ctx, editor)
+	in := &confirmExtractionInput{ID: run.ID, Body: apimodel.ConfirmExtractionReq{Questions: 1}}
+	if _, err := a.confirmExtraction(asEditor, in); err == nil {
+		t.Fatal("a removed editor confirmed the run")
+	}
+	waiting, err := st.GetExtraction(ctx, editor, run.ID)
+	if err != nil || waiting.Status != store.ExtractionConfirming {
+		t.Fatalf("after the refusal: %+v, %v", waiting, err)
 	}
 }

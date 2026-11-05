@@ -44,7 +44,6 @@ import asyncio
 import base64
 import collections
 import copy
-import dataclasses
 import functools
 import json
 import os
@@ -264,7 +263,7 @@ async def run(args) -> dict:
 
     async def crop(number: int, box: list[float]) -> tuple[bytes, tuple[int, int]]:
         jpeg, _box, size = capture.render(
-            pdf, number, box, cfg.capture_max_edge, extraction.FIGURE_PAGE_EDGE
+            pdf, number, box, cfg.capture_max_edge, page_edge=extraction.FIGURE_PAGE_EDGE
         )
         return jpeg, size
 
@@ -291,18 +290,18 @@ async def run(args) -> dict:
             list(range(1, count + 1)),
             answers["pdf"].removesuffix(".pdf"),
         )
-        schemes = [
-            extraction.SchemeFile(
+        files = [
+            extraction.AnswerFile(
                 answers["pdf"],
                 "\n\n".join(scheme_pages[n] for n in sorted(scheme_pages)),
             )
         ]
     elif "keys" in answers:
         lines = [f"{q['label']}. {q['parts'][0]['correct']}" for q in gold["questions"]]
-        schemes = [extraction.SchemeFile("answers.txt", "\n".join(lines))]
+        files = [extraction.AnswerFile("answers.txt", "\n".join(lines))]
     else:
         # A paper with no answer file: every key is worked out.
-        schemes = []
+        files = []
 
     provider, model_slug, name, rates = MODELS[args.model]
     model = spec(provider, model_slug, name, rates, "low")
@@ -319,15 +318,6 @@ async def run(args) -> dict:
     limits.bind_call_slots(limits.CallSlotPolicy(wait_s=limits.CHAT_SLOT_WAIT_S))
     usage = obs.start_usage()
     validate = validator(quizcheck())
-    parsed: list = []
-    parse_schemes = extraction.parse_schemes
-
-    async def kept(files, *, model, labels):
-        pieces = await parse_schemes(files, model=model, labels=labels)
-        parsed.extend(dataclasses.asdict(e) for piece in pieces for e in piece)
-        return pieces
-
-    extraction.parse_schemes = kept
     # Each placed figure's page, box and part, as the crops are made.
     figures: list[dict] = []
     place = extraction.placed
@@ -407,7 +397,7 @@ async def run(args) -> dict:
     recorded: list[dict] = []
     done: dict = {}
     async for event in extraction.run(
-        pages, schemes, model=model, validate=validate
+        pages, files, model=model, validate=validate
     ):
         if event["type"] == "questions":
             # The questions as copied, with their marks and no answers yet.
@@ -415,9 +405,7 @@ async def run(args) -> dict:
             print(f"  copied: {len(recorded)} questions so far", flush=True)
         else:
             done = event
-    if not schemes:
-        # With no scheme to replace them, these are the keys the model worked out.
-        recorded = copy.deepcopy(done["questions"])
+    recorded = copy.deepcopy(done["questions"])
     seconds = time.monotonic() - started
     crops = RESULTS / "crops" / run_name(args)
     crops.mkdir(parents=True, exist_ok=True)
@@ -462,7 +450,6 @@ async def run(args) -> dict:
         "recorded": recorded,
         "questions": done["questions"],
         "report": done["report"],
-        "scheme_entries": parsed,
         "figures": figures,
         "calls": calls,
     }
@@ -494,7 +481,7 @@ def plain(text: str) -> str:
     superscript is its digits, ^\circ is °, \text{cm} is cm, 1 000 is 1000."""
     t = text.replace("\\%", "%").replace("\\,", "").replace("\\ ", " ")
     t = re.sub(r"\^\s*\{?\s*\\circ\s*\}?", "°", t)
-    # A run of superscript or subscript digits is one number (4²² is 4^22).
+    # A run of superscript or subscript digits is one number (4²³ is 4^23).
     t = re.sub(r"[⁰¹²³⁴-⁹₀-₉]+", lambda m: " " + m.group().translate(_SCRIPTS), t)
     t = t.replace("−", "-").replace("–", "-")
     t = re.sub(r"\\(?:text|mathrm|textrm|mbox)\s*\{([^{}]*)\}", r" \1 ", t)
@@ -1090,11 +1077,6 @@ def score(result: dict, gold: dict, refs: Path) -> dict:
         if worked_mcq
         else None,
         "worked_out_part_marks_right": f"{worked_marks_right}/{worked_marks}",
-        "key_disagreements": result["report"]["keyDisagreements"],
-        "scheme_refused": result["report"]["schemeRefused"],
-        "marks_differ": result["report"]["marksDiffer"],
-        "unpaired_scheme_labels": len(result["report"]["unpaired"]),
-        "scheme_repeats": result["report"].get("schemeRepeats"),
         "outline_expected": len(result["report"]["expected"]),
         "outline_missing": result["report"]["missing"],
         "figures_gold": figure_gold,

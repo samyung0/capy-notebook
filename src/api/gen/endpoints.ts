@@ -55,6 +55,7 @@ import type {
   Comment,
   ComputationCheckReq,
   ComputationCheckResp,
+  ConfirmExtractionReq,
   Conversation,
   CreateBlankFileReq,
   CreateCommentReq,
@@ -3878,6 +3879,121 @@ export const getExtraction = async (id: string, options?: RequestInit): Promise<
 
   const data: getExtractionResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getExtractionResponse
+}
+
+
+
+export type cancelExtractionResponse200 = {
+  data: Extraction
+  status: 200
+}
+
+export type cancelExtractionResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type cancelExtractionResponseSuccess = (cancelExtractionResponse200) & {
+  headers: Headers;
+};
+export type cancelExtractionResponseError = (cancelExtractionResponseDefault) & {
+  headers: Headers;
+};
+
+export type cancelExtractionResponse = (cancelExtractionResponseSuccess | cancelExtractionResponseError)
+
+export const getCancelExtractionUrl = (id: string,) => {
+
+
+
+
+  return `/api/extractions/${id}/cancel`
+}
+
+/**
+ * @summary End a run waiting on its starter
+ */
+export const cancelExtraction = async (id: string, options?: RequestInit): Promise<cancelExtractionResponse> => {
+
+  const res = await fetch(getCancelExtractionUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: cancelExtractionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as cancelExtractionResponse
+}
+
+
+
+export type confirmExtractionResponse200 = {
+  data: Extraction
+  status: 200
+}
+
+export type confirmExtractionResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type confirmExtractionResponseSuccess = (confirmExtractionResponse200) & {
+  headers: Headers;
+};
+export type confirmExtractionResponseError = (confirmExtractionResponseDefault) & {
+  headers: Headers;
+};
+
+export type confirmExtractionResponse = (confirmExtractionResponseSuccess | confirmExtractionResponseError)
+
+export const getConfirmExtractionUrl = (id: string,) => {
+
+
+
+
+  return `/api/extractions/${id}/confirm`
+}
+
+/**
+ * @summary Make the first questions of a run waiting on its starter
+ */
+export const confirmExtraction = async (id: string,
+    confirmExtractionReq: NonReadonly<ConfirmExtractionReq>, options?: RequestInit): Promise<confirmExtractionResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getConfirmExtractionUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(confirmExtractionReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: confirmExtractionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as confirmExtractionResponse
 }
 
 

@@ -216,9 +216,9 @@ is my recommendation.
    window 2 this was never hit, so nothing needs doing unless the window grows.
    Option if it does: do not count a reply with no tool call against the steps.
 6. **A long number misread, and once the options changed to fit.** Paper 2 Q34 prints
-   `12B00CD000000E` with six zeros. Three of 11 runs dropped a zero (window 1 run 81,
+   a long number with six zeros. Three of 11 runs dropped a zero (window 1 run 81,
    window 6 run 82, all-pages run 81). Window 1 run 81 went further: it rewrote all
-   four options from `4^22, 4^14, 4^24, 4^16` to `4^20, 4^12, 4^22, 4^14`, so its
+   four options, lowering each exponent, so its
    wrong number still gives A. Its key stays A, so key scoring cannot see this. Only
    the numbers check caught the changed options, and it cannot catch a dropped zero
    at all. Window size is not the cause. Option: add a prompt line that says to copy

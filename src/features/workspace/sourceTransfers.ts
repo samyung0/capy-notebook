@@ -97,6 +97,8 @@ export interface RemoteTransferRequest extends TransferRequest {
 
 type StartTransfer = {
   importSources: ReturnType<typeof useImportSources>['mutateAsync'];
+  /** Failures show where the file was chosen, not as a toast. */
+  quietFailures?: boolean;
   uploadSource: ReturnType<typeof useUploadSource>['mutateAsync'];
   workspaceId: string | null;
 } & (
@@ -185,9 +187,12 @@ export async function trackDownload(
   }
 }
 
-/** Hides the panel. Running transfers keep going; their rows are gone. */
-export function dismissSourceTransfers() {
-  useSourceTransfers.setState({ transfers: [] });
+/** Hides the panel. Running transfers keep going; their rows are gone, but for `keep`,
+ * whose file ids and failures something still follows. */
+export function dismissSourceTransfers(keep: Set<string>) {
+  useSourceTransfers.setState((state) => ({
+    transfers: state.transfers.filter((transfer) => keep.has(transfer.key)),
+  }));
 }
 
 /** Removes one row, cancelling its upload (Epo 2026-10-22): a file not yet
@@ -396,7 +401,8 @@ export function startSourceTransfer(start: StartTransfer) {
     const reason = transferFailureReason(error);
     patchTransfer(key, { error: reason, stage: 'failed' });
     // A frozen or storage refusal shows as the workspace status instead.
-    if (!deferStorageRefusal(error)) toastFailure(name, reason);
+    if (!deferStorageRefusal(error) && !start.quietFailures)
+      toastFailure(name, reason);
   }
 
   /** Tells the user how many pictures nothing can show left a file (Epo
