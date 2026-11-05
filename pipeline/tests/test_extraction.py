@@ -476,6 +476,37 @@ async def test_a_quiz_filled_while_copying_still_answers_what_it_copied(monkeypa
     assert done["questions"][0]["parts"][0]["answer"]["correct"] == [1]
 
 
+async def test_a_part_with_no_answer_at_all_is_skipped_and_not_asked_for_again(
+    monkeypatch,
+):
+    """Epo 2026-11-05: a figure the pages don't hold gets no made-up key. The part stays
+    as copied and the report names it; the run doesn't send it back."""
+    first, second = _mcq("1", ["p", "q"], 1), _mcq("2", ["r", "s"], 0)
+    skip = {
+        "label": "2",
+        "parts": [{"label": "", "correct": [], "accepted": [], "solution": ""}],
+    }
+    script = Script(
+        "\n".join([_row("1"), _row("2")]),
+        {
+            "Copy questions 1 to 2 now.": [
+                _tools(
+                    ("record_question", _copy(first)),
+                    ("record_question", _copy(second)),
+                )
+            ],
+            "Give the answers to questions 1 to 2 now.": [
+                _tools(("record_answers", _answers(first)), ("record_answers", skip))
+            ],
+        },
+    )
+    done = (await _run(monkeypatch, script, [_page(5)]))[-1]
+    assert done["report"]["answersMissing"] == ["2"]
+    assert done["report"]["missing"] == []
+    assert [q["parts"][0]["answer"]["correct"] for q in done["questions"]] == [[1], []]
+    assert not done["questions"][1]["parts"][0].get("solution")
+
+
 async def test_a_failing_question_check_is_tried_again_then_fails_its_thread(
     monkeypatch,
 ):
@@ -627,8 +658,9 @@ def test_copying_carries_no_answers_and_answers_require_a_model_answer():
     ]
     given = record_answers["function"]["parameters"]["properties"]["parts"]["items"]
     assert given["required"] == ["label", "accepted", "solution"]
-    assert given["properties"]["accepted"]["description"].endswith(
+    assert (
         "open: a short model answer; mcq: an empty list."
+        in given["properties"]["accepted"]["description"]
     )
 
 

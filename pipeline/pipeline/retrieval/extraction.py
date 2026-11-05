@@ -688,6 +688,12 @@ def _chunks_of(items: list[Any], size: int) -> list[list[Any]]:
     return [items[i : i + size] for i in range(0, len(items), size)]
 
 
+def _as_list(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    return value if isinstance(value, list) else [value]
+
+
 def _keyless(item: dict[str, Any]) -> dict[str, Any]:
     """A copy call as code keeps it, anything it sent of a key taken out."""
     out = copy.deepcopy(item)
@@ -701,12 +707,17 @@ def _keyless(item: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _with_placeholders(item: dict[str, Any]) -> dict[str, Any]:
+def _with_placeholders(
+    item: dict[str, Any], only: set[str] | None = None
+) -> dict[str, Any]:
     """A copy with placeholder keys, so the validator checks what was copied and
-    nothing that comes later. It is never saved."""
+    nothing that comes later; ``only`` limits them to those parts, by label key. It is
+    never saved."""
     out = copy.deepcopy(item)
     for part in out.get("parts") or []:
         if not isinstance(part, dict) or not isinstance(part.get("answer"), dict):
+            continue
+        if only is not None and label_key(str(part.get("label") or "")) not in only:
             continue
         answer = part["answer"]
         kind = answer.get("type")
@@ -968,6 +979,9 @@ class Run:
             )
         merged = copy.deepcopy(kept)
         by_part = {label_key(str(p.get("label") or "")): p for p in merged["parts"]}
+        # A part sent with no answer at all is skipped (Epo 2026-11-05, "skip the answer
+        # if there not enough information"): it stays as copied, and the report names it.
+        skipped: set[str] = set()
         for given in args.get("parts") or []:
             given = given if isinstance(given, dict) else {}
             name = str(given.get("label") or "")
@@ -982,6 +996,13 @@ class Run:
                 )
             answer = part["answer"] if isinstance(part.get("answer"), dict) else {}
             part["answer"] = answer
+            if not any(
+                str(value).strip()
+                for field_name in ("correct", "accepted", "points")
+                for value in _as_list(given.get(field_name))
+            ):
+                skipped.add(label_key(name))
+                continue
             for field_name in ("correct", "accepted", "points"):
                 if field_name in given:
                     value = given[field_name]
@@ -994,6 +1015,7 @@ class Run:
             for p in merged["parts"]
             if isinstance(p.get("answer"), dict)
             and p["answer"].get("type") == "open"
+            and label_key(str(p.get("label") or "")) not in skipped
             and not any(str(v).strip() for v in p["answer"].get("accepted") or [])
         ]
         if no_model_answer:
@@ -1005,7 +1027,8 @@ class Run:
         new.figures, problem = read_figures(
             merged.get("figures"), pages, new.part_labels, self.boxes
         )
-        problem = problem or await self.validate(new.question)
+        checked = record(_with_placeholders(merged, skipped))
+        problem = problem or await self.validate(checked.question)
         if problem:
             return f"Question {new.label}: {problem}. Fix it and record it again."
         if not self._fits(key, new.question):

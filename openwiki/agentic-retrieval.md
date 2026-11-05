@@ -5835,7 +5835,7 @@ job. The screens (boards X0a, X0b, X1, X2) are in
      out gets one more call.
   6. A part left with no answer stays as copied (an mcq with `correct: []`, a short part with
      `accepted: []`, an open part with no marking items) with whatever keys its other parts got, and is
-     named in `answersMissing` (Epo 2026-11-05, "allow no answers for questions then"). The
+     named in `answersMissing` (Epo 2026-11-05, "allow no answers for questions then"). A part the model sends with every answer field empty is a skip (Epo 2026-11-05, the pages can't give it): it stays as copied and is not asked for again. The
      validator has no key-less form and only extraction changes, so Go splits the run's
      questions (`materialdoc.SplitIncomplete`): the quiz is created from those it takes,
      with none at all if need be (`MaterialDraft.AllowNoQuestions`), and the rest go to its

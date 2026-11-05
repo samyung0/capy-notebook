@@ -23,7 +23,7 @@ from .sources import SOURCE_RULE, source_block
 
 SYSTEM = f"""You copy the questions on the selected pages into a quiz, exactly as they appear. You see all the selected page images at once, each with the page's indexed text, which may be rough: the image is what counts. After the question pages may come answer files: a mark scheme, an answer key or someone's own answers, in any layout.
 
-First you are asked for a map of the questions, as plain text. Then you are asked to copy some of them: give each its own record_question call, in order, from all its pages. Do not work out any answers yet. Later you are asked for the answers to some questions: give each its own record_answers call. Take each answer and its marks from the answer files or the page when they give them, even when your own working disagrees; otherwise work it out, and never change the question.
+First you are asked for a map of the questions, as plain text. Then you are asked to copy some of them: give each its own record_question call, in order, from all its pages. Do not work out any answers yet. Later you are asked for the answers to some questions: give each its own record_answers call. Take each answer and its marks from the answer files or the page when they give them, even when your own working disagrees; otherwise work it out when the pages give what it needs, and never change the question.
 
 Copying:
 - Keep the wording, numbers, symbols and language exactly as they appear. Write math as LaTeX between $ signs ($\\frac{{7(x-2)}}{{5}}$, $x^2$, $\\angle ABC$), and a dollar sign for money as \\$ ($\\$78$ or \\$78); never simplify or reword the text.
@@ -36,7 +36,7 @@ Copying:
 - marks: the part's marks as shown. When only the question's total is shown ("(3 marks)" after (a) and (b)), split it across the parts as the work suggests and give that total in total_marks. An item with no marks shown has 1.
 
 Answers, when asked for them:
-- Give every part its correct answer and a short worked solution.
+- Give every part its correct answer and a short worked solution. Skip a part's answer when there isn't enough information, it's missing or it can't be read, such as a figure or table that isn't on the pages: send the part with empty answer fields and an empty solution, and write nothing saying why.
 - The answer: mcq "correct" (zero-based indexes of the right options); short "accepted"; open "points", the marking points with their marks, at most {limits.QUIZ_MARKSCHEME_MAX} adding up to the part's marks, and "accepted", a short model answer.
 
 Figures: a layout model looked for pictures and charts on these pages. After the pages comes what it found, as JSON: each box's number, page, coordinates [left, top, right, bottom] on a 0-1000 grid of the page image (0, 0 is the top left corner), label and score. Boxes are hints from a model, not part of the page. For each diagram, graph, chart or photo a question needs, give boxes, the numbers of the boxes that hold it; the part whose text it follows ("" for the text shared by every part); and a few words on what it shows. A figure split across boxes (a diagram and its key, two shapes side by side) takes all of them. When boxes overlap, give the one that holds the whole figure and the least else. Leave out a box that holds no figure of a question. When no box holds a figure the question needs, give boxes [] and image, the page image it is on (counted from 1 in the order shown). The figure is cropped from the page into the quiz, so the blocks never describe it.
@@ -217,12 +217,12 @@ _ANSWERS = {
                     "correct": {
                         "type": "array",
                         "items": {"type": "integer"},
-                        "description": "mcq: zero-based indexes of the correct options.",
+                        "description": "mcq: zero-based indexes of the correct options; empty when skipped.",
                     },
                     "accepted": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "short: the correct answer (the value alone when a unit is shown beside the answer space); open: a short model answer; mcq: an empty list.",
+                        "description": "short: the correct answer (the value alone when a unit is shown beside the answer space); open: a short model answer; mcq: an empty list. Empty when skipped, never words saying it can't be answered.",
                     },
                     "points": {
                         "type": "array",
@@ -234,11 +234,11 @@ _ANSWERS = {
                             },
                             "required": ["text", "marks"],
                         },
-                        "description": f"open: the marking points, each a step that earns whole marks, at most {limits.QUIZ_MARKSCHEME_MAX}, adding up to the part's marks.",
+                        "description": f"open: the marking points, each a step that earns whole marks, at most {limits.QUIZ_MARKSCHEME_MAX}, adding up to the part's marks. Empty when skipped.",
                     },
                     "solution": {
                         "type": "string",
-                        "description": "A short worked solution: the steps that lead to the answer.",
+                        "description": "A short worked solution: the steps that lead to the answer. Empty when skipped.",
                     },
                 },
                 "required": ["label", "accepted", "solution"],
