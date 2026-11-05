@@ -38,7 +38,7 @@ import { ConfirmDialog } from '@/components/ui/Dialog';
 import { userToast } from '@/components/ui/userToast';
 import type { RoomSeed } from '@/features/collaboration/deviceCopy';
 import type { PresenceConnection } from '@/features/collaboration/presence';
-import { FileError } from '@/features/files/FileStates';
+import { FileError, UnavailableItem } from '@/features/files/FileStates';
 import { MaterialRenderProvider } from '@/features/materials/MaterialRenderContext';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -333,9 +333,9 @@ function CollaborativeNoteEditor({
   const storedKey = meData
     ? draftKey(meData.id, 'material', material.id)
     : null;
-  // The editor already dropped the stored edits (NoteEditorCore). The note
-  // stays on screen, read-only under a strip saying so (Epo 2026-11-05); only a
-  // refused read ends what shows, which this doesn't ask for.
+  // The editor already dropped the stored edits and turned read-only
+  // (NoteEditorCore), staying mounted under a strip saying so (Epo 2026-11-05);
+  // only a refused read ends what shows, which this doesn't ask for.
   const onUnavailable = useCallback(
     () => onReadOnly?.('access_lost'),
     [onReadOnly]
@@ -561,23 +561,10 @@ function CollaborativeNoteEditor({
   // token rides the open connection instead. A failure that is no refusal
   // keeps the painted note under the strip's Retry (Epo 2026-11-04).
   if (!collaborationTokenData) {
-    if (tokenStatus === 404)
+    if (tokenStatus === 404 || tokenStatus === 403)
       return (
         <Replacing onShown={onShown}>
-          <FileError
-            message={m.editor_note_deleted()}
-            title={m.editor_note_not_found()}
-          />
-        </Replacing>
-      );
-    if (tokenStatus === 403)
-      return (
-        <Replacing onShown={onShown}>
-          <FileError
-            icon="securityWarning"
-            message={m.editor_access_lost_body()}
-            title={m.editor_access_lost()}
-          />
+          <UnavailableItem />
         </Replacing>
       );
     return null;

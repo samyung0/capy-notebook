@@ -1345,9 +1345,9 @@ under the read-only strip (it names no reason: a demoted viewer, a frozen
 account and a full owner all see it, and the account banner explains the
 account cases), `collaboration-not-found` (trashed or deleted) and
 `collaboration-forbidden` (lost access) keep the page, a reader's as it was and
-an editor's read-only under the "You no longer have access" strip, while a
-refused read or a discard notice decides the file-missing or no-access panel
-(see [authorization](../authorization-permissions-lifecycles.md)),
+an editor's read-only under the "You no longer have access" strip; with no 4403
+close before it the page asks for its read, and a refused read shows "This item
+is unavailable" (see [authorization](../authorization-permissions-lifecycles.md)),
 `collaboration-outdated` stops the editor
 for the page load (see [Client protocol](#client-protocol-and-the-release-nudge)),
 `collaboration-unassigned-id` is not retried (see [client ids](#client-ids)),

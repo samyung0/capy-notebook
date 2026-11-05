@@ -1207,7 +1207,7 @@ class MockSourceProvider implements SourceProvider {
     });
     this.drained = true;
     this.socketStatus = 'connected';
-    this.config.onClose?.();
+    this.config.onClose?.({ code: 0, reason: 'socket closed' });
   }
 
   announceEpoch(fileId: string, newEpoch: number) {
@@ -1313,11 +1313,13 @@ export function refuseOpenRooms() {
   for (const provider of open) provider.announceRefused();
   return open.length;
 }
-/** The collaboration service's refusal once the account freezes: every open
- * room turns read-only for its writer. */
+/** The collaboration service's refusal once the account freezes, or a writer
+ * lowered to a reader: every open room turns read-only for its writer. Returns
+ * how many there were. */
 export function announceReadOnly() {
-  for (const provider of [...materialProviders, ...sourceProviders])
-    provider.announceReadOnly();
+  const open = [...materialProviders, ...sourceProviders, ...itemProviders];
+  for (const provider of open) provider.announceReadOnly();
+  return open.length;
 }
 const failedSourceSaves = new Set<string>();
 export function failNextSourceSave(fileId: string) {
@@ -1647,6 +1649,15 @@ class MockItemProvider implements ItemProvider {
   announceRefused() {
     this.disconnect();
     this.config.onAuthenticationFailed?.(refused);
+  }
+
+  announceReadOnly() {
+    this.config.onStateless?.({
+      payload: JSON.stringify({
+        room: this.config.name,
+        type: 'room-read-only',
+      }),
+    });
   }
 
   disconnect() {

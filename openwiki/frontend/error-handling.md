@@ -775,11 +775,12 @@ not for the account itself; `lostAccess` on the failure message) clears the
 drafts and reloads to the
 file-missing or no-access panel, with no download: the user may no longer see
 that content. A storage or frozen refusal at save drops every writer to view
-under the read-only strip. A refused read (any 4xx but 408 and 429), or a refused
-rejoin after a discard notice, replaces the editor with the file-missing or
-no-access panel. A room's refusal alone keeps the page (Epo 2026-11-05): a
-reader's as it was, an editor's read-only under the grey "You no longer have
-access" strip with no save status (see
+under the read-only strip. A refused read (any 4xx but 408 and 429) replaces the
+page with "This item is unavailable", which never says blocked rather than gone.
+A room's refusal alone keeps the page (Epo 2026-11-05): a reader's as it was, an
+editor's mounted and read-only under the grey "You no longer have access" strip
+with no save status; with no 4403 close before it, the page also asks for its
+read, which may refuse (Q644; see
 [authorization](../authorization-permissions-lifecycles.md)). Drafts are written as
 each local edit happens, by a dedicated drafts worker, with the whole document
 once per offline episode and at unmount (see

@@ -237,6 +237,8 @@ export class ItemRoom {
   private readonly pending = new Map<string, number>();
   /** The mode of the eviction notice that came before a close. */
   private eviction: string | null = null;
+  /** Closed for this person's access change (4403), until it syncs again. */
+  private accessChanged = false;
   /** Stops waiting to start again after a first open that failed. */
   private waiting: (() => void) | null = null;
   /** The draft send of never-accepted stored steps (Q319, Q327, Q328). */
@@ -333,7 +335,8 @@ export class ItemRoom {
       // Gone or no longer this user's (404, 403): unavailable for good.
       // Offline or a server error: paused until it can join (REVIEW5 B1).
       const refusal = roomRefusal('', error);
-      if (refusal === 'notFound' || refusal === 'forbidden') this.unavailable();
+      if (refusal === 'notFound' || refusal === 'forbidden')
+        this.refusedAccess();
       else this.startLater();
       return;
     }
@@ -371,7 +374,7 @@ export class ItemRoom {
         const refusal = roomRefusal(reason, this.tokenError);
         this.tokenError = null;
         if (refusal === 'notFound' || refusal === 'forbidden') {
-          this.unavailable();
+          this.refusedAccess();
           return;
         }
         if (refusal === 'outdated') {
@@ -400,8 +403,9 @@ export class ItemRoom {
         this.set({ slowed: false });
         // This person's access changed, with no notice: a fresh token says
         // what they have now. A demotion reads on; a removal is refused and
-        // stops at the token (Epo 2026-11-05).
+        // stops at the token, keeping the page (Epo 2026-11-05).
         if (code === 4403) {
+          this.accessChanged = true;
           this.rejoin();
           return;
         }
@@ -449,6 +453,7 @@ export class ItemRoom {
       onStateless: ({ payload }) => this.stateless(payload),
       onSynced: ({ state }) => {
         if (state) {
+          this.accessChanged = false;
           if (this.snapshot.offline || this.heldEpisode)
             this.recorder?.connected();
           this.heldEpisode = false;
@@ -919,6 +924,16 @@ export class ItemRoom {
     const unstored = !this.storageOk && !!this.recorder?.unsaved;
     if (this.recorder)
       this.set({ offline: unstored ? 'outdated-unstored' : 'outdated' });
+  }
+
+  /** A refusal not told as an access change may mean the item is gone: the
+   * page's read says, and a refused one ends what shows (Epo 2026-11-05, Q644). */
+  private refusedAccess() {
+    if (!this.accessChanged)
+      void queryClient.invalidateQueries({
+        queryKey: qk.material(this.materialId),
+      });
+    this.unavailable();
   }
 
   /** The item is gone or no longer this user's: the room stops for good. */

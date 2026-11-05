@@ -68,13 +68,7 @@ const { createRoot } = await import('react-dom/client');
 const { QuizEditor } = await import('./QuizEditor');
 
 const editor = () => (
-  <QuizEditor
-    copy={{ seed: null }}
-    onAccessLost={() => {}}
-    quizId="qz1"
-    stored={[]}
-    title="Cells"
-  />
+  <QuizEditor copy={{ seed: null }} quizId="qz1" stored={[]} title="Cells" />
 );
 let host: HTMLElement;
 let root: ReturnType<typeof createRoot>;
@@ -157,6 +151,15 @@ it('leaves the documents alone when the room went read-only', async () => {
   await addQuestion();
   docs.rooms = { access: 'read' };
   await act(async () => root.render(editor()));
+  expect(host.textContent).toContain(m.editor_read_only_strip());
   leave();
   expect(list()).toHaveLength(2);
+});
+
+it('stays mounted under a strip when its room refuses this person', async () => {
+  docs.rooms = { status: 'unavailable' };
+  await show();
+  expect(host.textContent).toContain(m.editor_access_lost());
+  leave();
+  expect(list()).toHaveLength(1);
 });

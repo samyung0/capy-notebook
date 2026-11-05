@@ -380,7 +380,8 @@ export function useSourceSession(
     const controller = new AbortController();
     let provider: SourceProvider | null = null;
     // A discard's notice came: a refused rejoin may mean the file is gone.
-    let discardNotice = false;
+    // Closed for this person's access change (4403), until it syncs again.
+    let accessChanged = false;
     let doc: Y.Doc | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let goOffline = () => {};
@@ -899,11 +900,15 @@ export function useSourceSession(
               );
               void recorder?.discard();
             }
-            // A discard may mean the file is gone, which the panel says. Any
-            // other refusal keeps the page (Epo 2026-11-05): a reader as it
-            // was, an editor read-only under a strip saying so.
-            if (discardNotice) setUnavailable(refusal);
-            else if (session.access === 'write') {
+            // Not told as an access change, it may be gone: the file's read
+            // says, and a refused one ends what shows (Epo 2026-11-05, Q644).
+            if (!accessChanged)
+              void qc.invalidateQueries({ queryKey: qk.file(fileId) });
+            // The page stays until then: a reader as it was, an editor
+            // read-only under a strip saying so.
+            if (session.access === 'write') {
+              // Typing under the strip goes nowhere, so it never reads Saving.
+              discarded = true;
               clearTimeout(timer);
               rejectWaiters(new SourceSessionError(m.editor_access_lost()));
               setDirty(false);
@@ -914,7 +919,8 @@ export function useSourceSession(
             }
           }
         },
-        onClose: () => {
+        onClose: ({ code }) => {
+          if (code === 4403) accessChanged = true;
           active.synced = false;
           if (!cancelled) setSlowed(false);
           reconnect.closed(socketOpen(provider));
@@ -980,7 +986,6 @@ export function useSourceSession(
             return;
           }
           if (cancelled) return;
-          if (event.evictionId && event.mode !== 'drain') discardNotice = true;
           // The collaboration server names the room, not the file.
           if (event.type === 'room-read-only') {
             if (event.room === session.room) replace('readOnly');
@@ -1091,6 +1096,7 @@ export function useSourceSession(
           });
         },
         onSynced: ({ state }) => {
+          if (state) accessChanged = false;
           if (state && !cancelled && !active.recovery) {
             active.synced = true;
             setSlowed(false);

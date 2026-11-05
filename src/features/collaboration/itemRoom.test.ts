@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { ApiError, qk } from '@/api/client';
-import { COLLABORATION_LATE_REASON } from '@/features/notes/collaborationEvents';
+import {
+  COLLABORATION_LATE_REASON,
+  COLLABORATION_NOT_FOUND_REASON,
+} from '@/features/notes/collaborationEvents';
 import { m } from '@/i18n';
 import type { RoomProviderConfig } from './roomProvider';
 
@@ -394,7 +397,7 @@ it('joins again after a close for this person, and the token decides', async () 
   const [provider] = providers;
   await provider.config.token();
   provider.config.onSynced?.({ state: true });
-  const targeted = { code: 4403, reason: 'account access changed' };
+  const targeted = { code: 4403, reason: 'collaboration access changed' };
 
   provider.config.onClose?.(targeted);
   await vi.advanceTimersByTimeAsync(2000);
@@ -414,6 +417,26 @@ it('joins again after a close for this person, and the token decides', async () 
   );
   expect(room.getSnapshot().status).toBe('unavailable');
   expect(onReplace).not.toHaveBeenCalled();
+  // Told its access changed, the page stays: no read asked for.
+  expect(invalidateQueries).not.toHaveBeenCalled();
+  room.destroy();
+});
+
+// Epo 2026-11-05 (Q644): a refusal with no such close may mean the item is gone,
+// so the page's read says.
+it('asks for the read when refused with no access change first', async () => {
+  const { room } = await started();
+  const [provider] = providers;
+  await provider.config.token();
+  provider.config.onSynced?.({ state: true });
+  provider.config.onAuthenticationFailed?.({
+    reason: COLLABORATION_NOT_FOUND_REASON,
+  });
+  expect(room.getSnapshot().status).toBe('unavailable');
+  expect(invalidateQueries).toHaveBeenCalledWith({
+    queryKey: qk.material('q'),
+  });
+  invalidateQueries.mockClear();
   room.destroy();
 });
 

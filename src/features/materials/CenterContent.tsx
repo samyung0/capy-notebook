@@ -63,6 +63,7 @@ import {
   FileLoading,
   FileNotIndexedBanner,
   StorageFullBanner,
+  UnavailableItem,
 } from '@/features/files/FileStates';
 import { FileViewer } from '@/features/files/FileViewer';
 import {
@@ -598,11 +599,19 @@ function MaterialContentBody({
   const [readOnly, setReadOnly] = useState<ReadOnlyCode | 'access' | null>(
     null
   );
+  const queryClient = useQueryClient();
   const onReadOnly = useCallback(
-    (code?: ReadOnlyCode) => setReadOnly(code ?? 'access'),
-    []
+    (code?: ReadOnlyCode) => {
+      // Read-only views draw the read, so it follows. A room's refusal asks for
+      // none: only a refused read ends what shows.
+      if (code !== 'access_lost')
+        void queryClient.invalidateQueries({
+          queryKey: qk.material(materialId),
+        });
+      setReadOnly(code ?? 'access');
+    },
+    [materialId, queryClient]
   );
-  const onAccessLost = useCallback(() => setReadOnly('access_lost'), []);
   const overBar = useContext(FloatingBarContext);
   // The static renderer ahead of the paint, for a note or what may turn out to
   // be one: no other kind draws it.
@@ -668,10 +677,12 @@ function MaterialContentBody({
           (kind && UNREADABLE_TITLES[kind]?.()) ?? m.material_decode_title()
         }
       />
+    ) : refused ? (
+      <UnavailableItem />
     ) : (
       <FileError
-        errorId={refused ? null : unexpectedErrorId(error)}
-        onRetry={refused ? undefined : () => void refetch()}
+        errorId={unexpectedErrorId(error)}
+        onRetry={() => void refetch()}
       />
     );
   }
@@ -680,6 +691,9 @@ function MaterialContentBody({
     !(forceReadOnly || readOnly) && material.capabilities.canEditContent
       ? 'edit'
       : 'view';
+  // Refused by its room, an editor stays mounted and read-only, showing what it
+  // holds rather than the older read (Epo 2026-11-05).
+  const editorMounted = activeMode === 'edit' || readOnly === 'access_lost';
   const roomCopy: RoomCopy = {
     keep: me && keepsCopyOf(material) ? copyLabel(material, me.id) : undefined,
     seed,
@@ -707,7 +721,6 @@ function MaterialContentBody({
         action={<StudyButton kind="quiz" materialId={materialId} />}
         copy={roomCopy}
         key={materialId}
-        onAccessLost={onAccessLost}
         onPresenceChange={onPresenceChange}
         onStatusChange={onEditorStatusChange}
         quizId={materialId}
@@ -726,17 +739,17 @@ function MaterialContentBody({
   if (material.kind === 'flashcards') {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        {readOnly === 'access_lost' && readOnlyStrip}
+        {readOnly && readOnlyStrip}
         <div className="min-h-0 flex-1 overflow-auto">
           <TabContent centered={centerQuiz}>
-            {activeMode === 'edit' ? (
+            {editorMounted ? (
               <LiveFlashcards
                 action={
                   <StudyButton kind="flashcards" materialId={materialId} />
                 }
                 copy={roomCopy}
-                onAccessLost={onAccessLost}
                 onPresenceChange={onPresenceChange}
+                onReadOnly={onReadOnly}
                 onStatusChange={onEditorStatusChange}
                 openCardId={target}
                 setId={materialId}
@@ -764,11 +777,12 @@ function MaterialContentBody({
 
   if (
     (material.kind === 'mindmap' || material.kind === 'diagram') &&
-    activeMode === 'edit'
+    editorMounted
   )
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <AppErrorBoundary resetKeys={[materialId, activeMode]}>
+        {readOnly && readOnlyStrip}
+        <AppErrorBoundary resetKeys={[materialId, editorMounted]}>
           <Suspense fallback={<FileLoading />}>
             <MermaidMaterialEditor
               content={material.content}
@@ -811,7 +825,7 @@ function MaterialContentBody({
       {readOnlyStrip}
       <div className="min-h-0 flex-1" key="note">
         {material.kind === 'note' ? (
-          noteBody(material, activeMode === 'edit')
+          noteBody(material, editorMounted)
         ) : (
           <div className="relative h-full min-h-0 overflow-auto">
             {material.kind === 'quiz' ? (
@@ -1039,7 +1053,8 @@ function FileBody({
   });
   if (isLoading) return <FileLoading />;
   // A refusal ends what shows, as a material's does (Epo 2026-11-05).
-  if ((!file && isError) || isRefusedRead(error)) return <FileError />;
+  if (isRefusedRead(error)) return <UnavailableItem />;
+  if (!file && isError) return <FileError />;
   if (file && fileIsIngesting(file.status) && !file.hasBytes) {
     const waiting = file.status === 'pending';
     return (

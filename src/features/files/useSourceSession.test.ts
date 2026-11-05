@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { qk } from '@/api/client';
 
 // Capy's vitest has no DOM, so the hook runs under a minimal hooks runtime:
 // state and refs by call order, an effect when its deps change, enough to
@@ -72,8 +73,9 @@ const { createSourceProvider, recorder, sending, takeSourceOpen } = vi.hoisted(
     takeSourceOpen: vi.fn(),
   })
 );
+const invalidateQueries = vi.hoisted(() => vi.fn());
 vi.mock('@tanstack/react-query', () => ({
-  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+  useQueryClient: () => ({ invalidateQueries }),
 }));
 vi.mock('@/api/hooks', () => ({ useMe: () => ({ data: { id: 'u_1' } }) }));
 vi.mock('./sourceOpen', () => ({ takeSourceOpen }));
@@ -254,16 +256,33 @@ describe('an Office edit session opening while its base downloads', () => {
     });
   });
 
-  it('shows the missing panel when a discard came first: it may be gone', async () => {
-    const { options } = await open();
+  // Epo 2026-11-05 (Q644): it may be gone, so the file's read says.
+  it('asks for the read when refused with no access change first', async () => {
+    const { options } = await open({ ...SESSION, access: 'write' });
     options.onSynced?.({ state: true });
-    options.onStateless?.({
-      payload: JSON.stringify({ evictionId: 'e', mode: 'discard' }),
-    });
+    invalidateQueries.mockClear();
     options.onAuthenticationFailed?.({
       reason: COLLABORATION_NOT_FOUND_REASON,
     });
-    expect(render().unavailable).toBe('notFound');
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: qk.file(SESSION.fileId),
+    });
+    expect(render().unavailable).toBeNull();
+  });
+
+  it('asks for no read when told its access changed', async () => {
+    const { options } = await open({ ...SESSION, access: 'write' });
+    options.onSynced?.({ state: true });
+    invalidateQueries.mockClear();
+    options.onClose?.({ code: 4403, reason: 'collaboration access changed' });
+    options.onAuthenticationFailed?.({
+      reason: COLLABORATION_NOT_FOUND_REASON,
+    });
+    expect(invalidateQueries).not.toHaveBeenCalled();
+    expect(render()).toMatchObject({
+      banner: 'access-lost',
+      unavailable: null,
+    });
   });
 
   it('ends the session with the file error when the base cannot be read', async () => {

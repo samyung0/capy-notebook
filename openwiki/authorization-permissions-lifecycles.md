@@ -955,15 +955,19 @@ and [material editor checks](../server/internal/store/share.go#L209).
 - **What a refusal shows** (Epo 2026-11-05). A room refusing someone on rejoining
   leaves their page: a reader's as it was, an editor's read-only under a grey "You
   no longer have access" strip with no save status (`access_lost` for notes,
-  quizzes, flashcards and diagrams; `access-lost` for Office and text files). A
-  discard's notice may mean the item is gone, so an item room or note asks for the
-  material's read again (`isDiscardNotice`) and a source session shows its missing
-  or no-access panel. A refused read ends what shows, a material's and a file's
-  alike (`isRefusedRead` in `CenterContent`), so nobody keeps viewing a deleted item
-  past their next read. A fresh open with nothing to show gets the panel. A close
+  quizzes, flashcards and diagrams; `access-lost` for Office and text files). The
+  editor stays mounted, showing what it holds, and asks for no read. A
+  refusal not preceded by a 4403 may mean the item is gone (someone trashed it
+  while this person typed or was away), so the page asks for its read again, as a
+  discard's notice does (`isDiscardNotice`); 4403 alone says their access changed,
+  and that keeps the strip (Epo 2026-11-05, Q644). A refused read ends what shows,
+  a material's and a file's alike (`isRefusedRead` in `CenterContent`), for "This
+  item is unavailable": it never says blocked rather than gone. So nobody keeps
+  viewing a deleted item past their next read, and someone removed while offline
+  sees that page too. A close
   for one person's access change (4403, no notice) joins again in every room kind,
-  so the token says what they have now: a read token gives the read-only strip and
-  keeps a reader live, a refused one gives the above.
+  so the token says what they have now: a read token gives an editor the read-only
+  strip and keeps a reader live, a refused one gives the above.
 - ACL and lifecycle mutations enqueue room/user evictions transactionally in a
   database outbox. Redis delivery is retried with one stable eviction ID and is
   complete only after every active collaboration instance returns a positive

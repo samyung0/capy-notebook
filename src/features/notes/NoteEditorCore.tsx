@@ -773,6 +773,10 @@ export function NoteEditorCore({
   const [offlineLimit, setOfflineLimit] = useState(false);
   // The room refuses this build (the version gate): no reconnect, read-only.
   const [outdated, setOutdated] = useState(false);
+  // The room refused this person on rejoining.
+  const [accessLost, setAccessLost] = useState(false);
+  // Closed for this person's access change (4403), until it syncs again.
+  const accessChanged = useRef(false);
   const stale = useRef(false);
   const rejected = useRef(false);
   // After the first sync a dropped connection keeps the editor on screen.
@@ -881,7 +885,8 @@ export function NoteEditorCore({
   // A paused editor reports nothing; a standby one leaves the header's status
   // as it was, the paused note above it still on screen.
   const statusChange = useRef(onEditorStatusChange);
-  statusChange.current = phase === 'paused' ? undefined : onEditorStatusChange;
+  statusChange.current =
+    phase === 'paused' || accessLost ? undefined : onEditorStatusChange;
   // Stored steps of never-accepted sessions go through the draft send while
   // the room joins (Q319): view-only until it settles. Past DRAFT_SEND_WAIT_MS
   // the note applies them and edits on, nothing live and every JOIN waiting
@@ -1517,6 +1522,18 @@ export function NoteEditorCore({
           ).catch((error) => console.warn('Draft storage failed:', error));
           void recorder.current?.discard();
         }
+        // Not told as an access change, it may be gone: the page's read says,
+        // and a refused one ends what shows (Epo 2026-11-05, Q644).
+        if (!accessChanged.current)
+          void qc.invalidateQueries({ queryKey: qk.material(material.id) });
+        // The note stays as it is, read-only under a strip (Epo 2026-11-05):
+        // nothing rejoins, and it has no save status.
+        stale.current = true;
+        reconnector.current?.dispose();
+        roomProvider(editorRef.current)?.disconnect();
+        statusChange.current?.(null);
+        statusChange.current = undefined;
+        setAccessLost(true);
         reportUnavailable.current?.();
       }
     };
@@ -1551,6 +1568,7 @@ export function NoteEditorCore({
           },
           onSyncChange: ({ isSynced }) => {
             roomSynced.current = isSynced;
+            if (isSynced) accessChanged.current = false;
             // A bind Plate tried before the first sync happens now.
             if (isSynced) {
               reportJoinFailed.current?.(false);
@@ -1612,7 +1630,8 @@ export function NoteEditorCore({
                     beforeJoin,
                     name: collaborationToken.room,
                     onAuthenticationFailed,
-                    onClose: () => {
+                    onClose: ({ code }: { code: number }) => {
+                      if (code === 4403) accessChanged.current = true;
                       roomSynced.current = false;
                       markSlowed(false);
                       reconnector.current?.closed(
@@ -2378,6 +2397,7 @@ export function NoteEditorCore({
     offlineLimit ||
     copyFull ||
     outdated ||
+    accessLost ||
     phase === 'paused' ||
     draftsSending ||
     lateMerging;
@@ -2466,6 +2486,7 @@ export function NoteEditorCore({
                                 offlineLimit ||
                                 copyFull ||
                                 outdated ||
+                                accessLost ||
                                 draftsSending
                               }
                               shouldShowStats={shouldShowDocumentStats(

@@ -259,15 +259,12 @@ export function QuizEditor({
   title,
   action,
   copy,
-  onAccessLost,
   onPresenceChange,
   onStatusChange,
   sources,
   stored,
   target,
 }: {
-  /** Its room refused this reader: the page goes to view mode. */
-  onAccessLost: () => void;
   /** The device copy its rooms start from. */
   copy: RoomCopy;
   /** The questions as its read holds them, painted until the rooms sync. */
@@ -329,11 +326,8 @@ export function QuizEditor({
     question.scrollIntoView({ block: 'start' });
   });
 
+  // Its room refused this person: the page stays as it is, read-only.
   const refused = rooms.status === 'unavailable';
-  useEffect(() => {
-    if (refused) onAccessLost();
-  }, [refused, onAccessLost]);
-  if (refused) return null;
   // Everything but the live page: one column under the header's title.
   const column = (children: ReactNode) => (
     <div className="h-full overflow-y-auto px-4 py-6 sm:px-10">
@@ -350,7 +344,7 @@ export function QuizEditor({
       {headerActions &&
         createPortal(
           <>
-            {rooms.undo && !itemEditingStopped(rooms) && (
+            {rooms.undo && !refused && !itemEditingStopped(rooms) && (
               <UndoButtons header manager={rooms.undo} />
             )}
             {action && <span className="ml-2">{action}</span>}
@@ -359,12 +353,26 @@ export function QuizEditor({
         )}
       {rooms.recovery ? (
         column(<QuizRecovery recovery={rooms.recovery} rooms={rooms} />)
+      ) : refused ? (
+        column(
+          <>
+            <FileBanner message={m.editor_access_lost()} />
+            <QuizQuestionList<Question | LearnerQuestion>
+              disabled
+              questions={questions.length ? questions : stored}
+            />
+          </>
+        )
       ) : rooms.ready &&
         (rooms.access !== 'write' || itemEditingStopped(rooms)) ? (
         column(
           <>
-            {rooms.readOnlyCode === 'unsupported_block' && (
+            {rooms.readOnlyCode === 'unsupported_block' ? (
               <FileBanner message={m.editor_unsupported_block_strip()} />
+            ) : (
+              rooms.access !== 'write' && (
+                <FileBanner message={m.editor_read_only_strip()} />
+              )
             )}
             {rooms.offline && <SaveBanner state={rooms.offline} />}
             <QuizQuestionList
