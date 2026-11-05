@@ -320,7 +320,7 @@ test('the panel handle trades width with the viewer up to half the group, collap
   expect(await width(page, 'left')).toBe(wide);
 });
 
-test('the open panel is in the URL, back steps through it, and each workspace remembers its own', async ({
+test('the open panel is in the URL, back steps through it, and a new visit opens the Dashboard', async ({
   page,
 }) => {
   await page.goto('/workspaces/ws_bio');
@@ -345,11 +345,8 @@ test('the open panel is in the URL, back steps through it, and each workspace re
     'page'
   );
 
-  // Visiting again opens what was last open, here and only here.
+  // A new visit opens the Dashboard, whatever was open last time.
   await page.goto('/workspaces/ws_bio');
-  await expect(page).toHaveURL(/panel=agent/, { timeout: 60_000 });
-  await expect(panel).toBeVisible();
-  await page.goto('/workspaces/ws_eng');
   await expect(page).toHaveURL(/panel=none/, { timeout: 60_000 });
   await expect(panel).toBeHidden();
 });

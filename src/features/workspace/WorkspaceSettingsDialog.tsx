@@ -109,7 +109,7 @@ export function WorkspaceSettingsDialog({
   // fetches the workspace and shows its error. Closing matters on
   // /workspaces, where the page stays.
   const leavePage = () =>
-    navigate({ to: '/workspaces' }).then(() => {
+    navigate({ to: '/' }).then(() => {
       onClose();
       qc.removeQueries({ queryKey: qk.workspace(workspace.id) });
     });

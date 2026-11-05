@@ -67,7 +67,6 @@ import { addQuizRun, useQuizDialogKey } from '@/features/makeQuiz/quizRuns';
 import { CenterContent } from '@/features/materials/CenterContent';
 import type { OneColumnChrome } from '@/features/materials/CenterContentHeader';
 import {
-  isWorkspacePanel,
   type NoteCitationTarget,
   type OpenItem,
   openItemFromSearch,
@@ -322,21 +321,10 @@ function sectionForCenter(
   return was === 'study' ? 'dashboard' : was;
 }
 
-/** The panel as the URL says, else as this workspace last had it. */
-function firstPanelOf(
-  workspaceId: string,
-  urlPanel: WorkspacePanel | undefined,
-  lg: boolean
-) {
-  return lg
-    ? (urlPanel ??
-        readPref<WorkspacePanel | null>(
-          PREF_KEYS.panel(workspaceId),
-          null,
-          (value): value is WorkspacePanel => isWorkspacePanel(value)
-        ))
-    : null;
-}
+/** The panel the URL names; with none a workspace opens on its Dashboard (Epo
+ * 2026-11-05). */
+const firstPanelOf = (urlPanel: WorkspacePanel | undefined, lg: boolean) =>
+  lg ? (urlPanel ?? null) : null;
 
 function firstSectionOf(
   panel: WorkspacePanel | null,
@@ -417,20 +405,19 @@ function WorkspaceOpen() {
     ? `${searchedOpenItem.kind}:${searchedOpenItem.id}`
     : null;
   const center: PanelCenter = { openKey, studyPage };
-  // These two states draw the panel; the effect below keeps the URL and the
-  // memory on them.
+  // These two states draw the panel; the effect below keeps the URL on them.
   const [section, setSection] = useState<WorkspaceSection>(() =>
-    firstSectionOf(firstPanelOf(workspaceId, search.panel, lg), center)
+    firstSectionOf(firstPanelOf(search.panel, lg), center)
   );
   const [panelOpen, setPanelOpen] = useState(() =>
-    firstPanelOpenOf(firstPanelOf(workspaceId, search.panel, lg), center)
+    firstPanelOpenOf(firstPanelOf(search.panel, lg), center)
   );
   // Panels are each workspace's own. The page stays mounted when a Move takes
   // the open file to another: the file follows at once (Q467).
   const [seenWorkspace, setSeenWorkspace] = useState(workspaceId);
   if (workspaceId !== seenWorkspace) {
     setSeenWorkspace(workspaceId);
-    const panel = firstPanelOf(workspaceId, search.panel, lg);
+    const panel = firstPanelOf(search.panel, lg);
     setChatShown(readPref(PREF_KEYS.chatShown(workspaceId), false, isBoolean));
     setSection(firstSectionOf(panel, center));
     setPanelOpen(firstPanelOpenOf(panel, center));
@@ -482,7 +469,6 @@ function WorkspaceOpen() {
       }
       return;
     }
-    if (!beforeTour.current) writePref(PREF_KEYS.panel(workspaceId), panelNow);
     if (urlPanel === panelNow) return;
     // A press adds a step for back; anything else only labels the entry, such
     // as a navigation that left the panel out.
@@ -493,7 +479,7 @@ function WorkspaceOpen() {
       search: (previous) => ({ ...previous, panel: panelNow }),
       to: '.',
     });
-  }, [navigate, openKey, panelNow, search.panel, studyPage, workspaceId]);
+  }, [navigate, openKey, panelNow, search.panel, studyPage]);
   const openPracticeFirst = useEffectEvent(() => {
     if (lg && section === 'study' && !studyPage && !openKey)
       navigate({
@@ -781,7 +767,7 @@ function WorkspaceOpen() {
     return (
       <LoadingLarge
         backLabel={m.workspace_back_to()}
-        backTo="/workspaces"
+        backTo="/"
         title={m.workspace_loading()}
       />
     );
@@ -799,9 +785,7 @@ function WorkspaceOpen() {
     );
 
   if (!ws)
-    return (
-      <WorkspaceError backLabel={m.workspace_back_to()} backTo="/workspaces" />
-    );
+    return <WorkspaceError backLabel={m.workspace_back_to()} backTo="/" />;
 
   // Everyone has settings: phones open on the tab list, wider screens on the
   // first tab (General for owner and editor members, else their own Study).
@@ -1071,7 +1055,7 @@ function WorkspaceOpen() {
               oneColumnLayout ? (
                 <ToolbarButton
                   label={m.workspace_back_to()}
-                  onClick={() => navigate({ to: '/workspaces' })}
+                  onClick={() => navigate({ to: '/' })}
                 >
                   <Icon name="navigationBack" />
                 </ToolbarButton>

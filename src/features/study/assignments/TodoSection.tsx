@@ -11,6 +11,7 @@ import { cn } from '@/lib/cn';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { dayLabel } from './assignmentText';
 import { NewAssignmentDialog } from './LazyNewAssignmentDialog';
+import { todoRows } from './todoRows';
 
 /** A chip naming a quiz: the assignment's quill, tinted (Epo 2026-11-03). */
 function WorkChip({ title, done }: { title: string; done?: boolean }) {
@@ -52,10 +53,8 @@ function FileChip({ file }: { file: Assignment['files'][number] }) {
 /** The Dashboard's To do (boards H1, H2, H2b; Epo 2026-11-03). A member's holds
  * what is assigned to them: quizzes, and the rest with a tick. Staff's holds
  * what is for them: answers to approve and anything they assigned themselves,
- * with New assignment at its top right. A row is its own button, with nothing
- * else to press but a tick (Epo 2026-11-05); an assignment's page starts or
- * continues it. Done rows leave until Show done brings them back, crossed out.
- * Empty, the section doesn't show. */
+ * with New assignment at its top right. Done rows leave until Show done brings
+ * them back, crossed out. Empty, the section doesn't show. */
 export function TodoSection({
   manages,
   workspaceId,
@@ -63,30 +62,10 @@ export function TodoSection({
   manages: boolean;
   workspaceId: string;
 }) {
-  const navigate = useNavigate();
   const { data } = useAssignments(workspaceId, { errorBoundary: false });
-  const { mutate: setDone } = useSetAssignmentDone(workspaceId);
   const [showDone, setShowDone] = useState(false);
   const [creating, setCreating] = useState(false);
-  const items = data?.items ?? [];
-  const toApprove = manages
-    ? items.filter((a) => (a.manage?.toApprove ?? 0) > 0)
-    : [];
-  const mine = items.filter((a) => a.mine && !a.draft && !a.closedAt);
-  const open = mine.filter((a) => !a.mine?.done);
-  const done = mine.filter((a) => a.mine?.done);
-  const openPage = (a: Assignment) =>
-    navigate({
-      search: {
-        assignment: a.id,
-        ...(a.mine?.countedAttemptId && a.kind === 'marked'
-          ? { attempt: a.mine.countedAttemptId }
-          : {}),
-        ...(manages ? { own: true as const } : {}),
-        study: 'assignments' as const,
-      },
-      to: '.',
-    });
+  const { done, open, toApprove } = todoRows(data?.items ?? [], manages);
   const shown = showDone ? [...open, ...done] : open;
   if (toApprove.length === 0 && shown.length === 0 && done.length === 0)
     return null;
@@ -119,89 +98,12 @@ export function TodoSection({
           )}
         </div>
       </div>
-      <ul className="-mx-1.5 border-divider border-t">
-        {toApprove.map((a) => (
-          <Row key={a.id}>
-            <Link
-              className="flex min-h-10 min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 px-1.5 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset"
-              search={{
-                assignment: a.id,
-                study: 'assignments' as const,
-                tab: 'approve' as const,
-              }}
-              to="."
-            >
-              {m.dashboard_approve_on()}
-              <span className="flex min-w-0 items-center gap-2">
-                <WorkChip title={a.title} />
-                <span className="t-meta shrink-0 font-semibold text-tint-warning-fg">
-                  {m.dashboard_waiting({ count: a.manage?.toApprove ?? 0 })}
-                </span>
-              </span>
-            </Link>
-          </Row>
-        ))}
-        {shown.map((a) => {
-          const isDone = !!a.mine?.done;
-          const due = a.dueAt
-            ? m.assignment_due({ date: dayLabel(a.dueAt) })
-            : null;
-          return (
-            <Row key={a.id}>
-              {a.kind === 'unmarked' && (
-                <span className="grid w-7 shrink-0 justify-items-start pl-1.5">
-                  <Checkbox
-                    aria-label={a.title}
-                    checked={isDone}
-                    onChange={(next) => setDone({ done: next, id: a.id })}
-                    size={18}
-                  />
-                </span>
-              )}
-              <button
-                className={cn(
-                  'flex min-h-10 min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 px-1.5 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset',
-                  isDone && 'text-fg-muted line-through'
-                )}
-                onClick={() => void openPage(a)}
-                type="button"
-              >
-                {a.kind === 'marked' ? (
-                  <>
-                    {isDone ? m.dashboard_finish() : m.dashboard_do()}
-                    <WorkChip done={isDone} title={a.title} />
-                    {a.timeLimitMin && !isDone && (
-                      <span className="text-fg-secondary">
-                        {m.assignment_minutes_short({ count: a.timeLimitMin })}
-                      </span>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <span className="min-w-0">{a.title}</span>
-                    {a.files.map((file) => (
-                      <FileChip
-                        file={file}
-                        key={file.fileId ?? file.materialId}
-                      />
-                    ))}
-                  </>
-                )}
-                {due && (
-                  <span
-                    className={cn(
-                      't-meta shrink-0 text-fg-secondary sm:ml-auto sm:pl-3',
-                      isDone && 'text-fg-muted line-through'
-                    )}
-                  >
-                    {due}
-                  </span>
-                )}
-              </button>
-            </Row>
-          );
-        })}
-      </ul>
+      <TodoRows
+        manages={manages}
+        shown={shown}
+        toApprove={toApprove}
+        workspaceId={workspaceId}
+      />
       {creating && (
         <NewAssignmentDialog
           onClose={() => setCreating(false)}
@@ -210,6 +112,123 @@ export function TodoSection({
         />
       )}
     </section>
+  );
+}
+
+/** A To do list's rows, on the Dashboard and the To do page. A row is its own
+ * button, with nothing else to press but a tick (Epo 2026-11-05); an assignment's
+ * page starts or continues it. */
+export function TodoRows({
+  manages,
+  shown,
+  toApprove,
+  workspaceId,
+}: {
+  manages: boolean;
+  shown: Assignment[];
+  toApprove: Assignment[];
+  workspaceId: string;
+}) {
+  const navigate = useNavigate();
+  const { mutate: setDone } = useSetAssignmentDone(workspaceId);
+  const openPage = (a: Assignment) =>
+    navigate({
+      params: { workspaceId },
+      search: {
+        assignment: a.id,
+        ...(a.mine?.countedAttemptId && a.kind === 'marked'
+          ? { attempt: a.mine.countedAttemptId }
+          : {}),
+        ...(manages ? { own: true as const } : {}),
+        study: 'assignments' as const,
+      },
+      to: '/workspaces/$workspaceId',
+    });
+  return (
+    <ul className="-mx-1.5 border-divider border-t">
+      {toApprove.map((a) => (
+        <Row key={a.id}>
+          <Link
+            className="flex min-h-10 min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 px-1.5 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset"
+            params={{ workspaceId }}
+            search={{
+              assignment: a.id,
+              study: 'assignments' as const,
+              tab: 'approve' as const,
+            }}
+            to="/workspaces/$workspaceId"
+          >
+            {m.dashboard_approve_on()}
+            <span className="flex min-w-0 items-center gap-2">
+              <WorkChip title={a.title} />
+              <span className="t-meta shrink-0 font-semibold text-tint-warning-fg">
+                {m.dashboard_waiting({ count: a.manage?.toApprove ?? 0 })}
+              </span>
+            </span>
+          </Link>
+        </Row>
+      ))}
+      {shown.map((a) => {
+        const isDone = !!a.mine?.done;
+        const due = a.dueAt
+          ? m.assignment_due({ date: dayLabel(a.dueAt) })
+          : null;
+        return (
+          <Row key={a.id}>
+            {a.kind === 'unmarked' && (
+              <span className="grid w-7 shrink-0 justify-items-start pl-1.5">
+                <Checkbox
+                  aria-label={a.title}
+                  checked={isDone}
+                  onChange={(next) => setDone({ done: next, id: a.id })}
+                  size={18}
+                />
+              </span>
+            )}
+            <button
+              className={cn(
+                'flex min-h-10 min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 px-1.5 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset',
+                isDone && 'text-fg-muted line-through'
+              )}
+              onClick={() => void openPage(a)}
+              type="button"
+            >
+              {a.kind === 'marked' ? (
+                <>
+                  {isDone ? m.dashboard_finish() : m.dashboard_do()}
+                  <WorkChip done={isDone} title={a.title} />
+                  {a.timeLimitMin && !isDone && (
+                    <span className="text-fg-secondary">
+                      {m.assignment_minutes_short({ count: a.timeLimitMin })}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <>
+                  <span className="min-w-0">{a.title}</span>
+                  {a.files.map((file) => (
+                    <FileChip
+                      file={file}
+                      key={file.fileId ?? file.materialId}
+                    />
+                  ))}
+                </>
+              )}
+              {due && (
+                <span
+                  className={cn(
+                    't-meta shrink-0 text-fg-secondary sm:ml-auto sm:pl-3',
+                    isDone && 'text-fg-muted line-through'
+                  )}
+                >
+                  {due}
+                </span>
+              )}
+            </button>
+          </Row>
+        );
+      })}
+    </ul>
   );
 }
 

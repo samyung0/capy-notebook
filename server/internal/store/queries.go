@@ -273,9 +273,9 @@ func (s *Store) ListWorkspaces(ctx context.Context, userID, q, sortKey, tag stri
 	case "files":
 		sb += " ORDER BY (SELECT count(*) FROM files f WHERE f.workspace_id=w.id AND f.trashed_at IS NULL) DESC"
 	default:
-		// The caller's own last open; workspaces never opened follow, newest
-		// first.
-		sb += " ORDER BY mv.opened_at DESC NULLS LAST, w.created_at DESC"
+		// The caller's own last open; creating one counts as opening it (Epo
+		// 2026-11-05), so a new workspace lists first.
+		sb += " ORDER BY COALESCE(mv.opened_at, w.created_at) DESC, w.created_at DESC"
 	}
 	rows, err := s.pool.Query(ctx, sb, args...)
 	if err != nil {
