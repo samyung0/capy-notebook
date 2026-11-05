@@ -124,14 +124,9 @@ function useAccountStatus(): AccountStatus | null {
   return null;
 }
 
-function SubscriptionLink() {
+function SubscriptionLink({ small }: { small?: boolean }) {
   return (
-    <Button
-      asChild
-      className="h-7 px-2 text-fg underline underline-offset-3 hover:bg-fg/5"
-      size="sm"
-      variant="ghost"
-    >
+    <Button asChild size={small ? 'sm' : 'md'}>
       <Link search={{ tab: 'subscription' }} to="/billing">
         {m.account_banner_subscription()}
       </Link>
@@ -145,6 +140,7 @@ export default function HomeBanner() {
   if (!status) return null;
   return (
     <SlotCard
+      action={status.links && <SubscriptionLink />}
       body={status.body}
       connection={
         status.kind === 'offline' || status.kind === 'reconnecting'
@@ -167,11 +163,6 @@ export default function HomeBanner() {
           />
         </div>
       )}
-      {status.links && (
-        <div className="mt-1.5 -ml-2">
-          <SubscriptionLink />
-        </div>
-      )}
     </SlotCard>
   );
 }
@@ -185,6 +176,7 @@ export function AccountStatusBanner() {
   if (!status) return null;
   return (
     <SlotCard
+      action={status.links && <SubscriptionLink small />}
       body={status.body}
       connection={
         status.kind === 'offline' || status.kind === 'reconnecting'
@@ -196,17 +188,12 @@ export function AccountStatusBanner() {
       small
       title={status.title}
       tone={status.tone}
-    >
-      {status.links && (
-        <div className="-ml-2">
-          <SubscriptionLink />
-        </div>
-      )}
-    </SlotCard>
+    />
   );
 }
 
 function SlotCard({
+  action,
   title,
   body,
   icon,
@@ -216,6 +203,7 @@ function SlotCard({
   small,
   children,
 }: {
+  action?: React.ReactNode;
   title: string;
   body: string;
   icon: IconName;
@@ -241,10 +229,16 @@ function SlotCard({
       radius="card-lg"
       role="status"
     >
-      <div className="relative z-10 flex flex-col gap-1 xl:max-w-[80%]">
-        <p className={cn('font-bold', !small && 't-subtitle')}>{title}</p>
-        <p className={cn(small ? 't-meta' : 'mt-1')}>{body}</p>
-        {children}
+      {/* Phones put the action on its own row, right-aligned. */}
+      <div className="relative z-10 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <p className={cn('font-bold', !small && 't-subtitle')}>{title}</p>
+          <p className={cn(small ? 't-meta' : 'mt-1')}>{body}</p>
+          {children}
+        </div>
+        {action && (
+          <div className="shrink-0 self-end sm:self-auto">{action}</div>
+        )}
       </div>
       <Icon
         className="absolute -top-3 -right-4 opacity-15"
