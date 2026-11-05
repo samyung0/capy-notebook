@@ -939,3 +939,20 @@ Updated 2026-11-03. Decided this round, no longer open: the join notice (not an 
 
 11. Before schools: an age policy, and what happens to results when a member leaves.
 12. Later work, already queued: scanned submissions, AI insights (class snapshot, member summary), "Copy to my workspace" for self-made practice, letting members share practice with the class, and **gamification** such as a topic map on Summary reusing the question bank's TrailMap (Epo, 2026-11-03: think about it after this).
+
+## Where it stands, 2026-11-05 afternoon
+
+The batch is on `main` and UAT at bb1b3fb4a (`e2e/uat/journeys/study.spec.ts` hasn't run on UAT yet). The BetterOffice pin follows at 3464db68a. Study work is now all on the Mac (the Windows session stopped it there).
+
+**On `claude/study-followups`, local until Epo has seen the Settings tab:**
+- No kick (Epo: "a live room doesnt kick people becuase they receive update"): nothing closes a connection when an assignment is published, reopened or edited. Joining and tokens are still refused.
+- Closing sends `assignment_closed`; a member's open attempt submits what's on the page and goes straight to results. Closing has a 15 s grace, Claude's pick, so that submit counts.
+- Assignments keep the frozen copy, for assignments only; practice stays live. Republish (Epo: "i think republish button maybe more simpler") replaces it for an open marked assignment. Anyone in progress gets it on their next load, with answers to removed questions dropped; submitted attempts keep their marks.
+- The report has a Settings tab holding every action, and no ⋮: Edit quiz opens its room, Republish shows "Last published {date}", then Assignment details, Close or Reopen, Delete.
+- Claude's picks on Republish, told to Epo: `posted_at` moves; the highest share of an attempt's own total counts; a removed question stays last on the report while a submission holds it; an image no longer used stays charged until the assignment is deleted.
+
+**Figures:** at most 5 per whole question (Epo, "cap at 5, i thought its per part, if whole quesiton then 5"), on the extraction branch.
+
+**Still with Epo:** the Settings tab as shown; whether "never reconnect" reaches the other drains (hiding an item, access changes, moving a file) and two page swaps in `CenterContent.tsx` (a refetch sending the reader to the assignment, a 404 showing the error page); the Late badge; Summary counting open assignments; the picker's Coming soon rows; layout capacity and deploy; moving Attempts into Advanced.
+
+**Handed over by the Windows session, not started:** the first real UAT check of a question with no answers going through `insert_child`; dotted question ids in `quiz.rs`, on main too; locks in `source_imports.go:763-780`; the `StartAssignment` expired-attempt lock; `DeleteAssignment` returning 404; a cap on a whole run's figures; sweep starvation (200 rows with no ORDER BY). The rest are in the left-for-later lists of `FIXES.md` and `FIXES-2.md` under `2026-11-05-study-landing` in the harness. `assignments.go:327-336` is already handled.
