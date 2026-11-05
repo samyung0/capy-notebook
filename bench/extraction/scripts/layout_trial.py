@@ -4,7 +4,8 @@
 The service runs in its own venv with the model file (``layout/requirements.in``);
 this script runs in the root venv and reaches it through CAPY_LAYOUT_URL and
 CAPY_LAYOUT_TOKEN, as retrieval does. The wrappers below only record what the code
-did; none changes it.
+did; none changes it. Written before the scheme parse was removed, so a run with answer
+files needs the pipeline at ``e89a06d85``.
 
     python -I layout_trial.py run --tag frozen --parallel 3 \
         --scans <dir> --digital <dir> --env-file <keys> \

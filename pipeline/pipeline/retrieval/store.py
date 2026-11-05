@@ -1847,6 +1847,19 @@ async def workspace_outline(workspace_id: str) -> dict[str, Any]:
     return {"topics": topics, "files": files}
 
 
+async def extraction_decision(run_id: str) -> tuple[str, int | None]:
+    """A Make a quiz run's status and how many questions its starter confirmed; a run
+    with no row yet is still running, as Go writes it after the stream opens."""
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            "SELECT status, confirmed FROM question_extractions WHERE id = %s",
+            (run_id,),
+        )
+        row = await cur.fetchone()
+    return ("running", None) if row is None else (row["status"], row["confirmed"])
+
+
 async def file_page_source(
     workspace_id: str | None, file_id: str
 ) -> dict[str, Any] | None:

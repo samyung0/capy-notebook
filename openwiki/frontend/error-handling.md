@@ -84,7 +84,7 @@ inline, not as a toast, so the draft and its context stay on screen:
 - Such a mutation opts out of the global toast (`errorToast: false`), so the
   failure is reported once.
 
-Make a quiz follows the same rule on a page: a refused start shows in the page
+Make a quiz follows the same rule in its dialog: a refused start shows in the step
 picker's `FormAlert`, selection kept. A run that fails shows copy for its
 `errorCode` (`extractionFailure`) as a page `ErrorState` with Back to the pages,
 and the same copy in the toast when its page isn't open; there is no automatic

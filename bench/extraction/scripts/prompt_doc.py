@@ -194,6 +194,10 @@ async def generate(args) -> str:
             call(copied("12", figures=[{"boxes": [1], "description": long_words}])),
         ),
         (
+            "More figures than a question holds",
+            call(copied("12", figures=[{"boxes": [1]}] * 6)),
+        ),
+        (
             "A figure with boxes [] and no page image",
             call(copied("12", figures=[{"boxes": []}])),
         ),
@@ -276,9 +280,13 @@ async def generate(args) -> str:
         {"tool_calls": [call(answers("13") | {"parts": []}, "record_answers")]},
         {"content": "DONE"},
     ]
+    answer_files = [
+        extraction.AnswerFile("answers.docx", "<the file's indexed text>"),
+        extraction.AnswerFile("answers.jpg", images=((1, pages[0].image),)),
+    ]
     async for _ in extraction.run(
         pages,
-        [],
+        answer_files,
         model=model,
         validate=validate,
     ):
@@ -321,17 +329,6 @@ async def generate(args) -> str:
         *await full_strings(extraction),
     ]
 
-    transport.replies = [{"content": '{"entries": []}'}]
-    await extraction.parse_schemes(
-        [
-            extraction.SchemeFile(
-                "answers.pdf", "<the file's indexed text, 12,000 characters a piece>"
-            )
-        ],
-        model=model,
-        labels=[("1", []), ("3", ["a", "b(i)"])],
-    )
-    scheme_body = transport.bodies[-1]
     transport.replies = [{"content": '{"boxes": [[1, 1, 2, 2], [3, 3, 4, 4]]}'}]
     await extraction.locate(pages[0], [("3", "A triangle ABC"), ("4", "")], model=model)
     locate_body = transport.bodies[-1]
@@ -389,7 +386,6 @@ async def generate(args) -> str:
         row("Map (`extraction_map`)", map_body),
         row("Copy batch (`extraction_copy`)", copy_body),
         row("Solve batch (`extraction_solve`)", solve_body),
-        row("Mark scheme (`extraction_scheme`)", scheme_body),
         row("Box call (`extraction_figures`)", locate_body),
         "",
         "## The map, copy and solve calls",
@@ -410,7 +406,11 @@ async def generate(args) -> str:
         "",
         "On a born-digital paper. Each block is one content part of the message: each "
         "page's text and image, then all the boxes, numbered once across the selection, "
-        "then the ask.",
+        "then the answer files, then the ask. An answer file goes as its indexed text when "
+        "it is a born-digital PDF, Word, PowerPoint or text file, and as page images, under "
+        "their own count, when it is a scan or an image. At most "
+        f"{extraction.limits.EXTRACTION_PAGES_MAX} page images a run, paper and answer "
+        "pages together. Here one of each.",
         "",
         map_user,
         "",
@@ -418,8 +418,8 @@ async def generate(args) -> str:
         "",
         "A run sends page text only when no selected page of the question paper is a scan "
         "and at least one is born digital, read from the stored PDF at the start "
-        "(`extraction.page_layer`). A mark scheme has no say, and its call reads its own "
-        f"text either way. Born digital: at least {extraction.VISIBLE_CHARS} characters "
+        "(`extraction.page_layer`). An answer file has no say. "
+        f"Born digital: at least {extraction.VISIBLE_CHARS} characters "
         "the page shows, not in render mode 3 or at zero opacity, and no image covering "
         f"{extraction.IMAGE_COVERS_PAGE:.0%} of it. Blank, with no say: fewer, no image and "
         f"under {extraction.VISIBLE_CHARS} characters of indexed text. Anything else is a "
@@ -457,13 +457,6 @@ async def generate(args) -> str:
         "The next call in that thread adds this user message.",
         "",
         fenced(cut_off),
-        "",
-        "## The mark scheme call",
-        "",
-        "One call per piece of each answer file, starting when the map ends, with the "
-        "map's labels and parts.",
-        "",
-        messages_of(scheme_body),
         "",
         "## The box call",
         "",

@@ -11,15 +11,9 @@ export interface ExtractionReport {
   expected: string[];
   figures: string[];
   figuresLeftOut: string[];
-  keyDisagreements: string[];
-  marksDiffer: string[];
   missing: string[];
   pages: number;
   recorded: string[];
-  schemeFailed?: boolean;
-  schemeRefused: string[];
-  schemeRepeats: string[];
   stopped: ExtractionReportStopped;
-  unpaired: string[];
   windows: number;
 }

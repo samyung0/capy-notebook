@@ -9,6 +9,7 @@ Run: ``uvicorn pipeline.retrieve.service:app --host 0.0.0.0 --port 8001``
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import secrets
@@ -693,10 +694,15 @@ class ExtractFile(BaseModel):
     name: str
     # A question paper's selected pages, counted from 1; empty for an answer file.
     pages: list[int] = Field(default_factory=list)
+    # A Word or PowerPoint paper's pages as the browser drew them, base64 JPEGs in
+    # pages' order.
+    images: list[str] = Field(default_factory=list)
 
 
 class ExtractReq(LLMPin):
     workspaceId: str = Field(min_length=1)
+    # The run's row in Go's store, which holds the starter's answer after the map.
+    runId: str = Field(min_length=1)
     paper: list[ExtractFile] = Field(min_length=1)
     answerFiles: list[ExtractFile]
     spendSessionId: str = Field(min_length=1)
@@ -705,7 +711,7 @@ class ExtractReq(LLMPin):
 @app.post("/extract")
 async def extract(req: ExtractReq):
     """Make a quiz (todo-study-tracking.md §8): read the selected pages into
-    questions and pair the answer files with them, as events: ``questions``
+    questions, with the answer files in the first message, as events: ``questions``
     after each copy batch, then ``done`` with the quiz and its report, or
     ``error``. The request is checked first, so a page past its file's end
     is a 400 before the stream starts. The run holds a turn slot from then on
@@ -715,7 +721,7 @@ async def extract(req: ExtractReq):
     # hidden from members as they are, are theirs to read.
     hidden_token = store.bind_hidden_readers([req.workspaceId])
     try:
-        pages, schemes = await extraction.prepare(
+        pages, answers = await extraction.prepare(
             req.workspaceId,
             [f.model_dump() for f in req.paper],
             [f.model_dump() for f in req.answerFiles],
@@ -726,7 +732,7 @@ async def extract(req: ExtractReq):
     slot = _ChatSlot()
     slot.held = True
     return _SlotStream(
-        _extract_events(req, pages, schemes),
+        _extract_events(req, pages, answers),
         slot,
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -736,7 +742,7 @@ async def extract(req: ExtractReq):
 async def _extract_events(
     req: ExtractReq,
     pages: list[extraction.Page],
-    schemes: list[extraction.SchemeFile],
+    answers: list[extraction.AnswerFile],
 ):
     _bind_llm(req)
     slots_token = limits.bind_call_slots(
@@ -756,11 +762,20 @@ async def _extract_events(
         )
         async for event in extraction.run(
             pages,
-            schemes,
+            answers,
             model=model,
             validate=extraction.gateway_validate,
+            confirm=functools.partial(extraction.starter_confirm, req.runId),
         ):
             yield _sse(event)
+    except extraction.ConfirmExpired:
+        yield _sse(
+            {
+                "type": "error",
+                "code": "confirm_expired",
+                "message": "Nobody confirmed the questions in time.",
+            }
+        )
     except elitellm.ProviderBusy:
         yield _sse(
             {

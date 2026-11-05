@@ -2,15 +2,20 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it, vi } from 'vitest';
 import type { Extraction } from '@/api/types';
 import { m } from '@/i18n';
-import { ExtractionProgress } from './ExtractionProgress';
+import { useRunStep } from './ExtractionProgress';
 
 const read = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
-vi.mock('@/api/hooks', () => ({ useExtraction: () => read.value }));
+vi.mock('@/api/hooks', () => ({
+  useCancelExtraction: () => ({}),
+  useConfirmExtraction: () => ({}),
+  useExtraction: () => read.value,
+}));
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
 
 const run = (over: Partial<Extraction>): Extraction => ({
+  answered: 0,
   createdAt: '2026-11-05T10:00:00Z',
   id: 'ex_1',
   recorded: 3,
@@ -19,10 +24,23 @@ const run = (over: Partial<Extraction>): Extraction => ({
   workspaceId: 'ws_1',
   ...over,
 });
-const page = () =>
-  renderToStaticMarkup(
-    <ExtractionProgress onDone={vi.fn()} onLeave={vi.fn()} runId="ex_1" />
+const noop = vi.fn();
+function Step() {
+  const { body, title } = useRunStep({
+    onBack: noop,
+    onConfirmed: noop,
+    onDone: noop,
+    onLeave: noop,
+    runId: 'ex_1',
+  });
+  return (
+    <>
+      <h1>{title}</h1>
+      {body}
+    </>
   );
+}
+const page = () => renderToStaticMarkup(<Step />);
 
 it('keeps following the run when a poll fails', () => {
   read.value = { data: run({}), error: new Error('down') };

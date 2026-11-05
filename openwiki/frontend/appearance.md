@@ -94,7 +94,7 @@ Study's opens Practice. Below lg `panel=agent` is the chat page.
 
 The chat stays mounted from lg whichever section shows, the panel closed too,
 so it keeps its thread, draft and stream (below lg the dock's chat stays mounted
-too, hidden on Make a quiz's pages); a thread that moves on while hidden
+too, hidden while Make a quiz's dialog is open); a thread that moves on while hidden
 shows its end on return. Every way into a chat goes to Agent (`openChat`):
 `?chat=new` from Get started, the history's rows and New chat, and voice. A chat
 on screen comes back after a reload or a closed tab (`capy.workspace.chatShown.<id>`,

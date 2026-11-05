@@ -192,7 +192,7 @@ function audioTooLong(
   );
 }
 
-function workspaceFileRoom(
+export function workspaceFileRoom(
   workspace: { fileCount: number; filesLimit: number } | undefined
 ) {
   const filesUsed = workspace?.fileCount ?? 0;
@@ -204,7 +204,7 @@ function workspaceFileRoom(
   };
 }
 
-function workspaceRoomToast(workspaceRoom: number, filesLimit: number) {
+export function workspaceRoomToast(workspaceRoom: number, filesLimit: number) {
   userToast({
     title:
       workspaceRoom <= 0
@@ -215,7 +215,7 @@ function workspaceRoomToast(workspaceRoom: number, filesLimit: number) {
 }
 
 /** Server limit on files.name, counted in code points like the API. */
-function nameTooLong(name: string): boolean {
+export function nameTooLong(name: string): boolean {
   return [...name].length > fileNameMax;
 }
 

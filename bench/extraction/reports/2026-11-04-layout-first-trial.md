@@ -202,8 +202,7 @@ text.
 
 ## Options copied digit for digit: Q34
 
-2022 Paper 2 Q34 prints `12B00CD000000E`, six zeros, with options on `4^22, 4^14, 4^24,
-4^16`.
+2022 Paper 2 Q34 prints a long number with six zeros, with four options that are powers.
 
 | Prompt | Runs | Zeros right | Options as printed |
 |---|---|---|---|
@@ -213,7 +212,7 @@ text.
 
 The line does not fix the zero, and it could not: the zero is in the question's text,
 not an option. **The cause is the page read.** The indexed text for that page says
-`12B00CD00000E`, five zeros, so the model sees five in the text and six on the image.
+the number with five zeros, so the model sees five in the text and six on the image.
 The rewritten options happened once in 23 runs, too rarely to tell whether the line
 helps. Nothing got worse with it. I would take it out, since it shows no benefit. To
 fix the zero itself, the choice is what scan pages send as text, which is a prompt
