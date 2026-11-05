@@ -67,6 +67,13 @@ pub fn valid_id(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
+/// A stored question's id, held to what the validators hold it to, as a part's
+/// and a group's are: a stored `q1.1` seeds and saves. Only a key a client
+/// creates must be `valid_id`.
+fn stored_id(question: &Value) -> bool {
+    q::identifier(&question["id"], "id").is_ok()
+}
+
 /* ------------------------------------------------------------- reading */
 
 struct Entry {
@@ -1284,7 +1291,7 @@ pub fn states_from_value(value: &[Value], client_id: u64) -> (Vec<u8>, Vec<u8>) 
         let mut seen = HashSet::new();
         for question in questions_from_value(value) {
             let id = str_of(&question, "id");
-            if !valid_id(id) || !seen.insert(id.to_owned()) {
+            if !stored_id(&question) || !seen.insert(id.to_owned()) {
                 continue;
             }
             let next = order::after(order.as_deref());
@@ -2420,7 +2427,7 @@ pub fn set_questions(
     let mut seen = HashSet::new();
     for question in questions {
         let id = str_of(question, "id");
-        if !valid_id(id) || !seen.insert(id.to_owned()) {
+        if !stored_id(question) || !seen.insert(id.to_owned()) {
             return Err("invalid or repeated question id".into());
         }
     }

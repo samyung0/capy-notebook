@@ -1830,6 +1830,31 @@ fn a_group_id_the_validators_accept_stays_in_the_room() {
     );
 }
 
+/// A question's id is held to the validators too: a stored `q1.1` stays in the
+/// room, takes an edit and saves, where it once left the room without a word.
+#[test]
+fn a_question_id_the_validators_accept_stays_in_the_room() {
+    let mut question = fixtures().remove(0);
+    question["id"] = json!("q1.1");
+    let (content, keys, _, _) = rooms(std::slice::from_ref(&question));
+    assert_eq!(typed(&content, &keys), question);
+
+    let client = copy_of(&content, 3);
+    map_in(&client, &["questions", "q1.1"]).insert(&mut client.transact_mut(), "layout", "split");
+    let mut check = validator(Kind::Quiz, &content);
+    accepted(&mut check, &content, &client);
+    question["layout"] = json!("split");
+    assert_eq!(typed(&content, &keys), question);
+
+    quiz::set_questions(
+        &mut content.transact_mut(),
+        &mut keys.transact_mut(),
+        std::slice::from_ref(&question),
+    )
+    .unwrap();
+    assert_eq!(typed(&content, &keys), question);
+}
+
 /// A group's blocks take the stem's caps, at admission as in the exact check.
 #[test]
 fn group_values_past_their_caps_are_refused() {
