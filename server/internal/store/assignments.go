@@ -1213,12 +1213,13 @@ func (s *Store) RunningAttemptUsers(ctx context.Context, id string) ([]string, e
 // DeleteAssignment deletes it with its attempts, frozen questions and images,
 // which leave their payer's meter (a trigger's); its quiz is as it was.
 func (s *Store) DeleteAssignment(ctx context.Context, actorID, id string) error {
-	wsID, err := s.assignmentWorkspace(ctx, id)
-	if err != nil {
-		return err
-	}
+	var wsID string
 	var payer *string
-	if err := s.pool.QueryRow(ctx, `SELECT frozen_by FROM assignments WHERE id=$1`, id).Scan(&payer); err != nil {
+	err := s.pool.QueryRow(ctx, `SELECT workspace_id, frozen_by FROM assignments WHERE id=$1`, id).Scan(&wsID, &payer)
+	if isNoRows(err) {
+		return ErrNotFound
+	}
+	if err != nil {
 		return err
 	}
 	var also []string

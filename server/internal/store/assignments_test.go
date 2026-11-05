@@ -1175,6 +1175,9 @@ func TestAssignmentFrozenCopyAndDelete(t *testing.T) {
 	if err := f.s.DeleteAssignment(ctx, f.user, draft.ID); err != nil {
 		t.Fatal(err)
 	}
+	if err := f.s.DeleteAssignment(ctx, f.user, draft.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("second delete err=%v, want not found", err)
+	}
 	if _, err := f.s.MaterialEffectiveRole(ctx, f.viewer, f.quiz.ID); err != nil {
 		t.Fatalf("deleting left the quiz refused: %v", err)
 	}
