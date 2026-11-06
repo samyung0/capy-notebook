@@ -133,3 +133,14 @@ func TestHistoryWeightsOrder(t *testing.T) {
 		t.Errorf("one miss: %+v", w)
 	}
 }
+
+// A part left Not marked says nothing about recall, so the question isn't rated.
+func TestQuestionScoreSkipsANotMarkedPart(t *testing.T) {
+	q := map[string]any{"parts": []any{
+		map[string]any{"awarded": 1.0, "marks": 1.0},
+		map[string]any{"awarded": 0.0, "marks": 3.0, "pending": true},
+	}}
+	if _, ok := QuestionScore(q); ok {
+		t.Fatal("a Not marked part was scored")
+	}
+}

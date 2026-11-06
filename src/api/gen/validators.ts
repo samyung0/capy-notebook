@@ -208,6 +208,7 @@ export const markAssignmentAnswerBodyCommentMax = 2000;
 
 
 export const MarkAssignmentAnswerBody = zod.object({
+  "clearWarning": zod.boolean().optional(),
   "comment": zod.string().max(markAssignmentAnswerBodyCommentMax),
   "parts": zod.array(zod.object({
   "items": zod.array(zod.number()).nullish(),
@@ -461,6 +462,23 @@ export const UpdateAssignmentResponse = zod.object({
 
 
 /**
+ * @summary Approve every AI mark on one question
+ */
+export const ApproveAssignmentAIMarksParams = zod.object({
+  "id": zod.string()
+})
+
+export const ApproveAssignmentAIMarksBody = zod.object({
+  "questionId": zod.string()
+})
+
+export const ApproveAssignmentAIMarksResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "approved": zod.int()
+})
+
+
+/**
  * @summary Close an assignment to late submissions, or reopen it
  */
 export const SetAssignmentClosedParams = zod.object({
@@ -544,6 +562,19 @@ export const SetAssignmentDoneResponse = zod.void()
 
 
 /**
+ * @summary Have the AI mark the answers still waiting, in the background
+ */
+export const MarkAssignmentWithAIParams = zod.object({
+  "id": zod.string()
+})
+
+export const MarkAssignmentWithAIResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "total": zod.int()
+})
+
+
+/**
  * @summary Give a draft to its members
  */
 export const PublishAssignmentParams = zod.object({
@@ -618,6 +649,9 @@ export const GetAssignmentReportParams = zod.object({
 export const GetAssignmentReportResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "answers": zod.array(zod.object({
+  "aiAwarded": zod.number(),
+  "aiMarked": zod.boolean(),
+  "aiWarning": zod.string(),
   "attemptId": zod.string(),
   "attemptNumber": zod.int(),
   "awarded": zod.number(),
@@ -626,6 +660,10 @@ export const GetAssignmentReportResponse = zod.object({
   "userId": zod.string(),
   "waiting": zod.boolean()
 })),
+  "marking": zod.object({
+  "done": zod.int(),
+  "total": zod.int()
+}).optional(),
   "members": zod.array(zod.object({
   "attemptId": zod.string().optional(),
   "avatarUrl": zod.string().optional(),
@@ -5187,7 +5225,7 @@ export const SetStudyPreferencesResponse = zod.void()
  */
 export const ListModelSlotsResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "slots": zod.array(zod.enum(['chat', 'editor', 'ingest', 'extraction', 'retrieval', 'captioning', 'rerank']))
+  "slots": zod.array(zod.enum(['chat', 'editor', 'ingest', 'extraction', 'grading', 'retrieval', 'captioning', 'rerank']))
 })
 
 

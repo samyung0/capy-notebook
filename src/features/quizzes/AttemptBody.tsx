@@ -213,7 +213,8 @@ export function AttemptBody({
       setCheckError(undefined);
     });
     try {
-      finishedByCheck.current = checkedCount === answerable.length - 1;
+      finishedByCheck.current =
+        !checkedById.has(question.id) && checkedCount === answerable.length - 1;
       await check(question.id, answers);
     } catch (err) {
       if (isNoAnswersError(err)) {
@@ -319,7 +320,9 @@ export function AttemptBody({
             noAnswers.has(question.id) ? (
               <NoAnswersLine />
             ) : (
-              !checkedById.has(question.id) && (
+              // Not marked (no credits, a failure) can be checked again.
+              (!checkedById.has(question.id) ||
+                checkedById.get(question.id)?.parts.some((p) => p.pending)) && (
                 <div>
                   <div className="flex justify-end">
                     {/* Sized like the review session's Check. */}
@@ -332,7 +335,9 @@ export function AttemptBody({
                     >
                       {checking === question.id
                         ? m.quiz_grading()
-                        : m.question_ui_check()}
+                        : checkedById.has(question.id)
+                          ? m.question_ui_check_again()
+                          : m.question_ui_check()}
                     </Button>
                   </div>
                   {lastChecked === question.id && (

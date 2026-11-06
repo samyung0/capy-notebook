@@ -5,13 +5,15 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AssignmentAnswerRow } from './assignmentAnswerRow.ts';
+import type { AssignmentMarkingProgress } from './assignmentMarkingProgress.ts';
 import type { AssignmentMemberRow } from './assignmentMemberRow.ts';
 import type { AssignmentQuestionReport } from './assignmentQuestionReport.ts';
 
-export interface AssignmentReport {
+export interface AssignmentReportBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   answers: AssignmentAnswerRow[];
+  marking?: AssignmentMarkingProgress;
   members: AssignmentMemberRow[];
   questions: AssignmentQuestionReport[];
 }

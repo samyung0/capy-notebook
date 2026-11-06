@@ -192,10 +192,12 @@ async function changeMember(
 }
 
 /**
- * Whether a frame of the collaboration protocol closes a channel: its messages
- * are each a varint channel, a kind (4 is CLOSED) and a varint-long payload.
+ * The channels a frame of the collaboration protocol closes, each with its code
+ * and reason: its messages are each a varint channel, a kind (4 is CLOSED) and a
+ * varint-long payload, and a CLOSED's payload is a varint code and a string.
  */
-function closesChannel(frame: Buffer) {
+function channelsClosed(frame: Buffer) {
+  const closed: string[] = [];
   let at = 0;
   const varint = () => {
     let value = 0;
@@ -210,13 +212,19 @@ function closesChannel(frame: Buffer) {
     return value;
   };
   while (at < frame.length) {
-    varint();
+    const channel = varint();
     const kind = frame[at];
     at += 1;
-    if (kind === 4) return true;
-    at += varint();
+    const end = varint() + at;
+    if (kind === 4) {
+      const code = varint();
+      const length = varint();
+      const reason = frame.toString('utf8', at, at + length);
+      closed.push(`channel ${channel}: ${code} ${reason}`);
+    }
+    at = end;
   }
-  return false;
+  return closed;
 }
 
 /** Listens to the page's collaboration sockets: frames heard, and every channel
@@ -228,8 +236,8 @@ function watchRooms(run: UatRun, page: Page) {
     if (new URL(socket.url()).host !== host) return;
     socket.on('framereceived', ({ payload }) => {
       watch.frames += 1;
-      if (typeof payload !== 'string' && closesChannel(payload))
-        watch.closes.push('channel');
+      if (typeof payload !== 'string')
+        watch.closes.push(...channelsClosed(payload));
     });
     socket.on('close', () => watch.closes.push('socket'));
   });

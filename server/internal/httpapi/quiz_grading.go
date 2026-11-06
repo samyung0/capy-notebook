@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"runtime/debug"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -16,6 +19,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/jev"
+	"github.com/samyung0/capy-notebook/server/internal/models"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -24,9 +28,10 @@ import (
 // Grading happens here, never in the browser: readers who are not editing get
 // answer-free questions (questions.LearnerView), and checking an answer or
 // submitting an attempt sends the learner's answers by part id. Closed parts
-// are scored by questions.ScorePart; open parts go to Jev, one request per
-// answered part and one award per marking item. The response carries the key
-// for what was just checked.
+// are scored by questions.ScorePart; open parts go to the grading slot's model,
+// one request per answered part and one award per marking item (Jev still marks
+// signed-out checks, which go next). The response carries the key for what was
+// just checked.
 
 // answersMaxBytes bounds a request of answers: a hundred 5,000-character open
 // answers at up to four bytes a character plus every closed answer of a
@@ -43,7 +48,7 @@ type openPart struct {
 }
 
 // gradePlan is a grading request checked against the stored questions; open
-// holds the answered open parts, the ones Jev grades.
+// holds the answered open parts, the ones a model grades.
 type gradePlan struct {
 	questions []map[string]any
 	answers   map[string]any
@@ -97,7 +102,8 @@ func gradeRequestError(err error) error {
 	return hErr(err)
 }
 
-// gradeOpenParts sends each part to Jev with bounded concurrency. Any failure
+// gradeOpenParts sends each part to Jev for signed-out checks, with bounded
+// concurrency. Any failure
 // fails the whole request; the learner retries. It returns each part's marks
 // per marking item.
 func (a *api) gradeOpenParts(ctx context.Context, parts map[string]openPart) (map[string][]float64, jev.Usage, error) {
@@ -157,7 +163,7 @@ func gradingLimitError() error {
 }
 
 // reserveGrading counts parts against the signed-in user's daily cap before
-// any Jev call.
+// any model call.
 func (a *api) reserveGrading(ctx context.Context, parts int) error {
 	if err := a.s.ReserveGrading(ctx, userID(ctx), parts); errors.Is(err, store.ErrGradingLimit) {
 		return gradingLimitError()
@@ -167,10 +173,213 @@ func (a *api) reserveGrading(ctx context.Context, parts int) error {
 	return nil
 }
 
-// gradeSignedIn grades for a signed-in learner under the daily part cap and
-// records Jev's usage, uncharged. A failed usage write must not discard
-// grades the learner waited for.
-func (a *api) gradeSignedIn(ctx context.Context, plan gradePlan, workspaceID string, metadata map[string]any) ([]map[string]any, float64, float64, error) {
+const (
+	// gradingPartTimeout bounds one part just past the pipeline's own bound: its
+	// turn in the model's line (up to 60 s), then a part with working's 120 s.
+	gradingPartTimeout = 3*time.Minute + 15*time.Second
+	// gradingCheckTimeout bounds a check someone waits on, inside the 100 s the
+	// proxy in front allows: a part still running then stays Not marked, and the
+	// parts done are kept.
+	gradingCheckTimeout = 90 * time.Second
+)
+
+// gradingLLM is the grading slot's pin. A part with working thinks at low; the
+// pipeline turns thinking off for the rest.
+func (a *api) gradingLLM(ctx context.Context, userID string) (resolvedLLM, error) {
+	var out resolvedLLM
+	if a.modelReg == nil || a.pipe == nil {
+		return out, fmt.Errorf("%w: registry or pipeline not configured", store.ErrModelUnavailable)
+	}
+	cfg, err := a.modelReg.Default(ctx, models.SlotGrading)
+	if err != nil {
+		return out, fmt.Errorf("%w: %v", store.ErrModelUnavailable, err)
+	}
+	out.Cfg, out.Rates, out.UserID, out.Thinking = cfg, store.RatesFromConfig(cfg), userID, models.ThinkingLow
+	return out, nil
+}
+
+// partGrade is a part's marks per marking item, and the AI's comment on it; Flag
+// names what code told apart ("copied", "instructions"), which shows as an error.
+type partGrade struct {
+	Items   []float64
+	Comment string
+	Flag    string
+}
+
+// gradeWithModel marks open parts on the payer's credits, ten at once (Epo
+// 2026-11-04). It keeps each part's result: one that fails, or all of them when
+// there is nothing to pay with, is simply absent, and stays "Not marked". Nothing
+// retries it.
+func (a *api) gradeWithModel(ctx context.Context, payerID, workspaceID string, parts map[string]openPart) map[string]partGrade {
+	out := make(map[string]partGrade, len(parts))
+	if len(parts) == 0 {
+		return out
+	}
+	llm, err := a.gradingLLM(ctx, payerID)
+	if err != nil {
+		obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz})
+		return out
+	}
+	charge, err := a.beginProviderSession(ctx, payerID, workspaceID, store.SurfaceQuiz, llm.Rates, store.TokenRates{}, llm.Thinking)
+	if err != nil {
+		if !errors.Is(err, store.ErrCreditsExhausted) {
+			obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz})
+		}
+		return out
+	}
+	defer charge.settle(ctx)
+	var mu sync.Mutex
+	var group errgroup.Group
+	group.SetLimit(10)
+	// One report a run: a line of failures has one cause, such as credits running
+	// out partway.
+	var report sync.Once
+	for id, part := range parts {
+		group.Go(func() error {
+			grade, err := a.gradePartSafely(ctx, llm, charge.id, part)
+			if err != nil {
+				report.Do(func() {
+					obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz, "stage": "grade_part"})
+				})
+				return nil
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			out[id] = grade
+			return nil
+		})
+	}
+	_ = group.Wait()
+	return out
+}
+
+// gradePartSafely makes gradePart's panic that part's failure. It runs on a
+// goroutine of its own, where nothing above it catches one, so a panic would stop
+// the whole server for everyone.
+func (a *api) gradePartSafely(ctx context.Context, llm resolvedLLM, sessionID string, part openPart) (grade partGrade, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = panicError("grading a part", r)
+		}
+	}()
+	return a.gradePart(ctx, llm, sessionID, part)
+}
+
+// panicError turns a recovered panic into an error that keeps where it happened.
+func panicError(what string, recovered any) error {
+	return fmt.Errorf("%s panicked: %v\n%s", what, recovered, debug.Stack())
+}
+
+func (a *api) gradePart(ctx context.Context, llm resolvedLLM, sessionID string, part openPart) (partGrade, error) {
+	ctx, cancel := context.WithTimeout(ctx, gradingPartTimeout)
+	defer cancel()
+	items := make([]map[string]any, len(part.markscheme))
+	for i, text := range part.markscheme {
+		items[i] = map[string]any{"text": text, "marks": part.itemMarks[i]}
+	}
+	body := map[string]any{"question": part.question, "items": items, "answer": part.answer, "spendSessionId": sessionID}
+	llm.attach(body)
+	raw, err := a.pipe.PostRawUntil(ctx, "/grade", body)
+	if err != nil {
+		return partGrade{}, err
+	}
+	var reply struct {
+		Shares  []float64 `json:"shares"`
+		Comment string    `json:"comment"`
+		Flag    string    `json:"flag"`
+	}
+	if err := json.Unmarshal(raw, &reply); err != nil {
+		return partGrade{}, err
+	}
+	if len(reply.Shares) != len(part.itemMarks) {
+		return partGrade{}, fmt.Errorf("grading answered %d items of %d", len(reply.Shares), len(part.itemMarks))
+	}
+	// The model judges none, half or all of an item; items carry their own marks.
+	marks := make([]float64, len(reply.Shares))
+	for i, share := range reply.Shares {
+		marks[i] = share * part.itemMarks[i]
+	}
+	return partGrade{Items: marks, Comment: reply.Comment, Flag: reply.Flag}, nil
+}
+
+// applyPartGrade writes a late mark into a part left Not marked.
+func applyPartGrade(p map[string]any, grade partGrade) {
+	delete(p, "pending")
+	p["itemAwards"] = grade.Items
+	var awarded float64
+	for _, item := range grade.Items {
+		awarded += item
+	}
+	if marks, ok := p["marks"].(float64); ok && awarded > marks {
+		awarded = marks
+	}
+	p["awarded"] = awarded
+	if grade.Comment != "" {
+		p["aiComment"] = grade.Comment
+		if grade.Flag != "" {
+			p["aiFlag"] = grade.Flag
+		}
+	}
+}
+
+// gradedWithModel applies the model's marks to the plan's questions. An answered
+// open part it has no mark for is "Not marked", counted in the total and not as
+// wrong: nothing logs it, and it joins no review.
+func gradedWithModel(plan gradePlan, grades map[string]partGrade) ([]map[string]any, float64, float64) {
+	open := make(map[string][]float64, len(grades))
+	for id, grade := range grades {
+		open[id] = grade.Items
+	}
+	graded := make([]map[string]any, len(plan.questions))
+	var correct, total float64
+	for i, q := range plan.questions {
+		out, awarded, marks := questions.Graded(q, plan.answers, open)
+		parts, _ := out["parts"].([]any)
+		for _, raw := range parts {
+			p, _ := raw.(map[string]any)
+			id, _ := p["id"].(string)
+			if _, answered := plan.open[id]; !answered {
+				continue
+			}
+			grade, marked := grades[id]
+			if !marked {
+				p["pending"] = true
+				delete(p, "itemAwards")
+			} else if grade.Comment != "" {
+				p["aiComment"] = grade.Comment
+				if grade.Flag != "" {
+					p["aiFlag"] = grade.Flag
+				}
+			}
+		}
+		graded[i] = out
+		correct, total = correct+awarded, total+marks
+	}
+	return graded, correct, total
+}
+
+// gradeSignedIn grades for a signed-in learner under the daily part cap, on
+// their own credits (Epo 2026-11-03): whoever starts a job pays. Out of credits,
+// or on a failure, the closed parts still mark and the open ones stay unmarked.
+func (a *api) gradeSignedIn(ctx context.Context, plan gradePlan, workspaceID string) ([]map[string]any, float64, float64, error) {
+	if len(plan.open) > 0 {
+		if err := a.reserveGrading(ctx, len(plan.open)); err != nil {
+			return nil, 0, 0, err
+		}
+	}
+	marking, cancel := context.WithTimeout(ctx, gradingCheckTimeout)
+	defer cancel()
+	graded, correct, total := gradedWithModel(plan, a.gradeWithModel(marking, userID(ctx), workspaceID, plan.open))
+	if total <= 0 {
+		return nil, 0, 0, huma.Error422UnprocessableEntity("there are no questions to grade")
+	}
+	return graded, correct, total, nil
+}
+
+// gradeSharedSignedIn grades a signed-in visitor's check on a shared page with
+// Jev, uncharged, as the page's other checks are. It goes with them when shared
+// pages stop AI marking (Epo 2026-11-03).
+func (a *api) gradeSharedSignedIn(ctx context.Context, plan gradePlan, metadata map[string]any) ([]map[string]any, float64, float64, error) {
 	if len(plan.open) > 0 {
 		if err := a.reserveGrading(ctx, len(plan.open)); err != nil {
 			return nil, 0, 0, err
@@ -189,8 +398,8 @@ func (a *api) gradeSignedIn(ctx context.Context, plan gradePlan, workspaceID str
 	}
 	metadata["costMicroUsd"] = jev.CostMicroUSD(usage.InputTokens)
 	if err := a.s.RecordUsage(ctx, store.UsageEvent{
-		ActorUserID: userID(ctx), WorkspaceID: workspaceID,
-		Kind: store.KindLLM, Surface: store.SurfaceQuiz, Provider: "typesafe", Model: usage.Model,
+		ActorUserID: userID(ctx),
+		Kind:        store.KindLLM, Surface: store.SurfaceQuiz, Provider: "typesafe", Model: usage.Model,
 		InputTokens: usage.InputTokens, Units: int64(len(plan.open)), Unit: "parts", Metadata: metadata,
 	}); err != nil {
 		obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz})
@@ -388,7 +597,7 @@ func (a *api) checkSharedNoteQuiz(ctx context.Context, in *checkSharedNoteQuizIn
 	if err != nil {
 		return nil, gradeRequestError(err)
 	}
-	graded, correct, total, err := a.gradeSignedIn(ctx, plan, "", map[string]any{"quizId": in.QuizID, "sharedNoteId": id})
+	graded, correct, total, err := a.gradeSharedSignedIn(ctx, plan, map[string]any{"quizId": in.QuizID, "sharedNoteId": id})
 	if err != nil {
 		return nil, err
 	}

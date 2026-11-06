@@ -15,6 +15,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/jev"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/pipeline"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
@@ -43,6 +44,30 @@ func openGradingAPIWith(t *testing.T, choice string, cfg httpapi.Config) (http.H
 		_ = json.NewEncoder(w).Encode(map[string]any{"model": jev.Model, "answers": answers, "usage": map[string]any{"input_tokens": 1000}})
 	}))
 	t.Cleanup(srv.Close)
+	// The grading slot's model, behind the pipeline: each item's share.
+	pipe := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if choice == "fail" || (choice == "fail-once" && calls.Load() == 1) {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		var body struct {
+			Question string `json:"question"`
+			Items    []any  `json:"items"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		// One part never answers, until the caller gives up on it.
+		if choice == "slow-second" && strings.Contains(body.Question, "Second part") {
+			<-r.Context().Done()
+			return
+		}
+		shares := make([]float64, len(body.Items))
+		for i := range shares {
+			shares[i] = map[string]float64{"zero": 0, "partial": 0.5, "full": 1, "fail-once": 1, "slow-second": 1}[choice]
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"shares": shares, "comment": "Offered two answers for one point."})
+	}))
+	t.Cleanup(pipe.Close)
 	ctx := context.Background()
 	st, err := store.New(ctx, testdb.URL(t))
 	if err != nil {
@@ -56,7 +81,11 @@ func openGradingAPIWith(t *testing.T, choice string, cfg httpapi.Config) (http.H
 	st.SetModelRegistry(reg)
 	cfg.E2EAuth, cfg.E2ESecret, cfg.E2EUserIDs = true, "e2e-test-secret", []string{"u_owner", "u_editor", "u_viewer", "u_other"}
 	cfg.ModelRegistry, cfg.Jev = reg, jev.NewForTest("key", srv.URL)
-	h := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", cfg)
+	client := pipeline.New(pipe.URL, "secret")
+	if choice == "no-pipeline" {
+		client = nil
+	}
+	h := httpapi.New(st, blob.NewMemory(), client, nil, "docling", cfg)
 	return h, st, &calls
 }
 
@@ -104,7 +133,7 @@ func gradedParts(t *testing.T, questions []map[string]any) map[string]map[string
 // and returns the keys: Jev's per-item marks on the open part, the boolean key
 // and a matching share rounded down to a half mark.
 func TestQuizCheckGradesOnTheServer(t *testing.T) {
-	h, st, calls := openGradingAPI(t, "full")
+	h, _, calls := openGradingAPI(t, "full")
 	id := gradingQuiz(t, h, "private")
 	answers := map[string]any{"open-a": "Because of reasons.", "closed-b": true, "match-c": map[string]any{"0": "Paris", "1": "Berlin"}}
 	rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/check", "u_owner", map[string]any{"questionId": "q1", "answers": answers})
@@ -131,21 +160,16 @@ func TestQuizCheckGradesOnTheServer(t *testing.T) {
 		t.Fatalf("stored attempt → %d %s", stored.Code, stored.Body.String())
 	}
 	// Checking it again in the same attempt is refused before grading: no
-	// second Jev call (counted at the end).
+	// second model call (counted at the end).
 	if rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/check", "u_owner", map[string]any{
 		"questionId": "q1", "answers": answers, "attemptId": detail.ID,
 	}); rec.Code != http.StatusConflict {
 		t.Fatalf("repeated check → %d %s", rec.Code, rec.Body.String())
 	}
-	var credits, tokens int64
-	if err := st.Pool().QueryRow(context.Background(), `SELECT credit_micros, input_tokens FROM usage_events
-		WHERE actor_user_id='u_owner' AND surface='quiz' AND provider='typesafe'`).Scan(&credits, &tokens); err != nil {
-		t.Fatal(err)
+	if got := gradedParts(t, detail.Questions)["open-a"]["aiComment"]; got != "Offered two answers for one point." {
+		t.Fatalf("the AI's comment = %v", got)
 	}
-	if credits != 0 || tokens != 1000 {
-		t.Fatalf("usage credits=%d tokens=%d, want recorded and uncharged", credits, tokens)
-	}
-	// A blank open answer earns 0 on every item without a Jev call.
+	// A blank open answer earns 0 on every item without a model call.
 	rec = doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/check", "u_owner", map[string]any{"questionId": "q1", "answers": map[string]any{"open-a": "  "}})
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"awarded":0,"blocks":[{"text":"Explain."`) || !strings.Contains(rec.Body.String(), `"itemAwards":[0,0]`) {
 		t.Fatalf("blank attempt → %d %s", rec.Code, rec.Body.String())
@@ -171,12 +195,76 @@ func TestQuizCheckGradesOnTheServer(t *testing.T) {
 		t.Fatalf("client score → %d", rec.Code)
 	}
 	if calls.Load() != 1 {
-		t.Fatalf("Jev calls = %d, want only the answered open part", calls.Load())
+		t.Fatalf("model calls = %d, want only the answered open part", calls.Load())
 	}
 }
 
 // Security regression (human error-handling, 2026-10-21): questions a request
 // sends that fail our validation answer 400 with the reason, not a 500.
+// A part the model cannot mark stays "Not marked", and the closed parts still
+// mark: a check never fails for it (Epo 2026-11-03).
+func TestQuizCheckLeavesAFailedPartNotMarked(t *testing.T) {
+	h, _, _ := openGradingAPI(t, "fail")
+	id := gradingQuiz(t, h, "private")
+	rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/check", "u_owner", map[string]any{
+		"questionId": "q1", "answers": map[string]any{"open-a": "Because of reasons.", "closed-b": true},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("check → %d %s", rec.Code, rec.Body.String())
+	}
+	var detail struct{ Questions []map[string]any }
+	_ = json.Unmarshal(rec.Body.Bytes(), &detail)
+	parts := gradedParts(t, detail.Questions)
+	if parts["open-a"]["pending"] != true || parts["open-a"]["itemAwards"] != nil {
+		t.Fatalf("open part = %+v", parts["open-a"])
+	}
+	if parts["closed-b"]["awarded"] != float64(1) {
+		t.Fatalf("closed part = %+v", parts["closed-b"])
+	}
+}
+
+// A part left Not marked can be checked again once credits are back (Epo
+// 2026-11-05): only it is marked, from the answer first given, which the key has
+// since been shown beside. Once marked, the question locks as any checked one.
+func TestQuizCheckAgainMarksOnlyWhatWasNotMarked(t *testing.T) {
+	h, _, calls := openGradingAPI(t, "fail-once")
+	id := gradingQuiz(t, h, "private")
+	check := func(attempt string, answers map[string]any) (int, []map[string]any, map[string]any, string) {
+		t.Helper()
+		rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/check", "u_owner", map[string]any{
+			"questionId": "q1", "answers": answers, "attemptId": attempt,
+		})
+		var detail struct {
+			ID        string
+			Questions []map[string]any
+			Answers   map[string]any
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &detail)
+		return rec.Code, detail.Questions, detail.Answers, detail.ID
+	}
+	code, questions, _, attempt := check("", map[string]any{"open-a": "Because of reasons.", "closed-b": true})
+	if code != http.StatusOK || gradedParts(t, questions)["open-a"]["pending"] != true {
+		t.Fatalf("first check → %d %+v", code, questions)
+	}
+	code, questions, answers, _ := check(attempt, map[string]any{"open-a": "A better answer, now I have seen the key."})
+	if code != http.StatusOK {
+		t.Fatalf("check again → %d", code)
+	}
+	parts := gradedParts(t, questions)
+	if parts["open-a"]["pending"] != nil || parts["open-a"]["awarded"] != float64(3) || parts["closed-b"]["awarded"] != float64(1) {
+		t.Fatalf("after checking again = %+v", parts)
+	}
+	if answers["open-a"] != "Because of reasons." {
+		t.Fatalf("the answer changed to %v", answers["open-a"])
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("model calls = %d, want the failed one and one more", calls.Load())
+	}
+	if code, _, _, _ := check(attempt, map[string]any{"open-a": "Again."}); code != http.StatusConflict {
+		t.Fatalf("a third check → %d, want 409", code)
+	}
+}
+
 func TestCreateQuizRefusesInvalidQuestionsWith400(t *testing.T) {
 	h, _, _ := openGradingAPI(t, "full")
 	question := map[string]any{

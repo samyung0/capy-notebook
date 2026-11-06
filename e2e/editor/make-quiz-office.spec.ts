@@ -66,3 +66,47 @@ for (const { format, name } of QUIZ_PAPERS) {
     });
   });
 }
+
+// A real file's link is a presigned bucket URL, on another origin from the app, which the
+// mock's are not: the page count reads the bytes here, as the analysis worker refuses it.
+test('a Word file on a bucket shows its pages and its count', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await page.goto('/workspaces/ws_bio');
+  await page
+    .getByRole('button', { name: m.dashboard_make_quiz() })
+    .click({ timeout: 30_000 });
+  await uploadPaper(
+    page,
+    'paper.docx',
+    readFileSync(
+      new URL('../fixtures/files/make-quiz/paper.docx', import.meta.url)
+    )
+  );
+  await continueWhileReading(page, 'paper.docx');
+  await page.evaluate(() => {
+    const real = window.fetch;
+    const bucket = 'https://bucket.example.test/';
+    window.fetch = async (input, init) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url.startsWith(bucket))
+        return real(decodeURIComponent(url.slice(bucket.length)));
+      const response = await real(input, init);
+      if (!/\/api\/files\/[^/]+\/links$/.test(url)) return response;
+      const links = await response.json();
+      return Response.json({
+        ...links,
+        url: bucket + encodeURIComponent(links.url),
+      });
+    };
+  });
+  await makeQuizFromPanel(page);
+  await drawnSheets(page, 2);
+  await page.getByRole('button', { name: m.make_quiz_change_files() }).click();
+  await expect(
+    page
+      .getByRole('dialog')
+      .getByText(m.source_pages({ count: 2 }), { exact: true })
+  ).toBeVisible({ timeout: 30_000 });
+});

@@ -334,6 +334,12 @@ for (const { format, name } of QUIZ_PAPERS) {
     await expect(pageSheet(page, 2)).toHaveAttribute('aria-pressed', 'true', {
       timeout: 30_000,
     });
+    // The page goes back at once; the cancel reaches the run just after.
+    await expect
+      .poll(async () => (await readRun(run, cancelling)).status, {
+        timeout: 30_000,
+      })
+      .toBe('cancelled');
     const ended = await readRun(run, cancelling);
     assert.deepEqual(
       [ended.status, ended.confirmed, ended.quizId],

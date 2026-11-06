@@ -57,7 +57,9 @@ func logAnswerPartsTx(ctx context.Context, tx pgx.Tx, userID string, mt Material
 		// Only answered open parts reach the model (planGrading); a blank one
 		// scores 0 without it. An assignment's marks are the owner's.
 		grader := "deterministic"
-		if _, byOwner := p["markedBy"]; byOwner {
+		if by, marked := p["markedBy"]; marked && by == MarkedByAI {
+			grader = "ai"
+		} else if marked {
 			grader = "owner"
 		} else if text, _ := given[id].(string); kind == "open" && strings.TrimSpace(text) != "" {
 			grader = "ai"

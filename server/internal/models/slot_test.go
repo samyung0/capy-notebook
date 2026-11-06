@@ -11,6 +11,7 @@ func TestAllSlotsAndParsingStayInSync(t *testing.T) {
 		SlotEditor,
 		SlotIngest,
 		SlotExtraction,
+		SlotGrading,
 		SlotRetrieval,
 		SlotCaptioning,
 		SlotRerank,

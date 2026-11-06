@@ -92,7 +92,7 @@ func TestApplyPartMarks(t *testing.T) {
 func TestGradedWithoutKeys(t *testing.T) {
 	graded, _ := gradeAttempt(frozenFixture(t), map[string]any{"p1": []any{float64(1)}, "p3": "x"})
 	graded[0]["comment"] = "Well done"
-	raw, err := json.Marshal(gradedWithoutKeys(graded))
+	raw, err := json.Marshal(gradedWithoutKeys(graded, false))
 	if err != nil {
 		t.Fatal(err)
 	}
