@@ -6,7 +6,7 @@ import { expect, type Page, test } from '@playwright/test';
  * card, and the image for marking.
  */
 
-type Stats = { canvas: string[]; marks: number };
+type Stats = { canvas: string[]; marks: number; span: number };
 const STROKE_PATH = /<path d="([^"]*)" stroke="#e03131"/;
 const WHOLE_PIXELS = /^M[\d LM]+$/;
 const stats = (page: Page) =>
@@ -827,6 +827,10 @@ test.describe('with a finger', () => {
     expect(long).toBeLessThanOrEqual(1568);
     // The far shape is drawn nearer, so the rest isn't squashed.
     expect(short).toBeGreaterThan(long / 4);
+    // span is that drawn-nearer side in board units, not the 3,200 the board covers.
+    const { span } = await stats(page);
+    expect(span).toBeGreaterThan(820);
+    expect(span).toBeLessThan(3000);
   });
 });
 

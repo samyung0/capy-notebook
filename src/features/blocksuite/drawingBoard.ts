@@ -382,6 +382,24 @@ export function mountDrawingBoard(
       getCommonBound([...elements, ...blocks]) ?? new Bound(0, 0, 820, 520)
     );
   };
+  /** What the image draws: everything, far groups drawn nearer (FAR_GAP), with an
+   * 8-unit margin. `bound` is in board units. */
+  const framing = () => {
+    const items = [...gfx.layer.canvasElements, ...gfx.layer.blocks];
+    const bounds = items.map((item) => Bound.deserialize(item.xywh));
+    const whole = everything();
+    const far = Math.max(whole.w, whole.h) > IMAGE_SIDE_MAX;
+    const shifts = far ? closeUp(bounds) : bounds.map(() => ({ dx: 0, dy: 0 }));
+    const placed = bounds.map(
+      (box, i) =>
+        new Bound(box.x - shifts[i].dx, box.y - shifts[i].dy, box.w, box.h)
+    );
+    const all = getCommonBound(placed) ?? whole;
+    return {
+      bound: new Bound(all.x - 8, all.y - 8, all.w + 16, all.h + 16),
+      shiftOf: new Map(items.map((item, i) => [item.id, shifts[i]])),
+    };
+  };
   let frame = requestAnimationFrame(function mountLayer() {
     const background = container.querySelector('.edgeless-background');
     if (!background || !gfx.viewport.width) {
@@ -449,12 +467,17 @@ export function mountDrawingBoard(
     },
     /** The board as it is, leaving a tool in use alone. */
     snapshot: () => toBase64(Y.encodeStateAsUpdate(store.spaceDoc)),
-    stats: () => ({
-      blocks: gfx.layer.blocks.map((block) => block.flavour),
-      bytes: Y.encodeStateAsUpdate(store.spaceDoc).byteLength,
-      canvas: gfx.layer.canvasElements.map((element) => element.type),
-      marks: planeMarks(gfx),
-    }),
+    stats: () => {
+      const { bound } = framing();
+      return {
+        blocks: gfx.layer.blocks.map((block) => block.flavour),
+        bytes: Y.encodeStateAsUpdate(store.spaceDoc).byteLength,
+        canvas: gfx.layer.canvasElements.map((element) => element.type),
+        marks: planeMarks(gfx),
+        /** The image's longest side in board units, for the wide-board warning on Done. */
+        span: Math.max(bound.w, bound.h),
+      };
+    },
     /** The canvas as it stands, for marking, through the shared image compressor:
      * every card with the view it was left at, and what's drawn over and around them.
      * Something dragged far away is drawn nearer (FAR_GAP). */
@@ -464,20 +487,7 @@ export function mountDrawingBoard(
       const renderer = surfaceOf(gfx)?.renderer;
       if (!(renderer instanceof CanvasRenderer))
         throw new Error('drawing board: no canvas renderer');
-      const items = [...gfx.layer.canvasElements, ...gfx.layer.blocks];
-      const bounds = items.map((item) => Bound.deserialize(item.xywh));
-      const whole = everything();
-      const far = Math.max(whole.w, whole.h) > IMAGE_SIDE_MAX;
-      const shifts = far
-        ? closeUp(bounds)
-        : bounds.map(() => ({ dx: 0, dy: 0 }));
-      const shiftOf = new Map(items.map((item, i) => [item.id, shifts[i]]));
-      const placed = bounds.map(
-        (box, i) =>
-          new Bound(box.x - shifts[i].dx, box.y - shifts[i].dy, box.w, box.h)
-      );
-      const all = getCommonBound(placed) ?? whole;
-      const bound = new Bound(all.x - 8, all.y - 8, all.w + 16, all.h + 16);
+      const { bound, shiftOf } = framing();
       const scale = Math.min(2, IMAGE_SIDE_MAX / Math.max(bound.w, bound.h));
       const output = document.createElement('canvas');
       output.width = Math.round(bound.w * scale);
