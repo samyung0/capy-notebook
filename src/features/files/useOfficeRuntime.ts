@@ -815,6 +815,9 @@ export function useOfficeRuntime({
       if (message.type === 'error') {
         // The runtime's own text is English engine detail; the host owns copy.
         if (message.crashed) {
+          // The ribbon went with the editor, which sends no more menus: the
+          // host draws its strips again.
+          setMenus((current) => current && { ...current, ribbon: undefined });
           setCrashedFrame(initializedFrame.current);
           setError(m.files_office_crashed());
         } else setError(m.error_file_body());
