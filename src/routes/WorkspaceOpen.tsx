@@ -385,9 +385,11 @@ function WorkspaceOpen() {
   const { mutateAsync: updateTopic } = useUpdateTopic(workspaceId);
   const [cloneOpen, setCloneOpen] = useState(false);
 
-  // Breakpoints: one column below 1260px; from there the rail with one panel
-  // beside it, whichever section shows.
+  // Breakpoints: one column below 1260px, with the rail from 768px so iPads keep it
+  // (Epo 2026-11-06); from 1260px the rail with one panel beside it, whichever
+  // section shows.
   const lg = useMediaQuery('(min-width: 1260px)');
+  const railShown = useMediaQuery('(min-width: 768px)');
   const oneColumnLayout = !lg;
   const searchedOpenItem = openItemFromSearch(search);
   const studyPage = !searchedOpenItem && !!search.study;
@@ -431,6 +433,10 @@ function WorkspaceOpen() {
     setSeenCenter(centerKey);
     setSection((was) => sectionForCenter(was, center));
   }
+  // One column keeps no panel state, so the URL alone says the canvas shows.
+  const urlCanvas = search.panel === 'canvas' && !openKey && !studyPage;
+  if (!lg && urlCanvas !== (section === 'canvas'))
+    setSection(urlCanvas ? 'canvas' : sectionForCenter('dashboard', center));
   // The dashboard and the canvas have no panel.
   const leftOpen = section !== 'dashboard' && section !== 'canvas' && panelOpen;
   const leftShown = lg && leftOpen;
@@ -448,9 +454,11 @@ function WorkspaceOpen() {
     section: WorkspaceSection;
   } | null>(null);
   const panelNow: WorkspacePanel | null = lg
-    ? section === 'dashboard' || section === 'canvas' || !panelOpen
-      ? 'none'
-      : section
+    ? section === 'canvas'
+      ? 'canvas'
+      : section === 'dashboard' || !panelOpen
+        ? 'none'
+        : section
     : null;
   const panelPressed = useRef(false);
   const seenUrlPanel = useRef(search.panel);
@@ -643,6 +651,8 @@ function WorkspaceOpen() {
     }
     if (next === 'canvas') {
       setSection('canvas');
+      if (searchedOpenItem || search.study || search.make)
+        navigate({ search: { panel: 'canvas' }, to: '.' });
       return;
     }
     if (next === section) {
@@ -866,12 +876,46 @@ function WorkspaceOpen() {
       : []),
     settingsItem,
   ];
+  const centerHeader = () =>
+    viewerBox.current?.querySelector<HTMLElement>(
+      '[data-testid=content-header],[data-slot=center-header]'
+    ) ?? null;
   function openFiles() {
-    filesAnchor.current =
-      viewerBox.current?.querySelector<HTMLElement>(
-        '[data-testid=content-header],[data-slot=center-header]'
-      ) ?? null;
+    filesAnchor.current = centerHeader();
     setFilesOpen(true);
+  }
+
+  /** The rail in one column: its sections are the dropdown, the chat page and the
+   * centre's pages, as the header's menus have them. */
+  const railActive: WorkspaceSection = lg
+    ? section
+    : section === 'canvas'
+      ? 'canvas'
+      : search.panel === 'agent'
+        ? 'agent'
+        : studyPage
+          ? 'study'
+          : filesOpen || openKey
+            ? 'files'
+            : 'dashboard';
+  function selectOneColumn(next: WorkspaceSection) {
+    if (next === 'dashboard') openDashboard();
+    else if (next === 'study') openPractice();
+    else if (next === 'agent') setChatPageOpen(true);
+    else if (next === 'canvas')
+      navigate({ search: { panel: 'canvas' }, to: '.' });
+    else {
+      // The dropdown hangs under the centre's header, which the canvas and the
+      // chat page cover.
+      if (section === 'canvas') openDashboard();
+      else if (search.panel === 'agent')
+        navigate({
+          replace: true,
+          search: (previous) => ({ ...previous, panel: undefined }),
+          to: '.',
+        });
+      openFiles();
+    }
   }
   // The rail avatar's workspace part: Invite (sharing is managed by owners
   // and editors), Workspace settings, and Clone for readers who may.
@@ -1054,26 +1098,41 @@ function WorkspaceOpen() {
       {!headsItself && <h1 className="sr-only">{ws.name}</h1>}
       <WorkspaceHealth workspace={ws} />
       <AppErrorBoundary resetKeys={[openItem?.kind, openItem?.id]}>
-        {lg && section === 'canvas' ? (
-          <Suspense fallback={null}>
-            <WorkspaceCanvas workspaceId={workspaceId} />
-          </Suspense>
+        {section === 'canvas' ? (
+          <div className="flex h-full flex-col">
+            {/* Phones have no rail to leave by. */}
+            {!railShown && (
+              <div className="flex shrink-0 items-center p-1">
+                <ToolbarButton
+                  label={m.workspace_section_dashboard()}
+                  onClick={openDashboard}
+                >
+                  <Icon name="navigationBack" />
+                </ToolbarButton>
+              </div>
+            )}
+            <div className="min-h-0 flex-1">
+              <Suspense fallback={null}>
+                <WorkspaceCanvas workspaceId={workspaceId} />
+              </Suspense>
+            </div>
+          </div>
         ) : lg && pageContent ? (
           pageContent
         ) : (
           <CenterContent
             color="purple"
             item={openItem}
-            // From lg the rail carries Home and the section panels.
+            // From 768px the rail carries Home.
             leading={
-              oneColumnLayout ? (
+              railShown ? null : (
                 <ToolbarButton
                   label={m.workspace_back_to()}
                   onClick={() => navigate({ to: '/' })}
                 >
                   <Icon name="navigationBack" />
                 </ToolbarButton>
-              ) : null
+              )
             }
             onDeleted={() => setOpenItem(null)}
             oneColumn={oneColumn}
@@ -1200,11 +1259,11 @@ function WorkspaceOpen() {
   return (
     <>
       <div className="flex h-full min-h-0 gap-2">
-        {lg && (
+        {railShown && (
           <WorkspaceRail
             accountItems={accountItems}
-            active={section}
-            onSelect={selectSection}
+            active={railActive}
+            onSelect={lg ? selectSection : selectOneColumn}
             workspace={ws}
           />
         )}
@@ -1282,9 +1341,9 @@ function WorkspaceOpen() {
                       onPageOpen: setChatPageOpen,
                       pageOpen: search.panel === 'agent',
                     }}
-                    // The dialog takes the screen on phones; hidden, the chat keeps
-                    // its draft and stream.
-                    hidden={makeLink}
+                    // The dialog and the canvas take the screen on phones; hidden,
+                    // the chat keeps its draft and stream.
+                    hidden={makeLink || section === 'canvas'}
                     onOpenCitation={openCitation}
                     onOpenResource={openChatResource}
                     openResource={openItem}
@@ -1300,9 +1359,12 @@ function WorkspaceOpen() {
             <PopoverAnchor
               virtualRef={{
                 current: {
+                  // Opened from the rail before the header showed: found now.
                   getBoundingClientRect: () =>
-                    filesAnchor.current?.getBoundingClientRect() ??
-                    new DOMRect(),
+                    (filesAnchor.current?.isConnected
+                      ? filesAnchor.current
+                      : centerHeader()
+                    )?.getBoundingClientRect() ?? new DOMRect(),
                 },
               }}
             />

@@ -28,6 +28,7 @@ describe('parseWorkspaceOpenSearch', () => {
 
   it('keeps the open panel from the URL', () => {
     expect(parseWorkspaceOpenSearch({ panel: 'agent' }).panel).toBe('agent');
+    expect(parseWorkspaceOpenSearch({ panel: 'canvas' }).panel).toBe('canvas');
     expect(parseWorkspaceOpenSearch({ panel: 'x' }).panel).toBeUndefined();
   });
 

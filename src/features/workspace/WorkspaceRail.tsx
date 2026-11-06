@@ -80,9 +80,10 @@ function RailItem({
   );
 }
 
-/** The labelled icon rail on every workspace page from lg: Workspaces back to
- * the list, the workspace's badge (it only says where you are), the sections,
- * and your avatar opening the workspace and account menu. */
+/** The labelled icon rail on every workspace page from md, so iPads keep it:
+ * Workspaces back to the list, the workspace's badge (it only says where you
+ * are), the sections, and your avatar opening the workspace and account menu.
+ * From lg the sections open panels; below, the Files dropdown and the pages. */
 export function WorkspaceRail({
   accountItems,
   active,

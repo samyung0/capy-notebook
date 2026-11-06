@@ -78,10 +78,10 @@
   }
 }
 
-/* Phones: top right, left of Done, which the page around the board places and
-   sizes through --capy-board-done-width. */
-@container viewport (width < 768px) {
-  .capy-board-history {
+/* Where they no longer fit beside the toolbar: top right, left of Done, which the
+   page around the board places and sizes through --capy-board-done-width. */
+@container viewport (width < 980px) {
+  .capy-board:not([data-editor-open]) .capy-board-history {
     top: 8px;
     right: calc(8px + var(--capy-board-done-width, 0px));
     bottom: auto;
@@ -89,11 +89,22 @@
     padding: 0;
   }
 
-  .capy-board-history::after {
+  .capy-board:not([data-editor-open]) .capy-board-history::after {
     display: none;
   }
 
-  .capy-board-history button {
+  .capy-board:not([data-editor-open]) .capy-board-history button {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+@container viewport (width < 768px) {
+  .capy-board[data-editor-open] .capy-board-history {
+    padding: 0;
+  }
+
+  .capy-board[data-editor-open] .capy-board-history button {
     width: 40px;
     height: 40px;
   }
