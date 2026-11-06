@@ -297,7 +297,7 @@ function StaffList({
             <tbody>
               {rows.map((row) => (
                 <tr
-                  className="cursor-pointer [&>td]:hover:bg-surface-hover-bg"
+                  className="cursor-pointer hover:[&>td]:bg-surface-hover-bg"
                   key={row.id}
                   onClick={() => void open(row.id)}
                 >
@@ -574,7 +574,7 @@ function MemberList({ workspaceId }: { workspaceId: string }) {
             <tbody>
               {rows.map((row) => (
                 <tr
-                  className="cursor-pointer [&>td]:hover:bg-surface-hover-bg"
+                  className="cursor-pointer hover:[&>td]:bg-surface-hover-bg"
                   key={row.id}
                   onClick={() => void open(row)}
                 >

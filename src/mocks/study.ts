@@ -558,8 +558,6 @@ function learningOverview() {
   return {
     next: [...[...continued, ...started].slice(0, 3), ...suggested].slice(0, 4),
     teaches: [],
-    weekCards: 18,
-    weekQuestions: 41,
     workspaces: [
       ...real.map((wsId) => {
         const ws = db.workspaces.find((w) => w.id === wsId);

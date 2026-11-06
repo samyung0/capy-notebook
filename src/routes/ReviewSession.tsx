@@ -315,7 +315,7 @@ function Session({
           />
         }
       >
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-4 py-5 sm:px-6 lg:px-10 xl:px-16">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-4 py-5 sm:px-6">
           {session === null || loadingMore ? (
             isError ? (
               <ErrorState

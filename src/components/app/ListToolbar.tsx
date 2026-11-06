@@ -83,9 +83,7 @@ export function ListToolbar<V extends string>({
   // last deselect does not rebuild its menus.
   return (
     <>
-      {selection && (
-        <div className={cn('-mb-3 flex', 'page-px')}>{selection}</div>
-      )}
+      {selection && <div className="page-px -mb-3 flex">{selection}</div>}
       {/* Phones: icon-only sort and filter with the action on one row, the
           view toggle on its own row at the right (or on the first, without
           an action). From sm, one labelled row. */}

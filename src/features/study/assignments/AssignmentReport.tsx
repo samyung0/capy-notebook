@@ -353,7 +353,7 @@ function MembersTab({
             <tr
               className={cn(
                 member.attemptId &&
-                  'cursor-pointer [&>td]:hover:bg-surface-hover-bg'
+                  'cursor-pointer hover:[&>td]:bg-surface-hover-bg'
               )}
               key={member.userId}
               onClick={() => open(member)}

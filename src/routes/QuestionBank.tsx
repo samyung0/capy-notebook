@@ -650,7 +650,6 @@ export default function QuestionBank() {
                     {tabletChooser}
                   </div>
                 }
-                // The bank's normal gutter, as on its main page.
                 meta={
                   place &&
                   [

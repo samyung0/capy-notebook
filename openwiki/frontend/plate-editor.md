@@ -2544,7 +2544,11 @@ flashes its passage in the paint, and again in the editor once it shows; a
 question or card from a review summary scrolls into view in the quiz's list or
 the set's grid. The header's Preview shows the whole note as its readers read it,
 with embeds answerable and cards to study; the button turns into Edit, which goes back.
-Both directions keep the reader's place (`notePreviewPlace.ts`).
+The editor stays mounted, joined and undoable behind it (hidden and `inert`), and
+`NotePreview` draws `PaintedNote` from the editor's own value, so it reads nothing, works
+offline and shows text not yet saved. It refreshes at most every 250 ms from Slate's
+`onChange`, which a collaborator's typing runs through too. Both directions keep the same
+block at the same height; Edit returns focus and caret if the editor had them.
 
 ### The editable saved copy
 

@@ -20,7 +20,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import { createPortal } from 'react-dom';
 import { isApiError, isMaterialContentUnreadable, qk } from '@/api/client';
 import {
   useFile,
@@ -123,7 +122,6 @@ import {
   NoteBody,
   NoteSkeleton,
 } from './NoteBody';
-import { keepNotePlace } from './notePreviewPlace';
 import {
   type NoteCitationTarget,
   type OpenItem,
@@ -587,10 +585,6 @@ function MaterialContentBody({
   /** A chat citation's passage to show once a note paints (Q593). */
   citation?: NoteCitationTarget;
 }) {
-  // Reads the whole note as its readers do, embeds answerable, from the header.
-  const [previewing, setPreviewing] = useState(false);
-  const headerActions = useContext(FileActionsTarget);
-  const noteBox = useRef<HTMLDivElement>(null);
   const {
     data: loaded,
     error,
@@ -829,34 +823,9 @@ function MaterialContentBody({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {readOnlyStrip}
-      <div className="min-h-0 flex-1" key="note" ref={noteBox}>
+      <div className="min-h-0 flex-1" key="note">
         {material.kind === 'note' ? (
-          <>
-            {activeMode === 'edit' &&
-              headerActions &&
-              createPortal(
-                <Button
-                  className="shrink-0"
-                  iconLeft={previewing ? 'pencil' : 'view'}
-                  onClick={() => {
-                    if (noteBox.current)
-                      keepNotePlace(
-                        noteBox.current,
-                        previewing ? 'editor' : 'preview'
-                      );
-                    setPreviewing(!previewing);
-                  }}
-                  size="sm"
-                  variant="outline"
-                >
-                  <span className="max-sm:sr-only">
-                    {previewing ? m.action_edit() : m.editor_embed_preview()}
-                  </span>
-                </Button>,
-                headerActions
-              )}
-            {noteBody(material, editorMounted && !previewing)}
-          </>
+          noteBody(material, editorMounted)
         ) : (
           <div className="relative h-full min-h-0 overflow-auto">
             {material.kind === 'quiz' ? (

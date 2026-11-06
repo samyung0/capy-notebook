@@ -24,7 +24,6 @@ const (
 	// learningStartWindow is how recently a workspace must have been opened or
 	// practised for its next new quiz or set to be offered.
 	learningStartWindow = 30 * 24 * time.Hour
-	learningWeek        = 7 * 24 * time.Hour
 
 	LearningSession = "session"
 	LearningQuiz    = "quiz"

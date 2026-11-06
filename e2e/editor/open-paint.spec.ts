@@ -110,11 +110,12 @@ test('a reopen paints from the device copy, joins by difference and edits on', a
 }) => {
   await page.goto(SCENARIOS);
   await typeIntoNote(page, ' kept');
-  await page.reload();
+  await reopenHeld(page);
   // The room's join held: the note shows what the device kept.
   await expect(painted(page).getByText(`${SEED} kept`)).toBeVisible({
     timeout: 30_000,
   });
+  await release(page);
   await expect(editable(page)).toBeVisible({ timeout: 30_000 });
   await saved(page);
   await clickTextEnd(editable(page).getByText(`${SEED} kept`));

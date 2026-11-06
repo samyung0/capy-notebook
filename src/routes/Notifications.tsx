@@ -105,7 +105,7 @@ export default function Notifications() {
 
   return (
     <PagePanel header={<PageHeader title={m.notifications_title()} />}>
-      {/* The wide gutter; the actions sit at the panel's right edge, the
+      {/* The page gutter; the actions sit at the panel's right edge, the
        * list keeps its reading width. */}
       <div className="page-px flex w-full flex-col">
         <div className="flex items-center justify-end">
