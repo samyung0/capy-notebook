@@ -33,6 +33,16 @@ export type PinnedQuestion = {
 };
 
 const DRAFT_DELAY_MS = 800;
+const PHONE_WIDTH = 768;
+
+/** The first fit's room, [top, right, bottom, left]: clear of the pinned
+ * question (340px at 16px in) and Done, and of the toolbar when drawing. */
+const fitPadding = (readOnly: boolean): [number, number, number, number] => {
+  const bottom = readOnly ? 16 : 130;
+  return window.innerWidth < PHONE_WIDTH
+    ? [72, 12, readOnly ? 12 : 96, 12]
+    : [72, 40, bottom, 372];
+};
 
 const readAsDataUrl = (file: Blob) =>
   new Promise<string>((resolve, reject) => {
@@ -111,6 +121,7 @@ export default function DrawingBoardScreen({
       if (cancelled) return;
       try {
         board.current = mountDrawingBoard(element, {
+          fitPadding: fitPadding(readOnly),
           onChange: readOnly ? undefined : keep,
           readOnly,
           saved: kept?.doc ?? saved,
@@ -221,7 +232,7 @@ export default function DrawingBoardScreen({
           type="button"
         >
           <b className="shrink-0 leading-normal">{pinned.short}</b>
-          <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap leading-normal">
+          <span className="min-w-0 flex-1 truncate leading-normal">
             {pinned.summary}
           </span>
           <Icon name={unfolded ? 'chevronUp' : 'chevronDown'} size={18} />
