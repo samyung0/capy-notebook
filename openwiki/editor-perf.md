@@ -27,6 +27,12 @@ Four budget specs always run. Two V8 profile specs run only with
 `PERF_PROFILE=1`. Default CPU throttle is `PERF_CPU=4` via CDP after load. Open
 cost is measured unthrottled because that path is already tens of seconds.
 
+The dev server's module requests pass through MSW ahead of its handlers
+(`devModules` in `src/mocks/browser.ts`, Q617), which took the read-only open from
+about 4.5 s to 3 s and the scroll up about 6 FPS on the machine that measured it.
+`/api` keeps its mock latency. The budgets did not change (Q560), so they are looser
+in effect, and earlier numbers aren't comparable.
+
 Numbers from a Windows laptop are not comparable to Linux CI. Different OS,
 different Chromium raster path, different CPU. Keep local runs for debugging
 (`typingProfile.perf.ts` / `saveCycleProfile.perf.ts`). Use Actions for
