@@ -77,7 +77,7 @@ func (a *api) inspectSourceImports(
 	if err != nil {
 		return nil, hErr(err)
 	}
-	maxBytes, err := a.sourceMaxBytes(ctx, userID(ctx))
+	limits, err := a.s.PayerPlanLimits(ctx, userID(ctx))
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -232,6 +232,7 @@ func (a *api) inspectSourceImports(
 			})
 			continue
 		}
+		maxBytes := limits.FileBytes(meta.Name)
 		sizeBytes := int64(0)
 		sizeEstimate := false
 		if meta.Size != nil {

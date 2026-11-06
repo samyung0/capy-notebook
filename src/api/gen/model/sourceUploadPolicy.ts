@@ -20,5 +20,7 @@ export interface SourceUploadPolicy {
   kinds: SourceUploadKindPolicy[];
   maxBytes: number;
   parseModes: SourceUploadParseModePolicy[];
+  /** The flat cap on one text file (txt, md, json, source code, CSV, TSV), on every plan */
+  textMaxBytes: number;
   vlmIngestPageCreditMicros: number;
 }

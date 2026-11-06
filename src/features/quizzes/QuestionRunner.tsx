@@ -445,7 +445,8 @@ function OpenVerdict({
     marks,
   } = part;
   if (awarded == null) return null;
-  // No credits, or the model failed: not wrong, just not marked (Epo 2026-11-03).
+  // No credits, the model failed or a shared page, which marks no open answer:
+  // not wrong, just not marked (Epo 2026-11-03, 2026-11-05).
   if (part.pending)
     return (
       <p className="mb-2 font-bold text-fg-muted text-sm">

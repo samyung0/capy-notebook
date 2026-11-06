@@ -2173,7 +2173,29 @@ func TestSourceGrowthBudgetStopsAtZero(t *testing.T) {
 		// Less than admission's reserve left admits nothing: view only.
 		{"budget inside the reserve", exportCap - sourceGrowthMarginBytes - sourceWriteReserveBytes + 100, 150, 0},
 	} {
-		if got := SourceGrowthBudget(exportCap, tc.base, tc.grown); got != tc.want {
+		if got := SourceGrowthBudget("docx", exportCap, tc.base, tc.grown); got != tc.want {
+			t.Errorf("%s: %d, want %d", tc.name, got, tc.want)
+		}
+	}
+}
+
+// Epo 2026-11-06: a text room has no margin, so a 1.5 MiB text file under the
+// 2 MiB cap can still grow; only one inside admission's reserve opens view-only.
+func TestTextSourceGrowthBudgetHasNoMargin(t *testing.T) {
+	const textCap = 2 << 20
+	for _, tc := range []struct {
+		name  string
+		base  int64
+		grown int64
+		want  int64
+	}{
+		{"1.5 MiB base", 3 << 19, 0, 1<<19 - sourceWriteReserveBytes},
+		{"saved growth", 3 << 19, 150, 1<<19 - sourceWriteReserveBytes - 150},
+		{"inside the reserve", textCap - sourceWriteReserveBytes, 0, 0},
+		{"at the cap", textCap, 0, 0},
+		{"over the cap", textCap + 1, 0, 0},
+	} {
+		if got := SourceGrowthBudget("text", textCap, tc.base, tc.grown); got != tc.want {
 			t.Errorf("%s: %d, want %d", tc.name, got, tc.want)
 		}
 	}

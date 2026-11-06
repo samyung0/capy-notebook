@@ -155,6 +155,7 @@ export function QuizScore({
             ),
             id: question.id,
             marks: questionMarks(question),
+            notMarked: question.parts.some((part) => part.pending),
             number: i + 1,
             type: question.parts[0].answer.type,
           },

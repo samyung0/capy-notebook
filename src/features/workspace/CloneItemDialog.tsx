@@ -55,15 +55,17 @@ export function cloneErrorMessage(error: unknown) {
     trackQuotaBlocked(error, 'clone');
     return m.clone_quota_body();
   }
-  // Past the payer's per-file plan cap, as an upload is refused.
+  // Past the payer's per-file plan cap, or the flat text cap, as an upload is
+  // refused.
   if (
     isApiError(error) &&
     error.code === 'file_too_large' &&
     typeof error.body?.maxBytes === 'number'
   ) {
-    return m.source_files_too_large({
-      mb: Math.round(error.body.maxBytes / 1024 / 1024),
-    });
+    const mb = Math.round(error.body.maxBytes / 1024 / 1024);
+    return error.body.text
+      ? m.source_text_files_too_large({ mb })
+      : m.source_files_too_large({ mb });
   }
   // The source's stored content the current rules refuse: another name or
   // destination cannot help (Epo 2026-10-20).

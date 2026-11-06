@@ -50,6 +50,7 @@ var readRequiredPrivileges = []columnPrivilege{
 	{"plan_limits", "files_per_workspace", "SELECT"},
 	{"plan_limits", "files_per_upload", "SELECT"},
 	{"plan_limits", "image_max_bytes", "SELECT"},
+	{"plan_limits", "text_file_max_bytes", "SELECT"},
 	{"plan_limits", "topics_per_workspace", "SELECT"},
 	{"resource_credit_rates", "resource_key", "SELECT"},
 	{"resource_credit_rates", "version", "SELECT"},

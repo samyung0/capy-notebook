@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -137,56 +136,6 @@ func validateServiceSecrets(appEnv, pipelineSecret, collaborationSecret string) 
 		return errors.New("COLLABORATION_SECRET must be at least 32 characters and match the collaboration server's")
 	}
 	return nil
-}
-
-// validateTurnstileSecret refuses, outside development and e2e, a gateway
-// without TURNSTILE_SECRET_KEY: every gateway serves signed-out grading, whose
-// answer checks it verifies with Turnstile (Epo 2026-10-24, Q271). Local
-// stacks set Cloudflare's published test secret.
-func validateTurnstileSecret(appEnv, secret string) error {
-	if appEnv == "development" || appEnv == "e2e" {
-		return nil
-	}
-	if secret == "" {
-		return errors.New("TURNSTILE_SECRET_KEY is required: signed-out answer checks are verified with Turnstile")
-	}
-	if slices.Contains(turnstileTestSecrets, secret) {
-		return errors.New("TURNSTILE_SECRET_KEY is one of Cloudflare's published test secrets, which verify nothing")
-	}
-	return nil
-}
-
-// turnstileTestSecrets are Cloudflare's published test secrets: they pass,
-// fail or spend every token, so a deployed gateway refuses them (Q308).
-var turnstileTestSecrets = []string{
-	"1x0000000000000000000000000000000AA",
-	"2x0000000000000000000000000000000AA",
-	"3x0000000000000000000000000000000AA",
-}
-
-// turnstileHosts are the hosts a signed-out check's Turnstile token must have
-// been solved on (Q308): the app hosts of APP_URL, CORS_ALLOWED_ORIGINS and
-// COLLABORATION_ALLOWED_ORIGINS (UAT's lists hold uat and local.uat). Development and e2e use Cloudflare's test keys, whose tokens
-// name no app host, so they check none. Elsewhere an empty list would check
-// no host, so the gateway refuses to boot (Q350).
-func turnstileHosts(appEnv string, origins ...string) ([]string, error) {
-	if appEnv == "development" || appEnv == "e2e" {
-		return nil, nil
-	}
-	var hosts []string
-	for _, origin := range origins {
-		u, err := url.Parse(origin)
-		if err != nil || u.Hostname() == "" {
-			continue
-		}
-		if host := strings.ToLower(u.Hostname()); !slices.Contains(hosts, host) {
-			hosts = append(hosts, host)
-		}
-	}
-	if len(hosts) == 0 {
-		return nil, errors.New("no app host for Turnstile tokens: APP_URL, CORS_ALLOWED_ORIGINS and COLLABORATION_ALLOWED_ORIGINS name none")
-	}
-	return hosts, nil
 }
 
 func validateAuthConfiguration(
@@ -405,15 +354,6 @@ func main() {
 	if err := validateServiceSecrets(appEnv, pipeSecret, collaborationSecret); err != nil {
 		log.Fatal(err)
 	}
-	turnstileSecret := env("TURNSTILE_SECRET_KEY", "")
-	if err := validateTurnstileSecret(appEnv, turnstileSecret); err != nil {
-		log.Fatal(err)
-	}
-	// Read only by Config below, so dropping it there fails the build.
-	turnstileTokenHosts, err := turnstileHosts(appEnv, append(append([]string{appURL}, corsOrigins...), authorizedParties...)...)
-	if err != nil {
-		log.Fatal(err)
-	}
 	var pipe *pipeline.Client
 	if u := env("PIPELINE_URL", ""); u != "" {
 		pipe = pipeline.New(u, pipeSecret)
@@ -569,8 +509,6 @@ func main() {
 		BankAssets:             bankAssets,
 		BankAssetsURL:          env("BANK_ASSETS_URL", ""),
 		BankCommentEmail:       env("BANK_COMMENT_EMAIL", ""),
-		TurnstileSecret:        turnstileSecret,
-		TurnstileHosts:         turnstileTokenHosts,
 		ReleaseSHA:             env("RELEASE_SHA", ""),
 		APIDocs:                appEnv == "development",
 		ClerkSecretKey:         clerkSecret,

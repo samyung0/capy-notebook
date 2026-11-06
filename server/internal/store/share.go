@@ -1487,7 +1487,7 @@ func (s *Store) cloneWorkspaceOnce(
 	// 2026-10-20), while a single file clone refuses it with file_too_large.
 	files := snapshot.files[:0]
 	for _, file := range snapshot.files {
-		if file.sizeBytes > limits.SourceFileBytes {
+		if file.sizeBytes > limits.FileBytes(file.name) {
 			snapshot.bytes -= file.sizeBytes + file.sourceBytes
 			snapshot.skipped++
 			continue
@@ -2134,8 +2134,8 @@ func (s *Store) cloneFileOnce(ctx context.Context, starter cloneTxStarter, userI
 	if err != nil {
 		return "", nil, err
 	}
-	if f.sizeBytes > limits.SourceFileBytes {
-		return "", nil, &FileTooLargeError{LimitBytes: limits.SourceFileBytes}
+	if fileCap := limits.FileBytes(f.name); f.sizeBytes > fileCap {
+		return "", nil, &FileTooLargeError{LimitBytes: fileCap, Text: sourceupload.IsTextFile(f.name)}
 	}
 	if err := s.gateStorageTx(ctx, tx, dest.payerID, f.sizeBytes+f.sourceBytes); err != nil {
 		return "", nil, err

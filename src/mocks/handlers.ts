@@ -641,7 +641,8 @@ const mockCreditSettings: CreditSettings = {
 
 type GradeOneBody = { questionId: string; answers: Answers };
 
-/** A signed-out check: one question graded with its key. */
+/** A shared page's check: one question graded with its key. As on the server,
+ * no model reads an open answer, so an answered one stays Not marked. */
 function gradeOne(
   questions: Question[],
   { questionId, answers }: GradeOneBody
@@ -650,9 +651,17 @@ function gradeOne(
   if (!question)
     return HttpResponse.json({ message: 'not found' }, { status: 404 });
   const graded = gradeQuestions([question], answers);
+  const parts = graded.questions[0].parts.map((part) => {
+    const answer = answers[part.id];
+    return part.answer.type === 'open' &&
+      typeof answer === 'string' &&
+      answer.trim()
+      ? { ...part, awarded: 0, itemAwards: undefined, pending: true }
+      : part;
+  });
   return HttpResponse.json({
-    correct: graded.awarded,
-    question: graded.questions[0],
+    correct: parts.reduce((sum, part) => sum + (part.awarded ?? 0), 0),
+    question: { ...graded.questions[0], parts },
     total: graded.max,
   });
 }

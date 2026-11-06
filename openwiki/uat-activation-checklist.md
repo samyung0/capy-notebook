@@ -323,7 +323,7 @@ Clerk development instance. Point a local gateway at the UAT database only with
   the UAT bucket host, the bank asset base, `https://img.clerk.com`,
   `https://i.ytimg.com` and a `report-uri` on the Sentry security endpoint
   with `sentry_environment=uat`. On `/` and the deep link the same header
-  also carries `script-src 'self' https://clerk.uat.capynotebook.com/npm/@clerk/ …`. If
+  also carries a `script-src` naming `https://clerk.uat.capynotebook.com/npm/@clerk/`. If
   `/` and the deep link lack it while the summary has it, Workers Assets does
   not apply `_headers` to the SPA fallback: tell the Editor session (runbook
   §2.4 has the fallback plan). A `curl -sI` on an `/assets/…` chunk and on
@@ -341,8 +341,7 @@ Clerk development instance. Point a local gateway at the UAT database only with
 - The script policy on the Worker's pages (runbook §2.4): `curl -s -o
   /dev/null -D -` on a `/share/notes/…`, a `/share/quizzes/…`, a `/w/…`
   summary and a missing `/w/x` returns an enforced `Content-Security-Policy`
-  whose `script-src` is `'self'`,
-  `https://clerk.uat.capynotebook.com/npm/@clerk/` and, when UAT has a
+  whose `script-src` is `'self'` and, when UAT has a
   PostHog key, the `eu-assets.i.posthog.com` `/static/` and
   `/array/{key}/config.js` paths, with no `'unsafe-inline'`, no
   `'unsafe-eval'` and no `sha256-` hash, then `script-src-attr 'none'`,
@@ -354,8 +353,8 @@ Clerk development instance. Point a local gateway at the UAT database only with
   with a formula, a diagram, an embedded quiz, an interactive block and a
   YouTube block (play it), an audio block (play it: its
   `/p/notes/…/assets/…` request answers `302` to the bucket with
-  `Cache-Control: no-store`), a shared quiz and a shared flashcard set (Clerk
-  loads on those two), and a summary: each comes to life, and the console
+  `Cache-Control: no-store`), a shared quiz and a shared flashcard set, and a
+  summary: each comes to life, and the console
   shows no `Refused to` message. A `Refused to` message names what the
   policy blocked: send it, with the URL, to the Editor session.
 - `COLLABORATION_UAT_PUBLICATION_HOLD` is `true` in GitHub `uat` and

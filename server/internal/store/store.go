@@ -220,6 +220,12 @@ func (s *Store) MaxSourceFileBytes() (int64, error) {
 	return s.planLimits.MaxSourceFileBytes()
 }
 
+// SourceExportCap is what a source room's edits keep its file under
+// (planlimits.Catalog.SourceExportCap).
+func (s *Store) SourceExportCap(format string) (int64, error) {
+	return s.planLimits.SourceExportCap(format)
+}
+
 func (s *Store) Close() { s.pool.Close() }
 
 // ConfigureCollaboration enables Yjs-authoritative commands. The sidecar

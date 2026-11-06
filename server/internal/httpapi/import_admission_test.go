@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/samyung0/capy-notebook/server/internal/integrations"
+	"github.com/samyung0/capy-notebook/server/internal/planlimits"
 )
 
 // Security regression (Q346, review r2 S5): an import takes the upload's
@@ -27,5 +28,12 @@ func TestAdmitImportRefusesUnsafeNamesAndOversizedFiles(t *testing.T) {
 	}
 	if code, _, _, _ := admitImport(integrations.ImportFileMetadata{Name: "big.pdf", Size: size(11 << 20)}, "", 10<<20); code != "file_too_large" {
 		t.Errorf("over the cap: code = %q", code)
+	}
+	// Q629, Q630: an imported text file takes the text cap, an Excel file the plan's.
+	limits := planlimits.Limits{SourceFileBytes: 10 << 20, TextFileBytes: 2 << 20}
+	for name, want := range map[string]string{"big.csv": "file_too_large", "big.xlsx": ""} {
+		if code, _, _, _ := admitImport(integrations.ImportFileMetadata{Name: name, Size: size(3 << 20)}, "", limits.FileBytes(name)); code != want {
+			t.Errorf("%s: code = %q, want %q", name, code, want)
+		}
 	}
 }
