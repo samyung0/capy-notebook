@@ -15,7 +15,7 @@ Windows lands and deploys these, one landing per deploy.
 | `membership.spec.ts`: a real CLOSED frame on a bystander channel | Cause unknown; passed on an earlier run | The journey now records each close's code and reason |
 | Shared pages lose AI marking (Q640 B) | Windows | Next on its side |
 | New assignment's quiz picker, shared pages | On `main` 24cffdd73 | CI, UAT quality run |
-| Page counts off Make a quiz's rows, Add dialog retry fix | `claude/add-retry-analysis` 0c3726a1d (holds Extraction's 34675e04d) | Windows' review, then a train |
+| Page counts and Reading pages off Make a quiz's rows, popovers scrolling inside dialogs, Add dialog retry fix | `claude/add-retry-analysis` 86491c6b4 (holds Extraction's 34675e04d) | Windows' review, then a train |
 | Vendored BlockSuite, dev route only | `claude/drawing-answers` 9ec4a067d | Windows' train |
 
 ## Next, in order (Epo, 2026-11-06)
@@ -67,3 +67,7 @@ floating toolbars on e.g. tables and stuff, and affine has a table view as well.
 `todo-standalone-files.md`, `todo-clone-download.md`, `todo-account-chat.md`, `todo-ghost-text.md`,
 `todo-presence.md` and `todo-note-media.md` have landed on `main`, or look that way from its commits.
 Their status lines are from October and weren't updated, so don't read them as open work.
+
+## Left out
+
+- **Landing site** (`landing-site` worktree, uncommitted): Epo isn't using it for now (2026-11-06). Don't push or remove it without asking.
