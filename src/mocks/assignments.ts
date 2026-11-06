@@ -17,7 +17,7 @@ import type {
   TodoList,
   WorkspaceActivity,
 } from '@/api/types';
-import { toBase64 } from '@/features/blocksuite/base64';
+import { fromBase64, toBase64 } from '@/features/blocksuite/base64';
 import { SAVED, withElements } from '@/features/blocksuite/boardFixture';
 import type { Question, QuestionPart } from '@/features/questions/types';
 import type { Answers } from '@/features/quizzes/grade';
@@ -1408,11 +1408,17 @@ export const assignmentHandlers = (viewer: Viewer) => {
       for (const d of markedDrawings.splice(0)) mockDrawings.delete(d.id);
       return HttpResponse.json({ deleted });
     }),
-    http.get('/api/drawings/:id', ({ params }) => {
+    http.get('/api/drawings/:id', async ({ params }) => {
       const board = mockDrawings.get(String(params.id));
       if (board === undefined) return gone();
+      // Stored gzipped, as drawings.go stores it.
+      const packed = await new Response(
+        new Blob([fromBase64(board) as Uint8Array<ArrayBuffer>])
+          .stream()
+          .pipeThrough(new CompressionStream('gzip'))
+      ).arrayBuffer();
       return HttpResponse.json({
-        boardUrl: `data:application/octet-stream;base64,${board}`,
+        boardUrl: `data:application/gzip;base64,${toBase64(new Uint8Array(packed))}`,
         bytes: board.length,
         id: params.id,
         partId: '',

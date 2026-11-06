@@ -8,6 +8,8 @@ export interface FitRequest {
   maxBytes: number;
   /** The file is an SVG drawn as a PNG, which stays PNG (Q364). */
   png: boolean;
+  /** The first lossy encode's quality, when not fitImage's own. */
+  quality?: number;
 }
 
 export type FitResponse =
@@ -18,7 +20,11 @@ export type FitResponse =
  * a large photo's decode and colour scan stay off the main thread (Q348,
  * review N5); an SVG is drawn as a PNG first, on the page (Q364). An image no
  * decoder reads or no size fits is refused with its copy. */
-export async function fitImageOffThread(picked: File, maxBytes: number) {
+export async function fitImageOffThread(
+  picked: File,
+  maxBytes: number,
+  { quality }: { quality?: number } = {}
+) {
   const png = await pngFromSvg(picked).catch((error: unknown) => {
     throw error instanceof ImageUnreadableError
       ? new CopyError(m.image_unreadable())
@@ -52,6 +58,7 @@ export async function fitImageOffThread(picked: File, maxBytes: number) {
       file,
       maxBytes,
       png: png !== null,
+      quality,
     } satisfies FitRequest);
   });
 }

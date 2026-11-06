@@ -54,9 +54,12 @@ export function isSvgImage(bytes: Uint8Array) {
   return SVG_ROOT.test(decoder.decode(bytes.subarray(0, 4096)));
 }
 
-/** A byte cap as the image messages name it. */
+/** A byte cap as the image messages name it: whole MB, or KB under one (a
+ * drawing's 300 KB image read "0 MB"). */
 export const imageLimit = (maxBytes: number) =>
-  `${Math.round(maxBytes / 1024 ** 2)} MB`;
+  maxBytes < 1024 ** 2
+    ? `${Math.round(maxBytes / 1024)} KB`
+    : `${Math.round(maxBytes / 1024 ** 2)} MB`;
 
 /** A picked image that nothing it can be shrunk to fits under `maxBytes`. */
 export class ImageTooLargeError extends Error {
@@ -187,8 +190,10 @@ async function decodeLazily(file: File) {
  * the Office rules, and an animated GIF past it throws an
  * ImageTooManyPixelsError. With `png` (an SVG drawn as a PNG, Q364) the
  * result stays PNG whatever the image holds: lossless, shrunk at PNG_SIDES
- * past the cap. The import worker applies the same rules
- * (pipeline/pipeline/ingest/images.py). */
+ * past the cap. With `quality`, lossy encodes start there instead of at
+ * QUALITY (a drawing's marking image, line art that keeps its ink lower; Epo
+ * 2026-11-06: minimise drawing storage). The import worker applies the same
+ * rules (pipeline/pipeline/ingest/images.py). */
 export async function fitImage(
   file: File,
   maxBytes: number,
@@ -196,7 +201,13 @@ export async function fitImage(
     maxPixels = 0,
     office = maxPixels > 0,
     png = false,
-  }: { maxPixels?: number; office?: boolean; png?: boolean } = {}
+    quality = QUALITY,
+  }: {
+    maxPixels?: number;
+    office?: boolean;
+    png?: boolean;
+    quality?: number;
+  } = {}
 ): Promise<File> {
   const bitmap = await decode(file);
   try {
@@ -248,9 +259,9 @@ export async function fitImage(
     const lossless = png || alpha || (office && flat);
     let type = lossless ? 'image/png' : 'image/jpeg';
     let blob =
-      office || png ? null : await encode(canvas, 'image/webp', QUALITY);
+      office || png ? null : await encode(canvas, 'image/webp', quality);
     if (blob) type = 'image/webp';
-    else blob = await encode(canvas, type, QUALITY);
+    else blob = await encode(canvas, type, quality);
     if (!blob) throw new ImageTooLargeError(maxBytes);
     const keeps = png
       ? file.type === 'image/png'
@@ -282,8 +293,9 @@ export async function fitImage(
         longSide > SHRINK_SIDE
           ? draw(fitSize(bitmap.width, bitmap.height, SHRINK_SIDE)).canvas
           : canvas;
-      for (const quality of QUALITIES) {
-        blob = await encode(small, type, quality);
+      for (const step of QUALITIES) {
+        if (step > quality) continue;
+        blob = await encode(small, type, step);
         if (blob && blob.size <= maxBytes) return named(blob);
       }
     }

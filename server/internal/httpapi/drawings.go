@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"time"
@@ -115,7 +116,7 @@ type drawingOutput struct {
 	Body struct {
 		ID       string `json:"id"`
 		PartID   string `json:"partId"`
-		BoardURL string `json:"boardUrl" doc:"The board's saved document; the link is the same all hour and lasts two"`
+		BoardURL string `json:"boardUrl" doc:"The board's saved document, gzipped; the link is the same all hour and lasts two"`
 		Bytes    int64  `json:"bytes"`
 	}
 }
@@ -166,12 +167,18 @@ func (a *api) putDrawingObjects(ctx context.Context, attemptID string, in drawin
 	if a.blob == nil {
 		return store.DrawingObject{}, nil, errors.New("blob store not configured")
 	}
-	board := store.DrawingObject{
-		Key:   "drawings/" + attemptID + "/" + store.ObjectKeyID("board") + ".ydoc",
-		Bytes: int64(len(in.Board)),
-		Type:  "application/octet-stream",
+	// Gzipped, it keeps about 44% of its bytes, and the payer pays for those
+	// (Epo 2026-11-06: minimise drawing storage). Browsers inflate it on read.
+	packed, err := gzipBoard(in.Board)
+	if err != nil {
+		return store.DrawingObject{}, nil, err
 	}
-	if _, err := a.blob.PutObjectOnce(ctx, board.Key, bytes.NewReader(in.Board), board.Type, drawingCache); err != nil {
+	board := store.DrawingObject{
+		Key:   "drawings/" + attemptID + "/" + store.ObjectKeyID("board") + ".ydoc.gz",
+		Bytes: int64(len(packed)),
+		Type:  "application/gzip",
+	}
+	if _, err := a.blob.PutObjectOnce(ctx, board.Key, bytes.NewReader(packed), board.Type, drawingCache); err != nil {
 		return store.DrawingObject{}, nil, err
 	}
 	if imageType == "" {
@@ -186,6 +193,21 @@ func (a *api) putDrawingObjects(ctx context.Context, attemptID string, in drawin
 		return store.DrawingObject{}, nil, err
 	}
 	return board, image, nil
+}
+
+func gzipBoard(board []byte) ([]byte, error) {
+	var out bytes.Buffer
+	w, err := gzip.NewWriterLevel(&out, gzip.BestCompression)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := w.Write(board); err != nil {
+		return nil, err
+	}
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
 }
 
 func drawingExtension(contentType string) string {

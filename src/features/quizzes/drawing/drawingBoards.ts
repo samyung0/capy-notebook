@@ -19,7 +19,13 @@ export function fetchDrawingBoard(id: string) {
       .then(async (response) => {
         if (!response.ok)
           throw new Error(`board fetch failed: ${response.status}`);
-        return toBase64(new Uint8Array(await response.arrayBuffer()));
+        // Stored gzipped (drawings.go); inflated here, not by a header.
+        const inflated = response.body?.pipeThrough(
+          new DecompressionStream('gzip')
+        );
+        return toBase64(
+          new Uint8Array(await new Response(inflated).arrayBuffer())
+        );
       })
       .catch((error: unknown) => {
         if (isApiError(error) && error.status === 404) return DRAWING_DELETED;
