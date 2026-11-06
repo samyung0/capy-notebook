@@ -71,7 +71,7 @@ import { Redo03Icon, Undo03Icon } from '@hugeicons/core-free-icons';
 import { html, render } from 'lit';
 import * as Y from 'yjs';
 import { m } from '@/i18n';
-import { fitImage } from '@/lib/fitImage';
+import { fitImageOffThread } from '@/lib/fitImageOffThread';
 import { fromBase64, toBase64 } from './base64';
 import { chartExtensions } from './boardChart';
 import {
@@ -174,7 +174,7 @@ const surfaceOf = (gfx: GfxController) =>
 const FIRST_PLANE = { h: 520, ppu: 41, w: 820 };
 /** The marking image's longest side, and its bytes after the shared compressor. */
 const IMAGE_SIDE_MAX = 2400;
-const IMAGE_BYTES_MAX = 512 * 1024;
+const IMAGE_BYTES_MAX = 300 * 1024;
 /** On a board wider or taller than the image, a gap past this between groups of
  * elements shrinks to it in the image, so one dragged far away doesn't squash the rest
  * (Epo 2026-11-06). The board itself is left as it is. */
@@ -591,7 +591,8 @@ export function mountDrawingBoard(
         output.toBlob(resolve, 'image/png')
       );
       if (!png) throw new Error('drawing board: no image');
-      return fitImage(
+      // The encode runs in the compressor's worker; drawing needs the page.
+      return fitImageOffThread(
         new File([png], 'drawing.png', { type: 'image/png' }),
         IMAGE_BYTES_MAX
       );
