@@ -79,12 +79,19 @@ type Timings = {
 };
 
 /**
- * Medians of three `canvas` job runs of the Performance workflow, as Office's are.
- * Null until three runs of these gates are recorded: the bench then reports and
- * gates nothing. The first calibration (7d470b2e5, on 4cf06a4b6) measured the large
- * board and the blank open at 4x, so it doesn't carry over.
+ * Medians of three `canvas` job runs of the Performance workflow, as Office's are:
+ * 42252998330, 42253016137 and 42253034659 on 630705a96 (2026-11-07). The first
+ * calibration (7d470b2e5, on 4cf06a4b6) measured the large board and the blank open
+ * at 4x, so it doesn't carry over.
  */
-const MEDIANS: Timings | null = null;
+const MEDIANS: Timings | null = {
+  blankOpenMs: 807,
+  openMs: 2921,
+  panP90Ms: 43,
+  penP90Ms: 33,
+  typingP90Ms: 22,
+  zoomP90Ms: 76,
+};
 
 /** No input budget goes below this: a one-frame wobble fails anything smaller. */
 const INPUT_BUDGET_FLOOR_MS = 30;

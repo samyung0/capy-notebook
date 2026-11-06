@@ -323,9 +323,11 @@ p90s. Reported only: warm opens, the large board and the bytes. It fails on a
 page error, an input with no painted frame, typing that doesn't reach the
 card, a stroke that draws no brush, or a missed budget. The budgets are 1.3x
 the medians in `MEDIANS`, Office's rule (`budgetOf`, rounded up to 5 ms below
-a second and 50 ms above, inputs no lower than 30 ms). `MEDIANS` is null until
-three runs of these gates are recorded; until then the bench reports
-`budget: "uncalibrated"` and gates nothing. The first calibration (7d470b2e5,
+a second and 50 ms above, inputs no lower than 30 ms). `MEDIANS` holds three
+runs on 630705a96 (2026-11-07): blank open 805/821/807 ms, typical open
+2784/2921/3036, pan p90 43/38/43, pen 33/33/33, typing 25/22/21, zoom 61/76/77,
+so the budgets are 1050, 3800, 60, 45, 30 and 100 ms. With `MEDIANS` null the
+bench reports `budget: "uncalibrated"` and gates nothing. The first calibration (7d470b2e5,
 three runs on 4cf06a4b6, 2026-11-06) measured the large board and the blank
 open at 4x, so it doesn't carry over; it also showed one runner 40-60% slower
 on every figure, so rerun before reading a miss as a regression.
