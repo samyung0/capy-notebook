@@ -7,6 +7,8 @@ import { expect, type Page, test } from '@playwright/test';
  */
 
 type Stats = { canvas: string[]; marks: number };
+const STROKE_PATH = /<path d="([^"]*)" stroke="#e03131"/;
+const WHOLE_PIXELS = /^M[\d LM]+$/;
 const stats = (page: Page) =>
   page.evaluate('window.__board.stats()') as Promise<Stats>;
 const canvas = (page: Page) => stats(page).then(({ canvas: types }) => types);
@@ -822,9 +824,9 @@ test.describe('with a finger', () => {
       },
       await toImage(page)
     );
-    expect(long).toBeLessThanOrEqual(2400);
+    expect(long).toBeLessThanOrEqual(1568);
     // The far shape is drawn nearer, so the rest isn't squashed.
-    expect(short).toBeGreaterThan(600);
+    expect(short).toBeGreaterThan(long / 4);
   });
 });
 
@@ -1159,6 +1161,9 @@ test('a preview draws every kind on the board from its data, framed as the image
     'Energy is kept',
   ])
     expect(preview).toContain(part);
+  // Saved to whole pixels: the stroke, drawn through fractions, has none left.
+  const stroke = preview.match(STROKE_PATH)?.[1] ?? '';
+  expect(stroke).toMatch(WHOLE_PIXELS);
   // Well formed: a list shows it as an image.
   const drawn = await page.evaluate(async (svg) => {
     const image = new Image();

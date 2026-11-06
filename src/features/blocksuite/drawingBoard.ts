@@ -210,6 +210,45 @@ export type DrawingBoardOptions = {
 
 export { BoardLoadError } from './boardLoad';
 
+const roundPlace = (xywh: string) =>
+  JSON.stringify(
+    (JSON.parse(xywh) as number[]).map((value) => Math.round(value * 10) / 10)
+  );
+
+/** The saved copy keeps strokes to whole pixels and places to a tenth: 60% of the
+ * size with no change to see (drawing answers' measure, 2026-11-06, for Epo's "every
+ * stored byte cut"). Pressure stays, as perfect-freehand draws the line from it. */
+function roundPlaces(doc: Y.Doc) {
+  const place = (map: Y.Map<unknown>, key: string) => {
+    const xywh = map.get(key);
+    if (typeof xywh !== 'string') return;
+    const rounded = roundPlace(xywh);
+    if (rounded !== xywh) map.set(key, rounded);
+  };
+  doc.transact(() => {
+    for (const block of doc.getMap<Y.Map<unknown>>('blocks').values()) {
+      place(block, 'prop:xywh');
+      const native = block.get('prop:elements') as Y.Map<unknown> | undefined;
+      const elements = native?.get('value') as
+        | Y.Map<Y.Map<unknown>>
+        | undefined;
+      for (const element of elements?.values() ?? []) {
+        place(element, 'xywh');
+        if (element.get('type') !== 'brush') continue;
+        const points = element.get('points') as number[][];
+        element.set(
+          'points',
+          points.map(([x, y, ...pressure]) => [
+            Math.round(x),
+            Math.round(y),
+            ...pressure,
+          ])
+        );
+      }
+    }
+  });
+}
+
 /** A pasted image drawn as the page draws it: an SVG too, which createImageBitmap
  * can't decode from a file. */
 async function decodeImage(file: Blob) {
@@ -397,11 +436,13 @@ export function mountDrawingBoard(
 
   return {
     /** The board to store, with no undo history: a fresh document keeps only what's
-     * on the board (200 plane clicks were 606 KB live, 7.5 KB this way). */
+     * on the board (200 plane clicks were 606 KB live, 7.5 KB this way), rounded
+     * (roundPlaces). */
     save: () => {
       finishPlot();
       const fresh = new Y.Doc();
       Y.applyUpdate(fresh, Y.encodeStateAsUpdate(store.spaceDoc));
+      roundPlaces(fresh);
       const update = Y.encodeStateAsUpdate(fresh);
       fresh.destroy();
       return { bytes: update.byteLength, doc: toBase64(update) };
