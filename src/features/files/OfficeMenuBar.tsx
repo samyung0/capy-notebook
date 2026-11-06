@@ -108,11 +108,14 @@ export function OfficeHeaderSlots({
                 ribbon={menus.ribbon}
               />
             )}
-            <OfficeMenuBar
-              menus={menus.menus}
-              onCommand={onCommand}
-              onPicked={onPicked}
-            />
+            {/* With tabs after it, File keeps its width and only they scroll. */}
+            <div className={cn('flex min-w-0', menus.ribbon && 'shrink-0')}>
+              <OfficeMenuBar
+                menus={menus.menus}
+                onCommand={onCommand}
+                onPicked={onPicked}
+              />
+            </div>
             {menus.ribbon && (
               <RibbonTabs
                 onCommand={onCommand}
