@@ -24,7 +24,7 @@ place (Epo 2026-10-10).
 | Family                     | Measures                                                                                        | Run with                                    |
 | -------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------- |
 | [`collaboration/`](collaboration/) | Collaboration stress: many peers typing with reconnects in one Office and one Plate room, then in a near-limit note and a text source; convergence, lost updates, latency. Update rates one user's editing sends, scored against the server's allowance | `pnpm bench:stress` (Docker), `pnpm bench:rates` |
-| [`editor/`](editor/)       | Plate editor open cost, typing latency, save cycle, scroll FPS under CPU throttle; DOCX, XLSX and PPTX open, View to Edit, typing at both ends, co-editor update timings and heap (workers from the typing on) in the Office runtime; Office size-ladder fixtures; formula View/Edit parity | `pnpm bench:editor`, `pnpm bench:office`, `pnpm bench:formula` |
+| [`editor/`](editor/)       | Plate editor open cost, typing latency, save cycle, scroll FPS under CPU throttle; DOCX, XLSX and PPTX open, View to Edit, typing at both ends, co-editor update timings and heap (workers from the typing on) in the Office runtime; Office size-ladder fixtures; formula View/Edit parity; the drawing board's cold open, pan, zoom, pen and typing | `pnpm bench:editor`, `pnpm bench:office`, `pnpm bench:formula`, `pnpm bench:canvas` |
 | [`share-pages/`](share-pages/) | Shared workspace, quiz, flashcard and note pages on the deployed UAT site: Lighthouse FCP, LCP, CLS, TBT and bytes, cold and warm at the edge; Workers Cache hits | `pnpm bench:share-pages` (UAT) |
 | [`gateway/`](gateway/)     | Go gateway capacity: signed-in browser sessions replayed against the API with their event streams, uploads and paged lists, per-route and per-page latency and errors, gateway and Postgres CPU, waits for a pooled connection | `bench/gateway/scripts/step.sh <users>` (bench host) |
 | [`clone/`](clone/)         | A single file clone's two parts on a disposable pgvector database: the file row with its saved edits (as update rows and folded), and the index copy into the target's HNSW index | `bench/clone/scripts/run.sh` (Docker) |
@@ -42,6 +42,14 @@ production promotion. Budgets are regression tripwires, not UX targets; snapshot
 deltas stay warn-only. Details: [editor-perf.md](../openwiki/editor-perf.md).
 Results land in the gitignored `editor/.results/`, so this family has no
 committed reports.
+
+`pnpm bench:canvas` is the drawing board's spec (`editor/scripts/board.canvas.ts`):
+a production build without MSW whose `/dev/drawing` route is kept by
+`VITE_BENCH_ROUTES=true` (deploys pin it off), a cold open of an empty and a
+generated large board, then typing, a pen stroke, pans and zooms on the large one,
+each input to its painted frame, at 4x CPU; the bytes each open downloads are
+report-only. It runs as the `canvas` job of the `Performance` workflow, on dispatch
+only. Details: [editor-perf.md](../openwiki/editor-perf.md#drawing-board-pnpm-benchcanvas).
 
 `bench/editor/scripts/open-paint.mjs` measures a note's one way of opening on a
 production build with MSW, by hand (its header has the build): click or navigation

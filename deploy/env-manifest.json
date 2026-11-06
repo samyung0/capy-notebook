@@ -991,6 +991,10 @@
       "kind": "variable",
       "targets": ["local"]
     },
+    "VITE_BENCH_ROUTES": {
+      "kind": "variable",
+      "targets": ["local"]
+    },
     "VITE_CLERK_PUBLISHABLE_KEY": {
       "kind": "variable",
       "targets": ["local"]

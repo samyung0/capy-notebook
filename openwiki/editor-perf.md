@@ -283,6 +283,42 @@ file), then gate it from three CI runs.
 A laptop run is faster than the runner on typing and slower under load, so a
 local miss is not a regression by itself.
 
+## Drawing board (`pnpm bench:canvas`)
+
+[`bench/editor/scripts/board.canvas.ts`](../bench/editor/scripts/board.canvas.ts)
+measures the drawing board (BlockSuite's edgeless editor on `/dev/drawing`) in a
+production build without MSW ([`playwright.canvas.config.ts`](../bench/editor/scripts/playwright.canvas.config.ts)).
+The route is in that build only because the bench sets `VITE_BENCH_ROUTES=true`
+(`src/router.ts`, and `vite.config.ts` keeps the route and the vanilla-extract
+plugin for it); `scripts/env/config.py` pins it to `false` for every deploy, and
+`scripts/env/test_config.py` checks that. The build takes a few minutes.
+
+The large board is made in the page through BlockSuite's API and saved, so it
+always matches the board's current format: 200 pen strokes of 30 points, 30
+shapes, 10 formulas and 30 note cards of three paragraphs over the plane card.
+Everything runs at `CPU_RATE` (4x by default):
+
+- **Cold open:** three fresh contexts per board, an empty board (the plane card
+  alone) and the large one; navigation to the first task after the frame that
+  holds every element, the median of the three. It also reports the mount's
+  synchronous cost, when the main thread settles (the last long animation frame
+  within 5 s) and the blocking time in that window.
+- **On the large board:** typing 30 keys in a note card (100 ms apart), a pen
+  stroke of 40 moves (32 ms apart), 20 wheel pans and 20 Ctrl+wheel zooms
+  (100 ms apart). Each input is timed from its first event to the first task
+  after its next frame, as Office times keys; the p50, p90 and maximum are
+  reported.
+- **Bytes:** the JS and CSS each open requested, raw and gzipped from the build,
+  with the five largest chunks. Report-only.
+
+It fails on a page error, an input with no painted frame, typing that doesn't
+reach the card, a stroke that draws no brush, or a missed budget. The budgets
+are 1.3x the medians in `MEDIANS`, Office's rule (`budgetOf`, rounded up to
+5 ms below a second and 50 ms above, inputs no lower than 30 ms), on the cold
+opens and the four inputs' p90. `MEDIANS` is null until three runs of the
+`canvas` job are recorded; until then the bench reports `budget: "uncalibrated"`
+and gates nothing.
+
 ## Formula parity audit (`pnpm bench:formula`)
 
 [`bench/editor/scripts/formula-parity.audit.ts`](../bench/editor/scripts/formula-parity.audit.ts)
@@ -480,7 +516,9 @@ calling `perf.yml` or the file stops being dispatchable and callable. `office`
 runs `pnpm bench:office` on dispatch only (input `office`, default true; a
 `workflow_call` defaults it to false, so promotion skips it); its CI-calibrated
 budgets fail the job and the run. Its results go to the job summary and the
-`office-perf-results` artifact.
+`office-perf-results` artifact. `canvas` runs `pnpm bench:canvas` the same way
+(input `canvas`, default true on dispatch, false on `workflow_call`), with its
+results in the job summary and the `canvas-perf-results` artifact.
 `stress` runs `pnpm bench:stress` (below) on dispatch only (input `stress`,
 false on `workflow_call`) against the `e2e_stack` images, built from the same
 GitHub Actions layer cache. A failed check (exit 1) or a missed latency
