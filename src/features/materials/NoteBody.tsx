@@ -24,7 +24,7 @@ import type { Material } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { SaveBanner } from '@/components/banners/SaveBanner';
 import { Button } from '@/components/ui/Button';
-import { Skeleton } from '@/components/ui/feedback';
+import { Skeleton, Spinner } from '@/components/ui/feedback';
 import { FloatingBarContext } from '@/components/ui/floatingBarContext';
 import {
   type CopyLabel,
@@ -422,6 +422,7 @@ function NotePreview({
   label,
   material,
   place,
+  seat,
 }: {
   box: RefObject<HTMLDivElement | null>;
   /** The blocks on screen, for the place Edit goes back to. */
@@ -431,6 +432,8 @@ function NotePreview({
   material: Material;
   /** Where the editor was, in this note's blocks. */
   place: NotePosition;
+  /** The editor's seat: an embed has one room, its and Preview's (Q676 A). */
+  seat: NoteSeat | null;
 }) {
   const [value, setValue] = useState(() => editor.children as MaterialValue);
   drawn.current = value;
@@ -466,7 +469,9 @@ function NotePreview({
     <div className="h-full overflow-auto" ref={box}>
       <NoteDisplayToggles />
       <Suspense fallback={<NoteSkeleton />}>
-        <PaintedNote label={label} material={material} value={value} />
+        <NoteSeatContext.Provider value={seat}>
+          <PaintedNote label={label} material={material} value={value} />
+        </NoteSeatContext.Provider>
         <DocumentAttribution material={material} value={value} />
       </Suspense>
     </div>
@@ -593,6 +598,7 @@ function PaintedFrame({
   const [closing, setClosing] = useState(false);
   const settling = useRef<(() => void) | null>(null);
   const [locked, setLocked] = useState(false);
+  const [previewSeat, setPreviewSeat] = useState<NoteSeat | null>(null);
   const focusAtPress = useRef(false);
   const back = useRef<NotePosition | null>(null);
   // The caret while Preview is open: deselected, which closes the editor's
@@ -664,7 +670,12 @@ function PaintedFrame({
   });
   useEffect(() => () => settling.current?.(), []);
   const hostApi = useMemo(
-    () => ({ exit: () => exitPreview(), setHost: setPreviewHost, setLocked }),
+    () => ({
+      exit: () => exitPreview(),
+      setHost: setPreviewHost,
+      setLocked,
+      setSeat: setPreviewSeat,
+    }),
     []
   );
   // Plate is back on screen from this commit.
@@ -762,6 +773,7 @@ function PaintedFrame({
                   label={label}
                   material={material}
                   place={previewAt}
+                  seat={previewSeat}
                 />
               </AppErrorBoundary>,
               previewHost
@@ -775,7 +787,13 @@ function PaintedFrame({
               className="shrink-0"
               disabled={!plate}
               iconLeft={
-                previewOpen ? (locked ? 'navigationBack' : 'pencil') : 'view'
+                opening || closing
+                  ? undefined
+                  : previewOpen
+                    ? locked
+                      ? 'navigationBack'
+                      : 'pencil'
+                    : 'view'
               }
               onClick={previewOpen ? closePreview : openPreview}
               // Before the press takes the focus from the note.
@@ -785,6 +803,7 @@ function PaintedFrame({
               size="sm"
               variant="outline"
             >
+              {(opening || closing) && <Spinner className="size-4.5" />}
               <span className="sr-only sm:not-sr-only">
                 {previewOpen
                   ? locked

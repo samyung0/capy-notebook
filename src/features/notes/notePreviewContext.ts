@@ -1,5 +1,6 @@
 import type { PlateEditor } from 'platejs/react';
 import { createContext } from 'react';
+import type { NoteSeat } from '@/features/collaboration/noteSeat';
 
 /** An editor kept mounted behind the header's Preview: its overlays, palette and
  * players stand down (`useEditorHeld`), and its mounts hide under the host. */
@@ -13,6 +14,8 @@ export const NotePreviewHost = createContext<{
   /** Whether the note can be edited at all right now, for the button's word. */
   setLocked: (locked: boolean) => void;
   setHost: (host: HTMLDivElement | null) => void;
+  /** The seat of the editor on screen, which Preview's embeds join inside. */
+  setSeat: (seat: NoteSeat | null) => void;
 } | null>(null);
 
 const valueListeners = new WeakMap<PlateEditor, Set<() => void>>();

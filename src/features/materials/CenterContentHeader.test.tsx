@@ -162,7 +162,7 @@ it('hides a visible item from the button after its name', () => {
   expect(html.indexOf('Deck.pptx')).toBeLessThan(
     html.indexOf(m.content_hide_file())
   );
-  expect(html).toContain('max-sm:hidden');
+  expect(html).toContain('sm:inline-flex');
 });
 
 /** Its owners and editors show it to members from the chip, as from the ⋮

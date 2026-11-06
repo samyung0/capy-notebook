@@ -1724,7 +1724,7 @@ export function NoteEditorCore({
   ]);
 
   // The channel its embedded quizzes and sets join inside (Epo 2026-10-20).
-  const [seat] = useState(() => new NoteSeat());
+  const [seat] = useState(() => new NoteSeat(currentUserId));
   const editor = usePlateEditor({
     // slate-react re-creates the element descriptors of every block in a
     // modified chunk, so the chunk size is the number of blocks a keystroke
@@ -2409,6 +2409,9 @@ export function NoteEditorCore({
     () => previewHost?.setLocked(hostLocked),
     [previewHost, hostLocked]
   );
+  useEffect(() => {
+    if (phase === 'live') previewHost?.setSeat(seat);
+  }, [phase, previewHost, seat]);
   lockedNow.current = locked;
   // Read through refs: these are what changes it here.
   useEffect(() => canApplyNow.current(), [locked, phase]);

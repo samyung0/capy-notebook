@@ -348,3 +348,103 @@ test('Preview and back leaves a chat citation where it finished', async ({
     )
   ).toBeUndefined();
 });
+
+/** The matrix note with its quiz embed's room open in the hidden editor. */
+async function openNearEmbed(page: Page) {
+  await page.goto(`/workspaces/ws_bio?material=${MATRIX}`);
+  await expect(editable(page)).toBeVisible({ timeout: 30_000 });
+  const embed = page
+    .locator('[data-note-mount="live"] .slate-material_ref')
+    .first();
+  await embed.scrollIntoViewIfNeeded();
+  await expect(embed.locator('[data-question-edit]').first()).toBeVisible({
+    timeout: 30_000,
+  });
+}
+
+function watchTokens(page: Page) {
+  const tokens: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.endsWith('/collaboration-token'))
+      tokens.push(request.url());
+  });
+  return tokens;
+}
+
+test("Preview shares an embed's room with the editor: no token or channel of its own", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await openNearEmbed(page);
+  await page.waitForTimeout(1500);
+  const tokens = watchTokens(page);
+  await pressPreview(page);
+  const answer = preview(page)
+    .getByRole('button', { name: /Mitochondria/ })
+    .first();
+  await expect(answer).toBeInViewport({ timeout: 30_000 });
+  await page.waitForTimeout(1500);
+  expect(tokens).toEqual([]);
+  await answer.click();
+  await expect(answer).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('an embed the editor had open still answers in Preview offline', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.addInitScript(() => {
+    const original = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (sessionStorage.getItem('e2e.reads.fail') && url.includes('/api/'))
+        return Promise.reject(new TypeError('Failed to fetch'));
+      return original(input, init);
+    };
+  });
+  await openNearEmbed(page);
+  await page.waitForTimeout(1500);
+  await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    const { setCollaborationReachable } = await import(path);
+    setCollaborationReachable(false);
+    sessionStorage.setItem('e2e.reads.fail', 'true');
+  });
+  await page.context().setOffline(true);
+  await pressPreview(page);
+  await expect(
+    preview(page)
+      .getByRole('button', { name: /Mitochondria/ })
+      .first()
+  ).toBeVisible({ timeout: 30_000 });
+});
+
+test('an embed that was never near opens one room, which the editor then shares', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(`/workspaces/ws_bio?material=${MATRIX}`);
+  await expect(editable(page)).toBeVisible({ timeout: 30_000 });
+  await page.waitForTimeout(1500);
+  const tokens = watchTokens(page);
+  await pressPreview(page);
+  await expect(preview(page).locator('td').first()).toBeAttached();
+  const answer = preview(page)
+    .getByRole('button', { name: /Mitochondria/ })
+    .first();
+  await answer.scrollIntoViewIfNeeded({ timeout: 30_000 });
+  await expect(answer).toBeVisible();
+  await page.waitForTimeout(1500);
+  const quiz = () => tokens.filter((url) => url.includes('matrix_quiz'));
+  expect(quiz()).toHaveLength(1);
+  await pressEdit(page);
+  const embed = page
+    .locator('[data-note-mount="live"] .slate-material_ref')
+    .first();
+  await expect(embed.locator('[data-question-edit]').first()).toBeVisible({
+    timeout: 30_000,
+  });
+  // Its content room is shared; only the keys room is new.
+  await page.waitForTimeout(1500);
+  expect(quiz()).toHaveLength(2);
+});
