@@ -4451,7 +4451,25 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     only the blocks and elements the board's tools make, each block under a parent it
     may have in one tree, and each card's fields within
     the limits its editor keeps (marks, bars, labels, spokes, axis values, formula
-    length). Anything else throws a `BoardLoadError` with a `reason`.
+    length), with a place (`[x,y,w,h]`) on everything but a connector, which is placed
+    by its ends and saved without one until the board has drawn it. Anything else throws
+    a `BoardLoadError` with a `reason`.
+- **Preview (`boardPreview.ts`):** `drawBoardPreview(saved, { width, height })` draws a
+  saved board as an SVG string from its data, for lists, results and marking views
+  (Epo 2026-11-06: what's on it, not every detail). It never loads the editor: it imports
+  yjs and the small modules the check uses (`boardData.ts` holds the cards' stored shape,
+  limits and chart geometry, `boardGeometry.ts` the framing, `graphTicks.ts` the grid
+  step), 12.7 KB minified on its own. Framed as the marking image is (everything, far
+  groups drawn nearer, 8 px round, on white), stacked by index with a note over a stroke
+  at the same index. Strokes are plain lines thinned to one point per preview pixel and
+  never thinner than a pixel; shapes their outline, fill and text; connectors straight
+  from end to end with their arrowheads; text and shape labels a line per line break;
+  plane cards their grid (while lines are 6 px apart), axes and marks; charts their bars
+  or circle and spokes; formulas their LaTeX as text; notes their box and a line per
+  paragraph; pasted images a grey box. No numbers or labels on cards. It checks the board
+  first and throws the same `BoardLoadError`. A plane card with 5 strokes takes 0.4 ms
+  in Node, a 300 KB board (50 strokes of 300 points, 500 marks) 5 ms. Show it as an
+  `<img src="data:image/svg+xml,…">` in a list, so rows don't add SVG nodes to the page.
 - **Formulas:** a `formula` canvas element holding LaTeX, typed in MathLive (loaded on
   first open). AFFiNE keeps LaTeX as HTML in note cards, and its export (html2canvas)
   garbles that, so typing `$$` in a note here stays text; AFFiNE's inline spec stays

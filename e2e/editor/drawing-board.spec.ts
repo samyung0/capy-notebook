@@ -950,3 +950,205 @@ test('a saved board leaves its undo history out, and a teacher opens it read-onl
   });
   expect(error).toBe('BoardLoadError');
 });
+
+test('a preview draws every kind on the board from its data, framed as the image', async ({
+  page,
+}) => {
+  test.slow();
+  await openBoard(page);
+  await page.evaluate(() => {
+    type Model = { deserializedXYWH: number[]; marks: unknown[]; type: string };
+    const root = document.querySelector('affine-edgeless-root') as unknown as {
+      gfx: {
+        layer: { canvasElements: Model[] };
+        surface: { addElement(props: Record<string, unknown>): string };
+      };
+      std: {
+        store: {
+          addBlock(
+            flavour: string,
+            props: Record<string, unknown>,
+            parent: string
+          ): string;
+          getModelById(id: string): {
+            text: { insert(text: string, at: number): void };
+          };
+          root: { id: string };
+          spaceDoc: { getText(name: string): object };
+        };
+      };
+    };
+    const { gfx, std } = root;
+    const { store } = std;
+    // A free Y.Text of the board's own Yjs, as the tools give shapes and text.
+    const YText = store.spaceDoc.getText('preview-spec')
+      .constructor as new () => {
+      insert(at: number, text: string): void;
+    };
+    const text = (value: string) => {
+      const y = new YText();
+      y.insert(0, value);
+      return y;
+    };
+    const add = (props: Record<string, unknown>) =>
+      gfx.surface.addElement(props);
+    const plane = gfx.layer.canvasElements.find(
+      ({ type }) => type === 'plane'
+    ) as Model;
+    plane.marks = [
+      { at: [2, 3], id: 'a', kind: 'dot' },
+      {
+        id: 'b',
+        kind: 'line',
+        points: [
+          [-1, -1],
+          [4, 2],
+        ],
+      },
+      {
+        id: 'c',
+        kind: 'curve',
+        points: [
+          [0, 0],
+          [1, 2],
+          [3, 1],
+          [5, 4],
+        ],
+      },
+    ];
+    const [x, y, w, h] = plane.deserializedXYWH;
+    add({
+      color: '#e03131',
+      lineWidth: 4,
+      points: Array.from({ length: 40 }, (_, i) => [
+        i * 6,
+        30 + Math.sin(i / 4) * 25,
+      ]),
+      type: 'brush',
+      xywh: `[${x},${y + h + 40},250,70]`,
+    });
+    const box = add({
+      fillColor: '#ffe066',
+      filled: true,
+      shapeType: 'rect',
+      strokeColor: '#000000',
+      strokeWidth: 2,
+      text: text('Force'),
+      type: 'shape',
+      xywh: `[${x + w + 60},${y},160,90]`,
+    });
+    const ring = add({
+      fillColor: 'transparent',
+      filled: false,
+      shapeType: 'ellipse',
+      strokeColor: '#1971c2',
+      strokeWidth: 2,
+      type: 'shape',
+      xywh: `[${x + w + 60},${y + 250},160,100]`,
+    });
+    add({
+      source: { id: box, position: [0.5, 1] },
+      stroke: '#000000',
+      strokeWidth: 2,
+      target: { id: ring, position: [0.5, 0] },
+      type: 'connector',
+    });
+    add({
+      color: '#000000',
+      fontSize: 20,
+      text: text('mass = 2 kg\nv = 3 m/s'),
+      textAlign: 'left',
+      type: 'text',
+      xywh: `[${x + w + 60},${y + 400},220,60]`,
+    });
+    add({
+      latex: '\\frac{1}{2}mv^2',
+      type: 'formula',
+      xywh: `[${x + 300},${y + h + 40},200,60]`,
+    });
+    add({
+      axisMax: 10,
+      axisStep: 2,
+      bars: [
+        { fill: '#4dabf7', id: '1', label: 'A', value: 4 },
+        { fill: '#ff8787', id: '2', label: 'B', value: 7 },
+      ],
+      kind: 'bar',
+      labels: [],
+      spokes: [],
+      type: 'chart',
+      xywh: `[${x},${y + h + 160},360,240]`,
+    });
+    add({
+      axisMax: 10,
+      axisStep: 2,
+      bars: [],
+      kind: 'pie',
+      labels: [],
+      spokes: [0, 120, 200],
+      type: 'chart',
+      xywh: `[${x + 400},${y + h + 160},240,240]`,
+    });
+    const note = store.addBlock(
+      'affine:note',
+      { xywh: `[${x + 520},${y + 40},260,90]` },
+      store.root.id
+    );
+    const paragraph = store.addBlock('affine:paragraph', {}, note);
+    store.getModelById(paragraph).text.insert('Energy is kept', 0);
+  });
+  const doc = await save(page);
+  const preview = (await page.evaluate(
+    ([saved]) =>
+      (
+        window as unknown as {
+          __preview(
+            saved: string,
+            size: { height: number; width: number }
+          ): string;
+        }
+      ).__preview(saved, { height: 400, width: 600 }),
+    [doc]
+  )) as string;
+  // The note shares its place in the stack with the card under it, and goes over it.
+  expect(preview.indexOf('Energy is kept')).toBeGreaterThan(
+    preview.indexOf('stroke="#dededb"')
+  );
+  for (const part of [
+    'stroke="#e03131"', // the brush
+    'fill="#ffe066"', // the filled box
+    '<ellipse',
+    'Force',
+    'mass = 2 kg',
+    '\\frac{1}{2}mv^2',
+    'fill="#4dabf7"', // a bar
+    '<circle', // the pie
+    'Energy is kept',
+  ])
+    expect(preview).toContain(part);
+  // Well formed: a list shows it as an image.
+  const drawn = await page.evaluate(async (svg) => {
+    const image = new Image();
+    image.src = `data:image/svg+xml,${encodeURIComponent(svg)}`;
+    await image.decode();
+    return [image.width, image.height];
+  }, preview);
+  expect(drawn).toEqual([600, 400]);
+  expect(
+    await page.evaluate(
+      ([saved]) => {
+        try {
+          (
+            window as unknown as {
+              __preview(saved: string, size: object): string;
+            }
+          ).__preview(saved, { height: 10, width: 10 });
+        } catch (error) {
+          return (error as Error).name;
+        }
+        return 'drawn';
+      },
+      ['AAAA']
+    )
+  ).toBe('BoardLoadError');
+});

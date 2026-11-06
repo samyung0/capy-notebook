@@ -7,21 +7,23 @@ import { html, nothing, render } from 'lit';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import { m } from '@/i18n';
 import {
+  type ChartElementModel,
+  drawChart,
+  LABEL_REACH,
+  setChartEditor,
+} from './boardChart';
+import {
   AXIS_MAX,
   BARS_MAX,
   barPlot,
   type ChartBar,
-  type ChartElementModel,
-  drawChart,
   LABEL_LENGTH_MAX,
-  LABEL_REACH,
   LABELS_MAX,
   type Pads,
   type PieLabel,
   pieCircle,
   SPOKES_MAX,
-  setChartEditor,
-} from './boardChart';
+} from './boardData';
 import { drawChip, openBoardEditor } from './boardEditorShell';
 import { clockAngle, snapTo, type Vec } from './boardGeometry';
 import { fillRow, mathsIcon } from './boardTools';

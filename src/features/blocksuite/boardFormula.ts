@@ -24,10 +24,9 @@ import katex from 'katex';
 import { html, render } from 'lit';
 import { inertTex } from '@/features/materials/inertTex';
 import { getLocale, m } from '@/i18n';
+import { LATEX_MAX } from './boardData';
 import { setFormulaOpener } from './boardTools';
 
-/** Longest formula a member can type; the renderer draws nothing past it. */
-export const LATEX_MAX = 2000;
 const FONT_SIZE = 24;
 /** Bitmap pixels per board pixel, so a formula stays sharp when zoomed in. */
 const SHARPNESS = 3;
