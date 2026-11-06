@@ -50,9 +50,11 @@ import { InlinePresetStoreExtension } from '@blocksuite/affine/inlines/preset/st
 import { InlinePresetViewExtension } from '@blocksuite/affine/inlines/preset/view';
 import { ReferenceStoreExtension } from '@blocksuite/affine/inlines/reference/store';
 import { ReferenceViewExtension } from '@blocksuite/affine/inlines/reference/view';
+import { ImageBlockModel } from '@blocksuite/affine/model';
 import { FeatureFlagService } from '@blocksuite/affine/shared/services';
 import { BlockStdScope } from '@blocksuite/affine/std';
 import {
+  type GfxBlockElementModel,
   type GfxController,
   GfxControllerIdentifier,
 } from '@blocksuite/affine/std/gfx';
@@ -67,24 +69,29 @@ import { ToolbarViewExtension } from '@blocksuite/affine/widgets/toolbar/view';
 import { ViewportOverlayViewExtension } from '@blocksuite/affine/widgets/viewport-overlay/view';
 import { Redo03Icon, Undo03Icon } from '@hugeicons/core-free-icons';
 import { html, render } from 'lit';
-import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import * as Y from 'yjs';
 import { m } from '@/i18n';
 import { fromBase64, toBase64 } from './base64';
+import { chartExtensions } from './boardChart';
 import {
+  forgetFormulas,
   formulaExtensions,
   formulasDrawn,
   mountSymbolRow,
 } from './boardFormula';
 import { addPlane, planeExtensions, planeMarks } from './boardPlane';
-import { closePlaneEditor } from './boardPlaneEditor';
+import './boardChartEditor';
+import { closeBoardEditor } from './boardEditorShell';
+import './boardPlaneEditor';
 import {
-  mathsTool,
+  boardToolbar,
+  hugeIcon,
   noLatexMarkdown,
   outlineNewShapes,
   StampTool,
   setBoardPreview,
   shapeButtonTool,
+  sheetTools,
 } from './boardTools';
 
 const stores = new StoreExtensionManager([
@@ -146,26 +153,6 @@ class NoFrameOverlay extends Overlay {
   override render() {}
 }
 
-/** A Hugeicons icon's data as an SVG, for the board's Lit templates. */
-function hugeIcon(icon: unknown) {
-  const data = icon as readonly (readonly [string, Record<string, string>])[];
-  const body = data
-    .map(
-      ([tag, attributes]) =>
-        `<${tag} ${Object.entries(attributes)
-          .filter(([name]) => name !== 'key')
-          .map(
-            ([name, value]) =>
-              `${name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}="${value}"`
-          )
-          .join(' ')}/>`
-    )
-    .join('');
-  return unsafeSVG(
-    `<svg fill="none" height="24" viewBox="0 0 24 24" width="24">${body}</svg>`
-  );
-}
-
 const surfaceOf = (gfx: GfxController) =>
   gfx.surfaceComponent as SurfaceBlockComponent | null;
 
@@ -174,8 +161,8 @@ const FIRST_PLANE = { h: 520, ppu: 41, w: 820 };
 /** The marking image's longest side. */
 const IMAGE_SIDE_MAX = 2400;
 
-/** BlockSuite's edgeless editor on an in-memory board over a fixed sheet, opened
- * from a saved answer when there is one. */
+/** BlockSuite's edgeless editor on an in-memory board, opened from a saved answer when
+ * there is one. */
 export function mountDrawingBoard(
   container: HTMLElement,
   options: { onChange?: () => void; saved?: string } = {}
@@ -201,12 +188,14 @@ export function mountDrawingBoard(
     extensions: [
       ...views.get('edgeless'),
       shapeButtonTool,
-      mathsTool,
+      ...sheetTools,
       StampTool,
       ...formulaExtensions,
       ...planeExtensions,
+      ...chartExtensions,
       noLatexMarkdown,
       NoFrameOverlay,
+      ...boardToolbar,
     ],
     store,
   });
@@ -304,9 +293,20 @@ export function mountDrawingBoard(
     place();
   });
 
+  /** A pasted image from its file; a note card by html2canvas, as it's DOM. */
+  const blockImage = async (block: GfxBlockElementModel) => {
+    if (block instanceof ImageBlockModel) {
+      const { sourceId } = block.props;
+      const blob = sourceId && (await store.blobSync.get(sourceId));
+      return blob ? createImageBitmap(blob) : null;
+    }
+    const view = std.view.getBlock(block.id);
+    return view ? std.get(ExportManager)._html2canvas(view) : null;
+  };
+
   // An open plane writes its view on closing, and nothing else is in progress.
   const finishPlot = () => {
-    closePlaneEditor(gfx);
+    closeBoardEditor(gfx);
     gfx.tool.setTool(DefaultTool);
   };
 
@@ -340,36 +340,38 @@ export function mountDrawingBoard(
       if (!ctx) return null;
       ctx.fillStyle = '#fff';
       ctx.fillRect(0, 0, output.width, output.height);
-      const blocks = gfx.getElementsByBound(bound, { type: 'block' });
-      const elements = gfx.getElementsByBound(bound, { type: 'canvas' });
-      // Note cards are DOM, so BlockSuite's export draws them with the strokes, on
-      // a canvas with a 50 px margin at the device's scale.
-      if (blocks.length) {
-        const drawn = await std
-          .get(ExportManager)
-          .edgelessToCanvas(renderer, bound, gfx, blocks, elements);
-        if (!drawn) return null;
-        const device = window.devicePixelRatio || 1;
-        ctx.drawImage(
-          drawn,
-          50 * device,
-          50 * device,
-          bound.w * device,
-          bound.h * device,
-          0,
-          0,
-          output.width,
-          output.height
-        );
-        return output.toDataURL('image/png');
+      // Layer by layer, so what's covered on the screen is covered here. BlockSuite's
+      // export draws every note under every stroke, at the device's scale.
+      for (const layer of gfx.layer.layers) {
+        if (layer.type === 'canvas') {
+          ctx.drawImage(
+            renderer.getCanvasByBound(
+              bound,
+              layer.elements,
+              undefined,
+              false,
+              false,
+              scale
+            ),
+            0,
+            0,
+            output.width,
+            output.height
+          );
+          continue;
+        }
+        for (const block of layer.elements) {
+          const { h, w, x, y } = Bound.deserialize(block.xywh);
+          const place = [
+            (x - bound.x) * scale,
+            (y - bound.y) * scale,
+            w * scale,
+            h * scale,
+          ] as const;
+          const image = await blockImage(block);
+          if (image) ctx.drawImage(image, ...place);
+        }
       }
-      ctx.drawImage(
-        renderer.getCanvasByBound(bound, elements),
-        0,
-        0,
-        output.width,
-        output.height
-      );
       return output.toDataURL('image/png');
     },
     unmount: () => {
@@ -378,7 +380,8 @@ export function mountDrawingBoard(
       historyUpdates.unsubscribe();
       if (onChange) store.spaceDoc.off('update', onChange);
       symbols.unmount();
-      closePlaneEditor(gfx);
+      closeBoardEditor(gfx);
+      forgetFormulas();
       render(null, history);
       render(null, container);
     },

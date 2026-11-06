@@ -16,8 +16,8 @@ function addText(gfx: GfxController, event: PointerEventState) {
   const [x, y] = gfx.viewport.toModelCoord(event.x, event.y);
   const selected = gfx.getElementByPoint(x, y);
 
-  // Capy (local change 17): a label can go on top of a plane card.
-  if (!selected || selected.type === 'plane') {
+  // Capy (local change 17): a label can go on top of a plane or chart card.
+  if (!selected || selected.type === 'plane' || selected.type === 'chart') {
     const [modelX, modelY] = gfx.viewport.toModelCoord(event.x, event.y);
 
     if (!gfx.surface) {
