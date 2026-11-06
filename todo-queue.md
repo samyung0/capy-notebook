@@ -7,7 +7,7 @@ plan that holds its detail. Change this file whenever something starts, lands or
 
 Windows lands and deploys these, one landing per deploy; Mac sessions review and push feature
 branches (Epo, 2026-11-06, after the account switch). Main is 6159c0f25: ribbon (protocol 27), the
-quiz Undo fix 779c114fa, canvas-enrich to 2b1fc744f. Waiting on Windows: `claude/quiz-image-back` 43b17c1ea.
+quiz Undo fix 779c114fa, canvas-enrich to 2b1fc744f. Waiting on Windows: `claude/quiz-image-back` 43b17c1ea and `claude/board-connector-load` 236859139.
 
 | Item | Where it is | Waiting on |
 |---|---|---|
@@ -22,6 +22,7 @@ quiz Undo fix 779c114fa, canvas-enrich to 2b1fc744f. Waiting on Windows: `claude
 | Quiz's one layout in view, edit, study and assignments (A, S1, Epo 2026-11-06), add button aligned, image links shared in memory (Q678 A), number strip and no header when taking an assignment on a phone (Q679 B) | On `main` (369d457f6) | Done |
 | Quiz Undo reverting the answer key too (empty steps of the other document) | On `main` 6159c0f25 (779c114fa) | Done |
 | UAT note journey's `quizImageOnPick` (note.spec.ts:167): Back from a block's editor lost its toolbar to the dialog's focus trap, near-constant after the quiz layout | `claude/quiz-image-back` 43b17c1ea, 8 of 8 mock repro runs pass | Windows' merge, UAT run |
+| A saved board with a connector or group couldn't reopen (`checkSavedBoard` wanted a stored place, which BlockSuite never stores for either) | `claude/board-connector-load` 236859139, from main e37508bb8; drawing-board spec 17 passed | Windows' merge |
 | Vendored BlockSuite, dev routes only | On `main` c69c01992 | Done |
 | Bench reports main already links to (copy-first, figure boxes, layout models and capacity, DeepSeek grading, Office room memory), and the layout service's capacity settings (`cpu_shares: 128`, spinning off) | On `main` (9b95291a0); past-paper fixtures and run records stay on the bench branches | The layout project on the ingest host is rebuilt by hand (runbook 7.6) |
 
