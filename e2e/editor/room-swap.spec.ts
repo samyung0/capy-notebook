@@ -621,12 +621,13 @@ test('leaving a note during its build opens the next one cleanly', async ({
     .getByRole('link', { exact: true, name: EDITOR_NOTE.title })
     .click();
   await holdRooms(page, false);
-  // The other note opens in View; the building editor went with the first.
-  await expect(page.getByTestId('material-preview')).toContainText(
+  // The other note opens live (its token is asked for as it opens, Q618); the
+  // building editor went with the first.
+  await expect(page.locator('[data-note-mount="live"]')).toContainText(
     EDITOR_NOTE.firstParagraph,
     { timeout: 30_000 }
   );
-  await expect(page.locator('[data-note-mount]')).toHaveCount(0);
+  await expect(page.locator('[data-note-mount]')).toHaveCount(1);
   expect(errors).toEqual([]);
 });
 
