@@ -7,7 +7,7 @@ plan that holds its detail. Change this file whenever something starts, lands or
 
 Windows lands and deploys these, one landing per deploy; Mac sessions review and push feature
 branches (Epo, 2026-11-06, after the account switch). Waiting on Windows: `claude/quiz-shared-layout`
-369d457f6 and `claude/canvas-enrich-18ed75` c95fa44cf.
+369d457f6, `claude/canvas-enrich-18ed75` c95fa44cf and `claude/bench-reports` 9b95291a0.
 
 | Item | Where it is | Waiting on |
 |---|---|---|
@@ -21,6 +21,7 @@ branches (Epo, 2026-11-06, after the account switch). Waiting on Windows: `claud
 | One page gutter, no weekly count on Learning, note Preview over the mounted editor (Q669 A) with one room per embed (Q676 A), Hide file button, whole-row hover on study tables | On `main` c69c01992 | Windows' UAT run, one production measure of a near-limit Preview |
 | Quiz's one layout in view, edit, study and assignments (A, S1, Epo 2026-11-06), add button aligned, image links shared in memory (Q678 A), number strip and no header when taking an assignment on a phone (Q679 B) | `claude/quiz-shared-layout` 369d457f6 | Windows' reread, then a train |
 | Vendored BlockSuite, dev routes only | On `main` c69c01992 | Done |
+| Bench reports main already links to (copy-first, figure boxes, layout models and capacity, DeepSeek grading, Office room memory), and the layout service's capacity settings (`cpu_shares: 128`, spinning off) | `claude/bench-reports` 9b95291a0; past-paper fixtures and run records stay on the bench branches | Windows' review; the layout project on the ingest host is rebuilt by hand (runbook 7.6) |
 
 ## Next, in order (Epo, 2026-11-06)
 
