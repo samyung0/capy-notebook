@@ -45,10 +45,10 @@ committed reports.
 
 `pnpm bench:canvas` is the drawing board's spec (`editor/scripts/board.canvas.ts`):
 a production build without MSW whose `/dev/drawing` route is kept by
-`VITE_BENCH_ROUTES=true` (deploys pin it off), a cold open of an empty and a
-generated large board, then typing, a pen stroke, pans and zooms on the large one,
-each input to its painted frame, at 4x CPU; the bytes each open downloads are
-report-only. It runs as the `canvas` job of the `Performance` workflow, on dispatch
+`VITE_BENCH_ROUTES=true` (deploys pin it off). It gates a blank board's cold open
+at 1x and a typical board's (a drawn answer) cold open, typing, pen stroke, pans
+and zooms at 4x CPU, each input to its painted frame; warm opens, a large board
+and the bytes each open downloads are report-only. It runs as the `canvas` job of the `Performance` workflow, on dispatch
 only. Details: [editor-perf.md](../openwiki/editor-perf.md#drawing-board-pnpm-benchcanvas).
 
 `bench/editor/scripts/open-paint.mjs` measures a note's one way of opening on a

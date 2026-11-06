@@ -1,7 +1,7 @@
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { defineConfig, devices } from "@playwright/test";
-import "../../../e2e/i18n/compile";
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { defineConfig, devices } from '@playwright/test';
+import '../../../e2e/i18n/compile';
 
 /**
  * The drawing board's harness. Run with: pnpm bench:canvas
@@ -17,26 +17,26 @@ import "../../../e2e/i18n/compile";
  */
 
 const perfDir = path.dirname(fileURLToPath(import.meta.url));
-const root = path.resolve(perfDir, "..", "..", "..");
+const root = path.resolve(perfDir, '..', '..', '..');
 const port = Number(process.env.PERF_CANVAS_PORT ?? 4520);
 // board.canvas.ts reads the chunks' bytes from here.
-const outDir = path.join(perfDir, "..", ".results", "canvas-dist");
+const outDir = path.join(perfDir, '..', '.results', 'canvas-dist');
 
 export default defineConfig({
   fullyParallel: false,
   projects: [
-    { name: "chromium-canvas", use: { ...devices["Desktop Chrome"] } },
+    { name: 'chromium-canvas', use: { ...devices['Desktop Chrome'] } },
   ],
-  reporter: [["list"]],
+  reporter: [['list']],
   retries: 0,
   testDir: perfDir,
-  testMatch: "**/*.canvas.ts",
+  testMatch: '**/*.canvas.ts',
   timeout: 1_200_000,
   use: {
     baseURL: `http://127.0.0.1:${port}`,
-    screenshot: "off",
-    trace: "off",
-    video: "off",
+    screenshot: 'off',
+    trace: 'off',
+    video: 'off',
   },
   webServer: {
     // The heap flag is the one `pnpm build` uses. One build, then its preview,
@@ -45,10 +45,10 @@ export default defineConfig({
     cwd: root,
     env: {
       ...process.env,
-      NODE_ENV: "production",
-      VITE_BENCH_ROUTES: "true",
-      VITE_CLERK_PUBLISHABLE_KEY: "",
-      VITE_USE_MSW: "false",
+      NODE_ENV: 'production',
+      VITE_BENCH_ROUTES: 'true',
+      VITE_CLERK_PUBLISHABLE_KEY: '',
+      VITE_USE_MSW: 'false',
     },
     reuseExistingServer: false,
     timeout: 1_200_000,

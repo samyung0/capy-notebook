@@ -293,31 +293,39 @@ The route is in that build only because the bench sets `VITE_BENCH_ROUTES=true`
 plugin for it); `scripts/env/config.py` pins it to `false` for every deploy, and
 `scripts/env/test_config.py` checks that. The build takes a few minutes.
 
-The large board is made in the page through BlockSuite's API and saved, so it
-always matches the board's current format: 200 pen strokes of 30 points, 30
-shapes, 10 formulas and 30 note cards of three paragraphs over the plane card.
-Everything runs at `CPU_RATE` (4x by default):
+Its boards are made in the page through BlockSuite's API and saved, so they
+always match the board's current format (Q686 A):
 
-- **Cold open:** three fresh contexts per board, an empty board (the plane card
-  alone) and the large one; navigation to the first task after the frame that
-  holds every element, the median of the three. It also reports the mount's
-  synchronous cost, when the main thread settles (the last long animation frame
-  within 5 s) and the blocking time in that window.
-- **On the large board:** typing 30 keys in a note card (100 ms apart), a pen
-  stroke of 40 moves (32 ms apart), 20 wheel pans and 20 Ctrl+wheel zooms
-  (100 ms apart). Each input is timed from its first event to the first task
-  after its next frame, as Office times keys; the p50, p90 and maximum are
-  reported.
-- **Bytes:** the JS and CSS each open requested, raw and gzipped from the build,
-  with the five largest chunks. Report-only.
+- **Blank:** the plane card alone, as a new answer opens.
+- **Typical:** a drawn answer on the plane card: 40 pen strokes of 30 points,
+  3 shapes, 2 formulas and 2 note cards of two paragraphs below it.
+- **Large:** far past an answer: 200 strokes, 30 shapes, 10 formulas and 30
+  note cards of three paragraphs over a 2400 by 1600 area.
 
-It fails on a page error, an input with no painted frame, typing that doesn't
-reach the card, a stroke that draws no brush, or a missed budget. The budgets
-are 1.3x the medians in `MEDIANS`, Office's rule (`budgetOf`, rounded up to
-5 ms below a second and 50 ms above, inputs no lower than 30 ms), on the cold
-opens and the four inputs' p90. `MEDIANS` is null until three runs of the
-`canvas` job are recorded; until then the bench reports `budget: "uncalibrated"`
-and gates nothing.
+What it measures:
+
+- **Opens:** three fresh contexts per board, each a cold open and then a warm
+  one on the same page (the build's files cached); navigation to the first
+  task after the frame that holds every element, the median of the three. The
+  blank board opens at 1x, the others at `CPU_RATE` (4x by default). It also
+  reports the mount's synchronous cost, when the main thread settles (the last
+  long animation frame within 5 s) and the blocking time in that window.
+- **Inputs, on the typical and the large board at `CPU_RATE`:** typing 30 keys
+  in a note card (100 ms apart), a pen stroke of 40 moves (32 ms apart), 20
+  wheel pans and 20 Ctrl+wheel zooms (100 ms apart). Each input is timed from
+  its first event to the first task after its next frame, as Office times
+  keys; the p50, p90 and maximum are reported.
+- **Bytes:** the JS and CSS each cold open requested, raw and gzipped from the
+  build, with the five largest chunks.
+
+Gated: the blank and typical cold opens and the typical board's four input
+p90s. Reported only: warm opens, the large board and the bytes. It fails on a
+page error, an input with no painted frame, typing that doesn't reach the
+card, a stroke that draws no brush, or a missed budget. The budgets are 1.3x
+the medians in `MEDIANS`, Office's rule (`budgetOf`, rounded up to 5 ms below
+a second and 50 ms above, inputs no lower than 30 ms). `MEDIANS` is null until
+three runs of the `canvas` job are recorded; until then the bench reports
+`budget: "uncalibrated"` and gates nothing.
 
 ## Formula parity audit (`pnpm bench:formula`)
 

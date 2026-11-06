@@ -1194,7 +1194,7 @@ Drawing board (`pnpm bench:canvas`, production build, [editor-perf.md](editor-pe
 
 | File | About |
 | --- | --- |
-| [`bench/editor/scripts/board.canvas.ts`](../bench/editor/scripts/board.canvas.ts) | One case. Cold open of an empty and a generated large board (strokes, shapes, formulas, note cards), each the median of three fresh contexts; on the large board typing in a note card, a pen stroke, wheel pans and Ctrl+wheel zooms, each input to its painted frame; the bytes each open downloads (report-only). All at 4x CPU; budgets 1.3x the medians of three `canvas` job runs, uncalibrated until those are recorded. |
+| [`bench/editor/scripts/board.canvas.ts`](../bench/editor/scripts/board.canvas.ts) | One case. Generated blank, typical (a drawn answer) and large boards; cold and warm opens of each, the median of three fresh contexts (blank at 1x, the others at 4x CPU); on the typical and the large board typing in a note card, a pen stroke, wheel pans and Ctrl+wheel zooms at 4x, each input to its painted frame; the bytes each open downloads. Gated: the blank and typical cold opens and the typical inputs, at 1.3x the medians of three `canvas` job runs, uncalibrated until those are recorded; the rest report-only. |
 
 Collaboration stress (`pnpm bench:stress`, Docker, [editor-perf.md](editor-perf.md#collaboration-stress-pnpm-benchstress)):
 
