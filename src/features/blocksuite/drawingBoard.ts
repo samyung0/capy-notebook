@@ -83,7 +83,7 @@ import {
 import { addPlane, planeExtensions, planeMarks } from './boardPlane';
 import './boardChartEditor';
 import { closeBoardEditor } from './boardEditorShell';
-import { BoardLoadError, checkSavedBoard } from './boardLoad';
+import { checkSavedBoard } from './boardLoad';
 import './boardPlaneEditor';
 import {
   boardToolbar,
@@ -170,7 +170,7 @@ class NoFrameOverlay extends Overlay {
 const surfaceOf = (gfx: GfxController) =>
   gfx.surfaceComponent as SurfaceBlockComponent | null;
 
-/** The card a question with axes starts with, and the room a background gets. */
+/** The plane card the dev pages start with. */
 const FIRST_PLANE = { h: 520, ppu: 41, w: 820 };
 /** The marking image's longest side, and its bytes after the shared compressor. */
 const IMAGE_SIDE_MAX = 2400;
@@ -180,19 +180,11 @@ const IMAGE_BYTES_MAX = 300 * 1024;
  * (Epo 2026-11-06). The board itself is left as it is. */
 const FAR_GAP = 400;
 
-/** What the question puts under the answer (Epo 2026-11-03), fixed: no tool moves,
- * resizes or erases it. A figure is an image the browser can fetch. */
-export type BoardBackground =
-  | { kind: 'blank' }
-  | { kind: 'grid' }
-  | { kind: 'axes'; x: [number, number]; y: [number, number] }
-  | { kind: 'figure'; src: string };
-
 export type DrawingBoardOptions = {
-  /** For a fresh board; a saved one keeps the one it has. A figure is fetched again on
-   * every open, as its file isn't in the saved board. Without it, a movable plane. */
-  background?: BoardBackground;
   onChange?: () => void;
+  /** A fresh board starts with a plane card: the dev pages. Every answer starts on the
+   * same plain board (Epo 2026-11-06). */
+  plane?: boolean;
   /** Pan and zoom only: no tools, nothing opens for editing. */
   readOnly?: boolean;
   /** `save()`'s `doc`. A board that doesn't check out throws a BoardLoadError. */
@@ -201,7 +193,7 @@ export type DrawingBoardOptions = {
 
 export { BoardLoadError } from './boardLoad';
 
-/** An image file drawn as the page draws it: an SVG too, which createImageBitmap
+/** A pasted image drawn as the page draws it: an SVG too, which createImageBitmap
  * can't decode from a file. */
 async function decodeImage(file: Blob) {
   const url = URL.createObjectURL(file);
@@ -269,16 +261,7 @@ export function mountDrawingBoard(
 ) {
   const saved = options.saved ? fromBase64(options.saved) : null;
   if (saved) checkSavedBoard(saved);
-  const { background, readOnly = false } = options;
-  if (
-    background?.kind === 'axes' &&
-    !(
-      background.x[0] < background.x[1] &&
-      background.y[0] < background.y[1] &&
-      [...background.x, ...background.y].every(Number.isFinite)
-    )
-  )
-    throw new BoardLoadError('axes ranges');
+  const { readOnly = false } = options;
   const workspace = new TestWorkspace();
   workspace.storeExtensions = stores.get('store');
   workspace.meta.initialize();
@@ -396,76 +379,20 @@ export function mountDrawingBoard(
       return;
     }
     background.prepend(layer);
-    if (!saved) addBackground();
-    fitView();
-    place();
-  });
-  const fitView = () =>
+    if (options.plane && !saved) {
+      addPlane(
+        gfx,
+        new Bound(0, 0, FIRST_PLANE.w, FIRST_PLANE.h),
+        FIRST_PLANE.ppu
+      );
+      store.resetHistory();
+    }
     gfx.viewport.setViewportByBound(
       everything(),
       gfx.viewport.width < PHONE_WIDTH ? [64, 12, 96, 12] : [90, 40, 130, 40]
     );
-
-  /** A fresh board's background, out of the undo history. */
-  const addBackground = () => {
-    const sheet = new Bound(0, 0, FIRST_PLANE.w, FIRST_PLANE.h);
-    if (!background) addPlane(gfx, sheet, FIRST_PLANE.ppu);
-    else if (background.kind === 'grid')
-      addPlane(gfx, sheet, FIRST_PLANE.ppu, { axes: false, locked: true });
-    else if (background.kind === 'axes') {
-      const [left, right] = background.x;
-      const [bottom, top] = background.y;
-      const ppu = Math.min(
-        FIRST_PLANE.w / (right - left),
-        FIRST_PLANE.h / (top - bottom)
-      );
-      addPlane(
-        gfx,
-        new Bound(0, 0, (right - left) * ppu, (top - bottom) * ppu),
-        ppu,
-        { locked: true, view: { x0: left, y0: top } }
-      );
-    }
-    store.resetHistory();
-  };
-
-  /** A figure's file, fetched on every open: the saved board holds only its key, the
-   * file's hash. A fresh board places it at its own size, at most the sheet's. */
-  const ready = (async () => {
-    if (background?.kind !== 'figure') return;
-    let file: Blob;
-    let size: { height: number; width: number };
-    try {
-      const response = await fetch(background.src);
-      if (!response.ok) throw new Error(`figure: ${response.status}`);
-      file = await response.blob();
-      const image = await decodeImage(file);
-      size = { height: image.naturalHeight, width: image.naturalWidth };
-    } catch (cause) {
-      throw new BoardLoadError('figure', { cause });
-    }
-    const sourceId = await store.blobSync.set(file);
-    if (saved) return;
-    const { height, width } = size;
-    const scale = Math.min(1, FIRST_PLANE.w / width, FIRST_PLANE.h / height);
-    const surface = store.getModelsByFlavour('affine:surface')[0];
-    store.withoutTransact(() =>
-      store.addBlock(
-        'affine:image',
-        {
-          height,
-          lockedBySelf: true,
-          sourceId,
-          width,
-          xywh: new Bound(0, 0, width * scale, height * scale).serialize(),
-        },
-        surface
-      )
-    );
-    store.resetHistory();
-    fitView();
-  })();
-  ready.catch(() => undefined);
+    place();
+  });
 
   /** A pasted image from its file; a note card by html2canvas, as it's DOM. */
   const blockImage = async (block: GfxBlockElementModel) => {
@@ -485,9 +412,6 @@ export function mountDrawingBoard(
   };
 
   return {
-    /** Settles once a figure is on the board; rejects with a BoardLoadError when its
-     * file can't be fetched. */
-    ready,
     /** The board to store, with no undo history: a fresh document keeps only what's
      * on the board (200 plane clicks were 606 KB live, 7.5 KB this way). */
     save: () => {
@@ -511,7 +435,6 @@ export function mountDrawingBoard(
      * Something dragged far away is drawn nearer (FAR_GAP). */
     toImage: async () => {
       if (!readOnly) finishPlot();
-      await ready.catch(() => undefined);
       await formulasDrawn(gfx);
       const renderer = surfaceOf(gfx)?.renderer;
       if (!(renderer instanceof CanvasRenderer))

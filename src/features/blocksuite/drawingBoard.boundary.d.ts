@@ -1,13 +1,7 @@
 // What the app's tsconfig sees of ./drawingBoard.ts (see tsconfig.json paths).
-export type BoardBackground =
-  | { kind: 'blank' }
-  | { kind: 'grid' }
-  | { kind: 'axes'; x: [number, number]; y: [number, number] }
-  | { kind: 'figure'; src: string };
-
 export type DrawingBoardOptions = {
-  background?: BoardBackground;
   onChange?: () => void;
+  plane?: boolean;
   readOnly?: boolean;
   saved?: string;
 };
@@ -20,7 +14,6 @@ export function mountDrawingBoard(
   container: HTMLElement,
   options?: DrawingBoardOptions
 ): {
-  ready: Promise<void>;
   save: () => { bytes: number; doc: string };
   snapshot: () => string;
   stats: () => {
