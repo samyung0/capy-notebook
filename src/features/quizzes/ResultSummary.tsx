@@ -11,15 +11,23 @@ export interface QuestionResult {
   awarded: number | null;
   id: string;
   marks: number;
+  /** A part of it is Not marked: not wrong, whatever else it earned (Epo
+   * 2026-11-06, Q664 B). */
+  notMarked?: boolean;
   number: number;
   /** The question's first part's answer type, which groups it by type; a
    * review's flashcards have none. */
   type?: QuestionType;
 }
 
-export type Outcome = 'full' | 'partial' | 'wrong' | 'none';
+export type Outcome = 'full' | 'partial' | 'wrong' | 'notMarked' | 'none';
 
-export function outcomeOf({ awarded, marks }: QuestionResult): Outcome {
+export function outcomeOf({
+  awarded,
+  marks,
+  notMarked,
+}: QuestionResult): Outcome {
+  if (notMarked) return 'notMarked';
   if (awarded === null) return 'none';
   if (marks > 0 && awarded >= marks) return 'full';
   return awarded > 0 ? 'partial' : 'wrong';
@@ -28,6 +36,7 @@ export function outcomeOf({ awarded, marks }: QuestionResult): Outcome {
 export const OUTCOME_FILL: Record<Outcome, string> = {
   full: 'bg-solid-success',
   none: 'bg-surface-hover-bg',
+  notMarked: 'bg-surface-hover-bg',
   partial: 'bg-solid-warning',
   wrong: 'bg-solid-error',
 };
@@ -36,6 +45,7 @@ export const squareLabel = (outcome: Outcome, number: number) =>
   ({
     full: m.quiz_question_right,
     none: m.quiz_question_unanswered,
+    notMarked: m.quiz_question_not_marked,
     partial: m.quiz_question_partial,
     wrong: m.quiz_question_wrong,
   })[outcome]({ number });
@@ -82,13 +92,15 @@ export function ResultScore({
 const LEGEND: Record<Outcome, (count: number) => string> = {
   full: (count) => m.result_full({ count }),
   none: (count) => m.result_unanswered({ count }),
+  notMarked: (count) => m.result_not_marked({ count }),
   partial: (count) => m.result_partial({ count }),
   wrong: (count) => m.result_wrong({ count }),
 };
 
 /**
  * One numbered square per question, green for full marks, amber for partial,
- * red for none (blank answers are wrong) and grey without an answer; with
+ * red for none (blank answers are wrong) and grey without an answer or with a
+ * part Not marked; with
  * `onOpen` each square opens its question. A legend counts each colour;
  * `legend` rewords it (a review counts card ratings and skips too).
  */
@@ -101,11 +113,11 @@ export function ResultSquares({
   onOpen?: (id: string) => void;
   legend?: Record<Outcome, (count: number) => string>;
 }) {
-  const counts = { full: 0, none: 0, partial: 0, wrong: 0 };
+  const counts = { full: 0, none: 0, notMarked: 0, partial: 0, wrong: 0 };
   for (const result of results) counts[outcomeOf(result)]++;
-  const legend = (['full', 'partial', 'wrong', 'none'] as const).map(
-    (outcome) => [outcome, wording[outcome](counts[outcome])] as const
-  );
+  const legend = (
+    ['full', 'partial', 'wrong', 'notMarked', 'none'] as const
+  ).map((outcome) => [outcome, wording[outcome](counts[outcome])] as const);
   return (
     <div className="py-2">
       <ol
@@ -118,7 +130,8 @@ export function ResultSquares({
           const className = cn(
             'grid size-6.5 place-items-center rounded-md font-bold text-[#1d2330] text-[0.72rem]',
             OUTCOME_FILL[outcome],
-            outcome === 'none' && 'text-fg-secondary'
+            (outcome === 'none' || outcome === 'notMarked') &&
+              'text-fg-secondary'
           );
           return (
             <li key={result.id}>
@@ -194,9 +207,14 @@ export function ResultsByType({ results }: { results: QuestionResult[] }) {
             </ol>
             <span className="col-start-2 row-start-1 text-right text-fg-secondary text-sm sm:col-start-auto sm:row-start-auto">
               {m.result_type_marks({
-                awarded: formatPoints(
-                  rows.reduce((sum, result) => sum + (result.awarded ?? 0), 0)
-                ),
+                awarded: rows.every((result) => result.notMarked)
+                  ? '—'
+                  : formatPoints(
+                      rows.reduce(
+                        (sum, result) => sum + (result.awarded ?? 0),
+                        0
+                      )
+                    ),
                 max: formatPoints(
                   rows.reduce((sum, result) => sum + result.marks, 0)
                 ),
@@ -226,7 +244,7 @@ export function ResultNumber({
       ? 'size-5.5 cursor-pointer rounded-[5px] text-[0.7rem] hover:opacity-80'
       : 'size-6.5 rounded-md text-xs',
     OUTCOME_FILL[outcome],
-    outcome === 'none' && 'text-fg-secondary'
+    (outcome === 'none' || outcome === 'notMarked') && 'text-fg-secondary'
   );
   return onClick ? (
     <button className={className} onClick={onClick} type="button">

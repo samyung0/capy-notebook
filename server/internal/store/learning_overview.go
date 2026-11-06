@@ -24,7 +24,6 @@ const (
 	// learningStartWindow is how recently a workspace must have been opened or
 	// practised for its next new quiz or set to be offered.
 	learningStartWindow = 30 * 24 * time.Hour
-	learningWeek        = 7 * 24 * time.Hour
 
 	LearningSession = "session"
 	LearningQuiz    = "quiz"
@@ -82,11 +81,9 @@ type LearningTeach struct {
 
 // LearningOverview is the Overview tab.
 type LearningOverview struct {
-	Next          []LearningRow       `json:"next" nullable:"false"`
-	Workspaces    []LearningWorkspace `json:"workspaces" nullable:"false"`
-	Teaches       []LearningTeach     `json:"teaches" nullable:"false"`
-	WeekQuestions int                 `json:"weekQuestions"`
-	WeekCards     int                 `json:"weekCards"`
+	Next       []LearningRow       `json:"next" nullable:"false"`
+	Workspaces []LearningWorkspace `json:"workspaces" nullable:"false"`
+	Teaches    []LearningTeach     `json:"teaches" nullable:"false"`
 }
 
 type learningWorkspace struct {
@@ -251,8 +248,7 @@ func (s *Store) LearningOverview(ctx context.Context, userID string, now time.Ti
 	if err := s.learningSuggestions(ctx, &out, suggestions); err != nil {
 		return out, err
 	}
-	out.WeekQuestions, out.WeekCards, err = s.learningWeek(ctx, userID, ids, now)
-	return out, err
+	return out, nil
 }
 
 func (s *Store) learningWorkspaceRow(ctx context.Context, userID string, ws *learningWorkspace, tried, items int, now time.Time) (LearningWorkspace, error) {
@@ -434,14 +430,6 @@ func continuing(rows []LearningRow, sg *ReviewSuggestion) bool {
 		return r.Kind == LearningSession && r.WorkspaceID == sg.WorkspaceID && r.Group == sg.Group &&
 			(sg.TopicName == "" || r.TopicName == sg.TopicName)
 	})
-}
-
-// learningWeek counts answers in scope in the last seven days.
-func (s *Store) learningWeek(ctx context.Context, userID string, ids []string, now time.Time) (questions, cards int, err error) {
-	err = s.pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE m.kind='quiz'), count(*) FILTER (WHERE m.kind='flashcards')
-		FROM review_log rl JOIN materials m ON m.id=rl.material_id
-		WHERE rl.user_id=$1 AND rl.reviewed_at >= $2 AND COALESCE(m.workspace_id, m.practice_workspace_id) = ANY($3)`, userID, now.Add(-learningWeek), ids).Scan(&questions, &cards)
-	return questions, cards, err
 }
 
 /* --------------------------------------------------------------- topics */

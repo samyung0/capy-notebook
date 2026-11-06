@@ -2267,9 +2267,15 @@ design, option d), and the nudge's release file on 2026-10-17.
   25, so source tabs on the older pin (protocol 24) reload; `MIN_MATERIAL` stays
   22. `OFFICE_PROTOCOL_VERSION` stays. Its deploy request names "client protocol
   24 -> 25, source 24 -> 25".
-  The Office ribbon (Office protocol 14: `set-banner`, `banner-action`, `menu-file`
-  gone) raised `CLIENT_PROTOCOL` to 26 and `MIN_SOURCE` to 26, so source tabs
-  drawing the old header reload; `MIN_MATERIAL` stays.
+  The zip 9.0.5 pin raised `CLIENT_PROTOCOL` to 26 and `MIN_SOURCE` to 26, so
+  source tabs on the older pin (protocol 25) reload; `MIN_MATERIAL` stays 22.
+  `OFFICE_PROTOCOL_VERSION` stays. Its deploy request names "client protocol
+  25 -> 26, source 25 -> 26".
+  The Office ribbon (`OFFICE_PROTOCOL_VERSION` 13 -> 14: `set-banner`,
+  `banner-action`, `ribbon-focus`, `load`'s `ribbon`, `menu-file` gone) raised
+  `CLIENT_PROTOCOL` to 27 and `MIN_SOURCE` to 27, so source tabs drawing the old
+  header reload; `MIN_MATERIAL` stays 22. Its deploy request names "client
+  protocol 26 -> 27, source 26 -> 27".
 
 #### When to bump
 
@@ -2545,8 +2551,35 @@ A tab holding unsent edits asks again every 30 s. A reader's rooms keep their ow
 **Citations and deep links** work in the one mode: a chat citation scrolls and
 flashes its passage in the paint, and again in the editor once it shows; a
 question or card from a review summary scrolls into view in the quiz's list or
-the set's grid. A note's embed offers Preview in its ⋮ (top right on hover), which
-swaps its editor for the study view, to answer or study in place; Edit goes back.
+the set's grid. The header's Preview shows the whole note as its readers read it,
+with embeds answerable and cards to study; the button turns into Edit, which goes back.
+The editor stays mounted, joined and undoable behind it (its mounts hidden and `inert`).
+`NotePreview` portals into a host under the editor's save strips, so the strips and their
+actions stay reachable (Review leaves Preview first), and it reads none of the editor's
+contexts. It draws `PaintedNote` from the editor's own value, so it reads no note body,
+opens offline and shows text not yet saved; images still read their own. It
+redraws at most every 250 ms from the editor's value changes (`subscribeNoteValue`), which
+a collaborator's typing runs through too, and only changed blocks draw again. A room swap
+hands it the next editor without moving the reader.
+
+Its embeds join inside the editor's `NoteSeat`, whose `writer` makes a reader under it take
+the editor's room of the embed rather than a read channel (the server closes the earlier of
+a read and an edit channel to one document). So an embed the editor had open costs no token
+or channel and answers offline from its held document; one never opened joins once, on the
+key the editor then shares, and only its keys room is new at Edit. A try in Preview's embed
+stays in memory and records nothing, as in any note's embed; nothing is written to the room.
+
+While it's open `EditorPreviewing` makes `useEditorHeld` true: overlays go inert and the
+command palette stays shut. The selection is cleared, which closes selection-driven toolbars
+and removes this tab's caret for peers; a range ref carries it through other people's edits.
+Media pauses and a YouTube player goes back to its poster.
+
+Opening runs in a transition, with `aria-busy` on the button. Closing first settles the
+place behind Preview (`settleNotePlace`, up to about 300 ms: blocks off screen have no size
+until they come near), then shows the editor; Preview's DOM leaves when idle. Both directions
+keep the same block at the same height, inside the block if it's shorter on this side. A tall
+embed still loading in the editor can't land exactly until it has its height. When the note
+can't be edited at all the button reads Close preview.
 
 ### The editable saved copy
 
@@ -4321,3 +4354,99 @@ Unmodified horizontal arrows skip the redundant first/last child positions of
 `\overline` groups using MathLive's public element-info and movement commands,
 matching its accent navigation. Internal characters remain editable; modified
 arrows and other structures retain native navigation.
+
+## BlockSuite on main
+
+`vendor/blocksuite` (plain files; its README lists the local changes) is on `main`
+for the drawing answer's board only (Epo 2026-11-06). Notes stay on Plate until the
+cut. `src/features/blocksuite/drawingBoard.ts` imports just the editor parts the board
+needs, so it's a lazy chunk of about 1.2 MB gzipped, and the app reaches it through
+`drawingBoard.boundary.d.ts`, so the app's type check skips the vendored sources.
+Nothing in production opens it yet: `/dev/drawing` is a dev-only route. A production
+build swaps that route for an empty module (`MSW_ENTRIES` in `vite.config.ts`) and runs no
+vanilla-extract plugin, so it neither ships nor transforms the vendored sources. The answer
+flow reverses both. `pnpm audit` covers these packages' dependencies but not the copied
+source, so an AFFiNE security fix stays unseen until someone re-copies.
+
+### The board's tools
+
+The board adds to BlockSuite through its own extensions (`boardTools.ts`, `boardPlane.ts`,
+`boardPlaneEditor.ts`, `boardChart.ts`, `boardChartEditor.ts`, `boardEditorShell.ts`,
+`boardFormula.ts`, pure geometry in `boardGeometry.ts`), with a few
+vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
+
+- **Toolbar:** AFFiNE's shape pieces in the eraser's fixed colours (CSS variables on
+  `.capy-board`), then three sheets that only add things: Maths (a plane card or a label), Charts (a bar or pie chart card) and Formula. The
+  toolbar and its pen touch the canvas only, never into a card. New shapes have no fill
+  and a black outline.
+- **Undo and redo** are the board's own, not in the toolbar: left of zoom, or below 768 px
+  top right, where the page around the board reserves Done's width through
+  `--capy-board-done-width`. Below that width the toolbar spans the screen less an 8 px
+  gutter and zoom is hidden, since pinch does it. Zoom's row folds into AFFiNE's ⋯ up to
+  1200 px, which needs `.capy-board` to be the `viewport` container.
+- **Selecting** shows AFFiNE's own toolbar. It reads the editor's mode, so the board
+  reports edgeless (`boardToolbar` in `boardTools.ts`) and hides what makes no sense on an
+  answer: Frame, Comment and the linked doc entries. Connect shows its name. A plane card
+  adds a pen that opens it and a Fit to size / Custom size toggle; a chart card adds the pen.
+- **Shapes panel:** replaces AFFiNE's one-row menu through a DI override of the `shape`
+  senior tool. BlockSuite has four shape types, so the rest are presets of straight
+  connectors and ellipses in a group (a pen stroke smears at corners).
+- **Plane cards** (`boardPlane.ts`) are a `plane` canvas element holding a view (top left
+  corner in plane units, board pixels per unit) and its marks as plain data, drawn by one
+  renderer with a clip, so a card stacks with strokes and reaches the marking image with
+  no special case. A card is a picture on the canvas: Select moves it, its corners resize
+  it, between 120 by 80 and 4000 px, showing more or less of the plane at the same scale,
+  scrolling over it moves the canvas, and the eraser leaves it alone. A fresh board starts
+  with one. Double click, double tap or the pen opens it. **Fit to size**, on by default:
+  each time the plane is left, a card with marks takes their size at the plane's scale plus
+  40 px, its top left staying put; past 1600 px it zooms out instead. Dragging a corner
+  makes it Custom size, as resizing a note does. Neither is in the undo history. Pen
+  strokes over a card stay where they are, so they can stop lining up.
+- **Editing a plane** (`boardPlaneEditor.ts`, on the shell in `boardEditorShell.ts`): it
+  opens over the whole board. Done leaves, as does Escape when no mark is open. Inside, the wheel pans, Ctrl or pinch zooms, and Move drags.
+  Point, Line and Curve snap to the fine squares for the current zoom, so the
+  plane has no edge and no fixed scale (the numbers are the question editor's, `tickStep`
+  and `axisNumber` in `graph.ts`, with no JSXGraph). Numbers leave with their axis and
+  marks keep their thickness. The view stops 1e9 units from the origin, and a grid too
+  fine to draw goes blank. Each click is written at once, one undo step, and undo
+  shortens a line or curve still taking clicks. While a plane or chart is open, undo and
+  redo reach only what was done in it, since the canvas is out of sight: the stacks are
+  set aside on opening and put back on leaving. A press lands where it lifts, so a finger
+  can line it up against the coordinate chip. The view is written on leaving and isn't in
+  the undo history.
+- **Ending a mark:** Finish (shown while a line or curve is open), Escape, or clicking
+  a curve's last point again. The tool then goes back to Move, as AFFiNE's shape and
+  connector tools go back to Select; Point stays on. Leaving keeps a curve with two points
+  or more and removes a mark that has only its first. Canvas drawings over a card aren't in it: they stay in place
+  if the view moves.
+- **Chart cards** (`boardChart.ts`, `boardChartEditor.ts`) are a `chart` canvas element of
+  kind `bar` or `pie`, holding plain data, since a coordinate means nothing on either. They
+  move and resize like a plane card, the eraser leaves them alone, and their editor fills
+  the board on the same shell. Bar chart: numbers on the value axis only, up to a top and
+  step the student types (Fit takes the top to the first line above the tallest bar).
+  Dragging in a place sets its bar, in half steps, with the value in the chip; a free place
+  after the last bar starts the next, up to 24, in the current fill. Labels are typed under
+  the bars. Pie chart: no grid or axes, starting with a line at 12 o'clock. A click adds a
+  line, whose chip shows the sector it closes, from the line before it clockwise, and
+  labels sit at an angle inside the circle.
+- **Marking image:** everything on the canvas as it stands, including each card with the
+  view it was left at, so a plotted mark panned out of view isn't in it. It's drawn layer
+  by layer at a scale capped to 2400 px, so it stacks as the screen does and fits a phone's
+  canvas limit; AFFiNE's own export draws every note under every stroke at the device's
+  scale.
+- **Formulas:** a `formula` canvas element holding LaTeX, typed in MathLive (loaded on
+  first open). AFFiNE keeps LaTeX as HTML in note cards, and its export (html2canvas)
+  garbles that, so typing `$$` in a note here stays text; AFFiNE's inline spec stays
+  registered because paragraphs read it as they render. KaTeX lays the formula out in a
+  hidden host and its glyphs, rules and stretched SVGs (clipped as KaTeX clips them) are
+  drawn onto a bitmap the canvas renderer draws. Tested in Chromium only. Size and
+  expansion limits are set on KaTeX, and a saved answer holding more than 2,000
+  characters draws nothing. Bitmaps stay until the board closes: sharp up to 128 MB, plain
+  up to 256 MB, and past that a formula isn't drawn, on screen or in the image. Saving
+  answers still needs a read-only render for teachers,
+  with limits on the server.
+- **Labels** come from the Maths menu's Label, which can place one on top of a card (a
+  double click there opens the plane), or a double click on empty canvas. They have a
+  maths symbol row while typing. BlockSuite's default canvas font has no
+  face on this board because its font loader has no config, so `drawingBoard.css` aliases
+  it to the app's Fustat, or a label measures in one fallback and draws in another.

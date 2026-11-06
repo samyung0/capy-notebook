@@ -1,4 +1,5 @@
 import type { FileKind, SourceFile, SourceUploadPolicy } from '@/api/types';
+import { userToast } from '@/components/ui/userToast';
 import { fileExt } from '@/features/files/fileUtils';
 import { m } from '@/i18n';
 
@@ -12,6 +13,7 @@ import {
 } from './sourceAnalysis';
 import {
   getFileKind,
+  isTextFile,
   isTextKind,
   type ParseMode,
   sourceCompression,
@@ -138,7 +140,7 @@ export interface LocalSourceSelection {
 
 export interface RejectedLocalSource {
   file: File;
-  reason: 'file_too_large';
+  reason: 'file_too_large' | 'text_file_too_large';
 }
 
 /** The largest pick the browser compresses before its upload (Q345): a
@@ -158,13 +160,46 @@ export function validateLocalSourceSelection(
     const kind = getFileKind(file.name, policy);
     // One compressed before its upload is checked once compressed.
     const compressed = sourceCompression(file.name, kind);
-    if (file.size > (compressed ? COMPRESS_MAX_BYTES : policy.maxBytes)) {
+    if (
+      isTextFile(file.name, kind, policy) &&
+      file.size > policy.textMaxBytes
+    ) {
+      rejected.push({ file, reason: 'text_file_too_large' });
+    } else if (
+      file.size > (compressed ? COMPRESS_MAX_BYTES : policy.maxBytes)
+    ) {
       rejected.push({ file, reason: 'file_too_large' });
     } else {
       accepted.push({ file, kind });
     }
   }
   return { accepted, rejected };
+}
+
+/** A toast per cap the picked files passed, naming them. */
+export function toastRejectedSources(
+  rejected: readonly RejectedLocalSource[],
+  policy: SourceUploadPolicy
+) {
+  const toast = (reason: RejectedLocalSource['reason'], title: string) => {
+    const names = rejected
+      .filter((item) => item.reason === reason)
+      .map((item) => item.file.name);
+    if (names.length > 0)
+      userToast({ description: names.join(', '), title, variant: 'error' });
+  };
+  toast(
+    'file_too_large',
+    m.source_files_too_large({
+      mb: Math.round(policy.maxBytes / 1024 / 1024),
+    })
+  );
+  toast(
+    'text_file_too_large',
+    m.source_text_files_too_large({
+      mb: Math.round(policy.textMaxBytes / 1024 / 1024),
+    })
+  );
 }
 
 /** A source the policy fast-parses but the browser cannot estimate starts in
@@ -219,19 +254,23 @@ export function remoteSourceAnalysisInput(
 
 /** Analysis of a file already stored in the workspace (Retry processing),
  * read through its short-lived presigned link. */
-export function storedSourceAnalysisInput(
+export async function storedSourceAnalysisInput(
   file: { id: string; name: string; revision: number },
   url: string,
   policy: Pick<SourceUploadPolicy, 'parseModes'>
-): SourceAnalysisInput | undefined {
+): Promise<SourceAnalysisInput | undefined> {
   const kind = sourceAnalysisExtension(file.name, policy);
   const limits = fastParseLimits(policy);
   if (!(kind && limits)) return;
+  // The analysis worker takes only same-origin URLs, and a stored file's link is
+  // the bucket's, so its bytes go to it.
+  const response = await fetch(url);
+  if (!response.ok) return;
   return {
     key: `stored\0${file.id}\0${file.revision}`,
     kind,
     maxPages: limits.maxPages,
     name: file.name,
-    source: { url },
+    source: { file: new File([await response.blob()], file.name) },
   };
 }

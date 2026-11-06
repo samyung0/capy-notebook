@@ -47,7 +47,6 @@ import type {
   CheckBankQuestionReq,
   CheckQuizQuestionReq,
   CheckReviewItemReq,
-  CheckSharedNoteQuizReq,
   CheckSourceAccessParams,
   ClaimSourceRefreshParams,
   CloneFileReq,
@@ -8092,7 +8091,7 @@ export const getGradeAnonymousNoteQuizUrl = (token: string,
 }
 
 /**
- * @summary Grade one question of a quiz embedded in a shared note
+ * @summary Check one question of a quiz embedded in a shared note; an answered open part stays Not marked
  */
 export const gradeAnonymousNoteQuiz = async (token: string,
     quizId: string,
@@ -8260,7 +8259,7 @@ export const getGradeAnonymousQuizUrl = (token: string,) => {
 }
 
 /**
- * @summary Grade one question of a signed-out attempt at a shared quiz
+ * @summary Check one question of a shared quiz; an answered open part stays Not marked
  */
 export const gradeAnonymousQuiz = async (token: string,
     gradeAnonymousQuizReq: NonReadonly<GradeAnonymousQuizReq>, options?: RequestInit): Promise<gradeAnonymousQuizResponse> => {
@@ -9388,73 +9387,6 @@ const res = await fetch(getRedeemShareLinkUrl(),
 
   const data: redeemShareLinkResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as redeemShareLinkResponse
-}
-
-
-
-export type checkSharedNoteQuizResponse200 = {
-  data: GradedQuestion
-  status: 200
-}
-
-export type checkSharedNoteQuizResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type checkSharedNoteQuizResponseSuccess = (checkSharedNoteQuizResponse200) & {
-  headers: Headers;
-};
-export type checkSharedNoteQuizResponseError = (checkSharedNoteQuizResponseDefault) & {
-  headers: Headers;
-};
-
-export type checkSharedNoteQuizResponse = (checkSharedNoteQuizResponseSuccess | checkSharedNoteQuizResponseError)
-
-export const getCheckSharedNoteQuizUrl = (token: string,
-    quizId: string,) => {
-
-
-
-
-  return `/api/shared/notes/${token}/quizzes/${quizId}/check`
-}
-
-/**
- * @summary Grade a signed-in check of one question of a quiz embedded in a shared note
- */
-export const checkSharedNoteQuiz = async (token: string,
-    quizId: string,
-    checkSharedNoteQuizReq: NonReadonly<CheckSharedNoteQuizReq>, options?: RequestInit): Promise<checkSharedNoteQuizResponse> => {
-
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-const res = await fetch(getCheckSharedNoteQuizUrl(token,quizId),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(checkSharedNoteQuizReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: checkSharedNoteQuizResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as checkSharedNoteQuizResponse
 }
 
 

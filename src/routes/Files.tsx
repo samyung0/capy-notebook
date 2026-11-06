@@ -369,10 +369,9 @@ function ActiveFiles({
         }
         sortMenu={{ ...sorting, hiddenFromMd: view === 'list', sorts }}
         view={view}
-        wide
       />
       {/* Mouse only: the selection bar's clear button is the keyboard way. */}
-      <PageBody belowToolbar onClick={clearOnBlank(selection.clear)} wide>
+      <PageBody belowToolbar onClick={clearOnBlank(selection.clear)}>
         {waitsForConnection(fetchStatus, data) ? (
           <QueryPausedState />
         ) : isLoading ? (
@@ -747,7 +746,7 @@ function TrashTab({
   }
   return (
     <>
-      <div className="page-px-wide -mb-3 flex items-center">
+      <div className="page-px -mb-3 flex items-center">
         {selection.selecting ? (
           <SelectionBar
             allSelected={
@@ -803,7 +802,7 @@ function TrashTab({
         )}
       </div>
       {/* Mouse only: the selection bar's clear button is the keyboard way. */}
-      <PageBody belowToolbar onClick={clearOnBlank(selection.clear)} wide>
+      <PageBody belowToolbar onClick={clearOnBlank(selection.clear)}>
         <div className="flex flex-col gap-3">
           <p className="t-meta text-fg-muted" role="note">
             {m.trash_notice()}

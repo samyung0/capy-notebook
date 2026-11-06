@@ -206,7 +206,7 @@ function ProfileRowButton({
       aria-label={m.profile_menu_account()}
       className={cn(
         BASE_BUTTON_STYLE,
-        'flex h-9 w-full min-w-10.5 items-center justify-start gap-2.5 overflow-hidden px-2 text-fg hover:bg-page-hover'
+        'flex h-9 w-full min-w-10.5 items-center justify-start gap-2.5 overflow-hidden px-2 text-fg hover:bg-page-hover sm:h-8'
       )}
       type="button"
       {...props}

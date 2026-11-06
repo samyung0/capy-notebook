@@ -1,4 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useNavigate } from '@tanstack/react-router';
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { type Control, Controller, useForm } from 'react-hook-form';
 import { CreateAssignmentBody } from '@/api/gen/validators';
@@ -9,6 +10,7 @@ import {
   useMe,
   usePractice,
   useUpdateAssignment,
+  useWorkspace,
   useWorkspaceMembers,
 } from '@/api/hooks';
 import type {
@@ -27,6 +29,7 @@ import {
   DialogTitle,
 } from '@/components/ui/Dialog';
 import { FileIcon } from '@/components/ui/FileIcon';
+import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { Input, InputError } from '@/components/ui/Input';
@@ -43,11 +46,13 @@ import {
   SelectValue,
 } from '@/components/ui/Select';
 import { Switch } from '@/components/ui/Switch';
+import { isWorkspaceReadOnly } from '@/features/workspace/access';
 import { PanelSearchField } from '@/features/workspace/PanelSearch';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
+import { MakePractice } from '../practice/MakePractice';
 import { questionsLabel } from '../practice/practiceText';
 import { AdvancedSection } from './AdvancedSection';
 import {
@@ -69,19 +74,17 @@ const FIELD_TRIGGER =
 
 /** New assignment and its edit (boards A1, A1b, A1c, A1d): Kind first, then a
  * quiz with its marks rules, or a title with optional files. Editing keeps the
- * kind and the quiz. `newQuiz` is the seam for making a quiz on the spot (New
- * quiz, Make a quiz from a file, Generate questions; A1c, A1e): without it those
- * rows show as Coming soon. */
+ * kind and the quiz. The Quiz field's last rows make a quiz on the spot, through the
+ * dialogs that already do: Add file's Create tab, Make a quiz and generate.
+ */
 export function NewAssignmentDialog({
   existing,
-  newQuiz,
   onClose,
   onDone,
   presetQuizId,
   workspaceId,
 }: {
   existing?: Assignment;
-  newQuiz?: (how: 'blank' | 'file' | 'generate') => void;
   onClose: () => void;
   onDone: (assignment: Assignment) => void;
   /** Opened from a quiz (A1): its quiz is set and Kind doesn't show. */
@@ -90,7 +93,17 @@ export function NewAssignmentDialog({
 }) {
   const manage = existing?.manage;
   const formId = useId();
-  const { data: practice } = usePractice(workspaceId, { errorBoundary: false });
+  const navigate = useNavigate();
+  const { data: ws } = useWorkspace(workspaceId, { errorBoundary: false });
+  const [generating, setGenerating] = useState(false);
+  const {
+    data: practice,
+    isError: quizzesFailed,
+    isPending: quizzesPending,
+    refetch: refetchQuizzes,
+  } = usePractice(workspaceId, {
+    errorBoundary: false,
+  });
   const { data: members } = useWorkspaceMembers(workspaceId);
   const quizzes = practice?.quizzes ?? [];
   const {
@@ -207,6 +220,16 @@ export function NewAssignmentDialog({
     </Button>
   );
 
+  if (generating)
+    return (
+      <MakePractice
+        onClose={onClose}
+        onlyYou={false}
+        onMade={onClose}
+        title={m.assignment_generate_questions()}
+        workspaceId={workspaceId}
+      />
+    );
   return (
     <Dialog onOpenChange={(open) => !open && onClose()} open>
       <DialogContent
@@ -274,11 +297,39 @@ export function NewAssignmentDialog({
                 label={m.assignment_field_quiz()}
               >
                 <QuizPicker
-                  newQuiz={newQuiz}
+                  canMake={!isWorkspaceReadOnly(ws?.capabilities)}
+                  failed={quizzesFailed}
+                  onMake={(how) => {
+                    if (how === 'generate') {
+                      setGenerating(true);
+                      return;
+                    }
+                    onClose();
+                    void navigate({
+                      search:
+                        how === 'file'
+                          ? (previous) => ({
+                              make: 'files' as const,
+                              // Cancelling comes back here (Epo 2026-11-06).
+                              makeFrom:
+                                previous.study === 'assignments'
+                                  ? ('assignments' as const)
+                                  : undefined,
+                            })
+                          : (previous) => ({
+                              ...previous,
+                              add: 'create' as const,
+                              newFromQuiz: undefined,
+                            }),
+                      to: '.',
+                    });
+                  }}
                   onPick={(id, title) => {
                     setValue('quizId', id, { shouldValidate: true });
                     if (!titleEdited) setValue('title', title);
                   }}
+                  onRetry={() => void refetchQuizzes()}
+                  pending={quizzesPending}
                   quizzes={quizzes}
                   value={quizId}
                 />
@@ -623,13 +674,23 @@ function DateField({
 
 /** The quiz field (A1c): the workspace's quizzes, then the ways to make one. */
 function QuizPicker({
-  newQuiz,
+  canMake,
+  failed,
+  onMake,
   onPick,
+  onRetry,
+  pending,
   quizzes,
   value,
 }: {
-  newQuiz?: (how: 'blank' | 'file' | 'generate') => void;
+  /** Off in a frozen workspace, where making one would be refused. */
+  canMake: boolean;
+  /** The list couldn't be read, so "no quizzes" would be untrue. */
+  failed: boolean;
+  onMake: (how: 'blank' | 'file' | 'generate') => void;
   onPick: (id: string, title: string) => void;
+  onRetry: () => void;
+  pending: boolean;
   quizzes: { id: string; title: string; questions: number }[];
   value?: string;
 }) {
@@ -681,53 +742,75 @@ function QuizPicker({
         align="start"
         className="w-(--radix-popover-trigger-width) p-1.5"
       >
-        <PanelSearchField
-          label={m.assignment_search_quizzes()}
-          onChange={setQuery}
-          value={query}
-        />
-        <ul className="mt-1.5 max-h-60 overflow-auto">
-          {shown.map((q) => (
-            <li key={q.id}>
+        {pending ? (
+          <Skeleton className="h-9 w-full" />
+        ) : quizzes.length === 0 && failed ? (
+          <div className="flex items-center justify-between gap-2 px-2.5 py-1">
+            <p className="text-fg-secondary text-sm">
+              {m.assignment_quizzes_failed()}
+            </p>
+            <Button onClick={onRetry} size="sm" variant="outline">
+              {m.action_retry()}
+            </Button>
+          </div>
+        ) : quizzes.length === 0 ? (
+          <p className="px-2.5 py-2 text-fg-secondary text-sm">
+            {canMake
+              ? m.assignment_make_quiz_to_begin()
+              : m.assignment_no_quizzes()}
+          </p>
+        ) : (
+          <>
+            <PanelSearchField
+              label={m.assignment_search_quizzes()}
+              onChange={setQuery}
+              value={query}
+            />
+            <ul className="mt-1.5 max-h-60 overflow-auto">
+              {shown.map((q) => (
+                <li key={q.id}>
+                  <button
+                    className="flex min-h-9 w-full items-center gap-2.5 rounded-button px-2.5 text-left font-semibold outline-none hover:bg-overlay-hover focus-visible:bg-overlay-hover"
+                    onClick={() => {
+                      onPick(q.id, q.title);
+                      setOpen(false);
+                    }}
+                    type="button"
+                  >
+                    <FileIcon
+                      className="size-4 shrink-0"
+                      name={materialIconName('quiz')}
+                    />
+                    <span className="min-w-0 flex-1 truncate">{q.title}</span>
+                    <span className="t-meta shrink-0 font-medium text-fg-muted">
+                      {questionsLabel(q.questions)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {shown.length === 0 && (
+              <p className="px-2.5 py-2 text-fg-secondary text-sm">
+                {m.assignment_no_quizzes_match()}
+              </p>
+            )}
+          </>
+        )}
+        {canMake && (
+          <div className="mt-1.5 border-divider border-t pt-1.5">
+            {makers.map(({ how, icon, label }) => (
               <button
                 className="flex min-h-9 w-full items-center gap-2.5 rounded-button px-2.5 text-left font-semibold outline-none hover:bg-overlay-hover focus-visible:bg-overlay-hover"
-                onClick={() => {
-                  onPick(q.id, q.title);
-                  setOpen(false);
-                }}
+                key={how}
+                onClick={() => onMake(how)}
                 type="button"
               >
-                <FileIcon
-                  className="size-4 shrink-0"
-                  name={materialIconName('quiz')}
-                />
-                <span className="min-w-0 flex-1 truncate">{q.title}</span>
-                <span className="t-meta shrink-0 font-medium text-fg-muted">
-                  {questionsLabel(q.questions)}
-                </span>
+                <Icon className="shrink-0" name={icon} size={16} />
+                {label}
               </button>
-            </li>
-          ))}
-        </ul>
-        <div className="mt-1.5 border-divider border-t pt-1.5">
-          {makers.map(({ how, icon, label }) => (
-            <button
-              className={cn(
-                'flex min-h-9 w-full items-center gap-2.5 rounded-button px-2.5 text-left font-semibold outline-none',
-                newQuiz
-                  ? 'hover:bg-overlay-hover focus-visible:bg-overlay-hover'
-                  : 'cursor-default text-fg-muted'
-              )}
-              key={how}
-              onClick={() => newQuiz?.(how)}
-              title={newQuiz ? undefined : m.study_panel_soon()}
-              type="button"
-            >
-              <Icon className="shrink-0" name={icon} size={16} />
-              {label}
-            </button>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );

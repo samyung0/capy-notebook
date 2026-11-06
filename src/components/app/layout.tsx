@@ -66,21 +66,17 @@ export function PagePanel({
  * Body of a list or overview page (Dashboard, Workspaces, Question bank):
  * the normal gutter (`page-px`), 20/24px under the header. A list page's
  * ListToolbar already spaces the list from the header, so `belowToolbar`
- * keeps only a small gap. `wide` takes the tab body's gutter
- * (`page-px-wide`), for a list under a page's tabs (Files, Learning's All
- * results); other tab bodies use TabContent.
+ * keeps only a small gap.
  */
 export function PageBody({
   belowToolbar,
-  wide,
   className,
   ...props
-}: ComponentProps<'div'> & { belowToolbar?: boolean; wide?: boolean }) {
+}: ComponentProps<'div'> & { belowToolbar?: boolean }) {
   return (
     <div
       className={cn(
-        'w-full shrink-0 grow pb-6',
-        wide ? 'page-px-wide' : 'page-px',
+        'page-px w-full shrink-0 grow pb-6',
         belowToolbar ? 'pt-2' : 'pt-5 sm:pt-6',
         className
       )}

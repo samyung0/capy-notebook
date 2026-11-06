@@ -170,7 +170,7 @@ export function ContentActions({
     : [];
 
   // One order on every item menu (cards, rows, the open item's header):
-  // open or view, Rename, Share, Move, Hide from members, Clone, Download,
+  // open or view, Rename, Share, Move, Hide file, Clone, Download,
   // Properties, Delete.
   const items: MenuItem[] = [
     ...leadingItems,
@@ -201,7 +201,7 @@ export function ContentActions({
               },
         ]
       : []),
-    // Hide from members (Epo 2026-11-03): a workspace item's owners and
+    // Hide file (Epo 2026-11-03, renamed 2026-11-06): a workspace item's owners and
     // editors only; a standalone item has no members.
     ...(!readOnly && content && workspaceId
       ? [
@@ -210,8 +210,8 @@ export function ContentActions({
               ? ('view' as const)
               : ('viewOffSlash' as const),
             label: content.hidden
-              ? m.content_show_to_members()
-              : m.content_hide_from_members(),
+              ? m.content_unhide_file()
+              : m.content_hide_file(),
             onClick: () => toggleHidden(content, !content.hidden),
           },
         ]

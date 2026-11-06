@@ -230,9 +230,9 @@ audio takes the same route, which answers `302` to the five-minute bucket link G
 `Cache-Control: no-store` (Epo 2026-10-15): the player reads it in ranges, which a cached, buffered copy
 would not serve, and re-requests the route on a media error, so a seek after the link expired gets a fresh
 one (`MediaAssetView`). The share pages' policy has no `media-src` or `default-src`, so the bucket host is
-not blocked. Anything else (SVG, any other type) is still refused with `503`. Grading posts
+not blocked. Anything else (SVG, any other type) is still refused with `503`. A check posts
 straight to `/api/public/.../grade`, because a Worker subrequest reaches the API without the visitor's IP, which
-the per-IP caps need. Go verifies the token again on `/api/public/...` because the API hostname is public, and
+the rate limit keys on. Go verifies the token again on `/api/public/...` because the API hostname is public, and
 reads visibility and the owner's lifecycle in the same statement as the content. Quiz reads are answer-free
 (`questions.LearnerView`), like every read for viewing; grading returns the keys for the attempt just graded and
 stores nothing on the server. Flashcard reads carry written cards only (a new set's blank starter card is left
@@ -247,10 +247,11 @@ kept out of the static assets by `.assetsignore`; `wrangler.jsonc` aliases it as
 components keep their browser imports; libraries that only run in effects or on click (Mermaid, MathLive's
 editor, jsxgraph, KaTeX, the app's embed editors) are empty modules there. It writes the data it rendered from
 into `<script id="share-state">`, and the page's script (`share.html`, `src/share/main.tsx`) never fetches it
-again. A quiz or flashcard set hydrates whole (`StudyPage.tsx`, the same tree on both sides, in English). Clerk loads after hydration without its UI bundle (`prefetchUI={false}`) and is asked only when a
-question is checked or a card rated (`src/share/session.ts`): signed in, the check or rating goes to the
-account (`POST /api/quizzes/{id}/check`, `POST /api/review/ratings`); signed out, the share route grades and
-the browser keeps it. Without a Clerk key (MSW, e2e) `?anonymous` selects the signed-out path; under MSW the dev
+again. A quiz or flashcard set hydrates whole (`StudyPage.tsx`, the same tree on both sides, in English). Nothing on these pages counts, signed in or out, and they read no session (Epo 2026-11-05, Q640 B; 2026-11-06, Q663 A):
+a quiz's check takes the share route, which marks what has one right answer and leaves an answered open part Not marked
+with its marking points and worked solution to compare, with no AI marking and no self-marking, and the browser keeps
+the try; a card's rating runs ts-fsrs here and stays in this browser. No page the Worker renders loads Clerk (Epo
+2026-11-06, Q668), so nothing there identifies a visitor to analytics. Under MSW the dev
 server signs the mocks' placeholder links and answers the Worker's API reads from the MSW handlers
 (`src/summary/vite.ts`). The pages drop the label
 above the title; the owner (`author`: name and avatar, on the public reads and on the single quiz and
@@ -275,14 +276,9 @@ pattern lives in `src/features/questions/quantity.ts`. Mentions render the name 
 references in its current content and has not trashed, in reference order (quizzes answer-free, flashcards
 written cards only); they render in place (`src/share/PublicEmbed.tsx`) and are the only note data the page's
 script receives. The note's asset route also serves an image one of those embeds shows, owned by that embed.
-Visitors grade an embedded quiz one question at a time (`questionId` in, the graded question out) at
-`POST /api/public/notes/{token}/quizzes/{quizId}/grade`, which has the same
-caps as the quiz grade, stores nothing, and returns 404 for any quiz the note does not embed and reference. A
-signed-in visitor's check, also one question, goes instead to `POST /api/shared/notes/{token}/quizzes/{quizId}/check`: the same
-share-token checks, graded under the user's daily grading parts with no captcha, storing nothing (Epo 2026-10-24,
-Q311). The page takes it only once the session is known to be signed in; while it is signed out, failed or not
-yet settled, the check takes the captcha route. A note page loads Clerk to learn the session only when the note
-embeds a quiz (`src/share/islands.tsx`, Q350).
+Every visitor checks an embedded quiz one question at a time (`questionId` in, the graded question out) at
+`POST /api/public/notes/{token}/quizzes/{quizId}/grade`, which marks as the quiz's check does, stores nothing, and
+returns 404 for any quiz the note does not embed and reference.
 Embedded quizzes and flashcard sets are named by a random UUID that is never displayed, and they are left out of
 every materials listing, Explore, search and the workspace quiz count.
 
@@ -321,7 +317,7 @@ which also requires authentication. Link sharing copies Google's "anyone with
 the link" plus resource key (Sam 2026-10-18): a signed-in nonmember reaches a
 link workspace, or a standalone link material, only after presenting its signed
 link once (`/w/{id}.{signature}`, the summary's Open going through
-`/open/{token}`, a share page's signed-in attempt or rating, or a public
+`/open/{token}`, or a public
 page's Clone, which carries the token as `?clone=<kind>:<token>`). `POST
 /api/share/redeem` verifies the token, checks the resource is link or public
 now, and records the grant (`workspace_link_grants`, `material_link_grants`,
@@ -445,7 +441,8 @@ unchanged.
   the same two.
 - **Switching it.** `PUT /api/files/{id}/hidden` and `PUT
   /api/materials/{id}/hidden` with `{hidden}`, from the item's ⋮ menu ("Hide
-  from members" / "Show to members") or, to show it, its header chip. Owners and editors may switch it: the
+  file" / "Unhide file") or its header: a Hide file button on a visible item (from
+  `sm`), the chip on a hidden one. Owners and editors may switch it: the
   write locks the workspace and re-reads the actor's effective role like any
   content write (`lockWorkspaceEditorMutationTx`); a frozen account is refused
   and a standalone or embedded item answers 404. Hiding drains the item's live
@@ -490,7 +487,7 @@ unchanged.
 
 An open hidden item's header shows a "Hidden from members" chip after its
 name (X2; the icon alone on phones). For owners and editors who may change the
-item the chip is a button ("Show to members" in its tooltip) that shows it to
+item the chip is a button ("Unhide file" in its tooltip) that shows it to
 members, as the ⋮ menu does (`useToggleHidden`, same request and error toast);
 hiding again stays in the menu, and a read-only editor's chip is a plain
 label. A hidden item's Files row carries the eye at its end (`HiddenMark`,
@@ -1065,15 +1062,12 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
 
 ### Quizzes and flashcards
 
-- Readable shared quizzes can be attempted by any signed-in user. Attempts,
-  study progress and review state belong to the user taking the quiz (see
-  Study progress below). On a shared quiz page the attempt is held by the
-  page (`useSharedAccountRun`): each check posts to `/api/quizzes/{id}/check`
-  and continues the attempt the page's first check started, but opening the
-  page reads nothing, so a shared page's only read is the Worker's and a
-  reload starts a new attempt. Signed-out visitors can take standalone link/public
-  quizzes and study flashcards; their progress stays in the browser (see
-  Anonymous quizzes, flashcards and notes).
+- Readable shared quizzes can be attempted in the app by any signed-in user.
+  Attempts, study progress and review state belong to the user taking the quiz
+  (see Study progress below). On a shared quiz or flashcard page nothing counts,
+  signed in or out (Epo 2026-11-06, Q663 A): every visitor's check takes the public
+  route, and tries and ratings stay in the browser (see Anonymous quizzes,
+  flashcards and notes).
 - Answer keys follow one rule (Epo, 2026-10-06; details in
   [question-bank.md](question-bank.md#answer-keys-and-server-grading)):
   reading to view or study never sends them, owners and editors included
@@ -1194,7 +1188,8 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   left out), for which the dialog's toast says some files were not copied.
   The source stays as it is. A file past the cloner's per-file cap is left
   out and counted the same way, while a single file clone refuses it with
-  `file_too_large`. The 422 belongs to routes that read stored content
+  `file_too_large`; a text file's cap is flat (2 MiB on every plan,
+  [backend-storage-quota.md](backend-storage-quota.md#product-plan-limits)). The 422 belongs to routes that read stored content
   (`storedContentError` in `huma_register.go`: reads, clones, shared pages,
   their images and grades, quiz attempts and sharing, study): content a
   request sends answers 400 and content we generate that fails our own

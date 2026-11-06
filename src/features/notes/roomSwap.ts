@@ -101,6 +101,15 @@ export function pointIn(editor: PlateEditor, point: BlockPoint) {
     : null;
 }
 
+/** How far above the top edge a block sits, inside it: the same block can be
+ * shorter elsewhere (a note's Preview draws an embed in full). */
+export const offsetWithin = (offset: number, height: number) =>
+  Math.max(offset, 1 - height);
+
+/** Frames a place must hold, and the most it waits: about 300 ms at 60 Hz. */
+const SETTLED_FRAMES = 2;
+const SETTLE_FRAMES = 20;
+
 /** Puts the selection (and the focus) back where its blocks still exist,
  * then the same block at the same height, else the same scroll offset: the
  * reading place wins over the caret (review M2), as in a DOCX. */
@@ -119,12 +128,13 @@ export function restoreNotePosition(view: NoteView, position: NotePosition) {
     scrollArea.querySelector<HTMLElement>(
       `[data-block-id="${CSS.escape(position.block)}"]`
     );
-  if (block)
+  if (block) {
+    const box = block.getBoundingClientRect();
     scrollArea.scrollTop +=
-      block.getBoundingClientRect().top -
+      box.top -
       scrollArea.getBoundingClientRect().top -
-      position.offset;
-  else scrollArea.scrollTop = position.scrollTop;
+      offsetWithin(position.offset, box.height);
+  } else scrollArea.scrollTop = position.scrollTop;
 }
 
 /**
@@ -267,6 +277,38 @@ export function dropComposedText(editor: PlateEditor) {
     ?.querySelectorAll('[data-slate-string]');
   if (leaves?.length === 1 && leaves[0].textContent !== node.text)
     leaves[0].textContent = node.text;
+}
+
+/**
+ * Puts the place right behind what covers the note, frame by frame until it holds:
+ * blocks off screen have no size yet (`content-visibility: auto`, embeds that wait
+ * to come near), so a far place only lands as they lay out. Returns the cancel.
+ */
+export function settleNotePlace(
+  view: NoteView,
+  position: NotePosition,
+  done: () => void
+) {
+  const place = { ...position, focused: false, selection: null };
+  if (tabHidden()) {
+    done();
+    return () => undefined;
+  }
+  let frame = 0;
+  let frames = 0;
+  let last = Number.NaN;
+  let held = 0;
+  const step = () => {
+    restoreNotePosition(view, place);
+    const { scrollHeight, scrollTop } = view.scrollArea;
+    held = scrollTop + scrollHeight === last ? held + 1 : 0;
+    last = scrollTop + scrollHeight;
+    frames += 1;
+    if (held >= SETTLED_FRAMES || frames >= SETTLE_FRAMES) done();
+    else frame = requestAnimationFrame(step);
+  };
+  step();
+  return () => cancelAnimationFrame(frame);
 }
 
 /** Runs once the next frame has been painted; returns the cancel. */

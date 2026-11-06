@@ -14,7 +14,7 @@ back covers it). Editors switch between View mode and Edit mode; edit mode adds
 the answer key and a review bar (review status, Mark reviewed/Undo review,
 Comment, Edit) under each question. In View mode signed-in learners answer and
 check each question (Learner answering, below) and copy a topic summary's
-missed questions into their quizzes; production Jev grading remains in the central todo list.
+missed questions into their quizzes.
 
 ## Exam tree and covers
 
@@ -128,7 +128,7 @@ and worked-solution blocks. A multiple-choice part (`mcq`) has one or more
 correct options and is answered with checkboxes (multiple answers, `multi`,
 merged into it on every layer, Epo 2026-10-15; the learner UI redesign is
 Epo's). Only open parts carry a marking scheme: items of
-text and whole marks that add up to the part's marks, because Jev grades against
+text and whole marks that add up to the part's marks, because the model grades against
 them. An open part takes at most one sample answer (`accepted`, 0 or 1 items),
 and it is optional: the editor shows one Sample answer input, and grading never
 reads it. A closed part's answer is its own key and its solution explains it, so it
@@ -246,9 +246,8 @@ step is an address, `?make=files`, `?make=pages&paper=…&answers=…&quizFile=�
 - **Files.** Up to `EXTRACTION_PAPER_FILES_MAX` (5) question files, such as a photographed
   paper's images, and up to `EXTRACTION_ANSWER_FILES_MAX` (3) mark scheme or answer files,
   from a menu of the workspace's indexed files other than Excel and audio or a new upload.
-  Files have no stored page count, so the browser reads "16 pages"
-  (`filePages.ts`): a PDF's table through pdf.js with range requests once its row scrolls
-  into view, a Word or PowerPoint file through the upload analysis, on its bytes read from its link, since the analysis worker takes only same-origin URLs and a link is the bucket's. A count that can't be read shows none.
+  A row names the file, with no page count: reading one would download a Word or PowerPoint
+  file just to show it (Epo 2026-11-06).
   An upload takes the normal path (`useQuizUpload`, `startSourceTransfer`), hidden from
   members and in no topic, and shows "Reading pages" until it is indexed. Continue waits for
   each upload to have started, since the browser's page count happens in the dialog, and for
@@ -591,9 +590,14 @@ waits on stops at 90 s. A rule that cost credit becomes the AI's warning in plai
 words; an answer instructing the marker gets a fixed one, never the model's words.
 A part it could not mark stays `pending` ("Not marked") and is not scored; Check again
 marks only those parts, from the answers first given, since the check already showed
-the key (Epo 2026-11-05). The part's award is the sum and the
-snapshot keeps `itemAwards`. Signed-out checks stay on Jev until shared pages stop
-AI marking. The grading text
+the key (Epo 2026-11-05). Not marked isn't wrong (Epo 2026-11-06, Q664 B): its marks read
+a muted `— / 4` where `QuestionReview` shows them, its question takes a grey square counted
+as "N not marked" (any part `pending` makes the question Not marked, as in an assignment's
+`questionOutcome`), and its marks stay in the total. A review or Practice answer left Not
+marked is never stored, so their result pages never hold one. The part's award is the sum and the
+snapshot keeps `itemAwards`. A shared page marks no open answer: for every visitor,
+signed in or out, an answered open part stays Not marked with its marking points and
+worked solution to compare, and has no Check again (Epo 2026-11-05, Q640 B). The grading text
 is built in Go (`questions.GradingText`) from the stem, earlier parts and the
 part, with figures as their descriptions (`[Figure]` for one without), tables
 and chart data. A group's text and figures come once, as `Shared context: …`
@@ -602,8 +606,8 @@ nothing, and a question with no group reads byte for byte as before. Requests ca
 only part ids and answers; the server loads the scheme, so the endpoints cannot
 grade arbitrary text (see Answer keys and server grading below). Saving an open part in the quiz editor
 asks Jev whether grading it needs a calculation checked and warns the author
-at a probability of 0.3 or more; the save is never blocked. Usage and the
-anonymous caps are in [observability-metering.md](observability-metering.md).
+at a probability of 0.3 or more; the save is never blocked. Usage is in
+[observability-metering.md](observability-metering.md).
 
 User quizzes (not the bank) are bounded so a whole quiz stays within one
 grading budget: at most 100 parts per quiz, 7 per question, 5 marking items per part
@@ -636,7 +640,7 @@ checked question with the marks it was checked against. How a try is kept
 attempt's persisted query, so a reload or later visit continues it until Redo;
 a kept attempt that is gone (404) is forgotten, and a 409 (the attempt already
 holds the question: a lost response, another tab) reads the attempt again.
-Signed out on a shared quiz, `useLocalRun` keeps the id under
+On a shared quiz page, signed in or out, `useLocalRun` keeps the id under
 `capy.quizAttempt.local.<quizId>` and the attempt in IndexedDB beside the past
 attempts, showing the run it holds so a failed save loses nothing on the page;
 a quiz in a note (in the app, graded through `/check` with nothing stored) or
@@ -645,11 +649,11 @@ share the part review renderer. The saved attempt page has Redo quiz as an
 accent link beside the title; both pages lead with the score (`ResultSummary`,
 shared with the /qb topic summary): "awarded / max" large with "marks" and the
 percentage small, one numbered square per question (green full marks, amber
-partial, red none, blank answers are wrong; grey only for an unanswered bank
-question; a square scrolls to its question) with a legend of the colours
+partial, red none, blank answers are wrong; grey for a question with a part Not
+marked and an unanswered bank question; a square scrolls to its question) with a legend of the colours
 present, marks by answer type (a question counts under its first part's type),
 then every question with marks in tint-fg colours, the submitted answer, then one collapsed disclosure holding the
-worked solution, and for open parts the marking scheme with Jev's marks beside
+worked solution, and for open parts the marking scheme with the model's marks beside
 each item. Matching pairs and `gaps` score item by item: each right item earns its
 share of the part's marks, rounded down to a half mark; other closed parts are
 all or nothing. A `gaps` part writes numbered blanks, (1) ______, in its text, 1 to n in order
@@ -721,21 +725,21 @@ outside Yjs (D3 as revised 2026-10-10).
 
 | Grading route | Request | Effect |
 | --- | --- | --- |
-| `POST /api/quizzes/{id}/check` | `{questionId, answers, attemptId?, startedAt?}` | Grades one question's parts (closed in Go, open with Jev), adds it to the attempt ([study-progress.md](study-progress.md#endpoints)), rates review and marks progress for workspace quizzes, logs each graded part ([answer events](study-progress.md#answer-events)); 200 with the `AttemptDetail` so far. Needs read access; frozen accounts check. |
-| `POST /api/public/quizzes/{token}/grade` | `{questionId, answers, localId?}` | Signed out, one question: `{correct, total, question}`, nothing stored. The per-IP and global caps count only the answered open parts; over a cap it is 429 with `errors[0].message` `anonymous_grading_limit`. |
+| `POST /api/quizzes/{id}/check` | `{questionId, answers, attemptId?, startedAt?}` | Grades one question's parts (closed in Go, open with the grading slot's model), adds it to the attempt ([study-progress.md](study-progress.md#endpoints)), rates review and marks progress for workspace quizzes, logs each graded part ([answer events](study-progress.md#answer-events)); 200 with the `AttemptDetail` so far. Needs read access; frozen accounts check. |
+| `POST /api/public/quizzes/{token}/grade` | `{questionId, answers}` | A shared page's check, for every visitor, one question: `{correct, total, question}`, nothing stored. Closed parts mark; an answered open part comes back `pending` (Not marked) with its keys, and no model is called. The same for `POST /api/public/notes/{token}/quizzes/{quizId}/grade`. Under the `/api/public/` limits, with no token or caps of its own. |
 | `POST /api/review/check` | `{materialId, itemId, answers}` | One question of a review session: `{correct, total, question}`, rated from `correct / total`, each graded part logged as an answer event. A card is 422; cards keep `POST /api/review/ratings` with a required `rating`, which no longer takes a `score`. |
 | `POST /api/bank/questions/{id}/check` | `{answers}` | One bank question: `{correct, total, question}`, and records the learner's latest score. |
 
 Graded questions carry their keys, and every part `awarded`; open parts also
-carry `itemAwards` (Jev's marks per marking item, zeros for a blank answer,
-which makes no Jev call) and matching and gaps parts `itemResults`, right or
+carry `itemAwards` (the model's marks per marking item, zeros for a blank answer,
+which makes no model call) and matching and gaps parts `itemResults`, right or
 wrong per pair or gap. `questions.Graded` builds them. `POST /api/quizzes/{id}/grade`,
 `POST /api/bank/questions/{id}/reveal` and `/answers` are removed, and the
 browser no longer sends scores or graded snapshots. Answers naming a part the
 questions lack, or an open answer that is not text or exceeds 5,000 characters,
 are 422; an unanswered part is wrong. Attempts and checks are in the
 rate limiter's AI class (`server/internal/ratelimit/middleware.go`), as the
-grade route was, because they may call Jev.
+grade route was, because they may call a model.
 
 Answers are keyed by part id, one shape per answer type, the same for a
 learner view and a full question:
@@ -767,8 +771,8 @@ each question through its `/edit` route, because the batch route is View
 mode's, and caches it apart (`bankQuestionQuery(id, mode)`); a save or review
 marker replaces the Edit entry and marks View's stale (`storeBankEdit`).
 A quiz's Check posts one question (`useCheckQuizQuestion`) and shows the
-returned attempt; signed out, the public grade route grades one question and
-the attempt goes to IndexedDB (`LocalQuizAttempt`). Check in a review session posts `/api/review/check` and
+returned attempt; on a shared page the public grade route checks one question and
+the try goes to IndexedDB (`LocalQuizAttempt`). Check in a review session posts `/api/review/check` and
 the bank's Check its `/check` route; both show the returned question.
 `QuestionRunner`'s review shows the server's grading as it is: each part's
 `awarded`, the key's correct options and accepted answers, matching and gap
@@ -777,7 +781,7 @@ that stored position. Grading refuses (422) an ordering part sent without an
 order: the shown order is always an answer, which clients send as soon as the
 part renders, and an untouched order counts as answered. Nothing in the app scores answers: `grade.ts` keeps the
 answer types and a scorer only the MSW mocks use (`src/mocks/answerKeys.ts`
-also mirrors `LearnerView` and stands in for Jev), and `grade.test.ts` runs it
+also mirrors `LearnerView` and stands in for the model), and `grade.test.ts` runs it
 over the shared scoring fixtures. A pre-2026-10-06 attempt still shows its
 score and awards, but its matching letters and ordering rows show as
 unanswered and its gaps as wrong.
@@ -907,7 +911,7 @@ storage.
 
 | Endpoint | Effect |
 | --- | --- |
-| `POST /api/bank/questions/{id}/check` | `{answers}`, the learner's answers by part id. Grades them on the server (open parts with Jev), upserts the question's topic, hash, score (`correct / total`, 0 to 1) and time, and returns `{correct, total, question}`, that one question with its key and awards; 404 when unknown or retracted. |
+| `POST /api/bank/questions/{id}/check` | `{answers}`, the learner's answers by part id. Grades them on the server (open parts with the grading slot's model), upserts the question's topic, hash, score (`correct / total`, 0 to 1) and time, and returns `{correct, total, question}`, that one question with its key and awards; 404 when unknown or retracted. |
 | `GET /api/bank/topics/{topicId}/marks` | `{marks: {questionId: score}}` for the topic list: the latest score of each answered current question. |
 | `GET /api/bank/topics/{topicId}/summary` | `{questions: [{id, position, preview, marks, answerTypes, score, reviewedAt}]}`: every current question in topic order, unpaged, with the latest score for its current content (null when not answered) and when it was last marked reviewed (null when not); the summary page and the tree's squares. |
 | `GET /api/bank/progress` | `{topics}`: every topic with at least one answered current question, most recent answer first. Each carries exam, subject and topic ids and labels, `total` (current questions), `answered`, `correct` (score 1), `lastAnsweredAt`, `nextQuestionId`: the first unanswered question after the most recently answered one in topic order, wrapping to the start, or null when every question is answered, `questionIds` (the topic's current questions in order), `answeredPositions` (1-based places of the answered ones) and `lastAnsweredPosition` (the place of the most recent answer), which the landing's progress map draws and links. |
@@ -961,7 +965,7 @@ returns that question's key and awards only. The question then shows the quiz
 review (`QuestionReview`: part score in the marks column with no question total,
 the answer boxes tagged Right, Your answer and Correct answer, accepted answers, the
 worked solution collapsed), and the topic's marks and the landing refresh. Open
-parts (none in the bank today) are graded by Jev like a quiz's. Try again
+parts (none in the bank today) are graded by the model like a quiz's. Try again
 clears the answers and the key; the next check records a new attempt, and the
 list shows the latest. Edit mode reads `GET /api/bank/questions/{id}/edit` and
 keeps the answer key, review bar and disabled runner. A failed check keeps the

@@ -383,6 +383,14 @@ func IsTextKind(kind string) bool {
 	return kind == "txt" || kind == "md" || kind == "json"
 }
 
+// IsTextFile is whether the flat text cap holds the file: txt, md, json, source
+// code, CSV and TSV (Q629, Q630), the files the text editor opens. Excel and an
+// unrecognized name keep the plan's per-file cap.
+func IsTextFile(name string) bool {
+	ext := extensionKey(name)
+	return ext == "csv" || ext == "tsv" || IsTextKind(KindFromName(name))
+}
+
 func DefaultParseMode(name, kind string) string {
 	if IsTextKind(kind) {
 		// Text is never sent to the document parser. The worker reads the bytes and
@@ -496,6 +504,9 @@ func Validate(name, kind, mode string, size, maxBytes int64) error {
 		return fmt.Errorf("source file limit must be positive")
 	}
 	if size < 0 || size > maxBytes {
+		if IsTextFile(name) {
+			return fmt.Errorf("text files can be at most %d MB", maxBytes>>20)
+		}
 		return fmt.Errorf("uploads support files up to %d MB", maxBytes>>20)
 	}
 	if expectedKind == "unknown" {

@@ -12,9 +12,9 @@ import {
  * never reach the API. Images are cached by Workers Cache for five minutes,
  * like the pages; Go verifies the token again and reads privacy live. Audio
  * redirects, uncached, to the short-lived bucket link Go signs, which the
- * player reads in ranges (Epo 2026-10-15). Grading posts go straight to
+ * player reads in ranges (Epo 2026-10-15). A check posts straight to
  * `/api/public/.../grade`: a Worker subrequest reaches the API without the
- * visitor's IP, which the per-IP grading caps and rate limits key on.
+ * visitor's IP, which the rate limit keys on.
  *
  *   GET /p/{quizzes|flashcards|notes}/{token}/assets/{assetId} → image bytes
  *   GET /p/notes/{token}/assets/{assetId} → 302 to the audio's link

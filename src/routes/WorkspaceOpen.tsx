@@ -115,6 +115,7 @@ import {
 import { waitsForConnection } from '@/lib/online';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
+const WorkspaceCanvas = lazy(() => import('@/routes/DevWorkspaceCanvas'));
 const SummaryPage = lazy(() =>
   import('@/features/study/practice/SummaryPage').then((mod) => ({
     default: mod.SummaryPage,
@@ -430,7 +431,8 @@ function WorkspaceOpen() {
     setSeenCenter(centerKey);
     setSection((was) => sectionForCenter(was, center));
   }
-  const leftOpen = section !== 'dashboard' && panelOpen;
+  // The dashboard and the canvas have no panel.
+  const leftOpen = section !== 'dashboard' && section !== 'canvas' && panelOpen;
   const leftShown = lg && leftOpen;
   const chatOnScreen = leftShown && section === 'agent' && chatShown;
   useEffect(() => {
@@ -446,7 +448,7 @@ function WorkspaceOpen() {
     section: WorkspaceSection;
   } | null>(null);
   const panelNow: WorkspacePanel | null = lg
-    ? section === 'dashboard' || !panelOpen
+    ? section === 'dashboard' || section === 'canvas' || !panelOpen
       ? 'none'
       : section
     : null;
@@ -639,6 +641,10 @@ function WorkspaceOpen() {
       if (searchedOpenItem || search.study || search.make) openDashboard();
       return;
     }
+    if (next === 'canvas') {
+      setSection('canvas');
+      return;
+    }
     if (next === section) {
       setPanelOpen(!panelOpen);
       return;
@@ -719,7 +725,7 @@ function WorkspaceOpen() {
     }
     if (!loaded || linkTaken.current) return;
     linkTaken.current = true;
-    if (add && !readOnly) setAddSource('upload');
+    if (add && !readOnly) setAddSource(add);
     if (chat) openChat(null);
     navigate({
       replace: true,
@@ -1018,7 +1024,11 @@ function WorkspaceOpen() {
         />
       </Suspense>
     ));
-  const makeChoice = { answers: search.answers, paper: search.paper };
+  const makeChoice = {
+    answers: search.answers,
+    makeFrom: search.makeFrom,
+    paper: search.paper,
+  };
   // The landing is the workspace's Dashboard (boards H1, H2).
   const pageContent =
     studyContent ||
@@ -1044,7 +1054,11 @@ function WorkspaceOpen() {
       {!headsItself && <h1 className="sr-only">{ws.name}</h1>}
       <WorkspaceHealth workspace={ws} />
       <AppErrorBoundary resetKeys={[openItem?.kind, openItem?.id]}>
-        {lg && pageContent ? (
+        {lg && section === 'canvas' ? (
+          <Suspense fallback={null}>
+            <WorkspaceCanvas workspaceId={workspaceId} />
+          </Suspense>
+        ) : lg && pageContent ? (
           pageContent
         ) : (
           <CenterContent
@@ -1359,7 +1373,11 @@ function WorkspaceOpen() {
               paper: splitIds(search.paper),
             }}
             key={quizDialogKey}
-            onClose={openDashboard}
+            onClose={() =>
+              search.makeFrom
+                ? void navigate({ search: { study: search.makeFrom }, to: '.' })
+                : openDashboard()
+            }
             onConfirmed={(run, choice) => {
               addQuizRun({ ...choice, id: run.id, workspaceId });
               openDashboard();
@@ -1388,19 +1406,32 @@ function WorkspaceOpen() {
             }
             onShowFiles={(choice) =>
               void navigate({
-                search: { ...choiceSearch(choice), make: 'files' },
+                search: {
+                  ...choiceSearch(choice),
+                  make: 'files',
+                  makeFrom: search.makeFrom,
+                },
                 to: '.',
               })
             }
             onShowPages={(choice) =>
               void navigate({
-                search: { ...choiceSearch(choice), make: 'pages' },
+                search: {
+                  ...choiceSearch(choice),
+                  make: 'pages',
+                  makeFrom: search.makeFrom,
+                },
                 to: '.',
               })
             }
             onStarted={(run, choice) =>
               void navigate({
-                search: { ...choiceSearch(choice), make: 'run', run },
+                search: {
+                  ...choiceSearch(choice),
+                  make: 'run',
+                  makeFrom: search.makeFrom,
+                  run,
+                },
                 to: '.',
               })
             }

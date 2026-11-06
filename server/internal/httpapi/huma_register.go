@@ -363,7 +363,7 @@ func mapHTTPError(err error) error {
 			Detail: fmt.Sprintf("uploads support files up to %d MB", tooLarge.LimitBytes>>20),
 			Errors: []*huma.ErrorDetail{{
 				Message: "file_too_large",
-				Value:   map[string]any{"maxBytes": tooLarge.LimitBytes},
+				Value:   map[string]any{"maxBytes": tooLarge.LimitBytes, "text": tooLarge.Text},
 			}},
 		}
 	}
@@ -438,7 +438,7 @@ func newUnexpectedError(status int, traceID string) *unexpectedError {
 // typedServerCodes are the 5xx codes the browser gives their own copy; a 5xx
 // carrying anything else in errors[] (an error's text, even one word) is
 // unexpected. src/lib/errors.ts keeps the same list.
-var typedServerCodes = []string{"provider_busy", "ai_unavailable", "generate_empty", "bank_unavailable", "upload_queue_full", "rate_limit_unavailable", "captcha_unavailable", "transcription_failed", "voice_unavailable"}
+var typedServerCodes = []string{"provider_busy", "ai_unavailable", "generate_empty", "bank_unavailable", "upload_queue_full", "rate_limit_unavailable", "transcription_failed", "voice_unavailable"}
 
 func typedServerError(details []*huma.ErrorDetail) bool {
 	return len(details) > 0 && !slices.ContainsFunc(details, func(detail *huma.ErrorDetail) bool {

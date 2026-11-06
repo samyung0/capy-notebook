@@ -152,20 +152,6 @@ export function recordLocalCardReview(
   });
 }
 
-/** A random id for anonymous usage reporting, created on first use. It never
- * identifies anyone beyond this browser profile. */
-export async function anonymousId(): Promise<string> {
-  const existing = await run<string | undefined>(['meta'], 'readonly', (t) =>
-    t.objectStore('meta').get('anonymousId')
-  );
-  if (existing) return existing;
-  const id = crypto.randomUUID();
-  await run(['meta'], 'readwrite', (t) => {
-    t.objectStore('meta').put(id, 'anonymousId');
-  });
-  return id;
-}
-
 export function localUndoPayload(
   operationId: string
 ): Promise<LocalUndoPayload | undefined> {

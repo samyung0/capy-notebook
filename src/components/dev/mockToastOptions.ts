@@ -71,15 +71,6 @@ export const mockToastOptions: {
   },
   {
     group: 'Success and notices',
-    label: 'Sign in to keep grading',
-    toast: () => ({
-      button: action(m.action_sign_in()),
-      description: m.quiz_anonymous_limit_body(),
-      title: m.quiz_anonymous_limit_title(),
-    }),
-  },
-  {
-    group: 'Success and notices',
     label: 'Back online in a workspace',
     toast: () => ({
       description: m.connection_online_body(),

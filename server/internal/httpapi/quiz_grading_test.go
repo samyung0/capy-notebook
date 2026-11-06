@@ -20,15 +20,10 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
-// openGradingAPI serves the API with a stub Jev that gives every item the same
-// choice: "zero", "partial" or "full".
+// openGradingAPI serves the API with a stub grading model that gives every item
+// the same choice ("zero", "partial" or "full") and a stub Jev for the author's
+// computation check. The count covers both: every model call.
 func openGradingAPI(t *testing.T, choice string) (http.Handler, *store.Store, *atomic.Int32) {
-	t.Helper()
-	return openGradingAPIWith(t, choice, httpapi.Config{CaptchaVerifier: testCaptcha})
-}
-
-// openGradingAPIWith is openGradingAPI with cfg's Turnstile settings.
-func openGradingAPIWith(t *testing.T, choice string, cfg httpapi.Config) (http.Handler, *store.Store, *atomic.Int32) {
 	t.Helper()
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -79,8 +74,10 @@ func openGradingAPIWith(t *testing.T, choice string, cfg httpapi.Config) (http.H
 		t.Fatal(err)
 	}
 	st.SetModelRegistry(reg)
-	cfg.E2EAuth, cfg.E2ESecret, cfg.E2EUserIDs = true, "e2e-test-secret", []string{"u_owner", "u_editor", "u_viewer", "u_other"}
-	cfg.ModelRegistry, cfg.Jev = reg, jev.NewForTest("key", srv.URL)
+	cfg := httpapi.Config{
+		E2EAuth: true, E2ESecret: "e2e-test-secret", E2EUserIDs: []string{"u_owner", "u_editor", "u_viewer", "u_other"},
+		ModelRegistry: reg, Jev: jev.NewForTest("key", srv.URL),
+	}
 	client := pipeline.New(pipe.URL, "secret")
 	if choice == "no-pipeline" {
 		client = nil
@@ -130,7 +127,7 @@ func gradedParts(t *testing.T, questions []map[string]any) map[string]map[string
 }
 
 // Checking a question grades every part on the server, stores what it graded
-// and returns the keys: Jev's per-item marks on the open part, the boolean key
+// and returns the keys: the model's per-item marks on the open part, the boolean key
 // and a matching share rounded down to a half mark.
 func TestQuizCheckGradesOnTheServer(t *testing.T) {
 	h, _, calls := openGradingAPI(t, "full")
@@ -306,7 +303,7 @@ func TestAttemptNeedsAnOrder(t *testing.T) {
 	}
 }
 
-// Jev's partial credit is half of each item's own marks.
+// The model's partial credit is half of each item's own marks.
 func TestQuizCheckScalesPartialCreditByItemMarks(t *testing.T) {
 	h, _, _ := openGradingAPI(t, "partial")
 	id := gradingQuiz(t, h, "private")
@@ -318,67 +315,92 @@ func TestQuizCheckScalesPartialCreditByItemMarks(t *testing.T) {
 	}
 }
 
-// Signed-out grading grades one question's parts and returns the keys; the
-// daily caps count only the open parts Jev grades.
-func TestGradeAnonymousQuizCapsPerIP(t *testing.T) {
-	h, st, _ := openGradingAPI(t, "full")
-	id := gradingQuiz(t, h, "link")
-	token := store.ShareToken(nil, id)
-	grade := func(ip, body string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(http.MethodPost, "/api/public/quizzes/"+token+"/grade", strings.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("CF-Connecting-IP", ip)
-		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, req)
-		return rec
+// sharedCheck posts a shared page's check as a browser does: a signed-out one
+// with no auth headers at all, and no Turnstile token either way.
+func sharedCheck(t *testing.T, h http.Handler, path, user string, answers map[string]any) *httptest.ResponseRecorder {
+	t.Helper()
+	body := map[string]any{"questionId": "q1", "answers": answers}
+	if user != "" {
+		return doReq(t, h, http.MethodPost, path, user, body)
 	}
-	const open = `{"questionId":"q1","answers":{"open-a":"Because.","closed-b":false},"localId":"device-1","turnstileToken":"turnstile-ok"}`
-	rec := grade("203.0.113.7", open)
-	var graded struct {
-		Correct, Total float64
-		Question       map[string]any
-	}
-	_ = json.Unmarshal(rec.Body.Bytes(), &graded)
-	if rec.Code != http.StatusOK || graded.Correct != 3 || graded.Total != 6 ||
-		gradedParts(t, []map[string]any{graded.Question})["closed-b"]["answer"].(map[string]any)["correct"] != true {
-		t.Fatalf("anonymous grade → %d %s", rec.Code, rec.Body.String())
-	}
-	var parts int
-	var tokens int64
-	if err := st.Pool().QueryRow(context.Background(), `SELECT parts, input_tokens FROM anonymous_grading_usage
-		WHERE ip_hash=$1 AND local_id='device-1'`, st.AnonymousIPHash("203.0.113.7")).Scan(&parts, &tokens); err != nil {
+	raw, err := json.Marshal(body)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if parts != 1 || tokens != 1000 {
-		t.Fatalf("usage parts=%d tokens=%d", parts, tokens)
-	}
-	if _, err := st.Pool().Exec(context.Background(), `UPDATE anonymous_grading_usage SET parts=$2 WHERE ip_hash=$1`,
-		st.AnonymousIPHash("203.0.113.7"), store.AnonymousGradingPartsPerIP); err != nil {
-		t.Fatal(err)
-	}
-	if rec := grade("203.0.113.7", open); rec.Code != http.StatusTooManyRequests || !strings.Contains(rec.Body.String(), "anonymous_grading_limit") {
-		t.Fatalf("capped IP → %d %s", rec.Code, rec.Body.String())
-	}
-	if rec := grade("203.0.113.7", `{"questionId":"q1","answers":{"closed-b":true},"turnstileToken":"turnstile-ok"}`); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"correct":1`) {
-		t.Fatalf("capped IP, closed parts only → %d %s", rec.Code, rec.Body.String())
-	}
-	if rec := grade("198.51.100.4", open); rec.Code != http.StatusOK {
-		t.Fatalf("another IP → %d", rec.Code)
-	}
-	if rec := grade("198.51.100.4", `{"questionId":"q1","answers":{"nope":1}}`); rec.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("unknown part → %d", rec.Code)
-	}
-	// Swap the signature's last character; a token already ending in "x" gets "y" instead.
-	forged := token[:len(token)-1] + "x"
-	if forged == token {
-		forged = token[:len(token)-1] + "y"
-	}
-	req := httptest.NewRequest(http.MethodPost, "/api/public/quizzes/"+forged+"/grade", strings.NewReader(`{"questionId":"q1","answers":{}}`))
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(string(raw)))
 	req.Header.Set("Content-Type", "application/json")
-	rec = httptest.NewRecorder()
+	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("forged token → %d", rec.Code)
+	return rec
+}
+
+// TestSharedPageCheckLeavesOpenAnswersNotMarked (security regression: Epo
+// 2026-11-05, Q640 B). A shared page's check of an open part makes no model call
+// and takes no Turnstile token: visitors can't spend anyone's model budget.
+// Closed parts still mark, the open part comes back Not marked with its marking
+// points, and a signed-in visitor gets the same, with no attempt, no daily parts
+// and no charge.
+func TestSharedPageCheckLeavesOpenAnswersNotMarked(t *testing.T) {
+	h, st, calls := openGradingAPI(t, "full")
+	ctx := context.Background()
+	id := gradingQuiz(t, h, "link")
+	path := "/api/public/quizzes/" + store.ShareToken(nil, id) + "/grade"
+	t.Cleanup(func() {
+		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM grading_usage WHERE user_id='u_other'`)
+	})
+	answers := map[string]any{"open-a": "Because.", "closed-b": true}
+	for _, user := range []string{"", "u_other"} {
+		before := calls.Load()
+		rec := sharedCheck(t, h, path, user, answers)
+		var graded struct {
+			Correct, Total float64
+			Question       map[string]any
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &graded)
+		if rec.Code != http.StatusOK || graded.Correct != 1 || graded.Total != 6 {
+			t.Fatalf("visitor %q → %d %s", user, rec.Code, rec.Body.String())
+		}
+		if calls.Load() != before {
+			t.Fatalf("visitor %q: %d model calls, want none", user, calls.Load()-before)
+		}
+		parts := gradedParts(t, []map[string]any{graded.Question})
+		open := parts["open-a"]
+		if open["pending"] != true || open["awarded"] != float64(0) || open["itemAwards"] != nil {
+			t.Fatalf("visitor %q: open part = %v, want Not marked", user, open)
+		}
+		if scheme, _ := open["markscheme"].([]any); len(scheme) != 2 {
+			t.Fatalf("visitor %q: open part's marking points = %v", user, open["markscheme"])
+		}
+		closed := parts["closed-b"]
+		if closed["awarded"] != float64(1) || closed["answer"].(map[string]any)["correct"] != true {
+			t.Fatalf("visitor %q: closed part = %v", user, closed)
+		}
+		// The check reveals the rest of the question's key, and solutions, as before.
+		if solution, _ := parts["match-c"]["solution"].([]any); len(solution) != 1 {
+			t.Fatalf("visitor %q: worked solution = %v", user, parts["match-c"]["solution"])
+		}
+	}
+	var attempts, reserved int
+	if err := st.Pool().QueryRow(ctx, `SELECT (SELECT count(*) FROM attempts WHERE material_id=$1),
+		(SELECT count(*) FROM grading_usage WHERE user_id='u_other')`, id).Scan(&attempts, &reserved); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 0 || reserved != 0 {
+		t.Fatalf("attempts %d, daily parts rows %d; a shared page's check stores nothing", attempts, reserved)
+	}
+}
+
+// A blank open answer reads as not answered, not as Not marked, and an answer
+// naming a part the question lacks is refused.
+func TestSharedPageCheckTakesBlankAndRefusesUnknownParts(t *testing.T) {
+	h, _, _ := openGradingAPI(t, "full")
+	path := "/api/public/quizzes/" + store.ShareToken(nil, gradingQuiz(t, h, "link")) + "/grade"
+	rec := sharedCheck(t, h, path, "", map[string]any{"open-a": "  "})
+	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), `"pending"`) {
+		t.Fatalf("blank open answer → %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := sharedCheck(t, h, path, "", map[string]any{"nope": 1}); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("unknown part → %d", rec.Code)
 	}
 }
 
@@ -413,7 +435,7 @@ func TestAnonymousNoteEmbedsAndGrading(t *testing.T) {
 	token := store.ShareToken(nil, note.ID)
 	grade := func(quizID string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, "/api/public/notes/"+token+"/quizzes/"+quizID+"/grade",
-			strings.NewReader(`{"questionId":"q1","answers":{"q1-a":true},"turnstileToken":"turnstile-ok"}`))
+			strings.NewReader(`{"questionId":"q1","answers":{"q1-a":true}}`))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
@@ -459,15 +481,14 @@ func TestAnonymousNoteEmbedsAndGrading(t *testing.T) {
 	}
 }
 
-// TestSignedInSharedNoteQuizChecks (security regression: rate-limit audit r2
-// N-3, Q311). A signed-in visitor's check of a quiz embedded in a shared note
-// is graded with no captcha under the user's daily grading parts and stores
-// no attempt. It keeps the anonymous route's share checks: a forged link and a
-// quiz the note does not embed are 404s, and a signed-out caller is refused.
-func TestSignedInSharedNoteQuizChecks(t *testing.T) {
+// TestSharedNoteQuizCheckLeavesOpenAnswersNotMarked (security regression: Epo
+// 2026-11-05, Q640 B). A quiz embedded in a shared note checks like a shared
+// quiz: no model call and no token for any visitor, its open part Not marked with
+// its marking points, and nothing stored.
+func TestSharedNoteQuizCheckLeavesOpenAnswersNotMarked(t *testing.T) {
 	h, st, calls := openGradingAPI(t, "full")
 	ctx := context.Background()
-	note, err := st.CreateMaterial(ctx, store.Material{CreatedBy: "u_owner", Kind: "note", Title: "Signed-in embeds", Content: noteTestContent(t, "# Embeds\n\nbody")})
+	note, err := st.CreateMaterial(ctx, store.Material{CreatedBy: "u_owner", Kind: "note", Title: "Open embed", Content: noteTestContent(t, "# Embeds\n\nbody")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -480,14 +501,10 @@ func TestSignedInSharedNoteQuizChecks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	embed := func() store.Material {
-		mt, err := st.CreateEmbeddedMaterial(ctx, "u_owner", note.ID, store.EmbeddedDraft{Kind: "quiz", Questions: questions})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return mt
+	quiz, err := st.CreateEmbeddedMaterial(ctx, "u_owner", note.ID, store.EmbeddedDraft{Kind: "quiz", Questions: questions})
+	if err != nil {
+		t.Fatal(err)
 	}
-	quiz, unreferenced := embed(), embed()
 	content, err := materialdoc.Marshal(materialdoc.Envelope{SchemaVersion: materialdoc.SchemaVersion, Value: []map[string]any{
 		materialdoc.ParagraphNode("intro"), materialdoc.MaterialRefNode(quiz.ID, "quiz"),
 	}})
@@ -500,49 +517,22 @@ func TestSignedInSharedNoteQuizChecks(t *testing.T) {
 	if _, err := st.UpdateStandaloneMaterialPrivacy(ctx, "u_owner", note.ID, "", store.PrivacyLink); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM grading_usage WHERE user_id='u_other'`)
-	})
-	token := store.ShareToken(nil, note.ID)
-	check := func(user, path string) *httptest.ResponseRecorder {
-		return doReq(t, h, http.MethodPost, path, user, map[string]any{"questionId": "q1", "answers": map[string]any{"open-a": "Because."}})
-	}
-	path := "/api/shared/notes/" + token + "/quizzes/" + quiz.ID + "/check"
-
-	captchas, graded := captchaCalls.Load(), calls.Load()
-	if rec := check("u_other", path); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"correct":1`) {
-		t.Fatalf("signed-in check → %d %s", rec.Code, rec.Body.String())
-	}
-	if captchaCalls.Load() != captchas || calls.Load() == graded {
-		t.Fatalf("captcha checks %d, Jev calls %d; want no captcha and a graded open part",
-			captchaCalls.Load()-captchas, calls.Load()-graded)
-	}
-	var parts, attempts int
-	if err := st.Pool().QueryRow(ctx, `SELECT COALESCE((SELECT parts FROM grading_usage WHERE user_id='u_other' AND day=current_date), 0),
-		(SELECT count(*) FROM attempts WHERE material_id=$1)`, quiz.ID).Scan(&parts, &attempts); err != nil {
-		t.Fatal(err)
-	}
-	if parts != 1 || attempts != 0 {
-		t.Fatalf("daily parts %d and attempts %d, want 1 part reserved and nothing stored", parts, attempts)
-	}
-
-	forged := token[:len(token)-1] + "x"
-	if forged == token {
-		forged = token[:len(token)-1] + "y"
-	}
-	for name, p := range map[string]string{
-		"forged link":       "/api/shared/notes/" + forged + "/quizzes/" + quiz.ID + "/check",
-		"quiz not embedded": "/api/shared/notes/" + token + "/quizzes/" + unreferenced.ID + "/check",
-	} {
-		if rec := check("u_other", p); rec.Code != http.StatusNotFound {
-			t.Errorf("%s → %d, want 404", name, rec.Code)
+	path := "/api/public/notes/" + store.ShareToken(nil, note.ID) + "/quizzes/" + quiz.ID + "/grade"
+	for _, user := range []string{"", "u_other"} {
+		before := calls.Load()
+		rec := sharedCheck(t, h, path, user, map[string]any{"open-a": "Because."})
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"pending":true`) || !strings.Contains(rec.Body.String(), "Point one") {
+			t.Fatalf("visitor %q → %d %s", user, rec.Code, rec.Body.String())
+		}
+		if calls.Load() != before {
+			t.Fatalf("visitor %q: %d model calls, want none", user, calls.Load()-before)
 		}
 	}
-	other := doReq(t, h, http.MethodPost, path, "u_other", map[string]any{"questionId": "q9", "answers": map[string]any{}})
-	if other.Code != http.StatusNotFound {
-		t.Errorf("question not in the quiz → %d, want 404", other.Code)
+	var attempts int
+	if err := st.Pool().QueryRow(ctx, `SELECT count(*) FROM attempts WHERE material_id=$1`, quiz.ID).Scan(&attempts); err != nil {
+		t.Fatal(err)
 	}
-	if rec := check("", path); rec.Code != http.StatusUnauthorized {
-		t.Errorf("signed out → %d, want 401", rec.Code)
+	if attempts != 0 {
+		t.Fatalf("the embed stored %d attempts", attempts)
 	}
 }

@@ -111,6 +111,12 @@ a SmartArt frame the parser cannot draw becomes a raw unit. The goldens hold
 neither, so the seed check on each environment decides whether DOCX joins the
 reset.
 
+**The zip 9.0.5 pin.** `ooxml-opc`, the fork's only zip user, moves to zip 9.0.5
+with its `unreserved` feature, so a member holding an Info-ZIP extra field saves.
+A member holding a Unicode Path field (0x7075) is re-deflated on save instead of
+raw-copied, since the copied field could rename the part on the next read
+(upstream #2138, ported ahead of the second sync, Q650). Seeds do not change.
+
 **The 0.5.1 pin.** The fork carries upstream's 0.5.1 (4e982c3ae) on Capy's
 engines, with deck schema 6.0 (every PPTX seed changes, so every PPTX room
 resets at deploy) and XLSX and DOCX seed changes the seed check lists. What
@@ -1202,7 +1208,7 @@ only a client that skipped this meets it.
 It also shrinks one
 into the room's growth budget: the edit read's `growthBudgetBytes` (Go's
 `SourceGrowthBudget`: the export cap (the largest plan source file) less the
-base file, the 1 MiB margin, admission's 64 KiB reserve and the durable change
+base file, the 1 MiB margin (Office only), admission's 64 KiB reserve and the durable change
 over the seed, its state and rows, so 0 means nothing would be admitted) less
 what the
 replica's state grew since it held the room's document, a DOCX picture
@@ -2483,10 +2489,22 @@ callers arriving while one is queued for the same document share it and
 receive its outcome, and a reloaded room's new document queues its own save.
 Credits gate parsing and AI work, independently of durable saving.
 
-DOCX blocks text input after a canvas click whose caret cannot yet be placed.
-Previously accepted input finishes at its old caret. A fresh click after that
-input drains and with available geometry must set a valid selection before typing
-resumes; the input exposes placement state and selection for browser checks.
+DOCX typing is never dropped around a press, as in Google Docs. A press that cannot
+be placed yet, before the page geometry is ready (right after opening) or while
+earlier input is landing, is held (`usePagesPointer`, `InputOperationQueue.hold`):
+what was accepted before it, a composition included, lands at the old caret in
+order, the caret goes where the press was on its page once both are done, and what
+is typed meanwhile waits behind it and lands there, in the story the press opened.
+The press keeps its place as fractions of its page, so scrolling, zoom or a sidebar
+do not move it. The last press wins and starts no drag, it leaves focus where the
+reader has it by then, and a double click in that time opens no band and selects no
+word. A wait for the geometry ends after 10 s (its engine can fail to load) or on a
+flush, a pause or a click outside the frame included: the press is dropped and what
+was typed lands at the old caret and saves. Destroying the session lands it first
+too. A closing or reloading frame loses it, as any input still in the frame.
+A press that places no caret (a band on a single click, a note area no note claims,
+a position that resolves to nothing) leaves typing where the caret was. The input
+exposes placement state and selection for browser checks.
 Run language metadata survives the native seed, Yjs projection and OOXML export,
 and so does a run's font hint (`w:rFonts w:hint`), held in its own `fontHint`
 mark so typing in the run and picking a font keep it. Picking a font sets each
@@ -2681,8 +2699,10 @@ code `role_lost`); anything else (such as the owner's account state for a
 collaborator, which the read-only strip answers) takes effect within those 5 s,
 and every checkpoint rechecks each writer's account. Each room has its own state cap (`sources::state_cap`, Epo
 2026-10-17): its seed plus the export cap (the largest plan source file,
-`max(plan_limits.source_file_max_bytes)`, read with the room's stored rows)
-less the base file and a 1 MiB margin, within the 100 MiB ceiling every room
+`max(plan_limits.source_file_max_bytes)`, or in a text room the flat
+`text_file_max_bytes`, Q629, Q630; read with the room's stored rows)
+less the base file and, for Office, a 1 MiB margin (a text file's export is the
+text its state holds, so it has none, Epo 2026-11-06), within the 100 MiB ceiling every room
 shares (WebSocket frames, downloads, offline drafts).
 Pictures that came with the file are references in the seed but bytes in the
 export, and an inserted image is in the state at least as large as in the
@@ -2711,7 +2731,9 @@ durable state's over seed(base) as the room's estimate counts it
 (`sourceGrowthSQL`): an Office state and its rows are the change, and a text
 state, the whole text with its history, less its seed (`seed_bytes`). A base
 within the margin and the reserve of the export cap leaves no growth, so a
-Pro upload between about 28.94 and 30 MiB opens view-only from the start. An
+Pro upload between about 28.94 and 30 MiB opens view-only from the start,
+and so does a text file within the 64 KiB reserve of 2 MiB, about 1.94 MiB and
+up. An
 image picked once the replica exists waits for its first measure; one picked
 before is refused with the budget notice. A
 save's whole state and an agent edit's are held to the same cap. Only when

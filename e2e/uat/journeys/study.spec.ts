@@ -342,7 +342,8 @@ test('study progress: a quiz finished, a set studied and a short review are reco
         [workspaceId]
       )
     ).length,
-    0
+    1,
+    'the grading opened one provider session'
   );
-  await run.attach(`${workspaceId}-jev`, { awards, usage });
+  await run.attach(`${workspaceId}-grading`, { awards, usage });
 });

@@ -592,17 +592,16 @@ to the session's end), Previous shows the cards before it: a rated one read
 only with its rating ringed, a skipped one still to rate. Moving on
 swipes the top card off to the top left over the next one (no motion under
 reduced motion). Signed in, each rating
-posts to `/api/review/ratings`; a shared link opened signed out renders the same
+posts to `/api/review/ratings`; a shared link, signed in or out, renders the same
 page, rating with ts-fsrs into IndexedDB, as shared quizzes keep attempts in
-the browser. Embedded sets study there too and send no ratings
+the browser (Epo 2026-11-06, Q663 A). Embedded sets study there too and send no ratings
 (`parentMaterialId` on the set).
 
 ## Learning
 
 Rules and scores, no AI (Epo 2026-11-04; `features.learning`, on). Tabs:
 Overview (default), Past reviews and All results; `src/routes/Learning.tsx`. The
-title carries "This week: 41 questions, 18 cards", `review_log` rows in scope in
-the last seven days, on Overview only. The session and result pages stay under
+session and result pages stay under
 `/learning/review/$workspaceId` and `/learning/reviews/$sessionId`.
 
 ### Overview
@@ -746,7 +745,9 @@ Signed-out visitors of standalone link or public quizzes and sets use
 interval previews): only due cards are queued, quiz attempts and an
 append-only card review log plus card states live in IndexedDB
 (`src/lib/localDb.ts`, database `capy-local`), and nothing is imported into an
-account on sign-in. `SrsState` is a hand-written type in `src/lib/srs.ts`.
+account on sign-in. Shared quiz and flashcard pages keep a signed-in visitor's
+attempts and ratings there too, since nothing on them counts (Epo 2026-11-06,
+Q663 A). `SrsState` is a hand-written type in `src/lib/srs.ts`.
 
 ## Assignments
 
@@ -1035,6 +1036,14 @@ the viewer owns or belongs to, in `TodoRows`, the rows both share. A class with
 nothing to show is left out; those with answers waiting come first, then by the
 soonest due.
 
+**New assignment's Quiz field.** Its last rows make a quiz on the spot, wherever the
+dialog opens: New quiz opens Add file's Create tab (`?add=create`), Make a quiz from a
+file opens Make a quiz (`?make=files`, whose cancel returns through `makeFrom`), and
+Generate questions takes this dialog's place with the generate dialog, which stays on the
+page once the quiz is made. Any of them discards what was typed. A frozen workspace shows no rows. With no quizzes the field
+says "Make a quiz to begin." and has no search; a list that couldn't be read says so,
+with Try again. Making a quiz either way refreshes `qk.practice`, which the field reads.
+
 **Dashboard.** `TodoSection` (H1, H2, H2b). A member's To do is what went to them:
 quizzes, and the rest with a tick; Show done brings finished ones back crossed
 out. Staff's holds answers to approve and anything they gave themselves, with New
@@ -1045,9 +1054,7 @@ went to and staff.
 
 **Not built.** The grading switch and everything behind it (AI marks, Mark with
 AI, Approve all, quoted highlights, charging). Home's To approve list and the bell. Topic labels and mastery on Results. Regrade one
-question. Per-member extra time and excused work. New quiz, Make a quiz from a
-file and Generate questions in the picker show Coming soon behind the `newQuiz`
-seam, which nothing fills yet.
+question. Per-member extra time and excused work.
 
 Sources: [store](../server/internal/store/assignments.go),
 [routes](../server/internal/httpapi/huma_assignments.go),

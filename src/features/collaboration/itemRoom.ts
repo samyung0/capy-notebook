@@ -217,7 +217,7 @@ export class ItemRoom {
   private lastToken: string | undefined;
   private readonly listeners = new Set<() => void>();
   private readonly materialId: string;
-  private readonly options: ItemRoomOptions;
+  private options: ItemRoomOptions;
   private room = '';
   private recorder: DraftRecorder | null = null;
   private storageOk = true;
@@ -536,6 +536,13 @@ export class ItemRoom {
 
   private copyDocument() {
     return this.options.document ?? 'content';
+  }
+
+  /** A copy that joins with a device copy to keep, on a room opened without. */
+  keepAs(keep: CopyLabel) {
+    if (this.options.keep) return;
+    this.options = { ...this.options, keep };
+    if (this.provider) this.keepCopy();
   }
 
   /** The room's confirmed state goes on the device: on hide and at the end,
@@ -982,20 +989,26 @@ export function openItemRoom(
   materialId: string,
   options: ItemRoomOptions & { onReplace: () => void }
 ): { close: () => void; room: ItemRoom } {
-  const create = (onReplace: () => void) => {
-    const room = new ItemRoom(materialId, { ...options, onReplace });
+  const { inside, onReplace } = options;
+  const writer = options.read ? inside?.writer : undefined;
+  const opening: ItemRoomOptions = writer
+    ? { ...options, drafts: { actorId: writer }, read: false }
+    : options;
+  const create = (replace: () => void) => {
+    const room = new ItemRoom(materialId, { ...opening, onReplace: replace });
     void room.start();
     return room;
   };
-  const { inside, onReplace } = options;
   if (!inside) {
     const room = create(onReplace);
     return { close: () => room.destroy(), room };
   }
-  const key = [materialId, options.document ?? 'content', !!options.read].join(
+  const key = [materialId, opening.document ?? 'content', !!opening.read].join(
     ' '
   );
   const { release, room } = inside.hold(key, create, onReplace);
+  // A reader may have opened it first, and it keeps no device copy.
+  if (opening.keep) room.keepAs(opening.keep);
   return { close: release, room };
 }
 

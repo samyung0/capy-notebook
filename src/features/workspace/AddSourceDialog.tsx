@@ -106,6 +106,7 @@ import {
   sourceAnalysisIssue,
   sourceAnalysisIssueMessage,
   storedSourceAnalysisInput,
+  toastRejectedSources,
   validateLocalSourceSelection,
 } from './sourceDetails';
 import { createSourceInspectionGuard } from './sourceInspectionGuard';
@@ -1205,8 +1206,8 @@ export function AddSourceDialog({
     const kind = getFileKind(retryFile.name, uploadPolicy);
     void api
       .get<FileLinks>(`/files/${encodeURIComponent(retryFile.id)}/links`)
-      .then(({ url }) => {
-        const analysisInput = storedSourceAnalysisInput(
+      .then(async ({ url }) => {
+        const analysisInput = await storedSourceAnalysisInput(
           retryFile,
           url,
           uploadPolicy
@@ -1338,18 +1339,7 @@ export function AddSourceDialog({
       Array.from(list),
       uploadPolicy
     );
-    const oversized = selected.rejected.filter(
-      (item) => item.reason === 'file_too_large'
-    );
-    if (oversized.length > 0) {
-      userToast({
-        description: oversized.map((item) => item.file.name).join(', '),
-        title: m.source_files_too_large({
-          mb: Math.round(uploadPolicy.maxBytes / 1024 / 1024),
-        }),
-        variant: 'error',
-      });
-    }
+    toastRejectedSources(selected.rejected, uploadPolicy);
     const capped = capSourceUploads(
       pendingCount,
       selected.accepted,

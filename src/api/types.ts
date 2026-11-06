@@ -491,7 +491,6 @@ export type CreateQuizReq = Omit<GenCreateQuizReq, 'questions'> & {
 export type {
   AttemptCard,
   CheckQuizQuestionReq,
-  CheckSharedNoteQuizReq,
   ItemAttempts,
   PreviousAttempt,
 } from './gen/model';

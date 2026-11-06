@@ -95,8 +95,6 @@ export * from './checkQuizQuestionReq.ts';
 export * from './checkQuizQuestionReqAnswers.ts';
 export * from './checkReviewItemReq.ts';
 export * from './checkReviewItemReqAnswers.ts';
-export * from './checkSharedNoteQuizReq.ts';
-export * from './checkSharedNoteQuizReqAnswers.ts';
 export * from './checkSourceAccessParams.ts';
 export * from './citation.ts';
 export * from './claimSourceRefreshParams.ts';

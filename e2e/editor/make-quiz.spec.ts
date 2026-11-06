@@ -519,3 +519,26 @@ test('several question files share the 40 pages, and the list divides them from 
     page.getByText(m.make_quiz_pages_count({ count: 2, max: 40 }))
   ).toBeVisible();
 });
+
+// A popover is portaled out of its dialog, whose scroll lock would cancel the wheel.
+test('the file menu scrolls with the wheel and names only the file', async ({
+  page,
+}) => {
+  await page.goto('/workspaces/ws_bio');
+  await page
+    .getByRole('button', { name: m.dashboard_make_quiz() })
+    .first()
+    .click({ timeout: 60_000 });
+  await dialog(page).getByText(m.make_quiz_choose_file()).first().click();
+  const list = page.locator(
+    '[data-radix-popper-content-wrapper] .overflow-y-auto'
+  );
+  await expect(list.getByRole('option').first()).toBeVisible();
+  await expect(list.getByText(m.make_quiz_reading_pages())).toHaveCount(0);
+
+  await list.hover();
+  await page.mouse.wheel(0, 240);
+  await expect
+    .poll(() => list.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
+});

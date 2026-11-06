@@ -181,8 +181,10 @@ export function useRunStep({
         title: notice,
         variant: report?.stopped === 'credits' ? 'error' : 'warning',
       });
-    if (workspaceId)
+    if (workspaceId) {
       void qc.invalidateQueries({ queryKey: qk.materials(workspaceId) });
+      void qc.invalidateQueries({ queryKey: qk.practice(workspaceId) });
+    }
     onDone(done);
   }, [done, onDone, qc, report, workspaceId]);
   // Cancelled: back to the pages, picks and all.

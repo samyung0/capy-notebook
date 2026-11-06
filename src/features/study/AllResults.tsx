@@ -141,9 +141,8 @@ export function AllResults() {
         onResetFilters={() =>
           setSearch({ kind: undefined, workspace: undefined })
         }
-        wide
       />
-      <PageBody belowToolbar wide>
+      <PageBody belowToolbar>
         {waitsForConnection(fetchStatus, data) ? (
           <QueryPausedState />
         ) : isLoading ? (

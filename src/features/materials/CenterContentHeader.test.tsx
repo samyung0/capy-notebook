@@ -23,6 +23,7 @@ vi.mock('@/features/workspace/HiddenChip', async (original) => {
   const real =
     await original<typeof import('@/features/workspace/HiddenChip')>();
   return {
+    ...real,
     HiddenChip: (props: { onShow?: () => void }) => {
       chips.push(props);
       return real.HiddenChip(props);
@@ -155,8 +156,17 @@ it('marks an item hidden from members beside its name', () => {
   expect(html.indexOf('Deck.pptx')).toBeLessThan(html.indexOf(label));
 });
 
+/** A visible item has a Hide file button where the chip goes (Epo 2026-11-06). */
+it('hides a visible item from the button after its name', () => {
+  const html = render(true);
+  expect(html.indexOf('Deck.pptx')).toBeLessThan(
+    html.indexOf(m.content_hide_file())
+  );
+  expect(html).toContain('sm:inline-flex');
+});
+
 /** Its owners and editors show it to members from the chip, as from the ⋮
- * menu's Show to members (Epo 2026-11-03): a button, so the keyboard reaches
+ * menu's Unhide file (Epo 2026-11-03): a button, so the keyboard reaches
  * it, that says what it does. */
 it('shows a hidden item to members from its chip', () => {
   header.hidden = true;
@@ -164,7 +174,7 @@ it('shows a hidden item to members from its chip', () => {
   const html = render(true);
   header.hidden = false;
   expect(html).toMatch(CHIP_BUTTON);
-  expect(html).toContain(m.content_show_to_members());
+  expect(html).toContain(m.content_unhide_file());
   chips[0]?.onShow?.();
   expect(header.setHidden).toHaveBeenCalledWith(
     { hidden: false, id: 'f1', type: 'file' },

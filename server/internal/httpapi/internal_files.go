@@ -221,7 +221,7 @@ func (a *api) storeAgentFile(w http.ResponseWriter, ctx context.Context, f agent
 		a.fail(w, err)
 		return store.AgentOperation{}, false
 	}
-	if err := sourceupload.Validate(f.name, kind, parseMode, int64(len(f.content)), limits.SourceFileBytes); err != nil {
+	if err := sourceupload.Validate(f.name, kind, parseMode, int64(len(f.content)), limits.FileBytes(f.name)); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": err.Error()})
 		return store.AgentOperation{}, false
 	}

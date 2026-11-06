@@ -157,6 +157,7 @@ type SourceUploadPolicy struct {
 	Accept                       string                        `json:"accept"`
 	MaxBytes                     int64                         `json:"maxBytes"`
 	ImageMaxBytes                int64                         `json:"imageMaxBytes" doc:"The caller's plan image cap, which each picture inside an Office upload must fit"`
+	TextMaxBytes                 int64                         `json:"textMaxBytes" doc:"The flat cap on one text file (txt, md, json, source code, CSV, TSV), on every plan"`
 	AllowNoExtension             bool                          `json:"allowNoExtension"`
 	DigitalParsePageCreditMicros int64                         `json:"digitalParsePageCreditMicros"`
 	VLMIngestPageCreditMicros    int64                         `json:"vlmIngestPageCreditMicros"`

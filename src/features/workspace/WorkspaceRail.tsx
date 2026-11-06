@@ -11,7 +11,16 @@ import { iconUrl } from '@/lib/icon-catalog';
 
 /** The workspace's sections (Epo 2026-11-02, S2 and N1): Dashboard has no
  * panel; Files, Agent and Study each show theirs beside the rail. */
-export type WorkspaceSection = 'dashboard' | 'files' | 'agent' | 'study';
+export type WorkspaceSection =
+  | 'dashboard'
+  | 'files'
+  | 'agent'
+  | 'study'
+  | 'canvas';
+
+/** The canvas to play with: dev builds only, like the board's dev route, so a
+ * production build drops BlockSuite's chunk until a page that ships opens it. */
+export const CANVAS_SECTION = import.meta.env.DEV;
 
 const SECTIONS: {
   value: WorkspaceSection;
@@ -26,13 +35,22 @@ const SECTIONS: {
   { icon: 'folder', label: m.workspace_tab_files, value: 'files' },
   { icon: 'ai', label: m.workspace_section_agent, value: 'agent' },
   { icon: 'book', label: m.workspace_tab_study, value: 'study' },
+  ...(CANVAS_SECTION
+    ? [
+        {
+          icon: 'shape' as const,
+          label: m.workspace_section_canvas,
+          value: 'canvas' as const,
+        },
+      ]
+    : []),
 ];
 
 /* A rail item: the icon over its label, as the app sidebar's rows look. The
    page-coloured glow keeps it readable over a dark page frame, and can't be
    seen without one. */
 const ITEM =
-  'flex w-[68px] cursor-pointer flex-col items-center gap-0.5 rounded-button-lg px-1 pt-1.5 pb-1 font-medium text-[11px] text-fg leading-[1.1] outline-none transition-colors drop-shadow-[0_0_3px_var(--color-page)] hover:bg-fg/6 focus-visible:ring-2 focus-visible:ring-action';
+  'flex w-[68px] cursor-pointer flex-col items-center gap-0.5 rounded-button-lg px-1 pt-2 pb-1.5 font-medium text-[11px] text-fg leading-[1.1] outline-none transition-colors drop-shadow-[0_0_3px_var(--color-page)] hover:bg-fg/6 focus-visible:ring-2 focus-visible:ring-action';
 
 function RailItem({
   active,
@@ -83,7 +101,7 @@ export function WorkspaceRail({
     // page frame shows straight through.
     <nav
       aria-label={m.workspace_rail_label()}
-      className="flex h-full w-19 shrink-0 flex-col items-center gap-1 overflow-y-auto overflow-x-hidden py-3"
+      className="flex h-full w-19 shrink-0 flex-col items-center gap-2 overflow-y-auto overflow-x-hidden py-3"
     >
       <Link className={cn(ITEM, 'mb-1')} preload="intent" to="/">
         <Icon name="navigationBack" size={20} />
