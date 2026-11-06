@@ -13,7 +13,11 @@ import {
   localDrawingDraft,
   saveLocalDrawingDraft,
 } from '@/lib/localDb';
-import { DRAWING_BOARD_MAX, type DrawingValue } from './drawingValue';
+import {
+  DRAWING_BOARD_MAX,
+  type DrawingValue,
+  holdOpenDrawing,
+} from './drawingValue';
 
 type Board = ReturnType<typeof mountDrawingBoard>;
 
@@ -168,6 +172,14 @@ export default function DrawingBoardScreen({
       setBusy(false);
     }
   };
+
+  // A time limit running out presses Done here (finishOpenDrawing).
+  const latestFinish = useRef(finish);
+  latestFinish.current = finish;
+  useEffect(() => {
+    if (readOnly || !onDone) return;
+    return holdOpenDrawing(() => latestFinish.current());
+  }, [onDone, readOnly]);
 
   const doneButton = (ref?: React.Ref<HTMLButtonElement>) => (
     <Button

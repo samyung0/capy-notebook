@@ -35,7 +35,10 @@ import {
   type QuestionType,
   questionMarks,
 } from '@/features/questions/types';
-import { DrawingDraftScope } from '@/features/quizzes/drawing/drawingValue';
+import {
+  DrawingDraftScope,
+  finishOpenDrawing,
+} from '@/features/quizzes/drawing/drawingValue';
 import {
   type Answer,
   type Answers,
@@ -203,6 +206,8 @@ export function AssignmentTake({
   }, [attempt.id, reread]);
 
   const change = (partId: string, value: Answer) => {
+    // Read at once by a submit that follows (a board finished at zero).
+    latest.current = { ...latest.current, [partId]: value };
     setAnswers((current) => ({ ...current, [partId]: value }));
     dirty.current = true;
     setSave('saving');
@@ -284,13 +289,20 @@ export function AssignmentTake({
   );
   const timedOut = left !== null && left <= 0;
   const once = useRef(false);
-  const end = useCallback(() => {
-    if (once.current) return;
-    once.current = true;
-    submit();
-  }, [submit]);
+  // A drawing board open when the time runs out is submitted as it stands; one
+  // open when the assignment closes is not, as nothing is taken at a close
+  // (Epo 2026-11-06).
+  const end = useCallback(
+    async (board: 'finish' | 'drop') => {
+      if (once.current) return;
+      once.current = true;
+      if (board === 'finish') await finishOpenDrawing().catch(() => undefined);
+      submit();
+    },
+    [submit]
+  );
   useEffect(() => {
-    if (timedOut) end();
+    if (timedOut) void end('finish');
   }, [end, timedOut]);
   useEffect(
     () =>
@@ -302,7 +314,7 @@ export function AssignmentTake({
           return;
         }
         onClosed();
-        end();
+        void end('drop');
       }),
     [attempt.assignmentId, end, onClosed, reread]
   );

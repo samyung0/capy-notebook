@@ -24,3 +24,19 @@ export const DrawingDraftScope = createContext<string | null>(null);
 
 export const drawingDraftKey = (scope: string, partId: string) =>
   `${scope}:${partId}`;
+
+/** The board open to answer on, at most one at a time: a time limit running
+ * out submits it as it stands (Epo 2026-11-06). */
+let openBoard: (() => Promise<void>) | null = null;
+
+export function holdOpenDrawing(finish: () => Promise<void>) {
+  openBoard = finish;
+  return () => {
+    if (openBoard === finish) openBoard = null;
+  };
+}
+
+/** Presses Done on the open board, if any, and waits for its answer. */
+export async function finishOpenDrawing() {
+  await openBoard?.();
+}

@@ -160,6 +160,28 @@ server's wording for a misplaced marking scheme. No model writes this type:
 generation, extraction and the bank pilot's schemas leave it out, since adding
 it would change what they are sent.
 
+Answering (`src/features/quizzes/drawing/`): before drawing, the part shows one
+generic squared grid with Draw answer (E1, Epo 2026-11-06), the same for every
+drawing part. Draw answer opens the board full screen (`DrawingBoardScreen`,
+loaded with BlockSuite only then): the question pinned at the top left, folded to
+one line under a top bar on phones, and Done at the top right, both hidden while a
+card (a plane, a chart) is open full screen with its own Done. As it changes, the
+board is kept on the device (`localDb` `drawingDrafts`) under the quiz or the
+assignment attempt (`DrawingDraftScope`), and reopens from there until Done. Done
+on an empty board leaves the part unanswered; past 250 KB (undo history stripped)
+it toasts and the board stays open; otherwise the answer is the board's document
+and its WebP marking image, and the part shows the drawing with Edit drawing.
+Checked, it shows its verdict, the drawing and Open drawing, the whole board read
+only. A time limit running out with the board open presses its Done before the
+assignment is submitted; an assignment closing does not. Saving to the server and
+marking are not built yet: they wait on Epo's answers in
+`drawing-marking-proposal.md` (branch `claude/drawing-answers-flow-f90c14`).
+
+A checked model-marked part (open or drawing) shows its marking scheme in the
+open, each point with a tick, a dash or a cross and its marks, then its sample
+answer, with the worked solution folded below (R1, Epo 2026-11-06,
+`QuestionReview`).
+
 ### Grouped parts
 
 Exam papers print one more level, such as (b) with its text and figure, then
