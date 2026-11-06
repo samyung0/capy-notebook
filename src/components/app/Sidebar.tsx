@@ -108,9 +108,10 @@ function isActive(pathname: string, item: NavItem): boolean {
   return pathname === item.to || pathname.startsWith(item.to + '/');
 }
 
-// Rows clip their own label so the 70px rail shows only the icon.
+// Rows clip their own label so the 70px rail shows only the icon. The phone
+// drawer keeps the taller row for touch.
 const ROW_CLASS =
-  'flex h-9 w-full justify-start gap-3 overflow-hidden whitespace-nowrap px-3 leading-(--body-line-height) active:-rotate-1';
+  'flex h-9 w-full justify-start gap-3 overflow-hidden whitespace-nowrap px-3 leading-(--body-line-height) active:-rotate-1 sm:h-8';
 
 /* The rail fades every `data-label` (row labels, the profile's name) in as it
    widens and out as it narrows. */
@@ -253,7 +254,12 @@ export function Sidebar({
       )}
 
       {withAccount && (
-        <div className={cn('flex flex-col gap-1', rail ? 'mb-1' : 'mb-4')}>
+        <div
+          className={cn(
+            'flex flex-col gap-1 sm:gap-0.5',
+            rail ? 'mb-0.5' : 'mb-4'
+          )}
+        >
           <SearchRow />
           <Row
             active={pathname === NOTIFICATIONS}
@@ -269,7 +275,7 @@ export function Sidebar({
       )}
 
       {rail ? (
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1 sm:gap-0.5">
           {nav.sections.flatMap((section) =>
             section.items.map((i) => (
               <Row active={isActive(pathname, i)} item={i} key={i.to} />
@@ -287,7 +293,7 @@ export function Sidebar({
             >
               {section.label}
             </div>
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-1 sm:gap-0.5">
               {section.items.map((i) => (
                 <Row
                   active={isActive(pathname, i)}
@@ -303,7 +309,7 @@ export function Sidebar({
 
       <div className="mt-auto" />
       {withAccount && <VoiceCard onOpen={onNavigate} />}
-      <div className="mt-3 flex flex-col gap-1 border-divider border-t pt-2">
+      <div className="mt-3 flex flex-col gap-1 border-divider border-t pt-2 sm:gap-0.5">
         {withAccount && (
           <GettingStartedRow
             className={cn(BASE_BUTTON_STYLE, ROW_CLASS, ROW_IDLE)}
