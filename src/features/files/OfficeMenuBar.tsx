@@ -1,5 +1,16 @@
-import { type ReactNode, useContext, useEffect, useRef, useState } from 'react';
+import {
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
+import {
+  type FileBannerStrip,
+  useBannerOutlet,
+} from '@/components/banners/FileBanner';
 import { Button } from '@/components/ui/Button';
 import {
   DropdownMenu,
@@ -21,11 +32,16 @@ import {
   MenubarTrigger,
 } from '@/components/ui/Menubar';
 import { ButtonTooltip } from '@/components/ui/Tooltip';
-import { TablePicker } from '@/features/notes/toolbar/ToolbarTableMenu';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useHorizontalWheelScroll } from '@/lib/useHorizontalWheelScroll';
 import { useMediaQuery } from '@/lib/useMediaQuery';
+import { TablerIcon } from '@/office-runtime/TablerIcon';
+import {
+  arrowBackUp,
+  arrowForwardUp,
+  chevronDown,
+} from '@/office-runtime/tablerGlyphs';
 import { FileModeControl } from './FileModeControl';
 import {
   FileActionsTarget,
@@ -35,37 +51,18 @@ import {
 } from './fileModeContext';
 import {
   ariaKeyShortcut,
+  OFFICE_RIBBON_COMMANDS,
   type OfficeHeaderAction,
   type OfficeMenu,
   type OfficeMenuEntry,
-  officeItemAction,
+  type OfficeRibbon,
 } from './officeMenus';
 import type { useOfficeRuntime } from './useOfficeRuntime';
 
 interface Handlers {
   onCommand: (id: string, value?: string) => void;
-  /** A `pick` item's file from Capy's picker. */
-  onFile: (id: string, file: File) => void;
   /** Called as an item is picked, before the menu closes. */
   onPick: () => void;
-  /** The table size grid is no menu item: picking a size closes the menu. */
-  onPickAndClose: () => void;
-}
-
-/** Opens the browser's file picker from the menu click's user activation. */
-function pickFile(accept: string, onFile: (file: File) => void) {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = accept;
-  input.addEventListener(
-    'change',
-    () => {
-      const file = input.files?.[0];
-      if (file) onFile(file);
-    },
-    { once: true }
-  );
-  input.click();
 }
 
 /**
@@ -75,10 +72,13 @@ function pickFile(accept: string, onFile: (file: File) => void) {
 export function OfficeHeaderSlots({
   menus,
   onCommand,
-  onFile,
   onPicked,
-}: Omit<Handlers, 'onPick' | 'onPickAndClose'> & {
-  menus: { menus: OfficeMenu[]; actions: OfficeHeaderAction[] } | null;
+}: Omit<Handlers, 'onPick'> & {
+  menus: {
+    actions: OfficeHeaderAction[];
+    menus: OfficeMenu[];
+    ribbon?: OfficeRibbon;
+  } | null;
   /** Where focus goes after a picked item: the document, not the trigger. */
   onPicked: () => void;
 }) {
@@ -100,12 +100,27 @@ export function OfficeHeaderSlots({
     <>
       {menuTarget &&
         createPortal(
-          <OfficeMenuBar
-            menus={menus.menus}
-            onCommand={onCommand}
-            onFile={onFile}
-            onPicked={onPicked}
-          />,
+          <div className="flex min-w-0 items-center">
+            {menus.ribbon && (
+              <HistoryButtons
+                onCommand={onCommand}
+                onPicked={onPicked}
+                ribbon={menus.ribbon}
+              />
+            )}
+            <OfficeMenuBar
+              menus={menus.menus}
+              onCommand={onCommand}
+              onPicked={onPicked}
+            />
+            {menus.ribbon && (
+              <RibbonTabs
+                onCommand={onCommand}
+                onPicked={onPicked}
+                ribbon={menus.ribbon}
+              />
+            )}
+          </div>,
           menuTarget
         )}
       {actionsTarget &&
@@ -121,6 +136,148 @@ export function OfficeHeaderSlots({
           actionsTarget
         )}
     </>
+  );
+}
+
+const TAB_LINE_BUTTON =
+  'flex h-6 shrink-0 cursor-pointer items-center justify-center rounded-button outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action disabled:pointer-events-none disabled:opacity-40';
+
+/** A press keeps the document's focus: the tab line is the document's chrome. */
+function keepFrameFocus(event: { preventDefault: () => void }) {
+  event.preventDefault();
+}
+
+/** Undo and Redo at the tab line's left end, as Office's Quick Access Toolbar. */
+function HistoryButtons({
+  onCommand,
+  onPicked,
+  ribbon,
+}: {
+  onCommand: (id: string) => void;
+  onPicked: () => void;
+  ribbon: OfficeRibbon;
+}) {
+  const button = (
+    item: OfficeRibbon['undo'],
+    glyph: typeof arrowBackUp | typeof arrowForwardUp
+  ) => (
+    <ButtonTooltip
+      label={item.shortcut ? `${item.label} (${item.shortcut})` : item.label}
+    >
+      <button
+        aria-keyshortcuts={
+          item.shortcut ? ariaKeyShortcut(item.shortcut) : undefined
+        }
+        aria-label={item.label}
+        className={cn(TAB_LINE_BUTTON, 'w-7 text-fg')}
+        disabled={item.disabled}
+        onClick={() => {
+          onCommand(item.id);
+          onPicked();
+        }}
+        onMouseDown={keepFrameFocus}
+        type="button"
+      >
+        <TablerIcon glyph={glyph} />
+      </button>
+    </ButtonTooltip>
+  );
+  return (
+    <>
+      {button(ribbon.undo, arrowBackUp)}
+      {button(ribbon.redo, arrowForwardUp)}
+      <span
+        aria-hidden
+        className="mr-1.5 ml-1 h-3.5 w-px shrink-0 bg-divider"
+      />
+    </>
+  );
+}
+
+/**
+ * The ribbon's tabs after File. The tab state is the runtime's: a click asks,
+ * and `ribbon` comes back. A double click collapses, as in Office.
+ */
+function RibbonTabs({
+  onCommand,
+  onPicked,
+  ribbon,
+}: {
+  onCommand: (id: string) => void;
+  onPicked: () => void;
+  ribbon: OfficeRibbon;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useHorizontalWheelScroll(ref);
+  const moveFocus = (event: React.KeyboardEvent) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    const tabs = [
+      ...(ref.current?.querySelectorAll<HTMLElement>('[role="tab"]') ?? []),
+    ];
+    const at = tabs.indexOf(document.activeElement as HTMLElement);
+    const step = event.key === 'ArrowRight' ? 1 : -1;
+    tabs[(at + step + tabs.length) % tabs.length]?.focus();
+  };
+  return (
+    <div className="flex min-w-0 items-center">
+      <div
+        aria-label={m.files_office_ribbon_tabs()}
+        className="scroll-fade-x flex min-w-0 items-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        onKeyDown={moveFocus}
+        ref={ref}
+        role="tablist"
+      >
+        {ribbon.tabs.map((tab) => {
+          const current = ribbon.tab === tab.id;
+          return (
+            <button
+              aria-selected={current}
+              className={cn(
+                TAB_LINE_BUTTON,
+                'relative whitespace-nowrap px-2 font-medium text-sm leading-none',
+                current
+                  ? 'font-bold text-fg after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-action'
+                  : 'text-fg-muted'
+              )}
+              data-testid={`office-tab-${tab.id}`}
+              key={tab.id}
+              onClick={() => {
+                onCommand(`${OFFICE_RIBBON_COMMANDS.tab}${tab.id}`);
+                onPicked();
+              }}
+              onDoubleClick={() => onCommand(OFFICE_RIBBON_COMMANDS.collapse)}
+              onMouseDown={keepFrameFocus}
+              role="tab"
+              tabIndex={
+                current || (ribbon.tab === null && tab === ribbon.tabs[0])
+                  ? 0
+                  : -1
+              }
+              type="button"
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+      {ribbon.collapsed && (
+        <ButtonTooltip label={m.files_office_ribbon_expand()}>
+          <button
+            aria-label={m.files_office_ribbon_expand()}
+            className={cn(TAB_LINE_BUTTON, 'ml-1 w-7 text-fg-muted')}
+            data-testid="office-ribbon-expand"
+            onClick={() => {
+              onCommand(OFFICE_RIBBON_COMMANDS.collapse);
+              onPicked();
+            }}
+            onMouseDown={keepFrameFocus}
+            type="button"
+          >
+            <TablerIcon glyph={chevronDown} size={16} />
+          </button>
+        </ButtonTooltip>
+      )}
+    </div>
   );
 }
 
@@ -212,7 +369,7 @@ function OfficeMenuBar({
   menus,
   onPicked,
   ...handlers
-}: Omit<Handlers, 'onPick' | 'onPickAndClose'> & {
+}: Omit<Handlers, 'onPick'> & {
   menus: OfficeMenu[];
   onPicked: () => void;
 }) {
@@ -224,10 +381,6 @@ function OfficeMenuBar({
   const [open, setOpen] = useState('');
   const onPick = () => {
     picked.current = true;
-  };
-  const onPickAndClose = () => {
-    picked.current = true;
-    setOpen('');
   };
   return (
     <Menubar
@@ -253,12 +406,7 @@ function OfficeMenuBar({
               onPicked();
             }}
           >
-            <Entries
-              entries={menu.items}
-              onPick={onPick}
-              onPickAndClose={onPickAndClose}
-              {...handlers}
-            />
+            <Entries entries={menu.items} onPick={onPick} {...handlers} />
           </MenubarContent>
         </MenubarMenu>
       ))}
@@ -271,7 +419,7 @@ function Entries({
   entries,
   ...handlers
 }: Handlers & { entries: OfficeMenuEntry[] }) {
-  const { onCommand, onFile, onPick, onPickAndClose } = handlers;
+  const { onCommand, onPick } = handlers;
   // Labels line up when any row draws an icon.
   const column = entries.some(
     (entry) => (entry.kind === 'item' || entry.kind === 'submenu') && entry.icon
@@ -279,16 +427,7 @@ function Entries({
   return entries.map((entry, index) => {
     if (entry.kind === 'separator')
       return <MenubarSeparator className="mx-0" key={`separator-${index}`} />;
-    if (entry.kind === 'grid')
-      return (
-        <TablePicker
-          key={entry.id}
-          onInsert={(rows, cols) => {
-            onCommand(entry.id, `${rows}x${cols}`);
-            onPickAndClose();
-          }}
-        />
-      );
+    if (entry.kind === 'grid') return null;
     if (entry.kind === 'submenu')
       return (
         <MenubarSub key={entry.id}>
@@ -305,7 +444,6 @@ function Entries({
         </MenubarSub>
       );
     const checkable = entry.checked !== undefined;
-    const action = officeItemAction(entry);
     return (
       <MenubarItem
         // A checkbox item draws its tick at the start and the note toolbar's
@@ -320,9 +458,7 @@ function Entries({
         key={entry.id}
         onSelect={() => {
           onPick();
-          if (action.kind === 'pick')
-            pickFile(action.accept, (file) => onFile(entry.id, file));
-          else onCommand(entry.id);
+          onCommand(entry.id);
         }}
         role={
           checkable
@@ -376,12 +512,39 @@ export function OfficeHeader({
     | 'replaced'
     | 'runMenuCommand'
     | 'saving'
-    | 'sendMenuFile'
     | 'setRuntimeMode'
+    | 'showFrameBanner'
     | 'sizeLimited'
   >;
 }) {
   const headerTarget = useContext(FileHeaderTarget);
+  // Under the ribbon, which is in the frame, Office's message bar (Q566).
+  const { showFrameBanner } = runtime;
+  const hasRibbon = !!runtime.menus?.ribbon;
+  const toFrame = useCallback(
+    (strip: FileBannerStrip | null) =>
+      showFrameBanner(
+        strip && {
+          actions: strip.actions.map(({ disabled, label }) => ({
+            disabled,
+            label,
+          })),
+          closeable: strip.closeable,
+          inline: strip.inline,
+          kind: strip.kind,
+          message: strip.message,
+          testId: strip.testId,
+          tone: strip.tone,
+        },
+        strip &&
+          ((action) =>
+            action === 'close'
+              ? strip.onClose()
+              : strip.actions[action]?.onClick())
+      ),
+    [showFrameBanner]
+  );
+  useBannerOutlet(hasRibbon && headerTarget ? toFrame : null);
   const control = (
     <FileModeControl
       canEdit={canEdit}
@@ -402,7 +565,6 @@ export function OfficeHeader({
       <OfficeHeaderSlots
         menus={runtime.menus}
         onCommand={runtime.runMenuCommand}
-        onFile={runtime.sendMenuFile}
         onPicked={() => {
           // The menu closes after its exit animation: by then a click may
           // already have put the focus into the document, which it keeps.

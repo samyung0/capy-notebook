@@ -1,12 +1,16 @@
 import { STYLES, type Style, THEMES, type Theme } from '@/theme/theme';
 import {
+  isOfficeBanner,
   isOfficeHeaderActions,
   isOfficeMenus,
+  isOfficeRibbon,
+  type OfficeBanner,
   type OfficeHeaderAction,
   type OfficeMenu,
+  type OfficeRibbon,
 } from './officeMenus';
 
-export const OFFICE_PROTOCOL_VERSION = 13 as const;
+export const OFFICE_PROTOCOL_VERSION = 14 as const;
 
 /** Capy's UI locales; the runtime draws its chrome and menus in the same one. */
 export type OfficeLocale = 'en' | 'zh';
@@ -215,6 +219,12 @@ export type OfficeHostMessage =
       frosted: boolean;
       locale: OfficeLocale;
     }
+  /** The strip to draw under the ribbon (edit mode), or none. */
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'set-banner';
+      banner: OfficeBanner | null;
+    }
   /** A click on a runtime menu item or header action (not a host command). */
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;
@@ -222,15 +232,6 @@ export type OfficeHostMessage =
       id: string;
       /** A grid's size, "<rows>x<cols>". */
       value?: string;
-    }
-  /** The file Capy's picker returned for a `pick` item. */
-  | {
-      version: typeof OFFICE_PROTOCOL_VERSION;
-      type: 'menu-file';
-      id: string;
-      name: string;
-      mimeType: string;
-      bytes: ArrayBuffer;
     }
   /**
    * Pages to print, one image to save as PNG, or an editor's list-card
@@ -387,6 +388,16 @@ export type OfficeRuntimeMessage =
       type: 'menus';
       menus: OfficeMenu[];
       actions: OfficeHeaderAction[];
+      /** An editor's tab line; its `menus` are then File's alone. */
+      ribbon?: OfficeRibbon;
+      revision: number;
+    }
+  /** A click on the strip the runtime draws (`set-banner`). */
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'banner-action';
+      /** Which of its actions, or its close button. */
+      action: number | 'close';
       revision: number;
     }
   | {
@@ -486,17 +497,12 @@ export function isOfficeHostMessage(
       typeof candidate.frosted === 'boolean' &&
       (candidate.locale === 'en' || candidate.locale === 'zh')
     );
+  if (candidate.type === 'set-banner')
+    return candidate.banner === null || isOfficeBanner(candidate.banner);
   if (candidate.type === 'menu-command')
     return (
       typeof candidate.id === 'string' &&
       (candidate.value === undefined || typeof candidate.value === 'string')
-    );
-  if (candidate.type === 'menu-file')
-    return (
-      typeof candidate.id === 'string' &&
-      typeof candidate.name === 'string' &&
-      typeof candidate.mimeType === 'string' &&
-      candidate.bytes instanceof ArrayBuffer
     );
   if (candidate.type === 'render')
     return (
@@ -576,7 +582,13 @@ export function isOfficeRuntimeMessage(
     if (raw.type === 'cursor')
       return raw.cursor === null || isOfficeCursor(raw.cursor);
     if (raw.type === 'menus')
-      return isOfficeMenus(raw.menus) && isOfficeHeaderActions(raw.actions);
+      return (
+        isOfficeMenus(raw.menus) &&
+        isOfficeHeaderActions(raw.actions) &&
+        (raw.ribbon === undefined || isOfficeRibbon(raw.ribbon))
+      );
+    if (raw.type === 'banner-action')
+      return raw.action === 'close' || isCount(raw.action);
     if (raw.type === 'rendered')
       return (
         typeof raw.id === 'string' &&

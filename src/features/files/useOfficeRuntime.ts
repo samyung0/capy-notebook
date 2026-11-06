@@ -17,8 +17,10 @@ import { useFileMode } from './FileModeControl';
 import { fileExt } from './fileUtils';
 import {
   fitOfficeMenus,
+  type OfficeBanner,
   type OfficeHeaderAction,
   type OfficeMenu,
+  type OfficeRibbon,
   officeCommandNeeds,
   officeHostCommand,
 } from './officeMenus';
@@ -155,11 +157,16 @@ export function useOfficeRuntime({
   const [outdated, setOutdated] = useState(false);
   // The runtime's menu bar and header actions; each frame sends its own.
   const [menus, setMenus] = useState<{
+    ribbon?: OfficeRibbon;
     menus: OfficeMenu[];
     actions: OfficeHeaderAction[];
   } | null>(null);
   const menusRef = useRef(menus);
   menusRef.current = menus;
+  // The strip drawn under the ribbon: its clicks come back to the host's.
+  const bannerActionRef = useRef<((action: number | 'close') => void) | null>(
+    null
+  );
   // A PPTX show is on: the frame covers the page.
   const [presenting, setPresenting] = useState(false);
   const [replicaReady, setReplicaReady] = useState(false);
@@ -688,7 +695,12 @@ export function useOfficeRuntime({
         setMenus({
           actions: message.actions,
           menus: fitOfficeMenus(message.menus),
+          ribbon: message.ribbon,
         });
+        return;
+      }
+      if (message.type === 'banner-action') {
+        bannerActionRef.current?.(message.action);
         return;
       }
       if (message.type === 'position') {
@@ -958,22 +970,14 @@ export function useOfficeRuntime({
     ]
   );
 
-  /** A `pick` item's file, from Capy's picker. */
-  const sendMenuFile = useCallback(
-    (id: string, file: File) => {
-      void file.arrayBuffer().then((bytes) =>
-        post(
-          {
-            bytes,
-            id,
-            mimeType: file.type,
-            name: file.name,
-            type: 'menu-file',
-            version: OFFICE_PROTOCOL_VERSION,
-          },
-          [bytes]
-        )
-      );
+  /** Draws the strip under the frame's ribbon (null: none). */
+  const showFrameBanner = useCallback(
+    (
+      banner: OfficeBanner | null,
+      onAction: ((action: number | 'close') => void) | null
+    ) => {
+      bannerActionRef.current = onAction;
+      post({ banner, type: 'set-banner', version: OFFICE_PROTOCOL_VERSION });
     },
     [post]
   );
@@ -1109,9 +1113,9 @@ export function useOfficeRuntime({
     retryView,
     runMenuCommand,
     saving: leaving || source.status === 'saving',
-    sendMenuFile,
     setFrameLoaded,
     setRuntimeMode,
+    showFrameBanner,
     sizeLimited,
     slowed: mode === 'edit' && source.slowed,
     // The header says Reconnecting until the new view takes over.

@@ -24,8 +24,8 @@ export type OfficeMenuEntry =
       disabled?: boolean;
       icon?: IconName;
       /**
-       * Capy opens its file picker (the frame has no user activation for
-       * one) and sends the chosen file in `menu-file` instead of a command.
+       * The ribbon opens the file picker from its click, and runs the item
+       * with the chosen file.
        */
       pick?: 'image';
       /**
@@ -74,6 +74,41 @@ export interface OfficeHeaderAction {
 }
 
 /**
+ * The ribbon's tab line, which Capy's header draws (Q562): Undo and Redo on
+ * every tab, as Office's Quick Access Toolbar, and the editor's tabs. The ribbon
+ * itself is in the frame. Only edit mode has one (Q666).
+ */
+export interface OfficeRibbon {
+  collapsed: boolean;
+  redo: Extract<OfficeMenuEntry, { kind: 'item' }>;
+  /** Null: collapsed, with no tab open over the page. */
+  tab: string | null;
+  tabs: { id: string; label: string }[];
+  undo: Extract<OfficeMenuEntry, { kind: 'item' }>;
+}
+
+/** Ids the tab line sends in `menu-command`; the runtime keeps the tab state. */
+export const OFFICE_RIBBON_COMMANDS = {
+  collapse: 'ribbon.collapse',
+  /** Followed by the tab's id. */
+  tab: 'ribbon.tab:',
+} as const;
+
+/**
+ * A file strip the runtime draws under its ribbon, as Office's message bar
+ * (Q566): what FileBanner would draw; `banner-action` carries the clicks back.
+ */
+export interface OfficeBanner {
+  actions: { disabled?: boolean; label: string }[];
+  closeable: boolean;
+  inline: boolean;
+  kind?: string;
+  message: string;
+  testId?: string;
+  tone: 'neutral' | 'error';
+}
+
+/**
  * Items Capy performs itself instead of the runtime, which is sandboxed
  * without downloads, popups or modals: the runtime lists them where they
  * belong, and the host handles a click without a `menu-command`.
@@ -98,21 +133,6 @@ export function officeHostCommand(id: string): OfficeHostCommand | undefined {
   return (Object.keys(OFFICE_HOST_COMMANDS) as OfficeHostCommand[]).find(
     (command) => OFFICE_HOST_COMMANDS[command] === id
   );
-}
-
-/**
- * What a click on a menu item does: open Capy's file picker (`pick`), run
- * one of Capy's own commands, or send the id to the runtime.
- */
-export function officeItemAction(
-  item: Pick<Extract<OfficeMenuEntry, { kind: 'item' }>, 'id' | 'pick'>
-):
-  | { kind: 'pick'; accept: string }
-  | { kind: 'host'; command: OfficeHostCommand }
-  | { kind: 'runtime' } {
-  if (item.pick === 'image') return { accept: 'image/*', kind: 'pick' };
-  const command = officeHostCommand(item.id);
-  return command ? { command, kind: 'host' } : { kind: 'runtime' };
 }
 
 const MAC_MODIFIERS = /^[⌃⌥⇧⌘]*/;
@@ -218,6 +238,42 @@ export function isOfficeMenus(value: unknown): value is OfficeMenu[] {
         isEntries(candidate.items, 1)
       );
     })
+  );
+}
+
+function isTabLineItem(value: unknown) {
+  return isEntry(value, 1) && (value as { kind: string }).kind === 'item';
+}
+
+export function isOfficeRibbon(value: unknown): value is OfficeRibbon {
+  if (!value || typeof value !== 'object') return false;
+  const ribbon = value as Record<string, unknown>;
+  return (
+    typeof ribbon.collapsed === 'boolean' &&
+    (ribbon.tab === null || isText(ribbon.tab)) &&
+    isTabLineItem(ribbon.undo) &&
+    isTabLineItem(ribbon.redo) &&
+    Array.isArray(ribbon.tabs) &&
+    ribbon.tabs.length <= MAX_MENUS &&
+    ribbon.tabs.every((tab) => isText(tab?.id) && isText(tab?.label))
+  );
+}
+
+export function isOfficeBanner(value: unknown): value is OfficeBanner {
+  if (!value || typeof value !== 'object') return false;
+  const banner = value as Record<string, unknown>;
+  return (
+    typeof banner.message === 'string' &&
+    (banner.tone === 'neutral' || banner.tone === 'error') &&
+    typeof banner.closeable === 'boolean' &&
+    typeof banner.inline === 'boolean' &&
+    isOptional(banner.kind, 'string') &&
+    isOptional(banner.testId, 'string') &&
+    Array.isArray(banner.actions) &&
+    banner.actions.every(
+      (action) =>
+        isText(action?.label) && isOptional(action?.disabled, 'boolean')
+    )
   );
 }
 

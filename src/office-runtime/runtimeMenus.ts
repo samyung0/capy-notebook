@@ -16,7 +16,7 @@ import type {
 export interface OfficeMenuSource {
   actions?: OfficeHeaderAction[];
   menus: OfficeMenu[];
-  /** `file` comes with a `pick` item, from Capy's picker. */
+  /** `file` comes with a `pick` item, from the ribbon's picker. */
   run: (id: string, value?: string, file?: File) => void;
 }
 

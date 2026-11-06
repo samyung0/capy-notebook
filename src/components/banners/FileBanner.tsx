@@ -3,6 +3,7 @@ import {
   type ReactNode,
   useCallback,
   useContext,
+  useEffect,
   useId,
   useLayoutEffect,
   useMemo,
@@ -21,10 +22,42 @@ export interface FileBannerAction {
   onClick: () => void;
 }
 
+/** What a strip looks like, for a place that draws it itself. */
+export interface FileBannerStrip {
+  actions: FileBannerAction[];
+  closeable: boolean;
+  inline: boolean;
+  kind?: string;
+  message: string;
+  onClose: () => void;
+  testId?: string;
+  tone: 'neutral' | 'error';
+}
+
+export type BannerOutlet = (strip: FileBannerStrip | null) => void;
+
 const StripStack = createContext<{
+  outlet: BannerOutlet | null;
   push: (id: string) => () => void;
+  setOutlet: (outlet: BannerOutlet | null) => void;
   top: string | undefined;
 } | null>(null);
+
+/**
+ * Sends the stack's shown strip to `outlet` instead of drawing it, while one is
+ * given: an Office editor draws it under its ribbon, which is in its frame.
+ */
+export function useBannerOutlet(outlet: BannerOutlet | null) {
+  const setOutlet = useContext(StripStack)?.setOutlet;
+  useEffect(() => {
+    if (!(setOutlet && outlet)) return;
+    setOutlet(outlet);
+    return () => {
+      setOutlet(null);
+      outlet(null);
+    };
+  }, [outlet, setOutlet]);
+}
 
 /**
  * Shows only the newest strip mounted inside it (a strip whose message
@@ -32,11 +65,20 @@ const StripStack = createContext<{
  */
 export function BannerStack({ children }: { children: ReactNode }) {
   const [ids, setIds] = useState<string[]>([]);
+  const [outlet, setOutletState] = useState<BannerOutlet | null>(null);
+  // A function in state is called as an updater: the setter wraps it.
+  const setOutlet = useCallback(
+    (next: BannerOutlet | null) => setOutletState(() => next),
+    []
+  );
   const push = useCallback((id: string) => {
     setIds((list) => [...list.filter((other) => other !== id), id]);
     return () => setIds((list) => list.filter((other) => other !== id));
   }, []);
-  const value = useMemo(() => ({ push, top: ids.at(-1) }), [ids, push]);
+  const value = useMemo(
+    () => ({ outlet, push, setOutlet, top: ids.at(-1) }),
+    [ids, outlet, push, setOutlet]
+  );
   return <StripStack.Provider value={value}>{children}</StripStack.Provider>;
 }
 
@@ -77,7 +119,26 @@ export function FileBanner({
     () => (push && shown ? push(id) : undefined),
     [push, id, shown, message]
   );
-  if (!shown || (stack && stack.top !== id)) return null;
+  const showing = shown && (!stack || stack.top === id);
+  const outlet = showing ? stack?.outlet : null;
+  // Every render: actions close over their view's state.
+  useEffect(() => {
+    outlet?.({
+      actions,
+      closeable,
+      inline,
+      kind,
+      message,
+      onClose: () => setClosed(message),
+      testId,
+      tone,
+    });
+  });
+  useEffect(() => {
+    if (!outlet) return;
+    return () => outlet(null);
+  }, [outlet]);
+  if (!showing || outlet) return null;
   const buttons = actions.map((action) => (
     <Button
       className="h-7 px-2 underline underline-offset-3 hover:bg-fg/5"

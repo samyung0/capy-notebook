@@ -9,8 +9,9 @@ import {
   type PptxCommandState,
   PptxEditor,
   type PptxEditorApi,
+  type RibbonControls,
 } from '@betteroffice/pptx-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PaneLoading } from '@/components/ui/feedback';
 import type {
   OfficeAnalysis,
@@ -20,6 +21,7 @@ import type {
 } from '@/features/files/officeProtocol';
 import { m } from '@/i18n';
 import { runtimeNotesWindow } from './notesWindow';
+import { OfficeRibbon, type OfficeRibbonHost } from './OfficeRibbon';
 import type {
   OfficeCollaboration,
   OfficeExporter,
@@ -31,6 +33,7 @@ import { loadPptxFonts } from './pptxFonts';
 import { pptxIcons } from './pptxIcons';
 import { pptxStrings, presentAction } from './pptxMenus';
 import { renderSlides, slideThumbnail } from './pptxRender';
+import { PPTX_RIBBON } from './pptxRibbon';
 import { PRESENTER_VIEW } from './presenterWindow';
 import type {
   OfficeMenuReporter,
@@ -78,6 +81,7 @@ function pptxPresence(channel: CursorChannel): PptxPresence {
 export function PptxEditorHost({
   bytes,
   collaboration,
+  compact,
   onExporter,
   onFlusher,
   fileName,
@@ -98,16 +102,20 @@ export function PptxEditorHost({
   onZoomChange,
   prepareImage,
   readOnly,
+  ribbon,
 }: {
   bytes: Uint8Array;
   collaboration: OfficeCollaboration;
+  /** Below md: the ribbon is one row, with no zoom (as the PDF toolbar), font
+   * picker or size box. */
+  compact: boolean;
   onExporter: (exporter: OfficeExporter | null) => void;
   onFlusher: (flusher: OfficeFlusher | null) => void;
   fileName: string;
   /** The level the file was last shown at; fit to the window without. */
   initialZoom?: OfficeZoom;
   locale: OfficeLocale;
-  /** Below lg: no zoom (as the PDF toolbar), font picker or size box. */
+  /** Below lg: the slide strip goes under the slide. */
   narrow: boolean;
   /** Once the first slide is painted, pictures included. */
   onAnalysis: (analysis: OfficeAnalysis) => void;
@@ -128,6 +136,7 @@ export function PptxEditorHost({
   prepareImage: (file: File) => Promise<File>;
   /** Recovery: selection and copy only. */
   readOnly: boolean;
+  ribbon: OfficeRibbonHost;
 }) {
   const apiRef = useRef<PptxEditorApi | null>(null);
   const editorCollaboration = useMemo(
@@ -281,6 +290,18 @@ export function PptxEditorHost({
     };
   }, [onError]);
 
+  const renderRibbon = useCallback(
+    (controls: RibbonControls) => (
+      <OfficeRibbon
+        controls={controls}
+        layout={PPTX_RIBBON}
+        onBannerAction={ribbon.onBannerAction}
+        phone={compact}
+        store={ribbon.store}
+      />
+    ),
+    [compact, ribbon]
+  );
   if (!fonts)
     return <PaneLoading message={m.files_office_runtime_loading_editor()} />;
   return (
@@ -326,12 +347,13 @@ export function PptxEditorHost({
         }
         prepareImage={prepareImage}
         readOnly={readOnly}
+        ribbon={renderRibbon}
         // Present is a header action and Capy has no PPTX agent proposals.
-        showFontPicker={!narrow}
-        showFontSizePicker={!narrow}
+        showFontPicker={!compact}
+        showFontSizePicker={!compact}
         showPresentButton={false}
         showProposals={false}
-        showZoomControl={!narrow}
+        showZoomControl={!compact}
         singleRowToolbar
         // Below desktop the slide strip goes under the slide, as in view.
         stripBelow={narrow}

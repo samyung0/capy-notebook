@@ -49,6 +49,7 @@ import type {
 import { type CursorChannel, createCursorChannel } from './officePresence';
 import { handOverPresenterWindow, PRESENTER_VIEW } from './presenterWindow';
 import { prewarmRuntime, runtimeChunks } from './prewarm';
+import { createRibbonStore, ribbonChrome } from './ribbonStore';
 import {
   type OfficeCaptureScope,
   type OfficeMenuSource,
@@ -258,35 +259,72 @@ function OfficeRuntime() {
   const menusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // An editor's menus wait for its replica, as the old Save button did:
   // anything in them (File › Save first) can then reach the room.
+  const sendMenusNow = useCallback(() => {
+    const revision = revisionRef.current;
+    const current = menuSourceRef.current;
+    if (revision === null || (epochRef.current !== null && !replicaRef.current))
+      return;
+    const menus = current?.menus ?? [];
+    // A paused editor lists its editing items disabled (File › Save too).
+    const editing = epochRef.current !== null;
+    const shown = editing && pausedRef.current ? pausedMenus(menus) : menus;
+    // An editor's other menus are its ribbon's: Capy draws File and the tab line.
+    const chrome = editing && ribbonRef.current.get();
+    const ribbon = chrome ? ribbonChrome(chrome) : null;
+    const payload = {
+      actions: current?.actions ?? [],
+      menus: ribbon ? shown.filter((menu) => menu.id === 'file') : shown,
+      ...(ribbon && { ribbon }),
+    };
+    const text = JSON.stringify(payload);
+    if (text === menusSent.current) return;
+    menusSent.current = text;
+    post({ ...payload, revision, type: 'menus' });
+  }, []);
   const sendMenus = useCallback(() => {
     if (menusTimer.current) clearTimeout(menusTimer.current);
-    menusTimer.current = setTimeout(() => {
-      const revision = revisionRef.current;
-      const current = menuSourceRef.current;
-      if (
-        revision === null ||
-        (epochRef.current !== null && !replicaRef.current)
-      )
-        return;
-      const menus = current?.menus ?? [];
-      // A paused editor lists its editing items disabled (File › Save too).
-      const editing = epochRef.current !== null;
-      const payload = {
-        actions: current?.actions ?? [],
-        menus: editing && pausedRef.current ? pausedMenus(menus) : menus,
-      };
-      const text = JSON.stringify(payload);
-      if (text === menusSent.current) return;
-      menusSent.current = text;
-      post({ ...payload, revision, type: 'menus' });
-    }, 50);
-  }, []);
+    menusTimer.current = setTimeout(sendMenusNow, 50);
+  }, [sendMenusNow]);
+  // A tab click answers at once; the state stays out of React, so moving
+  // between tabs renders the ribbon alone (OfficeRibbon).
+  const [ribbon] = useState(() => createRibbonStore(() => sendMenusNow()));
+  const ribbonRef = useRef(ribbon);
+  // The ribbon runs the menus' commands in the frame, under the same pause.
+  const shareMenus = useCallback(() => {
+    const source = menuSourceRef.current;
+    const menus = source?.menus ?? [];
+    ribbon.setMenus(
+      epochRef.current !== null && pausedRef.current
+        ? pausedMenus(menus)
+        : menus,
+      source &&
+        ((id, value, file) => {
+          if (
+            !(
+              epochRef.current !== null &&
+              pausedRef.current &&
+              !runsWhilePaused(source, id)
+            )
+          )
+            source.run(id, value, file);
+        })
+    );
+  }, [ribbon]);
   const reportMenus = useCallback(
     (source: OfficeMenuSource | null) => {
       menuSourceRef.current = source;
+      shareMenus();
       sendMenus();
     },
-    [sendMenus]
+    [sendMenus, shareMenus]
+  );
+  const reportBannerAction = useCallback((action: number | 'close') => {
+    if (revisionRef.current !== null)
+      post({ action, revision: revisionRef.current, type: 'banner-action' });
+  }, []);
+  const ribbonHost = useMemo(
+    () => ({ onBannerAction: reportBannerAction, store: ribbon }),
+    [reportBannerAction, ribbon]
   );
   // The replica's state size once it held the room's document: the image
   // budget counts what the document grew since. An image picked before the
@@ -501,8 +539,18 @@ function OfficeRuntime() {
         setCitation(message.citation);
         return;
       }
+      if (message.type === 'set-banner') {
+        ribbonRef.current.setBanner(message.banner);
+        return;
+      }
+      // The tab line runs in every state: moving between tabs edits nothing.
       if (
-        (message.type === 'menu-command' || message.type === 'menu-file') &&
+        message.type === 'menu-command' &&
+        ribbonRef.current.command(message.id)
+      )
+        return;
+      if (
+        message.type === 'menu-command' &&
         epochRef.current !== null &&
         pausedRef.current &&
         !runsWhilePaused(menuSourceRef.current, message.id)
@@ -510,13 +558,6 @@ function OfficeRuntime() {
         return;
       if (message.type === 'menu-command') {
         menuSourceRef.current?.run(message.id, message.value);
-        return;
-      }
-      if (message.type === 'menu-file') {
-        const file = new File([message.bytes], message.name, {
-          type: message.mimeType,
-        });
-        menuSourceRef.current?.run(message.id, undefined, file);
         return;
       }
       if (message.type === 'render' && revisionRef.current !== null) {
@@ -579,6 +620,7 @@ function OfficeRuntime() {
       if (message.type === 'set-capabilities') {
         canEditRef.current = message.canEdit;
         pausedRef.current = pausedFor(message.canEdit);
+        shareMenus();
         sendMenus();
         if (pausedRef.current) await flush();
         // The latest pause state: a message that came during the flush set it.
@@ -811,7 +853,6 @@ function OfficeRuntime() {
               compact={compact}
               initialZoom={file.zoom}
               locale={locale}
-              narrow={narrow}
               onAnalysis={reportAnalysis}
               onError={reportError}
               onExporter={reportExporter}
@@ -825,15 +866,16 @@ function OfficeRuntime() {
               onZoomChange={reportZoom}
               prepareImage={prepareImage}
               readOnly={readOnly}
+              ribbon={ribbonHost}
             />
           ) : file.format === 'xlsx' ? (
             <XlsxEditorHost
               bytes={file.bytes}
               collaboration={collaboration}
+              compact={compact}
               fileName={file.fileName}
               initialZoom={zoom}
               locale={locale}
-              narrow={narrow}
               onAnalysis={reportAnalysis}
               onExporter={reportExporter}
               onFlusher={reportFlusher}
@@ -846,12 +888,14 @@ function OfficeRuntime() {
               onThumbnailer={reportThumbnailer}
               onZoomChange={reportZoom}
               readOnly={readOnly}
+              ribbon={ribbonHost}
               sending={sending}
             />
           ) : (
             <PptxEditorHost
               bytes={file.bytes}
               collaboration={collaboration}
+              compact={compact}
               fileName={file.fileName}
               initialZoom={file.zoom}
               locale={locale}
@@ -872,6 +916,7 @@ function OfficeRuntime() {
               onZoomChange={reportZoom}
               prepareImage={prepareImage}
               readOnly={readOnly}
+              ribbon={ribbonHost}
             />
           )
         ) : file.format === 'docx' ? (

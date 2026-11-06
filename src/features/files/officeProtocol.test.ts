@@ -151,14 +151,6 @@ describe('office host protocol', () => {
     const accepted = [
       { id: 'zoom:125', type: 'menu-command', version },
       { id: 'insert-table', type: 'menu-command', value: '3x4', version },
-      {
-        bytes: new ArrayBuffer(4),
-        id: 'insert-image',
-        mimeType: 'image/png',
-        name: 'cell.png',
-        type: 'menu-file',
-        version,
-      },
       { id: 'r1', kind: 'print', type: 'render', version },
       { id: 'r2', kind: 'png', type: 'render', version },
       { id: 'r4', kind: 'thumbnail', type: 'render', version },
