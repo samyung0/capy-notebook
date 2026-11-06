@@ -79,6 +79,51 @@ request format, control cases, coverage and results.
 python bench/grading/scripts/alibaba_decision.py --dataset data/grading-benchmark/laya-20260927/requests.jsonl --output data/grading-benchmark/alibaba-reproduction/pilot.jsonl --env .env.local --key-var ALIBABA_BEIJING_KEY --url-var ALIBABA_BEIJING_URL --parallel 8 --suite rubric --pilot
 ```
 
+## DeepSeek grader against Jev
+
+[`scripts/deepseek_grading.py`](scripts/deepseek_grading.py) grades open parts with
+DeepSeek: one request per part, JSON per marking item (none, partial or full plus a
+quote), temperature 0 with thinking off. Code checks that each partial or full quote
+appears in the answer after whitespace normalisation (otherwise the item scores none),
+applies the answer-level `vocabulary_only` flag and computes marks from the choices.
+It runs `deepseek-flash` on DeepSeek's API and the ingest descriptor pin
+`deepseek/deepseek-v4-flash-0731` on OpenRouter, and Jev's production request pinned
+to `jev-1.13.0`; the contract and LaTeX sets reuse Jev's saved 2026-10-02 runs.
+Sets: the Jev contract and LaTeX fixtures, `jev-partial-credit.json` and
+`typesafe_rubric_cases.json` as held-out sets, and the `deepseek-grading-*.json`
+fixtures (prompt injection, Traditional Chinese, HKDSE maths with working, IELTS
+reading, HKDSE Chinese reading from the 2020–2021 papers, and original DSE-style
+Chinese passages). Keys come from an explicit `--env` file; at most four workers, no
+retries. See the [2026-11-03 report](reports/2026-11-03-deepseek-grading.md).
+Round 2 (`--prompt r2`) sends the part's reference to the marker, adds rules for
+working and for reading answers, asks for `steps` before the choices and matches
+quotes on letters and digits; `--thinking-sets math` grades maths with thinking,
+`--no-reference` drops the reference block. See the
+[round 2 report](reports/2026-11-03-deepseek-grading-round2.md).
+Round 3 (`--prompt r3`) moves answer rules out of the question and item text
+(`deepseek-grading-rules.json` (on `claude/bench-deepseek-grading-4a344d`)): copy
+and word-limit rules are checked in code and a broken no-marks rule scores 0
+without a call; other rules go to the model in `<answer_rules>`. It adds
+`deepseek-v41-flash` (the alias, on Wafer) and `deepseek-v41-1017` (the dated
+captioning pin, InferenceNet then Cloudflare) on OpenRouter; `--copy-alt` measures
+whole-paragraph copying
+as passage coverage. See the [round 3 report](reports/2026-11-03-deepseek-grading-round3.md).
+[`scripts/grading_concurrency.py`](scripts/grading_concurrency.py) grades simulated
+40-part submissions on the 1017 pin with N parts in flight and several submissions at
+once: wall time, per-call latency, providers, errors, accuracy and cost. See the
+[concurrency report](reports/2026-11-04-grading-concurrency.md).
+
+```sh
+S=bench/grading/scripts/deepseek_grading.py; D=data/grading-benchmark/deepseek-grading-<fresh>; E=deploy/.env.uat
+python $S --check
+python $S run --grader deepseek-flash --sets all --env $E --output $D/flash
+python $S run --grader deepseek-0731 --sets all --env $E --output $D/0731
+python $S run --grader jev --sets all --env $E --jev-saved data/grading-benchmark/jev-contract-20261002 --output $D/jev
+python $S run --grader deepseek-flash --sets contract --kinds keywords,partial --label flash-repeat --env $E --output $D/flash-repeat
+python $S run --grader deepseek-flash --sets all --thinking low --samples 2 --borderline-from $D/flash --label flash-think-low --env $E --output $D/flash-think-low
+python $S report --runs $D/* --output $D/summary.json --compact bench/grading/reports/2026-11-03-mac
+```
+
 ## Reproduce a run
 
 The bounded Jev context comparison in
