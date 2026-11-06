@@ -157,7 +157,7 @@ func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*br
 			if err != nil {
 				return nil, hErr(err)
 			}
-			session.AtSizeLimit = store.SourceGrowthBudget(exportCap, *session.BaseBytes, session.GrownBytes) == 0
+			session.AtSizeLimit = store.SourceGrowthBudget(session.Format, exportCap, *session.BaseBytes, session.GrownBytes) == 0
 		}
 		return a.browserSourceSession(ctx, session)
 	}
@@ -200,7 +200,7 @@ func (a *api) sourceGrowthBudget(ctx context.Context, session store.BrowserSourc
 		return 0, hErr(err)
 	}
 	if session.BaseBytes != nil {
-		return store.SourceGrowthBudget(exportCap, *session.BaseBytes, session.GrownBytes), nil
+		return store.SourceGrowthBudget(session.Format, exportCap, *session.BaseBytes, session.GrownBytes), nil
 	}
 	if a.blob == nil {
 		return 0, huma.Error503ServiceUnavailable("blob store not configured")
@@ -209,7 +209,7 @@ func (a *api) sourceGrowthBudget(ctx context.Context, session store.BrowserSourc
 	if err != nil {
 		return 0, hErr(err)
 	}
-	return store.SourceGrowthBudget(exportCap, info.Size, session.GrownBytes), nil
+	return store.SourceGrowthBudget(session.Format, exportCap, info.Size, session.GrownBytes), nil
 }
 func (a *api) bootstrapSourceDocument(ctx context.Context, in *sourceBootstrapInput) (*sourceSessionOutput, error) {
 	if err := a.checkSourceSecret(ctx, in.Secret); err != nil {

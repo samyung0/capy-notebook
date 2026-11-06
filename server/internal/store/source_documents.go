@@ -92,8 +92,8 @@ type SourceSession struct {
 	BrowserSourceSession
 }
 
-// sourceGrowthMarginBytes: what a room's growth stays under the export cap
-// by. IMPORTANT: KEEP IN SYNC WITH STATE_GROWTH_MARGIN_BYTES IN
+// sourceGrowthMarginBytes: what an Office room's growth stays under the export
+// cap by; a text room has none (Epo 2026-11-06). IMPORTANT: KEEP IN SYNC WITH STATE_GROWTH_MARGIN_BYTES IN
 // collaboration-rs/crates/sources/src/lib.rs
 const sourceGrowthMarginBytes = 1 << 20
 
@@ -108,11 +108,15 @@ const sourceCeilingBytes = 100 << 20
 const sourceWriteReserveBytes = 64 << 10
 
 // SourceGrowthBudget is what a source room may still admit: the export cap
-// (SourceExportCap) less the base file, the margin, admission's write reserve and the durable growth over seed(base) (Epo 2026-10-17; the
+// (SourceExportCap) less the base file, an Office room's margin, admission's write reserve and the durable growth over seed(base) (Epo 2026-10-17; the
 // collaboration server's admission_cap of state_cap). Never negative; 0
 // means nothing would be admitted, so the file opens to view only.
-func SourceGrowthBudget(exportCap, baseBytes, grownBytes int64) int64 {
-	return max(0, exportCap-baseBytes-sourceGrowthMarginBytes-sourceWriteReserveBytes-grownBytes)
+func SourceGrowthBudget(format string, exportCap, baseBytes, grownBytes int64) int64 {
+	margin := int64(sourceGrowthMarginBytes)
+	if format == "text" {
+		margin = 0
+	}
+	return max(0, exportCap-baseBytes-margin-sourceWriteReserveBytes-grownBytes)
 }
 
 // sourceGrowthSQL is a source row's durable growth over seed(base), as the

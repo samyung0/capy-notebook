@@ -1106,7 +1106,7 @@ only a client that skipped this meets it.
 It also shrinks one
 into the room's growth budget: the edit read's `growthBudgetBytes` (Go's
 `SourceGrowthBudget`: the export cap (the largest plan source file) less the
-base file, the 1 MiB margin, admission's 64 KiB reserve and the durable change
+base file, the 1 MiB margin (Office only), admission's 64 KiB reserve and the durable change
 over the seed, its state and rows, so 0 means nothing would be admitted) less
 what the
 replica's state grew since it held the room's document, a DOCX picture
@@ -2601,7 +2601,8 @@ and every checkpoint rechecks each writer's account. Each room has its own state
 2026-10-17): its seed plus the export cap (the largest plan source file,
 `max(plan_limits.source_file_max_bytes)`, or in a text room the flat
 `text_file_max_bytes`, Q629, Q630; read with the room's stored rows)
-less the base file and a 1 MiB margin, within the 100 MiB ceiling every room
+less the base file and, for Office, a 1 MiB margin (a text file's export is the
+text its state holds, so it has none, Epo 2026-11-06), within the 100 MiB ceiling every room
 shares (WebSocket frames, downloads, offline drafts).
 Pictures that came with the file are references in the seed but bytes in the
 export, and an inserted image is in the state at least as large as in the
@@ -2631,7 +2632,8 @@ durable state's over seed(base) as the room's estimate counts it
 state, the whole text with its history, less its seed (`seed_bytes`). A base
 within the margin and the reserve of the export cap leaves no growth, so a
 Pro upload between about 28.94 and 30 MiB opens view-only from the start,
-and so does a text file between about 0.94 and 2 MiB. An
+and so does a text file within the 64 KiB reserve of 2 MiB, about 1.94 MiB and
+up. An
 image picked once the replica exists waits for its first measure; one picked
 before is refused with the budget notice. A
 save's whole state and an agent edit's are held to the same cap. Only when

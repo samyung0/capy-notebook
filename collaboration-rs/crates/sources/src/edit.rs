@@ -305,6 +305,7 @@ impl Sources {
             .transact()
             .encode_state_as_update_v1(&StateVector::default());
         let admission = crate::admission_cap(crate::state_cap(
+            session.format,
             seed.state.len() as u64,
             base.len() as u64,
             stored.export_cap,

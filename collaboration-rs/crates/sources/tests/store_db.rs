@@ -673,10 +673,10 @@ async fn an_agent_edit_on_a_checkpoint_that_keeps_moving_stops_after_three_attem
     assert_eq!(h.fake.moved.lock().unwrap()[&room.file_id], 3);
 }
 
-/// Epo 2026-10-17, Q629, Q630: a room's state cap is its seed plus the export
-/// cap (a text room's flat text cap) less its base file and a margin. A base
-/// that leaves no room, as a text file over the cap does, refuses a growing
-/// save and a growing agent edit.
+/// Epo 2026-10-17, Q629, Q630, 2026-11-06: a room's state cap is its seed plus
+/// the export cap (a text room's flat text cap) less its base file and, for
+/// Office, a margin. A base that leaves no room, as a text file over the cap
+/// does, refuses a growing save and a growing agent edit.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
 async fn a_rooms_state_cap_is_the_export_cap_less_its_base() {
@@ -696,15 +696,9 @@ async fn a_rooms_state_cap_is_the_export_cap_less_its_base() {
     let doc = text_doc(100);
     let loaded = h.sources.load(&room, &h.user, &doc).await.unwrap();
     let seed = encode(&doc, &StateVector::default()).len() as u64;
-    assert_eq!(
-        loaded.state_cap,
-        seed + export - 3 - sources::STATE_GROWTH_MARGIN_BYTES
-    );
+    assert_eq!(loaded.state_cap, seed + export - 3);
 
-    let base = format!(
-        "{}END",
-        "a".repeat((export - sources::STATE_GROWTH_MARGIN_BYTES / 2) as usize)
-    );
+    let base = format!("{}END", "a".repeat(export as usize));
     let room = h.file("text", "full.md", base.as_bytes()).await;
     let doc = text_doc(100);
     let loaded = h.sources.load(&room, &h.user, &doc).await.unwrap();

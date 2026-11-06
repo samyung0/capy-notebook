@@ -693,6 +693,7 @@ impl Sources {
             .await?;
         stage(&mut times.seed);
         let state_cap = crate::state_cap(
+            session.format,
             seed.state.len() as u64,
             base.len() as u64,
             stored.export_cap,

@@ -9130,11 +9130,7 @@ async fn an_undo_too_large_for_the_room_is_not_offered() {
     let first = format!("<{}>", "x".repeat(150_000));
     let second = format!("{{{}}}", "y".repeat(140_000));
     let growth = sources::STATE_WRITE_RESERVE_BYTES as usize + 600 * 1024;
-    let rest = TEXT_FILE_CAP as usize
-        - sources::STATE_GROWTH_MARGIN_BYTES as usize
-        - growth
-        - first.len()
-        - second.len();
+    let rest = TEXT_FILE_CAP as usize - growth - first.len() - second.len();
     let base = format!("{first}{second}{}", "a".repeat(rest));
     let (user, file) = text_file(&env, &gateway, &base).await;
     let room = format!("source:{file}:epoch:1");
@@ -9961,6 +9957,8 @@ async fn gateway(env: &Env) -> Gateway {
             axum::routing::get(gateway_get).post(gateway_post),
         )
         .route("/blob/{id}", axum::routing::get(gateway_blob))
+        // Go takes a save's body up to its internal cap, past axum's 2 MB.
+        .layer(axum::extract::DefaultBodyLimit::disable())
         .with_state(gateway.clone());
     tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
     gateway
@@ -10268,20 +10266,15 @@ async fn text_file_named(
 /// The flat text cap a text room's export cap reads (`plan_limits`, Q629, Q630).
 const TEXT_FILE_CAP: i64 = 2 * 1024 * 1024;
 
-/// A text source of `growth` bytes of room under the text cap
-/// (less the margin), joined by a writer; returns the writer, user and file.
+/// A text source of `growth` bytes of room under the text cap, joined by a
+/// writer; returns the writer, user and file.
 async fn capped_text_source(
     env: &Env,
     gateway: &Gateway,
     server: &Server,
     growth: usize,
 ) -> (Client, String, String, String) {
-    let base = format!(
-        "{}END",
-        "a".repeat(
-            TEXT_FILE_CAP as usize - sources::STATE_GROWTH_MARGIN_BYTES as usize - growth - 3
-        )
-    );
+    let base = format!("{}END", "a".repeat(TEXT_FILE_CAP as usize - growth - 3));
     let (user, file) = text_file(env, gateway, &base).await;
     let room = format!("source:{file}:epoch:1");
     let mut client = Client::open(server.port).await;
@@ -10311,9 +10304,8 @@ fn closed_for_size(closed: Option<Vec<u8>>) {
 }
 
 /// Epo 2026-10-17, Q629, Q630: a source room grows by at most the export cap
-/// (a text room's flat text cap) less its base file and a margin, not up to
-/// the ceiling every room shares. A base that leaves no room refuses the first
-/// keystroke.
+/// (a text room's flat text cap) less its base file, not up to the ceiling every
+/// room shares. A base that leaves no room refuses the first keystroke.
 #[tokio::test]
 async fn a_source_room_refuses_growth_past_its_export_cap() {
     let Some(env) = env() else { return };
@@ -10322,6 +10314,23 @@ async fn a_source_room_refuses_growth_past_its_export_cap() {
     let (mut client, ..) = capped_text_source(&env, &gateway, &server, 0).await;
     type_at_start(&mut client, "x").await;
     closed_for_size(client.until(4).await);
+}
+
+/// Epo 2026-11-06: a text file under the cap stays editable, as a text room has
+/// no margin under its export cap: a 1.5 MiB base opens for a writer, takes
+/// typing and saves it. Fails with the 1 MiB margin back, which closes the
+/// writer at the first keystroke.
+#[tokio::test]
+async fn a_text_file_under_the_cap_takes_typing() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (mut client, ..) = capped_text_source(&env, &gateway, &server, 512 * 1024).await;
+    type_at_start(&mut client, "x").await;
+    source_receipt(&mut client, "typed")
+        .await
+        .expect("the typing is saved");
+    assert!(source_text(&client).starts_with("xa"));
 }
 
 /// Security regression (Q213): a source room admits structs only under the

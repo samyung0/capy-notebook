@@ -227,6 +227,19 @@ func TestTextSourceOverTheTextCapHasNoGrowthBudget(t *testing.T) {
 	if _, _, err = memory.Put("sources/notes.md", strings.NewReader("# Notes")); err != nil {
 		t.Fatal(err)
 	}
+	// A 1.5 MiB text file stays editable (Epo 2026-11-06): 2 MiB less its base
+	// and the 64 KiB reserve, with no margin.
+	if _, err = st.Pool().Exec(ctx, `UPDATE files SET size_bytes=$2 WHERE id=$1`, file.ID, int64(3<<19)); err != nil {
+		t.Fatal(err)
+	}
+	if editor := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session", "u_owner", nil); editor.Code != http.StatusOK ||
+		!bytes.Contains(editor.Body.Bytes(), []byte(`"growthBudgetBytes":458752`)) {
+		t.Fatalf("1.5 MiB text editor session = %d body=%s", editor.Code, editor.Body.String())
+	}
+	if view := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session?view=true", "u_owner", nil); view.Code != http.StatusOK ||
+		bytes.Contains(view.Body.Bytes(), []byte(`atSizeLimit`)) {
+		t.Fatalf("1.5 MiB text view session = %d body=%s", view.Code, view.Body.String())
+	}
 	// Past the 2 MiB text cap, under every plan's per-file cap.
 	if _, err = st.Pool().Exec(ctx, `UPDATE files SET size_bytes=$2 WHERE id=$1`, file.ID, int64(2<<20+1)); err != nil {
 		t.Fatal(err)
@@ -275,11 +288,11 @@ func TestTextSourceGrowthCountsItsStateOverTheSeed(t *testing.T) {
 	if _, err = st.Pool().Exec(ctx, `UPDATE source_documents SET checkpoint=checkpoint+1,state=$2,seed_bytes=100 WHERE file_id=$1`, file.ID, make([]byte, 1000)); err != nil {
 		t.Fatal(err)
 	}
-	// The 2 MiB text cap less the 100 byte base, the 1 MiB margin, the 64 KiB
-	// reserve and the 900 bytes the state grew past its seed.
+	// The 2 MiB text cap less the 100 byte base, the 64 KiB reserve and the
+	// 900 bytes the state grew past its seed.
 	editor := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session", "u_owner", nil)
 	if editor.Code != http.StatusOK ||
-		!bytes.Contains(editor.Body.Bytes(), []byte(`"growthBudgetBytes":982040`)) {
+		!bytes.Contains(editor.Body.Bytes(), []byte(`"growthBudgetBytes":2030616`)) {
 		t.Fatalf("text editor session = %d body=%s", editor.Code, editor.Body.String())
 	}
 }

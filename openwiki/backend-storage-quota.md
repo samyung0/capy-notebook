@@ -225,16 +225,18 @@ Excel files and names Capy does not recognize keep the per-file cap. It holds at
   (the dialog shows the same message), and a workspace clone leaves it out and
   counts it in `skippedMaterials`.
 - saved edits: a text room's export cap is this cap, not the largest plan's source
-  cap (`Stored.export_cap`, `Catalog.SourceExportCap`). The room's state cap and
-  growth budget then follow the usual rule ([Reservations and
-  clones](#reservations-and-clones) below; the 1 MiB margin and 64 KiB reserve
-  included, so editing stops at about 0.94 MiB of state). An update past it gets
+  cap (`Stored.export_cap`, `Catalog.SourceExportCap`), with no margin under it
+  (Epo 2026-11-06): the margin covers an Office export's overhead, and a text
+  file's export is the text its state already holds. So a room's state cap is its
+  seed plus the cap less the base file, and editing runs to about 1.94 MiB of
+  state, which counts edit history too (the cap less admission's 64 KiB reserve).
+  A 1.5 MiB file opens editable and takes typing. An update past it gets
   the unrecoverable `source-checkpoint-failed` and closes for size; the editor
   shows the unsaved text read-only to copy ("These changes couldn't be saved."),
   and Reload returns to the last saved version. An agent edit past it answers 413.
 
-A text file already over the cap, or within the margin and reserve of it, keeps
-its bytes and stays readable: it opens view-only with the size-limit notice and
+A text file already over the cap, or within the 64 KiB reserve of it, keeps its
+bytes and stays readable: it opens view-only with the size-limit notice and
 its mode control disabled (`atSizeLimit`, `growthBudgetBytes` 0), as any source
 at its size limit does.
 
@@ -603,7 +605,7 @@ Edits a publication captured are charged once, in the file:
   and Yjs stores text as its UTF-8 bytes. What stays charged is Yjs history
   (deleted structs and item metadata; source states are never compacted, and
   a room's state cap bounds them: its seed plus the 2 MiB text cap less the
-  base file and a 1 MiB margin) and edits after the capture. Migration
+  base file) and edits after the capture. Migration
   0054 gave every existing text state the seed size of its file (seed(text) is
   the text plus 15–18 bytes). `seed_bytes` is recorded for text only (a CHECK
   keeps it 0 for Office rows).
