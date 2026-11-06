@@ -407,7 +407,17 @@ fn read_answer<C: ReadTxn, K: ReadTxn>(
             let value = if kind == "open" {
                 json!({ "type": "open", "accepted": key_texts("accepted"), "hints": key_texts("hints") })
             } else {
-                json!({ "type": "drawing" })
+                // A drawn sample answer is a key: its board and image asset ids.
+                let sample = keys.and_then(|(txn, key)| {
+                    Some(json!({
+                        "board": str_at(txn, key, "sampleBoard")?,
+                        "image": str_at(txn, key, "sampleImage")?,
+                    }))
+                });
+                match sample {
+                    Some(sample) => json!({ "type": "drawing", "sample": sample }),
+                    None => json!({ "type": "drawing" }),
+                }
             };
             (value, Some(Value::Array(scheme)))
         }
@@ -744,6 +754,21 @@ pub fn asset_ids<C: ReadTxn, K: ReadTxn>(content: &C, keys: &K) -> Vec<String> {
     let mut ids = std::collections::BTreeSet::new();
     for question in held_questions_json(content, Some(&KeysRead::new(keys))) {
         walk(&question, &mut ids);
+    }
+    // Drawn sample answers live in the keys: read them there, whatever the
+    // part's answer type says now, so one being written stays in use.
+    if let Some(root) = keys.get_map(KEYS_ROOT) {
+        for (_, entry) in root.iter(keys) {
+            if let Out::YMap(key) = entry {
+                for name in ["sampleBoard", "sampleImage"] {
+                    if let Some(id) = str_at(keys, &key, name)
+                        && !id.trim().is_empty()
+                    {
+                        ids.insert(id);
+                    }
+                }
+            }
+        }
     }
     ids.into_iter().collect()
 }
@@ -1121,6 +1146,17 @@ fn sync_answer(
             );
         }
         "open" | "drawing" => {
+            if kind == "drawing" {
+                let sample = answer.get("sample");
+                let id = |name: &str| {
+                    sample
+                        .and_then(|s| s.get(name))
+                        .and_then(Value::as_str)
+                        .map(string_any)
+                };
+                sync_plain(keys, &key, "sampleBoard", id("board"));
+                sync_plain(keys, &key, "sampleImage", id("image"));
+            }
             if kind == "open" {
                 sync_entries(
                     keys,
@@ -1868,6 +1904,10 @@ fn keys_shape(
         // boolean: true or false; mcq: a map of ticks by option id.
         ([K, _], Some("correct")) if a_bool(content) || is_map(content) => {
             tally.structure(16);
+            Ok(())
+        }
+        ([K, _], Some("sampleBoard" | "sampleImage")) if a_string(content, q::QUESTION_ID_MAX) => {
+            tally.value(content);
             Ok(())
         }
         ([K, _, "correct"], Some(option)) if valid_id(option) => match one_any(content) {

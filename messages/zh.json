@@ -3120,5 +3120,6 @@
   "canvas_delete_body": "{name} 的绘图将被永久删除，分数会保留。",
   "canvas_delete_all_title": "删除所有已批改的绘图？",
   "canvas_delete_all_body": "{count} 个绘图将被永久删除，分数会保留。",
-  "drawing_answer_deleted": "绘图已删除"
+  "drawing_answer_deleted": "绘图已删除",
+  "question_validation_bank_drawn_sample": "题库的绘图题不能有手绘参考答案。"
 }

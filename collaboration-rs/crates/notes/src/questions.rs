@@ -1198,6 +1198,7 @@ struct Part {
     answer: String,
     gaps: usize,
     open_accepted: Vec<String>,
+    drawn_sample: bool,
     awarded: Option<f64>,
     item_awards: Option<Vec<f64>>,
     marks: f64,
@@ -1212,6 +1213,8 @@ struct Answer {
     gaps: usize,
     /// An open answer's accepted texts.
     open_accepted: Vec<String>,
+    /// A drawing part holds a drawn sample answer.
+    drawn_sample: bool,
 }
 
 impl Answer {
@@ -1220,6 +1223,7 @@ impl Answer {
             kind: kind.into(),
             gaps: 0,
             open_accepted: vec![],
+            drawn_sample: false,
         }
     }
 }
@@ -1319,9 +1323,24 @@ fn answer(value: &Value) -> Result<Answer, String> {
             })
         }
         "drawing" => {
-            // Answered on the drawing board, opened plain (Epo 2026-11-06).
-            strict(map, what, &["type"], &[])?;
-            Ok(Answer::of(kind))
+            // Answered on the drawing board, opened plain (Epo 2026-11-06), with
+            // an optional drawn sample answer: its board and image, both the
+            // quiz's editor assets (Q3).
+            strict(map, what, &["type"], &["sample"])?;
+            let drawn_sample = match present(map, "sample") {
+                Some(sample) => {
+                    let sample = object(sample, "sample")?;
+                    strict(sample, "sample", &["board", "image"], &[])?;
+                    identifier(&sample["board"], "sample")?;
+                    identifier(&sample["image"], "sample")?;
+                    true
+                }
+                None => false,
+            };
+            Ok(Answer {
+                drawn_sample,
+                ..Answer::of(kind)
+            })
         }
         _ => fail(format!("{what}: invalid type")),
     }
@@ -1351,6 +1370,7 @@ fn part(value: &Value) -> Result<Part, String> {
         kind: answer,
         gaps,
         open_accepted,
+        drawn_sample,
     } = answer(&map["answer"])?;
     let awarded = match present(map, "awarded") {
         Some(v) => {
@@ -1407,6 +1427,7 @@ fn part(value: &Value) -> Result<Part, String> {
         answer,
         gaps,
         open_accepted,
+        drawn_sample,
         awarded,
         item_awards,
         marks,
@@ -1633,6 +1654,9 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
                     "Item awards must give none, half or all of each marking item's marks.",
                 );
             }
+        }
+        if policy.bank && part.drawn_sample {
+            return fail("A bank drawing part has no drawn sample answer.");
         }
         if policy.bank && part.solution.is_empty() {
             return fail("Bank questions need a worked solution for every part.");

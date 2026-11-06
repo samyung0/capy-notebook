@@ -1052,7 +1052,8 @@ func answer(value any, policy Policy) error {
 		required += " accepted hints"
 	case "drawing":
 		// Answered on the drawing board, which every drawing part opens plain
-		// (Epo 2026-11-06).
+		// (Epo 2026-11-06); an optional drawn sample answer (Q3).
+		optional = "sample"
 	case "gaps":
 		// One accepted list per numbered gap in the part's text.
 		required += " accepted"
@@ -1157,6 +1158,27 @@ func answer(value any, policy Policy) error {
 	case "ordering":
 		if !stringsArray(a["items"], 2, fieldlimits.QuestionAnswers, fieldlimits.QuestionText) {
 			return fail("invalid ordering items")
+		}
+	case "drawing":
+		raw, exists := a["sample"]
+		if !exists {
+			break
+		}
+		// The board (to edit again) and its image (shown after a check and sent
+		// to marking), both the quiz's own editor assets, as its images are; the
+		// bank has no private assets.
+		if policy.Bank {
+			return fail("a bank drawing part has no drawn sample answer")
+		}
+		sample, err := obj(raw)
+		if err != nil {
+			return err
+		}
+		if err := keys(sample, "board image", ""); err != nil {
+			return err
+		}
+		if !str(sample["board"], fieldlimits.QuestionID, true) || !str(sample["image"], fieldlimits.QuestionID, true) {
+			return fail("invalid drawn sample answer")
 		}
 	}
 	return nil
@@ -1278,7 +1300,8 @@ func shuffled(values []any) []any {
 	return out
 }
 
-// AssetIDs returns the editor assets referenced by a quiz question's images.
+// AssetIDs returns the editor assets referenced by a quiz question's images
+// and its drawn sample answers' boards and images.
 func AssetIDs(q map[string]any) []string {
 	var ids []string
 	for _, blocks := range blockLists(q) {
@@ -1288,7 +1311,26 @@ func AssetIDs(q map[string]any) []string {
 			}
 		}
 	}
+	parts, _ := q["parts"].([]any)
+	for _, raw := range parts {
+		if sample := drawnSample(raw); sample != nil {
+			ids = append(ids, sample["board"].(string), sample["image"].(string))
+		}
+	}
 	return ids
+}
+
+// drawnSample is a part's drawn sample answer, {board, image}, or nil.
+func drawnSample(raw any) map[string]any {
+	p, _ := raw.(map[string]any)
+	a, _ := p["answer"].(map[string]any)
+	sample, _ := a["sample"].(map[string]any)
+	board, okBoard := sample["board"].(string)
+	image, okImage := sample["image"].(string)
+	if a["type"] != "drawing" || !okBoard || !okImage || board == "" || image == "" {
+		return nil
+	}
+	return sample
 }
 
 // RewriteAssetIDs maps image assets through idMap and removes images whose
@@ -1326,6 +1368,16 @@ func RewriteAssetIDs(q map[string]any, idMap map[string]string) bool {
 		p["solution"] = rewrite(p["solution"])
 		if len(p["blocks"].([]any)) == 0 {
 			return false
+		}
+		// A drawn sample answer goes whole when either asset has no replacement;
+		// the part stands without it.
+		if sample := drawnSample(p); sample != nil {
+			board, image := idMap[sample["board"].(string)], idMap[sample["image"].(string)]
+			if board == "" || image == "" {
+				delete(p["answer"].(map[string]any), "sample")
+			} else {
+				sample["board"], sample["image"] = board, image
+			}
 		}
 	}
 	return true

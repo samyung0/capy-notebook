@@ -222,8 +222,15 @@ function readAnswer(
         },
         markscheme: readMarkscheme(key),
       };
-    case 'drawing':
-      return { answer: { type }, markscheme: readMarkscheme(key) };
+    case 'drawing': {
+      // A drawn sample answer is a key: its board and image asset ids.
+      const board = plain<string>(key, 'sampleBoard');
+      const image = plain<string>(key, 'sampleImage');
+      return {
+        answer: board && image ? { sample: { board, image }, type } : { type },
+        markscheme: readMarkscheme(key),
+      };
+    }
     case 'gaps': {
       const gaps = mapAt(key, 'gaps');
       const numbers: number[] = [];
@@ -828,6 +835,9 @@ function writeKeys(key: YMap, part: QuestionPart, ids: PartIds) {
       if (answer.type === 'open') {
         list('accepted', answer.accepted, 'acc');
         list('hints', answer.hints, 'hint');
+      } else {
+        setPlain(key, 'sampleBoard', answer.sample?.board);
+        setPlain(key, 'sampleImage', answer.sample?.image);
       }
       writeList(
         child(key, 'markscheme'),

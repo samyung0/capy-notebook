@@ -535,7 +535,11 @@ const answerSchema = z.discriminatedUnion('type', [
     hints: z.array(text).max(limits.QUESTION_ANSWERS_MAX),
     type: z.literal('open'),
   }),
-  z.strictObject({ type: z.literal('drawing') }),
+  z.strictObject({
+    // A drawn sample answer's board and image, the quiz's editor assets.
+    sample: z.strictObject({ board: identifier, image: identifier }).optional(),
+    type: z.literal('drawing'),
+  }),
 ]);
 
 export const questionSchema = z.strictObject({
@@ -623,6 +627,7 @@ export type RuleIssue = {
     | 'markscheme-total'
     | 'awarded-range'
     | 'bank-solution'
+    | 'bank-drawn-sample'
     | 'quiz-markscheme'
     | 'open-answer-length'
     | 'quiz-question-parts'
@@ -699,6 +704,8 @@ export function ruleIssues(
       fail('awarded-range', m.question_validation_awarded_range());
     if (policy.bank && part.solution.length === 0)
       fail('bank-solution', m.question_validation_bank_solution());
+    if (policy.bank && part.answer.type === 'drawing' && part.answer.sample)
+      fail('bank-drawn-sample', m.question_validation_bank_drawn_sample());
     if (policy.bank) return;
     // User quizzes (not the bank) cap marking items and sample answer length.
     if (part.markscheme && part.markscheme.length > limits.QUIZ_MARKSCHEME_MAX)
