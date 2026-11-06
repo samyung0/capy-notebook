@@ -115,6 +115,7 @@ import {
 import { waitsForConnection } from '@/lib/online';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
+const WorkspaceCanvas = lazy(() => import('@/routes/DevWorkspaceCanvas'));
 const SummaryPage = lazy(() =>
   import('@/features/study/practice/SummaryPage').then((mod) => ({
     default: mod.SummaryPage,
@@ -430,7 +431,8 @@ function WorkspaceOpen() {
     setSeenCenter(centerKey);
     setSection((was) => sectionForCenter(was, center));
   }
-  const leftOpen = section !== 'dashboard' && panelOpen;
+  // The dashboard and the canvas have no panel.
+  const leftOpen = section !== 'dashboard' && section !== 'canvas' && panelOpen;
   const leftShown = lg && leftOpen;
   const chatOnScreen = leftShown && section === 'agent' && chatShown;
   useEffect(() => {
@@ -446,7 +448,7 @@ function WorkspaceOpen() {
     section: WorkspaceSection;
   } | null>(null);
   const panelNow: WorkspacePanel | null = lg
-    ? section === 'dashboard' || !panelOpen
+    ? section === 'dashboard' || section === 'canvas' || !panelOpen
       ? 'none'
       : section
     : null;
@@ -637,6 +639,10 @@ function WorkspaceOpen() {
     if (next === 'dashboard') {
       setSection('dashboard');
       if (searchedOpenItem || search.study || search.make) openDashboard();
+      return;
+    }
+    if (next === 'canvas') {
+      setSection('canvas');
       return;
     }
     if (next === section) {
@@ -1048,7 +1054,11 @@ function WorkspaceOpen() {
       {!headsItself && <h1 className="sr-only">{ws.name}</h1>}
       <WorkspaceHealth workspace={ws} />
       <AppErrorBoundary resetKeys={[openItem?.kind, openItem?.id]}>
-        {lg && pageContent ? (
+        {lg && section === 'canvas' ? (
+          <Suspense fallback={null}>
+            <WorkspaceCanvas workspaceId={workspaceId} />
+          </Suspense>
+        ) : lg && pageContent ? (
           pageContent
         ) : (
           <CenterContent
