@@ -1129,8 +1129,10 @@ File and the view controls in the menu bar, as Google Sheets and Slides' viewer
   {action, revision}, which run the strip's own handlers. Until then, and in view
   mode, Capy draws it as before.
 - **Icons**: Tabler at the even 1.5 px line (Q603, stroke 36/size) in
-  `tablerGlyphs.ts`, one export per glyph, so a chunk holds only what it imports;
-  `TablerIcon` draws them, with Capy's drawn merge and decimal icons beside them.
+  `tablerGlyphs.ts`, one export per glyph, so the build holds only the glyphs used
+  (one chunk for the frame's editors; Capy's header takes its few from
+  `tablerHeaderGlyphs.ts`). `TablerIcon` draws them; Capy's drawn merge and decimal
+  icons and the colour swatches are in `capyGlyphs.ts`.
   `docxIcons.tsx`, `xlsxIcons.tsx` and `pptxIcons.tsx` map the editors' icon names
   to them, for the ribbon, right-click menus, link popups and overlays.
 
