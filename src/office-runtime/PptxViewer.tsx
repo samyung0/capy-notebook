@@ -15,9 +15,8 @@ import {
   LocaleProvider,
   PresentationOverlay,
 } from '@betteroffice/pptx-react/presentation';
-import { Note01Icon } from '@hugeicons/core-free-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { HugeIcon } from '@/components/ui/HugeIcon';
+
 import type {
   OfficeCitation,
   OfficeLocale,
@@ -35,6 +34,8 @@ import { pptxStrings, pptxT, presentAction, viewerMenus } from './pptxMenus';
 import { renderSlides } from './pptxRender';
 import { runtimeEngines } from './prewarm';
 import type { OfficeMenuReporter, OfficeRenderer } from './runtimeMenus';
+import { TablerIcon } from './TablerIcon';
+import { notes } from './tablerGlyphs';
 import {
   readNotesSize,
   readViewToggle,
@@ -445,7 +446,7 @@ export function PptxViewer({
               title={pptxT(locale)('notes.toggle')}
               type="button"
             >
-              <HugeIcon icon={Note01Icon} />
+              <TablerIcon glyph={notes} />
               <span>{pptxT(locale)('notes.toggle')}</span>
             </button>
           )}
