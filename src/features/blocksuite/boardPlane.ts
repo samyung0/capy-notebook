@@ -26,8 +26,9 @@ export type Mark =
   | { id: string; kind: 'dot'; at: Vec }
   | { id: string; kind: 'line' | 'curve'; points: Vec[] };
 
-/** The plane's top left corner in its own units, and board pixels per unit. */
-export type PlaneView = { ppu: number; x0: number; y0: number };
+/** The plane's top left corner in its own units, and board pixels per unit. Without
+ * axes it's a squared sheet: the grid alone. */
+export type PlaneView = { axes?: boolean; ppu: number; x0: number; y0: number };
 export type Frame = { h: number; w: number; x: number; y: number };
 
 /** Most marks one plane holds. */
@@ -81,6 +82,13 @@ export function drawPlane(
   };
   grid(minor, '#f1f1ef');
   grid(step, '#dededb');
+  if (view.axes === false) {
+    ctx.restore();
+    ctx.strokeStyle = '#d9d9d6';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(frame.x, frame.y, frame.w, frame.h);
+    return;
+  }
 
   // Numbers sit by their axis and leave with it (Epo 2026-11-06).
   const axisX = X(0);
@@ -146,6 +154,7 @@ export function drawPlane(
 }
 
 export class PlaneElementModel extends GfxPrimitiveElementModel<{
+  axes: boolean;
   fit: boolean;
   index: string;
   marks: Mark[];
@@ -181,6 +190,10 @@ export class PlaneElementModel extends GfxPrimitiveElementModel<{
   override includesPoint(x: number, y: number) {
     return pointInPolygon([x, y], Bound.deserialize(this.xywh).points);
   }
+
+  /** A squared sheet has none, and nothing to plot on. */
+  @field()
+  accessor axes = true;
 
   /** Fit to size: the card follows its marks each time the plane is left. */
   @field()
@@ -279,7 +292,9 @@ class PlaneElementView extends GfxElementModelView<PlaneElementModel> {
 
   override onCreated() {
     super.onCreated();
-    this.on('dblclick', () => openEditor(this.gfx, this.model));
+    this.on('dblclick', () => {
+      if (this.model.axes) openEditor(this.gfx, this.model);
+    });
   }
 }
 
@@ -348,16 +363,32 @@ export const planeExtensions = [
   planeInteraction,
 ];
 
-/** A card on the canvas, its plane's origin towards the lower left. */
-export function addPlane(gfx: GfxController, box: Bound, ppu: number) {
+/** A card on the canvas, its plane's origin towards the lower left unless `view`
+ * places it. A question's background is locked: no tool moves, resizes or erases it. */
+export function addPlane(
+  gfx: GfxController,
+  box: Bound,
+  ppu: number,
+  {
+    axes = true,
+    locked = false,
+    view,
+  }: {
+    axes?: boolean;
+    locked?: boolean;
+    view?: { x0: number; y0: number };
+  } = {}
+) {
   return gfx.surface?.addElement({
-    fit: true,
+    axes,
+    fit: !locked,
+    lockedBySelf: locked,
     marks: [],
     ppu,
     type: 'plane',
-    x0: -1,
+    x0: view?.x0 ?? -1,
     xywh: box.serialize(),
-    y0: (box.h * 0.7) / ppu,
+    y0: view?.y0 ?? (box.h * 0.7) / ppu,
   });
 }
 

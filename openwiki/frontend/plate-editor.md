@@ -4424,11 +4424,33 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   the bars. Pie chart: no grid or axes, starting with a line at 12 o'clock. A click adds a
   line, whose chip shows the sector it closes, from the line before it clockwise, and
   labels sit at an angle inside the circle.
-- **Marking image:** everything on the canvas as it stands, including each card with the
-  view it was left at, so a plotted mark panned out of view isn't in it. It's drawn layer
-  by layer at a scale capped to 2400 px, so it stacks as the screen does and fits a phone's
-  canvas limit; AFFiNE's own export draws every note under every stroke at the device's
-  scale.
+- **Marking image (`toImage()`):** everything on the canvas as it stands, including each
+  card with the view it was left at, so a plotted mark panned out of view isn't in it. It's
+  drawn layer by layer at a scale capped to 2400 px, so it stacks as the screen does and
+  fits a phone's canvas limit; AFFiNE's own export draws every note under every stroke at
+  the device's scale. On a board wider or taller than 2400 px, groups of elements more than
+  400 px apart are drawn 400 px apart, so one dragged far away doesn't squash the rest;
+  the board itself stays as it is. The PNG goes through `fitImage` (WebP, 512 KB cap) and
+  comes back as a `File`.
+- **What the answer flow mounts:** `mountDrawingBoard(host, { background, readOnly,
+  saved, onChange })`.
+  - `background` sets up a fresh board as the question part says: `blank`, `grid` (a
+    squared sheet: a plane card with no axes that doesn't open), `axes` (a plane card at
+    the given x and y ranges) or `figure` (an image fetched from `src`). It's locked: no
+    tool moves, resizes, deletes or erases it, and lock and unlock are off the toolbar.
+    A saved board keeps its own; a figure's file isn't in the saved board, so it's
+    fetched on every open, and `ready` rejects with a `BoardLoadError` when it can't be.
+    Without `background` the dev pages get a movable plane card.
+  - `readOnly` is a teacher's view: BlockSuite's read-only store (pan tool), no toolbars,
+    undo, symbol row or selection, and nothing opens for editing, so MathLive never
+    loads.
+  - `save()` returns `{ doc, bytes }`: the board copied into a fresh Yjs document, so no
+    undo history (200 undo steps on a card were 606 KB live and a few KB saved). The
+    answer flow refuses past Epo's 250 KB on Done.
+  - `saved` is checked before anything mounts (`boardLoad.ts`): one page and one canvas,
+    only the blocks and elements the board's tools make, and each card's fields within
+    the limits its editor keeps (marks, bars, labels, spokes, axis values, formula
+    length). Anything else throws a `BoardLoadError` with a `reason`.
 - **Formulas:** a `formula` canvas element holding LaTeX, typed in MathLive (loaded on
   first open). AFFiNE keeps LaTeX as HTML in note cards, and its export (html2canvas)
   garbles that, so typing `$$` in a note here stays text; AFFiNE's inline spec stays
@@ -4438,8 +4460,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   expansion limits are set on KaTeX, and a saved answer holding more than 2,000
   characters draws nothing. Bitmaps stay until the board closes: sharp up to 128 MB, plain
   up to 256 MB, and past that a formula isn't drawn, on screen or in the image. Saving
-  answers still needs a read-only render for teachers,
-  with limits on the server.
+  answers still needs limits on the server.
 - **Labels** come from the Maths menu's Label, which can place one on top of a card (a
   double click there opens the plane), or a double click on empty canvas. They have a
   maths symbol row while typing. BlockSuite's default canvas font has no

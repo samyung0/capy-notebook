@@ -87,8 +87,21 @@ const inkIn = (page: Page, dataUrl: string) =>
     return dark;
   }, dataUrl);
 
+/** The marking image, as a data URL. */
 const toImage = (page: Page) =>
-  page.evaluate('window.__board.toImage()') as Promise<string>;
+  page.evaluate(async () => {
+    const board = (
+      window as unknown as { __board: { toImage(): Promise<Blob> } }
+    ).__board;
+    const blob = await board.toImage();
+    return new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.readAsDataURL(blob);
+    });
+  });
+const save = (page: Page) =>
+  page.evaluate('window.__board.save().doc') as Promise<string>;
 
 test('draws over the card, labels, and reopens from what it saved', async ({
   page,
@@ -131,7 +144,7 @@ test('draws over the card, labels, and reopens from what it saved', async ({
   // The stroke and label reach the image.
   expect(await inkIn(page, await toImage(page))).toBeGreaterThan(before);
 
-  const saved = (await page.evaluate('window.__board.save()')) as string;
+  const saved = await save(page);
   await page.evaluate(`window.__reopen(${JSON.stringify(saved)})`);
   await expect.poll(() => canvas(page)).toEqual(['plane', 'brush', 'text']);
 });
@@ -254,7 +267,7 @@ test('double click opens the plane: it plots, undoes each click, and Escape leav
   await expect(page.locator('.capy-plane-editor')).toHaveCount(0);
   expect(await inkIn(page, await toImage(page))).toBeGreaterThan(empty);
 
-  const saved = (await page.evaluate('window.__board.save()')) as string;
+  const saved = await save(page);
   await page.evaluate(`window.__reopen(${JSON.stringify(saved)})`);
   await expect.poll(() => marks(page)).toBe(2);
 
@@ -608,7 +621,7 @@ test('bar and pie charts are their own cards, with no coordinates', async ({
   await expect.poll(async () => (await chart()).spokes).toBe(1);
   await page.getByRole('button', { name: 'Done' }).click();
 
-  const saved = (await page.evaluate('window.__board.save()')) as string;
+  const saved = await save(page);
   await page.evaluate(`window.__reopen(${JSON.stringify(saved)})`);
   await expect.poll(async () => (await chart()).labels).toEqual(['Science']);
   expect(errors).toEqual([]);
@@ -764,16 +777,21 @@ test.describe('with a finger', () => {
         xywh: '[3000,3000,200,200]',
       });
     });
-    const size = await page.evaluate(
+    const [long, short] = await page.evaluate(
       async (url) => {
         const image = new Image();
         image.src = url;
         await image.decode();
-        return Math.max(image.width, image.height);
+        return [
+          Math.max(image.width, image.height),
+          Math.min(image.width, image.height),
+        ];
       },
       await toImage(page)
     );
-    expect(size).toBeLessThanOrEqual(2400);
+    expect(long).toBeLessThanOrEqual(2400);
+    // The far shape is drawn nearer, so the rest isn't squashed.
+    expect(short).toBeGreaterThan(600);
   });
 });
 
@@ -859,4 +877,126 @@ test('the workspace canvas stays in the URL at every width', async ({
   await expect(page).toHaveURL(/panel=files/);
   await page.goBack();
   await expect(board).toBeVisible({ timeout: 30_000 });
+});
+
+/** The board's first element, as the page sees it. */
+const first = (page: Page) =>
+  page.evaluate(() => {
+    const root = document.querySelector('affine-edgeless-root') as unknown as {
+      gfx: {
+        layer: {
+          canvasElements: {
+            axes: boolean;
+            isLocked(): boolean;
+            x0: number;
+            xywh: string;
+            y0: number;
+          }[];
+        };
+      };
+    };
+    const [element] = root.gfx.layer.canvasElements;
+    return {
+      axes: element.axes,
+      locked: element.isLocked(),
+      x0: element.x0,
+      xywh: element.xywh,
+      y0: element.y0,
+    };
+  });
+
+test("a question's background is fixed: blank, grid, axes and a fetched figure", async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/dev/drawing?background=blank');
+  await page.locator('.capy-board-history').waitFor({ timeout: 60_000 });
+  await page.waitForTimeout(500);
+  expect(await canvas(page)).toEqual([]);
+
+  await openBoard(page, '/dev/drawing?background=axes:-5,5,-3,3');
+  expect(await first(page)).toMatchObject({ locked: true, x0: -5, y0: 3 });
+
+  // No tool moves, deletes or erases a squared sheet.
+  await openBoard(page, '/dev/drawing?background=grid');
+  const sheet = await first(page);
+  expect(sheet).toMatchObject({ axes: false, locked: true });
+  const at = await onCard(page);
+  await page.mouse.move(...at(0.5, 0.5));
+  await page.mouse.down();
+  await page.mouse.move(...at(0.7, 0.7), { steps: 6 });
+  await page.mouse.up();
+  await page.mouse.click(...at(0.5, 0.5));
+  await page.keyboard.press('Delete');
+  await page.mouse.dblclick(...at(0.5, 0.5));
+  expect(await canvas(page)).toEqual(['plane']);
+  expect((await first(page)).xywh).toBe(sheet.xywh);
+  await expect(page.locator('.capy-plane-editor')).toHaveCount(0);
+
+  // A figure's file (an SVG here, which needs the page's own decoding) is fetched
+  // again when the saved board reopens.
+  await page.goto('/dev/drawing?background=figure:/favicon.svg');
+  await page.waitForFunction("'ready' in (window.__board ?? {})");
+  await page.evaluate('window.__board.ready');
+  await expect
+    .poll(() => page.evaluate('window.__board.stats().blocks'))
+    .toEqual(['affine:image']);
+  const saved = await save(page);
+  await page.evaluate(`window.__reopen(${JSON.stringify(saved)})`);
+  await page.evaluate('window.__board.ready');
+  expect(await inkIn(page, await toImage(page))).toBeGreaterThan(0);
+});
+
+test('a saved board leaves its undo history out, and a teacher opens it read-only', async ({
+  page,
+}) => {
+  test.slow();
+  await openBoard(page);
+  // 200 points plotted one undo step at a time, as clicks on the plane add them.
+  await page.evaluate(() => {
+    const root = document.querySelector('affine-edgeless-root') as unknown as {
+      gfx: {
+        doc: { captureSync(): void };
+        layer: { canvasElements: { marks: object[] }[] };
+      };
+    };
+    const [card] = root.gfx.layer.canvasElements;
+    for (let i = 0; i < 200; i++) {
+      root.gfx.doc.captureSync();
+      card.marks = [
+        ...card.marks,
+        { at: [i / 10, i / 20], id: `m${i}`, kind: 'dot' },
+      ];
+    }
+  });
+  const live = (await stats(page)) as Stats & { bytes: number };
+  const { bytes, doc } = (await page.evaluate('window.__board.save()')) as {
+    bytes: number;
+    doc: string;
+  };
+  expect(bytes).toBeLessThan(live.bytes / 4);
+
+  await page.evaluate(`window.__reopen(${JSON.stringify(doc)}, true)`);
+  await page.waitForFunction(() =>
+    (window as unknown as { __board?: { stats(): Stats } }).__board
+      ?.stats()
+      .canvas.includes('plane')
+  );
+  await expect(page.locator('.capy-board-history')).toHaveCount(0);
+  await expect(page.locator('edgeless-toolbar-widget')).toHaveCount(0);
+  const at = await onCard(page);
+  await page.mouse.dblclick(...at(0.5, 0.5));
+  await expect(page.locator('.capy-plane-editor')).toHaveCount(0);
+  expect(await inkIn(page, await toImage(page))).toBeGreaterThan(0);
+
+  // What isn't a board says so, and mounts nothing.
+  const error = await page.evaluate(() => {
+    try {
+      (window as unknown as { __reopen(saved: string): void }).__reopen('AAAA');
+      return null;
+    } catch (thrown) {
+      return (thrown as Error).name;
+    }
+  });
+  expect(error).toBe('BoardLoadError');
 });

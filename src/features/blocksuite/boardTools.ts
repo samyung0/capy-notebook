@@ -853,6 +853,8 @@ const connectAction = {
 };
 
 const onlyOne = (ctx: ToolbarContext) => ctx.getSurfaceModels().length === 1;
+const onePlane = (ctx: ToolbarContext) =>
+  ctx.getSurfaceModels()[0] as unknown as PlaneElementModel | undefined;
 
 /** AFFiNE's selection toolbar reads the editor's mode, which the board has to report.
  * It goes without what makes no sense on an answer, or needs other documents or a page
@@ -877,11 +879,17 @@ export const boardToolbar = [
           // A note's place in page mode: the board has no page mode.
           'a.show-in',
           'b.display-in-page',
+          // Locking is the question's: its background stays put.
+          'b.lock',
         ].map((id) => ({ id, when: false })),
         connectAction,
       ],
     },
     id: BlockFlavourIdentifier('custom:affine:surface:*'),
+  }),
+  ToolbarModuleExtension({
+    config: { actions: [{ id: 'b.unlock', when: false }] },
+    id: BlockFlavourIdentifier('custom:affine:surface:locked'),
   }),
   ToolbarModuleExtension({
     config: {
@@ -898,7 +906,8 @@ export const boardToolbar = [
             tooltip: m.drawing_board_edit_plane(),
           }),
           id: 'a.edit',
-          when: onlyOne,
+          // A squared sheet has no plane to open.
+          when: (ctx: ToolbarContext) => onlyOne(ctx) && !!onePlane(ctx)?.axes,
         },
         {
           generate: (ctx: ToolbarContext) => {
@@ -921,7 +930,9 @@ export const boardToolbar = [
             };
           },
           id: 'b.size',
-          when: onlyOne,
+          // A background keeps the size the question gave it.
+          when: (ctx: ToolbarContext) =>
+            onlyOne(ctx) && !onePlane(ctx)?.isLocked(),
         },
       ],
     },

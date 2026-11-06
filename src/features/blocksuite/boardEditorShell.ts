@@ -24,7 +24,9 @@ export function openBoardEditor(
   }
 ) {
   const board = gfx.std.host.closest('.capy-board');
-  if (!board || board.querySelector('.capy-plane-editor')) return null;
+  // A teacher's board opens nothing for editing.
+  if (gfx.doc.readonly || !board || board.querySelector('.capy-plane-editor'))
+    return null;
   gfx.selection.clear();
 
   const root = document.createElement('div');

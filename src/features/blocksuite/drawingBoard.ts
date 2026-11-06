@@ -71,6 +71,7 @@ import { Redo03Icon, Undo03Icon } from '@hugeicons/core-free-icons';
 import { html, render } from 'lit';
 import * as Y from 'yjs';
 import { m } from '@/i18n';
+import { fitImage } from '@/lib/fitImage';
 import { fromBase64, toBase64 } from './base64';
 import { chartExtensions } from './boardChart';
 import {
@@ -82,6 +83,7 @@ import {
 import { addPlane, planeExtensions, planeMarks } from './boardPlane';
 import './boardChartEditor';
 import { closeBoardEditor } from './boardEditorShell';
+import { BoardLoadError, checkSavedBoard } from './boardLoad';
 import './boardPlaneEditor';
 import {
   boardToolbar,
@@ -113,7 +115,7 @@ const stores = new StoreExtensionManager([
   LinkStoreExtension,
   InlinePresetStoreExtension,
 ]);
-const views = new ViewExtensionManager([
+const VIEWS = [
   FoundationViewExtension,
   PointerViewExtension,
   GfxNoteViewExtension,
@@ -142,7 +144,19 @@ const views = new ViewExtensionManager([
   EdgelessZoomToolbarViewExtension,
   ToolbarViewExtension,
   ViewportOverlayViewExtension,
+];
+const views = new ViewExtensionManager(VIEWS);
+/** A teacher's view: pan and zoom, with no tools or selection toolbar. */
+const READ_ONLY_TOOLS = new Set<unknown>([
+  EdgelessAutoConnectViewExtension,
+  EdgelessDraggingAreaViewExtension,
+  EdgelessSelectedRectViewExtension,
+  EdgelessToolbarViewExtension,
+  ToolbarViewExtension,
 ]);
+const readOnlyViews = new ViewExtensionManager(
+  VIEWS.filter((view) => !READ_ONLY_TOOLS.has(view))
+);
 
 const PHONE_WIDTH = 768;
 
@@ -156,24 +170,122 @@ class NoFrameOverlay extends Overlay {
 const surfaceOf = (gfx: GfxController) =>
   gfx.surfaceComponent as SurfaceBlockComponent | null;
 
-/** The card a question with axes starts with. */
+/** The card a question with axes starts with, and the room a background gets. */
 const FIRST_PLANE = { h: 520, ppu: 41, w: 820 };
-/** The marking image's longest side. */
+/** The marking image's longest side, and its bytes after the shared compressor. */
 const IMAGE_SIDE_MAX = 2400;
+const IMAGE_BYTES_MAX = 512 * 1024;
+/** On a board wider or taller than the image, a gap past this between groups of
+ * elements shrinks to it in the image, so one dragged far away doesn't squash the rest
+ * (Epo 2026-11-06). The board itself is left as it is. */
+const FAR_GAP = 400;
+
+/** What the question puts under the answer (Epo 2026-11-03), fixed: no tool moves,
+ * resizes or erases it. A figure is an image the browser can fetch. */
+export type BoardBackground =
+  | { kind: 'blank' }
+  | { kind: 'grid' }
+  | { kind: 'axes'; x: [number, number]; y: [number, number] }
+  | { kind: 'figure'; src: string };
+
+export type DrawingBoardOptions = {
+  /** For a fresh board; a saved one keeps the one it has. A figure is fetched again on
+   * every open, as its file isn't in the saved board. Without it, a movable plane. */
+  background?: BoardBackground;
+  onChange?: () => void;
+  /** Pan and zoom only: no tools, nothing opens for editing. */
+  readOnly?: boolean;
+  /** `save()`'s `doc`. A board that doesn't check out throws a BoardLoadError. */
+  saved?: string;
+};
+
+export { BoardLoadError } from './boardLoad';
+
+/** An image file drawn as the page draws it: an SVG too, which createImageBitmap
+ * can't decode from a file. */
+async function decodeImage(file: Blob) {
+  const url = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    return image;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/** Board coordinates in the image: each group of nearby elements keeps its shape, and
+ * gaps past FAR_GAP between groups shrink to it. */
+function closeUp(bounds: Bound[]) {
+  // Groups: bounds within FAR_GAP of each other, joined.
+  const group = bounds.map((_, i) => i);
+  const root = (i: number): number => {
+    if (group[i] !== i) group[i] = root(group[i]);
+    return group[i];
+  };
+  const near = (a: Bound, b: Bound) =>
+    a.x - FAR_GAP <= b.x + b.w &&
+    b.x - FAR_GAP <= a.x + a.w &&
+    a.y - FAR_GAP <= b.y + b.h &&
+    b.y - FAR_GAP <= a.y + a.h;
+  for (let i = 0; i < bounds.length; i++)
+    for (let j = i + 1; j < bounds.length; j++)
+      if (near(bounds[i], bounds[j])) group[root(i)] = root(j);
+  const groups = new Map<number, Bound>();
+  for (const [i, bound] of bounds.entries()) {
+    const id = root(i);
+    const seen = groups.get(id);
+    groups.set(id, seen ? seen.unite(bound) : bound);
+  }
+  // Along each axis, the gaps between the groups' spans shrink to FAR_GAP.
+  const shifts = (spans: [number, number][]) => {
+    const order = [...spans.keys()].sort((a, b) => spans[a][0] - spans[b][0]);
+    const shift = new Array<number>(spans.length).fill(0);
+    let end = Number.NEGATIVE_INFINITY;
+    let taken = 0;
+    for (const i of order) {
+      const [from, to] = spans[i];
+      if (from - end > FAR_GAP && end > Number.NEGATIVE_INFINITY)
+        taken += from - end - FAR_GAP;
+      shift[i] = taken;
+      end = Math.max(end, to);
+    }
+    return shift;
+  };
+  const ids = [...groups.keys()];
+  const boxes = ids.map((id) => groups.get(id) as Bound);
+  const dx = shifts(boxes.map((box) => [box.x, box.x + box.w]));
+  const dy = shifts(boxes.map((box) => [box.y, box.y + box.h]));
+  const by = new Map(ids.map((id, i) => [id, { dx: dx[i], dy: dy[i] }]));
+  return bounds.map((_, i) => by.get(root(i)) as { dx: number; dy: number });
+}
 
 /** BlockSuite's edgeless editor on an in-memory board, opened from a saved answer when
  * there is one. */
 export function mountDrawingBoard(
   container: HTMLElement,
-  options: { onChange?: () => void; saved?: string } = {}
+  options: DrawingBoardOptions = {}
 ) {
+  const saved = options.saved ? fromBase64(options.saved) : null;
+  if (saved) checkSavedBoard(saved);
+  const { background, readOnly = false } = options;
+  if (
+    background?.kind === 'axes' &&
+    !(
+      background.x[0] < background.x[1] &&
+      background.y[0] < background.y[1] &&
+      [...background.x, ...background.y].every(Number.isFinite)
+    )
+  )
+    throw new BoardLoadError('axes ranges');
   const workspace = new TestWorkspace();
   workspace.storeExtensions = stores.get('store');
   workspace.meta.initialize();
   const doc = workspace.createDoc('board');
   const store = doc.getStore();
-  if (options.saved) {
-    Y.applyUpdate(store.spaceDoc, fromBase64(options.saved));
+  if (saved) {
+    Y.applyUpdate(store.spaceDoc, saved);
     store.load();
   } else {
     store.load(() => {
@@ -182,21 +294,27 @@ export function mountDrawingBoard(
     });
   }
   store.resetHistory();
+  store.readonly = readOnly;
   const { onChange } = options;
   if (onChange) store.spaceDoc.on('update', onChange);
+  const drawn = [
+    ...formulaExtensions,
+    ...planeExtensions,
+    ...chartExtensions,
+    NoFrameOverlay,
+  ];
   const std = new BlockStdScope({
-    extensions: [
-      ...views.get('edgeless'),
-      shapeButtonTool,
-      ...sheetTools,
-      StampTool,
-      ...formulaExtensions,
-      ...planeExtensions,
-      ...chartExtensions,
-      noLatexMarkdown,
-      NoFrameOverlay,
-      ...boardToolbar,
-    ],
+    extensions: readOnly
+      ? [...readOnlyViews.get('edgeless'), ...drawn]
+      : [
+          ...views.get('edgeless'),
+          shapeButtonTool,
+          ...sheetTools,
+          StampTool,
+          ...drawn,
+          noLatexMarkdown,
+          ...boardToolbar,
+        ],
     store,
   });
   // Undo and redo sit outside the toolbar: beside zoom, or on a phone top right,
@@ -234,7 +352,7 @@ export function mountDrawingBoard(
     container
   );
   const board = container.querySelector('.capy-board');
-  board?.append(history);
+  if (!readOnly) board?.append(history);
   // A double click types on the canvas, so the label is in the exported image.
   store.get(FeatureFlagService).setFlag('enable_edgeless_text', false);
   store.get(FeatureFlagService).setFlag('enable_note_menu_media', false);
@@ -244,8 +362,8 @@ export function mountDrawingBoard(
   void document.fonts
     .load('24px "blocksuite:surface:Inter"')
     .then(() => surfaceOf(gfx)?.refresh());
-  const symbols = mountSymbolRow(gfx);
-  board?.append(symbols.element);
+  const symbols = readOnly ? null : mountSymbolRow(gfx);
+  if (symbols) board?.append(symbols.element);
 
   // A preset being sized shows on this layer, under the strokes and outside the
   // document. It moves with the board.
@@ -278,27 +396,83 @@ export function mountDrawingBoard(
       return;
     }
     background.prepend(layer);
-    if (!options.saved) {
-      addPlane(
-        gfx,
-        new Bound(0, 0, FIRST_PLANE.w, FIRST_PLANE.h),
-        FIRST_PLANE.ppu
-      );
-      store.resetHistory();
-    }
+    if (!saved) addBackground();
+    fitView();
+    place();
+  });
+  const fitView = () =>
     gfx.viewport.setViewportByBound(
       everything(),
       gfx.viewport.width < PHONE_WIDTH ? [64, 12, 96, 12] : [90, 40, 130, 40]
     );
-    place();
-  });
+
+  /** A fresh board's background, out of the undo history. */
+  const addBackground = () => {
+    const sheet = new Bound(0, 0, FIRST_PLANE.w, FIRST_PLANE.h);
+    if (!background) addPlane(gfx, sheet, FIRST_PLANE.ppu);
+    else if (background.kind === 'grid')
+      addPlane(gfx, sheet, FIRST_PLANE.ppu, { axes: false, locked: true });
+    else if (background.kind === 'axes') {
+      const [left, right] = background.x;
+      const [bottom, top] = background.y;
+      const ppu = Math.min(
+        FIRST_PLANE.w / (right - left),
+        FIRST_PLANE.h / (top - bottom)
+      );
+      addPlane(
+        gfx,
+        new Bound(0, 0, (right - left) * ppu, (top - bottom) * ppu),
+        ppu,
+        { locked: true, view: { x0: left, y0: top } }
+      );
+    }
+    store.resetHistory();
+  };
+
+  /** A figure's file, fetched on every open: the saved board holds only its key, the
+   * file's hash. A fresh board places it at its own size, at most the sheet's. */
+  const ready = (async () => {
+    if (background?.kind !== 'figure') return;
+    let file: Blob;
+    let size: { height: number; width: number };
+    try {
+      const response = await fetch(background.src);
+      if (!response.ok) throw new Error(`figure: ${response.status}`);
+      file = await response.blob();
+      const image = await decodeImage(file);
+      size = { height: image.naturalHeight, width: image.naturalWidth };
+    } catch (cause) {
+      throw new BoardLoadError('figure', { cause });
+    }
+    const sourceId = await store.blobSync.set(file);
+    if (saved) return;
+    const { height, width } = size;
+    const scale = Math.min(1, FIRST_PLANE.w / width, FIRST_PLANE.h / height);
+    const surface = store.getModelsByFlavour('affine:surface')[0];
+    store.withoutTransact(() =>
+      store.addBlock(
+        'affine:image',
+        {
+          height,
+          lockedBySelf: true,
+          sourceId,
+          width,
+          xywh: new Bound(0, 0, width * scale, height * scale).serialize(),
+        },
+        surface
+      )
+    );
+    store.resetHistory();
+    fitView();
+  })();
+  ready.catch(() => undefined);
 
   /** A pasted image from its file; a note card by html2canvas, as it's DOM. */
   const blockImage = async (block: GfxBlockElementModel) => {
     if (block instanceof ImageBlockModel) {
       const { sourceId } = block.props;
       const blob = sourceId && (await store.blobSync.get(sourceId));
-      return blob ? createImageBitmap(blob) : null;
+      return blob ? decodeImage(blob) : null;
     }
     const view = std.view.getBlock(block.id);
     return view ? std.get(ExportManager)._html2canvas(view) : null;
@@ -311,9 +485,18 @@ export function mountDrawingBoard(
   };
 
   return {
+    /** Settles once a figure is on the board; rejects with a BoardLoadError when its
+     * file can't be fetched. */
+    ready,
+    /** The board to store, with no undo history: a fresh document keeps only what's
+     * on the board (200 plane clicks were 606 KB live, 7.5 KB this way). */
     save: () => {
       finishPlot();
-      return toBase64(Y.encodeStateAsUpdate(store.spaceDoc));
+      const fresh = new Y.Doc();
+      Y.applyUpdate(fresh, Y.encodeStateAsUpdate(store.spaceDoc));
+      const update = Y.encodeStateAsUpdate(fresh);
+      fresh.destroy();
+      return { bytes: update.byteLength, doc: toBase64(update) };
     },
     /** The board as it is, leaving a tool in use alone. */
     snapshot: () => toBase64(Y.encodeStateAsUpdate(store.spaceDoc)),
@@ -323,48 +506,80 @@ export function mountDrawingBoard(
       canvas: gfx.layer.canvasElements.map((element) => element.type),
       marks: planeMarks(gfx),
     }),
-    /** The canvas as it stands, for marking: every card with the view it was left
-     * at, and what's drawn over and around them. */
+    /** The canvas as it stands, for marking, through the shared image compressor:
+     * every card with the view it was left at, and what's drawn over and around them.
+     * Something dragged far away is drawn nearer (FAR_GAP). */
     toImage: async () => {
-      finishPlot();
+      if (!readOnly) finishPlot();
+      await ready.catch(() => undefined);
       await formulasDrawn(gfx);
       const renderer = surfaceOf(gfx)?.renderer;
-      if (!(renderer instanceof CanvasRenderer)) return null;
-      const all = everything();
+      if (!(renderer instanceof CanvasRenderer))
+        throw new Error('drawing board: no canvas renderer');
+      const items = [...gfx.layer.canvasElements, ...gfx.layer.blocks];
+      const bounds = items.map((item) => Bound.deserialize(item.xywh));
+      const whole = everything();
+      const far = Math.max(whole.w, whole.h) > IMAGE_SIDE_MAX;
+      const shifts = far
+        ? closeUp(bounds)
+        : bounds.map(() => ({ dx: 0, dy: 0 }));
+      const shiftOf = new Map(items.map((item, i) => [item.id, shifts[i]]));
+      const placed = bounds.map(
+        (box, i) =>
+          new Bound(box.x - shifts[i].dx, box.y - shifts[i].dy, box.w, box.h)
+      );
+      const all = getCommonBound(placed) ?? whole;
       const bound = new Bound(all.x - 8, all.y - 8, all.w + 16, all.h + 16);
       const scale = Math.min(2, IMAGE_SIDE_MAX / Math.max(bound.w, bound.h));
       const output = document.createElement('canvas');
       output.width = Math.round(bound.w * scale);
       output.height = Math.round(bound.h * scale);
       const ctx = output.getContext('2d');
-      if (!ctx) return null;
+      if (!ctx) throw new Error('drawing board: no 2d canvas');
       ctx.fillStyle = '#fff';
       ctx.fillRect(0, 0, output.width, output.height);
       // Layer by layer, so what's covered on the screen is covered here. BlockSuite's
-      // export draws every note under every stroke, at the device's scale.
+      // export draws every note under every stroke, at the device's scale. Each group
+      // drawn nearer is drawn on its own.
       for (const layer of gfx.layer.layers) {
         if (layer.type === 'canvas') {
-          ctx.drawImage(
-            renderer.getCanvasByBound(
-              bound,
-              layer.elements,
-              undefined,
-              false,
-              false,
-              scale
-            ),
-            0,
-            0,
-            output.width,
-            output.height
-          );
+          const byShift = new Map<string, typeof layer.elements>();
+          for (const element of layer.elements) {
+            const { dx, dy } = shiftOf.get(element.id) ?? { dx: 0, dy: 0 };
+            const key = `${dx},${dy}`;
+            byShift.set(key, [...(byShift.get(key) ?? []), element]);
+          }
+          for (const [key, elements] of byShift) {
+            const [dx, dy] = key.split(',').map(Number);
+            const from = new Bound(
+              bound.x + dx,
+              bound.y + dy,
+              bound.w,
+              bound.h
+            );
+            ctx.drawImage(
+              renderer.getCanvasByBound(
+                from,
+                elements,
+                undefined,
+                false,
+                false,
+                scale
+              ),
+              0,
+              0,
+              output.width,
+              output.height
+            );
+          }
           continue;
         }
         for (const block of layer.elements) {
           const { h, w, x, y } = Bound.deserialize(block.xywh);
+          const { dx, dy } = shiftOf.get(block.id) ?? { dx: 0, dy: 0 };
           const place = [
-            (x - bound.x) * scale,
-            (y - bound.y) * scale,
+            (x - dx - bound.x) * scale,
+            (y - dy - bound.y) * scale,
             w * scale,
             h * scale,
           ] as const;
@@ -372,14 +587,21 @@ export function mountDrawingBoard(
           if (image) ctx.drawImage(image, ...place);
         }
       }
-      return output.toDataURL('image/png');
+      const png = await new Promise<Blob | null>((resolve) =>
+        output.toBlob(resolve, 'image/png')
+      );
+      if (!png) throw new Error('drawing board: no image');
+      return fitImage(
+        new File([png], 'drawing.png', { type: 'image/png' }),
+        IMAGE_BYTES_MAX
+      );
     },
     unmount: () => {
       cancelAnimationFrame(frame);
       subscription.unsubscribe();
       historyUpdates.unsubscribe();
       if (onChange) store.spaceDoc.off('update', onChange);
-      symbols.unmount();
+      symbols?.unmount();
       closeBoardEditor(gfx);
       forgetFormulas();
       render(null, history);
