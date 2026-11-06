@@ -41,7 +41,7 @@ import {
   arrowBackUp,
   arrowForwardUp,
   chevronDown,
-} from '@/office-runtime/tablerGlyphs';
+} from '@/office-runtime/tablerHeaderGlyphs';
 import { FileModeControl } from './FileModeControl';
 import {
   FileActionsTarget,

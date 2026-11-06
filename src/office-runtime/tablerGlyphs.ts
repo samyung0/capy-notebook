@@ -6,6 +6,8 @@
  * Copied from the package's SVGs, not imported: it has nothing else the
  * runtime needs.
  */
+export { arrowBackUp, arrowForwardUp, chevronDown } from './tablerHeaderGlyphs';
+
 export const adjustmentsHorizontal = [
   'M12 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0',
   'M4 6l8 0',
@@ -36,10 +38,6 @@ export const alignJustified = [
 ] as const;
 export const alignLeft = ['M4 6l16 0', 'M4 12l10 0', 'M4 18l14 0'] as const;
 export const alignRight = ['M4 6l16 0', 'M10 12l10 0', 'M6 18l14 0'] as const;
-export const arrowBackUp = [
-  'M9 14l-4 -4l4 -4',
-  'M5 10h11a4 4 0 1 1 0 8h-1',
-] as const;
 export const arrowBarToDown = [
   'M4 20l16 0',
   'M12 14l0 -10',
@@ -53,10 +51,6 @@ export const arrowBarToUp = [
   'M4 4l16 0',
 ] as const;
 export const arrowDown = ['M12 5l0 14', 'M18 13l-6 6', 'M6 13l6 6'] as const;
-export const arrowForwardUp = [
-  'M15 14l4 -4l-4 -4',
-  'M19 10h-11a4 4 0 1 0 0 8h1',
-] as const;
 export const arrowLeft = ['M5 12l14 0', 'M5 12l6 6', 'M5 12l6 -6'] as const;
 export const arrowRight = ['M5 12l14 0', 'M13 18l6 -6', 'M13 6l6 6'] as const;
 export const arrowUp = ['M12 5l0 14', 'M18 11l-6 -6', 'M6 11l6 -6'] as const;
@@ -297,7 +291,6 @@ export const calendar = [
 ] as const;
 export const check = ['M5 12l5 5l10 -10'] as const;
 export const checks = ['M7 12l5 5l10 -10', 'M2 12l5 5m5 -5l5 -5'] as const;
-export const chevronDown = ['M6 9l6 6l6 -6'] as const;
 export const chevronLeft = ['M15 6l-6 6l6 6'] as const;
 export const chevronRight = ['M9 6l6 6l-6 6'] as const;
 export const chevronUp = ['M6 15l6 -6l6 6'] as const;
