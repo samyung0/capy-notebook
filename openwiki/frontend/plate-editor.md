@@ -2267,6 +2267,9 @@ design, option d), and the nudge's release file on 2026-10-17.
   25, so source tabs on the older pin (protocol 24) reload; `MIN_MATERIAL` stays
   22. `OFFICE_PROTOCOL_VERSION` stays. Its deploy request names "client protocol
   24 -> 25, source 24 -> 25".
+  The Office ribbon (Office protocol 14: `set-banner`, `banner-action`, `menu-file`
+  gone) raised `CLIENT_PROTOCOL` to 26 and `MIN_SOURCE` to 26, so source tabs
+  drawing the old header reload; `MIN_MATERIAL` stays.
 
 #### When to bump
 

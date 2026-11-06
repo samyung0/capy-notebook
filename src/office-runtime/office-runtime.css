@@ -531,20 +531,25 @@ html[data-frosted] .oox-root .bg-doc-surface:has(> .oox-formatting-bar) {
   overflow: auto hidden;
   scrollbar-width: none;
 }
-.office-ribbon__scroll[data-scroll-end] {
-  mask-image: linear-gradient(to left, transparent, #000 28px);
+/* Overlays, not a mask: a mask would hide the dropdowns inside the row. */
+.office-ribbon__scroll[data-scroll-start]::before,
+.office-ribbon__scroll[data-scroll-end]::after {
+  position: sticky;
+  z-index: 1;
+  flex: none;
+  width: 28px;
+  pointer-events: none;
+  content: "";
 }
-.office-ribbon__scroll[data-scroll-start] {
-  mask-image: linear-gradient(to right, transparent, #000 28px);
+.office-ribbon__scroll[data-scroll-start]::before {
+  left: 0;
+  margin-right: -28px;
+  background: linear-gradient(to right, var(--surface-card-bg), transparent);
 }
-.office-ribbon__scroll[data-scroll-start][data-scroll-end] {
-  mask-image: linear-gradient(
-    to right,
-    transparent,
-    #000 28px,
-    #000 calc(100% - 28px),
-    transparent
-  );
+.office-ribbon__scroll[data-scroll-end]::after {
+  right: 0;
+  margin-left: -28px;
+  background: linear-gradient(to left, var(--surface-card-bg), transparent);
 }
 .office-ribbon__group {
   display: flex;

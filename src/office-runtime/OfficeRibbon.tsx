@@ -34,8 +34,15 @@ const MENU_MARGIN = 8;
 /** The table size grid, as Capy's note toolbar picks one. */
 const GRID_SIZE = 8;
 
-/** Keeps the editor's focus and selection through a press in the ribbon. */
-const keepFocus = (event: MouseEvent) => event.preventDefault();
+/**
+ * A press in the ribbon keeps the editor's focus and selection. A menu entry's
+ * command may move the focus itself (a comment box), so the release stays from
+ * the DOCX toolbar's root, which would hand it back to the document.
+ */
+const PRESS = {
+  onMouseDown: (event: MouseEvent) => event.preventDefault(),
+  onMouseUp: (event: MouseEvent) => event.stopPropagation(),
+};
 
 /** What a cell needs of its ribbon: the commands' runner and glyphs. */
 interface RibbonApi {
@@ -95,7 +102,7 @@ function RibbonButton({
       data-icon-only={(iconOnly && !!glyph) || undefined}
       disabled={entry.disabled}
       onClick={() => runItem(api, entry)}
-      onMouseDown={keepFocus}
+      {...PRESS}
       title={title(entry)}
       type="button"
     >
@@ -144,7 +151,7 @@ function MenuRows({
           runItem(api, entry);
           close();
         }}
-        onMouseDown={keepFocus}
+        {...PRESS}
         role={
           entry.checked === undefined
             ? 'menuitem'
@@ -189,7 +196,7 @@ function TableGrid({
               close();
             }}
             onFocus={() => setSize({ cols, rows })}
-            onMouseDown={keepFocus}
+            {...PRESS}
             onMouseEnter={() => setSize({ cols, rows })}
             role="gridcell"
             type="button"
@@ -266,7 +273,8 @@ function RibbonMenu({
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       close();
-      trigger.current?.focus();
+      // Opened by mouse, the focus never left the document.
+      if (viaKeyboard.current) trigger.current?.focus();
     };
     const onScroll = (event: Event) => {
       if (!list.current?.contains(event.target as Node)) close();
@@ -305,7 +313,7 @@ function RibbonMenu({
           data-command={split.id}
           disabled={split.disabled}
           onClick={() => runItem(api, split)}
-          onMouseDown={keepFocus}
+          {...PRESS}
           title={title(split)}
           type="button"
         >
@@ -331,7 +339,7 @@ function RibbonMenu({
           viaKeyboard.current = event.detail === 0;
           setOpen((value) => !value);
         }}
-        onMouseDown={keepFocus}
+        {...PRESS}
         ref={trigger}
         title={split ? entry.label : label}
         type="button"
@@ -362,7 +370,7 @@ function RibbonMenu({
           aria-label={entry.label}
           className="office-ribbon__menu"
           onKeyDown={moveFocus}
-          onMouseDown={keepFocus}
+          {...PRESS}
           ref={list}
           role="menu"
           style={place}
@@ -389,7 +397,7 @@ function RibbonGallery({ api, entry }: { api: RibbonApi; entry: MenuEntry }) {
           disabled={item.disabled}
           key={item.id}
           onClick={() => runItem(api, item)}
-          onMouseDown={keepFocus}
+          {...PRESS}
           title={item.label}
           type="button"
         >
@@ -573,7 +581,8 @@ export function OfficeRibbon({
     };
   }, [shown, tab]);
 
-  // What's over the page closes with a click elsewhere, or Escape.
+  // What's over the page closes with a click elsewhere (a click in Capy takes
+  // this window's focus; its tab line keeps it), or Escape.
   useEffect(() => {
     if (!over) return;
     const outside = (event: Event) => {
@@ -591,11 +600,14 @@ export function OfficeRibbon({
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.key === 'Escape') store.closeOver();
     };
+    const onBlur = () => store.closeOver();
     document.addEventListener('pointerdown', outside, true);
     document.addEventListener('keydown', onKey);
+    window.addEventListener('blur', onBlur);
     return () => {
       document.removeEventListener('pointerdown', outside, true);
       document.removeEventListener('keydown', onKey);
+      window.removeEventListener('blur', onBlur);
     };
   }, [over, store]);
 
@@ -612,14 +624,15 @@ export function OfficeRibbon({
           className="office-ribbon__bar"
           data-over={over || undefined}
           data-tab={tab}
-          onClickCapture={(event) => {
+          // After the button's own handler, which closing first would unmount.
+          onClick={(event) => {
             if (!over) return;
             const target = event.target as Element;
             if (
               target.closest('button, [role="option"], [role="menuitem"]') &&
               !target.closest('[aria-haspopup], [role="combobox"]')
             )
-              queueMicrotask(() => store.closeOver());
+              store.closeOver();
           }}
           ref={bar}
         >
@@ -674,7 +687,7 @@ export function OfficeRibbon({
               className="office-ribbon__collapse"
               data-testid="office-ribbon-collapse"
               onClick={() => store.command(OFFICE_RIBBON_COMMANDS.collapse)}
-              onMouseDown={keepFocus}
+              {...PRESS}
               title={
                 over
                   ? m.files_office_ribbon_keep()
