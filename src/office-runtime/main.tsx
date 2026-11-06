@@ -49,7 +49,11 @@ import type {
 import { type CursorChannel, createCursorChannel } from './officePresence';
 import { handOverPresenterWindow, PRESENTER_VIEW } from './presenterWindow';
 import { prewarmRuntime, runtimeChunks } from './prewarm';
-import { createRibbonStore, ribbonChrome } from './ribbonStore';
+import {
+  createRibbonStore,
+  findRibbonEntry,
+  ribbonChrome,
+} from './ribbonStore';
 import {
   type OfficeCaptureScope,
   type OfficeMenuSource,
@@ -305,11 +309,16 @@ function OfficeRuntime() {
               pausedRef.current &&
               !runsWhilePaused(source, id)
             )
-          )
-            source.run(id, value, file);
+          ) {
+            // Capy opens the presenter window, as for its header's item.
+            const entry = findRibbonEntry(menus, id);
+            if (entry?.kind === 'item' && entry.popup === 'presenter')
+              askPresenter();
+            else source.run(id, value, file);
+          }
         })
     );
-  }, [ribbon]);
+  }, [askPresenter, ribbon]);
   const reportMenus = useCallback(
     (source: OfficeMenuSource | null) => {
       menuSourceRef.current = source;

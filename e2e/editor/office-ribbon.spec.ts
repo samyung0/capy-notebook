@@ -119,6 +119,42 @@ test('collapsed, a tab opens the ribbon over the page until a click elsewhere, a
   await expect(ribbonBar(page)).toBeVisible();
 });
 
+test("PPTX's View tab presents in the frame and has Capy open the presenter window", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await page.goto('/workspaces/ws_bio?file=bio-office-pptx&mode=edit');
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 120_000 });
+  const frame = frameOf(page);
+  await expect(frame.getByTestId('pptx-slide-canvas')).toBeVisible({
+    timeout: 120_000,
+  });
+  const present = () => runRibbonCommand(page, 'view', 'present');
+
+  await present();
+  await ribbonCommand(page, 'view.present').click();
+  await expect
+    .poll(() =>
+      frame.locator('body').evaluate(() => !!document.fullscreenElement)
+    )
+    .toBe(true);
+  await page.keyboard.press('Escape');
+  await expect
+    .poll(() =>
+      frame.locator('body').evaluate(() => !!document.fullscreenElement)
+    )
+    .toBe(false);
+
+  await present();
+  const opened = page.waitForEvent('popup');
+  await ribbonCommand(page, 'view.presenterView').click();
+  const notes = await opened;
+  await expect(
+    notes.getByRole('main', { name: 'Presenter view' })
+  ).toBeVisible();
+});
+
 test('a phone keeps one row under the tabs, Undo and Redo in the tab strip', async ({
   page,
 }) => {
