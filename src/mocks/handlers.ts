@@ -55,6 +55,7 @@ import {
   exampleAnswers,
   exampleQuestion,
 } from '@/features/questions/questionFixtures';
+import { isDrawingValue } from '@/features/quizzes/drawing/drawingValue';
 import { type Answers, runScore } from '@/features/quizzes/grade';
 import {
   modelRefValue,
@@ -653,9 +654,12 @@ function gradeOne(
   const graded = gradeQuestions([question], answers);
   const parts = graded.questions[0].parts.map((part) => {
     const answer = answers[part.id];
-    return part.answer.type === 'open' &&
-      typeof answer === 'string' &&
-      answer.trim()
+    const answered =
+      (part.answer.type === 'open' &&
+        typeof answer === 'string' &&
+        answer.trim() !== '') ||
+      (part.answer.type === 'drawing' && isDrawingValue(answer ?? null));
+    return answered
       ? { ...part, awarded: 0, itemAwards: undefined, pending: true }
       : part;
   });

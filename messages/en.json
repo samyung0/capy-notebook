@@ -2202,7 +2202,6 @@
   "quiz_no_answers_configured": "No answers configured",
   "quiz_questions": "Questions",
   "question_ui_type_answer": "Type your answer",
-  "question_ui_scheme_and_solution": "Marking scheme and worked solution",
   "question_ui_outline": "Outline",
   "question_ui_body": "Body",
   "question_ui_choose_exam": "Choose exam",
@@ -3039,5 +3038,15 @@
   "drawing_board_fill_red": "Red",
   "drawing_board_fill_yellow": "Yellow",
   "drawing_board_label": "Label",
-  "question_ui_drawing": "Drawing"
+  "question_ui_drawing": "Drawing",
+  "drawing_answer_draw": "Draw answer",
+  "drawing_answer_edit": "Edit drawing",
+  "drawing_answer_open": "Open drawing",
+  "drawing_answer_image": "Your drawing",
+  "drawing_answer_question": "Question",
+  "drawing_answer_hide_question": "Hide question",
+  "drawing_answer_show_question": "Show question",
+  "drawing_answer_too_big": "This drawing is too big to save. Remove some of it, then press Done again.",
+  "drawing_answer_open_failed": "This drawing couldn't be opened.",
+  "drawing_answer_capture_failed": "This drawing couldn't be saved. Press Done again."
 }

@@ -7,8 +7,9 @@ import type { SrsState } from './srs';
 /**
  * Browser-local data: signed-out visitors' quiz attempts and flashcard reviews
  * on shared standalone materials (never sent to the server or imported into an
- * account on sign-in), and the signed-in account's agent Undo payloads for a
- * day (`undoPayloads.ts`). Later offline work adds stores in new database
+ * account on sign-in), the signed-in account's agent Undo payloads for a
+ * day (`undoPayloads.ts`), and drawing answers' boards as they are drawn, until
+ * Done sends them (Epo 2026-11-06). Later offline work adds stores in new database
  * versions.
  *
  * Every call rejects when IndexedDB is unavailable (some private modes);
@@ -53,7 +54,16 @@ export interface LocalUndoPayload extends UndoPayload {
   operationId: string;
 }
 
-const VERSION = 4;
+/** A drawing answer's board as it stood when last changed, before Done. */
+export interface LocalDrawingDraft {
+  /** The board's saved document (base64). */
+  doc: string;
+  /** Where the answer is: the attempt or quiz, then the part. */
+  key: string;
+  savedAt: string;
+}
+
+const VERSION = 5;
 
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -90,6 +100,8 @@ function open(): Promise<IDBDatabase> {
         payloads.createIndex('issuedAt', 'issuedAt');
         payloads.createIndex('documentId', 'documentId');
       }
+      if (oldVersion < 5)
+        database.createObjectStore('drawingDrafts', { keyPath: 'key' });
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -221,5 +233,25 @@ export function deleteLocalUndoPayloads(
       cursor.delete();
       cursor.continue();
     };
+  });
+}
+
+export function localDrawingDraft(
+  key: string
+): Promise<LocalDrawingDraft | undefined> {
+  return run(['drawingDrafts'], 'readonly', (transaction) =>
+    transaction.objectStore('drawingDrafts').get(key)
+  );
+}
+
+export function saveLocalDrawingDraft(draft: LocalDrawingDraft): Promise<void> {
+  return run(['drawingDrafts'], 'readwrite', (transaction) => {
+    transaction.objectStore('drawingDrafts').put(draft);
+  });
+}
+
+export function deleteLocalDrawingDraft(key: string): Promise<void> {
+  return run(['drawingDrafts'], 'readwrite', (transaction) => {
+    transaction.objectStore('drawingDrafts').delete(key);
   });
 }

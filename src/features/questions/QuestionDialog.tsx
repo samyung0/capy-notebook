@@ -1391,8 +1391,9 @@ function QuestionDialogSession({
             {/* Learners see their own answer marked instead; the key is here
                 for the editor. An open part shows its optional sample answer
                 and its marking scheme. */}
-            {(part.answer.type !== 'open' ||
-              part.answer.accepted.length > 0 ||
+            {(!modelMarked(part.answer.type) ||
+              (part.answer.type === 'open' &&
+                part.answer.accepted.length > 0) ||
               (part.markscheme?.length ?? 0) > 0) && (
               // The key lives in the part's answer: a click selects that
               // block, brought into view only as far as it needs.
@@ -1416,16 +1417,17 @@ function QuestionDialogSession({
                 role="button"
                 tabIndex={0}
               >
-                {part.answer.type === 'open' ? (
+                {modelMarked(part.answer.type) ? (
                   <>
-                    {part.answer.accepted.length > 0 && (
-                      <div className="space-y-2">
-                        <h4 className="font-semibold text-sm text-tint-accent-1-fg">
-                          {m.question_ui_sample_answer_heading()}
-                        </h4>
-                        <AnswerView part={part} />
-                      </div>
-                    )}
+                    {part.answer.type === 'open' &&
+                      part.answer.accepted.length > 0 && (
+                        <div className="space-y-2">
+                          <h4 className="font-semibold text-sm text-tint-accent-1-fg">
+                            {m.question_ui_sample_answer_heading()}
+                          </h4>
+                          <AnswerView part={part} />
+                        </div>
+                      )}
                     {(part.markscheme?.length ?? 0) > 0 && (
                       <div className="space-y-2">
                         <h4 className="font-semibold text-sm text-tint-accent-1-fg">

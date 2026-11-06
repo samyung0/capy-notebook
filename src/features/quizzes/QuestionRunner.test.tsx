@@ -130,6 +130,33 @@ it('shows an open part with its marks and a verdict over its marking points', ()
   expect(graded([0, 0], ' ')).toContain('Question not answered');
 });
 
+it('shows a drawing part as a grid to draw on, its drawing after Done, and its verdict once checked', () => {
+  const question = exampleQuestion('draw', { type: 'drawing' });
+  const drawing = { board: 'AAA=', image: 'data:image/webp;base64,AAA=' };
+  const taking = (value?: typeof drawing) =>
+    renderToStaticMarkup(
+      <QuestionRunner
+        answers={value ? { 'draw-part': value } : {}}
+        question={question}
+      />
+    );
+  expect(taking()).toContain('drawing-grid');
+  expect(taking()).toContain(m.drawing_answer_draw());
+  expect(taking(drawing)).toContain(`src="${drawing.image}"`);
+  expect(taking(drawing)).toContain(m.drawing_answer_edit());
+  question.parts[0] = applyItemAwards(question.parts[0], [1]);
+  const checked = renderToStaticMarkup(
+    <QuestionRunner
+      answers={{ 'draw-part': drawing }}
+      question={question}
+      review
+    />
+  );
+  expect(checked).toContain('Correct:');
+  expect(checked).toContain(m.drawing_answer_open());
+  expect(checked).not.toContain(m.drawing_answer_edit());
+});
+
 it('marks a checked choice in its box and says Right or Wrong with the marks above', () => {
   const reviewed = (choice: number[]) => {
     const question = exampleQuestion('mcq');

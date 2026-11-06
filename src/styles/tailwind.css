@@ -406,6 +406,21 @@
   );
 }
 
+/* A drawing answer's area before drawing (E1, Epo 2026-11-06): one generic
+   squared grid, major lines every four minor squares. */
+@utility drawing-grid {
+  background-image:
+    linear-gradient(var(--color-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-line) 1px, transparent 1px),
+    linear-gradient(var(--color-divider) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-divider) 1px, transparent 1px);
+  background-size:
+    52px 52px,
+    52px 52px,
+    13px 13px,
+    13px 13px;
+}
+
 /* A wavy divider in currentColor: marks content learners don't see yet. */
 @utility wavy-rule {
   height: 6px;

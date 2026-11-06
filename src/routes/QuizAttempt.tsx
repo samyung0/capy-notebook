@@ -20,6 +20,7 @@ import {
 import type { LearnerQuestion } from '@/features/questions/types';
 import { AttemptBody } from '@/features/quizzes/AttemptBody';
 import { blockHomeCrumb } from '@/features/quizzes/crumbs';
+import { DrawingDraftScope } from '@/features/quizzes/drawing/drawingValue';
 import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
 import { useQuizRun } from '@/features/quizzes/quizRun';
 import { CloneItemDialog } from '@/features/workspace/CloneItemDialog';
@@ -97,62 +98,64 @@ function Attempt({ quizId }: { quizId: string }) {
 
   return (
     <RemovedAssetsContext.Provider value={removed}>
-      <AttemptBody
-        actions={
-          !quiz.canEdit &&
-          !quiz.parentMaterialId &&
-          (!quiz.workspaceId || workspace?.canClone) && (
-            <>
-              <Button
-                disabled={frozen}
-                iconLeft="plus"
-                onClick={() => setCloning(true)}
-                rounded="large"
-                size="sm"
-                variant="outline"
-              >
-                {m.action_clone_quiz()}
+      <DrawingDraftScope.Provider value={`quiz:${quiz.id}`}>
+        <AttemptBody
+          actions={
+            !quiz.canEdit &&
+            !quiz.parentMaterialId &&
+            (!quiz.workspaceId || workspace?.canClone) && (
+              <>
+                <Button
+                  disabled={frozen}
+                  iconLeft="plus"
+                  onClick={() => setCloning(true)}
+                  rounded="large"
+                  size="sm"
+                  variant="outline"
+                >
+                  {m.action_clone_quiz()}
+                </Button>
+                {cloning && (
+                  <CloneItemDialog
+                    item={{
+                      id: quiz.id,
+                      kind: 'quiz',
+                      name: quiz.name,
+                      type: 'material',
+                      workspaceId: quiz.workspaceId,
+                    }}
+                    onClose={() => setCloning(false)}
+                  />
+                )}
+              </>
+            )
+          }
+          control={control}
+          emptyAction={
+            <Link
+              className="mt-6 inline-flex"
+              preload="intent"
+              search={{ tab: 'blocks' }}
+              to="/files"
+            >
+              <Button iconLeft="navigationBack" rounded="large">
+                {m.quiz_back()}
               </Button>
-              {cloning && (
-                <CloneItemDialog
-                  item={{
-                    id: quiz.id,
-                    kind: 'quiz',
-                    name: quiz.name,
-                    type: 'material',
-                    workspaceId: quiz.workspaceId,
-                  }}
-                  onClose={() => setCloning(false)}
-                />
-              )}
-            </>
-          )
-        }
-        control={control}
-        emptyAction={
-          <Link
-            className="mt-6 inline-flex"
-            preload="intent"
-            search={{ tab: 'blocks' }}
-            to="/files"
-          >
-            <Button iconLeft="navigationBack" rounded="large">
-              {m.quiz_back()}
-            </Button>
-          </Link>
-        }
-        frame={StudyPanel}
-        inApp
-        name={quiz.name}
-        onBack={() =>
-          canGoBack
-            ? router.history.back()
-            : void navigate({ search: { tab: 'blocks' }, to: '/files' })
-        }
-        provenance={quiz.provenance}
-        questions={questions}
-        trail={[blockHomeCrumb(quiz)]}
-      />
+            </Link>
+          }
+          frame={StudyPanel}
+          inApp
+          name={quiz.name}
+          onBack={() =>
+            canGoBack
+              ? router.history.back()
+              : void navigate({ search: { tab: 'blocks' }, to: '/files' })
+          }
+          provenance={quiz.provenance}
+          questions={questions}
+          trail={[blockHomeCrumb(quiz)]}
+        />
+      </DrawingDraftScope.Provider>
     </RemovedAssetsContext.Provider>
   );
 }

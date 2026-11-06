@@ -2202,7 +2202,6 @@
   "quiz_no_answers_configured": "未设置答案",
   "quiz_questions": "题目",
   "question_ui_type_answer": "输入你的答案",
-  "question_ui_scheme_and_solution": "评分标准与解题过程",
   "question_ui_outline": "大纲",
   "question_ui_body": "正文",
   "question_ui_choose_exam": "选择考试",
@@ -3039,5 +3038,15 @@
   "drawing_board_fill_red": "红色",
   "drawing_board_fill_yellow": "黄色",
   "drawing_board_label": "标签",
-  "question_ui_drawing": "作图"
+  "question_ui_drawing": "作图",
+  "drawing_answer_draw": "作答",
+  "drawing_answer_edit": "修改作图",
+  "drawing_answer_open": "打开作图",
+  "drawing_answer_image": "你的作图",
+  "drawing_answer_question": "题目",
+  "drawing_answer_hide_question": "隐藏题目",
+  "drawing_answer_show_question": "显示题目",
+  "drawing_answer_too_big": "作图太大，无法保存。请删去部分内容后再按完成。",
+  "drawing_answer_open_failed": "无法打开这份作图。",
+  "drawing_answer_capture_failed": "无法保存这份作图，请再按一次完成。"
 }
