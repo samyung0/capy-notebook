@@ -4,6 +4,7 @@ import path from 'node:path';
 import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import { sentryVitePlugin } from '@sentry/vite-plugin';
 import tailwindcss from '@tailwindcss/vite';
+import { vanillaExtractPlugin } from '@vanilla-extract/vite-plugin';
 import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv } from 'vite';
 import { DEV_SHARE_LINK_SECRET } from './src/lib/shareLink';
@@ -32,13 +33,14 @@ const DECODE_ENTITIES = [
   'decode-named-character-reference',
 ].reduce((from, id) => createRequire(from).resolve(id), import.meta.filename);
 const DEV_ENV_FILE = /^deploy\/\.env(?:\.[^/]+)?$/;
-/** MSW's entry points (src/main.tsx, src/share). A build without MSW never
- * runs them, but Rollup loads every dynamic import, dead code included, and
- * loading the mocks emits their `?url` fixtures (Office files up to 23 MB) into
- * dist/: such a build gets an empty module instead. The editor benches build
- * with MSW on (`--mode development`) and keep them. */
+/** MSW's entry points (src/main.tsx, src/share) and the dev-only drawing board's
+ * route. A build without MSW never runs them, but Rollup loads every dynamic import,
+ * dead code included, and loading the mocks emits their `?url` fixtures (Office files
+ * up to 23 MB) into dist/, as the route would transform all of vendored BlockSuite: such
+ * a build gets an empty module instead. The editor benches build with MSW on
+ * (`--mode development`) and keep them. */
 const MSW_ENTRIES =
-  /\/mocks\/(browser|collaboration)$|\/dev\/MockScenarioPanel$/;
+  /\/mocks\/(browser|collaboration)$|\/dev\/MockScenarioPanel$|\/routes\/DevDrawingBoard$/;
 
 // Every component reads deploy/.env; see deploy/.env.example.
 const ENV_DIR = path.resolve(import.meta.dirname, 'deploy');
@@ -135,6 +137,9 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
         ? 'node_modules/.vite-editor-e2e'
         : undefined,
     envDir: ENV_DIR,
+    // BlockSuite uses standard decorators with `accessor` fields, which
+    // Rollup cannot parse: esbuild must lower them while transforming.
+    esbuild: { target: 'es2022' },
     optimizeDeps: {
       // '@betteroffice/docx-react' stays scanned: it imports
       // @radix-ui/react-select, which only the fork installs, and finding that
@@ -219,6 +224,12 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
             : [],
       },
       react(),
+      // BlockSuite's few `.css.ts` styles (vendor/blocksuite/README.md). It starts a
+      // Vite server of its own, so only where the board can load: a dev server or a
+      // build with MSW on. The answer flow turns this on for every build.
+      (command === 'serve' || useMsw) &&
+        mode !== 'test' &&
+        vanillaExtractPlugin(),
       mathliveFonts(),
       embedFrame(env.VITE_EMBED_ORIGIN),
       policyHeaders(env),

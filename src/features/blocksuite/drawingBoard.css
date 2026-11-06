@@ -1,0 +1,11 @@
+/* Boards K7 and K8: zoom at the bottom right, none on phones. */
+.capy-board affine-edgeless-zoom-toolbar-widget {
+  right: 12px;
+  left: auto;
+}
+
+@media (max-width: 639px) {
+  .capy-board affine-edgeless-zoom-toolbar-widget {
+    display: none;
+  }
+}

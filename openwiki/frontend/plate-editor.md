@@ -4318,3 +4318,16 @@ Unmodified horizontal arrows skip the redundant first/last child positions of
 `\overline` groups using MathLive's public element-info and movement commands,
 matching its accent navigation. Internal characters remain editable; modified
 arrows and other structures retain native navigation.
+
+## BlockSuite on main
+
+`vendor/blocksuite` (plain files; its README lists the local changes) is on `main`
+for the drawing answer's board only (Epo 2026-11-06). Notes stay on Plate until the
+cut. `src/features/blocksuite/drawingBoard.ts` imports just the editor parts the board
+needs, so it's a lazy chunk of about 1.2 MB gzipped, and the app reaches it through
+`drawingBoard.boundary.d.ts`, so the app's type check skips the vendored sources.
+Nothing in production opens it yet: `/dev/drawing` is a dev-only route. A production
+build swaps that route for an empty module (`MSW_ENTRIES` in `vite.config.ts`) and runs no
+vanilla-extract plugin, so it neither ships nor transforms the vendored sources. The answer
+flow reverses both. `pnpm audit` covers these packages' dependencies but not the copied
+source, so an AFFiNE security fix stays unseen until someone re-copies.

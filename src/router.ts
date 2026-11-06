@@ -152,6 +152,17 @@ const page = <const T extends string>(
   });
 
 const publicRoutes = [
+  // Dev builds only, so production builds drop BlockSuite's chunk until a page
+  // that ships opens the board.
+  ...(import.meta.env.DEV
+    ? [
+        createRoute({
+          component: lazyPage(() => import('@/routes/DevDrawingBoard')),
+          getParentRoute: () => rootRoute,
+          path: '/dev/drawing',
+        }),
+      ]
+    : []),
   createRoute({
     component: lazyPage(() => import('@/routes/WorkspaceInviteAccept')),
     getParentRoute: () => rootRoute,
