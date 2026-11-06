@@ -27,7 +27,7 @@ import { getLocale, m } from '@/i18n';
 import { setFormulaOpener } from './boardTools';
 
 /** Longest formula a member can type; the renderer draws nothing past it. */
-const LATEX_MAX = 2000;
+export const LATEX_MAX = 2000;
 const FONT_SIZE = 24;
 /** Bitmap pixels per board pixel, so a formula stays sharp when zoomed in. */
 const SHARPNESS = 3;
@@ -304,7 +304,9 @@ function boardOf(gfx: GfxController) {
  * opens it again. */
 async function openEditor(gfx: GfxController, model?: FormulaElementModel) {
   const board = boardOf(gfx);
-  if (!board || board.querySelector('.capy-formula')) return;
+  // A teacher's board loads no MathLive.
+  if (gfx.doc.readonly || !board || board.querySelector('.capy-formula'))
+    return;
   const { MathfieldElement } = await import('mathlive');
   MathfieldElement.fontsDirectory = '/mathlive/fonts';
   MathfieldElement.soundsDirectory = null;

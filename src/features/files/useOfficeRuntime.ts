@@ -10,6 +10,7 @@ import { RoomProvider } from '@/features/collaboration/roomProvider';
 import { getLocale, m } from '@/i18n';
 import { errorCopy, unexpectedErrorId } from '@/lib/errors';
 import { imageLimit } from '@/lib/fitImage';
+import { PREF_KEYS, readPref, writePref } from '@/lib/localPrefs';
 import { officeMark } from '@/lib/officeMarks';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { useFrosted, useTheme } from '@/theme/theme';
@@ -17,8 +18,10 @@ import { useFileMode } from './FileModeControl';
 import { fileExt } from './fileUtils';
 import {
   fitOfficeMenus,
+  type OfficeBanner,
   type OfficeHeaderAction,
   type OfficeMenu,
+  type OfficeRibbon,
   officeCommandNeeds,
   officeHostCommand,
 } from './officeMenus';
@@ -72,6 +75,8 @@ export interface OfficeSwap {
   onPosition: (position: OfficeViewPosition | null) => void;
   onReplaced: () => void;
   onSettled: () => void;
+  /** The tab the view on screen has open: the next view opens on it. */
+  ribbonTab: { current: string | null };
 }
 
 /** Both answer where the reader is once the frame says (null: no answer). */
@@ -120,6 +125,22 @@ export function isCurrentOfficeRuntimeMessage(
   return messageRevision === currentRevision;
 }
 
+/**
+ * A strip's click from the frame. It counts only with the user's gesture: a
+ * compromised frame could otherwise raise a strip and fire Download draft or
+ * Reload by itself (a click in the frame activates this page too).
+ */
+export function frameBannerAction(
+  action: number | 'close',
+  run: ((action: number | 'close') => void) | null,
+  activation: { isActive: boolean } | undefined = navigator.userActivation
+) {
+  if (activation?.isActive) run?.(action);
+}
+
+const isBoolean = (value: unknown): value is boolean =>
+  typeof value === 'boolean';
+
 export function useOfficeRuntime({
   canEdit,
   citation,
@@ -129,6 +150,8 @@ export function useOfficeRuntime({
   revision,
   swap,
 }: OfficeRuntimeOptions) {
+  const swapRef = useRef(swap);
+  swapRef.current = swap;
   const citationRef = useRef(citation);
   citationRef.current = citation;
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -139,6 +162,11 @@ export function useOfficeRuntime({
   const narrow = !useMediaQuery('(min-width: 1024px)');
   const compact = !useMediaQuery('(min-width: 768px)');
   const [mode, setMode] = useFileMode(canEdit, initialMode);
+  // Entering Edit opens on Home (Q665); only a swap within Edit keeps the tab.
+  useEffect(() => {
+    if (mode === 'view' && swapRef.current)
+      swapRef.current.ribbonTab.current = null;
+  }, [mode]);
   const [joined, setJoined] = useState(mode === 'edit');
   const [frameGeneration, setFrameGeneration] = useState(0);
   const [frameLoaded, setFrameLoaded] = useState(false);
@@ -155,11 +183,17 @@ export function useOfficeRuntime({
   const [outdated, setOutdated] = useState(false);
   // The runtime's menu bar and header actions; each frame sends its own.
   const [menus, setMenus] = useState<{
+    ribbon?: OfficeRibbon;
     menus: OfficeMenu[];
     actions: OfficeHeaderAction[];
   } | null>(null);
   const menusRef = useRef(menus);
   menusRef.current = menus;
+  // The strip drawn under the ribbon: its clicks come back to the host's.
+  const bannerSent = useRef('');
+  const bannerActionRef = useRef<((action: number | 'close') => void) | null>(
+    null
+  );
   // A PPTX show is on: the frame covers the page.
   const [presenting, setPresenting] = useState(false);
   const [replicaReady, setReplicaReady] = useState(false);
@@ -498,6 +532,17 @@ export function useOfficeRuntime({
         imageMaxBytes,
         mode,
         revision: revisionRef.current,
+        ribbon:
+          mode === 'edit'
+            ? {
+                collapsed: readPref(
+                  PREF_KEYS.officeRibbonCollapsed,
+                  false,
+                  isBoolean
+                ),
+                tab: swapRef.current?.ribbonTab.current ?? null,
+              }
+            : undefined,
         type: 'load',
         version: OFFICE_PROTOCOL_VERSION,
         zoom: zoomRef.current,
@@ -645,6 +690,7 @@ export function useOfficeRuntime({
         notices.frame();
         setReplicaReady(false);
         setMenus(null);
+        bannerSent.current = '';
         setPresenting(false);
         initializedFrame.current = -1;
         setFrameLoaded(true);
@@ -688,7 +734,36 @@ export function useOfficeRuntime({
         setMenus({
           actions: message.actions,
           menus: fitOfficeMenus(message.menus),
+          ribbon: message.ribbon,
         });
+        // The view on screen's: one building hidden hasn't been seen yet.
+        if (message.ribbon && !swapRef.current?.building) {
+          if (swapRef.current && message.ribbon.tab)
+            swapRef.current.ribbonTab.current = message.ribbon.tab;
+          // Q674: one choice per device, in Capy because the frame is sandboxed.
+          if (
+            readPref(PREF_KEYS.officeRibbonCollapsed, false, isBoolean) !==
+            message.ribbon.collapsed
+          )
+            writePref(
+              PREF_KEYS.officeRibbonCollapsed,
+              message.ribbon.collapsed
+            );
+        }
+        return;
+      }
+      if (message.type === 'banner-action') {
+        frameBannerAction(message.action, bannerActionRef.current);
+        return;
+      }
+      if (message.type === 'ribbon-focus') {
+        // Only from a frame the user is in: it can't take the focus otherwise.
+        if (document.activeElement === iframeRef.current)
+          document
+            .querySelector<HTMLElement>(
+              '[role="tablist"] [data-testid^="office-tab-"][tabindex="0"]'
+            )
+            ?.focus();
         return;
       }
       if (message.type === 'position') {
@@ -958,22 +1033,18 @@ export function useOfficeRuntime({
     ]
   );
 
-  /** A `pick` item's file, from Capy's picker. */
-  const sendMenuFile = useCallback(
-    (id: string, file: File) => {
-      void file.arrayBuffer().then((bytes) =>
-        post(
-          {
-            bytes,
-            id,
-            mimeType: file.type,
-            name: file.name,
-            type: 'menu-file',
-            version: OFFICE_PROTOCOL_VERSION,
-          },
-          [bytes]
-        )
-      );
+  /** Draws the strip under the frame's ribbon (null: none). */
+  const showFrameBanner = useCallback(
+    (
+      banner: OfficeBanner | null,
+      onAction: ((action: number | 'close') => void) | null
+    ) => {
+      bannerActionRef.current = onAction;
+      // FileBanner reports on every render; the frame hears of a change.
+      const text = JSON.stringify(banner);
+      if (text === bannerSent.current) return;
+      bannerSent.current = text;
+      post({ banner, type: 'set-banner', version: OFFICE_PROTOCOL_VERSION });
     },
     [post]
   );
@@ -1027,8 +1098,6 @@ export function useOfficeRuntime({
     !!source.unavailable ||
     outdated ||
     source.status === 'recovery';
-  const swapRef = useRef(swap);
-  swapRef.current = swap;
   useEffect(() => {
     if (swapping) swapRef.current?.onReplaced();
   }, [swapping]);
@@ -1109,9 +1178,9 @@ export function useOfficeRuntime({
     retryView,
     runMenuCommand,
     saving: leaving || source.status === 'saving',
-    sendMenuFile,
     setFrameLoaded,
     setRuntimeMode,
+    showFrameBanner,
     sizeLimited,
     slowed: mode === 'edit' && source.slowed,
     // The header says Reconnecting until the new view takes over.

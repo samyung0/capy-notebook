@@ -2271,6 +2271,11 @@ design, option d), and the nudge's release file on 2026-10-17.
   source tabs on the older pin (protocol 25) reload; `MIN_MATERIAL` stays 22.
   `OFFICE_PROTOCOL_VERSION` stays. Its deploy request names "client protocol
   25 -> 26, source 25 -> 26".
+  The Office ribbon (`OFFICE_PROTOCOL_VERSION` 13 -> 14: `set-banner`,
+  `banner-action`, `ribbon-focus`, `load`'s `ribbon`, `menu-file` gone) raised
+  `CLIENT_PROTOCOL` to 27 and `MIN_SOURCE` to 27, so source tabs drawing the old
+  header reload; `MIN_MATERIAL` stays 22. Its deploy request names "client
+  protocol 26 -> 27, source 26 -> 27".
 
 #### When to bump
 
@@ -4443,11 +4448,34 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   the bars. Pie chart: no grid or axes, starting with a line at 12 o'clock. A click adds a
   line, whose chip shows the sector it closes, from the line before it clockwise, and
   labels sit at an angle inside the circle.
-- **Marking image:** everything on the canvas as it stands, including each card with the
-  view it was left at, so a plotted mark panned out of view isn't in it. It's drawn layer
-  by layer at a scale capped to 2400 px, so it stacks as the screen does and fits a phone's
-  canvas limit; AFFiNE's own export draws every note under every stroke at the device's
-  scale.
+- **Marking image (`toImage()`):** everything on the canvas as it stands, including each
+  card with the view it was left at, so a plotted mark panned out of view isn't in it. It's
+  drawn layer by layer at a scale capped to 2400 px, so it stacks as the screen does and
+  fits a phone's canvas limit; AFFiNE's own export draws every note under every stroke at
+  the device's scale. On a board wider or taller than 2400 px, groups of elements more than
+  400 px apart are drawn 400 px apart, so one dragged far away doesn't squash the rest;
+  the board itself stays as it is. The PNG goes through `fitImageOffThread` (WebP, 300 KB cap, Epo 2026-11-06), whose
+  encode runs in a worker while the drawing stays on the page, and
+  comes back as a `File`.
+- **What the answer flow mounts:** `mountDrawingBoard(host, { readOnly, saved,
+  onChange })`. Every answer starts on the same plain board (Epo 2026-11-06 dropped
+  per-question backgrounds); the dev pages pass `plane: true` for a plane card to play
+  with.
+  - `fitPadding` ([top, right, bottom, left] pixels) is the room the first fit leaves
+    for what the page lays over the board, such as a pinned question card or a top bar;
+    without it the fit leaves room for the board's own toolbar and undo.
+  - `readOnly` is a teacher's view: BlockSuite's read-only store (pan tool), no toolbars,
+    undo, symbol row or selection, and nothing opens for editing, so MathLive never
+    loads.
+  - `save()` returns `{ doc, bytes }`: the board copied into a fresh Yjs document, so no
+    undo history (200 undo steps on a card were 606 KB live and a few KB saved). The
+    answer flow refuses past Epo's 250 KB on Done.
+  - `saved` is checked before anything mounts (`boardLoad.ts`), as BlockSuite's store
+    skips a block it doesn't know and takes any tree on load: one page and one canvas,
+    only the blocks and elements the board's tools make, each block under a parent it
+    may have in one tree, and each card's fields within
+    the limits its editor keeps (marks, bars, labels, spokes, axis values, formula
+    length). Anything else throws a `BoardLoadError` with a `reason`.
 - **Formulas:** a `formula` canvas element holding LaTeX, typed in MathLive (loaded on
   first open). AFFiNE keeps LaTeX as HTML in note cards, and its export (html2canvas)
   garbles that, so typing `$$` in a note here stays text; AFFiNE's inline spec stays
@@ -4457,8 +4485,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   expansion limits are set on KaTeX, and a saved answer holding more than 2,000
   characters draws nothing. Bitmaps stay until the board closes: sharp up to 128 MB, plain
   up to 256 MB, and past that a formula isn't drawn, on screen or in the image. Saving
-  answers still needs a read-only render for teachers,
-  with limits on the server.
+  answers still needs limits on the server.
 - **Labels** come from the Maths menu's Label, which can place one on top of a card (a
   double click there opens the plane), or a double click on empty canvas. They have a
   maths symbol row while typing. BlockSuite's default canvas font has no

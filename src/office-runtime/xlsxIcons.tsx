@@ -1,109 +1,113 @@
 import type { IconSet } from '@betteroffice/xlsx-react';
-import {
-  AlignBottomIcon,
-  AlignTopIcon,
-  AlignVerticalCenterIcon,
-  CheckIcon,
-  ChevronDownIcon,
-  DecimalsArrowLeftIcon,
-  DecimalsArrowRightIcon,
-  Download01Icon,
-  Image01Icon,
-  MinusSignIcon,
-  MoreVerticalIcon,
-  PaintBrush01Icon,
-  PaintBucketIcon,
-  PlusSignIcon,
-  PrinterIcon,
-  Redo03Icon,
-  RefreshCcwIcon,
-  Search01Icon,
-  SparklesIcon,
-  TableCellsMergeIcon,
-  TextAlignCenterIcon,
-  TextAlignLeftIcon,
-  TextAlignRightIcon,
-  TextBoldIcon,
-  TextColorIcon,
-  TextItalicIcon,
-  TextStrikethroughIcon,
-  TextWrapIcon,
-  Undo03Icon,
-} from '@hugeicons/core-free-icons';
-import type { IconSvgElement } from '@hugeicons/react';
 import type { ComponentProps } from 'react';
-import { HugeIcon } from '@/components/ui/HugeIcon';
-import { BorderIcon, type BorderIconKind } from './borderIcons';
+import {
+  decimalDecrease,
+  decimalIncrease,
+  fillSwatch,
+  tableCellsMerge,
+  textColorSwatch,
+} from './capyGlyphs';
 import { officeIconSize } from './officeIconSize';
+import { TablerIcon } from './TablerIcon';
+import {
+  alignCenter,
+  alignLeft,
+  alignRight,
+  arrowBackUp,
+  arrowForwardUp,
+  bold,
+  borderAll,
+  borderBottom,
+  borderHorizontal,
+  borderInner,
+  borderLeft,
+  borderNone,
+  borderOuter,
+  borderRight,
+  borderTop,
+  borderVertical,
+  brush,
+  check,
+  chevronDown,
+  dotsVertical,
+  download,
+  italic,
+  layoutAlignBottom,
+  layoutAlignMiddle,
+  layoutAlignTop,
+  minus,
+  photo,
+  plus,
+  printer,
+  refresh,
+  search,
+  sparkles,
+  strikethrough,
+  textWrap,
+} from './tablerGlyphs';
 
 /**
- * Every icon xlsx-react draws, from Capy's set: the same icon as Icon.tsx and
- * docxIcons.tsx for the same command, with the border icons drawn by hand
- * (borderIcons.tsx). Imported one by one so the rest of Hugeicons stays out of
- * the runtime bundle.
+ * Every icon xlsx-react draws, from Tabler (Q599): the same glyph as the
+ * other formats for the same command, Capy's own where Tabler has no fit.
  */
 export const XLSX_ICONS: Record<
   keyof IconSet,
-  IconSvgElement | { border: BorderIconKind }
+  ComponentProps<typeof TablerIcon>['glyph']
 > = {
-  add: PlusSignIcon,
-  alignCellBottom: AlignBottomIcon,
-  alignCellMiddle: AlignVerticalCenterIcon,
-  alignCellTop: AlignTopIcon,
-  alignLeft: TextAlignLeftIcon,
-  alignTextCenter: TextAlignCenterIcon,
-  alignTextLeft: TextAlignLeftIcon,
-  alignTextRight: TextAlignRightIcon,
-  bold: TextBoldIcon,
-  borderAll: { border: 'all' },
-  borderBottom: { border: 'bottom' },
-  borderHorizontal: { border: 'horizontal' },
-  borderInner: { border: 'inner' },
-  borderLeft: { border: 'left' },
-  borderNone: { border: 'none' },
-  borderOuter: { border: 'outer' },
-  borderRight: { border: 'right' },
-  borders: { border: 'all' },
-  borderTop: { border: 'top' },
-  borderVertical: { border: 'vertical' },
-  check: CheckIcon,
-  chevronDown: ChevronDownIcon,
-  decimalDecrease: DecimalsArrowLeftIcon,
-  decimalIncrease: DecimalsArrowRightIcon,
-  fillColor: PaintBucketIcon,
-  formatPaint: PaintBrush01Icon,
-  image: Image01Icon,
-  italic: TextItalicIcon,
-  merge: TableCellsMergeIcon,
-  more: MoreVerticalIcon,
-  print: PrinterIcon,
-  proposals: SparklesIcon,
-  redo: Redo03Icon,
-  refresh: RefreshCcwIcon,
-  remove: MinusSignIcon,
-  // Save requests Capy's checkpoint; the DOCX menu draws it the same way.
-  save: Download01Icon,
-  search: Search01Icon,
-  strikethrough: TextStrikethroughIcon,
-  textColor: TextColorIcon,
-  undo: Undo03Icon,
-  verticalAlignCenter: AlignVerticalCenterIcon,
-  wrap: TextWrapIcon,
+  add: plus,
+  alignCellBottom: layoutAlignBottom,
+  alignCellMiddle: layoutAlignMiddle,
+  alignCellTop: layoutAlignTop,
+  alignLeft,
+  alignTextCenter: alignCenter,
+  alignTextLeft: alignLeft,
+  alignTextRight: alignRight,
+  bold,
+  borderAll,
+  borderBottom,
+  borderHorizontal,
+  borderInner,
+  borderLeft,
+  borderNone,
+  borderOuter,
+  borderRight,
+  borders: borderAll,
+  borderTop,
+  borderVertical,
+  check,
+  chevronDown,
+  decimalDecrease,
+  decimalIncrease,
+  fillColor: fillSwatch,
+  formatPaint: brush,
+  image: photo,
+  italic,
+  merge: tableCellsMerge,
+  more: dotsVertical,
+  print: printer,
+  proposals: sparkles,
+  redo: arrowForwardUp,
+  refresh,
+  remove: minus,
+  save: download,
+  search,
+  strikethrough,
+  textColor: textColorSwatch,
+  undo: arrowBackUp,
+  verticalAlignCenter: layoutAlignMiddle,
+  wrap: textWrap,
 };
 
 /** Capy's toolbars and menus draw 18px icons (officeIconSize). */
 export const xlsxIcons = Object.fromEntries(
-  Object.entries(XLSX_ICONS).map(([name, icon]) => [
+  Object.entries(XLSX_ICONS).map(([name, glyph]) => [
     name,
-    ({ size = 16, style }: ComponentProps<IconSet[keyof IconSet]>) =>
-      'border' in icon ? (
-        <BorderIcon
-          kind={icon.border}
-          size={officeIconSize(name, size)}
-          style={style}
-        />
-      ) : (
-        <HugeIcon icon={icon} size={officeIconSize(name, size)} style={style} />
-      ),
+    ({ size = 16, style }: ComponentProps<IconSet[keyof IconSet]>) => (
+      <TablerIcon
+        glyph={glyph}
+        size={officeIconSize(name, size)}
+        style={style}
+      />
+    ),
   ])
 ) as IconSet;

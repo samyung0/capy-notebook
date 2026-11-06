@@ -28,6 +28,7 @@ export default function DevWorkspaceCanvas({
           changed = false;
         }, SAVE_AFTER_MS);
       },
+      plane: true,
       saved: saved || undefined,
     });
     Object.assign(window, { __board: board });
@@ -35,7 +36,7 @@ export default function DevWorkspaceCanvas({
       clearTimeout(timer);
       // Unchanged, what's stored stands: a board mounted and unmounted at once has
       // nothing on it yet.
-      if (changed) writePref(key, board.save());
+      if (changed) writePref(key, board.save().doc);
       board.unmount();
     };
   }, [workspaceId]);

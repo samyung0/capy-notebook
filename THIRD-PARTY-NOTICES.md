@@ -123,3 +123,13 @@ Copyright 2024 Mozilla Foundation (pdf.js); the OpenJPEG authors and
 Université catholique de Louvain (OpenJPEG).
 
 License: Apache License, Version 2.0 (pdf.js); BSD 2-Clause (OpenJPEG).
+
+---
+
+## Tabler Icons (copied glyphs)
+
+`src/office-runtime/tablerGlyphs.ts` holds the path data of the outline glyphs
+the Office editors draw, copied from `@tabler/icons` 3.50.0
+(https://github.com/tabler/tabler-icons).
+
+License: MIT, Copyright (c) 2020-2024 Paweł Kuna.

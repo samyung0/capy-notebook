@@ -11,6 +11,7 @@ import {
   type DocxEditorRef,
   type DocxMenuModel,
   type DocxPagesPresentedDetail,
+  type RibbonControls,
 } from '@betteroffice/docx-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DOCUMENT_COLORS } from '@/components/ui/ColorPicker';
@@ -22,6 +23,8 @@ import type {
 } from '@/features/files/officeProtocol';
 import { docxIcons } from './docxIcons';
 import { docxStrings, editorMenus } from './docxMenus';
+import { DOCX_RIBBON } from './docxRibbon';
+import { OfficeRibbon, type OfficeRibbonHost } from './OfficeRibbon';
 import type {
   OfficeCollaboration,
   OfficeExporter,
@@ -91,7 +94,6 @@ export function DocxEditorHost({
   compact,
   initialZoom,
   locale,
-  narrow,
   onAnalysis,
   onExporter,
   onMenus,
@@ -105,17 +107,19 @@ export function DocxEditorHost({
   onZoomChange,
   prepareImage,
   readOnly,
+  ribbon,
 }: {
   bytes: Uint8Array;
   collaboration: OfficeCollaboration;
   colorMode: 'light' | 'dark';
-  /** Below md: a pinch zooms the document; comments open only when asked. */
+  /**
+   * Below md: a pinch zooms the document; comments open only when asked; the
+   * ribbon is one row, with no zoom (as the PDF toolbar), font picker or size box.
+   */
   compact: boolean;
   /** 1 = 100%, or 'fit' to the pane: where the file was last shown. */
   initialZoom?: OfficeZoom;
   locale: OfficeLocale;
-  /** Below lg: no zoom (as the PDF toolbar), font picker or size box. */
-  narrow: boolean;
   /** Once the first pages are painted. */
   onAnalysis: (analysis: OfficeAnalysis) => void;
   onExporter: (exporter: OfficeExporter | null) => void;
@@ -132,6 +136,7 @@ export function DocxEditorHost({
   prepareImage: (file: File) => Promise<File>;
   /** Recovery: selection and copy only. */
   readOnly: boolean;
+  ribbon: OfficeRibbonHost;
 }) {
   const editorRef = useRef<DocxEditorRef>(null);
   const hostRef = useRef<HTMLDivElement>(null);
@@ -257,10 +262,27 @@ export function DocxEditorHost({
     (model: DocxMenuModel | null) => {
       if (model) onZoomChange(model.zoom);
       onMenus(
-        model && { menus: editorMenus(model.menus, locale), run: model.run }
+        model && {
+          focus: () => editorRef.current?.focus(),
+          menus: editorMenus(model.menus, locale),
+          run: model.run,
+        }
       );
     },
     [locale, onMenus, onZoomChange]
+  );
+  const renderRibbon = useCallback(
+    (controls: RibbonControls) => (
+      <OfficeRibbon
+        contexts={RIBBON_CONTEXTS}
+        controls={controls}
+        layout={DOCX_RIBBON}
+        onBannerAction={ribbon.onBannerAction}
+        onLeave={ribbon.onLeave}
+        store={ribbon.store}
+      />
+    ),
+    [ribbon]
   );
   return (
     <div className="office-editor-host" ref={hostRef}>
@@ -293,17 +315,21 @@ export function DocxEditorHost({
         prepareImage={prepareImage}
         readOnly={readOnly}
         ref={editorRef}
+        ribbon={renderRibbon}
         showFileOpen={false}
-        showFontPicker={!narrow}
-        showFontSizePicker={!narrow}
+        showFontPicker={!compact}
+        showFontSizePicker={!compact}
         showHelpMenu={false}
         showRuler={ruler}
-        showZoomControl={!narrow}
+        showZoomControl={!compact}
         singleRowToolbar
       />
     </div>
   );
 }
+
+/** Office's contextual tabs, on while the toolbar has their controls. */
+const RIBBON_CONTEXTS = { picture: 'imageWrap', table: 'tableMore' };
 
 const SCROLL_BOX = '.docx-editor__scroll-container';
 /** Body paragraphs in the page mirrors (headers and footers repeat theirs on

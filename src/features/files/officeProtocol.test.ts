@@ -151,14 +151,6 @@ describe('office host protocol', () => {
     const accepted = [
       { id: 'zoom:125', type: 'menu-command', version },
       { id: 'insert-table', type: 'menu-command', value: '3x4', version },
-      {
-        bytes: new ArrayBuffer(4),
-        id: 'insert-image',
-        mimeType: 'image/png',
-        name: 'cell.png',
-        type: 'menu-file',
-        version,
-      },
       { id: 'r1', kind: 'print', type: 'render', version },
       { id: 'r2', kind: 'png', type: 'render', version },
       { id: 'r4', kind: 'thumbnail', type: 'render', version },
@@ -171,6 +163,120 @@ describe('office host protocol', () => {
     expect(
       isOfficeHostMessage({ id: 'x', type: 'menu-command', value: 3, version })
     ).toBe(false);
+  });
+
+  it('takes a strip, or none, only in the shape FileBanner draws', () => {
+    const banner = {
+      actions: [{ label: 'Download draft' }],
+      closeable: false,
+      inline: true,
+      message: 'Could not save',
+      tone: 'error',
+    };
+    const message = (value: unknown) => ({
+      banner: value,
+      type: 'set-banner',
+      version: OFFICE_PROTOCOL_VERSION,
+    });
+    expect(isOfficeHostMessage(message(banner))).toBe(true);
+    expect(isOfficeHostMessage(message(null))).toBe(true);
+    expect(isOfficeHostMessage(message({ ...banner, tone: 'loud' }))).toBe(
+      false
+    );
+    expect(isOfficeHostMessage(message({ ...banner, actions: 'x' }))).toBe(
+      false
+    );
+  });
+
+  it('takes a strip click, and the keyboard leaving the ribbon, with a revision', () => {
+    const message = (type: string, extra: object) => ({
+      revision: 1,
+      type,
+      version: OFFICE_PROTOCOL_VERSION,
+      ...extra,
+    });
+    for (const action of [0, 2, 'close'])
+      expect(isOfficeRuntimeMessage(message('banner-action', { action }))).toBe(
+        true
+      );
+    for (const action of [-1, 1.5, 'open', null])
+      expect(isOfficeRuntimeMessage(message('banner-action', { action }))).toBe(
+        false
+      );
+    expect(isOfficeRuntimeMessage(message('ribbon-focus', {}))).toBe(true);
+    expect(
+      isOfficeRuntimeMessage(message('ribbon-focus', { revision: 'x' }))
+    ).toBe(false);
+  });
+
+  // Security regression (ribbon review: frame-named ids on the tab line): the
+  // frame draws on Capy's page and Capy runs what it clicks, so it can't name
+  // one of Capy's commands or write what it likes there.
+  it('refuses a tab line naming a Capy command or anything long', () => {
+    const undo = { id: 'undo', kind: 'item', label: 'Undo' };
+    const redo = { id: 'redo', kind: 'item', label: 'Redo' };
+    const tab = { id: 'insert', label: 'Insert' };
+    const menus = (ribbon: object) => ({
+      actions: [],
+      menus: [],
+      revision: 1,
+      ribbon: {
+        collapsed: false,
+        redo,
+        tab: 'insert',
+        tabs: [tab],
+        undo,
+        ...ribbon,
+      },
+      type: 'menus',
+      version: OFFICE_PROTOCOL_VERSION,
+    });
+    expect(isOfficeRuntimeMessage(menus({}))).toBe(true);
+    expect(isOfficeRuntimeMessage(menus({ tab: null }))).toBe(true);
+    expect(
+      isOfficeRuntimeMessage(
+        menus({
+          redo: { ...redo, id: 'edit.redo' },
+          undo: { ...undo, id: 'edit.undo' },
+        })
+      )
+    ).toBe(true);
+    for (const ribbon of [
+      { undo: { ...undo, id: 'capy.download' } },
+      { redo: { ...redo, id: 'capy.save' } },
+      { undo: { ...undo, id: 'redo' } },
+      { undo: { ...undo, label: 'x'.repeat(41) } },
+      { tabs: [{ ...tab, id: 'capy.download' }] },
+      { tabs: [{ ...tab, id: 'INSERT' }] },
+      { tabs: [{ ...tab, label: 'x'.repeat(41) }] },
+      { tab: 'other' },
+      { tabs: Array.from({ length: 13 }, () => tab) },
+    ])
+      expect(isOfficeRuntimeMessage(menus(ribbon))).toBe(false);
+  });
+
+  it('takes a load with a remembered ribbon only in its shape', () => {
+    const load = (ribbon: unknown) => ({
+      bytes: new ArrayBuffer(0),
+      canEdit: true,
+      fileName: 'a.docx',
+      format: 'docx',
+      mode: 'view',
+      revision: 1,
+      ribbon,
+      type: 'load',
+      version: OFFICE_PROTOCOL_VERSION,
+    });
+    expect(isOfficeHostMessage(load({ collapsed: true, tab: 'insert' }))).toBe(
+      true
+    );
+    expect(isOfficeHostMessage(load({ collapsed: false, tab: null }))).toBe(
+      true
+    );
+    expect(isOfficeHostMessage(load({ collapsed: 'yes', tab: null }))).toBe(
+      false
+    );
+    expect(isOfficeHostMessage(load({ collapsed: true, tab: 3 }))).toBe(false);
   });
 
   it('accepts menus only in the shape the header draws', () => {

@@ -1,9 +1,21 @@
 // What the app's tsconfig sees of ./drawingBoard.ts (see tsconfig.json paths).
+export type DrawingBoardOptions = {
+  fitPadding?: [number, number, number, number];
+  onChange?: () => void;
+  plane?: boolean;
+  readOnly?: boolean;
+  saved?: string;
+};
+
+export class BoardLoadError extends Error {
+  readonly reason: string;
+}
+
 export function mountDrawingBoard(
   container: HTMLElement,
-  options?: { onChange?: () => void; saved?: string }
+  options?: DrawingBoardOptions
 ): {
-  save: () => string;
+  save: () => { bytes: number; doc: string };
   snapshot: () => string;
   stats: () => {
     blocks: string[];
@@ -11,6 +23,6 @@ export function mountDrawingBoard(
     canvas: string[];
     marks: number;
   };
-  toImage: () => Promise<string | null>;
+  toImage: () => Promise<File>;
   unmount: () => void;
 };

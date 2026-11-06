@@ -452,13 +452,10 @@ async function openOffice(page: Page, id: string) {
   const mode = page.getByRole('button', { name: m.material_mode() });
   await expect(mode).toBeEnabled({ timeout: 60_000 });
   await mode.click();
-  // The editor's menus arrive with its replica.
-  await expect(
-    page
-      .getByRole('menubar', { name: m.files_office_menu_bar() })
-      .getByRole('menuitem')
-      .first()
-  ).toBeVisible({ timeout: 120_000 });
+  // The ribbon's tabs arrive with the editor's replica.
+  await expect(page.getByTestId('office-tab-edit')).toBeVisible({
+    timeout: 120_000,
+  });
   await page.waitForTimeout(5000);
   await installCounter(page);
   return runtimeFrame(page);
@@ -613,20 +610,13 @@ for (const { format, id } of OFFICE)
     } else {
       await page.keyboard.press('Escape');
       await reset(page);
-      await page
-        .getByRole('menubar', { name: m.files_office_menu_bar() })
-        .getByRole('menuitem', {
-          exact: true,
-          name:
-            format === 'docx' ? 'Insert' : m.files_office_pptx_menu_insert(),
-        })
-        .click();
+      await page.getByTestId('office-tab-insert').click();
       const chooser = page.waitForEvent('filechooser');
       await page
-        .getByRole('menuitem', {
-          exact: true,
-          name: format === 'docx' ? 'Image' : m.files_office_pptx_image(),
-        })
+        .frameLocator('iframe[src*="office-runtime"]')
+        .locator(
+          `.office-ribbon [data-command="${format === 'docx' ? 'insert-image' : 'insert.image'}"]`
+        )
         .click();
       await (await chooser).setFiles({
         buffer: Buffer.from(await photo(page), 'base64'),

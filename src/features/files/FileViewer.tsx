@@ -335,6 +335,9 @@ function OfficeSwap({ format, ...props }: OfficeFileProps) {
     format === 'xlsx' ? SheetView : format === 'docx' ? DocxView : PptxView;
   const generations =
     building === null ? [views.shown] : [views.shown, building];
+  // The tab goes with the swap; a tab picked while the next view builds stays
+  // behind (a paused view, a few seconds).
+  const ribbonTab = useRef<string | null>(null);
   return (
     <div className="relative h-full">
       {generations.map((generation) => {
@@ -358,6 +361,7 @@ function OfficeSwap({ format, ...props }: OfficeFileProps) {
                 onReplaced: () =>
                   void places.replaced(generation, tabHidden() || onPhone()),
                 onSettled: () => void places.settled(generation),
+                ribbonTab,
               }}
             />
           </OfficeSlot>

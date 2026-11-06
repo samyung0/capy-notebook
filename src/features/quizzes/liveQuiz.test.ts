@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { EMBED_CATALOG } from '@/api/embeds.generated';
-import { pairedUndo } from '@/features/collaboration/undo';
+import { itemUndo, pairedUndo } from '@/features/collaboration/undo';
 import { LOCAL_EDIT } from '@/features/collaboration/yText';
 import { exampleQuestions } from '@/features/questions/questionFixtures';
 import type { Question, QuestionBlock } from '@/features/questions/types';
@@ -208,6 +208,33 @@ it('undoes an answer type change in both documents as one step', () => {
   expect(undo.canUndo()).toBe(false);
   undo.redo();
   expect(readQuestions(content, keys)[0]).toEqual(next);
+});
+
+it('undoes only the latest edit when another document changed earlier', () => {
+  // Rooms' managers, a second apart: the answer, then the stem twice. Yjs
+  // reads the real clock, so each pause also ends its capture.
+  vi.useFakeTimers();
+  const { content, keys } = quiz();
+  const managers = [itemUndo(content), itemUndo(keys)] as const;
+  const undo = pairedUndo(...managers);
+  const answered = structuredClone(questions[0]);
+  const part = answered.parts[0];
+  if (part.answer.type !== 'mcq') throw new Error('fixture is mcq');
+  part.answer.correct = [part.answer.correct[0] === 0 ? 1 : 0];
+  writeQuestion(content, keys, answered);
+  const stem = (text: string) => {
+    vi.advanceTimersByTime(1000);
+    for (const manager of managers) manager.stopCapturing();
+    const next = structuredClone(readQuestions(content, keys)[0]);
+    next.stem = [{ text, type: 'text' }];
+    writeQuestion(content, keys, next);
+    return next;
+  };
+  const once = stem('First stem');
+  stem('Second stem');
+  undo.undo();
+  expect(readQuestions(content, keys)[0]).toEqual(once);
+  vi.useRealTimers();
 });
 
 it('applies pushed lists: a full one replaces, a partial one changes named parts', () => {

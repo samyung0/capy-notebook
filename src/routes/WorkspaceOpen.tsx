@@ -146,7 +146,7 @@ const PracticePage = lazy(() =>
 
 // The section panel beside the rail: one default for every section (Epo
 // 2026-11-04). It can be dragged as wide as half the group, as the right panel
-// could, which from md keeps the viewer above its least width.
+// could, which from lg keeps the viewer above its least width.
 const LEFT_SIZE = 340;
 const LEFT_MIN = 220;
 const LEFT_MAX = '50%';
@@ -323,8 +323,8 @@ function sectionForCenter(
 
 /** The panel the URL names; with none a workspace opens on its Dashboard (Epo
  * 2026-11-05). */
-const firstPanelOf = (urlPanel: WorkspacePanel | undefined, md: boolean) =>
-  md ? (urlPanel ?? null) : null;
+const firstPanelOf = (urlPanel: WorkspacePanel | undefined, lg: boolean) =>
+  lg ? (urlPanel ?? null) : null;
 
 function firstSectionOf(
   panel: WorkspacePanel | null,
@@ -389,10 +389,12 @@ function WorkspaceOpen() {
   const { mutateAsync: updateTopic } = useUpdateTopic(workspaceId);
   const [cloneOpen, setCloneOpen] = useState(false);
 
-  // Breakpoints: one column below 768px; from there, iPads too, the rail with one
-  // panel beside it, whichever section shows.
-  const md = useMediaQuery('(min-width: 768px)');
-  const oneColumnLayout = !md;
+  // Breakpoints: one column below 1260px, with the rail from 768px so iPads keep it
+  // (Epo 2026-11-06); from 1260px the rail with one panel beside it, whichever
+  // section shows.
+  const lg = useMediaQuery('(min-width: 1260px)');
+  const railShown = useMediaQuery('(min-width: 768px)');
+  const oneColumnLayout = !lg;
   const searchedOpenItem = openItemFromSearch(search);
   const studyPage = !searchedOpenItem && !!search.study;
   // Make a quiz from a link: its dialog opens over the Dashboard, on its pages or run
@@ -412,17 +414,17 @@ function WorkspaceOpen() {
   const center: PanelCenter = { openKey, studyPage };
   // These two states draw the panel; the effect below keeps the URL on them.
   const [section, setSection] = useState<WorkspaceSection>(() =>
-    firstSectionOf(firstPanelOf(search.panel, md), center)
+    firstSectionOf(firstPanelOf(search.panel, lg), center)
   );
   const [panelOpen, setPanelOpen] = useState(() =>
-    firstPanelOpenOf(firstPanelOf(search.panel, md), center)
+    firstPanelOpenOf(firstPanelOf(search.panel, lg), center)
   );
   // Panels are each workspace's own. The page stays mounted when a Move takes
   // the open file to another: the file follows at once (Q467).
   const [seenWorkspace, setSeenWorkspace] = useState(workspaceId);
   if (workspaceId !== seenWorkspace) {
     setSeenWorkspace(workspaceId);
-    const panel = firstPanelOf(search.panel, md);
+    const panel = firstPanelOf(search.panel, lg);
     setChatShown(readPref(PREF_KEYS.chatShown(workspaceId), false, isBoolean));
     setSection(firstSectionOf(panel, center));
     setPanelOpen(firstPanelOpenOf(panel, center));
@@ -437,25 +439,25 @@ function WorkspaceOpen() {
   }
   // One column keeps no panel state, so the URL alone says the canvas shows.
   const urlCanvas = search.panel === 'canvas' && !openKey && !studyPage;
-  if (!md && urlCanvas !== (section === 'canvas'))
+  if (!lg && urlCanvas !== (section === 'canvas'))
     setSection(urlCanvas ? 'canvas' : sectionForCenter('dashboard', center));
   // The dashboard and the canvas have no panel.
   const leftOpen = section !== 'dashboard' && section !== 'canvas' && panelOpen;
-  const leftShown = md && leftOpen;
+  const leftShown = lg && leftOpen;
   const chatOnScreen = leftShown && section === 'agent' && chatShown;
   useEffect(() => {
-    if (!md) return;
+    if (!lg) return;
     const key = PREF_KEYS.chatShown(workspaceId);
     if (chatOnScreen) writePref(key, true);
     else removePref(key);
-  }, [chatOnScreen, md, workspaceId]);
+  }, [chatOnScreen, lg, workspaceId]);
   // The tour's panels aren't the learner's to remember.
   const beforeTour = useRef<{
     chatShown: boolean;
     panelOpen: boolean;
     section: WorkspaceSection;
   } | null>(null);
-  const panelNow: WorkspacePanel | null = md
+  const panelNow: WorkspacePanel | null = lg
     ? section === 'canvas'
       ? 'canvas'
       : section === 'dashboard' || !panelOpen
@@ -493,7 +495,7 @@ function WorkspaceOpen() {
     });
   }, [navigate, openKey, panelNow, search.panel, studyPage]);
   const openPracticeFirst = useEffectEvent(() => {
-    if (md && section === 'study' && !studyPage && !openKey)
+    if (lg && section === 'study' && !studyPage && !openKey)
       navigate({
         replace: true,
         search: (previous) => ({ ...previous, study: 'practice' as const }),
@@ -505,7 +507,7 @@ function WorkspaceOpen() {
   const [panelGroup, setPanelGroup] = useState<HTMLDivElement | null>(null);
   usePanelLayout({
     // One column has no side panel to place.
-    group: md ? panelGroup : null,
+    group: lg ? panelGroup : null,
     groupRef: panelGroupRef,
     open: leftShown,
   });
@@ -808,7 +810,7 @@ function WorkspaceOpen() {
   // Everyone has settings: phones open on the tab list, wider screens on the
   // first tab (General for owner and editor members, else their own Study).
   const openSettings = () => setSettingsTab('menu');
-  // Below md an open Office file keeps its bottom chrome (sheet tabs, slide
+  // Below lg an open Office file keeps its bottom chrome (sheet tabs, slide
   // pager) clear: the chat dock stays a button above it.
   const openFile =
     openItem?.kind === 'file'
@@ -878,12 +880,46 @@ function WorkspaceOpen() {
       : []),
     settingsItem,
   ];
+  const centerHeader = () =>
+    viewerBox.current?.querySelector<HTMLElement>(
+      '[data-testid=content-header],[data-slot=center-header]'
+    ) ?? null;
   function openFiles() {
-    filesAnchor.current =
-      viewerBox.current?.querySelector<HTMLElement>(
-        '[data-testid=content-header],[data-slot=center-header]'
-      ) ?? null;
+    filesAnchor.current = centerHeader();
     setFilesOpen(true);
+  }
+
+  /** The rail in one column: its sections are the dropdown, the chat page and the
+   * centre's pages, as the header's menus have them. */
+  const railActive: WorkspaceSection = lg
+    ? section
+    : section === 'canvas'
+      ? 'canvas'
+      : search.panel === 'agent'
+        ? 'agent'
+        : studyPage
+          ? 'study'
+          : filesOpen || openKey
+            ? 'files'
+            : 'dashboard';
+  function selectOneColumn(next: WorkspaceSection) {
+    if (next === 'dashboard') openDashboard();
+    else if (next === 'study') openPractice();
+    else if (next === 'agent') setChatPageOpen(true);
+    else if (next === 'canvas')
+      navigate({ search: { panel: 'canvas' }, to: '.' });
+    else {
+      // The dropdown hangs under the centre's header, which the canvas and the
+      // chat page cover.
+      if (section === 'canvas') openDashboard();
+      else if (search.panel === 'agent')
+        navigate({
+          replace: true,
+          search: (previous) => ({ ...previous, panel: undefined }),
+          to: '.',
+        });
+      openFiles();
+    }
   }
   // The rail avatar's workspace part: Invite (sharing is managed by owners
   // and editors), Workspace settings, and Clone for readers who may.
@@ -994,7 +1030,7 @@ function WorkspaceOpen() {
       workspaceId={workspaceId}
     />
   );
-  // Study's pages fill the centre without a file header from md (boards P1,
+  // Study's pages fill the centre without a file header from lg (boards P1,
   // P2); one column keeps its header for the Files dropdown and ⋮.
   // A link to a page this person doesn't have opens Practice.
   const studyShown: StudyPage =
@@ -1068,8 +1104,8 @@ function WorkspaceOpen() {
       <AppErrorBoundary resetKeys={[openItem?.kind, openItem?.id]}>
         {section === 'canvas' ? (
           <div className="flex h-full flex-col">
-            {/* One column has no rail to leave by. */}
-            {oneColumnLayout && (
+            {/* Phones have no rail to leave by. */}
+            {!railShown && (
               <div className="flex shrink-0 items-center p-1">
                 <ToolbarButton
                   label={m.workspace_section_dashboard()}
@@ -1085,22 +1121,22 @@ function WorkspaceOpen() {
               </Suspense>
             </div>
           </div>
-        ) : md && pageContent ? (
+        ) : lg && pageContent ? (
           pageContent
         ) : (
           <CenterContent
             color="purple"
             item={openItem}
-            // From md the rail carries Home and the section panels.
+            // From 768px the rail carries Home.
             leading={
-              oneColumnLayout ? (
+              railShown ? null : (
                 <ToolbarButton
                   label={m.workspace_back_to()}
                   onClick={() => navigate({ to: '/' })}
                 >
                   <Icon name="navigationBack" />
                 </ToolbarButton>
-              ) : null
+              )
             }
             onDeleted={() => setOpenItem(null)}
             oneColumn={oneColumn}
@@ -1227,11 +1263,11 @@ function WorkspaceOpen() {
   return (
     <>
       <div className="flex h-full min-h-0 gap-2">
-        {md && (
+        {railShown && (
           <WorkspaceRail
             accountItems={accountItems}
-            active={section}
-            onSelect={selectSection}
+            active={railActive}
+            onSelect={lg ? selectSection : selectOneColumn}
             workspace={ws}
           />
         )}
@@ -1256,7 +1292,7 @@ function WorkspaceOpen() {
           }}
           orientation="horizontal"
         >
-          {md && (
+          {lg && (
             <>
               <ResizablePanel
                 className="overflow-visible! pr-1"
@@ -1327,9 +1363,12 @@ function WorkspaceOpen() {
             <PopoverAnchor
               virtualRef={{
                 current: {
+                  // Opened from the rail before the header showed: found now.
                   getBoundingClientRect: () =>
-                    filesAnchor.current?.getBoundingClientRect() ??
-                    new DOMRect(),
+                    (filesAnchor.current?.isConnected
+                      ? filesAnchor.current
+                      : centerHeader()
+                    )?.getBoundingClientRect() ?? new DOMRect(),
                 },
               }}
             />
