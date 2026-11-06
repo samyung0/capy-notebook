@@ -77,6 +77,8 @@ function PopoverTrigger({
   );
 }
 
+const stopScrollLock = (event: React.SyntheticEvent) => event.stopPropagation();
+
 function PopoverContent({
   className,
   align = 'center',
@@ -100,6 +102,10 @@ function PopoverContent({
         )}
         data-slot="popover-content"
         inert={held}
+        // Portaled out of any dialog it opens from, whose scroll lock listens on the
+        // document and would cancel the wheel and touch scrolling of a list in here.
+        onTouchMove={stopScrollLock}
+        onWheel={stopScrollLock}
         sideOffset={sideOffset}
         {...props}
       />

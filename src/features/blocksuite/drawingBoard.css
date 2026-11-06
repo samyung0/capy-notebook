@@ -1,0 +1,376 @@
+/* BlockSuite's default canvas font has no face on this board (its font loader has no
+   config), so a label measures and draws in a fallback: use the app's own font. */
+@font-face {
+  font-family: "blocksuite:surface:Inter";
+  font-weight: 200 800;
+  src: url("@fontsource-variable/fustat/files/fustat-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+/* The board fills the screen; AFFiNE's zoom rule reads this container. */
+.capy-board {
+  --capy-shape-button-roundedRect: #173654;
+  --capy-shape-button-stroke-roundedRect: #173654;
+  --capy-shape-button-ellipse: #1e96eb;
+  --capy-shape-button-stroke-ellipse: #1e96eb;
+  --capy-shape-button-triangle: #fff;
+  --capy-shape-button-stroke-triangle: #d9dde3;
+  container: viewport / inline-size;
+}
+
+/* Zoom at the bottom right, none on phones (pinch does it). */
+.capy-board affine-edgeless-zoom-toolbar-widget {
+  right: 12px;
+  left: auto;
+}
+
+/* Undo and redo: flat, left of zoom, with a thin divider. Zoom is 144 px wide, or
+   a 36 px button up to 1200 px. */
+.capy-board-history {
+  position: absolute;
+  right: 156px;
+  bottom: 20px;
+  z-index: 2;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  height: 40px;
+  padding: 4px 5px 4px 4px;
+  color: var(--affine-icon-color);
+}
+
+.capy-board-history::after {
+  width: 1px;
+  height: 20px;
+  margin-left: 5px;
+  content: "";
+  background: var(--affine-border-color);
+}
+
+.capy-board-history button {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.capy-board-history button:hover {
+  background: var(--affine-hover-color);
+}
+
+.capy-board-history button:focus-visible {
+  outline: 2px solid var(--affine-primary-color);
+}
+
+.capy-board-history button:disabled {
+  cursor: default;
+  background: none;
+  opacity: 0.35;
+}
+
+@container viewport (width <= 1200px) {
+  .capy-board-history {
+    right: 48px;
+  }
+}
+
+/* Phones: top right, left of Done, which the page around the board places and
+   sizes through --capy-board-done-width. */
+@container viewport (width < 768px) {
+  .capy-board-history {
+    top: 8px;
+    right: calc(8px + var(--capy-board-done-width, 0px));
+    bottom: auto;
+    height: 40px;
+    padding: 0;
+  }
+
+  .capy-board-history::after {
+    display: none;
+  }
+
+  .capy-board-history button {
+    width: 40px;
+    height: 40px;
+  }
+
+  .capy-board affine-edgeless-zoom-toolbar-widget {
+    display: none;
+  }
+}
+
+/* The formula card. */
+.capy-formula {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  z-index: 3;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(420px, calc(100% - 16px));
+  padding: 10px;
+  color: #1d1d1f;
+  background: #fff;
+  border: 1px solid var(--affine-border-color);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 10%);
+  transform: translateX(-50%);
+}
+
+.capy-formula-field math-field {
+  display: block;
+  width: 100%;
+  min-height: 56px;
+  font-size: 22px;
+  outline: none;
+  border: 0;
+  border-bottom: 1px solid #1d1d1f;
+  border-radius: 0;
+}
+
+.capy-formula-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.capy-formula-actions button {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 7px;
+}
+
+.capy-formula-actions .ghost {
+  color: #1d1d1f;
+}
+
+.capy-formula-actions .ghost:hover {
+  background: var(--affine-hover-color);
+}
+
+.capy-formula-actions .primary {
+  color: #fff;
+  background: #1d1d1f;
+}
+
+/* The maths symbols under a canvas label being typed. */
+.capy-symbols {
+  position: absolute;
+  z-index: 3;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  max-width: calc(100% - 16px);
+  padding: 3px;
+  background: #fff;
+  border: 1px solid var(--affine-border-color);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
+}
+
+.capy-symbols[hidden] {
+  display: none;
+}
+
+.capy-symbols button {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  font-size: 15px;
+  color: #333;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.capy-symbols button:hover {
+  background: var(--affine-hover-color);
+}
+
+.capy-formula-error {
+  margin: 0;
+  font-size: 13px;
+  color: #b3362f;
+}
+
+.capy-formula-error[hidden] {
+  display: none;
+}
+
+/* The plane open for editing, over the whole board. */
+.capy-plane-editor {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+  touch-action: none;
+  background: #fff;
+}
+
+.capy-plane-editor canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.capy-plane-editor[data-tool="move"] canvas {
+  cursor: grab;
+}
+
+.capy-plane-editor:not([data-tool="move"]) canvas {
+  cursor: crosshair;
+}
+
+.capy-plane-editor button {
+  all: unset;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 36px;
+  color: var(--affine-icon-color);
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.capy-plane-editor button:hover {
+  background: var(--affine-hover-color);
+}
+
+.capy-plane-editor button:focus-visible {
+  outline: 2px solid var(--affine-primary-color);
+}
+
+.capy-plane-editor button[aria-pressed="true"] {
+  color: var(--affine-primary-color);
+  background: var(--affine-hover-color);
+}
+
+.capy-plane-top,
+.capy-plane-zoom,
+.capy-plane-tools {
+  position: absolute;
+  background: #fff;
+  border: 1px solid var(--affine-border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
+}
+
+.capy-plane-top {
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+}
+
+.capy-plane-top button {
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.capy-plane-top .primary {
+  color: #fff;
+  background: #1d1d1f;
+}
+
+.capy-plane-top .primary:hover {
+  background: #1d1d1f;
+}
+
+.capy-plane-zoom {
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  padding: 3px;
+  font-size: 18px;
+}
+
+.capy-plane-tools {
+  bottom: 12px;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  max-width: calc(100% - 16px);
+  padding: 4px;
+  transform: translateX(-50%);
+}
+
+.capy-plane-row {
+  display: flex;
+  gap: 2px;
+  justify-content: center;
+}
+
+.capy-plane-tools .fills {
+  display: flex;
+  gap: 2px;
+  justify-content: center;
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--affine-border-color);
+}
+
+.capy-plane-tools .fills button {
+  min-width: 30px;
+  height: 30px;
+  border-radius: 50%;
+}
+
+.capy-plane-tools .fills i {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 14%);
+}
+
+.capy-plane-tools .fills .none {
+  background: linear-gradient(
+    to top right,
+    #fff calc(50% - 1px),
+    #d9483b calc(50% - 1px),
+    #d9483b calc(50% + 1px),
+    #fff calc(50% + 1px)
+  );
+}
+
+.capy-plane-tools .fills button[aria-pressed="true"] {
+  background: none;
+  box-shadow: 0 0 0 2px var(--affine-primary-color) inset;
+}
+
+/* Undo and redo stay reachable over the open plane, left of its zoom, or on a phone
+   left of its Fit and Done. */
+.capy-board:has(.capy-plane-editor) .capy-board-history {
+  right: 112px;
+  z-index: 4;
+}
+
+@container viewport (width < 768px) {
+  .capy-board:has(.capy-plane-editor) .capy-board-history {
+    right: 136px;
+  }
+
+  .capy-plane-zoom {
+    display: none;
+  }
+}

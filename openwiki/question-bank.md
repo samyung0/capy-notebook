@@ -246,9 +246,8 @@ step is an address, `?make=files`, `?make=pages&paper=…&answers=…&quizFile=�
 - **Files.** Up to `EXTRACTION_PAPER_FILES_MAX` (5) question files, such as a photographed
   paper's images, and up to `EXTRACTION_ANSWER_FILES_MAX` (3) mark scheme or answer files,
   from a menu of the workspace's indexed files other than Excel and audio or a new upload.
-  Files have no stored page count, so the browser reads "16 pages"
-  (`filePages.ts`): a PDF's table through pdf.js with range requests once its row scrolls
-  into view, a Word or PowerPoint file through the upload analysis, on its bytes read from its link, since the analysis worker takes only same-origin URLs and a link is the bucket's. A count that can't be read shows none.
+  A row names the file, with no page count: reading one would download a Word or PowerPoint
+  file just to show it (Epo 2026-11-06).
   An upload takes the normal path (`useQuizUpload`, `startSourceTransfer`), hidden from
   members and in no topic, and shows "Reading pages" until it is indexed. Continue waits for
   each upload to have started, since the browser's page count happens in the dialog, and for
