@@ -14,8 +14,9 @@ Windows lands and deploys these, one landing per deploy.
 | Layout service on the ingest host | Up, on UAT only; production has no GitHub environment yet | 0b45af688 is the first run with figures going through it |
 | `membership.spec.ts`: a real CLOSED frame on a bystander channel | Cause unknown; passed on an earlier run | The journey now records each close's code and reason |
 | Shared pages lose AI marking (Q640 B) | Windows | Next on its side |
-| New assignment's quiz picker | `claude/assignment-quiz-picker` 8bbfd6747, review round done with Epo's answers | CI, then Windows' train after the shared pages |
-| Vendored BlockSuite, dev route only | `claude/drawing-answers`, review round pushed | CI, then Windows' train after the picker |
+| New assignment's quiz picker, shared pages | On `main` 24cffdd73 | CI, UAT quality run |
+| Page counts off Make a quiz's rows, Add dialog retry fix | `claude/add-retry-analysis` 0c3726a1d (holds Extraction's 34675e04d) | Windows' review, then a train |
+| Vendored BlockSuite, dev route only | `claude/drawing-answers` 9ec4a067d | Windows' train |
 
 ## Next, in order (Epo, 2026-11-06)
 
@@ -39,7 +40,7 @@ boards K6, K7 and K8 on the study Design canvas. Scanned submissions build on it
 - [ ] Marking by a vision model against the marking points, with the same approval and credits rules. Needs grading landed, and the prompt shown to Epo first
 - [ ] Results, the approve tab and the report show the drawing
 - [ ] Specs, wiki, test catalog
-- [ ] Tune the board once it works (Epo, 2026-11-06): more common shapes, graphs and coordinate planes, for easier answering
+- [ ] Enrich the board (Epo, 2026-11-06), in session `canvas-enrich`, mocks first: remake the shape chooser button (pure yellow is odd), move undo and redo beside the zoom buttons, and find how graphs, formulas, charts and coordinate planes can go on the canvas more easily
 
 ### 2. Note look: copy Notion's styles
 
@@ -58,8 +59,6 @@ floating toolbars on e.g. tables and stuff, and affine has a table view as well.
 - **Scanned submissions** (`todo-study-tracking.md`, "Later"): needs its own design round.
 - **Study leftovers** (`todo-study-tracking.md` §11 "Can wait"): AI insights, the app-wide Learning page redesign, "Copy to my workspace", sharing practice with the class, gamification.
 - **Handed over by Windows, not started** (`todo-study-tracking.md`, "Where it stands"): a question with no answers through `insert_child`; dotted question ids in `quiz.rs`; locks in `source_imports.go`; the `StartAssignment` expired-attempt lock; `DeleteAssignment` returning 404; a whole run's figure cap; sweep starvation.
-- **Add dialog's retry** (`AddSourceDialog.tsx:1209`): passes a bucket link to the analysis worker that refuses other origins, so a retried file should say it can't be analyzed. Read from the code, not reproduced. Asked Epo.
-- **Make a quiz's page counts on Word and PowerPoint rows:** each row downloads the whole file and reads only the base, so an edited file's count can be wrong. Asked Epo about dropping them.
 - **Drag-and-drop copies** (`auto-scroll` and `hitbox` on 2.0.2 beside the vendored 1.4.0): matters at the notes cut.
 - **Results page and answers:** results hide answers after an assignment closes while Practice shows them. Optional, Epo hasn't decided.
 
