@@ -1,4 +1,5 @@
 import { DefaultTool } from '@blocksuite/affine/blocks/surface';
+import { ConnectorTool } from '@blocksuite/affine/gfx/connector';
 import {
   EdgelessShapeToolButton,
   ShapeTool,
@@ -10,6 +11,7 @@ import { LatexExtension } from '@blocksuite/affine/inlines/latex';
 import {
   type Color,
   ConnectorMode,
+  DEFAULT_CONNECTOR_MODE,
   DefaultTheme,
   isTransparent,
   PointStyle,
@@ -21,6 +23,7 @@ import {
   DocModeService,
   EditPropsStore,
   ThemeProvider,
+  type ToolbarContext,
   ToolbarModuleExtension,
 } from '@blocksuite/affine/shared/services';
 import {
@@ -38,12 +41,24 @@ import {
   EdgelessToolbarToolMixin,
   SeniorToolIdentifier,
 } from '@blocksuite/affine/widgets/edgeless-toolbar';
-import { css, html, LitElement, svg } from 'lit';
+import { Pen01Icon } from '@hugeicons/core-free-icons';
+import { css, html, LitElement, svg, type TemplateResult } from 'lit';
 import { property } from 'lit/decorators.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import * as Y from 'yjs';
 import { m } from '@/i18n';
-import { addPlane } from './boardPlane';
+import {
+  addChart,
+  type ChartElementModel,
+  type ChartKind,
+  openChart,
+} from './boardChart';
+import {
+  addPlane,
+  fitCard,
+  openPlane,
+  type PlaneElementModel,
+} from './boardPlane';
 
 type Vec = [number, number];
 
@@ -767,6 +782,8 @@ export const shapeButtonTool: ExtensionType = {
 
 const ICONS: Record<string, string> = {
   bars: '<path d="M3 21h18M6 21v-8h4v8M14 21V7h4v14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+  connect:
+    '<path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M15.97 2.02a.75.75 0 0 1 1.06 0l4.88 4.879a.85.85 0 0 1 0 1.202l-4.88 4.88a.75.75 0 1 1-1.06-1.062l3.67-3.669H18c-3.151 0-4.552.758-5.25 1.662-.745.963-.873 2.28-1.002 3.898l-.008.101c-.119 1.486-.259 3.245-1.303 4.595C9.323 19.946 7.349 20.75 4 20.75a.75.75 0 0 1 0-1.5c3.151 0 4.552-.758 5.25-1.662.745-.963.873-2.28 1.002-3.898l.008-.101c.119-1.486.259-3.245 1.303-4.595C12.677 7.554 14.651 6.75 18 6.75h1.64l-3.67-3.67a.75.75 0 0 1 0-1.06"/>',
   curve:
     '<path d="M4 6c2 9 5 13 8 13s6-5 8-14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="4.5" cy="7" r="2" fill="currentColor"/><circle cx="12" cy="19" r="2" fill="currentColor"/><circle cx="19.5" cy="7" r="2" fill="currentColor"/>',
   erase:
@@ -784,12 +801,62 @@ const ICONS: Record<string, string> = {
     '<path d="M12 3v5M12 16v5M3 12h5M16 12h5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="12" r="2.6" fill="currentColor"/>',
 };
 
+/** A Hugeicons icon's data as an SVG, for the board's Lit templates. */
+export function hugeIcon(icon: unknown) {
+  const data = icon as readonly (readonly [string, Record<string, string>])[];
+  const body = data
+    .map(
+      ([tag, attributes]) =>
+        `<${tag} ${Object.entries(attributes)
+          .filter(([name]) => name !== 'key')
+          .map(
+            ([name, value]) =>
+              `${name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}="${value}"`
+          )
+          .join(' ')}/>`
+    )
+    .join('');
+  return unsafeSVG(
+    `<svg fill="none" height="24" viewBox="0 0 24 24" width="24">${body}</svg>`
+  );
+}
+
 /** One of the maths icons as an SVG string, 24 px. */
 export const mathsIcon = (name: string) =>
   `<svg height="24" viewBox="0 0 24 24" width="24">${ICONS[name]}</svg>`;
 
+/** Connect, with its name beside it (the action AFFiNE's own button runs). */
+const connectAction = {
+  content(ctx: ToolbarContext) {
+    const models = ctx.getSurfaceModels();
+    if (!models.length) return null;
+    return html`<editor-icon-button
+      aria-label=${m.drawing_board_connect()}
+      data-testid="draw-connector"
+      .tooltip=${m.drawing_board_connect()}
+      @click=${(event: MouseEvent) => {
+        event.stopPropagation();
+        const point = ctx.gfx.viewport.toViewCoordFromClientCoord([
+          event.x,
+          event.y,
+        ]);
+        ctx.store.captureSync();
+        ctx.gfx.tool.setTool(ConnectorTool, { mode: DEFAULT_CONNECTOR_MODE });
+        ctx.gfx.tool.get(ConnectorTool).quickConnect(point, models[0]);
+      }}
+    >
+      ${unsafeSVG(mathsIcon('connect'))}
+      <span class="label">${m.drawing_board_connect()}</span>
+    </editor-icon-button>`;
+  },
+  id: 'a.draw-connector',
+};
+
+const onlyOne = (ctx: ToolbarContext) => ctx.getSurfaceModels().length === 1;
+
 /** AFFiNE's selection toolbar reads the editor's mode, which the board has to report.
- * It goes without what makes no sense on an answer, or needs other documents. */
+ * It goes without what makes no sense on an answer, or needs other documents. The cards
+ * add their pen, and a plane its size. */
 export const boardToolbar = [
   DocModeExtension(
     new (class extends DocModeService {
@@ -801,13 +868,78 @@ export const boardToolbar = [
   ToolbarModuleExtension({
     config: {
       actions: [
-        'b.add-frame',
-        'c.comment',
-        'Z.a.selection',
-        'd.conversions',
-      ].map((id) => ({ id, when: false })),
+        ...['b.add-frame', 'c.comment', 'Z.a.selection', 'd.conversions'].map(
+          (id) => ({ id, when: false })
+        ),
+        connectAction,
+      ],
     },
     id: BlockFlavourIdentifier('custom:affine:surface:*'),
+  }),
+  ToolbarModuleExtension({
+    config: {
+      actions: [
+        {
+          generate: () => ({
+            icon: html`${hugeIcon(Pen01Icon)}`,
+            label: m.drawing_board_edit_plane(),
+            run: (ctx: ToolbarContext) =>
+              openPlane(
+                ctx.gfx,
+                ctx.getSurfaceModels()[0] as unknown as PlaneElementModel
+              ),
+            tooltip: m.drawing_board_edit_plane(),
+          }),
+          id: 'a.edit',
+          when: onlyOne,
+        },
+        {
+          generate: (ctx: ToolbarContext) => {
+            const model = ctx.getSurfaceModels()[0] as unknown as
+              | PlaneElementModel
+              | undefined;
+            const label = model?.fit
+              ? m.drawing_board_fit_to_size()
+              : m.drawing_board_custom_size();
+            return {
+              label,
+              run: (context: ToolbarContext) => {
+                if (!model) return;
+                context.store.captureSync();
+                model.fit = !model.fit;
+                if (model.fit) fitCard(model);
+              },
+              showLabel: true,
+              tooltip: label,
+            };
+          },
+          id: 'b.size',
+          when: onlyOne,
+        },
+      ],
+    },
+    id: BlockFlavourIdentifier('affine:surface:plane'),
+  }),
+  ToolbarModuleExtension({
+    config: {
+      actions: [
+        {
+          generate: () => ({
+            icon: html`${hugeIcon(Pen01Icon)}`,
+            label: m.drawing_board_edit_chart(),
+            run: (ctx: ToolbarContext) =>
+              openChart(
+                ctx.gfx,
+                ctx.getSurfaceModels()[0] as unknown as ChartElementModel
+              ),
+            tooltip: m.drawing_board_edit_chart(),
+          }),
+          id: 'a.edit',
+          when: onlyOne,
+        },
+      ],
+    },
+    id: BlockFlavourIdentifier('affine:surface:chart'),
   }),
 ];
 
@@ -818,72 +950,62 @@ export function setFormulaOpener(open: typeof openFormula) {
 }
 
 const NEW_PLANE = { h: 320, ppu: 30, w: 480 };
+const NEW_CHART = {
+  bar: { h: 300, w: 420 },
+  pie: { h: 300, w: 300 },
+} as const;
 
-/** The canvas's maths tool only adds things: what's plotted is made inside a plane. */
-class CapyMathsMenu extends LitElement {
+/** A menu over its toolbar button, in rows of an icon and a name. */
+abstract class CapyMenu extends LitElement {
   static override styles = [
     POPPER_STYLES,
     css`
       :host {
         display: flex;
+        flex-direction: column;
         gap: 2px;
-        padding: 6px 8px;
+        width: 200px;
+        padding: 6px;
         background: var(--affine-background-overlay-panel-color);
         border: 1px solid var(--affine-border-color);
         border-bottom: 0;
         border-radius: 8px 8px 0 0;
       }
+      button {
+        justify-content: flex-start;
+        gap: 8px;
+        width: 100%;
+        padding: 0 8px;
+        font-size: 13.5px;
+        font-weight: 500;
+        color: var(--affine-text-primary-color);
+      }
+      button svg {
+        flex: none;
+        color: var(--affine-icon-color);
+      }
     `,
   ];
 
-  private get gfx() {
+  protected get gfx() {
     return this.edgeless.std.get(GfxControllerIdentifier);
   }
 
-  override render() {
-    const addCard = () => {
-      const { centerX, centerY } = this.gfx.viewport;
-      const { h, ppu, w } = NEW_PLANE;
-      finishPlacing(
-        this.gfx,
-        addPlane(
-          this.gfx,
-          new Bound(centerX - w / 2, centerY - h / 2, w, h),
-          ppu
-        )
-      );
-      this.onDone();
-    };
-    return html`<button
-        aria-label=${m.drawing_board_add_plane()}
-        title=${m.drawing_board_add_plane()}
-        type="button"
-        @click=${addCard}
-      >
-        ${unsafeSVG(mathsIcon('plane'))}
-      </button>
-      <button
-        aria-label=${m.drawing_board_label()}
-        title=${m.drawing_board_label()}
-        type="button"
-        @click=${() => {
-          this.gfx.tool.setTool(TextTool);
-          this.onDone();
-        }}
-      >
-        ${unsafeSVG(mathsIcon('label'))}
-      </button>
-      <button
-        aria-label=${m.drawing_board_formula()}
-        title=${m.drawing_board_formula()}
-        type="button"
-        @click=${() => {
-          openFormula(this.gfx);
-          this.onDone();
-        }}
-      >
-        ${unsafeSVG(mathsIcon('formula'))}
-      </button>`;
+  /** A new card's box, in the middle of the view. */
+  protected centred(w: number, h: number) {
+    const { centerX, centerY } = this.gfx.viewport;
+    return new Bound(centerX - w / 2, centerY - h / 2, w, h);
+  }
+
+  protected placed(id: string | undefined) {
+    finishPlacing(this.gfx, id);
+    this.onDone();
+  }
+
+  protected row(icon: string, label: string, run: () => void) {
+    return html`<button type="button" @click=${run}>
+      ${unsafeSVG(mathsIcon(icon))}${label}
+    </button>`;
   }
 
   @property({ attribute: false })
@@ -893,8 +1015,43 @@ class CapyMathsMenu extends LitElement {
   accessor onDone: () => void = () => undefined;
 }
 
-/** A sheet of graph paper with a curve, beside the pen, eraser and shapes. */
-class CapyMathsButton extends EdgelessToolbarToolMixin(
+class CapyMathsMenu extends CapyMenu {
+  override render() {
+    return html`${this.row('plane', m.drawing_board_add_plane(), () =>
+      this.placed(
+        addPlane(
+          this.gfx,
+          this.centred(NEW_PLANE.w, NEW_PLANE.h),
+          NEW_PLANE.ppu
+        )
+      )
+    )}${this.row('label', m.drawing_board_label(), () => {
+      this.gfx.tool.setTool(TextTool);
+      this.onDone();
+    })}`;
+  }
+}
+
+class CapyChartsMenu extends CapyMenu {
+  override render() {
+    const chart = (kind: ChartKind) => () =>
+      this.placed(
+        addChart(
+          this.gfx,
+          this.centred(NEW_CHART[kind].w, NEW_CHART[kind].h),
+          kind
+        )
+      );
+    return html`${this.row(
+      'bars',
+      m.drawing_board_bar_chart(),
+      chart('bar')
+    )}${this.row('pie', m.drawing_board_pie_chart(), chart('pie'))}`;
+  }
+}
+
+/** A sheet on the toolbar beside the pen, eraser and shapes, rising on hover. */
+abstract class CapySheetButton extends EdgelessToolbarToolMixin(
   SignalWatcher(LitElement)
 ) {
   static override styles = css`
@@ -930,13 +1087,36 @@ class CapyMathsButton extends EdgelessToolbarToolMixin(
     }
   `;
 
-  // It's a menu, not a tool: no tool is ever active for it.
+  // It's not a tool: no tool is ever active for it.
   override type = DefaultTool as never;
 
   // @ts-expect-error the mixin defines it as a getter, typed as a property.
   override get active() {
     return false;
   }
+
+  protected abstract name(): string;
+  protected abstract art(): unknown;
+  protected abstract press(): void;
+
+  override render() {
+    return html`<edgeless-toolbar-button
+      .tooltip=${this.popper ? '' : this.name()}
+      .tooltipOffset=${5}
+      @click=${() => this.press()}
+    >
+      <div class="wrap">
+        <span class="art" data-open=${!!this.popper}>
+          <svg height="62" viewBox="0 0 62 62" width="62">${this.art()}</svg>
+        </span>
+      </div>
+    </edgeless-toolbar-button>`;
+  }
+}
+
+/** A sheet that opens a menu of what it adds. */
+abstract class CapyMenuButton extends CapySheetButton {
+  protected abstract menu: string;
 
   private readonly closeMenu = () => {
     closePopper(this);
@@ -948,18 +1128,18 @@ class CapyMathsButton extends EdgelessToolbarToolMixin(
     if (!event.composedPath().includes(this)) this.closeMenu();
   };
 
-  private toggle() {
+  protected press() {
     if (this.popper) {
       this.closeMenu();
       return;
     }
-    openPopper(this, 'capy-maths-menu', 100, {
+    openPopper(this, this.menu, 100, {
       marginLeft: 'auto',
       marginRight: '10px',
       maxWidth: '100%',
       width: 'fit-content',
     });
-    const menu = (this.popper as { element: CapyMathsMenu } | null)?.element;
+    const menu = (this.popper as { element: CapyMenu } | null)?.element;
     if (menu) menu.onDone = this.closeMenu;
     document.addEventListener('pointerdown', this.onOutside, true);
     this.requestUpdate();
@@ -969,47 +1149,61 @@ class CapyMathsButton extends EdgelessToolbarToolMixin(
     super.disconnectedCallback();
     document.removeEventListener('pointerdown', this.onOutside, true);
   }
+}
 
-  override render() {
-    return html`<edgeless-toolbar-button
-      .tooltip=${this.popper ? '' : m.drawing_board_maths()}
-      .tooltipOffset=${5}
-      @click=${() => this.toggle()}
-    >
-      <div class="wrap">
-        <span class="art" data-open=${!!this.popper}>
-          <svg height="62" viewBox="0 0 62 62" width="62">
-            <g transform="rotate(-5 31 31)">
-              <rect
-                fill="#fff"
-                height="60"
-                rx="3"
-                stroke="#dfe1e6"
-                width="54"
-                x="4"
-                y="4"
-              ></rect>
-              <path
-                d="M13 4v60M22 4v60M31 4v60M40 4v60M49 4v60M4 13h54M4 22h54M4 31h54M4 40h54M4 49h54"
-                stroke="#e8ecf1"
-              ></path>
-              <path
-                d="M13 4v60M4 40h54"
-                stroke="#85858a"
-                stroke-width="1.3"
-              ></path>
-              <path
-                d="M8 14c5 21 10 31 17 31s12-12 21-35"
-                fill="none"
-                stroke="#2b9be8"
-                stroke-linecap="round"
-                stroke-width="2.4"
-              ></path>
-            </g>
-          </svg>
-        </span>
-      </div>
-    </edgeless-toolbar-button>`;
+/** Graph paper with a curve. */
+class CapyMathsButton extends CapyMenuButton {
+  protected menu = 'capy-maths-menu';
+
+  protected name() {
+    return m.drawing_board_maths();
+  }
+
+  protected art() {
+    return svg`<g transform="rotate(-5 31 31)">
+      <rect fill="#fff" height="60" rx="3" stroke="#dfe1e6" width="54" x="4" y="4"></rect>
+      <path d="M13 4v60M22 4v60M31 4v60M40 4v60M49 4v60M4 13h54M4 22h54M4 31h54M4 40h54M4 49h54" stroke="#e8ecf1"></path>
+      <path d="M13 4v60M4 40h54" stroke="#85858a" stroke-width="1.3"></path>
+      <path d="M8 14c5 21 10 31 17 31s12-12 21-35" fill="none" stroke="#2b9be8" stroke-linecap="round" stroke-width="2.4"></path>
+    </g>`;
+  }
+}
+
+/** A sheet with bars on it. */
+class CapyChartsButton extends CapyMenuButton {
+  protected menu = 'capy-charts-menu';
+
+  protected name() {
+    return m.drawing_board_charts();
+  }
+
+  protected art() {
+    return svg`<g transform="rotate(4 31 31)">
+      <rect fill="#fff" height="60" rx="3" stroke="#dfe1e6" width="54" x="4" y="4"></rect>
+      <path d="M12 12v32h38" fill="none" stroke="#85858a" stroke-width="1.3"></path>
+      <rect fill="#2b9be8" height="24" width="8" x="17" y="20"></rect>
+      <rect fill="#f6c343" height="14" width="8" x="28" y="30"></rect>
+      <rect fill="#1c3a5e" height="19" width="8" x="39" y="25"></rect>
+    </g>`;
+  }
+}
+
+/** A sheet with a formula on it. Pressing it opens the formula card. */
+class CapyFormulaButton extends CapySheetButton {
+  protected name() {
+    return m.drawing_board_formula();
+  }
+
+  protected art() {
+    return svg`<g transform="rotate(-3 31 31)">
+      <rect fill="#fff" height="60" rx="3" stroke="#dfe1e6" width="54" x="4" y="4"></rect>
+      <path d="M12 26l3-2 4 13 5-24h24" fill="none" stroke="#1c3a5e" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2"></path>
+      <path d="M31 19l10 12M41 19 31 31" fill="none" stroke="#2b9be8" stroke-linecap="round" stroke-width="2.4"></path>
+    </g>`;
+  }
+
+  protected press() {
+    openFormula(this.edgeless.std.get(GfxControllerIdentifier));
   }
 }
 
@@ -1017,7 +1211,7 @@ const NEVER_MATCHES = /(?!)/;
 
 /** Note cards keep AFFiNE's inline LaTeX spec, which paragraphs read as they render,
  * but typing $$ does nothing: KaTeX's HTML can't reach the marking image from a card.
- * Formulas are the maths tool's. */
+ * Formulas have their own toolbar button. */
 export const noLatexMarkdown: ExtensionType = {
   setup: (di) => {
     di.override(LatexExtension.identifier, () => ({
@@ -1028,23 +1222,51 @@ export const noLatexMarkdown: ExtensionType = {
   },
 };
 
-export const mathsTool: ExtensionType = {
+const seniorTool = (
+  id: string,
+  name: () => string,
+  content: (block: BlockComponent) => TemplateResult
+): ExtensionType => ({
   setup: (di) => {
     di.addImpl(
-      SeniorToolIdentifier('capy-maths'),
+      SeniorToolIdentifier(id),
       () =>
         ({ block }: { block: BlockComponent }) => ({
-          content: html`<capy-maths-button .edgeless=${block}></capy-maths-button>`,
-          name: m.drawing_board_maths(),
+          content: content(block),
+          name: name(),
         })
     );
   },
-};
+});
+
+/** The toolbar's sheets, after the shapes. */
+export const sheetTools = [
+  seniorTool(
+    'capy-maths',
+    m.drawing_board_maths,
+    (block) => html`<capy-maths-button .edgeless=${block}></capy-maths-button>`
+  ),
+  seniorTool(
+    'capy-charts',
+    m.drawing_board_charts,
+    (block) =>
+      html`<capy-charts-button .edgeless=${block}></capy-charts-button>`
+  ),
+  seniorTool(
+    'capy-formula',
+    m.drawing_board_formula,
+    (block) =>
+      html`<capy-formula-button .edgeless=${block}></capy-formula-button>`
+  ),
+];
 
 for (const [tag, element] of [
   ['capy-shape-panel', CapyShapePanel],
   ['capy-shape-button', CapyShapeButton],
   ['capy-maths-menu', CapyMathsMenu],
   ['capy-maths-button', CapyMathsButton],
+  ['capy-charts-menu', CapyChartsMenu],
+  ['capy-charts-button', CapyChartsButton],
+  ['capy-formula-button', CapyFormulaButton],
 ] as const)
   if (!customElements.get(tag)) customElements.define(tag, element);

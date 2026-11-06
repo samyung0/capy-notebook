@@ -322,8 +322,8 @@
   background: #1d1d1f;
 }
 
-/* Undo and redo stay within reach over the open plane, beside its zoom. */
-.capy-board[data-plane-open] .capy-board-history {
+/* Undo and redo stay within reach over an open plane or chart, beside its zoom. */
+.capy-board[data-editor-open] .capy-board-history {
   right: 92px;
   bottom: 12px;
   z-index: 4;
@@ -334,8 +334,18 @@
   box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
 }
 
+/* A chart has no zoom to sit beside. */
+.capy-board[data-editor-open]:has(.capy-chart-editor) .capy-board-history {
+  right: 12px;
+}
+
+.capy-board[data-editor-open] .capy-board-history::after {
+  display: none;
+}
+
 @container viewport (width < 768px) {
-  .capy-board[data-plane-open] .capy-board-history {
+  .capy-board[data-editor-open] .capy-board-history,
+  .capy-board[data-editor-open]:has(.capy-chart-editor) .capy-board-history {
     top: 8px;
     right: 124px;
     bottom: auto;
@@ -411,5 +421,62 @@
 
   .capy-plane-zoom {
     display: none;
+  }
+}
+
+.capy-chart-editor canvas,
+.capy-chart-editor:not([data-tool="move"]) canvas {
+  cursor: crosshair;
+}
+
+.capy-chart-axis {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #55555b;
+  background: #fff;
+  border: 1px solid var(--affine-border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
+}
+
+.capy-chart-axis label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.capy-chart-axis input {
+  all: unset;
+  width: 34px;
+  color: #1d1d1f;
+  text-align: center;
+  border-bottom: 1px solid #1d1d1f;
+}
+
+.capy-chart-label {
+  all: unset;
+  position: absolute;
+  width: 110px;
+  padding: 2px 4px;
+  font:
+    500 13px Arial,
+    sans-serif;
+  color: #1d1d1f;
+  text-align: center;
+  background: #fff;
+  border-bottom: 1px solid #1e96eb;
+  transform: translate(-50%, -50%);
+}
+
+@container viewport (width < 768px) {
+  .capy-chart-axis {
+    top: 60px;
   }
 }

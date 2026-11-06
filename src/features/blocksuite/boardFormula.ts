@@ -455,11 +455,14 @@ export function mountSymbolRow(gfx: GfxController) {
     queueMicrotask(place)
   );
   const viewport = gfx.viewport.viewportUpdated.subscribe(place);
+  // A label grows as it's typed, and the row stays under its last line.
+  const updates = gfx.surface?.elementUpdated.subscribe(place);
   return {
     element: row,
     unmount: () => {
       selection.unsubscribe();
       viewport.unsubscribe();
+      updates?.unsubscribe();
       row.remove();
     },
   };

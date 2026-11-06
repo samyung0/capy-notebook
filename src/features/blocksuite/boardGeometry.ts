@@ -24,33 +24,10 @@ export function snapTo(value: number, step: number) {
   return Number((Math.round(value / step) * step).toPrecision(12));
 }
 
-/** A bar from the x axis in plane units: its column starts where the drag began, it
- * reaches the height the pointer is at, and dragging sideways widens it (a histogram's
- * class). `narrowest` is half a numbered square at the current zoom. */
-export function barBetween(
-  start: Vec,
-  end: Vec,
-  minor: number,
-  narrowest: number
-) {
-  const x = snapTo(Math.floor(start[0] / minor) * minor, minor);
-  return {
-    h: snapTo(end[1], minor),
-    w: Math.max(snapTo(end[0] - x, minor), narrowest),
-    x,
-  };
-}
-
 /** Degrees clockwise from 12 o'clock, to the nearest degree, as a protractor reads. */
 export function clockAngle([cx, cy]: Vec, [x, y]: Vec) {
   const degrees = (Math.atan2(x - cx, y - cy) * 180) / Math.PI;
   return Math.round((degrees + 360) % 360);
-}
-
-/** A point on a circle in plane units, where y goes up. */
-export function onCircle([cx, cy]: Vec, radius: number, degrees: number): Vec {
-  const turn = (degrees * Math.PI) / 180;
-  return [cx + radius * Math.sin(turn), cy + radius * Math.cos(turn)];
 }
 
 /** A smooth curve through the points (Catmull-Rom), as many short segments. */

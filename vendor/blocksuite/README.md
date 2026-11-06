@@ -235,8 +235,8 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
     16)`), so the board can register its formula element before a saved answer loads.
 
 17. Text tool (`affine/gfx/text` `tool.ts`, marked `Capy (local change 17)`): a click on
-    a `plane` card adds a label on top of it. The board's Label button uses this, since
-    a double click on a card opens the plane. It applies only when the card is the topmost
+    a `plane` or `chart` card adds a label on top of it. The board's Label button uses this,
+    since a double click on a card opens its editor. It applies only when the card is the topmost
     thing under the click.
 18. Double tap (`framework/std` `event/control/pointer.ts` and
     `gfx/interactivity/gfx-view-event-handler.ts`, marked `Capy (local change 18)`): two
@@ -247,6 +247,12 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
     marked `Capy (local change 19)`): `getCanvasByBound` takes the scale to draw at, and
     `_html2canvas` is public. The board draws its image layer by layer, so it stacks as
     the screen does and stays within a phone's canvas limit.
+20. Tooltips (`affine/components` `tooltip.ts`, marked `Capy (local change 20)`): a tooltip
+    takes no pointer events. A tap shows it first and the click then lands on it, so a
+    phone couldn't use the toolbar's arrows or reach the tools past them.
+21. Blank lines (`framework/std` `inline/components/v-line.ts`, marked `Capy (local change
+    21)`): the empty line's template has no space around it. A canvas label keeps white
+    space, so a blank line in one was five lines tall and took no clicks.
 
 The specs named in local changes 6 to 9 are on the `blocksuite-notes` branch, with the
 note editor they pin.

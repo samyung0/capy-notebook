@@ -10,7 +10,6 @@ import {
   polygonNearestPoint,
   type SerializedXYWH,
 } from '@blocksuite/affine/global/gfx';
-import type { Color } from '@blocksuite/affine/model';
 import {
   field,
   type GfxController,
@@ -19,21 +18,13 @@ import {
   GfxViewInteractionExtension,
 } from '@blocksuite/affine/std/gfx';
 import { axisNumber, tickStep } from '@/features/questions/graph';
-import {
-  minorStep,
-  onCircle,
-  smoothThrough,
-  ticks,
-  type Vec,
-} from './boardGeometry';
+import { minorStep, smoothThrough, ticks, type Vec } from './boardGeometry';
 
-/** What's plotted on a plane, in its own units. A line, curve or pie grows a click at
- * a time, each click one undo step. */
+/** What's plotted on a plane, in its own units. A line or curve grows a click at a time,
+ * each click one undo step. */
 export type Mark =
   | { id: string; kind: 'dot'; at: Vec }
-  | { id: string; kind: 'line' | 'curve'; points: Vec[] }
-  | { fill: Color; h: number; id: string; kind: 'bar'; w: number; x: number }
-  | { at: Vec; id: string; kind: 'pie'; radius: number; spokes: number[] };
+  | { id: string; kind: 'line' | 'curve'; points: Vec[] };
 
 /** The plane's top left corner in its own units, and board pixels per unit. */
 export type PlaneView = { ppu: number; x0: number; y0: number };
@@ -46,6 +37,10 @@ const DOT_RADIUS = 4.5;
 const CARD_WIDTH_MIN = 120;
 const CARD_HEIGHT_MIN = 80;
 const CARD_SIDE_MAX = 4000;
+/** Fit to size: the room left around the marks, and the longest side before it zooms
+ * out instead of growing. */
+const FIT_PAD = 40;
+const FIT_SIDE_MAX = 1600;
 const clamp = (value: number, low: number, high: number) =>
   Math.max(low, Math.min(high, value));
 
@@ -53,8 +48,7 @@ export function drawPlane(
   ctx: CanvasRenderingContext2D,
   frame: Frame,
   view: PlaneView,
-  marks: Mark[],
-  resolve: (color: Color) => string
+  marks: Mark[]
 ) {
   const X = (x: number) => frame.x + (x - view.x0) * view.ppu;
   const Y = (y: number) => frame.y + (view.y0 - y) * view.ppu;
@@ -140,31 +134,7 @@ export function drawPlane(
   };
   for (const mark of marks) {
     if (mark.kind === 'dot') dot(mark.at);
-    else if (mark.kind === 'bar') {
-      const box = [
-        X(mark.x),
-        Y(Math.max(mark.h, 0)),
-        mark.w * view.ppu,
-        Math.abs(mark.h) * view.ppu,
-      ] as const;
-      ctx.fillStyle = resolve(mark.fill);
-      ctx.fillRect(...box);
-      ctx.strokeRect(...box);
-    } else if (mark.kind === 'pie') {
-      if (mark.radius) {
-        ctx.beginPath();
-        ctx.arc(
-          X(mark.at[0]),
-          Y(mark.at[1]),
-          mark.radius * view.ppu,
-          0,
-          Math.PI * 2
-        );
-        ctx.stroke();
-        for (const spoke of mark.spokes)
-          trace([mark.at, onCircle(mark.at, mark.radius, spoke)]);
-      } else dot(mark.at);
-    } else {
+    else {
       trace(mark.kind === 'curve' ? smoothThrough(mark.points) : mark.points);
       for (const point of mark.points) dot(point);
     }
@@ -176,6 +146,7 @@ export function drawPlane(
 }
 
 export class PlaneElementModel extends GfxPrimitiveElementModel<{
+  fit: boolean;
   index: string;
   marks: Mark[];
   ppu: number;
@@ -211,6 +182,10 @@ export class PlaneElementModel extends GfxPrimitiveElementModel<{
     return pointInPolygon([x, y], Bound.deserialize(this.xywh).points);
   }
 
+  /** Fit to size: the card follows its marks each time the plane is left. */
+  @field()
+  accessor fit = true;
+
   @field()
   accessor marks: Mark[] = [];
 
@@ -236,14 +211,11 @@ Object.assign(elementsCtorMap, { plane: PlaneElementModel });
 const planeRenderer: ElementRenderer<PlaneElementModel> = (
   model,
   ctx,
-  matrix,
-  renderer
+  matrix
 ) => {
   const [, , w, h] = model.deserializedXYWH;
   ctx.setTransform(matrix);
-  drawPlane(ctx, { h, w, x: 0, y: 0 }, model, model.marks, (color) =>
-    renderer.getColorValue(color, 'transparent', true)
-  );
+  drawPlane(ctx, { h, w, x: 0, y: 0 }, model, model.marks);
 };
 
 /** The full-screen editor, set by its module so this one stays light. */
@@ -251,6 +223,55 @@ let openEditor: (gfx: GfxController, model: PlaneElementModel) => void = () =>
   undefined;
 export function setPlaneEditor(open: typeof openEditor) {
   openEditor = open;
+}
+export const openPlane = (gfx: GfxController, model: PlaneElementModel) =>
+  openEditor(gfx, model);
+
+/** Every point a plane's marks reach, and its origin, so the axes stay in view. */
+export function markPoints(marks: Mark[]) {
+  return [
+    [0, 0] as Vec,
+    ...marks.flatMap((mark) => (mark.kind === 'dot' ? [mark.at] : mark.points)),
+  ];
+}
+
+/** Sizes a card to its marks at its scale, its top left staying put. Past the longest
+ * side it zooms out instead. An empty card keeps its size. Not in the undo history,
+ * like the view. */
+export function fitCard(model: PlaneElementModel) {
+  if (!model.marks.length) return;
+  const seen = markPoints(model.marks);
+  const xs = seen.map(([x]) => x);
+  const ys = seen.map(([, y]) => y);
+  const [left, right, bottom, top] = [
+    Math.min(...xs),
+    Math.max(...xs),
+    Math.min(...ys),
+    Math.max(...ys),
+  ];
+  const room = FIT_SIDE_MAX - FIT_PAD * 2;
+  const ppu = Math.min(
+    model.ppu,
+    room / Math.max(right - left, 1e-6),
+    room / Math.max(top - bottom, 1e-6)
+  );
+  const w = clamp(
+    (right - left) * ppu + FIT_PAD * 2,
+    CARD_WIDTH_MIN,
+    FIT_SIDE_MAX
+  );
+  const h = clamp(
+    (top - bottom) * ppu + FIT_PAD * 2,
+    CARD_HEIGHT_MIN,
+    FIT_SIDE_MAX
+  );
+  const [x, y] = model.deserializedXYWH;
+  model.surface.store.withoutTransact(() => {
+    model.ppu = ppu;
+    model.x0 = (left + right) / 2 - w / 2 / ppu;
+    model.y0 = (top + bottom) / 2 + h / 2 / ppu;
+    model.xywh = new Bound(x, y, w, h).serialize();
+  });
 }
 
 class PlaneElementView extends GfxElementModelView<PlaneElementModel> {
@@ -298,6 +319,8 @@ const planeInteraction = GfxViewInteractionExtension<PlaneElementView>(
         },
         onResizeStart(context) {
           context.default(context);
+          // As resizing a note does: the card keeps the size it's given.
+          model.fit = false;
           model.stash('x0');
           model.stash('y0');
         },
@@ -328,6 +351,7 @@ export const planeExtensions = [
 /** A card on the canvas, its plane's origin towards the lower left. */
 export function addPlane(gfx: GfxController, box: Bound, ppu: number) {
   return gfx.surface?.addElement({
+    fit: true,
     marks: [],
     ppu,
     type: 'plane',

@@ -69,10 +69,10 @@ import { ToolbarViewExtension } from '@blocksuite/affine/widgets/toolbar/view';
 import { ViewportOverlayViewExtension } from '@blocksuite/affine/widgets/viewport-overlay/view';
 import { Redo03Icon, Undo03Icon } from '@hugeicons/core-free-icons';
 import { html, render } from 'lit';
-import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import * as Y from 'yjs';
 import { m } from '@/i18n';
 import { fromBase64, toBase64 } from './base64';
+import { chartExtensions } from './boardChart';
 import {
   forgetFormulas,
   formulaExtensions,
@@ -80,15 +80,18 @@ import {
   mountSymbolRow,
 } from './boardFormula';
 import { addPlane, planeExtensions, planeMarks } from './boardPlane';
-import { closePlaneEditor } from './boardPlaneEditor';
+import './boardChartEditor';
+import { closeBoardEditor } from './boardEditorShell';
+import './boardPlaneEditor';
 import {
   boardToolbar,
-  mathsTool,
+  hugeIcon,
   noLatexMarkdown,
   outlineNewShapes,
   StampTool,
   setBoardPreview,
   shapeButtonTool,
+  sheetTools,
 } from './boardTools';
 
 const stores = new StoreExtensionManager([
@@ -150,26 +153,6 @@ class NoFrameOverlay extends Overlay {
   override render() {}
 }
 
-/** A Hugeicons icon's data as an SVG, for the board's Lit templates. */
-function hugeIcon(icon: unknown) {
-  const data = icon as readonly (readonly [string, Record<string, string>])[];
-  const body = data
-    .map(
-      ([tag, attributes]) =>
-        `<${tag} ${Object.entries(attributes)
-          .filter(([name]) => name !== 'key')
-          .map(
-            ([name, value]) =>
-              `${name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}="${value}"`
-          )
-          .join(' ')}/>`
-    )
-    .join('');
-  return unsafeSVG(
-    `<svg fill="none" height="24" viewBox="0 0 24 24" width="24">${body}</svg>`
-  );
-}
-
 const surfaceOf = (gfx: GfxController) =>
   gfx.surfaceComponent as SurfaceBlockComponent | null;
 
@@ -205,10 +188,11 @@ export function mountDrawingBoard(
     extensions: [
       ...views.get('edgeless'),
       shapeButtonTool,
-      mathsTool,
+      ...sheetTools,
       StampTool,
       ...formulaExtensions,
       ...planeExtensions,
+      ...chartExtensions,
       noLatexMarkdown,
       NoFrameOverlay,
       ...boardToolbar,
@@ -322,7 +306,7 @@ export function mountDrawingBoard(
 
   // An open plane writes its view on closing, and nothing else is in progress.
   const finishPlot = () => {
-    closePlaneEditor(gfx);
+    closeBoardEditor(gfx);
     gfx.tool.setTool(DefaultTool);
   };
 
@@ -396,7 +380,7 @@ export function mountDrawingBoard(
       historyUpdates.unsubscribe();
       if (onChange) store.spaceDoc.off('update', onChange);
       symbols.unmount();
-      closePlaneEditor(gfx);
+      closeBoardEditor(gfx);
       forgetFormulas();
       render(null, history);
       render(null, container);

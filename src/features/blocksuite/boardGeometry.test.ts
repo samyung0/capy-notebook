@@ -1,9 +1,7 @@
 import { expect, it } from 'vitest';
 import {
-  barBetween,
   clockAngle,
   minorStep,
-  onCircle,
   smoothThrough,
   snapTo,
   ticks,
@@ -37,18 +35,12 @@ it('passes through every plotted point', () => {
     expect(curve[index * 8]).toEqual(point);
 });
 
-it('builds a bar up or down from the axis, wider only when dragged wider', () => {
-  expect(barBetween([3.2, 0.4], [3.2, 5.1], 0.5, 1)).toEqual({
-    h: 5,
-    w: 1,
-    x: 3,
-  });
-  expect(barBetween([3.2, 0], [6.1, 2], 0.5, 1).w).toBe(3);
-  expect(barBetween([3.2, 0], [3.2, -2], 0.5, 1).h).toBe(-2);
-});
-
 it("reads a pie angle clockwise from 12 o'clock", () => {
   const centre: Vec = [5, 5];
-  for (const degrees of [0, 45, 126, 205, 290])
-    expect(clockAngle(centre, onCircle(centre, 3, degrees))).toBe(degrees);
+  for (const degrees of [0, 45, 126, 205, 290]) {
+    const turn = (degrees * Math.PI) / 180;
+    expect(
+      clockAngle(centre, [5 + 3 * Math.sin(turn), 5 + 3 * Math.cos(turn)])
+    ).toBe(degrees);
+  }
 });
