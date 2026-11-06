@@ -5,7 +5,10 @@ plan that holds its detail. Change this file whenever something starts, lands or
 
 ## Landing now
 
-Windows lands and deploys these, one landing per deploy.
+Windows lands and deploys these, one landing per deploy. Epo is switching accounts (2026-11-06)
+and the Windows session may not be reachable after that, so nothing below lands until Epo says who
+does it. Waiting: `claude/quiz-shared-layout` 369d457f6 and `claude/canvas-enrich-18ed75` 66e532eb1,
+both pushed and neither reviewed.
 
 | Item | Where it is | Waiting on |
 |---|---|---|
@@ -15,10 +18,10 @@ Windows lands and deploys these, one landing per deploy.
 | `membership.spec.ts`: a real CLOSED frame on a bystander channel | Cause unknown; passed on an earlier run | The journey now records each close's code and reason |
 | Shared pages lose AI marking (Q640 B) | Windows | Next on its side |
 | New assignment's quiz picker, shared pages | On `main` 24cffdd73 | CI, UAT quality run |
-| Page counts and Reading pages off Make a quiz's rows, popovers scrolling inside dialogs, Add dialog retry fix | `claude/add-retry-analysis` 86491c6b4 (holds Extraction's 34675e04d) | Windows' review, then a train |
+| Page counts and Reading pages off Make a quiz's rows, popovers scrolling inside dialogs, Add dialog retry fix | On `main` c69c01992 (86491c6b4, holds Extraction's 34675e04d) | Windows' UAT run |
 | One page gutter, no weekly count on Learning, note Preview over the mounted editor (Q669 A) with one room per embed (Q676 A), Hide file button, whole-row hover on study tables | On `main` c69c01992 | Windows' UAT run, one production measure of a near-limit Preview |
 | Quiz's one layout in view, edit, study and assignments (A, S1, Epo 2026-11-06), add button aligned, image links shared in memory (Q678 A), number strip and no header when taking an assignment on a phone (Q679 B) | `claude/quiz-shared-layout` 369d457f6 | Windows' reread, then a train |
-| Vendored BlockSuite, dev route only | `claude/drawing-answers` 9ec4a067d | Windows' train |
+| Vendored BlockSuite, dev routes only | On `main` c69c01992 | Done |
 
 ## Next, in order (Epo, 2026-11-06)
 
@@ -35,7 +38,7 @@ boards K6, K7 and K8 on the study Design canvas. Scanned submissions build on it
   - **Only tried on mocks:** Chromium on this Mac with simulated touch, no real phone or pen.
 - [x] Fix what the try found (`claude/drawing-answers`, local): the `ZodError` on every partial edit (a zod 4 port slip), zoom at the bottom right and none on phones, the sheet filling a phone's width, the note menu's image, link and file buttons off, undo and redo in the toolbar, note cards drawn onto the sheet in the image
 - [ ] Note card text comes out slightly clipped in the image (html2canvas); readable, revisit with tuning
-- [ ] Bring `vendor/blocksuite` to `main` in a lazy chunk (Epo, 2026-11-06: "sure"): on `claude/drawing-answers`, dev route only until the answer flow opens it
+- [x] Bring `vendor/blocksuite` to `main` in a lazy chunk (Epo, 2026-11-06: "sure"): on `main` c69c01992, dev routes only until the answer flow opens it
 - [ ] `drawing` answer type with its background (blank, squared grid, axes, figure) in the shared question format: Go, Rust, TypeScript, pipeline
 - [ ] The board: full screen, question pinned at top left, Done returning to a preview and "Edit drawing", phones
 - [ ] Saving: strokes kept, an image rendered for marking, charged to whoever pays for the work: the workspace owner for assignments, the member for their own practice, deleted with the attempt (Epo, 2026-11-06). First trace whether a saved answer's flavours reach minimatch in `schema.ts`
