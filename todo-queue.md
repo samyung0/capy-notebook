@@ -6,8 +6,8 @@ plan that holds its detail. Change this file whenever something starts, lands or
 ## Landing now
 
 Windows lands and deploys these, one landing per deploy; Mac sessions review and push feature
-branches (Epo, 2026-11-06, after the account switch). Waiting on Windows: `claude/quiz-shared-layout`
-369d457f6, `claude/canvas-enrich-18ed75` c95fa44cf and `claude/bench-reports` 9b95291a0.
+branches (Epo, 2026-11-06, after the account switch). Main is 6159c0f25: ribbon (protocol 27), the
+quiz Undo fix 779c114fa, canvas-enrich to 2b1fc744f. Waiting on Windows: `claude/quiz-image-back` 43b17c1ea.
 
 | Item | Where it is | Waiting on |
 |---|---|---|
@@ -19,9 +19,11 @@ branches (Epo, 2026-11-06, after the account switch). Waiting on Windows: `claud
 | New assignment's quiz picker, shared pages | On `main` 24cffdd73 | CI, UAT quality run |
 | Page counts and Reading pages off Make a quiz's rows, popovers scrolling inside dialogs, Add dialog retry fix | On `main` c69c01992 (86491c6b4, holds Extraction's 34675e04d) | Windows' UAT run |
 | One page gutter, no weekly count on Learning, note Preview over the mounted editor (Q669 A) with one room per embed (Q676 A), Hide file button, whole-row hover on study tables | On `main` c69c01992 | Windows' UAT run, one production measure of a near-limit Preview |
-| Quiz's one layout in view, edit, study and assignments (A, S1, Epo 2026-11-06), add button aligned, image links shared in memory (Q678 A), number strip and no header when taking an assignment on a phone (Q679 B) | `claude/quiz-shared-layout` 369d457f6 | Windows' reread, then a train |
+| Quiz's one layout in view, edit, study and assignments (A, S1, Epo 2026-11-06), add button aligned, image links shared in memory (Q678 A), number strip and no header when taking an assignment on a phone (Q679 B) | On `main` (369d457f6) | Done |
+| Quiz Undo reverting the answer key too (empty steps of the other document) | On `main` 6159c0f25 (779c114fa) | Done |
+| UAT note journey's `quizImageOnPick` (note.spec.ts:167): Back from a block's editor lost its toolbar to the dialog's focus trap, near-constant after the quiz layout | `claude/quiz-image-back` 43b17c1ea, 8 of 8 mock repro runs pass | Windows' merge, UAT run |
 | Vendored BlockSuite, dev routes only | On `main` c69c01992 | Done |
-| Bench reports main already links to (copy-first, figure boxes, layout models and capacity, DeepSeek grading, Office room memory), and the layout service's capacity settings (`cpu_shares: 128`, spinning off) | `claude/bench-reports` 9b95291a0; past-paper fixtures and run records stay on the bench branches | Windows' review; the layout project on the ingest host is rebuilt by hand (runbook 7.6) |
+| Bench reports main already links to (copy-first, figure boxes, layout models and capacity, DeepSeek grading, Office room memory), and the layout service's capacity settings (`cpu_shares: 128`, spinning off) | On `main` (9b95291a0); past-paper fixtures and run records stay on the bench branches | The layout project on the ingest host is rebuilt by hand (runbook 7.6) |
 
 ## Next, in order (Epo, 2026-11-06)
 
