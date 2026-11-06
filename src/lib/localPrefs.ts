@@ -27,6 +27,8 @@ export const PREF_KEYS = {
   mapFinishPlayed: 'capy.map.finishPlayed',
   /** A note's toolbar is shown in Edit (Q461; no key: hidden). */
   noteToolbar: 'capy.note.toolbar',
+  /** The Office ribbon is collapsed on this device (Q674; no key: expanded). */
+  officeRibbonCollapsed: 'capy.office.ribbonCollapsed',
   /** The conversation a mounted chat panel shows, per workspace or for the
    * account chat (null), so a reload or a reopened tab comes back to it (Epo
    * 2026-10-27, T19). */

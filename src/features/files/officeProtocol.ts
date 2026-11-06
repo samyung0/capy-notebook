@@ -113,6 +113,14 @@ export type OfficeAnalysis =
       textCharacterCount: number;
     };
 
+function isKeptRibbon(value: unknown) {
+  if (!value || typeof value !== 'object') return false;
+  const { collapsed, tab } = value as Record<string, unknown>;
+  return (
+    typeof collapsed === 'boolean' && (tab === null || typeof tab === 'string')
+  );
+}
+
 export type OfficeHostMessage =
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;
@@ -158,6 +166,11 @@ export type OfficeHostMessage =
       citation?: OfficeCitation | null;
       /** The zoom the file was last shown at; the format's default without. */
       zoom?: OfficeZoom;
+      /**
+       * Edit mode only: this device's remembered collapse (Q674), and the tab
+       * the view a room swap replaces was on.
+       */
+      ribbon?: { collapsed: boolean; tab: string | null };
     }
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;
@@ -392,6 +405,12 @@ export type OfficeRuntimeMessage =
       ribbon?: OfficeRibbon;
       revision: number;
     }
+  /** The keyboard leaves the ribbon: the tab line takes it. */
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'ribbon-focus';
+      revision: number;
+    }
   /** A click on the strip the runtime draws (`set-banner`). */
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;
@@ -523,6 +542,7 @@ export function isOfficeHostMessage(
       (candidate.citation === undefined ||
         isOfficeCitation(candidate.citation)) &&
       (candidate.zoom === undefined || isOfficeZoom(candidate.zoom)) &&
+      (candidate.ribbon === undefined || isKeptRibbon(candidate.ribbon)) &&
       ['docx', 'pptx', 'xlsx'].includes(
         String((candidate as { format?: unknown }).format)
       ) &&
@@ -589,6 +609,7 @@ export function isOfficeRuntimeMessage(
       );
     if (raw.type === 'banner-action')
       return raw.action === 'close' || isCount(raw.action);
+    if (raw.type === 'ribbon-focus') return true;
     if (raw.type === 'rendered')
       return (
         typeof raw.id === 'string' &&

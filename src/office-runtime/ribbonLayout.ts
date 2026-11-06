@@ -20,6 +20,8 @@ export type RibbonCell =
       label?: () => string;
       /** Over a dropdown's label: the item the upper half runs (PowerPoint's New slide). */
       split?: string;
+      /** Shows as on while one of its items is ticked (an armed tool). */
+      ticks?: boolean;
     };
 
 export interface RibbonGroup {

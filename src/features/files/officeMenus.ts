@@ -90,6 +90,8 @@ export interface OfficeRibbon {
 /** Ids the tab line sends in `menu-command`; the runtime keeps the tab state. */
 export const OFFICE_RIBBON_COMMANDS = {
   collapse: 'ribbon.collapse',
+  /** The keyboard goes from the tab line into the current tab's commands. */
+  enter: 'ribbon.enter',
   /** Followed by the tab's id. */
   tab: 'ribbon.tab:',
 } as const;
@@ -241,21 +243,44 @@ export function isOfficeMenus(value: unknown): value is OfficeMenu[] {
   );
 }
 
-function isTabLineItem(value: unknown) {
-  return isEntry(value, 1) && (value as { kind: string }).kind === 'item';
+/** What the frame may put on the tab line, which is Capy's page. */
+const MAX_TAB_LABEL = 40;
+const TAB_ID = /^[a-z]{1,16}$/;
+
+function isTabLabel(value: unknown) {
+  return isText(value) && value.length <= MAX_TAB_LABEL;
+}
+
+/** Only the editors' own history commands: never one of Capy's (`capy.download`). */
+function isTabLineItem(value: unknown, ids: readonly string[]) {
+  if (!(isEntry(value, 1) && (value as { kind: string }).kind === 'item'))
+    return false;
+  const item = value as { id: string; label: string };
+  return ids.includes(item.id) && isTabLabel(item.label);
 }
 
 export function isOfficeRibbon(value: unknown): value is OfficeRibbon {
   if (!value || typeof value !== 'object') return false;
   const ribbon = value as Record<string, unknown>;
+  if (
+    !(
+      typeof ribbon.collapsed === 'boolean' &&
+      isTabLineItem(ribbon.undo, ['undo', 'edit.undo']) &&
+      isTabLineItem(ribbon.redo, ['redo', 'edit.redo']) &&
+      Array.isArray(ribbon.tabs) &&
+      ribbon.tabs.length <= MAX_MENUS &&
+      ribbon.tabs.every(
+        (tab) =>
+          typeof tab?.id === 'string' &&
+          TAB_ID.test(tab.id) &&
+          isTabLabel(tab?.label)
+      )
+    )
+  )
+    return false;
   return (
-    typeof ribbon.collapsed === 'boolean' &&
-    (ribbon.tab === null || isText(ribbon.tab)) &&
-    isTabLineItem(ribbon.undo) &&
-    isTabLineItem(ribbon.redo) &&
-    Array.isArray(ribbon.tabs) &&
-    ribbon.tabs.length <= MAX_MENUS &&
-    ribbon.tabs.every((tab) => isText(tab?.id) && isText(tab?.label))
+    ribbon.tab === null ||
+    (ribbon.tabs as { id: string }[]).some((tab) => tab.id === ribbon.tab)
   );
 }
 

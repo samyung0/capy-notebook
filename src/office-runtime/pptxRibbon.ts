@@ -41,6 +41,7 @@ import {
 } from './tablerGlyphs';
 
 const NEW_SLIDE: RibbonCell = { id: 'new-slide-layout', split: 'slide.new' };
+const SHAPE: RibbonCell = { id: 'shape', ticks: true };
 
 /** PPTX: Home and Slide from the mocks; the rest group the old menus' items. */
 export const PPTX_RIBBON: RibbonLayout = {
@@ -94,7 +95,10 @@ export const PPTX_RIBBON: RibbonLayout = {
   },
   phoneHome: [
     row(NEW_SLIDE),
-    row('select', icon('insert.textBox'), icon('insert.image'), icon('shape')),
+    row('select', icon('insert.textBox'), icon('insert.image'), {
+      ...SHAPE,
+      icon: true,
+    }),
     row('bold', 'italic', 'underline', 'textColor', 'highlight'),
     row('align', 'lineSpacing'),
     row('bulletedList', 'numberedList', 'decreaseIndent', 'increaseIndent'),
@@ -217,7 +221,7 @@ export const PPTX_RIBBON: RibbonLayout = {
       {
         label: m.files_office_ribbon_drawing,
         lines: [
-          ['insert.textBox', 'insert.image', 'shape'],
+          ['select', 'insert.textBox', 'insert.image', SHAPE],
           ['fill', 'shapeBorderColor', 'shapeBorderWidth', 'shapeAdjustment'],
         ],
       },
@@ -232,7 +236,7 @@ export const PPTX_RIBBON: RibbonLayout = {
         label: m.files_office_ribbon_tools,
         lines: [
           ['select', 'insert.textBox'],
-          ['insert.image', 'shape'],
+          ['insert.image', SHAPE],
         ],
       },
       { big: [NEW_SLIDE], label: m.files_office_ribbon_slides },

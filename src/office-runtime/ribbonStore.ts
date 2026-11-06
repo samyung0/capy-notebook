@@ -16,8 +16,12 @@ export interface RibbonState {
   banner: OfficeBanner | null;
   collapsed: boolean;
   contexts: readonly RibbonContext[];
+  /** Counts the times the tab line sent the keyboard into the ribbon. */
+  focusRequest: number;
   /** The editor's whole menu tree, paused or not; the host shows only File. */
   menus: readonly OfficeMenu[];
+  /** The ribbon is on screen: the host's strips and tab line count on it. */
+  mounted: boolean;
   /** Collapsed, with a clicked tab's ribbon open over the page. */
   over: boolean;
   /** Edit always opens on Home (Q665). */
@@ -57,6 +61,7 @@ function historyItem(menus: readonly OfficeMenu[], name: 'redo' | 'undo') {
 
 /** What Capy's tab line draws; the editor's own tree stays in the frame. */
 export function ribbonChrome(state: RibbonState): OfficeRibbon | null {
+  if (!state.mounted) return null;
   const undo = historyItem(state.menus, 'undo');
   const redo = historyItem(state.menus, 'redo');
   if (!(undo && redo)) return null;
@@ -94,6 +99,38 @@ export function findRibbonEntry(
 }
 
 /**
+ * What a layout's cell draws from the menus. A split with no list (a deck with
+ * no slides has no layouts to list) draws its upper half, whole.
+ */
+export function findRibbonCell(
+  menus: readonly OfficeMenu[],
+  cell: { id: string; split?: string }
+) {
+  const found = findRibbonEntry(menus, cell.id);
+  if (found && found.kind !== 'separator' && found.kind !== 'grid')
+    return found;
+  const split = cell.split ? findRibbonEntry(menus, cell.split) : undefined;
+  return split?.kind === 'item' ? split : null;
+}
+
+/**
+ * After a command the keys go back to the document, as in Office, unless the
+ * command moved them (a comment box, a dialog) or a list stays open.
+ */
+export function returnKeys(focus: () => void) {
+  requestAnimationFrame(() => {
+    const active = document.activeElement;
+    if (
+      (!active ||
+        active === document.body ||
+        active.closest('.office-ribbon')) &&
+      !document.querySelector('.office-ribbon [aria-expanded="true"]')
+    )
+      focus();
+  });
+}
+
+/**
  * The ribbon's state for one edit frame: the tab line in Capy's header and the
  * ribbon in the editor's toolbar both read it, so a tab click moves neither
  * the editor nor its toolbar's other state.
@@ -103,12 +140,16 @@ export function createRibbonStore(onChromeChange: () => void) {
     banner: null,
     collapsed: false,
     contexts: [],
+    focusRequest: 0,
     menus: [],
+    mounted: false,
     over: false,
     tab: HOME_TAB,
   };
   const listeners = new Set<() => void>();
   let runner: OfficeMenuSource['run'] | null = null;
+  let focuser: (() => void) | null = null;
+  let menusText = '[]';
   const set = (next: Partial<RibbonState>) => {
     state = { ...state, ...next };
     for (const listener of listeners) listener();
@@ -129,11 +170,24 @@ export function createRibbonStore(onChromeChange: () => void) {
         if (state.collapsed && state.over && tab === state.tab)
           set({ over: false });
         else set({ over: state.collapsed, tab });
+      } else if (id === OFFICE_RIBBON_COMMANDS.enter) {
+        set({
+          focusRequest: state.focusRequest + 1,
+          over: state.collapsed,
+        });
       } else return false;
       onChromeChange();
       return true;
     },
+    /** Puts the keys back in the document. */
+    focusDocument() {
+      focuser?.();
+    },
     get: () => state,
+    /** A room swap's new frame takes over the tab and the collapse. */
+    restore(kept: { collapsed: boolean; tab: string | null }) {
+      set({ collapsed: kept.collapsed, tab: kept.tab ?? HOME_TAB });
+    },
     run(id: string, value?: string, file?: File) {
       runner?.(id, value, file);
     },
@@ -155,10 +209,25 @@ export function createRibbonStore(onChromeChange: () => void) {
     },
     setMenus(
       menus: readonly OfficeMenu[],
-      run: OfficeMenuSource['run'] | null
+      run: OfficeMenuSource['run'] | null,
+      focus: (() => void) | null = null
     ) {
       runner = run;
-      set({ menus });
+      focuser = focus;
+      // Editors re-report on each selection change; most change nothing here,
+      // and an arrow key in a sheet must not draw the ribbon.
+      const text = JSON.stringify(menus);
+      if (text === menusText) return;
+      menusText = text;
+      // A restored tab that isn't here (a table the caret isn't in): Home.
+      const known = ribbonTabs(menus, state.contexts).some(
+        (tab) => tab.id === state.tab
+      );
+      set({ menus, tab: known || !menus.length ? state.tab : HOME_TAB });
+    },
+    setMounted(mounted: boolean) {
+      set({ mounted });
+      onChromeChange();
     },
     subscribe(listener: () => void) {
       listeners.add(listener);

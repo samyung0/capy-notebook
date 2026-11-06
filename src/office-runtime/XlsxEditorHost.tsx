@@ -178,6 +178,7 @@ export function XlsxEditorHost({
   useEffect(() => {
     if (!commandState) return;
     onMenus({
+      focus: () => apiRef.current?.focus(),
       menus: xlsxEditMenus(commandState, locale),
       run: (id) => runXlsxMenuItem(id, apiRef.current),
     });
@@ -264,11 +265,11 @@ export function XlsxEditorHost({
         controls={controls}
         layout={XLSX_RIBBON}
         onBannerAction={ribbon.onBannerAction}
-        phone={compact}
+        onLeave={ribbon.onLeave}
         store={ribbon.store}
       />
     ),
-    [compact, ribbon]
+    [ribbon]
   );
   const leavingFirstSheet = (event: PointerEvent<HTMLDivElement>) => {
     if (

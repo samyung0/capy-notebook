@@ -126,6 +126,7 @@ describe('menus while editing is paused', () => {
     const menus = pausedMenus(
       editorMenus(
         {
+          activeShape: null,
           borderWeight: null,
           checked: [],
           enabled,

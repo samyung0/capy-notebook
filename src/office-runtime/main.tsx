@@ -52,6 +52,7 @@ import { prewarmRuntime, runtimeChunks } from './prewarm';
 import {
   createRibbonStore,
   findRibbonEntry,
+  returnKeys,
   ribbonChrome,
 } from './ribbonStore';
 import {
@@ -119,6 +120,9 @@ interface LoadedFile {
   /** Where the viewer or editor opens; the format's default without. */
   zoom?: OfficeZoom;
 }
+
+/** How long a ribbon command waits for input to settle: the host's own flush limit. */
+const COMMAND_SETTLE_MS = 30_000;
 
 function OfficeRuntime() {
   const [file, setFile] = useState<LoadedFile | null>(null);
@@ -272,12 +276,13 @@ function OfficeRuntime() {
     // A paused editor lists its editing items disabled (File › Save too).
     const editing = epochRef.current !== null;
     const shown = editing && pausedRef.current ? pausedMenus(menus) : menus;
-    // An editor's other menus are its ribbon's: Capy draws File and the tab line.
-    const chrome = editing && ribbonRef.current.get();
-    const ribbon = chrome ? ribbonChrome(chrome) : null;
+    // An editor's other menus are its ribbon's: Capy draws File and, while the
+    // ribbon is on screen, the tab line. So `ribbon` is the frame's word that it
+    // is drawn, which the host's strips go by.
+    const ribbon = editing ? ribbonChrome(ribbonRef.current.get()) : null;
     const payload = {
       actions: current?.actions ?? [],
-      menus: ribbon ? shown.filter((menu) => menu.id === 'file') : shown,
+      menus: editing ? shown.filter((menu) => menu.id === 'file') : shown,
       ...(ribbon && { ribbon }),
     };
     const text = JSON.stringify(payload);
@@ -293,7 +298,51 @@ function OfficeRuntime() {
   // between tabs renders the ribbon alone (OfficeRibbon).
   const [ribbon] = useState(() => createRibbonStore(() => sendMenusNow()));
   const ribbonRef = useRef(ribbon);
-  // The ribbon runs the menus' commands in the frame, under the same pause.
+  // A press on the ribbon keeps the document's focus, so nothing settles input
+  // as the old menu's click did (`focus-left`): a command settles it first, in
+  // order, runs under the same pause, then hands the keys back. A flush ends a
+  // held DOCX press rather than wait on it; the limit is for an engine that
+  // never answers, the host's own flush limit.
+  const commandsRef = useRef(Promise.resolve());
+  const settleAndRun = useCallback(
+    async (id: string, value?: string, file?: File) => {
+      // A press may leave a composition open; only its blur ends it.
+      if (composingRef.current)
+        (document.activeElement as HTMLElement | null)?.blur();
+      if (replicaRef.current)
+        await Promise.race([
+          flush().catch(() => {}),
+          new Promise((resolve) => setTimeout(resolve, COMMAND_SETTLE_MS)),
+        ]);
+      const source = menuSourceRef.current;
+      if (
+        !source ||
+        (epochRef.current !== null &&
+          pausedRef.current &&
+          !runsWhilePaused(source, id))
+      )
+        return;
+      source.run(id, value, file);
+      returnKeys(ribbonRef.current.focusDocument);
+    },
+    [flush]
+  );
+  const runCommand = useCallback(
+    (id: string, value?: string, file?: File) => {
+      commandsRef.current = commandsRef.current
+        .then(() => settleAndRun(id, value, file))
+        .catch((error: unknown) => {
+          if (revisionRef.current !== null)
+            post({
+              message: error instanceof Error ? error.message : String(error),
+              revision: revisionRef.current,
+              type: 'error',
+            });
+        });
+    },
+    [settleAndRun]
+  );
+  // The ribbon runs the menus' commands in the frame.
   const shareMenus = useCallback(() => {
     const source = menuSourceRef.current;
     const menus = source?.menus ?? [];
@@ -303,22 +352,16 @@ function OfficeRuntime() {
         : menus,
       source &&
         ((id, value, file) => {
-          if (
-            !(
-              epochRef.current !== null &&
-              pausedRef.current &&
-              !runsWhilePaused(source, id)
-            )
-          ) {
-            // Capy opens the presenter window, as for its header's item.
-            const entry = findRibbonEntry(menus, id);
-            if (entry?.kind === 'item' && entry.popup === 'presenter')
-              askPresenter();
-            else source.run(id, value, file);
-          }
-        })
+          // Capy opens the presenter window, as for its header's item.
+          const entry = findRibbonEntry(menus, id);
+          if (entry?.kind !== 'item' || entry.popup !== 'presenter')
+            runCommand(id, value, file);
+          else if (!pausedRef.current || runsWhilePaused(source, id))
+            askPresenter();
+        }),
+      source?.focus ?? null
     );
-  }, [askPresenter, ribbon]);
+  }, [askPresenter, ribbon, runCommand]);
   const reportMenus = useCallback(
     (source: OfficeMenuSource | null) => {
       menuSourceRef.current = source;
@@ -331,9 +374,17 @@ function OfficeRuntime() {
     if (revisionRef.current !== null)
       post({ action, revision: revisionRef.current, type: 'banner-action' });
   }, []);
+  const reportRibbonLeft = useCallback(() => {
+    if (revisionRef.current !== null)
+      post({ revision: revisionRef.current, type: 'ribbon-focus' });
+  }, []);
   const ribbonHost = useMemo(
-    () => ({ onBannerAction: reportBannerAction, store: ribbon }),
-    [reportBannerAction, ribbon]
+    () => ({
+      onBannerAction: reportBannerAction,
+      onLeave: reportRibbonLeft,
+      store: ribbon,
+    }),
+    [reportBannerAction, reportRibbonLeft, ribbon]
   );
   // The replica's state size once it held the room's document: the image
   // budget counts what the document grew since. An image picked before the
@@ -509,6 +560,7 @@ function OfficeRuntime() {
         revisionRef.current = message.revision;
         zoomSentRef.current = message.zoom;
         epochRef.current = message.collaboration?.epoch ?? null;
+        if (message.ribbon) ribbonRef.current.restore(message.ribbon);
         pausedRef.current = pausedFor(canEditRef.current ?? message.canEdit);
         setReadOnly(pausedRef.current);
         setMode(nextMode);
@@ -558,15 +610,8 @@ function OfficeRuntime() {
         ribbonRef.current.command(message.id)
       )
         return;
-      if (
-        message.type === 'menu-command' &&
-        epochRef.current !== null &&
-        pausedRef.current &&
-        !runsWhilePaused(menuSourceRef.current, message.id)
-      )
-        return;
       if (message.type === 'menu-command') {
-        menuSourceRef.current?.run(message.id, message.value);
+        runCommand(message.id, message.value);
         return;
       }
       if (message.type === 'render' && revisionRef.current !== null) {
@@ -677,7 +722,9 @@ function OfficeRuntime() {
         exporterRef.current &&
         revisionRef.current !== null
       ) {
-        await flush();
+        // A draft's rescue: a flush that can't finish (the editor's view gone
+        // after a render error) doesn't stop it; the exporter says what it can do.
+        await flush().catch(() => {});
         const revision = revisionRef.current;
         if (failScenarioExport) {
           failScenarioExport = false;

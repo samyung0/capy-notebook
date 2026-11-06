@@ -522,14 +522,18 @@ html[data-frosted] .oox-root .bg-doc-surface:has(> .oox-formatting-bar) {
   z-index: 40;
   box-shadow: var(--office-menu-shadow, 0 4px 16px rgba(60, 64, 67, 0.24));
 }
+/* From 768 px of frame up what doesn't fit is in More; the one row scrolls. */
 .office-ribbon__scroll {
   position: relative;
   display: flex;
   flex: 1;
   align-items: stretch;
   min-width: 0;
-  overflow: auto hidden;
+  overflow: hidden;
   scrollbar-width: none;
+}
+.office-ribbon[data-phone] .office-ribbon__scroll {
+  overflow: auto hidden;
 }
 /* Overlays, not a mask: a mask would hide the dropdowns inside the row. */
 .office-ribbon__scroll[data-scroll-start]::before,
@@ -557,16 +561,16 @@ html[data-frosted] .oox-root .bg-doc-surface:has(> .oox-formatting-bar) {
   flex-direction: column;
   padding: 0 2px;
 }
+/* All padding, so a group's box is what it takes of the row (useRowFit). */
 .office-ribbon__group + .office-ribbon__group {
   position: relative;
-  padding-left: 7px;
-  margin-left: 5px;
+  padding-left: 12px;
 }
 .office-ribbon__group + .office-ribbon__group::before {
   position: absolute;
   top: 5px;
   bottom: 19px;
-  left: 0;
+  left: 5px;
   width: 1px;
   content: "";
   background: var(--divider);
@@ -655,6 +659,7 @@ html[data-frosted] .oox-root .bg-doc-surface:has(> .oox-formatting-bar) {
 .office-ribbon__button[aria-expanded="true"] {
   background: var(--surface-card-hover-bg);
 }
+.office-ribbon__button[data-checked],
 .office-ribbon__button[aria-pressed="true"] {
   color: var(--doc-toggle-active-fg);
   background: var(--doc-toggle-active-bg);
@@ -731,12 +736,43 @@ html[data-frosted] .oox-root .bg-doc-surface:has(> .oox-formatting-bar) {
   background: var(--surface-card-hover-bg);
 }
 /* A dropdown's list, as the toolbars' own (--office-menu-*). */
+/* The row an arrow key marked while the focus stays in the document. */
+.office-ribbon [data-active] {
+  outline: 2px solid var(--action-primary-bg);
+  outline-offset: -2px;
+}
+.office-ribbon__more {
+  width: 56px;
+}
+.office-ribbon__more > .office-ribbon__button {
+  width: 100%;
+  min-width: 0;
+}
+/* The groups that moved: each as in the row, its caption over it. */
+.office-ribbon__more-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.office-ribbon__more-list .office-ribbon__group {
+  flex-direction: column-reverse;
+  padding: 0;
+}
+.office-ribbon__more-list .office-ribbon__group::before {
+  display: none;
+}
+.office-ribbon__more-list .office-ribbon__body {
+  justify-content: flex-start;
+  height: auto;
+}
+.office-ribbon__more-list .office-ribbon__caption {
+  text-align: left;
+}
 .office-ribbon__menu {
   position: fixed;
   z-index: 10000;
   box-sizing: border-box;
   min-width: 180px;
-  max-height: calc(100vh - 16px);
   padding: var(--office-menu-padding, 6px);
   overflow-y: auto;
   color: var(--office-menu-text);
@@ -962,14 +998,14 @@ html[data-frosted] .oox-root .bg-doc-surface:has(> .oox-formatting-bar) {
   padding: 0 2px;
 }
 .office-ribbon[data-phone] .office-ribbon__group + .office-ribbon__group {
-  padding-left: 5px;
-  margin-left: 3px;
+  padding-left: 8px;
 }
 .office-ribbon[data-phone]
   .office-ribbon__group
   + .office-ribbon__group::before {
   top: 8px;
   bottom: 8px;
+  left: 3px;
 }
 .office-ribbon[data-phone] .office-ribbon__body {
   gap: 2px;

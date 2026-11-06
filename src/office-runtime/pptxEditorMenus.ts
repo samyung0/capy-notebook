@@ -130,14 +130,19 @@ export function editorMenus(
     {
       id: 'insert',
       items: [
-        command('insert.textBox', t('toolbar.textBoxTool')),
+        toggle('insert.textBox', t('toolbar.textBoxTool')),
         // The ribbon opens the picker, and runs the item with its file.
         command('insert.image', m.files_office_pptx_image(), { pick: 'image' }),
         submenu(
           'shape',
           t('toolbar.shapeTool'),
           SHAPE_PRESETS.map((preset) =>
-            valued('insert.shape', preset.geometry, t(preset.labelKey))
+            valued(
+              'insert.shape',
+              preset.geometry,
+              t(preset.labelKey),
+              state.activeShape ?? ''
+            )
           ),
           'shape'
         ),

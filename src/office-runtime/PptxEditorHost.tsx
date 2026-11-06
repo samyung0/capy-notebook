@@ -166,6 +166,7 @@ export function PptxEditorHost({
     const presentable = commandState.enabled['view.presenterView'];
     onMenus({
       actions: [presentAction(locale, !presentable)],
+      focus: () => apiRef.current?.focus(),
       menus: editorMenus(commandState, locale),
       run: (id, value, file) => {
         const api = apiRef.current;
@@ -296,11 +297,11 @@ export function PptxEditorHost({
         controls={controls}
         layout={PPTX_RIBBON}
         onBannerAction={ribbon.onBannerAction}
-        phone={compact}
+        onLeave={ribbon.onLeave}
         store={ribbon.store}
       />
     ),
-    [compact, ribbon]
+    [ribbon]
   );
   if (!fonts)
     return <PaneLoading message={m.files_office_runtime_loading_editor()} />;

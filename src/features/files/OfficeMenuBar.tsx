@@ -212,7 +212,22 @@ function RibbonTabs({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useHorizontalWheelScroll(ref);
-  const moveFocus = (event: React.KeyboardEvent) => {
+  // The keyboard's way into the frame, where the commands are: Enter, Space,
+  // Down or Tab on a tab, as Office's ribbon. Escape there comes back
+  // (`ribbon-focus`).
+  const enterRibbon = (tab: string) => {
+    if (ribbon.tab !== tab) onCommand(`${OFFICE_RIBBON_COMMANDS.tab}${tab}`);
+    onCommand(OFFICE_RIBBON_COMMANDS.enter);
+    onPicked();
+  };
+  const onTabsKey = (event: React.KeyboardEvent) => {
+    if (event.key === 'ArrowDown' || (event.key === 'Tab' && !event.shiftKey)) {
+      const tab = (event.target as HTMLElement).dataset.tab;
+      if (!tab) return;
+      event.preventDefault();
+      enterRibbon(tab);
+      return;
+    }
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
     const tabs = [
       ...(ref.current?.querySelectorAll<HTMLElement>('[role="tab"]') ?? []),
@@ -221,12 +236,24 @@ function RibbonTabs({
     const step = event.key === 'ArrowRight' ? 1 : -1;
     tabs[(at + step + tabs.length) % tabs.length]?.focus();
   };
+  // The current tab shows; so does a new contextual one, as it appears.
+  const tabCount = ribbon.tabs.length;
+  const lastCount = useRef(tabCount);
+  useEffect(() => {
+    const grew = tabCount > lastCount.current;
+    lastCount.current = tabCount;
+    const tabs = ref.current?.querySelectorAll<HTMLElement>('[role="tab"]');
+    const shown = grew
+      ? tabs?.[tabs.length - 1]
+      : ref.current?.querySelector<HTMLElement>('[aria-selected="true"]');
+    shown?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [ribbon.tab, tabCount]);
   return (
     <div className="flex min-w-0 items-center">
       <div
         aria-label={m.files_office_ribbon_tabs()}
         className="scroll-fade-x flex min-w-0 items-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        onKeyDown={moveFocus}
+        onKeyDown={onTabsKey}
         ref={ref}
         role="tablist"
       >
@@ -242,9 +269,15 @@ function RibbonTabs({
                   ? 'font-bold text-fg after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-action'
                   : 'text-fg-muted'
               )}
+              data-tab={tab.id}
               data-testid={`office-tab-${tab.id}`}
               key={tab.id}
-              onClick={() => {
+              onClick={(event) => {
+                // Enter or Space: the keyboard goes on into the commands.
+                if (event.detail === 0) {
+                  enterRibbon(tab.id);
+                  return;
+                }
                 onCommand(`${OFFICE_RIBBON_COMMANDS.tab}${tab.id}`);
                 onPicked();
               }}

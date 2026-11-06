@@ -15,6 +15,8 @@ import type {
  */
 export interface OfficeMenuSource {
   actions?: OfficeHeaderAction[];
+  /** Puts the keys back in the document, after a ribbon command. */
+  focus?: () => void;
   menus: OfficeMenu[];
   /** `file` comes with a `pick` item, from the ribbon's picker. */
   run: (id: string, value?: string, file?: File) => void;

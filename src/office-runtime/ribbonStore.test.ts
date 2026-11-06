@@ -23,6 +23,8 @@ function open() {
   const onChange = vi.fn();
   const store = createRibbonStore(onChange);
   store.setMenus(menus, null);
+  store.setMounted(true);
+  onChange.mockClear();
   return { onChange, store };
 }
 
@@ -109,4 +111,41 @@ it('runs an item with its file, and draws only a changed banner', () => {
   store.setBanner({ ...banner });
   expect(listener).toHaveBeenCalledTimes(1);
   expect(store.get().banner).toEqual(banner);
+});
+
+it('offers no tab line while the ribbon is not on screen', () => {
+  const { onChange, store } = open();
+  store.setMounted(false);
+  expect(ribbonChrome(store.get())).toBeNull();
+  expect(onChange).toHaveBeenCalledTimes(1);
+});
+
+it('draws nothing for menus reported again unchanged, and keeps the newest runner', () => {
+  const { store } = open();
+  const drawn = vi.fn();
+  store.subscribe(drawn);
+  const run = vi.fn();
+  store.setMenus(structuredClone(menus), run);
+  expect(drawn).not.toHaveBeenCalled();
+  store.run('undo');
+  expect(run).toHaveBeenCalledWith('undo', undefined, undefined);
+});
+
+it('restores a swapped view on its tab and collapse, or Home when the tab is gone', () => {
+  const store = createRibbonStore(vi.fn());
+  store.setMounted(true);
+  store.restore({ collapsed: true, tab: 'insert' });
+  store.setMenus(menus, null);
+  expect(store.get()).toMatchObject({ collapsed: true, tab: 'insert' });
+  const gone = createRibbonStore(vi.fn());
+  gone.restore({ collapsed: false, tab: 'table' });
+  gone.setMenus(menus, null);
+  expect(gone.get().tab).toBe('home');
+});
+
+it('counts the tab line sending the keyboard in, and opens over the page when collapsed', () => {
+  const { store } = open();
+  store.command(OFFICE_RIBBON_COMMANDS.collapse);
+  expect(store.command(OFFICE_RIBBON_COMMANDS.enter)).toBe(true);
+  expect(store.get()).toMatchObject({ focusRequest: 1, over: true });
 });

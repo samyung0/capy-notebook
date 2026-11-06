@@ -262,7 +262,11 @@ export function DocxEditorHost({
     (model: DocxMenuModel | null) => {
       if (model) onZoomChange(model.zoom);
       onMenus(
-        model && { menus: editorMenus(model.menus, locale), run: model.run }
+        model && {
+          focus: () => editorRef.current?.focus(),
+          menus: editorMenus(model.menus, locale),
+          run: model.run,
+        }
       );
     },
     [locale, onMenus, onZoomChange]
@@ -274,11 +278,11 @@ export function DocxEditorHost({
         controls={controls}
         layout={DOCX_RIBBON}
         onBannerAction={ribbon.onBannerAction}
-        phone={compact}
+        onLeave={ribbon.onLeave}
         store={ribbon.store}
       />
     ),
-    [compact, ribbon]
+    [ribbon]
   );
   return (
     <div className="office-editor-host" ref={hostRef}>
