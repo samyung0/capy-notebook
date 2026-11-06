@@ -1507,10 +1507,7 @@ Two content security policies, both built once per SPA build by
 - **Scripts, enforced on the Worker's pages.** The share, summary and error
   pages the site Worker renders are also sent with an enforced
   `Content-Security-Policy` (`pagePolicy`):
-  - `script-src` names only `'self'`, Clerk's packages on its frontend API
-    (`https://{host}/npm/@clerk/`, the host decoded from
-    `VITE_CLERK_PUBLISHABLE_KEY`, and a key that names no plain host fails the
-    build; shared quizzes and flashcard sets load clerk-js from it) and this
+  - `script-src` names only `'self'` and this
     PostHog project's script assets (`/static/` and
     `/array/{VITE_POSTHOG_KEY}/config.js` on the host posthog-js loads them
     from, `src/lib/posthogHost.ts`: `https://{eu|us}-assets.i.posthog.com` for
@@ -1528,7 +1525,9 @@ Two content security policies, both built once per SPA build by
     (`src/lib/zodJitless.ts`), so Zod never probes `new Function` (the summary
     and error pages' script builds no schema);
   - `script-src-attr 'none'` (no event-handler attributes),
-    `worker-src 'self' blob:` (clerk-js's timer worker),
+    `worker-src 'self' blob:` (only clerk-js's timer worker was known to need
+    `blob:`; the pages run clean without it locally, and it stays for PostHog's
+    lazy extensions, which only a deployed page can check),
     `style-src 'self' 'unsafe-inline'` (the Worker inlines the page's CSS;
     MathLive and Mermaid write style attributes),
     `frame-src` `VITE_EMBED_ORIGIN` and `https://www.youtube-nocookie.com`,
@@ -1538,7 +1537,10 @@ Two content security policies, both built once per SPA build by
     embed a shared quiz or note;
 
   The SPA gets the same `script-src` report-only, inside its image header,
-  plus `https://challenges.cloudflare.com` (Clerk's Turnstile on sign-up) and
+  plus Clerk's packages on its frontend API (`https://{host}/npm/@clerk/`, the
+  host decoded from `VITE_CLERK_PUBLISHABLE_KEY`, and a key that names no plain
+  host fails the build; no page the Worker renders loads Clerk, Epo 2026-11-06,
+  Q668), `https://challenges.cloudflare.com` (Clerk's Turnstile on sign-up) and
   `https://apis.google.com` (the Drive picker), to learn what the app itself
   would need before anything there is enforced.
 

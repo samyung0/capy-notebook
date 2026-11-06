@@ -250,8 +250,8 @@ into `<script id="share-state">`, and the page's script (`share.html`, `src/shar
 again. A quiz or flashcard set hydrates whole (`StudyPage.tsx`, the same tree on both sides, in English). Nothing on these pages counts, signed in or out, and they read no session (Epo 2026-11-05, Q640 B; 2026-11-06, Q663 A):
 a quiz's check takes the share route, which marks what has one right answer and leaves an answered open part Not marked
 with its marking points and worked solution to compare, with no AI marking and no self-marking, and the browser keeps
-the try; a card's rating runs ts-fsrs here and stays in this browser. Clerk loads after hydration without its UI
-bundle (`prefetchUI={false}`), only so analytics knows a signed-in visitor (`src/share/ShareAuth.tsx`). Under MSW the dev
+the try; a card's rating runs ts-fsrs here and stays in this browser. No page the Worker renders loads Clerk (Epo
+2026-11-06, Q668), so nothing there identifies a visitor to analytics. Under MSW the dev
 server signs the mocks' placeholder links and answers the Worker's API reads from the MSW handlers
 (`src/summary/vite.ts`). The pages drop the label
 above the title; the owner (`author`: name and avatar, on the public reads and on the single quiz and
@@ -278,7 +278,7 @@ written cards only); they render in place (`src/share/PublicEmbed.tsx`) and are 
 script receives. The note's asset route also serves an image one of those embeds shows, owned by that embed.
 Every visitor checks an embedded quiz one question at a time (`questionId` in, the graded question out) at
 `POST /api/public/notes/{token}/quizzes/{quizId}/grade`, which marks as the quiz's check does, stores nothing, and
-returns 404 for any quiz the note does not embed and reference. A note page loads no Clerk.
+returns 404 for any quiz the note does not embed and reference.
 Embedded quizzes and flashcard sets are named by a random UUID that is never displayed, and they are left out of
 every materials listing, Explore, search and the workspace quiz count.
 

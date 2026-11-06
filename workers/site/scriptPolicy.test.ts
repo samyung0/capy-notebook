@@ -104,7 +104,7 @@ const answer = (data: unknown) =>
 // pages the site Worker renders run scripts only from the app and named
 // hosts, never inline or from an attribute, and only the app frames them.
 describe('enforced script policy', () => {
-  it('names the app, Clerk and this PostHog project for scripts, and only embed and YouTube frames', () => {
+  it('names the app and this PostHog project for scripts, and only embed and YouTube frames', () => {
     expect(directives(pagePolicy(DEPLOYED))).toEqual({
       'base-uri': ["'none'"],
       'form-action': ["'self'"],
@@ -117,7 +117,6 @@ describe('enforced script policy', () => {
       'report-uri': [REPORT],
       'script-src': [
         "'self'",
-        'https://clerk.uat.capynotebook.com/npm/@clerk/',
         'https://eu-assets.i.posthog.com/static/',
         'https://eu-assets.i.posthog.com/array/phc_project/config.js',
       ],
@@ -125,7 +124,7 @@ describe('enforced script policy', () => {
       'style-src': ["'self'", "'unsafe-inline'"],
       'worker-src': ["'self'", 'blob:'],
     });
-    // A local build without Clerk or PostHog runs scripts from the app only.
+    // A local build without PostHog runs scripts from the app only.
     expect(directives(pagePolicy({}))['script-src']).toEqual(["'self'"]);
     expect(locked(PAGE_POLICY)).toEqual(LOCKED);
   });
@@ -133,7 +132,7 @@ describe('enforced script policy', () => {
   it('fails the build when the Clerk key names no plain host', () => {
     for (const host of ['clerk.example.com/x', 'clerk example', 'a;b'])
       expect(() =>
-        pagePolicy({
+        appPolicy({
           VITE_CLERK_PUBLISHABLE_KEY: `pk_test_${btoa(`${host}$`)}`,
         })
       ).toThrow('VITE_CLERK_PUBLISHABLE_KEY');
@@ -212,11 +211,12 @@ describe('enforced script policy', () => {
 });
 
 describe('the SPA script report', () => {
-  it('reports scripts beyond the share pages’ sources and the app’s own two hosts', () => {
+  it('reports scripts beyond the share pages’ sources and the app’s own hosts', () => {
     const found = directives(appPolicy(DEPLOYED));
     expect(found['img-src']).toContain("'self'");
     expect(found['script-src']).toEqual([
       ...directives(pagePolicy(DEPLOYED))['script-src'],
+      'https://clerk.uat.capynotebook.com/npm/@clerk/',
       'https://challenges.cloudflare.com',
       'https://apis.google.com',
     ]);
