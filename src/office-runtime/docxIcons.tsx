@@ -1,15 +1,15 @@
 import type { IconSet } from '@betteroffice/docx-react';
 import type { ComponentProps } from 'react';
-import { officeIconSize } from './officeIconSize';
 import {
   borderColorSwatch,
   fillSwatch,
   highlightSwatch,
-  TablerIcon,
   tableCellsMerge,
   tableCellsSplit,
   textColorSwatch,
-} from './TablerIcon';
+} from './capyGlyphs';
+import { officeIconSize } from './officeIconSize';
+import { TablerIcon } from './TablerIcon';
 import {
   adjustmentsHorizontal,
   alertTriangle,

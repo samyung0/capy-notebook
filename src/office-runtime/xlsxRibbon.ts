@@ -1,6 +1,6 @@
 import { m } from '@/i18n';
+import { tableCellsMerge } from './capyGlyphs';
 import { icon, type RibbonLayout, row } from './ribbonLayout';
-import { tableCellsMerge } from './TablerIcon';
 import {
   alignCenter,
   alignLeft,

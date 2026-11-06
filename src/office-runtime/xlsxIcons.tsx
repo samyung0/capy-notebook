@@ -1,14 +1,14 @@
 import type { IconSet } from '@betteroffice/xlsx-react';
 import type { ComponentProps } from 'react';
-import { officeIconSize } from './officeIconSize';
 import {
   decimalDecrease,
   decimalIncrease,
   fillSwatch,
-  TablerIcon,
   tableCellsMerge,
   textColorSwatch,
-} from './TablerIcon';
+} from './capyGlyphs';
+import { officeIconSize } from './officeIconSize';
+import { TablerIcon } from './TablerIcon';
 import {
   alignCenter,
   alignLeft,

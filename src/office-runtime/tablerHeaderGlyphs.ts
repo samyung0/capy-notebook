@@ -1,6 +1,7 @@
 /**
- * The Tabler glyphs Capy's own header draws (tablerGlyphs.ts says where they come
- * from). Their own module, so the app holds these and the frame's editors the rest.
+ * The Tabler glyphs Capy's own header draws and TablerIcon needs (tablerGlyphs.ts
+ * says where they come from). Their own module, so the app holds these and the
+ * frame's editors the rest.
  */
 export const arrowBackUp = [
   'M9 14l-4 -4l4 -4',
@@ -11,3 +12,4 @@ export const arrowForwardUp = [
   'M19 10h-11a4 4 0 1 0 0 8h1',
 ] as const;
 export const chevronDown = ['M6 9l6 6l6 -6'] as const;
+export const chevronUp = ['M6 15l6 -6l6 6'] as const;

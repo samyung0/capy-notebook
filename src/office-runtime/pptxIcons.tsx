@@ -1,13 +1,13 @@
 import type { IconSet } from '@betteroffice/pptx-react';
 import type { ComponentProps } from 'react';
-import { officeIconSize } from './officeIconSize';
 import {
   borderColorSwatch,
   fillSwatch,
   highlightSwatch,
-  TablerIcon,
   textColorSwatch,
-} from './TablerIcon';
+} from './capyGlyphs';
+import { officeIconSize } from './officeIconSize';
+import { TablerIcon } from './TablerIcon';
 import {
   alignCenter,
   alignJustified,

@@ -6,7 +6,12 @@
  * Copied from the package's SVGs, not imported: it has nothing else the
  * runtime needs.
  */
-export { arrowBackUp, arrowForwardUp, chevronDown } from './tablerHeaderGlyphs';
+export {
+  arrowBackUp,
+  arrowForwardUp,
+  chevronDown,
+  chevronUp,
+} from './tablerHeaderGlyphs';
 
 export const adjustmentsHorizontal = [
   'M12 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0',
@@ -293,7 +298,6 @@ export const check = ['M5 12l5 5l10 -10'] as const;
 export const checks = ['M7 12l5 5l10 -10', 'M2 12l5 5m5 -5l5 -5'] as const;
 export const chevronLeft = ['M15 6l-6 6l6 6'] as const;
 export const chevronRight = ['M9 6l6 6l-6 6'] as const;
-export const chevronUp = ['M6 15l6 -6l6 6'] as const;
 export const circleCheck = [
   'M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0',
   'M9 12l2 2l4 -4',
