@@ -490,6 +490,7 @@ export function QuestionPane({
   canMoveUp,
   context,
   number,
+  opening,
   onMove,
   onRemove,
   question,
@@ -498,6 +499,9 @@ export function QuestionPane({
   uploadAsset,
   write,
 }: {
+  /** Painted before its keys come: nothing to warn about yet. */
+  opening?: boolean;
+
   canMoveDown: boolean;
   canMoveUp: boolean;
   context: string;
@@ -666,7 +670,9 @@ export function QuestionPane({
           </ToolbarPopoverContent>
         </Popover>
       </div>
-      <IssueSummary messages={issueMessages(questionIssues(question))} />
+      {!opening && (
+        <IssueSummary messages={issueMessages(questionIssues(question))} />
+      )}
       {blocks(question.stem, {}, m.question_ui_question_placeholder())}
       {questionItems(question).map((item) =>
         item.kind === 'part' ? (

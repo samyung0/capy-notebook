@@ -448,3 +448,30 @@ test('an embed that was never near opens one room, which the editor then shares'
   await page.waitForTimeout(1500);
   expect(quiz()).toHaveLength(2);
 });
+
+test('an image the editor showed appears in Preview with no second ask, offline too', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(`/workspaces/ws_bio?material=${MATRIX}`);
+  await expect(editable(page)).toBeVisible({ timeout: 30_000 });
+  const image = page.locator('[data-note-mount="live"] img[src]').first();
+  await image.scrollIntoViewIfNeeded({ timeout: 30_000 });
+  await expect(image).toBeVisible({ timeout: 30_000 });
+  const asks: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.includes('/editor-assets/'))
+      asks.push(request.url());
+  });
+  await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    const { setCollaborationReachable } = await import(path);
+    setCollaborationReachable(false);
+  });
+  await page.context().setOffline(true);
+  await pressPreview(page);
+  await expect(preview(page).locator('img[src]').first()).toBeVisible({
+    timeout: 30_000,
+  });
+  expect(asks).toEqual([]);
+});

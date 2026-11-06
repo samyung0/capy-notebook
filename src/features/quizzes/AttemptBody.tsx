@@ -10,15 +10,24 @@ import { isNoAnswersError } from '@/api/client';
 import type { Provenance, Question } from '@/api/types';
 import { TabContent } from '@/components/app/tabPanel';
 import { Button } from '@/components/ui/Button';
+import { Icon } from '@/components/ui/Icon';
+import { IconButton } from '@/components/ui/IconButton';
 import { userToast } from '@/components/ui/userToast';
-import { SourcesLine } from '@/features/materials/MaterialAttributionFooter';
-import type { LearnerQuestion } from '@/features/questions/types';
+import {
+  QuestionCreditNote,
+  SourcesLine,
+} from '@/features/materials/MaterialAttributionFooter';
+import {
+  type LearnerQuestion,
+  questionMarks,
+} from '@/features/questions/types';
 import { attemptMinutes } from '@/features/study/attempts';
 import { m } from '@/i18n';
 import { scoreBucket, track } from '@/lib/analytics';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
 import { type Answer, runScore } from './grade';
+import { QuestionRunner } from './QuestionRunner';
 import { QuizQuestionList, QuizScore, quizMeta } from './QuizPage';
 import {
   type Crumb,
@@ -26,6 +35,7 @@ import {
   NoFrame,
   QuizPageHeader,
 } from './QuizPageHeader';
+import { QuizSplit, useQuizPick } from './QuizSplit';
 import type { QuizRunControl } from './quizRun';
 import { ResetButton } from './ResetButton';
 import { keptAnswers, partsById } from './stillAnswers';
@@ -40,6 +50,55 @@ const NoAnswersLine = () => (
     {m.quiz_no_answers_configured()}
   </p>
 );
+
+/** A checked question's mark in the list. */
+function RowResult({ question }: { question: Question | undefined }) {
+  const parts = question?.parts ?? [];
+  const awarded = parts.reduce((sum, part) => sum + (part.awarded ?? 0), 0);
+  const marks = parts.reduce((sum, part) => sum + part.marks, 0);
+  if (parts.some((part) => part.pending))
+    return <Icon name="clock" size={18} />;
+  return awarded >= marks ? (
+    <Icon className="text-tint-success-fg" name="check" size={18} />
+  ) : awarded > 0 ? (
+    <Icon className="text-tint-warning-fg" name="minus" size={18} />
+  ) : (
+    <Icon className="text-tint-error-fg" name="x" size={18} />
+  );
+}
+
+/** The app's study page header: one row, as a file's in the workspace. */
+function StudyHeader({
+  actions,
+  meta,
+  onBack,
+  title,
+}: {
+  actions: ReactNode;
+  meta: string;
+  onBack?: () => void;
+  title: string;
+}) {
+  return (
+    <header className="flex min-h-15 flex-wrap items-center gap-x-3 gap-y-1 border-divider border-b px-4 py-2.5 sm:px-5">
+      {onBack && (
+        <IconButton
+          className="-ml-1.5 rounded-input p-1.5"
+          icon="navigationBack"
+          label={m.action_back()}
+          onClick={onBack}
+          size="sm"
+          variant="ghost-hover"
+        />
+      )}
+      <h1 className="min-w-0 truncate font-bold">{title}</h1>
+      <p className="t-meta shrink-0 text-fg-muted">{meta}</p>
+      <div className="ml-auto flex shrink-0 items-center gap-2 empty:hidden">
+        {actions}
+      </div>
+    </header>
+  );
+}
 
 const EmbeddedBody = ({ children }: { children: ReactNode }) => (
   <div>{children}</div>
@@ -93,6 +152,13 @@ export function AttemptBody({
   trail: Crumb[];
 }) {
   const Shell = frame ?? NoFrame;
+  // The app's page takes one question at a time beside the list (Epo 2026-11-06,
+  // S1); public pages and notes keep the whole quiz in one column.
+  const split = inApp && !embedded;
+  const { onQuestion, open, picked, setOnQuestion, setPicked } = useQuizPick(
+    undefined,
+    true
+  );
   const Body = embedded ? EmbeddedBody : WideBody;
   const { run, check, redo } = control;
   // Answers typed into questions not yet checked; a checked question shows
@@ -139,6 +205,8 @@ export function AttemptBody({
     if (!finished || !finishedByCheck.current) return;
     finishedByCheck.current = false;
     setCelebrate(true);
+    setPicked(null);
+    setOnQuestion(true);
     const pct = max > 0 ? (awarded / max) * 100 : 0;
     track('quiz_attempt_finished', { scoreBucket: scoreBucket(pct) });
   }, [finished, awarded, max]);
@@ -146,6 +214,7 @@ export function AttemptBody({
   function restart() {
     setDrafts({});
     setCelebrate(false);
+    setPicked(null);
     redo();
   }
 
@@ -219,6 +288,201 @@ export function AttemptBody({
   }
 
   const answers = { ...drafts, ...run.answers };
+
+  if (split) {
+    const checkedMarks = answerable
+      .filter((q) => checkedById.has(q.id))
+      .reduce((sum, q) => sum + questionMarks(q), 0);
+    // A try picked up again opens at the first question it hasn't checked.
+    const firstOpen = answerable.find((q) => !checkedById.has(q.id));
+    const showResult = finished && !picked;
+    const currentId = showResult ? undefined : (picked ?? firstOpen?.id);
+    const index = Math.max(
+      0,
+      shown.findIndex((q) => q.id === currentId)
+    );
+    const question = shown[index];
+    const checked = checkedById.has(question.id);
+    const left = noAnswers.has(question.id);
+    const recheck =
+      checked &&
+      !neverMarks &&
+      checkedById.get(question.id)?.parts.some((p) => p.pending);
+    const next = shown[index + 1];
+    return (
+      <Shell
+        header={
+          <StudyHeader
+            actions={
+              <>
+                {actions}
+                {run.checked.length > 0 && !finished && (
+                  <ResetButton disabled={checking !== null} onClick={restart} />
+                )}
+              </>
+            }
+            meta={
+              checkedCount > 0
+                ? m.quiz_study_progress({
+                    awarded,
+                    checked: checkedCount,
+                    marks: checkedMarks,
+                    total: answerable.length,
+                  })
+                : quizMeta(answerable)
+            }
+            onBack={onBack}
+            title={name}
+          />
+        }
+      >
+        <QuizSplit
+          above={
+            finished && (
+              <button
+                aria-current={showResult || undefined}
+                className={cn(
+                  'flex min-h-9 w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2 py-1 text-left font-semibold text-[13.5px] outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action',
+                  showResult && 'bg-page-hover hover:bg-page-hover'
+                )}
+                onClick={() => {
+                  setPicked(null);
+                  setOnQuestion(true);
+                }}
+                type="button"
+              >
+                {m.quiz_study_result()}
+                <span className="text-fg-muted text-xs">{`${awarded}/${max}`}</span>
+              </button>
+            )
+          }
+          current={currentId}
+          foot={<SourcesLine className="pb-4" provenance={provenance} />}
+          onBack={() => setOnQuestion(false)}
+          onOpen={open}
+          onQuestion={onQuestion}
+          questions={shown}
+          rowEnd={(q) =>
+            checkedById.has(q.id) ? (
+              <RowResult question={checkedById.get(q.id)} />
+            ) : (
+              questionMarks(q)
+            )
+          }
+        >
+          {showResult ? (
+            <div className="mx-auto grid max-w-205 gap-8 px-4 py-6 sm:px-10">
+              <QuizScore
+                awarded={awarded}
+                confetti={celebrate}
+                leftOut={noAnswers}
+                max={max}
+                minutes={
+                  run.takenAt
+                    ? attemptMinutes({
+                        startedAt: run.startedAt,
+                        takenAt: run.takenAt,
+                      })
+                    : undefined
+                }
+                onOpen={open}
+                questions={shown as Question[]}
+              />
+              <div className="flex justify-end">
+                <Button
+                  className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
+                  iconLeft="refresh"
+                  onClick={restart}
+                  rounded="normal"
+                  size="sm"
+                  variant="outline"
+                >
+                  {m.quiz_redo()}
+                </Button>
+              </div>
+              {footer}
+            </div>
+          ) : (
+            <div
+              className="mx-auto grid max-w-205 gap-4 px-4 py-6 sm:px-10"
+              data-question-id={question.id}
+              key={question.id}
+            >
+              <QuestionRunner
+                answers={answers}
+                disabled={checking === question.id || left}
+                onChange={setAnswer}
+                question={question}
+                questionNumber={index + 1}
+                review={checked && !left}
+              />
+              <QuestionCreditNote
+                credit={provenance?.questions?.[question.id]}
+              />
+              {left && <NoAnswersLine />}
+              <div className="flex items-center justify-between gap-2">
+                {index > 0 ? (
+                  <Button
+                    className="h-9 px-3.5"
+                    onClick={() => open(shown[index - 1].id)}
+                    rounded="normal"
+                    size="sm"
+                    variant="outline"
+                  >
+                    {m.action_previous()}
+                  </Button>
+                ) : (
+                  <span />
+                )}
+                <div className="flex gap-2">
+                  {!left && (!checked || recheck) && (
+                    <Button
+                      className="h-9 px-3.5"
+                      disabled={checking !== null}
+                      onClick={() => {
+                        // It stays open, showing its result.
+                        setPicked(question.id);
+                        void checkQuestion(question);
+                      }}
+                      rounded="normal"
+                      size="sm"
+                      variant={recheck ? 'outline' : undefined}
+                    >
+                      {checking === question.id
+                        ? m.quiz_grading()
+                        : checked
+                          ? m.question_ui_check_again()
+                          : m.question_ui_check()}
+                    </Button>
+                  )}
+                  {(checked || left) && next && (
+                    <Button
+                      className="h-9 px-3.5"
+                      onClick={() => open(next.id)}
+                      rounded="normal"
+                      size="sm"
+                    >
+                      {m.action_next()}
+                    </Button>
+                  )}
+                  {(checked || left) && !next && finished && (
+                    <Button
+                      className="h-9 px-3.5"
+                      onClick={() => setPicked(null)}
+                      rounded="normal"
+                      size="sm"
+                    >
+                      {m.quiz_study_see_result()}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </QuizSplit>
+      </Shell>
+    );
+  }
 
   if (finished) {
     return (

@@ -20,6 +20,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { isApiError, isMaterialContentUnreadable, qk } from '@/api/client';
 import {
   useFile,
@@ -84,8 +85,7 @@ import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import type { LearnerQuestion } from '@/features/questions/types';
 import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
-import { QuizEditor } from '@/features/quizzes/QuizEditor';
-import { QuizQuestionList } from '@/features/quizzes/QuizPage';
+import { QuizEditor, QuizReadSplit } from '@/features/quizzes/QuizEditor';
 import {
   OfflineStatus,
   WorkspaceStatusButton,
@@ -873,12 +873,7 @@ function QuizPreview({
   title: string;
 }) {
   const overBar = useContext(FloatingBarContext);
-  useEffect(() => {
-    if (!target) return;
-    document
-      .querySelector(`[data-question-id="${CSS.escape(target)}"]`)
-      ?.scrollIntoView({ block: 'start' });
-  }, [target]);
+  const headerActions = useContext(FileActionsTarget);
   // Someone gone from editing to viewing keeps no answers on this device.
   useEffect(() => {
     void dropDeviceCopies(quizId, 'keys');
@@ -886,17 +881,25 @@ function QuizPreview({
   // The stored questions paint first; the live room follows (live-items).
   const questions = useLiveQuizQuestions(quizId, storedQuestions(content));
   return (
-    <TabContent fill>
-      <div className="mb-7 flex items-center gap-4">
-        <h1 className="t-large-card-title min-w-0 flex-1">{title}</h1>
-        <StudyButton kind="quiz" materialId={quizId} />
-      </div>
-      <QuizQuestionList disabled questions={questions} />
-      <SourcesLine
-        className={cn('mt-16 pb-4', overBar && 'pb-20')}
-        provenance={provenance}
+    <>
+      {/* The header names it for the eye; the page's one h1 stays its title. */}
+      <h1 className="sr-only">{title}</h1>
+      {headerActions &&
+        createPortal(
+          <StudyButton kind="quiz" materialId={quizId} />,
+          headerActions
+        )}
+      <QuizReadSplit
+        questions={questions}
+        sources={
+          <SourcesLine
+            className={cn('pb-4', overBar && 'pb-20')}
+            provenance={provenance}
+          />
+        }
+        target={target}
       />
-    </TabContent>
+    </>
   );
 }
 

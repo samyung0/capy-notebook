@@ -17,6 +17,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { mediaWidth } from './document';
 import { MediaFrame } from './MediaFrame';
+import { assetLink, heldAssetLink } from './resolvedAssetLinks';
 
 // Loaded when used: the authenticated resolve (with the app's query client
 // behind it) only where no AssetUrlContext answers, which is never on a shared
@@ -87,8 +88,20 @@ export function useRemovedAssets(
   );
 }
 
+const assetReady = (asset: Awaited<ReturnType<typeof assetLink>>) =>
+  ({
+    contentType: asset.contentType,
+    materialId: asset.materialId,
+    name: asset.name,
+    status: 'ready',
+    url: asset.url,
+  }) as const;
+
 export function useResolvedAsset(assetId: string | undefined) {
-  const [state, setState] = useState<AssetState>({ status: 'loading' });
+  const [state, setState] = useState<AssetState>(() => {
+    const held = assetId && heldAssetLink(assetId);
+    return held ? assetReady(held) : { status: 'loading' };
+  });
   const [generation, setGeneration] = useState(0);
   const resolveUrl = useContext(AssetUrlContext);
   const override = assetId ? resolveUrl?.(assetId) : undefined;
@@ -103,17 +116,11 @@ export function useResolvedAsset(assetId: string | undefined) {
       setState({ kind: 'missing', status: 'error' });
       return () => controller.abort();
     }
-    setState({ status: 'loading' });
-    void resolveEditorAsset(assetId, controller.signal)
-      .then((asset) => {
-        setState({
-          contentType: asset.contentType,
-          materialId: asset.materialId,
-          name: asset.name,
-          status: 'ready',
-          url: asset.url,
-        });
-      })
+    const again = generation > 0;
+    const held = again ? undefined : heldAssetLink(assetId);
+    setState(held ? assetReady(held) : { status: 'loading' });
+    void assetLink(assetId, controller.signal, again)
+      .then((asset) => setState(assetReady(asset)))
       .catch(() => {
         if (!controller.signal.aborted) {
           setState({

@@ -34,6 +34,7 @@ import {
   emptyAnswer,
 } from '@/features/quizzes/grade';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
+import { QuizSplit } from '@/features/quizzes/QuizSplit';
 import { keptAnswers, partsById } from '@/features/quizzes/stillAnswers';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -143,6 +144,7 @@ export function AssignmentTake({
   const qc = useQueryClient();
   const questions = attempt.questions as LearnerQuestion[];
   const [wantedIndex, setIndex] = useState(0);
+  const [onQuestion, setOnQuestion] = useState(true);
   // New questions can be fewer: the last one stands in.
   const index = Math.min(wantedIndex, Math.max(questions.length - 1, 0));
   const [answers, setAnswers] = useState<Answers>(attempt.answers);
@@ -344,76 +346,45 @@ export function AssignmentTake({
             </Button>
           </div>
         </header>
-        <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-          <nav
-            aria-label={m.assignment_questions_nav()}
-            className="shrink-0 border-divider max-md:border-b md:w-50 md:overflow-auto md:border-r md:px-4 md:py-5"
-          >
-            <div className="max-md:hidden">
-              <p className="t-label text-fg-muted uppercase">
-                {m.practice_col_questions()}
-              </p>
-              <p className="t-meta mt-1.5 text-fg-secondary">
-                {m.assignment_answered_of({
-                  answered: answeredCount,
-                  total: questions.length,
-                })}
-              </p>
-            </div>
-            <ol className="flex gap-2 overflow-x-auto px-4 py-2.5 [scrollbar-width:none] md:mt-3 md:grid md:grid-cols-4 md:overflow-visible md:p-0">
-              {questions.map((q, i) => {
-                const current = i === index;
-                const done = isAnswered(q);
-                const marked = bookmarks.includes(q.id);
-                return (
-                  <li className="shrink-0" key={q.id}>
-                    <button
-                      aria-current={current ? 'step' : undefined}
-                      aria-label={m.assignment_question_n({ number: i + 1 })}
-                      className={cn(
-                        'relative grid size-9 place-items-center rounded-[10px] border font-semibold outline-none focus-visible:ring-2 focus-visible:ring-action',
-                        done
-                          ? 'border-transparent bg-tint-accent-1 text-tint-accent-1-fg'
-                          : 'border-line text-fg',
-                        current && 'border-2 border-solid-accent-1'
-                      )}
-                      onClick={() => go(i)}
-                      type="button"
-                    >
-                      {i + 1}
-                      {marked && (
-                        <Icon
-                          className="absolute top-0 right-0.5 text-solid-accent-1"
-                          name="bookmark"
-                          size={11}
-                        />
-                      )}
-                    </button>
-                  </li>
-                );
+        <QuizSplit
+          above={
+            <p className="t-meta px-1.5 pb-1.5 text-fg-secondary">
+              {m.assignment_answered_of({
+                answered: answeredCount,
+                total: questions.length,
               })}
-            </ol>
-            <ul className="t-meta mt-3.5 flex flex-col gap-2 text-fg-secondary max-md:hidden">
-              <Legend className="bg-tint-accent-1">
-                {m.assignment_legend_answered()}
-              </Legend>
-              <Legend className="border-2 border-solid-accent-1">
-                {m.assignment_legend_current()}
-              </Legend>
-              <li className="flex items-center gap-2">
+            </p>
+          }
+          current={question?.id}
+          onBack={() => setOnQuestion(false)}
+          onOpen={(id) => {
+            go(questions.findIndex((q) => q.id === id));
+            setOnQuestion(true);
+          }}
+          onQuestion={onQuestion}
+          questions={questions}
+          rowEnd={(q) => (
+            <>
+              {bookmarks.includes(q.id) && (
                 <Icon
                   className="text-solid-accent-1"
                   name="bookmark"
-                  size={14}
+                  size={18}
                 />
-                {m.assignment_legend_bookmarked()}
-              </li>
-              <Legend className="border border-line">
-                {m.assignment_legend_not_answered()}
-              </Legend>
-            </ul>
-          </nav>
-          <div className="min-h-0 flex-1 overflow-auto px-4 pt-6 pb-24 sm:px-6 lg:px-21.5 lg:pt-12 lg:pb-10">
+              )}
+              {isAnswered(q) ? (
+                <Icon
+                  className="text-tint-accent-1-fg"
+                  name="check"
+                  size={18}
+                />
+              ) : (
+                questionMarks(q)
+              )}
+            </>
+          )}
+        >
+          <div className="px-4 pt-6 pb-24 sm:px-6 lg:px-21.5 lg:pt-12 lg:pb-10">
             {question && (
               <div
                 className="motion-safe:motion-text-in mx-auto flex w-full max-w-180 flex-col gap-3"
@@ -472,7 +443,7 @@ export function AssignmentTake({
               </div>
             )}
           </div>
-        </div>
+        </QuizSplit>
       </div>
       {confirming && (
         <Dialog
@@ -522,20 +493,5 @@ export function AssignmentTake({
         </Dialog>
       )}
     </RemovedAssetsContext.Provider>
-  );
-}
-
-function Legend({
-  children,
-  className,
-}: {
-  children: string;
-  className: string;
-}) {
-  return (
-    <li className="flex items-center gap-2">
-      <span aria-hidden className={cn('size-3.5 rounded-xs', className)} />
-      {children}
-    </li>
   );
 }
