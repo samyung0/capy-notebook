@@ -201,8 +201,25 @@ plus `DRAWN_SECTION`; open-answer calls are unchanged. A drawing's quotes are no
 checked against text and it gets no copy check. A part left Not marked keeps its
 image so Check again (practice) or Mark with AI (assignments) can give it its one
 marking later; the image goes once that marking lands (`DropDrawingImages`),
-before any approval. The grading slot's model must read images; the slot check
-doesn't enforce it yet (M4, open).
+before any approval. The grading slot requires `vision` (M4, Epo 2026-11-07,
+`models.slotRequirements`).
+
+A quiz's drawing part may hold a drawn sample answer (Q3): `answer.sample:
+{board, image}`, two of the quiz's editor assets, the board gzipped under the
+`board` purpose (migration 0158, a drawing's 250 KB cap, kept out of Files ›
+Embeds) and the image an ordinary quiz image. The bank refuses it. The live
+quiz keeps it with the keys (`sampleBoard`, `sampleImage`), and it counts,
+copies and freezes with the quiz's other assets; a copy missing either asset
+drops it whole. Authors draw it from "Sample answer (optional)" under the
+marking scheme in the quiz editor and the question dialog (`DrawnSampleField`,
+A1–A3); results show it drawn from its board, and marking sends its image
+before the student's drawing.
+
+In an assignment, Done on an emptied board deletes the part's stored drawing
+(`DELETE /api/assignment-attempts/{id}/drawings/{partId}`), so it is neither
+submitted nor charged. A board still being drawn on the device belongs to the
+signed-in account: `claimAccountData` deletes another account's drafts, and
+everyone's on sign-out.
 
 A checked model-marked part (open or drawing) shows its marking scheme in the
 open, each point with a tick, a dash or a cross and its marks, then its sample
