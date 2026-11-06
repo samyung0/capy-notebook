@@ -80,6 +80,8 @@ const snap = (gfx: GfxController, e: PointerEventState) =>
 
 const INK = '#000000';
 const DOT = 10;
+/** A brush this wide draws as thick as a 2 px shape outline or connector. */
+const CURVE_WIDTH = 1.5;
 const PREVIEW = '#1e96eb';
 
 function addDot(gfx: GfxController, [x, y]: Vec) {
@@ -187,7 +189,7 @@ export class PlotTool extends BaseTool<{ plot: Plot }> {
     if (placed.length < 2) return;
     const brush = this.gfx.surface?.addElement({
       color: DefaultTheme.black,
-      lineWidth: 3,
+      lineWidth: CURVE_WIDTH,
       points: smoothThrough(placed).map(([x, y]) => [x, y, 0.5]),
       type: 'brush',
     });
@@ -214,7 +216,7 @@ export class PlotTool extends BaseTool<{ plot: Plot }> {
         .map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`)
         .join('');
       parts.push(
-        `<path d="${path}" fill="none" stroke="${INK}" stroke-width="3" stroke-linecap="round"/>`
+        `<path d="${path}" fill="none" stroke="${INK}" stroke-width="2" stroke-linecap="round"/>`
       );
     }
     layer.innerHTML = parts.join('');
