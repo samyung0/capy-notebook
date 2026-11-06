@@ -1,14 +1,12 @@
 /**
  * `$…$` and `$$…$$` in chat prose, rendered with KaTeX (the export's renderer
- * and stylesheet). remark-math parses the math; `rehypeChatMath` turns each
- * formula into a `span[data-math]` that `MathSpan` draws, loading KaTeX on
- * the first formula. A formula KaTeX cannot read (half-streamed, or invalid)
- * shows its source.
+ * and stylesheet). remark-math parses the math; `rehypeChatMath` (proseBody)
+ * turns each formula into a `span[data-math]` that `MathSpan` draws, loading
+ * KaTeX on the first formula. A formula KaTeX cannot read (half-streamed, or
+ * invalid) shows its source.
  */
 
 import { type ComponentProps, useEffect, useMemo, useState } from 'react';
-import remarkMath from 'remark-math';
-import type { MathPlugin } from 'streamdown';
 
 type Katex = typeof import('katex').default;
 
@@ -85,59 +83,6 @@ function escapeSingles(part: string): string {
     out = `${out.slice(0, index)}\\${out.slice(index)}`;
   return out;
 }
-
-interface HastNode {
-  children?: HastNode[];
-  properties?: Record<string, unknown>;
-  tagName?: string;
-  type: string;
-  value?: string;
-}
-
-const isMathCode = (node: HastNode) =>
-  node.type === 'element' &&
-  node.tagName === 'code' &&
-  Array.isArray(node.properties?.className) &&
-  node.properties.className.includes('language-math');
-
-const textOf = (node: HastNode): string =>
-  node.type === 'text'
-    ? (node.value ?? '')
-    : (node.children ?? []).map(textOf).join('');
-
-/** remark-math leaves `code.language-math` (inline) and `pre > code` (display). */
-function rehypeChatMath() {
-  return (tree: HastNode) => {
-    const visit = (node: HastNode) => {
-      node.children?.forEach((child, index, siblings) => {
-        const code =
-          child.tagName === 'pre'
-            ? child.children?.find(isMathCode)
-            : isMathCode(child)
-              ? child
-              : undefined;
-        if (!code) {
-          visit(child);
-          return;
-        }
-        siblings[index] = {
-          children: [{ type: 'text', value: textOf(code) }],
-          properties: { dataMath: code === child ? 'inline' : 'display' },
-          tagName: 'span',
-          type: 'element',
-        } as HastNode;
-      });
-    };
-    visit(tree);
-  };
-}
-
-export const chatMath: MathPlugin = {
-  name: 'katex',
-  rehypePlugin: rehypeChatMath,
-  remarkPlugin: remarkMath,
-  type: 'math',
-};
 
 function Formula({ display, tex }: { display: boolean; tex: string }) {
   const [ready, setReady] = useState(!!katex);

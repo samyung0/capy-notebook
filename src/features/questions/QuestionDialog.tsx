@@ -1,5 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import {
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import * as limits from '@/api/limits.generated';
@@ -389,6 +395,15 @@ function QuestionDialogSession({
     );
     element.focus({ preventScroll: true });
   }, [reveal]);
+  // Leaving the editor removes the focused Back or Save, and the dialog's
+  // focus trap then focuses the dialog itself, which dismisses the row's
+  // toolbar: focus goes back to the row edited, before the trap looks.
+  const wasEditing = useRef(false);
+  useLayoutEffect(() => {
+    const left = wasEditing.current && !editing;
+    wasEditing.current = !!editing;
+    if (left && selected) rowElement(selected)?.focus({ preventScroll: true });
+  });
   const [error, setError] = useState('');
   const [savingBlock, setSavingBlock] = useState(false);
   // A graph row that cannot be drawn holds the block's Save.

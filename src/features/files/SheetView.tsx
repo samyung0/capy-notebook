@@ -58,14 +58,21 @@ export default function SheetView({
         actions={[
           ...(runtime.mode === 'view'
             ? [{ label: m.error_action_retry(), onClick: runtime.retryView }]
-            : [
-                {
-                  label: m.source_edit_download_draft(),
-                  onClick: () => {
-                    void runtime.downloadDraft().catch(() => {});
+            : runtime.crashed
+              ? [
+                  {
+                    label: m.error_action_reload(),
+                    onClick: runtime.reopenEditor,
                   },
-                },
-              ]),
+                ]
+              : [
+                  {
+                    label: m.source_edit_download_draft(),
+                    onClick: () => {
+                      void runtime.downloadDraft().catch(() => {});
+                    },
+                  },
+                ]),
         ]}
         banner={runtime.banner}
         error={runtime.error}

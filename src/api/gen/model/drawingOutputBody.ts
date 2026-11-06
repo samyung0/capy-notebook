@@ -8,7 +8,7 @@
 export interface DrawingOutputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** The board's saved document; the link is the same all hour and lasts two */
+  /** The board's saved document, gzipped; the link is the same all hour and lasts two */
   boardUrl: string;
   bytes: number;
   id: string;

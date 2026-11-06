@@ -4,6 +4,7 @@ import { RoomProvider } from '@/features/collaboration/roomProvider';
 import { m } from '@/i18n';
 import {
   deliverToEngine,
+  frameBannerAction,
   frameCanEdit,
   keepsFocus,
   officeNotices,
@@ -50,6 +51,20 @@ describe('the focus a newly opened DOCX leaves alone', () => {
     ).toBe(false);
     expect(keepsFocus(element('BODY'))).toBe(false);
     expect(keepsFocus(null)).toBe(false);
+  });
+});
+
+// Security regression (ribbon review: banner-action gesture): a compromised
+// frame could raise a strip and fire Download draft or Reload with no click.
+describe('a strip click the frame reports', () => {
+  it("runs only with the user's gesture, and not where the browser can't say", () => {
+    const run = vi.fn();
+    frameBannerAction(0, run, { isActive: false });
+    expect(run).not.toHaveBeenCalled();
+    frameBannerAction('close', run, undefined);
+    expect(run).not.toHaveBeenCalled();
+    frameBannerAction(1, run, { isActive: true });
+    expect(run).toHaveBeenCalledExactlyOnceWith(1);
   });
 });
 

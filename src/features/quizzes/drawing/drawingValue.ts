@@ -26,11 +26,13 @@ export const DrawingDraftScope = createContext<string | null>(null);
 export const drawingDraftKey = (scope: string, partId: string) =>
   `${scope}:${partId}`;
 
-/** Stores a drawing part's board with Done and returns its id: an assignment's,
- * whose attempt is on the server from the start. Practice has none, so its
- * drawings stay on the device until Check sends them (Epo 2026-11-06). */
+/** Stores a drawing part's board with Done and returns its id, or with null
+ * (Done on an emptied board) forgets it: an assignment's, whose attempt is on
+ * the server from the start. Practice has none, so its drawings stay on the
+ * device until Check sends them (Epo 2026-11-06). */
 export const DrawingUploader = createContext<
-  ((partId: string, value: DrawingValue) => Promise<string>) | null
+  | ((partId: string, value: DrawingValue | null) => Promise<string | null>)
+  | null
 >(null);
 
 const DATA_URL_PREFIX = /^data:[^;,]+;base64,/;

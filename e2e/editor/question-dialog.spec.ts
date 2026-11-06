@@ -30,6 +30,35 @@ test('undoing the add of a chart still open in its editor goes back to the quest
   await expect(partAnswers(dialog)).toBeVisible();
 });
 
+test('a block keeps its toolbar after Back from its editor', async ({
+  page,
+}) => {
+  await page.goto('/materials/qz_2');
+  await openQuestionDialog(page);
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: m.question_ui_add_block() }).click();
+  await page
+    .getByRole('button', { exact: true, name: m.question_ui_image() })
+    .click();
+  await dialog.locator('input[type="file"]').setInputFiles({
+    buffer: Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      'base64'
+    ),
+    mimeType: 'image/png',
+    name: 'field-photo.png',
+  });
+  await dialog
+    .getByRole('textbox', { name: m.question_ui_description() })
+    .fill('Field photo');
+  await dialog
+    .getByRole('button', { exact: true, name: m.action_back() })
+    .click();
+  await expect(
+    page.getByRole('toolbar', { name: m.question_ui_block_actions() })
+  ).toBeVisible();
+});
+
 test('a quiz embedded in a note keeps its question dialog open through an edit', async ({
   page,
 }) => {

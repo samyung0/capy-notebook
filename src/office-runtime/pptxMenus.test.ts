@@ -15,6 +15,7 @@ const state = (
   enabled: boolean,
   extra: Partial<PptxCommandState> = {}
 ): PptxCommandState => ({
+  activeShape: null,
   borderWeight: null,
   checked: [],
   enabled: Object.fromEntries(

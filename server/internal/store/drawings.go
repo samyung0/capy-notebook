@@ -118,6 +118,28 @@ func (s *Store) SaveAssignmentDrawing(ctx context.Context, userID, attemptID, pa
 	return saved, err
 }
 
+// DeleteAssignmentDrawing forgets the drawing of one part of the member's
+// running attempt, as Done on an emptied board leaves the part unanswered: it is
+// neither submitted nor charged any longer. A part holding none is no error.
+func (s *Store) DeleteAssignmentDrawing(ctx context.Context, userID, attemptID, partID string) error {
+	return s.inTx(ctx, func(tx pgx.Tx) error {
+		var submitted *time.Time
+		err := tx.QueryRow(ctx, `SELECT submitted_at FROM attempts
+			WHERE id=$1 AND user_id=$2 AND assignment_id IS NOT NULL FOR UPDATE`, attemptID, userID).Scan(&submitted)
+		if isNoRows(err) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if submitted != nil {
+			return ErrAttemptFinished
+		}
+		_, err = tx.Exec(ctx, `DELETE FROM drawings WHERE attempt_id=$1 AND part_id=$2`, attemptID, partID)
+		return err
+	})
+}
+
 // putDrawingTx upserts the part's drawing after the payer's gate passes for
 // what it adds over what the part held.
 func (s *Store) putDrawingTx(ctx context.Context, tx pgx.Tx, userID, attemptID, partID string, board DrawingObject, image *DrawingObject) (Drawing, error) {

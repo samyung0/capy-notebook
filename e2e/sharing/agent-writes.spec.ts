@@ -1233,11 +1233,11 @@ async function uploadOffice(api: APIRequestContext, format: OfficeFormat) {
   return id;
 }
 
-async function openOffice(page: Page, fileId: string, format: OfficeFormat) {
+async function openOffice(page: Page, fileId: string) {
   await page.goto(
     `/workspaces/${workspaceId}?file=${encodeURIComponent(fileId)}&mode=edit`
   );
-  await expect(officeEditMenu(page, format)).toBeVisible({ timeout: 120_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 120_000 });
   // The open file shows the rail's Files panel; pressing Files closes it.
   await page
     .getByRole('navigation', { name: m.workspace_rail_label() })
@@ -1336,8 +1336,8 @@ test.describe('agent writes to Office sources', () => {
     }) => {
       const fileId = await uploadOffice(ownerApi, format);
       const frames = [
-        await openOffice(ownerPage, fileId, format),
-        await openOffice(editorPage, fileId, format),
+        await openOffice(ownerPage, fileId),
+        await openOffice(editorPage, fileId),
       ];
       const before = await entries(anonymousApi, fileId, format);
       // Text, not formulas: the agent's value is the text with a suffix.
@@ -1476,7 +1476,7 @@ test.describe('agent writes to Office sources', () => {
       // took at its load.
       const link = await collaborationLink(ownerPage.context());
       const fileId = await uploadOffice(ownerApi, format);
-      const frame = await openOffice(ownerPage, fileId, format);
+      const frame = await openOffice(ownerPage, fileId);
       // The editor's own element: a reload would replace it.
       const editor = {
         docx: frame.getByRole('textbox', { name: 'Document input' }),

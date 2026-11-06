@@ -49,8 +49,7 @@ import { offerExpiredDrafts } from './expiredDrafts';
 import type { NoteSeat } from './noteSeat';
 import { NO_PRESENCE, type PresenceConnection } from './presence';
 import { RoomProvider, type RoomProviderConfig } from './roomProvider';
-import { limitUndo, type UndoTarget, undoTarget } from './undo';
-import { LOCAL_EDIT } from './yText';
+import { itemUndo, limitUndo, type UndoTarget, undoTarget } from './undo';
 
 /* A live item's room (a flashcard set, a quiz's content or keys document;
  * live-items DESIGN.md): its own Y.Doc joined on the tab's shared
@@ -166,6 +165,8 @@ export interface ItemRoomOptions {
   /** An editor's room: unsent edits are kept on this device under this
    * account (readers keep none). */
   drafts?: { actorId: string };
+  /** Where this room's first token comes from, when not its own request. */
+  firstToken?: () => ReturnType<typeof getMaterialCollaborationToken>;
   /** An embedded quiz's or set's room: it joins inside its note's channel
    * (Epo 2026-10-20). */
   inside?: NoteSeat | null;
@@ -260,12 +261,8 @@ export class ItemRoom {
     this.materialId = materialId;
     this.options = options;
     this.doc = options.seed?.doc ?? new Y.Doc();
-    // The document holds only this item: Undo covers this user's own edits
-    // to it, never others' or the server's.
-    this.undo = new Y.UndoManager(this.doc, {
-      captureTimeout: 500,
-      trackedOrigins: new Set([LOCAL_EDIT]),
-    });
+    // The document holds only this item.
+    this.undo = itemUndo(this.doc);
     // Undo reaches back 24 h (Epo 2026-10-23).
     limitUndo(this.undo);
     this.history = undoTarget(this.undo);
@@ -327,10 +324,8 @@ export class ItemRoom {
     this.reconnector.started();
     let first: Awaited<ReturnType<typeof getMaterialCollaborationToken>>;
     try {
-      first = await getMaterialCollaborationToken(
-        this.materialId,
-        this.tokenRequest()
-      );
+      first = await (this.options.firstToken?.() ??
+        getMaterialCollaborationToken(this.materialId, this.tokenRequest()));
     } catch (error) {
       // Gone or no longer this user's (404, 403): unavailable for good.
       // Offline or a server error: paused until it can join (REVIEW5 B1).

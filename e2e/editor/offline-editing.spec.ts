@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
-import { officeEditMenu } from '../helpers/office';
+import { officeEditMenu, officeFrame } from '../helpers/office';
 import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 
@@ -827,7 +827,7 @@ async function docxRows(page: Page) {
  * instead of MSW, whose 404 drops the rows as lost. */
 async function closeDocxOffline(page: Page, text: string) {
   await page.goto(docx);
-  await expect(officeEditMenu(page, 'docx')).toBeVisible({ timeout: 120_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 120_000 });
   await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
     'data-save-state',
     'saved',
@@ -907,11 +907,9 @@ test('a DOCX edited offline in a closed tab opens copy-only after its room moved
     advanceScenarioSource(id);
   }, DOCX);
   await reopenDocx(reopened);
-  await expect(reopened.getByTestId('save-banner')).toHaveAttribute(
-    'data-kind',
-    'changed',
-    { timeout: 60_000 }
-  );
+  await expect(
+    officeFrame(reopened).getByTestId('save-banner')
+  ).toHaveAttribute('data-kind', 'changed', { timeout: 60_000 });
   expect(await copiedDocx(reopened)).toContain('Typed before the move.');
 });
 
@@ -933,7 +931,7 @@ test('a DOCX draft past the 7-day expiry shows once copy-only, then goes', async
     await putDrafts(rows.map((row) => ({ ...row, savedAt: old })));
   }, DOCX);
   await reopenDocx(reopened);
-  const banner = reopened.getByTestId('save-banner');
+  const banner = officeFrame(reopened).getByTestId('save-banner');
   await expect(banner).toHaveAttribute('data-kind', 'expired', {
     timeout: 60_000,
   });
@@ -941,7 +939,7 @@ test('a DOCX draft past the 7-day expiry shows once copy-only, then goes', async
   await expect.poll(() => docxRows(reopened)).toBe(0);
   // Shown once: the next open is the live document.
   await reopened.reload();
-  await expect(officeEditMenu(reopened, 'docx')).toBeVisible({
+  await expect(officeEditMenu(reopened)).toBeVisible({
     timeout: 120_000,
   });
   await expect(reopened.getByTestId('editor-save-state')).toHaveAttribute(

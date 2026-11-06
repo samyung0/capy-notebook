@@ -18,7 +18,7 @@ import {
   useSourceBatch,
   workspaceFileRoom,
   workspaceRoomToast,
-} from '@/features/workspace/AddSourceDialog';
+} from '@/features/workspace/sourceBatch';
 import {
   toastRejectedSources,
   validateLocalSourceSelection,

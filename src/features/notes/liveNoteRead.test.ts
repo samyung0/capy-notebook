@@ -29,11 +29,32 @@ vi.mock('@/api/hooks', () => ({
       url: 'ws://x',
     };
   }),
+  materialTokenQuery: (id: string) => ({
+    queryFn: () => opened.answer(),
+    queryKey: ['material', id, 'collaboration-token'],
+    staleTime: 180_000,
+  }),
+}));
+const opened = vi.hoisted(() => ({
+  answer: (): Promise<unknown> => Promise.reject(new Error('not asked')),
 }));
 vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
 
+const { queryClient } = await import('@/api/queryClient');
 const { readNoteLive } = await import('./liveNoteRead');
 const flush = () => new Promise((done) => setTimeout(done, 0));
+const OPENED = ['material', 'n', 'collaboration-token'];
+const openToken = (access: 'read' | 'write') => ({
+  access,
+  room: 'material:n:schema:1',
+  token: `opened-${access}`,
+  url: 'ws://x',
+});
+const reset = () => {
+  requests.length = 0;
+  providers.length = 0;
+  queryClient.clear();
+};
 
 it('asks for a read channel and rejoins when the server closes it for writing', async () => {
   const room = new Y.Doc();
@@ -71,5 +92,66 @@ it('asks for a read channel and rejoins when the server closes it for writing', 
   // object.
   expect(values).toHaveLength(2);
   expect(values[1][0]).toBe(values[0][0]);
+  leave();
+});
+
+it("a viewer's channel takes the token its open asked for, once", async () => {
+  reset();
+  let answer = (_: unknown) => {};
+  opened.answer = () =>
+    new Promise((done) => {
+      answer = done;
+    });
+  // Still in flight as the reader starts.
+  void queryClient.prefetchQuery({
+    queryFn: opened.answer,
+    queryKey: OPENED,
+  });
+  const leave = readNoteLive('n', [], () => {});
+  await flush();
+  expect(providers).toHaveLength(0);
+  answer(openToken('read'));
+  await flush();
+  await flush();
+  expect(requests).toEqual([]);
+  expect(providers).toHaveLength(1);
+  expect(await providers[0].token?.(undefined)).toBe('opened-read');
+  // It left the cache: an editor mounted later asks afresh.
+  expect(queryClient.getQueryState(OPENED)).toBeUndefined();
+  // A rejoin asks for its own.
+  providers[0].onClose?.({
+    code: 4000,
+    reason: 'read-only connection sent a document update',
+  });
+  await flush();
+  await flush();
+  expect(requests).toEqual([{ access: 'read' }]);
+  leave();
+});
+
+it("an editor's View holds a write token and asks for its read channel", async () => {
+  reset();
+  queryClient.setQueryData(OPENED, openToken('write'));
+  const leave = readNoteLive('n', [], () => {});
+  await flush();
+  await flush();
+  expect(requests).toEqual([{ access: 'read' }]);
+  // The editor's stays for the editor.
+  expect(queryClient.getQueryData(OPENED)).toMatchObject({ access: 'write' });
+  leave();
+});
+
+it("an editor's View rejoining with an old write token mints no second one", async () => {
+  reset();
+  const answered = vi.fn(async () => openToken('write'));
+  opened.answer = answered;
+  queryClient.setQueryData(OPENED, openToken('write'), {
+    updatedAt: Date.now() - 10 * 60_000,
+  });
+  const leave = readNoteLive('n', [], () => {});
+  await flush();
+  await flush();
+  expect(answered).not.toHaveBeenCalled();
+  expect(requests).toEqual([{ access: 'read' }]);
   leave();
 });

@@ -2,15 +2,20 @@ import { useEffect, useRef } from 'react';
 import { drawBoardPreview } from '@/features/blocksuite/boardPreview';
 import { mountDrawingBoard } from '@/features/blocksuite/drawingBoard';
 
-/** The drawing answer's board on its own, for building it and for its spec, with
- * its handle on `window`. Not linked from anywhere. `__reopen(doc, true)` opens a saved
- * board as a teacher sees it; `__preview(doc, size)` draws it as lists do. */
+/** The drawing answer's board on its own, for building it, for its spec and for
+ * bench:canvas, with its handle on `window`. Not linked from anywhere. `__reopen(doc,
+ * true)` opens a saved board as a teacher sees it; `__preview(doc, size)` draws it as
+ * lists do. */
 export default function DevDrawingBoard() {
   const container = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const host = container.current;
     if (!host) return;
-    let board = mountDrawingBoard(host, { plane: true });
+    // The bench sets a saved board before the page loads, and times the mount.
+    const { __benchBoard } = window as Window & { __benchBoard?: string };
+    performance.mark('board:mount-start');
+    let board = mountDrawingBoard(host, { plane: true, saved: __benchBoard });
+    performance.mark('board:mount-end');
     const reopen = (
       saved: string,
       readOnly = false,

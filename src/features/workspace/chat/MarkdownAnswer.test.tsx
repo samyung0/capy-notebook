@@ -4,6 +4,7 @@ import type { Citation } from '@/api/types';
 import { m } from '@/i18n';
 import { withoutMarkers } from './blocks/citeMarkers';
 import { loadKatex } from './blocks/math';
+import { loadProse } from './blocks/text';
 import { MarkdownAnswer } from './MarkdownAnswer';
 import { parseMarkdownAnswer } from './markdownSegments';
 
@@ -142,7 +143,7 @@ describe('withoutMarkers', () => {
 });
 
 describe('MarkdownAnswer', () => {
-  beforeAll(loadKatex);
+  beforeAll(() => Promise.all([loadKatex(), loadProse()]));
   const citations = [{ n: 4 }, { n: 2 }] as Citation[];
 
   it('numbers [#n] markers by the citation list and draws the blocks', () => {

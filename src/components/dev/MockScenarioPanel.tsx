@@ -219,11 +219,17 @@ export default function MockScenarioPanel() {
             );
           }
           if (!note && !['invite-success', 'collab-chaos'].includes(id)) {
+            // An Office editor's strip draws under its ribbon, in the frame.
+            const surface =
+              '[role="alert"], [data-toast], [data-error-surface]';
             await ui.wait(
               () =>
-                document.querySelector(
-                  '[role="alert"], [data-toast], [data-error-surface]'
-                ),
+                document.querySelector(surface) ||
+                document
+                  .querySelector<HTMLIFrameElement>(
+                    'iframe[src*="office-runtime"]'
+                  )
+                  ?.contentDocument?.querySelector(surface),
               'application error rendered'
             );
           }

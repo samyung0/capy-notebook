@@ -97,7 +97,7 @@ changing any of them.
 | Family          | Measures                                                                         | Runs in CI |
 | --------------- | -------------------------------------------------------------------------------- | ---------- |
 | `bench/collaboration` | Many peers typing with reconnects in one Office and one Plate room: convergence, lost updates, latency (`pnpm bench:stress`); update rates one user's editing sends (`pnpm bench:rates`) | Yes, manual (stress) |
-| `bench/editor`  | Editor open cost, typing latency, save cycle, scroll FPS (`pnpm bench:editor`)    | Yes        |
+| `bench/editor`  | Editor open cost, typing latency, save cycle, scroll FPS (`pnpm bench:editor`); the drawing board's open, pan, zoom, pen and typing (`pnpm bench:canvas`) | Yes        |
 | `bench/share-pages` | Shared pages on deployed UAT: Lighthouse paint, shift, blocking and bytes; Workers Cache hits (`pnpm bench:share-pages`) | Yes, manual |
 | `bench/clone`   | A single file clone's row and saved-edit copy against its index copy (`bench/clone/scripts/run.sh`) | No, Docker |
 | `bench/gateway` | Go gateway capacity under replayed signed-in sessions with their event streams, uploads and paged lists: per-route and per-page latency, CPU, pooled-connection waits (`bench/gateway/scripts/step.sh`) | No, bench host |

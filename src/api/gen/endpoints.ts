@@ -506,6 +506,58 @@ const res = await fetch(getSaveAssignmentAnswersUrl(id),
 
 
 
+export type deleteAssignmentDrawingResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteAssignmentDrawingResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type deleteAssignmentDrawingResponseSuccess = (deleteAssignmentDrawingResponse204) & {
+  headers: Headers;
+};
+export type deleteAssignmentDrawingResponseError = (deleteAssignmentDrawingResponseDefault) & {
+  headers: Headers;
+};
+
+export type deleteAssignmentDrawingResponse = (deleteAssignmentDrawingResponseSuccess | deleteAssignmentDrawingResponseError)
+
+export const getDeleteAssignmentDrawingUrl = (id: string,
+    partId: string,) => {
+
+
+
+
+  return `/api/assignment-attempts/${id}/drawings/${partId}`
+}
+
+/**
+ * @summary Forget a drawing part's stored drawing in a running attempt (Done on an emptied board)
+ */
+export const deleteAssignmentDrawing = async (id: string,
+    partId: string, options?: RequestInit): Promise<deleteAssignmentDrawingResponse> => {
+
+  const res = await fetch(getDeleteAssignmentDrawingUrl(id,partId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteAssignmentDrawingResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deleteAssignmentDrawingResponse
+}
+
+
+
 export type saveAssignmentDrawingResponse200 = {
   data: DrawingSavedOutputBody
   status: 200

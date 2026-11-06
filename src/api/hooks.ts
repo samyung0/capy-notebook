@@ -3253,6 +3253,12 @@ export const saveAssignmentDrawing = (
     )
     .then(({ id }) => id);
 
+/** Forgets a drawing part's stored drawing (Done on an emptied board). */
+export const deleteAssignmentDrawing = (attemptId: string, partId: string) =>
+  api.del<void>(
+    `/assignment-attempts/${attemptId}/drawings/${encodeURIComponent(partId)}`
+  );
+
 /** Files › Canvas: the caller's marked drawings, newest first. Lazy, like the
  * Trash tab; secondary, so it renders its own error state. */
 export const useMarkedDrawings = (enabled: boolean) =>

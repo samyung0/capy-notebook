@@ -189,6 +189,7 @@
     "bench:editor": "playwright test --config=bench/editor/scripts/playwright.perf.config.ts",
     "bench:office": "playwright test --config=bench/editor/scripts/playwright.office.config.ts",
     "bench:formula": "playwright test --config=bench/editor/scripts/playwright.formula.config.ts",
+    "bench:canvas": "playwright test --config=bench/editor/scripts/playwright.canvas.config.ts",
     "bench:share-pages": "tsx bench/share-pages/scripts/share-pages.ts",
     "bench:stress": "tsx bench/collaboration/scripts/stress.ts",
     "bench:rates": "playwright test --config=bench/collaboration/scripts/playwright.rates.config.ts",

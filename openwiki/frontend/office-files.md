@@ -1070,12 +1070,12 @@ switch. The top row holds back, the sidebar toggle, the workspace picker (a
 24px pill with 6px padding, slimmer than elsewhere), the file name and its
 save status beside it at every width, phones included (the icon, its label
 in the tooltip; a slowed open's line holds that tooltip open, Epo
-2026-10-20); the row under it holds Google-style menus from the left edge
-(File, Edit, View, Insert, Format…, 24px triggers). The avatar group (see
+2026-10-20). The row under it is the ribbon's tab line in edit mode (below),
+and File and the view controls in view mode. The avatar group (see
 [plate-editor](plate-editor.md#room-presence)), the mode toggle, header actions
 (PPTX Present) and ⋮ sit right, centred on both rows, or on the top row below
-sm at the row's 24px, where the menus take the full width and scroll sideways
-with edge fades. There is no Save button: autosave, Ctrl/Cmd+S,
+sm at the row's 24px, where the tab line takes the full width and scrolls
+sideways with edge fades. There is no Save button: autosave, Ctrl/Cmd+S,
 File › Save and leaving Edit save. Rename, Move, Properties and Delete stay in
 ⋮. The Office views render `OfficeHeader` (`OfficeMenuBar.tsx`), which portals
 the runtime's menus and actions into the header and draws the menus as a Radix
@@ -1090,17 +1090,117 @@ document already has it, so a menu opened during load stays open. Without a
 file header (no portal target) a row of its own carries the label and the
 toggle. Notes, PDFs and other files keep the one-row header.
 
-The menus come from the runtime as data (protocol v8, `officeMenus.ts`): a
-`menus` message carries the whole bar (items with labels already in Capy's
-locale, shortcuts, ticks, Capy icon names, submenus, Capy's table-size grid)
-and the header actions, and is re-sent when either changes; in edit mode it
-waits for the editor's replica, as the old Save button did. A click sends
-`menu-command` {id, value?}; an item's parameter rides in its id after a colon
-("zoom:125"), `value` carries only the grid's "<rows>x<cols>". Items marked
-`pick: 'image'` open Capy's own file picker, because a click in the host gives
-the frame no user activation, and the file goes over as `menu-file`. Every
-inserted image (that file, one picked from the editor's own toolbar button, or
-a DOCX picture watermark) passes the editor's `prepareImage` first: the runtime
+### The ribbon
+
+Edit mode is a classic ribbon, as desktop Excel and PowerPoint (Q562, Q596-Q603,
+Q564, Q566, Q567, Q673-Q675, Q677; flat buttons are a signed exception to
+AGENTS.md's bordered actions). A view-only reader, or anyone in View, sees no ribbon and no tabs:
+File and the view controls in the menu bar, as Google Sheets and Slides' viewer
+(Q666).
+
+- **The tab line** (`RibbonTabs`, `HistoryButtons`) is in Capy's header: Undo and
+  Redo, the File menu, Home, then the other menus as tabs (`office-tab-<id>`).
+  Undo and Redo stay on every tab and at every width: the line has no width
+  rule of its own, so it can't disagree with the frame. The tab's state is the
+  frame's (`ribbonStore.ts`, one store per frame, so **Edit always opens on
+  Home**, Q665): a click sends `menu-command` `ribbon.tab:<id>`, and the next
+  `menus` message's `ribbon` field (`tabs`, `tab`, `collapsed`, `undo`, `redo`)
+  redraws the line. Moving tabs rerenders no editor. The field is there only
+  while the ribbon is on screen (`setMounted`). `isOfficeRibbon` holds what the
+  frame may put on Capy's page: Undo and Redo only as the editors' own ids, never
+  one of Capy's commands, tab ids of lower-case letters, labels of 40 characters.
+- **The ribbon** (`OfficeRibbon.tsx`) is in the frame, about 78 px high, under the
+  tab line: groups with names, two lines of 28 px controls or tall labelled
+  buttons, scrolling sideways under a vertical wheel with edge fades. Each format
+  has a layout table (`docxRibbon.ts`, `xlsxRibbon.ts`, `pptxRibbon.ts`) whose
+  cells name either a control of the editor's toolbar or a menu entry by id. The
+  fork's three `Toolbar`s take a `ribbon` render prop (`RibbonControls`) that
+  receives their controls by name and keep their root (role, test ids), so
+  pickers, selection state and commands are the ones they always had; an item
+  becomes a button (`data-command=<id>`), a submenu a dropdown, and
+  `src/office-runtime/ribbonLayout.test.ts` checks every menu command is in a
+  tab. The fork's `singleRow` toolbar remains for its own callers; Capy always
+  passes `ribbon`. Each fork `Toolbar` exports `RIBBON_CONTROL_NAMES`, so a renamed
+  control fails to compile; `ribbonLayout.test.ts` reads the real `HostMenus`
+  model and asserts every cell resolves, and the fork's `singleRowToolbar.test.tsx`
+  fails on a new upstream control until it is named. Layout stays in Capy, one
+  renderer and three tables (Q673).
+- **What doesn't fit** (Q675): from 768 px of frame up the row doesn't scroll.
+  Groups that don't fit move, from the tab's end, into one More button at the end
+  of the row; earlier groups stay put, and their controls and commands keep their
+  states there. `useRowFit` measures once before paint when the tab or its set of
+  groups changes; after that a ResizeObserver reports sizes, so typing and
+  selection read no layout. The collapse chevron is outside the row, and Undo and
+  Redo are in Capy's header, so neither moves.
+- **An open list owns the keyboard** (`useListKeys`). Opened by mouse, the focus
+  stays in the document, because leaving would commit an XLSX cell being typed;
+  a capture listener at the window takes every key, and the held text field is
+  read-only so an IME can't start: Escape closes the list, arrows and Home and End
+  walk a marked row (`data-active`), Enter runs it. Opened by keyboard, the list
+  has real focus. A MutationObserver on `aria-expanded` installs all this, so
+  nothing listens while no list is open.
+- **A command settles input first.** The old menu's click took the focus away
+  (`focus-left`, a flush); a press on the ribbon keeps it, so `runCommand` in
+  `main.tsx` ends an open composition, flushes, runs the command in order under
+  the pause, then hands the keys to the document (`returnKeys`) unless the command
+  took them or a list stays open. A flush ends a held DOCX press rather than wait
+  on it, and the wait has the host's own flush limit.
+- **The keyboard's route**: Enter, Space, Down or Tab on a tab goes to the tab's
+  first command (`ribbon.enter`); Left and Right walk the row; Escape, or Shift+Tab
+  at the first command, goes back (`ribbon-focus`). A row or a button hands the
+  keys to the document, as Office. No KeyTips.
+- **Contextual tabs**: DOCX's Table and Picture come with the selection
+  (`RIBBON_CONTEXTS`, on when their control draws) and fall back to Home when it
+  leaves, as Office's. PowerPoint's big New slide split has its layout list.
+- **Collapsing**: the chevron at the ribbon's right, or a double click on a tab,
+  collapses it to the tab line, with no current tab. A click on a tab then opens
+  that tab's ribbon over the page (`data-over`, absolutely placed) until a click
+  elsewhere, Escape, a command or that tab again; its pin button keeps it. It
+  is expanded on first use (Q564) and remembered on each device (Q674): Capy holds
+  `officeRibbonCollapsed` in local storage, as the frame is sandboxed, and sends it
+  on `load`, with no account setting. A room swap's new frame also gets the tab on
+  screen (`load`'s `ribbon`, `OfficeSwap.ribbonTab`); entering Edit clears it, so
+  Edit still opens on Home.
+- **One row** (Q597, Q677): under 768 px of the frame's own width, whatever the
+  window (`matchMedia` in the frame, so a crossing renders the ribbon and sends no
+  message): a scrolling row under the tabs (`phoneHome` on Home, a tab's groups
+  flattened elsewhere) and no collapse chevron. Page fit, pinch zoom, comments
+  opening and hiding the font and size boxes stay on `compact`, Capy's window
+  under 768 px.
+- **Banners** draw under the ribbon, as Office's message bar (Q566). While the
+  frame reports its ribbon on screen, `OfficeHeader` registers a `BannerOutlet` on `BannerStack`
+  (`useBannerOutlet`): the strip that would draw is sent as `set-banner`, the frame
+  draws it (`RibbonBanner`), and its clicks come back as `banner-action`
+  {action, revision}, which run the strip's own handlers, only with the user's
+  gesture (`navigator.userActivation` on the host: a click in the frame activates
+  its parent, a frame's own timer doesn't). Until then, in view mode, and once a
+  render error takes the ribbon, Capy draws it as before. Download draft survives
+  that error in DOCX: the session is outside the fork's boundary, so `handleSave`
+  exports from it when the view is gone, and `export` doesn't stop at a failed
+  flush. XLSX and PPTX have no such boundary in the fork, so the runtime's
+  `EditorCrash` catches their render errors (Q687): the editor goes, `error`
+  carries `crashed`, and the strip says so with Reload (no Download draft, whose
+  exporter left with the editor). Reload (`reopenEditor`) opens a new frame on
+  the same session, so every edit the host already holds comes back.
+- **Icons**: Tabler at the even 1.5 px line (Q603, stroke 36/size) in
+  `tablerGlyphs.ts`, one export per glyph, so the build holds only the glyphs used
+  (one chunk for the frame's editors; Capy's header takes its few from
+  `tablerHeaderGlyphs.ts`). `TablerIcon` draws them; Capy's drawn merge and decimal
+  icons and the colour swatches are in `capyGlyphs.ts`.
+  `docxIcons.tsx`, `xlsxIcons.tsx` and `pptxIcons.tsx` map the editors' icon names
+  to them, for the ribbon, right-click menus, link popups and overlays.
+
+The menus come from the runtime as data (protocol v14, `officeMenus.ts`): a
+`menus` message carries the header's menus (items with labels already in Capy's
+locale, shortcuts, ticks, Capy icon names, submenus) and the header actions, and
+is re-sent when either changes; in edit mode it waits for the editor's replica,
+as the old Save button did, and carries only File, the rest of the tree staying
+in the frame for the ribbon. A click in the header sends `menu-command` {id,
+value?}; an item's parameter rides in its id after a colon ("zoom:125"), `value`
+carries only the table grid's "<rows>x<cols>". Items marked `pick: 'image'` open
+the file picker from the ribbon's click in the frame, and run with that file.
+Every inserted image (that file, or a DOCX picture watermark) passes the editor's
+`prepareImage` first: the runtime
 compresses it within 2,400 px and the payer's plan image cap, which the edit
 `load` carries as `imageMaxBytes` (protocol v10; an edit session without one
 fails with the file error instead of loading), as JPEG or PNG
@@ -1131,12 +1231,11 @@ as it does `EquationTextError`: no error box of its own). While it
 prepares, DOCX reports pending input and ignores another pick, as PPTX reports
 its pending insert; when the picture lands, an editor takes the focus back only
 if its frame still has it, so a slow shrink leaves a Capy menu, the chat box or
-a dialog the user moved to alone. For the
-same reason items marked `fullscreen` (and a header action marked so) go over
-with the click's full-screen permission, and items marked `popup: 'presenter'`
-have Capy open the PPTX presenter window first (`officeCommandNeeds`, see PPTX
-Present below). A header action with `items` is a split button: its main part
-runs the action, its arrow lists the items. Capy
+a dialog the user moved to alone. Items marked `fullscreen` (and a header action
+marked so) go over with the click's full-screen permission, and items marked
+`popup: 'presenter'` have Capy open the PPTX presenter window first
+(`officeCommandNeeds`, see PPTX Present below). A header action with `items` is a
+split button: its main part runs the action, its arrow lists the items. Capy
 performs its own commands without a round trip to the runtime's code:
 `capy.save` takes the checkpoint, `capy.download` saves the bytes `export`
 returns (in view mode the saved state the viewer opened), `capy.print` prints
@@ -1156,8 +1255,7 @@ as export does. Pages are drawn, encoded and released one at a time (DOCX
 settle: drawn when the frame is idle, without flushing pending input
 (DOCX ends that print loop after page 1;
 [thumbnails.md](../thumbnails.md#browser-captures)). The host drops a submenu longer than 80 entries
-rather than the whole bar; DOCX Format › Paragraph styles lists the first 40
-styles (the toolbar's style picker keeps all).
+rather than the whole bar; DOCX's style list in the ribbon keeps every style.
 
 While editing is paused (handoff, replaced, recovery, connecting before the
 first sync, discarding: the host's narrowed `canEdit` in `set-capabilities`;
@@ -1185,9 +1283,9 @@ edits; Capy's own Save edits, Download, PNG and Print do not). The runtime
 re-sends its menus with every editing item disabled and a submenu with nothing
 left to run disabled too, the table grid counting as an edit (`pausedMenus`),
 keeps the read-only items (Select all, Find and replace, View, Download,
-Print) and the header actions usable, and drops any other `menu-command` or
-`menu-file` (`runsWhilePaused`). The read-only editors refuse edits themselves
-too: DOCX keeps its toolbar row, disabled, because its menus come from it,
+Print) and the header actions usable, and drops any other `menu-command`
+(`runsWhilePaused`); the ribbon's cells run under the same gate. The read-only editors refuse edits themselves
+too: DOCX keeps its ribbon, disabled,
 opens Find and replace with Find working and Replace and Replace all disabled,
 offers only Copy and Select all on right-click, ignores Ctrl/Cmd+K, Delete on
 a selected table, a header or footer double-click, Tab out of a table's last
@@ -1197,10 +1295,10 @@ is hidden, not dropped, and comes back with its draft when editing resumes,
 and so is a new comment being written; neither takes the focus back); XLSX's
 `run` refuses editing commands and its Select all hands the grid the keys, so
 Ctrl/Cmd+C copies the sheet (in the grid Tab moves between cells, as when
-editing). All three keep their toolbar row visible and disabled, and XLSX its
+editing). All three keep their ribbon visible and disabled, and XLSX its
 formula bar visible and read-only (its text still selects and copies), so
 nothing moves when a pause starts or ends. The toolbar's zoom control and the
-XLSX name box are the exceptions and stay usable, as View › Zoom does: zooming
+XLSX name box are the exceptions and stay usable, as the View tab's zoom does: zooming
 and going to a cell edit nothing. Only an editor pauses: in view mode
 a `canEdit` of false (a view-only user's) changes nothing, and the viewer
 still selects and copies. The DOCX menu model refuses a disabled item's id
@@ -1287,23 +1385,18 @@ is not scrolled to. A rotation loads faces for the wider toolbar, and before
 this that relayout counted as a local edit, so Edit jumped back to the caret's
 page on every resize at any zoom.
 
-In edit mode the DOCX editor shows one toolbar row under the header, in Google
-Docs' order (`singleRowToolbar` with the menus in the host, `DocxEditor`'s
-`onMenus`): undo/redo, zoom, style, font, size box (no −/+ steps), bold,
-italic, underline, text colour and highlight (each picker ticks the
-selection's colour when the whole selection shares one and it is one of the
-palette's colours; the highlight is read from the editor as the text colour
-is, however the document stores it, so a highlight picked in Capy ticks while
-a file's Word highlight such as yellow, which the palette lacks, does not),
-then link, comment and image,
-alignment with line spacing, lists and indent, and clear formatting, with the
-comments toggle pinned right; image or table controls follow the lists when an
-image or a cell is selected. Strikethrough, superscript and subscript live in
-Format › Text. Below lg (the viewport, as the PDF toolbar) the zoom dropdown,
-the font picker and the size box are hidden. The row scrolls sideways: a
-vertical mouse wheel scrolls it, and an edge with more to scroll fades
-(`data-scroll-start`/`-end`, so it needs no scroll-driven animations). The DOCX
-menus (`hostMenus.tsx` in the fork, Capy's icons and File › Download and Print
+In edit mode the DOCX editor shows the ribbon (above). Home holds Font (font
+box, size box, bold, italic, underline, strikethrough, text colour, highlight,
+clear formatting; each colour picker ticks the selection's colour when the whole
+selection shares one and it is one of the palette's colours; the highlight is
+read from the editor as the text colour is, however the document stores it, so a
+highlight picked in Capy ticks while a file's Word highlight such as yellow,
+which the palette lacks, does not), Paragraph (lists and indent, alignment, line
+spacing), Styles (Word's gallery: Normal, Title, Heading 1 and the selection's,
+with every style behind its arrow) and Insert (image, table, link, comment).
+The Table and Picture tabs come with the selection. Below md the font picker, the
+size box and the zoom control are hidden. The DOCX
+menus (`hostMenus.tsx` in the fork, Capy's File icons and File › Download and Print
 added in `docxMenus.ts`) are File (Save, Download ▸ Word document, Print),
 Edit (Undo, Redo, Select all, Delete, Find and replace), View (Show
 ruler ✓, Show document outline ✓, Show comments ✓, Zoom ▸), Insert (Image, Table ▸, Link,
@@ -1437,12 +1530,11 @@ file, kept in the runtime origin's `localStorage` under `capy.docx.ruler`
 View menu holds only what the viewer does (Zoom); the next edit opens with the
 remembered choice.
 
-The XLSX editor's toolbar row follows Google Sheets (xlsx-react's
-`singleRowToolbar`, no menu button): undo, redo and paint format, zoom (a
-boxless combobox), number formats, the font picker, the size box (no −/+
-steps), bold, italic, strikethrough and text colour, fill, borders and merge,
-then alignment and wrapping, scrolling sideways like the DOCX row; below lg the
-font picker, size box and zoom are hidden. Capy hides the fork's Search menus
+The XLSX editor's ribbon follows desktop Excel (`xlsxRibbon.ts`): Home holds
+Clipboard (big Format Painter), Font (font box, size box, bold, italic,
+strikethrough, text colour, fill, borders), Alignment with merge and wrap text,
+Number (formats and decimals) and Cells; below md the font picker, size box and
+zoom are hidden. Capy hides the fork's Search menus
 button (it does nothing), its agent proposals button (Capy stages no proposals)
 and the custom number format item (it only reapplies the current pattern)
 through `showSearchMenus`, `showProposals` and `showCustomNumberFormat`. Its
@@ -1452,11 +1544,11 @@ section labels and swatches; see the shared menu style below), the alignment
 popovers stack one icon button per alignment, and the text, fill and border
 colours open the same palette as the note editor's (Default clears the colour,
 Custom color takes any). The formula bar is its own row under the toolbar,
-as tall as the toolbar row (40px, 36px in a frame under 640px), and the sheet
+40px high (36px in a frame under 640px), and the sheet
 tabs sit under the grid. The viewer draws the same formula
 bar, read-only, in the same place: a click selects a cell (widened to its merged
 range, outlined in the editor's Excel green) and shows its address and full
-text, so the two modes differ only by the toolbar row. xlsx-react reads its
+text, so the two modes differ only by the ribbon. xlsx-react reads its
 other chrome colours, font and control sizes from `--xlsx-*` variables too; the
 grid stays white in dark themes, as pages do. Its icons come through
 `XlsxEditor`'s `icons` prop: `src/office-runtime/xlsxIcons.tsx` maps every
@@ -1688,7 +1780,7 @@ sets it from `set-appearance` and Capy's own page from its locale at startup
 Microsoft YaHei on Windows) at the chrome's weights instead of a mix of a
 Japanese face and Hiragino Sans GB's W3/W6 under `lang="en"`.
 
-The three toolbar rows take the note toolbar's scale (`--toolbar-button`,
+The toolbars' popovers and what is left of their rows take the note toolbar's scale (`--toolbar-button`,
 `--toolbar-icon`, `Toolbar` and `ToolbarGroup`; see plate-editor.md "Toolbar
 icons"). `office-runtime.css` defines it once as `--toolbar-height`,
 `--toolbar-padding`, `--toolbar-button`, `--toolbar-icon`,
@@ -1775,26 +1867,20 @@ fork's own colours); slides keep their own colours. The viewer's thumbnails
 take the width their button leaves (126px, less beside the strip's
 scrollbar), so a thumbnail never covers its selection border. View mode has
 no count row, so the strip and the notes start right under the file header;
-edit mode adds the editor's flat toolbar row (`singleRowToolbar`, 40px, 36px
-in a frame under 640px) above the same layout. Below desktop (Capy's window
+edit mode adds the ribbon above the same layout. Below desktop (Capy's window
 under 1024px, the `narrow` flag in the frame's style message, so tablets and
 phones) or in a frame under 640px, the strip is a row of 96px thumbnails
 under the slide in both modes. Neither mode has a pager (Epo 2026-10-30): the
 strip and the row are the slide navigation. The editor takes the flag as
 pptx-react's `stripBelow` prop; the viewer as its `pptx-viewer-narrow` class.
 
-The PPTX toolbar row follows Google Slides and Capy's DOCX row: new slide
-with a layout dropdown, undo and redo, a zoom dropdown, then select, text box,
-image and shape. A selected text box or text adds font, size box (no steps),
-bold, italic, underline, text colour and highlight colour; an alignment
-dropdown (left, centre, right, justify, then the box's top, middle and bottom)
-and a line and paragraph spacing dropdown (single, 1.15, 1.5, double, add or
-remove 10 pt before or after the paragraph); bulleted and numbered list
-buttons, each with a style menu, then decrease and increase indent; and clear
-formatting. A selected shape then adds fill, border colour, border weight and
-its adjustment. Strikethrough, superscript, subscript and the font size steps
-are in Format › Text, as in DOCX. Below lg zoom, font and size are hidden. The
-row scrolls sideways under a vertical wheel, with edge fades.
+The PPTX ribbon follows desktop PowerPoint (`pptxRibbon.ts`): Home holds Slides
+(the big New slide split with its layout list, Delete), Font, Paragraph (lists,
+indent, alignment with the box's top, middle and bottom, line and paragraph
+spacing, clear formatting), Drawing (text box, image, shape, fill, border colour,
+border weight and its adjustment) and Arrange. Select is on the Insert tab, zoom on
+View. Below md zoom, font and size are hidden. Collaborators' chips float at the
+ribbon's right end (`ribbonPresence`).
 `src/office-runtime/pptxIcons.tsx` maps every toolbar icon name and the
 show's and presenter window's controls (exit, previous, next, Full screen, ⋮,
 pause, resume, reset, notes size) to Capy's Hugeicons
@@ -1943,8 +2029,8 @@ object to the slide and several to the box around them, distributing three or
 more) (`pptxEditorMenus.ts`, labels from `pptx-i18n` for the locale and Capy
 messages for the rest). A menu id carries
 its command's value after a colon (`view.zoom:1.5`, `insert.shape:ellipse`,
-`slide.newWithLayout:<layout part>`). Insert › Image is a `pick` item: Capy's
-picker hands the file to `PptxEditorApi.insertImage`. View mode offers File ›
+`slide.newWithLayout:<layout part>`). Insert › Image is a `pick` item: the
+ribbon's picker hands the file to `PptxEditorApi.insertImage`. View mode offers File ›
 Download and Print and View › Present ▸, Zoom ▸ (the same Fit and levels as
 edit mode, `zoomMenu`) and Show speaker notes (`pptxMenus.ts`); a level above
 the fit scrolls the slide from its edges in an inner scroller

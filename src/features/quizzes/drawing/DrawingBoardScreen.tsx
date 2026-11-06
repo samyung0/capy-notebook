@@ -77,9 +77,10 @@ export default function DrawingBoardScreen({
   draft?: string;
   onClose: () => void;
   onDone?: (value: DrawingValue | null) => void;
-  /** An assignment's Done stores the drawing before the board closes; a refusal
-   * (too big, storage full) keeps it open with nothing lost. */
-  store?: (value: DrawingValue) => Promise<string>;
+  /** An assignment's Done stores the drawing before the board closes, or
+   * forgets it when emptied (null); a refusal (too big, storage full, offline)
+   * keeps it open with nothing lost. */
+  store?: (value: DrawingValue | null) => Promise<string | null>;
   pinned: PinnedQuestion;
   readOnly?: boolean;
   saved?: string;
@@ -163,22 +164,22 @@ export default function DrawingBoardScreen({
     if (!current || busy) return;
     if (readOnly || !onDone) return onClose();
     const stats = current.stats();
-    if (stats.canvas.length === 0 && stats.blocks.length === 0) {
-      if (draft) await deleteLocalDrawingDraft(draft).catch(() => undefined);
-      return onDone(null);
-    }
-    const { bytes, doc } = current.save();
-    if (bytes > DRAWING_BOARD_MAX) {
+    const empty = stats.canvas.length === 0 && stats.blocks.length === 0;
+    const saved = empty ? null : current.save();
+    if (saved && saved.bytes > DRAWING_BOARD_MAX) {
       userToast({ title: m.drawing_answer_too_big(), variant: 'error' });
       return;
     }
     setBusy(true);
     try {
-      const value: DrawingValue = {
-        board: doc,
-        image: await readAsDataUrl(await current.toImage()),
-      };
-      if (store) value.drawing = await store(value);
+      let value: DrawingValue | null = null;
+      if (saved) {
+        value = {
+          board: saved.doc,
+          image: await readAsDataUrl(await current.toImage()),
+        };
+        if (store) value.drawing = (await store(value)) ?? undefined;
+      } else if (store) await store(null);
       if (draft) await deleteLocalDrawingDraft(draft).catch(() => undefined);
       onDone(value);
     } catch (error) {

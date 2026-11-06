@@ -514,7 +514,8 @@ function PaintedFrame({
   seed: RoomSeed | null | undefined;
 }) {
   const builds = editing && !!material;
-  // Its token alongside the paint, not behind the editor's chunk.
+  // Its token alongside the paint, not behind the editor's chunk: the open
+  // (CenterContent) asked already, unless it didn't know this was a note.
   const queryClient = useQueryClient();
   useEffect(() => {
     if (builds) void queryClient.prefetchQuery(materialTokenQuery(materialId));

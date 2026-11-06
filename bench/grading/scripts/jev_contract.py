@@ -1436,7 +1436,7 @@ def main():
         return 0
     if args.output is None or args.output.exists():
         parser.error("--output must name a fresh directory")
-    env = "TYPESAFE_API_KEY" if args.provider == "jev" else "CLOUDFLARE_API_TOKEN"
+    env = "CLOUDFLARE_API_TOKEN" if args.provider.startswith("clef") else "TYPESAFE_API_KEY"
     if args.key_stdin:
         key = (
             getpass.getpass("Key: ") if sys.stdin.isatty() else sys.stdin.readline()
@@ -1446,7 +1446,7 @@ def main():
     if not key:
         parser.error(f"Provide --key-stdin or {env}")
     account = None
-    if args.provider != "jev":
+    if args.provider.startswith("clef"):
         account = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip()
         if not account:
             parser.error("Clef needs CLOUDFLARE_ACCOUNT_ID")

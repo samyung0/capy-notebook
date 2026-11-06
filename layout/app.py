@@ -104,6 +104,8 @@ def load_model() -> Callable[[Image.Image], list[dict[str, Any]]]:
     options = ort.SessionOptions()
     options.intra_op_num_threads = THREADS
     options.inter_op_num_threads = 1
+    # Idle threads sleep instead of holding a core the parser needs.
+    options.add_session_config_entry("session.intra_op.allow_spinning", "0")
     session = ort.InferenceSession(
         MODEL_PATH, options, providers=["CPUExecutionProvider"]
     )

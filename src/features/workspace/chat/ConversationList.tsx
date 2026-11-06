@@ -16,6 +16,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { PanelNewRow } from '../PanelNewRow';
 import { matchesSearch, PanelSearch } from '../PanelSearch';
+import { preloadProse } from './blocks/text';
 
 /**
  * A workspace's chats (or with a null `workspaceId` the account chat's) for
@@ -80,6 +81,9 @@ export function ConversationList({
             active && 'font-bold'
           )}
           onClick={() => onOpen(c.id)}
+          // The thread is about to draw its Markdown.
+          onFocus={preloadProse}
+          onPointerEnter={preloadProse}
           type="button"
         >
           <span className="line-clamp-1 flex-1 translate-y-px">

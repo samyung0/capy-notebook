@@ -22,6 +22,10 @@ const LABEL_WIDTH = 200;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const AFTER_SPACE = /(?<=\s)/;
 const LEADING_MINUS = /^-/;
+/** axisNumber's formatters by decimals and notation (at most 26; the locale is
+ * fixed): building one costs far more than formatting, and a plane on the drawing
+ * board formats every tick on every frame. */
+const AXIS_FORMATS = new Map<string, Intl.NumberFormat>();
 let measureContext: CanvasRenderingContext2D | null = null;
 
 /** Greedy lines of at most LABEL_WIDTH in JSXGraph's 12px text; a word wider
@@ -178,13 +182,18 @@ function frameFor([left, top, right, bottom]: Bbox): Frame {
 export function axisNumber(value: number, step: number) {
   if (Math.abs(value) < step * 1e-9) return '';
   const digits = Math.min(14, Math.max(-Math.floor(Math.log10(step)), 2));
-  return new Intl.NumberFormat('en-US', {
-    maximumFractionDigits: digits,
-    useGrouping: false,
-    ...((step < 1e-5 || step > 1e7) && { notation: 'scientific' }),
-  })
-    .format(value)
-    .replace(LEADING_MINUS, '\u2013');
+  const scientific = step < 1e-5 || step > 1e7;
+  const key = `${digits}${scientific ? 'e' : ''}`;
+  let format = AXIS_FORMATS.get(key);
+  if (!format) {
+    format = new Intl.NumberFormat('en-US', {
+      maximumFractionDigits: digits,
+      useGrouping: false,
+      ...(scientific && { notation: 'scientific' }),
+    });
+    AXIS_FORMATS.set(key, format);
+  }
+  return format.format(value).replace(LEADING_MINUS, '\u2013');
 }
 
 /** GeoGebra's zoom range, in pixels per unit. */

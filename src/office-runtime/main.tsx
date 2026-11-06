@@ -1,5 +1,7 @@
 import {
+  Component,
   lazy,
+  type ReactNode,
   Suspense,
   useCallback,
   useEffect,
@@ -49,6 +51,12 @@ import type {
 import { type CursorChannel, createCursorChannel } from './officePresence';
 import { handOverPresenterWindow, PRESENTER_VIEW } from './presenterWindow';
 import { prewarmRuntime, runtimeChunks } from './prewarm';
+import {
+  createRibbonStore,
+  findRibbonEntry,
+  returnKeys,
+  ribbonChrome,
+} from './ribbonStore';
 import {
   type OfficeCaptureScope,
   type OfficeMenuSource,
@@ -114,6 +122,9 @@ interface LoadedFile {
   /** Where the viewer or editor opens; the format's default without. */
   zoom?: OfficeZoom;
 }
+
+/** How long a ribbon command waits for input to settle: the host's own flush limit. */
+const COMMAND_SETTLE_MS = 30_000;
 
 function OfficeRuntime() {
   const [file, setFile] = useState<LoadedFile | null>(null);
@@ -258,35 +269,124 @@ function OfficeRuntime() {
   const menusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // An editor's menus wait for its replica, as the old Save button did:
   // anything in them (File › Save first) can then reach the room.
+  const sendMenusNow = useCallback(() => {
+    const revision = revisionRef.current;
+    const current = menuSourceRef.current;
+    if (revision === null || (epochRef.current !== null && !replicaRef.current))
+      return;
+    const menus = current?.menus ?? [];
+    // A paused editor lists its editing items disabled (File › Save too).
+    const editing = epochRef.current !== null;
+    const shown = editing && pausedRef.current ? pausedMenus(menus) : menus;
+    // An editor's other menus are its ribbon's: Capy draws File and, while the
+    // ribbon is on screen, the tab line. So `ribbon` is the frame's word that it
+    // is drawn, which the host's strips go by.
+    const ribbon = editing ? ribbonChrome(ribbonRef.current.get()) : null;
+    const payload = {
+      actions: current?.actions ?? [],
+      menus: editing ? shown.filter((menu) => menu.id === 'file') : shown,
+      ...(ribbon && { ribbon }),
+    };
+    const text = JSON.stringify(payload);
+    if (text === menusSent.current) return;
+    menusSent.current = text;
+    post({ ...payload, revision, type: 'menus' });
+  }, []);
   const sendMenus = useCallback(() => {
     if (menusTimer.current) clearTimeout(menusTimer.current);
-    menusTimer.current = setTimeout(() => {
-      const revision = revisionRef.current;
-      const current = menuSourceRef.current;
+    menusTimer.current = setTimeout(sendMenusNow, 50);
+  }, [sendMenusNow]);
+  // A tab click answers at once; the state stays out of React, so moving
+  // between tabs renders the ribbon alone (OfficeRibbon).
+  const [ribbon] = useState(() => createRibbonStore(() => sendMenusNow()));
+  const ribbonRef = useRef(ribbon);
+  // A press on the ribbon keeps the document's focus, so nothing settles input
+  // as the old menu's click did (`focus-left`): a command settles it first, in
+  // order, runs under the same pause, then hands the keys back. A flush ends a
+  // held DOCX press rather than wait on it; the limit is for an engine that
+  // never answers, the host's own flush limit.
+  const commandsRef = useRef(Promise.resolve());
+  const settleAndRun = useCallback(
+    async (id: string, value?: string, file?: File) => {
+      // A press may leave a composition open; only its blur ends it.
+      if (composingRef.current)
+        (document.activeElement as HTMLElement | null)?.blur();
+      if (replicaRef.current)
+        await Promise.race([
+          flush().catch(() => {}),
+          new Promise((resolve) => setTimeout(resolve, COMMAND_SETTLE_MS)),
+        ]);
+      const source = menuSourceRef.current;
       if (
-        revision === null ||
-        (epochRef.current !== null && !replicaRef.current)
+        !source ||
+        (epochRef.current !== null &&
+          pausedRef.current &&
+          !runsWhilePaused(source, id))
       )
         return;
-      const menus = current?.menus ?? [];
-      // A paused editor lists its editing items disabled (File › Save too).
-      const editing = epochRef.current !== null;
-      const payload = {
-        actions: current?.actions ?? [],
-        menus: editing && pausedRef.current ? pausedMenus(menus) : menus,
-      };
-      const text = JSON.stringify(payload);
-      if (text === menusSent.current) return;
-      menusSent.current = text;
-      post({ ...payload, revision, type: 'menus' });
-    }, 50);
-  }, []);
+      source.run(id, value, file);
+      returnKeys(ribbonRef.current.focusDocument);
+    },
+    [flush]
+  );
+  const runCommand = useCallback(
+    (id: string, value?: string, file?: File) => {
+      commandsRef.current = commandsRef.current
+        .then(() => settleAndRun(id, value, file))
+        .catch((error: unknown) => {
+          if (revisionRef.current !== null)
+            post({
+              message: error instanceof Error ? error.message : String(error),
+              revision: revisionRef.current,
+              type: 'error',
+            });
+        });
+    },
+    [settleAndRun]
+  );
+  // The ribbon runs the menus' commands in the frame.
+  const shareMenus = useCallback(() => {
+    const source = menuSourceRef.current;
+    const menus = source?.menus ?? [];
+    ribbon.setMenus(
+      epochRef.current !== null && pausedRef.current
+        ? pausedMenus(menus)
+        : menus,
+      source &&
+        ((id, value, file) => {
+          // Capy opens the presenter window, as for its header's item.
+          const entry = findRibbonEntry(menus, id);
+          if (entry?.kind !== 'item' || entry.popup !== 'presenter')
+            runCommand(id, value, file);
+          else if (!pausedRef.current || runsWhilePaused(source, id))
+            askPresenter();
+        }),
+      source?.focus ?? null
+    );
+  }, [askPresenter, ribbon, runCommand]);
   const reportMenus = useCallback(
     (source: OfficeMenuSource | null) => {
       menuSourceRef.current = source;
+      shareMenus();
       sendMenus();
     },
-    [sendMenus]
+    [sendMenus, shareMenus]
+  );
+  const reportBannerAction = useCallback((action: number | 'close') => {
+    if (revisionRef.current !== null)
+      post({ action, revision: revisionRef.current, type: 'banner-action' });
+  }, []);
+  const reportRibbonLeft = useCallback(() => {
+    if (revisionRef.current !== null)
+      post({ revision: revisionRef.current, type: 'ribbon-focus' });
+  }, []);
+  const ribbonHost = useMemo(
+    () => ({
+      onBannerAction: reportBannerAction,
+      onLeave: reportRibbonLeft,
+      store: ribbon,
+    }),
+    [reportBannerAction, reportRibbonLeft, ribbon]
   );
   // The replica's state size once it held the room's document: the image
   // budget counts what the document grew since. An image picked before the
@@ -462,6 +562,7 @@ function OfficeRuntime() {
         revisionRef.current = message.revision;
         zoomSentRef.current = message.zoom;
         epochRef.current = message.collaboration?.epoch ?? null;
+        if (message.ribbon) ribbonRef.current.restore(message.ribbon);
         pausedRef.current = pausedFor(canEditRef.current ?? message.canEdit);
         setReadOnly(pausedRef.current);
         setMode(nextMode);
@@ -501,22 +602,18 @@ function OfficeRuntime() {
         setCitation(message.citation);
         return;
       }
+      if (message.type === 'set-banner') {
+        ribbonRef.current.setBanner(message.banner);
+        return;
+      }
+      // The tab line runs in every state: moving between tabs edits nothing.
       if (
-        (message.type === 'menu-command' || message.type === 'menu-file') &&
-        epochRef.current !== null &&
-        pausedRef.current &&
-        !runsWhilePaused(menuSourceRef.current, message.id)
+        message.type === 'menu-command' &&
+        ribbonRef.current.command(message.id)
       )
         return;
       if (message.type === 'menu-command') {
-        menuSourceRef.current?.run(message.id, message.value);
-        return;
-      }
-      if (message.type === 'menu-file') {
-        const file = new File([message.bytes], message.name, {
-          type: message.mimeType,
-        });
-        menuSourceRef.current?.run(message.id, undefined, file);
+        runCommand(message.id, message.value);
         return;
       }
       if (message.type === 'render' && revisionRef.current !== null) {
@@ -579,6 +676,7 @@ function OfficeRuntime() {
       if (message.type === 'set-capabilities') {
         canEditRef.current = message.canEdit;
         pausedRef.current = pausedFor(message.canEdit);
+        shareMenus();
         sendMenus();
         if (pausedRef.current) await flush();
         // The latest pause state: a message that came during the flush set it.
@@ -626,7 +724,9 @@ function OfficeRuntime() {
         exporterRef.current &&
         revisionRef.current !== null
       ) {
-        await flush();
+        // A draft's rescue: a flush that can't finish (the editor's view gone
+        // after a render error) doesn't stop it; the exporter says what it can do.
+        await flush().catch(() => {});
         const revision = revisionRef.current;
         if (failScenarioExport) {
           failScenarioExport = false;
@@ -691,6 +791,18 @@ function OfficeRuntime() {
         return;
       }
       post({
+        message: value.message,
+        revision: runtimeRevision,
+        type: 'error',
+      });
+    },
+    [runtimeRevision]
+  );
+  const reportCrash = useCallback(
+    (value: Error) => {
+      if (runtimeRevision === undefined) return;
+      post({
+        crashed: true,
         message: value.message,
         revision: runtimeRevision,
         type: 'error',
@@ -811,7 +923,6 @@ function OfficeRuntime() {
               compact={compact}
               initialZoom={file.zoom}
               locale={locale}
-              narrow={narrow}
               onAnalysis={reportAnalysis}
               onError={reportError}
               onExporter={reportExporter}
@@ -825,54 +936,62 @@ function OfficeRuntime() {
               onZoomChange={reportZoom}
               prepareImage={prepareImage}
               readOnly={readOnly}
+              ribbon={ribbonHost}
             />
           ) : file.format === 'xlsx' ? (
-            <XlsxEditorHost
-              bytes={file.bytes}
-              collaboration={collaboration}
-              fileName={file.fileName}
-              initialZoom={zoom}
-              locale={locale}
-              narrow={narrow}
-              onAnalysis={reportAnalysis}
-              onExporter={reportExporter}
-              onFlusher={reportFlusher}
-              onMenus={reportMenus}
-              onNotice={reportNotice}
-              onPendingChange={reportHostPending}
-              onPositioner={reportPositioner}
-              onRenderer={reportRenderer}
-              onSave={save}
-              onThumbnailer={reportThumbnailer}
-              onZoomChange={reportZoom}
-              readOnly={readOnly}
-              sending={sending}
-            />
+            <EditorCrash onCrash={reportCrash}>
+              <XlsxEditorHost
+                bytes={file.bytes}
+                collaboration={collaboration}
+                compact={compact}
+                fileName={file.fileName}
+                initialZoom={zoom}
+                locale={locale}
+                onAnalysis={reportAnalysis}
+                onExporter={reportExporter}
+                onFlusher={reportFlusher}
+                onMenus={reportMenus}
+                onNotice={reportNotice}
+                onPendingChange={reportHostPending}
+                onPositioner={reportPositioner}
+                onRenderer={reportRenderer}
+                onSave={save}
+                onThumbnailer={reportThumbnailer}
+                onZoomChange={reportZoom}
+                readOnly={readOnly}
+                ribbon={ribbonHost}
+                sending={sending}
+              />
+            </EditorCrash>
           ) : (
-            <PptxEditorHost
-              bytes={file.bytes}
-              collaboration={collaboration}
-              fileName={file.fileName}
-              initialZoom={file.zoom}
-              locale={locale}
-              narrow={narrow}
-              onAnalysis={reportAnalysis}
-              onAskPresenter={askPresenter}
-              onError={reportError}
-              onExporter={reportExporter}
-              onFlusher={reportFlusher}
-              onMenus={reportMenus}
-              onNotice={reportNotice}
-              onPendingChange={reportHostPending}
-              onPositioner={reportPositioner}
-              onPresentingChange={reportPresenting}
-              onRenderer={reportRenderer}
-              onSave={save}
-              onThumbnailer={reportThumbnailer}
-              onZoomChange={reportZoom}
-              prepareImage={prepareImage}
-              readOnly={readOnly}
-            />
+            <EditorCrash onCrash={reportCrash}>
+              <PptxEditorHost
+                bytes={file.bytes}
+                collaboration={collaboration}
+                compact={compact}
+                fileName={file.fileName}
+                initialZoom={file.zoom}
+                locale={locale}
+                narrow={narrow}
+                onAnalysis={reportAnalysis}
+                onAskPresenter={askPresenter}
+                onError={reportError}
+                onExporter={reportExporter}
+                onFlusher={reportFlusher}
+                onMenus={reportMenus}
+                onNotice={reportNotice}
+                onPendingChange={reportHostPending}
+                onPositioner={reportPositioner}
+                onPresentingChange={reportPresenting}
+                onRenderer={reportRenderer}
+                onSave={save}
+                onThumbnailer={reportThumbnailer}
+                onZoomChange={reportZoom}
+                prepareImage={prepareImage}
+                readOnly={readOnly}
+                ribbon={ribbonHost}
+              />
+            </EditorCrash>
           )
         ) : file.format === 'docx' ? (
           <DocxViewer
@@ -918,6 +1037,30 @@ function OfficeRuntime() {
       </Suspense>
     </div>
   );
+}
+
+/** A render error in the XLSX or PPTX editor (DOCX's editor catches its own):
+ * the editor goes, and the host's strip asks to reload it (Q687). */
+class EditorCrash extends Component<
+  { children: ReactNode; onCrash: (error: Error) => void },
+  { crashed: boolean }
+> {
+  state = { crashed: false };
+
+  static getDerivedStateFromError() {
+    return { crashed: true };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.error('Office editor render error', error);
+    this.props.onCrash(
+      error instanceof Error ? error : new Error(String(error))
+    );
+  }
+
+  render() {
+    return this.state.crashed ? null : this.props.children;
+  }
 }
 
 function post(message: OfficeRuntimePayload, transfer: Transferable[] = []) {

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { CitationContext } from './Cite';
-import { Prose } from './text';
+import { loadProse, Prose } from './text';
 
 const CELL = /<td[^>]*>.*?<\/td>/g;
 const CITED_LAST_CELL =
@@ -10,6 +10,8 @@ const CITED_LAST_CELL =
 const SHOWN: Record<number, number> = { 7: 1, 9: 2 };
 
 describe('Markdown tables', () => {
+  beforeAll(loadProse);
+
   it("draw in the chat's table look, without Streamdown's frame or buttons", () => {
     const md = renderToStaticMarkup(
       <Prose text={'| Tool | Result |\n|---|---|\n| `list_sources` | ok |'} />

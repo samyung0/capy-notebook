@@ -65,12 +65,13 @@ import {
 } from '@/features/materials/countLabels';
 import { relativeTime } from '@/features/materials/MaterialListCard';
 import { MaterialsTab } from '@/features/materials/MaterialsTab';
+import { ContentActions } from '@/features/workspace/ContentActions';
+import { resumedConnect } from '@/features/workspace/connectResume';
+import { toFileActionTarget } from '@/features/workspace/contentActionTarget';
 import {
   AddSourceDialog,
-  resumedConnect,
-} from '@/features/workspace/AddSourceDialog';
-import { ContentActions } from '@/features/workspace/ContentActions';
-import { toFileActionTarget } from '@/features/workspace/contentActionTarget';
+  addSourceIntent,
+} from '@/features/workspace/LazyAddSourceDialog';
 import {
   type RetryProcessing,
   retryFailedFile,
@@ -270,6 +271,7 @@ function ActiveFiles({
   } | null>(resumeProvider ? { resume: true, workspaceId: null } : null);
   const addFile = (
     <Button
+      {...addSourceIntent}
       className="px-1.5 font-bold text-link"
       disabled={frozen}
       iconLeft="plus"

@@ -480,3 +480,639 @@ html[data-frosted] .oox-root :is([data-docx-escape-layer], [role="dialog"]) {
 html[data-frosted] .oox-root .bg-doc-surface:has(> .oox-formatting-bar) {
   background: transparent;
 }
+
+/* The ribbon (Q562, Q603): about 78px, two 28px lines of small controls with
+   18px icons, 58px big buttons with 20px icons, 2px group padding, 26px font
+   and size boxes, an 11px caption; flat buttons, as Office's (Q567, a signed
+   exception to the bordered-button rule). Below md it is one row with no
+   captions (Q597). The DOCX, XLSX and PPTX toolbars' own controls take the
+   same scale through their variables. */
+.office-ribbon {
+  --doc-toolbar-button-size: 28px;
+  --doc-toolbar-height: 28px;
+  --doc-toolbar-icon-size: 18px;
+  --doc-color-split-height: 28px;
+  --doc-color-split-width: 28px;
+  --doc-list-divider-height: 0;
+  --doc-list-divider-margin: 0;
+  --xlsx-button-size: 28px;
+  --xlsx-control-font-size: 13px;
+  --xlsx-control-font-weight: 500;
+  --pptx-button-size: 28px;
+  --pptx-control-font-size: 13px;
+  --pptx-control-font-weight: 500;
+  position: relative;
+  z-index: 30;
+  font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+  color: var(--text-primary);
+}
+.office-ribbon__bar {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  align-items: stretch;
+  height: 78px;
+  padding: 3px 6px 0;
+  background: var(--surface-card-bg);
+  border-bottom: 1px solid var(--divider);
+}
+.office-ribbon__bar[data-over] {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 40;
+  box-shadow: var(--office-menu-shadow, 0 4px 16px rgba(60, 64, 67, 0.24));
+}
+/* From 768 px of frame up what doesn't fit is in More; the one row scrolls. */
+.office-ribbon__scroll {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: stretch;
+  min-width: 0;
+  overflow: hidden;
+  scrollbar-width: none;
+}
+.office-ribbon[data-phone] .office-ribbon__scroll {
+  overflow: auto hidden;
+}
+/* Overlays, not a mask: a mask would hide the dropdowns inside the row. */
+.office-ribbon__scroll[data-scroll-start]::before,
+.office-ribbon__scroll[data-scroll-end]::after {
+  position: sticky;
+  z-index: 1;
+  flex: none;
+  width: 28px;
+  pointer-events: none;
+  content: "";
+}
+.office-ribbon__scroll[data-scroll-start]::before {
+  left: 0;
+  margin-right: -28px;
+  background: linear-gradient(to right, var(--surface-card-bg), transparent);
+}
+.office-ribbon__scroll[data-scroll-end]::after {
+  right: 0;
+  margin-left: -28px;
+  background: linear-gradient(to left, var(--surface-card-bg), transparent);
+}
+.office-ribbon__group {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  padding: 0 2px;
+}
+/* All padding, so a group's box is what it takes of the row (useRowFit). */
+.office-ribbon__group + .office-ribbon__group {
+  position: relative;
+  padding-left: 12px;
+}
+.office-ribbon__group + .office-ribbon__group::before {
+  position: absolute;
+  top: 5px;
+  bottom: 19px;
+  left: 5px;
+  width: 1px;
+  content: "";
+  background: var(--divider);
+}
+.office-ribbon__body {
+  display: flex;
+  flex: 1;
+  gap: 1px;
+  align-items: flex-start;
+  justify-content: center;
+  height: 59px;
+}
+.office-ribbon__lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.office-ribbon__line {
+  display: flex;
+  gap: 1px;
+  align-items: center;
+  height: 28px;
+}
+.office-ribbon__caption {
+  height: 15px;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 13px;
+  color: var(--text-muted);
+  text-align: center;
+  white-space: nowrap;
+}
+.office-ribbon__button,
+.office-ribbon__split-top,
+.office-ribbon__split-bottom {
+  display: inline-flex;
+  flex: none;
+  gap: 5px;
+  align-items: center;
+  height: 28px;
+  padding: 0 6px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text-primary);
+  white-space: nowrap;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-button);
+}
+.office-ribbon__button[data-icon-only] {
+  justify-content: center;
+  min-width: 28px;
+  padding: 0;
+}
+.office-ribbon__button[data-icon-only][aria-haspopup] {
+  padding: 0 1px 0 5px;
+}
+.office-ribbon__button[data-big] {
+  flex-direction: column;
+  gap: 3px;
+  justify-content: center;
+  min-width: 46px;
+  height: 58px;
+  padding: 0 4px;
+  font-size: 12px;
+}
+.office-ribbon__big-label {
+  display: inline-flex;
+  gap: 1px;
+  align-items: center;
+}
+.office-ribbon__button[data-box] {
+  gap: 4px;
+  justify-content: space-between;
+  width: 128px;
+  height: 26px;
+  padding: 0 4px 0 8px;
+  border: 1px solid var(--border-default);
+}
+.office-ribbon__button:hover:enabled,
+.office-ribbon__split-top:hover:enabled,
+.office-ribbon__split-bottom:hover:enabled,
+.office-ribbon__button[aria-expanded="true"] {
+  background: var(--surface-card-hover-bg);
+}
+.office-ribbon__button[data-checked],
+.office-ribbon__button[aria-pressed="true"] {
+  color: var(--doc-toggle-active-fg);
+  background: var(--doc-toggle-active-bg);
+}
+.office-ribbon button:disabled {
+  cursor: default;
+  opacity: var(--toolbar-disabled-opacity);
+}
+.office-ribbon__button:focus-visible,
+.office-ribbon__split-top:focus-visible,
+.office-ribbon__split-bottom:focus-visible,
+.office-ribbon__menu-item:focus-visible,
+.office-ribbon__collapse:focus-visible,
+.office-ribbon__layout:focus-visible {
+  outline: 2px solid var(--action-primary-bg);
+  outline-offset: -2px;
+}
+/* PowerPoint's New slide: the upper half adds a slide, the lower lists layouts. */
+.office-ribbon__dropdown {
+  display: inline-flex;
+  flex: none;
+}
+.office-ribbon__dropdown[data-split] {
+  border-radius: var(--radius-button);
+}
+.office-ribbon__dropdown[data-split]:hover {
+  box-shadow: inset 0 0 0 1px var(--border-default);
+}
+.office-ribbon__split-top[data-big] {
+  justify-content: center;
+  width: 100%;
+  height: 32px;
+  padding: 4px 6px 0;
+  border-radius: var(--radius-button) var(--radius-button) 0 0;
+}
+.office-ribbon__split-bottom[data-big] {
+  justify-content: center;
+  height: 26px;
+  padding: 0 6px;
+  font-size: 12px;
+  border-radius: 0 0 var(--radius-button) var(--radius-button);
+}
+.office-ribbon__dropdown[data-split]:has([data-big]) {
+  flex-direction: column;
+  min-width: 52px;
+  height: 58px;
+}
+.office-ribbon__dropdown[data-split] .office-ribbon__split-top:not([data-big]) {
+  justify-content: center;
+  width: 28px;
+  padding: 0;
+}
+.office-ribbon__dropdown[data-split]
+  .office-ribbon__split-bottom:not([data-big]) {
+  justify-content: center;
+  width: 18px;
+  padding: 0;
+}
+.office-ribbon__collapse {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  align-self: flex-end;
+  width: 28px;
+  height: 28px;
+  margin-bottom: 16px;
+  color: var(--text-muted);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-button);
+}
+.office-ribbon__collapse:hover {
+  background: var(--surface-card-hover-bg);
+}
+/* A dropdown's list, as the toolbars' own (--office-menu-*). */
+/* The row an arrow key marked while the focus stays in the document. */
+.office-ribbon [data-active] {
+  outline: 2px solid var(--action-primary-bg);
+  outline-offset: -2px;
+}
+.office-ribbon__more {
+  width: 56px;
+}
+.office-ribbon__more > .office-ribbon__button {
+  width: 100%;
+  min-width: 0;
+}
+/* The groups that moved: each as in the row, its caption over it. */
+.office-ribbon__more-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.office-ribbon__more-list .office-ribbon__group {
+  flex-direction: column-reverse;
+  padding: 0;
+}
+.office-ribbon__more-list .office-ribbon__group::before {
+  display: none;
+}
+.office-ribbon__more-list .office-ribbon__body {
+  justify-content: flex-start;
+  height: auto;
+}
+.office-ribbon__more-list .office-ribbon__caption {
+  text-align: left;
+}
+.office-ribbon__menu {
+  position: fixed;
+  z-index: 10000;
+  box-sizing: border-box;
+  min-width: 180px;
+  padding: var(--office-menu-padding, 6px);
+  overflow-y: auto;
+  color: var(--office-menu-text);
+  background: var(--office-menu-bg);
+  border: 1px solid var(--office-menu-border);
+  border-radius: var(--office-menu-radius, 8px);
+  box-shadow: var(--office-menu-shadow, 0 4px 16px rgba(60, 64, 67, 0.24));
+}
+.office-ribbon__menu-item {
+  display: flex;
+  gap: var(--office-menu-item-gap, 8px);
+  align-items: center;
+  width: 100%;
+  min-height: var(--office-menu-item-height, 28px);
+  padding: 0 var(--office-menu-item-padding-x, 8px);
+  font:
+    var(--office-menu-font-weight, 500) var(--office-menu-font-size, 14px) /
+    var(--office-menu-line-height, normal)
+    var(--office-menu-font-family, inherit);
+  color: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: var(--office-menu-item-radius, 8px);
+}
+.office-ribbon__menu-item > span {
+  flex: 1;
+}
+.office-ribbon__menu-item > kbd {
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.office-ribbon__menu-item:hover:enabled,
+.office-ribbon__menu-item:focus-visible {
+  background: var(--office-menu-hover, var(--surface-card-hover-bg));
+}
+.office-ribbon__menu-label {
+  padding: var(--office-menu-label-padding, 12px 8px 6px);
+  font-size: var(--office-menu-label-font-size, 12px);
+  font-weight: var(--office-menu-label-font-weight, 500);
+  color: var(--office-menu-muted);
+}
+.office-ribbon__menu-separator {
+  height: 1px;
+  margin: 4px var(--office-menu-item-padding-x, 8px);
+  background: var(--office-menu-separator, var(--divider));
+  border: 0;
+}
+.office-ribbon__grid {
+  display: grid;
+  grid-template-columns: repeat(8, 18px);
+  gap: 2px;
+  padding: 4px;
+}
+.office-ribbon__grid > button {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  cursor: pointer;
+  background: none;
+  border: 1px solid var(--border-default);
+  border-radius: 2px;
+}
+.office-ribbon__grid > button[data-on] {
+  background: var(--doc-toggle-active-bg);
+  border-color: var(--action-primary-bg);
+}
+.office-ribbon__grid-size {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+}
+/* The style and layout galleries, framed like a box. */
+.oox-ribbon-gallery,
+.office-ribbon-gallery {
+  box-sizing: border-box;
+  display: flex;
+  gap: 4px;
+  align-items: stretch;
+  height: 58px;
+  padding: 2px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-button);
+}
+.oox-ribbon-gallery > button {
+  width: 66px;
+  overflow: hidden;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: calc(var(--radius-button) - 2px);
+}
+.oox-ribbon-gallery > button[data-slot="1"] {
+  font-size: 17px;
+}
+.oox-ribbon-gallery > button[data-slot="2"] {
+  font-size: 14.5px;
+  font-weight: 700;
+}
+.oox-ribbon-gallery > button[aria-pressed="true"],
+.oox-ribbon-gallery > button:hover:enabled,
+.office-ribbon__layout:hover:enabled {
+  background: var(--surface-card-hover-bg);
+}
+/* The picker behind the gallery's arrow draws only its chevron. */
+.oox-ribbon-gallery button[role="combobox"] {
+  align-self: center;
+  height: 100%;
+  padding: 0 2px;
+  background: none;
+  border: 0;
+}
+.oox-ribbon-gallery button[role="combobox"] > span:first-child {
+  display: none;
+}
+.office-ribbon__layout {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+  justify-content: center;
+  width: 70px;
+  font-size: 11.5px;
+  color: var(--text-primary);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: calc(var(--radius-button) - 2px);
+}
+.office-ribbon__layout > i {
+  display: block;
+  width: 48px;
+  height: 27px;
+  border: 1px solid var(--border-default);
+  border-radius: 3px;
+}
+/* One bar per colour button: the swatch sits 1px under the glyph (round 3c),
+   14 x 3 px in a 28px button. */
+.office-ribbon [data-color-bar] {
+  position: absolute !important;
+  right: calc((var(--office-ribbon-button, 28px) - 14px) / 2) !important;
+  bottom: calc((var(--office-ribbon-button, 28px) - 18px) / 2 + 2px) !important;
+  left: calc((var(--office-ribbon-button, 28px) - 14px) / 2) !important;
+  width: auto !important;
+  height: 3px !important;
+  margin: 0 !important;
+  border-radius: 1px !important;
+}
+.office-ribbon .docx-color-picker-button {
+  position: relative;
+  justify-content: center;
+  width: var(--office-ribbon-button, 28px) !important;
+  height: var(--office-ribbon-button, 28px) !important;
+  padding: 0 !important;
+}
+/* Its chevron: the whole button opens the palette, as XLSX's and PPTX's. */
+.office-ribbon .docx-color-picker-button > [data-icon] {
+  display: none !important;
+}
+/* DOCX's controls at the ribbon's scale, flat. */
+.office-ribbon__body .office-ribbon__line .oox-toolbar-toggle {
+  flex-shrink: 0;
+  width: var(--office-ribbon-button, 28px);
+  height: var(--office-ribbon-button, 28px);
+}
+.office-ribbon__body .office-ribbon__line [data-testid="toolbar-alignment"] {
+  height: var(--office-ribbon-button, 28px);
+  color: var(--doc-text);
+  border-radius: var(--doc-toolbar-radius);
+}
+.office-ribbon .oox-ribbon-box,
+.office-ribbon [data-testid="font-size-display"],
+.office-ribbon [data-testid="font-size-input"] {
+  height: 26px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-button);
+}
+.office-ribbon .oox-ribbon-box {
+  justify-content: space-between;
+  padding: 0 4px 0 8px;
+}
+.office-ribbon [data-testid="font-size-display"],
+.office-ribbon [data-testid="font-size-input"] {
+  width: 36px;
+  margin-left: 3px;
+}
+.office-ribbon .docx-list-buttons,
+.office-ribbon .docx-list-buttons > [role="group"] {
+  gap: 1px;
+}
+.office-ribbon :is(button, input):disabled {
+  opacity: var(--toolbar-disabled-opacity);
+}
+/* XLSX's Paint format, big as Office's Format Painter. */
+.office-ribbon [data-testid="xlsx-paint-big"] svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 1.8;
+}
+/* Below md: one row under the tabs, the same cells flattened. */
+.office-ribbon[data-phone] {
+  --office-ribbon-button: 30px;
+  --doc-toolbar-button-size: 30px;
+  --xlsx-button-size: 30px;
+  --pptx-button-size: 30px;
+}
+.office-ribbon[data-phone] .office-ribbon__bar {
+  height: 36px;
+  padding: 0 4px;
+}
+.office-ribbon[data-phone] .office-ribbon__group {
+  flex-direction: row;
+  align-items: center;
+  padding: 0 2px;
+}
+.office-ribbon[data-phone] .office-ribbon__group + .office-ribbon__group {
+  padding-left: 8px;
+}
+.office-ribbon[data-phone]
+  .office-ribbon__group
+  + .office-ribbon__group::before {
+  top: 8px;
+  bottom: 8px;
+  left: 3px;
+}
+.office-ribbon[data-phone] .office-ribbon__body {
+  gap: 2px;
+  align-items: center;
+  height: auto;
+}
+.office-ribbon[data-phone] .office-ribbon__caption {
+  display: none;
+}
+.office-ribbon[data-phone] .office-ribbon__lines,
+.office-ribbon[data-phone] .office-ribbon__line {
+  flex-direction: row;
+  gap: 2px;
+  height: auto;
+}
+.office-ribbon[data-phone] .office-ribbon__button {
+  height: 30px;
+}
+.office-ribbon[data-phone] .office-ribbon__button[data-icon-only] {
+  min-width: 30px;
+}
+.office-ribbon[data-phone] .office-ribbon__button[data-big] {
+  flex-direction: row;
+  gap: 5px;
+  min-width: 0;
+  padding: 0 6px;
+  font-size: 13px;
+}
+.office-ribbon[data-phone]
+  .office-ribbon__dropdown[data-split]:has([data-big]) {
+  flex-direction: row;
+  min-width: 0;
+  height: 30px;
+}
+.office-ribbon[data-phone] .office-ribbon__split-top[data-big] {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+.office-ribbon[data-phone] .office-ribbon__split-bottom[data-big] {
+  height: 30px;
+  padding: 0 4px;
+}
+.office-ribbon[data-phone] .oox-ribbon-gallery,
+.office-ribbon[data-phone] .office-ribbon-gallery {
+  height: 30px;
+  padding: 0 2px;
+  border: 0;
+}
+/* The file strip under the ribbon: Capy's FileBanner, in this frame. */
+.office-banner {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 4px 8px 4px 16px;
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--surface-card-hover-bg);
+  border-bottom: 1px solid var(--divider);
+}
+.office-banner[data-inline] {
+  align-items: center;
+  height: 36px;
+  padding-block: 0;
+}
+.office-banner[data-tone="error"] {
+  background: var(--tint-error-bg);
+  border-bottom-color: color-mix(in srgb, var(--solid-error) 40%, transparent);
+}
+.office-banner > p {
+  flex: 1;
+  min-width: 0;
+  padding-top: 2px;
+  margin: 0;
+  overflow: auto hidden;
+  scrollbar-width: none;
+}
+.office-banner[data-inline] > p {
+  padding: 0;
+  white-space: nowrap;
+}
+.office-banner > button {
+  flex: none;
+  height: 28px;
+  padding: 0 8px;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-button);
+}
+.office-banner > button:hover:enabled {
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+}
+.office-banner > .office-banner__close {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  opacity: 0.75;
+}
+@media (min-width: 640px) {
+  .office-banner {
+    padding-inline: 16px 8px;
+  }
+}

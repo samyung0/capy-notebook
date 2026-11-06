@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { isApiError, qk } from '@/api/client';
 import {
+  deleteAssignmentDrawing,
   onAssignmentEvent,
   saveAssignmentAnswers,
   saveAssignmentDrawing,
@@ -210,8 +211,10 @@ export function AssignmentTake({
 
   // Done stores a drawing part's board at once (Epo 2026-11-06); saves name it.
   const storeDrawing = useCallback(
-    (partId: string, value: DrawingValue) =>
-      saveAssignmentDrawing(attempt.id, partId, value),
+    (partId: string, value: DrawingValue | null) =>
+      value
+        ? saveAssignmentDrawing(attempt.id, partId, value)
+        : deleteAssignmentDrawing(attempt.id, partId).then(() => null),
     [attempt.id]
   );
   const change = (partId: string, value: Answer) => {

@@ -16,6 +16,10 @@ const read = vi.hoisted(() => ({
 }));
 const mounts = vi.hoisted(() => ({ count: 0 }));
 vi.mock('@/api/hooks', () => ({
+  materialTokenQuery: (id: string) => ({
+    queryFn: async () => ({ access: 'write' }),
+    queryKey: ['material', id, 'collaboration-token'],
+  }),
   useMaterial: () => ({ ...read, error: null, refetch: vi.fn() }),
   useMe: () => ({ data: { id: 'u_1' } }),
 }));

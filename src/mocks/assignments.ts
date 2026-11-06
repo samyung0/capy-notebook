@@ -1389,6 +1389,15 @@ export const assignmentHandlers = (viewer: Viewer) => {
         return HttpResponse.json({ id });
       }
     ),
+    http.delete(
+      '/api/assignment-attempts/:id/drawings/:partId',
+      ({ params }) => {
+        const found = attemptOf(params.id);
+        if (!found) return gone();
+        delete found.attempt.answers[String(params.partId)];
+        return new HttpResponse(null, { status: 204 });
+      }
+    ),
     http.get('/api/drawings', () =>
       HttpResponse.json({
         count: markedDrawings.length,

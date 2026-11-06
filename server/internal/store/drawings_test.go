@@ -172,3 +172,36 @@ func TestMarkedDrawingsListAndDeleteForTheirPayer(t *testing.T) {
 		t.Fatalf("drawings left = %d, err %v", left, err)
 	}
 }
+
+// TestAnEmptiedDrawingIsForgotten: Done on an emptied board forgets the part's
+// stored drawing, so the submitted attempt leaves the part unanswered and the
+// member stops paying for it.
+func TestAnEmptiedDrawingIsForgotten(t *testing.T) {
+	f := newAssignmentFixture(t, "emptied-drawing")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	form := f.form(t, now.Add(time.Hour))
+	form.Questions = drawingFrozen(t)
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	board := DrawingObject{Key: "drawings/" + run.ID + "/board_1.ydoc.gz", Bytes: 1000, Type: "application/gzip"}
+	if _, err := f.s.SaveAssignmentDrawing(ctx, f.viewer, run.ID, "p4", board, nil, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.DeleteAssignmentDrawing(ctx, f.viewer, run.ID, "p4"); err != nil {
+		t.Fatal(err)
+	}
+	done, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.ID, map[string]any{}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, answered := done.Answers["p4"]; answered {
+		t.Fatalf("an emptied drawing was submitted: %v", done.Answers["p4"])
+	}
+}

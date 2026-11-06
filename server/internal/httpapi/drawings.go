@@ -51,6 +51,8 @@ type drawingSavedOutput struct {
 func (a *api) registerDrawings(api huma.API) {
 	regWithMaxBody(api, "PUT", "/api/assignment-attempts/{id}/drawings/{partId}", "saveAssignmentDrawing", "assignments",
 		"Store a drawing part's board (and its marking image) for a running attempt", 200, drawingMaxBody, a.saveAssignmentDrawing)
+	reg(api, "DELETE", "/api/assignment-attempts/{id}/drawings/{partId}", "deleteAssignmentDrawing", "assignments",
+		"Forget a drawing part's stored drawing in a running attempt (Done on an emptied board)", 204, a.deleteAssignmentDrawing)
 	reg(api, "GET", "/api/drawings/{id}", "getDrawing", "assignments",
 		"A drawing answer's board, as a link that lasts the hour", 200, a.getDrawing)
 	reg(api, "GET", "/api/drawings", "listDrawings", "assignments",
@@ -59,6 +61,15 @@ func (a *api) registerDrawings(api huma.API) {
 		"Delete one of the caller's marked drawings; its marks stay", 200, a.deleteDrawing)
 	reg(api, "DELETE", "/api/drawings", "deleteAllDrawings", "assignments",
 		"Delete every marked drawing the caller pays for; their marks stay", 200, a.deleteAllDrawings)
+}
+
+type assignmentDrawingPartInput struct {
+	ID     string `path:"id"`
+	PartID string `path:"partId" maxLength:"128"`
+}
+
+func (a *api) deleteAssignmentDrawing(ctx context.Context, in *assignmentDrawingPartInput) (*Empty, error) {
+	return &Empty{}, assignmentError(a.s.DeleteAssignmentDrawing(ctx, userID(ctx), in.ID, in.PartID))
 }
 
 type drawingListInput struct {

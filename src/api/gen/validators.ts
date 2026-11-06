@@ -197,6 +197,21 @@ export const SaveAssignmentAnswersResponse = zod.void()
 
 
 /**
+ * @summary Forget a drawing part's stored drawing in a running attempt (Done on an emptied board)
+ */
+export const deleteAssignmentDrawingPathPartIdMax = 128;
+
+
+
+export const DeleteAssignmentDrawingParams = zod.object({
+  "id": zod.string(),
+  "partId": zod.string().max(deleteAssignmentDrawingPathPartIdMax)
+})
+
+export const DeleteAssignmentDrawingResponse = zod.void()
+
+
+/**
  * @summary Store a drawing part's board (and its marking image) for a running attempt
  */
 export const saveAssignmentDrawingPathPartIdMax = 128;
@@ -2182,7 +2197,7 @@ export const GetDrawingParams = zod.object({
 
 export const GetDrawingResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "boardUrl": zod.string().describe('The board\'s saved document; the link is the same all hour and lasts two'),
+  "boardUrl": zod.string().describe('The board\'s saved document, gzipped; the link is the same all hour and lasts two'),
   "bytes": zod.int(),
   "id": zod.string(),
   "partId": zod.string()

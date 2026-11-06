@@ -2271,6 +2271,11 @@ design, option d), and the nudge's release file on 2026-10-17.
   source tabs on the older pin (protocol 25) reload; `MIN_MATERIAL` stays 22.
   `OFFICE_PROTOCOL_VERSION` stays. Its deploy request names "client protocol
   25 -> 26, source 25 -> 26".
+  The Office ribbon (`OFFICE_PROTOCOL_VERSION` 13 -> 14: `set-banner`,
+  `banner-action`, `ribbon-focus`, `load`'s `ribbon`, `menu-file` gone) raised
+  `CLIENT_PROTOCOL` to 27 and `MIN_SOURCE` to 27, so source tabs drawing the old
+  header reload; `MIN_MATERIAL` stays 22. Its deploy request names "client
+  protocol 26 -> 27, source 26 -> 27".
 
 #### When to bump
 
@@ -2491,13 +2496,29 @@ server down, a timeout or rate limit; a refusal shows its panel), else the store
 wordless skeleton (`NoteSkeleton`). Offline with nothing to paint it reads "Waiting
 for connection" (C9).
 
+- **Its token** is asked for as the note opens, beside its read rather than a
+  round trip behind it (Q618, `MaterialContentBody`): everyone opening a note
+  needs one but a heavy note opened read-only, which joins no room. It needs the
+  kind known at the open, from the list or the copy's row; otherwise the frame asks
+  once the read answers. It's one request: `materialTokenQuery`'s, which the
+  editor reads, and which a viewer's first read channel takes from the cache (a
+  viewer's token says read either way, `readToken` in `liveNoteRead.ts`). An
+  editor's View holds a write token and asks for its own read channel. A read token
+  nothing took goes when the note closes, so someone raised meanwhile doesn't start
+  an editor from it. Someone refused gets that one extra refused request, which
+  nothing shows or retries: the read decides the page (Q644), and opening it again
+  once let in asks afresh.
 - **A viewer** stays on the paint, which follows its room on a read channel
   (`LiveNote`, `readNoteLive`, Q158), from its copy when it has one. No cue says
   it is read-only (D9). A reopen loads no editor: a copy's row keeps its reader's
   last `canEditContent` (`copyLabel`), which decides until the read answers.
 - **An editor** builds Plate behind the paint: `NoteEditor` mounts `invisible
-  absolute inset-0` and `inert`, and asks for its token, discussions and drafts
-  meanwhile. Edits are held until there is an editor (C4, no spare client ids):
+  absolute inset-0` and `inert`, and asks for its discussions and drafts
+  meanwhile. The mount doesn't wait for the discussions (Q680): their anchors land
+  on their text when they answer, the caret left where it was. With the token at
+  open (Q618) that took a note to editable about 0.8 to 1.3 s sooner under the
+  mock on 2026-11-06 (production build with MSW, the paint unchanged); MSW adds
+  about 1.1 s to each API call, so the real saving is unmeasured. Edits are held until there is an editor (C4, no spare client ids):
   keys are dropped and a phone shows no keyboard. Plate stays static until the
   first sync (C5): no early bind. Once `NoteEditorCore` painted (`onShown`) the
   paint goes and the editor shows in the same commit, at the block under the top
@@ -3602,7 +3623,9 @@ imports) joins the note room on the tab's socket on a read channel, whoever
 the reader is: View asks for one with `{access: 'read'}` on the token request,
 as every reader room does (embeds in View, the quiz attempt and set study
 pages), so the server refuses anything such a channel sends (it closes a read
-channel that writes and sends a viewer no presence). Once the room syncs, its
+channel that writes and sends a viewer no presence). A viewer's first join takes
+the read token its note's open already asked for instead ([opening a
+note](#opening-a-note)), once. Once the room syncs, its
 value is handed over block by block (`notes/liveNoteBlocks.ts`): a block equal
 to what the View shows keeps its object (element ids below the block are left
 out of the comparison, since normalization gives id-less children random ids),
@@ -4363,6 +4386,21 @@ build swaps that route for an empty module (`MSW_ENTRIES` in `vite.config.ts`), 
 doesn't ship the vendored sources; the answer flow reverses that. No vanilla-extract plugin
 runs: the board's only `.css.ts` styles, the canvas note's, are plain CSS (local change 24). `pnpm audit` covers these packages' dependencies but not the copied
 source, so an AFFiNE security fix stays unseen until someone re-copies.
+
+The dev server pre-bundles the board's BlockSuite (Q683): at start `vite.config.ts` reads
+every `@blocksuite/affine/*` subpath that `src/features/blocksuite` names and adds them to
+`optimizeDeps.include`, so esbuild bundles them once into Vite's dep cache instead of the
+server sending about 2,000 vendored source files a request each. An esbuild plugin there
+gives each `.css.ts` file vanilla-extract's file scope, and its styles register in the
+browser as the module runs, so the dev server runs no vanilla-extract plugin (a build with
+MSW on still does). Two consequences:
+
+- An edit to `vendor/blocksuite` shows only after the bundle is rebuilt: start the server
+  with `vite --force`. `src/features/blocksuite` stays app source and hot reloads as before.
+- A BlockSuite subpath newly imported there needs a server restart. Until then it loads as
+  source beside a second copy of what the bundle holds.
+
+Numbers in [editor-perf.md](../editor-perf.md#drawing-board-in-dev).
 
 ### The board's tools
 

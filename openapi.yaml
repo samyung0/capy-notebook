@@ -2721,7 +2721,7 @@ components:
           readOnly: true
           type: string
         boardUrl:
-          description: The board's saved document; the link is the same all hour and lasts two
+          description: The board's saved document, gzipped; the link is the same all hour and lasts two
           type: string
         bytes:
           format: int64
@@ -9013,6 +9013,32 @@ paths:
       tags:
         - Assignments
   /api/assignment-attempts/{id}/drawings/{partId}:
+    delete:
+      operationId: deleteAssignmentDrawing
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: partId
+          required: true
+          schema:
+            maxLength: 128
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Forget a drawing part's stored drawing in a running attempt (Done on an emptied board)
+      tags:
+        - assignments
     put:
       operationId: saveAssignmentDrawing
       parameters:

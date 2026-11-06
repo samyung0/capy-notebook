@@ -30,6 +30,8 @@ CLEF_URL = "https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/@cf/c
 # wrapped in Cloudflare's {"result": ...} envelope; {account} is filled at call time.
 PROVIDERS = {
     "jev": (URL, MODEL),
+    # The production pin (server/internal/jev), for runs that must not follow the alias.
+    "jev-1.13.0": (URL, "jev-1.13.0"),
     "clef": (CLEF_URL.format(account="{account}", model="clef"), "clef"),
     "clef-flash": (CLEF_URL.format(account="{account}", model="clef-flash"), "clef-flash"),
 }
@@ -122,7 +124,7 @@ def call(job, key, provider="jev", account=None):
         if len(raw) > 1_048_576:
             raise ValueError("Response exceeded size limit")
         payload = json.loads(raw)
-        if provider != "jev" and response.status == 200:
+        if provider.startswith("clef") and response.status == 200:
             payload = payload["result"]
         result["response"] = safe_response(payload, key)
         if response.status != 200:

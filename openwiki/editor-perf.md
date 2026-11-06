@@ -27,12 +27,49 @@ Four budget specs always run. Two V8 profile specs run only with
 `PERF_PROFILE=1`. Default CPU throttle is `PERF_CPU=4` via CDP after load. Open
 cost is measured unthrottled because that path is already tens of seconds.
 
+The dev server's module requests pass through MSW ahead of its handlers
+(`devModules` in `src/mocks/browser.ts`, Q617). On a busy PC on 2026-11-06 (three
+alternating runs, medians) that took the read-only open from 6.2 s to 3.9 s, the
+interactive open from 19.4 s to 15.0 s and the scroll from 11 to 24 FPS. `/api` keeps
+its mock latency. The budgets did not change (Q560), so they are looser in effect,
+and earlier numbers aren't comparable.
+
 Numbers from a Windows laptop are not comparable to Linux CI. Different OS,
 different Chromium raster path, different CPU. Keep local runs for debugging
 (`typingProfile.perf.ts` / `saveCycleProfile.perf.ts`). Use Actions for
 deltas.
 
 `.github/workflows/ci.yml` does not run `pnpm bench:editor`.
+
+## Drawing board in dev
+
+The dev server pre-bundles the board's BlockSuite and runs no vanilla-extract plugin
+(Q683; how, and why a vendored edit then needs `vite --force`:
+[frontend/plate-editor.md](frontend/plate-editor.md#blocksuite-on-main)). Measured on the
+PC on 2026-11-06 against the config before it, MSW's module pass-through in both,
+alternating, medians of 3, at 3-25% CPU load from other sessions. Usable means the plane
+is painted and the pen button is there.
+
+| Workspace Canvas tab, blank board | Before | After |
+| --- | --- | --- |
+| Cold start (empty cache): click to usable | 10.5 s | 1.4 s |
+| Restart (cache kept): click to usable | 11.2 s | 1.3 s |
+| Warm (same server, new tab): click to usable | 3.4 s | 0.85 s |
+| Reload with the canvas in the URL: reload to usable | 5.7 s | 2.9 s |
+| Requests after the click, warm | 2,212 (27.9 MB) | 192 (12.9 MB) |
+
+Nothing else got slower. A plain workspace load after a cold start took 17.5 s against
+18.3 s (the dep scan 4.8 s against 7.2 s, the bundling 8.9 s against 7.2 s, esbuild's
+memory 2.6 GB against 2.3 GB while it runs), after a restart 9.1 s against 9.2 s. A DOCX
+opened in 6.2 s after a restart and 4.1 s warm, both ways. `drawing-board.spec.ts` at
+one worker takes 2.0 min from an empty cache and 1.8 min warm, against 8.6 min on the
+dev setup before both MSW's pass-through and this.
+
+`axisNumber` (`src/features/questions/graph.ts`) keeps one `Intl.NumberFormat` per
+decimals and notation. On a large board (8 answers: 25 plane cards, 64 formulas, 32 note
+cards) at 4x CPU in dev, zooming went from 23.5 to 28.5 FPS and from 1.66 s to 0.81 s of
+blocking, and typing a label from 28.7 to 15.9 ms of blocking per key; the label's input
+p95 stays near 470-500 ms, held by other work.
 
 ## Office runtime (`pnpm bench:office`)
 
@@ -246,6 +283,46 @@ file), then gate it from three CI runs.
 A laptop run is faster than the runner on typing and slower under load, so a
 local miss is not a regression by itself.
 
+## Drawing board (`pnpm bench:canvas`)
+
+[`bench/editor/scripts/board.canvas.ts`](../bench/editor/scripts/board.canvas.ts)
+measures the drawing board (BlockSuite's edgeless editor on `/dev/drawing`) in a
+production build without MSW ([`playwright.canvas.config.ts`](../bench/editor/scripts/playwright.canvas.config.ts)).
+The route is in that build only because the bench sets `VITE_BENCH_ROUTES=true`
+(`src/router.ts`, and `vite.config.ts` keeps the route and the vanilla-extract
+plugin for it); `scripts/env/config.py` pins it to `false` for every deploy, and
+`scripts/env/test_config.py` checks that. The build takes a few minutes.
+
+The large board is made in the page through BlockSuite's API and saved, so it
+always matches the board's current format: 200 pen strokes of 30 points, 30
+shapes, 10 formulas and 30 note cards of three paragraphs over the plane card.
+Everything runs at `CPU_RATE` (4x by default):
+
+- **Cold open:** three fresh contexts per board, an empty board (the plane card
+  alone) and the large one; navigation to the first task after the frame that
+  holds every element, the median of the three. It also reports the mount's
+  synchronous cost, when the main thread settles (the last long animation frame
+  within 5 s) and the blocking time in that window.
+- **On the large board:** typing 30 keys in a note card (100 ms apart), a pen
+  stroke of 40 moves (32 ms apart), 20 wheel pans and 20 Ctrl+wheel zooms
+  (100 ms apart). Each input is timed from its first event to the first task
+  after its next frame, as Office times keys; the p50, p90 and maximum are
+  reported.
+- **Bytes:** the JS and CSS each open requested, raw and gzipped from the build,
+  with the five largest chunks. Report-only.
+
+It fails on a page error, an input with no painted frame, typing that doesn't
+reach the card, a stroke that draws no brush, or a missed budget. The budgets
+are 1.3x the medians in `MEDIANS`, Office's rule (`budgetOf`, rounded up to
+5 ms below a second and 50 ms above, inputs no lower than 30 ms), on the cold
+opens and the four inputs' p90. `MEDIANS` holds three runs of the `canvas` job
+on 4cf06a4b6 (2026-11-06): empty open 1906/2084/2994 ms, large open
+2756/2930/4651, pan p90 61/60/86, pen 59/64/89, typing 29/24/35, zoom 79/80/130.
+The third ran 40-60% slower on every figure (a slower runner), so a run on such
+a runner misses the opens' budgets (2750 and 3850 ms); rerun before reading a
+miss as a regression. With `MEDIANS` null the bench reports
+`budget: "uncalibrated"` and gates nothing.
+
 ## Formula parity audit (`pnpm bench:formula`)
 
 [`bench/editor/scripts/formula-parity.audit.ts`](../bench/editor/scripts/formula-parity.audit.ts)
@@ -443,7 +520,9 @@ calling `perf.yml` or the file stops being dispatchable and callable. `office`
 runs `pnpm bench:office` on dispatch only (input `office`, default true; a
 `workflow_call` defaults it to false, so promotion skips it); its CI-calibrated
 budgets fail the job and the run. Its results go to the job summary and the
-`office-perf-results` artifact.
+`office-perf-results` artifact. `canvas` runs `pnpm bench:canvas` the same way
+(input `canvas`, default true on dispatch, false on `workflow_call`), with its
+results in the job summary and the `canvas-perf-results` artifact.
 `stress` runs `pnpm bench:stress` (below) on dispatch only (input `stress`,
 false on `workflow_call`) against the `e2e_stack` images, built from the same
 GitHub Actions layer cache. A failed check (exit 1) or a missed latency

@@ -78,11 +78,7 @@ import { SharingNotice } from '@/features/study/assignments/SharingNotice';
 import { StudyPanel } from '@/features/study/practice/StudyPanel';
 import { type StudyPage, studyView } from '@/features/study/practice/studyView';
 import { VoiceFooterButton } from '@/features/voice/VoiceCard';
-import {
-  AddSourceDialog,
-  type AddSourceMode,
-  resumedConnect,
-} from '@/features/workspace/AddSourceDialog';
+import type { AddSourceMode } from '@/features/workspace/AddSourceDialog';
 import {
   canManageWorkspaceSettings,
   isWorkspaceReadOnly,
@@ -90,8 +86,11 @@ import {
 import { ChatPanel, type ChatRequest } from '@/features/workspace/ChatPanel';
 import { CloneWorkspaceDialog } from '@/features/workspace/CloneWorkspaceDialog';
 import { ArchivedChatsDialog } from '@/features/workspace/chat/ArchivedChatsDialog';
+import { preloadProseWhenIdle } from '@/features/workspace/chat/blocks/text';
 import { ConversationList } from '@/features/workspace/chat/ConversationList';
+import { resumedConnect } from '@/features/workspace/connectResume';
 import { FilesPanel } from '@/features/workspace/FilesPanel';
+import { AddSourceDialog } from '@/features/workspace/LazyAddSourceDialog';
 import type { TabAction } from '@/features/workspace/PanelTabRow';
 import type { SettingsView } from '@/features/workspace/settingsTabs';
 import { WorkspaceDashboard } from '@/features/workspace/WorkspaceDashboard';
@@ -374,6 +373,11 @@ function WorkspaceOpen() {
   useEffect(() => {
     if (loaded) visit({ id: workspaceId, visitor });
   }, [loaded, visit, visitor, workspaceId]);
+  // The chat's Markdown once the page is idle, so saved chats read formatted
+  // offline too (Q681).
+  useEffect(() => {
+    if (loaded) return preloadProseWhenIdle();
+  }, [loaded]);
   const { data: topics } = useTopics(workspaceId);
   const { data: files } = useFiles(workspaceId);
   const { data: materials } = useMaterials(workspaceId, {
