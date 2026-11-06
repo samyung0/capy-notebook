@@ -268,12 +268,8 @@
   }
 }
 
-/* Page gutters. Normal: list and overview pages (Dashboard, Workspaces,
- * Question bank). Wide: the body under a page's tabs (Settings, Billing,
- * Files, Learning) and Notifications.
- * wide-inset takes a section inside a normal page out to the wide gutter
- * (Question bank's topic lists). The bleeds pull edge-to-edge content (the
- * trail maps) back out to the panel's edges. */
+/* The page gutter (Epo 2026-11-06: one for every page, tab bodies too). The bleed
+ * pulls edge-to-edge content (the trail maps) back out to the panel's edges. */
 /* The chat send icon: the accent, made more vivid over frost (a frosted panel
    or the dock's glass), where the plain accent fades into the glass. */
 @utility text-send {
@@ -290,20 +286,8 @@
   @apply px-4 sm:px-6;
 }
 
-@utility page-px-wide {
-  @apply px-4 sm:px-6 lg:px-10 xl:px-16;
-}
-
-@utility wide-inset {
-  @apply lg:px-4 xl:px-10;
-}
-
 @utility page-bleed {
   @apply -mx-4 sm:-mx-6;
-}
-
-@utility page-bleed-wide {
-  @apply -mx-4 sm:-mx-6 lg:-mx-10 xl:-mx-16;
 }
 
 /* A page's tab strip: each tab's own 12px padding makes up the rest, so the

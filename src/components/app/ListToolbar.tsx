@@ -66,7 +66,6 @@ export function ListToolbar<V extends string>({
   onViewChange,
   action,
   selection,
-  wide,
 }: {
   /** Left out where every sort lives in the table's header. */
   sortMenu?: SortMenuProps<V>;
@@ -79,17 +78,13 @@ export function ListToolbar<V extends string>({
   /** The SelectionBar, shown instead of the whole toolbar while anything is
    * selected. */
   selection?: ReactNode;
-  /** Under a page's tabs: the tab body's gutter, like PageBody's `wide`. */
-  wide?: boolean;
 }) {
   // The toolbar stays mounted under the selection bar, so a first pick or a
   // last deselect does not rebuild its menus.
   return (
     <>
       {selection && (
-        <div className={cn('-mb-3 flex', wide ? 'page-px-wide' : 'page-px')}>
-          {selection}
-        </div>
+        <div className={cn('-mb-3 flex', 'page-px')}>{selection}</div>
       )}
       {/* Phones: icon-only sort and filter with the action on one row, the
           view toggle on its own row at the right (or on the first, without
@@ -97,7 +92,7 @@ export function ListToolbar<V extends string>({
       <div
         className={cn(
           '-mb-3 flex flex-wrap items-center gap-x-3',
-          wide ? 'page-px-wide' : 'page-px',
+          'page-px',
           selection && 'hidden'
         )}
       >

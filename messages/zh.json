@@ -2711,7 +2711,6 @@
   "quiz_ai_marked_count": "AI 评分小题 {count} / {max}",
   "learning_tab_overview": "概览",
   "learning_next": "接下来做什么",
-  "learning_week": "本周：{parts}",
   "learning_cards": "{count} 张卡片",
   "learning_cards_one": "1 张卡片",
   "learning_continue_session": "继续 · 已答 {answered} / {total} · {when}",

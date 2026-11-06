@@ -34,7 +34,7 @@ export interface NotePosition {
 
 /** Top-level blocks only: nested ones (list items in columns, table cells)
  * would break the order the search relies on. */
-const TOP_BLOCKS = '[data-block-id]:not([data-block-id] *)';
+export const TOP_BLOCKS = '[data-block-id]:not([data-block-id] *)';
 
 export function blockPoint(
   editor: PlateEditor,

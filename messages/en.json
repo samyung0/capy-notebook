@@ -2711,7 +2711,6 @@
   "quiz_ai_marked_count": "{count} of {max} AI-marked parts",
   "learning_tab_overview": "Overview",
   "learning_next": "What to do next",
-  "learning_week": "This week: {parts}",
   "learning_cards": "{count} cards",
   "learning_cards_one": "1 card",
   "learning_continue_session": "Continue · {answered} of {total} answered · {when}",

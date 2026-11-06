@@ -408,11 +408,10 @@ export function MaterialsTab({
         }
         sortMenu={{ ...sorting, hiddenFromMd: view === 'list', sorts }}
         view={view}
-        wide
       />
       {/* Mouse only: the selection bar's clear button is the keyboard way. */}
       <div
-        className="page-px-wide w-full shrink-0 grow pt-2 pb-6"
+        className="page-px w-full shrink-0 grow pt-2 pb-6"
         onClick={clearOnBlank(selection.clear)}
       >
         {waitsForConnection(fetchStatus, data) ? (

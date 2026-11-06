@@ -651,7 +651,6 @@ export default function QuestionBank() {
                   </div>
                 }
                 // The bank's normal gutter, as on its main page.
-                gutter="normal"
                 meta={
                   place &&
                   [

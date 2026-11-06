@@ -107,18 +107,6 @@ export function LearningOverviewTab() {
   );
 }
 
-/** "This week: 41 questions, 18 cards"; neither when nothing was answered. */
-export function weekLine(questions: number, cards: number) {
-  const parts = [
-    questions > 0 && questionsLabel(questions),
-    cards > 0 &&
-      (cards === 1
-        ? m.learning_cards_one()
-        : m.learning_cards({ count: cards })),
-  ].filter(Boolean);
-  return parts.length ? m.learning_week({ parts: parts.join(', ') }) : '';
-}
-
 const rowKey = (r: LearningRow) =>
   [
     r.kind,

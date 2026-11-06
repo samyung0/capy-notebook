@@ -2542,8 +2542,9 @@ A tab holding unsent edits asks again every 30 s. A reader's rooms keep their ow
 **Citations and deep links** work in the one mode: a chat citation scrolls and
 flashes its passage in the paint, and again in the editor once it shows; a
 question or card from a review summary scrolls into view in the quiz's list or
-the set's grid. A note's embed offers Preview in its ⋮ (top right on hover), which
-swaps its editor for the study view, to answer or study in place; Edit goes back.
+the set's grid. The header's Preview shows the whole note as its readers read it,
+with embeds answerable and cards to study; the button turns into Edit, which goes back.
+Both directions keep the reader's place (`notePreviewPlace.ts`).
 
 ### The editable saved copy
 
