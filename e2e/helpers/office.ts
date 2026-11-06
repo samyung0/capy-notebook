@@ -4,12 +4,10 @@ import { m } from '../i18n';
 
 export type OfficeFormat = 'docx' | 'xlsx' | 'pptx';
 
-/** The PPTX menus are Capy's; DOCX and XLSX menus carry BetterOffice's labels, which are these names. */
+/** The menu bar keeps File, and View for a viewer: the PPTX menus are Capy's,
+ * DOCX and XLSX menus carry BetterOffice's labels, which are these names. */
 const PPTX_MENUS = {
-  Edit: m.files_office_pptx_menu_edit,
   File: m.files_office_pptx_menu_file,
-  Format: m.files_office_pptx_menu_format,
-  Insert: m.files_office_pptx_menu_insert,
   View: m.files_office_pptx_menu_view,
 };
 
@@ -53,9 +51,12 @@ export function ribbonCommand(page: Page, id: string) {
   return officeFrame(page).locator(`.office-ribbon [data-command="${id}"]`);
 }
 
-/** Moves to `tab` and runs the ribbon's command `id`. */
+/** Moves to `tab` and runs the ribbon's command `id`, through More if it moved there. */
 export async function runRibbonCommand(page: Page, tab: string, id: string) {
   await officeTab(page, tab).click();
+  const more = officeFrame(page).getByTestId('office-ribbon-more');
+  if (!(await ribbonCommand(page, id).count()) && (await more.count()))
+    await more.click();
   await ribbonCommand(page, id).click();
 }
 

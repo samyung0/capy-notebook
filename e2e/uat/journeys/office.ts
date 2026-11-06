@@ -292,6 +292,8 @@ export async function publishWhileEditing(
   assert.equal(row.epoch, before.epoch);
   // A reload banner would follow the publication at once; none comes.
   await page.waitForTimeout(5000);
+  // In the frame under the ribbon (Q566), or Capy's while it has no ribbon.
+  await expect(runtime.getByText(m.source_edit_replaced())).toHaveCount(0);
   await expect(page.getByText(m.source_edit_replaced())).toHaveCount(0);
   await saved(page);
   assert(await mounted.evaluate((node) => node.isConnected));

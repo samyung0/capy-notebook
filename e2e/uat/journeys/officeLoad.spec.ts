@@ -34,7 +34,7 @@ const FILES: [OfficeFormat, 'small' | 'large', string][] = [
   ['pptx', 'large', 'e2e/fixtures/files/rich-content/lecture.pptx'],
 ];
 
-/** Per open, from navigation to the Edit menu. */
+/** Per open, from navigation to the ribbon's tab line. */
 const OPEN_TIMEOUT = 240_000;
 /** Then, for the first page painted. */
 const PAINT_GRACE = 30_000;
@@ -85,7 +85,7 @@ type Probe = {
   }[];
   /** The header's `data-save-state` values, in order. */
   saveStates: { state: string; at: number }[];
-  /** When the Office header's Edit menu appeared. */
+  /** When the Office header's tab line appeared. */
   editable?: number;
   /** Runtime frame: when each host message type first arrived. */
   host: Record<string, number>;
@@ -435,7 +435,7 @@ function summarize(
   const editable = at(app, probe?.editable);
   const painted = at(app, probe?.runtime.ready);
   // The open is done once editable and painted (DOCX paints after its fonts,
-  // which can follow the Edit menu); later fetches are not the open's.
+  // which can follow the tab line); later fetches are not the open's.
   const done =
     editable === null || painted === null
       ? editable
@@ -625,7 +625,7 @@ function writeSummary(run: UatRun, directory: string, results: OpenResult[]) {
     '',
     `Run \`${run.id}\` on ${run.env.expectedRevision}. Milliseconds after the tab's navigation start; – is not reached or not observable. Cold: a new browser context, signed in, its HTTP cache cleared. Warm: a new tab in that context after the cold tab closed. Detail per open in \`office-load-*.json\`, traces in \`office-load-*.zip\` (\`npx playwright show-trace\`).`,
     '',
-    'HTTP cache live: the opens run without the Clerk testing-token route, which turned the cache off in the first run (uat-quality 38934968702: nothing cached, even warm). The first page painted is waited for up to 30 s after the Edit menu (DOCX paints after its fonts).',
+    'HTTP cache live: the opens run without the Clerk testing-token route, which turned the cache off in the first run (uat-quality 38934968702: nothing cached, even warm). The first page painted is waited for up to 30 s after the tab line (DOCX paints after its fonts).',
     '',
     '| File | Open | SPA ready | Frame initialized | Grant | Source bytes | Synced | WASM fetched | Fonts fetched | First page | Replica | Editable | Stuck at |',
     '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |',
