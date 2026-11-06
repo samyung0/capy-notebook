@@ -1087,18 +1087,22 @@ toggle. Notes, PDFs and other files keep the one-row header.
 ### The ribbon
 
 Edit mode is a classic ribbon, as desktop Excel and PowerPoint (Q562, Q596-Q603,
-Q564, Q566, Q567; flat buttons are a signed exception to AGENTS.md's bordered
-actions). A view-only reader, or anyone in View, sees no ribbon and no tabs:
+Q564, Q566, Q567, Q673-Q675, Q677; flat buttons are a signed exception to
+AGENTS.md's bordered actions). A view-only reader, or anyone in View, sees no ribbon and no tabs:
 File and the view controls in the menu bar, as Google Sheets and Slides' viewer
 (Q666).
 
 - **The tab line** (`RibbonTabs`, `HistoryButtons`) is in Capy's header: Undo and
   Redo, the File menu, Home, then the other menus as tabs (`office-tab-<id>`).
-  Undo and Redo stay on every tab and, at 360 px, in the strip. The tab's state
-  is the frame's (`ribbonStore.ts`, one store per frame, so **Edit always opens
-  on Home**, Q665): a click sends `menu-command` `ribbon.tab:<id>`, and the next
+  Undo and Redo stay on every tab and at every width: the line has no width
+  rule of its own, so it can't disagree with the frame. The tab's state is the
+  frame's (`ribbonStore.ts`, one store per frame, so **Edit always opens on
+  Home**, Q665): a click sends `menu-command` `ribbon.tab:<id>`, and the next
   `menus` message's `ribbon` field (`tabs`, `tab`, `collapsed`, `undo`, `redo`)
-  redraws the line. Moving tabs rerenders no editor.
+  redraws the line. Moving tabs rerenders no editor. The field is there only
+  while the ribbon is on screen (`setMounted`). `isOfficeRibbon` holds what the
+  frame may put on Capy's page: Undo and Redo only as the editors' own ids, never
+  one of Capy's commands, tab ids of lower-case letters, labels of 40 characters.
 - **The ribbon** (`OfficeRibbon.tsx`) is in the frame, about 78 px high, under the
   tab line: groups with names, two lines of 28 px controls or tall labelled
   buttons, scrolling sideways under a vertical wheel with edge fades. Each format
@@ -1110,7 +1114,35 @@ File and the view controls in the menu bar, as Google Sheets and Slides' viewer
   becomes a button (`data-command=<id>`), a submenu a dropdown, and
   `src/office-runtime/ribbonLayout.test.ts` checks every menu command is in a
   tab. The fork's `singleRow` toolbar remains for its own callers; Capy always
-  passes `ribbon`.
+  passes `ribbon`. Each fork `Toolbar` exports `RIBBON_CONTROL_NAMES`, so a renamed
+  control fails to compile; `ribbonLayout.test.ts` reads the real `HostMenus`
+  model and asserts every cell resolves, and the fork's `singleRowToolbar.test.tsx`
+  fails on a new upstream control until it is named. Layout stays in Capy, one
+  renderer and three tables (Q673).
+- **What doesn't fit** (Q675): from 768 px of frame up the row doesn't scroll.
+  Groups that don't fit move, from the tab's end, into one More button at the end
+  of the row; earlier groups stay put, and their controls and commands keep their
+  states there. `useRowFit` measures once before paint when the tab or its set of
+  groups changes; after that a ResizeObserver reports sizes, so typing and
+  selection read no layout. The collapse chevron is outside the row, and Undo and
+  Redo are in Capy's header, so neither moves.
+- **An open list owns the keyboard** (`useListKeys`). Opened by mouse, the focus
+  stays in the document, because leaving would commit an XLSX cell being typed;
+  a capture listener at the window takes every key, and the held text field is
+  read-only so an IME can't start: Escape closes the list, arrows and Home and End
+  walk a marked row (`data-active`), Enter runs it. Opened by keyboard, the list
+  has real focus. A MutationObserver on `aria-expanded` installs all this, so
+  nothing listens while no list is open.
+- **A command settles input first.** The old menu's click took the focus away
+  (`focus-left`, a flush); a press on the ribbon keeps it, so `runCommand` in
+  `main.tsx` ends an open composition, flushes, runs the command in order under
+  the pause, then hands the keys to the document (`returnKeys`) unless the command
+  took them or a list stays open. A flush ends a held DOCX press rather than wait
+  on it, and the wait has the host's own flush limit.
+- **The keyboard's route**: Enter, Space, Down or Tab on a tab goes to the tab's
+  first command (`ribbon.enter`); Left and Right walk the row; Escape, or Shift+Tab
+  at the first command, goes back (`ribbon-focus`). A row or a button hands the
+  keys to the document, as Office. No KeyTips.
 - **Contextual tabs**: DOCX's Table and Picture come with the selection
   (`RIBBON_CONTEXTS`, on when their control draws) and fall back to Home when it
   leaves, as Office's. PowerPoint's big New slide split has its layout list.
@@ -1118,16 +1150,28 @@ File and the view controls in the menu bar, as Google Sheets and Slides' viewer
   collapses it to the tab line, with no current tab. A click on a tab then opens
   that tab's ribbon over the page (`data-over`, absolutely placed) until a click
   elsewhere, Escape, a command or that tab again; its pin button keeps it. It
-  is expanded by default and not remembered between frames.
-- **Phones** (below md): one scrolling row under the tabs (`phoneHome` on Home, a
-  tab's groups flattened elsewhere), no collapse, font, size and zoom in their
-  menus' dropdowns.
+  is expanded on first use (Q564) and remembered on each device (Q674): Capy holds
+  `officeRibbonCollapsed` in local storage, as the frame is sandboxed, and sends it
+  on `load`, with no account setting. A room swap's new frame also gets the tab on
+  screen (`load`'s `ribbon`, `OfficeSwap.ribbonTab`); entering Edit clears it, so
+  Edit still opens on Home.
+- **One row** (Q597, Q677): under 768 px of the frame's own width, whatever the
+  window (`matchMedia` in the frame, so a crossing renders the ribbon and sends no
+  message): a scrolling row under the tabs (`phoneHome` on Home, a tab's groups
+  flattened elsewhere) and no collapse chevron. Page fit, pinch zoom, comments
+  opening and hiding the font and size boxes stay on `compact`, Capy's window
+  under 768 px.
 - **Banners** draw under the ribbon, as Office's message bar (Q566). While the
-  frame has a ribbon, `OfficeHeader` registers a `BannerOutlet` on `BannerStack`
+  frame reports its ribbon on screen, `OfficeHeader` registers a `BannerOutlet` on `BannerStack`
   (`useBannerOutlet`): the strip that would draw is sent as `set-banner`, the frame
   draws it (`RibbonBanner`), and its clicks come back as `banner-action`
-  {action, revision}, which run the strip's own handlers. Until then, and in view
-  mode, Capy draws it as before.
+  {action, revision}, which run the strip's own handlers, only with the user's
+  gesture (`navigator.userActivation` on the host: a click in the frame activates
+  its parent, a frame's own timer doesn't). Until then, in view mode, and once a
+  render error takes the ribbon, Capy draws it as before. Download draft survives
+  that error in DOCX: the session is outside the fork's boundary, so `handleSave`
+  exports from it when the view is gone, and `export` doesn't stop at a failed
+  flush.
 - **Icons**: Tabler at the even 1.5 px line (Q603, stroke 36/size) in
   `tablerGlyphs.ts`, one export per glyph, so the build holds only the glyphs used
   (one chunk for the frame's editors; Capy's header takes its few from
