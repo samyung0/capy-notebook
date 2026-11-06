@@ -461,6 +461,34 @@ test('the image stacks as the screen does, and many formulas settle', async ({
   expect(errors).toEqual([]);
 });
 
+test('a note scrolled out of view still reaches the image', async ({
+  page,
+}) => {
+  test.slow();
+  await openBoard(page);
+  // A dark note far to the right: BlockSuite hides a block out of view at no size.
+  await page.evaluate(`{ const gfx = document.querySelector('affine-edgeless-root').gfx;
+    const note = gfx.doc.addBlock('affine:note', { xywh: '[4000,0,400,300]',
+      background: '#000000', index: gfx.layer.generateIndex() }, gfx.doc.root.id);
+    gfx.doc.addBlock('affine:paragraph', {}, note); }`);
+  expect(
+    await page.evaluate(() =>
+      document
+        .querySelector('affine-edgeless-note')
+        ?.classList.contains('block-idle')
+    )
+  ).toBe(true);
+  expect(await inkIn(page, await toImage(page))).toBeGreaterThan(10_000);
+  // Left as it was found.
+  expect(
+    await page.evaluate(() =>
+      document
+        .querySelector('affine-edgeless-note')
+        ?.classList.contains('block-idle')
+    )
+  ).toBe(true);
+});
+
 test('a plane card has its pen and size, and fits its marks', async ({
   page,
 }) => {

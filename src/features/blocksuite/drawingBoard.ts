@@ -57,7 +57,7 @@ import { ReferenceStoreExtension } from '@blocksuite/affine/inlines/reference/st
 import { ReferenceViewExtension } from '@blocksuite/affine/inlines/reference/view';
 import { ImageBlockModel } from '@blocksuite/affine/model';
 import { FeatureFlagService } from '@blocksuite/affine/shared/services';
-import { BlockStdScope } from '@blocksuite/affine/std';
+import { BlockStdScope, isGfxBlockComponent } from '@blocksuite/affine/std';
 import {
   type GfxBlockElementModel,
   type GfxController,
@@ -376,7 +376,17 @@ export function mountDrawingBoard(
       return blob ? decodeImage(blob) : null;
     }
     const view = std.view.getBlock(block.id);
-    return view ? std.get(ExportManager)._html2canvas(view) : null;
+    if (!view) return null;
+    // A note out of view is BlockSuite's idle block: hidden with no size, which
+    // html2canvas draws as nothing at all. It's shown for the capture only.
+    const idle =
+      isGfxBlockComponent(view) && view.transformState$.value === 'idle';
+    if (idle) view.transformState$.value = 'active';
+    try {
+      return await std.get(ExportManager)._html2canvas(view);
+    } finally {
+      if (idle) view.transformState$.value = 'idle';
+    }
   };
 
   // An open plane writes its view on closing, and nothing else is in progress.
