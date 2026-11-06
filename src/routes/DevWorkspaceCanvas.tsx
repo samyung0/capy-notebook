@@ -28,6 +28,7 @@ export default function DevWorkspaceCanvas({
           changed = false;
         }, SAVE_AFTER_MS);
       },
+      plane: true,
       saved: saved || undefined,
     });
     Object.assign(window, { __board: board });

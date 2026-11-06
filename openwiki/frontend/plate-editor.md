@@ -4433,15 +4433,10 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   the board itself stays as it is. The PNG goes through `fitImageOffThread` (WebP, 300 KB cap, Epo 2026-11-06), whose
   encode runs in a worker while the drawing stays on the page, and
   comes back as a `File`.
-- **What the answer flow mounts:** `mountDrawingBoard(host, { background, readOnly,
-  saved, onChange })`.
-  - `background` sets up a fresh board as the question part says: `blank`, `grid` (a
-    squared sheet: a plane card with no axes that doesn't open), `axes` (a plane card at
-    the given x and y ranges) or `figure` (an image fetched from `src`). It's locked: no
-    tool moves, resizes, deletes or erases it, and lock and unlock are off the toolbar.
-    A saved board keeps its own; a figure's file isn't in the saved board, so it's
-    fetched on every open, and `ready` rejects with a `BoardLoadError` when it can't be.
-    Without `background` the dev pages get a movable plane card.
+- **What the answer flow mounts:** `mountDrawingBoard(host, { readOnly, saved,
+  onChange })`. Every answer starts on the same plain board (Epo 2026-11-06 dropped
+  per-question backgrounds); the dev pages pass `plane: true` for a plane card to play
+  with.
   - `readOnly` is a teacher's view: BlockSuite's read-only store (pan tool), no toolbars,
     undo, symbol row or selection, and nothing opens for editing, so MathLive never
     loads.
