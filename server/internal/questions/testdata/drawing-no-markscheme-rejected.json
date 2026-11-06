@@ -1,0 +1,35 @@
+{
+  "name": "drawing-no-markscheme-rejected",
+  "valid": false,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Drawn answers."
+      }
+    ],
+    "parts": [
+      {
+        "id": "p1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Draw it."
+          }
+        ],
+        "answer": {
+          "type": "drawing",
+          "background": {
+            "kind": "blank"
+          }
+        },
+        "marks": 2,
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

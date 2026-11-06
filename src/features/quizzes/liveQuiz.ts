@@ -2,6 +2,7 @@ import * as Y from 'yjs';
 import { applyTextChange, LOCAL_EDIT } from '@/features/collaboration/yText';
 import { repairGroups } from '@/features/questions/groups';
 import {
+  type DrawingBackground,
   gapNumbers,
   type LearnerAnswer,
   type LearnerQuestion,
@@ -175,6 +176,42 @@ function partKeys(keys: Y.Doc | null, partId: string, type: string) {
   return key && plain<string>(key, 'type') === type ? key : undefined;
 }
 
+const readMarkscheme = (key: YMap | undefined): MarkItem[] =>
+  ordered(mapAt(key, 'markscheme')).map(({ entry }) => ({
+    marks: plain<number>(entry, 'marks') ?? 1,
+    text: text(entry, 'text'),
+  }));
+
+/** A drawing answer's background, held as plain fields on the content answer
+ * (`background`, `xMin`…`yMax`, `block`) for learners to see, as the server
+ * holds it. */
+function readBackground(answer: YMap | undefined): DrawingBackground {
+  const at = (key: string) => plain<number>(answer, key) ?? 0;
+  const kind = plain<string>(answer, 'background');
+  if (kind === 'axes')
+    return {
+      kind,
+      x: [at('xMin'), at('xMax')],
+      y: [at('yMin'), at('yMax')],
+    };
+  if (kind === 'figure') return { block: at('block'), kind };
+  return { kind: kind === 'grid' ? 'grid' : 'blank' };
+}
+
+function writeBackground(answer: YMap, background: DrawingBackground) {
+  setPlain(answer, 'background', background.kind);
+  const axes = background.kind === 'axes' ? background : undefined;
+  setPlain(answer, 'xMin', axes?.x[0]);
+  setPlain(answer, 'xMax', axes?.x[1]);
+  setPlain(answer, 'yMin', axes?.y[0]);
+  setPlain(answer, 'yMax', axes?.y[1]);
+  setPlain(
+    answer,
+    'block',
+    background.kind === 'figure' ? background.block : undefined
+  );
+}
+
 function readAnswer(
   answer: YMap | undefined,
   key: YMap | undefined
@@ -214,10 +251,12 @@ function readAnswer(
           hints: texts(mapAt(key, 'hints')),
           type,
         },
-        markscheme: ordered(mapAt(key, 'markscheme')).map(({ entry }) => ({
-          marks: plain<number>(entry, 'marks') ?? 1,
-          text: text(entry, 'text'),
-        })),
+        markscheme: readMarkscheme(key),
+      };
+    case 'drawing':
+      return {
+        answer: { background: readBackground(answer), type },
+        markscheme: readMarkscheme(key),
       };
     case 'gaps': {
       const gaps = mapAt(key, 'gaps');
@@ -369,6 +408,9 @@ export function readLearnerQuestions(
               break;
             case 'gaps':
               learner = { gaps: gapNumbers(blocks).length, type };
+              break;
+            case 'drawing':
+              learner = { background: readBackground(answer), type };
               break;
             default:
               learner = { type: type === 'boolean' ? 'boolean' : 'open' };
@@ -779,6 +821,9 @@ function writeContentAnswer(part: YMap, answer: QuestionAnswer): PartIds {
     case 'short':
       setPlain(map, 'unit', answer.unit);
       break;
+    case 'drawing':
+      writeBackground(map, answer.background);
+      break;
     case 'matching':
       ids.left = writeList(
         child(map, 'left'),
@@ -816,8 +861,11 @@ function writeKeys(key: YMap, part: QuestionPart, ids: PartIds) {
       list('accepted', answer.accepted, 'acc');
       break;
     case 'open':
-      list('accepted', answer.accepted, 'acc');
-      list('hints', answer.hints, 'hint');
+    case 'drawing':
+      if (answer.type === 'open') {
+        list('accepted', answer.accepted, 'acc');
+        list('hints', answer.hints, 'hint');
+      }
       writeList(
         child(key, 'markscheme'),
         (part.markscheme ?? []).map((item) => ({
@@ -1052,6 +1100,8 @@ export function withEmptyKeys(question: LearnerQuestion): Question {
           return full(answer);
         case 'open':
           return full({ accepted: [], hints: [], type: answer.type });
+        case 'drawing':
+          return full(answer);
         case 'gaps':
           return full({
             accepted: Array.from({ length: answer.gaps }, () => []),

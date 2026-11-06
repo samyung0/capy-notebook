@@ -402,6 +402,7 @@ export function MarkschemeList({
 }
 export const answerLabels: Record<QuestionType, () => string> = {
   boolean: m.question_ui_true_false,
+  drawing: m.question_ui_drawing,
   gaps: m.question_ui_fill_in_the_gaps,
   matching: m.question_ui_matching,
   mcq: m.question_ui_multiple_choice,
@@ -425,6 +426,8 @@ export function emptyAnswer(type: QuestionType): QuestionAnswer {
       return { items: ['', ''], type };
     case 'gaps':
       return { accepted: [['']], type };
+    case 'drawing':
+      return { background: { kind: 'blank' }, type };
   }
 }
 

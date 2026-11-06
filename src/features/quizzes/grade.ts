@@ -1,6 +1,10 @@
 import type { Question, QuestionPart } from '@/api/types';
 import { quantityValuePattern } from '@/features/questions/quantity';
-import type { LearnerPart, LearnerQuestion } from '@/features/questions/types';
+import {
+  type LearnerPart,
+  type LearnerQuestion,
+  modelMarked,
+} from '@/features/questions/types';
 
 /**
  * A learner's answer per part, as the server takes it: option indices for
@@ -165,6 +169,7 @@ function closedCorrect(part: QuestionPart, value: Answer | undefined): boolean {
     case 'gaps':
       return itemResults(part, value).every(Boolean);
     case 'open':
+    case 'drawing':
       return false;
   }
 }
@@ -176,7 +181,7 @@ export function scorePart(
   answer: Answer | undefined
 ): { awarded: number; max: number; items: boolean[] } {
   const max = part.marks;
-  if (part.answer.type === 'open')
+  if (modelMarked(part.answer.type))
     return {
       awarded: Math.min(max, Math.max(0, part.awarded ?? 0)),
       items: [],
@@ -217,6 +222,7 @@ export function emptyAnswer(part: QuestionPart | LearnerPart): Answer {
       return [];
     case 'boolean':
     case 'ordering':
+    case 'drawing':
       return null;
     case 'short':
     case 'open':

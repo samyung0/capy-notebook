@@ -108,6 +108,8 @@ function answerLines(part: QuestionPart, labels: ExportLabels): string[] {
       return a.accepted.map((answer) => answer + (a.unit ? ` ${a.unit}` : ''));
     case 'open':
       return a.accepted;
+    case 'drawing':
+      return [];
     case 'matching':
       return a.pairs.map((pair) => `${pair.left} → ${a.options[pair.right]}`);
     case 'ordering':

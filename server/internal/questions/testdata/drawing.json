@@ -1,0 +1,138 @@
+{
+  "name": "drawing",
+  "valid": true,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Drawn answers."
+      }
+    ],
+    "parts": [
+      {
+        "id": "blank",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Draw it."
+          }
+        ],
+        "answer": {
+          "type": "drawing",
+          "background": {
+            "kind": "blank"
+          }
+        },
+        "marks": 2,
+        "markscheme": [
+          {
+            "text": "Shape right",
+            "marks": 1
+          },
+          {
+            "text": "Labelled",
+            "marks": 1
+          }
+        ],
+        "solution": []
+      },
+      {
+        "id": "grid",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Draw it."
+          }
+        ],
+        "answer": {
+          "type": "drawing",
+          "background": {
+            "kind": "grid"
+          }
+        },
+        "marks": 2,
+        "markscheme": [
+          {
+            "text": "Shape right",
+            "marks": 1
+          },
+          {
+            "text": "Labelled",
+            "marks": 1
+          }
+        ],
+        "solution": []
+      },
+      {
+        "id": "axes",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Draw it."
+          }
+        ],
+        "answer": {
+          "type": "drawing",
+          "background": {
+            "kind": "axes",
+            "x": [-5, 5],
+            "y": [0, 100]
+          }
+        },
+        "marks": 2,
+        "markscheme": [
+          {
+            "text": "Shape right",
+            "marks": 1
+          },
+          {
+            "text": "Labelled",
+            "marks": 1
+          }
+        ],
+        "solution": []
+      },
+      {
+        "id": "figure",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Label the parts."
+          },
+          {
+            "type": "image",
+            "image": {
+              "assetId": "asset_0123456789"
+            },
+            "width": 400,
+            "height": 300,
+            "description": "A leaf"
+          }
+        ],
+        "answer": {
+          "type": "drawing",
+          "background": {
+            "kind": "figure",
+            "block": 1
+          }
+        },
+        "marks": 2,
+        "markscheme": [
+          {
+            "text": "Shape right",
+            "marks": 1
+          },
+          {
+            "text": "Labelled",
+            "marks": 1
+          }
+        ],
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

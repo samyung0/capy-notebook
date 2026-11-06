@@ -34,7 +34,7 @@ use yrs::{
 };
 
 use notes::edit::{DocumentCommand, EditError, EditErrorCode};
-use notes::questions::{self as q, Policy};
+use notes::questions::{self as q, Policy, model_marked};
 use ydoc::Incoming;
 use ydoc::steps::{Walk, step};
 
@@ -49,8 +49,13 @@ pub const BLOCK_ID: &str = "quiz";
 pub const MAX_ID: usize = 128;
 
 const ANSWER_TYPES: &[&str] = &[
-    "mcq", "boolean", "short", "matching", "ordering", "open", "gaps",
+    "mcq", "boolean", "short", "matching", "ordering", "open", "gaps", "drawing",
 ];
+/// A drawing answer's background kinds; the kind sits in the content answer's
+/// `background`, with `xMin`, `xMax`, `yMin` and `yMax` for axes and `block` (the
+/// part's image block) for a figure, all for learners to see.
+const BACKGROUNDS: &[&str] = &["blank", "grid", "axes", "figure"];
+const AXIS_KEYS: [&str; 4] = ["xMin", "xMax", "yMin", "yMax"];
 /// The question block kinds a live quiz holds: the embed catalog's question
 /// blocks (chart, plot, graph) and the plain ones it does not list.
 pub const BLOCK_TYPES: &[&str] = &["text", "table", "image", "chart", "plot", "graph"];
@@ -391,7 +396,7 @@ fn read_answer<C: ReadTxn, K: ReadTxn>(
             }
             (value, None)
         }
-        "open" => {
+        "open" | "drawing" => {
             let scheme = match keys {
                 Some((txn, key)) => ordered(txn, map_at(txn, key, "markscheme").as_ref())
                     .iter()
@@ -404,10 +409,12 @@ fn read_answer<C: ReadTxn, K: ReadTxn>(
                     .collect(),
                 None => Vec::new(),
             };
-            (
-                json!({ "type": "open", "accepted": key_texts("accepted"), "hints": key_texts("hints") }),
-                Some(Value::Array(scheme)),
-            )
+            let value = if kind == "open" {
+                json!({ "type": "open", "accepted": key_texts("accepted"), "hints": key_texts("hints") })
+            } else {
+                json!({ "type": "drawing", "background": answer.map_or(json!({ "kind": "blank" }), |a| read_background(content, a)) })
+            };
+            (value, Some(Value::Array(scheme)))
         }
         "gaps" => {
             let accepted: Vec<Vec<String>> = match (keys, key_map("gaps")) {
@@ -479,6 +486,19 @@ fn read_answer<C: ReadTxn, K: ReadTxn>(
             None,
         ),
         _ => (json!({ "type": kind }), None),
+    }
+}
+
+/// A drawing answer's background from its content answer's plain fields.
+fn read_background<T: ReadTxn>(txn: &T, answer: &MapRef) -> Value {
+    let kind = str_at(txn, answer, "background").unwrap_or_default();
+    let at = |key: &str| number(num_at(txn, answer, key).unwrap_or(0.0));
+    match kind.as_str() {
+        "axes" => {
+            json!({ "kind": "axes", "x": [at("xMin"), at("xMax")], "y": [at("yMin"), at("yMax")] })
+        }
+        "figure" => json!({ "kind": "figure", "block": at("block") }),
+        _ => json!({ "kind": kind }),
     }
 }
 
@@ -1118,23 +1138,27 @@ fn sync_answer(
                 text_fill,
             );
         }
-        "open" => {
-            sync_entries(
-                keys,
-                &key,
-                "accepted",
-                "a",
-                &strings(&answer, "accepted"),
-                text_fill,
-            );
-            sync_entries(
-                keys,
-                &key,
-                "hints",
-                "h",
-                &strings(&answer, "hints"),
-                text_fill,
-            );
+        "open" | "drawing" => {
+            if kind == "open" {
+                sync_entries(
+                    keys,
+                    &key,
+                    "accepted",
+                    "a",
+                    &strings(&answer, "accepted"),
+                    text_fill,
+                );
+                sync_entries(
+                    keys,
+                    &key,
+                    "hints",
+                    "h",
+                    &strings(&answer, "hints"),
+                    text_fill,
+                );
+            } else {
+                sync_background(content, &answer_map, answer.get("background"));
+            }
             sync_entries(
                 keys,
                 &key,
@@ -1203,6 +1227,27 @@ fn sync_answer(
         }
         _ => {}
     }
+}
+
+/// A drawing answer's background as plain fields on its content answer map;
+/// fields its kind doesn't use go.
+fn sync_background(txn: &mut TransactionMut, answer: &MapRef, background: Option<&Value>) {
+    let background = background.cloned().unwrap_or(Value::Null);
+    let kind = str_of(&background, "kind");
+    sync_plain(txn, answer, "background", Some(string_any(kind)));
+    let ranges = [("x", 0), ("x", 1), ("y", 0), ("y", 1)];
+    for (field, (axis, end)) in AXIS_KEYS.iter().zip(ranges) {
+        let value = (kind == "axes")
+            .then(|| background[axis][end].as_f64())
+            .flatten()
+            .map(Any::Number);
+        sync_plain(txn, answer, field, value);
+    }
+    let block = (kind == "figure")
+        .then(|| background["block"].as_f64())
+        .flatten()
+        .map(Any::Number);
+    sync_plain(txn, answer, "block", block);
 }
 
 /// One question (the shared JSON) in both documents under `order`, written
@@ -1581,6 +1626,22 @@ fn whole_marks(content: &ItemContent) -> bool {
         if value.fract() == 0.0 && (1.0..=MAX_MARKS).contains(value))
 }
 
+/// An axis end: a finite number within a chart value's bound.
+fn axis_value(content: &ItemContent) -> bool {
+    // 1e12 is exact as an f64.
+    #[allow(clippy::cast_precision_loss)]
+    let bound = q::QUESTION_CHART_VALUE_MAX as f64;
+    matches!(one_any(content), Some(Any::Number(value)) if value.is_finite() && value.abs() <= bound)
+}
+
+/// A figure background's block: the index of one of a part's blocks.
+fn figure_block(content: &ItemContent) -> bool {
+    // A part's block count, exact as an f64.
+    #[allow(clippy::cast_precision_loss)]
+    let blocks = q::QUESTION_BLOCKS_MAX as f64;
+    matches!(one_any(content), Some(Any::Number(value)) if value.fract() == 0.0 && (0.0..blocks).contains(value))
+}
+
 /// What one update adds, which texts it types into and which lists it grows.
 struct Tally<'a> {
     /// The figure host links must be under ([figure_url]).
@@ -1816,13 +1877,27 @@ fn content_shape(
             block_shape(rest, key, content, full, tally)
         }
         ([R, _, "parts", _, "answer"], Some("type")) if one_of(content, ANSWER_TYPES) => {
-            if one_of(content, &["open"]) {
+            if one_of(content, &["open", "drawing"]) {
                 tally.open += 1;
             }
             tally.value(content);
             Ok(())
         }
         ([R, _, "parts", _, "answer"], Some("unit")) if a_string(content, q::QUESTION_UNIT_MAX) => {
+            tally.value(content);
+            Ok(())
+        }
+        ([R, _, "parts", _, "answer"], Some("background")) if one_of(content, BACKGROUNDS) => {
+            tally.value(content);
+            Ok(())
+        }
+        ([R, _, "parts", _, "answer"], Some(axis))
+            if AXIS_KEYS.contains(&axis) && axis_value(content) =>
+        {
+            tally.value(content);
+            Ok(())
+        }
+        ([R, _, "parts", _, "answer"], Some("block")) if figure_block(content) => {
             tally.value(content);
             Ok(())
         }
@@ -2015,9 +2090,9 @@ fn part_counts<T: ReadTxn>(txn: &T) -> (u64, u64) {
             step(Walk::Exact);
             let Out::YMap(part) = part else { continue };
             parts += 1;
-            if map_at(txn, &part, "answer")
-                .is_some_and(|answer| str_at(txn, &answer, "type").as_deref() == Some("open"))
-            {
+            if map_at(txn, &part, "answer").is_some_and(|answer| {
+                str_at(txn, &answer, "type").is_some_and(|kind| model_marked(&kind))
+            }) {
                 open += 1;
             }
         }
@@ -2275,7 +2350,7 @@ pub fn check_content_caps<T: ReadTxn>(txn: &T) -> Result<(), String> {
             let Some(answer) = map_at(txn, &part.map, "answer") else {
                 continue;
             };
-            if str_at(txn, &answer, "type").as_deref() == Some("open") {
+            if str_at(txn, &answer, "type").is_some_and(|kind| model_marked(&kind)) {
                 open += 1;
             }
             if let Some(unit) = str_at(txn, &answer, "unit") {

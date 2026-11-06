@@ -2294,7 +2294,7 @@
   "question_issue_text_part": "Part {label}: missing or empty question text",
   "question_issue_warning": "Issues: {issues}",
   "question_issue_row": "Has issues",
-  "question_validation_markscheme_open": "Open answers need a marking scheme, and only open answers have one.",
+  "question_validation_markscheme_open": "Open and drawing answers need a marking scheme, and only they have one.",
   "question_validation_markscheme_total": "The marking items must add up to the part's marks.",
   "question_validation_quiz_markscheme": "A part has at most {max} marking items.",
   "question_validation_open_answer_length": "Sample answers are limited to {max} characters.",
@@ -3038,5 +3038,8 @@
   "drawing_board_fill_purple": "Purple",
   "drawing_board_fill_red": "Red",
   "drawing_board_fill_yellow": "Yellow",
-  "drawing_board_label": "Label"
+  "drawing_board_label": "Label",
+  "question_validation_axis_range": "An axis runs from a lower to a higher value.",
+  "question_validation_drawing_figure": "Pick one of the part's images as the figure to draw on.",
+  "question_ui_drawing": "Drawing"
 }

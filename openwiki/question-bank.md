@@ -123,7 +123,7 @@ kept their position.
 ## Shared question format
 
 `src/features/questions/types.ts` defines stem blocks and ordered parts. Each
-part has a stable ID, blocks, one of seven answer types, whole `marks` (1–20)
+part has a stable ID, blocks, one of eight answer types, whole `marks` (1–20)
 and worked-solution blocks. A multiple-choice part (`mcq`) has one or more
 correct options and is answered with checkboxes (multiple answers, `multi`,
 merged into it on every layer, Epo 2026-10-15; the learner UI redesign is
@@ -143,6 +143,27 @@ Alt+ArrowUp or Alt+ArrowDown moves the focused option with focus following it;
 a move swaps the two options and every pair's `right` with them, so each
 prompt keeps its answer, as removing an option does (Epo 2026-10-18,
 `StringList`'s `onMove` in `editorFields.tsx`).
+
+### Drawing parts
+
+A `drawing` part (Epo 2026-11-03) is answered on the drawing board
+(`src/features/blocksuite/drawingBoard.ts`) and marked like an open part: it
+carries a marking scheme, counts towards the quiz's AI-marked parts, and its
+`itemAwards` and `pending` work as an open part's. Its answer holds only
+`background`, what the board starts from: `{kind: 'blank'}`, `{kind: 'grid'}`
+(a squared sheet), `{kind: 'axes', x: [min, max], y: [min, max]}` (each end
+within a chart value's bound, lower first) or `{kind: 'figure', block: n}`,
+which names one of the part's own image blocks to label, so a figure's asset
+is referenced once and goes wherever the part's blocks go. Learners see the
+background (`LearnerView` keeps it). The live quiz holds it as plain fields on
+the content answer map, `background` with `xMin`, `xMax`, `yMin`, `yMax` or
+`block`, as Rust (`quiz.rs`) and the browser (`liveQuiz.ts`) read and write it.
+Every validator refuses an unknown kind, an extra key, a reversed or
+out-of-range axis and a figure that is not one of the part's image blocks, on
+the shared `drawing-*` fixtures. Go's `questions.ModelMarked`, Rust's
+`model_marked` and the browser's `modelMarked` say which types a model marks.
+No model writes this type: generation, extraction and the bank pilot's
+schemas leave it out, since adding it would change what they are sent.
 
 ### Grouped parts
 

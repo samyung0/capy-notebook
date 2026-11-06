@@ -1198,6 +1198,7 @@ struct Part {
     answer: String,
     gaps: usize,
     open_accepted: Vec<String>,
+    figure: Option<usize>,
     awarded: Option<f64>,
     item_awards: Option<Vec<f64>>,
     marks: f64,
@@ -1206,9 +1207,61 @@ struct Part {
     solution: Vec<Block>,
 }
 
-/// `answerSchema`; returns the answer type, the gaps count and an open
-/// answer's accepted texts.
-fn answer(value: &Value) -> Result<(String, usize, Vec<String>), String> {
+/// What `answer` leaves for the part's own checks.
+struct Answer {
+    kind: String,
+    gaps: usize,
+    /// An open answer's accepted texts.
+    open_accepted: Vec<String>,
+    /// A drawing over a figure: the index of the part's block it names.
+    figure: Option<usize>,
+}
+
+impl Answer {
+    fn of(kind: &str) -> Self {
+        Self {
+            kind: kind.into(),
+            gaps: 0,
+            open_accepted: vec![],
+            figure: None,
+        }
+    }
+}
+
+/// `drawingBackground`: a blank sheet, a squared grid, axes over x and y
+/// ranges, or one of the part's own image blocks; returns the figure's index.
+fn drawing_background(value: &Value) -> Result<Option<usize>, String> {
+    let what = "background";
+    let map = object(value, what)?;
+    match map.get("kind").and_then(Value::as_str).unwrap_or("") {
+        "blank" | "grid" => {
+            strict(map, what, &["kind"], &[])?;
+            Ok(None)
+        }
+        "axes" => {
+            strict(map, what, &["kind", "x", "y"], &[])?;
+            for axis in ["x", "y"] {
+                let range = array(&map[axis], what, 2, 2)?;
+                let low = chart_value(&range[0], what)?;
+                let high = chart_value(&range[1], what)?;
+                if low >= high {
+                    return fail("An axis runs from a lower to a higher value.");
+                }
+            }
+            Ok(None)
+        }
+        "figure" => {
+            strict(map, what, &["block", "kind"], &[])?;
+            let block = index(&map["block"], what)?;
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            Ok(Some(block as usize))
+        }
+        _ => fail(format!("{what}: invalid kind")),
+    }
+}
+
+/// `answerSchema`.
+fn answer(value: &Value) -> Result<Answer, String> {
     let what = "answer";
     let map = object(value, what)?;
     let kind = map.get("type").and_then(Value::as_str).unwrap_or("");
@@ -1226,12 +1279,12 @@ fn answer(value: &Value) -> Result<(String, usize, Vec<String>), String> {
             {
                 return fail("Choose valid, distinct correct options.");
             }
-            Ok((kind.into(), 0, vec![]))
+            Ok(Answer::of(kind))
         }
         "boolean" => {
             strict(map, what, &["correct", "type"], &[])?;
             boolean(&map["correct"], what)?;
-            Ok((kind.into(), 0, vec![]))
+            Ok(Answer::of(kind))
         }
         "short" => {
             strict(map, what, &["accepted", "type"], &["unit"])?;
@@ -1252,7 +1305,7 @@ fn answer(value: &Value) -> Result<(String, usize, Vec<String>), String> {
             if unit && !accepted.iter().all(|a| valid_quantity_value(a)) {
                 return fail("Accepted answers must contain values only, in the required unit.");
             }
-            Ok((kind.into(), 0, vec![]))
+            Ok(Answer::of(kind))
         }
         "matching" => {
             strict(map, what, &["options", "pairs", "type"], &[])?;
@@ -1268,12 +1321,12 @@ fn answer(value: &Value) -> Result<(String, usize, Vec<String>), String> {
             if rights.iter().any(|r| *r >= options.len() as f64) {
                 return fail("Every pair needs a choice from the pool.");
             }
-            Ok((kind.into(), 0, vec![]))
+            Ok(Answer::of(kind))
         }
         "ordering" => {
             strict(map, what, &["items", "type"], &[])?;
             list(&map["items"], what, 2)?;
-            Ok((kind.into(), 0, vec![]))
+            Ok(Answer::of(kind))
         }
         "gaps" => {
             strict(map, what, &["accepted", "type"], &[])?;
@@ -1281,7 +1334,10 @@ fn answer(value: &Value) -> Result<(String, usize, Vec<String>), String> {
             for item in lists {
                 list(item, what, 1)?;
             }
-            Ok((kind.into(), lists.len(), vec![]))
+            Ok(Answer {
+                gaps: lists.len(),
+                ..Answer::of(kind)
+            })
         }
         "open" => {
             strict(map, what, &["accepted", "hints", "type"], &[])?;
@@ -1293,7 +1349,19 @@ fn answer(value: &Value) -> Result<(String, usize, Vec<String>), String> {
             for hint in array(&map["hints"], what, 0, QUESTION_ANSWERS_MAX)? {
                 text(hint, what)?;
             }
-            Ok((kind.into(), 0, accepted))
+            Ok(Answer {
+                open_accepted: accepted,
+                ..Answer::of(kind)
+            })
+        }
+        "drawing" => {
+            // Answered on the drawing board over its background (Epo 2026-11-03).
+            strict(map, what, &["background", "type"], &[])?;
+            let figure = drawing_background(&map["background"])?;
+            Ok(Answer {
+                figure,
+                ..Answer::of(kind)
+            })
         }
         _ => fail(format!("{what}: invalid type")),
     }
@@ -1319,7 +1387,12 @@ fn part(value: &Value) -> Result<Part, String> {
         Some(group) => Some(identifier(group, what)?),
         None => None,
     };
-    let (answer, gaps, open_accepted) = answer(&map["answer"])?;
+    let Answer {
+        kind: answer,
+        gaps,
+        open_accepted,
+        figure,
+    } = answer(&map["answer"])?;
     let awarded = match present(map, "awarded") {
         Some(v) => {
             let n = number(v, what)?;
@@ -1375,6 +1448,7 @@ fn part(value: &Value) -> Result<Part, String> {
         answer,
         gaps,
         open_accepted,
+        figure,
         awarded,
         item_awards,
         marks,
@@ -1575,8 +1649,14 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
                 );
             }
         }
-        if (part.answer == "open") != part.markscheme.is_some() {
-            return fail("Open answers need a marking scheme, and only open answers have one.");
+        if part
+            .figure
+            .is_some_and(|i| part.blocks.get(i).is_none_or(|b| b.kind != "image"))
+        {
+            return fail("A figure background names one of the part's image blocks.");
+        }
+        if model_marked(&part.answer) != part.markscheme.is_some() {
+            return fail("Open and drawing answers need a marking scheme, and only they have one.");
         }
         let marks = part.markscheme.clone().unwrap_or_default();
         if part.markscheme.is_some() && marks.iter().sum::<f64>() != part.marks {
@@ -1653,9 +1733,15 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
     }
     Ok(Question {
         id,
-        open_parts: parts.iter().filter(|p| p.answer == "open").count(),
+        open_parts: parts.iter().filter(|p| model_marked(&p.answer)).count(),
         part_ids: parts.into_iter().map(|p| p.id).collect(),
     })
+}
+
+/// Answer types a model marks against the part's marking items: written
+/// (open) and drawn answers.
+pub fn model_marked(answer: &str) -> bool {
+    answer == "open" || answer == "drawing"
 }
 
 /// `Number(digits)` as JS prints it (leading zeros dropped).

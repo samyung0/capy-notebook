@@ -72,6 +72,7 @@ import {
   blankQuestion,
   gapNumbers,
   gapText,
+  modelMarked,
   QUESTION_TYPES,
   type Question,
   type QuestionAnswer,
@@ -125,7 +126,7 @@ function gapsAnswer(part: QuestionPart): QuestionPart {
     markscheme: undefined,
   };
 }
-/** Open answers carry a marking scheme worth the part's marks; closed ones
+/** Open and drawing answers carry a marking scheme worth the part's marks; closed ones
  * drop it. Turned away from blanks, the text blocks holding them go. */
 export function withAnswer(
   part: QuestionPart,
@@ -139,7 +140,7 @@ export function withAnswer(
     part.answer.type === 'gaps'
       ? part.blocks.filter((block) => gapNumbers([block]).length === 0)
       : part.blocks;
-  return answer.type === 'open'
+  return modelMarked(answer.type)
     ? {
         ...part,
         answer,
@@ -149,9 +150,9 @@ export function withAnswer(
     : { ...part, answer, blocks, itemAwards: undefined, markscheme: undefined };
 }
 
-// Only open parts have a marking scheme.
+// Only open and drawing parts have a marking scheme.
 const answerTitle = (part: QuestionPart) =>
-  part.answer.type === 'open'
+  modelMarked(part.answer.type)
     ? m.question_ui_answer_and_marking_scheme()
     : m.question_ui_answer_and_marks();
 

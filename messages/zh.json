@@ -2294,7 +2294,7 @@
   "question_issue_text_part": "第 {label} 小题：缺少题目文字或文字为空",
   "question_issue_warning": "问题：{issues}",
   "question_issue_row": "有问题",
-  "question_validation_markscheme_open": "开放式答案需要评分标准，且只有开放式答案才有评分标准。",
+  "question_validation_markscheme_open": "开放式和作图答案需要评分标准，且只有它们才有评分标准。",
   "question_validation_markscheme_total": "评分要点的分数总和必须等于该小题的分数。",
   "question_validation_quiz_markscheme": "每个小题最多有 {max} 个评分要点。",
   "question_validation_open_answer_length": "参考答案最多 {max} 个字符。",
@@ -3038,5 +3038,8 @@
   "drawing_board_fill_purple": "紫色",
   "drawing_board_fill_red": "红色",
   "drawing_board_fill_yellow": "黄色",
-  "drawing_board_label": "标签"
+  "drawing_board_label": "标签",
+  "question_validation_axis_range": "坐标轴须从较小值到较大值。",
+  "question_validation_drawing_figure": "请从本小题的图片中选一张作为作图的底图。",
+  "question_ui_drawing": "作图"
 }

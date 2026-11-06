@@ -31,11 +31,11 @@ import (
 
 // ScorePart scores a closed part: its awarded marks and whether each scored
 // item is right. Matching pairs and gaps score one by one, rounded down to a
-// half mark; every other closed answer is one item, all or nothing. Open parts
-// score 0 with no items: Jev grades them.
+// half mark; every other closed answer is one item, all or nothing. Open and
+// drawing parts score 0 with no items: a model marks them.
 func ScorePart(p map[string]any, value any) (float64, []bool) {
 	a, _ := p["answer"].(map[string]any)
-	if a == nil || a["type"] == "open" {
+	if a == nil || ModelMarked(a["type"]) {
 		return 0, nil
 	}
 	items := itemResults(a, value)
@@ -382,7 +382,7 @@ func Graded(q map[string]any, answers map[string]any, open map[string][]float64)
 		marks, _ := num(p["marks"])
 		a, _ := p["answer"].(map[string]any)
 		var score float64
-		if a["type"] == "open" {
+		if ModelMarked(a["type"]) {
 			_, itemMarks := MarkItems(p)
 			items := open[id]
 			if items == nil {

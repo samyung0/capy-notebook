@@ -9,6 +9,7 @@ export const QUESTION_TYPES = [
   'ordering',
   'open',
   'gaps',
+  'drawing',
 ] as const;
 
 export type QuestionType = (typeof QUESTION_TYPES)[number];
@@ -185,7 +186,21 @@ export type QuestionAnswer =
   | { type: 'ordering'; items: string[] }
   | { type: 'open'; accepted: string[]; hints: string[] }
   /** One accepted list per numbered gap written in the part's text. */
-  | { type: 'gaps'; accepted: string[][] };
+  | { type: 'gaps'; accepted: string[][] }
+  /** Answered on the drawing board over its background, marked like an open
+   * part against its marking items (Epo 2026-11-03). */
+  | { type: 'drawing'; background: DrawingBackground };
+
+/** What a drawing answer is drawn over: a blank sheet, a squared grid, axes over
+ * x and y ranges, or one of the part's own image blocks (`block`) to label. */
+export type DrawingBackground =
+  | { kind: 'blank' | 'grid' }
+  | { kind: 'axes'; x: [number, number]; y: [number, number] }
+  | { kind: 'figure'; block: number };
+
+/** Answer types a model marks against the part's marking items. */
+export const modelMarked = (type: QuestionType) =>
+  type === 'open' || type === 'drawing';
 
 /** An open part's marking item; harder steps can carry more whole marks. */
 export type MarkItem = { text: string; marks: number };
@@ -202,7 +217,8 @@ export type QuestionPart = {
   blocks: QuestionBlock[];
   answer: QuestionAnswer;
   marks: number;
-  /** Open parts only, adding up to `marks`; closed answers are their own key. */
+  /** Open and drawing parts only, adding up to `marks`; closed answers are
+   * their own key. */
   markscheme?: MarkItem[];
   solution: QuestionBlock[];
   /** Attempt snapshots only; authored content rejects these fields. */
@@ -235,7 +251,8 @@ export type LearnerAnswer =
   | { type: 'short'; unit?: string }
   | { type: 'matching'; options: string[]; left: string[] }
   | { type: 'ordering'; items: string[] }
-  | { type: 'gaps'; gaps: number };
+  | { type: 'gaps'; gaps: number }
+  | { type: 'drawing'; background: DrawingBackground };
 export type LearnerPart = {
   id: string;
   group?: string;
