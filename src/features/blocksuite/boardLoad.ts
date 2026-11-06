@@ -20,15 +20,17 @@ export class BoardLoadError extends Error {
   }
 }
 
-/** What a board may hold: the blocks and canvas elements its tools make. */
-const FLAVOURS = new Set([
-  'affine:image',
-  'affine:list',
-  'affine:note',
-  'affine:page',
-  'affine:paragraph',
-  'affine:surface',
-]);
+/** What a board may hold: the blocks its tools make, each under the parents it may
+ * have. The page is the root. The store checks none of this when a saved board loads:
+ * it skips a block it doesn't know and takes any tree. */
+const PARENTS: Record<string, string[]> = {
+  'affine:image': ['affine:surface', 'affine:note'],
+  'affine:list': ['affine:note', 'affine:paragraph', 'affine:list'],
+  'affine:note': ['affine:page'],
+  'affine:page': [],
+  'affine:paragraph': ['affine:note', 'affine:paragraph', 'affine:list'],
+  'affine:surface': ['affine:page'],
+};
 const ELEMENTS = new Set([
   'brush',
   'chart',
@@ -107,12 +109,32 @@ export function checkSavedBoard(update: Uint8Array) {
   const blocks = doc.getMap('blocks').toJSON() as Record<string, Fields>;
   const flavours = Object.values(blocks).map((block) => block['sys:flavour']);
   for (const flavour of flavours)
-    if (typeof flavour !== 'string' || !FLAVOURS.has(flavour))
+    if (typeof flavour !== 'string' || !Object.hasOwn(PARENTS, flavour))
       throw new BoardLoadError(`block ${String(flavour)}`);
   const count = (flavour: string) =>
     flavours.filter((each) => each === flavour).length;
   if (count('affine:page') !== 1 || count('affine:surface') !== 1)
     throw new BoardLoadError('no single page and canvas');
+  // One tree: every child exists and has one allowed parent, and every block but the
+  // page is someone's child.
+  const parentOf = new Map<string, string>();
+  for (const [id, block] of Object.entries(blocks)) {
+    const children = block['sys:children'];
+    if (!Array.isArray(children)) throw new BoardLoadError('block children');
+    for (const child of children) {
+      const flavour = blocks[child]?.['sys:flavour'] as string | undefined;
+      if (
+        !flavour ||
+        parentOf.has(child) ||
+        !PARENTS[flavour].includes(block['sys:flavour'] as string)
+      )
+        throw new BoardLoadError('block tree');
+      parentOf.set(child, id);
+    }
+  }
+  for (const [id, block] of Object.entries(blocks))
+    if ((block['sys:flavour'] === 'affine:page') === parentOf.has(id))
+      throw new BoardLoadError('block tree');
   const surface = Object.values(blocks).find(
     (block) => block['sys:flavour'] === 'affine:surface'
   ) as Fields;

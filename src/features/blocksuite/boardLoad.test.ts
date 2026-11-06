@@ -39,6 +39,24 @@ describe('checkSavedBoard', () => {
     ).toBeNull();
   });
 
+  it('refuses a block out of place', () => {
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, fromBase64(SAVED));
+    const blocks = doc.getMap<Y.Map<unknown>>('blocks');
+    const page = [...blocks.values()].find(
+      (block) => block.get('sys:flavour') === 'affine:page'
+    );
+    // A paragraph straight under the page, with no note.
+    const paragraph = new Y.Map<unknown>();
+    paragraph.set('sys:id', 'loose');
+    paragraph.set('sys:flavour', 'affine:paragraph');
+    paragraph.set('sys:children', new Y.Array());
+    blocks.set('loose', paragraph);
+    const children = page?.get('sys:children') as Y.Array<string>;
+    children.push(['loose']);
+    expect(reason(Y.encodeStateAsUpdate(doc))).toBe('block tree');
+  });
+
   it('refuses what the board never makes or can not draw', () => {
     expect(reason(new Uint8Array([1, 2, 3, 4, 5]))).toBe('unreadable');
     expect(reason(withElement({ type: 'mindmap', xywh: '[0,0,9,9]' }))).toBe(

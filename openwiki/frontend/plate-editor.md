@@ -4448,8 +4448,10 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   - `save()` returns `{ doc, bytes }`: the board copied into a fresh Yjs document, so no
     undo history (200 undo steps on a card were 606 KB live and a few KB saved). The
     answer flow refuses past Epo's 250 KB on Done.
-  - `saved` is checked before anything mounts (`boardLoad.ts`): one page and one canvas,
-    only the blocks and elements the board's tools make, and each card's fields within
+  - `saved` is checked before anything mounts (`boardLoad.ts`), as BlockSuite's store
+    skips a block it doesn't know and takes any tree on load: one page and one canvas,
+    only the blocks and elements the board's tools make, each block under a parent it
+    may have in one tree, and each card's fields within
     the limits its editor keeps (marks, bars, labels, spokes, axis values, formula
     length). Anything else throws a `BoardLoadError` with a `reason`.
 - **Formulas:** a `formula` canvas element holding LaTeX, typed in MathLive (loaded on
