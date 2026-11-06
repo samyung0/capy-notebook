@@ -1,4 +1,4 @@
-import type { Stats } from 'node:fs';
+import { readdirSync, readFileSync, type Stats } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { paraglideVitePlugin } from '@inlang/paraglide-js';
@@ -41,6 +41,26 @@ const DEV_ENV_FILE = /^deploy\/\.env(?:\.[^/]+)?$/;
  * (`--mode development`) and keep them. */
 const MSW_ENTRIES =
   /\/mocks\/(browser|collaboration)$|\/dev\/MockScenarioPanel$|\/routes\/Dev(DrawingBoard|WorkspaceCanvas)$/;
+const BOARD_IMPORT = /'(@blocksuite\/affine\/[^']+)'/g;
+const CSS_TS = /\.css\.ts$/;
+
+/** The board's BlockSuite subpaths, which the dev server pre-bundles into one esbuild
+ * bundle instead of serving ~2,000 vendored source files a request each (Q683). A
+ * subpath left out would load as source beside a second copy of what the bundle holds,
+ * so they're read from src/features/blocksuite at start; a new import needs a restart.
+ * The bundle is cached, so an edit to vendor/blocksuite shows after `vite --force`;
+ * src/features/blocksuite stays app source and hot reloads. Builds don't pre-bundle. */
+function boardDeps() {
+  const dir = path.resolve(import.meta.dirname, 'src/features/blocksuite');
+  const ids = readdirSync(dir, { encoding: 'utf8', recursive: true })
+    .filter((name) => name.endsWith('.ts'))
+    .flatMap((name) =>
+      [
+        ...readFileSync(path.join(dir, name), 'utf8').matchAll(BOARD_IMPORT),
+      ].map(([, id]) => id)
+    );
+  return [...new Set(ids)];
+}
 
 // Every component reads deploy/.env; see deploy/.env.example.
 const ENV_DIR = path.resolve(import.meta.dirname, 'deploy');
@@ -141,6 +161,34 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
     // Rollup cannot parse: esbuild must lower them while transforming.
     esbuild: { target: 'es2022' },
     optimizeDeps: {
+      esbuildOptions: {
+        plugins: [
+          {
+            // The pre-bundle's `.css.ts` files, out of the vanilla-extract plugin's
+            // reach: each gets the file scope that plugin adds, and its styles
+            // register in the browser as the module runs.
+            name: 'vanilla-extract-file-scope',
+            setup(build) {
+              build.onLoad({ filter: CSS_TS }, ({ path: file }) => ({
+                contents: [
+                  "import { endFileScope, setFileScope } from '@vanilla-extract/css/fileScope';",
+                  `setFileScope(${JSON.stringify(
+                    path
+                      .relative(import.meta.dirname, file)
+                      .split(path.sep)
+                      .join('/')
+                  )}, 'blocksuite');`,
+                  readFileSync(file, 'utf8'),
+                  'endFileScope();',
+                ].join('\n'),
+                loader: 'ts',
+              }));
+            },
+          },
+        ],
+        // As `esbuild` above, for BlockSuite's decorators.
+        target: 'es2022',
+      },
       // '@betteroffice/docx-react' stays scanned: it imports
       // @radix-ui/react-select, which only the fork installs, and finding that
       // on the first DOCX edit re-optimizes and reloads every open page.
@@ -168,6 +216,7 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
         'linkedom/worker',
         'mermaid',
         'pdfjs-dist/legacy/build/pdf.mjs',
+        ...boardDeps(),
       ],
     },
     plugins: [
@@ -225,11 +274,10 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
       },
       react(),
       // BlockSuite's few `.css.ts` styles (vendor/blocksuite/README.md). It starts a
-      // Vite server of its own, so only where the board can load: a dev server or a
-      // build with MSW on. The answer flow turns this on for every build.
-      (command === 'serve' || useMsw) &&
-        mode !== 'test' &&
-        vanillaExtractPlugin(),
+      // Vite server of its own, so only in a build where the board can load: one with
+      // MSW on. The dev server pre-bundles them instead (optimizeDeps). The answer
+      // flow turns this on for every build.
+      command === 'build' && useMsw && vanillaExtractPlugin(),
       mathliveFonts(),
       embedFrame(env.VITE_EMBED_ORIGIN),
       policyHeaders(env),

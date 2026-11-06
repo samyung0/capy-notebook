@@ -4387,6 +4387,21 @@ vanilla-extract plugin, so it neither ships nor transforms the vendored sources.
 flow reverses both. `pnpm audit` covers these packages' dependencies but not the copied
 source, so an AFFiNE security fix stays unseen until someone re-copies.
 
+The dev server pre-bundles the board's BlockSuite (Q683): at start `vite.config.ts` reads
+every `@blocksuite/affine/*` subpath that `src/features/blocksuite` names and adds them to
+`optimizeDeps.include`, so esbuild bundles them once into Vite's dep cache instead of the
+server sending about 2,000 vendored source files a request each. An esbuild plugin there
+gives each `.css.ts` file vanilla-extract's file scope, and its styles register in the
+browser as the module runs, so the dev server runs no vanilla-extract plugin (a build with
+MSW on still does). Two consequences:
+
+- An edit to `vendor/blocksuite` shows only after the bundle is rebuilt: start the server
+  with `vite --force`. `src/features/blocksuite` stays app source and hot reloads as before.
+- A BlockSuite subpath newly imported there needs a server restart. Until then it loads as
+  source beside a second copy of what the bundle holds.
+
+Numbers in [editor-perf.md](../editor-perf.md#drawing-board-in-dev).
+
 ### The board's tools
 
 The board adds to BlockSuite through its own extensions (`boardTools.ts`, `boardPlane.ts`,

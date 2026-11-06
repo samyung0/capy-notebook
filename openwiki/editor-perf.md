@@ -41,6 +41,36 @@ deltas.
 
 `.github/workflows/ci.yml` does not run `pnpm bench:editor`.
 
+## Drawing board in dev
+
+The dev server pre-bundles the board's BlockSuite and runs no vanilla-extract plugin
+(Q683; how, and why a vendored edit then needs `vite --force`:
+[frontend/plate-editor.md](frontend/plate-editor.md#blocksuite-on-main)). Measured on the
+PC on 2026-11-06 against the config before it, MSW's module pass-through in both,
+alternating, medians of 3, at 3-25% CPU load from other sessions. Usable means the plane
+is painted and the pen button is there.
+
+| Workspace Canvas tab, blank board | Before | After |
+| --- | --- | --- |
+| Cold start (empty cache): click to usable | 10.5 s | 1.4 s |
+| Restart (cache kept): click to usable | 11.2 s | 1.3 s |
+| Warm (same server, new tab): click to usable | 3.4 s | 0.85 s |
+| Reload with the canvas in the URL: reload to usable | 5.7 s | 2.9 s |
+| Requests after the click, warm | 2,212 (27.9 MB) | 192 (12.9 MB) |
+
+Nothing else got slower. A plain workspace load after a cold start took 17.5 s against
+18.3 s (the dep scan 4.8 s against 7.2 s, the bundling 8.9 s against 7.2 s, esbuild's
+memory 2.6 GB against 2.3 GB while it runs), after a restart 9.1 s against 9.2 s. A DOCX
+opened in 6.2 s after a restart and 4.1 s warm, both ways. `drawing-board.spec.ts` at
+one worker takes 2.0 min from an empty cache and 1.8 min warm, against 8.6 min on the
+dev setup before both MSW's pass-through and this.
+
+`axisNumber` (`src/features/questions/graph.ts`) keeps one `Intl.NumberFormat` per
+decimals and notation. On a large board (8 answers: 25 plane cards, 64 formulas, 32 note
+cards) at 4x CPU in dev, zooming went from 23.5 to 28.5 FPS and from 1.66 s to 0.81 s of
+blocking, and typing a label from 28.7 to 15.9 ms of blocking per key; the label's input
+p95 stays near 470-500 ms, held by other work.
+
 ## Office runtime (`pnpm bench:office`)
 
 [`bench/editor/scripts/runtime.office.ts`](../bench/editor/scripts/runtime.office.ts)
