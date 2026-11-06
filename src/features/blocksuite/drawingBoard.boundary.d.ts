@@ -5,7 +5,12 @@ export function mountDrawingBoard(
 ): {
   save: () => string;
   snapshot: () => string;
-  stats: () => { blocks: string[]; bytes: number; canvas: string[] };
+  stats: () => {
+    blocks: string[];
+    bytes: number;
+    canvas: string[];
+    marks: number;
+  };
   toImage: () => Promise<string | null>;
   unmount: () => void;
 };

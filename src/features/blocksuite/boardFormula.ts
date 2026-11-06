@@ -22,14 +22,33 @@ import {
 } from '@blocksuite/affine/std/gfx';
 import katex from 'katex';
 import { html, render } from 'lit';
+import { inertTex } from '@/features/materials/inertTex';
 import { getLocale, m } from '@/i18n';
 import { setFormulaOpener } from './boardTools';
 
-/** Longest formula a member can type. */
+/** Longest formula a member can type; the renderer draws nothing past it. */
 const LATEX_MAX = 2000;
 const FONT_SIZE = 24;
 /** Bitmap pixels per board pixel, so a formula stays sharp when zoomed in. */
 const SHARPNESS = 3;
+/** The longest bitmap side, whatever a formula asks for. */
+const BITMAP_MAX = 4096;
+/** Drawings kept; the oldest goes and is drawn again if needed. */
+const KEPT_MAX = 64;
+/** What MathLive writes that KaTeX has no command for. */
+const KATEX_OPTIONS = {
+  macros: {
+    '\\differentialD': '\\mathrm{d}',
+    '\\exponentialE': '\\mathrm{e}',
+    '\\imaginaryI': '\\mathrm{i}',
+    '\\placeholder': '\\square',
+  },
+  // A formula asks for no more than this many ems, or expansions, whoever wrote it.
+  maxExpand: 500,
+  maxSize: 12,
+  output: 'html',
+  trust: false,
+} as const;
 
 type Drawn = { canvas: HTMLCanvasElement; h: number; w: number };
 
@@ -42,18 +61,22 @@ const ready = new Map<string, Drawn>();
 async function layOut(latex: string): Promise<Drawn> {
   const host = document.createElement('div');
   // The padding keeps tall glyphs and stretched delimiters inside the bitmap.
-  host.style.cssText = `position:fixed;left:-10000px;top:0;padding:${FONT_SIZE / 3}px 2px;font-size:${FONT_SIZE}px;font-weight:400;color:#000;white-space:nowrap;width:max-content`;
+  host.style.cssText = `position:fixed;left:0;top:0;visibility:hidden;pointer-events:none;padding:${FONT_SIZE / 3}px 2px;font-size:${FONT_SIZE}px;font-weight:400;color:#000;white-space:nowrap;width:max-content`;
   document.body.append(host);
   try {
-    katex.render(latex, host, { output: 'html', throwOnError: false });
+    katex.render(latex, host, { ...KATEX_OPTIONS, throwOnError: false });
     await document.fonts.ready;
     const box = host.getBoundingClientRect();
     const canvas = document.createElement('canvas');
-    canvas.width = Math.ceil(box.width * SHARPNESS);
-    canvas.height = Math.ceil(box.height * SHARPNESS);
+    const sharpness = Math.min(
+      SHARPNESS,
+      BITMAP_MAX / Math.max(box.width, box.height, 1)
+    );
+    canvas.width = Math.ceil(box.width * sharpness);
+    canvas.height = Math.ceil(box.height * sharpness);
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('no canvas context');
-    ctx.scale(SHARPNESS, SHARPNESS);
+    ctx.scale(sharpness, sharpness);
     ctx.textRendering = 'geometricPrecision';
     ctx.translate(-box.x, -box.y);
     const stretched: SVGElement[] = [];
@@ -107,7 +130,21 @@ async function layOut(latex: string): Promise<Drawn> {
       const image = new Image();
       image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(copy))}`;
       await image.decode();
+      // KaTeX stretches a root's bar with a 400em SVG cut off by a parent.
+      const cut = (function clipOf(el: Element | null): Element | null {
+        if (!el || el === host) return null;
+        return getComputedStyle(el).overflow === 'hidden'
+          ? el
+          : clipOf(el.parentElement);
+      })(shape.parentElement)?.getBoundingClientRect();
+      ctx.save();
+      if (cut) {
+        ctx.beginPath();
+        ctx.rect(cut.left, cut.top, cut.width, cut.height);
+        ctx.clip();
+      }
       ctx.drawImage(image, at.left, at.top, at.width, at.height);
+      ctx.restore();
     }
     return { canvas, h: box.height, w: box.width };
   } finally {
@@ -115,13 +152,25 @@ async function layOut(latex: string): Promise<Drawn> {
   }
 }
 
-function drawing(latex: string) {
+export function drawing(latex: string) {
   let pending = drawings.get(latex);
   if (!pending) {
-    pending = layOut(latex).then((drawn) => {
-      ready.set(latex, drawn);
-      return drawn;
-    });
+    pending = layOut(latex).then(
+      (drawn) => {
+        ready.set(latex, drawn);
+        const [oldest] = ready.keys();
+        if (ready.size > KEPT_MAX && oldest !== latex) {
+          ready.delete(oldest);
+          drawings.delete(oldest);
+        }
+        return drawn;
+      },
+      (error) => {
+        // Not kept, so the next draw tries again.
+        drawings.delete(latex);
+        throw error;
+      }
+    );
     drawings.set(latex, pending);
   }
   return pending;
@@ -182,9 +231,13 @@ const formulaRenderer: ElementRenderer<FormulaElementModel> = (
   matrix,
   renderer
 ) => {
+  if (model.latex.length > LATEX_MAX) return;
   const drawn = ready.get(model.latex);
   if (!drawn) {
-    void drawing(model.latex).then(() => renderer.refresh());
+    drawing(model.latex).then(
+      () => renderer.refresh(),
+      () => undefined
+    );
     return;
   }
   const [, , w, h] = model.deserializedXYWH;
@@ -211,11 +264,16 @@ export const formulaExtensions = [
   FormulaElementView,
 ];
 
-/** Every formula on the board is drawn, before the board becomes an image. */
+/** Every formula on the board is drawn, before the board becomes an image. One that
+ * can't be drawn is left out, not the whole answer. */
 export async function formulasDrawn(gfx: GfxController) {
-  await Promise.all(
+  await Promise.allSettled(
     gfx.layer.canvasElements
-      .filter((element) => element.type === 'formula')
+      .filter(
+        (element) =>
+          element.type === 'formula' &&
+          (element as FormulaElementModel).latex.length <= LATEX_MAX
+      )
       .map((element) => drawing((element as FormulaElementModel).latex))
   );
 }
@@ -234,7 +292,7 @@ async function openEditor(gfx: GfxController, model?: FormulaElementModel) {
   MathfieldElement.soundsDirectory = null;
   MathfieldElement.locale = getLocale();
   const field = new MathfieldElement();
-  field.value = model?.latex ?? '';
+  field.value = inertTex(model?.latex ?? '');
   field.mathVirtualKeyboardPolicy = 'auto';
   const card = document.createElement('div');
   card.className = 'capy-formula';
@@ -242,15 +300,33 @@ async function openEditor(gfx: GfxController, model?: FormulaElementModel) {
     render(null, card);
     card.remove();
   };
+  const fail = (message: string) => {
+    error.textContent = message;
+    error.hidden = false;
+  };
+  // The card stays open until the formula is on the canvas, so nothing typed is lost.
   const save = async () => {
-    const latex = field.value.trim().slice(0, LATEX_MAX);
-    close();
+    const latex = field.value.trim();
     if (!latex) {
+      close();
       if (model) gfx.surface?.deleteElement(model.id);
       gfx.doc.captureSync();
       return;
     }
-    const { h, w } = await drawing(latex);
+    if (latex.length > LATEX_MAX) {
+      fail(m.drawing_board_formula_too_long());
+      return;
+    }
+    let drawn: Drawn;
+    try {
+      katex.renderToString(latex, { ...KATEX_OPTIONS, throwOnError: true });
+      drawn = await drawing(latex);
+    } catch {
+      fail(m.drawing_board_formula_error());
+      return;
+    }
+    close();
+    const { h, w } = drawn;
     const { centerX, centerY } = gfx.viewport;
     const box = model
       ? new Bound(model.x, model.y, w, h)
@@ -270,6 +346,7 @@ async function openEditor(gfx: GfxController, model?: FormulaElementModel) {
   };
   render(
     html`<div class="capy-formula-field"></div>
+      <p class="capy-formula-error" hidden></p>
       <div class="capy-formula-actions">
         <button class="ghost" type="button" @click=${close}>
           ${m.action_cancel()}
@@ -281,6 +358,7 @@ async function openEditor(gfx: GfxController, model?: FormulaElementModel) {
     card
   );
   card.querySelector('.capy-formula-field')?.append(field);
+  const error = card.querySelector('.capy-formula-error') as HTMLElement;
   // The board's shortcuts (S, V, Escape) stay out of the field.
   for (const type of [
     'keydown',
@@ -344,7 +422,10 @@ export function mountSymbolRow(gfx: GfxController) {
   const place = () => {
     const [element] = gfx.selection.selectedElements;
     const typing =
-      gfx.selection.editing && element && element.type === 'text' && element;
+      gfx.selection.editing &&
+      element &&
+      (element as { type?: string }).type === 'text' &&
+      element;
     row.hidden = !typing;
     if (!typing) return;
     const bound = Bound.deserialize(typing.xywh);

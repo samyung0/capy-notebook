@@ -226,10 +226,17 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
 
 15. Phone toolbar (`affine/widgets/edgeless-toolbar` `edgeless-toolbar.ts`, marked
     `Capy (local change 15)`): below 768 px the toolbar takes the full width less an
-    8 px gutter, in place of AFFiNE's 64 px safe area each side.
+    8 px gutter, in place of AFFiNE's 64 px safe area each side, its illustrated tools
+    are 78 px wide and spread with `space-around`, so two show between the arrows. The
+    change is the `FULL_WIDTH_*` constants, the media rule, `_availableWidth` and
+    `scrollSeniorToolSize`.
 
 16. `elementsCtorMap` exported from `affine/blocks/surface` (marked `Capy (local change
     16)`), so the board can register its formula element before a saved answer loads.
+
+17. Text tool (`affine/gfx/text` `tool.ts`, marked `Capy (local change 17)`): a click on
+    a `plane` card adds a label on top of it. The board's Label button uses this, since
+    a double click on a card opens the plane.
 
 The specs named in local changes 6 to 9 are on the `blocksuite-notes` branch, with the
 note editor they pin.

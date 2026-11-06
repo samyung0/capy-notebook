@@ -3,50 +3,48 @@ import {
   EdgelessShapeToolButton,
   ShapeTool,
 } from '@blocksuite/affine/gfx/shape';
+import { TextTool } from '@blocksuite/affine/gfx/text';
 import { Bound } from '@blocksuite/affine/global/gfx';
 import { SignalWatcher } from '@blocksuite/affine/global/lit';
+import { LatexExtension } from '@blocksuite/affine/inlines/latex';
 import {
+  type Color,
   ConnectorMode,
   DefaultTheme,
   isTransparent,
   PointStyle,
   type ShapeName,
+  ShapeType,
 } from '@blocksuite/affine/model';
 import {
   EditPropsStore,
   ThemeProvider,
 } from '@blocksuite/affine/shared/services';
-import type { PointerEventState } from '@blocksuite/affine/std';
+import type { BlockComponent, PointerEventState } from '@blocksuite/affine/std';
 import {
   BaseTool,
   type GfxController,
   GfxControllerIdentifier,
 } from '@blocksuite/affine/std/gfx';
+import type { ExtensionType } from '@blocksuite/affine/store';
 import {
   EdgelessToolbarToolMixin,
   SeniorToolIdentifier,
 } from '@blocksuite/affine/widgets/edgeless-toolbar';
-import { css, html, LitElement, nothing, svg } from 'lit';
+import { css, html, LitElement, svg } from 'lit';
 import { property } from 'lit/decorators.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import * as Y from 'yjs';
 import { m } from '@/i18n';
-import {
-  barBetween,
-  clockAngle,
-  coordinates,
-  onCircle,
-  SHEET,
-  smoothThrough,
-  snapToGrid,
-  type Vec,
-} from './boardGeometry';
+import { addPlane } from './boardPlane';
+
+type Vec = [number, number];
 
 const SHAPE_NAMES: ShapeName[] = [
-  'rect',
-  'ellipse',
-  'diamond',
-  'triangle',
+  ShapeType.Rect,
+  ShapeType.Ellipse,
+  ShapeType.Diamond,
+  ShapeType.Triangle,
   'roundedRect',
 ];
 
@@ -56,7 +54,7 @@ export function outlineNewShapes(gfx: GfxController) {
   setShapeFill(gfx, 'transparent');
 }
 
-function setShapeFill(gfx: GfxController, fillColor: unknown) {
+function setShapeFill(gfx: GfxController, fillColor: Color) {
   const props = gfx.std.get(EditPropsStore);
   for (const name of SHAPE_NAMES)
     props.recordLastProps(`shape:${name}`, {
@@ -66,37 +64,14 @@ function setShapeFill(gfx: GfxController, fillColor: unknown) {
     });
 }
 
-// ---------------------------------------------------------------- plotting
-
-type Plot = 'point' | 'line' | 'curve';
+const PREVIEW = '#1e96eb';
 
 const previews = new WeakMap<GfxController, SVGSVGElement>();
 
-/** The layer under the strokes that shows a plot being placed. It lives on the
- * sheet, so it moves and scales with the board and never reaches the answer. */
+/** The layer under the strokes that shows a preset being sized. It moves and scales
+ * with the board and never reaches the answer. */
 export function setBoardPreview(gfx: GfxController, layer: SVGSVGElement) {
   previews.set(gfx, layer);
-}
-
-const snap = (gfx: GfxController, e: PointerEventState) =>
-  snapToGrid(gfx.viewport.toModelCoord(e.x, e.y) as Vec);
-
-const INK = '#000000';
-const DOT = 10;
-/** A brush this wide draws as thick as a 2 px shape outline or connector. */
-const CURVE_WIDTH = 1.5;
-const PREVIEW = '#1e96eb';
-
-function addDot(gfx: GfxController, [x, y]: Vec) {
-  return gfx.surface?.addElement({
-    fillColor: DefaultTheme.black,
-    filled: true,
-    shapeType: 'ellipse',
-    strokeColor: DefaultTheme.black,
-    strokeWidth: 1,
-    type: 'shape',
-    xywh: new Bound(x - DOT / 2, y - DOT / 2, DOT, DOT).serialize(),
-  });
 }
 
 function addSegment(
@@ -132,249 +107,6 @@ function finishPlacing(gfx: GfxController, id: string | undefined) {
   gfx.doc.captureSync();
   gfx.tool.setTool(DefaultTool);
   if (id) gfx.selection.set({ editing: false, elements: [id] });
-}
-
-/** Point, Line and Curve: each click snaps to a grid crossing and the coordinates
- * show while you place it. Everything lands as ordinary dots and strokes. */
-export class PlotTool extends BaseTool<{ plot: Plot }> {
-  static override toolName = 'capy-plot';
-
-  private placed: Vec[] = [];
-
-  private get plot() {
-    return this.activatedOption.plot;
-  }
-
-  override activate() {
-    this.placed = [];
-  }
-
-  override deactivate() {
-    if (this.plot === 'curve') this.commitCurve();
-    this.placed = [];
-    this.draw(null);
-  }
-
-  override pointerMove(e: PointerEventState) {
-    this.draw(snap(this.gfx, e));
-  }
-
-  override pointerOut() {
-    this.draw(null);
-  }
-
-  override click(e: PointerEventState) {
-    const at = snap(this.gfx, e);
-    if (!at) return;
-    const last = this.placed.at(-1);
-    const repeat = last && last[0] === at[0] && last[1] === at[1];
-    if (this.plot === 'point') {
-      addDot(this.gfx, at);
-      this.gfx.doc.captureSync();
-    } else if (this.plot === 'line') {
-      if (last && !repeat) {
-        addGroup(this.gfx, [
-          addSegment(this.gfx, last, at),
-          addDot(this.gfx, last),
-          addDot(this.gfx, at),
-        ]);
-        this.gfx.doc.captureSync();
-        this.placed = [];
-      } else if (!last) this.placed = [at];
-    } else if (repeat) this.commitCurve();
-    else this.placed.push(at);
-    this.draw(at);
-  }
-
-  private commitCurve() {
-    const { placed } = this;
-    this.placed = [];
-    if (placed.length < 2) return;
-    const brush = this.gfx.surface?.addElement({
-      color: DefaultTheme.black,
-      lineWidth: CURVE_WIDTH,
-      points: smoothThrough(placed).map(([x, y]) => [x, y, 0.5]),
-      type: 'brush',
-    });
-    addGroup(this.gfx, [brush, ...placed.map((p) => addDot(this.gfx, p))]);
-    this.gfx.doc.captureSync();
-  }
-
-  private draw(at: Vec | null) {
-    const layer = previews.get(this.gfx);
-    if (!layer) return;
-    const parts: string[] = [];
-    if (at)
-      parts.push(
-        `<path d="M${at[0]} 0V${at[1]}M${SHEET.origin.x} ${at[1]}H${at[0]}" stroke="${PREVIEW}" stroke-dasharray="4 4" fill="none"/>`,
-        `<circle cx="${at[0]}" cy="${at[1]}" r="${DOT / 2}" fill="${PREVIEW}"/>`,
-        `<g transform="translate(${at[0] + 12} ${at[1] - 32})"><rect width="${coordinates(at).length * 8 + 14}" height="24" rx="4" fill="#111"/><text x="7" y="17" fill="#fff" font-size="14" font-family="Arial, sans-serif">${coordinates(at)}</text></g>`
-      );
-    const points = this.placed;
-    for (const [x, y] of points)
-      parts.push(`<circle cx="${x}" cy="${y}" r="${DOT / 2}" fill="${INK}"/>`);
-    const line = at ? [...points, at] : points;
-    if (line.length > 1) {
-      const path = smoothThrough(line)
-        .map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`)
-        .join('');
-      parts.push(
-        `<path d="${path}" fill="none" stroke="${INK}" stroke-width="2" stroke-linecap="round"/>`
-      );
-    }
-    layer.innerHTML = parts.join('');
-  }
-}
-
-const chip = (x: number, y: number, text: string) =>
-  `<g transform="translate(${x} ${y})"><rect width="${text.length * 8 + 14}" height="24" rx="4" fill="#111"/><text x="7" y="17" fill="#fff" font-size="14" font-family="Arial, sans-serif">${text}</text></g>`;
-
-/** Bars: drag up from the x axis. They take the shapes' fill, from the menu. */
-export class BarsTool extends BaseTool {
-  static override toolName = 'capy-bars';
-
-  start: Vec | null = null;
-  end: Vec | null = null;
-
-  override dragStart(e: PointerEventState) {
-    const at = this.gfx.viewport.toModelCoord(e.x, e.y) as Vec;
-    this.start = snapToGrid(at) ? at : null;
-  }
-
-  override dragMove(e: PointerEventState) {
-    if (!this.start) return;
-    const at = this.gfx.viewport.toModelCoord(e.x, e.y) as Vec;
-    this.end = at;
-    const { h, height, w, x, y } = barBetween(this.start, at);
-    const layer = previews.get(this.gfx);
-    if (layer)
-      layer.innerHTML = `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${PREVIEW}" fill-opacity=".08" stroke="${PREVIEW}" stroke-width="2" stroke-dasharray="5 4"/>${chip(x + w + 10, y - 12, `${height}`.replace('-', '−'))}`;
-  }
-
-  override dragEnd() {
-    const { end, start } = this;
-    this.start = null;
-    this.end = null;
-    const layer = previews.get(this.gfx);
-    if (layer) layer.innerHTML = '';
-    if (!(start && end)) return;
-    const { h, height, w, x, y } = barBetween(start, end);
-    if (!height) return;
-    const { fillColor, filled } =
-      this.gfx.std.get(EditPropsStore).lastProps$.value['shape:rect'];
-    this.gfx.surface?.addElement({
-      fillColor,
-      filled,
-      shapeType: 'rect',
-      strokeColor: DefaultTheme.black,
-      strokeWidth: 2,
-      type: 'shape',
-      xywh: new Bound(x, y, w, h).serialize(),
-    });
-    this.gfx.doc.captureSync();
-  }
-}
-
-/** A pie, one click at a time: the centre, the circle's edge, then each dividing
- * line, with the angle since the last line showing. Clicking the centre again
- * finishes it, as does leaving the tool. */
-export class SectorTool extends BaseTool {
-  static override toolName = 'capy-sector';
-
-  centre: Vec | null = null;
-  radius = 0;
-  lastAngle = 0;
-  parts: (string | undefined)[] = [];
-
-  override deactivate() {
-    this.finish();
-    this.draw('');
-  }
-
-  private finish() {
-    if (this.parts.length) {
-      addGroup(this.gfx, this.parts);
-      this.gfx.doc.captureSync();
-    }
-    this.parts = [];
-    this.centre = null;
-    this.radius = 0;
-    this.lastAngle = 0;
-  }
-
-  private draw(body: string) {
-    const layer = previews.get(this.gfx);
-    if (layer) layer.innerHTML = body;
-  }
-
-  override pointerMove(e: PointerEventState) {
-    const at = this.gfx.viewport.toModelCoord(e.x, e.y) as Vec;
-    const { centre, radius } = this;
-    if (!centre) {
-      const snapped = snapToGrid(at);
-      this.draw(
-        snapped
-          ? `<circle cx="${snapped[0]}" cy="${snapped[1]}" r="${DOT / 2}" fill="${PREVIEW}"/>`
-          : ''
-      );
-      return;
-    }
-    if (!radius) {
-      const r = Math.hypot(at[0] - centre[0], at[1] - centre[1]);
-      this.draw(
-        `<circle cx="${centre[0]}" cy="${centre[1]}" r="${r}" fill="none" stroke="${PREVIEW}" stroke-width="2" stroke-dasharray="5 4"/>`
-      );
-      return;
-    }
-    const angle = clockAngle(centre, at);
-    const [x, y] = onCircle(centre, radius, angle);
-    const sector = (angle - this.lastAngle + 360) % 360;
-    this.draw(
-      `<path d="M${centre[0]} ${centre[1]}L${x} ${y}" stroke="${PREVIEW}" stroke-width="2"/>${chip(x + 10, y - 12, `${sector}°`)}`
-    );
-  }
-
-  override click(e: PointerEventState) {
-    const at = this.gfx.viewport.toModelCoord(e.x, e.y) as Vec;
-    const { centre, gfx } = this;
-    if (!centre) {
-      this.centre = snapToGrid(at);
-      return;
-    }
-    const distance = Math.hypot(at[0] - centre[0], at[1] - centre[1]);
-    if (distance < DOT) {
-      this.finish();
-      this.draw('');
-      return;
-    }
-    if (this.radius) {
-      const angle = clockAngle(centre, at);
-      this.parts.push(
-        addSegment(gfx, centre, onCircle(centre, this.radius, angle))
-      );
-      this.lastAngle = angle;
-    } else {
-      this.radius = distance;
-      this.parts.push(
-        gfx.surface?.addElement({
-          fillColor: 'transparent',
-          filled: false,
-          shapeType: 'ellipse',
-          strokeColor: DefaultTheme.black,
-          strokeWidth: 2,
-          type: 'shape',
-          xywh: new Bound(
-            centre[0] - distance,
-            centre[1] - distance,
-            distance * 2,
-            distance * 2
-          ).serialize(),
-        }),
-        addSegment(gfx, centre, onCircle(centre, distance, 0))
-      );
-    }
-    gfx.doc.captureSync();
-  }
 }
 
 // ---------------------------------------------------------------- presets
@@ -615,22 +347,22 @@ const PANEL: { items: PanelItem[]; label: () => string }[] = [
       {
         icon: '<rect x="4" y="4" width="16" height="16"/>',
         label: m.drawing_board_square,
-        shapeName: 'rect',
+        shapeName: ShapeType.Rect,
       },
       {
         icon: '<circle cx="12" cy="12" r="8.5"/>',
         label: m.drawing_board_ellipse,
-        shapeName: 'ellipse',
+        shapeName: ShapeType.Ellipse,
       },
       {
         icon: '<path d="M12 3l9 9-9 9-9-9z"/>',
         label: m.drawing_board_diamond,
-        shapeName: 'diamond',
+        shapeName: ShapeType.Diamond,
       },
       {
         icon: '<path d="M12 4l9 16H3z"/>',
         label: m.drawing_board_triangle,
-        shapeName: 'triangle',
+        shapeName: ShapeType.Triangle,
       },
       {
         icon: '<rect x="3" y="6" width="18" height="12" rx="4"/>',
@@ -732,8 +464,19 @@ const PANEL: { items: PanelItem[]; label: () => string }[] = [
   },
 ];
 
+const FILL_NAMES: Record<string, () => string> = {
+  Blue: m.drawing_board_fill_blue,
+  Green: m.drawing_board_fill_green,
+  Grey: m.drawing_board_fill_grey,
+  Magenta: m.drawing_board_fill_magenta,
+  Orange: m.drawing_board_fill_orange,
+  Purple: m.drawing_board_fill_purple,
+  Red: m.drawing_board_fill_red,
+  Yellow: m.drawing_board_fill_yellow,
+};
+
 const FILLS = DefaultTheme.FillColorShortPalettes.filter(
-  ({ value }: { value: unknown }) => !isTransparent(value)
+  ({ value }) => !isTransparent(value)
 ).slice(0, 7);
 
 const POPPER_STYLES = css`
@@ -802,18 +545,20 @@ const POPPER_STYLES = css`
 `;
 
 /** The fill new shapes and bars take: none, or a colour. */
-function fillRow(edgeless: EdgelessShapeToolButton['edgeless']) {
-  const gfx = edgeless.std.get(GfxControllerIdentifier);
-  const props = edgeless.std.get(EditPropsStore).lastProps$.value;
-  const theme = edgeless.std.get(ThemeProvider);
+export function fillRow(gfx: GfxController, onPick?: () => void) {
+  const props = gfx.std.get(EditPropsStore).lastProps$.value;
+  const theme = gfx.std.get(ThemeProvider);
   const current = props['shape:rect'].fillColor;
-  const swatch = (color: unknown, label: string, cls = '') =>
+  const swatch = (color: Color, label: string, cls = '') =>
     html`<button
       aria-label=${label}
       aria-pressed=${JSON.stringify(current) === JSON.stringify(color)}
       title=${label}
       type="button"
-      @click=${() => setShapeFill(gfx, color)}
+      @click=${() => {
+        setShapeFill(gfx, color);
+        onPick?.();
+      }}
     >
       <i
         class=${cls}
@@ -822,9 +567,7 @@ function fillRow(edgeless: EdgelessShapeToolButton['edgeless']) {
     </button>`;
   return html`<div class="fills" role="group" aria-label=${m.drawing_board_fill()}>
     ${swatch('transparent', m.drawing_board_no_fill(), 'none')}
-    ${FILLS.map(({ key, value }: { key: string; value: unknown }) =>
-      swatch(value, key)
-    )}
+    ${FILLS.map(({ key, value }) => swatch(value, FILL_NAMES[key]?.() ?? key))}
   </div>`;
 }
 
@@ -928,16 +671,22 @@ class CapyShapePanel extends SignalWatcher(LitElement) {
     return html`<div class="groups">
         ${PANEL.map((group, i) => this.renderGroup(group, i === 0))}
       </div>
-      ${fillRow(this.edgeless)}`;
+      ${fillRow(this.gfx)}`;
   }
 
   @property({ attribute: false })
   accessor edgeless!: EdgelessShapeToolButton['edgeless'];
 }
 
+type PopperButton = LitElement & {
+  createPopper: EdgelessShapeToolButton['createPopper'];
+  edgeless: EdgelessShapeToolButton['edgeless'];
+  popper: EdgelessShapeToolButton['popper'];
+};
+
 /** A popper taller than AFFiNE's 100 px clip, spanning the toolbar. */
 function openPopper(
-  button: EdgelessShapeToolButton | CapyMathsButton,
+  button: PopperButton,
   tag: string,
   height: number,
   style: Partial<CSSStyleDeclaration>
@@ -955,7 +704,7 @@ function openPopper(
 
 /** Leaving the tool closes its menu. Forgetting it at once lets a quick click open
  * it again while it's still sliding away. */
-function closePopper(button: EdgelessShapeToolButton | CapyMathsButton) {
+function closePopper(button: PopperButton) {
   const { popper } = button;
   if (!popper) return;
   button.popper = null;
@@ -963,7 +712,9 @@ function closePopper(button: EdgelessShapeToolButton | CapyMathsButton) {
 }
 
 /** AFFiNE's draggable pieces, opening the grouped panel for its one-row menu. */
+// @ts-expect-error `_toggleMenu` is private in the base, which calls it through `this`.
 class CapyShapeButton extends EdgelessShapeToolButton {
+  // @ts-expect-error the mixin defines it as a getter, typed as a property.
   override get active() {
     const active = this.edgelessTool?.toolType;
     return active === ShapeTool || active === StampTool;
@@ -974,7 +725,7 @@ class CapyShapeButton extends EdgelessShapeToolButton {
     if (!this.active) closePopper(this);
   }
 
-  protected _toggleMenu() {
+  override _toggleMenu() {
     openPopper(this, 'capy-shape-panel', 420, {
       marginLeft: '0',
       maxWidth: '100%',
@@ -983,8 +734,8 @@ class CapyShapeButton extends EdgelessShapeToolButton {
   }
 }
 
-export const shapeButtonTool = {
-  setup: (di: { override: (...args: unknown[]) => void }) => {
+export const shapeButtonTool: ExtensionType = {
+  setup: (di) => {
     di.override(
       SeniorToolIdentifier('shape'),
       () =>
@@ -992,8 +743,8 @@ export const shapeButtonTool = {
           block,
           toolbarContainer,
         }: {
-          block: unknown;
-          toolbarContainer: unknown;
+          block: BlockComponent;
+          toolbarContainer: HTMLElement;
         }) => ({
           content: html`<capy-shape-button
             .edgeless=${block}
@@ -1007,54 +758,50 @@ export const shapeButtonTool = {
 
 // ---------------------------------------------------------------- maths tool
 
-const MATHS_ICONS: Record<Plot | 'axes', string> = {
-  axes: '<path d="M6 21V3M6 18h15M3.5 5.5 6 3l2.5 2.5M18.5 15.5 21 18l-2.5 2.5M6 13h1.5M6 8h1.5M11 18v-1.5M16 18v-1.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
+const ICONS: Record<string, string> = {
+  bars: '<path d="M3 21h18M6 21v-8h4v8M14 21V7h4v14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
   curve:
     '<path d="M4 6c2 9 5 13 8 13s6-5 8-14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="4.5" cy="7" r="2" fill="currentColor"/><circle cx="12" cy="19" r="2" fill="currentColor"/><circle cx="19.5" cy="7" r="2" fill="currentColor"/>',
+  erase:
+    '<path d="m9 20 11-11-5-5L4 15l5 5Zm0 0h11M8 11l5 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
+  formula:
+    '<path d="M18 5H7l6 7-6 7h11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
+  label:
+    '<path d="M5 6V4h14v2M12 4v16M9 20h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
   line: '<path d="M6 18 18 6" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="5" cy="19" r="2.2" fill="currentColor"/><circle cx="19" cy="5" r="2.2" fill="currentColor"/>',
+  move: '<path d="M12 3v18M3 12h18M12 3 9.5 5.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
+  pie: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 12V3M12 12l7.5 5" fill="none" stroke="currentColor" stroke-width="1.5"/>',
+  plane:
+    '<path d="M6 21V3M6 18h15M3.5 5.5 6 3l2.5 2.5M18.5 15.5 21 18l-2.5 2.5M6 13h1.5M6 8h1.5M11 18v-1.5M16 18v-1.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
   point:
     '<path d="M12 3v5M12 16v5M3 12h5M16 12h5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="12" r="2.6" fill="currentColor"/>',
 };
 
-const icon24 = (body: string) =>
-  html`<svg height="24" viewBox="0 0 24 24" width="24">${shape(body)}</svg>`;
+/** One of the maths icons as an SVG string, 24 px. */
+export const mathsIcon = (name: string) =>
+  `<svg height="24" viewBox="0 0 24 24" width="24">${ICONS[name]}</svg>`;
 
 /** The formula button's action, set by the formula module. */
 let openFormula: (gfx: GfxController) => void = () => undefined;
 export function setFormulaOpener(open: typeof openFormula) {
   openFormula = open;
 }
-const BARS_ICON =
-  '<path d="M3 21h18M6 21v-8h4v8M14 21V7h4v14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>';
-const SECTOR_ICON =
-  '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 12V3M12 12l7.5 5" fill="none" stroke="currentColor" stroke-width="1.5"/>';
-const FORMULA_ICON =
-  '<path d="M18 5H7l6 7-6 7h11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>';
 
-class CapyMathsMenu extends SignalWatcher(LitElement) {
+const NEW_PLANE = { h: 320, ppu: 30, w: 480 };
+
+/** The canvas's maths tool only adds things: what's plotted is made inside a plane. */
+class CapyMathsMenu extends LitElement {
   static override styles = [
     POPPER_STYLES,
     css`
       :host {
         display: flex;
-        flex-direction: column;
-        gap: 4px;
+        gap: 2px;
         padding: 6px 8px;
         background: var(--affine-background-overlay-panel-color);
         border: 1px solid var(--affine-border-color);
         border-bottom: 0;
         border-radius: 8px 8px 0 0;
-      }
-      .tools {
-        display: flex;
-        align-items: center;
-        gap: 2px;
-      }
-      .tools > i {
-        width: 1px;
-        height: 20px;
-        margin: 0 4px;
-        background: var(--affine-border-color);
       }
     `,
   ];
@@ -1064,74 +811,56 @@ class CapyMathsMenu extends SignalWatcher(LitElement) {
   }
 
   override render() {
-    const option = this.gfx.tool.currentToolOption$.value;
-    const plot = (kind: Plot, label: string) =>
-      html`<button
-        aria-label=${label}
-        aria-pressed=${
-          option?.toolType === PlotTool && option.options?.plot === kind
-        }
-        title=${label}
-        type="button"
-        @click=${() => this.gfx.tool.setTool(PlotTool, { plot: kind })}
-      >
-        ${icon24(MATHS_ICONS[kind])}
-      </button>`;
-    const addAxes = () => {
-      const { h, w } = PRESETS.axes;
+    const addCard = () => {
       const { centerX, centerY } = this.gfx.viewport;
+      const { h, ppu, w } = NEW_PLANE;
       finishPlacing(
         this.gfx,
-        placePreset(
+        addPlane(
           this.gfx,
-          'axes',
-          new Bound(centerX - w / 2, centerY - h / 2, w, h)
+          new Bound(centerX - w / 2, centerY - h / 2, w, h),
+          ppu
         )
       );
+      this.onDone();
     };
-    const tool = (
-      toolType: typeof BarsTool | typeof SectorTool,
-      body: string,
-      label: string
-    ) =>
-      html`<button
-        aria-label=${label}
-        aria-pressed=${option?.toolType === toolType}
-        title=${label}
+    return html`<button
+        aria-label=${m.drawing_board_add_plane()}
+        title=${m.drawing_board_add_plane()}
         type="button"
-        @click=${() => this.gfx.tool.setTool(toolType)}
+        @click=${addCard}
       >
-        ${icon24(body)}
+        ${unsafeSVG(mathsIcon('plane'))}
+      </button>
+      <button
+        aria-label=${m.drawing_board_label()}
+        title=${m.drawing_board_label()}
+        type="button"
+        @click=${() => {
+          this.gfx.tool.setTool(TextTool);
+          this.onDone();
+        }}
+      >
+        ${unsafeSVG(mathsIcon('label'))}
+      </button>
+      <button
+        aria-label=${m.drawing_board_formula()}
+        title=${m.drawing_board_formula()}
+        type="button"
+        @click=${() => {
+          openFormula(this.gfx);
+          this.onDone();
+        }}
+      >
+        ${unsafeSVG(mathsIcon('formula'))}
       </button>`;
-    return html`<div class="tools">
-        ${plot('point', m.drawing_board_point())}
-        ${plot('line', m.drawing_board_line_through_points())}
-        ${plot('curve', m.drawing_board_curve())}
-        <button
-          aria-label=${m.drawing_board_add_axes()}
-          title=${m.drawing_board_add_axes()}
-          type="button"
-          @click=${addAxes}
-        >
-          ${icon24(MATHS_ICONS.axes)}
-        </button>
-        ${tool(BarsTool, BARS_ICON, m.drawing_board_bars())}
-        ${tool(SectorTool, SECTOR_ICON, m.drawing_board_pie())}
-        <i></i>
-        <button
-          aria-label=${m.drawing_board_formula()}
-          title=${m.drawing_board_formula()}
-          type="button"
-          @click=${() => openFormula(this.gfx)}
-        >
-          ${icon24(FORMULA_ICON)}
-        </button>
-      </div>
-      ${option?.toolType === BarsTool ? fillRow(this.edgeless) : nothing}`;
   }
 
   @property({ attribute: false })
   accessor edgeless!: EdgelessShapeToolButton['edgeless'];
+
+  @property({ attribute: false })
+  accessor onDone: () => void = () => undefined;
 }
 
 /** A sheet of graph paper with a curve, beside the pen, eraser and shapes. */
@@ -1166,42 +895,59 @@ class CapyMathsButton extends EdgelessToolbarToolMixin(
       cursor: pointer;
     }
     .wrap:hover .art,
-    .art[data-active='true'] {
+    .art[data-open='true'] {
       transform: translateY(-8px);
     }
   `;
 
-  override type = PlotTool as never;
+  // It's a menu, not a tool: no tool is ever active for it.
+  override type = DefaultTool as never;
 
+  // @ts-expect-error the mixin defines it as a getter, typed as a property.
   override get active() {
-    const active = this.edgelessTool?.toolType;
-    return active === PlotTool || active === BarsTool || active === SectorTool;
+    return false;
   }
 
-  override updated() {
-    if (!this.active) closePopper(this);
-  }
+  private readonly closeMenu = () => {
+    closePopper(this);
+    document.removeEventListener('pointerdown', this.onOutside, true);
+    this.requestUpdate();
+  };
+
+  private readonly onOutside = (event: PointerEvent) => {
+    if (!event.composedPath().includes(this)) this.closeMenu();
+  };
 
   private toggle() {
-    if (this.tryDisposePopper()) return;
-    if (!this.active) this.gfx.tool.setTool(PlotTool, { plot: 'point' });
-    openPopper(this, 'capy-maths-menu', 150, {
+    if (this.popper) {
+      this.closeMenu();
+      return;
+    }
+    openPopper(this, 'capy-maths-menu', 100, {
       marginLeft: 'auto',
       marginRight: '10px',
       maxWidth: '100%',
       width: 'fit-content',
     });
+    const menu = (this.popper as { element: CapyMathsMenu } | null)?.element;
+    if (menu) menu.onDone = this.closeMenu;
+    document.addEventListener('pointerdown', this.onOutside, true);
+    this.requestUpdate();
+  }
+
+  override disconnectedCallback() {
+    super.disconnectedCallback();
+    document.removeEventListener('pointerdown', this.onOutside, true);
   }
 
   override render() {
     return html`<edgeless-toolbar-button
-      .active=${this.active}
       .tooltip=${this.popper ? '' : m.drawing_board_maths()}
       .tooltipOffset=${5}
       @click=${() => this.toggle()}
     >
       <div class="wrap">
-        <span class="art" data-active=${this.active}>
+        <span class="art" data-open=${!!this.popper}>
           <svg height="62" viewBox="0 0 62 62" width="62">
             <g transform="rotate(-5 31 31)">
               <rect
@@ -1237,12 +983,27 @@ class CapyMathsButton extends EdgelessToolbarToolMixin(
   }
 }
 
-export const mathsTool = {
-  setup: (di: { addImpl: (...args: unknown[]) => void }) => {
+const NEVER_MATCHES = /(?!)/;
+
+/** Note cards keep AFFiNE's inline LaTeX spec, which paragraphs read as they render,
+ * but typing $$ does nothing: KaTeX's HTML can't reach the marking image from a card.
+ * Formulas are the maths tool's. */
+export const noLatexMarkdown: ExtensionType = {
+  setup: (di) => {
+    di.override(LatexExtension.identifier, () => ({
+      action: () => ({ halt: false }),
+      name: 'latex',
+      pattern: NEVER_MATCHES,
+    }));
+  },
+};
+
+export const mathsTool: ExtensionType = {
+  setup: (di) => {
     di.addImpl(
       SeniorToolIdentifier('capy-maths'),
       () =>
-        ({ block }: { block: unknown }) => ({
+        ({ block }: { block: BlockComponent }) => ({
           content: html`<capy-maths-button .edgeless=${block}></capy-maths-button>`,
           name: m.drawing_board_maths(),
         })

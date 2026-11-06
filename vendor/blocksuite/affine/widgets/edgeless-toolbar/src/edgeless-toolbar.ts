@@ -59,6 +59,7 @@ const SENIOR_TOOL_NAV_SIZE = 20;
 const DIVIDER_WIDTH = 8;
 const DIVIDER_SPACE = 8;
 const SAFE_AREA_WIDTH = 64;
+// Capy (local change 15), with `_availableWidth` and `scrollSeniorToolSize`.
 const FULL_WIDTH_BELOW = 768;
 const FULL_WIDTH_GUTTER = 8;
 const FULL_WIDTH_TOOL = 78;

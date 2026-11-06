@@ -1,29 +1,43 @@
 export type Vec = [number, number];
 
-/** The sheet an answer is drawn on, in the board's own coordinates, with one
- * grid square a unit: the origin is where the axes cross. */
-export const SHEET = { h: 520, origin: { x: 41, y: 360 }, w: 820, x: 0, y: 0 };
-export const UNIT = { x: 41, y: 40 };
-
-/** The nearest grid crossing, or null off the sheet. */
-export function snapToGrid([x, y]: Vec): Vec | null {
-  if (
-    x < SHEET.x ||
-    x > SHEET.x + SHEET.w ||
-    y < SHEET.y ||
-    y > SHEET.y + SHEET.h
-  )
-    return null;
-  return [
-    Math.round((x - SHEET.origin.x) / UNIT.x) * UNIT.x + SHEET.origin.x,
-    Math.round((y - SHEET.origin.y) / UNIT.y) * UNIT.y + SHEET.origin.y,
-  ];
+/** Finer squares between a plane's numbered lines: 1 and 5 split in five, 2 in four. */
+export function minorStep(step: number) {
+  const power = 10 ** Math.floor(Math.log10(step));
+  return Math.round(step / power) === 2 ? step / 4 : step / 5;
 }
 
-/** A grid crossing as the student reads it off the axes: "(3, −1)". */
-export function coordinates([x, y]: Vec) {
-  const value = (n: number) => `${n}`.replace('-', '−');
-  return `(${value((x - SHEET.origin.x) / UNIT.x)}, ${value((SHEET.origin.y - y) / UNIT.y)})`;
+/** The nearest multiple of `step`, without the float dust that would show in a label. */
+export function snapTo(value: number, step: number) {
+  return Number((Math.round(value / step) * step).toPrecision(12));
+}
+
+/** A bar from the x axis in plane units: its column starts where the drag began, it
+ * reaches the height the pointer is at, and dragging sideways widens it (a histogram's
+ * class). `narrowest` is half a numbered square at the current zoom. */
+export function barBetween(
+  start: Vec,
+  end: Vec,
+  minor: number,
+  narrowest: number
+) {
+  const x = snapTo(Math.floor(start[0] / minor) * minor, minor);
+  return {
+    h: snapTo(end[1], minor),
+    w: Math.max(snapTo(end[0] - x, minor), narrowest),
+    x,
+  };
+}
+
+/** Degrees clockwise from 12 o'clock, to the nearest degree, as a protractor reads. */
+export function clockAngle([cx, cy]: Vec, [x, y]: Vec) {
+  const degrees = (Math.atan2(x - cx, y - cy) * 180) / Math.PI;
+  return Math.round((degrees + 360) % 360);
+}
+
+/** A point on a circle in plane units, where y goes up. */
+export function onCircle([cx, cy]: Vec, radius: number, degrees: number): Vec {
+  const turn = (degrees * Math.PI) / 180;
+  return [cx + radius * Math.sin(turn), cy + radius * Math.cos(turn)];
 }
 
 /** A smooth curve through the points (Catmull-Rom), as many short segments. */
@@ -48,31 +62,4 @@ export function smoothThrough(points: Vec[], perSegment = 16): Vec[] {
   const last = points.at(-1);
   if (last) out.push(last);
   return out;
-}
-
-/** A bar from the x axis: its column is where the drag began, it reaches the grid
- * line the pointer is on, and dragging sideways widens it (a histogram's class). */
-export function barBetween(start: Vec, end: Vec) {
-  const column = Math.floor((start[0] - SHEET.origin.x) / UNIT.x);
-  const reach = Math.round((end[0] - SHEET.origin.x) / UNIT.x);
-  const columns = Math.max(reach - column, 1);
-  const height = Math.round((SHEET.origin.y - end[1]) / UNIT.y);
-  return {
-    h: Math.abs(height) * UNIT.y,
-    height,
-    w: columns * UNIT.x,
-    x: SHEET.origin.x + column * UNIT.x,
-    y: height > 0 ? SHEET.origin.y - height * UNIT.y : SHEET.origin.y,
-  };
-}
-
-/** Degrees clockwise from 12 o'clock, to the nearest degree, as a protractor reads. */
-export function clockAngle([cx, cy]: Vec, [x, y]: Vec) {
-  const degrees = (Math.atan2(x - cx, cy - y) * 180) / Math.PI;
-  return Math.round((degrees + 360) % 360);
-}
-
-export function onCircle([cx, cy]: Vec, radius: number, degrees: number): Vec {
-  const turn = (degrees * Math.PI) / 180;
-  return [cx + radius * Math.sin(turn), cy - radius * Math.cos(turn)];
 }

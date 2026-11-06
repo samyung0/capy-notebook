@@ -15,6 +15,7 @@ import {
   DefaultTool,
   ExportManager,
   Overlay,
+  type SurfaceBlockComponent,
 } from '@blocksuite/affine/blocks/surface';
 import { SurfaceStoreExtension } from '@blocksuite/affine/blocks/surface/store';
 import { SurfaceViewExtension } from '@blocksuite/affine/blocks/surface/view';
@@ -36,10 +37,12 @@ import { ShapeStoreExtension } from '@blocksuite/affine/gfx/shape/store';
 import { ShapeViewExtension } from '@blocksuite/affine/gfx/shape/view';
 import { TextStoreExtension } from '@blocksuite/affine/gfx/text/store';
 import { TextViewExtension } from '@blocksuite/affine/gfx/text/view';
-import { Bound } from '@blocksuite/affine/global/gfx';
+import { Bound, getCommonBound } from '@blocksuite/affine/global/gfx';
 import { InlineCommentViewExtension } from '@blocksuite/affine/inlines/comment/view';
 import { FootnoteStoreExtension } from '@blocksuite/affine/inlines/footnote/store';
 import { FootnoteViewExtension } from '@blocksuite/affine/inlines/footnote/view';
+import { LatexStoreExtension as InlineLatexStoreExtension } from '@blocksuite/affine/inlines/latex/store';
+import { LatexViewExtension as InlineLatexViewExtension } from '@blocksuite/affine/inlines/latex/view';
 import { LinkStoreExtension } from '@blocksuite/affine/inlines/link/store';
 import { LinkViewExtension } from '@blocksuite/affine/inlines/link/view';
 import { MentionViewExtension } from '@blocksuite/affine/inlines/mention/view';
@@ -49,7 +52,10 @@ import { ReferenceStoreExtension } from '@blocksuite/affine/inlines/reference/st
 import { ReferenceViewExtension } from '@blocksuite/affine/inlines/reference/view';
 import { FeatureFlagService } from '@blocksuite/affine/shared/services';
 import { BlockStdScope } from '@blocksuite/affine/std';
-import { GfxControllerIdentifier } from '@blocksuite/affine/std/gfx';
+import {
+  type GfxController,
+  GfxControllerIdentifier,
+} from '@blocksuite/affine/std/gfx';
 import { HistoryExtension, Text } from '@blocksuite/affine/store';
 import { TestWorkspace } from '@blocksuite/affine/store/test';
 import { EdgelessAutoConnectViewExtension } from '@blocksuite/affine/widgets/edgeless-auto-connect/view';
@@ -70,13 +76,12 @@ import {
   formulasDrawn,
   mountSymbolRow,
 } from './boardFormula';
-import { SHEET, UNIT } from './boardGeometry';
+import { addPlane, planeExtensions, planeMarks } from './boardPlane';
+import { closePlaneEditor } from './boardPlaneEditor';
 import {
-  BarsTool,
   mathsTool,
+  noLatexMarkdown,
   outlineNewShapes,
-  PlotTool,
-  SectorTool,
   StampTool,
   setBoardPreview,
   shapeButtonTool,
@@ -95,6 +100,7 @@ const stores = new StoreExtensionManager([
   GroupStoreExtension,
   ShapeStoreExtension,
   TextStoreExtension,
+  InlineLatexStoreExtension,
   ReferenceStoreExtension,
   FootnoteStoreExtension,
   LinkStoreExtension,
@@ -115,6 +121,7 @@ const views = new ViewExtensionManager([
   ParagraphViewExtension,
   SurfaceViewExtension,
   RootViewExtension,
+  InlineLatexViewExtension,
   ReferenceViewExtension,
   FootnoteViewExtension,
   MentionViewExtension,
@@ -135,14 +142,13 @@ const PHONE_WIDTH = 768;
 /** The board has no frames, but resizing a selection clears their highlight. */
 class NoFrameOverlay extends Overlay {
   static override overlayName = 'frame';
-  clear() {}
+  override clear() {}
   override render() {}
 }
 
 /** A Hugeicons icon's data as an SVG, for the board's Lit templates. */
-function hugeIcon(
-  data: readonly (readonly [string, Record<string, string>])[]
-) {
+function hugeIcon(icon: unknown) {
+  const data = icon as readonly (readonly [string, Record<string, string>])[];
   const body = data
     .map(
       ([tag, attributes]) =>
@@ -160,30 +166,13 @@ function hugeIcon(
   );
 }
 
-/** Squared paper with numbered x and y axes: the part's background, never in the
- * answer. SVG text, because the same drawing goes into the marking image, where
- * only system fonts reach it. */
-function axesSheet({ h, origin, w }: typeof SHEET) {
-  const lines: string[] = [];
-  for (let x = 0; x <= w; x += UNIT.x)
-    lines.push(`<path d="M${x} 0V${h}" stroke="#ececea"/>`);
-  for (let y = 0; y <= h; y += UNIT.y)
-    lines.push(`<path d="M0 ${y}H${w}" stroke="#ececea"/>`);
-  const label = 'font-family="Arial, sans-serif" font-size="12" fill="#77757d"';
-  for (let x = origin.x + UNIT.x, n = 1; x < w; x += UNIT.x, n++)
-    lines.push(
-      `<text x="${x}" y="${origin.y + 16}" text-anchor="middle" ${label}>${n}</text>`
-    );
-  for (let y = origin.y - UNIT.y, n = 1; y > 0; y -= UNIT.y, n++)
-    lines.push(
-      `<text x="${origin.x - 7}" y="${y + 4}" text-anchor="end" ${label}>${n}</text>`
-    );
-  for (let y = origin.y + UNIT.y, n = 1; y < h; y += UNIT.y, n++)
-    lines.push(
-      `<text x="${origin.x - 7}" y="${y + 4}" text-anchor="end" ${label}>−${n}</text>`
-    );
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}"><rect width="${w}" height="${h}" fill="#fff"/>${lines.join('')}<path d="M${origin.x} 0V${h}M0 ${origin.y}H${w}" stroke="#8b8b88" stroke-width="1.5"/></svg>`;
-}
+const surfaceOf = (gfx: GfxController) =>
+  gfx.surfaceComponent as SurfaceBlockComponent | null;
+
+/** The card a question with axes starts with. */
+const FIRST_PLANE = { h: 520, ppu: 41, w: 820 };
+/** The marking image's longest side. */
+const IMAGE_SIDE_MAX = 2400;
 
 /** BlockSuite's edgeless editor on an in-memory board over a fixed sheet, opened
  * from a saved answer when there is one. */
@@ -213,11 +202,10 @@ export function mountDrawingBoard(
       ...views.get('edgeless'),
       shapeButtonTool,
       mathsTool,
-      PlotTool,
-      BarsTool,
-      SectorTool,
       StampTool,
       ...formulaExtensions,
+      ...planeExtensions,
+      noLatexMarkdown,
       NoFrameOverlay,
     ],
     store,
@@ -266,50 +254,61 @@ export function mountDrawingBoard(
   // Canvas labels measure and draw in this font (the stylesheet's @font-face).
   void document.fonts
     .load('24px "blocksuite:surface:Inter"')
-    .then(() => gfx.surfaceComponent?.refresh());
+    .then(() => surfaceOf(gfx)?.refresh());
   const symbols = mountSymbolRow(gfx);
   board?.append(symbols.element);
 
-  // The sheet sits under the strokes and moves with the board, outside the
-  // document, so no tool can select or erase it.
-  const svg = axesSheet(SHEET);
-  const sheet = document.createElement('div');
-  sheet.style.cssText =
-    'position:absolute;pointer-events:none;box-shadow:0 0 0 1px #d9d9d6;border-radius:6px;overflow:hidden';
-  sheet.innerHTML = svg;
-  // What the plotting tools show while placing, above the paper.
+  // A preset being sized shows on this layer, under the strokes and outside the
+  // document. It moves with the board.
+  const layer = document.createElement('div');
+  layer.style.cssText =
+    'position:absolute;pointer-events:none;width:1px;height:1px;transform-origin:0 0';
   const preview = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  preview.setAttribute('viewBox', `0 0 ${SHEET.w} ${SHEET.h}`);
-  preview.style.cssText = 'position:absolute;inset:0;width:100%;height:100%';
-  sheet.append(preview);
+  preview.style.cssText =
+    'position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible';
+  layer.append(preview);
   setBoardPreview(gfx, preview);
   const place = () => {
-    const [left, top] = gfx.viewport.toViewCoord(SHEET.x, SHEET.y);
-    const { zoom } = gfx.viewport;
-    sheet.style.left = `${left}px`;
-    sheet.style.top = `${top}px`;
-    sheet.style.width = `${SHEET.w}px`;
-    sheet.style.height = `${SHEET.h}px`;
-    sheet.style.transform = `scale(${zoom})`;
-    sheet.style.transformOrigin = '0 0';
+    const [left, top] = gfx.viewport.toViewCoord(0, 0);
+    layer.style.left = `${left}px`;
+    layer.style.top = `${top}px`;
+    layer.style.transform = `scale(${gfx.viewport.zoom})`;
   };
   const subscription = gfx.viewport.viewportUpdated.subscribe(place);
-  let frame = requestAnimationFrame(function mountSheet() {
+  const everything = () => {
+    const elements = gfx.layer.canvasElements;
+    const blocks = gfx.layer.blocks;
+    return (
+      getCommonBound([...elements, ...blocks]) ?? new Bound(0, 0, 820, 520)
+    );
+  };
+  let frame = requestAnimationFrame(function mountLayer() {
     const background = container.querySelector('.edgeless-background');
     if (!background || !gfx.viewport.width) {
-      frame = requestAnimationFrame(mountSheet);
+      frame = requestAnimationFrame(mountLayer);
       return;
     }
-    background.prepend(sheet);
+    background.prepend(layer);
+    if (!options.saved) {
+      addPlane(
+        gfx,
+        new Bound(0, 0, FIRST_PLANE.w, FIRST_PLANE.h),
+        FIRST_PLANE.ppu
+      );
+      store.resetHistory();
+    }
     gfx.viewport.setViewportByBound(
-      new Bound(SHEET.x, SHEET.y, SHEET.w, SHEET.h),
+      everything(),
       gfx.viewport.width < PHONE_WIDTH ? [64, 12, 96, 12] : [90, 40, 130, 40]
     );
     place();
   });
 
-  // Leaving a plotting tool keeps a curve still being placed.
-  const finishPlot = () => gfx.tool.setTool(DefaultTool);
+  // An open plane writes its view on closing, and nothing else is in progress.
+  const finishPlot = () => {
+    closePlaneEditor(gfx);
+    gfx.tool.setTool(DefaultTool);
+  };
 
   return {
     save: () => {
@@ -322,24 +321,25 @@ export function mountDrawingBoard(
       blocks: gfx.layer.blocks.map((block) => block.flavour),
       bytes: Y.encodeStateAsUpdate(store.spaceDoc).byteLength,
       canvas: gfx.layer.canvasElements.map((element) => element.type),
+      marks: planeMarks(gfx),
     }),
-    /** The sheet and what's on it, for marking. */
+    /** The canvas as it stands, for marking: every card with the view it was left
+     * at, and what's drawn over and around them. */
     toImage: async () => {
       finishPlot();
       await formulasDrawn(gfx);
-      const renderer = gfx.surfaceComponent?.renderer;
+      const renderer = surfaceOf(gfx)?.renderer;
       if (!(renderer instanceof CanvasRenderer)) return null;
-      const bound = new Bound(SHEET.x, SHEET.y, SHEET.w, SHEET.h);
+      const all = everything();
+      const bound = new Bound(all.x - 8, all.y - 8, all.w + 16, all.h + 16);
+      const scale = Math.min(2, IMAGE_SIDE_MAX / Math.max(bound.w, bound.h));
       const output = document.createElement('canvas');
-      output.width = SHEET.w * 2;
-      output.height = SHEET.h * 2;
+      output.width = Math.round(bound.w * scale);
+      output.height = Math.round(bound.h * scale);
       const ctx = output.getContext('2d');
       if (!ctx) return null;
-      ctx.scale(2, 2);
-      const image = new Image();
-      image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-      await image.decode();
-      ctx.drawImage(image, 0, 0);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, output.width, output.height);
       const blocks = gfx.getElementsByBound(bound, { type: 'block' });
       const elements = gfx.getElementsByBound(bound, { type: 'canvas' });
       // Note cards are DOM, so BlockSuite's export draws them with the strokes, on
@@ -349,17 +349,17 @@ export function mountDrawingBoard(
           .get(ExportManager)
           .edgelessToCanvas(renderer, bound, gfx, blocks, elements);
         if (!drawn) return null;
-        const scale = window.devicePixelRatio || 1;
+        const device = window.devicePixelRatio || 1;
         ctx.drawImage(
           drawn,
-          50 * scale,
-          50 * scale,
-          SHEET.w * scale,
-          SHEET.h * scale,
+          50 * device,
+          50 * device,
+          bound.w * device,
+          bound.h * device,
           0,
           0,
-          SHEET.w,
-          SHEET.h
+          output.width,
+          output.height
         );
         return output.toDataURL('image/png');
       }
@@ -367,8 +367,8 @@ export function mountDrawingBoard(
         renderer.getCanvasByBound(bound, elements),
         0,
         0,
-        SHEET.w,
-        SHEET.h
+        output.width,
+        output.height
       );
       return output.toDataURL('image/png');
     },
@@ -378,6 +378,7 @@ export function mountDrawingBoard(
       historyUpdates.unsubscribe();
       if (onChange) store.spaceDoc.off('update', onChange);
       symbols.unmount();
+      closePlaneEditor(gfx);
       render(null, history);
       render(null, container);
     },

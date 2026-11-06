@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { mountDrawingBoard } from '@/features/blocksuite/drawingBoard';
-import { isString, readPref, removePref, writePref } from '@/lib/localPrefs';
+import { isString, readPref, writePref } from '@/lib/localPrefs';
 
 const SAVE_AFTER_MS = 500;
 
@@ -17,24 +17,25 @@ export default function DevWorkspaceCanvas({
     if (!host) return;
     const key = `capy.workspace.canvas.${workspaceId}`;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let changed = false;
     const saved = readPref(key, '', isString);
     const board = mountDrawingBoard(host, {
       onChange: () => {
+        changed = true;
         clearTimeout(timer);
-        timer = setTimeout(
-          () => writePref(key, board.snapshot()),
-          SAVE_AFTER_MS
-        );
+        timer = setTimeout(() => {
+          writePref(key, board.snapshot());
+          changed = false;
+        }, SAVE_AFTER_MS);
       },
       saved: saved || undefined,
     });
     Object.assign(window, { __board: board });
     return () => {
       clearTimeout(timer);
-      // An empty board has no blocks to keep.
-      if (board.stats().canvas.length || board.stats().blocks.length)
-        writePref(key, board.save());
-      else removePref(key);
+      // Unchanged, what's stored stands: a board mounted and unmounted at once has
+      // nothing on it yet.
+      if (changed) writePref(key, board.save());
       board.unmount();
     };
   }, [workspaceId]);

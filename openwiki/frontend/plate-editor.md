@@ -4334,40 +4334,51 @@ source, so an AFFiNE security fix stays unseen until someone re-copies.
 
 ### The board's tools
 
-The board adds to BlockSuite through its own extensions (`boardTools.ts`,
-`boardFormula.ts`, pure geometry in `boardGeometry.ts`), with three vendored changes
-(14 to 16 in `vendor/blocksuite/README.md`).
+The board adds to BlockSuite through its own extensions (`boardTools.ts`, `boardPlane.ts`,
+`boardPlaneEditor.ts`, `boardFormula.ts`, pure geometry in `boardGeometry.ts`), with three
+vendored changes (14 to 16 in `vendor/blocksuite/README.md`).
 
 - **Toolbar:** AFFiNE's shape pieces in the eraser's fixed colours (CSS variables on
-  `.capy-board`), then a maths tool. New shapes have no fill and a black outline, so
-  the grid and earlier strokes stay readable for marking.
-- **Undo and redo** are the board's own, not in the toolbar: left of zoom, or below
-  768 px top right, where the page around the board reserves Done's width through
-  `--capy-board-done-width`. Below that width the toolbar spans the screen less an
-  8 px gutter and zoom is hidden, since pinch does it. Zoom's row folds into AFFiNE's
-  ⋯ up to 1200 px, which needs `.capy-board` to be the `viewport` container.
-- **Shapes panel:** replaces AFFiNE's one-row menu through a DI override of the
-  `shape` senior tool. BlockSuite has four shape types, so the rest are presets of
-  straight connectors and ellipses in a group (a pen stroke smears at corners).
-- **Plotting** is by hand (Epo: a typed function answers the question): the sheet has
-  numbered axes, and Point, Line and Curve snap to its grid crossings. They land as
-  ordinary dots, connectors and strokes. The preview layer sits on the sheet, under
-  the strokes and outside the document. Clicking a curve's last point again finishes
-  it, as does leaving the tool.
-- **Charts** are built by hand too. Bars drag up from the x axis and take the shapes'
-  fill, and dragging sideways widens one for a histogram. A pie is clicked out: the
-  centre, the edge, then each dividing line with the angle since the last one showing;
-  clicking the centre again finishes it. Line graphs are Point and Line. The sheet's
-  axes are fixed for now (18 across, −3 to 8, one square equals 1).
-- **Canvas tab:** the workspace rail's Canvas, below Study, opens the board to play
-  with (`DevWorkspaceCanvas.tsx`). It keeps the board in `localStorage` per workspace,
-  half a second after each change and on leaving, with no request. Dev builds only,
-  like `/dev/drawing`, and a production build gets an empty module (`MSW_ENTRIES`).
-- **Formulas:** a `formula` canvas element holding LaTeX, typed in MathLive
-  (loaded on first open). AFFiNE keeps LaTeX as HTML in note cards, and its export
-  (html2canvas) garbles that, so note cards here have no LaTeX extension. KaTeX lays
-  the formula out off-screen and its glyphs, rules and stretched SVGs are drawn onto a
-  bitmap, which the canvas renderer draws like any element: it stacks with strokes
-  and reaches the marking image with no special case. Tested in Chromium only.
-- **Labels** have a maths symbol row while typing. BlockSuite's default canvas font is
-  fetched from AFFiNE's CDN, so `drawingBoard.css` aliases it to the app's Fustat.
+  `.capy-board`), then a maths tool that only adds things: a plane card, a label or a formula. The
+  toolbar and its pen touch the canvas only, never into a card. New shapes have no fill
+  and a black outline.
+- **Undo and redo** are the board's own, not in the toolbar: left of zoom, or below 768 px
+  top right, where the page around the board reserves Done's width through
+  `--capy-board-done-width`. Below that width the toolbar spans the screen less an 8 px
+  gutter and zoom is hidden, since pinch does it. Zoom's row folds into AFFiNE's ⋯ up to
+  1200 px, which needs `.capy-board` to be the `viewport` container.
+- **Shapes panel:** replaces AFFiNE's one-row menu through a DI override of the `shape`
+  senior tool. BlockSuite has four shape types, so the rest are presets of straight
+  connectors and ellipses in a group (a pen stroke smears at corners).
+- **Plane cards** (`boardPlane.ts`) are a `plane` canvas element holding a view (top left
+  corner in plane units, board pixels per unit) and its marks as plain data, drawn by one
+  renderer with a clip, so a card stacks with strokes and reaches the marking image with
+  no special case. A card is a picture on the canvas: Select moves it, its corners resize
+  it, showing more or less of the plane at the same scale, scrolling over it moves the
+  canvas, and the eraser leaves it alone. A fresh board starts with one.
+- **Editing a plane** (`boardPlaneEditor.ts`): double click opens it over the whole board,
+  and Done or Escape leave. Inside, the wheel pans, Ctrl or pinch zooms, and Move drags.
+  Point, Line, Curve, Bars and Pie snap to the fine squares for the current zoom, so the
+  plane has no edge and no fixed scale (the numbers are the question editor's, `tickStep`
+  and `axisNumber` in `graph.ts`, with no JSXGraph). Numbers leave with their axis and
+  marks keep their thickness. Each click is written at once, one undo step, and undo
+  shortens a line, curve or pie still taking clicks. A press lands where it lifts, so a
+  finger can line it up against the coordinate chip. The view is written on leaving and
+  isn't in the undo history. Canvas drawings over a card aren't in it: they stay in place
+  if the view moves.
+- **Marking image:** everything on the canvas as it stands, including each card with the
+  view it was left at, so a plotted mark panned out of view isn't in it.
+- **Formulas:** a `formula` canvas element holding LaTeX, typed in MathLive (loaded on
+  first open). AFFiNE keeps LaTeX as HTML in note cards, and its export (html2canvas)
+  garbles that, so typing `$$` in a note here stays text; AFFiNE's inline spec stays
+  registered because paragraphs read it as they render. KaTeX lays the formula out in a
+  hidden host and its glyphs, rules and stretched SVGs (clipped as KaTeX clips them) are
+  drawn onto a bitmap the canvas renderer draws. Tested in Chromium only. Size and
+  expansion limits are set on KaTeX, and a saved answer holding more than 2,000
+  characters draws nothing. Saving answers still needs a read-only render for teachers,
+  with limits on the server.
+- **Labels** come from the maths menu's Add a label, which can place one on top of a card (a
+  double click there opens the plane), or a double click on empty canvas. They have a
+  maths symbol row while typing. BlockSuite's default canvas font has no
+  face on this board because its font loader has no config, so `drawingBoard.css` aliases
+  it to the app's Fustat, or a label measures in one fallback and draws in another.
