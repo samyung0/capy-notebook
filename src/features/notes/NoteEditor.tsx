@@ -357,8 +357,10 @@ function CollaborativeNoteEditor({
   );
   const role: WorkspaceRole | null =
     material.role ?? (material.isOwner ? 'owner' : null);
-  const { data: discussionsData, isPending: discussionsIsPending } =
-    useMaterialDiscussions(material.id, { errorBoundary: false });
+  // The editor mounts without them (Q680): their anchors land when they answer.
+  const { data: discussionsData } = useMaterialDiscussions(material.id, {
+    errorBoundary: false,
+  });
   const {
     data: collaborationTokenData,
     error: collaborationTokenError,
@@ -550,8 +552,7 @@ function CollaborativeNoteEditor({
   }, [swap.pending]);
 
   // Hidden behind the painted note until there is an editor to show.
-  if (meIsPending || discussionsIsPending || collaborationTokenIsPending)
-    return null;
+  if (meIsPending || collaborationTokenIsPending) return null;
 
   if (!meData || meIsError) {
     return (
