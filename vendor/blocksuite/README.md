@@ -259,6 +259,10 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
     stretch` to every Tailwind `truncate` in the app once the board had loaded; it's
     scoped to the attachment and image fallback cards. A check of every rule the board
     loads against the app's Tailwind classes found no other bare selector.
+23. Note height (`affine/blocks` `note/src/note-edgeless-block.ts`, marked `Capy (local
+    change 23)`): a canvas note reads its content's height once a frame instead of on
+    every mutation batch. Each read forced a layout; a large board's first render spent
+    874 ms on them at 4x CPU slowdown (Windows' canvas-open report, 2026-11-06).
 
 The specs named in local changes 6 to 9 are on the `blocksuite-notes` branch, with the
 note editor they pin.

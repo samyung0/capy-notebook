@@ -21,7 +21,9 @@ import { SurfaceStoreExtension } from '@blocksuite/affine/blocks/surface/store';
 import { SurfaceViewExtension } from '@blocksuite/affine/blocks/surface/view';
 import {
   StoreExtensionManager,
+  type ViewExtensionContext,
   ViewExtensionManager,
+  ViewExtensionProvider,
 } from '@blocksuite/affine/ext-loader';
 import { FoundationStoreExtension } from '@blocksuite/affine/foundation/store';
 import { FoundationViewExtension } from '@blocksuite/affine/foundation/view';
@@ -41,8 +43,11 @@ import { Bound, getCommonBound } from '@blocksuite/affine/global/gfx';
 import { InlineCommentViewExtension } from '@blocksuite/affine/inlines/comment/view';
 import { FootnoteStoreExtension } from '@blocksuite/affine/inlines/footnote/store';
 import { FootnoteViewExtension } from '@blocksuite/affine/inlines/footnote/view';
+import {
+  LatexEditorUnitSpecExtension,
+  LatexInlineSpecExtension,
+} from '@blocksuite/affine/inlines/latex';
 import { LatexStoreExtension as InlineLatexStoreExtension } from '@blocksuite/affine/inlines/latex/store';
-import { LatexViewExtension as InlineLatexViewExtension } from '@blocksuite/affine/inlines/latex/view';
 import { LinkStoreExtension } from '@blocksuite/affine/inlines/link/store';
 import { LinkViewExtension } from '@blocksuite/affine/inlines/link/view';
 import { MentionViewExtension } from '@blocksuite/affine/inlines/mention/view';
@@ -116,6 +121,18 @@ const stores = new StoreExtensionManager([
   LinkStoreExtension,
   InlinePresetStoreExtension,
 ]);
+/** AFFiNE's inline LaTeX specs, which note paragraphs need to render, without its
+ * LaTeX node and editor menu: the board keeps `$$` as text, and those two load KaTeX
+ * and shiki with the board. KaTeX loads with the first formula card instead. */
+class InlineLatexViewExtension extends ViewExtensionProvider {
+  override name = 'affine-latex-inline';
+
+  override setup(context: ViewExtensionContext) {
+    super.setup(context);
+    context.register([LatexInlineSpecExtension, LatexEditorUnitSpecExtension]);
+  }
+}
+
 const VIEWS = [
   FoundationViewExtension,
   PointerViewExtension,

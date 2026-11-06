@@ -198,17 +198,27 @@ export class EdgelessNoteBlockComponent extends toGfxBlockComponent(
       })
     );
 
+    // Capy (local change 23): the height is read once a frame, not on every mutation
+    // batch; each read forced a layout, 874 ms on a large board's first render.
+    let frame = 0;
     const observer = new MutationObserver(() => {
-      const rect = this._noteContent?.getBoundingClientRect();
-      if (!rect) return;
-      const zoom = this.gfx.viewport.zoom;
-      const scale = this.model.props.edgeless.scale ?? 1;
-      this._noteFullHeight =
-        rect.height / scale / zoom + 2 * EDGELESS_BLOCK_CHILD_PADDING;
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        const rect = this._noteContent?.getBoundingClientRect();
+        if (!rect) return;
+        const zoom = this.gfx.viewport.zoom;
+        const scale = this.model.props.edgeless.scale ?? 1;
+        this._noteFullHeight =
+          rect.height / scale / zoom + 2 * EDGELESS_BLOCK_CHILD_PADDING;
+      });
     });
     if (this._noteContent) {
       observer.observe(this, { childList: true, subtree: true });
-      _disposables.add(() => observer.disconnect());
+      _disposables.add(() => {
+        observer.disconnect();
+        cancelAnimationFrame(frame);
+      });
     }
   }
 

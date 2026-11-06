@@ -63,8 +63,7 @@ export function drawBoardPreview(
     index: String(fields.index ?? fields['prop:index'] ?? ''),
     kind: String(fields.type ?? fields['sys:flavour']),
   }));
-  // A connector sits where its ends are: it's saved without a place until the board
-  // has drawn it.
+  // A connector sits where its ends are: BlockSuite never stores its place.
   for (const fields of Object.values(elements)) {
     if (fields.type !== 'connector') continue;
     const from = endPoint(fields.source, boxById);
