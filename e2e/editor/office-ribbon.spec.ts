@@ -843,14 +843,15 @@ test('the row follows the frame: under 768 px it is one row, whatever the window
   await expect(frameOf(page).getByTestId('office-ribbon-more')).toHaveCount(0);
   await expect(ribbonCommand(page, 'insert-comment')).toBeAttached();
   await undoFirst();
-  // The Files panel docked (1260 px up) and made wider: same, with no reload.
-  await page.setViewportSize({ height: 800, width: 1280 });
+  // A wider window, then the Files panel made wider: same, with no reload. The
+  // panel keeps its share of the narrow window, so 1280 px wouldn't clear 768 px.
+  await page.setViewportSize({ height: 800, width: 1600 });
   await expect.poll(() => frameWidth(page)).toBeGreaterThanOrEqual(768);
   await expect(ribbon).not.toHaveAttribute('data-phone', 'true');
   await expect(chevron).toBeVisible();
   await undoFirst();
   await page.getByRole('separator').first().focus();
-  for (let step = 0; step < 8; step += 1)
+  for (let step = 0; step < 16; step += 1)
     await page.keyboard.press('ArrowRight');
   await expect.poll(() => frameWidth(page)).toBeLessThan(768);
   await expect(ribbon).toHaveAttribute('data-phone', 'true');
