@@ -28,7 +28,6 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName } from '@/lib/fileIcons';
 import { useRunStep } from './ExtractionProgress';
-import { useFilePages, useSeen } from './filePages';
 import {
   hasAnswerRoom,
   hasPaperRoom,
@@ -72,7 +71,7 @@ function readingPct(transfer: SourceTransfer | undefined, file?: SourceFile) {
 
 type RowState =
   | { kind: 'failed'; detail: string }
-  | { kind: 'ready'; file: SourceFile }
+  | { kind: 'ready' }
   | { kind: 'reading'; file?: SourceFile; pct: number };
 
 function useRowState(
@@ -88,48 +87,24 @@ function useRowState(
   if (picked.failure) return { detail: picked.failure, kind: 'failed' };
   if (file && file.status !== 'pending' && file.status !== 'processing')
     return file.indexed
-      ? { file, kind: 'ready' }
+      ? { kind: 'ready' }
       : { detail: m.make_quiz_not_readable(), kind: 'failed' };
   return { file, kind: 'reading', pct: readingPct(transfer, file) };
 }
 
-/** "16 pages", once known. */
-function PagesMeta({
-  className,
-  file,
-  policy,
-}: {
-  className?: string;
-  file: SourceFile;
-  policy: SourceUploadPolicy | undefined;
-}) {
-  const pages = useFilePages(file, policy);
-  if (!pages) return null;
-  return (
-    <span className={cn('t-meta shrink-0 text-fg-muted', className)}>
-      {pages === 1 ? m.make_quiz_one_page() : m.source_pages({ count: pages })}
-    </span>
-  );
-}
-
-/** A chosen file's row (X0b): icon, name, then its pages or how its reading
- * goes, then its action. */
+/** A chosen file's row (X0b): icon, name, then how its reading goes, then its
+ * action. */
 function FileRow({
   end,
   files,
   last,
-  metaAtEnd,
   picked,
-  policy,
 }: {
   end: React.ReactNode;
   files: SourceFile[] | undefined;
   /** The list's last row has no line under it. */
   last: boolean;
-  /** The count beside the action rather than the name (the answers' rows). */
-  metaAtEnd?: boolean;
   picked: Picked;
-  policy: SourceUploadPolicy | undefined;
 }) {
   const state = useRowState(picked, files);
   return (
@@ -144,9 +119,6 @@ function FileRow({
         name={fileIconName({ kind: picked.kind, name: picked.name })}
       />
       <span className="min-w-0 truncate font-semibold">{picked.name}</span>
-      {state.kind === 'ready' && !metaAtEnd && (
-        <PagesMeta file={state.file} policy={policy} />
-      )}
       <span className="ml-auto flex shrink-0 items-center gap-2">
         {state.kind === 'reading' && (
           <>
@@ -160,9 +132,6 @@ function FileRow({
               value={state.pct}
             />
           </>
-        )}
-        {state.kind === 'ready' && metaAtEnd && (
-          <PagesMeta file={state.file} policy={policy} />
         )}
         {state.kind === 'failed' && (
           <span className="t-meta max-w-52 truncate text-tint-error-fg">
@@ -189,34 +158,26 @@ function MenuRow({ className, ...props }: React.ComponentProps<'button'>) {
   );
 }
 
-/** A file in the menu (X0a): its count is read once it scrolls into view. */
+/** A file in the menu (X0a). */
 function MenuFileRow({
   file,
   onPick,
-  policy,
 }: {
   file: SourceFile;
   onPick: () => void;
-  policy: SourceUploadPolicy | undefined;
 }) {
-  const [ref, seen] = useSeen<HTMLButtonElement>();
-  const pages = useFilePages(file, policy, seen);
   return (
-    <MenuRow aria-selected={false} onClick={onPick} ref={ref} role="option">
+    <MenuRow aria-selected={false} onClick={onPick} role="option">
       <FileIcon
         className="size-4 shrink-0"
         name={fileIconName({ kind: file.kind, name: file.name })}
       />
       <span className="min-w-0 truncate">{file.name}</span>
-      <span className="t-meta ml-auto shrink-0 font-medium text-fg-muted">
-        {file.status === 'pending' || file.status === 'processing'
-          ? m.make_quiz_reading_pages()
-          : pages === 1
-            ? m.make_quiz_one_page()
-            : pages
-              ? m.source_pages({ count: pages })
-              : null}
-      </span>
+      {(file.status === 'pending' || file.status === 'processing') && (
+        <span className="t-meta ml-auto shrink-0 font-medium text-fg-muted">
+          {m.make_quiz_reading_pages()}
+        </span>
+      )}
     </MenuRow>
   );
 }
@@ -291,7 +252,6 @@ function FileMenu({
               file={file}
               key={file.id}
               onPick={() => onPick(file)}
-              policy={policy}
             />
           ))}
           {shown.length === 0 && (
@@ -598,7 +558,6 @@ export function MakeQuizDialog({
                   key={row.key}
                   last={i === paper.length - 1}
                   picked={row}
-                  policy={policy}
                 />
               ))}
               <div className="mt-2">
@@ -645,9 +604,7 @@ export function MakeQuizDialog({
               files={files}
               key={row.key}
               last={i === answers.length - 1}
-              metaAtEnd
               picked={row}
-              policy={policy}
             />
           ))}
           <div className={cn(answers.length > 0 && 'mt-2')}>
