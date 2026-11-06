@@ -11,6 +11,11 @@ import { m } from '@/i18n';
 import type { Answer } from '../grade';
 import type { PinnedQuestion } from './DrawingBoardScreen';
 import {
+  DrawingPreview,
+  storedDrawingId,
+  useDrawingBoard,
+} from './DrawingPreview';
+import {
   DrawingDraftScope,
   DrawingUploader,
   type DrawingValue,
@@ -59,7 +64,9 @@ export function DrawingAnswer({
   const scope = useContext(DrawingDraftScope);
   const upload = useContext(DrawingUploader);
   const [open, setOpen] = useState(false);
-  const drawing = isDrawingValue(value) ? value : null;
+  // The device's board, or the stored one once the server keeps it.
+  const board = useDrawingBoard(value);
+  const answered = isDrawingValue(value) || storedDrawingId(value) !== null;
   usePrefetchedBoard();
   const taking = !(review || disabled);
   const close = () => setOpen(false);
@@ -70,12 +77,8 @@ export function DrawingAnswer({
   return (
     <div className="flex flex-col items-start gap-3">
       {verdict}
-      {drawing ? (
-        <img
-          alt={m.drawing_answer_image()}
-          className="h-auto max-h-[300px] w-auto max-w-full"
-          src={drawing.image}
-        />
+      {answered ? (
+        board && <DrawingPreview board={board} />
       ) : review ? null : (
         // A generic grid, the same for every drawing part.
         <div className="drawing-grid relative aspect-[52/30] w-full max-w-[520px]">
@@ -91,7 +94,7 @@ export function DrawingAnswer({
           )}
         </div>
       )}
-      {drawing && taking && (
+      {answered && taking && (
         <Button
           iconLeft="pencil"
           onClick={() => setOpen(true)}
@@ -100,7 +103,7 @@ export function DrawingAnswer({
           {m.drawing_answer_edit()}
         </Button>
       )}
-      {drawing && review && (
+      {board && review && (
         <Button
           iconRight="navigationForward"
           onClick={() => setOpen(true)}
@@ -118,7 +121,7 @@ export function DrawingAnswer({
             onDone={taking ? done : undefined}
             pinned={pinned}
             readOnly={!taking}
-            saved={drawing?.board}
+            saved={board ?? undefined}
             store={upload ? (next) => upload(partId, next) : undefined}
           />
         </Suspense>

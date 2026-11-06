@@ -3048,5 +3048,6 @@
   "drawing_answer_show_question": "显示题目",
   "drawing_answer_too_big": "作图太大，无法保存。请删去部分内容后再按完成。",
   "drawing_answer_open_failed": "无法打开这份作图。",
-  "drawing_answer_capture_failed": "无法保存这份作图，请再按一次完成。"
+  "drawing_answer_capture_failed": "无法保存这份作图，请再按一次完成。",
+  "drawing_answer_unreadable": "无法显示这份作图。"
 }

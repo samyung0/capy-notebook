@@ -142,7 +142,10 @@ it('shows a drawing part as a grid to draw on, its drawing after Done, and its v
     );
   expect(taking()).toContain('drawing-grid');
   expect(taking()).toContain(m.drawing_answer_draw());
-  expect(taking(drawing)).toContain(`src="${drawing.image}"`);
+  // Drawn from its board (here not a real one, so it says it can't be shown).
+  expect(taking(drawing)).toContain(
+    m.drawing_answer_unreadable().replace("'", '&#x27;')
+  );
   expect(taking(drawing)).toContain(m.drawing_answer_edit());
   question.parts[0] = applyItemAwards(question.parts[0], [1]);
   const checked = renderToStaticMarkup(

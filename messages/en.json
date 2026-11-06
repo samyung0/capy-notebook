@@ -3048,5 +3048,6 @@
   "drawing_answer_show_question": "Show question",
   "drawing_answer_too_big": "This drawing is too big to save. Remove some of it, then press Done again.",
   "drawing_answer_open_failed": "This drawing couldn't be opened.",
-  "drawing_answer_capture_failed": "This drawing couldn't be saved. Press Done again."
+  "drawing_answer_capture_failed": "This drawing couldn't be saved. Press Done again.",
+  "drawing_answer_unreadable": "This drawing can't be shown."
 }
