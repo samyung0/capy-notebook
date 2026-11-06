@@ -3,12 +3,10 @@ import { createRoot, hydrateRoot } from 'react-dom/client';
 import { USE_MSW } from '@/api/auth';
 import { AppToaster } from '@/components/app/AppToaster';
 import { StudyPage } from './StudyPage';
-import { settleSession } from './session';
 
 /* A shared quiz or flashcard set (`page`, from hydrateQuiz.tsx or
-   hydrateFlashcards.tsx): hydrate the Worker's HTML, then load Clerk only to
-   learn whether the visitor is signed in, which decides where a rating is saved
-   (session.ts). */
+   hydrateFlashcards.tsx): hydrate the Worker's HTML, then load Clerk only so
+   analytics knows a signed-in visitor (ShareAuth.tsx). */
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as
   | string
@@ -24,13 +22,7 @@ export async function hydrateStudy(page: ReactNode) {
   hydrateRoot(document.getElementById('root')!, <StudyPage>{page}</StudyPage>);
 
   const extras = document.body.appendChild(document.createElement('div'));
-  // MSW and key-less local runs have no session: `?anonymous` picks the
-  // signed-out path there.
   const withClerk = !USE_MSW && PUBLISHABLE_KEY;
-  if (!withClerk)
-    settleSession(
-      !new URLSearchParams(window.location.search).has('anonymous')
-    );
   createRoot(extras).render(
     <>
       <AppToaster />

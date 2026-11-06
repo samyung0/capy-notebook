@@ -2892,8 +2892,7 @@ seedFlashcardSets.forEach((d, i) => {
     })
   );
 });
-// Standalone link-shared materials for the share pages; add `?anonymous` to
-// open them as a signed-out visitor.
+// Standalone link-shared materials for the share pages.
 materials.push(
   makeMaterial({
     capabilities: ownerCapabilities,

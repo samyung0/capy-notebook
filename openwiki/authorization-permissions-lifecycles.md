@@ -247,12 +247,11 @@ kept out of the static assets by `.assetsignore`; `wrangler.jsonc` aliases it as
 components keep their browser imports; libraries that only run in effects or on click (Mermaid, MathLive's
 editor, jsxgraph, KaTeX, the app's embed editors) are empty modules there. It writes the data it rendered from
 into `<script id="share-state">`, and the page's script (`share.html`, `src/share/main.tsx`) never fetches it
-again. A quiz or flashcard set hydrates whole (`StudyPage.tsx`, the same tree on both sides, in English). Clerk loads after hydration without its UI bundle (`prefetchUI={false}`) and is asked only when a
-card is rated (`src/share/session.ts`): signed in, the rating goes to the account (`POST /api/review/ratings`);
-signed out, the browser keeps it. A quiz's check never asks (Epo 2026-11-05, Q640 B): for every visitor the share
-route marks what has one right answer, an answered open part stays Not marked with its marking points and worked
-solution to compare, with no AI marking and no self-marking, and the browser keeps the try, so nothing counts on an
-account. On a quiz page only analytics reads Clerk now. Without a Clerk key (MSW, e2e) `?anonymous` selects the signed-out path; under MSW the dev
+again. A quiz or flashcard set hydrates whole (`StudyPage.tsx`, the same tree on both sides, in English). Nothing on these pages counts, signed in or out, and they read no session (Epo 2026-11-05, Q640 B; 2026-11-06, Q663 A):
+a quiz's check takes the share route, which marks what has one right answer and leaves an answered open part Not marked
+with its marking points and worked solution to compare, with no AI marking and no self-marking, and the browser keeps
+the try; a card's rating runs ts-fsrs here and stays in this browser. Clerk loads after hydration without its UI
+bundle (`prefetchUI={false}`), only so analytics knows a signed-in visitor (`src/share/ShareAuth.tsx`). Under MSW the dev
 server signs the mocks' placeholder links and answers the Worker's API reads from the MSW handlers
 (`src/summary/vite.ts`). The pages drop the label
 above the title; the owner (`author`: name and avatar, on the public reads and on the single quiz and
@@ -318,7 +317,7 @@ which also requires authentication. Link sharing copies Google's "anyone with
 the link" plus resource key (Sam 2026-10-18): a signed-in nonmember reaches a
 link workspace, or a standalone link material, only after presenting its signed
 link once (`/w/{id}.{signature}`, the summary's Open going through
-`/open/{token}`, a share page's signed-in rating, or a public
+`/open/{token}`, or a public
 page's Clone, which carries the token as `?clone=<kind>:<token>`). `POST
 /api/share/redeem` verifies the token, checks the resource is link or public
 now, and records the grant (`workspace_link_grants`, `material_link_grants`,
@@ -1064,10 +1063,10 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
 
 - Readable shared quizzes can be attempted in the app by any signed-in user.
   Attempts, study progress and review state belong to the user taking the quiz
-  (see Study progress below). On a shared quiz page nothing counts, signed in or
-  out (Epo 2026-11-05, Q640 B): every visitor's check takes the public route and
-  the browser keeps the try. Signed-out visitors can study flashcards too; their
-  progress stays in the browser (see Anonymous quizzes, flashcards and notes).
+  (see Study progress below). On a shared quiz or flashcard page nothing counts,
+  signed in or out (Epo 2026-11-06, Q663 A): every visitor's check takes the public
+  route, and tries and ratings stay in the browser (see Anonymous quizzes,
+  flashcards and notes).
 - Answer keys follow one rule (Epo, 2026-10-06; details in
   [question-bank.md](question-bank.md#answer-keys-and-server-grading)):
   reading to view or study never sends them, owners and editors included

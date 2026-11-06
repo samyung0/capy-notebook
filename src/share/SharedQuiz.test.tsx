@@ -106,15 +106,17 @@ async function check(page: ReactNode) {
     // Only the closed question is left to check.
     checksLeft: button(m.question_ui_check()).length,
     markingPoint: openText.includes(point),
+    marksDash: openText.includes('— / 1'),
     notMarked: openText.includes(m.assignment_not_marked()),
     solution: openText.includes(solution),
   };
   await act(async () => button(m.question_ui_true())[0]?.click());
   await act(async () => button(m.question_ui_check())[0]?.click());
   const closedRight = host.textContent?.includes(m.question_ui_result_right());
+  const finished = host.innerHTML;
   act(() => root.unmount());
   host.remove();
-  return { ...seen, closedRight };
+  return { finished, seen: { ...seen, closedRight } };
 }
 
 const MARKED = {
@@ -122,6 +124,7 @@ const MARKED = {
   checksLeft: 1,
   closedRight: true,
   markingPoint: true,
+  marksDash: true,
   notMarked: true,
   solution: true,
 };
@@ -130,7 +133,7 @@ it('marks the closed part and leaves the open part Not marked on a shared quiz',
   anonymous.gradeAnonymousQuiz.mockImplementation(
     async (_token, { questionId }) => answer(questionId)
   );
-  const seen = await check(
+  const { finished, seen } = await check(
     <SharedQuiz
       quiz={
         {
@@ -145,6 +148,10 @@ it('marks the closed part and leaves the open part Not marked on a shared quiz',
     />
   );
   expect(seen).toEqual(MARKED);
+  // The result counts it apart from wrong (Epo 2026-11-06, Q664 B).
+  expect(finished).toContain(m.quiz_question_not_marked({ number: 1 }));
+  expect(finished).toContain(m.result_not_marked({ count: 1 }));
+  expect(finished).not.toContain(m.result_wrong({ count: 1 }));
   expect(anonymous.gradeAnonymousQuiz).toHaveBeenCalledWith('qz_1.sig', {
     answers: {},
     questionId: open.id,
@@ -155,7 +162,7 @@ it('does the same for a quiz embedded in a shared note', async () => {
   anonymous.gradeAnonymousNoteQuiz.mockImplementation(
     async (_token, _quiz, { questionId }) => answer(questionId)
   );
-  const seen = await check(
+  const { seen } = await check(
     <PublicQuizEmbed
       embed={{ id: 'qz_2', kind: 'quiz', questions } as AnonymousEmbed}
       token="note.sig"

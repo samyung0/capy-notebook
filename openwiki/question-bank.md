@@ -591,7 +591,11 @@ waits on stops at 90 s. A rule that cost credit becomes the AI's warning in plai
 words; an answer instructing the marker gets a fixed one, never the model's words.
 A part it could not mark stays `pending` ("Not marked") and is not scored; Check again
 marks only those parts, from the answers first given, since the check already showed
-the key (Epo 2026-11-05). The part's award is the sum and the
+the key (Epo 2026-11-05). Not marked isn't wrong (Epo 2026-11-06, Q664 B): its marks read
+a muted `— / 4` where `QuestionReview` shows them, its question takes a grey square counted
+as "N not marked" (any part `pending` makes the question Not marked, as in an assignment's
+`questionOutcome`), and its marks stay in the total. A review or Practice answer left Not
+marked is never stored, so their result pages never hold one. The part's award is the sum and the
 snapshot keeps `itemAwards`. A shared page marks no open answer: for every visitor,
 signed in or out, an answered open part stays Not marked with its marking points and
 worked solution to compare, and has no Check again (Epo 2026-11-05, Q640 B). The grading text
@@ -646,8 +650,8 @@ share the part review renderer. The saved attempt page has Redo quiz as an
 accent link beside the title; both pages lead with the score (`ResultSummary`,
 shared with the /qb topic summary): "awarded / max" large with "marks" and the
 percentage small, one numbered square per question (green full marks, amber
-partial, red none, blank answers are wrong; grey only for an unanswered bank
-question; a square scrolls to its question) with a legend of the colours
+partial, red none, blank answers are wrong; grey for a question with a part Not
+marked and an unanswered bank question; a square scrolls to its question) with a legend of the colours
 present, marks by answer type (a question counts under its first part's type),
 then every question with marks in tint-fg colours, the submitted answer, then one collapsed disclosure holding the
 worked solution, and for open parts the marking scheme with the model's marks beside

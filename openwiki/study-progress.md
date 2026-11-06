@@ -592,9 +592,9 @@ to the session's end), Previous shows the cards before it: a rated one read
 only with its rating ringed, a skipped one still to rate. Moving on
 swipes the top card off to the top left over the next one (no motion under
 reduced motion). Signed in, each rating
-posts to `/api/review/ratings`; a shared link opened signed out renders the same
+posts to `/api/review/ratings`; a shared link, signed in or out, renders the same
 page, rating with ts-fsrs into IndexedDB, as shared quizzes keep attempts in
-the browser. Embedded sets study there too and send no ratings
+the browser (Epo 2026-11-06, Q663 A). Embedded sets study there too and send no ratings
 (`parentMaterialId` on the set).
 
 ## Learning
@@ -746,8 +746,9 @@ Signed-out visitors of standalone link or public quizzes and sets use
 interval previews): only due cards are queued, quiz attempts and an
 append-only card review log plus card states live in IndexedDB
 (`src/lib/localDb.ts`, database `capy-local`), and nothing is imported into an
-account on sign-in. A shared quiz page keeps a signed-in visitor's attempts there
-too, since nothing on it counts (Epo 2026-11-05, Q640 B). `SrsState` is a hand-written type in `src/lib/srs.ts`.
+account on sign-in. Shared quiz and flashcard pages keep a signed-in visitor's
+attempts and ratings there too, since nothing on them counts (Epo 2026-11-06,
+Q663 A). `SrsState` is a hand-written type in `src/lib/srs.ts`.
 
 ## Assignments
 

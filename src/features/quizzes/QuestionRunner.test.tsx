@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it } from 'vitest';
 import { exampleQuestion } from '@/features/questions/questionFixtures';
+import { m } from '@/i18n';
 import { applyItemAwards } from './grade';
 import { QuestionRunner } from './QuestionRunner';
 
@@ -176,4 +177,31 @@ it('lists a wrong multi-answer part as your answer, then the correct answer apar
   expect(html).toContain('Wrong</span>');
   expect(html.slice(html.indexOf('Correct answer'))).toContain('Mitochondria');
   expect(html.slice(html.indexOf('Correct answer'))).not.toContain('Ribosome');
+});
+
+// The in-app review shared by a quiz, Practice and a review session.
+it('reads a part left Not marked as unmarked, with its marking points, not as 0', () => {
+  const question = exampleQuestion('open', {
+    accepted: [],
+    hints: [],
+    type: 'open',
+  });
+  question.parts[0].marks = 4;
+  question.parts[0].markscheme = [{ marks: 4, text: 'Names the factor.' }];
+  question.parts[0].awarded = 0;
+  question.parts[0].pending = true;
+  const html = renderToStaticMarkup(
+    <QuestionRunner
+      answers={{ 'open-part': 'CO2 limits it.' }}
+      headerMarks
+      question={question}
+      questionNumber={1}
+      review
+    />
+  );
+  expect(html).toContain(m.assignment_not_marked());
+  expect(html).toContain('— / 4');
+  expect(html).not.toContain('0 / 4');
+  expect(html).toContain('Names the factor.');
+  expect(html).toContain('[4]');
 });

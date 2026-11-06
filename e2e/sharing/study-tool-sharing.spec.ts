@@ -97,11 +97,8 @@ for (const kind of kinds) {
       anonymousPage,
       ownerApi,
     }) => {
-      // No Clerk in e2e, so ?anonymous selects the signed-out page.
       for (const item of [kind.link, kind.public]) {
-        await anonymousPage.goto(
-          `${await sharePath(ownerApi, kind.api, item)}?anonymous`
-        );
+        await anonymousPage.goto(await sharePath(ownerApi, kind.api, item));
         await expect(anonymousPage.getByText(item.text)).toBeVisible();
         // The same ⋮ and header for every visitor; neither reads the session.
         await expect(
@@ -123,8 +120,8 @@ for (const kind of kinds) {
       const privateItem = await created.json();
       try {
         for (const path of [
-          `${privateItem.sharePath}?anonymous`,
-          `${kind.share}/${kind.link.id}?anonymous`,
+          privateItem.sharePath,
+          `${kind.share}/${kind.link.id}`,
         ]) {
           await anonymousPage.goto(path);
           await expect(
@@ -179,8 +176,8 @@ for (const kind of kinds) {
           otherPage.getByRole('link', { name: m.summary_sign_up() })
         ).toBeVisible();
       }
-      // A quiz's check counts nowhere, signed in or out (Epo 2026-11-03); a
-      // card's rating reads the session and goes to the account.
+      // Nothing here counts, signed in or out (Epo 2026-11-06, Q663 A): a quiz's
+      // check takes the share route, and a card's rating stays in this browser.
       // The server's HTML shows before the page is live; act once hydrated.
       await expect(otherPage.locator('html')).toHaveAttribute(
         'data-hydrated',
@@ -197,15 +194,13 @@ for (const kind of kinds) {
           .click();
         expect((await saved).status()).toBe(200);
       } else {
-        const saved = waitForApi(
-          otherPage,
-          apiEndsWith('/api/review/ratings', 'POST')
-        );
         await otherPage
           .getByRole('button', { name: m.flashcards_show_answer() })
           .click();
         await otherPage.getByRole('button', { name: m.srs_good() }).click();
-        expect((await saved).ok()).toBe(true);
+        await expect(
+          otherPage.getByText(m.flashcards_saved_in_browser())
+        ).toBeVisible();
       }
     });
 
@@ -277,7 +272,7 @@ test('a link note opens for signed-out visitors and clones for signed-in ones', 
     const path = list.items.find((item) => item.id === note.id)?.sharePath;
     expect(path).toMatch(/^\/share\/notes\//);
 
-    await anonymousPage.goto(`${path}?anonymous`);
+    await anonymousPage.goto(path as string);
     await expect(anonymousPage.getByText(body).first()).toBeVisible();
 
     const cloned = waitForApi(
