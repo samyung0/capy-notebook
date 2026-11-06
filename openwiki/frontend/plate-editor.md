@@ -4358,9 +4358,9 @@ cut. `src/features/blocksuite/drawingBoard.ts` imports just the editor parts the
 needs, so it's a lazy chunk of about 1.2 MB gzipped, and the app reaches it through
 `drawingBoard.boundary.d.ts`, so the app's type check skips the vendored sources.
 Nothing in production opens it yet: `/dev/drawing` is a dev-only route. A production
-build swaps that route for an empty module (`MSW_ENTRIES` in `vite.config.ts`) and runs no
-vanilla-extract plugin, so it neither ships nor transforms the vendored sources. The answer
-flow reverses both. `pnpm audit` covers these packages' dependencies but not the copied
+build swaps that route for an empty module (`MSW_ENTRIES` in `vite.config.ts`), so it
+doesn't ship the vendored sources; the answer flow reverses that. No vanilla-extract plugin
+runs: the board's only `.css.ts` styles, the canvas note's, are plain CSS (local change 24). `pnpm audit` covers these packages' dependencies but not the copied
 source, so an AFFiNE security fix stays unseen until someone re-copies.
 
 ### The board's tools

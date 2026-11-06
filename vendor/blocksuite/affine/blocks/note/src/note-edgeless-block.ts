@@ -24,8 +24,8 @@ import clamp from 'lodash-es/clamp';
 import { MoreIndicator } from './components/more-indicator';
 import { NoteConfigExtension } from './config';
 import { NoteBlockComponent } from './note-block';
-import { ACTIVE_NOTE_EXTRA_PADDING } from './note-edgeless-block.css';
-import * as styles from './note-edgeless-block.css';
+import * as styles from './note-styles';
+import { ACTIVE_NOTE_EXTRA_PADDING } from './note-styles';
 
 export const AFFINE_EDGELESS_NOTE = 'affine-edgeless-note';
 
