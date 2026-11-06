@@ -120,7 +120,6 @@
     "@types/node": "^26.1.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "@vanilla-extract/vite-plugin": "5.1.5",
     "@vitejs/plugin-react": "^4.3.0",
     "fake-indexeddb": "^6.2.5",
     "husky": "^9.1.7",

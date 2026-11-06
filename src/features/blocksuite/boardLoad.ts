@@ -4,10 +4,10 @@ import {
   BARS_MAX,
   LABEL_LENGTH_MAX,
   LABELS_MAX,
+  LATEX_MAX,
+  MARKS_MAX,
   SPOKES_MAX,
-} from './boardChart';
-import { LATEX_MAX } from './boardFormula';
-import { MARKS_MAX } from './boardPlane';
+} from './boardData';
 
 /** Why a saved board doesn't open: it's handed to the page, never half mounted. */
 export class BoardLoadError extends Error {
@@ -42,19 +42,51 @@ const ELEMENTS = new Set([
   'text',
 ]);
 
-type Fields = Record<string, unknown>;
+export type Fields = Record<string, unknown>;
 
 const finite = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value);
 const listUpTo = (value: unknown, max: number) =>
   Array.isArray(value) && value.length <= max;
+/** `[x,y,w,h]`, as the board and its preview read a place. */
+function isPlace(xywh: unknown) {
+  if (typeof xywh !== 'string') return false;
+  try {
+    const place: unknown = JSON.parse(xywh);
+    return (
+      listUpTo(place, 4) &&
+      (place as unknown[]).length === 4 &&
+      (place as unknown[]).every(finite)
+    );
+  } catch {
+    return false;
+  }
+}
+/** A connector's end: on an element (by id) or at a point. */
+const connection = (value: unknown) => {
+  const { id, position } = (value ?? {}) as Fields;
+  return (
+    typeof id === 'string' ||
+    (Array.isArray(position) && position.length === 2 && position.every(finite))
+  );
+};
 
 /** The checks a card's own renderer relies on. */
 function elementProblem(fields: Fields): string | null {
   const { type } = fields;
   if (typeof type !== 'string' || !ELEMENTS.has(type))
     return `element type ${String(type)}`;
-  if (typeof fields.xywh !== 'string') return `${type} without a place`;
+  // A connector's place comes from its ends and a group's from its children, so
+  // neither stores one; every other element does.
+  if (type === 'connector')
+    return connection(fields.source) && connection(fields.target)
+      ? null
+      : 'connector ends';
+  if (type === 'group')
+    return fields.children && typeof fields.children === 'object'
+      ? null
+      : 'group children';
+  if (!isPlace(fields.xywh)) return `${type} without a place`;
   if (type === 'formula')
     return typeof fields.latex === 'string' && fields.latex.length <= LATEX_MAX
       ? null
@@ -98,7 +130,8 @@ function elementProblem(fields: Fields): string | null {
 }
 
 /** A saved board's update, checked before anything mounts: one page with one canvas,
- * and only what the board's tools make, each within its limits. */
+ * and only what the board's tools make, each within its limits. Its blocks and canvas
+ * elements as plain data, for the preview. */
 export function checkSavedBoard(update: Uint8Array) {
   const doc = new Y.Doc();
   try {
@@ -132,9 +165,16 @@ export function checkSavedBoard(update: Uint8Array) {
       parentOf.set(child, id);
     }
   }
-  for (const [id, block] of Object.entries(blocks))
+  for (const [id, block] of Object.entries(blocks)) {
     if ((block['sys:flavour'] === 'affine:page') === parentOf.has(id))
       throw new BoardLoadError('block tree');
+    const onCanvas =
+      block['sys:flavour'] === 'affine:note' ||
+      (block['sys:flavour'] === 'affine:image' &&
+        blocks[parentOf.get(id) as string]['sys:flavour'] === 'affine:surface');
+    if (onCanvas && !isPlace(block['prop:xywh']))
+      throw new BoardLoadError('block without a place');
+  }
   const surface = Object.values(blocks).find(
     (block) => block['sys:flavour'] === 'affine:surface'
   ) as Fields;
@@ -146,4 +186,5 @@ export function checkSavedBoard(update: Uint8Array) {
     if (problem) throw new BoardLoadError(problem);
   }
   doc.destroy();
+  return { blocks, elements: elements as Record<string, Fields> };
 }

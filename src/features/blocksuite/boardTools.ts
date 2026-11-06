@@ -47,12 +47,8 @@ import { property } from 'lit/decorators.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import * as Y from 'yjs';
 import { m } from '@/i18n';
-import {
-  addChart,
-  type ChartElementModel,
-  type ChartKind,
-  openChart,
-} from './boardChart';
+import { addChart, type ChartElementModel, openChart } from './boardChart';
+import type { ChartKind } from './boardData';
 import {
   addPlane,
   fitCard,

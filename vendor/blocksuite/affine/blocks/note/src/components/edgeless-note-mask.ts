@@ -6,7 +6,7 @@ import { html } from 'lit';
 import { property } from 'lit/decorators.js';
 import { styleMap } from 'lit/directives/style-map.js';
 
-import { ACTIVE_NOTE_EXTRA_PADDING } from '../note-edgeless-block.css';
+import { ACTIVE_NOTE_EXTRA_PADDING } from '../note-styles';
 
 export class EdgelessNoteMask extends SignalWatcher(
   WithDisposable(ShadowlessElement)

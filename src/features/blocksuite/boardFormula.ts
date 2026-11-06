@@ -1,4 +1,3 @@
-import 'katex/dist/katex.min.css';
 import {
   DefaultTool,
   type ElementRenderer,
@@ -20,14 +19,12 @@ import {
   GfxElementModelView,
   GfxPrimitiveElementModel,
 } from '@blocksuite/affine/std/gfx';
-import katex from 'katex';
 import { html, render } from 'lit';
 import { inertTex } from '@/features/materials/inertTex';
 import { getLocale, m } from '@/i18n';
+import { LATEX_MAX } from './boardData';
 import { setFormulaOpener } from './boardTools';
 
-/** Longest formula a member can type; the renderer draws nothing past it. */
-export const LATEX_MAX = 2000;
 const FONT_SIZE = 24;
 /** Bitmap pixels per board pixel, so a formula stays sharp when zoomed in. */
 const SHARPNESS = 3;
@@ -51,6 +48,23 @@ const KATEX_OPTIONS = {
   trust: false,
 } as const;
 
+/** KaTeX and its stylesheet, loaded once a board holds a formula or the formula editor
+ * opens: most boards have none (84 KB gzipped). */
+let katexLoad: Promise<typeof import('katex').default> | null = null;
+const loadKatex = () => {
+  katexLoad ??= Promise.all([
+    import('katex'),
+    import('katex/dist/katex.min.css'),
+  ]).then(
+    ([module]) => module.default,
+    (error) => {
+      katexLoad = null;
+      throw error;
+    }
+  );
+  return katexLoad;
+};
+
 type Drawn = { canvas: HTMLCanvasElement; h: number; w: number };
 
 const drawings = new Map<string, Promise<Drawn>>();
@@ -66,6 +80,7 @@ async function layOut(latex: string): Promise<Drawn> {
   const host = document.createElement('div');
   // The padding keeps tall glyphs and stretched delimiters inside the bitmap.
   host.style.cssText = `position:fixed;left:0;top:0;visibility:hidden;pointer-events:none;padding:${FONT_SIZE / 3}px 2px;font-size:${FONT_SIZE}px;font-weight:400;color:#000;white-space:nowrap;width:max-content`;
+  const katex = await loadKatex();
   document.body.append(host);
   try {
     // Its own macros, or a \\gdef in one formula would change the others.
@@ -307,6 +322,8 @@ async function openEditor(gfx: GfxController, model?: FormulaElementModel) {
   // A teacher's board loads no MathLive.
   if (gfx.doc.readonly || !board || board.querySelector('.capy-formula'))
     return;
+  // Save draws with KaTeX: it loads while MathLive does.
+  loadKatex().catch(() => undefined);
   const { MathfieldElement } = await import('mathlive');
   MathfieldElement.fontsDirectory = '/mathlive/fonts';
   MathfieldElement.soundsDirectory = null;
@@ -339,7 +356,10 @@ async function openEditor(gfx: GfxController, model?: FormulaElementModel) {
     }
     let drawn: Drawn;
     try {
-      katex.renderToString(latex, { ...KATEX_OPTIONS, throwOnError: true });
+      (await loadKatex()).renderToString(latex, {
+        ...KATEX_OPTIONS,
+        throwOnError: true,
+      });
       drawn = await drawing(latex);
     } catch {
       fail(m.drawing_board_formula_error());

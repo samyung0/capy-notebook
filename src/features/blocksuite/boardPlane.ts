@@ -17,21 +17,14 @@ import {
   GfxPrimitiveElementModel,
   GfxViewInteractionExtension,
 } from '@blocksuite/affine/std/gfx';
-import { axisNumber, tickStep } from '@/features/questions/graph';
+import { axisNumber } from '@/features/questions/graph';
+import { tickStep } from '@/features/questions/graphTicks';
+import type { Mark } from './boardData';
 import { minorStep, smoothThrough, ticks, type Vec } from './boardGeometry';
-
-/** What's plotted on a plane, in its own units. A line or curve grows a click at a time,
- * each click one undo step. */
-export type Mark =
-  | { id: string; kind: 'dot'; at: Vec }
-  | { id: string; kind: 'line' | 'curve'; points: Vec[] };
 
 /** The plane's top left corner in its own units, and board pixels per unit. */
 export type PlaneView = { ppu: number; x0: number; y0: number };
 export type Frame = { h: number; w: number; x: number; y: number };
-
-/** Most marks one plane holds. */
-export const MARKS_MAX = 500;
 
 const DOT_RADIUS = 4.5;
 const CARD_WIDTH_MIN = 120;

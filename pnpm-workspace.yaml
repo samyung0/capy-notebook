@@ -3,8 +3,8 @@ packages:
   - collaboration-rs/crates/notes/markdown
   - ops
   # BlockSuite, copied in as plain files (vendor/blocksuite/README.md). Linked,
-  # not injected: Vite then treats it as source (no dep pre-bundling, so its
-  # .css.ts files reach the vanilla-extract plugin) and edits apply directly.
+  # not injected: Vite then treats it as source (no dep pre-bundling) and edits
+  # apply directly.
   - vendor/blocksuite/framework/*
   - vendor/blocksuite/affine/*
   - vendor/blocksuite/affine/*/*
@@ -88,8 +88,8 @@ overrides:
 auditConfig:
   ignoreGhsas:
     # deepmerge <=4.3.1 prototype poisoning (low), no fixed release. In production
-    # dependencies only @vanilla-extract/css (vendored BlockSuite's styles) uses it,
-    # to merge the style objects of `.css.ts` sources while the CSS is built; no user
+    # dependencies only @vanilla-extract/css (vendored BlockSuite's outline fragment,
+    # which nothing loads) uses it, to merge `.css.ts` style objects at build; no user
     # input reaches it (Epo 2026-11-06). html-to-text and ultracite also pull it in,
     # as dev tools.
     - GHSA-gcqx-w48m-w2h4

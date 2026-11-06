@@ -8,6 +8,7 @@ import * as limits from '@/api/limits.generated';
 import { m } from '@/i18n';
 import { CopyError } from '@/lib/copyError';
 import { runtimeTerm } from './graphSyntax';
+import { tickStep } from './graphTicks';
 import type { GraphBlock, GraphElement } from './types';
 import { validGraphTerm } from './validation';
 
@@ -169,14 +170,6 @@ function frameFor([left, top, right, bottom]: Bbox): Frame {
     oy: origin(bottom, top),
     unit: magnitude(Math.min(right - left, top - bottom)),
   };
-}
-
-/** GeoGebra's tick step: 100px worth of units rounded down to 1, 2 or 5 × 10ⁿ. */
-export function tickStep(pixelsPerUnit: number) {
-  const units = 100 / pixelsPerUnit;
-  const power = 10 ** Math.floor(Math.log10(units));
-  const n = units / power;
-  return (n > 5 ? 5 : n > 2 ? 2 : 1) * power;
 }
 
 /** A tick number as GeoGebra writes it: plain with enough decimals for the
