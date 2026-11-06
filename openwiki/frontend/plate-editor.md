@@ -4354,6 +4354,15 @@ The board adds to BlockSuite through its own extensions (`boardTools.ts`,
   ordinary dots, connectors and strokes. The preview layer sits on the sheet, under
   the strokes and outside the document. Clicking a curve's last point again finishes
   it, as does leaving the tool.
+- **Charts** are built by hand too. Bars drag up from the x axis and take the shapes'
+  fill, and dragging sideways widens one for a histogram. A pie is clicked out: the
+  centre, the edge, then each dividing line with the angle since the last one showing;
+  clicking the centre again finishes it. Line graphs are Point and Line. The sheet's
+  axes are fixed for now (18 across, −3 to 8, one square equals 1).
+- **Canvas tab:** the workspace rail's Canvas, below Study, opens the board to play
+  with (`DevWorkspaceCanvas.tsx`). It keeps the board in `localStorage` per workspace,
+  half a second after each change and on leaving, with no request. Dev builds only,
+  like `/dev/drawing`, and a production build gets an empty module (`MSW_ENTRIES`).
 - **Formulas:** a `formula` canvas element holding LaTeX, typed in MathLive
   (loaded on first open). AFFiNE keeps LaTeX as HTML in note cards, and its export
   (html2canvas) garbles that, so note cards here have no LaTeX extension. KaTeX lays

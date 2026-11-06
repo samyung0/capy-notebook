@@ -146,3 +146,50 @@ test('a phone has undo at the top and the toolbar at full width', async ({
     await page.locator('edgeless-toolbar-widget smooth-corner').boundingBox()
   ).toMatchObject({ width: 344, x: 8 });
 });
+
+test('builds a filled bar and a pie, and the workspace canvas keeps them on reload', async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/workspaces/ws_bio');
+  const tab = page.getByRole('button', { name: 'Canvas' });
+  await tab.waitFor();
+  await tab.click();
+  const sheet = page.locator('.edgeless-background > div').first();
+  await sheet.waitFor();
+  const box = await sheet.boundingBox();
+  if (!box) throw new Error('no sheet');
+  const at = (x: number, y: number) =>
+    [
+      box.x + ((41 + 41 * x) / 820) * box.width,
+      box.y + ((360 - 40 * y) / 520) * box.height,
+    ] as const;
+
+  await page.locator('capy-maths-button').first().click();
+  await page.getByRole('button', { name: 'Bars: drag up' }).click();
+  await page.locator('capy-maths-menu .fills button').nth(5).click();
+  await page.mouse.move(...at(1.5, 0));
+  await page.mouse.down();
+  await page.mouse.move(...at(1.5, 5), { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(() => canvas(page)).toEqual(['shape']);
+
+  await page.getByRole('button', { name: 'Pie: click' }).click();
+  await page.mouse.click(...at(10, 4));
+  await page.mouse.click(...at(10, 7));
+  await page.mouse.click(...at(12, 3));
+  await page.mouse.click(...at(10, 4));
+  await expect.poll(() => canvas(page)).toContain('group');
+  const placed = await canvas(page);
+
+  // Saved in this browser after a short wait, with no request.
+  await expect
+    .poll(() =>
+      page.evaluate(() => localStorage.getItem('capy.workspace.canvas.ws_bio'))
+    )
+    .not.toBeNull();
+  await page.reload();
+  await tab.click();
+  await sheet.waitFor();
+  await expect.poll(() => canvas(page)).toEqual(placed);
+});

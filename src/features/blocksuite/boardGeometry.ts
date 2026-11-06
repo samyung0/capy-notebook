@@ -49,3 +49,30 @@ export function smoothThrough(points: Vec[], perSegment = 16): Vec[] {
   if (last) out.push(last);
   return out;
 }
+
+/** A bar from the x axis: its column is where the drag began, it reaches the grid
+ * line the pointer is on, and dragging sideways widens it (a histogram's class). */
+export function barBetween(start: Vec, end: Vec) {
+  const column = Math.floor((start[0] - SHEET.origin.x) / UNIT.x);
+  const reach = Math.round((end[0] - SHEET.origin.x) / UNIT.x);
+  const columns = Math.max(reach - column, 1);
+  const height = Math.round((SHEET.origin.y - end[1]) / UNIT.y);
+  return {
+    h: Math.abs(height) * UNIT.y,
+    height,
+    w: columns * UNIT.x,
+    x: SHEET.origin.x + column * UNIT.x,
+    y: height > 0 ? SHEET.origin.y - height * UNIT.y : SHEET.origin.y,
+  };
+}
+
+/** Degrees clockwise from 12 o'clock, to the nearest degree, as a protractor reads. */
+export function clockAngle([cx, cy]: Vec, [x, y]: Vec) {
+  const degrees = (Math.atan2(x - cx, cy - y) * 180) / Math.PI;
+  return Math.round((degrees + 360) % 360);
+}
+
+export function onCircle([cx, cy]: Vec, radius: number, degrees: number): Vec {
+  const turn = (degrees * Math.PI) / 180;
+  return [cx + radius * Math.sin(turn), cy - radius * Math.cos(turn)];
+}

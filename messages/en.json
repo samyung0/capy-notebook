@@ -2997,5 +2997,8 @@
   "drawing_board_axes": "Axes",
   "drawing_board_number_line": "Number line",
   "drawing_board_venn": "Venn diagram",
-  "drawing_board_force_arrows": "Force arrows"
+  "drawing_board_force_arrows": "Force arrows",
+  "drawing_board_bars": "Bars: drag up from the x axis",
+  "drawing_board_pie": "Pie: click the centre, the edge, then each line",
+  "workspace_section_canvas": "Canvas"
 }

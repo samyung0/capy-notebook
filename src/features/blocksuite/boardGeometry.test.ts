@@ -1,6 +1,9 @@
 import { expect, it } from 'vitest';
 import {
+  barBetween,
+  clockAngle,
   coordinates,
+  onCircle,
   SHEET,
   smoothThrough,
   snapToGrid,
@@ -24,4 +27,22 @@ it('passes through every plotted point', () => {
   const curve = smoothThrough(points, 8);
   for (const [index, point] of points.entries())
     expect(curve[index * 8]).toEqual(point);
+});
+
+it('builds a bar up from the axis, one column wide unless dragged wider', () => {
+  const [x, y] = at(3, 0);
+  expect(barBetween([x + 10, y - 5], at(3, 5))).toMatchObject({
+    height: 5,
+    w: UNIT.x,
+    x,
+  });
+  expect(barBetween([x + 10, y - 5], at(6, 2)).w).toBe(3 * UNIT.x);
+  const below = barBetween([x + 10, y], at(3, -2));
+  expect([below.height, below.y]).toEqual([-2, SHEET.origin.y]);
+});
+
+it("reads a pie angle clockwise from 12 o'clock", () => {
+  const centre = at(5, 5);
+  for (const degrees of [0, 45, 126, 205, 290])
+    expect(clockAngle(centre, onCircle(centre, 100, degrees))).toBe(degrees);
 });

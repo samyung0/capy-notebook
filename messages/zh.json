@@ -2997,5 +2997,8 @@
   "drawing_board_axes": "坐标轴",
   "drawing_board_number_line": "数轴",
   "drawing_board_venn": "韦恩图",
-  "drawing_board_force_arrows": "受力箭头"
+  "drawing_board_force_arrows": "受力箭头",
+  "drawing_board_bars": "条形：从 x 轴向上拖动",
+  "drawing_board_pie": "饼图：依次点击圆心、边缘和每条分割线",
+  "workspace_section_canvas": "画布"
 }

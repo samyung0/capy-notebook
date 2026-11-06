@@ -11,7 +11,16 @@ import { iconUrl } from '@/lib/icon-catalog';
 
 /** The workspace's sections (Epo 2026-11-02, S2 and N1): Dashboard has no
  * panel; Files, Agent and Study each show theirs beside the rail. */
-export type WorkspaceSection = 'dashboard' | 'files' | 'agent' | 'study';
+export type WorkspaceSection =
+  | 'dashboard'
+  | 'files'
+  | 'agent'
+  | 'study'
+  | 'canvas';
+
+/** The canvas to play with: dev builds only, like the board's dev route, so a
+ * production build drops BlockSuite's chunk until a page that ships opens it. */
+export const CANVAS_SECTION = import.meta.env.DEV;
 
 const SECTIONS: {
   value: WorkspaceSection;
@@ -26,6 +35,15 @@ const SECTIONS: {
   { icon: 'folder', label: m.workspace_tab_files, value: 'files' },
   { icon: 'ai', label: m.workspace_section_agent, value: 'agent' },
   { icon: 'book', label: m.workspace_tab_study, value: 'study' },
+  ...(CANVAS_SECTION
+    ? [
+        {
+          icon: 'shape' as const,
+          label: m.workspace_section_canvas,
+          value: 'canvas' as const,
+        },
+      ]
+    : []),
 ];
 
 /* A rail item: the icon over its label, as the app sidebar's rows look. The

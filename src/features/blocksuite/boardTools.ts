@@ -26,13 +26,16 @@ import {
   EdgelessToolbarToolMixin,
   SeniorToolIdentifier,
 } from '@blocksuite/affine/widgets/edgeless-toolbar';
-import { css, html, LitElement, svg } from 'lit';
+import { css, html, LitElement, nothing, svg } from 'lit';
 import { property } from 'lit/decorators.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import * as Y from 'yjs';
 import { m } from '@/i18n';
 import {
+  barBetween,
+  clockAngle,
   coordinates,
+  onCircle,
   SHEET,
   smoothThrough,
   snapToGrid,
@@ -220,6 +223,157 @@ export class PlotTool extends BaseTool<{ plot: Plot }> {
       );
     }
     layer.innerHTML = parts.join('');
+  }
+}
+
+const chip = (x: number, y: number, text: string) =>
+  `<g transform="translate(${x} ${y})"><rect width="${text.length * 8 + 14}" height="24" rx="4" fill="#111"/><text x="7" y="17" fill="#fff" font-size="14" font-family="Arial, sans-serif">${text}</text></g>`;
+
+/** Bars: drag up from the x axis. They take the shapes' fill, from the menu. */
+export class BarsTool extends BaseTool {
+  static override toolName = 'capy-bars';
+
+  start: Vec | null = null;
+  end: Vec | null = null;
+
+  override dragStart(e: PointerEventState) {
+    const at = this.gfx.viewport.toModelCoord(e.x, e.y) as Vec;
+    this.start = snapToGrid(at) ? at : null;
+  }
+
+  override dragMove(e: PointerEventState) {
+    if (!this.start) return;
+    const at = this.gfx.viewport.toModelCoord(e.x, e.y) as Vec;
+    this.end = at;
+    const { h, height, w, x, y } = barBetween(this.start, at);
+    const layer = previews.get(this.gfx);
+    if (layer)
+      layer.innerHTML = `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${PREVIEW}" fill-opacity=".08" stroke="${PREVIEW}" stroke-width="2" stroke-dasharray="5 4"/>${chip(x + w + 10, y - 12, `${height}`.replace('-', '−'))}`;
+  }
+
+  override dragEnd() {
+    const { end, start } = this;
+    this.start = null;
+    this.end = null;
+    const layer = previews.get(this.gfx);
+    if (layer) layer.innerHTML = '';
+    if (!(start && end)) return;
+    const { h, height, w, x, y } = barBetween(start, end);
+    if (!height) return;
+    const { fillColor, filled } =
+      this.gfx.std.get(EditPropsStore).lastProps$.value['shape:rect'];
+    this.gfx.surface?.addElement({
+      fillColor,
+      filled,
+      shapeType: 'rect',
+      strokeColor: DefaultTheme.black,
+      strokeWidth: 2,
+      type: 'shape',
+      xywh: new Bound(x, y, w, h).serialize(),
+    });
+    this.gfx.doc.captureSync();
+  }
+}
+
+/** A pie, one click at a time: the centre, the circle's edge, then each dividing
+ * line, with the angle since the last line showing. Clicking the centre again
+ * finishes it, as does leaving the tool. */
+export class SectorTool extends BaseTool {
+  static override toolName = 'capy-sector';
+
+  centre: Vec | null = null;
+  radius = 0;
+  lastAngle = 0;
+  parts: (string | undefined)[] = [];
+
+  override deactivate() {
+    this.finish();
+    this.draw('');
+  }
+
+  private finish() {
+    if (this.parts.length) {
+      addGroup(this.gfx, this.parts);
+      this.gfx.doc.captureSync();
+    }
+    this.parts = [];
+    this.centre = null;
+    this.radius = 0;
+    this.lastAngle = 0;
+  }
+
+  private draw(body: string) {
+    const layer = previews.get(this.gfx);
+    if (layer) layer.innerHTML = body;
+  }
+
+  override pointerMove(e: PointerEventState) {
+    const at = this.gfx.viewport.toModelCoord(e.x, e.y) as Vec;
+    const { centre, radius } = this;
+    if (!centre) {
+      const snapped = snapToGrid(at);
+      this.draw(
+        snapped
+          ? `<circle cx="${snapped[0]}" cy="${snapped[1]}" r="${DOT / 2}" fill="${PREVIEW}"/>`
+          : ''
+      );
+      return;
+    }
+    if (!radius) {
+      const r = Math.hypot(at[0] - centre[0], at[1] - centre[1]);
+      this.draw(
+        `<circle cx="${centre[0]}" cy="${centre[1]}" r="${r}" fill="none" stroke="${PREVIEW}" stroke-width="2" stroke-dasharray="5 4"/>`
+      );
+      return;
+    }
+    const angle = clockAngle(centre, at);
+    const [x, y] = onCircle(centre, radius, angle);
+    const sector = (angle - this.lastAngle + 360) % 360;
+    this.draw(
+      `<path d="M${centre[0]} ${centre[1]}L${x} ${y}" stroke="${PREVIEW}" stroke-width="2"/>${chip(x + 10, y - 12, `${sector}°`)}`
+    );
+  }
+
+  override click(e: PointerEventState) {
+    const at = this.gfx.viewport.toModelCoord(e.x, e.y) as Vec;
+    const { centre, gfx } = this;
+    if (!centre) {
+      this.centre = snapToGrid(at);
+      return;
+    }
+    const distance = Math.hypot(at[0] - centre[0], at[1] - centre[1]);
+    if (distance < DOT) {
+      this.finish();
+      this.draw('');
+      return;
+    }
+    if (this.radius) {
+      const angle = clockAngle(centre, at);
+      this.parts.push(
+        addSegment(gfx, centre, onCircle(centre, this.radius, angle))
+      );
+      this.lastAngle = angle;
+    } else {
+      this.radius = distance;
+      this.parts.push(
+        gfx.surface?.addElement({
+          fillColor: 'transparent',
+          filled: false,
+          shapeType: 'ellipse',
+          strokeColor: DefaultTheme.black,
+          strokeWidth: 2,
+          type: 'shape',
+          xywh: new Bound(
+            centre[0] - distance,
+            centre[1] - distance,
+            distance * 2,
+            distance * 2
+          ).serialize(),
+        }),
+        addSegment(gfx, centre, onCircle(centre, distance, 0))
+      );
+    }
+    gfx.doc.captureSync();
   }
 }
 
@@ -614,7 +768,65 @@ const POPPER_STYLES = css`
   svg {
     display: block;
   }
+  .fills {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+    .fills button {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+    }
+    .fills i {
+      display: block;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      box-sizing: border-box;
+      box-shadow: inset 0 0 0 1px rgb(0 0 0 / 14%);
+    }
+    .fills .none {
+      background: linear-gradient(
+        to top right,
+        #fff calc(50% - 1px),
+        #d9483b calc(50% - 1px),
+        #d9483b calc(50% + 1px),
+        #fff calc(50% + 1px)
+      );
+    }
+    .fills button[aria-pressed='true'] {
+      background: none;
+      box-shadow: 0 0 0 2px var(--affine-primary-color) inset;
+    }
 `;
+
+/** The fill new shapes and bars take: none, or a colour. */
+function fillRow(edgeless: EdgelessShapeToolButton['edgeless']) {
+  const gfx = edgeless.std.get(GfxControllerIdentifier);
+  const props = edgeless.std.get(EditPropsStore).lastProps$.value;
+  const theme = edgeless.std.get(ThemeProvider);
+  const current = props['shape:rect'].fillColor;
+  const swatch = (color: unknown, label: string, cls = '') =>
+    html`<button
+      aria-label=${label}
+      aria-pressed=${JSON.stringify(current) === JSON.stringify(color)}
+      title=${label}
+      type="button"
+      @click=${() => setShapeFill(gfx, color)}
+    >
+      <i
+        class=${cls}
+        style=${cls ? '' : `background:${theme.generateColorProperty(color)}`}
+      ></i>
+    </button>`;
+  return html`<div class="fills" role="group" aria-label=${m.drawing_board_fill()}>
+    ${swatch('transparent', m.drawing_board_no_fill(), 'none')}
+    ${FILLS.map(({ key, value }: { key: string; value: unknown }) =>
+      swatch(value, key)
+    )}
+  </div>`;
+}
 
 class CapyShapePanel extends SignalWatcher(LitElement) {
   static override styles = [
@@ -655,38 +867,9 @@ class CapyShapePanel extends SignalWatcher(LitElement) {
         margin-top: 0;
       }
       .fills {
-        display: flex;
-        align-items: center;
-        gap: 2px;
         margin: 10px -14px 0;
         padding: 8px 14px 0 8px;
         border-top: 1px solid var(--affine-border-color);
-      }
-      .fills button {
-        width: 30px;
-        height: 30px;
-        border-radius: 50%;
-      }
-      .fills i {
-        display: block;
-        width: 18px;
-        height: 18px;
-        border-radius: 50%;
-        box-sizing: border-box;
-        box-shadow: inset 0 0 0 1px rgb(0 0 0 / 14%);
-      }
-      .fills .none {
-        background: linear-gradient(
-          to top right,
-          #fff calc(50% - 1px),
-          #d9483b calc(50% - 1px),
-          #d9483b calc(50% + 1px),
-          #fff calc(50% + 1px)
-        );
-      }
-      .fills button[aria-pressed='true'] {
-        background: none;
-        box-shadow: 0 0 0 2px var(--affine-primary-color) inset;
       }
     `,
   ];
@@ -742,31 +925,10 @@ class CapyShapePanel extends SignalWatcher(LitElement) {
   }
 
   override render() {
-    const props = this.edgeless.std.get(EditPropsStore).lastProps$.value;
-    const theme = this.edgeless.std.get(ThemeProvider);
-    const current = props['shape:rect'].fillColor;
-    const swatch = (color: unknown, label: string, cls = '') =>
-      html`<button
-        aria-label=${label}
-        aria-pressed=${JSON.stringify(current) === JSON.stringify(color)}
-        title=${label}
-        type="button"
-        @click=${() => setShapeFill(this.gfx, color)}
-      >
-        <i
-          class=${cls}
-          style=${cls ? '' : `background:${theme.generateColorProperty(color)}`}
-        ></i>
-      </button>`;
     return html`<div class="groups">
         ${PANEL.map((group, i) => this.renderGroup(group, i === 0))}
       </div>
-      <div class="fills" role="group" aria-label=${m.drawing_board_fill()}>
-        ${swatch('transparent', m.drawing_board_no_fill(), 'none')}
-        ${FILLS.map(({ key, value }: { key: string; value: unknown }) =>
-          swatch(value, key)
-        )}
-      </div>`;
+      ${fillRow(this.edgeless)}`;
   }
 
   @property({ attribute: false })
@@ -862,6 +1024,10 @@ let openFormula: (gfx: GfxController) => void = () => undefined;
 export function setFormulaOpener(open: typeof openFormula) {
   openFormula = open;
 }
+const BARS_ICON =
+  '<path d="M3 21h18M6 21v-8h4v8M14 21V7h4v14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>';
+const SECTOR_ICON =
+  '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 12V3M12 12l7.5 5" fill="none" stroke="currentColor" stroke-width="1.5"/>';
 const FORMULA_ICON =
   '<path d="M18 5H7l6 7-6 7h11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>';
 
@@ -871,15 +1037,20 @@ class CapyMathsMenu extends SignalWatcher(LitElement) {
     css`
       :host {
         display: flex;
-        align-items: center;
-        gap: 2px;
+        flex-direction: column;
+        gap: 4px;
         padding: 6px 8px;
         background: var(--affine-background-overlay-panel-color);
         border: 1px solid var(--affine-border-color);
         border-bottom: 0;
         border-radius: 8px 8px 0 0;
       }
-      i {
+      .tools {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+      }
+      .tools > i {
         width: 1px;
         height: 20px;
         margin: 0 4px;
@@ -918,26 +1089,45 @@ class CapyMathsMenu extends SignalWatcher(LitElement) {
         )
       );
     };
-    return html`${plot('point', m.drawing_board_point())}
-      ${plot('line', m.drawing_board_line_through_points())}
-      ${plot('curve', m.drawing_board_curve())}
-      <button
-        aria-label=${m.drawing_board_add_axes()}
-        title=${m.drawing_board_add_axes()}
+    const tool = (
+      toolType: typeof BarsTool | typeof SectorTool,
+      body: string,
+      label: string
+    ) =>
+      html`<button
+        aria-label=${label}
+        aria-pressed=${option?.toolType === toolType}
+        title=${label}
         type="button"
-        @click=${addAxes}
+        @click=${() => this.gfx.tool.setTool(toolType)}
       >
-        ${icon24(MATHS_ICONS.axes)}
-      </button>
-      <i></i>
-      <button
-        aria-label=${m.drawing_board_formula()}
-        title=${m.drawing_board_formula()}
-        type="button"
-        @click=${() => openFormula(this.gfx)}
-      >
-        ${icon24(FORMULA_ICON)}
+        ${icon24(body)}
       </button>`;
+    return html`<div class="tools">
+        ${plot('point', m.drawing_board_point())}
+        ${plot('line', m.drawing_board_line_through_points())}
+        ${plot('curve', m.drawing_board_curve())}
+        <button
+          aria-label=${m.drawing_board_add_axes()}
+          title=${m.drawing_board_add_axes()}
+          type="button"
+          @click=${addAxes}
+        >
+          ${icon24(MATHS_ICONS.axes)}
+        </button>
+        ${tool(BarsTool, BARS_ICON, m.drawing_board_bars())}
+        ${tool(SectorTool, SECTOR_ICON, m.drawing_board_pie())}
+        <i></i>
+        <button
+          aria-label=${m.drawing_board_formula()}
+          title=${m.drawing_board_formula()}
+          type="button"
+          @click=${() => openFormula(this.gfx)}
+        >
+          ${icon24(FORMULA_ICON)}
+        </button>
+      </div>
+      ${option?.toolType === BarsTool ? fillRow(this.edgeless) : nothing}`;
   }
 
   @property({ attribute: false })
@@ -983,15 +1173,19 @@ class CapyMathsButton extends EdgelessToolbarToolMixin(
 
   override type = PlotTool as never;
 
+  override get active() {
+    const active = this.edgelessTool?.toolType;
+    return active === PlotTool || active === BarsTool || active === SectorTool;
+  }
+
   override updated() {
     if (!this.active) closePopper(this);
   }
 
   private toggle() {
     if (this.tryDisposePopper()) return;
-    if (this.gfx.tool.currentToolOption$.peek()?.toolType !== PlotTool)
-      this.gfx.tool.setTool(PlotTool, { plot: 'point' });
-    openPopper(this, 'capy-maths-menu', 100, {
+    if (!this.active) this.gfx.tool.setTool(PlotTool, { plot: 'point' });
+    openPopper(this, 'capy-maths-menu', 150, {
       marginLeft: 'auto',
       marginRight: '10px',
       maxWidth: '100%',

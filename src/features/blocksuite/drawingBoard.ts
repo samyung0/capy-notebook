@@ -72,9 +72,11 @@ import {
 } from './boardFormula';
 import { SHEET, UNIT } from './boardGeometry';
 import {
+  BarsTool,
   mathsTool,
   outlineNewShapes,
   PlotTool,
+  SectorTool,
   StampTool,
   setBoardPreview,
   shapeButtonTool,
@@ -187,7 +189,7 @@ function axesSheet({ h, origin, w }: typeof SHEET) {
  * from a saved answer when there is one. */
 export function mountDrawingBoard(
   container: HTMLElement,
-  options: { saved?: string } = {}
+  options: { onChange?: () => void; saved?: string } = {}
 ) {
   const workspace = new TestWorkspace();
   workspace.storeExtensions = stores.get('store');
@@ -204,12 +206,16 @@ export function mountDrawingBoard(
     });
   }
   store.resetHistory();
+  const { onChange } = options;
+  if (onChange) store.spaceDoc.on('update', onChange);
   const std = new BlockStdScope({
     extensions: [
       ...views.get('edgeless'),
       shapeButtonTool,
       mathsTool,
       PlotTool,
+      BarsTool,
+      SectorTool,
       StampTool,
       ...formulaExtensions,
       NoFrameOverlay,
@@ -310,6 +316,8 @@ export function mountDrawingBoard(
       finishPlot();
       return toBase64(Y.encodeStateAsUpdate(store.spaceDoc));
     },
+    /** The board as it is, leaving a tool in use alone. */
+    snapshot: () => toBase64(Y.encodeStateAsUpdate(store.spaceDoc)),
     stats: () => ({
       blocks: gfx.layer.blocks.map((block) => block.flavour),
       bytes: Y.encodeStateAsUpdate(store.spaceDoc).byteLength,
@@ -368,6 +376,7 @@ export function mountDrawingBoard(
       cancelAnimationFrame(frame);
       subscription.unsubscribe();
       historyUpdates.unsubscribe();
+      if (onChange) store.spaceDoc.off('update', onChange);
       symbols.unmount();
       render(null, history);
       render(null, container);
