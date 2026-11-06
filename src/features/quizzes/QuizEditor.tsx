@@ -43,6 +43,7 @@ import {
   questionMarks,
 } from '@/features/questions/types';
 import { m } from '@/i18n';
+import { quizSampleUpload } from './drawing/DrawnSample';
 import {
   moveQuestion,
   questionState,
@@ -191,6 +192,7 @@ function QuizEditorBody({
               status={status}
               undo={undo}
               uploadAsset={quizImageUpload(quizId)}
+              uploadSample={quizSampleUpload(quizId)}
               write={(next) => {
                 blank.current = null;
                 writeQuestion(content, keys, next);

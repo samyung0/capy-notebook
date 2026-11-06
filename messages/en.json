@@ -3121,5 +3121,7 @@
   "canvas_delete_all_title": "Delete all marked drawings?",
   "canvas_delete_all_body": "{count} drawings go for good. Their marks stay.",
   "drawing_answer_deleted": "Drawing deleted",
-  "question_validation_bank_drawn_sample": "A bank drawing part has no drawn sample answer."
+  "question_validation_bank_drawn_sample": "A bank drawing part has no drawn sample answer.",
+  "drawing_sample_draw": "Draw sample answer",
+  "drawing_sample_edit": "Edit sample answer"
 }

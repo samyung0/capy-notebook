@@ -32,6 +32,11 @@ import {
   UndoButtons,
 } from '@/features/collaboration/LiveItemControls';
 import type { UndoTarget } from '@/features/collaboration/undo';
+import {
+  DrawnSampleField,
+  type UploadDrawnSample,
+} from '@/features/quizzes/drawing/DrawnSample';
+import { pinnedQuestion } from '@/features/quizzes/drawing/pinnedQuestion';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -223,6 +228,8 @@ export interface QuestionDialogProps {
   question: Question;
   questionNumber?: number;
   uploadAsset?: UploadQuestionAsset;
+  /** A quiz's drawn sample answers (Q3); the bank has none. */
+  uploadSample?: UploadDrawnSample;
 }
 
 /** A plot has no editor, so it is never added empty. */
@@ -345,6 +352,7 @@ function QuestionDialogSession({
   policy = 'quiz',
   bankAssetsUrl,
   uploadAsset,
+  uploadSample,
   live,
 }: QuestionDialogProps) {
   const {
@@ -1791,6 +1799,19 @@ function QuestionDialogSession({
                     max={limits.QUESTION_MARKS_MAX}
                     onChange={(marks) => editPart({ ...shown.part, marks })}
                     value={shown.part.marks}
+                  />
+                )}
+                {shown.part.answer.type === 'drawing' && uploadSample && (
+                  <DrawnSampleField
+                    onChange={(sample) =>
+                      editPart({
+                        ...shown.part,
+                        answer: { type: 'drawing', ...(sample && { sample }) },
+                      })
+                    }
+                    pinned={pinnedQuestion(draft, shown.part, questionNumber)}
+                    sample={shown.part.answer.sample}
+                    upload={uploadSample}
                   />
                 )}
               </div>

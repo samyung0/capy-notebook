@@ -13,6 +13,7 @@ import { issueMessages, questionIssues } from '@/features/questions/issues';
 import { blankQuestion } from '@/features/questions/types';
 import { validateQuestion } from '@/features/questions/validation';
 import { m } from '@/i18n';
+import { quizSampleUpload } from './drawing/DrawnSample';
 import {
   questionState,
   removeQuestion,
@@ -186,6 +187,7 @@ export function QuizForm({
               questions.findIndex((q) => q.id === question.id) + 1
             }
             uploadAsset={quizImageUpload(quizId)}
+            uploadSample={quizSampleUpload(quizId)}
           />
         </Suspense>
       )}

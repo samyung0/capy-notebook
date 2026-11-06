@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, lazy, type ReactNode, Suspense } from 'react';
 import { CategoryChart } from '@/components/charts/CategoryChart';
 import { PlotChart } from '@/components/charts/PlotChart';
 import { Icon } from '@/components/ui/Icon';
@@ -24,6 +24,14 @@ import {
   type QuestionPart,
   questionMarks,
 } from './types';
+
+// A drawn sample answer's preview loads only where one shows: shared pages
+// render without it (Q3).
+const DrawnSampleView = lazy(() =>
+  import('@/features/quizzes/drawing/DrawnSample').then((module) => ({
+    default: module.DrawnSampleView,
+  }))
+);
 
 export type BlockSection = {
   groupId?: string;
@@ -778,6 +786,16 @@ export function QuestionReview({
                     {m.question_ui_sample_answer_heading()}
                   </p>
                   <TextView className="text-fg-secondary" text={sample} />
+                </>
+              )}
+              {part.answer.type === 'drawing' && part.answer.sample && (
+                <>
+                  <p className="t-meta mt-2 font-bold text-tint-success-fg">
+                    {m.question_ui_sample_answer_heading()}
+                  </p>
+                  <Suspense fallback={null}>
+                    <DrawnSampleView sample={part.answer.sample} />
+                  </Suspense>
                 </>
               )}
             </div>
