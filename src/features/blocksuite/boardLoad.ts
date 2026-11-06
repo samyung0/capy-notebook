@@ -62,15 +62,31 @@ function isPlace(xywh: unknown) {
     return false;
   }
 }
+/** A connector's end: on an element (by id) or at a point. */
+const connection = (value: unknown) => {
+  const { id, position } = (value ?? {}) as Fields;
+  return (
+    typeof id === 'string' ||
+    (Array.isArray(position) && position.length === 2 && position.every(finite))
+  );
+};
 
 /** The checks a card's own renderer relies on. */
 function elementProblem(fields: Fields): string | null {
   const { type } = fields;
   if (typeof type !== 'string' || !ELEMENTS.has(type))
     return `element type ${String(type)}`;
-  // A connector is placed by its ends, and saved without a place until it's drawn.
-  if (type !== 'connector' && !isPlace(fields.xywh))
-    return `${type} without a place`;
+  // A connector's place comes from its ends and a group's from its children, so
+  // neither stores one; every other element does.
+  if (type === 'connector')
+    return connection(fields.source) && connection(fields.target)
+      ? null
+      : 'connector ends';
+  if (type === 'group')
+    return fields.children && typeof fields.children === 'object'
+      ? null
+      : 'group children';
+  if (!isPlace(fields.xywh)) return `${type} without a place`;
   if (type === 'formula')
     return typeof fields.latex === 'string' && fields.latex.length <= LATEX_MAX
       ? null
