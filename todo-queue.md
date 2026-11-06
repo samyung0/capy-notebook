@@ -16,7 +16,7 @@ Windows lands and deploys these, one landing per deploy.
 | Shared pages lose AI marking (Q640 B) | Windows | Next on its side |
 | New assignment's quiz picker, shared pages | On `main` 24cffdd73 | CI, UAT quality run |
 | Page counts and Reading pages off Make a quiz's rows, popovers scrolling inside dialogs, Add dialog retry fix | `claude/add-retry-analysis` 86491c6b4 (holds Extraction's 34675e04d) | Windows' review, then a train |
-| One page gutter, no weekly count on Learning, note-wide Preview | `claude/note-preview-cleanups` e148fcac1 | Windows' review, then a train |
+| One page gutter, no weekly count on Learning, note-wide Preview, Hide file button | `claude/note-preview-cleanups` b4baa592a | Windows' review, then a train |
 | Vendored BlockSuite, dev route only | `claude/drawing-answers` 9ec4a067d | Windows' train |
 
 ## Next, in order (Epo, 2026-11-06)
