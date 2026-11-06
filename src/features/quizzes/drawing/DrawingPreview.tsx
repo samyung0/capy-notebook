@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api } from '@/api/client';
-import { toBase64 } from '@/features/blocksuite/base64';
 import { drawBoardPreview } from '@/features/blocksuite/boardPreview';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import type { Answer } from '../grade';
+import { fetchDrawingBoard } from './drawingBoards';
 import { isDrawingValue } from './drawingValue';
 
 /** A stored drawing's id, as an answer names it once the server keeps it. */
@@ -17,30 +16,10 @@ export const storedDrawingId = (value: Answer) =>
     ? value.drawing
     : null;
 
-/** Stored boards fetched in this page, by drawing id. */
-const fetched = new Map<string, Promise<string>>();
-
-const fetchBoard = (id: string) => {
-  let board = fetched.get(id);
-  if (!board) {
-    board = api
-      .get<{ boardUrl: string }>(`/drawings/${id}`)
-      .then((drawing) => fetch(drawing.boardUrl))
-      .then(async (response) => {
-        if (!response.ok)
-          throw new Error(`board fetch failed: ${response.status}`);
-        return toBase64(new Uint8Array(await response.arrayBuffer()));
-      });
-    // A failure is fetched again on the next view, not retried here.
-    board.catch(() => fetched.delete(id));
-    fetched.set(id, board);
-  }
-  return board;
-};
-
 /** A drawing answer's board, base64: the device's, or the stored one fetched
- * through its hour-long link (the member and the assignment's staff only).
- * Shared pages have no stored drawings, so they never fetch. */
+ * through its hour-long link (the member and the assignment's staff only), or
+ * DRAWING_DELETED once its payer deleted it. Shared pages have no stored
+ * drawings, so they never fetch. */
 export function useDrawingBoard(value: Answer) {
   const local = isDrawingValue(value) ? value.board : null;
   const id = local ? null : storedDrawingId(value);
@@ -50,7 +29,7 @@ export function useDrawingBoard(value: Answer) {
   useEffect(() => {
     if (!id) return;
     let live = true;
-    fetchBoard(id)
+    fetchDrawingBoard(id)
       .then((board) => live && setStored({ board, id }))
       .catch(() => undefined);
     return () => {
@@ -58,6 +37,28 @@ export function useDrawingBoard(value: Answer) {
     };
   }, [id]);
   return local ?? (stored && stored.id === id ? stored.board : null);
+}
+
+/** A board drawn as an SVG data URL, or null when it can't be read. With
+ * `inset`, the drawing sits that far inside a transparent box of the full size,
+ * so a card's own panel frames it (Files › Canvas, mock S3). */
+export function drawingPreviewUrl(
+  board: string,
+  width: number,
+  height: number,
+  inset = 0
+) {
+  try {
+    let svg = drawBoardPreview(board, {
+      height: height - inset * 2,
+      width: width - inset * 2,
+    });
+    if (inset)
+      svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">${svg.replace('<svg ', `<svg x="${inset}" y="${inset}" `)}</svg>`;
+    return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -76,14 +77,10 @@ export function DrawingPreview({
   height?: number;
   width?: number;
 }) {
-  const src = useMemo(() => {
-    try {
-      const svg = drawBoardPreview(board, { height, width });
-      return `data:image/svg+xml,${encodeURIComponent(svg)}`;
-    } catch {
-      return null;
-    }
-  }, [board, height, width]);
+  const src = useMemo(
+    () => drawingPreviewUrl(board, width, height),
+    [board, height, width]
+  );
   if (!src)
     return (
       <p className={cn('t-meta text-fg-muted', className)}>

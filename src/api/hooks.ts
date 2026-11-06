@@ -11,6 +11,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef } from 'react';
+import { forgetDrawingBoards } from '@/features/quizzes/drawing/drawingBoards';
 import {
   answersForCheck,
   answersForSave,
@@ -103,6 +104,7 @@ import type {
   Label,
   LearningOverview,
   LibraryFigure,
+  MarkedDrawings,
   Material,
   MaterialCollaborationToken,
   MaterialComment,
@@ -3250,6 +3252,45 @@ export const saveAssignmentDrawing = (
       drawingUpload(value)
     )
     .then(({ id }) => id);
+
+/** Files › Canvas: the caller's marked drawings, newest first. Lazy, like the
+ * Trash tab; secondary, so it renders its own error state. */
+export const useMarkedDrawings = (enabled: boolean) =>
+  useInfiniteQuery({
+    enabled,
+    getNextPageParam: (last: MarkedDrawings) => last.nextCursor || undefined,
+    initialPageParam: '',
+    meta: { errorBoundary: false },
+    queryFn: ({ pageParam }: { pageParam: string }) =>
+      api.get<MarkedDrawings>(
+        `/drawings${pageParam ? `?${new URLSearchParams({ cursor: pageParam })}` : ''}`
+      ),
+    queryKey: qk.drawings,
+  });
+
+function invalidateAfterDrawingDelete(qc: QueryClient, ids: string[] | null) {
+  forgetDrawingBoards(ids);
+  qc.invalidateQueries({ queryKey: qk.drawings });
+  qc.invalidateQueries({ queryKey: qk.billing });
+}
+
+/** Delete one marked drawing; its marks stay. */
+export function useDeleteDrawing() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del<{ deleted: number }>(`/drawings/${id}`),
+    onSuccess: (_out, id) => invalidateAfterDrawingDelete(qc, [id]),
+  });
+}
+
+/** Delete every marked drawing the caller pays for. */
+export function useDeleteAllDrawings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.del<{ deleted: number }>('/drawings'),
+    onSuccess: () => invalidateAfterDrawingDelete(qc, null),
+  });
+}
 
 /** Its one caller reports a failure itself: no global toast. */
 export function useSubmitAssignmentAttempt(workspaceId: string) {

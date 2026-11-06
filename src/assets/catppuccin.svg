@@ -3,6 +3,19 @@
      Colors are var(ctp-*) custom properties defined in src/styles/tokens/catppuccin.css.
      XML comments cannot contain a double hyphen, hence the spelling above. -->
 <svg xmlns="http://www.w3.org/2000/svg">
+  <!-- A drawn answer (Files › Canvas, mock S3). -->
+  <symbol id="drawing" viewBox="0 0 24 24">
+    <g
+      fill="none"
+      stroke="var(--ctp-mauve)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-width="1.95"
+    >
+      <path d="M4 20h4L19 9l-4-4L4 16v4z" />
+      <path d="M13.5 6.5l4 4" />
+    </g>
+  </symbol>
   <symbol id="assignment" viewBox="0 0 24 24">
     <g
       fill="none"

@@ -173,9 +173,29 @@ it toasts and the board stays open; otherwise the answer is the board's document
 and its WebP marking image, and the part shows the drawing with Edit drawing.
 Checked, it shows its verdict, the drawing and Open drawing, the whole board read
 only. A time limit running out with the board open presses its Done before the
-assignment is submitted; an assignment closing does not. Saving to the server and
-marking are not built yet: they wait on Epo's answers in
-`drawing-marking-proposal.md` (branch `claude/drawing-answers-flow-f90c14`).
+assignment is submitted; an assignment closing does not.
+
+Saving (migration 0156 `drawings`, `server/internal/store/drawings.go`): a
+practice board stays on the device until Check, which sends the board and its
+image with the answers; an assignment's goes up on Done (`PUT
+/api/assignment-attempts/{id}/drawings/{partId}`). The part's answer is then
+`{"drawing": id}`. The person attempting pays for the board (Epo 2026-11-06),
+through the storage gate. The marking image is kept only while its part waits on
+marking (Not marked), and never under "Manual grading only". No picture of a
+drawing is stored: answers, results, Approve, the report and Files › Canvas draw
+it from the board (`drawBoardPreview`, `DrawingPreview`), fetched through `GET
+/api/drawings/{id}` by the member or the assignment's staff. A practice board goes
+when its quiz is deleted for good, an assignment's with the assignment; a leaving
+member keeps their unmarked boards and loses the marked ones.
+
+Files › Canvas (`CanvasTab`, mocks S2 and S3) lists the payer's drawings whose
+parts are marked (`GET /api/drawings`), named by the quiz with no score; the
+payer deletes one (`DELETE /api/drawings/{id}`) or all (`DELETE
+/api/drawings`), the marks staying, and the result then says "Drawing deleted".
+Billing's storage bar splits into Files, "Notes, quizzes and images" and Canvas
+(`BillingInfo.storageBreakdown`, recounted from the same rows as the meter).
+Marking a drawing with the vision model waits on Epo's approval of the prompt in
+`drawing-marking-proposal.md`; until then a drawing part stays Not marked.
 
 A checked model-marked part (open or drawing) shows its marking scheme in the
 open, each point with a tick, a dash or a cross and its marks, then its sample

@@ -754,3 +754,26 @@ func (s *Store) reconcileStorageUserTx(
 		WHERE user_id=$1 AND id <= $2`, userID, maxDeltaID)
 	return changed, err
 }
+
+// StorageBreakdown is what a payer's storage holds, by kind, recounted from the
+// rows the meter counts: files (uploads and their saved documents), canvas
+// (drawn answers' boards and the images kept while their parts wait), and other
+// (notes, quizzes, sets, their images and audio, assignment copies).
+type StorageBreakdown struct {
+	FilesBytes  int64 `json:"filesBytes"`
+	CanvasBytes int64 `json:"canvasBytes"`
+	OtherBytes  int64 `json:"otherBytes"`
+}
+
+func (s *Store) storageBreakdown(ctx context.Context, userID string) (StorageBreakdown, error) {
+	var b StorageBreakdown
+	err := s.pool.QueryRow(ctx, `SELECT
+		COALESCE((SELECT sum(size_bytes) FROM files WHERE user_id=$1), 0)
+		+ COALESCE((SELECT sum(storage_bytes) FROM source_documents WHERE user_id=$1), 0),
+		COALESCE((SELECT sum(board_bytes + image_bytes) FROM drawings WHERE user_id=$1), 0),
+		COALESCE((SELECT sum(size_bytes) FROM editor_assets WHERE user_id=$1 AND status='ready'), 0)
+		+ COALESCE((SELECT sum(size_bytes) FROM materials WHERE owner_user_id=$1), 0)
+		+ COALESCE((SELECT sum(frozen_bytes) FROM assignments WHERE frozen_by=$1), 0)`, userID).
+		Scan(&b.FilesBytes, &b.CanvasBytes, &b.OtherBytes)
+	return b, err
+}

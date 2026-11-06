@@ -80,6 +80,7 @@ import type {
   DrawingOutputBody,
   DrawingSavedOutputBody,
   DrawingUpload,
+  DrawingsDeletedOutputBody,
   EditorAssetPage,
   ErrorModel,
   Event,
@@ -115,6 +116,7 @@ import type {
   ListAccountConversationsParams,
   ListAttemptsParams,
   ListConversationsParams,
+  ListDrawingsParams,
   ListEditorAssetsParams,
   ListModelsParams,
   ListNotificationsParams,
@@ -128,6 +130,7 @@ import type {
   ListWorkspacesParams,
   LocaleInputBody,
   MarkAssignmentWithAIOutputBody,
+  MarkedDrawings,
   Material,
   MaterialChildrenInputBody,
   MaterialChildrenOutputBody,
@@ -3496,6 +3499,163 @@ const res = await fetch(getCreateMaterialCommentUrl(id),
 
   const data: createMaterialCommentResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createMaterialCommentResponse
+}
+
+
+
+export type deleteAllDrawingsResponse200 = {
+  data: DrawingsDeletedOutputBody
+  status: 200
+}
+
+export type deleteAllDrawingsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type deleteAllDrawingsResponseSuccess = (deleteAllDrawingsResponse200) & {
+  headers: Headers;
+};
+export type deleteAllDrawingsResponseError = (deleteAllDrawingsResponseDefault) & {
+  headers: Headers;
+};
+
+export type deleteAllDrawingsResponse = (deleteAllDrawingsResponseSuccess | deleteAllDrawingsResponseError)
+
+export const getDeleteAllDrawingsUrl = () => {
+
+
+
+
+  return `/api/drawings`
+}
+
+/**
+ * @summary Delete every marked drawing the caller pays for; their marks stay
+ */
+export const deleteAllDrawings = async ( options?: RequestInit): Promise<deleteAllDrawingsResponse> => {
+
+  const res = await fetch(getDeleteAllDrawingsUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteAllDrawingsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as deleteAllDrawingsResponse
+}
+
+
+
+export type listDrawingsResponse200 = {
+  data: MarkedDrawings
+  status: 200
+}
+
+export type listDrawingsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listDrawingsResponseSuccess = (listDrawingsResponse200) & {
+  headers: Headers;
+};
+export type listDrawingsResponseError = (listDrawingsResponseDefault) & {
+  headers: Headers;
+};
+
+export type listDrawingsResponse = (listDrawingsResponseSuccess | listDrawingsResponseError)
+
+export const getListDrawingsUrl = (params?: ListDrawingsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/drawings?${stringifiedParams}` : `/api/drawings`
+}
+
+/**
+ * @summary The caller's marked drawings, newest first (Files › Canvas)
+ */
+export const listDrawings = async (params?: ListDrawingsParams, options?: RequestInit): Promise<listDrawingsResponse> => {
+
+  const res = await fetch(getListDrawingsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listDrawingsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listDrawingsResponse
+}
+
+
+
+export type deleteDrawingResponse200 = {
+  data: DrawingsDeletedOutputBody
+  status: 200
+}
+
+export type deleteDrawingResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type deleteDrawingResponseSuccess = (deleteDrawingResponse200) & {
+  headers: Headers;
+};
+export type deleteDrawingResponseError = (deleteDrawingResponseDefault) & {
+  headers: Headers;
+};
+
+export type deleteDrawingResponse = (deleteDrawingResponseSuccess | deleteDrawingResponseError)
+
+export const getDeleteDrawingUrl = (id: string,) => {
+
+
+
+
+  return `/api/drawings/${id}`
+}
+
+/**
+ * @summary Delete one of the caller's marked drawings; its marks stay
+ */
+export const deleteDrawing = async (id: string, options?: RequestInit): Promise<deleteDrawingResponse> => {
+
+  const res = await fetch(getDeleteDrawingUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteDrawingResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as deleteDrawingResponse
 }
 
 

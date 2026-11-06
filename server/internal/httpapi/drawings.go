@@ -51,6 +51,60 @@ func (a *api) registerDrawings(api huma.API) {
 		"Store a drawing part's board (and its marking image) for a running attempt", 200, drawingMaxBody, a.saveAssignmentDrawing)
 	reg(api, "GET", "/api/drawings/{id}", "getDrawing", "assignments",
 		"A drawing answer's board, as a link that lasts the hour", 200, a.getDrawing)
+	reg(api, "GET", "/api/drawings", "listDrawings", "assignments",
+		"The caller's marked drawings, newest first (Files › Canvas)", 200, a.listDrawings)
+	reg(api, "DELETE", "/api/drawings/{id}", "deleteDrawing", "assignments",
+		"Delete one of the caller's marked drawings; its marks stay", 200, a.deleteDrawing)
+	reg(api, "DELETE", "/api/drawings", "deleteAllDrawings", "assignments",
+		"Delete every marked drawing the caller pays for; their marks stay", 200, a.deleteAllDrawings)
+}
+
+type drawingListInput struct {
+	Limit  int    `query:"limit" minimum:"1" maximum:"100" default:"50"`
+	Cursor string `query:"cursor" doc:"Opaque cursor from the previous page"`
+}
+
+type drawingListOutput struct {
+	Body store.MarkedDrawings
+}
+
+func (a *api) listDrawings(ctx context.Context, in *drawingListInput) (*drawingListOutput, error) {
+	page, err := a.s.ListMarkedDrawings(ctx, userID(ctx), in.Cursor, in.Limit)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &drawingListOutput{Body: page}, nil
+}
+
+type drawingsDeletedOutput struct {
+	Body struct {
+		Deleted int `json:"deleted"`
+	}
+}
+
+// deleteDrawing deletes a marked drawing its payer names; one still waiting on
+// marking, or anyone else's, is not found.
+func (a *api) deleteDrawing(ctx context.Context, in *drawingIDInput) (*drawingsDeletedOutput, error) {
+	n, err := a.s.DeleteMarkedDrawings(ctx, userID(ctx), []string{in.ID})
+	if err != nil {
+		return nil, hErr(err)
+	}
+	if n == 0 {
+		return nil, hErr(store.ErrNotFound)
+	}
+	out := &drawingsDeletedOutput{}
+	out.Body.Deleted = n
+	return out, nil
+}
+
+func (a *api) deleteAllDrawings(ctx context.Context, _ *struct{}) (*drawingsDeletedOutput, error) {
+	n, err := a.s.DeleteMarkedDrawings(ctx, userID(ctx), nil)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	out := &drawingsDeletedOutput{}
+	out.Body.Deleted = n
+	return out, nil
 }
 
 type drawingIDInput struct {

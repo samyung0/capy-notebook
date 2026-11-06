@@ -17,6 +17,7 @@ import {
   storedDrawingId,
   useDrawingBoard,
 } from './DrawingPreview';
+import { DRAWING_DELETED } from './drawingBoards';
 import {
   DrawingDraftScope,
   DrawingUploader,
@@ -67,7 +68,9 @@ export function DrawingAnswer({
   const upload = useContext(DrawingUploader);
   const [open, setOpen] = useState(false);
   // The device's board, or the stored one once the server keeps it.
-  const board = useDrawingBoard(value);
+  const fetched = useDrawingBoard(value);
+  const deleted = fetched === DRAWING_DELETED;
+  const board = deleted ? null : fetched;
   const answered = isDrawingValue(value) || storedDrawingId(value) !== null;
   usePrefetchedBoard();
   const taking = !(review || disabled);
@@ -80,7 +83,11 @@ export function DrawingAnswer({
     <div className="flex flex-col items-start gap-3">
       {verdict}
       {answered ? (
-        board && <DrawingPreview board={board} />
+        deleted ? (
+          <p className="t-meta text-fg-muted">{m.drawing_answer_deleted()}</p>
+        ) : (
+          board && <DrawingPreview board={board} />
+        )
       ) : review ? null : (
         // A generic grid, the same for every drawing part.
         <div className="drawing-grid relative aspect-[52/30] w-full max-w-[520px]">

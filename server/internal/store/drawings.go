@@ -278,3 +278,92 @@ func dropLeaverMarkedDrawingsTx(ctx context.Context, tx pgx.Tx, wsID, userID str
 					AND COALESCE((p->>'pending')::boolean, false) = false)`, wsID, userID)
 	return err
 }
+
+// markedDrawingSQL finds, for a drawing d of attempt t, the question and part
+// it answers, only once that part is marked (graded, not waiting on anyone).
+const markedDrawingSQL = `SELECT q.n AS question, p.n AS part, jsonb_array_length(q.v->'parts') AS parts
+	FROM jsonb_array_elements(COALESCE(t.questions, '[]'::jsonb)) WITH ORDINALITY q(v, n),
+		jsonb_array_elements(q.v->'parts') WITH ORDINALITY p(v, n)
+	WHERE p.v->>'id' = d.part_id AND p.v ? 'awarded'
+		AND COALESCE((p.v->>'pending')::boolean, false) = false
+	LIMIT 1`
+
+// MarkedDrawing is one of a payer's marked drawings, for Files › Canvas.
+type MarkedDrawing struct {
+	ID            string    `json:"id"`
+	AttemptID     string    `json:"attemptId"`
+	Assignment    bool      `json:"assignment" doc:"An assignment's answer; otherwise practice"`
+	QuizName      string    `json:"quizName"`
+	WorkspaceID   string    `json:"workspaceId,omitempty"`
+	WorkspaceName string    `json:"workspaceName"`
+	Question      int       `json:"question" doc:"The question's number, from 1"`
+	Part          int       `json:"part,omitempty" doc:"The part's number from 1, when the question has more than one"`
+	Bytes         int64     `json:"bytes"`
+	CreatedAt     time.Time `json:"createdAt"`
+}
+
+// MarkedDrawings is a page of the caller's marked drawings, newest first, with
+// how many they have and what those hold in all.
+type MarkedDrawings struct {
+	Items      []MarkedDrawing `json:"items" nullable:"false"`
+	Count      int             `json:"count"`
+	TotalBytes int64           `json:"totalBytes"`
+	NextCursor string          `json:"nextCursor,omitempty"`
+}
+
+// ListMarkedDrawings lists the drawings userID pays for whose parts are marked
+// (Epo 2026-11-06): only those may be deleted, so only those show. A drawing
+// still waiting on marking never lists.
+func (s *Store) ListMarkedDrawings(ctx context.Context, userID, cursor string, limit int) (MarkedDrawings, error) {
+	out := MarkedDrawings{Items: []MarkedDrawing{}}
+	if err := s.pool.QueryRow(ctx, `SELECT count(*), COALESCE(sum(d.board_bytes + d.image_bytes), 0)
+		FROM drawings d JOIN attempts t ON t.id = d.attempt_id
+		WHERE d.user_id = $1 AND EXISTS (`+markedDrawingSQL+`)`, userID).
+		Scan(&out.Count, &out.TotalBytes); err != nil {
+		return out, err
+	}
+	after, afterID, err := decodeTimeCursor(cursor)
+	if err != nil {
+		return out, err
+	}
+	rows, err := s.pool.Query(ctx, `SELECT d.id, d.attempt_id, t.assignment_id IS NOT NULL,
+			COALESCE(t.quiz_name, ''), COALESCE(t.workspace_id, ''), COALESCE(t.workspace_name, ''), m.question, CASE WHEN m.parts > 1 THEN m.part ELSE 0 END,
+			d.board_bytes + d.image_bytes, d.created_at
+		FROM drawings d JOIN attempts t ON t.id = d.attempt_id
+		CROSS JOIN LATERAL (`+markedDrawingSQL+`) m
+		WHERE d.user_id = $1 AND ($2::timestamptz IS NULL OR (d.created_at, d.id) < ($2, $3))
+		ORDER BY d.created_at DESC, d.id DESC
+		LIMIT $4`, userID, after, afterID, limit+1)
+	if err != nil {
+		return out, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var d MarkedDrawing
+		if err := rows.Scan(&d.ID, &d.AttemptID, &d.Assignment, &d.QuizName, &d.WorkspaceID, &d.WorkspaceName,
+			&d.Question, &d.Part, &d.Bytes, &d.CreatedAt); err != nil {
+			return out, err
+		}
+		out.Items = append(out.Items, d)
+	}
+	if err := rows.Err(); err != nil {
+		return out, err
+	}
+	if len(out.Items) > limit {
+		out.Items = out.Items[:limit]
+		last := out.Items[limit-1]
+		out.NextCursor = encodeTimeCursor(last.CreatedAt, last.ID)
+	}
+	return out, nil
+}
+
+// DeleteMarkedDrawings deletes the payer's marked drawings: the ids given, or
+// every one when ids is nil. Their marks stay; results then say the drawing
+// was deleted. It returns how many went.
+func (s *Store) DeleteMarkedDrawings(ctx context.Context, userID string, ids []string) (int, error) {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM drawings d USING attempts t
+		WHERE t.id = d.attempt_id AND d.user_id = $1
+			AND ($2::text[] IS NULL OR d.id = ANY($2))
+			AND EXISTS (`+markedDrawingSQL+`)`, userID, ids)
+	return int(tag.RowsAffected()), err
+}

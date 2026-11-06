@@ -11,11 +11,14 @@ import type {
   AssignmentPartReport,
   AssignmentQuestionReport,
   AssignmentReport,
+  MarkedDrawing,
   MaterialRef,
   SharingNotice,
   TodoList,
   WorkspaceActivity,
 } from '@/api/types';
+import { toBase64 } from '@/features/blocksuite/base64';
+import { SAVED, withElements } from '@/features/blocksuite/boardFixture';
 import type { Question, QuestionPart } from '@/features/questions/types';
 import type { Answers } from '@/features/quizzes/grade';
 import { scorePart } from '@/features/quizzes/grade';
@@ -70,6 +73,50 @@ const mockDrawings = new Map<string, string>();
 const WS = 'ws_bio';
 const ASSIGNMENT_GRACE_MS = 15_000;
 const DAY = 86_400_000;
+
+// Files › Canvas: marked drawings the viewer pays for, with seeded boards.
+const wave = Array.from({ length: 60 }, (_, i) => [
+  i * 8,
+  120 + Math.sin(i / 5) * 60,
+]);
+mockDrawings.set('dr_marked_1', SAVED);
+mockDrawings.set(
+  'dr_marked_2',
+  toBase64(
+    withElements({
+      color: '#1c7ed6',
+      lineWidth: 4,
+      points: wave,
+      type: 'brush',
+      xywh: '[900,0,480,240]',
+    })
+  )
+);
+const markedDrawings: MarkedDrawing[] = [
+  {
+    assignment: true,
+    attemptId: 'at_1',
+    bytes: 86 * 1024,
+    createdAt: new Date(Date.now() - 4 * DAY).toISOString(),
+    id: 'dr_marked_1',
+    part: 1,
+    question: 1,
+    quizName: 'Distance and speed',
+    workspaceId: 'ws_bio',
+    workspaceName: 'Biology 101',
+  },
+  {
+    assignment: false,
+    attemptId: 'at_2',
+    bytes: 54 * 1024,
+    createdAt: new Date(Date.now() - DAY).toISOString(),
+    id: 'dr_marked_2',
+    question: 11,
+    quizName: 'Genetics check-in',
+    workspaceId: 'ws_bio',
+    workspaceName: 'Biology 101',
+  },
+];
 const at = (days: number, hours = 18) => {
   const d = new Date(Date.now() + days * DAY);
   d.setHours(hours, 0, 0, 0);
@@ -1342,6 +1389,25 @@ export const assignmentHandlers = (viewer: Viewer) => {
         return HttpResponse.json({ id });
       }
     ),
+    http.get('/api/drawings', () =>
+      HttpResponse.json({
+        count: markedDrawings.length,
+        items: markedDrawings,
+        totalBytes: markedDrawings.reduce((sum, d) => sum + d.bytes, 0),
+      })
+    ),
+    http.delete('/api/drawings/:id', ({ params }) => {
+      const i = markedDrawings.findIndex((d) => d.id === params.id);
+      if (i < 0) return gone();
+      markedDrawings.splice(i, 1);
+      mockDrawings.delete(String(params.id));
+      return HttpResponse.json({ deleted: 1 });
+    }),
+    http.delete('/api/drawings', () => {
+      const deleted = markedDrawings.length;
+      for (const d of markedDrawings.splice(0)) mockDrawings.delete(d.id);
+      return HttpResponse.json({ deleted });
+    }),
     http.get('/api/drawings/:id', ({ params }) => {
       const board = mockDrawings.get(String(params.id));
       if (board === undefined) return gone();

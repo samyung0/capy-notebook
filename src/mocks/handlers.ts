@@ -3327,6 +3327,14 @@ export const handlers = [
       renewalAt: new Date(
         Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 9)
       ).toISOString(),
+      storageBreakdown: {
+        canvasBytes: 140 * 1024,
+        filesBytes: Math.round(db.accountStatus.storageUsedBytes * 0.8),
+        otherBytes:
+          db.accountStatus.storageUsedBytes -
+          Math.round(db.accountStatus.storageUsedBytes * 0.8) -
+          140 * 1024,
+      },
       storageLimitBytes: db.accountStatus.storageLimitBytes,
       storageReservedBytes: 0,
       storageUsedBytes: db.accountStatus.storageUsedBytes,

@@ -1602,6 +1602,11 @@ export const GetBillingResponse = zod.object({
   "creditsUsedMicros": zod.int(),
   "planTier": zod.enum(['free', 'pro']),
   "renewalAt": zod.iso.datetime({"offset":true}).optional(),
+  "storageBreakdown": zod.object({
+  "canvasBytes": zod.int(),
+  "filesBytes": zod.int(),
+  "otherBytes": zod.int()
+}),
   "storageLimitBytes": zod.int(),
   "storageReservedBytes": zod.int(),
   "storageUsedBytes": zod.int(),
@@ -2102,6 +2107,65 @@ export const CreateMaterialCommentResponse = zod.object({
   "text": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "userId": zod.string()
+})
+
+
+/**
+ * @summary Delete every marked drawing the caller pays for; their marks stay
+ */
+export const DeleteAllDrawingsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "deleted": zod.int()
+})
+
+
+/**
+ * @summary The caller's marked drawings, newest first (Files › Canvas)
+ */
+export const listDrawingsQueryLimitDefault = 50;
+export const listDrawingsQueryLimitMax = 100;
+
+
+
+export const ListDrawingsQueryParams = zod.object({
+  "limit": zod.int().min(1).max(listDrawingsQueryLimitMax).default(listDrawingsQueryLimitDefault),
+  "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
+})
+
+export const ListDrawingsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "count": zod.int(),
+  "items": zod.array(zod.object({
+  "assignment": zod.boolean().describe('An assignment\'s answer; otherwise practice'),
+  "attemptId": zod.string(),
+  "bytes": zod.int(),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "part": zod.int().optional().describe('The part\'s number from 1, when the question has more than one'),
+  "question": zod.int().describe('The question\'s number, from 1'),
+  "quizName": zod.string(),
+  "workspaceId": zod.string().optional(),
+  "workspaceName": zod.string()
+})),
+  "nextCursor": zod.string().optional(),
+  "totalBytes": zod.int()
+})
+
+
+/**
+ * @summary Delete one of the caller's marked drawings; its marks stay
+ */
+export const deleteDrawingPathIdMax = 64;
+
+
+
+export const DeleteDrawingParams = zod.object({
+  "id": zod.string().max(deleteDrawingPathIdMax)
+})
+
+export const DeleteDrawingResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "deleted": zod.int()
 })
 
 

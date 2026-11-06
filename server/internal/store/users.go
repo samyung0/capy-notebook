@@ -30,6 +30,9 @@ type BillingInfo struct {
 	StorageUsedBytes     int64 `json:"storageUsedBytes"`
 	StorageReservedBytes int64 `json:"storageReservedBytes"`
 	StorageLimitBytes    int64 `json:"storageLimitBytes"`
+	// StorageBreakdown splits what the caller pays for on Billing (Epo
+	// 2026-11-06): uploaded files, drawn answers, and everything else.
+	StorageBreakdown StorageBreakdown `json:"storageBreakdown"`
 	// Monthly AI allowance. Distinct from storage: the actor spends credits,
 	// the workspace owner spends bytes.
 	CreditsUsedMicros     int64     `json:"creditsUsedMicros"`
@@ -712,6 +715,9 @@ func (s *Store) GetBilling(ctx context.Context, userID string) (BillingInfo, err
 	b.StorageUsedBytes = usage.UsedBytes
 	b.StorageReservedBytes = usage.ReservedBytes
 	b.StorageLimitBytes = usage.LimitBytes
+	if b.StorageBreakdown, err = s.storageBreakdown(ctx, userID); err != nil {
+		return b, err
+	}
 	credits, err := s.CreditBalance(ctx, userID)
 	if err != nil {
 		return b, err
