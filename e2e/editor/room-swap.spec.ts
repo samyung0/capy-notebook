@@ -1,6 +1,11 @@
 import { expect, type Page, test } from '@playwright/test';
 import { EDITOR_NOTE, EDITOR_WORKSPACE_ID } from '../../src/mocks/editorSeed';
-import { officeEditMenu, officeMenu, saveOffice } from '../helpers/office';
+import {
+  officeEditMenu,
+  officeFrame,
+  officeMenu,
+  saveOffice,
+} from '../helpers/office';
 import { m } from '../i18n';
 import { clickTextEnd, openEditorNote } from './helpers';
 
@@ -648,7 +653,7 @@ const pageInView = (page: Page, view: string, index: number) =>
  * `typing`, the document input holds the focus. */
 async function openDocxOnPage4(page: Page, typing = false) {
   await page.goto(`/workspaces/ws_bio?file=${DOCX}&mode=edit`);
-  await expect(officeEditMenu(page, 'docx')).toBeVisible({ timeout: 120_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 120_000 });
   await saveOffice(page, 'docx');
   await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
   if (typing) {
@@ -691,7 +696,9 @@ test('a DOCX maintenance pause keeps the reader where they are', async ({
     const { announceSourcePaused } = await import(path);
     announceSourcePaused(id);
   }, DOCX);
-  await expect(page.getByText(m.source_edit_paused())).toBeVisible();
+  await expect(
+    officeFrame(page).getByText(m.source_edit_paused())
+  ).toBeVisible();
   // The read-only switch lays the pages out again.
   await page.waitForTimeout(2000);
   expect(await docxPane(page, 'live').evaluate((node) => node.scrollTop)).toBe(
@@ -733,9 +740,10 @@ test('a newer DOCX epoch swaps the editor with no banner or Reload', async ({
   await expect(page.locator('iframe[src*="office-runtime"]')).toHaveCount(1);
   // At the same place: page 4 is on screen, by its first paragraph's id.
   await expect.poll(() => pageInView(page, 'live', 3)).toBe(true);
-  await expect(page.getByText(m.source_edit_replaced())).toHaveCount(0);
+  const strip = officeFrame(page);
+  await expect(strip.getByText(m.source_edit_replaced())).toHaveCount(0);
   await expect(
-    page.getByRole('button', { exact: true, name: m.error_action_reload() })
+    strip.getByRole('button', { exact: true, name: m.error_action_reload() })
   ).toHaveCount(0);
   // Editing goes on in the new epoch: File › Save is enabled again.
   await officeMenu(page, 'docx', 'File').click();
@@ -833,7 +841,7 @@ test('a newer XLSX epoch swaps the editor at the same sheet and cell', async ({
   test.setTimeout(300_000);
   const fileId = 'bio-office-xlsx';
   await page.goto(`/workspaces/ws_bio?file=${fileId}&mode=edit`);
-  await expect(officeEditMenu(page, 'xlsx')).toBeVisible({ timeout: 120_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 120_000 });
   await saveOffice(page, 'xlsx');
   await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
   const frame = page.frameLocator('[data-office-view="live"] iframe');
@@ -861,7 +869,7 @@ test('a newer PPTX epoch swaps the editor at the same slide', async ({
   test.setTimeout(300_000);
   const fileId = 'bio-office-pptx';
   await page.goto(`/workspaces/ws_bio?file=${fileId}&mode=edit`);
-  await expect(officeEditMenu(page, 'pptx')).toBeVisible({ timeout: 120_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 120_000 });
   await saveOffice(page, 'pptx');
   await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
   const slide = (index: number) =>

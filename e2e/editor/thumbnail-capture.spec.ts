@@ -18,7 +18,7 @@ test('a PPTX edit sends one thumbnail capture', async ({ page }) => {
   });
   const mode = page.getByRole('button', { name: m.material_mode() });
   await mode.click();
-  await expect(officeEditMenu(page, 'pptx')).toBeVisible({ timeout: 30_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
 
   const runtime = page
@@ -73,7 +73,7 @@ test('a DOCX edit sends one thumbnail capture', async ({ page }) => {
     timeout: 60_000,
   });
   await page.getByRole('button', { name: m.material_mode() }).click();
-  await expect(officeEditMenu(page, 'docx')).toBeVisible({ timeout: 30_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
 
   await frame.getByTestId('yrs-input').pressSequentially('X');
@@ -114,7 +114,7 @@ test('an XLSX capture follows only first-sheet edits', async ({ page }) => {
     timeout: 60_000,
   });
   await page.getByRole('button', { name: m.material_mode() }).click();
-  await expect(officeEditMenu(page, 'xlsx')).toBeVisible({ timeout: 30_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
   const saved = page.locator('[data-save-state="saved"]');
   await expect(saved).toBeVisible();
 
@@ -175,7 +175,7 @@ test('opening a stale card for editing uploads it once', async ({ page }) => {
     sessionStorage.setItem('capy.mock.thumbnailStale.bio-office-pptx', 'true')
   );
   const mode = page.getByRole('button', { name: m.material_mode() });
-  const editor = officeEditMenu(page, 'pptx');
+  const editor = officeEditMenu(page);
   await mode.click();
   await expect(editor).toBeVisible({ timeout: 30_000 });
   await expect.poll(() => captures.length, { timeout: 30_000 }).toBe(1);

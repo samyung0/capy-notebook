@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { expect, type Page, test } from '@playwright/test';
-import { officeEditMenu, saveOffice } from '../helpers/office';
+import { officeEditMenu, officeFrame, saveOffice } from '../helpers/office';
 import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 
@@ -201,15 +201,15 @@ test('a refused DOCX save keeps the edit copyable until Reload', async ({
     refuseNextSourceSave('mock-scenario-docx');
   });
   await saveOffice(page, 'docx');
-  const banner = page.getByTestId('save-banner');
+  const frame = officeFrame(page);
+  const banner = frame.getByTestId('save-banner');
   await expect(banner).toHaveAttribute('data-kind', 'refused');
   await expect(
-    page.getByRole('button', {
+    frame.getByRole('button', {
       exact: true,
       name: m.source_edit_download_draft(),
     })
   ).toHaveCount(0);
-  const frame = page.frameLocator('iframe[src*="office-runtime"]');
   await expect
     .poll(() =>
       frame
@@ -271,9 +271,9 @@ test('a refused PPTX save keeps the slide text copyable until Reload', async ({
     refuseNextSourceSave('mock-scenario-pptx');
   });
   await saveOffice(page, 'pptx');
-  const banner = page.getByTestId('save-banner');
+  const frame = officeFrame(page);
+  const banner = frame.getByTestId('save-banner');
   await expect(banner).toHaveAttribute('data-kind', 'refused');
-  const frame = page.frameLocator('iframe[src*="office-runtime"]');
   const input = frame.getByTestId('pptx-text-input');
   await expect(input).toHaveAttribute('readonly', '');
   const copied = frame
@@ -320,10 +320,8 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
     await launch(page, `office-${format}-save`);
     const frame = page.locator('iframe[src*="office-runtime"]');
     const mounted = await frame.elementHandle();
-    await expect(page.getByTestId('save-banner')).toHaveAttribute(
-      'data-kind',
-      'delayed'
-    );
+    const strip = officeFrame(page).getByTestId('save-banner');
+    await expect(strip).toHaveAttribute('data-kind', 'delayed');
     await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
       'data-save-state',
       'unsaved'
@@ -333,7 +331,7 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
       'data-save-state',
       'saved'
     );
-    await expect(page.getByTestId('save-banner')).toHaveCount(0);
+    await expect(strip).toHaveCount(0);
     expect(await mounted!.evaluate((node) => node.isConnected)).toBe(true);
     const mode = page.getByRole('button', { name: m.material_mode() });
     await expect(page).toHaveURL(/mode=edit/);
@@ -347,7 +345,7 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
     await expect(mode).toHaveAttribute('aria-pressed', 'true', {
       timeout: 30_000,
     });
-    await expect(officeEditMenu(page, format)).toBeVisible({ timeout: 30_000 });
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
 
     const panel = page.getByTestId('mock-scenario-panel');
     await panel.evaluate((node: HTMLDetailsElement) => {
@@ -468,9 +466,11 @@ test('Office export failure keeps the editable iframe in Edit and draft download
   await launch(page, 'office-runtime-error');
   const frame = page.locator('iframe[src*="office-runtime"]');
   const mounted = await frame.elementHandle();
-  // The iframe's own error text never renders; the host shows its copy.
+  const inFrame = officeFrame(page);
+  // The iframe's own error text never renders; the host shows its copy, under
+  // the ribbon.
   await expect(
-    page.getByRole('alert').getByText(m.source_edit_save_failed())
+    inFrame.getByRole('alert').getByText(m.source_edit_save_failed())
   ).toBeVisible();
   await expect(page).toHaveURL(/mode=edit/);
   await expect(
@@ -482,7 +482,7 @@ test('Office export failure keeps the editable iframe in Edit and draft download
     )
   ).toBe('edit');
   const downloadReady = page.waitForEvent('download');
-  await page
+  await inFrame
     .getByRole('button', { exact: true, name: m.source_edit_download_draft() })
     .click();
   const download = await downloadReady;

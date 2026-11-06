@@ -69,7 +69,7 @@ test('an XLSX grid is busy and takes no Delete while the tab holds back', async 
     timeout: 60_000,
   });
   await page.getByRole('button', { name: m.material_mode() }).click();
-  await expect(officeEditMenu(page, 'xlsx')).toBeVisible({ timeout: 30_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
   const grid = frame.getByTestId('xlsx-scroll');
   const nameBox = frame.getByTestId('xlsx-name-box');
   const formula = frame.getByTestId('xlsx-formula-input');

@@ -58,11 +58,11 @@ async function upload(api: APIRequestContext, format: Format) {
   return id;
 }
 
-async function open(page: Page, fileId: string, format: Format) {
+async function open(page: Page, fileId: string) {
   await page.goto(
     `/workspaces/${workspaceId}?file=${encodeURIComponent(fileId)}&mode=edit`
   );
-  await expect(officeEditMenu(page, format)).toBeVisible({ timeout: 120_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 120_000 });
   return page.frameLocator(RUNTIME);
 }
 
@@ -217,8 +217,8 @@ test.describe('Undo in an Office room', () => {
       const undoerLink = await roomLink(ownerPage);
       const peerLink = await roomLink(editorPage);
       const fileId = await upload(ownerApi, 'docx');
-      const undoer = await open(ownerPage, fileId, 'docx');
-      const peer = await open(editorPage, fileId, 'docx');
+      const undoer = await open(ownerPage, fileId);
+      const peer = await open(editorPage, fileId);
       // The peer's editor is live: what it types reaches the other.
       await caretInLastCell(editorPage, peer);
       await editorPage.keyboard.insertText('Z');
@@ -253,7 +253,7 @@ test.describe('Undo in an Office room', () => {
         timeout: 30_000,
       });
       await ownerPage.reload();
-      await expect(officeEditMenu(ownerPage, 'docx')).toBeVisible({
+      await expect(officeEditMenu(ownerPage)).toBeVisible({
         timeout: 120_000,
       });
       await expect(
@@ -272,8 +272,8 @@ test.describe('Undo in an Office room', () => {
     const undoerLink = await roomLink(ownerPage);
     const peerLink = await roomLink(editorPage);
     const fileId = await upload(ownerApi, 'pptx');
-    const undoer = await open(ownerPage, fileId, 'pptx');
-    const peer = await open(editorPage, fileId, 'pptx');
+    const undoer = await open(ownerPage, fileId);
+    const peer = await open(editorPage, fileId);
     // The peer's editor is live: what it types reaches the other.
     const seeded = await slidePixels(undoer);
     await clickTopBox(peer, 2);
@@ -311,7 +311,7 @@ test.describe('Undo in an Office room', () => {
     // A joiner draws it too.
     const shownToPeer = await slidePixels(peer);
     await ownerPage.reload();
-    await expect(officeEditMenu(ownerPage, 'pptx')).toBeVisible({
+    await expect(officeEditMenu(ownerPage)).toBeVisible({
       timeout: 120_000,
     });
     await expect
@@ -333,8 +333,8 @@ test.describe('Undo in an Office room', () => {
   }) => {
     const errors = [ownerPage, editorPage].map(pageErrors);
     const fileId = await upload(ownerApi, 'docx');
-    const undoer = await open(ownerPage, fileId, 'docx');
-    const peer = await open(editorPage, fileId, 'docx');
+    const undoer = await open(ownerPage, fileId);
+    const peer = await open(editorPage, fileId);
     const rows = (frame: FrameLocator) => frame.locator('.layout-table-row');
     await expect(rows(undoer)).toHaveCount(2);
 
@@ -354,7 +354,7 @@ test.describe('Undo in an Office room', () => {
       timeout: 30_000,
     });
     await ownerPage.reload();
-    await expect(officeEditMenu(ownerPage, 'docx')).toBeVisible({
+    await expect(officeEditMenu(ownerPage)).toBeVisible({
       timeout: 120_000,
     });
     await expect(

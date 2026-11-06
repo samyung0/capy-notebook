@@ -31,11 +31,62 @@ export function officeMenu(
 }
 
 /**
- * The editor's Edit menu: it arrives once the editor's replica is ready, as
- * the old Save button became enabled then. View mode has no Edit menu.
+ * The ribbon's Edit tab: the tab line arrives once the editor's replica is
+ * ready, as the old Save button became enabled then. View mode has no tabs.
  */
-export function officeEditMenu(page: Page, format: OfficeFormat) {
-  return officeMenu(page, format, 'Edit');
+export function officeEditMenu(page: Page) {
+  return officeTab(page, 'edit');
+}
+
+/** The Office runtime's frame, which holds the ribbon and the strip under it. */
+export function officeFrame(page: Page) {
+  return page.frameLocator('iframe[src*="office-runtime"]');
+}
+
+/** A tab of the ribbon's tab line, in Capy's header. */
+export function officeTab(page: Page, id: string) {
+  return page.getByTestId(`office-tab-${id}`);
+}
+
+/** A ribbon button or dropdown row, by its menu item's id. */
+export function ribbonCommand(page: Page, id: string) {
+  return officeFrame(page).locator(`.office-ribbon [data-command="${id}"]`);
+}
+
+/** Moves to `tab` and runs the ribbon's command `id`. */
+export async function runRibbonCommand(page: Page, tab: string, id: string) {
+  await officeTab(page, tab).click();
+  await ribbonCommand(page, id).click();
+}
+
+/** The zoom control on the ribbon's View tab. */
+export function ribbonZoom(page: Page, format: OfficeFormat) {
+  const frame = officeFrame(page);
+  return format === 'docx'
+    ? frame.getByRole('combobox', { name: /^Zoom/ })
+    : frame.getByTestId(`${format}-zoom`);
+}
+
+/** Picks a level in the ribbon's zoom control. */
+export async function zoomInRibbon(
+  page: Page,
+  format: OfficeFormat,
+  level: string
+) {
+  await officeTab(page, 'view').click();
+  const control = ribbonZoom(page, format);
+  if (format === 'xlsx') {
+    await control.fill(level.replace('%', ''));
+    await control.press('Enter');
+    return;
+  }
+  await control.click();
+  await officeFrame(page)
+    .getByRole(format === 'docx' ? 'option' : 'menuitem', {
+      exact: true,
+      name: level,
+    })
+    .click();
 }
 
 /** File › Save, the header's way to save an Office file. */

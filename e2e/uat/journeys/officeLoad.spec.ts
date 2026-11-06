@@ -13,7 +13,7 @@ import {
   whenReady,
   workspace,
 } from './files';
-import { type OfficeFormat, officeMenu, officeMenuLabels } from './office';
+import { type OfficeFormat, officeEditTab } from './office';
 import { type Actor, expect, test, type UatRun } from './runtime';
 
 /**
@@ -105,10 +105,10 @@ type Probe = {
 /**
  * Runs in every frame before its own scripts (context.addInitScript). The app
  * page records runtime messages, its collaboration sockets, the header's save
- * states and when the Edit menu appeared; the runtime frame records host
+ * states and when the Edit tab appeared; the runtime frame records host
  * messages, WASM compiles and the fonts it adds. Instrumentation only.
  */
-function installProbe(labels: { bar: string; item: string }) {
+function installProbe() {
   const now = () => performance.now();
   const probe: Probe = {
     capabilities: [],
@@ -168,18 +168,10 @@ function installProbe(labels: { bar: string; item: string }) {
         ?.getAttribute('data-save-state');
       if (state && state !== probe.saveStates.at(-1)?.state)
         probe.saveStates.push({ at: now(), state });
-      // The menu bar comes from the runtime's `menus` message.
+      // The tab line comes from the runtime's `menus` message.
       if (probe.editable !== undefined || probe.runtime.menus === undefined)
         return;
-      const bar = Array.from(
-        document.querySelectorAll('[role="menubar"]')
-      ).find((element) => element.getAttribute('aria-label') === labels.bar);
-      if (
-        bar &&
-        Array.from(bar.querySelectorAll('[role="menuitem"]')).some(
-          (item) => item.textContent?.trim() === labels.item
-        )
-      )
+      if (document.querySelector('[data-testid="office-tab-edit"]'))
         probe.editable = now();
     }).observe(document, {
       attributeFilter: ['data-save-state'],
@@ -593,12 +585,12 @@ async function measure(
       actor,
       `office-load-${file.format}-${file.size}-${open}`,
       () =>
-        expect(officeMenu(actor.page, file.format, 'Edit')).toBeVisible({
+        expect(officeEditTab(actor.page)).toBeVisible({
           timeout: OPEN_TIMEOUT,
         })
     );
     // DOCX posts `ready` (first page painted) after its fonts, which can come
-    // after the Edit menu; without it by then the milestone stays unavailable.
+    // after the Edit tab; without it by then the milestone stays unavailable.
     await actor.page
       .waitForFunction(
         () =>
@@ -766,10 +758,7 @@ test('Office open times: DOCX, XLSX and PPTX, small and large, cold and warm', a
     await cdp.send('Network.clearBrowserCache');
     await cdp.detach();
     await actor.page.close();
-    await context.addInitScript(
-      installProbe,
-      officeMenuLabels(file.format, 'Edit')
-    );
+    await context.addInitScript(installProbe);
     await context.tracing.start({ screenshots: true, snapshots: true });
     // Warm: a new tab in the same context once the cold tab closed.
     for (const open of ['cold', 'warm'] as const) {

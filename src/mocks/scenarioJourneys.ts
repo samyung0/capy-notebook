@@ -81,8 +81,8 @@ export async function runJourney(
     await go(`${scenarioPath}?file=${fileId}`);
     await editMode();
     // A text source is ready with its editor; an Office editor once its
-    // Edit menu arrives (with the replica, as the old Save button did).
-    if (office) await ui.button('Edit', '[role="menubar"] [role="menuitem"]');
+    // Edit tab arrives (with the replica, as the old Save button did).
+    if (office) await ui.button('Edit', '[role="tablist"] [role="tab"]');
     else await ui.element(`textarea[aria-label="${m.source_edit_raw()}"]`);
   };
   // Ctrl+S in the text editor: an explicit save, persisted at once.
@@ -422,7 +422,7 @@ export async function runJourney(
         new CustomEvent('capy-scenario-export-failure')
       );
       await ui.click(m.material_mode(), 'button');
-      await ui.element('[role="alert"]');
+      await officeUI.element('[role="alert"]');
       return;
     }
     // File › Save in the header's menu bar (the Save button is gone).
