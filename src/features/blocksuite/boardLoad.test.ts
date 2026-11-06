@@ -37,6 +37,19 @@ describe('checkSavedBoard', () => {
     expect(
       reason(withElement({ latex: 'x^2', type: 'formula', xywh: '[0,0,9,9]' }))
     ).toBeNull();
+    // Neither stores a place: BlockSuite works it out.
+    expect(
+      reason(
+        withElement({
+          source: { id: 'KcbWPydu9W' },
+          target: { position: [40, 60] },
+          type: 'connector',
+        })
+      )
+    ).toBeNull();
+    expect(
+      reason(withElement({ children: new Y.Map(), type: 'group' }))
+    ).toBeNull();
   });
 
   it('refuses a block out of place', () => {
