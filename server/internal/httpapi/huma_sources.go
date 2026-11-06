@@ -25,6 +25,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/integrations"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/planlimits"
 	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
@@ -139,6 +140,7 @@ func (a *api) getSourceUploadPolicy(
 			Accept:                       "",
 			MaxBytes:                     maxBytes,
 			ImageMaxBytes:                limits.ImageBytes,
+			TextMaxBytes:                 limits.TextFileBytes,
 			AllowNoExtension:             true,
 			DigitalParsePageCreditMicros: rates[store.ResourceDigitalParsePage].CreditMicrosPerUnit,
 			VLMIngestPageCreditMicros:    rates[store.ResourceVLMIngestPage].CreditMicrosPerUnit,
@@ -186,7 +188,7 @@ func (a *api) sourceUploadTicket(w http.ResponseWriter, r *http.Request) {
 func (a *api) takeSourceTicket(w http.ResponseWriter, r *http.Request, batch *string) (uploadTurn, error) {
 	ctx := r.Context()
 	wsID := id(r)
-	maxBytes, err := a.sourceMaxBytes(ctx, uid(r))
+	limits, err := a.s.PayerPlanLimits(ctx, uid(r))
 	if err != nil {
 		return uploadTurn{}, err
 	}
@@ -197,7 +199,7 @@ func (a *api) takeSourceTicket(w http.ResponseWriter, r *http.Request, batch *st
 	if err := readTicketMetadata(w, r, &body); err != nil {
 		return uploadTurn{}, err
 	}
-	_, topicName, err := a.checkSourceUpload(ctx, wsID, maxBytes, &body, batch)
+	_, topicName, err := a.checkSourceUpload(ctx, wsID, limits, &body, batch)
 	if err != nil {
 		return uploadTurn{}, err
 	}
@@ -340,8 +342,8 @@ func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *strin
 	if err != nil {
 		return store.File{}, err
 	}
-	maxBytes := limits.SourceFileBytes
-	r.Body = http.MaxBytesReader(w, r.Body, maxBytes+uploadMetadataMaxBytes)
+	// The name comes with the metadata, which then holds a text file to its cap.
+	r.Body = http.MaxBytesReader(w, r.Body, limits.SourceFileBytes+uploadMetadataMaxBytes)
 	if a.blob == nil {
 		return store.File{}, errors.New("blob store not configured")
 	}
@@ -356,7 +358,7 @@ func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *strin
 	if err := claim.matches(sourceClaim(&body)); err != nil {
 		return store.File{}, err
 	}
-	name, topicName, err := a.checkSourceUpload(ctx, wsID, maxBytes, &body, batch)
+	name, topicName, err := a.checkSourceUpload(ctx, wsID, limits, &body, batch)
 	if err != nil {
 		return store.File{}, err
 	}
@@ -402,7 +404,7 @@ func standaloneHidden() error {
 // default content type, and returns the trimmed file and topic names.
 // batch names the upload's batch once it is open.
 func (a *api) checkSourceUpload(
-	ctx context.Context, wsID string, maxBytes int64, body *apimodel.CreateSourceUploadReq, batch *string,
+	ctx context.Context, wsID string, limits planlimits.Limits, body *apimodel.CreateSourceUploadReq, batch *string,
 ) (name, topicName string, err error) {
 	// The bounds the JSON schema applied when the metadata was its own request.
 	if !batchIDPattern.MatchString(body.BatchID) || body.BatchTotal < 1 || body.BatchTotal > 10000 ||
@@ -435,7 +437,7 @@ func (a *api) checkSourceUpload(
 	if body.ParseMode == "" {
 		body.ParseMode = sourceupload.DefaultParseMode(name, body.Kind)
 	}
-	if err := sourceupload.Validate(name, body.Kind, body.ParseMode, body.SizeBytes, maxBytes); err != nil {
+	if err := sourceupload.Validate(name, body.Kind, body.ParseMode, body.SizeBytes, limits.FileBytes(name)); err != nil {
 		return "", "", huma.Error400BadRequest(err.Error())
 	}
 	if err := a.checkParsePages(body.ParseMode, body.PageCount); err != nil {
@@ -682,7 +684,7 @@ func (a *api) queueSourceImports(ctx context.Context, in *importSourcesInput) (*
 	if err != nil {
 		return nil, hErr(err)
 	}
-	maxBytes, err := a.sourceMaxBytes(ctx, userID(ctx))
+	limits, err := a.s.PayerPlanLimits(ctx, userID(ctx))
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -749,6 +751,7 @@ func (a *api) queueSourceImports(ctx context.Context, in *importSourcesInput) (*
 			continue
 		}
 		meta.Name = strings.TrimSpace(meta.Name)
+		maxBytes := limits.FileBytes(meta.Name)
 		code, reservedSize, kind, mode := admitImport(meta, in.Body.ParseMode, maxBytes)
 		if code != "" {
 			rejected = append(rejected, apimodel.SourceImportRejected{

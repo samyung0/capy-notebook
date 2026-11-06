@@ -110,8 +110,6 @@ const (
 	ExtractionPaperFiles      = 5
 	ExtractionAnswerFiles     = 3
 	ExtractionQuestionCredits = 4
-	// AnonymousLocalID bounds the reporting id a signed-out browser sends.
-	AnonymousLocalID = 64
 	// A flashcard's front and back (human/frontend/plate-editor.md for the
 	// back); the collaboration server reads them from the embed catalog.
 	CardFront = 200
@@ -199,7 +197,6 @@ var Columns = map[string]int{
 	"editor_assets.name":               FileName,
 	"upload_sessions.topic_name":       TopicName,
 	"upload_sessions.name":             FileName,
-	"anonymous_grading_usage.local_id": AnonymousLocalID,
 	"reconcile_runs.requested_by_name": UserName,
 	"pdf_annotations.text":             PDFAnnotationText,
 	"material_comments.text":           Comment,

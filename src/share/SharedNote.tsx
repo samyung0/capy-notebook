@@ -146,11 +146,11 @@ export function SharedNote({
         byline={
           <PublicByline author={note.author} updatedAt={note.updatedAt} />
         }
-        className="px-0 pt-4 sm:px-6 sm:pt-2"
+        className="px-4 pt-4 sm:px-6 sm:pt-2"
         title={note.name}
         trail={[]}
       />
-      <div className="pt-2 pb-8 sm:px-6 lg:px-10 xl:px-16">
+      <div className="page-px-wide pt-2 pb-8">
         <NoteBlocks document={document} {...props} />
         <MaterialAttributionFooter provenance={note.provenance} />
       </div>

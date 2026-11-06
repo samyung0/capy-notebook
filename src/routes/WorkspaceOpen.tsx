@@ -719,7 +719,7 @@ function WorkspaceOpen() {
     }
     if (!loaded || linkTaken.current) return;
     linkTaken.current = true;
-    if (add && !readOnly) setAddSource('upload');
+    if (add && !readOnly) setAddSource(add);
     if (chat) openChat(null);
     navigate({
       replace: true,
@@ -1018,7 +1018,11 @@ function WorkspaceOpen() {
         />
       </Suspense>
     ));
-  const makeChoice = { answers: search.answers, paper: search.paper };
+  const makeChoice = {
+    answers: search.answers,
+    makeFrom: search.makeFrom,
+    paper: search.paper,
+  };
   // The landing is the workspace's Dashboard (boards H1, H2).
   const pageContent =
     studyContent ||
@@ -1359,7 +1363,11 @@ function WorkspaceOpen() {
               paper: splitIds(search.paper),
             }}
             key={quizDialogKey}
-            onClose={openDashboard}
+            onClose={() =>
+              search.makeFrom
+                ? void navigate({ search: { study: search.makeFrom }, to: '.' })
+                : openDashboard()
+            }
             onConfirmed={(run, choice) => {
               addQuizRun({ ...choice, id: run.id, workspaceId });
               openDashboard();
@@ -1388,19 +1396,32 @@ function WorkspaceOpen() {
             }
             onShowFiles={(choice) =>
               void navigate({
-                search: { ...choiceSearch(choice), make: 'files' },
+                search: {
+                  ...choiceSearch(choice),
+                  make: 'files',
+                  makeFrom: search.makeFrom,
+                },
                 to: '.',
               })
             }
             onShowPages={(choice) =>
               void navigate({
-                search: { ...choiceSearch(choice), make: 'pages' },
+                search: {
+                  ...choiceSearch(choice),
+                  make: 'pages',
+                  makeFrom: search.makeFrom,
+                },
                 to: '.',
               })
             }
             onStarted={(run, choice) =>
               void navigate({
-                search: { ...choiceSearch(choice), make: 'run', run },
+                search: {
+                  ...choiceSearch(choice),
+                  make: 'run',
+                  makeFrom: search.makeFrom,
+                  run,
+                },
                 to: '.',
               })
             }

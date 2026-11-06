@@ -683,6 +683,10 @@ export function QuestionReview({
     0
   );
   const graded = question.parts.some((part) => part.awarded != null);
+  // Not marked isn't 0: its marks read "—" (Epo 2026-11-06, Q664 B).
+  const shown = question.parts.every((part) => part.pending)
+    ? '—'
+    : String(awarded);
   return (
     <QuestionView
       headerMarks={headerMarks}
@@ -755,7 +759,8 @@ export function QuestionReview({
       }}
       renderBlock={renderBlock}
       renderMarks={(part) => {
-        const awarded = 'awarded' in part ? part.awarded : undefined;
+        const awarded =
+          'awarded' in part && !part.pending ? part.awarded : undefined;
         const max = part.marks;
         return (
           <span
@@ -777,9 +782,9 @@ export function QuestionReview({
       totalMarks={
         graded &&
         (marks === 1
-          ? m.question_ui_result_mark({ awarded: String(awarded) })
+          ? m.question_ui_result_mark({ awarded: shown })
           : m.question_ui_result_marks({
-              awarded: String(awarded),
+              awarded: shown,
               marks: String(marks),
             }))
       }

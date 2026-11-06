@@ -19,7 +19,10 @@ import {
   workspaceFileRoom,
   workspaceRoomToast,
 } from '@/features/workspace/AddSourceDialog';
-import { validateLocalSourceSelection } from '@/features/workspace/sourceDetails';
+import {
+  toastRejectedSources,
+  validateLocalSourceSelection,
+} from '@/features/workspace/sourceDetails';
 import {
   removeSourceTransfer,
   startSourceTransfer,
@@ -154,14 +157,7 @@ export function useQuizUpload(
     // Upload a file waits for the policy.
     if (!policy) return [];
     const { accepted, rejected } = validateLocalSourceSelection(list, policy);
-    if (rejected.length > 0)
-      userToast({
-        description: rejected.map((item) => item.file.name).join(', '),
-        title: m.source_files_too_large({
-          mb: Math.round(policy.maxBytes / 1024 / 1024),
-        }),
-        variant: 'error',
-      });
+    toastRejectedSources(rejected, policy);
     const usable = accepted.filter((item) =>
       isQuizFile({ kind: item.kind, name: item.file.name })
     );

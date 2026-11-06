@@ -3,7 +3,10 @@ import { act } from 'react';
 import { expect, it, vi } from 'vitest';
 import { ApiError, parseErrorBody } from '@/api/client';
 import type { Question } from '@/api/types';
-import { exampleQuestion } from '@/features/questions/questionFixtures';
+import {
+  exampleAnswers,
+  exampleQuestion,
+} from '@/features/questions/questionFixtures';
 import { getLocale, m } from '@/i18n';
 
 /* A question with no answers says so at its Check, and neither the finish nor
@@ -78,6 +81,58 @@ it('shows No answers configured at its Check and leaves it out of the score', as
   expect(host.textContent).toContain(m.quiz_redo());
   expect(host.textContent).toContain(m.quiz_no_answers_configured());
   expect(host.textContent).toContain('1 / 1');
+  act(() => root.unmount());
+  host.remove();
+});
+
+/* In the app, out of credits or after a failure, a part stays Not marked: it can
+   be checked again, and the result counts it apart from wrong, in the total. */
+function NotMarkedQuiz() {
+  const open = exampleQuestion('q_open', exampleAnswers[6]);
+  const control = useMemoryRun(
+    async () =>
+      ({
+        question: {
+          ...open,
+          parts: open.parts.map((part) => ({
+            ...part,
+            awarded: 0,
+            marks: 4,
+            pending: true,
+          })),
+        },
+      }) as never
+  );
+  return (
+    <AttemptBody
+      control={control}
+      name="Quiz"
+      questions={[{ ...open, parts: [{ ...open.parts[0], marks: 4 }] }]}
+      trail={[]}
+    />
+  );
+}
+
+it('shows a part left Not marked in the result as not marked, its marks in the total', async () => {
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host);
+  await act(async () => root.render(<NotMarkedQuiz />));
+  const check = [...host.querySelectorAll('button')].find(
+    (button) => button.textContent === m.question_ui_check()
+  );
+  await act(async () => check?.click());
+  const html = host.innerHTML;
+  expect(html).toContain(m.assignment_not_marked());
+  expect(html).toContain(m.quiz_question_not_marked({ number: 1 }));
+  expect(html).toContain(m.result_not_marked({ count: 1 }));
+  expect(html).not.toContain(m.result_wrong({ count: 1 }));
+  expect(host.textContent).toContain('— / 4');
+  expect(host.textContent).toContain(
+    m.result_type_marks({ awarded: '—', max: '4' })
+  );
+  // Its marks stay in the score's total.
+  expect(host.textContent).toContain('0 / 4');
   act(() => root.unmount());
   host.remove();
 });

@@ -69,14 +69,6 @@ type Config struct {
 	// RateLimit governs per-user and per-IP request limits. The zero value
 	// disables limiting entirely.
 	RateLimit ratelimit.Config
-	// TurnstileSecret verifies signed-out answer checks' Turnstile tokens
-	// (TURNSTILE_SECRET_KEY); CaptchaVerifier replaces siteverify in tests.
-	TurnstileSecret string
-	// TurnstileHosts are the hosts a Turnstile token must have been solved
-	// on, the environment's app hosts; empty skips the check (development
-	// and e2e, whose test keys name no app host).
-	TurnstileHosts  []string
-	CaptchaVerifier CaptchaVerifier
 	// ModelRegistry is the process-wide model config cache. Nil disables
 	// per-model pricing and pinning (tests).
 	ModelRegistry *models.Registry
@@ -116,7 +108,6 @@ type api struct {
 	cfg                Config
 	mailRecorder       mail.Recorder
 	limiter            *ratelimit.Limiter
-	captcha            CaptchaVerifier
 	modelReg           *models.Registry
 	jev                *jev.Client
 	stripeSubscription func(string) (*stripe.Subscription, error)
@@ -181,7 +172,6 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		assetThumbs:        make(chan struct{}, assetThumbnailSlots),
 		mailRecorder:       cfg.MailRecorder,
 		limiter:            ratelimit.New(rdb, cfg.RateLimit),
-		captcha:            cfg.CaptchaVerifier,
 		jev:                cfg.Jev,
 		modelReg:           cfg.ModelRegistry,
 		stripeSubscription: billing.RetrieveSubscription,
@@ -207,9 +197,6 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	// starter workspace's sample content.
 	provisioner := starterProvisioner{Store: s, a: a}
 	a.wh = provisioner
-	if a.captcha == nil {
-		a.captcha = newTurnstileVerifier(cfg.TurnstileSecret, cfg.TurnstileHosts)
-	}
 	a.uploads = newUploadQueue(func(batch string, removed bool) {
 		if removed {
 			a.removeSourceBatchFile(context.Background(), batch)

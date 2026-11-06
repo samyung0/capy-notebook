@@ -6,20 +6,16 @@ import {
   useRef,
   useState,
 } from 'react';
-import { flushSync } from 'react-dom';
-import { captchaCopy, isAnonymousGradingLimit } from '@/api/anonymous';
 import { isNoAnswersError } from '@/api/client';
 import type { Provenance, Question } from '@/api/types';
 import { TabContent } from '@/components/app/tabPanel';
 import { Button } from '@/components/ui/Button';
-import { InputError } from '@/components/ui/Input';
 import { userToast } from '@/components/ui/userToast';
 import { SourcesLine } from '@/features/materials/MaterialAttributionFooter';
 import type { LearnerQuestion } from '@/features/questions/types';
 import { attemptMinutes } from '@/features/study/attempts';
 import { m } from '@/i18n';
 import { scoreBucket, track } from '@/lib/analytics';
-import { toastSignInRequired } from '@/lib/authToasts';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
 import { type Answer, runScore } from './grade';
@@ -54,7 +50,6 @@ const WideBody = ({ children }: { children: ReactNode }) => (
 );
 export function AttemptBody({
   actions,
-  belowCheck,
   byline,
   control,
   embedded,
@@ -62,6 +57,7 @@ export function AttemptBody({
   footer,
   frame,
   name,
+  neverMarks = false,
   onBack,
   provenance,
   questions,
@@ -69,9 +65,6 @@ export function AttemptBody({
   trail,
 }: {
   actions?: ReactNode;
-  /** Under the Check last clicked while taking the quiz: the shared pages'
-   * Turnstile challenge (Q372). */
-  belowCheck?: ReactNode;
   /** The owner, on shared links. */
   byline?: ReactNode;
   /** The try in progress and how a question is checked: on the account,
@@ -87,6 +80,9 @@ export function AttemptBody({
    * Embedded quizzes have none. */
   frame?: Frame;
   name: string;
+  /** A shared page: open answers stay Not marked there, so checking one again
+   * would change nothing. */
+  neverMarks?: boolean;
   onBack?: () => void;
   provenance?: Provenance;
   /** Answer-free: each key arrives with its checked question. */
@@ -105,10 +101,6 @@ export function AttemptBody({
   // The question being checked: one at a time, so each check builds on the
   // run the page shows.
   const [checking, setChecking] = useState<string | null>(null);
-  // Where belowCheck renders: under the Check clicked last, which keeps a
-  // challenge or a captcha refusal under it after the check ends.
-  const [lastChecked, setLastChecked] = useState<string | null>(null);
-  const [checkError, setCheckError] = useState<string>();
   // Questions a check found with no answers (Epo 2026-11-05): they say so, and
   // neither finish nor score counts them.
   const [noAnswers, setNoAnswers] = useState<ReadonlySet<string>>(new Set());
@@ -205,13 +197,7 @@ export function AttemptBody({
     const answers = Object.fromEntries(
       Object.entries(drafts).filter(([id]) => own.has(id))
     );
-    // Committed now, so a signed-out check finds its Turnstile slot under
-    // this Check when it asks for a token.
-    flushSync(() => {
-      setChecking(question.id);
-      setLastChecked(question.id);
-      setCheckError(undefined);
-    });
+    setChecking(question.id);
     try {
       finishedByCheck.current =
         !checkedById.has(question.id) && checkedCount === answerable.length - 1;
@@ -222,18 +208,6 @@ export function AttemptBody({
         return;
       }
       finishedByCheck.current = false;
-      const captcha = captchaCopy(err);
-      if (captcha) {
-        setCheckError(captcha);
-        return;
-      }
-      if (isAnonymousGradingLimit(err)) {
-        toastSignInRequired(
-          m.quiz_anonymous_limit_title(),
-          m.quiz_anonymous_limit_body()
-        );
-        return;
-      }
       userToast({
         description: errorCopy(err, m.quiz_grade_failed_body()),
         title: m.quiz_grade_failed(),
@@ -322,34 +296,25 @@ export function AttemptBody({
             ) : (
               // Not marked (no credits, a failure) can be checked again.
               (!checkedById.has(question.id) ||
-                checkedById.get(question.id)?.parts.some((p) => p.pending)) && (
-                <div>
-                  <div className="flex justify-end">
-                    {/* Sized like the review session's Check. */}
-                    <Button
-                      className="h-9 px-3.5"
-                      disabled={checking !== null}
-                      onClick={() => void checkQuestion(question)}
-                      rounded="normal"
-                      size="sm"
-                    >
-                      {checking === question.id
-                        ? m.quiz_grading()
-                        : checkedById.has(question.id)
-                          ? m.question_ui_check_again()
-                          : m.question_ui_check()}
-                    </Button>
-                  </div>
-                  {lastChecked === question.id && (
-                    <>
-                      {belowCheck}
-                      {checkError && (
-                        <InputError className="mt-2 justify-end">
-                          {checkError}
-                        </InputError>
-                      )}
-                    </>
-                  )}
+                (!neverMarks &&
+                  checkedById
+                    .get(question.id)
+                    ?.parts.some((p) => p.pending))) && (
+                <div className="flex justify-end">
+                  {/* Sized like the review session's Check. */}
+                  <Button
+                    className="h-9 px-3.5"
+                    disabled={checking !== null}
+                    onClick={() => void checkQuestion(question)}
+                    rounded="normal"
+                    size="sm"
+                  >
+                    {checking === question.id
+                      ? m.quiz_grading()
+                      : checkedById.has(question.id)
+                        ? m.question_ui_check_again()
+                        : m.question_ui_check()}
+                  </Button>
                 </div>
               )
             )

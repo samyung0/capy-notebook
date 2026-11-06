@@ -673,9 +673,10 @@ async fn an_agent_edit_on_a_checkpoint_that_keeps_moving_stops_after_three_attem
     assert_eq!(h.fake.moved.lock().unwrap()[&room.file_id], 3);
 }
 
-/// Epo 2026-10-17: a room's state cap is its seed plus the export cap (the
-/// largest plan source file) less its base file and a margin. A base that
-/// leaves no room refuses a growing save and a growing agent edit.
+/// Epo 2026-10-17, Q629, Q630, 2026-11-06: a room's state cap is its seed plus
+/// the export cap (a text room's flat text cap) less its base file and, for
+/// Office, a margin. A base that leaves no room, as a text file over the cap
+/// does, refuses a growing save and a growing agent edit.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
 async fn a_rooms_state_cap_is_the_export_cap_less_its_base() {
@@ -686,23 +687,18 @@ async fn a_rooms_state_cap_is_the_export_cap_less_its_base() {
         .get()
         .await
         .unwrap()
-        .query_one("SELECT max(source_file_max_bytes) FROM plan_limits", &[])
+        .query_one("SELECT max(text_file_max_bytes) FROM plan_limits", &[])
         .await
         .unwrap()
         .get::<_, i64>(0) as u64;
+    assert_eq!(export, 2 << 20);
     let room = h.file("text", "notes.md", b"abc").await;
     let doc = text_doc(100);
     let loaded = h.sources.load(&room, &h.user, &doc).await.unwrap();
     let seed = encode(&doc, &StateVector::default()).len() as u64;
-    assert_eq!(
-        loaded.state_cap,
-        seed + export - 3 - sources::STATE_GROWTH_MARGIN_BYTES
-    );
+    assert_eq!(loaded.state_cap, seed + export - 3);
 
-    let base = format!(
-        "{}END",
-        "a".repeat((export - sources::STATE_GROWTH_MARGIN_BYTES / 2) as usize)
-    );
+    let base = format!("{}END", "a".repeat(export as usize));
     let room = h.file("text", "full.md", base.as_bytes()).await;
     let doc = text_doc(100);
     let loaded = h.sources.load(&room, &h.user, &doc).await.unwrap();
@@ -754,6 +750,29 @@ async fn a_rooms_state_cap_is_the_export_cap_less_its_base() {
     };
     assert_eq!(error.status(), Some(413), "{error:?}");
     assert_eq!(h.row(&room).await.get::<_, i64>(0), 0, "nothing was stored");
+
+    // An Office room keeps the largest plan's per-file cap.
+    let plan_cap = h
+        .fake
+        .db
+        .get()
+        .await
+        .unwrap()
+        .query_one("SELECT max(source_file_max_bytes) FROM plan_limits", &[])
+        .await
+        .unwrap()
+        .get::<_, i64>(0) as u64;
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let bytes = std::fs::read(root.join("e2e/fixtures/files/basic/lesson.docx")).unwrap();
+    let room = h.file("docx", "lesson.docx", &bytes).await;
+    let doc = Doc::with_client_id(100);
+    let loaded = h.sources.load(&room, &h.user, &doc).await.unwrap();
+    assert_eq!(
+        loaded.state_cap,
+        encode(&doc, &StateVector::default()).len() as u64 + plan_cap
+            - bytes.len() as u64
+            - sources::STATE_GROWTH_MARGIN_BYTES
+    );
 }
 
 /// A trashed file waits for no rebuild, though its room unloading (its

@@ -1,7 +1,6 @@
 import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
 import {
-  anonymousId,
   localCardStates,
   localQuizAttempts,
   recordLocalCardReview,
@@ -47,10 +46,5 @@ describe('browser-local study data', () => {
     expect(await localCardStates('mat_s')).toEqual([
       { cardId: 'c1', setId: 'mat_s', srs },
     ]);
-  });
-
-  it('creates one stable anonymous id', async () => {
-    const id = await anonymousId();
-    expect(await anonymousId()).toBe(id);
   });
 });

@@ -198,8 +198,10 @@ pub(crate) struct Stored {
     pub(crate) epoch: u64,
     pub(crate) base_revision: i64,
     pub(crate) rows: Vec<(u64, Vec<u8>)>,
-    /// The largest plan source file (`plan_limits`), which publication's
-    /// export may not exceed.
+    /// What the room's edits keep its file under (`plan_limits`): a text
+    /// room's flat text cap (Q629, Q630), an Office room's largest plan source
+    /// file. KEEP IN SYNC WITH SourceExportCap IN
+    /// server/internal/planlimits/catalog.go
     pub(crate) export_cap: u64,
     /// The largest plan image cap (`plan_limits`), the picture limit on Word
     /// and PowerPoint edits.
@@ -571,7 +573,7 @@ impl Sources {
             .map_err(db_error)?;
         let row = txn
             .query_opt(
-                "SELECT d.state,d.state_seed_sha256,d.checkpoint,d.epoch,d.base_revision,(SELECT max(source_file_max_bytes) FROM plan_limits),(SELECT max(image_max_bytes) FROM plan_limits) FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1 AND f.trashed_at IS NULL",
+                "SELECT d.state,d.state_seed_sha256,d.checkpoint,d.epoch,d.base_revision,(SELECT max(CASE WHEN d.format='text' THEN text_file_max_bytes ELSE source_file_max_bytes END) FROM plan_limits),(SELECT max(image_max_bytes) FROM plan_limits) FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1 AND f.trashed_at IS NULL",
                 &[&file_id],
             )
             .await
@@ -691,6 +693,7 @@ impl Sources {
             .await?;
         stage(&mut times.seed);
         let state_cap = crate::state_cap(
+            session.format,
             seed.state.len() as u64,
             base.len() as u64,
             stored.export_cap,
