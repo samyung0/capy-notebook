@@ -1,4 +1,11 @@
-import { lazy, type ReactNode, Suspense, useContext, useState } from 'react';
+import {
+  lazy,
+  type ReactNode,
+  Suspense,
+  useContext,
+  useEffect,
+  useState,
+} from 'react';
 import { Button } from '@/components/ui/Button';
 import { m } from '@/i18n';
 import type { Answer } from '../grade';
@@ -11,8 +18,19 @@ import {
   isDrawingValue,
 } from './drawingValue';
 
-// BlockSuite loads only when a board opens.
-const DrawingBoardScreen = lazy(() => import('./DrawingBoardScreen'));
+// BlockSuite loads only for a drawing part: the chunk (about 1.16 MB) is fetched
+// when the part shows, in idle time, so Draw answer opens without waiting on it.
+const loadBoard = () => import('./DrawingBoardScreen');
+const DrawingBoardScreen = lazy(loadBoard);
+
+function usePrefetchedBoard() {
+  useEffect(() => {
+    const idle = window.requestIdleCallback ?? ((run) => setTimeout(run, 200));
+    const cancel = window.cancelIdleCallback ?? clearTimeout;
+    const handle = idle(() => void loadBoard().catch(() => undefined));
+    return () => cancel(handle);
+  }, []);
+}
 
 /**
  * A drawing part's answer area. Before drawing, one generic squared grid with
@@ -42,6 +60,7 @@ export function DrawingAnswer({
   const upload = useContext(DrawingUploader);
   const [open, setOpen] = useState(false);
   const drawing = isDrawingValue(value) ? value : null;
+  usePrefetchedBoard();
   const taking = !(review || disabled);
   const close = () => setOpen(false);
   const done = (next: DrawingValue | null) => {
