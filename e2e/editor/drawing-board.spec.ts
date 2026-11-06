@@ -185,6 +185,11 @@ test('double click opens the plane: it plots, undoes each click, and Escape leav
   await expect(page.locator('.capy-plane-editor')).toBeVisible();
   const at = await onPlane(page);
 
+  // A right click plots nothing.
+  await page.getByRole('button', { exact: true, name: 'Point' }).click();
+  await page.mouse.click(...at(0.5, 0.5), { button: 'right' });
+  await expect.poll(() => marks(page)).toBe(0);
+
   // A curve grows a click at a time; undo steps back one click, and clicking its
   // last point again finishes it.
   await page.getByRole('button', { name: 'Curve through points' }).click();
@@ -200,7 +205,16 @@ test('double click opens the plane: it plots, undoes each click, and Escape leav
     .first()
     .dispatchEvent('click');
   await page.mouse.click(...at(0.55, 0.3));
+  await expect(
+    page.getByRole('button', { name: 'Finish curve' })
+  ).toBeVisible();
   await page.mouse.click(...at(0.55, 0.3));
+  await expect(page.getByRole('button', { name: 'Finish curve' })).toHaveCount(
+    0
+  );
+  await expect(
+    page.getByRole('button', { name: 'Move the plane' })
+  ).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(() => marks(page)).toBe(1);
 
   // A bar, filled, and a pie finished by clicking its centre.
@@ -226,7 +240,7 @@ test('double click opens the plane: it plots, undoes each click, and Escape leav
   await page.keyboard.press('ControlOrMeta+z');
   await expect.poll(() => marks(page)).toBe(3);
 
-  // Escape does what Done does.
+  // With no mark open, Escape does what Done does.
   await page.keyboard.press('Escape');
   await expect(page.locator('.capy-plane-editor')).toHaveCount(0);
   expect(await inkIn(page, await toImage(page))).toBeGreaterThan(empty);
@@ -238,6 +252,185 @@ test('double click opens the plane: it plots, undoes each click, and Escape leav
   await page.mouse.dblclick(...card(0.5, 0.5));
   await page.getByRole('button', { name: 'Done' }).click();
   await expect(page.locator('.capy-plane-editor')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('Escape ends the open mark first, and a mark with one point goes', async ({
+  page,
+}) => {
+  test.slow();
+  await openBoard(page);
+  const card = await onCard(page);
+  await page.mouse.dblclick(...card(0.5, 0.5));
+  const at = await onPlane(page);
+  const curve = page.getByRole('button', { name: 'Curve through points' });
+
+  await curve.click();
+  await page.mouse.click(...at(0.3, 0.6));
+  await page.mouse.click(...at(0.4, 0.4));
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.capy-plane-editor')).toBeVisible();
+  await expect.poll(() => marks(page)).toBe(1);
+
+  await curve.click();
+  await page.mouse.click(...at(0.6, 0.6));
+  await expect.poll(() => marks(page)).toBe(2);
+  await page.getByRole('button', { name: 'Finish curve' }).click();
+  await expect.poll(() => marks(page)).toBe(1);
+
+  await curve.click();
+  await page.mouse.click(...at(0.6, 0.6));
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect(page.locator('.capy-plane-editor')).toHaveCount(0);
+  await expect.poll(() => marks(page)).toBe(1);
+});
+
+test('undo inside the plane stops at what was done there', async ({ page }) => {
+  test.slow();
+  await openBoard(page);
+  const card = await onCard(page);
+  await page.locator('edgeless-pen-tool-button').first().click();
+  await page.mouse.move(...card(0.1, 0.2));
+  await page.mouse.down();
+  await page.mouse.move(...card(0.3, 0.4), { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(() => canvas(page)).toEqual(['plane', 'brush']);
+
+  await page.keyboard.press('v');
+  await page.mouse.move(...card(0.5, 0.5));
+  await page.mouse.dblclick(...card(0.5, 0.5));
+  const at = await onPlane(page);
+  await page.getByRole('button', { exact: true, name: 'Point' }).click();
+  await page.mouse.click(...at(0.4, 0.4));
+  await expect.poll(() => marks(page)).toBe(1);
+
+  for (const _ of [1, 2, 3]) await page.keyboard.press('ControlOrMeta+z');
+  await expect.poll(() => marks(page)).toBe(0);
+  expect(await canvas(page)).toEqual(['plane', 'brush']);
+  await expect(
+    page.getByRole('button', { name: 'Undo' }).first()
+  ).toBeDisabled();
+
+  // Both redo keys, whatever the Shift key does to the letter.
+  await page.keyboard.press('Control+Shift+z');
+  await expect.poll(() => marks(page)).toBe(1);
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect.poll(() => marks(page)).toBe(0);
+  await page.keyboard.press('Control+y');
+  await expect.poll(() => marks(page)).toBe(1);
+
+  // A height change alone redraws at the new size.
+  const size = page.viewportSize();
+  if (!size) throw new Error('no viewport');
+  await page.setViewportSize({ height: size.height - 120, width: size.width });
+  await expect
+    .poll(() =>
+      page
+        .locator('.capy-plane-editor canvas')
+        .evaluate(
+          (element) =>
+            (element as HTMLCanvasElement).height /
+            (window.devicePixelRatio * element.getBoundingClientRect().height)
+        )
+    )
+    .toBeCloseTo(1, 1);
+
+  // Out again, undo carries on into the canvas.
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect.poll(() => marks(page)).toBe(0);
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect.poll(() => canvas(page)).toEqual(['plane']);
+});
+
+test("selecting shows AFFiNE's toolbar, and a card keeps a real size", async ({
+  page,
+}) => {
+  test.slow();
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await openBoard(page);
+  const at = await onCard(page);
+  await page.mouse.click(...at(0.5, 0.5));
+  const toolbar = page.locator('affine-toolbar-widget');
+  await expect(toolbar.getByLabel('Draw connector')).toBeVisible();
+  await toolbar.getByLabel('More', { exact: true }).click();
+  await expect(toolbar.getByText('Duplicate')).toBeVisible();
+  await expect(toolbar.getByText('linked doc')).toHaveCount(0);
+  await expect(toolbar.getByText('Frame section')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+
+  // Its bottom right corner, dragged past the top left.
+  await page.mouse.click(...at(0.5, 0.5));
+  await page.mouse.move(...at(1, 1));
+  await page.mouse.down();
+  await page.mouse.move(...at(-0.2, -0.2), { steps: 8 });
+  await page.mouse.up();
+  const size = await page.evaluate(() => {
+    const root = document.querySelector('affine-edgeless-root') as unknown as {
+      gfx: {
+        layer: {
+          canvasElements: { h: number; type: string; w: number }[];
+        };
+      };
+    };
+    const card = root.gfx.layer.canvasElements.find(
+      ({ type }) => type === 'plane'
+    );
+    return [card?.w, card?.h];
+  });
+  expect(size[0]).toBeGreaterThanOrEqual(120);
+  expect(size[1]).toBeGreaterThanOrEqual(80);
+  expect(errors).toEqual([]);
+});
+
+test('the image stacks as the screen does, and many formulas settle', async ({
+  page,
+}) => {
+  test.slow();
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await openBoard(page);
+  const add = (script: string) => page.evaluate(script);
+  const prelude = `const root = document.querySelector('affine-edgeless-root');
+    const gfx = root.gfx;`;
+
+  await add(`{ ${prelude}
+    gfx.surface.addElement({ type: 'shape', shapeType: 'rect', filled: true,
+      fillColor: '#000000', strokeColor: '#000000',
+      xywh: '[1000,0,300,200]' }); }`);
+  const seen = await inkIn(page, await toImage(page));
+  await add(`{ ${prelude}
+    const note = gfx.doc.addBlock('affine:note', { xywh: '[980,-20,340,240]',
+      index: gfx.layer.generateIndex() }, gfx.doc.root.id);
+    gfx.doc.addBlock('affine:paragraph', {}, note); }`);
+  await expect
+    .poll(async () => inkIn(page, await toImage(page)))
+    .toBeLessThan(seen * 0.8);
+
+  // More formulas than used to be kept: they all draw, then the board rests.
+  await add(`{ ${prelude}
+    for (let i = 0; i < 70; i++)
+      gfx.surface.addElement({ type: 'formula', latex: 'x_{' + i + '}',
+        xywh: '[' + (i * 40) + ',600,36,36]' }); }`);
+  const image = await toImage(page);
+  const refreshes = await page.evaluate(async () => {
+    const root = document.querySelector('affine-edgeless-root') as unknown as {
+      gfx: { surfaceComponent: { renderer: { refresh(): void } } };
+    };
+    const { renderer } = root.gfx.surfaceComponent;
+    const original = renderer.refresh;
+    let count = 0;
+    renderer.refresh = function refresh() {
+      count++;
+      original.call(renderer);
+    };
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    renderer.refresh = original;
+    return count;
+  });
+  expect(refreshes).toBeLessThan(5);
+  expect(await inkIn(page, image)).toBeGreaterThan(0);
   expect(errors).toEqual([]);
 });
 
@@ -321,6 +514,69 @@ test('a phone has undo at the top and the toolbar at full width', async ({
   expect(
     await page.locator('edgeless-toolbar-widget smooth-corner').boundingBox()
   ).toMatchObject({ width: 344, x: 8 });
+});
+
+test.describe('with a finger', () => {
+  test.use({ deviceScaleFactor: 3, hasTouch: true, isMobile: true });
+
+  test('a double tap opens the plane, and a big board still makes an image', async ({
+    page,
+  }) => {
+    test.slow();
+    await page.setViewportSize({ height: 800, width: 390 });
+    await openBoard(page);
+    const card = await onCard(page);
+    await page.touchscreen.tap(...card(0.5, 0.5));
+    await expect(
+      page.locator('affine-toolbar-widget').getByLabel('Draw connector')
+    ).toBeVisible();
+    await page.waitForTimeout(600);
+    await page.touchscreen.tap(...card(0.5, 0.5));
+    await expect(page.locator('.capy-plane-editor')).toHaveCount(0);
+    await page.waitForTimeout(100);
+    await page.touchscreen.tap(...card(0.52, 0.51));
+    await expect(page.locator('.capy-plane-editor')).toBeVisible();
+
+    // Plotted by tapping, ended by the button, undone by the real one over the plane.
+    const at = await onPlane(page);
+    // The dev scenario panel covers the tool row here.
+    await page
+      .getByRole('button', { name: 'Curve through points' })
+      .dispatchEvent('click');
+    await page.touchscreen.tap(...at(0.3, 0.4));
+    await page.touchscreen.tap(...at(0.6, 0.5));
+    await page.getByRole('button', { name: 'Finish curve' }).tap();
+    await expect.poll(() => marks(page)).toBe(1);
+    const undo = page.locator('.capy-board-history button').first();
+    await undo.tap();
+    await undo.tap();
+    await expect.poll(() => marks(page)).toBe(0);
+    await page.getByRole('button', { name: 'Done' }).tap();
+
+    // Past what a phone's canvas takes at the device's scale.
+    await page.evaluate(() => {
+      const root = document.querySelector(
+        'affine-edgeless-root'
+      ) as unknown as {
+        gfx: { surface: { addElement(props: object): string } };
+      };
+      root.gfx.surface.addElement({
+        shapeType: 'rect',
+        type: 'shape',
+        xywh: '[3000,3000,200,200]',
+      });
+    });
+    const size = await page.evaluate(
+      async (url) => {
+        const image = new Image();
+        image.src = url;
+        await image.decode();
+        return Math.max(image.width, image.height);
+      },
+      await toImage(page)
+    );
+    expect(size).toBeLessThanOrEqual(2400);
+  });
 });
 
 test('the workspace canvas keeps its plane on reload', async ({ page }) => {

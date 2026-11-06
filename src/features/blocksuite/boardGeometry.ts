@@ -6,6 +6,19 @@ export function minorStep(step: number) {
   return Math.round(step / power) === 2 ? step / 4 : step / 5;
 }
 
+/** Most lines one direction of a plane's grid draws. */
+const TICKS_MAX = 1000;
+
+/** The multiples of `every` from `from` to `to`, by index, so a step too small to move
+ * a large number can't loop for ever. None past the cap: the grid goes, the tab stays. */
+export function ticks(from: number, to: number, every: number) {
+  const first = Math.ceil(from / every);
+  const last = Math.floor(to / every);
+  const count = last - first + 1;
+  if (!Number.isFinite(count) || count < 1 || count > TICKS_MAX) return [];
+  return Array.from({ length: count }, (_, i) => (first + i) * every);
+}
+
 /** The nearest multiple of `step`, without the float dust that would show in a label. */
 export function snapTo(value: number, step: number) {
   return Number((Math.round(value / step) * step).toPrecision(12));

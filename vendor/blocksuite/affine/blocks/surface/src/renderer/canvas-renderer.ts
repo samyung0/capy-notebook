@@ -1289,11 +1289,13 @@ export class CanvasRenderer {
     surfaceElements?: SurfaceElementModel[],
     canvas?: HTMLCanvasElement,
     clearBeforeDrawing?: boolean,
-    withZoom?: boolean
+    withZoom?: boolean,
+    // Capy (local change 19): a big board's image can't always take the device's scale.
+    scale?: number
   ): HTMLCanvasElement {
     canvas = canvas || document.createElement('canvas');
 
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = scale ?? (window.devicePixelRatio || 1);
     const actualWidth = Math.ceil(bound.w * dpr);
     const actualHeight = Math.ceil(bound.h * dpr);
 

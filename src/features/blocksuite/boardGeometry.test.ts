@@ -6,8 +6,17 @@ import {
   onCircle,
   smoothThrough,
   snapTo,
+  ticks,
   type Vec,
 } from './boardGeometry';
+
+it('lists a grid by index, and gives up on one no step can cross', () => {
+  expect(ticks(-1, 3, 1)).toEqual([-1, 0, 1, 2, 3]);
+  // Zoomed out, panned far, zoomed in: the step is too small to move this number.
+  expect(ticks(2.75e11, 2.75e11 + 1e-3, 2e-6).length).toBeLessThanOrEqual(1000);
+  expect(ticks(0, 1000, 1e-6)).toEqual([]);
+  expect(ticks(Number.NaN, 1, 1)).toEqual([]);
+});
 
 it('snaps to the fine squares, which follow the numbered step', () => {
   expect(minorStep(1)).toBe(0.2);

@@ -17,10 +17,17 @@ import {
   ShapeType,
 } from '@blocksuite/affine/model';
 import {
+  DocModeExtension,
+  DocModeService,
   EditPropsStore,
   ThemeProvider,
+  ToolbarModuleExtension,
 } from '@blocksuite/affine/shared/services';
-import type { BlockComponent, PointerEventState } from '@blocksuite/affine/std';
+import {
+  type BlockComponent,
+  BlockFlavourIdentifier,
+  type PointerEventState,
+} from '@blocksuite/affine/std';
 import {
   BaseTool,
   type GfxController,
@@ -780,6 +787,29 @@ const ICONS: Record<string, string> = {
 /** One of the maths icons as an SVG string, 24 px. */
 export const mathsIcon = (name: string) =>
   `<svg height="24" viewBox="0 0 24 24" width="24">${ICONS[name]}</svg>`;
+
+/** AFFiNE's selection toolbar reads the editor's mode, which the board has to report.
+ * It goes without what makes no sense on an answer, or needs other documents. */
+export const boardToolbar = [
+  DocModeExtension(
+    new (class extends DocModeService {
+      override getEditorMode() {
+        return 'edgeless' as const;
+      }
+    })()
+  ),
+  ToolbarModuleExtension({
+    config: {
+      actions: [
+        'b.add-frame',
+        'c.comment',
+        'Z.a.selection',
+        'd.conversions',
+      ].map((id) => ({ id, when: false })),
+    },
+    id: BlockFlavourIdentifier('custom:affine:surface:*'),
+  }),
+];
 
 /** The formula button's action, set by the formula module. */
 let openFormula: (gfx: GfxController) => void = () => undefined;

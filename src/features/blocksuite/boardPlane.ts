@@ -19,7 +19,13 @@ import {
   GfxViewInteractionExtension,
 } from '@blocksuite/affine/std/gfx';
 import { axisNumber, tickStep } from '@/features/questions/graph';
-import { minorStep, onCircle, smoothThrough, type Vec } from './boardGeometry';
+import {
+  minorStep,
+  onCircle,
+  smoothThrough,
+  ticks,
+  type Vec,
+} from './boardGeometry';
 
 /** What's plotted on a plane, in its own units. A line, curve or pie grows a click at
  * a time, each click one undo step. */
@@ -37,6 +43,11 @@ export type Frame = { h: number; w: number; x: number; y: number };
 export const MARKS_MAX = 500;
 
 const DOT_RADIUS = 4.5;
+const CARD_WIDTH_MIN = 120;
+const CARD_HEIGHT_MIN = 80;
+const CARD_SIDE_MAX = 4000;
+const clamp = (value: number, low: number, high: number) =>
+  Math.max(low, Math.min(high, value));
 
 export function drawPlane(
   ctx: CanvasRenderingContext2D,
@@ -64,11 +75,11 @@ export function drawPlane(
     ctx.strokeStyle = color;
     ctx.lineWidth = 1;
     ctx.beginPath();
-    for (let x = Math.ceil(left / every) * every; x <= right; x += every) {
+    for (const x of ticks(left, right, every)) {
       ctx.moveTo(X(x), frame.y);
       ctx.lineTo(X(x), frame.y + frame.h);
     }
-    for (let y = Math.ceil(bottom / every) * every; y <= top; y += every) {
+    for (const y of ticks(bottom, top, every)) {
       ctx.moveTo(frame.x, Y(y));
       ctx.lineTo(frame.x + frame.w, Y(y));
     }
@@ -104,9 +115,9 @@ export function drawPlane(
     ctx.strokeText(text, x, y);
     ctx.fillText(text, x, y);
   };
-  for (let x = Math.ceil(left / step) * step; x <= right; x += step)
+  for (const x of ticks(left, right, step))
     label(axisNumber(x, step), X(x), axisY + 14, 'center');
-  for (let y = Math.ceil(bottom / step) * step; y <= top; y += step)
+  for (const y of ticks(bottom, top, step))
     label(axisNumber(y, step), axisX - 7, Y(y), 'right');
 
   // Marks keep their thickness whatever the plane's zoom.
@@ -265,10 +276,25 @@ const planeInteraction = GfxViewInteractionExtension<PlaneElementView>(
           model.pop('y0');
         },
         onResizeMove(context) {
-          const { newBound, originalBound } = context;
-          model.xywh = newBound.serialize();
-          model.x0 = x0 + (newBound.x - originalBound.x) / model.ppu;
-          model.y0 = y0 - (newBound.y - originalBound.y) / model.ppu;
+          const { constraint, newBound, originalBound } = context;
+          const w = clamp(newBound.w, constraint.minWidth, constraint.maxWidth);
+          const h = clamp(
+            newBound.h,
+            constraint.minHeight,
+            constraint.maxHeight
+          );
+          // At a limit, the edge that isn't being dragged stays put.
+          const x =
+            newBound.x === originalBound.x
+              ? newBound.x
+              : newBound.x + newBound.w - w;
+          const y =
+            newBound.y === originalBound.y
+              ? newBound.y
+              : newBound.y + newBound.h - h;
+          model.xywh = new Bound(x, y, w, h).serialize();
+          model.x0 = x0 + (x - originalBound.x) / model.ppu;
+          model.y0 = y0 - (y - originalBound.y) / model.ppu;
         },
         onResizeStart(context) {
           context.default(context);
@@ -283,6 +309,12 @@ const planeInteraction = GfxViewInteractionExtension<PlaneElementView>(
           context.set({ rotatable: false });
         },
       };
+    },
+    resizeConstraint: {
+      maxHeight: CARD_SIDE_MAX,
+      maxWidth: CARD_SIDE_MAX,
+      minHeight: CARD_HEIGHT_MIN,
+      minWidth: CARD_WIDTH_MIN,
     },
   }
 );

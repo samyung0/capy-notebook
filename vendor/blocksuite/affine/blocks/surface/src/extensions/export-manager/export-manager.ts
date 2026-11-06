@@ -283,7 +283,8 @@ export class ExportManager {
     });
   }
 
-  private async _html2canvas(
+  // Capy (local change 19): public, so the board can draw a note in its place in the stack.
+  async _html2canvas(
     htmlElement: HTMLElement,
     options: Parameters<Html2CanvasFunction>[1] = {}
   ) {

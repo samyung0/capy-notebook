@@ -236,7 +236,17 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
 
 17. Text tool (`affine/gfx/text` `tool.ts`, marked `Capy (local change 17)`): a click on
     a `plane` card adds a label on top of it. The board's Label button uses this, since
-    a double click on a card opens the plane.
+    a double click on a card opens the plane. It applies only when the card is the topmost
+    thing under the click.
+18. Double tap (`framework/std` `event/control/pointer.ts` and
+    `gfx/interactivity/gfx-view-event-handler.ts`, marked `Capy (local change 18)`): two
+    touches within 500 ms and 24 px are a double click, though each has its own pointer id,
+    and a touch finds the element under it before the event goes to that element's view.
+    Upstream, a phone never opens anything a double click opens.
+19. Marking image (`affine/blocks/surface` `canvas-renderer.ts` and `export-manager.ts`,
+    marked `Capy (local change 19)`): `getCanvasByBound` takes the scale to draw at, and
+    `_html2canvas` is public. The board draws its image layer by layer, so it stacks as
+    the screen does and stays within a phone's canvas limit.
 
 The specs named in local changes 6 to 9 are on the `blocksuite-notes` branch, with the
 note editor they pin.

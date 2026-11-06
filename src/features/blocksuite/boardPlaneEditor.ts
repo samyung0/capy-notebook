@@ -3,6 +3,7 @@ import {
   ThemeProvider,
 } from '@blocksuite/affine/shared/services';
 import type { GfxController } from '@blocksuite/affine/std/gfx';
+import { HistoryExtension } from '@blocksuite/affine/store';
 import { html, render } from 'lit';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import { axisNumber, tickStep } from '@/features/questions/graph';
@@ -32,6 +33,15 @@ const PIXELS_TO_FINISH = 16;
 const PIXELS_TO_ERASE = 12;
 const PPU_MIN = 1e-6;
 const PPU_MAX = 1e6;
+/** How far from the origin the view goes, in the plane's units. */
+const VIEW_MAX = 1e9;
+
+/** Whether a mark has become what it set out to be. Leaving keeps what has, and removes
+ * what hasn't, as AFFiNE removes a connector it cancels. */
+const whole = (mark: Mark) =>
+  mark.kind === 'line' || mark.kind === 'curve'
+    ? mark.points.length > 1
+    : mark.kind !== 'pie' || mark.radius > 0;
 
 const TOOLS: { icon: string; id: Tool; label: () => string }[] = [
   { icon: 'move', id: 'move', label: m.drawing_board_move_plane },
@@ -74,9 +84,10 @@ function distanceTo(mark: Mark, [x, y]: Vec) {
   );
 }
 
-/** The endless plane, filling the board for editing. Done and Escape leave. Everything
- * plotted is written at once, so undo steps through it click by click; the view is
- * written on leaving. */
+/** The endless plane, filling the board for editing. Everything plotted is written at
+ * once, so undo steps through it click by click; the view is written on leaving. While
+ * it's open undo reaches only what was done in it, as what's on the canvas is out of
+ * sight. Escape ends the open mark, or leaves as Done does when there's none. */
 function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   const board = gfx.std.host.closest('.capy-board');
   if (!board || board.querySelector('.capy-plane-editor')) return;
@@ -91,6 +102,20 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   board.append(root);
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
+  board.setAttribute('data-plane-open', '');
+
+  const undo = gfx.doc.get(HistoryExtension).undoManager;
+  gfx.doc.captureSync();
+  const earlier = { redo: undo.redoStack, undo: undo.undoStack };
+  let changed = false;
+  /** The undo buttons read the stacks only when told. */
+  const stacksSwapped = () =>
+    undo.emit('stack-cleared', [
+      { redoStackCleared: true, undoStackCleared: true },
+    ]);
+  undo.undoStack = [];
+  undo.redoStack = [];
+  stacksSwapped();
 
   const box = () => root.getBoundingClientRect();
   const [, , cardW, cardH] = model.deserializedXYWH;
@@ -125,6 +150,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   const openMark = () => model.marks.find((mark) => mark.id === openId);
 
   const write = (marks: Mark[]) => {
+    changed = true;
     gfx.doc.captureSync();
     gfx.surface?.updateElement(model.id, { marks });
     gfx.doc.captureSync();
@@ -138,7 +164,10 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   const draw = () => {
     const { height, width } = box();
     const scale = window.devicePixelRatio || 1;
-    if (canvas.width !== Math.round(width * scale)) {
+    if (
+      canvas.width !== Math.round(width * scale) ||
+      canvas.height !== Math.round(height * scale)
+    ) {
       canvas.width = Math.round(width * scale);
       canvas.height = Math.round(height * scale);
     }
@@ -247,6 +276,18 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   };
 
   const newId = () => crypto.randomUUID();
+  /** Ends the open mark. Like AFFiNE's shape and connector tools, the tool then goes
+   * back to the plain one; Point stays on, like AFFiNE's pen. */
+  const finish = () => {
+    const open = openMark();
+    openId = null;
+    if (open && !whole(open))
+      write(model.marks.filter((mark) => mark.id !== open.id));
+    tool = 'move';
+    pointer = null;
+    drawControls();
+    redraw();
+  };
   /** A press lands where it lifts, so a finger can line it up against the chip. */
   const place = (px: Vec) => {
     const at = snapped(px);
@@ -255,18 +296,12 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     else if (tool === 'line' || tool === 'curve') {
       if (open?.kind === tool) {
         const last = open.points.at(-1);
-        const nearLast =
-          last &&
-          Math.hypot(
-            (last[0] - at[0]) * view.ppu,
-            (last[1] - at[1]) * view.ppu
-          ) < PIXELS_TO_FINISH;
-        if (nearLast) {
-          openId = null;
+        if (last?.[0] === at[0] && last[1] === at[1]) {
+          finish();
           return;
         }
         replaceOpen({ ...open, points: [...open.points, at] });
-        if (tool === 'line') openId = null;
+        if (tool === 'line') finish();
         return;
       }
       if (model.marks.length >= MARKS_MAX) return;
@@ -283,7 +318,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       const pixels =
         Math.hypot(here[0] - open.at[0], here[1] - open.at[1]) * view.ppu;
       if (pixels < PIXELS_TO_FINISH) {
-        openId = null;
+        if (open.radius) finish();
         return;
       }
       if (open.radius)
@@ -308,17 +343,22 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     }
   };
 
+  const hold = () => {
+    view.x0 = Math.max(-VIEW_MAX, Math.min(VIEW_MAX, view.x0));
+    view.y0 = Math.max(-VIEW_MAX, Math.min(VIEW_MAX, view.y0));
+    redraw();
+  };
   const zoomAt = (factor: number, [px, py]: Vec) => {
     const [x, y] = toPlane([px, py]);
     view.ppu = Math.max(PPU_MIN, Math.min(PPU_MAX, view.ppu * factor));
     view.x0 = x - px / view.ppu;
     view.y0 = y + py / view.ppu;
-    redraw();
+    hold();
   };
   const panBy = (dx: number, dy: number) => {
     view.x0 -= dx / view.ppu;
     view.y0 += dy / view.ppu;
-    redraw();
+    hold();
   };
   const fit = () => {
     const seen: Vec[] = [[0, 0]];
@@ -342,16 +382,29 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       Math.min(...ys),
       Math.max(...ys),
     ];
-    view.ppu = Math.min(
-      (width - 100) / Math.max(x1 - x0, 1),
-      (height - 160) / Math.max(y1 - y0, 1)
+    view.ppu = Math.max(
+      PPU_MIN,
+      Math.min(
+        PPU_MAX,
+        (width - 100) / Math.max(x1 - x0, 1),
+        (height - 160) / Math.max(y1 - y0, 1)
+      )
     );
     view.x0 = (x0 + x1) / 2 - width / 2 / view.ppu;
     view.y0 = (y0 + y1) / 2 + height / 2 / view.ppu;
-    redraw();
+    hold();
   };
 
   const close = () => {
+    openId = null;
+    const kept = model.marks.filter(whole);
+    if (kept.length < model.marks.length) write(kept);
+    gfx.doc.captureSync();
+    undo.undoStack = [...earlier.undo, ...undo.undoStack];
+    undo.redoStack = changed
+      ? undo.redoStack
+      : [...earlier.redo, ...undo.redoStack];
+    stacksSwapped();
     const { width, height } = box();
     const [x, y] = [
       view.x0 + width / 2 / view.ppu,
@@ -359,41 +412,53 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     ];
     const [, , w, h] = model.deserializedXYWH;
     // The view is where the student looks, not part of the undo history.
-    if (gfx.getElementById(model.id))
-      gfx.doc.withoutTransact(() => {
-        model.ppu = view.ppu;
-        model.x0 = x - w / 2 / view.ppu;
-        model.y0 = y + h / 2 / view.ppu;
-      });
+    gfx.doc.withoutTransact(() => {
+      model.ppu = view.ppu;
+      model.x0 = x - w / 2 / view.ppu;
+      model.y0 = y + h / 2 / view.ppu;
+    });
     cancelAnimationFrame(frame);
     window.removeEventListener('keydown', onKey, true);
     updates.unsubscribe();
     render(null, controls);
     root.remove();
+    board.removeAttribute('data-plane-open');
     closing.delete(gfx);
-    if (gfx.getElementById(model.id))
-      gfx.selection.set({ editing: false, elements: [model.id] });
+    gfx.selection.set({ editing: false, elements: [model.id] });
   };
   closing.set(gfx, close);
 
-  // Escape does what Done does, and the board's own shortcuts stay out of the plane.
+  // The board listens on the document, so its shortcuts stop here. Typing elsewhere on
+  // the page isn't the plane's.
   const onKey = (event: KeyboardEvent) => {
+    const { target } = event;
+    if (
+      target instanceof Element &&
+      target !== document.body &&
+      !root.contains(target)
+    )
+      return;
     event.stopPropagation();
-    if (event.key === 'Escape') {
+    const key = event.key.toLowerCase();
+    const command = event.metaKey || event.ctrlKey;
+    if (key === 'escape') {
       event.preventDefault();
-      close();
-    } else if ((event.metaKey || event.ctrlKey) && event.key === 'z') {
+      if (openMark()) finish();
+      else close();
+    } else if (command && (key === 'y' || (key === 'z' && event.shiftKey))) {
       event.preventDefault();
-      if (event.shiftKey) gfx.doc.redo();
-      else gfx.doc.undo();
+      gfx.doc.redo();
+    } else if (command && key === 'z') {
+      event.preventDefault();
+      gfx.doc.undo();
     }
   };
   window.addEventListener('keydown', onKey, true);
 
   const updates = gfx.surface
     ? gfx.surface.elementUpdated.subscribe(() => {
-        if (gfx.getElementById(model.id)) redraw();
-        else close();
+        drawControls();
+        redraw();
       })
     : { unsubscribe: () => undefined };
 
@@ -418,6 +483,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     return [event.clientX - rect.left, event.clientY - rect.top];
   };
   canvas.addEventListener('pointerdown', (event) => {
+    if (event.button) return;
     canvas.setPointerCapture(event.pointerId);
     const at = local(event);
     pointers.set(event.pointerId, at);
@@ -496,6 +562,15 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
 
   const drawControls = () => {
     root.dataset.tool = tool;
+    const open = openMark();
+    const finishLabel =
+      open?.kind === 'curve'
+        ? m.drawing_board_finish_curve()
+        : open?.kind === 'line'
+          ? m.drawing_board_finish_line()
+          : open?.kind === 'pie'
+            ? m.drawing_board_finish_pie()
+            : null;
     render(
       html`<div class="capy-plane-top">
           <button type="button" @click=${fit}>${m.drawing_board_fit()}</button>
@@ -527,6 +602,17 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
             +
           </button>
         </div>
+        ${
+          finishLabel
+            ? html`<button
+                class="capy-plane-finish"
+                type="button"
+                @click=${finish}
+              >
+                ${finishLabel}
+              </button>`
+            : null
+        }
         <div class="capy-plane-tools">
           ${tool === 'bars' ? fillRow(gfx, drawControls) : null}
           <div class="capy-plane-row">
@@ -538,11 +624,9 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
                   title=${label()}
                   type="button"
                   @click=${() => {
+                    finish();
                     tool = id;
-                    openId = null;
-                    pointer = null;
                     drawControls();
-                    redraw();
                   }}
                 >
                   ${unsafeSVG(mathsIcon(icon))}
