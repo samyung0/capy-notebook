@@ -1,5 +1,6 @@
 // What the app's tsconfig sees of ./drawingBoard.ts (see tsconfig.json paths).
 export type DrawingBoardOptions = {
+  fitPadding?: [number, number, number, number];
   onChange?: () => void;
   plane?: boolean;
   readOnly?: boolean;

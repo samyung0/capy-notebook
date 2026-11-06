@@ -181,6 +181,10 @@ const IMAGE_BYTES_MAX = 300 * 1024;
 const FAR_GAP = 400;
 
 export type DrawingBoardOptions = {
+  /** Room the first fit leaves around the drawing, [top, right, bottom, left] in
+   * pixels, for what the page lays over the board (a pinned question, a top bar).
+   * Without it, room for the board's own toolbar and undo. */
+  fitPadding?: [number, number, number, number];
   onChange?: () => void;
   /** A fresh board starts with a plane card: the dev pages. Every answer starts on the
    * same plain board (Epo 2026-11-06). */
@@ -389,7 +393,10 @@ export function mountDrawingBoard(
     }
     gfx.viewport.setViewportByBound(
       everything(),
-      gfx.viewport.width < PHONE_WIDTH ? [64, 12, 96, 12] : [90, 40, 130, 40]
+      options.fitPadding ??
+        (gfx.viewport.width < PHONE_WIDTH
+          ? [64, 12, 96, 12]
+          : [90, 40, 130, 40])
     );
     place();
   });

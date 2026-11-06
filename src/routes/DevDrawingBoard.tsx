@@ -10,9 +10,13 @@ export default function DevDrawingBoard() {
     const host = container.current;
     if (!host) return;
     let board = mountDrawingBoard(host, { plane: true });
-    const reopen = (saved: string, readOnly = false) => {
+    const reopen = (
+      saved: string,
+      readOnly = false,
+      fitPadding?: [number, number, number, number]
+    ) => {
       board.unmount();
-      board = mountDrawingBoard(host, { readOnly, saved });
+      board = mountDrawingBoard(host, { fitPadding, readOnly, saved });
       Object.assign(window, { __board: board });
     };
     Object.assign(window, { __board: board, __reopen: reopen });
