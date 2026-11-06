@@ -4431,7 +4431,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   fits a phone's canvas limit; AFFiNE's own export draws every note under every stroke at
   the device's scale. On a board wider or taller than 2400 px, groups of elements more than
   400 px apart are drawn 400 px apart, so one dragged far away doesn't squash the rest;
-  the board itself stays as it is. The PNG goes through `fitImage` (WebP, 512 KB cap) and
+  the board itself stays as it is. The PNG goes through `fitImageOffThread` (WebP, 300 KB cap, Epo 2026-11-06), whose
+  encode runs in a worker while the drawing stays on the page, and
   comes back as a `File`.
 - **What the answer flow mounts:** `mountDrawingBoard(host, { background, readOnly,
   saved, onChange })`.
