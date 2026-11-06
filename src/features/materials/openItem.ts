@@ -35,14 +35,16 @@ export type OpenItem =
 /** A note citation: the blocks it came from, and its text for one without. */
 export type NoteCitationTarget = OfficeCitation & { blockIds?: string[] };
 
-/** The panel beside the rail, or `none` for no panel. */
-export type WorkspacePanel = 'files' | 'agent' | 'study' | 'none';
+/** The panel beside the rail, or `none` for no panel. `canvas` is the dev builds'
+ * board, which has no panel and fills the centre at every width. */
+export type WorkspacePanel = 'files' | 'agent' | 'study' | 'canvas' | 'none';
 
 export function isWorkspacePanel(value: unknown): value is WorkspacePanel {
   return (
     value === 'files' ||
     value === 'agent' ||
     value === 'study' ||
+    (import.meta.env.DEV && value === 'canvas') ||
     value === 'none'
   );
 }
