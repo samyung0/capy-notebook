@@ -111,6 +111,12 @@ a SmartArt frame the parser cannot draw becomes a raw unit. The goldens hold
 neither, so the seed check on each environment decides whether DOCX joins the
 reset.
 
+**The zip 9.0.5 pin.** `ooxml-opc`, the fork's only zip user, moves to zip 9.0.5
+with its `unreserved` feature, so a member holding an Info-ZIP extra field saves.
+A member holding a Unicode Path field (0x7075) is re-deflated on save instead of
+raw-copied, since the copied field could rename the part on the next read
+(upstream #2138, ported ahead of the second sync, Q650). Seeds do not change.
+
 **The 0.5.1 pin.** The fork carries upstream's 0.5.1 (4e982c3ae) on Capy's
 engines, with deck schema 6.0 (every PPTX seed changes, so every PPTX room
 resets at deploy) and XLSX and DOCX seed changes the seed check lists. What
@@ -2401,10 +2407,22 @@ callers arriving while one is queued for the same document share it and
 receive its outcome, and a reloaded room's new document queues its own save.
 Credits gate parsing and AI work, independently of durable saving.
 
-DOCX blocks text input after a canvas click whose caret cannot yet be placed.
-Previously accepted input finishes at its old caret. A fresh click after that
-input drains and with available geometry must set a valid selection before typing
-resumes; the input exposes placement state and selection for browser checks.
+DOCX typing is never dropped around a press, as in Google Docs. A press that cannot
+be placed yet, before the page geometry is ready (right after opening) or while
+earlier input is landing, is held (`usePagesPointer`, `InputOperationQueue.hold`):
+what was accepted before it, a composition included, lands at the old caret in
+order, the caret goes where the press was on its page once both are done, and what
+is typed meanwhile waits behind it and lands there, in the story the press opened.
+The press keeps its place as fractions of its page, so scrolling, zoom or a sidebar
+do not move it. The last press wins and starts no drag, it leaves focus where the
+reader has it by then, and a double click in that time opens no band and selects no
+word. A wait for the geometry ends after 10 s (its engine can fail to load) or on a
+flush, a pause or a click outside the frame included: the press is dropped and what
+was typed lands at the old caret and saves. Destroying the session lands it first
+too. A closing or reloading frame loses it, as any input still in the frame.
+A press that places no caret (a band on a single click, a note area no note claims,
+a position that resolves to nothing) leaves typing where the caret was. The input
+exposes placement state and selection for browser checks.
 Run language metadata survives the native seed, Yjs projection and OOXML export,
 and so does a run's font hint (`w:rFonts w:hint`), held in its own `fontHint`
 mark so typing in the run and picking a font keep it. Picking a font sets each
