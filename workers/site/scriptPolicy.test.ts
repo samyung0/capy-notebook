@@ -7,7 +7,7 @@ import {
   shareToken,
 } from '../../src/lib/shareLink';
 import { appPolicy, pagePolicy } from '../../vite-image-policy';
-import { allowTurnstile, handleSiteRequest } from './handler';
+import { handleSiteRequest } from './handler';
 
 const DEPLOYED = {
   B2_BUCKET: 'capy-notebook-uat',
@@ -104,7 +104,7 @@ const answer = (data: unknown) =>
 // pages the site Worker renders run scripts only from the app and named
 // hosts, never inline or from an attribute, and only the app frames them.
 describe('enforced script policy', () => {
-  it('names the app, Clerk and this PostHog project for scripts, and only embed and YouTube frames', () => {
+  it('names the app and this PostHog project for scripts, and only embed and YouTube frames', () => {
     expect(directives(pagePolicy(DEPLOYED))).toEqual({
       'base-uri': ["'none'"],
       'form-action': ["'self'"],
@@ -117,7 +117,6 @@ describe('enforced script policy', () => {
       'report-uri': [REPORT],
       'script-src': [
         "'self'",
-        'https://clerk.uat.capynotebook.com/npm/@clerk/',
         'https://eu-assets.i.posthog.com/static/',
         'https://eu-assets.i.posthog.com/array/phc_project/config.js',
       ],
@@ -125,7 +124,7 @@ describe('enforced script policy', () => {
       'style-src': ["'self'", "'unsafe-inline'"],
       'worker-src': ["'self'", 'blob:'],
     });
-    // A local build without Clerk or PostHog runs scripts from the app only.
+    // A local build without PostHog runs scripts from the app only.
     expect(directives(pagePolicy({}))['script-src']).toEqual(["'self'"]);
     expect(locked(PAGE_POLICY)).toEqual(LOCKED);
   });
@@ -133,7 +132,7 @@ describe('enforced script policy', () => {
   it('fails the build when the Clerk key names no plain host', () => {
     for (const host of ['clerk.example.com/x', 'clerk example', 'a;b'])
       expect(() =>
-        pagePolicy({
+        appPolicy({
           VITE_CLERK_PUBLISHABLE_KEY: `pk_test_${btoa(`${host}$`)}`,
         })
       ).toThrow('VITE_CLERK_PUBLISHABLE_KEY');
@@ -177,13 +176,8 @@ describe('enforced script policy', () => {
       ),
     ];
     expect(pages.map((page) => page.status)).toEqual([200, 200, 404, 404]);
-    // The quiz page grades signed-out answers, so it also allows Turnstile.
-    expect(pages[0].headers.get('Content-Security-Policy')).toBe(
-      allowTurnstile(PAGE_POLICY)
-    );
-    for (const page of pages.slice(1))
-      expect(page.headers.get('Content-Security-Policy')).toBe(PAGE_POLICY);
     for (const page of pages) {
+      expect(page.headers.get('Content-Security-Policy')).toBe(PAGE_POLICY);
       expect(locked(page.headers.get('Content-Security-Policy'))).toEqual(
         LOCKED
       );
@@ -204,9 +198,7 @@ describe('enforced script policy', () => {
     );
     const policy = page.headers.get('Content-Security-Policy');
     const hash = createHash('sha256').update(boot).digest('base64');
-    const [self, ...hosts] = directives(allowTurnstile(PAGE_POLICY))[
-      'script-src'
-    ];
+    const [self, ...hosts] = directives(PAGE_POLICY)['script-src'];
     expect(directives(policy)['script-src']).toEqual([
       self,
       `'sha256-${hash}'`,
@@ -219,11 +211,12 @@ describe('enforced script policy', () => {
 });
 
 describe('the SPA script report', () => {
-  it('reports scripts beyond the share pages’ sources and the app’s own two hosts', () => {
+  it('reports scripts beyond the share pages’ sources and the app’s own hosts', () => {
     const found = directives(appPolicy(DEPLOYED));
     expect(found['img-src']).toContain("'self'");
     expect(found['script-src']).toEqual([
       ...directives(pagePolicy(DEPLOYED))['script-src'],
+      'https://clerk.uat.capynotebook.com/npm/@clerk/',
       'https://challenges.cloudflare.com',
       'https://apis.google.com',
     ]);

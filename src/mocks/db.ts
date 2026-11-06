@@ -2102,7 +2102,11 @@ export const materials: Material[] = [];
 /** The note's own copy of another note's quiz or flashcard set, as the
  * collaboration service's children pass makes it (fresh card ids, numbered
  * title); "" when the source is not an embedded quiz or set. */
-export function copyEmbeddedInto(note: Material, sourceId: string): string {
+export function copyEmbeddedInto(
+  note: Material,
+  sourceId: string,
+  id = uid('mat')
+): string {
   const source = materials.find((x) => x.id === sourceId);
   if (
     !source?.parentMaterialId ||
@@ -2121,7 +2125,7 @@ export function copyEmbeddedInto(note: Material, sourceId: string): string {
     ...source,
     content: rekey(source.content) as typeof source.content,
     createdAt: new Date().toISOString(),
-    id: uid('mat'),
+    id,
     parentMaterialId: note.id,
     // Embedded items carry a random, never displayed name.
     title: crypto.randomUUID(),
@@ -2888,8 +2892,7 @@ seedFlashcardSets.forEach((d, i) => {
     })
   );
 });
-// Standalone link-shared materials for the share pages; add `?anonymous` to
-// open them as a signed-out visitor.
+// Standalone link-shared materials for the share pages.
 materials.push(
   makeMaterial({
     capabilities: ownerCapabilities,
@@ -3150,7 +3153,16 @@ if (sharedNote)
     ...sharedNote.content,
     value: sharedNote.content.value.map((node) =>
       node.type === 'material_ref' && typeof node.materialId === 'string'
-        ? { ...node, materialId: copyEmbeddedInto(sharedNote, node.materialId) }
+        ? {
+            ...node,
+            // A stable id: the dev server renders this page from its own copy
+            // of the mocks, and the browser's checks it through this one.
+            materialId: copyEmbeddedInto(
+              sharedNote,
+              node.materialId,
+              `${node.materialId}_shared`
+            ),
+          }
         : node
     ),
   };

@@ -13,7 +13,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
@@ -29,9 +28,9 @@ import (
 // answer-free questions (questions.LearnerView), and checking an answer or
 // submitting an attempt sends the learner's answers by part id. Closed parts
 // are scored by questions.ScorePart; open parts go to the grading slot's model,
-// one request per answered part and one award per marking item (Jev still marks
-// signed-out checks, which go next). The response carries the key for what was
-// just checked.
+// one request per answered part and one award per marking item, except on a
+// shared page, where they stay Not marked. The response carries the key for what
+// was just checked.
 
 // answersMaxBytes bounds a request of answers: a hundred 5,000-character open
 // answers at up to four bytes a character plus every closed answer of a
@@ -48,7 +47,7 @@ type openPart struct {
 }
 
 // gradePlan is a grading request checked against the stored questions; open
-// holds the answered open parts, the ones a model grades.
+// holds the answered open parts, the ones a model may grade.
 type gradePlan struct {
 	questions []map[string]any
 	answers   map[string]any
@@ -58,7 +57,7 @@ type gradePlan struct {
 // planGrading refuses answers to parts the questions do not have, ordering
 // parts with no order (the shown order is always an answer, so a client sends
 // it), and open answers that are not text or are too long. Blank open answers
-// earn 0 without a Jev call.
+// earn 0 without a model call.
 func planGrading(qs []map[string]any, answers map[string]any) (gradePlan, error) {
 	plan := gradePlan{questions: qs, answers: answers, open: map[string]openPart{}}
 	known := map[string]bool{}
@@ -100,61 +99,6 @@ func gradeRequestError(err error) error {
 		return huma.Error422UnprocessableEntity(err.Error())
 	}
 	return hErr(err)
-}
-
-// gradeOpenParts sends each part to Jev for signed-out checks, with bounded
-// concurrency. Any failure
-// fails the whole request; the learner retries. It returns each part's marks
-// per marking item.
-func (a *api) gradeOpenParts(ctx context.Context, parts map[string]openPart) (map[string][]float64, jev.Usage, error) {
-	out := map[string][]float64{}
-	var usage jev.Usage
-	var mu sync.Mutex
-	group, ctx := errgroup.WithContext(ctx)
-	// 10 parts at once (Epo 2026-11-04, after the 2026-11-04 grading
-	// concurrency bench: a 40-part paper took 28-86 s at 5, 10, 20 or 40 at
-	// once, its slowest part setting the wall time).
-	group.SetLimit(10)
-	for id, part := range parts {
-		group.Go(func() error {
-			awards, used, err := a.jev.GradePart(ctx, part.question, part.markscheme, part.answer)
-			if err != nil {
-				return err
-			}
-			// Jev judges each item as none, half or all of it; items carry their own marks.
-			for i := range awards {
-				awards[i] *= part.itemMarks[i]
-			}
-			mu.Lock()
-			defer mu.Unlock()
-			out[id] = awards
-			usage.Model = used.Model
-			usage.InputTokens += used.InputTokens
-			return nil
-		})
-	}
-	return out, usage, group.Wait()
-}
-
-// grade grades every part of the plan and returns the questions with keys and
-// awards (questions.Graded) and the awarded marks over the total.
-func (a *api) grade(ctx context.Context, plan gradePlan) ([]map[string]any, float64, float64, jev.Usage, error) {
-	var open map[string][]float64
-	var usage jev.Usage
-	if len(plan.open) > 0 {
-		var err error
-		if open, usage, err = a.gradeOpenParts(ctx, plan.open); err != nil {
-			return nil, 0, 0, usage, err
-		}
-	}
-	graded := make([]map[string]any, len(plan.questions))
-	var correct, total float64
-	for i, q := range plan.questions {
-		var awarded, marks float64
-		graded[i], awarded, marks = questions.Graded(q, plan.answers, open)
-		correct, total = correct+awarded, total+marks
-	}
-	return graded, correct, total, usage, nil
 }
 
 // gradingLimitError is the refusal past the signed-in daily part cap.
@@ -376,37 +320,6 @@ func (a *api) gradeSignedIn(ctx context.Context, plan gradePlan, workspaceID str
 	return graded, correct, total, nil
 }
 
-// gradeSharedSignedIn grades a signed-in visitor's check on a shared page with
-// Jev, uncharged, as the page's other checks are. It goes with them when shared
-// pages stop AI marking (Epo 2026-11-03).
-func (a *api) gradeSharedSignedIn(ctx context.Context, plan gradePlan, metadata map[string]any) ([]map[string]any, float64, float64, error) {
-	if len(plan.open) > 0 {
-		if err := a.reserveGrading(ctx, len(plan.open)); err != nil {
-			return nil, 0, 0, err
-		}
-	}
-	graded, correct, total, usage, err := a.grade(ctx, plan)
-	if err != nil {
-		obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz})
-		return nil, 0, 0, huma.Error503ServiceUnavailable("grading is unavailable, try again")
-	}
-	if total <= 0 {
-		return nil, 0, 0, huma.Error422UnprocessableEntity("there are no questions to grade")
-	}
-	if len(plan.open) == 0 {
-		return graded, correct, total, nil
-	}
-	metadata["costMicroUsd"] = jev.CostMicroUSD(usage.InputTokens)
-	if err := a.s.RecordUsage(ctx, store.UsageEvent{
-		ActorUserID: userID(ctx),
-		Kind:        store.KindLLM, Surface: store.SurfaceQuiz, Provider: "typesafe", Model: usage.Model,
-		InputTokens: usage.InputTokens, Units: int64(len(plan.open)), Unit: "parts", Metadata: metadata,
-	}); err != nil {
-		obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz})
-	}
-	return graded, correct, total, nil
-}
-
 func decodeStoredQuestions(raw json.RawMessage) ([]map[string]any, error) {
 	var qs []map[string]any
 	if len(raw) == 0 {
@@ -415,9 +328,7 @@ func decodeStoredQuestions(raw json.RawMessage) ([]map[string]any, error) {
 	return qs, json.Unmarshal(raw, &qs)
 }
 
-/* ------------------------------------------------------- signed-out grading */
-
-type clientIPKey struct{}
+/* ----------------------------------------------------- a shared page's check */
 
 type gradeAnonymousQuizInput struct {
 	Token string `path:"token"`
@@ -431,31 +342,30 @@ type gradeAnonymousNoteQuizInput struct {
 
 // registerAnonymousGrading serves POST /api/public/quizzes/{token}/grade and,
 // for a quiz embedded in a shared note, POST
-// /api/public/notes/{token}/quizzes/{quizId}/grade, reached directly, not
-// through the site Worker. Nothing is stored; the daily caps key on the client
-// address (an IPv6 /56), and count only the open parts Jev
-// grades. A forged token is refused before the body is read.
+// /api/public/notes/{token}/quizzes/{quizId}/grade: a shared page's check, for
+// every visitor, signed in or out (Epo 2026-11-05, Q640 B). The browser calls
+// them directly, not through the site Worker, so the /api/public/ limit keys on
+// the visitor's address. A forged token is refused before the body is read.
 func (a *api) registerAnonymousGrading(api huma.API) {
-	clientIP := huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
+	verified := huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
 		if _, ok := a.s.VerifyShareToken(ctx.Param("token")); !ok {
 			_ = huma.WriteErr(api, ctx, http.StatusNotFound, "not found")
 			return
 		}
-		r, _ := humachi.Unwrap(ctx)
-		next(huma.WithValue(ctx, clientIPKey{}, obs.ClientAddress(r)))
+		next(ctx)
 	}}
 	huma.Register(api, huma.Operation{
 		OperationID: "gradeAnonymousQuiz", Method: http.MethodPost, Path: "/api/public/quizzes/{token}/grade",
-		Summary: "Grade one question of a signed-out attempt at a shared quiz", Tags: []string{"Sharing"},
-		DefaultStatus: http.StatusOK, MaxBodyBytes: answersMaxBytes, Middlewares: clientIP,
+		Summary: "Check one question of a shared quiz; an answered open part stays Not marked", Tags: []string{"Sharing"},
+		DefaultStatus: http.StatusOK, MaxBodyBytes: answersMaxBytes, Middlewares: verified,
 	}, func(ctx context.Context, in *gradeAnonymousQuizInput) (*gradedQuestionOutput, error) {
 		out, err := a.gradeAnonymousQuiz(ctx, in)
 		return out, reportHandlerError(ctx, err)
 	})
 	huma.Register(api, huma.Operation{
 		OperationID: "gradeAnonymousNoteQuiz", Method: http.MethodPost, Path: "/api/public/notes/{token}/quizzes/{quizId}/grade",
-		Summary: "Grade one question of a quiz embedded in a shared note", Tags: []string{"Sharing"},
-		DefaultStatus: http.StatusOK, MaxBodyBytes: answersMaxBytes, Middlewares: clientIP,
+		Summary: "Check one question of a quiz embedded in a shared note; an answered open part stays Not marked", Tags: []string{"Sharing"},
+		DefaultStatus: http.StatusOK, MaxBodyBytes: answersMaxBytes, Middlewares: verified,
 	}, func(ctx context.Context, in *gradeAnonymousNoteQuizInput) (*gradedQuestionOutput, error) {
 		out, err := a.gradeAnonymousNoteQuiz(ctx, in)
 		return out, reportHandlerError(ctx, err)
@@ -471,7 +381,7 @@ func (a *api) gradeAnonymousQuiz(ctx context.Context, in *gradeAnonymousQuizInpu
 	if err != nil {
 		return nil, storedContentError(ctx, id, err)
 	}
-	return a.gradeAnonymous(ctx, quiz.Questions, in.Body)
+	return gradeAnonymous(quiz.Questions, in.Body)
 }
 
 // gradeAnonymousNoteQuiz grades a quiz the shared note embeds and references;
@@ -485,12 +395,14 @@ func (a *api) gradeAnonymousNoteQuiz(ctx context.Context, in *gradeAnonymousNote
 	if err != nil {
 		return nil, storedContentError(ctx, id, err)
 	}
-	return a.gradeAnonymous(ctx, stored, in.Body)
+	return gradeAnonymous(stored, in.Body)
 }
 
-// gradeAnonymous grades one question of a signed-out attempt against the
-// stored questions under the anonymous daily caps.
-func (a *api) gradeAnonymous(ctx context.Context, stored json.RawMessage, body apimodel.GradeAnonymousQuizReq) (*gradedQuestionOutput, error) {
+// gradeAnonymous checks one question against the stored questions. Closed parts
+// mark here; no model reads an open answer, so an answered open part comes back
+// Not marked, with the marking points and solution any check reveals. Nothing is
+// stored.
+func gradeAnonymous(stored json.RawMessage, body apimodel.GradeAnonymousQuizReq) (*gradedQuestionOutput, error) {
 	qs, err := decodeStoredQuestions(stored)
 	if err != nil {
 		return nil, hErr(err)
@@ -503,103 +415,9 @@ func (a *api) gradeAnonymous(ctx context.Context, stored json.RawMessage, body a
 	if err != nil {
 		return nil, gradeRequestError(err)
 	}
-	// After the share-token check (the route's middleware) and before any
-	// grading; a forged link never reaches siteverify.
-	if err := a.checkCaptcha(ctx, body.TurnstileToken); err != nil {
-		return nil, err
-	}
-	var ipHash string
-	if len(plan.open) > 0 {
-		if a.jev == nil {
-			return nil, huma.Error503ServiceUnavailable("grading is unavailable, try again")
-		}
-		ip, _ := ctx.Value(clientIPKey{}).(string)
-		ipHash = a.s.AnonymousIPHash(ip)
-		if err := a.s.ReserveAnonymousGrading(ctx, ipHash, body.LocalID, len(plan.open)); errors.Is(err, store.ErrAnonymousGradingLimit) {
-			return nil, &huma.ErrorModel{
-				Status: http.StatusTooManyRequests, Title: http.StatusText(http.StatusTooManyRequests),
-				Detail: "sign in to keep grading open answers today", Errors: []*huma.ErrorDetail{{Message: "anonymous_grading_limit"}},
-			}
-		} else if err != nil {
-			return nil, hErr(err)
-		}
-	}
-	graded, correct, total, usage, err := a.grade(ctx, plan)
-	if err != nil {
-		obs.CaptureErr(ctx, err, map[string]string{"surface": "anonymous_quiz"})
-		return nil, huma.Error503ServiceUnavailable("grading is unavailable, try again")
-	}
+	graded, correct, total := gradedWithModel(plan, nil)
 	if total <= 0 {
 		return nil, huma.Error422UnprocessableEntity("there are no questions to grade")
-	}
-	if len(plan.open) > 0 {
-		if err := a.s.RecordAnonymousGradingUsage(ctx, ipHash, body.LocalID, usage.InputTokens, jev.CostMicroUSD(usage.InputTokens)); err != nil {
-			obs.CaptureErr(ctx, err, map[string]string{"surface": "anonymous_quiz"})
-		}
-	}
-	return &gradedQuestionOutput{Body: apimodel.GradedQuestion{Correct: correct, Total: total, Question: graded[0]}}, nil
-}
-
-/* ------------------------------------ signed-in check of a shared note quiz */
-
-type checkSharedNoteQuizInput struct {
-	Token  string `path:"token"`
-	QuizID string `path:"quizId"`
-	Body   apimodel.CheckSharedNoteQuizReq
-}
-
-// registerSharedNoteQuizCheck serves POST
-// /api/shared/notes/{token}/quizzes/{quizId}/check: a signed-in visitor's
-// check of one question of a quiz embedded in a shared note, graded under the user's daily
-// grading parts with no captcha and recording nothing (Epo 2026-10-24,
-// Q311). It keeps the anonymous route's share-token checks: a forged token
-// is refused before the body is read, and only a quiz the shared note embeds
-// is graded.
-func (a *api) registerSharedNoteQuizCheck(api huma.API) {
-	verified := huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
-		if _, ok := a.s.VerifyShareToken(ctx.Param("token")); !ok {
-			_ = huma.WriteErr(api, ctx, http.StatusNotFound, "not found")
-			return
-		}
-		next(ctx)
-	}}
-	huma.Register(api, huma.Operation{
-		OperationID: "checkSharedNoteQuiz", Method: http.MethodPost, Path: "/api/shared/notes/{token}/quizzes/{quizId}/check",
-		Summary: "Grade a signed-in check of one question of a quiz embedded in a shared note", Tags: []string{"Sharing"},
-		DefaultStatus: http.StatusOK, MaxBodyBytes: answersMaxBytes, Middlewares: verified,
-	}, func(ctx context.Context, in *checkSharedNoteQuizInput) (*gradedQuestionOutput, error) {
-		out, err := a.checkSharedNoteQuiz(ctx, in)
-		return out, reportHandlerError(ctx, err)
-	})
-}
-
-func (a *api) checkSharedNoteQuiz(ctx context.Context, in *checkSharedNoteQuizInput) (*gradedQuestionOutput, error) {
-	if err := a.requireAccountMutate(ctx); err != nil {
-		return nil, err
-	}
-	id, err := a.sharedMaterialID(in.Token)
-	if err != nil {
-		return nil, err
-	}
-	stored, err := a.s.AnonymousNoteQuiz(ctx, id, in.QuizID)
-	if err != nil {
-		return nil, storedContentError(ctx, id, err)
-	}
-	qs, err := decodeStoredQuestions(stored)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	q, _, _ := quizQuestion(qs, in.Body.QuestionID)
-	if q == nil {
-		return nil, noAnswersConfiguredError()
-	}
-	plan, err := planGrading([]map[string]any{q}, in.Body.Answers)
-	if err != nil {
-		return nil, gradeRequestError(err)
-	}
-	graded, correct, total, err := a.gradeSharedSignedIn(ctx, plan, map[string]any{"quizId": in.QuizID, "sharedNoteId": id})
-	if err != nil {
-		return nil, err
 	}
 	return &gradedQuestionOutput{Body: apimodel.GradedQuestion{Correct: correct, Total: total, Question: graded[0]}}, nil
 }

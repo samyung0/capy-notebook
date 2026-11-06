@@ -26,3 +26,17 @@ it('colours each question by its marks and counts only the colours present', () 
   expect(html).toContain(m.result_wrong({ count: 1 }));
   expect(html).not.toContain(m.result_unanswered({ count: 0 }));
 });
+
+it('counts a question with a part Not marked apart from wrong, whatever it earned', () => {
+  const results = [
+    { ...result(1, 0), notMarked: true },
+    { ...result(2, 1), notMarked: true },
+    result(3, 0),
+  ];
+  expect(results.map(outcomeOf)).toEqual(['notMarked', 'notMarked', 'wrong']);
+
+  const html = renderToStaticMarkup(<ResultSquares results={results} />);
+  expect(html).toContain(m.quiz_question_not_marked({ number: 1 }));
+  expect(html).toContain(m.result_not_marked({ count: 2 }));
+  expect(html).toContain(m.result_wrong({ count: 1 }));
+});

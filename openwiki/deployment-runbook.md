@@ -154,9 +154,10 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    verifies them in the Worker; CI renders the same GitHub secret into the app
    host's env file and passes it to `wrangler deploy --secrets-file`, and `wrangler.jsonc` lists it under
    `secrets.required`. Changing it invalidates every shared link, including
-   quiz and flashcard links, and resets the anonymous grading IP hashes.
+   quiz and flashcard links.
    `JEV_TYPESAFE_API_KEY` (manifest secret, target `app`) is the typesafe.ai
-   key that grades open quiz parts; without it grading answers 503.
+   key behind the quiz editor's needs-a-calculation check; without it that
+   check answers 503.
    `ALIBABA_MODELSTUDIO_KEY` (secret) and `ALIBABA_MODELSTUDIO_URL`
    (variable) also reach the app target for chat voice input, which the API
    calls itself (the same Singapore workspace and key as uploaded audio,
@@ -186,7 +187,7 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    `/p/*` routes serve signed-out shared quizzes', flashcards' and notes'
    images under the same signature check. The Worker inlines only the CSS
    rules a page's HTML uses (`workers/site/usedCss.ts`) and preloads the full
-   stylesheets, which the page applies before it hydrates. Anonymous grading skips
+   stylesheets, which the page applies before it hydrates. A shared page's check skips
    the Worker and posts to `/api/public/quizzes/{token}/grade` directly, since
    Worker subrequests reach the API without the visitor's IP. There is no
    KV/R2 cache. Only the `run_worker_first` paths reach the Worker; every other
@@ -1215,8 +1216,8 @@ per IP with the data centre (`cf.colo.id`).
 
 - `capy_public_api_rate_limit` covers `/api/public/` on every host of both
   environments: 100 requests in 10 s from one address, then blocked for 10 s.
-  `/api/public/` is the costliest path a signed-out caller reaches (grading
-  calls Jev; a public note read is up to about 2 MiB). It stops floods before
+  `/api/public/` is the costliest path a signed-out caller reaches (a public
+  note read is up to about 2 MiB). It stops floods before
   the tunnel and Redis. It covers direct `/api/public/` calls only: the site
   Worker's own reads of `/api/public/` reach the origin without passing the
   zone's rate-limit phase (a same-zone subrequest, the Worker has no
@@ -1506,10 +1507,7 @@ Two content security policies, both built once per SPA build by
 - **Scripts, enforced on the Worker's pages.** The share, summary and error
   pages the site Worker renders are also sent with an enforced
   `Content-Security-Policy` (`pagePolicy`):
-  - `script-src` names only `'self'`, Clerk's packages on its frontend API
-    (`https://{host}/npm/@clerk/`, the host decoded from
-    `VITE_CLERK_PUBLISHABLE_KEY`, and a key that names no plain host fails the
-    build; shared quizzes and flashcard sets load clerk-js from it) and this
+  - `script-src` names only `'self'` and this
     PostHog project's script assets (`/static/` and
     `/array/{VITE_POSTHOG_KEY}/config.js` on the host posthog-js loads them
     from, `src/lib/posthogHost.ts`: `https://{eu|us}-assets.i.posthog.com` for
@@ -1527,7 +1525,9 @@ Two content security policies, both built once per SPA build by
     (`src/lib/zodJitless.ts`), so Zod never probes `new Function` (the summary
     and error pages' script builds no schema);
   - `script-src-attr 'none'` (no event-handler attributes),
-    `worker-src 'self' blob:` (clerk-js's timer worker),
+    `worker-src 'self' blob:` (only clerk-js's timer worker was known to need
+    `blob:`; the pages run clean without it locally, and it stays for PostHog's
+    lazy extensions, which only a deployed page can check),
     `style-src 'self' 'unsafe-inline'` (the Worker inlines the page's CSS;
     MathLive and Mermaid write style attributes),
     `frame-src` `VITE_EMBED_ORIGIN` and `https://www.youtube-nocookie.com`,
@@ -1535,14 +1535,12 @@ Two content security policies, both built once per SPA build by
   - `frame-ancestors 'self'`: only the app may frame these pages, and
     nothing in it does today, so an outside site (an LMS, a blog) cannot
     embed a shared quiz or note;
-  - on a shared quiz and a shared note only (the pages that grade signed-out
-    answers), `https://challenges.cloudflare.com` in `script-src` and
-    `frame-src` for Cloudflare Turnstile (`allowTurnstile` in
-    `workers/site/handler.ts`; Epo 2026-10-24, Q271). Flashcard, summary and
-    error pages do not get it.
 
   The SPA gets the same `script-src` report-only, inside its image header,
-  plus `https://challenges.cloudflare.com` (Clerk's Turnstile on sign-up) and
+  plus Clerk's packages on its frontend API (`https://{host}/npm/@clerk/`, the
+  host decoded from `VITE_CLERK_PUBLISHABLE_KEY`, and a key that names no plain
+  host fails the build; no page the Worker renders loads Clerk, Epo 2026-11-06,
+  Q668), `https://challenges.cloudflare.com` (Clerk's Turnstile on sign-up) and
   `https://apis.google.com` (the Drive picker), to learn what the app itself
   would need before anything there is enforced.
 
@@ -1600,41 +1598,6 @@ it; a new script or frame host on a public page goes into `scriptSources` or
 `capy-web` security report. The HTML embed frame, the Office runtime and Ops
 keep their own policies (§2.3, `workers/office/_headers`, the Ops application
 below).
-
-### 2.5 Turnstile widget (signed-out answer checks)
-
-Each signed-out answer check (a shared quiz's Submit, a quiz embedded in a
-shared note) carries a Cloudflare Turnstile token, and the API verifies it
-with siteverify before grading (Epo 2026-10-24, Q271; observability-metering
-§ anonymous grading). Dashboard work, by hand, once per environment:
-
-1. Cloudflare dashboard → Turnstile → Add widget. Mode **Managed**. Hostnames:
-   the environment's app hosts that serve share pages (UAT:
-   `uat.capynotebook.com` and `local.uat.capynotebook.com`; production: its
-   app hostname). One widget
-   per environment, so a leaked UAT key cannot pass production checks.
-2. GitHub environment (`uat`, `production`): variable
-   `VITE_TURNSTILE_SITE_KEY` (the widget's site key, built into the share
-   pages) and secret `TURNSTILE_SECRET_KEY` (its secret key, for the API).
-   `scripts/env/config.py` refuses a build without the site key and an app
-   render without the secret, and a production gateway does not boot without
-   the secret or with one of Cloudflare's published test secrets
-   (`validateTurnstileSecret`, Q308), or when `APP_URL`,
-   `CORS_ALLOWED_ORIGINS` and `COLLABORATION_ALLOWED_ORIGINS` name no host to
-   check tokens against (`turnstileHosts`, Q350).
-3. Deploy, open a shared quiz signed out and submit: the check is graded. A
-   403 `captcha_failed` means the token did not verify (wrong key pair, or a
-   host siteverify names that is not among the gateway's `APP_URL`,
-   `CORS_ALLOWED_ORIGINS` and `COLLABORATION_ALLOWED_ORIGINS` hosts); a 503
-   `captcha_unavailable` means siteverify could not answer (the API refuses
-   rather than skipping the check).
-
-Local stacks and e2e use Cloudflare's published test keys, which always pass:
-site key `1x00000000000000000000AA`, secret
-`1x0000000000000000000000000000000AA` (`deploy/.env.example`, the Compose
-files, `playwright.config.ts`). The API still calls siteverify with the test
-secret, so a local signed-out check needs Cloudflare reachable; it checks no
-hostname there, since test tokens name none of the app hosts.
 
 ---
 

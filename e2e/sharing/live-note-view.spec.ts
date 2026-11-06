@@ -125,7 +125,7 @@ test('a shared note page joins no room, signed in or out', async ({
     const path = list.items.find((item) => item.id === note.id)?.sharePath;
     expect(path).toMatch(/^\/share\/notes\//);
     for (const [page, url] of [
-      [anonymousPage, `${path}?anonymous`],
+      [anonymousPage, path as string],
       [otherPage, path as string],
     ] as const) {
       const joins: string[] = [];

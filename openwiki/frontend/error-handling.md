@@ -42,9 +42,7 @@ the note placeholder (`errorCopy`) show it inline:
 An unexpected failure (`unexpectedErrorId` in `src/lib/errors.ts`: an API 5xx
 without one of the typed codes `provider_busy`, `ai_unavailable`,
 `generate_empty`, `bank_unavailable`, `upload_queue_full` (the gateway's
-upload line is full: busy, try again), `rate_limit_unavailable`,
-`captcha_unavailable` (siteverify could not check a signed-out answer check;
-the quiz shows it under the question's Check with `captcha_failed`), or an unknown status
+upload line is full: busy, try again), `rate_limit_unavailable`, or an unknown status
 without a code)
 shows its request's trace id as a small (`text-xs`) "Error ID: …" line under
 the Retry action, spaced well apart from it (`ErrorId`). It has no copy button:
