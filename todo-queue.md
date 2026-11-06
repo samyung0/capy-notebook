@@ -7,7 +7,7 @@ plan that holds its detail. Change this file whenever something starts, lands or
 
 Windows lands and deploys these, one landing per deploy; Mac sessions review and push feature
 branches (Epo, 2026-11-06, after the account switch). Main is 6159c0f25: ribbon (protocol 27), the
-quiz Undo fix 779c114fa, canvas-enrich to 2b1fc744f. On the PC's opening train: `claude/quiz-image-back` 43b17c1ea and `claude/board-connector-load` 236859139. Waiting on Windows: canvas-enrich's speed-ups (e87d5f85b, bf336ec54) and, once its session pushes, drawing answers.
+quiz Undo fix 779c114fa, canvas-enrich to 2b1fc744f. On the PC's opening train: `claude/quiz-image-back` 43b17c1ea and `claude/board-connector-load` 236859139. Waiting on Windows: canvas-enrich's speed-ups (e87d5f85b, bf336ec54) and `claude/drawing-answers-flow-f90c14` cf23ad085.
 
 | Item | Where it is | Waiting on |
 |---|---|---|
@@ -43,7 +43,7 @@ boards K6, K7 and K8 on the study Design canvas. Scanned submissions build on it
 - [x] Fix what the try found (`claude/drawing-answers`, local): the `ZodError` on every partial edit (a zod 4 port slip), zoom at the bottom right and none on phones, the sheet filling a phone's width, the note menu's image, link and file buttons off, undo and redo in the toolbar, note cards drawn onto the sheet in the image
 - [ ] Note card text comes out slightly clipped in the image (html2canvas); readable, revisit with tuning
 - [x] Bring `vendor/blocksuite` to `main` in a lazy chunk (Epo, 2026-11-06: "sure"): on `main` c69c01992, dev routes only until the answer flow opens it
-- [ ] Answer track (type, board in the attempt, saving, marking, results) in session `drawing-answers`, from 2026-11-06. Built and handed back 2026-11-07; `claude/drawing-answers-flow-f90c14` pushed at 826bff390 with main c02dff757 merged in. Not verified: Go DB tests (CI), a live model call with a drawing, an e2e spec. Open: M4 (grading slot requires vision), drawn sample answer editors, the wide-board warning on Done, per-account device drafts, orphaned drawings
+- [ ] Answer track (type, board in the attempt, saving, marking, results) in session `drawing-answers`, from 2026-11-06. Pushed 2026-11-07 at cf23ad085 (main c02dff757 merged in; migrations 0156–0158): M4 (slot requires vision), drawn sample answers, account-scoped device drafts, emptied board deletes its drawing. Not verified: Go DB tests and 0158 on a real DB (CI), a live model call with a drawing or sample image, an e2e spec. Open: the wide-board warning on Done (Epo: W1 or W2 on the canvas; canvas-enrich's `stats().span`), orphaned drawings
 - [ ] `drawing` answer type with its background (blank, squared grid, axes, figure) in the shared question format: Go, Rust, TypeScript, pipeline
 - [ ] The board: full screen, question pinned at top left, Done returning to a preview and "Edit drawing", phones
 - [ ] Saving: strokes kept, an image rendered for marking, charged to whoever pays for the work: the workspace owner for assignments, the member for their own practice, deleted with the attempt (Epo, 2026-11-06). First trace whether a saved answer's flavours reach minimatch in `schema.ts`
