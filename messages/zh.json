@@ -1016,6 +1016,7 @@
   "files_office_document_frame_title": "{name} 的文档查看器",
   "files_office_runtime_loading_file": "正在加载文件",
   "files_office_runtime_loading": "正在加载",
+  "files_office_crashed": "此文件出了点问题。重新加载即可继续编辑。",
   "files_office_runtime_loading_editor": "正在加载编辑器",
   "files_office_no_slides": "没有幻灯片",
   "files_office_slide_content": "第 {current} 张（共 {total} 张）的内容",

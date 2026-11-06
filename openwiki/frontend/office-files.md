@@ -1177,7 +1177,11 @@ File and the view controls in the menu bar, as Google Sheets and Slides' viewer
   render error takes the ribbon, Capy draws it as before. Download draft survives
   that error in DOCX: the session is outside the fork's boundary, so `handleSave`
   exports from it when the view is gone, and `export` doesn't stop at a failed
-  flush.
+  flush. XLSX and PPTX have no such boundary in the fork, so the runtime's
+  `EditorCrash` catches their render errors (Q687): the editor goes, `error`
+  carries `crashed`, and the strip says so with Reload (no Download draft, whose
+  exporter left with the editor). Reload (`reopenEditor`) opens a new frame on
+  the same session, so every edit the host already holds comes back.
 - **Icons**: Tabler at the even 1.5 px line (Q603, stroke 36/size) in
   `tablerGlyphs.ts`, one export per glyph, so the build holds only the glyphs used
   (one chunk for the frame's editors; Capy's header takes its few from

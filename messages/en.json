@@ -1016,6 +1016,7 @@
   "files_office_document_frame_title": "Document viewer for {name}",
   "files_office_runtime_loading_file": "Loading file",
   "files_office_runtime_loading": "Loading",
+  "files_office_crashed": "Something went wrong with this file. Reload to keep editing.",
   "files_office_runtime_loading_editor": "Loading editor",
   "files_office_no_slides": "No slides",
   "files_office_slide_content": "Slide {current} of {total} content",

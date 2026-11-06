@@ -246,6 +246,8 @@ export function useOfficeRuntime({
   );
   const publishedRevision = useRef(revision);
   const initializedFrame = useRef(-1);
+  // The frame whose editor failed to render (Q687): its strip offers Reload.
+  const [crashedFrame, setCrashedFrame] = useState<number | null>(null);
   // The source document the frame was loaded with: a frame still showing an
   // earlier one (an in-place restart swaps it on the next render) is never
   // made editable.
@@ -412,6 +414,16 @@ export function useOfficeRuntime({
     setError(config.error);
     setErrorId(null);
   }, [revision, mode, config.error]);
+
+  // Reload after the editor failed to render: a new frame opens the editor
+  // again on the same session, so nothing synced is lost.
+  const reopenEditor = () => {
+    initializedFrame.current = -1;
+    setFrameLoaded(false);
+    setFrameGeneration((value) => value + 1);
+    setError(null);
+    setErrorId(null);
+  };
 
   const retryView = () => {
     if (mode !== 'view') return;
@@ -802,7 +814,10 @@ export function useOfficeRuntime({
       }
       if (message.type === 'error') {
         // The runtime's own text is English engine detail; the host owns copy.
-        setError(m.error_file_body());
+        if (message.crashed) {
+          setCrashedFrame(initializedFrame.current);
+          setError(m.files_office_crashed());
+        } else setError(m.error_file_body());
         for (const waiters of [frameRequests, renderRequests]) {
           for (const waiter of waiters.current.values())
             waiter.reject(new Error(message.message));
@@ -1155,6 +1170,7 @@ export function useOfficeRuntime({
   return {
     analysis,
     banner: source.banner,
+    crashed: crashedFrame === frameGeneration,
     discardDraft: source.discardDraft,
     discarding: source.discarding,
     downloadDraft,
@@ -1174,6 +1190,7 @@ export function useOfficeRuntime({
     readOnly: source.readOnly,
     ready,
     render,
+    reopenEditor,
     replaced: source.replaced,
     retryView,
     runMenuCommand,

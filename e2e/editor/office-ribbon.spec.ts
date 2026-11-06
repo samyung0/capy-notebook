@@ -476,6 +476,34 @@ test('a render error in the editor: the strip and Download draft reach the host'
   expect(first.subarray(0, 2).toString()).toBe('PK');
 });
 
+for (const format of ['xlsx', 'pptx'] as const) {
+  test(`a render error in the ${format} editor: the strip asks to reload, and Reload opens it again`, async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await page.goto(`/workspaces/ws_bio?file=bio-office-${format}&mode=edit`);
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 120_000 });
+    await expect(frameOf(page).locator('.office-ribbon')).toBeVisible();
+    const runtime = page
+      .frames()
+      .find((candidate) => candidate.url().includes('office-runtime'));
+    if (!runtime) throw new Error('Missing Office runtime');
+    await runtime.evaluate(() =>
+      window.dispatchEvent(new Event('capy-scenario-ribbon-failure'))
+    );
+    await expect(page.getByText(m.files_office_crashed())).toBeVisible();
+    await expect(frameOf(page).locator('.office-ribbon')).toHaveCount(0);
+    await page
+      .getByRole('button', { exact: true, name: m.error_action_reload() })
+      .click();
+    await expect(frameOf(page).locator('.office-ribbon')).toBeVisible({
+      timeout: 120_000,
+    });
+    await expect(page.getByText(m.files_office_crashed())).toHaveCount(0);
+  });
+}
+
 test('PPTX chips stay out of the ribbon: the header draws who is in the room', async ({
   page,
 }) => {

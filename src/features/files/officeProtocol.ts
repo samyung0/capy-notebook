@@ -387,6 +387,8 @@ export type OfficeRuntimeMessage =
       type: 'error';
       message: string;
       revision: number;
+      /** The editor failed to render and is gone: only a reload brings it back. */
+      crashed?: boolean;
     }
   /** The user tried something the file refuses; the document is unaffected. */
   | {

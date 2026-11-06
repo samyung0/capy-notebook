@@ -1,5 +1,7 @@
 import {
+  Component,
   lazy,
+  type ReactNode,
   Suspense,
   useCallback,
   useEffect,
@@ -796,6 +798,18 @@ function OfficeRuntime() {
     },
     [runtimeRevision]
   );
+  const reportCrash = useCallback(
+    (value: Error) => {
+      if (runtimeRevision === undefined) return;
+      post({
+        crashed: true,
+        message: value.message,
+        revision: runtimeRevision,
+        type: 'error',
+      });
+    },
+    [runtimeRevision]
+  );
   const reportNotice = useCallback(
     (notice: OfficeNotice) => {
       if (runtimeRevision === undefined) return;
@@ -925,55 +939,59 @@ function OfficeRuntime() {
               ribbon={ribbonHost}
             />
           ) : file.format === 'xlsx' ? (
-            <XlsxEditorHost
-              bytes={file.bytes}
-              collaboration={collaboration}
-              compact={compact}
-              fileName={file.fileName}
-              initialZoom={zoom}
-              locale={locale}
-              onAnalysis={reportAnalysis}
-              onExporter={reportExporter}
-              onFlusher={reportFlusher}
-              onMenus={reportMenus}
-              onNotice={reportNotice}
-              onPendingChange={reportHostPending}
-              onPositioner={reportPositioner}
-              onRenderer={reportRenderer}
-              onSave={save}
-              onThumbnailer={reportThumbnailer}
-              onZoomChange={reportZoom}
-              readOnly={readOnly}
-              ribbon={ribbonHost}
-              sending={sending}
-            />
+            <EditorCrash onCrash={reportCrash}>
+              <XlsxEditorHost
+                bytes={file.bytes}
+                collaboration={collaboration}
+                compact={compact}
+                fileName={file.fileName}
+                initialZoom={zoom}
+                locale={locale}
+                onAnalysis={reportAnalysis}
+                onExporter={reportExporter}
+                onFlusher={reportFlusher}
+                onMenus={reportMenus}
+                onNotice={reportNotice}
+                onPendingChange={reportHostPending}
+                onPositioner={reportPositioner}
+                onRenderer={reportRenderer}
+                onSave={save}
+                onThumbnailer={reportThumbnailer}
+                onZoomChange={reportZoom}
+                readOnly={readOnly}
+                ribbon={ribbonHost}
+                sending={sending}
+              />
+            </EditorCrash>
           ) : (
-            <PptxEditorHost
-              bytes={file.bytes}
-              collaboration={collaboration}
-              compact={compact}
-              fileName={file.fileName}
-              initialZoom={file.zoom}
-              locale={locale}
-              narrow={narrow}
-              onAnalysis={reportAnalysis}
-              onAskPresenter={askPresenter}
-              onError={reportError}
-              onExporter={reportExporter}
-              onFlusher={reportFlusher}
-              onMenus={reportMenus}
-              onNotice={reportNotice}
-              onPendingChange={reportHostPending}
-              onPositioner={reportPositioner}
-              onPresentingChange={reportPresenting}
-              onRenderer={reportRenderer}
-              onSave={save}
-              onThumbnailer={reportThumbnailer}
-              onZoomChange={reportZoom}
-              prepareImage={prepareImage}
-              readOnly={readOnly}
-              ribbon={ribbonHost}
-            />
+            <EditorCrash onCrash={reportCrash}>
+              <PptxEditorHost
+                bytes={file.bytes}
+                collaboration={collaboration}
+                compact={compact}
+                fileName={file.fileName}
+                initialZoom={file.zoom}
+                locale={locale}
+                narrow={narrow}
+                onAnalysis={reportAnalysis}
+                onAskPresenter={askPresenter}
+                onError={reportError}
+                onExporter={reportExporter}
+                onFlusher={reportFlusher}
+                onMenus={reportMenus}
+                onNotice={reportNotice}
+                onPendingChange={reportHostPending}
+                onPositioner={reportPositioner}
+                onPresentingChange={reportPresenting}
+                onRenderer={reportRenderer}
+                onSave={save}
+                onThumbnailer={reportThumbnailer}
+                onZoomChange={reportZoom}
+                prepareImage={prepareImage}
+                readOnly={readOnly}
+                ribbon={ribbonHost}
+              />
+            </EditorCrash>
           )
         ) : file.format === 'docx' ? (
           <DocxViewer
@@ -1019,6 +1037,30 @@ function OfficeRuntime() {
       </Suspense>
     </div>
   );
+}
+
+/** A render error in the XLSX or PPTX editor (DOCX's editor catches its own):
+ * the editor goes, and the host's strip asks to reload it (Q687). */
+class EditorCrash extends Component<
+  { children: ReactNode; onCrash: (error: Error) => void },
+  { crashed: boolean }
+> {
+  state = { crashed: false };
+
+  static getDerivedStateFromError() {
+    return { crashed: true };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.error('Office editor render error', error);
+    this.props.onCrash(
+      error instanceof Error ? error : new Error(String(error))
+    );
+  }
+
+  render() {
+    return this.state.crashed ? null : this.props.children;
+  }
 }
 
 function post(message: OfficeRuntimePayload, transfer: Transferable[] = []) {
