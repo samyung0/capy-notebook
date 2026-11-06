@@ -255,3 +255,18 @@ export function deleteLocalDrawingDraft(key: string): Promise<void> {
     transaction.objectStore('drawingDrafts').delete(key);
   });
 }
+
+/** Gives the drawing drafts to `owner` (none: signed out): another account's,
+ * or anyone's once signed out, are deleted first, in one transaction. A
+ * draft holds a student's answer, so it never outlives its account here. */
+export function claimLocalDrawingDrafts(owner: string | null): Promise<void> {
+  return run(['meta', 'drawingDrafts'], 'readwrite', (t) => {
+    const meta = t.objectStore('meta');
+    meta.get('drawingDraftsOwner').onsuccess = (event) => {
+      if (owner && (event.target as IDBRequest).result === owner) return;
+      t.objectStore('drawingDrafts').clear();
+      if (owner) meta.put(owner, 'drawingDraftsOwner');
+      else meta.delete('drawingDraftsOwner');
+    };
+  });
+}
