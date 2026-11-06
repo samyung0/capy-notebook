@@ -7,6 +7,8 @@ import {
   useState,
 } from 'react';
 import { Button } from '@/components/ui/Button';
+import { QuestionBlockView } from '@/features/questions/QuestionView';
+import type { QuestionBlock } from '@/features/questions/types';
 import { m } from '@/i18n';
 import type { Answer } from '../grade';
 import type { PinnedQuestion } from './DrawingBoardScreen';
@@ -127,5 +129,44 @@ export function DrawingAnswer({
         </Suspense>
       )}
     </div>
+  );
+}
+
+/** A drawing answer as staff and results read it, outside the question runner:
+ * the drawing drawn from its board, and Open drawing, the whole board read only
+ * (R2, R3, Epo 2026-11-06). `blocks` are the part's text, pinned over the board. */
+export function ReviewedDrawing({
+  blocks,
+  marks,
+  title,
+  value,
+}: {
+  blocks: QuestionBlock[];
+  marks: string;
+  title: string;
+  value: Answer;
+}) {
+  const first = blocks.find((block) => block.type === 'text');
+  return (
+    <DrawingAnswer
+      disabled={false}
+      onChange={() => undefined}
+      partId=""
+      pinned={{
+        body: (
+          <div className="flex flex-col gap-2 text-fg-secondary">
+            {blocks.map((block, i) => (
+              <QuestionBlockView block={block} key={i} />
+            ))}
+          </div>
+        ),
+        marks,
+        short: title,
+        summary: first?.type === 'text' ? first.text : '',
+        title,
+      }}
+      review
+      value={value}
+    />
   );
 }

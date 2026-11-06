@@ -26,8 +26,13 @@ import {
 import { userToast } from '@/components/ui/userToast';
 import { AiWarning } from '@/features/questions/AiWarning';
 import { TextView } from '@/features/questions/QuestionView';
-import { type Question, questionMarks } from '@/features/questions/types';
-import { formatPoints } from '@/features/quizzes/grade';
+import {
+  modelMarked,
+  type Question,
+  questionMarks,
+} from '@/features/questions/types';
+import { ReviewedDrawing } from '@/features/quizzes/drawing/DrawingAnswer';
+import { type Answer, formatPoints } from '@/features/quizzes/grade';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
@@ -67,7 +72,7 @@ export function ApproveTab({
     [report.members]
   );
   const openQuestions = report.questions.filter((q) =>
-    q.question.parts.some((p) => p.answer.type === 'open')
+    q.question.parts.some((p) => modelMarked(p.answer.type))
   );
   const firstWaiting = report.answers.find((row) => row.waiting);
   const { isPending: marking, mutate: markWithAI } = useMarkAssignmentWithAI(
@@ -393,7 +398,7 @@ function MarkForm({
   question: AssignmentGradedQuestion;
   waiting: boolean;
 }) {
-  const parts = question.parts.filter((p) => p.answer.type === 'open');
+  const parts = question.parts.filter((p) => modelMarked(p.answer.type));
   const [items, setItems] = useState<Record<string, (number | null)[]>>(() =>
     Object.fromEntries(
       parts.map((p) => [
@@ -482,15 +487,25 @@ function MarkForm({
         const text = answers[part.id];
         return (
           <div className="mt-3" key={part.id}>
-            <p className="whitespace-pre-wrap border-line-strong border-l-3 py-0.5 pl-4">
-              {typeof text === 'string' && text ? (
-                text
-              ) : (
-                <span className="text-fg-muted">
-                  {m.assignment_not_answered()}
-                </span>
-              )}
-            </p>
+            {part.answer.type === 'drawing' && text ? (
+              // Drawn from its board, Open drawing for the whole board (R3).
+              <ReviewedDrawing
+                blocks={part.blocks}
+                marks={m.question_ui_marks({ count: part.marks })}
+                title={m.drawing_answer_question()}
+                value={text as Answer}
+              />
+            ) : (
+              <p className="whitespace-pre-wrap border-line-strong border-l-3 py-0.5 pl-4">
+                {typeof text === 'string' && text ? (
+                  text
+                ) : (
+                  <span className="text-fg-muted">
+                    {m.assignment_not_answered()}
+                  </span>
+                )}
+              </p>
+            )}
             {part.aiComment && (
               <AiWarning
                 className="mt-3"
