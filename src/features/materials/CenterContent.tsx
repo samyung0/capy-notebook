@@ -161,7 +161,7 @@ export function CenterContent({
    * workspace's Dashboard or a Study page (one column; from lg the
    * workspace draws it without the header). */
   page?: ReactNode;
-  /** Below md: the title opens Files and ⋮ carries the workspace actions. */
+  /** Below lg: the title opens Files and ⋮ carries the workspace actions. */
   oneColumn?: OneColumnChrome;
   standalone?: boolean;
   /** Workspace chrome drawn before the file name in the header. */

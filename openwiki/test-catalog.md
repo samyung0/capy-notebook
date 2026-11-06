@@ -27,7 +27,7 @@ SectionGallery spacing increases at `sm`; workspace
 labels, note AI suggestions and editor padding use small-screen base styles.
 These visual checks are not covered by the automated suites below.
 
-Chat history styling is checked manually in the MSW Biology workspace below md:
+Chat history styling is checked manually in the MSW Biology workspace below lg:
 open Chat history from the chat page, inspect the dialog's list (New chat, search,
 Pinned and Older, scroll fade) and See archived, select a saved conversation,
 reopen to check its active marker, and dismiss with Escape; on a phone New chat

@@ -825,7 +825,7 @@ test('the workspace canvas stays in the URL at every width', async ({
   const board = page.locator('.capy-board');
   await board.waitFor();
 
-  // An iPad keeps the rail, with undo over the toolbar's end no more: top right.
+  // An iPad keeps the rail, and undo moves to the top right, clear of the toolbar.
   const rail = page.getByRole('navigation', { name: 'Workspace' });
   await page.setViewportSize({ height: 800, width: 900 });
   await expect(rail).toBeVisible();
