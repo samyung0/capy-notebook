@@ -7,7 +7,7 @@ plan that holds its detail. Change this file whenever something starts, lands or
 
 Windows lands and deploys these, one landing per deploy; Mac sessions review and push feature
 branches (Epo, 2026-11-06, after the account switch). Main is 6159c0f25: ribbon (protocol 27), the
-quiz Undo fix 779c114fa, canvas-enrich to 2b1fc744f. On the PC's opening train: `claude/quiz-image-back` 43b17c1ea and `claude/board-connector-load` 236859139. Waiting on Windows: `claude/bench-canvas-typical` 630705a96 (main c02dff757 merged in) and canvas-enrich's speed-ups (e87d5f85b, bf336ec54).
+quiz Undo fix 779c114fa, canvas-enrich to 2b1fc744f. On the PC's opening train: `claude/quiz-image-back` 43b17c1ea and `claude/board-connector-load` 236859139. Waiting on Windows: canvas-enrich's speed-ups (e87d5f85b, bf336ec54) and, once its session pushes, drawing answers.
 
 | Item | Where it is | Waiting on |
 |---|---|---|
@@ -23,7 +23,7 @@ quiz Undo fix 779c114fa, canvas-enrich to 2b1fc744f. On the PC's opening train: 
 | Quiz Undo reverting the answer key too (empty steps of the other document) | On `main` 6159c0f25 (779c114fa) | Done |
 | UAT note journey's `quizImageOnPick` (note.spec.ts:167): Back from a block's editor lost its toolbar to the dialog's focus trap, near-constant after the quiz layout | `claude/quiz-image-back` 43b17c1ea, 8 of 8 mock repro runs pass | Windows' merge, UAT run |
 | A saved board with a connector or group couldn't reopen (`checkSavedBoard` wanted a stored place, which BlockSuite never stores for either) | `claude/board-connector-load` 236859139, from main e37508bb8; drawing-board spec 17 passed | Windows' merge |
-| bench:canvas (Q686 A): gated blank open at 1x, typical board's open, typing, pen, pan and zoom at 4x; warm opens, large board and bytes report-only; `canvas` job in Performance | Main c02dff757 gates the large board (first calibration 7d470b2e5); `claude/bench-canvas-typical` 630705a96 moves the gates to the typical board with `MEDIANS` null; checked on a dev server only | Windows: land it, then three `canvas` runs to fill `MEDIANS` (typical board approved by Epo 2026-11-07) |
+| bench:canvas (Q686 A): gated blank open at 1x, typical board's open, typing, pen, pan and zoom at 4x; warm opens, large board and bytes report-only | On `main` b4a2307d2, calibrated (runs 42252998330, 42253016137, 42253034659): budgets blank 1050, typical open 3800, pan 60, pen 45, typing 30, zoom 100 ms | Done |
 | Vendored BlockSuite, dev routes only | On `main` c69c01992 | Done |
 | Bench reports main already links to (copy-first, figure boxes, layout models and capacity, DeepSeek grading, Office room memory), and the layout service's capacity settings (`cpu_shares: 128`, spinning off) | On `main` (9b95291a0); past-paper fixtures and run records stay on the bench branches | The layout project on the ingest host is rebuilt by hand (runbook 7.6) |
 
