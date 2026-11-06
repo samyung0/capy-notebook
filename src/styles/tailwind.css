@@ -560,6 +560,15 @@ math-field {
     --note-leading: 1.5;
   }
 
+  /* Taking an assignment on a phone: no workspace header or chat button
+     (Epo 2026-11-06); the page has its own way out, clock and Submit. */
+  @media (width < 768px) {
+    [data-viewer]:has([data-assignment-take]) [data-center-header],
+    [data-viewer]:has([data-assignment-take]) [data-chat-dock] {
+      display: none !important;
+    }
+  }
+
   /* Paint-contained chunks must include the drag-handle gutter on the left and
      the comment trigger in the editor's right padding (px-5 sm:px-10). */
   .note-editor [data-slate-chunk] {

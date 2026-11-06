@@ -133,6 +133,7 @@ export function QuizScore({
   max,
   minutes,
   confetti = false,
+  onOpen,
 }: {
   /** Graded questions: every part carries the server's `awarded`. */
   questions: Question[];
@@ -143,6 +144,8 @@ export function QuizScore({
   /** "12 min" beside the score; absent where the start is unknown. */
   minutes?: string;
   confetti?: boolean;
+  /** Where a square goes: else it scrolls to its question below. */
+  onOpen?: (id: string) => void;
 }) {
   const results = questions.flatMap((question, i): QuestionResult[] =>
     leftOut?.has(question.id)
@@ -169,10 +172,12 @@ export function QuizScore({
           {confetti && <Confetti />}
         </div>
         <ResultSquares
-          onOpen={(id) =>
-            document
-              .querySelector(`[data-question-id="${CSS.escape(id)}"]`)
-              ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          onOpen={
+            onOpen ??
+            ((id) =>
+              document
+                .querySelector(`[data-question-id="${CSS.escape(id)}"]`)
+                ?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
           }
           results={results}
         />

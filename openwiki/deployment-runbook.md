@@ -1209,10 +1209,10 @@ for phase in http_request_firewall_custom http_ratelimit http_request_cache_sett
 done
 ```
 
-**Rate limiting rules** (Epo 2026-10-24, Q303, Q324). The zone is on
-Cloudflare Pro, which allows two rate limiting rules; the phase holds both,
-and `scripts/deploy/test_cloudflare_rules.py` refuses a third. Each counts
-per IP with the data centre (`cf.colo.id`).
+**Rate limiting rule** (Epo 2026-10-24, Q303; 2026-11-06, Q641). The zone is on
+Cloudflare Free, which allows one rate limiting rule, counting 10 s and
+blocking for 10 s; `scripts/deploy/test_cloudflare_rules.py` refuses a second.
+It counts per IP with the data centre (`cf.colo.id`).
 
 - `capy_public_api_rate_limit` covers `/api/public/` on every host of both
   environments: 100 requests in 10 s from one address, then blocked for 10 s.
@@ -1224,17 +1224,9 @@ per IP with the data centre (`cf.colo.id`).
   `global_fetch_strictly_public`); the Worker signs the visitor's address
   into each read and Go counts it per visitor and shared page, 300 a minute
   (Q244; [observability-metering.md](observability-metering.md#6-rate-limiting)).
-- `capy_share_pages_rate_limit` covers the shared pages a visitor opens,
-  `/share/` and `/w/` on the app hosts of both environments (`app`,
-  `uat`): past 600 requests a minute from one address,
-  a Managed Challenge. On Pro a challenge action must set
-  `mitigation_timeout` 0, so the rule throttles (each request past the rate
-  is challenged) rather than holding a challenge for a set time. The rule
-  matches `/share/` and `/w/` only: `/p/` serves the pages' images and audio,
-  which cannot answer a challenge, so it stays bounded by the gateway's
-  per-visitor share-read class (Epo 2026-10-24, Q329).
-
-Everything else has no edge limit. A rule must leave `/webhooks/` out: Stripe
+Shared pages (`/share/`, `/w/`, `/p/`) have no edge limit, as Q310 first
+decided: the gateway's per-visitor share-read class bounds what they read.
+Everything else has no edge limit either. A rule must leave `/webhooks/` out: Stripe
 and Clerk burst deliveries and retries from small sets of IPs, and rate
 limiting them can lose subscription or identity events. Super Bot Fight Mode
 and the managed WAF rulesets stay off until they are tested on chosen routes
@@ -2724,7 +2716,10 @@ timings logged. It is its own compose project under `/opt/capy-layout`, outside
 the UAT and production projects and the release workflows, like the library
 database (§7.3). The image holds the model: `layout/Dockerfile` adds it from a
 pinned Hugging Face revision and checks its SHA-256 at build, so the build needs
-the network and the running service does not.
+the network and the running service does not. It runs at a low CPU weight
+(`cpu_shares: 128`, no `cpus` cap) with onnxruntime's spinning off, so the parser
+beside it keeps the cores when both are busy; sizes come from the
+[capacity test](../bench/extraction/reports/2026-11-04-layout-capacity.md).
 
 1. Check out the reviewed commit under `/opt/capy-layout/src`.
 2. Create `/opt/capy-layout/.env` (mode 0600) from `deploy/layout.env.example`.

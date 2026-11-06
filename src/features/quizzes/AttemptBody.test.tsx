@@ -136,3 +136,96 @@ it('shows a part left Not marked in the result as not marked, its marks in the t
   act(() => root.unmount());
   host.remove();
 });
+
+const three = ['a', 'b', 'c'].map((id) => exampleQuestion(id));
+
+function SplitQuiz() {
+  const control = useMemoryRun(
+    async (id) =>
+      ({
+        question: {
+          ...three.find((q) => q.id === id),
+          parts: three[0].parts.map((part) => ({ ...part, awarded: 1 })),
+        },
+      }) as never
+  );
+  return (
+    <AttemptBody
+      control={control}
+      inApp
+      name="Quiz"
+      questions={three}
+      trail={[]}
+    />
+  );
+}
+
+it("the app's study page never strands a question skipped, and ends on a Result row", async () => {
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host);
+  await act(async () => root.render(<SplitQuiz />));
+  const press = (name: string) =>
+    act(async () =>
+      [...host.querySelectorAll('button')]
+        .find((button) => button.textContent?.trim() === name)
+        ?.click()
+    );
+  // The last question first: the first two are still left.
+  await act(async () =>
+    host.querySelector<HTMLElement>('[data-question-row="c"]')?.click()
+  );
+  await press(m.question_ui_check());
+  await press(m.quiz_study_go_to({ number: 1 }));
+  expect(
+    host.querySelector('[data-question-id]')?.getAttribute('data-question-id')
+  ).toBe('a');
+  await press(m.question_ui_check());
+  await press(m.action_next());
+  await press(m.question_ui_check());
+  expect(host.textContent).toContain(m.quiz_study_result());
+  expect(host.textContent).toContain(m.quiz_redo());
+  // A checked question opens from the list, and a way back to the result.
+  await act(async () =>
+    host.querySelector<HTMLElement>('[data-question-row="c"]')?.click()
+  );
+  expect(
+    host.querySelector('[data-question-id]')?.getAttribute('data-question-id')
+  ).toBe('c');
+  await press(m.quiz_study_see_result());
+  expect(host.textContent).toContain(m.quiz_redo());
+  await act(async () => root.unmount());
+  host.remove();
+});
+
+it('a try picked up again opens at the first question not checked', async () => {
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host);
+  const done = {
+    ...three[0],
+    parts: three[0].parts.map((part) => ({ ...part, awarded: 1 })),
+  };
+  await act(async () =>
+    root.render(
+      <AttemptBody
+        control={
+          {
+            check: vi.fn(),
+            redo: vi.fn(),
+            run: { answers: {}, checked: [done] },
+          } as never
+        }
+        inApp
+        name="Quiz"
+        questions={three}
+        trail={[]}
+      />
+    )
+  );
+  expect(
+    host.querySelector('[data-question-id]')?.getAttribute('data-question-id')
+  ).toBe('b');
+  await act(async () => root.unmount());
+  host.remove();
+});

@@ -3,6 +3,7 @@ import type * as Y from 'yjs';
 import { useMe } from '@/api/hooks';
 import {
   type RoomCopy,
+  type RoomSeed,
   useRoomSeed,
 } from '@/features/collaboration/deviceCopy';
 import {
@@ -35,6 +36,8 @@ export interface QuizRooms {
   content: ItemRoom | null;
   /** The keys document, in Edit for editors who can write. */
   keys: ItemRoom | null;
+  /** The device's copy of the keys: undefined while it reads, null with none. */
+  keysSeed: RoomSeed | null | undefined;
   /** The offline banner (the worse of the two rooms'). */
   offline: ItemRoomSnapshot['offline'];
   /** The content room's other editors, for the header. */
@@ -151,6 +154,7 @@ export function useQuizRooms(
     access: content.snapshot.access,
     content: content.room,
     keys: wantKeys ? keys.room : null,
+    keysSeed,
     offline: offline ?? null,
     presence: content.snapshot.presence,
     readOnlyCode: content.snapshot.readOnlyCode,

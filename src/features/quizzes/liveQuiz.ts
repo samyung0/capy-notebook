@@ -1023,3 +1023,43 @@ export function seedQuiz(content: Y.Doc, keys: Y.Doc, questions: Question[]) {
   for (const question of questions)
     writeQuestion(content, keys, question, 'seed');
 }
+
+/** A learner's question in the editor's shape, with its keys still to come. */
+export function withEmptyKeys(question: LearnerQuestion): Question {
+  return {
+    ...question,
+    parts: question.parts.map((part): QuestionPart => {
+      const { answer } = part;
+      const full = (a: QuestionAnswer): QuestionPart => ({
+        ...part,
+        answer: a,
+        solution: [],
+      });
+      switch (answer.type) {
+        case 'mcq':
+          return full({ ...answer, correct: [] });
+        case 'boolean':
+          return full({ correct: false, type: answer.type });
+        case 'short':
+          return full({ ...answer, accepted: [] });
+        case 'matching':
+          return full({
+            options: answer.options,
+            pairs: answer.left.map((left) => ({ left, right: 0 })),
+            type: answer.type,
+          });
+        case 'ordering':
+          return full(answer);
+        case 'open':
+          return full({ accepted: [], hints: [], type: answer.type });
+        case 'gaps':
+          return full({
+            accepted: Array.from({ length: answer.gaps }, () => []),
+            type: answer.type,
+          });
+        default:
+          throw new Error('Unknown answer type');
+      }
+    }),
+  };
+}

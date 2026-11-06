@@ -74,7 +74,7 @@ function ResolvedCardImage({
   assetId: string;
   className?: string;
 }) {
-  const [asset] = useResolvedAsset(assetId);
+  const [asset, , onImageError] = useResolvedAsset(assetId);
   if (asset.status === 'error' && asset.kind === 'removed')
     return (
       <RemovedMedia
@@ -88,6 +88,7 @@ function ResolvedCardImage({
     <img
       alt=""
       className={cn('max-w-full object-contain', className)}
+      onError={onImageError}
       src={asset.url}
     />
   ) : (

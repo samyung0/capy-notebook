@@ -28,6 +28,10 @@ import { m } from '@/i18n';
 
 const NO_QUESTIONS: LearnerQuestion[] = [];
 
+import type { Frame } from '@/features/quizzes/QuizPageHeader';
+
+const StudyPanel: Frame = (props) => <PagePanel fill {...props} />;
+
 /** `/quizzes/$quizId/attempt`, inside the app. Shared links open the public
  * page instead (src/share/SharedQuiz.tsx). */
 export default function QuizAttempt() {
@@ -137,7 +141,7 @@ function Attempt({ quizId }: { quizId: string }) {
             </Button>
           </Link>
         }
-        frame={PagePanel}
+        frame={StudyPanel}
         inApp
         name={quiz.name}
         onBack={() =>

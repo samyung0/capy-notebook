@@ -855,7 +855,8 @@ const connectAction = {
 const onlyOne = (ctx: ToolbarContext) => ctx.getSurfaceModels().length === 1;
 
 /** AFFiNE's selection toolbar reads the editor's mode, which the board has to report.
- * It goes without what makes no sense on an answer, or needs other documents. The cards
+ * It goes without what makes no sense on an answer, or needs other documents or a page
+ * mode. The cards
  * add their pen, and a plane its size. */
 export const boardToolbar = [
   DocModeExtension(
@@ -868,9 +869,15 @@ export const boardToolbar = [
   ToolbarModuleExtension({
     config: {
       actions: [
-        ...['b.add-frame', 'c.comment', 'Z.a.selection', 'd.conversions'].map(
-          (id) => ({ id, when: false })
-        ),
+        ...[
+          'b.add-frame',
+          'c.comment',
+          'Z.a.selection',
+          'd.conversions',
+          // A note's place in page mode: the board has no page mode.
+          'a.show-in',
+          'b.display-in-page',
+        ].map((id) => ({ id, when: false })),
         connectAction,
       ],
     },

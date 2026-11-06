@@ -779,6 +779,7 @@ export const handlers = [
         { status: 503 }
       );
     }
+    if (!file) return new HttpResponse(null, { status: 404 });
     // A hung edit open (`holdSourceSessions`): never answered.
     if (sourceSessionHeld() && !view) await new Promise(() => {});
     const session = await mockSourceSession(String(params.id), view);

@@ -323,9 +323,10 @@ under it) and the open question on the right (`QuestionPane`), with each text
 block edited where it stands, an image's Choose image, and each part's Answer
 type, correct answer, Marks, marking scheme and worked solution. It sits under
 the normal header, beside the workspace's left panel: the quiz with its chip, ⋮
-and save state, then Undo, Redo and Study. Until its rooms sync it paints the
-device copy or the stored questions in one column, as a read-only room does.
-Phones show the list, then one question with All questions to go back, under the
+and save state, then Undo, Redo and Study. Until its rooms sync the same page shows
+with a working list and a question that takes no input: drawn from the device's copy
+with its keys, else from the read, with answers waiting rather than a key it doesn't
+know. Phones show the list, then one question with All questions to go back, under the
 normal header. What the page doesn't lay out (charts, graphs, tables, blanks,
 layout and part labels, adding blocks, parts and groups, a unit or hints) is in
 the question's ⋮, Edit all details: the question dialog on the same question. A
@@ -623,13 +624,18 @@ fit one submission.
 
 Attempts retain graded snapshots. Mistakes strip the attempt-only awards.
 Taking, reviewing and every read-only view (quiz preview, quiz editor, bank,
-question dialog preview) use `QuestionRunner`; a quiz shows all its questions on
-one page (`QuizQuestionList`), each with its own Check (the review
-session's dark 36px Check, Epo 2026-10-25) that grades it and shows its key in
-place, and "N of M checked" under the list. Checking the last question opens
-the completion page (inside a note, the questions in review); it ends with a
-small outline Redo quiz on the right (confetti only when the last check
-happened on the page, not on a reopened result). While taking it, once a
+question dialog preview) use `QuestionRunner`. In the app a quiz has one layout in
+view, edit, study and an assignment (`QuizSplit`, Epo 2026-11-06): the question list on
+the left, one question on the right; a phone shows the list, then the question with a way
+back. Taking an assignment on a phone has a strip of numbers instead, with answered,
+flagged and left on each, no header or chat button, a way out beside the strip, and the
+clock and Submit along the bottom. Study has Previous, Check (the review session's dark 36px Check, Epo 2026-10-25,
+which grades it and shows its key in place) and Next, the list marks what's been checked,
+and "N of M checked" sits in the header. A try picked up again opens at the first question
+not checked. Checking the last question opens the result, a Result row at the list's top; it
+ends with a small outline Redo quiz on the right (confetti only when the last check happened
+on the page, not on a reopened result). Public shared pages and a note's embed keep every
+question on one page (`QuizQuestionList`), each with its own Check. While taking it, once a
 question is checked, an outline md Reset at the far right of the title starts
 a new try (`ResetButton`). One question is checked at a time: every Check and
 Reset wait while a check is in flight, so each check builds on the run the

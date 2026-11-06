@@ -10,7 +10,7 @@ import {
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
-import type * as Y from 'yjs';
+import * as Y from 'yjs';
 import { QUIZ_OPEN_PARTS_MAX } from '@/api/limits.generated';
 import type { Question } from '@/api/types';
 import { FileBanner } from '@/components/banners/FileBanner';
@@ -42,17 +42,19 @@ import {
   questionMarks,
 } from '@/features/questions/types';
 import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
 import {
   moveQuestion,
   questionState,
   removeQuestion,
   removeUnchangedQuestion,
+  seedQuiz,
+  withEmptyKeys,
   writeQuestion,
 } from './liveQuiz';
 import { useQuizQuestions, useQuizRooms } from './liveQuizRooms';
+import { QuestionRunner } from './QuestionRunner';
 import { QuizRecovery, quizImageUpload } from './QuizForm';
-import { QuizQuestionList } from './QuizPage';
+import { QuizSplit, useQuizPick } from './QuizSplit';
 
 const QuestionPane = lazy(() =>
   import('./QuestionPane').then((module) => ({
@@ -68,18 +70,6 @@ export function aiMarkedCount(questions: Question[]): string {
   return m.quiz_ai_marked_count({ count: open, max: QUIZ_OPEN_PARTS_MAX });
 }
 
-/** A question's row text: its first words as written. */
-function questionSummary(question: Question): string {
-  const blocks = [
-    ...question.stem,
-    ...(question.groups?.flatMap((group) => group.blocks) ?? []),
-    ...question.parts.flatMap((part) => part.blocks),
-  ];
-  for (const block of blocks)
-    if (block.type === 'text' && block.text.trim()) return block.text.trim();
-  return m.quiz_editor_untitled();
-}
-
 /** The question added and not written to yet, and what it held when added. */
 type BlankQuestion = { id: string; state: string };
 
@@ -92,28 +82,32 @@ function QuizEditorBody({
   blank,
   content,
   keys,
+  keysPending,
+  opening,
+  pick,
   questions,
   quizId,
   sources,
   status,
-  target,
   title,
   undo,
 }: {
   blank: RefObject<BlankQuestion | null>;
   content: Y.Doc;
   keys: Y.Doc;
+  keysPending?: boolean;
+  /** The paint before the rooms sync (`QuizOpeningPaint`). */
+  opening?: boolean;
+  /** Kept by the page, so the question open in the paint stays open after it. */
+  pick: ReturnType<typeof useQuizPick>;
   questions: Question[];
   quizId: string;
   sources: ReactNode;
   status: ItemRoomStatus;
-  /** A question a link opens at (a review summary's). */
-  target?: string;
   title: string;
   undo: UndoTarget | null;
 }) {
-  const [picked, setPicked] = useState<string | null>(target ?? null);
-  const [phoneOnQuestion, setPhoneOnQuestion] = useState(!!target);
+  const { onQuestion, picked, setOnQuestion, setPicked } = pick;
   const index = Math.max(
     0,
     questions.findIndex((question) => question.id === picked)
@@ -124,101 +118,63 @@ function QuizEditorBody({
       removeUnchangedQuestion(content, keys, blank.current);
       blank.current = null;
     }
-    setPicked(id);
-    setPhoneOnQuestion(true);
+    pick.open(id);
   };
   return (
-    <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] md:grid-cols-[300px_minmax(0,1fr)]">
-      <nav
-        aria-label={m.question_ui_questions()}
-        className={cn(
-          'flex min-h-0 flex-col gap-px overflow-y-auto p-2.5 md:border-divider md:border-r',
-          phoneOnQuestion && 'max-md:hidden'
-        )}
-      >
-        <div className="flex items-center px-1.5 pt-0.5 pb-1.5">
-          <p className="min-w-0 font-bold text-[11px] text-fg-muted uppercase leading-none tracking-[.06rem]">
-            {m.quiz_editor_questions({ count: questions.length })}
-          </p>
-          <span className="ml-auto" />
-          <ToolbarButton
-            label={m.quiz_add_question()}
-            onClick={() => {
-              const added = blankQuestion();
-              writeQuestion(content, keys, added);
-              open(added.id);
-              blank.current = {
-                id: added.id,
-                state: questionState(content, keys, added.id),
-              };
-            }}
-          >
-            <Icon name="plus" />
-          </ToolbarButton>
-        </div>
-        {questions.map((item, i) => {
-          const issues = issueMessages(questionIssues(item));
-          const on = item.id === question?.id;
-          return (
-            <button
-              aria-current={on || undefined}
-              className={cn(
-                'grid min-h-9 w-full cursor-pointer grid-cols-[22px_minmax(0,1fr)_auto_20px] items-center gap-2 rounded-lg px-2 py-1 text-left text-[13.5px] outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action',
-                on && 'bg-page-hover hover:bg-page-hover'
-              )}
-              data-question-row={item.id}
-              key={item.id}
-              onClick={() => open(item.id)}
-              type="button"
-            >
-              <span className="font-bold text-fg-secondary">{i + 1}</span>
-              <span
-                className={cn('truncate', issues.length === 0 && 'col-span-2')}
-              >
-                {questionSummary(item)}
-              </span>
-              {issues.length > 0 && (
-                <span
-                  aria-label={m.quiz_editor_has_issue()}
-                  className="inline-flex text-tint-warning-fg"
-                  role="img"
-                >
-                  <Icon className="size-4" name="alert" />
-                </span>
-              )}
-              <span className="text-right text-fg-muted text-xs">
-                {questionMarks(item)}
-              </span>
-            </button>
-          );
-        })}
-        <div className="mt-auto flex flex-col gap-2 px-2 pt-3 pb-1">
+    <QuizSplit
+      action={
+        <ToolbarButton
+          disabled={opening}
+          label={m.quiz_add_question()}
+          onClick={() => {
+            const added = blankQuestion();
+            writeQuestion(content, keys, added);
+            open(added.id);
+            blank.current = {
+              id: added.id,
+              state: questionState(content, keys, added.id),
+            };
+          }}
+        >
+          <Icon name="plus" />
+        </ToolbarButton>
+      }
+      current={question?.id}
+      foot={
+        <>
           {/* A whole past paper is seen to fit (Epo 2026-11-03). */}
           <p className="t-meta text-fg-muted">{aiMarkedCount(questions)}</p>
           {sources}
-        </div>
-      </nav>
-      <div
-        className={cn(
-          'min-h-0 min-w-0 overflow-y-auto',
-          !phoneOnQuestion && 'max-md:hidden'
-        )}
-      >
-        <button
-          className="mx-4 mt-3 inline-flex cursor-pointer items-center gap-1.5 font-semibold text-fg-secondary underline md:hidden"
-          onClick={() => setPhoneOnQuestion(false)}
-          type="button"
-        >
-          <Icon name="navigationBack" size={16} />
-          {m.quiz_editor_all_questions()}
-        </button>
-        {question && (
-          <Suspense fallback={<Skeleton className="m-4 h-64" />}>
+        </>
+      }
+      onBack={() => setOnQuestion(false)}
+      onOpen={open}
+      onQuestion={onQuestion}
+      questions={questions}
+      rowEnd={(item) => (
+        <>
+          {!opening && issueMessages(questionIssues(item)).length > 0 && (
+            <span
+              aria-label={m.quiz_editor_has_issue()}
+              className="inline-flex text-tint-warning-fg"
+              role="img"
+            >
+              <Icon className="size-4" name="alert" />
+            </span>
+          )}
+          {questionMarks(item)}
+        </>
+      )}
+    >
+      {question && (
+        <Suspense fallback={<Skeleton className="m-4 h-64" />}>
+          <div className="contents" inert={opening}>
             <QuestionPane
               canMoveDown={index < questions.length - 1}
               canMoveUp={index > 0}
               context={title}
               key={question.id}
+              keysPending={keysPending}
               number={index + 1}
               onMove={(direction) =>
                 moveQuestion(content, question.id, index + direction)
@@ -229,6 +185,7 @@ function QuizEditorBody({
                 blank.current = null;
                 setPicked(next?.id ?? null);
               }}
+              opening={opening}
               question={question}
               status={status}
               undo={undo}
@@ -238,9 +195,128 @@ function QuizEditorBody({
                 writeQuestion(content, keys, next);
               }}
             />
-          </Suspense>
+          </div>
+        </Suspense>
+      )}
+    </QuizSplit>
+  );
+}
+
+const NO_ANSWERS = {};
+
+/** The questions as they read, in the quiz's layout: a room that turned read-only
+ * or refused, and anyone who only views the quiz. */
+export function QuizReadSplit({
+  banner,
+  paneClassName,
+  questions,
+  showAnswerKey,
+  sources,
+  target,
+}: {
+  banner?: ReactNode;
+  paneClassName?: string;
+  questions: (Question | LearnerQuestion)[];
+  showAnswerKey?: boolean;
+  sources?: ReactNode;
+  target?: string;
+}) {
+  const { onQuestion, open, picked, setOnQuestion } = useQuizPick(target);
+  const index = Math.max(
+    0,
+    questions.findIndex((question) => question.id === picked)
+  );
+  const question = questions[index];
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {banner}
+      <QuizSplit
+        current={question?.id}
+        foot={sources}
+        onBack={() => setOnQuestion(false)}
+        onOpen={open}
+        onQuestion={onQuestion}
+        paneClassName={paneClassName}
+        questions={questions}
+        rowEnd={questionMarks}
+      >
+        {question && (
+          <div
+            className="mx-auto grid max-w-205 gap-4 px-4 py-6 sm:px-10"
+            data-question-id={question.id}
+            key={question.id}
+          >
+            <QuestionRunner
+              answers={NO_ANSWERS}
+              disabled
+              question={question}
+              questionNumber={index + 1}
+              showAnswerKey={showAnswerKey}
+            />
+          </div>
         )}
-      </div>
+      </QuizSplit>
+    </div>
+  );
+}
+
+/** The opening (Epo 2026-11-06, A): the editor's own page from the first paint.
+ * Its list works and its question takes no input until the rooms sync. It draws
+ * the device's copy, keys and all, else the read, showing no key it doesn't know. */
+function QuizOpeningPaint({
+  contentSeed,
+  keysSeed,
+  pick,
+  quizId,
+  sources,
+  stored,
+  title,
+}: {
+  contentSeed: Y.Doc | null;
+  keysSeed: Y.Doc | null;
+  pick: ReturnType<typeof useQuizPick>;
+  quizId: string;
+  sources: ReactNode;
+  stored: LearnerQuestion[];
+  title: string;
+}) {
+  const [docs] = useState(() => {
+    const content = contentSeed ?? new Y.Doc();
+    const keys = keysSeed ?? new Y.Doc();
+    if (!contentSeed)
+      for (const question of stored)
+        try {
+          seedQuiz(content, keys, [withEmptyKeys(question)]);
+        } catch {
+          // A type this version can't draw: the rooms' page says so.
+        }
+    return { content, keys };
+  });
+  useEffect(
+    () => () => {
+      if (!contentSeed) docs.content.destroy();
+      if (!keysSeed) docs.keys.destroy();
+    },
+    [contentSeed, docs, keysSeed]
+  );
+  const shown = useQuizQuestions(docs.content, docs.keys);
+  const blank = useRef<BlankQuestion | null>(null);
+  return (
+    <div className="flex h-full min-h-0 flex-col" data-quiz-opening="">
+      <QuizEditorBody
+        blank={blank}
+        content={docs.content}
+        keys={docs.keys}
+        keysPending={!keysSeed}
+        opening
+        pick={pick}
+        questions={shown}
+        quizId={quizId}
+        sources={sources}
+        status="syncing"
+        title={title}
+        undo={null}
+      />
     </div>
   );
 }
@@ -282,6 +358,7 @@ export function QuizEditor({
   onStatusChange?: (status: NoteEditorStatus | null) => void;
 }) {
   const rooms = useQuizRooms(quizId, { copy, edit: true });
+  const pick = useQuizPick(target);
   const questions = useQuizQuestions(rooms.content?.doc, rooms.keys?.doc);
   const headerActions = useContext(FileActionsTarget);
   useEffect(() => {
@@ -328,15 +405,6 @@ export function QuizEditor({
 
   // Its room refused this person: the page stays as it is, read-only.
   const refused = rooms.status === 'unavailable';
-  // Everything but the live page: one column under the header's title.
-  const column = (children: ReactNode) => (
-    <div className="h-full overflow-y-auto px-4 py-6 sm:px-10">
-      <div className="mx-auto flex max-w-205 flex-col gap-6">
-        {children}
-        <div className="mt-10 empty:hidden">{sources}</div>
-      </div>
-    </div>
-  );
   return (
     <>
       {/* The header names it for the eye; the page's one h1 stays its title. */}
@@ -352,36 +420,38 @@ export function QuizEditor({
           headerActions
         )}
       {rooms.recovery ? (
-        column(<QuizRecovery recovery={rooms.recovery} rooms={rooms} />)
+        <div className="h-full overflow-y-auto px-4 py-6 sm:px-10">
+          <div className="mx-auto flex max-w-205 flex-col gap-6">
+            <QuizRecovery recovery={rooms.recovery} rooms={rooms} />
+          </div>
+        </div>
       ) : refused ? (
-        column(
-          <>
-            <FileBanner message={m.editor_access_lost()} />
-            <QuizQuestionList<Question | LearnerQuestion>
-              disabled
-              questions={questions.length ? questions : stored}
-            />
-          </>
-        )
+        <QuizReadSplit
+          banner={<FileBanner message={m.editor_access_lost()} />}
+          questions={questions.length ? questions : stored}
+          sources={sources}
+          target={target}
+        />
       ) : rooms.ready &&
         (rooms.access !== 'write' || itemEditingStopped(rooms)) ? (
-        column(
-          <>
-            {rooms.readOnlyCode === 'unsupported_block' ? (
-              <FileBanner message={m.editor_unsupported_block_strip()} />
-            ) : (
-              rooms.access !== 'write' && (
-                <FileBanner message={m.editor_read_only_strip()} />
-              )
-            )}
-            {rooms.offline && <SaveBanner state={rooms.offline} />}
-            <QuizQuestionList
-              disabled
-              questions={questions}
-              showAnswerKey={rooms.access === 'write'}
-            />
-          </>
-        )
+        <QuizReadSplit
+          banner={
+            <>
+              {rooms.readOnlyCode === 'unsupported_block' ? (
+                <FileBanner message={m.editor_unsupported_block_strip()} />
+              ) : (
+                rooms.access !== 'write' && (
+                  <FileBanner message={m.editor_read_only_strip()} />
+                )
+              )}
+              {rooms.offline && <SaveBanner state={rooms.offline} />}
+            </>
+          }
+          questions={questions}
+          showAnswerKey={rooms.access === 'write'}
+          sources={sources}
+          target={target}
+        />
       ) : rooms.ready && rooms.content && rooms.keys ? (
         <div className="flex h-full min-h-0 flex-col">
           {rooms.offline && <SaveBanner state={rooms.offline} />}
@@ -390,28 +460,31 @@ export function QuizEditor({
               blank={blank}
               content={rooms.content.doc}
               keys={rooms.keys.doc}
+              pick={pick}
               questions={questions}
               quizId={quizId}
               sources={sources}
               status={rooms.status}
-              target={target}
               title={title}
               undo={rooms.undo}
             />
           </CollaborationHold>
         </div>
       ) : (
-        // Until they sync (Epo 2026-11-04): what the device copy holds, else
-        // what the read holds.
-        column(
-          <>
-            {isOutdatedBanner(rooms.offline) && <SaveBanner state="outdated" />}
-            <QuizQuestionList<Question | LearnerQuestion>
-              disabled
-              questions={questions.length ? questions : stored}
+        <div className="flex h-full min-h-0 flex-col">
+          {isOutdatedBanner(rooms.offline) && <SaveBanner state="outdated" />}
+          {copy.seed !== undefined && rooms.keysSeed !== undefined && (
+            <QuizOpeningPaint
+              contentSeed={copy.seed?.doc ?? null}
+              keysSeed={copy.seed ? (rooms.keysSeed?.doc ?? null) : null}
+              pick={pick}
+              quizId={quizId}
+              sources={sources}
+              stored={stored}
+              title={title}
             />
-          </>
-        )
+          )}
+        </div>
       )}
     </>
   );

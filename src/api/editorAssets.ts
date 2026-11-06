@@ -103,7 +103,8 @@ export async function uploadEditorAsset(
   return { ...asset, name: picked.name };
 }
 
-// Resolve at render/download time. Callers must not persist or cache the URL.
+// Resolve at render/download time. Nothing persists the URL; a tab's views share
+// it in memory until it expires (`resolvedAssetLinks.ts`).
 export function resolveEditorAsset(assetId: string, signal?: AbortSignal) {
   return api.get<ResolvedEditorAsset>(
     `/editor-assets/${encodeURIComponent(assetId)}/resolve`,

@@ -3381,18 +3381,17 @@ connection.
   holds yet refetches them, and every events-stream connect refetches them
   too.
 
-### Chat below lg
+### Chat below md
 
-Below 1260px the workspace has no panels and `ChatPanel` takes `dock`
+Below 768px the workspace has no panels and `ChatPanel` takes `dock`
 (`WorkspaceOpen`): it lays an overlay on the viewer holding the chat page and,
 while that is closed, `ChatDock` (`chat/ChatDock.tsx`). The chat page's state is
 `panel=agent` in the URL, so the back gesture closes it and keeps the file, and
-its ⋮ holds New chat and Workspace settings (Epo 2026-11-05). Phones, and Office
-files at every width, get a 52px round button at the bottom right that morphs
+its ⋮ holds New chat and Workspace settings (Epo 2026-11-05). Every file gets a
+52px round button at the bottom right that morphs
 into a one-line field (history clock on the left, voice input and send on
 the right, [Chat voice input](#chat-voice-input)) and
-focuses it in the same tap, so the keyboard opens; wider screens show the
-field itself. The morph copies the Files panel's floating plus
+focuses it in the same tap, so the keyboard opens. The morph copies the Files panel's floating plus
 (`motion-chat-dock` in `motion.css`): one surface anchored bottom right
 springs from the button to the row's width and the field's measured height,
 the icon blurs and slides out and the field slides in. The open field keeps
@@ -3422,7 +3421,7 @@ only the composer lifts above the keyboard.
 
 ### Chat voice input
 
-The chat composer (`ChatPanel`) and the one-line dock on file pages below lg
+The chat composer (`ChatPanel`) and the one-line dock on file pages below md
 (`ChatDock`) have a mic button left of Send where the browser has
 `MediaRecorder` and `getUserMedia` (`chat/VoiceInput.tsx`, logic in
 `chat/voiceRecording.ts`); elsewhere it is not shown. Both show one
@@ -3443,7 +3442,7 @@ and the chat page. Decisions: human/agentic-retrieval.md 2026-10-23.
   `src/api/limits.generated.ts`). The microphone's tracks stop whenever
   a recording ends, and when the recorder fails to start; a recording is
   dropped when the questions block takes the composer's place, the chat hides
-  (from lg, leaving the Agent tab; below lg, a page taking the dock's corner) or
+  (from md, leaving the Agent tab; below md, a page taking the dock's corner) or
   goes. Going between the dock and its chat page keeps it.
 - **Transcription.** The clip goes as the raw body of
   `POST /api/workspaces/{id}/voice-transcriptions` with its own
@@ -3938,7 +3937,7 @@ materials are sources.
   show no credits; they link to the item's own page, which does. The space above it is the
   document's own bottom padding plus the footer's, so a block inserted at the
   end does not move it (Epo 2026-10-11); below it there is room above the
-  page's end (`pb-12`), and room under the workspace's chat dock below lg
+  page's end (`pb-12`), and room under the workspace's chat dock below md
   (`FloatingBarContext`, provided by `WorkspaceOpen` in one column except over
   Office files; `pb-28`). In the editor the stats footer, when shown,
   follows it and keeps that room instead.
