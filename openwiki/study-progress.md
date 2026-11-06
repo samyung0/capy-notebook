@@ -1037,8 +1037,9 @@ soonest due.
 
 **New assignment's Quiz field.** Its last rows make a quiz on the spot, wherever the
 dialog opens: New quiz opens Add file's Create tab (`?add=create`), Make a quiz from a
-file opens Make a quiz (`?make=files`), and Generate questions takes this dialog's place
-with the generate dialog. A frozen workspace shows no rows. With no quizzes the field
+file opens Make a quiz (`?make=files`, whose cancel returns through `makeFrom`), and
+Generate questions takes this dialog's place with the generate dialog, which stays on the
+page once the quiz is made. Any of them discards what was typed. A frozen workspace shows no rows. With no quizzes the field
 says "Make a quiz to begin." and has no search; a list that couldn't be read says so,
 with Try again. Making a quiz either way refreshes `qk.practice`, which the field reads.
 

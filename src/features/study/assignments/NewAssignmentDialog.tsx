@@ -225,6 +225,8 @@ export function NewAssignmentDialog({
       <MakePractice
         onClose={onClose}
         onlyYou={false}
+        onMade={onClose}
+        title={m.assignment_generate_questions()}
         workspaceId={workspaceId}
       />
     );
@@ -306,7 +308,14 @@ export function NewAssignmentDialog({
                     void navigate({
                       search:
                         how === 'file'
-                          ? { make: 'files' as const }
+                          ? (previous) => ({
+                              make: 'files' as const,
+                              // Cancelling comes back here (Epo 2026-11-06).
+                              makeFrom:
+                                previous.study === 'assignments'
+                                  ? ('assignments' as const)
+                                  : undefined,
+                            })
                           : (previous) => ({
                               ...previous,
                               add: 'create' as const,

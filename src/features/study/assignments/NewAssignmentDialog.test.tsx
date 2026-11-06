@@ -168,10 +168,12 @@ it('closes for New quiz and Make a quiz, which open by link', async () => {
   const root = await show(undefined, onClose);
   await press(row(m.dashboard_make_quiz()));
   expect(onClose).toHaveBeenCalledTimes(1);
-  expect(navigate).toHaveBeenLastCalledWith({
-    search: { make: 'files' },
-    to: '.',
+  const makeSearch = navigate.mock.lastCall?.[0].search;
+  expect(makeSearch({ study: 'assignments' })).toEqual({
+    make: 'files',
+    makeFrom: 'assignments',
   });
+  expect(makeSearch({})).toEqual({ make: 'files', makeFrom: undefined });
   await press(row(m.assignment_new_quiz()));
   const { search } = navigate.mock.lastCall?.[0] ?? {};
   expect(search({ study: 'assignments' })).toEqual({

@@ -159,13 +159,20 @@ function Field({
 export function MakePractice({
   initialTopicId,
   onClose,
+  onMade,
   onlyYou,
+  title,
   workspaceId,
 }: {
   /** The topic it starts on: Summary's weakest. */
   initialTopicId?: string;
   onClose: () => void;
+  /** Stays on the page once the quiz is made, rather than opening it to answer:
+   * a teacher making one for an assignment. */
+  onMade?: () => void;
   onlyYou: boolean;
+  /** The dialog's title, where "Make my own practice" isn't what's happening. */
+  title?: string;
   workspaceId: string;
 }) {
   const navigate = useNavigate();
@@ -222,7 +229,8 @@ export function MakePractice({
         topics: from === 'topics' ? picked : [],
         types: TYPES.find((t) => t.value === types)?.types ?? [],
       })) as { quiz?: { id: string } };
-      if (made.quiz?.id)
+      if (onMade) onMade();
+      else if (made.quiz?.id)
         navigate({
           params: { quizId: made.quiz.id },
           to: '/quizzes/$quizId/attempt',
@@ -252,7 +260,7 @@ export function MakePractice({
         className="sm:max-w-[600px]"
       >
         <DialogTitle action={startButton} className="pb-0">
-          {m.practice_make_own()}
+          {title ?? m.practice_make_own()}
         </DialogTitle>
         <div className="mt-4 flex flex-col gap-4">
           {nothingToRead && (

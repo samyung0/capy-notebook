@@ -57,6 +57,45 @@ test('a quiz made from the Quiz field is in the list when it opens again', async
   await expect(quizzes).toHaveCount(before + 1);
 });
 
+test('cancelling Make a quiz returns to Assignments', async ({ page }) => {
+  await page.goto('/workspaces/ws_bio?study=assignments');
+  await openQuizField(page);
+  await makerRow(page, m.dashboard_make_quiz()).click();
+  await expect(page).toHaveURL(/make=files/);
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { exact: true, name: m.action_cancel() })
+    .click();
+  await expect(page).toHaveURL(/study=assignments/);
+  await expect(page).not.toHaveURL(/make=/);
+  await expect(
+    page.getByRole('button', { name: m.assignment_new() }).first()
+  ).toBeVisible();
+});
+
+test('Generate questions stays on Assignments with the quiz in the list', async ({
+  page,
+}) => {
+  await page.goto('/workspaces/ws_bio?study=assignments');
+  await openQuizField(page);
+  const quizzes = page.locator('[data-radix-popper-content-wrapper] ul button');
+  await expect(quizzes.first()).toBeVisible();
+  const before = await quizzes.count();
+  await makerRow(page, m.assignment_generate_questions()).click();
+
+  const dialog = page.getByRole('dialog', {
+    name: m.assignment_generate_questions(),
+  });
+  await dialog
+    .getByRole('button', { exact: true, name: m.review_start() })
+    .click();
+  await expect(dialog).toBeHidden({ timeout: 30_000 });
+  await expect(page).toHaveURL(/study=assignments/);
+
+  await openQuizField(page);
+  await expect(quizzes).toHaveCount(before + 1);
+});
+
 test('from the Dashboard, Make a quiz opens its dialog', async ({ page }) => {
   await page.goto('/workspaces/ws_bio');
   await openQuizField(page);
@@ -74,6 +113,6 @@ test('from the Dashboard, Generate questions opens its dialog', async ({
   await openQuizField(page);
   await makerRow(page, m.assignment_generate_questions()).click();
   await expect(
-    page.getByRole('dialog', { name: m.practice_make_own() })
+    page.getByRole('dialog', { name: m.assignment_generate_questions() })
   ).toBeVisible();
 });
