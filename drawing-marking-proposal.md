@@ -32,7 +32,7 @@ Same path as an open part: Go reserves credits (the member's in practice, the ow
 
 - **M1, the prompt below:** today's open-answer prompt word for word, plus a four-line section only drawing calls get. OK?
 - **M2, call settings:** the open answer's own rule, unchanged: thinking on when the question or its items show working (16,000 tokens, 180 s), otherwise reasoning off, temperature 0, 2,000 tokens, 90 s. Before marking ships I'd add about five drawings to the grading bench to check it.
-- **M3, the image sent:** the capture shrunk to at most 1,568 px on its longest side, as WebP. Your board decision caps the capture at 2,400 px; the smaller size keeps the image's token cost down.
+- **M3, answered (Epo 2026-11-06):** the board's image is shrunk to at most 1,568 px on its longest side before it's sent; a measurement of how readable boards stay at that size is running.
 - **M4, the grading slot requires vision:** the ops dashboard's slot check would refuse a grading model without the `vision` capability. Migration 0153 says the slot "needs no vision" today. OK to require it?
 
 ### The prompt: today's open-answer prompt, unchanged, plus one section
