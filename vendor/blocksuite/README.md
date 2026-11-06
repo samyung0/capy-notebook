@@ -216,6 +216,16 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
     `affine/gfx/note` `note-menu.ts`, marked `Capy (local change 12)`): the board turns
     off the note menu's image, link and file buttons, which upload or need a doc search.
 
+13. `minimatch` 10.2.5 → 11.0.1 (`framework/store`) for GHSA-g3hv-75wg-m249 (Epo
+    2026-11-06). `schema.ts` uses both arguments of `_matchFlavour` as patterns: check
+    whether a saved answer's flavours reach it before saving is built.
+
+The specs named in local changes 6 to 9 are on the `blocksuite-notes` branch, with the
+note editor they pin.
+
+`pnpm audit` sees these packages' dependencies, not this source: Dependabot and `cargo
+deny` don't cover it, so an AFFiNE security fix stays unseen until someone re-copies.
+
 Outside this directory, for BlockSuite:
 
 - `patches/@atlaskit__pragmatic-drag-and-drop@1.4.0.patch`: upstream's yarn

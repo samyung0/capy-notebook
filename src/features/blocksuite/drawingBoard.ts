@@ -62,6 +62,7 @@ import { ToolbarViewExtension } from '@blocksuite/affine/widgets/toolbar/view';
 import { ViewportOverlayViewExtension } from '@blocksuite/affine/widgets/viewport-overlay/view';
 import { html, render, svg } from 'lit';
 import * as Y from 'yjs';
+import { fromBase64, toBase64 } from './base64';
 
 const stores = new StoreExtensionManager([
   ImageStoreExtension,
@@ -154,10 +155,6 @@ function axesSheet({ h, w }: typeof SHEET) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}"><rect width="${w}" height="${h}" fill="#fff"/>${lines.join('')}<path d="M41 0V${h}M0 360H${w}" stroke="#8b8b88" stroke-width="1.5"/></svg>`;
 }
 
-function fromBase64(saved: string) {
-  return Uint8Array.from(atob(saved), (c) => c.charCodeAt(0));
-}
-
 /** BlockSuite's edgeless editor on an in-memory board over a fixed sheet, opened
  * from a saved answer when there is one. */
 export function mountDrawingBoard(
@@ -225,8 +222,7 @@ export function mountDrawingBoard(
   });
 
   return {
-    save: () =>
-      btoa(String.fromCharCode(...Y.encodeStateAsUpdate(store.spaceDoc))),
+    save: () => toBase64(Y.encodeStateAsUpdate(store.spaceDoc)),
     stats: () => ({
       blocks: gfx.layer.blocks.map((block) => block.flavour),
       bytes: Y.encodeStateAsUpdate(store.spaceDoc).byteLength,

@@ -3986,8 +3986,8 @@ importers:
         specifier: 4.4.0
         version: 4.4.0
       minimatch:
-        specifier: 10.2.5
-        version: 10.2.5
+        specifier: 11.0.1
+        version: 11.0.1
       nanoid:
         specifier: 5.1.16
         version: 5.1.16
@@ -6154,6 +6154,12 @@ packages:
     resolution:
       {
         integrity: sha512-3ji1fcrT+FPAK86UqEhB/psHixYo6niWPJtt7+qRaYFynt/BaJG8GhAPimtWUpEiVSTq8ZM8L5psMxGquiB/Vg==,
+      }
+
+  "@isaacs/nonrecursive-glob-match@1.0.3":
+    resolution:
+      {
+        integrity: sha512-SI7kyKHq4XXDRozw+r9GlRZkia1ZkFrpLW98r2IC2Bpr8YkFGE3fvjzmxCG0x78A++69HmDNrDvSMYBZmHGpKA==,
       }
 
   "@jridgewell/gen-mapping@0.3.13":
@@ -14358,17 +14364,17 @@ packages:
       }
     engines: { node: ">=22.0.0" }
 
-  minimatch@10.2.5:
-    resolution:
-      {
-        integrity: sha512-MULkVLfKGYDFYejP07QOurDLLQpcjk7Fw+7jXS2R2czRQzR56yHRveU5NDJEOviH+hETZKSkIk5c+T23GjFUMg==,
-      }
-    engines: { node: 18 || 20 || >=22 }
-
   minimatch@10.2.6:
     resolution:
       {
         integrity: sha512-vpLQEs+VLCr1nU0BXS07maYoFwlDAH0gngQuuttxIwutDFEMHq2blX+8vpgxDdK3J1PwjCJiep77OitTZ4Ll1A==,
+      }
+    engines: { node: 18 || 20 || >=22 }
+
+  minimatch@11.0.1:
+    resolution:
+      {
+        integrity: sha512-t+Vn6DX4wPCxS23y03C0uhF7S1jpi1GfqPrnlEipCJaA2ykiNbMkVlDutZtmvLfRcUN6R8AYVlzTsQrT4RZoLQ==,
       }
     engines: { node: 18 || 20 || >=22 }
 
@@ -18838,6 +18844,8 @@ snapshots:
     dependencies:
       "@swc/helpers": 0.5.15
 
+  "@isaacs/nonrecursive-glob-match@1.0.3": {}
+
   "@jridgewell/gen-mapping@0.3.13":
     dependencies:
       "@jridgewell/sourcemap-codec": 1.5.5
@@ -21141,7 +21149,7 @@ snapshots:
   "@shikijs/types@3.23.0":
     dependencies:
       "@shikijs/vscode-textmate": 10.0.2
-      "@types/hast": 3.0.5
+      "@types/hast": 3.0.4
     optional: true
 
   "@shikijs/vscode-textmate@10.0.2": {}
@@ -24712,12 +24720,13 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  minimatch@10.2.5:
+  minimatch@10.2.6:
     dependencies:
       brace-expansion: 5.0.12
 
-  minimatch@10.2.6:
+  minimatch@11.0.1:
     dependencies:
+      "@isaacs/nonrecursive-glob-match": 1.0.3
       brace-expansion: 5.0.12
 
   minimist@1.2.8:
@@ -26838,7 +26847,7 @@ snapshots:
 
   y-webrtc@10.3.0(supports-color@10.2.2)(yjs@13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497)):
     dependencies:
-      lib0: 0.2.117
+      lib0: 0.2.114
       simple-peer: 9.11.1(supports-color@10.2.2)
       y-protocols: 1.0.7(yjs@13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497))
       yjs: 13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497)

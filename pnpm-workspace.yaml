@@ -87,8 +87,9 @@ overrides:
 # here. Each entry says why it waits.
 auditConfig:
   ignoreGhsas:
-    # deepmerge <=4.3.1 prototype poisoning (low), no fixed release. Only
-    # @vanilla-extract/css (vendored BlockSuite's styles) uses it, to merge the
-    # style objects of `.css.ts` sources while the CSS is built; no user input
-    # reaches it (Epo 2026-10-28).
+    # deepmerge <=4.3.1 prototype poisoning (low), no fixed release. In production
+    # dependencies only @vanilla-extract/css (vendored BlockSuite's styles) uses it,
+    # to merge the style objects of `.css.ts` sources while the CSS is built; no user
+    # input reaches it (Epo 2026-11-06). html-to-text and ultracite also pull it in,
+    # as dev tools.
     - GHSA-gcqx-w48m-w2h4

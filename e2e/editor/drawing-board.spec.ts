@@ -9,6 +9,8 @@ import { expect, type Page, test } from '@playwright/test';
 const canvas = (page: Page) => page.evaluate('window.__board.stats().canvas');
 
 test('draws, labels, renders to an image and reopens', async ({ page }) => {
+  // Opening the editor from source is slow on a loaded runner.
+  test.slow();
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/dev/drawing');
@@ -26,6 +28,11 @@ test('draws, labels, renders to an image and reopens', async ({ page }) => {
     await page.mouse.move(...at(0.1 + step * 0.04, 0.2 + step * 0.03));
   await page.mouse.up();
   await expect.poll(() => canvas(page)).toEqual(['brush']);
+
+  // The note menu holds no image, link or file buttons, or the divider after them.
+  await page.locator('edgeless-note-senior-button').first().click();
+  await expect(page.locator('edgeless-note-menu')).toBeVisible();
+  await expect(page.locator('edgeless-note-menu .divider')).toHaveCount(0);
 
   await page.keyboard.press('v');
   await page.mouse.dblclick(...at(0.7, 0.3));
