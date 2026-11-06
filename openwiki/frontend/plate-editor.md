@@ -4382,7 +4382,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   1200 px, which needs `.capy-board` to be the `viewport` container.
 - **Selecting** shows AFFiNE's own toolbar. It reads the editor's mode, so the board
   reports edgeless (`boardToolbar` in `boardTools.ts`) and hides what makes no sense on an
-  answer: Frame, Comment and the linked doc entries. Connect shows its name. A plane card
+  answer: Frame, Comment, a note's page mode entries and the linked doc entries. Connect shows its name. A plane card
   adds a pen that opens it and a Fit to size / Custom size toggle; a chart card adds the pen.
 - **Shapes panel:** replaces AFFiNE's one-row menu through a DI override of the `shape`
   senior tool. BlockSuite has four shape types, so the rest are presets of straight

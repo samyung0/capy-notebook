@@ -148,6 +148,23 @@ test('a note card takes typing and leaves $$ as text', async ({ page }) => {
   await expect(page.locator('affine-edgeless-note')).toContainText(
     'see $$x^2$$ here'
   );
+
+  // Selected, it has its height button, and nothing about a page mode.
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => {
+    const { gfx } = document.querySelector(
+      'affine-edgeless-root'
+    ) as unknown as {
+      gfx: {
+        layer: { blocks: { id: string }[] };
+        selection: { set(selection: object): void };
+      };
+    };
+    gfx.selection.set({ editing: false, elements: [gfx.layer.blocks[0].id] });
+  });
+  const toolbar = page.locator('affine-toolbar-widget');
+  await expect(toolbar.getByLabel('Size', { exact: true })).toBeVisible();
+  await expect(toolbar.getByText('Display in Page')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
@@ -786,12 +803,50 @@ test('the workspace canvas keeps its plane on reload', async ({ page }) => {
     )
     .not.toBeNull();
   await page.waitForTimeout(700);
+  // The URL brings the tab back on its own.
   await page.reload();
-  await tab.click();
   await page.waitForFunction(() =>
     (window as unknown as { __board?: { stats(): Stats } }).__board
       ?.stats()
       .canvas.includes('plane')
   );
   await expect.poll(() => marks(page)).toBe(1);
+});
+
+test('the workspace canvas stays in the URL at every width', async ({
+  page,
+}) => {
+  test.slow();
+  // Pressed with a page open in the centre, it takes that page's place in the URL.
+  await page.goto('/workspaces/ws_bio?study=practice');
+  await page.getByRole('button', { name: 'Canvas' }).click();
+  await expect(page).toHaveURL(/panel=canvas/);
+  await expect(page).not.toHaveURL(/study=/);
+  const board = page.locator('.capy-board');
+  await board.waitFor();
+
+  // Below the rail the board stays, and only the back button leaves it.
+  await page.setViewportSize({ height: 800, width: 900 });
+  await expect(page).toHaveURL(/panel=canvas/);
+  await expect(board).toBeVisible();
+  await page.reload();
+  // A reload loads the board's chunk again, which is slow on the dev server.
+  await expect(board).toBeVisible({ timeout: 90_000 });
+  await page.getByRole('button', { name: 'Dashboard' }).first().click();
+  await expect(board).toHaveCount(0);
+  await expect(page).not.toHaveURL(/panel=canvas/);
+
+  // The browser's back returns to it, and a wide window keeps it.
+  await page.goBack();
+  await expect(board).toBeVisible({ timeout: 30_000 });
+  await page.setViewportSize({ height: 800, width: 1400 });
+  await expect(board).toBeVisible();
+  await expect(page).toHaveURL(/panel=canvas/);
+
+  // Another section leaves it, and Back returns.
+  await page.getByRole('button', { name: 'Files' }).first().click();
+  await expect(board).toHaveCount(0);
+  await expect(page).toHaveURL(/panel=files/);
+  await page.goBack();
+  await expect(board).toBeVisible({ timeout: 30_000 });
 });

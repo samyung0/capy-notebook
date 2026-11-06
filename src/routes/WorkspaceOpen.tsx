@@ -431,6 +431,10 @@ function WorkspaceOpen() {
     setSeenCenter(centerKey);
     setSection((was) => sectionForCenter(was, center));
   }
+  // One column keeps no panel state, so the URL alone says the canvas shows.
+  const urlCanvas = search.panel === 'canvas' && !openKey && !studyPage;
+  if (!lg && urlCanvas !== (section === 'canvas'))
+    setSection(urlCanvas ? 'canvas' : sectionForCenter('dashboard', center));
   // The dashboard and the canvas have no panel.
   const leftOpen = section !== 'dashboard' && section !== 'canvas' && panelOpen;
   const leftShown = lg && leftOpen;
@@ -448,9 +452,11 @@ function WorkspaceOpen() {
     section: WorkspaceSection;
   } | null>(null);
   const panelNow: WorkspacePanel | null = lg
-    ? section === 'dashboard' || section === 'canvas' || !panelOpen
-      ? 'none'
-      : section
+    ? section === 'canvas'
+      ? 'canvas'
+      : section === 'dashboard' || !panelOpen
+        ? 'none'
+        : section
     : null;
   const panelPressed = useRef(false);
   const seenUrlPanel = useRef(search.panel);
@@ -643,6 +649,8 @@ function WorkspaceOpen() {
     }
     if (next === 'canvas') {
       setSection('canvas');
+      if (searchedOpenItem || search.study || search.make)
+        navigate({ search: { panel: 'canvas' }, to: '.' });
       return;
     }
     if (next === section) {
@@ -1054,10 +1062,25 @@ function WorkspaceOpen() {
       {!headsItself && <h1 className="sr-only">{ws.name}</h1>}
       <WorkspaceHealth workspace={ws} />
       <AppErrorBoundary resetKeys={[openItem?.kind, openItem?.id]}>
-        {lg && section === 'canvas' ? (
-          <Suspense fallback={null}>
-            <WorkspaceCanvas workspaceId={workspaceId} />
-          </Suspense>
+        {section === 'canvas' ? (
+          <div className="flex h-full flex-col">
+            {/* One column has no rail to leave by. */}
+            {oneColumnLayout && (
+              <div className="flex shrink-0 items-center p-1">
+                <ToolbarButton
+                  label={m.workspace_section_dashboard()}
+                  onClick={openDashboard}
+                >
+                  <Icon name="navigationBack" />
+                </ToolbarButton>
+              </div>
+            )}
+            <div className="min-h-0 flex-1">
+              <Suspense fallback={null}>
+                <WorkspaceCanvas workspaceId={workspaceId} />
+              </Suspense>
+            </div>
+          </div>
         ) : lg && pageContent ? (
           pageContent
         ) : (
@@ -1282,9 +1305,9 @@ function WorkspaceOpen() {
                       onPageOpen: setChatPageOpen,
                       pageOpen: search.panel === 'agent',
                     }}
-                    // The dialog takes the screen on phones; hidden, the chat keeps
-                    // its draft and stream.
-                    hidden={makeLink}
+                    // The dialog and the canvas take the screen on phones; hidden,
+                    // the chat keeps its draft and stream.
+                    hidden={makeLink || section === 'canvas'}
                     onOpenCitation={openCitation}
                     onOpenResource={openChatResource}
                     openResource={openItem}
