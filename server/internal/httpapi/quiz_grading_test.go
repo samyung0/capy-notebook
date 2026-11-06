@@ -1,9 +1,14 @@
 package httpapi_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/png"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,6 +24,9 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/store"
 	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
+
+// gradedImages counts grading calls that carried a drawing's image.
+var gradedImages atomic.Int32
 
 // openGradingAPI serves the API with a stub grading model that gives every item
 // the same choice ("zero", "partial" or "full") and a stub Jev for the author's
@@ -49,8 +57,12 @@ func openGradingAPI(t *testing.T, choice string) (http.Handler, *store.Store, *a
 		var body struct {
 			Question string `json:"question"`
 			Items    []any  `json:"items"`
+			Image    string `json:"image"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body.Image != "" {
+			gradedImages.Add(1)
+		}
 		// One part never answers, until the caller gives up on it.
 		if choice == "slow-second" && strings.Contains(body.Question, "Second part") {
 			<-r.Context().Done()
@@ -535,4 +547,70 @@ func TestSharedNoteQuizCheckLeavesOpenAnswersNotMarked(t *testing.T) {
 	if attempts != 0 {
 		t.Fatalf("the embed stored %d attempts", attempts)
 	}
+}
+
+// A drawing left Not marked keeps its marking image; Check again marks it from
+// that image, sent in place of an answer, and the image goes once it is marked
+// (Epo 2026-11-07). The board stays.
+func TestQuizCheckAgainMarksADrawingFromItsKeptImage(t *testing.T) {
+	h, st, _ := openGradingAPI(t, "fail-once")
+	rec := doReq(t, h, http.MethodPost, "/api/quizzes", "u_owner", map[string]any{
+		"name": "Drawn", "privacy": "private",
+		"questions": []any{map[string]any{
+			"id": "q1", "stem": []any{}, "layout": "paper", "labels": "letters",
+			"parts": []any{map[string]any{"id": "draw-a", "blocks": []any{map[string]any{"type": "text", "text": "Draw it."}},
+				"answer": map[string]any{"type": "drawing"}, "marks": 2,
+				"markscheme": []any{map[string]any{"text": "Shape", "marks": 2}}, "solution": []any{}}},
+		}},
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create quiz → %d %s", rec.Code, rec.Body.String())
+	}
+	var quiz struct{ ID string }
+	_ = json.Unmarshal(rec.Body.Bytes(), &quiz)
+	var png bytes.Buffer
+	if err := pngEncode(&png); err != nil {
+		t.Fatal(err)
+	}
+	drawing := map[string]any{
+		"board": base64.StdEncoding.EncodeToString([]byte("a saved board")),
+		"image": base64.StdEncoding.EncodeToString(png.Bytes()),
+	}
+	check := func(attempt string) (int, map[string]any, string) {
+		t.Helper()
+		rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+quiz.ID+"/check", "u_owner", map[string]any{
+			"questionId": "q1", "answers": map[string]any{"draw-a": drawing}, "attemptId": attempt,
+		})
+		var detail struct {
+			ID        string
+			Questions []map[string]any
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &detail)
+		return rec.Code, gradedParts(t, detail.Questions)["draw-a"], detail.ID
+	}
+	before := gradedImages.Load()
+	code, part, attempt := check("")
+	if code != http.StatusOK || part["pending"] != true {
+		t.Fatalf("first check → %d %+v", code, part)
+	}
+	held, err := st.AttemptDrawings(context.Background(), attempt)
+	if err != nil || held["draw-a"].ImageKey == "" {
+		t.Fatalf("a Not marked drawing kept no image: %+v, err %v", held, err)
+	}
+	code, part, _ = check(attempt)
+	if code != http.StatusOK || part["pending"] != nil || part["awarded"] != float64(2) {
+		t.Fatalf("check again → %d %+v", code, part)
+	}
+	if gradedImages.Load()-before != 2 {
+		t.Fatalf("grading calls with the image = %d, want 2", gradedImages.Load()-before)
+	}
+	held, err = st.AttemptDrawings(context.Background(), attempt)
+	if err != nil || held["draw-a"].ImageKey != "" || held["draw-a"].BoardKey == "" {
+		t.Fatalf("after marking = %+v, err %v", held, err)
+	}
+}
+
+// pngEncode writes a 2 x 2 PNG, a drawing's smallest marking image.
+func pngEncode(w io.Writer) error {
+	return png.Encode(w, image.NewGray(image.Rect(0, 0, 2, 2)))
 }

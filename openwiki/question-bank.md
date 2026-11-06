@@ -194,8 +194,15 @@ payer deletes one (`DELETE /api/drawings/{id}`) or all (`DELETE
 /api/drawings`), the marks staying, and the result then says "Drawing deleted".
 Billing's storage bar splits into Files, "Notes, quizzes and images" and Canvas
 (`BillingInfo.storageBreakdown`, recounted from the same rows as the meter).
-Marking a drawing with the vision model waits on Epo's approval of the prompt in
-`drawing-marking-proposal.md`; until then a drawing part stays Not marked.
+Marking (M1, Epo 2026-11-07): a drawing goes to the grading slot's model on the
+open answer's path, credits and settings, its marking image sent as a data URL
+in place of the answer (`grading.py` `drawing_message`), with the system prompt
+plus `DRAWN_SECTION`; open-answer calls are unchanged. A drawing's quotes are not
+checked against text and it gets no copy check. A part left Not marked keeps its
+image so Check again (practice) or Mark with AI (assignments) can give it its one
+marking later; the image goes once that marking lands (`DropDrawingImages`),
+before any approval. The grading slot's model must read images; the slot check
+doesn't enforce it yet (M4, open).
 
 A checked model-marked part (open or drawing) shows its marking scheme in the
 open, each point with a tick, a dash or a cross and its marks, then its sample

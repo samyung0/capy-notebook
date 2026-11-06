@@ -7,13 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 )
-
-// rowExecer runs one statement on the pool or a caller's transaction.
-type rowExecer interface {
-	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
-}
 
 // A drawing answer's stored objects (migration 0156): the board the member
 // drew, always, and its marking image only while its part waits on the AI.
@@ -177,11 +171,15 @@ func attemptDrawingsTx(ctx context.Context, q rowsQueryer, attemptID string) (ma
 	return out, rows.Err()
 }
 
-// DropDrawingImage forgets a part's marking image once the part is marked, or
-// when marking by hand needs none; the board stays.
-func (s *Store) DropDrawingImage(ctx context.Context, q rowExecer, attemptID, partID string) error {
-	_, err := q.Exec(ctx, `UPDATE drawings SET image_key=NULL, image_type=NULL, image_bytes=0, updated_at=now()
-		WHERE attempt_id=$1 AND part_id=$2 AND image_key IS NOT NULL`, attemptID, partID)
+// DropDrawingImages forgets the marking images of an attempt's parts once
+// their AI marking has landed (Epo 2026-11-06): nothing marks them again, and
+// the board stays.
+func (s *Store) DropDrawingImages(ctx context.Context, attemptID string, partIDs []string) error {
+	if len(partIDs) == 0 {
+		return nil
+	}
+	_, err := s.pool.Exec(ctx, `UPDATE drawings SET image_key=NULL, image_type=NULL, image_bytes=0, updated_at=now()
+		WHERE attempt_id=$1 AND part_id = ANY($2) AND image_key IS NOT NULL`, attemptID, partIDs)
 	return err
 }
 

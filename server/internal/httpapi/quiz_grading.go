@@ -224,11 +224,6 @@ func (a *api) gradeWithModel(ctx context.Context, payerID, workspaceID string, p
 	// out partway.
 	var report sync.Once
 	for id, part := range parts {
-		// Marking a drawing waits on the pipeline taking its image (proposal
-		// M1, waiting on Epo): until then it stays Not marked.
-		if len(part.image) > 0 {
-			continue
-		}
 		group.Go(func() error {
 			grade, err := a.gradePartSafely(ctx, llm, charge.id, part)
 			if err != nil {
@@ -271,7 +266,14 @@ func (a *api) gradePart(ctx context.Context, llm resolvedLLM, sessionID string, 
 	for i, text := range part.markscheme {
 		items[i] = map[string]any{"text": text, "marks": part.itemMarks[i]}
 	}
-	body := map[string]any{"question": part.question, "items": items, "answer": part.answer, "spendSessionId": sessionID}
+	body := map[string]any{"question": part.question, "items": items, "spendSessionId": sessionID}
+	// A drawing goes as its marking image in place of the answer (M1, Epo
+	// 2026-11-07).
+	if len(part.image) > 0 {
+		body["image"] = "data:" + part.imageType + ";base64," + base64.StdEncoding.EncodeToString(part.image)
+	} else {
+		body["answer"] = part.answer
+	}
 	llm.attach(body)
 	raw, err := a.pipe.PostRawUntil(ctx, "/grade", body)
 	if err != nil {

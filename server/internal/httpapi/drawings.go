@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
+	"io"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -193,6 +194,42 @@ func (a *api) putDrawingObjects(ctx context.Context, attemptID string, in drawin
 		return store.DrawingObject{}, nil, err
 	}
 	return board, image, nil
+}
+
+// keptImage is a drawing's marking image read back from the bucket.
+type keptImage struct {
+	data        []byte
+	contentType string
+}
+
+// keptDrawingImages reads an attempt's kept marking images by part id, for a
+// part left Not marked that is marked later. A part whose image is gone (marked
+// already, or marked by hand) is absent and stays as it is.
+func (a *api) keptDrawingImages(ctx context.Context, attemptID string) (map[string]keptImage, error) {
+	drawings, err := a.s.AttemptDrawings(ctx, attemptID)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]keptImage{}
+	for partID, d := range drawings {
+		if d.ImageKey == "" {
+			continue
+		}
+		if a.blob == nil {
+			return nil, errors.New("blob store not configured")
+		}
+		r, err := a.blob.Open(ctx, d.ImageKey)
+		if err != nil {
+			return nil, err
+		}
+		data, err := io.ReadAll(io.LimitReader(r, fieldlimits.DrawingImageBytes+1))
+		_ = r.Close()
+		if err != nil {
+			return nil, err
+		}
+		out[partID] = keptImage{data: data, contentType: d.ImageType}
+	}
+	return out, nil
 }
 
 func gzipBoard(board []byte) ([]byte, error) {

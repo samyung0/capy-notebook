@@ -309,6 +309,8 @@ func (a *api) checkQuizQuestion(ctx context.Context, in *checkQuizQuestionInput)
 // is ignored.
 func (a *api) recheckQuizQuestion(ctx context.Context, in *checkQuizQuestionInput, workspaceID string, held, answers map[string]any, order []string, marks map[string]float64) (*attemptDetailOutput, error) {
 	open := map[string]openPart{}
+	drawn := map[string]bool{}
+	var images map[string]keptImage
 	parts, _ := held["parts"].([]any)
 	for i, raw := range parts {
 		p, _ := raw.(map[string]any)
@@ -318,7 +320,23 @@ func (a *api) recheckQuizQuestion(ctx context.Context, in *checkQuizQuestionInpu
 		id, _ := p["id"].(string)
 		text, _ := answers[id].(string)
 		items, itemMarks := questions.MarkItems(p)
-		open[id] = openPart{question: questions.GradingText(held, i), markscheme: items, itemMarks: itemMarks, answer: text}
+		part := openPart{question: questions.GradingText(held, i), markscheme: items, itemMarks: itemMarks, answer: text}
+		// A drawing left Not marked keeps its image for this one marking.
+		if given, _ := answers[id].(map[string]any); given["drawing"] != nil {
+			if images == nil {
+				var err error
+				if images, err = a.keptDrawingImages(ctx, in.Body.AttemptID); err != nil {
+					return nil, hErr(err)
+				}
+			}
+			image, kept := images[id]
+			if !kept {
+				continue
+			}
+			part.image, part.imageType = image.data, image.contentType
+			drawn[id] = true
+		}
+		open[id] = part
 	}
 	if err := a.reserveGrading(ctx, len(open)); err != nil {
 		return nil, err
@@ -343,6 +361,16 @@ func (a *api) recheckQuizQuestion(ctx context.Context, in *checkQuizQuestionInpu
 		return nil, huma.Error409Conflict(err.Error())
 	}
 	if err != nil {
+		return nil, hErr(err)
+	}
+	// A drawing marked now has had its one marking: its image goes.
+	var marked []string
+	for id := range remarked {
+		if drawn[id] {
+			marked = append(marked, id)
+		}
+	}
+	if err := a.s.DropDrawingImages(ctx, in.Body.AttemptID, marked); err != nil {
 		return nil, hErr(err)
 	}
 	return &attemptDetailOutput{Body: apimodel.FromAttemptDetail(res)}, nil

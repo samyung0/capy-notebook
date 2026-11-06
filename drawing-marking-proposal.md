@@ -1,6 +1,6 @@
 # Drawing answers: saving and marking, for Epo's decision
 
-Proposal from the drawing-answers session (2026-11-06). Nothing below is built. The mocks are on the canvas at https://claude.ai/artifact/PeD5MMznkkTTdc2cEJb9zj, with questions Q1–Q5 on its sticky.
+Proposal from the drawing-answers session (2026-11-06). Status 2026-11-07: saving is built as Epo's later decisions in `human/` changed it (the person attempting pays, practice stays on the device until Check, the image kept only until marked); M1 approved and built, M2 and M3 decided; M4 is open. The mocks are on the canvas at https://claude.ai/artifact/PeD5MMznkkTTdc2cEJb9zj, with questions Q1–Q5 on its sticky.
 
 ## Saving (S1–S5)
 
