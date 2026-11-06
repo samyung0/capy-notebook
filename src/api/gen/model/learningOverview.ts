@@ -13,7 +13,5 @@ export interface LearningOverview {
   readonly $schema?: string;
   next: LearningRow[];
   teaches: LearningTeach[];
-  weekCards: number;
-  weekQuestions: number;
   workspaces: LearningWorkspace[];
 }

@@ -3824,12 +3824,6 @@ components:
           items:
             $ref: "#/components/schemas/LearningTeach"
           type: array
-        weekCards:
-          format: int64
-          type: integer
-        weekQuestions:
-          format: int64
-          type: integer
         workspaces:
           items:
             $ref: "#/components/schemas/LearningWorkspace"
@@ -3838,8 +3832,6 @@ components:
         - next
         - workspaces
         - teaches
-        - weekQuestions
-        - weekCards
       type: object
     LearningRow:
       additionalProperties: false

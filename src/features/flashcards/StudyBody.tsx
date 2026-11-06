@@ -268,9 +268,7 @@ export function StudyBody({
 
   return (
     <Shell header={header}>
-      <div
-        className={cn(!embedded && 'px-4 pt-8 pb-8 sm:px-6 lg:px-10 xl:px-16')}
-      >
+      <div className={cn(!embedded && 'px-4 pt-8 pb-8 sm:px-6')}>
         <div className="mx-auto flex max-w-160 flex-col gap-6">
           {card ? (
             <>

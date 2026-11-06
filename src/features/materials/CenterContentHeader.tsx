@@ -50,7 +50,7 @@ import {
   toFileActionTarget,
   toMaterialActionTarget,
 } from '@/features/workspace/contentActionTarget';
-import { HiddenChip } from '@/features/workspace/HiddenChip';
+import { HiddenChip, HideFileButton } from '@/features/workspace/HiddenChip';
 import { useToggleHidden } from '@/features/workspace/hiddenFromMembers';
 import {
   OfflineStatus,
@@ -444,19 +444,24 @@ export function Header({
     'min-w-0 truncate',
     leading ? 't-body font-semibold' : 't-subtitle'
   );
-  // Owners and editors who may change the item show it to members from its
-  // chip as from the ⋮ menu; viewers never see a hidden item.
+  // Owners and editors who may change the item hide or unhide it here as from
+  // the ⋮ menu; viewers never see a hidden item.
   const itemReadOnly =
     readOnly || (materialCapabilities ? !materialCapabilities.canEdit : false);
   const toggleHidden = useToggleHidden(workspaceId);
+  const canHide = !itemReadOnly && !!workspaceId;
   const hiddenChip =
     file?.hidden || material?.hidden ? (
       <HiddenChip
         onShow={
-          itemReadOnly || !workspaceId
-            ? undefined
-            : () => toggleHidden({ id: item.id, type: item.kind }, false)
+          canHide
+            ? () => toggleHidden({ id: item.id, type: item.kind }, false)
+            : undefined
         }
+      />
+    ) : canHide && (file || material) ? (
+      <HideFileButton
+        onHide={() => toggleHidden({ id: item.id, type: item.kind }, true)}
       />
     ) : null;
   const name = oneColumn ? (

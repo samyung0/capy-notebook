@@ -378,7 +378,7 @@ function AllPractice({
                   <tr
                     className={cn(
                       canEdit &&
-                        'cursor-pointer [&>td]:hover:bg-surface-hover-bg'
+                        'cursor-pointer hover:[&>td]:bg-surface-hover-bg'
                     )}
                     key={row.key}
                     onClick={canEdit ? () => openQuiz(row.quiz.id) : undefined}

@@ -150,7 +150,7 @@ export function SharedNote({
         title={note.name}
         trail={[]}
       />
-      <div className="page-px-wide pt-2 pb-8">
+      <div className="page-px pt-2 pb-8">
         <NoteBlocks document={document} {...props} />
         <MaterialAttributionFooter provenance={note.provenance} />
       </div>

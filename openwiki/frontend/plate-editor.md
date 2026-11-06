@@ -2546,8 +2546,35 @@ A tab holding unsent edits asks again every 30 s. A reader's rooms keep their ow
 **Citations and deep links** work in the one mode: a chat citation scrolls and
 flashes its passage in the paint, and again in the editor once it shows; a
 question or card from a review summary scrolls into view in the quiz's list or
-the set's grid. A note's embed offers Preview in its ⋮ (top right on hover), which
-swaps its editor for the study view, to answer or study in place; Edit goes back.
+the set's grid. The header's Preview shows the whole note as its readers read it,
+with embeds answerable and cards to study; the button turns into Edit, which goes back.
+The editor stays mounted, joined and undoable behind it (its mounts hidden and `inert`).
+`NotePreview` portals into a host under the editor's save strips, so the strips and their
+actions stay reachable (Review leaves Preview first), and it reads none of the editor's
+contexts. It draws `PaintedNote` from the editor's own value, so it reads no note body,
+opens offline and shows text not yet saved; images still read their own. It
+redraws at most every 250 ms from the editor's value changes (`subscribeNoteValue`), which
+a collaborator's typing runs through too, and only changed blocks draw again. A room swap
+hands it the next editor without moving the reader.
+
+Its embeds join inside the editor's `NoteSeat`, whose `writer` makes a reader under it take
+the editor's room of the embed rather than a read channel (the server closes the earlier of
+a read and an edit channel to one document). So an embed the editor had open costs no token
+or channel and answers offline from its held document; one never opened joins once, on the
+key the editor then shares, and only its keys room is new at Edit. A try in Preview's embed
+stays in memory and records nothing, as in any note's embed; nothing is written to the room.
+
+While it's open `EditorPreviewing` makes `useEditorHeld` true: overlays go inert and the
+command palette stays shut. The selection is cleared, which closes selection-driven toolbars
+and removes this tab's caret for peers; a range ref carries it through other people's edits.
+Media pauses and a YouTube player goes back to its poster.
+
+Opening runs in a transition, with `aria-busy` on the button. Closing first settles the
+place behind Preview (`settleNotePlace`, up to about 300 ms: blocks off screen have no size
+until they come near), then shows the editor; Preview's DOM leaves when idle. Both directions
+keep the same block at the same height, inside the block if it's shorter on this side. A tall
+embed still loading in the editor can't land exactly until it has its height. When the note
+can't be edited at all the button reads Close preview.
 
 ### The editable saved copy
 

@@ -1,23 +1,30 @@
 import { useQueryClient } from '@tanstack/react-query';
+import type { RangeRef } from 'platejs';
+import type { PlateEditor } from 'platejs/react';
 import {
   type ComponentProps,
   lazy,
+  type RefObject,
   Suspense,
   useCallback,
   useContext,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  useTransition,
 } from 'react';
+import { createPortal } from 'react-dom';
 import * as Y from 'yjs';
 import { qk } from '@/api/client';
 import { materialTokenQuery } from '@/api/hooks';
 import type { Material } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { SaveBanner } from '@/components/banners/SaveBanner';
-import { Skeleton } from '@/components/ui/feedback';
+import { Button } from '@/components/ui/Button';
+import { Skeleton, Spinner } from '@/components/ui/feedback';
 import { FloatingBarContext } from '@/components/ui/floatingBarContext';
 import {
   type CopyLabel,
@@ -27,15 +34,25 @@ import {
 } from '@/features/collaboration/deviceCopy';
 import { NoteSeat, NoteSeatContext } from '@/features/collaboration/noteSeat';
 import type { PresenceConnection } from '@/features/collaboration/presence';
+import { FileActionsTarget } from '@/features/files/fileModeContext';
 import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { NoteBlocks } from '@/features/notes/liveNoteBlocks';
 import { NoteDisplayToggles } from '@/features/notes/NoteDisplayToggles';
 import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
 import {
+  EditorPreviewing,
+  NotePreviewHost,
+  subscribeNoteValue,
+} from '@/features/notes/notePreviewContext';
+import {
+  blockPoint,
+  captureNotePosition,
   type NotePosition,
   type NoteView,
+  offsetWithin,
   restoreNotePosition,
+  settleNotePlace,
 } from '@/features/notes/roomSwap';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -377,6 +394,90 @@ function LiveNote({
   );
 }
 
+/** How often an open Preview redraws while the note changes behind it. Blocks that
+ * didn't change keep their identity and aren't drawn again. */
+const PREVIEW_REFRESH_MS = 250;
+
+/** The first of a static note's blocks under its scroller's top edge. */
+function previewPlace(box: HTMLElement) {
+  const root = box.querySelector('[data-slate-editor]');
+  if (!root) return null;
+  const top = box.getBoundingClientRect().top;
+  const blocks = [...root.children];
+  const index = blocks.findIndex(
+    (block) => block.getBoundingClientRect().bottom > top
+  );
+  if (index < 0) return null;
+  return { index, offset: blocks[index].getBoundingClientRect().top - top };
+}
+
+/** The whole note as its readers read it, drawn from the text in the editor kept
+ * behind it (Epo 2026-11-06), so it reads no body and shows what's typed, saved yet
+ * or not. A collaborator's typing reaches it through the same editor, and a room
+ * swap hands it the next editor without moving the reader. */
+function NotePreview({
+  box,
+  drawn,
+  editor,
+  label,
+  material,
+  place,
+  seat,
+}: {
+  box: RefObject<HTMLDivElement | null>;
+  /** The blocks on screen, for the place Edit goes back to. */
+  drawn: RefObject<MaterialValue>;
+  editor: PlateEditor;
+  label: PaintLabel;
+  material: Material;
+  /** Where the editor was, in this note's blocks. */
+  place: NotePosition;
+  /** The editor's seat: an embed has one room, its and Preview's (Q676 A). */
+  seat: NoteSeat | null;
+}) {
+  const [value, setValue] = useState(() => editor.children as MaterialValue);
+  drawn.current = value;
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    setValue(editor.children as MaterialValue);
+    const stop = subscribeNoteValue(editor, () => {
+      timer ??= setTimeout(() => {
+        timer = undefined;
+        setValue(editor.children as MaterialValue);
+      }, PREVIEW_REFRESH_MS);
+    });
+    return () => {
+      clearTimeout(timer);
+      stop();
+    };
+  }, [editor]);
+  // The same block at the same height, before the browser paints it.
+  useLayoutEffect(() => {
+    const scroller = box.current;
+    const index = drawn.current.findIndex((block) => block.id === place.block);
+    const block = scroller?.querySelector('[data-slate-editor]')?.children[
+      index
+    ];
+    if (!(scroller && block)) return;
+    const { height, top } = block.getBoundingClientRect();
+    scroller.scrollTop +=
+      top -
+      scroller.getBoundingClientRect().top -
+      offsetWithin(place.offset, height);
+  }, [box, drawn, place]);
+  return (
+    <div className="h-full overflow-auto" ref={box}>
+      <NoteDisplayToggles />
+      <Suspense fallback={<NoteSkeleton />}>
+        <NoteSeatContext.Provider value={seat}>
+          <PaintedNote label={label} material={material} value={value} />
+        </NoteSeatContext.Provider>
+        <DocumentAttribution material={material} value={value} />
+      </Suspense>
+    </div>
+  );
+}
+
 /** How many blocks the frame paints until the reader nears their end: the
  * editor replaces them in moments, and a near-limit note's whole static DOM
  * would slow its build by about a second (bench/editor/reports). */
@@ -385,7 +486,8 @@ const PAINT_BLOCKS = 100;
 /** An editor's note, and any note before its read answers: the paint on top
  * until Plate behind it has painted the room's document (or its saved copy,
  * past the join's 30 s), then Plate, at the reader's block and caret. At 30 s a
- * strip with Retry shows over whichever is on screen. */
+ * strip with Retry shows over whichever is on screen. The header's Preview puts
+ * the readers' rendering over Plate, which stays mounted, joined and undoable. */
 function PaintedFrame({
   allowExternalAssets,
   citation,
@@ -442,10 +544,13 @@ function PaintedFrame({
   const moved = useRef<{ place: NotePosition; view: NoteView } | null>(null);
   const [editor, setEditor] = useState<NoteView | null>(null);
   const value = useRef(painted);
+  const handedOver = useRef(false);
   const onShown = useCallback((view: NoteView | null) => {
-    const box = paintBox.current;
+    // Later reports are room swaps, which keep the place themselves.
+    const box = handedOver.current ? null : paintBox.current;
     const place = box && view && paintedPosition(box, value.current);
     if (place && view) moved.current = { place, view };
+    handedOver.current = true;
     setEditor(view);
     setShown(true);
   }, []);
@@ -481,6 +586,122 @@ function PaintedFrame({
   const [joinFailed, setJoinFailed] = useState<{ retry: () => void } | null>(
     null
   );
+  const headerActions = useContext(FileActionsTarget);
+  const previewBox = useRef<HTMLDivElement>(null);
+  const previewDrawn = useRef<MaterialValue>([]);
+  const [previewHost, setPreviewHost] = useState<HTMLDivElement | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  // Where the editor was as Preview opened. It outlives the open by a moment:
+  // the DOM leaves when idle, as the paint's does.
+  const [previewAt, setPreviewAt] = useState<NotePosition | null>(null);
+  const [opening, startOpening] = useTransition();
+  const [closing, setClosing] = useState(false);
+  const settling = useRef<(() => void) | null>(null);
+  const [locked, setLocked] = useState(false);
+  const [previewSeat, setPreviewSeat] = useState<NoteSeat | null>(null);
+  const focusAtPress = useRef(false);
+  const back = useRef<NotePosition | null>(null);
+  // The caret while Preview is open: deselected, which closes the editor's
+  // selection-driven toolbars and shows peers no caret here, and moved along by
+  // whatever edits the note meanwhile.
+  const caret = useRef<{ editor: PlateEditor; range: RangeRef } | null>(null);
+  const plate = editor?.editor;
+  const openPreview = () => {
+    if (!(editor && plate) || opening) return;
+    const at = {
+      ...captureNotePosition(editor),
+      focused: focusAtPress.current,
+    };
+    const { selection } = plate;
+    caret.current = selection
+      ? { editor: plate, range: plate.api.rangeRef(selection) }
+      : null;
+    plate.tf.deselect();
+    for (const media of editor.scrollArea.querySelectorAll<HTMLMediaElement>(
+      'audio,video'
+    ))
+      media.pause();
+    startOpening(() => {
+      setPreviewAt(at);
+      setPreviewOpen(true);
+    });
+  };
+  const leavePreview = (place: Partial<NotePosition>) => {
+    if (!previewAt) return;
+    const held = caret.current;
+    const range = held?.range.unref() ?? null;
+    caret.current = null;
+    const anchor = held && range && blockPoint(held.editor, range.anchor);
+    const focus = held && range && blockPoint(held.editor, range.focus);
+    back.current = {
+      ...previewAt,
+      ...place,
+      selection: anchor && focus ? { anchor, focus } : null,
+    };
+    setPreviewOpen(false);
+  };
+  const closePreview = () => {
+    if (!(editor && previewAt) || settling.current) return;
+    // The block Preview is at, by the value it drew.
+    const box = previewBox.current;
+    const at = box && previewPlace(box);
+    const block = at && previewDrawn.current[at.index]?.id;
+    const place =
+      at && typeof block === 'string' ? { block, offset: at.offset } : {};
+    // Preview stays on top until the editor has really got there.
+    setClosing(true);
+    settling.current = settleNotePlace(
+      editor,
+      { ...previewAt, ...place },
+      () => {
+        settling.current = null;
+        setClosing(false);
+        leavePreview(place);
+      }
+    );
+  };
+  // Something that needs the editor now: no waiting for the place.
+  const exitPreview = useEffectEvent(() => {
+    if (!previewOpen) return;
+    settling.current?.();
+    settling.current = null;
+    setClosing(false);
+    leavePreview({});
+  });
+  useEffect(() => () => settling.current?.(), []);
+  const hostApi = useMemo(
+    () => ({
+      exit: () => exitPreview(),
+      setHost: setPreviewHost,
+      setLocked,
+      setSeat: setPreviewSeat,
+    }),
+    []
+  );
+  // Plate is back on screen from this commit.
+  useLayoutEffect(() => {
+    if (previewOpen || !back.current || !editor) return;
+    // Its caret's block gone, the focus still comes back.
+    if (back.current.focused && !back.current.selection)
+      editor.editor?.tf.focus();
+    restoreNotePosition(editor, back.current);
+    back.current = null;
+  }, [editor, previewOpen]);
+  useEffect(() => {
+    if (previewOpen || !previewAt) return;
+    const go = () => setPreviewAt(null);
+    if (typeof requestIdleCallback !== 'function') {
+      const timer = setTimeout(go, 200);
+      return () => clearTimeout(timer);
+    }
+    const idle = requestIdleCallback(go, { timeout: 2000 });
+    return () => cancelIdleCallback(idle);
+  }, [previewAt, previewOpen]);
+  // A citation points into the editor, where its passage flashes.
+  useEffect(() => {
+    if (citation) exitPreview();
+  }, [citation]);
+  const previewing = !!(previewOpen && plate && material);
   const onJoinFailed = useCallback(
     (retry: (() => void) | null) => setJoinFailed(retry && { retry }),
     []
@@ -522,20 +743,77 @@ function PaintedFrame({
           >
             {builds && (
               <Suspense fallback={null}>
-                <NoteEditor
-                  allowExternalAssets={allowExternalAssets}
-                  materialId={materialId}
-                  onEditorStatusChange={onEditorStatusChange}
-                  onJoinFailed={onJoinFailed}
-                  onPresenceChange={onPresenceChange}
-                  onReadOnly={onReadOnly}
-                  onShown={onShown}
-                  seed={seed}
-                />
+                <EditorPreviewing.Provider value={previewing}>
+                  <NotePreviewHost.Provider value={hostApi}>
+                    <NoteEditor
+                      allowExternalAssets={allowExternalAssets}
+                      materialId={materialId}
+                      onEditorStatusChange={onEditorStatusChange}
+                      onJoinFailed={onJoinFailed}
+                      onPresenceChange={onPresenceChange}
+                      onReadOnly={onReadOnly}
+                      onShown={onShown}
+                      seed={seed}
+                    />
+                  </NotePreviewHost.Provider>
+                </EditorPreviewing.Provider>
               </Suspense>
             )}
           </div>
+          {previewAt &&
+            plate &&
+            material &&
+            previewHost &&
+            createPortal(
+              <AppErrorBoundary resetKeys={[materialId]}>
+                <NotePreview
+                  box={previewBox}
+                  drawn={previewDrawn}
+                  editor={plate}
+                  label={label}
+                  material={material}
+                  place={previewAt}
+                  seat={previewSeat}
+                />
+              </AppErrorBoundary>,
+              previewHost
+            )}
         </div>
+        {builds &&
+          headerActions &&
+          createPortal(
+            <Button
+              aria-busy={opening || closing || undefined}
+              className="shrink-0"
+              disabled={!plate}
+              iconLeft={
+                opening || closing
+                  ? undefined
+                  : previewOpen
+                    ? locked
+                      ? 'navigationBack'
+                      : 'pencil'
+                    : 'view'
+              }
+              onClick={previewOpen ? closePreview : openPreview}
+              // Before the press takes the focus from the note.
+              onPointerDown={() => {
+                focusAtPress.current = !!plate?.api.isFocused();
+              }}
+              size="sm"
+              variant="outline"
+            >
+              {(opening || closing) && <Spinner className="size-4.5" />}
+              <span className="sr-only sm:not-sr-only">
+                {previewOpen
+                  ? locked
+                    ? m.note_preview_close()
+                    : m.action_edit()
+                  : m.editor_embed_preview()}
+              </span>
+            </Button>,
+            headerActions
+          )}
       </div>
     </AppErrorBoundary>
   );

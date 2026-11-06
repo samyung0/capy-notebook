@@ -102,6 +102,29 @@ export const MaterialPreview = memo(function MaterialPreview({
  * the decorate plugins (code highlighting) run. The static kit has no plugin
  * that renders around the document.
  */
+const StaticBlock = memo(function StaticBlock({
+  block,
+  decorate,
+  editor,
+  index,
+}: {
+  block: MaterialValue[number];
+  decorate: ReturnType<typeof pipeDecorate>;
+  editor: SlateEditor;
+  index: number;
+}) {
+  const path = [index];
+  return (
+    <ElementStatic
+      decorate={decorate}
+      decorations={decorate ? decorate([block, path]) : NONE}
+      editor={editor}
+      element={block}
+      path={path}
+    />
+  );
+});
+
 function KeyedStatic({
   className,
   editor,
@@ -112,7 +135,7 @@ function KeyedStatic({
   value: MaterialValue;
 }) {
   editor.children = value;
-  const decorate = pipeDecorate(editor);
+  const decorate = useMemo(() => pipeDecorate(editor), [editor]);
   const seen = new Set<unknown>();
   return (
     <div
@@ -128,7 +151,6 @@ function KeyedStatic({
       }}
     >
       {value.map((block, index) => {
-        const path = [index];
         // A repeated or missing id (never written by the editor) keys by place.
         const key =
           typeof block.id === 'string' && !seen.has(block.id)
@@ -136,13 +158,12 @@ function KeyedStatic({
             : `#${index}`;
         seen.add(block.id);
         return (
-          <ElementStatic
+          <StaticBlock
+            block={block}
             decorate={decorate}
-            decorations={decorate ? decorate([block, path]) : NONE}
             editor={editor}
-            element={block}
+            index={index}
             key={key}
-            path={path}
           />
         );
       })}

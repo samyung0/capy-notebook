@@ -102,7 +102,7 @@ describe('moving a file', () => {
     expect(labels({ canMoveTo: true })).toEqual([
       m.action_rename(),
       m.action_move_to(),
-      m.content_hide_from_members(),
+      m.content_hide_file(),
       m.action_clone_to(),
       m.action_download(),
       m.content_properties(),
@@ -130,13 +130,11 @@ describe('hiding an item from members', () => {
   }
 
   it('offers Hide to owners and editors, Show once hidden, nothing to viewers', () => {
-    expect(items(file('pdf', 'ready'))).toContain(
-      m.content_hide_from_members()
-    );
+    expect(items(file('pdf', 'ready'))).toContain(m.content_hide_file());
     expect(items({ ...file('pdf', 'ready'), hidden: true })).toContain(
-      m.content_show_to_members()
+      m.content_unhide_file()
     );
     const viewer = items(file('pdf', 'ready'), true);
-    expect(viewer).not.toContain(m.content_hide_from_members());
+    expect(viewer).not.toContain(m.content_hide_file());
   });
 });

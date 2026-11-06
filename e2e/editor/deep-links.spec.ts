@@ -25,7 +25,7 @@ test('a link to a question opens it in the quiz editor, its row in view', async 
   ).toBeVisible();
 });
 
-test("a note's embed answers in Preview from its menu, and edits again", async ({
+test("a note's embed answers in the note's Preview, and edits again", async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -41,14 +41,19 @@ test("a note's embed answers in Preview from its menu, and edits again", async (
   await expect(embed.locator('[data-question-edit]').first()).toBeVisible({
     timeout: 30_000,
   });
-  await embed.hover();
-  await embed.getByRole('button', { name: m.a11y_open_menu() }).click();
-  await page.getByRole('menuitem', { name: m.editor_embed_preview() }).click();
-  const answer = embed.getByRole('button', { name: /Mitochondria/ }).first();
+  await page
+    .getByRole('button', { exact: true, name: m.editor_embed_preview() })
+    .click();
+  await expect(page.getByTestId('material-preview')).toBeVisible();
+  const answer = page.getByRole('button', { name: /Mitochondria/ }).first();
+  // Same place in the note.
+  await expect(answer).toBeInViewport({ timeout: 30_000 });
   await answer.click();
   await expect(answer).toHaveAttribute('aria-pressed', 'true');
-  await embed.hover();
-  await embed.getByRole('button', { name: m.a11y_open_menu() }).click();
-  await page.getByRole('menuitem', { name: m.action_edit() }).click();
-  await expect(embed.locator('[data-question-edit]').first()).toBeVisible();
+  await page
+    .getByRole('button', { exact: true, name: m.action_edit() })
+    .click();
+  await expect(embed.locator('[data-question-edit]').first()).toBeInViewport({
+    timeout: 30_000,
+  });
 });

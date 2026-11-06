@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useContext, useState } from 'react';
+import { EditorPreviewing } from '@/features/notes/notePreviewContext';
 import { m } from '@/i18n';
 import { YOUTUBE_PLAYER_ALLOW, youtubeEmbedUrl } from './youtubeUrl';
 
@@ -32,6 +33,8 @@ export function YouTubePlayer({ videoId }: { videoId: string }) {
  * server-rendered pages start it without React. */
 export function YouTubeEmbed({ videoId }: { videoId: string }) {
   const [playing, setPlaying] = useState(false);
+  // An editor behind the note's Preview goes quiet.
+  if (useContext(EditorPreviewing) && playing) setPlaying(false);
   return (
     <div className={FRAME_CLASS}>
       {playing ? (

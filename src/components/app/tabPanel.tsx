@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { InputTitle } from '@/components/ui/Input';
 import { cn } from '@/lib/cn';
 
-/** Body under a page's tabs, at the wide gutter (`page-px-wide`). It grows
+/** Body under a page's tabs, at the page gutter (`page-px`). It grows
  * with its content so the panel scrolls the header and tabs away with it.
  * Content stops at max-w-7xl unless `fill` (Learning and quiz pages run to
  * the gutter) or `narrow` (forms, whose inputs read badly that long). */
@@ -17,7 +17,7 @@ export function TabContent({
   centered?: boolean;
   fill?: boolean;
   narrow?: boolean;
-  /** In the workspace centre pane: page-px-wide's steps (and the sm top
+  /** In the workspace centre pane: page-px's steps (and the sm top
    * padding) by the pane's own width rather than the window's. */
   pane?: boolean;
 }) {
@@ -34,13 +34,13 @@ export function TabContent({
   if (pane)
     return (
       <div className="@container/pane relative flex-1">
-        <div className="@min-[40rem]/pane:px-6 @min-[64rem]/pane:px-10 @min-[80rem]/pane:px-16 px-4 @min-[40rem]/pane:pt-8 pt-5 pb-8">
+        <div className="@min-[40rem]/pane:px-6 px-4 @min-[40rem]/pane:pt-8 pt-5 pb-8">
           {body}
         </div>
       </div>
     );
   return (
-    <div className="page-px-wide relative flex-1 pt-5 pb-8 sm:pt-8">{body}</div>
+    <div className="page-px relative flex-1 pt-5 pb-8 sm:pt-8">{body}</div>
   );
 }
 

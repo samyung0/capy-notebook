@@ -3891,8 +3891,6 @@ export const GetLearningOverviewResponse = zod.object({
   "name": zod.string(),
   "workspaceId": zod.string()
 })),
-  "weekCards": zod.int(),
-  "weekQuestions": zod.int(),
   "workspaces": zod.array(zod.object({
   "iconId": zod.string(),
   "items": zod.int(),

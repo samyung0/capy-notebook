@@ -601,8 +601,7 @@ the browser (Epo 2026-11-06, Q663 A). Embedded sets study there too and send no 
 
 Rules and scores, no AI (Epo 2026-11-04; `features.learning`, on). Tabs:
 Overview (default), Past reviews and All results; `src/routes/Learning.tsx`. The
-title carries "This week: 41 questions, 18 cards", `review_log` rows in scope in
-the last seven days, on Overview only. The session and result pages stay under
+session and result pages stay under
 `/learning/review/$workspaceId` and `/learning/reviews/$sessionId`.
 
 ### Overview
