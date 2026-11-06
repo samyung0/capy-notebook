@@ -59,6 +59,9 @@ const SENIOR_TOOL_NAV_SIZE = 20;
 const DIVIDER_WIDTH = 8;
 const DIVIDER_SPACE = 8;
 const SAFE_AREA_WIDTH = 64;
+const FULL_WIDTH_BELOW = 768;
+const FULL_WIDTH_GUTTER = 8;
+const FULL_WIDTH_TOOL = 78;
 
 export const EDGELESS_TOOLBAR_WIDGET = 'edgeless-toolbar-widget';
 export class EdgelessToolbarWidget extends WidgetComponent<RootBlockModel> {
@@ -193,6 +196,26 @@ export class EdgelessToolbarWidget extends WidgetComponent<RootBlockModel> {
       align-items: center;
       flex-shrink: 0;
     }
+    /* Capy (local change 15): a phone's toolbar takes the full width, with two
+       illustrated tools showing between the arrows. */
+    @media (max-width: ${unsafeCSS(FULL_WIDTH_BELOW - 1)}px) {
+      .edgeless-toolbar-toggle-control {
+        width: 100%;
+        max-width: calc(100% - ${unsafeCSS(FULL_WIDTH_GUTTER)}px * 2);
+        padding-bottom: ${unsafeCSS(FULL_WIDTH_GUTTER)}px;
+      }
+      .edgeless-toolbar-smooth-corner {
+        width: 100%;
+      }
+      .edgeless-toolbar-container .senior-tools {
+        flex: 1;
+        justify-content: space-around;
+        min-width: 0;
+      }
+      .edgeless-toolbar-container .senior-tool-item {
+        width: ${unsafeCSS(FULL_WIDTH_TOOL)}px;
+      }
+    }
     .senior-nav-button-wrapper {
       flex-shrink: 0;
       width: 0px;
@@ -291,7 +314,13 @@ export class EdgelessToolbarWidget extends WidgetComponent<RootBlockModel> {
 
   // calculate all the width manually
   private get _availableWidth() {
-    return this.containerWidth - 2 * SAFE_AREA_WIDTH;
+    return (
+      this.containerWidth -
+      2 *
+        (this.containerWidth < FULL_WIDTH_BELOW
+          ? FULL_WIDTH_GUTTER
+          : SAFE_AREA_WIDTH)
+    );
   }
 
   private get _cachedPresentHideToolbar() {
@@ -453,7 +482,9 @@ export class EdgelessToolbarWidget extends WidgetComponent<RootBlockModel> {
     return (
       Math.floor(
         (seniorAvailableWidth - (SENIOR_TOOL_NAV_SIZE + DIVIDER_SPACE) * 2) /
-          SENIOR_TOOL_WIDTH
+          (this.containerWidth < FULL_WIDTH_BELOW
+            ? FULL_WIDTH_TOOL
+            : SENIOR_TOOL_WIDTH)
       ) || 1
     );
   }

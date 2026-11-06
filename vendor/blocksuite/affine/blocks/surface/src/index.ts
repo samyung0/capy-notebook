@@ -6,7 +6,8 @@ export {
   SurfaceElementModel,
   SurfaceGroupLikeModel,
 } from './element-model/base.js';
-export { CanvasElementType } from './element-model/index.js';
+// Capy (local change 16): `elementsCtorMap` lets the drawing board add its formula element.
+export { CanvasElementType, elementsCtorMap } from './element-model/index.js';
 export { CanvasRenderer } from './renderer/canvas-renderer.js';
 export { DomRenderer } from './renderer/dom-renderer.js';
 export type { ElementRenderer } from './renderer/elements/index.js';

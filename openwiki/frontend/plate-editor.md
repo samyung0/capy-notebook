@@ -4331,3 +4331,34 @@ build swaps that route for an empty module (`MSW_ENTRIES` in `vite.config.ts`) a
 vanilla-extract plugin, so it neither ships nor transforms the vendored sources. The answer
 flow reverses both. `pnpm audit` covers these packages' dependencies but not the copied
 source, so an AFFiNE security fix stays unseen until someone re-copies.
+
+### The board's tools
+
+The board adds to BlockSuite through its own extensions (`boardTools.ts`,
+`boardFormula.ts`, pure geometry in `boardGeometry.ts`), with three vendored changes
+(14 to 16 in `vendor/blocksuite/README.md`).
+
+- **Toolbar:** AFFiNE's shape pieces in the eraser's fixed colours (CSS variables on
+  `.capy-board`), then a maths tool. New shapes have no fill and a black outline, so
+  the grid and earlier strokes stay readable for marking.
+- **Undo and redo** are the board's own, not in the toolbar: left of zoom, or below
+  768 px top right, where the page around the board reserves Done's width through
+  `--capy-board-done-width`. Below that width the toolbar spans the screen less an
+  8 px gutter and zoom is hidden, since pinch does it. Zoom's row folds into AFFiNE's
+  ⋯ up to 1200 px, which needs `.capy-board` to be the `viewport` container.
+- **Shapes panel:** replaces AFFiNE's one-row menu through a DI override of the
+  `shape` senior tool. BlockSuite has four shape types, so the rest are presets of
+  straight connectors and ellipses in a group (a pen stroke smears at corners).
+- **Plotting** is by hand (Epo: a typed function answers the question): the sheet has
+  numbered axes, and Point, Line and Curve snap to its grid crossings. They land as
+  ordinary dots, connectors and strokes. The preview layer sits on the sheet, under
+  the strokes and outside the document. Clicking a curve's last point again finishes
+  it, as does leaving the tool.
+- **Formulas:** a `formula` canvas element holding LaTeX, typed in MathLive
+  (loaded on first open). AFFiNE keeps LaTeX as HTML in note cards, and its export
+  (html2canvas) garbles that, so note cards here have no LaTeX extension. KaTeX lays
+  the formula out off-screen and its glyphs, rules and stretched SVGs are drawn onto a
+  bitmap, which the canvas renderer draws like any element: it stacks with strokes
+  and reaches the marking image with no special case. Tested in Chromium only.
+- **Labels** have a maths symbol row while typing. BlockSuite's default canvas font is
+  fetched from AFFiNE's CDN, so `drawingBoard.css` aliases it to the app's Fustat.

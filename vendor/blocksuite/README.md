@@ -220,6 +220,17 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
     2026-11-06). `schema.ts` uses both arguments of `_matchFlavour` as patterns: check
     whether a saved answer's flavours reach it before saving is built.
 
+14. Shape button colours (`affine/gfx/shape` `shape-draggable.ts`, marked `Capy (local
+    change 14)`): `--capy-shape-button-<name>` and `--capy-shape-button-stroke-<name>`
+    fix the toolbar pieces' colours; without them the pieces show the shape's last colour.
+
+15. Phone toolbar (`affine/widgets/edgeless-toolbar` `edgeless-toolbar.ts`, marked
+    `Capy (local change 15)`): below 768 px the toolbar takes the full width less an
+    8 px gutter, in place of AFFiNE's 64 px safe area each side.
+
+16. `elementsCtorMap` exported from `affine/blocks/surface` (marked `Capy (local change
+    16)`), so the board can register its formula element before a saved answer loads.
+
 The specs named in local changes 6 to 9 are on the `blocksuite-notes` branch, with the
 note editor they pin.
 

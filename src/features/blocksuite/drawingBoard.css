@@ -1,11 +1,201 @@
-/* Boards K7 and K8: zoom at the bottom right, none on phones. */
+/* BlockSuite's default canvas font, which it would fetch from AFFiNE's CDN: labels
+   use the app's own font instead. */
+@font-face {
+  font-family: "blocksuite:surface:Inter";
+  font-weight: 200 800;
+  src: url("@fontsource-variable/fustat/files/fustat-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+/* The board fills the screen; AFFiNE's zoom rule reads this container. */
+.capy-board {
+  --capy-shape-button-roundedRect: #173654;
+  --capy-shape-button-stroke-roundedRect: #173654;
+  --capy-shape-button-ellipse: #1e96eb;
+  --capy-shape-button-stroke-ellipse: #1e96eb;
+  --capy-shape-button-triangle: #fff;
+  --capy-shape-button-stroke-triangle: #d9dde3;
+  container: viewport / inline-size;
+}
+
+/* Zoom at the bottom right, none on phones (pinch does it). */
 .capy-board affine-edgeless-zoom-toolbar-widget {
   right: 12px;
   left: auto;
 }
 
-@media (max-width: 639px) {
+/* Undo and redo: flat, left of zoom, with a thin divider. Zoom is 144 px wide, or
+   a 36 px button up to 1200 px. */
+.capy-board-history {
+  position: absolute;
+  right: 156px;
+  bottom: 20px;
+  z-index: 2;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  height: 40px;
+  padding: 4px 5px 4px 4px;
+  color: var(--affine-icon-color);
+}
+
+.capy-board-history::after {
+  width: 1px;
+  height: 20px;
+  margin-left: 5px;
+  content: "";
+  background: var(--affine-border-color);
+}
+
+.capy-board-history button {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.capy-board-history button:hover {
+  background: var(--affine-hover-color);
+}
+
+.capy-board-history button:focus-visible {
+  outline: 2px solid var(--affine-primary-color);
+}
+
+.capy-board-history button:disabled {
+  cursor: default;
+  background: none;
+  opacity: 0.35;
+}
+
+@container viewport (width <= 1200px) {
+  .capy-board-history {
+    right: 48px;
+  }
+}
+
+/* Phones: top right, left of Done, which the page around the board places and
+   sizes through --capy-board-done-width. */
+@container viewport (width < 768px) {
+  .capy-board-history {
+    top: 8px;
+    right: calc(8px + var(--capy-board-done-width, 0px));
+    bottom: auto;
+    height: 40px;
+    padding: 0;
+  }
+
+  .capy-board-history::after {
+    display: none;
+  }
+
+  .capy-board-history button {
+    width: 40px;
+    height: 40px;
+  }
+
   .capy-board affine-edgeless-zoom-toolbar-widget {
     display: none;
   }
+}
+
+/* The formula card. */
+.capy-formula {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  z-index: 3;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(420px, calc(100% - 16px));
+  padding: 10px;
+  background: #fff;
+  border: 1px solid var(--affine-border-color);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 10%);
+  transform: translateX(-50%);
+}
+
+.capy-formula-field math-field {
+  display: block;
+  width: 100%;
+  min-height: 56px;
+  font-size: 22px;
+  outline: none;
+  border: 0;
+  border-bottom: 1px solid #1d1d1f;
+  border-radius: 0;
+}
+
+.capy-formula-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.capy-formula-actions button {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 7px;
+}
+
+.capy-formula-actions .ghost {
+  color: #1d1d1f;
+}
+
+.capy-formula-actions .ghost:hover {
+  background: var(--affine-hover-color);
+}
+
+.capy-formula-actions .primary {
+  color: #fff;
+  background: #1d1d1f;
+}
+
+/* The maths symbols under a canvas label being typed. */
+.capy-symbols {
+  position: absolute;
+  z-index: 3;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  max-width: calc(100% - 16px);
+  padding: 3px;
+  background: #fff;
+  border: 1px solid var(--affine-border-color);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
+}
+
+.capy-symbols[hidden] {
+  display: none;
+}
+
+.capy-symbols button {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  font-size: 15px;
+  color: #333;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.capy-symbols button:hover {
+  background: var(--affine-hover-color);
 }

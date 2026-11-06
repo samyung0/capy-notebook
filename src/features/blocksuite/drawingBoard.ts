@@ -12,7 +12,9 @@ import { RootStoreExtension } from '@blocksuite/affine/blocks/root/store';
 import { RootViewExtension } from '@blocksuite/affine/blocks/root/view';
 import {
   CanvasRenderer,
+  DefaultTool,
   ExportManager,
+  Overlay,
 } from '@blocksuite/affine/blocks/surface';
 import { SurfaceStoreExtension } from '@blocksuite/affine/blocks/surface/store';
 import { SurfaceViewExtension } from '@blocksuite/affine/blocks/surface/view';
@@ -38,8 +40,6 @@ import { Bound } from '@blocksuite/affine/global/gfx';
 import { InlineCommentViewExtension } from '@blocksuite/affine/inlines/comment/view';
 import { FootnoteStoreExtension } from '@blocksuite/affine/inlines/footnote/store';
 import { FootnoteViewExtension } from '@blocksuite/affine/inlines/footnote/view';
-import { LatexStoreExtension as InlineLatexStoreExtension } from '@blocksuite/affine/inlines/latex/store';
-import { LatexViewExtension as InlineLatexViewExtension } from '@blocksuite/affine/inlines/latex/view';
 import { LinkStoreExtension } from '@blocksuite/affine/inlines/link/store';
 import { LinkViewExtension } from '@blocksuite/affine/inlines/link/view';
 import { MentionViewExtension } from '@blocksuite/affine/inlines/mention/view';
@@ -50,19 +50,35 @@ import { ReferenceViewExtension } from '@blocksuite/affine/inlines/reference/vie
 import { FeatureFlagService } from '@blocksuite/affine/shared/services';
 import { BlockStdScope } from '@blocksuite/affine/std';
 import { GfxControllerIdentifier } from '@blocksuite/affine/std/gfx';
-import { Text } from '@blocksuite/affine/store';
+import { HistoryExtension, Text } from '@blocksuite/affine/store';
 import { TestWorkspace } from '@blocksuite/affine/store/test';
 import { EdgelessAutoConnectViewExtension } from '@blocksuite/affine/widgets/edgeless-auto-connect/view';
 import { EdgelessDraggingAreaViewExtension } from '@blocksuite/affine/widgets/edgeless-dragging-area/view';
 import { EdgelessSelectedRectViewExtension } from '@blocksuite/affine/widgets/edgeless-selected-rect/view';
-import { SeniorToolExtension } from '@blocksuite/affine/widgets/edgeless-toolbar';
 import { EdgelessToolbarViewExtension } from '@blocksuite/affine/widgets/edgeless-toolbar/view';
 import { EdgelessZoomToolbarViewExtension } from '@blocksuite/affine/widgets/edgeless-zoom-toolbar/view';
 import { ToolbarViewExtension } from '@blocksuite/affine/widgets/toolbar/view';
 import { ViewportOverlayViewExtension } from '@blocksuite/affine/widgets/viewport-overlay/view';
-import { html, render, svg } from 'lit';
+import { Redo03Icon, Undo03Icon } from '@hugeicons/core-free-icons';
+import { html, render } from 'lit';
+import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import * as Y from 'yjs';
+import { m } from '@/i18n';
 import { fromBase64, toBase64 } from './base64';
+import {
+  formulaExtensions,
+  formulasDrawn,
+  mountSymbolRow,
+} from './boardFormula';
+import { SHEET, UNIT } from './boardGeometry';
+import {
+  mathsTool,
+  outlineNewShapes,
+  PlotTool,
+  StampTool,
+  setBoardPreview,
+  shapeButtonTool,
+} from './boardTools';
 
 const stores = new StoreExtensionManager([
   ImageStoreExtension,
@@ -77,7 +93,6 @@ const stores = new StoreExtensionManager([
   GroupStoreExtension,
   ShapeStoreExtension,
   TextStoreExtension,
-  InlineLatexStoreExtension,
   ReferenceStoreExtension,
   FootnoteStoreExtension,
   LinkStoreExtension,
@@ -98,7 +113,6 @@ const views = new ViewExtensionManager([
   ParagraphViewExtension,
   SurfaceViewExtension,
   RootViewExtension,
-  InlineLatexViewExtension,
   ReferenceViewExtension,
   FootnoteViewExtension,
   MentionViewExtension,
@@ -114,45 +128,59 @@ const views = new ViewExtensionManager([
   ViewportOverlayViewExtension,
 ]);
 
-const PHONE_WIDTH = 640;
+const PHONE_WIDTH = 768;
 
-const arrow = (d: string) =>
-  html`<svg fill="none" height="20" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" viewBox="0 0 20 20" width="20">${svg`<path d=${d} />`}</svg>`;
+/** The board has no frames, but resizing a selection clears their highlight. */
+class NoFrameOverlay extends Overlay {
+  static override overlayName = 'frame';
+  clear() {}
+  override render() {}
+}
 
-/** Undo and redo, at the toolbar's end as on board K7. BlockSuite keeps them on the
- * keyboard only; a phone has none. */
-const historyTool = SeniorToolExtension('capy-history', ({ block }) => ({
-  content: html`<div
-    class="capy-board-history"
-    style="align-items:center;display:flex;gap:4px;height:100%;justify-content:center"
-  >
-    <edgeless-tool-icon-button
-      .tooltip=${'Undo'}
-      @click=${() => block.store.undo()}
-    >
-      ${arrow('M7.5 5 4 8.5 7.5 12M4 8.5h8a4 4 0 0 1 0 8H8')}
-    </edgeless-tool-icon-button>
-    <edgeless-tool-icon-button
-      .tooltip=${'Redo'}
-      @click=${() => block.store.redo()}
-    >
-      ${arrow('M12.5 5 16 8.5 12.5 12M16 8.5H8a4 4 0 0 0 0 8h4')}
-    </edgeless-tool-icon-button>
-  </div>`,
-  name: 'Undo and redo',
-}));
+/** A Hugeicons icon's data as an SVG, for the board's Lit templates. */
+function hugeIcon(
+  data: readonly (readonly [string, Record<string, string>])[]
+) {
+  const body = data
+    .map(
+      ([tag, attributes]) =>
+        `<${tag} ${Object.entries(attributes)
+          .filter(([name]) => name !== 'key')
+          .map(
+            ([name, value]) =>
+              `${name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}="${value}"`
+          )
+          .join(' ')}/>`
+    )
+    .join('');
+  return unsafeSVG(
+    `<svg fill="none" height="24" viewBox="0 0 24 24" width="24">${body}</svg>`
+  );
+}
 
-/** The sheet an answer is drawn on, in the board's own coordinates. */
-const SHEET = { h: 520, w: 820, x: 0, y: 0 };
-
-/** Squared paper with x and y axes: the part's background, never in the answer. */
-function axesSheet({ h, w }: typeof SHEET) {
+/** Squared paper with numbered x and y axes: the part's background, never in the
+ * answer. SVG text, because the same drawing goes into the marking image, where
+ * only system fonts reach it. */
+function axesSheet({ h, origin, w }: typeof SHEET) {
   const lines: string[] = [];
-  for (let x = 0; x <= w; x += 41)
+  for (let x = 0; x <= w; x += UNIT.x)
     lines.push(`<path d="M${x} 0V${h}" stroke="#ececea"/>`);
-  for (let y = 0; y <= h; y += 40)
+  for (let y = 0; y <= h; y += UNIT.y)
     lines.push(`<path d="M0 ${y}H${w}" stroke="#ececea"/>`);
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}"><rect width="${w}" height="${h}" fill="#fff"/>${lines.join('')}<path d="M41 0V${h}M0 360H${w}" stroke="#8b8b88" stroke-width="1.5"/></svg>`;
+  const label = 'font-family="Arial, sans-serif" font-size="12" fill="#77757d"';
+  for (let x = origin.x + UNIT.x, n = 1; x < w; x += UNIT.x, n++)
+    lines.push(
+      `<text x="${x}" y="${origin.y + 16}" text-anchor="middle" ${label}>${n}</text>`
+    );
+  for (let y = origin.y - UNIT.y, n = 1; y > 0; y -= UNIT.y, n++)
+    lines.push(
+      `<text x="${origin.x - 7}" y="${y + 4}" text-anchor="end" ${label}>${n}</text>`
+    );
+  for (let y = origin.y + UNIT.y, n = 1; y < h; y += UNIT.y, n++)
+    lines.push(
+      `<text x="${origin.x - 7}" y="${y + 4}" text-anchor="end" ${label}>−${n}</text>`
+    );
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}"><rect width="${w}" height="${h}" fill="#fff"/>${lines.join('')}<path d="M${origin.x} 0V${h}M0 ${origin.y}H${w}" stroke="#8b8b88" stroke-width="1.5"/></svg>`;
 }
 
 /** BlockSuite's edgeless editor on an in-memory board over a fixed sheet, opened
@@ -177,17 +205,64 @@ export function mountDrawingBoard(
   }
   store.resetHistory();
   const std = new BlockStdScope({
-    extensions: [...views.get('edgeless'), historyTool],
+    extensions: [
+      ...views.get('edgeless'),
+      shapeButtonTool,
+      mathsTool,
+      PlotTool,
+      StampTool,
+      ...formulaExtensions,
+      NoFrameOverlay,
+    ],
     store,
   });
+  // Undo and redo sit outside the toolbar: beside zoom, or on a phone top right,
+  // left of Done. BlockSuite keeps them on the keyboard only; a phone has none.
+  const history = document.createElement('div');
+  history.className = 'capy-board-history';
+  const drawHistory = () =>
+    render(
+      html`<button
+          aria-label=${m.drawing_board_undo()}
+          ?disabled=${!store.canUndo}
+          title=${m.drawing_board_undo()}
+          type="button"
+          @click=${() => store.undo()}
+        >
+          ${hugeIcon(Undo03Icon)}
+        </button>
+        <button
+          aria-label=${m.drawing_board_redo()}
+          ?disabled=${!store.canRedo}
+          title=${m.drawing_board_redo()}
+          type="button"
+          @click=${() => store.redo()}
+        >
+          ${hugeIcon(Redo03Icon)}
+        </button>`,
+      history
+    );
+  drawHistory();
+  const historyUpdates = store
+    .get(HistoryExtension)
+    .onUpdated.subscribe(drawHistory);
   render(
     html`<div class="affine-edgeless-viewport capy-board">${std.render()}</div>`,
     container
   );
+  const board = container.querySelector('.capy-board');
+  board?.append(history);
   // A double click types on the canvas, so the label is in the exported image.
   store.get(FeatureFlagService).setFlag('enable_edgeless_text', false);
   store.get(FeatureFlagService).setFlag('enable_note_menu_media', false);
   const gfx = std.get(GfxControllerIdentifier);
+  outlineNewShapes(gfx);
+  // Canvas labels measure and draw in this font (the stylesheet's @font-face).
+  void document.fonts
+    .load('24px "blocksuite:surface:Inter"')
+    .then(() => gfx.surfaceComponent?.refresh());
+  const symbols = mountSymbolRow(gfx);
+  board?.append(symbols.element);
 
   // The sheet sits under the strokes and moves with the board, outside the
   // document, so no tool can select or erase it.
@@ -196,6 +271,12 @@ export function mountDrawingBoard(
   sheet.style.cssText =
     'position:absolute;pointer-events:none;box-shadow:0 0 0 1px #d9d9d6;border-radius:6px;overflow:hidden';
   sheet.innerHTML = svg;
+  // What the plotting tools show while placing, above the paper.
+  const preview = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  preview.setAttribute('viewBox', `0 0 ${SHEET.w} ${SHEET.h}`);
+  preview.style.cssText = 'position:absolute;inset:0;width:100%;height:100%';
+  sheet.append(preview);
+  setBoardPreview(gfx, preview);
   const place = () => {
     const [left, top] = gfx.viewport.toViewCoord(SHEET.x, SHEET.y);
     const { zoom } = gfx.viewport;
@@ -216,13 +297,19 @@ export function mountDrawingBoard(
     background.prepend(sheet);
     gfx.viewport.setViewportByBound(
       new Bound(SHEET.x, SHEET.y, SHEET.w, SHEET.h),
-      gfx.viewport.width < PHONE_WIDTH ? [70, 12, 120, 12] : [90, 40, 130, 40]
+      gfx.viewport.width < PHONE_WIDTH ? [64, 12, 96, 12] : [90, 40, 130, 40]
     );
     place();
   });
 
+  // Leaving a plotting tool keeps a curve still being placed.
+  const finishPlot = () => gfx.tool.setTool(DefaultTool);
+
   return {
-    save: () => toBase64(Y.encodeStateAsUpdate(store.spaceDoc)),
+    save: () => {
+      finishPlot();
+      return toBase64(Y.encodeStateAsUpdate(store.spaceDoc));
+    },
     stats: () => ({
       blocks: gfx.layer.blocks.map((block) => block.flavour),
       bytes: Y.encodeStateAsUpdate(store.spaceDoc).byteLength,
@@ -230,6 +317,8 @@ export function mountDrawingBoard(
     }),
     /** The sheet and what's on it, for marking. */
     toImage: async () => {
+      finishPlot();
+      await formulasDrawn(gfx);
       const renderer = gfx.surfaceComponent?.renderer;
       if (!(renderer instanceof CanvasRenderer)) return null;
       const bound = new Bound(SHEET.x, SHEET.y, SHEET.w, SHEET.h);
@@ -278,6 +367,9 @@ export function mountDrawingBoard(
     unmount: () => {
       cancelAnimationFrame(frame);
       subscription.unsubscribe();
+      historyUpdates.unsubscribe();
+      symbols.unmount();
+      render(null, history);
       render(null, container);
     },
   };
