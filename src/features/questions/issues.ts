@@ -407,11 +407,6 @@ function answerMessage(
       )
         return m.question_issue_blank_answer();
       return;
-    case 'drawing':
-      // The axes' own wording; the dialog's inputs keep the rest from happening.
-      return issue.message === m.question_validation_axis_range()
-        ? issue.message
-        : undefined;
     default:
       return;
   }
@@ -420,8 +415,6 @@ function answerMessage(
 /** A hand-written rule's agreed wording, for the rules a user can break. */
 function ruleMessage(rule: RuleIssue, part: QuestionPart): string | undefined {
   if (rule.rule === 'gap-markers') return m.question_issue_blanks_order();
-  if (rule.rule === 'drawing-figure')
-    return m.question_validation_drawing_figure();
   // Items past the cap: the part's marks stop at it (`schemeMarks`).
   if (
     rule.rule === 'markscheme-total' &&

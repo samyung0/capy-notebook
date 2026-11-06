@@ -20,10 +20,7 @@
           }
         ],
         "answer": {
-          "type": "drawing",
-          "background": {
-            "kind": "blank"
-          }
+          "type": "drawing"
         },
         "marks": 2,
         "solution": []

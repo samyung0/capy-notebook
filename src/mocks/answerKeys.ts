@@ -55,7 +55,7 @@ export function learnerView(question: Question): LearnerQuestion {
           learner = { type: answer.type };
           break;
         case 'drawing':
-          learner = { background: answer.background, type: 'drawing' };
+          learner = { type: 'drawing' };
           break;
       }
       return {

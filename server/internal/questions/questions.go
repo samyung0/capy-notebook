@@ -301,9 +301,6 @@ func Validate(q map[string]any, policy Policy) error {
 		if err := answer(p["answer"], policy); err != nil {
 			return err
 		}
-		if a["type"] == "drawing" && !figureBlock(p) {
-			return fail("a figure background names one of the part's image blocks")
-		}
 		if a["type"] == "gaps" && !gapsNumbered(p) {
 			return fail("write each gap in the text as (1) ______, (2) ______ and so on, one per accepted list")
 		}
@@ -1054,8 +1051,8 @@ func answer(value any, policy Policy) error {
 	case "open":
 		required += " accepted hints"
 	case "drawing":
-		// Answered on the drawing board over its background (Epo 2026-11-03).
-		required += " background"
+		// Answered on the drawing board, which every drawing part opens plain
+		// (Epo 2026-11-06).
 	case "gaps":
 		// One accepted list per numbered gap in the part's text.
 		required += " accepted"
@@ -1161,8 +1158,6 @@ func answer(value any, policy Policy) error {
 		if !stringsArray(a["items"], 2, fieldlimits.QuestionAnswers, fieldlimits.QuestionText) {
 			return fail("invalid ordering items")
 		}
-	case "drawing":
-		return background(a["background"])
 	}
 	return nil
 }
@@ -1173,55 +1168,6 @@ func ModelMarked(answerType any) bool {
 	return answerType == "open" || answerType == "drawing"
 }
 
-// background is what a drawing answer is drawn over: a blank sheet, a squared
-// grid, axes over x and y ranges, or one of the part's own image blocks to label.
-func background(value any) error {
-	b, err := obj(value)
-	if err != nil {
-		return err
-	}
-	switch b["kind"] {
-	case "blank", "grid":
-		return keys(b, "kind", "")
-	case "axes":
-		if err := keys(b, "kind x y", ""); err != nil {
-			return err
-		}
-		for _, axis := range []string{"x", "y"} {
-			r, ok := tuple(b[axis], 2)
-			if !ok || r[0] >= r[1] || math.Abs(r[0]) > fieldlimits.QuestionChartValue || math.Abs(r[1]) > fieldlimits.QuestionChartValue {
-				return fail("an axis runs from a lower to a higher value")
-			}
-		}
-		return nil
-	case "figure":
-		if err := keys(b, "kind block", ""); err != nil {
-			return err
-		}
-		if !index(b["block"], fieldlimits.QuestionBlocks) {
-			return fail("invalid figure block")
-		}
-		return nil
-	}
-	return fail("invalid drawing background")
-}
-
-// figureBlock checks a figure background names an image block of its part;
-// other backgrounds pass.
-func figureBlock(p map[string]any) bool {
-	a, _ := p["answer"].(map[string]any)
-	b, _ := a["background"].(map[string]any)
-	if b["kind"] != "figure" {
-		return true
-	}
-	n, _ := num(b["block"])
-	list, _ := p["blocks"].([]any)
-	if int(n) >= len(list) {
-		return false
-	}
-	block, _ := list[int(n)].(map[string]any)
-	return block["type"] == "image"
-}
 func index(v any, size int) bool {
 	n, ok := num(v)
 	return ok && n >= 0 && n < float64(size) && n == math.Trunc(n)
@@ -1303,8 +1249,6 @@ func LearnerView(q map[string]any) map[string]any {
 		case "gaps":
 			accepted, _ := a["accepted"].([]any)
 			learner["gaps"] = len(accepted)
-		case "drawing":
-			learner["background"] = a["background"]
 		case "ordering":
 			items, _ := a["items"].([]any)
 			learner["items"] = shuffled(items)

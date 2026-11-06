@@ -2,7 +2,6 @@ import * as Y from 'yjs';
 import { applyTextChange, LOCAL_EDIT } from '@/features/collaboration/yText';
 import { repairGroups } from '@/features/questions/groups';
 import {
-  type DrawingBackground,
   gapNumbers,
   type LearnerAnswer,
   type LearnerQuestion,
@@ -182,36 +181,6 @@ const readMarkscheme = (key: YMap | undefined): MarkItem[] =>
     text: text(entry, 'text'),
   }));
 
-/** A drawing answer's background, held as plain fields on the content answer
- * (`background`, `xMin`…`yMax`, `block`) for learners to see, as the server
- * holds it. */
-function readBackground(answer: YMap | undefined): DrawingBackground {
-  const at = (key: string) => plain<number>(answer, key) ?? 0;
-  const kind = plain<string>(answer, 'background');
-  if (kind === 'axes')
-    return {
-      kind,
-      x: [at('xMin'), at('xMax')],
-      y: [at('yMin'), at('yMax')],
-    };
-  if (kind === 'figure') return { block: at('block'), kind };
-  return { kind: kind === 'grid' ? 'grid' : 'blank' };
-}
-
-function writeBackground(answer: YMap, background: DrawingBackground) {
-  setPlain(answer, 'background', background.kind);
-  const axes = background.kind === 'axes' ? background : undefined;
-  setPlain(answer, 'xMin', axes?.x[0]);
-  setPlain(answer, 'xMax', axes?.x[1]);
-  setPlain(answer, 'yMin', axes?.y[0]);
-  setPlain(answer, 'yMax', axes?.y[1]);
-  setPlain(
-    answer,
-    'block',
-    background.kind === 'figure' ? background.block : undefined
-  );
-}
-
 function readAnswer(
   answer: YMap | undefined,
   key: YMap | undefined
@@ -254,10 +223,7 @@ function readAnswer(
         markscheme: readMarkscheme(key),
       };
     case 'drawing':
-      return {
-        answer: { background: readBackground(answer), type },
-        markscheme: readMarkscheme(key),
-      };
+      return { answer: { type }, markscheme: readMarkscheme(key) };
     case 'gaps': {
       const gaps = mapAt(key, 'gaps');
       const numbers: number[] = [];
@@ -410,7 +376,7 @@ export function readLearnerQuestions(
               learner = { gaps: gapNumbers(blocks).length, type };
               break;
             case 'drawing':
-              learner = { background: readBackground(answer), type };
+              learner = { type };
               break;
             default:
               learner = { type: type === 'boolean' ? 'boolean' : 'open' };
@@ -820,9 +786,6 @@ function writeContentAnswer(part: YMap, answer: QuestionAnswer): PartIds {
       break;
     case 'short':
       setPlain(map, 'unit', answer.unit);
-      break;
-    case 'drawing':
-      writeBackground(map, answer.background);
       break;
     case 'matching':
       ids.left = writeList(

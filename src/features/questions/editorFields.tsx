@@ -427,7 +427,7 @@ export function emptyAnswer(type: QuestionType): QuestionAnswer {
     case 'gaps':
       return { accepted: [['']], type };
     case 'drawing':
-      return { background: { kind: 'blank' }, type };
+      return { type };
   }
 }
 

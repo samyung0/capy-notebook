@@ -3039,7 +3039,5 @@
   "drawing_board_fill_red": "Red",
   "drawing_board_fill_yellow": "Yellow",
   "drawing_board_label": "Label",
-  "question_validation_axis_range": "An axis runs from a lower to a higher value.",
-  "question_validation_drawing_figure": "Pick one of the part's images as the figure to draw on.",
   "question_ui_drawing": "Drawing"
 }

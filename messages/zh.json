@@ -3039,7 +3039,5 @@
   "drawing_board_fill_red": "红色",
   "drawing_board_fill_yellow": "黄色",
   "drawing_board_label": "标签",
-  "question_validation_axis_range": "坐标轴须从较小值到较大值。",
-  "question_validation_drawing_figure": "请从本小题的图片中选一张作为作图的底图。",
   "question_ui_drawing": "作图"
 }

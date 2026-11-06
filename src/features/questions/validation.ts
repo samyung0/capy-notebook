@@ -477,26 +477,6 @@ export const liveFigureSchema = z.discriminatedUnion('type', [
   graphSchema,
 ]);
 
-/** An axis end, bounded as a chart value. */
-const axisEnd = finite
-  .min(-limits.QUESTION_CHART_VALUE_MAX)
-  .max(limits.QUESTION_CHART_VALUE_MAX);
-const axisRange = z
-  .tuple([axisEnd, axisEnd])
-  .refine(([low, high]) => low < high, {
-    error: () => m.question_validation_axis_range(),
-  });
-/** What a drawing answer is drawn over; a figure names one of the part's image
- * blocks, checked with the part. */
-const drawingBackground = z.discriminatedUnion('kind', [
-  z.strictObject({ kind: z.enum(['blank', 'grid']) }),
-  z.strictObject({ kind: z.literal('axes'), x: axisRange, y: axisRange }),
-  z.strictObject({
-    block: index.max(limits.QUESTION_BLOCKS_MAX - 1),
-    kind: z.literal('figure'),
-  }),
-]);
-
 const answerSchema = z.discriminatedUnion('type', [
   z
     .strictObject({
@@ -555,7 +535,7 @@ const answerSchema = z.discriminatedUnion('type', [
     hints: z.array(text).max(limits.QUESTION_ANSWERS_MAX),
     type: z.literal('open'),
   }),
-  z.strictObject({ background: drawingBackground, type: z.literal('drawing') }),
+  z.strictObject({ type: z.literal('drawing') }),
 ]);
 
 export const questionSchema = z.strictObject({
@@ -639,7 +619,6 @@ export type RuleIssue = {
     | 'part-ids'
     | 'awarded'
     | 'gap-markers'
-    | 'drawing-figure'
     | 'markscheme-open'
     | 'markscheme-total'
     | 'awarded-range'
@@ -704,12 +683,6 @@ export function ruleIssues(
         part.answer.accepted.map((_, i) => i + 1).join()
     )
       fail('gap-markers', m.question_validation_gap_markers());
-    if (
-      part.answer.type === 'drawing' &&
-      part.answer.background.kind === 'figure' &&
-      part.blocks[part.answer.background.block]?.type !== 'image'
-    )
-      fail('drawing-figure', m.question_validation_drawing_figure());
     // Only model-marked parts have a marking scheme, which the model marks against.
     if (modelMarked(part.answer.type) !== (part.markscheme !== undefined))
       fail('markscheme-open', m.question_validation_markscheme_open());

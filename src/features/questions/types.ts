@@ -187,16 +187,9 @@ export type QuestionAnswer =
   | { type: 'open'; accepted: string[]; hints: string[] }
   /** One accepted list per numbered gap written in the part's text. */
   | { type: 'gaps'; accepted: string[][] }
-  /** Answered on the drawing board over its background, marked like an open
-   * part against its marking items (Epo 2026-11-03). */
-  | { type: 'drawing'; background: DrawingBackground };
-
-/** What a drawing answer is drawn over: a blank sheet, a squared grid, axes over
- * x and y ranges, or one of the part's own image blocks (`block`) to label. */
-export type DrawingBackground =
-  | { kind: 'blank' | 'grid' }
-  | { kind: 'axes'; x: [number, number]; y: [number, number] }
-  | { kind: 'figure'; block: number };
+  /** Answered on the drawing board, which every drawing part opens plain
+   * (Epo 2026-11-06), and marked like an open part against its marking items. */
+  | { type: 'drawing' };
 
 /** Answer types a model marks against the part's marking items. */
 export const modelMarked = (type: QuestionType) =>
@@ -252,7 +245,7 @@ export type LearnerAnswer =
   | { type: 'matching'; options: string[]; left: string[] }
   | { type: 'ordering'; items: string[] }
   | { type: 'gaps'; gaps: number }
-  | { type: 'drawing'; background: DrawingBackground };
+  | { type: 'drawing' };
 export type LearnerPart = {
   id: string;
   group?: string;

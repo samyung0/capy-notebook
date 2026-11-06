@@ -1,5 +1,5 @@
 {
-  "name": "drawing-figure-not-image-rejected",
+  "name": "drawing-background-rejected",
   "valid": false,
   "policy": {},
   "question": {
@@ -22,8 +22,7 @@
         "answer": {
           "type": "drawing",
           "background": {
-            "kind": "figure",
-            "block": 0
+            "kind": "grid"
           }
         },
         "marks": 2,

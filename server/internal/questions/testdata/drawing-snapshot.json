@@ -22,10 +22,7 @@
           }
         ],
         "answer": {
-          "type": "drawing",
-          "background": {
-            "kind": "grid"
-          }
+          "type": "drawing"
         },
         "marks": 2,
         "markscheme": [
