@@ -148,6 +148,23 @@ test('a note card takes typing and leaves $$ as text', async ({ page }) => {
   await expect(page.locator('affine-edgeless-note')).toContainText(
     'see $$x^2$$ here'
   );
+
+  // Selected, it has its height button, and nothing about a page mode.
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => {
+    const { gfx } = document.querySelector(
+      'affine-edgeless-root'
+    ) as unknown as {
+      gfx: {
+        layer: { blocks: { id: string }[] };
+        selection: { set(selection: object): void };
+      };
+    };
+    gfx.selection.set({ editing: false, elements: [gfx.layer.blocks[0].id] });
+  });
+  const toolbar = page.locator('affine-toolbar-widget');
+  await expect(toolbar.getByLabel('Size', { exact: true })).toBeVisible();
+  await expect(toolbar.getByText('Display in Page')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
