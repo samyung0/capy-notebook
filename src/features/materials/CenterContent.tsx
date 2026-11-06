@@ -20,6 +20,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { isApiError, isMaterialContentUnreadable, qk } from '@/api/client';
 import {
   useFile,
@@ -84,8 +85,7 @@ import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import type { LearnerQuestion } from '@/features/questions/types';
 import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
-import { QuizEditor } from '@/features/quizzes/QuizEditor';
-import { QuizQuestionList } from '@/features/quizzes/QuizPage';
+import { QuizEditor, QuizReadSplit } from '@/features/quizzes/QuizEditor';
 import {
   OfflineStatus,
   WorkspaceStatusButton,
@@ -128,6 +128,7 @@ import {
   readDocumentMode,
   saveDocumentMode,
 } from './openItem';
+import { forgetAssetLinks } from './resolvedAssetLinks';
 
 /* A standalone mindmap's or diagram's live editor: CodeMirror, no Plate. */
 const MermaidMaterialEditor = lazy(
@@ -161,7 +162,7 @@ export function CenterContent({
    * workspace's Dashboard or a Study page (one column; from lg the
    * workspace draws it without the header). */
   page?: ReactNode;
-  /** Below lg: the title opens Files and ⋮ carries the workspace actions. */
+  /** Below md: the title opens Files and ⋮ carries the workspace actions. */
   oneColumn?: OneColumnChrome;
   standalone?: boolean;
   /** Workspace chrome drawn before the file name in the header. */
@@ -628,7 +629,10 @@ function MaterialContentBody({
   const lost =
     isApiError(error) && (error.status === 403 || error.status === 404);
   useEffect(() => {
-    if (lost) void dropDeviceCopies(materialId);
+    if (!lost) return;
+    void dropDeviceCopies(materialId);
+    // Signed links outlast access by their lifetime, but no further (Epo Q678 A).
+    forgetAssetLinks();
   }, [lost, materialId]);
   // A refusal ends what shows; a read that could not answer leaves it, an open
   // editor included.
@@ -873,12 +877,7 @@ function QuizPreview({
   title: string;
 }) {
   const overBar = useContext(FloatingBarContext);
-  useEffect(() => {
-    if (!target) return;
-    document
-      .querySelector(`[data-question-id="${CSS.escape(target)}"]`)
-      ?.scrollIntoView({ block: 'start' });
-  }, [target]);
+  const headerActions = useContext(FileActionsTarget);
   // Someone gone from editing to viewing keeps no answers on this device.
   useEffect(() => {
     void dropDeviceCopies(quizId, 'keys');
@@ -886,17 +885,26 @@ function QuizPreview({
   // The stored questions paint first; the live room follows (live-items).
   const questions = useLiveQuizQuestions(quizId, storedQuestions(content));
   return (
-    <TabContent fill>
-      <div className="mb-7 flex items-center gap-4">
-        <h1 className="t-large-card-title min-w-0 flex-1">{title}</h1>
-        <StudyButton kind="quiz" materialId={quizId} />
-      </div>
-      <QuizQuestionList disabled questions={questions} />
-      <SourcesLine
-        className={cn('mt-16 pb-4', overBar && 'pb-20')}
-        provenance={provenance}
+    <>
+      {/* The header names it for the eye; the page's one h1 stays its title. */}
+      <h1 className="sr-only">{title}</h1>
+      {headerActions &&
+        createPortal(
+          <StudyButton kind="quiz" materialId={quizId} />,
+          headerActions
+        )}
+      <QuizReadSplit
+        paneClassName={cn(overBar && 'pb-20')}
+        questions={questions}
+        sources={
+          <SourcesLine
+            className={cn('pb-4', overBar && 'pb-20')}
+            provenance={provenance}
+          />
+        }
+        target={target}
       />
-    </TabContent>
+    </>
   );
 }
 
@@ -959,6 +967,7 @@ function EmptyCenter({
           // As in a file header: the title pill's padding spaces it.
           !(leading && oneColumn) && 'sm:gap-2'
         )}
+        data-center-header=""
         data-slot="center-header"
       >
         {leading === undefined ? (

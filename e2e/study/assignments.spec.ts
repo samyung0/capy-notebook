@@ -146,13 +146,11 @@ test.describe('assignments', () => {
       .locator('visible=true')
       .click();
     await viewerPage
-      .getByRole('button', { name: m.assignment_question_n({ number: 2 }) })
-      .locator('visible=true')
-      .waitFor();
+      .locator('[data-question-row]')
+      .nth(1)
+      .waitFor({ state: 'attached' });
     await viewerPage.getByText('Mitochondria').click();
-    await viewerPage
-      .getByRole('button', { name: m.assignment_question_n({ number: 2 }) })
-      .click();
+    await viewerPage.locator('[data-question-row]').nth(1).click();
     await viewerPage.getByRole('textbox').fill('By osmosis.');
     await viewerPage
       .getByRole('button', { name: m.assignment_submit() })

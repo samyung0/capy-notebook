@@ -147,7 +147,7 @@ const PracticePage = lazy(() =>
 
 // The section panel beside the rail: one default for every section (Epo
 // 2026-11-04). It can be dragged as wide as half the group, as the right panel
-// could, which from lg keeps the viewer above its least width.
+// could, which from md keeps the viewer above its least width.
 const LEFT_SIZE = 340;
 const LEFT_MIN = 220;
 const LEFT_MAX = '50%';
@@ -324,8 +324,8 @@ function sectionForCenter(
 
 /** The panel the URL names; with none a workspace opens on its Dashboard (Epo
  * 2026-11-05). */
-const firstPanelOf = (urlPanel: WorkspacePanel | undefined, lg: boolean) =>
-  lg ? (urlPanel ?? null) : null;
+const firstPanelOf = (urlPanel: WorkspacePanel | undefined, md: boolean) =>
+  md ? (urlPanel ?? null) : null;
 
 function firstSectionOf(
   panel: WorkspacePanel | null,
@@ -385,10 +385,10 @@ function WorkspaceOpen() {
   const { mutateAsync: updateTopic } = useUpdateTopic(workspaceId);
   const [cloneOpen, setCloneOpen] = useState(false);
 
-  // Breakpoints: one column below 1260px; from there the rail with one panel
-  // beside it, whichever section shows.
-  const lg = useMediaQuery('(min-width: 1260px)');
-  const oneColumnLayout = !lg;
+  // Breakpoints: one column below 768px; from there, iPads too, the rail with one
+  // panel beside it, whichever section shows.
+  const md = useMediaQuery('(min-width: 768px)');
+  const oneColumnLayout = !md;
   const searchedOpenItem = openItemFromSearch(search);
   const studyPage = !searchedOpenItem && !!search.study;
   // Make a quiz from a link: its dialog opens over the Dashboard, on its pages or run
@@ -408,17 +408,17 @@ function WorkspaceOpen() {
   const center: PanelCenter = { openKey, studyPage };
   // These two states draw the panel; the effect below keeps the URL on them.
   const [section, setSection] = useState<WorkspaceSection>(() =>
-    firstSectionOf(firstPanelOf(search.panel, lg), center)
+    firstSectionOf(firstPanelOf(search.panel, md), center)
   );
   const [panelOpen, setPanelOpen] = useState(() =>
-    firstPanelOpenOf(firstPanelOf(search.panel, lg), center)
+    firstPanelOpenOf(firstPanelOf(search.panel, md), center)
   );
   // Panels are each workspace's own. The page stays mounted when a Move takes
   // the open file to another: the file follows at once (Q467).
   const [seenWorkspace, setSeenWorkspace] = useState(workspaceId);
   if (workspaceId !== seenWorkspace) {
     setSeenWorkspace(workspaceId);
-    const panel = firstPanelOf(search.panel, lg);
+    const panel = firstPanelOf(search.panel, md);
     setChatShown(readPref(PREF_KEYS.chatShown(workspaceId), false, isBoolean));
     setSection(firstSectionOf(panel, center));
     setPanelOpen(firstPanelOpenOf(panel, center));
@@ -431,26 +431,32 @@ function WorkspaceOpen() {
     setSeenCenter(centerKey);
     setSection((was) => sectionForCenter(was, center));
   }
+  // One column keeps no panel state, so the URL alone says the canvas shows.
+  const urlCanvas = search.panel === 'canvas' && !openKey && !studyPage;
+  if (!md && urlCanvas !== (section === 'canvas'))
+    setSection(urlCanvas ? 'canvas' : sectionForCenter('dashboard', center));
   // The dashboard and the canvas have no panel.
   const leftOpen = section !== 'dashboard' && section !== 'canvas' && panelOpen;
-  const leftShown = lg && leftOpen;
+  const leftShown = md && leftOpen;
   const chatOnScreen = leftShown && section === 'agent' && chatShown;
   useEffect(() => {
-    if (!lg) return;
+    if (!md) return;
     const key = PREF_KEYS.chatShown(workspaceId);
     if (chatOnScreen) writePref(key, true);
     else removePref(key);
-  }, [chatOnScreen, lg, workspaceId]);
+  }, [chatOnScreen, md, workspaceId]);
   // The tour's panels aren't the learner's to remember.
   const beforeTour = useRef<{
     chatShown: boolean;
     panelOpen: boolean;
     section: WorkspaceSection;
   } | null>(null);
-  const panelNow: WorkspacePanel | null = lg
-    ? section === 'dashboard' || section === 'canvas' || !panelOpen
-      ? 'none'
-      : section
+  const panelNow: WorkspacePanel | null = md
+    ? section === 'canvas'
+      ? 'canvas'
+      : section === 'dashboard' || !panelOpen
+        ? 'none'
+        : section
     : null;
   const panelPressed = useRef(false);
   const seenUrlPanel = useRef(search.panel);
@@ -483,7 +489,7 @@ function WorkspaceOpen() {
     });
   }, [navigate, openKey, panelNow, search.panel, studyPage]);
   const openPracticeFirst = useEffectEvent(() => {
-    if (lg && section === 'study' && !studyPage && !openKey)
+    if (md && section === 'study' && !studyPage && !openKey)
       navigate({
         replace: true,
         search: (previous) => ({ ...previous, study: 'practice' as const }),
@@ -495,7 +501,7 @@ function WorkspaceOpen() {
   const [panelGroup, setPanelGroup] = useState<HTMLDivElement | null>(null);
   usePanelLayout({
     // One column has no side panel to place.
-    group: lg ? panelGroup : null,
+    group: md ? panelGroup : null,
     groupRef: panelGroupRef,
     open: leftShown,
   });
@@ -643,6 +649,8 @@ function WorkspaceOpen() {
     }
     if (next === 'canvas') {
       setSection('canvas');
+      if (searchedOpenItem || search.study || search.make)
+        navigate({ search: { panel: 'canvas' }, to: '.' });
       return;
     }
     if (next === section) {
@@ -796,7 +804,7 @@ function WorkspaceOpen() {
   // Everyone has settings: phones open on the tab list, wider screens on the
   // first tab (General for owner and editor members, else their own Study).
   const openSettings = () => setSettingsTab('menu');
-  // Below lg an open Office file keeps its bottom chrome (sheet tabs, slide
+  // Below md an open Office file keeps its bottom chrome (sheet tabs, slide
   // pager) clear: the chat dock stays a button above it.
   const openFile =
     openItem?.kind === 'file'
@@ -982,7 +990,7 @@ function WorkspaceOpen() {
       workspaceId={workspaceId}
     />
   );
-  // Study's pages fill the centre without a file header from lg (boards P1,
+  // Study's pages fill the centre without a file header from md (boards P1,
   // P2); one column keeps its header for the Files dropdown and ⋮.
   // A link to a page this person doesn't have opens Practice.
   const studyShown: StudyPage =
@@ -1054,17 +1062,32 @@ function WorkspaceOpen() {
       {!headsItself && <h1 className="sr-only">{ws.name}</h1>}
       <WorkspaceHealth workspace={ws} />
       <AppErrorBoundary resetKeys={[openItem?.kind, openItem?.id]}>
-        {lg && section === 'canvas' ? (
-          <Suspense fallback={null}>
-            <WorkspaceCanvas workspaceId={workspaceId} />
-          </Suspense>
-        ) : lg && pageContent ? (
+        {section === 'canvas' ? (
+          <div className="flex h-full flex-col">
+            {/* One column has no rail to leave by. */}
+            {oneColumnLayout && (
+              <div className="flex shrink-0 items-center p-1">
+                <ToolbarButton
+                  label={m.workspace_section_dashboard()}
+                  onClick={openDashboard}
+                >
+                  <Icon name="navigationBack" />
+                </ToolbarButton>
+              </div>
+            )}
+            <div className="min-h-0 flex-1">
+              <Suspense fallback={null}>
+                <WorkspaceCanvas workspaceId={workspaceId} />
+              </Suspense>
+            </div>
+          </div>
+        ) : md && pageContent ? (
           pageContent
         ) : (
           <CenterContent
             color="purple"
             item={openItem}
-            // From lg the rail carries Home and the section panels.
+            // From md the rail carries Home and the section panels.
             leading={
               oneColumnLayout ? (
                 <ToolbarButton
@@ -1200,7 +1223,7 @@ function WorkspaceOpen() {
   return (
     <>
       <div className="flex h-full min-h-0 gap-2">
-        {lg && (
+        {md && (
           <WorkspaceRail
             accountItems={accountItems}
             active={section}
@@ -1229,7 +1252,7 @@ function WorkspaceOpen() {
           }}
           orientation="horizontal"
         >
-          {lg && (
+          {md && (
             <>
               <ResizablePanel
                 className="overflow-visible! pr-1"
@@ -1259,6 +1282,7 @@ function WorkspaceOpen() {
           >
             <div
               className="relative h-full"
+              data-viewer=""
               ref={viewerBox}
               style={{ '--office-inset': '0px' } as React.CSSProperties}
             >
@@ -1281,9 +1305,9 @@ function WorkspaceOpen() {
                       onPageOpen: setChatPageOpen,
                       pageOpen: search.panel === 'agent',
                     }}
-                    // The dialog takes the screen on phones; hidden, the chat keeps
-                    // its draft and stream.
-                    hidden={makeLink}
+                    // The dialog and the canvas take the screen on phones; hidden,
+                    // the chat keeps its draft and stream.
+                    hidden={makeLink || section === 'canvas'}
                     onOpenCitation={openCitation}
                     onOpenResource={openChatResource}
                     openResource={openItem}

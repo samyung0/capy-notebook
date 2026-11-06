@@ -687,6 +687,7 @@ export function Header({
         // The title pill's padding already spaces it from the back button.
         !(leading && oneColumn) && 'sm:gap-2'
       )}
+      data-center-header=""
       data-testid="content-header"
       ref={measureHeader}
     >

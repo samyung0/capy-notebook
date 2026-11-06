@@ -2557,7 +2557,8 @@ The editor stays mounted, joined and undoable behind it (its mounts hidden and `
 `NotePreview` portals into a host under the editor's save strips, so the strips and their
 actions stay reachable (Review leaves Preview first), and it reads none of the editor's
 contexts. It draws `PaintedNote` from the editor's own value, so it reads no note body,
-opens offline and shows text not yet saved; images still read their own. It
+opens offline and shows text not yet saved; images use the links the editor already holds
+(`resolvedAssetLinks.ts`). It
 redraws at most every 250 ms from the editor's value changes (`subscribeNoteValue`), which
 a collaborator's typing runs through too, and only changed blocks draw again. A room swap
 hands it the next editor without moving the reader.
@@ -4386,7 +4387,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   1200 px, which needs `.capy-board` to be the `viewport` container.
 - **Selecting** shows AFFiNE's own toolbar. It reads the editor's mode, so the board
   reports edgeless (`boardToolbar` in `boardTools.ts`) and hides what makes no sense on an
-  answer: Frame, Comment and the linked doc entries. Connect shows its name. A plane card
+  answer: Frame, Comment, a note's page mode entries and the linked doc entries. Connect shows its name. A plane card
   adds a pen that opens it and a Fit to size / Custom size toggle; a chart card adds the pen.
 - **Shapes panel:** replaces AFFiNE's one-row menu through a DI override of the `shape`
   senior tool. BlockSuite has four shape types, so the rest are presets of straight

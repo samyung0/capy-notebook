@@ -80,7 +80,7 @@ function RailItem({
   );
 }
 
-/** The labelled icon rail on every workspace page from lg: Workspaces back to
+/** The labelled icon rail on every workspace page from md: Workspaces back to
  * the list, the workspace's badge (it only says where you are), the sections,
  * and your avatar opening the workspace and account menu. */
 export function WorkspaceRail({

@@ -337,7 +337,7 @@ follows the workspace's kind (board U3, the map in
 see is practice: until hidden quizzes exist, every untrashed, top-level quiz.
 The page is `src/features/study/practice/PracticePage.tsx`, lazy-loaded into
 the centre while nothing is open and the URL has `study=practice`
-(`parseWorkspaceOpenSearch`). From lg it fills the centre panel without a
+(`parseWorkspaceOpenSearch`). From md it fills the centre panel without a
 file header (28px 36px padding); one column keeps the header for the Files
 dropdown and ⋮, which with the dropdown's foot lead to Practice, Summary and
 Assignments, each only for whoever has that page. The rail's Study opens it and

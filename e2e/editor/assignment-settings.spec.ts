@@ -78,7 +78,7 @@ test.describe('as a member', () => {
       .click({ timeout: 30_000 });
     await page.getByRole('button', { name: m.sharing_notice_ok() }).click();
     const take = page.locator('[data-assignment-take]');
-    const first = take.getByText('Which organelle makes most');
+    const first = take.locator('h2').getByText('Which organelle makes most');
     await expect(first).toBeVisible({ timeout: 30_000 });
     await page.evaluate(() =>
       fetch('/api/assignments/as_paper/republish', { method: 'POST' })

@@ -407,11 +407,11 @@ test('Office viewer keeps its iframe when the workspace layout changes', async (
   });
   const opened = sessions;
 
-  // One column below lg, two columns at lg: both switch the surrounding layout.
-  // Below lg an open Office file keeps chat to its round button; at lg the
+  // One column below md, two columns at md: both switch the surrounding layout.
+  // Below md an open Office file keeps chat to its round button; at md the
   // rail offers Files.
   for (const [width, tools] of [
-    [900, m.workspace_tab_chat()],
+    [700, m.workspace_tab_chat()],
     [1280, m.workspace_tab_files()],
   ] as const) {
     await page.setViewportSize({ height: 800, width });
@@ -2046,7 +2046,7 @@ test('PPTX speaker notes start hidden, and one remembered toggle serves view and
   await showNotes.click();
   await expect(viewNotes).toBeVisible();
 
-  // Below lg the chat button sits above the open notes box.
+  // Below md the chat button sits above the open notes box.
   await page.setViewportSize({ height: 800, width: 390 });
   const tools = page.locator('[data-workspace-chat-button]');
   await expect(tools).toBeVisible();
@@ -2314,7 +2314,7 @@ test('DOCX Format › Table fits, centres and pins a table, a drag keeps the fit
   await expect(ribbonCommand(page, 'table-header-row')).toBeDisabled();
 });
 
-test('below lg the chat button sits 8px above the sheet tabs, the slide strip and the notes box', async ({
+test('below md the chat button sits 8px above the sheet tabs, the slide strip and the notes box', async ({
   page,
 }) => {
   test.setTimeout(180_000);

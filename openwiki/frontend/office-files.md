@@ -1728,7 +1728,7 @@ are left to the browser, as in Sheets. Zoom edits nothing, so View › Zoom runs
 while editing is paused; PNG saves the part on screen drawn at the same scale at
 every zoom.
 
-Below lg, while a DOCX, XLSX or PPTX file is open, the workspace's chat stays
+Below md, while a DOCX, XLSX or PPTX file is open, the workspace's chat stays
 a round button at the bottom right, above the sheet tabs and the slide strip,
 at every width; it opens the same one-line field as other files
 (`ChatDock`, `WorkspaceOpen`).
@@ -1997,7 +1997,7 @@ recovery). The server refuses an update that
 grows a slide's notes past the cap (see the root rule below), so no client
 gets around the panel.
 
-Below lg the workspace's chat button sits at the frame's bottom right, 8px
+Below md the workspace's chat button sits at the frame's bottom right, 8px
 above its bottom chrome; the open chat field sits at the same 16px gap from
 the viewer's bottom as on every other file, over that chrome. The runtime reports that chrome's height
 as `bottom-inset` (protocol v9) whenever it changes: the frame's height minus

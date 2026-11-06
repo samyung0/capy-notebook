@@ -156,6 +156,8 @@ test('a wide display formula scrolls in its own box with an edge fade, a fitting
   // width under the number, and the reaction equation just fits at 390 px.
   await page.setViewportSize({ height: 844, width: 360 });
   await page.goto('/quizzes/qz_1/attempt');
+  // A phone starts on the list.
+  await page.locator('[data-question-row]').first().click();
   // The first question's reaction equation is wider than a 360 px column.
   const formula = page
     .locator('[data-question-id]')

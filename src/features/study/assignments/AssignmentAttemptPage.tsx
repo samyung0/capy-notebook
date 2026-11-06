@@ -4,6 +4,7 @@ import { useAssignment, useAssignmentAttempt } from '@/api/hooks';
 import { ErrorState } from '@/components/app/ErrorState';
 import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
+import { IconButton } from '@/components/ui/IconButton';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
@@ -86,6 +87,18 @@ export function AssignmentAttemptPage({
     return (
       <AssignmentTake
         attempt={data}
+        leave={
+          <IconButton
+            asChild
+            className="rounded-input p-1.5"
+            icon="navigationBack"
+            label={m.assignment_leave()}
+            size="sm"
+            variant="ghost-hover"
+          >
+            <Link search={{ study: 'assignments' as const }} to="." />
+          </IconButton>
+        }
         onClosed={closedHere}
         workspaceId={workspaceId}
       />

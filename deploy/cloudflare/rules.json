@@ -30,7 +30,7 @@
     "http_ratelimit": [
       {
         "ref": "capy_public_api_rate_limit",
-        "description": "Signed-out share reads and grading (/api/public/) on every host: 100 requests in 10 s per address, then blocked for 10 s",
+        "description": "Signed-out share reads (/api/public/) on every host: 100 requests in 10 s per address, then blocked for 10 s",
         "expression": "starts_with(http.request.uri.path, \"/api/public/\")",
         "action": "block",
         "ratelimit": {
@@ -38,19 +38,6 @@
           "period": 10,
           "requests_per_period": 100,
           "mitigation_timeout": 10
-        },
-        "enabled": true
-      },
-      {
-        "ref": "capy_share_pages_rate_limit",
-        "description": "Shared pages (/share/, /w/) on the app hosts: 600 requests a minute per address, then a Managed Challenge (throttling; /p/ images and audio are left out, since a challenge breaks subresources)",
-        "expression": "http.host in {\"app.capynotebook.com\" \"uat.capynotebook.com\"} and (starts_with(http.request.uri.path, \"/share/\") or starts_with(http.request.uri.path, \"/w/\"))",
-        "action": "managed_challenge",
-        "ratelimit": {
-          "characteristics": ["ip.src", "cf.colo.id"],
-          "period": 60,
-          "requests_per_period": 600,
-          "mitigation_timeout": 0
         },
         "enabled": true
       }

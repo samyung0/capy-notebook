@@ -45,19 +45,54 @@ test('a quiz paints its questions until its rooms sync, then shows its page and 
   await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
   await holdTokens(page, QUIZ);
   await page.reload();
-  await expect(page.locator('[data-question-id]').first()).toBeVisible({
+  // The editor's own page from the first paint, drawn from the device's copy with
+  // its keys: nothing is left to fill in.
+  const opening = page.locator('[data-quiz-opening]');
+  await expect(opening.locator('[data-question-row]').first()).toBeVisible({
     timeout: 30_000,
   });
-  await expect(page.locator('[data-question-row]')).toHaveCount(0);
+  await expect(opening.locator('[data-keys-pending]')).toHaveCount(0);
+  await expect(
+    opening.getByRole('button', { name: m.quiz_add_question() })
+  ).toBeDisabled();
   await expect(status(page)).toHaveAttribute('data-save-state', 'opening');
   await expect
     .poll(() => copies(page, QUIZ))
     .toEqual(['content', 'keys', 'read']);
   await holdTokens(page, null);
-  await expect(page.locator('[data-question-row]').first()).toBeVisible({
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved', {
     timeout: 30_000,
   });
-  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
+  await expect(opening).toHaveCount(0);
+  await expect(page.locator('[data-question-row]').first()).toBeVisible();
+});
+
+test('a first open shows no key it does not know, and its list works while it waits', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.addInitScript(
+    (materialId) =>
+      sessionStorage.setItem(
+        'capy.mock.collaboration.tokensHeld',
+        JSON.stringify({ delayMs: null, materialId })
+      ),
+    QUIZ
+  );
+  await page.setViewportSize({ height: 740, width: 360 });
+  await page.goto(open(QUIZ));
+  const opening = page.locator('[data-quiz-opening]');
+  const row = opening.locator('[data-question-row]').first();
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  await row.click();
+  await expect(
+    opening.getByRole('button', { name: m.quiz_editor_all_questions() })
+  ).toBeVisible();
+  // The read carries no keys: the answer waits, and nothing warns about it.
+  await expect(opening.locator('[data-keys-pending]').first()).toBeVisible();
+  await expect(opening.getByText(m.quiz_editor_add_solution())).toHaveCount(0);
+  await holdTokens(page, null);
+  await expect(opening).toHaveCount(0, { timeout: 30_000 });
 });
 
 test('someone gone from editing to viewing loses the answer keys copy', async ({
@@ -65,11 +100,11 @@ test('someone gone from editing to viewing loses the answer keys copy', async ({
 }) => {
   test.setTimeout(90_000);
   await page.goto(open(QUIZ));
-  await expect(page.locator('[data-question-row]').first()).toBeVisible({
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved', {
     timeout: 30_000,
   });
   await page.reload();
-  await expect(page.locator('[data-question-row]').first()).toBeVisible({
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved', {
     timeout: 30_000,
   });
   await expect.poll(() => copies(page, QUIZ)).toContain('keys');
@@ -93,7 +128,11 @@ test('someone gone from editing to viewing loses the answer keys copy', async ({
   await expect(page.locator('[data-question-id]').first()).toBeVisible({
     timeout: 30_000,
   });
-  await expect(page.locator('[data-question-row]')).toHaveCount(0);
+  // The quiz's one layout, read-only: nothing to add a question with.
+  await expect(page.locator('[data-question-row]').first()).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: m.quiz_add_question() })
+  ).toHaveCount(0);
   await expect.poll(() => copies(page, QUIZ)).not.toContain('keys');
 });
 
