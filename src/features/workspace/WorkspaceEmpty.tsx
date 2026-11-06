@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/Button';
 import { m } from '@/i18n';
+import { addSourceIntent } from './LazyAddSourceDialog';
 import '@/features/questions/trailMap/trailMap.css';
 
 /** The map's ink at sticker size, for an empty page. */
@@ -35,7 +36,7 @@ export function WorkspaceEmpty({ onUpload }: { onUpload?: () => void }) {
       <InkBook />
       <p className="t-subtitle">{m.workspace_empty_title()}</p>
       {onUpload && (
-        <Button iconLeft="upload" onClick={onUpload}>
+        <Button {...addSourceIntent} iconLeft="upload" onClick={onUpload}>
           {m.action_add_file()}
         </Button>
       )}

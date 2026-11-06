@@ -23,6 +23,7 @@ import { studyView } from '@/features/study/practice/studyView';
 import { getLocale, m } from '@/i18n';
 import { isWorkspaceReadOnly } from './access';
 import { HiddenMark } from './HiddenChip';
+import { addSourceIntent } from './LazyAddSourceDialog';
 import { WorkspaceEmpty } from './WorkspaceEmpty';
 
 /** How many recent files the Dashboard shows (boards H1, H2: one row of four). */
@@ -81,7 +82,12 @@ export function WorkspaceDashboard({
         </div>
         {canAdd && !empty && (
           <div className="-mt-2.5 -mb-1 flex flex-wrap items-center gap-2">
-            <Button iconLeft="upload" onClick={onUpload} variant="outline">
+            <Button
+              {...addSourceIntent}
+              iconLeft="upload"
+              onClick={onUpload}
+              variant="outline"
+            >
               {m.action_upload()}
             </Button>
             <Button onClick={onMakeQuiz}>{m.dashboard_make_quiz()}</Button>

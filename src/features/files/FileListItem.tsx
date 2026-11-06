@@ -3,10 +3,13 @@ import { type MouseEventHandler, useState } from 'react';
 import type { SourceFile, Topic, UserColor } from '@/api/types';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
-import { AddSourceDialog } from '@/features/workspace/AddSourceDialog';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import { toFileActionTarget } from '@/features/workspace/contentActionTarget';
 import { HiddenMark } from '@/features/workspace/HiddenChip';
+import {
+  AddSourceDialog,
+  addSourceIntent,
+} from '@/features/workspace/LazyAddSourceDialog';
 import {
   type RetryProcessing,
   retryFailedFile,
@@ -72,6 +75,7 @@ export function FileListItem({
   return (
     <div className="relative flex flex-col">
       <div
+        {...(failed && !file.indexed ? addSourceIntent : undefined)}
         className={cn(
           'group relative flex min-h-7.5 items-center rounded-button pr-1.5 hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!',
           indent ? 'pl-7' : 'pl-2',

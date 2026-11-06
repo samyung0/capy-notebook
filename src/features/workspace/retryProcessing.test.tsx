@@ -45,8 +45,9 @@ vi.mock('@/features/workspace/ContentActions', () => ({
     return null;
   },
 }));
-vi.mock('@/features/workspace/AddSourceDialog', () => ({
+vi.mock('@/features/workspace/LazyAddSourceDialog', () => ({
   AddSourceDialog: () => null,
+  addSourceIntent: {},
 }));
 vi.mock('@tanstack/react-router', async (original) => ({
   ...(await original<typeof import('@tanstack/react-router')>()),

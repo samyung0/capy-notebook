@@ -21,6 +21,9 @@ const devModules = http.all(
 
 export const worker = setupWorker(devModules, ...handlers);
 
+/** For a spec's `worker.use`, from the app's own instance of the module. */
+export { HttpResponse, http } from 'msw';
+
 export async function startMockServer() {
   const saved = sessionStorage.getItem(LAST_SCENARIO);
   // Restore persistent faults without replaying navigation, edits or submissions.

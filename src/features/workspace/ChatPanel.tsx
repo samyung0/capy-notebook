@@ -52,6 +52,7 @@ import {
 } from '@/lib/localPrefs';
 import { textLength } from '@/lib/textLength';
 import { userColorPairDark } from '@/lib/userColor';
+import { loadProse, useProseBody } from './chat/blocks/text';
 import {
   CHAT_DOCK_TRANSITION,
   ChatDock,
@@ -584,6 +585,12 @@ export function ChatPanel({
     movedOnHidden.current = false;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [hidden]);
+  // A thread drawn ahead of its Markdown code changes height as that lands.
+  const proseBody = useProseBody();
+  useEffect(() => {
+    if (proseBody && !hidden)
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+  }, [proseBody]);
 
   function submit() {
     const trimmed = text.trim();
@@ -800,6 +807,8 @@ export function ChatPanel({
                   voice.phase === 'recording' && 'hidden'
                 )}
                 onChange={(e) => setText(e.target.value)}
+                // An answer is coming: its Markdown code gets a head start.
+                onFocus={() => void loadProse()}
                 onKeyDown={(e) => {
                   // The chosen send key sends; the other one adds a new line.
                   // An IME's Enter confirms its candidate and never sends.

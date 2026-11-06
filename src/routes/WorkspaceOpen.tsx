@@ -78,11 +78,7 @@ import { SharingNotice } from '@/features/study/assignments/SharingNotice';
 import { StudyPanel } from '@/features/study/practice/StudyPanel';
 import { type StudyPage, studyView } from '@/features/study/practice/studyView';
 import { VoiceFooterButton } from '@/features/voice/VoiceCard';
-import {
-  AddSourceDialog,
-  type AddSourceMode,
-  resumedConnect,
-} from '@/features/workspace/AddSourceDialog';
+import type { AddSourceMode } from '@/features/workspace/AddSourceDialog';
 import {
   canManageWorkspaceSettings,
   isWorkspaceReadOnly,
@@ -91,7 +87,9 @@ import { ChatPanel, type ChatRequest } from '@/features/workspace/ChatPanel';
 import { CloneWorkspaceDialog } from '@/features/workspace/CloneWorkspaceDialog';
 import { ArchivedChatsDialog } from '@/features/workspace/chat/ArchivedChatsDialog';
 import { ConversationList } from '@/features/workspace/chat/ConversationList';
+import { resumedConnect } from '@/features/workspace/connectResume';
 import { FilesPanel } from '@/features/workspace/FilesPanel';
+import { AddSourceDialog } from '@/features/workspace/LazyAddSourceDialog';
 import type { TabAction } from '@/features/workspace/PanelTabRow';
 import type { SettingsView } from '@/features/workspace/settingsTabs';
 import { WorkspaceDashboard } from '@/features/workspace/WorkspaceDashboard';

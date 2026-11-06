@@ -97,11 +97,11 @@ vi.mock('@/features/workspace/WorkspaceHealth', () => ({
   useAccountFrozen: () => false,
   useStorageStatus: () => state.storage,
 }));
-vi.mock('@/features/workspace/AddSourceDialog', () => ({
+vi.mock('@/features/workspace/LazyAddSourceDialog', () => ({
   AddSourceDialog: ({ workspaceId }: { workspaceId: string | null }) => (
     <div data-add-source={String(workspaceId)} />
   ),
-  resumedConnect: () => null,
+  addSourceIntent: {},
 }));
 
 const { act } = await import('react');

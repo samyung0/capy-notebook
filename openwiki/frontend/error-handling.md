@@ -360,6 +360,20 @@ nudge's page load waits for the connection the same way (plate-editor
 a connection that is down while the browser reports online still takes
 TanStack's reload.
 
+Two pieces of a workspace page load only when wanted (Q619), so a failed load
+leaves the page. Add file (`LazyAddSourceDialog`, reached by the file panel, the
+Dashboard, the Files page, the Indexing tab and a failed file's menu) loads on hover
+or focus of what opens it and at the latest on the click, with nothing shown until
+then. If its code won't load, a toast says so and nothing opens: offline the offline
+copy, otherwise "An update is ready" with Reload. The chat's Markdown code
+(`Prose`) loads with the first answer to draw, or ahead of it on focusing the
+composer or hovering a saved chat. Until it lands an answer's words hold their
+place unseen, so no raw Markdown flashes and the thread settles at its end. If it
+won't load the words show as they are (`data-prose="failed"`), which is still the
+answer: offline with no toast of its own, trying once more when the connection is
+back, otherwise with the same update toast. Without a reload, a browser that keeps
+the failed import stays on those words.
+
 ## Shared-resource security
 
 Public workspace summaries at `/w/:id.:signature` render on the server. Unsigned or
