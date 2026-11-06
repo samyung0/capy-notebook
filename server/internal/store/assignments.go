@@ -1538,7 +1538,11 @@ func (s *Store) SaveAssignmentAnswers(ctx context.Context, userID, attemptID str
 			expired = true
 			return nil
 		}
-		raw, err := json.Marshal(answers)
+		drawings, err := attemptDrawingsTx(ctx, tx, attemptID)
+		if err != nil {
+			return err
+		}
+		raw, err := json.Marshal(withDrawingAnswers(answers, drawings))
 		if err != nil {
 			return err
 		}
@@ -1627,6 +1631,12 @@ func (s *Store) finishAttemptTx(ctx context.Context, tx pgx.Tx, r attemptRow, an
 			}
 		}
 	}
+	// A drawing part's answer is the drawing stored for it, whatever was sent.
+	drawings, err := attemptDrawingsTx(ctx, tx, r.id)
+	if err != nil {
+		return err
+	}
+	answers = withDrawingAnswers(answers, drawings)
 	frozen, err := decodeFrozen(r.frozen)
 	if err != nil {
 		return err
@@ -1682,6 +1692,10 @@ func gradeAttempt(frozen []map[string]any, answers map[string]any) ([]map[string
 			} else if isText && a["type"] == "open" && strings.TrimSpace(text) == "" {
 				continue
 			}
+			// A drawing part's answer is its stored drawing (withDrawingAnswers).
+			if a["type"] == "drawing" && !isDrawingAnswer(value) {
+				continue
+			}
 			given[id] = value
 		}
 		out, _, _ := questions.Graded(q, given, nil)
@@ -1690,7 +1704,7 @@ func gradeAttempt(frozen []map[string]any, answers map[string]any) ([]map[string
 			p, _ := raw.(map[string]any)
 			a, _ := p["answer"].(map[string]any)
 			id, _ := p["id"].(string)
-			if a["type"] == "open" && given[id] != nil {
+			if questions.ModelMarked(a["type"]) && given[id] != nil {
 				p["pending"] = true
 				delete(p, "itemAwards")
 			}
@@ -2138,7 +2152,7 @@ func applyPartMarks(question map[string]any, marks []AssignmentPartMark, actorID
 		partMarks, _ := p["marks"].(float64)
 		a, _ := p["answer"].(map[string]any)
 		var awarded float64
-		if a["type"] == "open" {
+		if questions.ModelMarked(a["type"]) {
 			_, itemMarks := questions.MarkItems(p)
 			if len(mark.Items) != len(itemMarks) {
 				return nil, assignmentInput("give a mark for every marking point")
@@ -2508,7 +2522,7 @@ func questionReports(frozen []map[string]any, attempts, others []reportAttempt) 
 		for _, raw := range list {
 			p, _ := raw.(map[string]any)
 			a, _ := p["answer"].(map[string]any)
-			open = open || a["type"] == "open"
+			open = open || questions.ModelMarked(a["type"])
 			report.Parts = append(report.Parts, partReport(p, attempts))
 		}
 		var fullMarks, marked int
@@ -2560,7 +2574,7 @@ func hasOpenPart(q map[string]any) bool {
 	parts, _ := q["parts"].([]any)
 	for _, raw := range parts {
 		p, _ := raw.(map[string]any)
-		if a, _ := p["answer"].(map[string]any); a["type"] == "open" {
+		if a, _ := p["answer"].(map[string]any); questions.ModelMarked(a["type"]) {
 			return true
 		}
 	}
@@ -2633,7 +2647,7 @@ func partReport(p map[string]any, attempts []reportAttempt) AssignmentPartReport
 		if len(out.WrongAnswers) > wrongAnswersShown {
 			out.WrongAnswers = out.WrongAnswers[:wrongAnswersShown]
 		}
-	case "open":
+	case "open", "drawing":
 		texts, marks := questions.MarkItems(p)
 		out.Items = make([]AssignmentItemReport, len(texts))
 		for i := range texts {

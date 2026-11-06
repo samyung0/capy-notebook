@@ -282,9 +282,17 @@ func (a *api) checkQuizQuestion(ctx context.Context, in *checkQuizQuestionInput)
 	if err != nil {
 		return nil, err
 	}
+	// A quick check in a note keeps nothing, drawings included.
+	var drawings map[string]store.QuizDrawing
+	if quiz.ParentMaterialID == "" {
+		if drawings, err = a.keepCheckDrawings(ctx, plan, graded[0]); err != nil {
+			return nil, hErr(err)
+		}
+	}
 	res, err := a.s.CheckQuizQuestion(ctx, userID(ctx), in.ID, store.QuizCheck{
 		AttemptID: in.Body.AttemptID, StartedAt: in.Body.StartedAt,
 		Answers: answers, Question: graded[0], Order: order, Marks: marks,
+		Drawings: drawings,
 	}, time.Now())
 	if errors.Is(err, store.ErrQuestionChecked) {
 		return nil, huma.Error409Conflict(err.Error())

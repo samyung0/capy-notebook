@@ -77,6 +77,9 @@ import type {
   DeletionPreflight,
   Detail,
   Discussion,
+  DrawingOutputBody,
+  DrawingSavedOutputBody,
+  DrawingUpload,
   EditorAssetPage,
   ErrorModel,
   Event,
@@ -496,6 +499,73 @@ const res = await fetch(getSaveAssignmentAnswersUrl(id),
 
   const data: saveAssignmentAnswersResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as saveAssignmentAnswersResponse
+}
+
+
+
+export type saveAssignmentDrawingResponse200 = {
+  data: DrawingSavedOutputBody
+  status: 200
+}
+
+export type saveAssignmentDrawingResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type saveAssignmentDrawingResponseSuccess = (saveAssignmentDrawingResponse200) & {
+  headers: Headers;
+};
+export type saveAssignmentDrawingResponseError = (saveAssignmentDrawingResponseDefault) & {
+  headers: Headers;
+};
+
+export type saveAssignmentDrawingResponse = (saveAssignmentDrawingResponseSuccess | saveAssignmentDrawingResponseError)
+
+export const getSaveAssignmentDrawingUrl = (id: string,
+    partId: string,) => {
+
+
+
+
+  return `/api/assignment-attempts/${id}/drawings/${partId}`
+}
+
+/**
+ * @summary Store a drawing part's board (and its marking image) for a running attempt
+ */
+export const saveAssignmentDrawing = async (id: string,
+    partId: string,
+    drawingUpload: NonReadonly<DrawingUpload>, options?: RequestInit): Promise<saveAssignmentDrawingResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getSaveAssignmentDrawingUrl(id,partId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(drawingUpload)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: saveAssignmentDrawingResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as saveAssignmentDrawingResponse
 }
 
 
@@ -3426,6 +3496,56 @@ const res = await fetch(getCreateMaterialCommentUrl(id),
 
   const data: createMaterialCommentResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createMaterialCommentResponse
+}
+
+
+
+export type getDrawingResponse200 = {
+  data: DrawingOutputBody
+  status: 200
+}
+
+export type getDrawingResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getDrawingResponseSuccess = (getDrawingResponse200) & {
+  headers: Headers;
+};
+export type getDrawingResponseError = (getDrawingResponseDefault) & {
+  headers: Headers;
+};
+
+export type getDrawingResponse = (getDrawingResponseSuccess | getDrawingResponseError)
+
+export const getGetDrawingUrl = (id: string,) => {
+
+
+
+
+  return `/api/drawings/${id}`
+}
+
+/**
+ * @summary A drawing answer's board, as a link that lasts the hour
+ */
+export const getDrawing = async (id: string, options?: RequestInit): Promise<getDrawingResponse> => {
+
+  const res = await fetch(getGetDrawingUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getDrawingResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getDrawingResponse
 }
 
 

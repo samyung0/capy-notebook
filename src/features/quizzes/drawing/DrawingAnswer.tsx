@@ -5,6 +5,7 @@ import type { Answer } from '../grade';
 import type { PinnedQuestion } from './DrawingBoardScreen';
 import {
   DrawingDraftScope,
+  DrawingUploader,
   type DrawingValue,
   drawingDraftKey,
   isDrawingValue,
@@ -38,6 +39,7 @@ export function DrawingAnswer({
   verdict?: ReactNode;
 }) {
   const scope = useContext(DrawingDraftScope);
+  const upload = useContext(DrawingUploader);
   const [open, setOpen] = useState(false);
   const drawing = isDrawingValue(value) ? value : null;
   const taking = !(review || disabled);
@@ -98,6 +100,7 @@ export function DrawingAnswer({
             pinned={pinned}
             readOnly={!taking}
             saved={drawing?.board}
+            store={upload ? (next) => upload(partId, next) : undefined}
           />
         </Suspense>
       )}

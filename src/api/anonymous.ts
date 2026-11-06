@@ -1,3 +1,5 @@
+import { answersForCheck } from '@/features/quizzes/drawing/drawingValue';
+import type { Answers } from '@/features/quizzes/grade';
 import { ApiError, parseErrorBody } from './client';
 import type { GradeAnonymousQuizReq, GradedQuestion } from './types';
 
@@ -46,7 +48,7 @@ export const gradeAnonymousQuiz = (
   body: GradeAnonymousQuizReq
 ) =>
   publicJson<GradedQuestion>(`/api/public/quizzes/${token}/grade`, {
-    body: JSON.stringify(body),
+    body: JSON.stringify(withDrawingsSent(body)),
     headers: { 'Content-Type': 'application/json' },
     method: 'POST',
   });
@@ -61,8 +63,14 @@ export const gradeAnonymousNoteQuiz = (
   publicJson<GradedQuestion>(
     `/api/public/notes/${token}/quizzes/${quizId}/grade`,
     {
-      body: JSON.stringify(body),
+      body: JSON.stringify(withDrawingsSent(body)),
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
     }
   );
+
+/** A drawing goes as its board and image; a shared page never marks it. */
+const withDrawingsSent = (body: GradeAnonymousQuizReq) => ({
+  ...body,
+  answers: answersForCheck(body.answers as Answers),
+});

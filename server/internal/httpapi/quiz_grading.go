@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -44,14 +45,19 @@ type openPart struct {
 	markscheme []string
 	itemMarks  []float64
 	answer     string
+	// A drawing part: its marking image and type, in place of answer.
+	image     []byte
+	imageType string
 }
 
 // gradePlan is a grading request checked against the stored questions; open
-// holds the answered open parts, the ones a model may grade.
+// holds the answered open and drawing parts, the ones a model may grade, and
+// drawings the boards (and images) a check sent, which a signed-in check keeps.
 type gradePlan struct {
 	questions []map[string]any
 	answers   map[string]any
 	open      map[string]openPart
+	drawings  map[string]drawingUpload
 }
 
 // planGrading refuses answers to parts the questions do not have, ordering
@@ -59,7 +65,7 @@ type gradePlan struct {
 // it), and open answers that are not text or are too long. Blank open answers
 // earn 0 without a model call.
 func planGrading(qs []map[string]any, answers map[string]any) (gradePlan, error) {
-	plan := gradePlan{questions: qs, answers: answers, open: map[string]openPart{}}
+	plan := gradePlan{questions: qs, answers: answers, open: map[string]openPart{}, drawings: map[string]drawingUpload{}}
 	known := map[string]bool{}
 	for _, q := range qs {
 		parts, _ := q["parts"].([]any)
@@ -70,6 +76,20 @@ func planGrading(qs []map[string]any, answers map[string]any) (gradePlan, error)
 			a, _ := p["answer"].(map[string]any)
 			if a["type"] == "ordering" && answers[id] == nil {
 				return gradePlan{}, errGradeRequest
+			}
+			if a["type"] == "drawing" && answers[id] != nil {
+				drawing, imageType, err := sentDrawing(answers[id])
+				if err != nil {
+					return gradePlan{}, err
+				}
+				plan.drawings[id] = drawing
+				// Stored as the drawing's id once kept (store.withDrawingAnswers).
+				answers[id] = map[string]any{"drawing": ""}
+				if imageType != "" {
+					items, marks := questions.MarkItems(p)
+					plan.open[id] = openPart{question: questions.GradingText(q, i), markscheme: items, itemMarks: marks, image: drawing.Image, imageType: imageType}
+				}
+				continue
 			}
 			if a["type"] != "open" || answers[id] == nil {
 				continue
@@ -91,6 +111,31 @@ func planGrading(qs []map[string]any, answers map[string]any) (gradePlan, error)
 		}
 	}
 	return plan, nil
+}
+
+// sentDrawing reads a drawing part's answer as a check sends it, {board,
+// image} in base64, and checks both before anything is stored or marked.
+func sentDrawing(value any) (drawingUpload, string, error) {
+	m, ok := value.(map[string]any)
+	if !ok {
+		return drawingUpload{}, "", errGradeRequest
+	}
+	decode := func(key string) ([]byte, bool) {
+		text, isText := m[key].(string)
+		if !isText {
+			return nil, m[key] == nil
+		}
+		b, err := base64.StdEncoding.DecodeString(text)
+		return b, err == nil
+	}
+	board, okBoard := decode("board")
+	image, okImage := decode("image")
+	if !okBoard || !okImage || len(board) == 0 {
+		return drawingUpload{}, "", errGradeRequest
+	}
+	upload := drawingUpload{Board: board, Image: image}
+	imageType, err := checkedDrawing(upload)
+	return upload, imageType, err
 }
 
 // gradeRequestError answers a refused plan with 422 and passes others on.
@@ -179,6 +224,11 @@ func (a *api) gradeWithModel(ctx context.Context, payerID, workspaceID string, p
 	// out partway.
 	var report sync.Once
 	for id, part := range parts {
+		// Marking a drawing waits on the pipeline taking its image (proposal
+		// M1, waiting on Epo): until then it stays Not marked.
+		if len(part.image) > 0 {
+			continue
+		}
 		group.Go(func() error {
 			grade, err := a.gradePartSafely(ctx, llm, charge.id, part)
 			if err != nil {

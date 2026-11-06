@@ -11,6 +11,12 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef } from 'react';
+import {
+  answersForCheck,
+  answersForSave,
+  type DrawingValue,
+  drawingUpload,
+} from '@/features/quizzes/drawing/drawingValue';
 import type { Answers } from '@/features/quizzes/grade';
 import {
   durationBucket,
@@ -2976,7 +2982,10 @@ export function useCheckQuizQuestion(options?: MutationUiOptions) {
       quizId,
       ...body
     }: CheckQuizQuestionReq & { quizId: string }) =>
-      api.post<AttemptDetail>(`/quizzes/${quizId}/check`, body),
+      api.post<AttemptDetail>(`/quizzes/${quizId}/check`, {
+        ...body,
+        answers: answersForCheck(body.answers as Answers),
+      }),
     onSuccess: (attempt) => {
       // An embedded quiz records nothing: its attempt comes back without an id.
       if (!attempt.id) return;
@@ -3225,7 +3234,22 @@ export function useStartAssignment(workspaceId: string) {
 
 /** Saves a running attempt's answers: no toast, the page says Saved or not. */
 export const saveAssignmentAnswers = (attemptId: string, answers: Answers) =>
-  api.put<void>(`/assignment-attempts/${attemptId}/answers`, { answers });
+  api.put<void>(`/assignment-attempts/${attemptId}/answers`, {
+    answers: answersForSave(answers),
+  });
+
+/** Stores a drawing part's board and image with Done; the answer is its id. */
+export const saveAssignmentDrawing = (
+  attemptId: string,
+  partId: string,
+  value: DrawingValue
+) =>
+  api
+    .put<{ id: string }>(
+      `/assignment-attempts/${attemptId}/drawings/${encodeURIComponent(partId)}`,
+      drawingUpload(value)
+    )
+    .then(({ id }) => id);
 
 /** Its one caller reports a failure itself: no global toast. */
 export function useSubmitAssignmentAttempt(workspaceId: string) {
@@ -3234,7 +3258,7 @@ export function useSubmitAssignmentAttempt(workspaceId: string) {
     meta: { errorToast: false },
     mutationFn: ({ answers, id }: { answers: Answers; id: string }) =>
       api.post<AssignmentAttempt>(`/assignment-attempts/${id}/submit`, {
-        answers,
+        answers: answersForSave(answers),
       }),
     onSuccess: (attempt) => {
       qc.setQueryData(qk.assignmentAttempt(attempt.id), attempt);

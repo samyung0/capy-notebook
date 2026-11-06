@@ -71,11 +71,15 @@ export default function DrawingBoardScreen({
   pinned,
   readOnly = false,
   saved,
+  store,
 }: {
   /** The device key a board being drawn is kept under, when the page has one. */
   draft?: string;
   onClose: () => void;
   onDone?: (value: DrawingValue | null) => void;
+  /** An assignment's Done stores the drawing before the board closes; a refusal
+   * (too big, storage full) keeps it open with nothing lost. */
+  store?: (value: DrawingValue) => Promise<string>;
   pinned: PinnedQuestion;
   readOnly?: boolean;
   saved?: string;
@@ -170,9 +174,13 @@ export default function DrawingBoardScreen({
     }
     setBusy(true);
     try {
-      const image = await readAsDataUrl(await current.toImage());
+      const value: DrawingValue = {
+        board: doc,
+        image: await readAsDataUrl(await current.toImage()),
+      };
+      if (store) value.drawing = await store(value);
       if (draft) await deleteLocalDrawingDraft(draft).catch(() => undefined);
-      onDone({ board: doc, image });
+      onDone(value);
     } catch (error) {
       userToast({
         description: errorCopy(error, m.drawing_answer_capture_failed()),

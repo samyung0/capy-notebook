@@ -2700,6 +2700,68 @@ components:
         - updatedAt
         - comments
       type: object
+    DrawingOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/DrawingOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        boardUrl:
+          description: The board's saved document; the link is the same all hour and lasts two
+          type: string
+        bytes:
+          format: int64
+          type: integer
+        id:
+          type: string
+        partId:
+          type: string
+      required:
+        - id
+        - partId
+        - boardUrl
+        - bytes
+      type: object
+    DrawingSavedOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/DrawingSavedOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        id:
+          description: 'The stored drawing; the part''s answer is {"drawing": id}'
+          type: string
+      required:
+        - id
+      type: object
+    DrawingUpload:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/DrawingUpload.json
+          format: uri
+          readOnly: true
+          type: string
+        board:
+          description: The board's saved document, base64
+          format: base64
+          maxLength: 400000
+          type: string
+        image:
+          description: The marking image (WebP, or JPEG or PNG where the browser makes no WebP), base64; left out when nothing will mark it
+          format: base64
+          maxLength: 420000
+          type: string
+      required:
+        - board
+      type: object
     EditorAssetItem:
       additionalProperties: false
       properties:
@@ -8841,6 +8903,43 @@ paths:
       summary: Save a running attempt's answers
       tags:
         - Assignments
+  /api/assignment-attempts/{id}/drawings/{partId}:
+    put:
+      operationId: saveAssignmentDrawing
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: partId
+          required: true
+          schema:
+            maxLength: 128
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DrawingUpload"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DrawingSavedOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Store a drawing part's board (and its marking image) for a running attempt
+      tags:
+        - assignments
   /api/assignment-attempts/{id}/marks:
     post:
       operationId: markAssignmentAnswer
@@ -10252,6 +10351,32 @@ paths:
       summary: Add a comment to a discussion
       tags:
         - Material collaboration
+  /api/drawings/{id}:
+    get:
+      operationId: getDrawing
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DrawingOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: A drawing answer's board, as a link that lasts the hour
+      tags:
+        - assignments
   /api/edit-incidents:
     post:
       operationId: reportEditIncident

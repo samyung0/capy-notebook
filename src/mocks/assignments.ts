@@ -65,6 +65,8 @@ type Attempt = {
   graded: AssignmentGradedQuestion[];
 };
 
+/** Drawings an assignment's Done stored, by id: their boards. */
+const mockDrawings = new Map<string, string>();
 const WS = 'ws_bio';
 const ASSIGNMENT_GRACE_MS = 15_000;
 const DAY = 86_400_000;
@@ -1323,6 +1325,33 @@ export const assignmentHandlers = (viewer: Viewer) => {
         return new HttpResponse(null, { status: 204 });
       }
     ),
+    // Done stores a drawing part's board (and image); its answer is the id.
+    http.put(
+      '/api/assignment-attempts/:id/drawings/:partId',
+      async ({ params, request }) => {
+        const found = attemptOf(params.id);
+        if (!found) return gone();
+        if (found.attempt.submittedAt)
+          return conflict(
+            'attempt_finished',
+            'This attempt has been submitted.'
+          );
+        const body = (await request.json()) as { board: string };
+        const id = `dr_${String(params.partId)}_${Date.now()}`;
+        mockDrawings.set(id, body.board);
+        return HttpResponse.json({ id });
+      }
+    ),
+    http.get('/api/drawings/:id', ({ params }) => {
+      const board = mockDrawings.get(String(params.id));
+      if (board === undefined) return gone();
+      return HttpResponse.json({
+        boardUrl: `data:application/octet-stream;base64,${board}`,
+        bytes: board.length,
+        id: params.id,
+        partId: '',
+      });
+    }),
     http.post(
       '/api/assignment-attempts/:id/submit',
       async ({ params, request }) => {

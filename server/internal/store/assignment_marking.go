@@ -24,6 +24,8 @@ type AnswerToMark struct {
 	Items      []string
 	ItemMarks  []float64
 	Answer     string
+	// A drawing part: its marking image is the attempt's stored one for PartID.
+	Drawing bool
 }
 
 // AnswersToMark lists what the AI has yet to mark in an assignment, or in one of
@@ -76,14 +78,16 @@ func attemptAnswersToMark(attemptID string, rawAnswers, rawGraded []byte) ([]Ans
 			p, _ := raw.(map[string]any)
 			partID, _ := p["id"].(string)
 			text, _ := given[partID].(string)
+			drawn := isDrawingAnswer(given[partID])
 			pending, _ := p["pending"].(bool)
-			if _, marked := p["aiAwards"]; !pending || marked || strings.TrimSpace(text) == "" {
+			if _, marked := p["aiAwards"]; !pending || marked || (strings.TrimSpace(text) == "" && !drawn) {
 				continue
 			}
 			items, marks := questions.MarkItems(p)
 			out = append(out, AnswerToMark{
 				AttemptID: attemptID, QuestionID: questionID, PartID: partID,
 				Question: questions.GradingText(q, i), Items: items, ItemMarks: marks, Answer: text,
+				Drawing: drawn,
 			})
 		}
 	}

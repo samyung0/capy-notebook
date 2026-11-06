@@ -63,6 +63,8 @@ func logAnswerPartsTx(ctx context.Context, tx pgx.Tx, userID string, mt Material
 			grader = "owner"
 		} else if text, _ := given[id].(string); kind == "open" && strings.TrimSpace(text) != "" {
 			grader = "ai"
+		} else if kind == "drawing" && isDrawingAnswer(given[id]) {
+			grader = "ai"
 		}
 		ids, types, graders = append(ids, id), append(types, kind), append(graders, grader)
 		awarded, marks = append(awarded, a), append(marks, m)

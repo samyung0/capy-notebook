@@ -197,6 +197,35 @@ export const SaveAssignmentAnswersResponse = zod.void()
 
 
 /**
+ * @summary Store a drawing part's board (and its marking image) for a running attempt
+ */
+export const saveAssignmentDrawingPathPartIdMax = 128;
+
+
+
+export const SaveAssignmentDrawingParams = zod.object({
+  "id": zod.string(),
+  "partId": zod.string().max(saveAssignmentDrawingPathPartIdMax)
+})
+
+export const saveAssignmentDrawingBodyBoardMax = 400000;
+
+export const saveAssignmentDrawingBodyImageMax = 420000;
+
+
+
+export const SaveAssignmentDrawingBody = zod.object({
+  "board": zod.string().max(saveAssignmentDrawingBodyBoardMax).describe('The board\'s saved document, base64'),
+  "image": zod.string().max(saveAssignmentDrawingBodyImageMax).optional().describe('The marking image (WebP, or JPEG or PNG where the browser makes no WebP), base64; left out when nothing will mark it')
+})
+
+export const SaveAssignmentDrawingResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "id": zod.string().describe('The stored drawing; the part\'s answer is {"drawing": id}')
+})
+
+
+/**
  * @summary Set or change a question's marks and comment in a member's answers
  */
 export const MarkAssignmentAnswerParams = zod.object({
@@ -2073,6 +2102,26 @@ export const CreateMaterialCommentResponse = zod.object({
   "text": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "userId": zod.string()
+})
+
+
+/**
+ * @summary A drawing answer's board, as a link that lasts the hour
+ */
+export const getDrawingPathIdMax = 64;
+
+
+
+export const GetDrawingParams = zod.object({
+  "id": zod.string().max(getDrawingPathIdMax)
+})
+
+export const GetDrawingResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "boardUrl": zod.string().describe('The board\'s saved document; the link is the same all hour and lasts two'),
+  "bytes": zod.int(),
+  "id": zod.string(),
+  "partId": zod.string()
 })
 
 

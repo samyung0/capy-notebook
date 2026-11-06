@@ -2210,6 +2210,16 @@ type QuizCheck struct {
 	// and Marks each one's marks now: unchecked questions score 0 of them.
 	Order []string
 	Marks map[string]float64
+	// Drawings are the boards (and the images of parts left Not marked) a check
+	// sent, already in the bucket, kept with the attempt and charged to the
+	// learner (Epo 2026-11-06). A quick check keeps none.
+	Drawings map[string]QuizDrawing
+}
+
+// QuizDrawing is one drawing part's stored objects for a check.
+type QuizDrawing struct {
+	Board DrawingObject
+	Image *DrawingObject
 }
 
 // ErrQuestionChecked refuses a second check of a question in one attempt: it
@@ -2311,6 +2321,11 @@ func (s *Store) CheckQuizQuestion(ctx context.Context, userID, materialID string
 	}
 	if err != nil {
 		return AttemptDetail{}, err
+	}
+	if len(c.Drawings) > 0 {
+		if d, err = keepQuizDrawingsTx(ctx, s, tx, userID, d, answers, c.Drawings); err != nil {
+			return AttemptDetail{}, err
+		}
 	}
 	// Before the rating, which would count as the key seen.
 	if err := logAnswerPartsTx(ctx, tx, userID, mt, c.Question, c.Answers, answerSourceQuiz, d.ID, now, c.Remarked); err != nil {
