@@ -6,11 +6,11 @@
  */
 import type { AssignmentFileRef } from './assignmentFileRef.ts';
 import type { AssignmentFormReqKind } from './assignmentFormReqKind.ts';
+import type { AssignmentFormReqMarking } from './assignmentFormReqMarking.ts';
 
 export interface AssignmentFormReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  approveAiMarks: boolean;
   assignAll: boolean;
   /** @maxItems 500 */
   assignees: string[];
@@ -29,6 +29,7 @@ export interface AssignmentFormReq {
      * @maximum 50
      */
   latePenaltyPct: number;
+  marking: AssignmentFormReqMarking;
   noLate: boolean;
   quizId?: string;
   showAnswers: boolean;

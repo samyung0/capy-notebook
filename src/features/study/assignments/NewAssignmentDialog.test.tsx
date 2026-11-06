@@ -90,10 +90,10 @@ const existing = {
   kind: 'marked',
   latePenaltyPct: 0,
   manage: {
-    approveAiMarks: true,
     assignAll: false,
     // Left the workspace after this copy of the assignment was read.
     assignees: ['ann', 'gone'],
+    marking: 'ai_approve',
     quizId: 'qz1',
     quizTitle: 'Cells',
     showAnswers: true,

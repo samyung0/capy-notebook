@@ -2800,7 +2800,6 @@
   "assignment_role_owner": "owner",
   "assignment_role_ta": "teaching assistant",
   "assignment_switch_draft": "Draft only",
-  "assignment_switch_approve": "Approve AI marks before members see them",
   "assignment_switch_answers": "Show answers after submitting",
   "assignment_switch_shuffle": "Shuffle questions",
   "assignment_title_required": "Give it a title",
@@ -3049,5 +3048,10 @@
   "drawing_answer_too_big": "This drawing is too big to save. Remove some of it, then press Done again.",
   "drawing_answer_open_failed": "This drawing couldn't be opened.",
   "drawing_answer_capture_failed": "This drawing couldn't be saved. Press Done again.",
-  "drawing_answer_unreadable": "This drawing can't be shown."
+  "drawing_answer_unreadable": "This drawing can't be shown.",
+  "assignment_field_marking": "Marking",
+  "assignment_marking_ai_approve": "AI grades, approval required",
+  "assignment_marking_ai": "AI grades, no approval needed",
+  "assignment_marking_manual": "Manual grading only",
+  "assignment_tab_mark": "Mark answers"
 }

@@ -48,7 +48,7 @@ type Row = {
   assignAll: boolean;
   assignees: string[];
   draft: boolean;
-  approveAiMarks: boolean;
+  marking: AssignmentFormReq['marking'];
   showAnswers: boolean;
   shuffle: boolean;
   files: { fileId?: string; materialId?: string }[];
@@ -334,13 +334,13 @@ function seed() {
   );
   const files = db.files.filter((f) => f.workspaceId === WS);
   const common = {
-    approveAiMarks: true,
     assignAll: true,
     assignees: [],
     attempts: 1,
     draft: false,
     files: [],
     latePenaltyPct: 0,
+    marking: 'ai_approve' as const,
     noLate: false,
     showAnswers: true,
     shuffle: false,
@@ -657,7 +657,6 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
     ...(staff
       ? {
           manage: {
-            approveAiMarks: row.approveAiMarks,
             assignAll: row.assignAll,
             assigned: assigned.length,
             assignees: row.assignees,
@@ -669,6 +668,7 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
                   ) / decided.length
                 : undefined,
             done: row.kind === 'marked' ? countedRows.length : ticked.length,
+            marking: row.marking,
             quizId: row.quizId,
             quizTitle: material?.title,
             showAnswers: row.showAnswers,
@@ -945,7 +945,7 @@ function applyForm(row: Row, body: AssignmentFormReq) {
   row.latePenaltyPct = body.latePenaltyPct;
   row.assignAll = body.assignAll;
   row.assignees = body.assignees;
-  row.approveAiMarks = body.approveAiMarks;
+  row.marking = body.marking;
   row.showAnswers = body.showAnswers;
   row.shuffle = body.shuffle;
   row.files = body.files.map(({ fileId, materialId }) => ({
@@ -1112,7 +1112,6 @@ export const assignmentHandlers = (viewer: Viewer) => {
         seed();
         const body = (await request.json()) as AssignmentFormReq;
         const row: Row = {
-          approveAiMarks: true,
           assignAll: true,
           assignees: [],
           attempts: 1,
@@ -1121,6 +1120,7 @@ export const assignmentHandlers = (viewer: Viewer) => {
           id: newId('as'),
           kind: body.kind,
           latePenaltyPct: 0,
+          marking: 'ai_approve' as const,
           noLate: false,
           postedAt: new Date().toISOString(),
           quizId: body.quizId,

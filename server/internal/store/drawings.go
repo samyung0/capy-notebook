@@ -84,10 +84,11 @@ func (s *Store) SaveAssignmentDrawing(ctx context.Context, userID, attemptID, pa
 	expired := false
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		var r attemptRow
-		err := tx.QueryRow(ctx, `SELECT a.workspace_id, t.submitted_at, t.deadline_at, a.closed_at, a.no_late, a.due_at, a.questions
+		var marking string
+		err := tx.QueryRow(ctx, `SELECT a.workspace_id, t.submitted_at, t.deadline_at, a.closed_at, a.no_late, a.due_at, a.questions, a.marking
 			FROM attempts t JOIN assignments a ON a.id=t.assignment_id
 			WHERE t.id=$1 AND t.user_id=$2 FOR UPDATE OF t`, attemptID, userID).
-			Scan(&r.wsID, &r.submitted, &r.deadline, &r.closedAt, &r.noLate, &r.dueAt, &r.frozen)
+			Scan(&r.wsID, &r.submitted, &r.deadline, &r.closedAt, &r.noLate, &r.dueAt, &r.frozen, &marking)
 		if isNoRows(err) {
 			return ErrNotFound
 		}
@@ -106,6 +107,10 @@ func (s *Store) SaveAssignmentDrawing(ctx context.Context, userID, attemptID, pa
 		}
 		if !drawingPartIn(r.frozen, partID) {
 			return ErrNotDrawingPart
+		}
+		// Marked by hand, nothing reads a marking image: none is kept.
+		if marking == MarkingManual {
+			image = nil
 		}
 		saved, err = s.putDrawingTx(ctx, tx, userID, attemptID, partID, board, image)
 		return err

@@ -692,8 +692,6 @@ components:
           format: uri
           readOnly: true
           type: string
-        approveAiMarks:
-          type: boolean
         assignAll:
           type: boolean
         assignees:
@@ -726,6 +724,12 @@ components:
           maximum: 50
           minimum: 0
           type: integer
+        marking:
+          enum:
+            - ai_approve
+            - ai
+            - manual
+          type: string
         noLate:
           type: boolean
         quizId:
@@ -752,7 +756,7 @@ components:
         - assignAll
         - assignees
         - draft
-        - approveAiMarks
+        - marking
         - showAnswers
         - shuffle
         - files
@@ -799,8 +803,6 @@ components:
     AssignmentManage:
       additionalProperties: false
       properties:
-        approveAiMarks:
-          type: boolean
         assignAll:
           type: boolean
         assigned:
@@ -816,6 +818,12 @@ components:
         done:
           format: int64
           type: integer
+        marking:
+          enum:
+            - ai_approve
+            - ai
+            - manual
+          type: string
         quizId:
           type: string
         quizTitle:
@@ -832,7 +840,7 @@ components:
       required:
         - assignAll
         - assignees
-        - approveAiMarks
+        - marking
         - showAnswers
         - shuffle
         - assigned

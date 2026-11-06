@@ -71,6 +71,8 @@ export function ApproveTab({
     () => new Map(report.members.map((row) => [row.userId, row])),
     [report.members]
   );
+  // Marked by hand (A4): no AI to run or approve.
+  const manual = assignment.manage?.marking === 'manual';
   const openQuestions = report.questions.filter((q) =>
     q.question.parts.some((p) => modelMarked(p.answer.type))
   );
@@ -187,6 +189,7 @@ export function ApproveTab({
             {m.assignment_to_approve({ count: toApprove })}
           </span>
           <span
+            className={cn(manual && 'hidden')}
             title={approvable ? undefined : m.assignment_approve_all_waits()}
           >
             <Button
@@ -215,7 +218,8 @@ export function ApproveTab({
               total: report.marking.total,
             })}
           </p>
-        ) : report.answers.some((row) => row.waiting && !row.aiMarked) ? (
+        ) : !manual &&
+          report.answers.some((row) => row.waiting && !row.aiMarked) ? (
           <Button
             className="mt-2 w-full"
             disabled={marking}

@@ -4,14 +4,15 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { AssignmentManageMarking } from './assignmentManageMarking.ts';
 
 export interface AssignmentManage {
-  approveAiMarks: boolean;
   assignAll: boolean;
   assigned: number;
   assignees: string[];
   average?: number;
   done: number;
+  marking: AssignmentManageMarking;
   quizId?: string;
   quizTitle?: string;
   quizTrashed?: boolean;

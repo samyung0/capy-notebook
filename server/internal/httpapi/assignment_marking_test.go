@@ -48,7 +48,7 @@ func markingAssignment(t *testing.T, h http.Handler, texts ...string) string {
 	rec := doReq(t, h, http.MethodPost, ws+"/assignments", "u_owner", map[string]any{
 		"kind": "marked", "title": "Marking", "quizId": made.ID, "dueAt": time.Now().Add(time.Hour).Format(time.RFC3339),
 		"attempts": 1, "noLate": false, "latePenaltyPct": 20, "assignAll": true, "assignees": []string{}, "draft": false,
-		"approveAiMarks": true, "showAnswers": true, "shuffle": false, "files": []any{},
+		"marking": "ai_approve", "showAnswers": true, "shuffle": false, "files": []any{},
 	})
 	if rec.Code != http.StatusOK && rec.Code != http.StatusCreated {
 		t.Fatalf("create assignment: status = %d body=%s", rec.Code, rec.Body.String())

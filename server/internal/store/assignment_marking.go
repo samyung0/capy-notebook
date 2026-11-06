@@ -32,12 +32,17 @@ type AnswerToMark struct {
 // its attempts (attemptID), and who pays: AI marking of an assignment's answers is
 // its workspace owner's (Epo 2026-11-03).
 func (s *Store) AnswersToMark(ctx context.Context, assignmentID, attemptID string) (payerID, workspaceID string, answers []AnswerToMark, err error) {
-	if err = s.pool.QueryRow(ctx, `SELECT w.user_id, a.workspace_id FROM assignments a
-		JOIN workspaces w ON w.id=a.workspace_id WHERE a.id=$1`, assignmentID).Scan(&payerID, &workspaceID); err != nil {
+	var marking string
+	if err = s.pool.QueryRow(ctx, `SELECT w.user_id, a.workspace_id, a.marking FROM assignments a
+		JOIN workspaces w ON w.id=a.workspace_id WHERE a.id=$1`, assignmentID).Scan(&payerID, &workspaceID, &marking); err != nil {
 		if isNoRows(err) {
 			err = ErrNotFound
 		}
 		return "", "", nil, err
+	}
+	// Marked by hand: nothing goes to the AI (Epo 2026-11-06).
+	if marking == MarkingManual {
+		return payerID, workspaceID, nil, nil
 	}
 	rows, err := s.pool.Query(ctx, `SELECT t.id, t.answers, t.questions FROM attempts t
 		WHERE t.assignment_id=$1 AND ($2='' OR t.id=$2) AND t.submitted_at IS NOT NULL AND t.waiting_answers > 0
@@ -119,10 +124,11 @@ func (s *Store) SaveAIMarks(ctx context.Context, attemptID string, marks []AIMar
 		if err != nil {
 			return err
 		}
-		var approval bool
-		if err := tx.QueryRow(ctx, `SELECT approve_ai_marks FROM assignments WHERE id=$1`, r.assignmentID).Scan(&approval); err != nil {
+		var marking string
+		if err := tx.QueryRow(ctx, `SELECT marking FROM assignments WHERE id=$1`, r.assignmentID).Scan(&marking); err != nil {
 			return err
 		}
+		approval := marking == MarkingAIApprove
 		graded, err := decodeFrozen(r.graded)
 		if err != nil {
 			return err

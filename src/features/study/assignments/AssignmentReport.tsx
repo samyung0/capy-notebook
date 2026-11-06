@@ -139,7 +139,13 @@ export function AssignmentReport({
             tabs={[
               { label: m.assignment_tab_questions(), value: 'questions' },
               { label: m.assignment_tab_members(), value: 'members' },
-              { label: m.assignment_tab_approve(), value: 'approve' },
+              {
+                label:
+                  assignment.manage?.marking === 'manual'
+                    ? m.assignment_tab_mark()
+                    : m.assignment_tab_approve(),
+                value: 'approve',
+              },
               { label: m.assignment_tab_settings(), value: 'settings' },
             ]}
             value={tab}

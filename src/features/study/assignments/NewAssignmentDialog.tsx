@@ -115,7 +115,6 @@ export function NewAssignmentDialog({
     watch,
   } = useForm<AssignmentFormReq>({
     defaultValues: {
-      approveAiMarks: manage?.approveAiMarks ?? true,
       assignAll: manage?.assignAll ?? true,
       assignees: manage?.assignees ?? [],
       attempts: existing?.attempts ?? 1,
@@ -127,6 +126,7 @@ export function NewAssignmentDialog({
       })),
       kind: existing?.kind ?? 'marked',
       latePenaltyPct: existing?.latePenaltyPct ?? 0,
+      marking: manage?.marking ?? 'ai_approve',
       noLate: existing?.noLate ?? false,
       quizId: manage?.quizId ?? presetQuizId,
       showAnswers: manage?.showAnswers ?? true,
@@ -468,11 +468,38 @@ export function NewAssignmentDialog({
           </div>
           {kind === 'marked' && (
             <div className="flex flex-col gap-2 pt-0.5">
-              <SwitchRow
-                control={control}
-                label={m.assignment_switch_approve()}
-                name="approveAiMarks"
-              />
+              {/* One dropdown for every AI-marked part (A4, Epo 2026-11-06). */}
+              <div className="mb-1 max-w-75">
+                <Field label={m.assignment_field_marking()}>
+                  <Controller
+                    control={control}
+                    name="marking"
+                    render={({ field }) => (
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                      >
+                        <SelectTrigger
+                          aria-label={m.assignment_field_marking()}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ai_approve">
+                            {m.assignment_marking_ai_approve()}
+                          </SelectItem>
+                          <SelectItem value="ai">
+                            {m.assignment_marking_ai()}
+                          </SelectItem>
+                          <SelectItem value="manual">
+                            {m.assignment_marking_manual()}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                </Field>
+              </div>
               <SwitchRow
                 control={control}
                 label={m.assignment_switch_answers()}
@@ -589,7 +616,7 @@ function SwitchRow({
 }: {
   control: Control<AssignmentFormReq>;
   label: string;
-  name: 'draft' | 'approveAiMarks' | 'noLate' | 'showAnswers' | 'shuffle';
+  name: 'draft' | 'noLate' | 'showAnswers' | 'shuffle';
 }) {
   return (
     <Controller

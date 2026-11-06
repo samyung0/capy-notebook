@@ -12,7 +12,10 @@ func submitOpenAnswer(t *testing.T, f assignmentFixture, approval bool, now time
 	t.Helper()
 	ctx := context.Background()
 	form := f.form(t, now.Add(time.Hour))
-	form.ApproveAIMarks = approval
+	form.Marking = MarkingAI
+	if approval {
+		form.Marking = MarkingAIApprove
+	}
 	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
@@ -127,7 +130,7 @@ func TestAIWarningStaysHiddenWithShowAnswersOff(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	form := f.form(t, now.Add(time.Hour))
-	form.ApproveAIMarks, form.ShowAnswers = false, false
+	form.Marking, form.ShowAnswers = MarkingAI, false
 	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)

@@ -141,7 +141,7 @@ func assignmentForm(b apimodel.AssignmentFormReq) store.AssignmentForm {
 	return store.AssignmentForm{
 		Kind: b.Kind, Title: b.Title, QuizID: b.QuizID, DueAt: b.DueAt, TimeLimitMin: b.TimeLimitMin, Attempts: b.Attempts,
 		NoLate: b.NoLate, LatePenaltyPct: b.LatePenaltyPct,
-		AssignAll: b.AssignAll, Assignees: b.Assignees, Draft: b.Draft, ApproveAIMarks: b.ApproveAIMarks,
+		AssignAll: b.AssignAll, Assignees: b.Assignees, Draft: b.Draft, Marking: b.Marking,
 		ShowAnswers: b.ShowAnswers, Shuffle: b.Shuffle, Files: b.Files,
 	}
 }

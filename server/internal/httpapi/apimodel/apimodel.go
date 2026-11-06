@@ -475,13 +475,14 @@ type AssignmentFormReq struct {
 	LatePenaltyPct int  `json:"latePenaltyPct" minimum:"0" maximum:"50"`
 	// AssignAll gives it to every viewer member, those who join later included;
 	// Assignees names anyone else, or everyone when it is off.
-	AssignAll      bool                      `json:"assignAll"`
-	Assignees      []string                  `json:"assignees" nullable:"false" maxItems:"500"`
-	Draft          bool                      `json:"draft"`
-	ApproveAIMarks bool                      `json:"approveAiMarks"`
-	ShowAnswers    bool                      `json:"showAnswers"`
-	Shuffle        bool                      `json:"shuffle"`
-	Files          []store.AssignmentFileRef `json:"files" nullable:"false" maxItems:"20"`
+	AssignAll bool     `json:"assignAll"`
+	Assignees []string `json:"assignees" nullable:"false" maxItems:"500"`
+	Draft     bool     `json:"draft"`
+	// Marking of AI-marked parts: ai_approve, ai or manual (Epo 2026-11-06).
+	Marking     string                    `json:"marking" enum:"ai_approve,ai,manual"`
+	ShowAnswers bool                      `json:"showAnswers"`
+	Shuffle     bool                      `json:"shuffle"`
+	Files       []store.AssignmentFileRef `json:"files" nullable:"false" maxItems:"20"`
 }
 
 // GradedQuestion is one checked question with its key and, on each part, the
