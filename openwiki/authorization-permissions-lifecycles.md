@@ -441,7 +441,8 @@ unchanged.
   the same two.
 - **Switching it.** `PUT /api/files/{id}/hidden` and `PUT
   /api/materials/{id}/hidden` with `{hidden}`, from the item's ⋮ menu ("Hide
-  from members" / "Show to members") or, to show it, its header chip. Owners and editors may switch it: the
+  file" / "Unhide file") or its header: a Hide file button on a visible item (from
+  `sm`), the chip on a hidden one. Owners and editors may switch it: the
   write locks the workspace and re-reads the actor's effective role like any
   content write (`lockWorkspaceEditorMutationTx`); a frozen account is refused
   and a standalone or embedded item answers 404. Hiding drains the item's live
@@ -486,7 +487,7 @@ unchanged.
 
 An open hidden item's header shows a "Hidden from members" chip after its
 name (X2; the icon alone on phones). For owners and editors who may change the
-item the chip is a button ("Show to members" in its tooltip) that shows it to
+item the chip is a button ("Unhide file" in its tooltip) that shows it to
 members, as the ⋮ menu does (`useToggleHidden`, same request and error toast);
 hiding again stays in the menu, and a read-only editor's chip is a plain
 label. A hidden item's Files row carries the eye at its end (`HiddenMark`,

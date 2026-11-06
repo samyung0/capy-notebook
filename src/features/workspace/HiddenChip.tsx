@@ -20,8 +20,7 @@ export function HiddenMark({ className }: { className?: string }) {
 /** "Hidden from members" after an item's name (X2, Epo 2026-11-03): an item
  * only the workspace's owners and editors see. With onShow (an owner or
  * editor who may change it) the chip is a button that shows the item to
- * members, as the ⋮ menu's Show to members does; hiding again stays in the
- * menu. Phones keep the icon alone. */
+ * members, as the ⋮ menu's Unhide file does. Phones keep the icon alone. */
 export function HiddenChip({ onShow }: { onShow?: () => void }) {
   if (!onShow)
     return (
@@ -36,7 +35,7 @@ export function HiddenChip({ onShow }: { onShow?: () => void }) {
       </span>
     );
   return (
-    <ButtonTooltip label={m.content_show_to_members()} side="bottom">
+    <ButtonTooltip label={m.content_unhide_file()} side="bottom">
       <button
         className="inline-flex h-5.5 shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-md bg-page-hover px-1.75 font-semibold text-[12.5px] text-fg-muted outline-none transition duration-150 ease-out hover:bg-surface-dark-hover-bg hover:text-fg focus-visible:ring-2 focus-visible:ring-action active:scale-[0.96]"
         data-testid="hidden-chip"
@@ -48,8 +47,24 @@ export function HiddenChip({ onShow }: { onShow?: () => void }) {
           {m.content_hidden_from_members()}
         </span>
         {/* The action, for screen readers; sighted users get the tooltip. */}
-        <span className="sr-only">{m.content_show_to_members()}</span>
+        <span className="sr-only">{m.content_unhide_file()}</span>
       </button>
     </ButtonTooltip>
+  );
+}
+
+/** Where the chip sits on an item members can see (Epo 2026-11-06). Small screens
+ * leave it out for the name's room; the ⋮ menu's Hide file stays. */
+export function HideFileButton({ onHide }: { onHide: () => void }) {
+  return (
+    <button
+      className="inline-flex h-5.5 shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-md bg-page-hover px-1.75 font-semibold text-[12.5px] text-fg-muted outline-none transition duration-150 ease-out hover:bg-surface-dark-hover-bg hover:text-fg focus-visible:ring-2 focus-visible:ring-action active:scale-[0.96] max-sm:hidden"
+      data-testid="hide-file"
+      onClick={onHide}
+      type="button"
+    >
+      <Icon name="viewOffSlash" size={16} />
+      {m.content_hide_file()}
+    </button>
   );
 }
