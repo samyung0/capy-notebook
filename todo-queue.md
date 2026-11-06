@@ -5,10 +5,9 @@ plan that holds its detail. Change this file whenever something starts, lands or
 
 ## Landing now
 
-Windows lands and deploys these, one landing per deploy. Epo is switching accounts (2026-11-06)
-and the Windows session may not be reachable after that, so nothing below lands until Epo says who
-does it. Waiting: `claude/quiz-shared-layout` 369d457f6 and `claude/canvas-enrich-18ed75` 66e532eb1,
-both pushed and neither reviewed.
+Windows lands and deploys these, one landing per deploy; Mac sessions review and push feature
+branches (Epo, 2026-11-06, after the account switch). Waiting on Windows: `claude/quiz-shared-layout`
+369d457f6 and `claude/canvas-enrich-18ed75` c95fa44cf.
 
 | Item | Where it is | Waiting on |
 |---|---|---|
@@ -39,13 +38,14 @@ boards K6, K7 and K8 on the study Design canvas. Scanned submissions build on it
 - [x] Fix what the try found (`claude/drawing-answers`, local): the `ZodError` on every partial edit (a zod 4 port slip), zoom at the bottom right and none on phones, the sheet filling a phone's width, the note menu's image, link and file buttons off, undo and redo in the toolbar, note cards drawn onto the sheet in the image
 - [ ] Note card text comes out slightly clipped in the image (html2canvas); readable, revisit with tuning
 - [x] Bring `vendor/blocksuite` to `main` in a lazy chunk (Epo, 2026-11-06: "sure"): on `main` c69c01992, dev routes only until the answer flow opens it
+- [ ] Answer track (type, board in the attempt, saving, marking, results) in session `drawing-answers`, from 2026-11-06
 - [ ] `drawing` answer type with its background (blank, squared grid, axes, figure) in the shared question format: Go, Rust, TypeScript, pipeline
 - [ ] The board: full screen, question pinned at top left, Done returning to a preview and "Edit drawing", phones
 - [ ] Saving: strokes kept, an image rendered for marking, charged to whoever pays for the work: the workspace owner for assignments, the member for their own practice, deleted with the attempt (Epo, 2026-11-06). First trace whether a saved answer's flavours reach minimatch in `schema.ts`
 - [ ] Marking by a vision model against the marking points, with the same approval and credits rules. Needs grading landed, and the prompt shown to Epo first
 - [ ] Results, the approve tab and the report show the drawing
 - [ ] Specs, wiki, test catalog
-- [ ] Enrich the board (Epo, 2026-11-06), in session `canvas-enrich`, mocks first: remake the shape chooser button (pure yellow is odd), move undo and redo beside the zoom buttons, and find how graphs, formulas, charts and coordinate planes can go on the canvas more easily
+- [ ] Enrich the board (Epo, 2026-11-06: "a lot more enrichments" to come), in session `canvas-enrich`, mocks first: remake the shape chooser button (pure yellow is odd), move undo and redo beside the zoom buttons, and find how graphs, formulas, charts and coordinate planes can go on the canvas more easily
 
 ### 2. Note look: copy Notion's styles
 
