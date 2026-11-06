@@ -49,6 +49,7 @@ func TestReadRoleRequiresEveryPlanLimitsStartupColumn(t *testing.T) {
 		"files_per_workspace":   true,
 		"files_per_upload":      true,
 		"image_max_bytes":       true,
+		"text_file_max_bytes":   true,
 		"topics_per_workspace":  true,
 	}
 	got := map[string]bool{}
@@ -301,7 +302,7 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 			plan_tier, storage_limit_bytes, credit_limit_micros,
 			source_file_max_bytes,
 			owned_workspace_limit, files_per_workspace, files_per_upload,
-			image_max_bytes, topics_per_workspace
+			image_max_bytes, text_file_max_bytes, topics_per_workspace
 		) ON plan_limits TO %s;
 		GRANT SELECT (
 			resource_key, version, unit, credit_micros_per_unit, active, created_at

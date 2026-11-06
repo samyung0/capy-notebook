@@ -6744,6 +6744,7 @@ export const GetSourceUploadPolicyResponse = zod.object({
   "maxPages": zod.int().optional(),
   "mode": zod.enum(['fast', 'none'])
 })),
+  "textMaxBytes": zod.int().describe('The flat cap on one text file (txt, md, json, source code, CSV, TSV), on every plan'),
   "vlmIngestPageCreditMicros": zod.int()
 })
 

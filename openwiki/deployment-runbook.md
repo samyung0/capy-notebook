@@ -2855,7 +2855,7 @@ counts `served`, `busy` and each refusal; a rising `busy` means the pool is shor
    migration has since dropped, so an older ops build still starts; do not roll
    ops back past a release that dropped a column it names.
 
-   Ops validates the eight `plan_limits` column grants before it loads the
+   Ops validates the ten `plan_limits` column grants before it loads the
    startup catalog. A missing grant therefore fails as a role-contract error,
    rather than as a later plan-catalog query error.
 

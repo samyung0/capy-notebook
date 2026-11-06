@@ -40,21 +40,26 @@ use serde::{Deserialize, Serialize};
 /// IN server/internal/store/source_documents.go
 pub const MAX_SOURCE_STATE_BYTES: usize = 100 * 1024 * 1024;
 
-/// What a room's growth stays under its export cap by, so the export's own
-/// overhead never takes an accepted state past publication.
+/// What an Office room's growth stays under its export cap by, so the export's
+/// own overhead never takes an accepted state past publication. A text room has
+/// no margin (Epo 2026-11-06): its export is the text its state already holds.
 /// IMPORTANT: KEEP IN SYNC WITH sourceGrowthMarginBytes IN
 /// server/internal/store/source_documents.go
 pub const STATE_GROWTH_MARGIN_BYTES: u64 = 1024 * 1024;
 
-/// A room's state cap: its seed plus the export cap (the largest plan source
-/// file) less the base file and a margin, within [`MAX_SOURCE_STATE_BYTES`]
-/// (Epo 2026-10-17). Pictures that came with the file are references in the
+/// A room's state cap: its seed plus the export cap (a text room's flat text
+/// cap, an Office room's largest plan source file) less the base file and, for
+/// Office, a margin, within [`MAX_SOURCE_STATE_BYTES`] (Epo 2026-10-17). Pictures that came with the file are references in the
 /// seed but bytes in the export; inserted images are bytes in both. So a
 /// room's edits keep its export under the plan limit. Publication still
 /// takes an export over it, up to the ceiling (Epo 2026-10-19); its base
 /// then leaves the room no growth, and the file opens at its size limit.
-pub fn state_cap(seed_bytes: u64, base_bytes: u64, export_cap: u64) -> u64 {
-    let growth = export_cap.saturating_sub(base_bytes + STATE_GROWTH_MARGIN_BYTES);
+pub fn state_cap(format: SourceFormat, seed_bytes: u64, base_bytes: u64, export_cap: u64) -> u64 {
+    let margin = match format {
+        SourceFormat::Text => 0,
+        SourceFormat::Docx | SourceFormat::Xlsx | SourceFormat::Pptx => STATE_GROWTH_MARGIN_BYTES,
+    };
+    let growth = export_cap.saturating_sub(base_bytes + margin);
     (seed_bytes + growth).min(MAX_SOURCE_STATE_BYTES as u64)
 }
 
@@ -183,15 +188,21 @@ mod tests {
     #[test]
     fn a_rooms_cap_is_its_seed_plus_the_export_cap_less_its_base() {
         const MIB: u64 = 1024 * 1024;
-        assert_eq!(state_cap(2 * MIB, 4 * MIB, 30 * MIB), 27 * MIB);
+        let office = SourceFormat::Xlsx;
+        assert_eq!(state_cap(office, 2 * MIB, 4 * MIB, 30 * MIB), 27 * MIB);
         // A base at the export cap leaves the seed alone.
-        assert_eq!(state_cap(2 * MIB, 30 * MIB, 30 * MIB), 2 * MIB);
+        assert_eq!(state_cap(office, 2 * MIB, 30 * MIB, 30 * MIB), 2 * MIB);
         // So does a base published over it.
-        assert_eq!(state_cap(2 * MIB, 40 * MIB, 30 * MIB), 2 * MIB);
+        assert_eq!(state_cap(office, 2 * MIB, 40 * MIB, 30 * MIB), 2 * MIB);
         // Never past the ceiling every room shares.
         assert_eq!(
-            state_cap(90 * MIB, MIB, 30 * MIB),
+            state_cap(office, 90 * MIB, MIB, 30 * MIB),
             MAX_SOURCE_STATE_BYTES as u64
         );
+        // A text room has no margin: its state is held to the cap itself, and
+        // a base over the cap leaves the seed alone.
+        let text = SourceFormat::Text;
+        assert_eq!(state_cap(text, MIB + 16, MIB, 2 * MIB), 2 * MIB + 16);
+        assert_eq!(state_cap(text, 3 * MIB, 3 * MIB, 2 * MIB), 3 * MIB);
     }
 }

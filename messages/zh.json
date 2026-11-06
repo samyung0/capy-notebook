@@ -557,6 +557,7 @@
   "source_create_blank_xlsx": "空白 XLSX",
   "source_cloud_inspecting": "正在检查所选文件…",
   "source_files_too_large": "文件大小不得超过 {mb} MB",
+  "source_text_files_too_large": "文本文件大小不得超过 {mb} MB",
   "source_analysis_failed": "无法分析此文件。请移除文件或关闭解析。",
   "source_analysis_unsupported": "此格式可在服务器解析，但浏览器暂时无法估算费用。请移除文件或关闭解析。",
   "source_analysis_password_protected": "此 PDF 受密码保护，将不解析直接添加。",

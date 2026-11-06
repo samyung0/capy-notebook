@@ -41,6 +41,47 @@ describe('unified source details', () => {
     ).toEqual([['large.pdf', 'file_too_large']]);
   });
 
+  it('holds text files to the flat text cap and Excel files to the plan cap (Q629, Q630)', () => {
+    const sized = (name: string, size: number) => {
+      const file = new File(['x'], name);
+      Object.defineProperty(file, 'size', { value: size });
+      return file;
+    };
+    const over = sourceUploadPolicy.textMaxBytes + 1;
+    const result = validateLocalSourceSelection(
+      [
+        sized('notes.md', over),
+        sized('notes.txt', over),
+        sized('data.json', over),
+        sized('main.py', over),
+        sized('table.csv', over),
+        sized('table.tsv', over),
+        sized('full.md', sourceUploadPolicy.textMaxBytes),
+        sized('book.xlsx', over),
+        sized('old.xls', over),
+        sized('paper.pdf', over),
+      ],
+      sourceUploadPolicy
+    );
+    expect(result.accepted.map((item) => item.file.name)).toEqual([
+      'full.md',
+      'book.xlsx',
+      'old.xls',
+      'paper.pdf',
+    ]);
+    expect(new Set(result.rejected.map((item) => item.reason))).toEqual(
+      new Set(['text_file_too_large'])
+    );
+    expect(result.rejected.map((item) => item.file.name)).toEqual([
+      'notes.md',
+      'notes.txt',
+      'data.json',
+      'main.py',
+      'table.csv',
+      'table.tsv',
+    ]);
+  });
+
   it('accepts a picture or Office pick over the cap for compression, up to 256 MB', () => {
     // Q345 (review S11): a larger one is never read whole into a worker.
     const sized = (name: string, size: number) => {

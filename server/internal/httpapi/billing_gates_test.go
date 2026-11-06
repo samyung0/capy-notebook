@@ -763,6 +763,44 @@ func TestEditorDeletesItsImageInANoteItStillEdits(t *testing.T) {
 	}
 }
 
+// Q629, Q630: a text file over the flat cap is refused before anything is sent,
+// on Pro too and saying why, where an Excel file of its size passes. The upload
+// checks the same metadata again. The upload policy carries the cap for the
+// dialog.
+func TestATextSourceOverTheTextCapIsRefused(t *testing.T) {
+	fx := openBilling(t)
+	if _, err := fx.pool.Exec(context.Background(), `UPDATE users SET plan_tier='pro' WHERE id=$1`, fx.actorID); err != nil {
+		t.Fatal(err)
+	}
+	limit := mustPlanLimits(t, fx.store, store.PlanPro).TextFileBytes
+	if limit != 2<<20 {
+		t.Fatalf("text cap = %d, want 2 MiB", limit)
+	}
+	policy := doReq(t, fx.handler, http.MethodGet, "/api/source-upload-policy", fx.actorID, nil)
+	if !strings.Contains(policy.Body.String(), fmt.Sprintf(`"textMaxBytes":%d`, limit)) {
+		t.Fatalf("policy = %s", policy.Body.String())
+	}
+	sources := "/api/workspaces/" + fx.workspaceID + "/sources/uploads"
+	meta := func(name string, size int64) map[string]any {
+		return map[string]any{
+			"name": name, "parseMode": "none", "sizeBytes": size, "contentType": "application/octet-stream",
+			"batchId": fmt.Sprintf("sb_%d", time.Now().UnixNano()), "batchTotal": 1,
+		}
+	}
+	for _, name := range []string{"big.md", "big.txt", "big.json", "big.py", "big.csv", "big.tsv"} {
+		rec, _ := takeTicket(t, fx.handler, sources, fx.actorID, meta(name, limit+1))
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "text files can be at most 2 MB") {
+			t.Fatalf("%s at its ticket: %d %s", name, rec.Code, rec.Body.String())
+		}
+	}
+	if rec, _ := takeTicket(t, fx.handler, sources, fx.actorID, meta("full.md", limit)); rec.Code != http.StatusCreated {
+		t.Fatalf("a text file at the cap: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec, _ := takeTicket(t, fx.handler, sources, fx.actorID, meta("big.xlsx", limit+1)); rec.Code != http.StatusCreated {
+		t.Fatalf("an Excel file past the text cap: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 // The upload checks again what its ticket checked: a file within the cap when
 // its ticket was issued but over it when it uploads (the payer's plan fell),
 // and a reservation over the storage that filled while it waited, are refused

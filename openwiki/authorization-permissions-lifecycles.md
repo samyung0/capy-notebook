@@ -1194,7 +1194,8 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   left out), for which the dialog's toast says some files were not copied.
   The source stays as it is. A file past the cloner's per-file cap is left
   out and counted the same way, while a single file clone refuses it with
-  `file_too_large`. The 422 belongs to routes that read stored content
+  `file_too_large`; a text file's cap is flat (2 MiB on every plan,
+  [backend-storage-quota.md](backend-storage-quota.md#product-plan-limits)). The 422 belongs to routes that read stored content
   (`storedContentError` in `huma_register.go`: reads, clones, shared pages,
   their images and grades, quiz attempts and sharing, study): content a
   request sends answers 400 and content we generate that fails our own

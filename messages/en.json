@@ -557,6 +557,7 @@
   "source_create_blank_xlsx": "Blank XLSX",
   "source_cloud_inspecting": "Checking selected files…",
   "source_files_too_large": "Files must be {mb} MB or smaller",
+  "source_text_files_too_large": "Text files must be {mb} MB or smaller",
   "source_analysis_failed": "This file could not be analyzed. Remove it or turn parsing off.",
   "source_analysis_unsupported": "This format is parsed on the server but can't be cost-estimated in the browser yet. Remove it or turn parsing off.",
   "source_analysis_password_protected": "This PDF is password-protected, so it will be added without parsing.",
