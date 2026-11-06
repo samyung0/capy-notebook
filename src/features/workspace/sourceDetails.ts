@@ -219,19 +219,23 @@ export function remoteSourceAnalysisInput(
 
 /** Analysis of a file already stored in the workspace (Retry processing),
  * read through its short-lived presigned link. */
-export function storedSourceAnalysisInput(
+export async function storedSourceAnalysisInput(
   file: { id: string; name: string; revision: number },
   url: string,
   policy: Pick<SourceUploadPolicy, 'parseModes'>
-): SourceAnalysisInput | undefined {
+): Promise<SourceAnalysisInput | undefined> {
   const kind = sourceAnalysisExtension(file.name, policy);
   const limits = fastParseLimits(policy);
   if (!(kind && limits)) return;
+  // The analysis worker takes only same-origin URLs, and a stored file's link is
+  // the bucket's, so its bytes go to it.
+  const response = await fetch(url);
+  if (!response.ok) return;
   return {
     key: `stored\0${file.id}\0${file.revision}`,
     kind,
     maxPages: limits.maxPages,
     name: file.name,
-    source: { url },
+    source: { file: new File([await response.blob()], file.name) },
   };
 }
