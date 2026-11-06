@@ -55,16 +55,11 @@ export function readNoteLive(
  * when it says read, as a viewer's does, so opening costs one request. It leaves
  * the cache, serving this channel alone. An editor's View holds a write token
  * and asks for its own, with no fresh write token on the way, as does an open
- * that didn't know it was a note, and every later join. So does an editor
- * demoted to read: the token it watches stays with its editor. */
+ * that didn't know it was a note, and every later join. */
 async function readToken(materialId: string) {
   const query = materialTokenQuery(materialId);
   const { data, fetchStatus } = queryClient.getQueryState(query.queryKey) ?? {};
-  const held = queryClient
-    .getQueryCache()
-    .find({ queryKey: query.queryKey })
-    ?.getObserversCount();
-  if (!held && (data?.access === 'read' || fetchStatus === 'fetching')) {
+  if (data?.access === 'read' || fetchStatus === 'fetching') {
     const token = await queryClient.fetchQuery(query);
     if (token.access === 'read') {
       queryClient.removeQueries({ queryKey: query.queryKey });

@@ -1,5 +1,4 @@
 import { slateNodesToInsertDelta } from '@slate-yjs/core';
-import { QueryObserver } from '@tanstack/react-query';
 import { expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import type { RoomProviderConfig } from '@/features/collaboration/roomProvider';
@@ -139,26 +138,6 @@ it("an editor's View holds a write token and asks for its read channel", async (
   expect(requests).toEqual([{ access: 'read' }]);
   // The editor's stays for the editor.
   expect(queryClient.getQueryData(OPENED)).toMatchObject({ access: 'write' });
-  leave();
-});
-
-it('an editor demoted to read keeps its token, and its View asks for its own', async () => {
-  reset();
-  queryClient.setQueryData(OPENED, openToken('read'));
-  // The demoted editor still watches the token it reconnected with.
-  const editor = new QueryObserver(queryClient, {
-    enabled: false,
-    queryKey: OPENED,
-  });
-  const unwatch = editor.subscribe(() => {});
-  const leave = readNoteLive('n', [], () => {});
-  await flush();
-  await flush();
-  expect(requests).toEqual([{ access: 'read' }]);
-  expect(queryClient.getQueryData(OPENED)).toMatchObject({
-    token: 'opened-read',
-  });
-  unwatch();
   leave();
 });
 

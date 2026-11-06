@@ -391,12 +391,12 @@ test('membership: an editor demoted to viewer has open note, Office and quiz edi
 
   // 2. Demoted to viewer: each open editor reconnects on a read token and
   // drops to View under the read-only strip; the note's View joins its room
-  // on a read channel. The member still reads but cannot write.
+  // on a read channel (on that reconnect's read token, Q618), so it follows
+  // the bystander's typing below. The member still reads but cannot write.
   const noteReadOnly = browserToken(member.page, noteToken, 'own', 'read');
   const officeReadOnly = browserToken(office.page, fileToken, 'own', 'read');
-  const viewJoined = browserToken(member.page, noteToken, 'read', 'read');
   expect(await changeMember(run, workspaceId, member, 'viewer')).toBe(204);
-  await Promise.all([noteReadOnly, officeReadOnly, viewJoined]);
+  await Promise.all([noteReadOnly, officeReadOnly]);
   for (const page of [member.page, office.page])
     await expect(page.getByText(m.editor_read_only_strip())).toBeVisible();
   await expect(member.page.locator('[contenteditable="true"]')).toHaveCount(0);
@@ -437,6 +437,9 @@ test('membership: an editor demoted to viewer has open note, Office and quiz edi
   await office.page.close();
   await quizTab.close();
   await bystanderTypes(bystanderLine, `Demoted ${marker}`);
+  await expect(member.page.getByText(`Demoted ${marker}`)).toBeVisible({
+    timeout: 60_000,
+  });
 
   // 3. Removed while typing: the room closes on them and their rejoin is refused
   // at the token, and they stay on the note, read-only under the strip.
