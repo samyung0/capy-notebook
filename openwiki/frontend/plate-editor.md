@@ -2544,11 +2544,26 @@ flashes its passage in the paint, and again in the editor once it shows; a
 question or card from a review summary scrolls into view in the quiz's list or
 the set's grid. The header's Preview shows the whole note as its readers read it,
 with embeds answerable and cards to study; the button turns into Edit, which goes back.
-The editor stays mounted, joined and undoable behind it (hidden and `inert`), and
-`NotePreview` draws `PaintedNote` from the editor's own value, so it reads nothing, works
-offline and shows text not yet saved. It refreshes at most every 250 ms from Slate's
-`onChange`, which a collaborator's typing runs through too. Both directions keep the same
-block at the same height; Edit returns focus and caret if the editor had them.
+The editor stays mounted, joined and undoable behind it (its mounts hidden and `inert`).
+`NotePreview` portals into a host under the editor's save strips, so the strips and their
+actions stay reachable (Review leaves Preview first), and it reads none of the editor's
+contexts. It draws `PaintedNote` from the editor's own value, so it reads no note body,
+opens offline and shows text not yet saved; images and embeds still read their own. It
+redraws at most every 250 ms from the editor's value changes (`subscribeNoteValue`), which
+a collaborator's typing runs through too, and only changed blocks draw again. A room swap
+hands it the next editor without moving the reader.
+
+While it's open `EditorPreviewing` makes `useEditorHeld` true: overlays go inert and the
+command palette stays shut. The selection is cleared, which closes selection-driven toolbars
+and removes this tab's caret for peers; a range ref carries it through other people's edits.
+Media pauses and a YouTube player goes back to its poster.
+
+Opening runs in a transition, with `aria-busy` on the button. Closing first settles the
+place behind Preview (`settleNotePlace`, up to about 300 ms: blocks off screen have no size
+until they come near), then shows the editor; Preview's DOM leaves when idle. Both directions
+keep the same block at the same height, inside the block if it's shorter on this side. A tall
+embed still loading in the editor can't land exactly until it has its height. When the note
+can't be edited at all the button reads Close preview.
 
 ### The editable saved copy
 

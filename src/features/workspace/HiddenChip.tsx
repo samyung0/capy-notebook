@@ -29,7 +29,7 @@ export function HiddenChip({ onShow }: { onShow?: () => void }) {
         title={m.content_hidden_from_members()}
       >
         <Icon name="viewOffSlash" size={16} />
-        <span className="max-sm:sr-only">
+        <span className="sr-only sm:not-sr-only">
           {m.content_hidden_from_members()}
         </span>
       </span>
@@ -43,7 +43,7 @@ export function HiddenChip({ onShow }: { onShow?: () => void }) {
         type="button"
       >
         <Icon name="viewOffSlash" size={16} />
-        <span className="max-sm:sr-only">
+        <span className="sr-only sm:not-sr-only">
           {m.content_hidden_from_members()}
         </span>
         {/* The action, for screen readers; sighted users get the tooltip. */}
@@ -58,7 +58,7 @@ export function HiddenChip({ onShow }: { onShow?: () => void }) {
 export function HideFileButton({ onHide }: { onHide: () => void }) {
   return (
     <button
-      className="inline-flex h-5.5 shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-md bg-page-hover px-1.75 font-semibold text-[12.5px] text-fg-muted outline-none transition duration-150 ease-out hover:bg-surface-dark-hover-bg hover:text-fg focus-visible:ring-2 focus-visible:ring-action active:scale-[0.96] max-sm:hidden"
+      className="hidden h-5.5 shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-md bg-page-hover px-1.75 font-semibold text-[12.5px] text-fg-muted outline-none transition duration-150 ease-out hover:bg-surface-dark-hover-bg hover:text-fg focus-visible:ring-2 focus-visible:ring-action active:scale-[0.96] sm:inline-flex"
       data-testid="hide-file"
       onClick={onHide}
       type="button"

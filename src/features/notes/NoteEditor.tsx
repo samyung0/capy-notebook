@@ -4,6 +4,7 @@ import {
   type ReactNode,
   Suspense,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -63,6 +64,7 @@ import {
   type NoteEditorPhase,
   type NoteOfflineState,
 } from './NoteEditorCore';
+import { EditorPreviewing, NotePreviewHost } from './notePreviewContext';
 import { RECONNECT_GRACE_MS } from './roomConnection';
 import {
   captureNotePosition,
@@ -523,6 +525,8 @@ function CollaborativeNoteEditor({
         }
       : null;
   const swap = useRoomSwap(ready, wanted, onShown);
+  const previewing = useContext(EditorPreviewing);
+  const previewHost = useContext(NotePreviewHost);
   // The room answered late (in-place GC): the paused editor's document goes
   // to the next mount, which merges its unsent edits (NoteEditorCore `late`).
   const [late, setLate] = useState<{ key: string; handed: Handed } | null>(
@@ -625,26 +629,37 @@ function CollaborativeNoteEditor({
               <SaveBanner
                 onDiscard={() => setDiscarding(true)}
                 onRetry={lateRetry?.retry}
-                onReview={() => setReviewing(true)}
+                onReview={() => {
+                  previewHost?.exit();
+                  setReviewing(true);
+                }}
                 state={banner}
               />
             )}
-            {swap.mounts.map(({ mount, phase, hidden }) => (
-              // Keyed by room and mount: the swap only changes the classes, so
-              // the next editor's DOM is never moved or rebuilt.
+            <div className="relative flex min-h-0 flex-1 flex-col">
+              {swap.mounts.map(({ mount, phase, hidden }) => (
+                // Keyed by room and mount: the swap only changes the classes, so
+                // the next editor's DOM is never moved or rebuilt.
+                <div
+                  aria-hidden={phase === 'standby' || previewing || undefined}
+                  className={cn(
+                    'flex min-h-0 flex-1 flex-col',
+                    hidden && 'absolute inset-0',
+                    (hidden || previewing) && 'invisible'
+                  )}
+                  data-note-mount={phase}
+                  inert={phase === 'standby' || previewing}
+                  key={mount.key}
+                >
+                  {renderMount(mount, phase)}
+                </div>
+              ))}
               <div
-                aria-hidden={phase === 'standby' || undefined}
-                className={cn(
-                  'flex min-h-0 flex-1 flex-col',
-                  hidden && 'invisible absolute inset-0'
-                )}
-                data-note-mount={phase}
-                inert={phase === 'standby'}
-                key={mount.key}
-              >
-                {renderMount(mount, phase)}
-              </div>
-            ))}
+                className="absolute inset-0"
+                hidden={!previewing}
+                ref={previewHost?.setHost}
+              />
+            </div>
             {swap.copying && (
               // A phone's paused note, as a copy over the editor remounting in
               // place under it.
@@ -764,8 +779,10 @@ function useRoomSwap(
     (key: string, view: NoteView) => {
       views.current.set(key, view);
       const { pending: waiting, ready: next, shown: current } = latest.current;
-      if (waiting && next?.key === key) swapTo(next, false);
-      else if (current?.key === key) {
+      if (waiting && next?.key === key) {
+        swapTo(next, false);
+        onShown?.(view);
+      } else if (current?.key === key) {
         setPaintedKey(key);
         setCopy(null);
         onShown?.(view);

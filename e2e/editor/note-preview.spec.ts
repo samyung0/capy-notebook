@@ -1,5 +1,6 @@
 import { expect, type Page, test } from '@playwright/test';
 import { m } from '../i18n';
+import { clickTextEnd } from './helpers';
 
 /* Note Preview (Epo Q669 A, 2026-11-06): the editor stays mounted behind it and
  * Preview draws the readers' rendering from the live editor's text. Runs on a
@@ -8,6 +9,7 @@ import { m } from '../i18n';
 const NOTE = 'mock-scenario-note';
 const SCENARIOS = `/workspaces/ws_scenarios?material=${NOTE}`;
 const SEED = 'A note for trying application errors.';
+const MATRIX = 'mat_note_bio_feature_matrix';
 
 const editable = (page: Page) =>
   page.locator('[data-slate-editor="true"][contenteditable="true"]');
@@ -19,11 +21,50 @@ const pressPreview = (page: Page) =>
 const pressEdit = (page: Page) =>
   page.getByRole('button', { exact: true, name: m.action_edit() }).click();
 
+const saved = (page: Page) =>
+  expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'saved',
+    { timeout: 30_000 }
+  );
+
+/** The note's own requests from here on: a body read, a token, a channel. */
+function watchReads(page: Page) {
+  const reads: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.includes(`/${NOTE}`))
+      reads.push(request.url());
+  });
+  return reads;
+}
+
+const peerAppends = (page: Page, id: string, text: string) =>
+  page.evaluate(
+    async ([id, text]) => {
+      const path = '/src/mocks/collaboration.ts';
+      const { mockNotePeer } = await import(path);
+      mockNotePeer('mock-scenario-note').append([
+        { children: [{ text }], id, type: 'p' },
+      ]);
+    },
+    [id, text]
+  );
+
+/** A peer's edit in the next room, once it has opened. */
+const peerAppendsNext = (page: Page, id: string, text: string) =>
+  expect(() => peerAppends(page, id, text)).toPass({ timeout: 30_000 });
+
+const discardRoom = (page: Page) =>
+  page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    const { discardMockMaterialRoom } = await import(path);
+    discardMockMaterialRoom('mock-scenario-note');
+  });
+
 async function typeIntoNote(page: Page, typed: string) {
   await page.goto(SCENARIOS);
   await expect(editable(page)).toBeVisible({ timeout: 30_000 });
-  await editable(page).getByText(SEED).click();
-  await page.keyboard.press('End');
+  await clickTextEnd(editable(page).getByText(SEED));
   await page.keyboard.type(typed);
   await expect(editable(page)).toContainText(typed);
 }
@@ -68,8 +109,7 @@ test('Preview shows a draft the room has not taken, and keeps it after', async (
     setCollaborationReachable(false);
   });
   await page.context().setOffline(true);
-  await editable(page).getByText(SEED).click();
-  await page.keyboard.press('End');
+  await clickTextEnd(editable(page).getByText(SEED));
   await page.keyboard.type(' Unsent draft.');
   await pressPreview(page);
   await expect(preview(page)).toContainText('Unsent draft.');
@@ -103,11 +143,7 @@ test('Preview opens with every read failing', async ({ page }) => {
 
 test('toggling Preview reads nothing over the network', async ({ page }) => {
   await typeIntoNote(page, ' No read.');
-  const reads: string[] = [];
-  page.on('request', (request) => {
-    if (new URL(request.url()).pathname.includes(`/${NOTE}`))
-      reads.push(request.url());
-  });
+  const reads = watchReads(page);
   await pressPreview(page);
   await expect(preview(page)).toContainText('No read.');
   await pressEdit(page);
@@ -115,18 +151,158 @@ test('toggling Preview reads nothing over the network', async ({ page }) => {
   expect(reads).toEqual([]);
 });
 
-test("a collaborator's typing reaches an open Preview", async ({ page }) => {
+test("a collaborator's typing reaches an open Preview, with no read or room of its own", async ({
+  page,
+}) => {
   await typeIntoNote(page, ' Mine.');
   await pressPreview(page);
   await expect(preview(page)).toContainText('Mine.');
-  await page.evaluate(async () => {
+  const reads = watchReads(page);
+  await peerAppends(page, 'peer-line', 'Typed by a peer.');
+  await expect(preview(page)).toContainText('Typed by a peer.');
+  expect(reads).toEqual([]);
+});
+
+test('a room swap before Preview leaves it reading the next editor', async ({
+  page,
+}) => {
+  await typeIntoNote(page, ' Before the swap.');
+  await saved(page);
+  await discardRoom(page);
+  await expect(editable(page)).toContainText('Before the swap.', {
+    timeout: 30_000,
+  });
+  await saved(page);
+  await pressPreview(page);
+  await expect(preview(page)).toContainText('Before the swap.');
+  await peerAppendsNext(page, 'peer-after-swap', 'Peer in the next room.');
+  await expect(preview(page)).toContainText('Peer in the next room.');
+  await pressEdit(page);
+  await clickTextEnd(editable(page).getByText('Before the swap.'));
+  await page.keyboard.type(' On.');
+  await expect(editable(page)).toContainText('Before the swap. On.');
+});
+
+test('a room swap during Preview hands it the next editor', async ({
+  page,
+}) => {
+  await typeIntoNote(page, ' Before the swap.');
+  await saved(page);
+  await pressPreview(page);
+  await expect(preview(page)).toContainText('Before the swap.');
+  await discardRoom(page);
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'saved',
+    { timeout: 30_000 }
+  );
+  await peerAppendsNext(page, 'peer-during-swap', 'Peer in the next room.');
+  await expect(preview(page)).toContainText('Peer in the next room.', {
+    timeout: 30_000,
+  });
+  await pressEdit(page);
+  await expect(editable(page)).toContainText('Peer in the next room.');
+});
+
+test("a table's toolbar closes with Preview, so nothing there can edit the hidden note", async ({
+  page,
+}) => {
+  await page.goto(`/workspaces/ws_bio?material=${MATRIX}`);
+  await expect(editable(page)).toBeVisible({ timeout: 30_000 });
+  const cell = editable(page).getByText('Cytosol', { exact: true });
+  await cell.scrollIntoViewIfNeeded();
+  await clickTextEnd(cell);
+  const remove = page.getByRole('button', { name: m.editor_delete_table() });
+  await expect(remove).toBeVisible();
+  await pressPreview(page);
+  await expect(preview(page).locator('td').first()).toBeVisible();
+  await expect(remove).toBeHidden();
+  await pressEdit(page);
+  // The caret comes back into the table, and with it its toolbar.
+  await expect(remove).toBeVisible();
+});
+
+test("the editor's command palette stays shut in Preview", async ({ page }) => {
+  await typeIntoNote(page, ' Palette.');
+  const search = page.getByPlaceholder(m.editor_search_commands());
+  await page.keyboard.press('ControlOrMeta+k');
+  await expect(search).toBeVisible();
+  await page.keyboard.press('Escape');
+  await pressPreview(page);
+  await expect(preview(page)).toContainText('Palette.');
+  await page.keyboard.press('ControlOrMeta+k');
+  await page.waitForTimeout(300);
+  await expect(search).toBeHidden();
+});
+
+test("the caret follows a peer's edit in its block", async ({ page }) => {
+  await typeIntoNote(page, ' Mine');
+  await pressPreview(page);
+  await expect(preview(page)).toContainText('Mine');
+  // A collaborator types at the start of the caret's block.
+  await page.evaluate(async (seed) => {
     const path = '/src/mocks/collaboration.ts';
     const { mockNotePeer } = await import(path);
-    mockNotePeer('mock-scenario-note').append([
-      { children: [{ text: 'Typed by a peer.' }], id: 'peer-line', type: 'p' },
-    ]);
+    const peer = mockNotePeer('mock-scenario-note');
+    const root = peer.document.get('content');
+    const block = root
+      .toDelta()
+      .map((op: { insert: { toString(): string } }) => op.insert)
+      .find((insert: { toString(): string }) =>
+        insert.toString().includes(seed)
+      );
+    block.insert(0, 'Peer: ');
+  }, SEED);
+  await expect(preview(page)).toContainText(`Peer: ${SEED}`);
+  await pressEdit(page);
+  await expect(editable(page)).toBeVisible();
+  await page.keyboard.type(' again');
+  await expect(editable(page)).toContainText(`Peer: ${SEED} Mine again`);
+});
+
+test('save strips stay on screen over Preview, and the button says so when the note is locked', async ({
+  page,
+}) => {
+  await typeIntoNote(page, ' Strip.');
+  await saved(page);
+  await pressPreview(page);
+  await expect(preview(page)).toContainText('Strip.');
+  await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    const { refuseThisBuild, setCollaborationReachable } = await import(path);
+    setCollaborationReachable(false);
+    refuseThisBuild();
+    setCollaborationReachable(true);
   });
-  await expect(preview(page)).toContainText('Typed by a peer.');
+  const banner = page.locator(
+    '[data-testid="save-banner"][data-kind="outdated"]'
+  );
+  await expect(banner).toBeVisible({ timeout: 30_000 });
+  await expect(
+    page.getByRole('button', { exact: true, name: m.note_preview_close() })
+  ).toBeVisible();
+});
+
+test('an embed keeps its answer in Preview while a peer types', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(`/workspaces/ws_bio?material=${MATRIX}`);
+  await expect(editable(page)).toBeVisible({ timeout: 30_000 });
+  await pressPreview(page);
+  const answer = page.getByRole('button', { name: /Mitochondria/ }).first();
+  await answer.scrollIntoViewIfNeeded({ timeout: 30_000 });
+  await answer.click();
+  await expect(answer).toHaveAttribute('aria-pressed', 'true');
+  await page.evaluate(async (id) => {
+    const path = '/src/mocks/collaboration.ts';
+    const { mockNotePeer } = await import(path);
+    mockNotePeer(id).append([
+      { children: [{ text: 'Peer below.' }], id: 'peer-below', type: 'p' },
+    ]);
+  }, MATRIX);
+  await expect(preview(page)).toContainText('Peer below.');
+  await expect(answer).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('Preview and back leaves a chat citation where it finished', async ({
@@ -147,9 +323,28 @@ test('Preview and back leaves a chat citation where it finished', async ({
   await expect(flashed).toHaveCount(0);
   await pressPreview(page);
   await expect(preview(page)).toContainText('Third paragraph gamma');
+  // A replayed flash ends on its own, so watch for it starting.
+  await page.evaluate(() => {
+    new MutationObserver((changes) => {
+      if (
+        changes.some(
+          (change) =>
+            change.target instanceof Element &&
+            change.target.hasAttribute('data-citation-flash')
+        )
+      )
+        Object.assign(window, { citationFlashed: true });
+    }).observe(document.body, {
+      attributeFilter: ['data-citation-flash'],
+      subtree: true,
+    });
+  });
   await pressEdit(page);
   await expect(editable(page)).toBeVisible({ timeout: 30_000 });
-  // A flash would start as the editor shows again.
   await page.waitForTimeout(1000);
-  await expect(flashed).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () => (window as { citationFlashed?: boolean }).citationFlashed
+    )
+  ).toBeUndefined();
 });

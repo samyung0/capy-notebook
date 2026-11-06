@@ -157,6 +157,7 @@ import type { MergePiece } from './merge/types';
 import { noteComponents } from './nodeComponents';
 import { useNoteEditorPrefs } from './noteEditorPrefs';
 import { sendCaret, sendPointer } from './notePresence';
+import { NotePreviewHost, noteValueChanged } from './notePreviewContext';
 import { buildPlugins } from './plugins';
 import {
   RemotePresenceMarks,
@@ -2300,6 +2301,7 @@ export function NoteEditorCore({
   const [embeds, setEmbeds] = useState(() => embedKey(projection));
   const changeValue = useCallback(
     ({ editor: current }: { editor: PlateEditor }) => {
+      noteValueChanged(current);
       // The merge view's pieces follow the note (one frame later).
       store.changed();
       // The saved copy shown before the room's first sync was edited (Q229);
@@ -2401,6 +2403,12 @@ export function NoteEditorCore({
     phase === 'paused' ||
     draftsSending ||
     lateMerging;
+  const previewHost = useContext(NotePreviewHost);
+  const hostLocked = phase === 'live' && locked;
+  useEffect(
+    () => previewHost?.setLocked(hostLocked),
+    [previewHost, hostLocked]
+  );
   lockedNow.current = locked;
   // Read through refs: these are what changes it here.
   useEffect(() => canApplyNow.current(), [locked, phase]);

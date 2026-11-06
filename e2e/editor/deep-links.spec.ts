@@ -44,6 +44,7 @@ test("a note's embed answers in the note's Preview, and edits again", async ({
   await page
     .getByRole('button', { exact: true, name: m.editor_embed_preview() })
     .click();
+  await expect(page.getByTestId('material-preview')).toBeVisible();
   const answer = page.getByRole('button', { name: /Mitochondria/ }).first();
   // Same place in the note.
   await expect(answer).toBeInViewport({ timeout: 30_000 });
