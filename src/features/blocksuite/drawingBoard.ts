@@ -540,9 +540,12 @@ export function mountDrawingBoard(
       );
       if (!png) throw new Error('drawing board: no image');
       // The encode runs in the compressor's worker; drawing needs the page.
+      // Line art keeps its ink at 0.75: 10-20% smaller than the shared 0.85
+      // (Epo 2026-11-06: minimise drawing storage).
       return fitImageOffThread(
         new File([png], 'drawing.png', { type: 'image/png' }),
-        IMAGE_BYTES_MAX
+        IMAGE_BYTES_MAX,
+        { quality: 0.75 }
       );
     },
     unmount: () => {
