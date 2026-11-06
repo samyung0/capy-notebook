@@ -315,9 +315,13 @@ It fails on a page error, an input with no painted frame, typing that doesn't
 reach the card, a stroke that draws no brush, or a missed budget. The budgets
 are 1.3x the medians in `MEDIANS`, Office's rule (`budgetOf`, rounded up to
 5 ms below a second and 50 ms above, inputs no lower than 30 ms), on the cold
-opens and the four inputs' p90. `MEDIANS` is null until three runs of the
-`canvas` job are recorded; until then the bench reports `budget: "uncalibrated"`
-and gates nothing.
+opens and the four inputs' p90. `MEDIANS` holds three runs of the `canvas` job
+on 4cf06a4b6 (2026-11-06): empty open 1906/2084/2994 ms, large open
+2756/2930/4651, pan p90 61/60/86, pen 59/64/89, typing 29/24/35, zoom 79/80/130.
+The third ran 40-60% slower on every figure (a slower runner), so a run on such
+a runner misses the opens' budgets (2750 and 3850 ms); rerun before reading a
+miss as a regression. With `MEDIANS` null the bench reports
+`budget: "uncalibrated"` and gates nothing.
 
 ## Formula parity audit (`pnpm bench:formula`)
 

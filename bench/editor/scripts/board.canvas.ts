@@ -49,10 +49,18 @@ type Timings = {
 };
 
 /**
- * Medians of three `canvas` job runs of the Performance workflow, as Office's are.
- * Null until those runs are recorded: the bench then reports and gates nothing.
+ * Medians of three `canvas` job runs of the Performance workflow, as Office's are:
+ * 42239723250, 42240647652 and 42240666814 on 4cf06a4b6 (2026-11-06). The third
+ * ran 40-60% slower on every figure, a slower runner by its spread.
  */
-const MEDIANS: Timings | null = null;
+const MEDIANS: Timings | null = {
+  emptyOpenMs: 2084,
+  largeOpenMs: 2930,
+  panP90Ms: 61,
+  penP90Ms: 64,
+  typingP90Ms: 29,
+  zoomP90Ms: 80,
+};
 
 /** No input budget goes below this: a one-frame wobble fails anything smaller. */
 const INPUT_BUDGET_FLOOR_MS = 30;
