@@ -1,0 +1,775 @@
+{
+  "provenance": {
+    "author": "Claude Code agent (Opus 5.5); original passages, questions, schemes, student answers and labels, synthetic, written in the HKDSE Chinese Language reading style",
+    "date": "2026-11-03",
+    "human_certified": false,
+    "labels_written_before_inference": true,
+    "sources": ["original; no past papers used"],
+    "scope": "HKDSE Chinese Language Paper 1 style reading comprehension in Traditional Chinese (HK usage): three original passages (classical anecdote with a 君子曰 comment, modern narrative-lyrical prose, modern argumentative essay), open parts with DSE-style point marking schemes (內容, 引用原文, 說明, 語譯 key words and sentence meaning), synthetic student answers of six kinds",
+    "copyright": "original"
+  },
+  "labeling_rules": [
+    "Each marking item is judged on its own: 1 when everything the item requires is conveyed, 0.5 when a meaningful part is conveyed but a required component is missing or only vaguely stated, 0 when nothing meaningful is conveyed.",
+    "Own-words paraphrase, note form, colloquial Cantonese wording, mixed English words and minor typos are fine for content (指出) and explanation (說明) items; there is no separate expression mark outside 語譯.",
+    "An item that says 引用原文 is earned only by an accurate quotation (verbatim or with trivial slips) of a passage sentence the item accepts. Retelling the passage in own words does not earn it; a quotation from a part of the passage the item does not accept, or text that is not in the passage, earns 0.",
+    "A quotation alone earns only the 引用 item. A 說明 item needs the student to explain, in their own words, how the evidence supports the point. A 內容 item needs the point itself stated; quoting evidence (an example, a description, a character's words) that does not itself state the point does not earn it. A quoted sentence that plainly states the requested point, such as the thesis sentence of a modern passage, does count.",
+    "Classical passage: content must be rendered in modern written Chinese. Copying the classical wording without rendering it earns 0 on 內容, 說明 and 語譯 items; the item texts say so with 只抄錄原文不給分.",
+    "語譯: a key-word item is judged on that word alone; leaving the word untranslated earns 0. The 2-mark sentence item is judged on overall meaning and the two named phrases: both right earns 1, one of the two wrong or untranslated earns 0.5, neither earns 0. A key word already scored by its own item is not penalised again in the sentence item.",
+    "A misreading (wrong attitude, wrong cause, wrong device, wrong word sense, wrong event) earns 0 on the item it contradicts; other items are judged on their own, so an accurate quotation still earns its 引用 item when the interpretation around it is wrong.",
+    "Evidence used to support a wrong point earns 0 on the 說明 item paired with the correct point.",
+    "For questions asking for two points, the student's points are matched to items by content, not by order.",
+    "Generic effects or morals (使文章生動, 吸引讀者, 要珍惜時間, 要努力讀書) earn 0 unless the item accepts them.",
+    "Text in parentheses or after 例如 in an item lists acceptable answers or marker notes, not extra requirements; explicit 不給分 notes are binding.",
+    "Irrelevant material neither adds nor subtracts unless it contradicts an item.",
+    "Labels were decided from the passage, question and scheme alone, before any model output existed."
+  ],
+  "answer_kinds": {
+    "full": "complete, correct and well-explained answer, quoting where the question asks for it",
+    "paraphrase": "right content in the student's own words with little or no quotation; earns content and explanation items, loses only items that require a quotation or a named term",
+    "partial": "one point right, another missing, vague or wrong",
+    "quote_only": "copies passage sentences verbatim without naming the point or explaining it; earns only 引用 items",
+    "misread": "fluent but misreads the passage: wrong attitude, wrong cause, wrong device or mistranslated key word",
+    "irrelevant": "off-topic or general moralising unrelated to what the question asks"
+  },
+  "questions": [
+    {
+      "id": "dsezh-classical-old-craftsman",
+      "subject": "chinese_reading",
+      "language": "zh-Hant",
+      "source": "original, classical",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "label": "閱讀以下文章，然後回答問題。",
+            "text": "老匠補器\n\n市南有老匠，善治器。凡器之敝者，人皆棄之，匠獨收而補之，久之復完。或問曰：「新器易得，子何不易之，而勞於故物乎？」匠笑曰：「新器雖美，未經吾手，吾不知其病之所在；故器雖敝，吾知其裂自何始，補之則不復裂矣。」其鄰有少年，好新而惡故，器稍損輒棄之，歲費百金，而家無完器。後歲大饑，商旅不至，市無新器。少年求器於匠，匠出故器與之，皆堅好可用。少年慚曰：「吾始以子為拙，今乃知拙者在我也。」\n\n君子曰：「學亦猶是也。故學雖淺，溫之而知其所以失；徒逐新說而不反求諸己，雖日聞百說，終無所得也。」"
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "試解釋下列文句中「」內的字詞。（3分）\n(i) 子何不「易」之\n(ii) 好新而「惡」故\n(iii) 器稍損「輒」棄之"
+              }
+            ],
+            "markscheme": [
+              {"text": "(i)「易」解作「更換、交換、換掉」（解作「容易」不給分）", "marks": 1},
+              {"text": "(ii)「惡」解作「厭惡、討厭、不喜歡」（解作「邪惡、壞」不給分）", "marks": 1},
+              {"text": "(iii)「輒」解作「就、總是、往往」", "marks": 1}
+            ],
+            "reference_answer": "(i) 更換 (ii) 厭惡 (iii) 就、總是"
+          },
+          {
+            "id": "b",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "試語譯下列文句：「新器雖美，未經吾手，吾不知其病之所在；故器雖敝，吾知其裂自何始。」（4分）"
+              }
+            ],
+            "markscheme": [
+              {"text": "「病」譯作「毛病、缺陷、問題」（譯作「疾病、生病」或保留「病」字不譯，不給分）", "marks": 1},
+              {"text": "「敝」譯作「破舊、破損、殘破」（保留「敝」字不譯，不給分）", "marks": 1},
+              {"text": "句意準確：新器雖然美觀，但沒有經過我的手（修理），我不知道它的毛病在哪裏；舊器雖然破舊，我卻知道它從哪裏開始裂開。須譯出「未經吾手」（沒有經過我的手）及「其裂自何始」（它從哪裏開始裂開）兩處，錯譯或漏譯其中一處得1分（「病」「敝」二字已另行計分，此項不重複扣分）", "marks": 2}
+            ],
+            "reference_answer": "新的器物雖然美觀，但沒有經過我的手修理，我不知道它的毛病在哪裏；舊的器物雖然破舊，我卻知道它是從哪裏開始裂開的。"
+          },
+          {
+            "id": "c",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "少年說：「吾始以子為拙，今乃知拙者在我也。」他為甚麼會這樣說？試結合文意加以說明。（3分）"
+              }
+            ],
+            "markscheme": [
+              {"text": "指出少年起初認為老匠不換新器、只花氣力修補舊器，是笨拙或白費氣力的做法（須以白話說明，只抄錄原文不給分）", "marks": 1},
+              {"text": "指出後來遇上饑荒，市上沒有新器可買，少年要向老匠求器，而老匠修補過的舊器都堅固耐用（須以白話說明，只抄錄原文不給分）", "marks": 1},
+              {"text": "說明少年因此醒悟：自己喜新厭舊、器物稍有損壞便丟棄，花費很多卻家中沒有完好的器物，真正笨拙的是自己", "marks": 1}
+            ],
+            "reference_answer": "少年起初以為老匠不買新器、只費力修補舊物，是笨拙的做法。後來饑荒，商旅不來，市上買不到新器，他只好向老匠求器，卻發現老匠修補過的舊器都堅固好用。他由此醒悟自己喜新厭舊、器物稍壞就丟掉，年年花費很多，家裏卻沒有一件完好的器物，真正笨拙的其實是自己，因而感到慚愧。"
+          },
+          {
+            "id": "d",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "文末「君子曰」一段帶出了甚麼道理？試引用原文，並結合老匠的故事加以說明。（3分）"
+              }
+            ],
+            "markscheme": [
+              {"text": "指出道理：求學應溫習舊有的學問，從中反省自己的錯處或不足，不應只顧追逐新說（須以白話說明，只抄錄原文不給分）", "marks": 1},
+              {"text": "引用原文：「故學雖淺，溫之而知其所以失」或「徒逐新說而不反求諸己，雖日聞百說，終無所得」（引用其中一句或其主要部分即可）", "marks": 1},
+              {"text": "說明故事與道理的對應：老匠熟悉舊器，知道裂痕從何而起，所以補得牢固，猶如溫習舊學能找出自己失誤的原因；或少年好新棄舊而家無完器，猶如只追逐新說的人終無所得（具體說明其中一組對應即可）", "marks": 1}
+            ],
+            "reference_answer": "道理是：求學應溫習舊有的知識，從中反省自己錯在哪裏，不應只顧追逐新的說法。原文說「故學雖淺，溫之而知其所以失」。老匠熟悉舊器，知道裂痕從哪裏開始，所以補過便不再裂；同樣，溫習舊學能讓人找出自己失誤的原因。少年喜新棄舊，花費很多卻家無完器，正如只追新說而不反省的人，天天聽很多說法，最終一無所得。"
+          }
+        ]
+      },
+      "answers": {
+        "a": [
+          {
+            "kind": "full",
+            "text": "(i) 易：更換\n(ii) 惡：厭惡\n(iii) 輒：就、總是",
+            "labels": [
+              [1, "'更換' is the replace sense."],
+              [1, "'厭惡' is correct."],
+              [1, "'就、總是' is correct."]
+            ]
+          },
+          {
+            "kind": "paraphrase",
+            "text": "(i) 換掉佢，換個新的\n(ii) 唔鍾意，即係討厭\n(iii) 每次都會、立即就",
+            "labels": [
+              [1, "Colloquial 'swap it for a new one' carries the replace sense."],
+              [1, "'Dislike, i.e. hate' is correct despite Cantonese wording."],
+              [1, "'Every time, at once' conveys 就/總是."]
+            ]
+          },
+          {
+            "kind": "partial",
+            "text": "(i) 交換\n(ii) 討厭\n(iii) 慢慢地",
+            "labels": [
+              [1, "'交換' is accepted."],
+              [1, "'討厭' is accepted."],
+              [0, "'Slowly' is not 就/總是."]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "(i) 容易\n(ii) 邪惡\n(iii) 就",
+            "labels": [
+              [0, "Takes 易 as 'easy', which the item excludes."],
+              [0, "Takes 惡 as 'evil', which the item excludes."],
+              [1, "'就' is correct."]
+            ]
+          }
+        ],
+        "b": [
+          {
+            "kind": "full",
+            "text": "新的器物雖然美觀，但沒有經過我的手修理，我不知道它的毛病在哪裏；舊的器物雖然破舊，我卻知道它的裂痕是從哪裏開始的。",
+            "labels": [
+              [1, "病 rendered 毛病."],
+              [1, "敝 rendered 破舊."],
+              [1, "Both 未經吾手 and 其裂自何始 rendered accurately; sentence meaning correct."]
+            ]
+          },
+          {
+            "kind": "paraphrase",
+            "text": "新東西雖然好看，可是我從來沒有親手修理過它，所以不清楚它有甚麼缺陷；舊東西雖然已經殘破，我卻清楚知道它是從哪個位置開始裂的。",
+            "labels": [
+              [1, "病 rendered 缺陷."],
+              [1, "敝 rendered 殘破."],
+              [1, "Free but accurate: never handled/repaired it; knows where the crack began."]
+            ]
+          },
+          {
+            "kind": "partial",
+            "text": "新的器物雖然美麗，但沒有經過我的手，我不知道它的毛病在甚麼地方；舊的器物雖然便宜，我知道它會裂開。",
+            "labels": [
+              [1, "病 rendered 毛病."],
+              [0, "敝 rendered 'cheap', a wrong sense."],
+              [0.5, "未經吾手 correct; 其裂自何始 reduced to 'knows it will crack', losing where it began."]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "新的器物雖然美麗，但我還未買到手，不知道它生了甚麼病；舊的器物雖然破舊，我卻知道它從哪裏開始裂開。",
+            "labels": [
+              [0, "病 taken as illness, which the item excludes."],
+              [1, "敝 rendered 破舊."],
+              [0.5, "未經吾手 mistranslated as 'not yet bought'; 其裂自何始 correct."]
+            ]
+          },
+          {
+            "kind": "quote_only",
+            "text": "新器雖然美，未經我手，我不知其病之所在；故器雖然敝，我知其裂自何始。",
+            "labels": [
+              [0, "病 left untranslated."],
+              [0, "敝 left untranslated."],
+              [0, "Copies the original with 吾 and 雖 swapped; neither named phrase rendered."]
+            ]
+          }
+        ],
+        "c": [
+          {
+            "kind": "full",
+            "text": "少年起初認為老匠不買新器、只花氣力修補舊物，是很笨拙的做法。後來遇上饑荒，商人不來，市上買不到新器，他只好向老匠求器，發現老匠修補過的舊器都堅固好用。他因而醒悟自己喜新厭舊，器物稍壞就丟掉，花了很多錢，家中卻沒有一件完好的器物，真正笨的人其實是自己，所以感到慚愧而這樣說。",
+            "labels": [
+              [1, "Initial view that repairing old vessels was foolish, in modern Chinese."],
+              [1, "Famine, no new vessels, the craftsman's repaired vessels sturdy."],
+              [1, "Realises his own habit of discarding left him nothing; he is the foolish one."]
+            ]
+          },
+          {
+            "kind": "paraphrase",
+            "text": "一開始覺得老匠修舊東西很蠢，浪費時間。後來荒年沒有新器賣，他要問老匠拿，點知老匠的舊器反而很耐用。他才明白自己一壞就丟東西，錢花了不少，家裏卻沒有一件好的，原來真正蠢的是自己。",
+            "labels": [
+              [1, "Initial view stated in own words."],
+              [1, "Famine, no new vessels, old vessels durable."],
+              [1, "Discarding at the first damage, money spent, nothing whole: he is the fool."]
+            ]
+          },
+          {
+            "kind": "quote_only",
+            "text": "因為「後歲大饑，商旅不至，市無新器。少年求器於匠，匠出故器與之，皆堅好可用。」所以少年慚曰：「吾始以子為拙，今乃知拙者在我也。」",
+            "labels": [
+              [0, "Only copies 吾始以子為拙; the initial view is not stated in modern Chinese."],
+              [0, "Famine and sturdy vessels appear only as copied classical text; item says copying earns 0."],
+              [0, "No explanation of what he realised about himself."]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "少年起初認為老匠很笨，因為老匠不肯把舊器丟掉。後來饑荒，少年沒有錢買新器，老匠便送了一件新器給他。少年覺得老匠很慷慨，後悔自己以前看不起老匠，所以這樣說。",
+            "labels": [
+              [1, "Initial view (foolish to keep old vessels) stated in modern Chinese."],
+              [0, "Misreads: no new vessels on the market and the craftsman gave old ones, not money troubles or a new vessel."],
+              [0, "Gives regret for slighting a generous man, not realising his own wasteful habit."]
+            ]
+          }
+        ],
+        "d": [
+          {
+            "kind": "full",
+            "text": "這段帶出的道理是：求學應溫習舊有的學問，從中反省自己錯在哪裏，不應只顧追逐新的說法。原文說「故學雖淺，溫之而知其所以失」。老匠熟悉舊器，知道裂痕從哪裏開始，所以補得好；同樣，學生溫習舊學，就能找出自己犯錯的原因。少年喜新棄舊，結果家無完器，就像只追新說、不反省自己的人，雖然每天聽很多說法，最終一無所得。",
+            "labels": [
+              [1, "Revise old learning, examine one's errors, do not merely chase new theories."],
+              [1, "Accurate quotation of the accepted line."],
+              [1, "Both correspondences explained (craftsman/knowing faults, youth/chasing the new)."]
+            ]
+          },
+          {
+            "kind": "quote_only",
+            "text": "「學亦猶是也。故學雖淺，溫之而知其所以失；徒逐新說而不反求諸己，雖日聞百說，終無所得也。」",
+            "labels": [
+              [0, "No moral stated in modern Chinese; the original is only copied."],
+              [1, "Accurate quotation of the 君子曰 lines."],
+              [0, "No link to the craftsman's story."]
+            ]
+          },
+          {
+            "kind": "partial",
+            "text": "道理：讀書要溫故知新，溫習舊的知識就能知道自己錯在哪裏，不要只顧追求新的學說。原文：「徒逐新說而不反求諸己，雖日聞百說，終無所得」。正如老匠修補舊器一樣。",
+            "labels": [
+              [1, "Revise old knowledge, find one's errors, do not just chase new theories."],
+              [1, "Accurate quotation of the accepted line."],
+              [0.5, "Names the craftsman as a parallel but not the specific correspondence (knowing where it cracked vs one's errors)."]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "這段的道理是做人要節儉，不要浪費金錢。少年「歲費百金，而家無完器」，就是因為太浪費；老匠省錢修補舊物，所以饑荒時也有器物用。",
+            "labels": [
+              [0, "Thrift is not the moral; the 君子曰 lines are about learning."],
+              [0, "Quotation is from the story, not the lines the item accepts."],
+              [0, "Story is mapped to thrift, not to revising and self-examination."]
+            ]
+          },
+          {
+            "kind": "irrelevant",
+            "text": "做人要有一技之長，好像老匠一樣，將來才找到工作。所以我們要努力讀書，不要浪費時間打機。",
+            "labels": [
+              [0, "General moral about skills and study effort, not the passage's point."],
+              [0, "No quotation."],
+              [0, "No correspondence explained."]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dsezh-prose-watch-stall",
+      "subject": "chinese_reading",
+      "language": "zh-Hant",
+      "source": "original, modern prose",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "label": "閱讀以下文章，然後回答問題。",
+            "text": "錶舖\n\n1　父親的錶舖在深水埗一條橫街的樓梯底，闊不過兩臂，一盞枱燈，一張摺凳，便是他三十年的天地。\n\n2　小時候，我最怕同學經過。他們背着新款書包，我卻蹲在樓梯底替父親數螺絲。有一次，一個同學指着舖面笑說：「這麼小，也算舖頭？」我漲紅了臉，第二天便改走另一條路回家，寧願多繞十分鐘。\n\n3　父親從不在意這些。客人拿來一隻停了的錶，他把放大鏡夾在眼窩，一坐就是一個下午。我嫌他慢，他只說：「錶是急不來的，你一急，齒輪就跟你鬥氣。」\n\n4　上個月，業主決定收回樓梯底。我請了假回去幫忙執拾。抽屜裏全是用牛皮紙包好的零件，每一包都寫着客人的名字和日期，有些已是十多年前的事。「有些人再沒回來取，」父親說，「但萬一回來呢？」\n\n5　最後一天，父親把枱燈關掉，樓梯底一下子暗了。街上的人照舊走過，沒有人回頭。我忽然很想告訴當年那個繞路回家的孩子：這裏雖小，卻放得下一個人三十年的耐心。\n\n6　臨走時，父親把一隻舊錶塞進我手裏，是我中學時弄壞、早已忘記的那一隻。錶面擦得發亮，秒針正一格一格地走着。"
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "根據第2段，「我」小時候對父親的錶舖抱着怎樣的態度？試引用原文加以說明。（3分）"
+              }
+            ],
+            "markscheme": [
+              {"text": "指出「我」小時候對父親的錶舖感到自卑、尷尬或羞恥，不想被同學看見", "marks": 1},
+              {"text": "引用原文：「我最怕同學經過」或「我漲紅了臉，第二天便改走另一條路回家，寧願多繞十分鐘」（或第2段中其他能表現這種態度的原文）", "marks": 1},
+              {"text": "說明所引文句或文中事例如何表現這種態度：例如怕同學經過時看見自己在樓梯底幫忙；被取笑後臉紅，寧願繞路也要避開錶舖，可見他以錶舖為恥", "marks": 1}
+            ],
+            "reference_answer": "「我」小時候對錶舖感到自卑、尷尬，以之為恥。原文說「我最怕同學經過」，被同學取笑後「我漲紅了臉，第二天便改走另一條路回家，寧願多繞十分鐘」。他怕同學看見自己在簡陋的樓梯底替父親數螺絲，被笑後臉紅，寧願多走十分鐘也要避開錶舖，可見他覺得錶舖寒酸，令自己丟臉。"
+          },
+          {
+            "id": "b",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "試從第4段找出父親的兩項性格特點，並加以說明。（4分）"
+              }
+            ],
+            "markscheme": [
+              {"text": "指出父親細心、做事有條理或一絲不苟", "marks": 1},
+              {"text": "說明細心有條理：每一包零件都用牛皮紙包好，並寫上客人的名字和日期", "marks": 1},
+              {"text": "指出父親守信、重承諾或處處為客人着想", "marks": 1},
+              {"text": "說明守信或為客人着想：即使有些客人十多年沒有回來取，他仍替他們保留零件，因為「萬一回來呢」", "marks": 1}
+            ],
+            "reference_answer": "一、細心有條理：抽屜裏的零件每一包都用牛皮紙包好，並寫上客人的名字和日期。二、守信、為客人着想：有些客人十多年沒有回來取，他仍然替他們保留零件，因為「萬一回來呢」，不願辜負客人。"
+          },
+          {
+            "id": "c",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "第3段中，父親說：「錶是急不來的，你一急，齒輪就跟你鬥氣。」試指出這句運用了哪種修辭手法，並說明其作用。（3分）"
+              }
+            ],
+            "markscheme": [
+              {"text": "指出修辭手法：擬人", "marks": 1},
+              {"text": "說明如何運用：把齒輪寫成像人一樣會「跟你鬥氣」", "marks": 1},
+              {"text": "說明作用：生動地表現修錶必須耐心、急不來的道理，或突出父親沉着、有耐性的性格（答其一即可；只答「使文章生動」「吸引讀者」而無具體內容，不給分）", "marks": 1}
+            ],
+            "reference_answer": "運用了擬人法。父親把齒輪寫成像人一樣會「跟你鬥氣」，生動地說明修錶必須耐心、不能急躁，一急便會出錯，也突出父親沉着、有耐性的性格。"
+          },
+          {
+            "id": "d",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "文章結尾寫父親把一隻舊錶塞進「我」手裏，「錶面擦得發亮，秒針正一格一格地走着」。作者借這個結尾表達了怎樣的感情？試加以說明。（4分）"
+              }
+            ],
+            "markscheme": [
+              {"text": "指出「我」對父親的感激或感動，體會到父親默默的關愛", "marks": 1},
+              {"text": "說明：那隻錶是「我」中學時弄壞、早已忘記的，父親卻一直替他修好並擦亮保存", "marks": 1},
+              {"text": "指出另一種感情：對父親三十年耐心的敬佩、對錶舖結業的不捨，或對自己當年以錶舖為恥的愧疚（答其一即可）", "marks": 1},
+              {"text": "說明「秒針正一格一格地走着」的含意：錶舖雖然結業，父親的耐心和心意仍在延續，留在「我」身邊", "marks": 1}
+            ],
+            "reference_answer": "作者表達了對父親的感激和敬佩。那隻錶是「我」中學時弄壞、早已忘記的，父親卻默默修好，還擦得發亮保存着，可見他對兒子的關愛。秒針「一格一格地走着」，象徵父親三十年不急不躁的耐心，錶舖雖然結業，這份耐心和心意仍在延續，留在「我」手中。"
+          }
+        ]
+      },
+      "answers": {
+        "a": [
+          {
+            "kind": "full",
+            "text": "「我」小時候對錶舖感到自卑和尷尬。原文說「我最怕同學經過」，被同學取笑後又「我漲紅了臉，第二天便改走另一條路回家，寧願多繞十分鐘」。他怕同學看見自己蹲在樓梯底數螺絲，被笑後臉紅，甚至寧願多走十分鐘也要避開錶舖，可見他覺得父親的錶舖寒酸，以此為恥。",
+            "labels": [
+              [1, "Inferiority and embarrassment named."],
+              [1, "Both accepted quotations, accurate."],
+              [1, "Explains fear of being seen, blushing and the detour as shame."]
+            ]
+          },
+          {
+            "kind": "paraphrase",
+            "text": "小時候作者覺得父親的錶舖很丟臉。他很怕被同學看到自己在那裏幫手，被同學笑舖頭細小之後，他寧願繞遠路回家，也不想再經過錶舖，可見他因錶舖而自卑。",
+            "labels": [
+              [1, "Shame and inferiority stated."],
+              [0, "No quotation; the events are retold in own words."],
+              [1, "Explains fear of being seen and the detour as shame."]
+            ]
+          },
+          {
+            "kind": "quote_only",
+            "text": "「小時候，我最怕同學經過。他們背着新款書包，我卻蹲在樓梯底替父親數螺絲。」「我漲紅了臉，第二天便改走另一條路回家，寧願多繞十分鐘。」",
+            "labels": [
+              [0, "The attitude is never named."],
+              [1, "Accurate quotations from paragraph 2."],
+              [0, "No explanation of how the lines show the attitude."]
+            ]
+          },
+          {
+            "kind": "partial",
+            "text": "態度：不開心。\n引用：「我最怕同學經過」",
+            "labels": [
+              [0.5, "'Unhappy' is a vague version of the required shame or embarrassment."],
+              [1, "Accurate quotation."],
+              [0, "No explanation."]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "作者小時候以父親的錶舖為傲。同學取笑錶舖細小時，「我漲紅了臉，第二天便改走另一條路回家」，因為他很生氣同學看不起父親，不想再和這些同學一起走。",
+            "labels": [
+              [0, "Pride contradicts the shame the paragraph shows."],
+              [1, "Accurate quotation from paragraph 2."],
+              [0, "Reads the blush and detour as anger at classmates, a misreading."]
+            ]
+          }
+        ],
+        "b": [
+          {
+            "kind": "full",
+            "text": "一、細心有條理：抽屜裏的零件每一包都用牛皮紙包好，還寫上客人的名字和日期。\n二、守信、為客人着想：有些客人十多年也沒有回來取，他仍然替他們保留零件，因為他想「萬一回來呢？」，不想令客人失望。",
+            "labels": [
+              [1, "Careful and orderly named."],
+              [1, "Wrapped parts labelled with names and dates."],
+              [1, "Trustworthy, considerate of customers named."],
+              [1, "Keeps parts for customers gone ten-plus years, citing 萬一回來呢."]
+            ]
+          },
+          {
+            "kind": "partial",
+            "text": "父親做事很細心，每一包零件都用牛皮紙包好，寫着客人的名字和日期。另外他也很守信用，因為他保留了很多零件。",
+            "labels": [
+              [1, "Careful named."],
+              [1, "Wrapped and labelled parts cited."],
+              [1, "Trustworthy named."],
+              [0.5, "Says he kept many parts but not that the owners had not returned for years or 萬一回來呢."]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "父親很吝嗇，連客人不要的零件也不捨得丟掉，一留就十多年。他又很固執，業主要收回樓梯底，他也不肯搬走。",
+            "labels": [
+              [0, "No carefulness or orderliness; 'stingy' is a misreading."],
+              [0, "Wrapping and labelling not mentioned."],
+              [0, "Stingy and stubborn contradict keeping parts for the customers' sake."],
+              [0, "Kept-parts evidence supports stinginess; refusing to move contradicts the passage."]
+            ]
+          },
+          {
+            "kind": "irrelevant",
+            "text": "我覺得父親是一個好爸爸，我們應該孝順父母，多些陪伴他們，不要等到失去才後悔。",
+            "labels": [
+              [0, "No trait from paragraph 4."],
+              [0, "No evidence."],
+              [0, "No second trait."],
+              [0, "No evidence."]
+            ]
+          }
+        ],
+        "c": [
+          {
+            "kind": "full",
+            "text": "運用了擬人法。作者把齒輪寫成像人一樣會「跟你鬥氣」，生動地表現修錶不能心急、必須有耐性的道理，也突出父親沉着、有耐心的性格。",
+            "labels": [
+              [1, "Personification named."],
+              [1, "Gears written as sulking like a person."],
+              [1, "Specific effect: repair needs patience; father's calm patience."]
+            ]
+          },
+          {
+            "kind": "partial",
+            "text": "擬人，令文章更生動，吸引讀者。",
+            "labels": [
+              [1, "Personification named."],
+              [0, "Does not say the gears are given human behaviour."],
+              [0, "Generic effect, which the item excludes."]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "這是比喻法，把錶比喻成急性子的人，說明父親修錶時很心急，想快點完成。",
+            "labels": [
+              [0, "Simile is the wrong device."],
+              [0, "Says the watch is likened to an impatient person, not the gears sulking."],
+              [0, "Claims the father is impatient, contradicting the passage."]
+            ]
+          },
+          {
+            "kind": "quote_only",
+            "text": "「錶是急不來的，你一急，齒輪就跟你鬥氣。」父親只說：「錶是急不來的」。",
+            "labels": [
+              [0, "No device named."],
+              [0, "Quotes the line without explaining that the gears are made human."],
+              [0, "No effect explained."]
+            ]
+          }
+        ],
+        "d": [
+          {
+            "kind": "full",
+            "text": "作者表達了對父親的感動和敬佩。這隻錶是作者中學時弄壞、自己早已忘記的，父親卻默默修好，還把錶面擦得發亮，可見父親一直關心兒子。秒針「一格一格地走着」，象徵父親三十年來不急不躁的耐心，錶舖雖然關了，這份耐心和父愛仍在作者手中延續下去。",
+            "labels": [
+              [1, "Being moved by the father's quiet care named."],
+              [1, "Watch broken and forgotten, yet repaired and polished by the father."],
+              [1, "Admiration named."],
+              [1, "Ticking hand as the father's patience continuing after the stall closes."]
+            ]
+          },
+          {
+            "kind": "paraphrase",
+            "text": "感動：爸爸記得我自己都忘了的壞錶，一直靜靜幫我修好、抹到發亮，好有心。\n不捨：錶舖沒有了，但隻錶仍然在走，代表爸爸的耐心沒有消失，會一直陪着我。",
+            "labels": [
+              [1, "Moved by the father's care."],
+              [1, "Forgotten broken watch quietly repaired and polished."],
+              [1, "Reluctance at the closing named."],
+              [1, "The still-running watch stands for the father's patience continuing."]
+            ]
+          },
+          {
+            "kind": "partial",
+            "text": "作者很感動，因為父親修好了他以前弄壞的錶。秒針一格一格地走，表示時間過得很快，作者已經長大了。",
+            "labels": [
+              [1, "Being moved named."],
+              [1, "Father repaired the watch the narrator once broke; the core of the point."],
+              [0, "No second feeling (admiration, reluctance or remorse)."],
+              [0, "Reads the ticking as time flying, not the father's patience continuing."]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "作者表達了對父親的不滿。父親把一隻舊錶塞給他，好像在提醒他當年弄壞了錶，作者覺得父親很記仇。秒針一格一格地走，表示作者很不耐煩，想快點離開。",
+            "labels": [
+              [0, "Resentment contradicts the gratitude the ending shows."],
+              [0, "Treats the watch as a reproach, not a repaired keepsake."],
+              [0, "No admiration, reluctance or remorse."],
+              [0, "Reads the ticking as impatience, a misreading."]
+            ]
+          },
+          {
+            "kind": "irrelevant",
+            "text": "時間就像秒針一樣，一去不返，所以我們要珍惜時間，好好讀書，不要等到失去才後悔。",
+            "labels": [
+              [0, "General moral, no feeling toward the father."],
+              [0, "The watch is not explained."],
+              [0, "No second feeling."],
+              [0, "Generic 'cherish time', which the item does not accept."]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dsezh-argument-learning-to-wait",
+      "subject": "chinese_reading",
+      "language": "zh-Hant",
+      "source": "original, modern argumentative",
+      "question": {
+        "stem": [
+          {
+            "type": "text",
+            "label": "閱讀以下文章，然後回答問題。",
+            "text": "學會等待\n\n1　今天的人最怕等。網頁三秒未載入便關掉，訊息發出後對方未即時回覆便心生不安，連煮一頓飯也要選「十分鐘快速食譜」。我們把「快」當成能力，把「等」當成浪費。然而，我認為懂得等待，正是現代人最欠缺的修養。\n\n2　首先，許多美好的事物本來就需要時間。農夫插秧後，再心急也不能把禾苗拔高；釀酒的人把酒封進缸裏，往往要等上數年，酒才醇厚。孔子說「欲速則不達」，正是這個道理。急於求成，只會把事情弄壞。\n\n3　其次，等待讓人學會思考。從前寫信，一來一回動輒十天半月，寫信人下筆前必先反覆斟酌；今天的即時通訊卻讓人想到甚麼便發甚麼，說話越來越多，深思熟慮的話卻越來越少。等待留出的空白，其實是讓人沉澱的時間。\n\n4　有人會說，社會講求效率，不快便會被淘汰。這話不無道理，但效率是為了把事情做好，而不是為了快而快。一個學生若只求一晚背熟所有課文，考試後便忘得一乾二淨；倒不如每天溫習一點，讓知識慢慢扎根。\n\n5　等待不是消極的停頓，而是一種積極的耐心。它像冬天的泥土，表面看來毫無動靜，種子卻正在底下悄悄長根。學會等待，我們才能等到真正值得的東西。"
+          }
+        ],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "本文的中心論點是甚麼？（2分）"
+              }
+            ],
+            "markscheme": [
+              {"text": "指出作者主張人應學會等待，懂得等待是一種重要的修養", "marks": 1},
+              {"text": "指出作者認為這種修養正是現代人最欠缺的（現代人凡事求快、怕等）", "marks": 1}
+            ],
+            "reference_answer": "本文的中心論點是：懂得等待，正是現代人最欠缺的修養。"
+          },
+          {
+            "id": "b",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "根據第2、3段，作者認為人應學會等待的原因是甚麼？試舉兩項。（2分）"
+              }
+            ],
+            "markscheme": [
+              {"text": "原因一：許多美好的事物需要時間才能成就，急於求成只會把事情弄壞（只列舉農夫、釀酒等例子而未歸納出原因，不給分）", "marks": 1},
+              {"text": "原因二：等待讓人學會思考，留出沉澱的時間，使人深思熟慮後才表達（只列舉寫信等例子而未歸納出原因，不給分）", "marks": 1}
+            ],
+            "reference_answer": "一、許多美好的事物本來就需要時間，急於求成只會把事情弄壞。二、等待讓人學會思考，給人沉澱的時間，下筆或說話前會深思熟慮。"
+          },
+          {
+            "id": "c",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "作者在第3段運用了哪種論證手法？試引用原文加以說明。（3分）"
+              }
+            ],
+            "markscheme": [
+              {"text": "指出論證手法：對比論證（把從前寫信與今天的即時通訊對照）", "marks": 1},
+              {"text": "引用原文：「從前寫信，一來一回動輒十天半月，寫信人下筆前必先反覆斟酌」及／或「今天的即時通訊卻讓人想到甚麼便發甚麼」（引用對比的其中一方或雙方均可）", "marks": 1},
+              {"text": "說明對比如何證明論點：從前寫信要等，人下筆前會反覆思量；今天通訊不用等，人說話多了卻少了深思，從而證明「等待讓人學會思考」", "marks": 1}
+            ],
+            "reference_answer": "作者運用了對比論證。他把「從前寫信，一來一回動輒十天半月，寫信人下筆前必先反覆斟酌」與「今天的即時通訊卻讓人想到甚麼便發甚麼」對照：從前要等，人下筆前反覆思量；今天不用等，人說話多了，深思熟慮的話卻少了。兩者對比，證明等待讓人學會思考。"
+          },
+          {
+            "id": "d",
+            "blocks": [
+              {
+                "type": "text",
+                "text": "第4段中，作者對「社會講求效率，不快便會被淘汰」這種說法抱持甚麼態度？試加以說明。（3分）"
+              }
+            ],
+            "markscheme": [
+              {"text": "指出作者部分認同這種說法（承認它「不無道理」）", "marks": 1},
+              {"text": "指出作者同時有所保留：認為效率是為了把事情做好，而不是為了快而快", "marks": 1},
+              {"text": "說明作者所舉的例子：學生一晚背熟所有課文，考試後便忘記；不如每天溫習一點，讓知識慢慢扎根，可見只求快反而做不好事情", "marks": 1}
+            ],
+            "reference_answer": "作者部分認同這說法，承認「這話不無道理」；但有所保留，認為效率是為了把事情做好，而不是為了快而快。他以學生為例：只求一晚背熟所有課文，考試後便忘得一乾二淨，不如每天溫習一點，讓知識慢慢扎根，可見只求快反而做不好事情。"
+          }
+        ]
+      },
+      "answers": {
+        "a": [
+          {
+            "kind": "full",
+            "text": "中心論點：懂得等待是一種修養，而這正是現代人最欠缺的，所以我們應學會等待。",
+            "labels": [
+              [1, "Waiting is a cultivation people should learn."],
+              [1, "It is what modern people most lack."]
+            ]
+          },
+          {
+            "kind": "paraphrase",
+            "text": "作者認為現在的人太心急，凡事求快，不肯等，其實學懂等待是很重要的品德，而這正正是現代人缺少的。",
+            "labels": [
+              [1, "Learning to wait is an important virtue."],
+              [1, "Modern people rush and lack it."]
+            ]
+          },
+          {
+            "kind": "partial",
+            "text": "等待是好的。",
+            "labels": [
+              [0.5, "A positive view of waiting, but not that it is a cultivation people should learn."],
+              [0, "Nothing on modern people lacking it."]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "中心論點是現代社會講求效率，人做事應該快一點，否則便會被淘汰。",
+            "labels": [
+              [0, "States the opposing view the author rebuts."],
+              [0, "Does not say modern people lack patience; contradicts the thesis."]
+            ]
+          }
+        ],
+        "b": [
+          {
+            "kind": "full",
+            "text": "一、美好的事物需要時間才能成就，急於求成只會把事情弄壞。\n二、等待讓人學會思考，給人沉澱的時間，說話前能深思熟慮。",
+            "labels": [
+              [1, "Good things take time; haste spoils them."],
+              [1, "Waiting teaches thinking and gives time to settle."]
+            ]
+          },
+          {
+            "kind": "quote_only",
+            "text": "「農夫插秧後，再心急也不能把禾苗拔高；釀酒的人把酒封進缸裏，往往要等上數年，酒才醇厚。」「從前寫信，一來一回動輒十天半月，寫信人下筆前必先反覆斟酌」",
+            "labels": [
+              [0, "Copies the farming and wine examples without drawing the reason; the item excludes this."],
+              [0, "Copies the letter example without stating that waiting makes people think."]
+            ]
+          },
+          {
+            "kind": "partial",
+            "text": "1. 好的東西要花時間，太急會弄壞。\n2. 效率不是最重要。",
+            "labels": [
+              [1, "Reason one in note form."],
+              [0, "Not the second reason; the author does not say efficiency is unimportant."]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "一、等待可以令人省錢，例如寫信比用即時通訊便宜。\n二、等待可以令人休息，不用太辛苦。",
+            "labels": [
+              [0, "Saving money is not in the passage."],
+              [0, "Rest is not the reason; thinking and settling are missing."]
+            ]
+          }
+        ],
+        "c": [
+          {
+            "kind": "full",
+            "text": "作者運用了對比論證。他把「從前寫信，一來一回動輒十天半月，寫信人下筆前必先反覆斟酌」與「今天的即時通訊卻讓人想到甚麼便發甚麼」對照：從前要等，人下筆前會再三思考；今天不用等，人說話多了卻少了深思。兩者對比，突出等待能讓人沉澱和思考，證明「等待讓人學會思考」這個分論點。",
+            "labels": [
+              [1, "Contrast named."],
+              [1, "Both sides quoted accurately."],
+              [1, "Explains how the contrast proves waiting teaches thinking."]
+            ]
+          },
+          {
+            "kind": "quote_only",
+            "text": "「從前寫信，一來一回動輒十天半月，寫信人下筆前必先反覆斟酌；今天的即時通訊卻讓人想到甚麼便發甚麼，說話越來越多，深思熟慮的話卻越來越少。」",
+            "labels": [
+              [0, "No method named."],
+              [1, "Accurate quotation of both sides."],
+              [0, "No explanation of how the contrast proves the point."]
+            ]
+          },
+          {
+            "kind": "partial",
+            "text": "對比論證。「今天的即時通訊卻讓人想到甚麼便發甚麼」。",
+            "labels": [
+              [1, "Contrast named."],
+              [1, "Accurate quotation of one side, which the item accepts."],
+              [0, "No explanation."]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "比喻論證。作者把等待比喻成「冬天的泥土」，說明等待表面上沒有動靜，其實在默默成長。",
+            "labels": [
+              [0, "The metaphor is in paragraph 5; paragraph 3 uses contrast."],
+              [0, "Quotation is not from paragraph 3."],
+              [0, "Explains the paragraph 5 metaphor, not the paragraph 3 contrast."]
+            ]
+          },
+          {
+            "kind": "paraphrase",
+            "text": "用了對比論證：以前寫信要等十天半月，所以寫之前會想清楚；現在用 WhatsApp 即刻就 send 到，人想到甚麼就講甚麼，少了思考。作者用新舊兩種溝通方式對照，證明等待可以令人思考。",
+            "labels": [
+              [1, "Contrast named."],
+              [0, "No quotation; both sides retold in own words."],
+              [1, "Explains the contrast proves waiting fosters thought."]
+            ]
+          }
+        ],
+        "d": [
+          {
+            "kind": "full",
+            "text": "作者對這說法部分認同，他承認「這話不無道理」；但他有所保留，認為效率是為了把事情做好，而不是為了快而快。他舉學生為例：一晚背熟所有課文的人，考試後便忘得一乾二淨，倒不如每天溫習一點，讓知識慢慢扎根，可見只求快反而做不好事情。",
+            "labels": [
+              [1, "Partial agreement, citing 不無道理."],
+              [1, "Reservation: efficiency serves doing things well, not speed itself."],
+              [1, "Cramming-versus-daily-revision example explained."]
+            ]
+          },
+          {
+            "kind": "partial",
+            "text": "作者覺得有道理，但不完全同意，因為不應為快而快。",
+            "labels": [
+              [1, "Acknowledges it has some truth."],
+              [1, "Reservation: not speed for its own sake."],
+              [0, "The student example is not explained."]
+            ]
+          },
+          {
+            "kind": "misread",
+            "text": "作者完全反對這種說法，認為效率一點也不重要，人做甚麼事都應該慢慢來。",
+            "labels": [
+              [0, "Total rejection contradicts 不無道理."],
+              [0, "Says efficiency is unimportant, contradicting 'efficiency serves doing things well'."],
+              [0, "No example explained."]
+            ]
+          },
+          {
+            "kind": "irrelevant",
+            "text": "我認為香港人生活節奏太快，返工返學都好忙，政府應該推行四天工作週，讓大家有多些時間休息。",
+            "labels": [
+              [0, "Own opinion on Hong Kong life, not the author's attitude."],
+              [0, "No reservation stated."],
+              [0, "No example explained."]
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

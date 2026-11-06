@@ -2716,7 +2716,10 @@ timings logged. It is its own compose project under `/opt/capy-layout`, outside
 the UAT and production projects and the release workflows, like the library
 database (§7.3). The image holds the model: `layout/Dockerfile` adds it from a
 pinned Hugging Face revision and checks its SHA-256 at build, so the build needs
-the network and the running service does not.
+the network and the running service does not. It runs at a low CPU weight
+(`cpu_shares: 128`, no `cpus` cap) with onnxruntime's spinning off, so the parser
+beside it keeps the cores when both are busy; sizes come from the
+[capacity test](../bench/extraction/reports/2026-11-04-layout-capacity.md).
 
 1. Check out the reviewed commit under `/opt/capy-layout/src`.
 2. Create `/opt/capy-layout/.env` (mode 0600) from `deploy/layout.env.example`.

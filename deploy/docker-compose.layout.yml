@@ -51,7 +51,12 @@ services:
       ]
     mem_limit: ${LAYOUT_MEMORY_LIMIT:?set LAYOUT_MEMORY_LIMIT}
     memswap_limit: ${LAYOUT_MEMORY_LIMIT:?set LAYOUT_MEMORY_LIMIT}
-    cpus: ${LAYOUT_CPUS:?set LAYOUT_CPUS}
+    # Low CPU weight, no cap: the parser beside it wins the cores when both are
+    # busy, and the pool takes the idle ones. A cap alone left every large book
+    # past the parse deadline (bench/extraction/reports/2026-11-04-layout-capacity.md).
+    cpu_shares: 128
+    # A crashed inference is not PID 1; Docker restarts it in about 2 s.
+    init: true
     # Threads count: one inference's threads, the workers and uvicorn.
     pids_limit: 128
     healthcheck:
