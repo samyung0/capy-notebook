@@ -825,8 +825,18 @@ test('the workspace canvas stays in the URL at every width', async ({
   const board = page.locator('.capy-board');
   await board.waitFor();
 
-  // Below the rail the board stays, and only the back button leaves it.
+  // An iPad keeps the rail, with undo over the toolbar's end no more: top right.
+  const rail = page.getByRole('navigation', { name: 'Workspace' });
   await page.setViewportSize({ height: 800, width: 900 });
+  await expect(rail).toBeVisible();
+  await expect(board).toBeVisible();
+  const boardBox = await board.boundingBox();
+  const undoBox = await page.locator('.capy-board-history').boundingBox();
+  expect(undoBox && boardBox && undoBox.y - boardBox.y).toBe(8);
+
+  // Below the rail the board stays, and only the back button leaves it.
+  await page.setViewportSize({ height: 800, width: 700 });
+  await expect(rail).toHaveCount(0);
   await expect(page).toHaveURL(/panel=canvas/);
   await expect(board).toBeVisible();
   await page.reload();

@@ -35,7 +35,7 @@ entries); mocks: `artifacts/2026-10-20-painted-cards-cursors-mocks.html`.
   under Workspaces in the nav: every class's Dashboard To do, one section per
   workspace whose heading opens its Dashboard, at most 860px wide.
 - **Dashboard (Epo 2026-11-03, boards H1 owner, H2 member, H3):**
-  `WorkspaceDashboard.tsx`, the centre with nothing open (from lg without a
+  `WorkspaceDashboard.tsx`, the centre with nothing open (from md without a
   file header; one column keeps it). The workspace's name with "owner · N
   members", Upload and a disabled "Make a quiz from a file" ("Coming soon")
   for those who may add; **What to practise next**, Practice's suggestions for
@@ -57,7 +57,7 @@ entries); mocks: `artifacts/2026-10-20-painted-cards-cursors-mocks.html`.
 
 ## Workspace rail
 
-From lg (1260px) every workspace page leads with a labelled icon rail
+From md (768px, so iPads keep it, Epo 2026-11-06) every workspace page leads with a labelled icon rail
 (`WorkspaceRail.tsx`): 60px wide, straight on the shell with no panel of its own
 (Epo 2026-11-04), so it has the app sidebar's page colour and a frame shows
 through behind it, with
@@ -94,13 +94,13 @@ Which panel shows is `panel` in the URL (`files`, `agent`, `study` or `none`, Ep
 2026-11-05): `section` and `panelOpen` draw it, an effect keeps the URL and
 them, a rail press adds a back step, and back or a link moves the panel. With no
 `panel` in the URL a workspace opens on its Dashboard (Epo 2026-11-05); `panel=study`
-opens Practice. Below lg `panel=agent` is the chat page. Dev builds also take
+opens Practice. Below md `panel=agent` is the chat page. Dev builds also take
 `panel=canvas`, the drawing board in the centre at every width: it has no panel, and
-below lg a back button leads to the Dashboard.
+below md a back button leads to the Dashboard.
 
-The chat stays mounted from lg whichever section shows, the panel closed too,
-so it keeps its thread, draft and stream (below lg the dock's chat stays mounted
-too, hidden while Make a quiz's dialog is open); a thread that moves on while hidden
+The chat stays mounted from md whichever section shows, the panel closed too,
+so it keeps its thread, draft and stream (below md the dock's chat stays mounted
+too, hidden while Make a quiz's dialog or the canvas is open); a thread that moves on while hidden
 shows its end on return. Every way into a chat goes to Agent (`openChat`):
 `?chat=new` from Get started, the history's rows and New chat, and voice. A chat
 on screen comes back after a reload or a closed tab (`capy.workspace.chatShown.<id>`,
@@ -112,7 +112,7 @@ Files; a Study page moves it to Study unless Agent shows; leaving Study for the
 landing shows the Dashboard. Pressing the current section closes or reopens its
 panel; Dashboard opens the landing and Study opens Practice. With the rail the
 centre header has no back arrow or panel toggle; Study's pages fill the centre
-without a header. Below lg the one-column layout stays as before: the header's
+without a header. Below md the one-column layout stays as before: the header's
 title opens the Files dropdown, its ⋮ (and the dropdown's foot) carry Dashboard,
 Study, the Study pages this person has beside Practice (Summary, Assignments)
 and Workspace settings, and chat is the dock and its chat page.
@@ -294,7 +294,7 @@ How it is drawn:
   slide strip, notes box). The frost shows around pages and slides; pages,
   cells, slides, menus and the DOCX editor's popups and dialogs keep their
   fills. A PDF view stays opaque.
-- The chat dock below lg floats over the centre panel, outside its card: it
+- The chat dock below md floats over the centre panel, outside its card: it
   marks itself `data-frost` when the centre frosts, and its open field is
   frosted glass (`motion-chat-dock`: translucent fill, 16px backdrop blur).
 - With None, everything returns to the page colour and the opaque cards.
