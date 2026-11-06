@@ -194,13 +194,20 @@ function useListKeys(bar: RefObject<HTMLDivElement | null>, shown: boolean) {
     const root = bar.current;
     if (!root) return;
     let stop: (() => void) | null = null;
-    const observer = new MutationObserver(() => {
-      if (root.querySelector('[aria-expanded="true"]')) stop ??= holdKeys(root);
-      else {
-        stop?.();
+    const sync = () => {
+      if (root.querySelector('[aria-expanded="true"]')) {
+        if (stop) return;
+        stop = holdKeys(root);
+        gone.observe(root, { childList: true, subtree: true });
+      } else if (stop) {
+        stop();
         stop = null;
+        gone.disconnect();
       }
-    });
+    };
+    const observer = new MutationObserver(sync);
+    // A list can also go with its tab, while one is open only.
+    const gone = new MutationObserver(sync);
     observer.observe(root, {
       attributeFilter: ['aria-expanded'],
       attributes: true,
@@ -208,6 +215,7 @@ function useListKeys(bar: RefObject<HTMLDivElement | null>, shown: boolean) {
     });
     return () => {
       observer.disconnect();
+      gone.disconnect();
       stop?.();
     };
   }, [bar, shown]);

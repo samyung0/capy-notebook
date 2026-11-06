@@ -78,6 +78,23 @@ test.describe('an open list owns the keyboard', () => {
     ).toBeVisible();
   });
 
+  test('XLSX: a list that goes with its tab gives the keys back to the cell', async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    const { editor } = await openCell(page, 'abc');
+    await ribbonCommand(page, 'wrapping').click();
+    await expect(
+      officeFrame(page).locator('.office-ribbon__menu')
+    ).toBeVisible();
+    await officeTab(page, 'view').click();
+    await expect(officeFrame(page).locator('.office-ribbon__menu')).toHaveCount(
+      0
+    );
+    await page.keyboard.type('d');
+    await expect(editor).toHaveValue('abcd');
+  });
+
   test('XLSX: arrows and Enter drive the rows, the list opened by mouse', async ({
     page,
   }) => {
