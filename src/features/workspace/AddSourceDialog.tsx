@@ -1206,8 +1206,8 @@ export function AddSourceDialog({
     const kind = getFileKind(retryFile.name, uploadPolicy);
     void api
       .get<FileLinks>(`/files/${encodeURIComponent(retryFile.id)}/links`)
-      .then(({ url }) => {
-        const analysisInput = storedSourceAnalysisInput(
+      .then(async ({ url }) => {
+        const analysisInput = await storedSourceAnalysisInput(
           retryFile,
           url,
           uploadPolicy
