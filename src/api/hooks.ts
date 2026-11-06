@@ -2490,6 +2490,9 @@ export function useCreateMaterial(wsId: string) {
     onSuccess: (mt) => {
       if (mt.kind === 'note') track('note_created', { workspaceId: wsId });
       qc.invalidateQueries({ queryKey: qk.materials(wsId) });
+      // New assignment's Quiz field lists the workspace's quizzes from here.
+      if (mt.kind === 'quiz')
+        qc.invalidateQueries({ queryKey: qk.practice(wsId) });
       invalidateOwnedMaterials(qc);
       qc.setQueryData(qk.material(mt.id), mt);
     },

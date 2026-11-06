@@ -11,13 +11,32 @@ const { document, window } = parseHTML(
 Object.assign(globalThis, { document, IS_REACT_ACT_ENVIRONMENT: true, window });
 
 const save = vi.hoisted(() => vi.fn());
+const practice = vi.hoisted(() => ({
+  failed: false,
+  quizzes: [] as { id: string; questions: number; title: string }[],
+}));
+const navigate = vi.hoisted(() => vi.fn());
+const frozen = vi.hoisted(() => ({ value: false }));
+vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }));
+vi.mock('@/features/workspace/access', () => ({
+  isWorkspaceReadOnly: () => frozen.value,
+}));
+vi.mock('../practice/MakePractice', () => ({
+  MakePractice: () => <div data-make-practice />,
+}));
 vi.mock('@/api/hooks', () => ({
   useCreateAssignment: () => ({ isPending: false, mutate: save }),
   useFiles: () => ({ data: [] }),
   useMaterials: () => ({ data: [] }),
   useMe: () => ({ data: { id: 'owner' } }),
-  usePractice: () => ({ data: { quizzes: [] } }),
+  usePractice: () => ({
+    data: { quizzes: practice.quizzes },
+    isError: practice.failed,
+    isPending: false,
+    refetch: vi.fn(),
+  }),
   useUpdateAssignment: () => ({ isPending: false, mutate: save }),
+  useWorkspace: () => ({ data: {} }),
   useWorkspaceMembers: () => ({
     data: [
       { name: 'Ann', role: 'viewer', userId: 'ann' },
@@ -53,7 +72,7 @@ vi.mock('@/components/ui/Select', () => ({
 }));
 vi.mock('@/components/ui/Popover', () => ({
   Popover: pass,
-  PopoverContent: () => null,
+  PopoverContent: pass,
   PopoverTrigger: pass,
 }));
 vi.mock('@/components/ui/Switch', () => ({ Switch: () => null }));
@@ -86,13 +105,13 @@ const existing = {
 
 const host = document.createElement('div');
 document.body.append(host);
-const show = async (value?: Assignment) => {
+const show = async (value?: Assignment, onClose = vi.fn()) => {
   const root = createRoot(host);
   await act(async () =>
     root.render(
       <NewAssignmentDialog
         existing={value}
-        onClose={vi.fn()}
+        onClose={onClose}
         onDone={vi.fn()}
         workspaceId="ws1"
       />
@@ -109,7 +128,86 @@ const submitForm = () =>
       );
   });
 
-beforeEach(() => save.mockReset());
+beforeEach(() => {
+  save.mockReset();
+  navigate.mockReset();
+  frozen.value = false;
+  practice.failed = false;
+  practice.quizzes = [];
+});
+
+const searchBox = () =>
+  host.querySelector(`[aria-label="${m.assignment_search_quizzes()}"]`);
+
+it('asks for a quiz to be made when there are none, with no search', async () => {
+  const root = await show();
+  expect(host.textContent).toContain(m.assignment_make_quiz_to_begin());
+  expect(searchBox()).toBeNull();
+  await act(async () => root.unmount());
+});
+
+it('searches once there are quizzes', async () => {
+  practice.quizzes = [{ id: 'q1', questions: 3, title: 'Cells' }];
+  const root = await show();
+  expect(host.textContent).not.toContain(m.assignment_make_quiz_to_begin());
+  expect(searchBox()).not.toBeNull();
+  await act(async () => root.unmount());
+});
+
+const row = (label: string) =>
+  [...host.querySelectorAll('button')].find(
+    (button) => button.textContent === label
+  );
+const press = (button?: Element) =>
+  act(async () => {
+    button?.dispatchEvent(new window.Event('click', { bubbles: true }));
+  });
+
+it('closes for New quiz and Make a quiz, which open by link', async () => {
+  const onClose = vi.fn();
+  const root = await show(undefined, onClose);
+  await press(row(m.dashboard_make_quiz()));
+  expect(onClose).toHaveBeenCalledTimes(1);
+  const makeSearch = navigate.mock.lastCall?.[0].search;
+  expect(makeSearch({ study: 'assignments' })).toEqual({
+    make: 'files',
+    makeFrom: 'assignments',
+  });
+  expect(makeSearch({})).toEqual({ make: 'files', makeFrom: undefined });
+  await press(row(m.assignment_new_quiz()));
+  const { search } = navigate.mock.lastCall?.[0] ?? {};
+  expect(search({ study: 'assignments' })).toEqual({
+    add: 'create',
+    newFromQuiz: undefined,
+    study: 'assignments',
+  });
+  await act(async () => root.unmount());
+});
+
+it('gives way to the generate dialog', async () => {
+  const onClose = vi.fn();
+  const root = await show(undefined, onClose);
+  await press(row(m.assignment_generate_questions()));
+  expect(host.querySelector('[data-make-practice]')).not.toBeNull();
+  expect(onClose).not.toHaveBeenCalled();
+  await act(async () => root.unmount());
+});
+
+it('offers no way to make a quiz in a frozen workspace', async () => {
+  frozen.value = true;
+  const root = await show();
+  expect(row(m.assignment_new_quiz())).toBeUndefined();
+  expect(host.textContent).toContain(m.assignment_no_quizzes());
+  await act(async () => root.unmount());
+});
+
+it('says a list it could not read failed, not that there are no quizzes', async () => {
+  practice.failed = true;
+  const root = await show();
+  expect(host.textContent).toContain(m.assignment_quizzes_failed());
+  expect(host.textContent).not.toContain(m.assignment_make_quiz_to_begin());
+  await act(async () => root.unmount());
+});
 
 it('sends the form once, whichever Create is pressed', async () => {
   const root = await show(existing);

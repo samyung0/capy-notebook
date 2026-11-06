@@ -86,6 +86,9 @@ export type WorkspaceOpenSearch = {
   review?: string;
   /** Make a quiz's dialog while nothing is open: its files, pages or run. */
   make?: 'files' | 'pages' | 'run';
+  /** The page Make a quiz opened from, which cancelling returns to; the Dashboard
+   * when there's none. */
+  makeFrom?: 'assignments';
   /** The file whose pages it shows. */
   quizFile?: string;
   /** The question paper's files and the mark scheme or answer files, comma
@@ -100,7 +103,7 @@ export type WorkspaceOpenSearch = {
   settingsQuery?: string;
   /** One-shot actions from the Get started list, dropped once taken: open the
    * Add file dialog, or a new chat. */
-  add?: 'upload';
+  add?: 'create' | 'upload';
   chat?: 'new';
 };
 
@@ -164,6 +167,7 @@ export function parseWorkspaceOpenSearch(
     file: undefined,
     group: undefined,
     make: undefined,
+    makeFrom: undefined,
     member: undefined,
     newFromQuiz: undefined,
     own: undefined,
@@ -177,7 +181,10 @@ export function parseWorkspaceOpenSearch(
     tab: undefined,
     topicId: undefined,
     ...parseOpenPage(search),
-    add: search.add === 'upload' ? 'upload' : undefined,
+    add:
+      search.add === 'upload' || search.add === 'create'
+        ? search.add
+        : undefined,
     chat: search.chat === 'new' ? 'new' : undefined,
     panel: isWorkspacePanel(search.panel) ? search.panel : undefined,
     settings: isSettingsView(search.settings) ? search.settings : undefined,
@@ -222,10 +229,20 @@ function parseMakeQuiz(search: Record<string, unknown>): WorkspaceOpenSearch {
   const paper = text(search.paper);
   const answers = text(search.answers);
   const run = text(search.run);
-  if (search.make === 'files') return { answers, make: 'files', paper };
+  const makeFrom =
+    search.makeFrom === 'assignments' ? ('assignments' as const) : undefined;
+  if (search.make === 'files')
+    return { answers, make: 'files', makeFrom, paper };
   if (search.make === 'pages' && paper)
-    return { answers, make: 'pages', paper, quizFile: text(search.quizFile) };
-  if (search.make === 'run' && run) return { answers, make: 'run', paper, run };
+    return {
+      answers,
+      make: 'pages',
+      makeFrom,
+      paper,
+      quizFile: text(search.quizFile),
+    };
+  if (search.make === 'run' && run)
+    return { answers, make: 'run', makeFrom, paper, run };
   return {};
 }
 
