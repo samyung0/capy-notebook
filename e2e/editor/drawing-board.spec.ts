@@ -7,6 +7,8 @@ import { expect, type Page, test } from '@playwright/test';
  */
 
 type Stats = { canvas: string[]; marks: number };
+const STROKE_PATH = /<path d="([^"]*)" stroke="#e03131"/;
+const WHOLE_PIXELS = /^M[\d LM]+$/;
 const stats = (page: Page) =>
   page.evaluate('window.__board.stats()') as Promise<Stats>;
 const canvas = (page: Page) => stats(page).then(({ canvas: types }) => types);
@@ -461,6 +463,34 @@ test('the image stacks as the screen does, and many formulas settle', async ({
   expect(errors).toEqual([]);
 });
 
+test('a note scrolled out of view still reaches the image', async ({
+  page,
+}) => {
+  test.slow();
+  await openBoard(page);
+  // A dark note far to the right: BlockSuite hides a block out of view at no size.
+  await page.evaluate(`{ const gfx = document.querySelector('affine-edgeless-root').gfx;
+    const note = gfx.doc.addBlock('affine:note', { xywh: '[4000,0,400,300]',
+      background: '#000000', index: gfx.layer.generateIndex() }, gfx.doc.root.id);
+    gfx.doc.addBlock('affine:paragraph', {}, note); }`);
+  expect(
+    await page.evaluate(() =>
+      document
+        .querySelector('affine-edgeless-note')
+        ?.classList.contains('block-idle')
+    )
+  ).toBe(true);
+  expect(await inkIn(page, await toImage(page))).toBeGreaterThan(10_000);
+  // Left as it was found.
+  expect(
+    await page.evaluate(() =>
+      document
+        .querySelector('affine-edgeless-note')
+        ?.classList.contains('block-idle')
+    )
+  ).toBe(true);
+});
+
 test('a plane card has its pen and size, and fits its marks', async ({
   page,
 }) => {
@@ -794,9 +824,9 @@ test.describe('with a finger', () => {
       },
       await toImage(page)
     );
-    expect(long).toBeLessThanOrEqual(2400);
+    expect(long).toBeLessThanOrEqual(1568);
     // The far shape is drawn nearer, so the rest isn't squashed.
-    expect(short).toBeGreaterThan(600);
+    expect(short).toBeGreaterThan(long / 4);
   });
 });
 
@@ -1131,6 +1161,9 @@ test('a preview draws every kind on the board from its data, framed as the image
     'Energy is kept',
   ])
     expect(preview).toContain(part);
+  // Saved to whole pixels: the stroke, drawn through fractions, has none left.
+  const stroke = preview.match(STROKE_PATH)?.[1] ?? '';
+  expect(stroke).toMatch(WHOLE_PIXELS);
   // Well formed: a list shows it as an image.
   const drawn = await page.evaluate(async (svg) => {
     const image = new Image();

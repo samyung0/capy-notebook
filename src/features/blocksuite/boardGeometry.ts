@@ -65,8 +65,9 @@ export function unite(boxes: Box[]): Box {
   return { h: bottom - y, w: right - x, x, y };
 }
 
-/** The marking image's longest side. */
-export const IMAGE_SIDE_MAX = 2400;
+/** The marking image's longest side, drawn at the size the marking model reads (Epo
+ * 2026-11-06, 1,568 px): 42-47% smaller than drawing at 2,400 px and shrinking later. */
+export const IMAGE_SIDE_MAX = 1568;
 
 /** On a board wider or taller than the marking image, a gap past this between groups
  * of elements shrinks to it in the image, so one dragged far away doesn't squash the
