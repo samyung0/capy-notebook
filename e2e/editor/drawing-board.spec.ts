@@ -908,7 +908,10 @@ test('a saved board leaves its undo history out, and a teacher opens it read-onl
   };
   expect(bytes).toBeLessThan(live.bytes / 4);
 
-  await page.evaluate(`window.__reopen(${JSON.stringify(doc)}, true)`);
+  // Room for a question card pinned over the board's top left.
+  await page.evaluate(
+    `window.__reopen(${JSON.stringify(doc)}, true, [16, 16, 16, 372])`
+  );
   await page.waitForFunction(() =>
     (window as unknown as { __board?: { stats(): Stats } }).__board
       ?.stats()
@@ -916,10 +919,25 @@ test('a saved board leaves its undo history out, and a teacher opens it read-onl
   );
   await expect(page.locator('.capy-board-history')).toHaveCount(0);
   await expect(page.locator('edgeless-toolbar-widget')).toHaveCount(0);
+  const board = await page.locator('.capy-board').boundingBox();
+  const card = (await onCard(page))(0, 0);
+  expect(board && card[0] - board.x).toBeGreaterThanOrEqual(371);
   const at = await onCard(page);
   await page.mouse.dblclick(...at(0.5, 0.5));
   await expect(page.locator('.capy-plane-editor')).toHaveCount(0);
   expect(await inkIn(page, await toImage(page))).toBeGreaterThan(0);
+
+  // The board's styles leave the app's own truncate alone.
+  const alignSelf = await page.evaluate(() => {
+    const row = document.createElement('div');
+    row.className = 'flex items-center';
+    row.innerHTML = '<span class="truncate">x</span>';
+    document.body.append(row);
+    const value = getComputedStyle(row.firstElementChild as Element).alignSelf;
+    row.remove();
+    return value;
+  });
+  expect(alignSelf).not.toBe('stretch');
 
   // What isn't a board says so, and mounts nothing.
   const error = await page.evaluate(() => {

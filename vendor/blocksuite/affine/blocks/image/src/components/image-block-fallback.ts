@@ -35,7 +35,8 @@ export class ImageBlockFallbackCard extends WithDisposable(ShadowlessElement) {
       padding: 12px;
     }
 
-    .truncate {
+    /* Capy (local change 22): scoped, as this sheet goes into the document. */
+    .affine-image-fallback-card .truncate {
       align-self: stretch;
       text-overflow: ellipsis;
       white-space: nowrap;

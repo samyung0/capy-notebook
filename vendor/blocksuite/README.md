@@ -253,6 +253,12 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
 21. Blank lines (`framework/std` `inline/components/v-line.ts`, marked `Capy (local change
     21)`): the empty line's template has no space around it. A canvas label keeps white
     space, so a blank line in one was five lines tall and took no clicks.
+22. Leaking class (`affine/blocks` `attachment/src/styles.ts` and
+    `image/src/components/image-block-fallback.ts`, marked `Capy (local change 22)`): a
+    bare `.truncate` rule, in sheets that go into the document, applied `align-self:
+    stretch` to every Tailwind `truncate` in the app once the board had loaded; it's
+    scoped to the attachment and image fallback cards. A check of every rule the board
+    loads against the app's Tailwind classes found no other bare selector.
 
 The specs named in local changes 6 to 9 are on the `blocksuite-notes` branch, with the
 note editor they pin.

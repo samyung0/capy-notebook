@@ -4438,6 +4438,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   onChange })`. Every answer starts on the same plain board (Epo 2026-11-06 dropped
   per-question backgrounds); the dev pages pass `plane: true` for a plane card to play
   with.
+  - `fitPadding` ([top, right, bottom, left] pixels) is the room the first fit leaves
+    for what the page lays over the board, such as a pinned question card or a top bar;
+    without it the fit leaves room for the board's own toolbar and undo.
   - `readOnly` is a teacher's view: BlockSuite's read-only store (pan tool), no toolbars,
     undo, symbol row or selection, and nothing opens for editing, so MathLive never
     loads.
