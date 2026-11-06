@@ -22,6 +22,7 @@ import {
 } from 'react';
 import { isApiError, isMaterialContentUnreadable, qk } from '@/api/client';
 import {
+  materialTokenQuery,
   useFile,
   useMaterial,
   useMaterials,
@@ -621,6 +622,15 @@ function MaterialContentBody({
   const { data: me } = useMe({ errorBoundary: false });
   // A heavy note opened read-only reads nothing of its own beyond its read.
   const seed = useRoomSeed(materialId, staticNote ? null : me?.id);
+  // A note's room token beside its read, not a round trip behind it. Its editor
+  // and a viewer's read channel (liveNoteRead) both start from this request. A
+  // refusal stays quiet here: the read says what shows.
+  const opensNote =
+    !staticNote && (kind === 'note' || seed?.row.kind === 'note');
+  useEffect(() => {
+    if (opensNote)
+      void queryClient.prefetchQuery(materialTokenQuery(materialId));
+  }, [materialId, opensNote, queryClient]);
   // An item's last read, painting until this one answers.
   const copied = useMaterialCopy(materialId, staticNote ? null : me?.id);
   const refused = isRefusedRead(error);

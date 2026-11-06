@@ -2491,13 +2491,23 @@ server down, a timeout or rate limit; a refusal shows its panel), else the store
 wordless skeleton (`NoteSkeleton`). Offline with nothing to paint it reads "Waiting
 for connection" (C9).
 
+- **Its token** is asked for as the note opens, beside its read rather than a
+  round trip behind it (Q618, `MaterialContentBody`): everyone opening a note
+  needs one but a heavy note opened read-only, which joins no room. It needs the
+  kind known at the open, from the list or the copy's row; otherwise the frame asks
+  once the read answers. It's one request: `materialTokenQuery`'s, which the
+  editor reads, and which a viewer's first read channel takes from the cache (a
+  viewer's token says read either way, `readToken` in `liveNoteRead.ts`). An
+  editor's View holds a write token and asks for its own read channel. Someone
+  refused gets that one extra refused request, which nothing shows or retries:
+  the read decides the page (Q644).
 - **A viewer** stays on the paint, which follows its room on a read channel
   (`LiveNote`, `readNoteLive`, Q158), from its copy when it has one. No cue says
   it is read-only (D9). A reopen loads no editor: a copy's row keeps its reader's
   last `canEditContent` (`copyLabel`), which decides until the read answers.
 - **An editor** builds Plate behind the paint: `NoteEditor` mounts `invisible
-  absolute inset-0` and `inert`, and asks for its token, discussions and drafts
-  meanwhile. Edits are held until there is an editor (C4, no spare client ids):
+  absolute inset-0` and `inert`, and asks for its discussions and drafts
+  meanwhile; the mount still waits for the discussions' answer. Edits are held until there is an editor (C4, no spare client ids):
   keys are dropped and a phone shows no keyboard. Plate stays static until the
   first sync (C5): no early bind. Once `NoteEditorCore` painted (`onShown`) the
   paint goes and the editor shows in the same commit, at the block under the top
@@ -3601,7 +3611,9 @@ imports) joins the note room on the tab's socket on a read channel, whoever
 the reader is: View asks for one with `{access: 'read'}` on the token request,
 as every reader room does (embeds in View, the quiz attempt and set study
 pages), so the server refuses anything such a channel sends (it closes a read
-channel that writes and sends a viewer no presence). Once the room syncs, its
+channel that writes and sends a viewer no presence). A viewer's first join takes
+the read token its note's open already asked for instead ([opening a
+note](#opening-a-note)), once. Once the room syncs, its
 value is handed over block by block (`notes/liveNoteBlocks.ts`): a block equal
 to what the View shows keeps its object (element ids below the block are left
 out of the comparison, since normalization gives id-less children random ids),

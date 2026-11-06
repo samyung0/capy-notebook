@@ -1,4 +1,6 @@
 import * as Y from 'yjs';
+import { getMaterialCollaborationToken, materialTokenQuery } from '@/api/hooks';
+import { queryClient } from '@/api/queryClient';
 import {
   type CopyLabel,
   type RoomSeed,
@@ -49,6 +51,24 @@ export function readNoteLive(
   });
 }
 
+/** A read channel's token: the one the note's open asked for (CenterContent)
+ * when it says read, as a viewer's does, so opening costs one request. It leaves
+ * the cache, serving this channel alone. An editor's View holds a write token
+ * and asks for its own, as does an open that didn't know it was a note, and
+ * every later join. */
+async function readToken(materialId: string) {
+  const query = materialTokenQuery(materialId);
+  const { data, fetchStatus } = queryClient.getQueryState(query.queryKey) ?? {};
+  if (data || fetchStatus === 'fetching') {
+    const token = await queryClient.fetchQuery(query);
+    if (token.access === 'read') {
+      queryClient.removeQueries({ queryKey: query.queryKey });
+      return token;
+    }
+  }
+  return getMaterialCollaborationToken(materialId, { access: 'read' });
+}
+
 /** Follows the room until left, joining afresh each time it ends here: from
  * the copy (`seed`), or the one kept when it joins again after hiding. */
 function follow(
@@ -67,6 +87,7 @@ function follow(
       return;
     }
     const room = new ItemRoom(materialId, {
+      firstToken: () => readToken(materialId),
       keep,
       onReplace: () => {
         leave();

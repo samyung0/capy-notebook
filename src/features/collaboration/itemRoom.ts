@@ -166,6 +166,8 @@ export interface ItemRoomOptions {
   /** An editor's room: unsent edits are kept on this device under this
    * account (readers keep none). */
   drafts?: { actorId: string };
+  /** Where this room's first token comes from, when not its own request. */
+  firstToken?: () => ReturnType<typeof getMaterialCollaborationToken>;
   /** An embedded quiz's or set's room: it joins inside its note's channel
    * (Epo 2026-10-20). */
   inside?: NoteSeat | null;
@@ -327,10 +329,8 @@ export class ItemRoom {
     this.reconnector.started();
     let first: Awaited<ReturnType<typeof getMaterialCollaborationToken>>;
     try {
-      first = await getMaterialCollaborationToken(
-        this.materialId,
-        this.tokenRequest()
-      );
+      first = await (this.options.firstToken?.() ??
+        getMaterialCollaborationToken(this.materialId, this.tokenRequest()));
     } catch (error) {
       // Gone or no longer this user's (404, 403): unavailable for good.
       // Offline or a server error: paused until it can join (REVIEW5 B1).
