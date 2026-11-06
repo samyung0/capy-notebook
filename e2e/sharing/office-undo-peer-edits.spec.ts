@@ -9,7 +9,7 @@ import type {
 import { expect, test } from '../fixtures/actors';
 import { seed } from '../fixtures/seed';
 import { uploadSourceFile } from '../helpers/api';
-import { officeEditMenu } from '../helpers/office';
+import { officeEditMenu, officeTab } from '../helpers/office';
 
 /*
  * Undo in an Office room, in two browsers on the real stack (Q549, Q624): one
@@ -139,14 +139,12 @@ async function lastCellEnd(frame: FrameLocator) {
 
 /** The caret at the end of the fixture's last table cell. */
 async function caretInLastCell(page: Page, frame: FrameLocator) {
-  // The editor takes the pointer a moment after its menus arrive; its toolbar
-  // shows the table group once the caret is in a table.
+  // The editor takes the pointer a moment after its menus arrive; the ribbon's
+  // contextual Table tab comes once the caret is in a table.
   await expect(async () => {
     const { x, y } = await lastCellEnd(frame);
     await page.mouse.click(x, y);
-    await expect(frame.getByRole('group', { name: 'Table' })).toBeVisible({
-      timeout: 1000,
-    });
+    await expect(officeTab(page, 'table')).toBeVisible({ timeout: 1000 });
   }).toPass({ timeout: 30_000 });
   await documentInput(frame).press('End');
 }
