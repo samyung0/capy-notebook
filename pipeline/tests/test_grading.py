@@ -173,7 +173,7 @@ def test_the_grade_route_needs_the_secret_and_answers_shares(monkeypatch):
     assert done.status_code == 200
     assert done.json()["shares"] == [1.0]
     assert pinned["slot"].value == "grading"
-    drawn = {**body, "answer": "", "image": IMAGE}
+    drawn = {**body, "answer": "", "image": IMAGE, "sampleImage": IMAGE}
     sent = http.post("/grade", json=drawn, headers={"X-Pipeline-Secret": secret})
     assert sent.status_code == 200
 

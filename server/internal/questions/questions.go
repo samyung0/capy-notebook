@@ -1320,6 +1320,15 @@ func AssetIDs(q map[string]any) []string {
 	return ids
 }
 
+// DrawnSampleImage is the editor asset of a part's drawn sample answer image,
+// which marking sends before the student's drawing (Q3), or "".
+func DrawnSampleImage(part map[string]any) string {
+	if sample := drawnSample(part); sample != nil {
+		return sample["image"].(string)
+	}
+	return ""
+}
+
 // drawnSample is a part's drawn sample answer, {board, image}, or nil.
 func drawnSample(raw any) map[string]any {
 	p, _ := raw.(map[string]any)

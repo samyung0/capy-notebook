@@ -164,6 +164,7 @@ func (a *api) markAttemptAnswers(ctx context.Context, assignmentID, attemptID st
 	for _, answer := range answers {
 		part := openPart{
 			question: answer.Question, markscheme: answer.Items, itemMarks: answer.ItemMarks, answer: answer.Answer,
+			sampleAsset: answer.SampleImage,
 		}
 		if answer.Drawing {
 			if images == nil {

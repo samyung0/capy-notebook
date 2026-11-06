@@ -717,14 +717,19 @@ class GradeReq(LLMPin):
     # 2026-11-07); exactly one of the two.
     answer: str = ""
     image: str = Field(default="", max_length=600_000)
+    # A drawing part's drawn sample answer image (Q3), sent before the drawing.
+    sampleImage: str = Field(default="", max_length=600_000)
     spendSessionId: str = Field(min_length=1)
 
     @model_validator(mode="after")
     def _one_answer(self) -> GradeReq:
         if bool(self.answer) == bool(self.image):
             raise ValueError("send an answer or an image, not both")
-        if self.image and not _DRAWING_IMAGE.match(self.image):
-            raise ValueError("image must be a WebP, JPEG or PNG data URL")
+        for name, value in (("image", self.image), ("sampleImage", self.sampleImage)):
+            if value and not _DRAWING_IMAGE.match(value):
+                raise ValueError(f"{name} must be a WebP, JPEG or PNG data URL")
+        if self.sampleImage and not self.image:
+            raise ValueError("a sample image goes only with a drawing")
         return self
 
 
@@ -745,6 +750,7 @@ async def grade(req: GradeReq) -> dict[str, Any]:
             [item.model_dump() for item in req.items],
             req.answer,
             image=req.image,
+            sample=req.sampleImage,
             model=models.resolve_query_model(
                 req.providerSlug,
                 req.modelSlug,

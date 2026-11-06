@@ -24,8 +24,10 @@ type AnswerToMark struct {
 	Items      []string
 	ItemMarks  []float64
 	Answer     string
-	// A drawing part: its marking image is the attempt's stored one for PartID.
-	Drawing bool
+	// A drawing part: its marking image is the attempt's stored one for PartID;
+	// SampleImage is its drawn sample answer's image asset, or "".
+	Drawing     bool
+	SampleImage string
 }
 
 // AnswersToMark lists what the AI has yet to mark in an assignment, or in one of
@@ -92,7 +94,7 @@ func attemptAnswersToMark(attemptID string, rawAnswers, rawGraded []byte) ([]Ans
 			out = append(out, AnswerToMark{
 				AttemptID: attemptID, QuestionID: questionID, PartID: partID,
 				Question: questions.GradingText(q, i), Items: items, ItemMarks: marks, Answer: text,
-				Drawing: drawn,
+				Drawing: drawn, SampleImage: questions.DrawnSampleImage(p),
 			})
 		}
 	}

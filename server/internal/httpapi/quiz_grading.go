@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"runtime/debug"
 	"strings"
@@ -45,9 +46,11 @@ type openPart struct {
 	markscheme []string
 	itemMarks  []float64
 	answer     string
-	// A drawing part: its marking image and type, in place of answer.
-	image     []byte
-	imageType string
+	// A drawing part: its marking image and type, in place of answer, and
+	// its drawn sample answer's image asset, sent before it when it has one.
+	image       []byte
+	imageType   string
+	sampleAsset string
 }
 
 // gradePlan is a grading request checked against the stored questions; open
@@ -87,7 +90,10 @@ func planGrading(qs []map[string]any, answers map[string]any) (gradePlan, error)
 				answers[id] = map[string]any{"drawing": ""}
 				if imageType != "" {
 					items, marks := questions.MarkItems(p)
-					plan.open[id] = openPart{question: questions.GradingText(q, i), markscheme: items, itemMarks: marks, image: drawing.Image, imageType: imageType}
+					plan.open[id] = openPart{
+						question: questions.GradingText(q, i), markscheme: items, itemMarks: marks,
+						image: drawing.Image, imageType: imageType, sampleAsset: questions.DrawnSampleImage(p),
+					}
 				}
 				continue
 			}
@@ -268,9 +274,16 @@ func (a *api) gradePart(ctx context.Context, llm resolvedLLM, sessionID string, 
 	}
 	body := map[string]any{"question": part.question, "items": items, "spendSessionId": sessionID}
 	// A drawing goes as its marking image in place of the answer (M1, Epo
-	// 2026-11-07).
+	// 2026-11-07), after its drawn sample answer's image when it has one (Q3).
 	if len(part.image) > 0 {
 		body["image"] = "data:" + part.imageType + ";base64," + base64.StdEncoding.EncodeToString(part.image)
+		if part.sampleAsset != "" {
+			sample, err := a.sampleImage(ctx, part.sampleAsset)
+			if err != nil {
+				return partGrade{}, err
+			}
+			body["sampleImage"] = sample
+		}
 	} else {
 		body["answer"] = part.answer
 	}
@@ -533,4 +546,30 @@ func (a *api) checkQuestionComputation(ctx context.Context, in *computationCheck
 		}}, nil
 	}
 	return nil, huma.Error422UnprocessableEntity("partId must name an open part of the question")
+}
+
+// sampleImage reads a drawn sample answer's image asset as a data URL. An image
+// that can't be read fails the part, which stays Not marked: marking without
+// the sample would judge it on less than its author gave.
+func (a *api) sampleImage(ctx context.Context, assetID string) (string, error) {
+	asset, err := a.s.GetEditorAsset(ctx, assetID)
+	if err != nil {
+		return "", err
+	}
+	if asset.Purpose != "image" || a.blob == nil {
+		return "", fmt.Errorf("drawn sample answer %s is not a stored image", assetID)
+	}
+	r, err := a.blob.Open(ctx, asset.ObjectPath)
+	if err != nil {
+		return "", err
+	}
+	defer r.Close()
+	data, err := io.ReadAll(io.LimitReader(r, fieldlimits.DrawingImageBytes+1))
+	if err != nil {
+		return "", err
+	}
+	if len(data) > fieldlimits.DrawingImageBytes {
+		return "", fmt.Errorf("drawn sample answer %s is over the image cap", assetID)
+	}
+	return "data:" + asset.ContentType + ";base64," + base64.StdEncoding.EncodeToString(data), nil
 }

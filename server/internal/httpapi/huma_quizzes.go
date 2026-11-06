@@ -320,7 +320,7 @@ func (a *api) recheckQuizQuestion(ctx context.Context, in *checkQuizQuestionInpu
 		id, _ := p["id"].(string)
 		text, _ := answers[id].(string)
 		items, itemMarks := questions.MarkItems(p)
-		part := openPart{question: questions.GradingText(held, i), markscheme: items, itemMarks: itemMarks, answer: text}
+		part := openPart{question: questions.GradingText(held, i), markscheme: items, itemMarks: itemMarks, answer: text, sampleAsset: questions.DrawnSampleImage(p)}
 		// A drawing left Not marked keeps its image for this one marking.
 		if given, _ := answers[id].(map[string]any); given["drawing"] != nil {
 			if images == nil {

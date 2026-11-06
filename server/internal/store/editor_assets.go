@@ -735,7 +735,9 @@ func (s *Store) ListEditorAssets(
 		JOIN materials m ON m.id=a.material_id
 		JOIN materials top ON top.id=COALESCE(m.parent_material_id, m.id)
 		CROSS JOIN LATERAL (SELECT `+lostAccessSQL("top.workspace_id", "$1")+` AS lost) l
-		WHERE a.user_id=$1 AND a.status='ready' AND a.trashed_at IS NULL AND `+filter+clause+
+		WHERE a.user_id=$1 AND a.status='ready' AND a.trashed_at IS NULL
+			-- A drawn sample answer's board goes with its quiz, never alone.
+			AND a.purpose IN ('image','audio') AND `+filter+clause+
 		orderClause(editorAssetSort, "a.id", false)+fmt.Sprintf(` LIMIT $%d`, len(args)), args...)
 	if err != nil {
 		return EditorAssetPage{}, err
