@@ -181,7 +181,7 @@ test('a note card takes typing and leaves $$ as text', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-test('the shapes panel draws an outline and places a preset', async ({
+test('the shapes panel draws an outline and places a preset that reopens', async ({
   page,
 }) => {
   test.slow();
@@ -201,6 +201,11 @@ test('the shapes panel draws an outline and places a preset', async ({
   await expect(page.locator('capy-shape-panel')).toHaveCount(0);
   await expect.poll(() => canvas(page)).toContain('connector');
   await expect.poll(() => canvas(page)).toContain('group');
+  // The preset's connector and group store no place, and the board still reopens.
+  const placed = await canvas(page);
+  const saved = await save(page);
+  await page.evaluate(`window.__reopen(${JSON.stringify(saved)})`);
+  await expect.poll(() => canvas(page)).toEqual(placed);
 });
 
 test('double click opens the plane: it plots, undoes each click, and Escape leaves', async ({
