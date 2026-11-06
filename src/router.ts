@@ -153,8 +153,9 @@ const page = <const T extends string>(
 
 const publicRoutes = [
   // Dev builds only, so production builds drop BlockSuite's chunk until a page
-  // that ships opens the board.
-  ...(import.meta.env.DEV
+  // that ships opens the board. The canvas bench's production build turns it on
+  // (VITE_BENCH_ROUTES, bench:canvas); a deploy pins it off (scripts/env/config.py).
+  ...(import.meta.env.DEV || import.meta.env.VITE_BENCH_ROUTES === 'true'
     ? [
         createRoute({
           component: lazyPage(() => import('@/routes/DevDrawingBoard')),

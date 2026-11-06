@@ -41,6 +41,9 @@ const DEV_ENV_FILE = /^deploy\/\.env(?:\.[^/]+)?$/;
  * (`--mode development`) and keep them. */
 const MSW_ENTRIES =
   /\/mocks\/(browser|collaboration)$|\/dev\/MockScenarioPanel$|\/routes\/Dev(DrawingBoard|WorkspaceCanvas)$/;
+/** The board's route, which the canvas bench's production build keeps without MSW
+ * (VITE_BENCH_ROUTES, bench:canvas). */
+const BENCH_ROUTE = /\/routes\/DevDrawingBoard$/;
 
 // Every component reads deploy/.env; see deploy/.env.example.
 const ENV_DIR = path.resolve(import.meta.dirname, 'deploy');
@@ -70,6 +73,8 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
   const env = loadEnv(mode, ENV_DIR, '');
   // Match src/main.tsx: MSW is on unless explicitly disabled.
   const useMsw = env.VITE_USE_MSW !== 'false' && mode === 'development';
+  // Match src/router.ts: the board's route in a build, for bench:canvas only.
+  const benchRoutes = env.VITE_BENCH_ROUTES === 'true';
   // Caddy terminates local HTTPS; plain pnpm dev keeps the localhost lane.
   const serveLocalUat = mode === 'local-uat';
   const devHost = 'local.uat.capynotebook.com';
@@ -186,7 +191,9 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
             id === '\0no-mocks' ? 'export {};' : undefined,
           name: 'no-mocks-in-builds',
           resolveId: (id: string) =>
-            MSW_ENTRIES.test(id) ? '\0no-mocks' : undefined,
+            MSW_ENTRIES.test(id) && !(benchRoutes && BENCH_ROUTE.test(id))
+              ? '\0no-mocks'
+              : undefined,
         },
       // The release an open tab compares with its own when it regains focus
       // (src/lib/appRelease.ts); public/_headers serves it uncached.
@@ -225,9 +232,10 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
       },
       react(),
       // BlockSuite's few `.css.ts` styles (vendor/blocksuite/README.md). It starts a
-      // Vite server of its own, so only where the board can load: a dev server or a
-      // build with MSW on. The answer flow turns this on for every build.
-      (command === 'serve' || useMsw) &&
+      // Vite server of its own, so only where the board can load: a dev server, a
+      // build with MSW on or the canvas bench's. The answer flow turns this on for
+      // every build.
+      (command === 'serve' || useMsw || benchRoutes) &&
         mode !== 'test' &&
         vanillaExtractPlugin(),
       mathliveFonts(),
