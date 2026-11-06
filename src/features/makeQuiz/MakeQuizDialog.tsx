@@ -173,11 +173,6 @@ function MenuFileRow({
         name={fileIconName({ kind: file.kind, name: file.name })}
       />
       <span className="min-w-0 truncate">{file.name}</span>
-      {(file.status === 'pending' || file.status === 'processing') && (
-        <span className="t-meta ml-auto shrink-0 font-medium text-fg-muted">
-          {m.make_quiz_reading_pages()}
-        </span>
-      )}
     </MenuRow>
   );
 }
