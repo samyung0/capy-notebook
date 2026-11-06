@@ -80,7 +80,9 @@ type Timings = {
 
 /**
  * Medians of three `canvas` job runs of the Performance workflow, as Office's are.
- * Null until those runs are recorded: the bench then reports and gates nothing.
+ * Null until three runs of these gates are recorded: the bench then reports and
+ * gates nothing. The first calibration (7d470b2e5, on 4cf06a4b6) measured the large
+ * board and the blank open at 4x, so it doesn't carry over.
  */
 const MEDIANS: Timings | null = null;
 

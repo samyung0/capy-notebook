@@ -324,8 +324,11 @@ page error, an input with no painted frame, typing that doesn't reach the
 card, a stroke that draws no brush, or a missed budget. The budgets are 1.3x
 the medians in `MEDIANS`, Office's rule (`budgetOf`, rounded up to 5 ms below
 a second and 50 ms above, inputs no lower than 30 ms). `MEDIANS` is null until
-three runs of the `canvas` job are recorded; until then the bench reports
-`budget: "uncalibrated"` and gates nothing.
+three runs of these gates are recorded; until then the bench reports
+`budget: "uncalibrated"` and gates nothing. The first calibration (7d470b2e5,
+three runs on 4cf06a4b6, 2026-11-06) measured the large board and the blank
+open at 4x, so it doesn't carry over; it also showed one runner 40-60% slower
+on every figure, so rerun before reading a miss as a regression.
 
 ## Formula parity audit (`pnpm bench:formula`)
 
