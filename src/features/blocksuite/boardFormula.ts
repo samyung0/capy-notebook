@@ -33,8 +33,9 @@ const FONT_SIZE = 24;
 const SHARPNESS = 3;
 /** The longest bitmap side, whatever a formula asks for. */
 const BITMAP_MAX = 4096;
-/** Drawings kept; the oldest goes and is drawn again if needed. */
-const KEPT_MAX = 64;
+/** Bitmaps' memory: sharp up to the first, plain up to the second, then none. */
+const SHARP_BYTES_MAX = 128 * 1024 * 1024;
+const BITMAP_BYTES_MAX = 256 * 1024 * 1024;
 /** What MathLive writes that KaTeX has no command for. */
 const KATEX_OPTIONS = {
   macros: {
@@ -54,6 +55,9 @@ type Drawn = { canvas: HTMLCanvasElement; h: number; w: number };
 
 const drawings = new Map<string, Promise<Drawn>>();
 const ready = new Map<string, Drawn>();
+let bitmapBytes = 0;
+
+class OverBudget extends Error {}
 
 /** KaTeX lays a formula out in HTML, which BlockSuite's export (html2canvas) can't
  * read, so its glyphs, rules and stretched SVGs are drawn onto a canvas from where
@@ -64,12 +68,19 @@ async function layOut(latex: string): Promise<Drawn> {
   host.style.cssText = `position:fixed;left:0;top:0;visibility:hidden;pointer-events:none;padding:${FONT_SIZE / 3}px 2px;font-size:${FONT_SIZE}px;font-weight:400;color:#000;white-space:nowrap;width:max-content`;
   document.body.append(host);
   try {
-    katex.render(latex, host, { ...KATEX_OPTIONS, throwOnError: false });
+    // Its own macros, or a \\gdef in one formula would change the others.
+    katex.render(latex, host, {
+      ...KATEX_OPTIONS,
+      macros: { ...KATEX_OPTIONS.macros },
+      throwOnError: false,
+    });
     await document.fonts.ready;
     const box = host.getBoundingClientRect();
     const canvas = document.createElement('canvas');
+    // Past the budget for sharp formulas, new ones are plain, and past the whole
+    // budget they aren't kept at all (drawing()).
     const sharpness = Math.min(
-      SHARPNESS,
+      bitmapBytes < SHARP_BYTES_MAX ? SHARPNESS : 1,
       BITMAP_MAX / Math.max(box.width, box.height, 1)
     );
     canvas.width = Math.ceil(box.width * sharpness);
@@ -152,22 +163,29 @@ async function layOut(latex: string): Promise<Drawn> {
   }
 }
 
+/** Lets go of every bitmap, when the board closes. */
+export function forgetFormulas() {
+  ready.clear();
+  drawings.clear();
+  bitmapBytes = 0;
+}
+
 export function drawing(latex: string) {
   let pending = drawings.get(latex);
   if (!pending) {
     pending = layOut(latex).then(
       (drawn) => {
+        // Nothing is thrown out to make room: the renderer would draw it again, for
+        // ever, on a board with many formulas. Over budget stays a failed draw.
+        const bytes = drawn.canvas.width * drawn.canvas.height * 4;
+        if (bitmapBytes + bytes > BITMAP_BYTES_MAX) throw new OverBudget();
+        bitmapBytes += bytes;
         ready.set(latex, drawn);
-        const [oldest] = ready.keys();
-        if (ready.size > KEPT_MAX && oldest !== latex) {
-          ready.delete(oldest);
-          drawings.delete(oldest);
-        }
         return drawn;
       },
       (error) => {
         // Not kept, so the next draw tries again.
-        drawings.delete(latex);
+        if (!(error instanceof OverBudget)) drawings.delete(latex);
         throw error;
       }
     );
@@ -437,11 +455,14 @@ export function mountSymbolRow(gfx: GfxController) {
     queueMicrotask(place)
   );
   const viewport = gfx.viewport.viewportUpdated.subscribe(place);
+  // A label grows as it's typed, and the row stays under its last line.
+  const updates = gfx.surface?.elementUpdated.subscribe(place);
   return {
     element: row,
     unmount: () => {
       selection.unsubscribe();
       viewport.unsubscribe();
+      updates?.unsubscribe();
       row.remove();
     },
   };

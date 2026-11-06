@@ -1,13 +1,20 @@
 import { expect, it } from 'vitest';
 import {
-  barBetween,
   clockAngle,
   minorStep,
-  onCircle,
   smoothThrough,
   snapTo,
+  ticks,
   type Vec,
 } from './boardGeometry';
+
+it('lists a grid by index, and gives up on one no step can cross', () => {
+  expect(ticks(-1, 3, 1)).toEqual([-1, 0, 1, 2, 3]);
+  // Zoomed out, panned far, zoomed in: the step is too small to move this number.
+  expect(ticks(2.75e11, 2.75e11 + 1e-3, 2e-6).length).toBeLessThanOrEqual(1000);
+  expect(ticks(0, 1000, 1e-6)).toEqual([]);
+  expect(ticks(Number.NaN, 1, 1)).toEqual([]);
+});
 
 it('snaps to the fine squares, which follow the numbered step', () => {
   expect(minorStep(1)).toBe(0.2);
@@ -28,18 +35,12 @@ it('passes through every plotted point', () => {
     expect(curve[index * 8]).toEqual(point);
 });
 
-it('builds a bar up or down from the axis, wider only when dragged wider', () => {
-  expect(barBetween([3.2, 0.4], [3.2, 5.1], 0.5, 1)).toEqual({
-    h: 5,
-    w: 1,
-    x: 3,
-  });
-  expect(barBetween([3.2, 0], [6.1, 2], 0.5, 1).w).toBe(3);
-  expect(barBetween([3.2, 0], [3.2, -2], 0.5, 1).h).toBe(-2);
-});
-
 it("reads a pie angle clockwise from 12 o'clock", () => {
   const centre: Vec = [5, 5];
-  for (const degrees of [0, 45, 126, 205, 290])
-    expect(clockAngle(centre, onCircle(centre, 3, degrees))).toBe(degrees);
+  for (const degrees of [0, 45, 126, 205, 290]) {
+    const turn = (degrees * Math.PI) / 180;
+    expect(
+      clockAngle(centre, [5 + 3 * Math.sin(turn), 5 + 3 * Math.cos(turn)])
+    ).toBe(degrees);
+  }
 });

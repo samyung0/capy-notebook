@@ -114,12 +114,15 @@ class ClickController extends PointerControllerBase {
     // disable for secondary pointer
     if (event.isPrimary === false) return;
 
-    if (
-      this._downPointerState &&
-      event.pointerId === this._downPointerState.raw.pointerId &&
-      event.timeStamp - this._downPointerState.raw.timeStamp < 500 &&
-      !isFarEnough(event, this._downPointerState.raw)
-    ) {
+    // Capy (local change 18): every touch gets its own pointer id, and a finger comes
+    // down a little apart from its last tap.
+    const last = this._downPointerState?.raw;
+    const sameSpot =
+      last &&
+      (event.pointerType === 'touch' && last.pointerType === 'touch'
+        ? Math.hypot(event.x - last.x, event.y - last.y) < 24
+        : event.pointerId === last.pointerId && !isFarEnough(event, last));
+    if (last && sameSpot && event.timeStamp - last.timeStamp < 500) {
       this._pointerDownCount++;
     } else {
       this._pointerDownCount = 1;
