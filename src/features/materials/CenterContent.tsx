@@ -128,6 +128,7 @@ import {
   readDocumentMode,
   saveDocumentMode,
 } from './openItem';
+import { forgetAssetLinks } from './resolvedAssetLinks';
 
 /* A standalone mindmap's or diagram's live editor: CodeMirror, no Plate. */
 const MermaidMaterialEditor = lazy(
@@ -628,7 +629,10 @@ function MaterialContentBody({
   const lost =
     isApiError(error) && (error.status === 403 || error.status === 404);
   useEffect(() => {
-    if (lost) void dropDeviceCopies(materialId);
+    if (!lost) return;
+    void dropDeviceCopies(materialId);
+    // Signed links outlast access by their lifetime, but no further (Epo Q678 A).
+    forgetAssetLinks();
   }, [lost, materialId]);
   // A refusal ends what shows; a read that could not answer leaves it, an open
   // editor included.
@@ -890,6 +894,7 @@ function QuizPreview({
           headerActions
         )}
       <QuizReadSplit
+        paneClassName={cn(overBar && 'pb-20')}
         questions={questions}
         sources={
           <SourcesLine
@@ -962,6 +967,7 @@ function EmptyCenter({
           // As in a file header: the title pill's padding spaces it.
           !(leading && oneColumn) && 'sm:gap-2'
         )}
+        data-center-header=""
         data-slot="center-header"
       >
         {leading === undefined ? (

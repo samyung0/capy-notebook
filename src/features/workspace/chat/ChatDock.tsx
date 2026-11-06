@@ -173,6 +173,7 @@ export function ChatDock({
   return (
     <div
       className="motion-chat-dock-row pointer-events-none absolute inset-x-4 bottom-4 data-[office=true]:bottom-[calc(var(--office-inset)+8px)] data-[open=true]:bottom-[calc(--spacing(4)+var(--keyboard-inset,0px))]"
+      data-chat-dock=""
       // The open field keeps the button's gap from the screen's edge on every
       // file, lifted above the keyboard that covers the page; only the button
       // rises above an Office file's bottom chrome. Folding drops the lift at

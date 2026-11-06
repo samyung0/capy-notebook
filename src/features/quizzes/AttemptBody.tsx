@@ -35,7 +35,7 @@ import {
   NoFrame,
   QuizPageHeader,
 } from './QuizPageHeader';
-import { QuizSplit, useQuizPick } from './QuizSplit';
+import { QuizSplit, RowMark, useQuizPick } from './QuizSplit';
 import type { QuizRunControl } from './quizRun';
 import { ResetButton } from './ResetButton';
 import { keptAnswers, partsById } from './stillAnswers';
@@ -57,13 +57,23 @@ function RowResult({ question }: { question: Question | undefined }) {
   const awarded = parts.reduce((sum, part) => sum + (part.awarded ?? 0), 0);
   const marks = parts.reduce((sum, part) => sum + part.marks, 0);
   if (parts.some((part) => part.pending))
-    return <Icon name="clock" size={18} />;
+    return (
+      <RowMark label={m.quiz_row_not_marked()}>
+        <Icon name="clock" size={18} />
+      </RowMark>
+    );
   return awarded >= marks ? (
-    <Icon className="text-tint-success-fg" name="check" size={18} />
+    <RowMark label={m.question_ui_result_right()}>
+      <Icon className="text-tint-success-fg" name="check" size={18} />
+    </RowMark>
   ) : awarded > 0 ? (
-    <Icon className="text-tint-warning-fg" name="minus" size={18} />
+    <RowMark label={m.quiz_row_part_right()}>
+      <Icon className="text-tint-warning-fg" name="minus" size={18} />
+    </RowMark>
   ) : (
-    <Icon className="text-tint-error-fg" name="x" size={18} />
+    <RowMark label={m.question_ui_result_wrong()}>
+      <Icon className="text-tint-error-fg" name="x" size={18} />
+    </RowMark>
   );
 }
 
@@ -155,10 +165,7 @@ export function AttemptBody({
   // The app's page takes one question at a time beside the list (Epo 2026-11-06,
   // S1); public pages and notes keep the whole quiz in one column.
   const split = inApp && !embedded;
-  const { onQuestion, open, picked, setOnQuestion, setPicked } = useQuizPick(
-    undefined,
-    true
-  );
+  const { onQuestion, open, picked, setOnQuestion, setPicked } = useQuizPick();
   const Body = embedded ? EmbeddedBody : WideBody;
   const { run, check, redo } = control;
   // Answers typed into questions not yet checked; a checked question shows
@@ -290,9 +297,11 @@ export function AttemptBody({
   const answers = { ...drafts, ...run.answers };
 
   if (split) {
-    const checkedMarks = answerable
-      .filter((q) => checkedById.has(q.id))
-      .reduce((sum, q) => sum + questionMarks(q), 0);
+    // The marks as they were checked, as the score counts them.
+    const checkedMarks = answerable.reduce((sum, q) => {
+      const done = checkedById.get(q.id);
+      return done ? sum + questionMarks(done) : sum;
+    }, 0);
     // A try picked up again opens at the first question it hasn't checked.
     const firstOpen = answerable.find((q) => !checkedById.has(q.id));
     const showResult = finished && !picked;
@@ -315,7 +324,7 @@ export function AttemptBody({
           <StudyHeader
             actions={
               <>
-                {actions}
+                {!finished && actions}
                 {run.checked.length > 0 && !finished && (
                   <ResetButton disabled={checking !== null} onClick={restart} />
                 )}
@@ -463,6 +472,19 @@ export function AttemptBody({
                       size="sm"
                     >
                       {m.action_next()}
+                    </Button>
+                  )}
+                  {(checked || left) && !next && !finished && firstOpen && (
+                    <Button
+                      className="h-9 px-3.5"
+                      onClick={() => open(firstOpen.id)}
+                      rounded="normal"
+                      size="sm"
+                    >
+                      {m.quiz_study_go_to({
+                        number:
+                          shown.findIndex((q) => q.id === firstOpen.id) + 1,
+                      })}
                     </Button>
                   )}
                   {(checked || left) && !next && finished && (

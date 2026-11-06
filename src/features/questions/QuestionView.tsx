@@ -105,12 +105,13 @@ function AssetFigure({
   assetId: string;
   block: ImageBlock | GraphBlock;
 }) {
-  const [asset] = useResolvedAsset(assetId);
+  const [asset, , onImageError] = useResolvedAsset(assetId);
   if (asset.status === 'error' && asset.kind === 'removed')
     return <RemovedMedia className="mx-auto w-fit max-w-full" />;
   return (
     <Figure
       block={block}
+      onError={onImageError}
       src={asset.status === 'ready' ? asset.url : undefined}
     />
   );
@@ -118,9 +119,11 @@ function AssetFigure({
 
 function Figure({
   block,
+  onError,
   src,
 }: {
   block: ImageBlock | GraphBlock;
+  onError?: () => void;
   src: string | undefined;
 }) {
   // The stored size is the image's own pixels: shown at most that wide and at
@@ -135,6 +138,7 @@ function Figure({
           block.type === 'graph' && 'bg-white'
         )}
         height={block.height}
+        onError={onError}
         src={src}
         width={block.width}
       />

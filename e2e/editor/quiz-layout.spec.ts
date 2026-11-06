@@ -42,9 +42,6 @@ test('study takes one question at a time and marks it in the list', async ({
     'data-question-row',
     (await rows(page).first().getAttribute('data-question-row')) ?? ''
   );
-  // Picked up again, it opens at the first question not checked.
-  await rows(page).nth(5).click();
-  await expect(page.locator('[data-question-id]')).toHaveCount(1);
 });
 
 test('a phone shows the list, then one question with a way back', async ({
@@ -55,20 +52,102 @@ test('a phone shows the list, then one question with a way back', async ({
   const back = page.getByRole('button', {
     name: m.quiz_editor_all_questions(),
   });
-  await expect(back).toBeVisible({ timeout: 30_000 });
-  await expect(rows(page).first()).toBeHidden();
-  await back.click();
-  await expect(rows(page).first()).toBeVisible();
+  await expect(rows(page).first()).toBeVisible({ timeout: 30_000 });
   await expect(back).toBeHidden();
   await rows(page).nth(2).click();
   await expect(back).toBeVisible();
+  await expect(back).toBeFocused();
   await expect(rows(page).first()).toBeHidden();
-  const overflow = await page.evaluate(
-    () =>
-      document.documentElement.scrollWidth -
-      document.documentElement.clientWidth
-  );
-  expect(overflow).toBeLessThanOrEqual(0);
+  await back.click();
+  await expect(rows(page).nth(2)).toBeFocused();
+  await expect(
+    page.evaluate(
+      () =>
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth
+    )
+  ).resolves.toBeLessThanOrEqual(0);
+});
+
+test('the list keeps the open question in view, and each opens at its top', async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 420, width: 1280 });
+  await page.goto('/workspaces/ws_bio?material=qz_bio_near');
+  await expect(rows(page).first()).toBeVisible({ timeout: 30_000 });
+  const pane = page.locator('[data-quiz-pane]');
+  await pane.evaluate((box) => {
+    box.scrollTop = 500;
+  });
+  await rows(page).nth(14).scrollIntoViewIfNeeded();
+  await rows(page).nth(14).click();
+  await expect(pane).toHaveJSProperty('scrollTop', 0);
+  await expect(rows(page).nth(14)).toBeInViewport();
+});
+
+test.describe('taking an assignment', () => {
+  const ASSIGNMENT = '/workspaces/ws_bio?study=assignments&assignment=as_paper';
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() =>
+      sessionStorage.setItem('capy.scenario.last', 'workspace-member')
+    );
+  });
+  const start = async (page: Page) => {
+    await page.goto(ASSIGNMENT);
+    await page
+      .getByRole('button', { exact: true, name: m.assignment_start() })
+      .click({ timeout: 30_000 });
+    await page.getByRole('button', { name: m.sharing_notice_ok() }).click();
+  };
+
+  test('a phone has a strip of numbers and no header, with its clock, Submit and a way out', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await start(page);
+    const take = page.locator('[data-assignment-take]');
+    const strip = take.getByRole('navigation', {
+      name: m.assignment_questions_nav(),
+    });
+    await expect(strip).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('[data-center-header]')).toBeHidden();
+    await expect(page.locator('[data-chat-dock]')).toBeHidden();
+    await expect(
+      take.getByRole('button', { name: m.assignment_submit() }).last()
+    ).toBeVisible();
+    await expect(rows(page).first()).toBeHidden();
+    await page.getByText('Mitochondria', { exact: true }).click();
+    const second = strip.getByRole('button', {
+      name: m.assignment_question_n({ number: 2 }),
+    });
+    await second.click();
+    await expect(second).toHaveAttribute('aria-current', 'step');
+    await expect(
+      strip.getByRole('button', {
+        name: `${m.assignment_question_n({ number: 1 })}, ${m.assignment_legend_answered()}`,
+      })
+    ).toBeVisible();
+    await take.getByRole('link', { name: m.assignment_leave() }).click();
+    await expect(take).toHaveCount(0);
+    await expect(page.locator('[data-center-header]')).toBeVisible();
+  });
+
+  test('the list on a wider screen says which are answered', async ({
+    page,
+  }) => {
+    await start(page);
+    await page.getByText('Mitochondria', { exact: true }).click();
+    await expect(
+      rows(page).first().getByRole('img', {
+        name: m.assignment_legend_answered(),
+      })
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(
+      page.getByRole('button', {
+        name: m.assignment_question_n({ number: 2 }),
+      })
+    ).toBeHidden();
+  });
 });
 
 test("the editor's add button lines up with the rows' marks", async ({

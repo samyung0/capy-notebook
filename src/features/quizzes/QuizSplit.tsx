@@ -1,10 +1,23 @@
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Icon } from '@/components/ui/Icon';
-import type { LearnerQuestion, Question } from '@/features/questions/types';
+import { parseMathText } from '@/features/questions/parseMathText';
+import {
+  GAP_MARKER,
+  type LearnerQuestion,
+  type Question,
+} from '@/features/questions/types';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
-/** A question's row text: its first words as written. */
+/** Text without formula markup: a plain formula as written, others elided. */
+const rowText = (text: string) =>
+  parseMathText(text)
+    .map(({ type, value }) =>
+      type !== 'text' && value.includes('\\') ? '…' : value
+    )
+    .join('');
+
+/** A question's row text: its first words as written, gaps as plain blanks. */
 export function questionSummary(question: Question | LearnerQuestion): string {
   const blocks = [
     ...question.stem,
@@ -12,14 +25,27 @@ export function questionSummary(question: Question | LearnerQuestion): string {
     ...question.parts.flatMap((part) => part.blocks),
   ];
   for (const block of blocks)
-    if (block.type === 'text' && block.text.trim()) return block.text.trim();
-  return m.quiz_editor_untitled();
+    if (block.type === 'text' && block.text.trim())
+      return rowText(block.text.trim()).replace(GAP_MARKER, '___');
+  // Nothing to quote: a figure says so, and only an empty one is new.
+  return blocks.some((block) => block.type !== 'text')
+    ? m.quiz_row_figure()
+    : m.quiz_editor_untitled();
 }
 
-/** Which question is open, and on a phone whether it or the list shows. */
+/** Which question is open, and on a phone whether it or the list shows. A link
+ * to another question opens that one. */
 export function useQuizPick(target?: string, startOnQuestion = !!target) {
   const [picked, setPicked] = useState<string | null>(target ?? null);
   const [onQuestion, setOnQuestion] = useState(startOnQuestion);
+  const [linked, setLinked] = useState(target);
+  if (linked !== target) {
+    setLinked(target);
+    if (target) {
+      setPicked(target);
+      setOnQuestion(true);
+    }
+  }
   return {
     onQuestion,
     open: (id: string | null) => {
@@ -32,10 +58,26 @@ export function useQuizPick(target?: string, startOnQuestion = !!target) {
   };
 }
 
+/** A row's mark that isn't its number of marks: it says what it means. */
+export function RowMark({
+  children,
+  label,
+}: {
+  children: ReactNode;
+  label: string;
+}) {
+  return (
+    <span aria-label={label} className="inline-flex" role="img">
+      {children}
+    </span>
+  );
+}
+
 /**
  * A quiz's one layout, in view, edit, study and an assignment (Epo 2026-11-06,
  * from board X2): the question list on the left, the open question on the right.
- * Phones have room for one: the list, then the question with a way back to it.
+ * Phones have room for one: the list, then the question with a way back to it,
+ * or `phoneStrip` above the question in place of the list.
  */
 export function QuizSplit<Q extends Question | LearnerQuestion>({
   action,
@@ -46,6 +88,8 @@ export function QuizSplit<Q extends Question | LearnerQuestion>({
   onBack,
   onOpen,
   onQuestion,
+  paneClassName,
+  phoneStrip,
   questions,
   rowEnd,
 }: {
@@ -61,18 +105,45 @@ export function QuizSplit<Q extends Question | LearnerQuestion>({
   onBack: () => void;
   onOpen: (id: string) => void;
   onQuestion: boolean;
+  /** Around the pane's content: room under it for what floats over the page. */
+  paneClassName?: string;
+  /** Phones: always above the question, with no list. */
+  phoneStrip?: ReactNode;
   questions: Q[];
   /** What a row ends with: a question's marks, unless this says otherwise. */
   rowEnd: (question: Q) => ReactNode;
 }) {
+  const list = useRef<HTMLElement>(null);
+  const pane = useRef<HTMLDivElement>(null);
+  const back = useRef<HTMLButtonElement>(null);
+  // The list keeps the open question in view, and each opens at its top.
+  useEffect(() => {
+    if (pane.current) pane.current.scrollTop = 0;
+    const row = list.current?.querySelector('[aria-current="true"]');
+    // Not in every test DOM.
+    row?.scrollIntoView?.({ block: 'nearest' });
+  }, [current]);
+  // A phone swaps one for the other, and the focus goes where the reader went.
+  const onQuestionBefore = useRef(onQuestion);
+  useEffect(() => {
+    if (onQuestionBefore.current === onQuestion) return;
+    onQuestionBefore.current = onQuestion;
+    if (onQuestion) back.current?.focus();
+    else
+      list.current
+        ?.querySelector<HTMLElement>('[aria-current="true"]')
+        ?.focus();
+  }, [onQuestion]);
+  const phoneOnQuestion = onQuestion || !!phoneStrip;
   return (
     <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] md:grid-cols-[300px_minmax(0,1fr)]">
       <nav
         aria-label={m.question_ui_questions()}
         className={cn(
           'min-h-0 flex-col gap-px overflow-y-auto p-2.5 md:flex md:border-divider md:border-r',
-          onQuestion ? 'hidden' : 'flex'
+          phoneOnQuestion ? 'hidden' : 'flex'
         )}
+        ref={list}
       >
         <div className="flex min-h-7 items-center px-1.5 pt-0.5 pb-1.5">
           <p className="min-w-0 font-bold text-[11px] text-fg-muted uppercase leading-none tracking-[.06rem]">
@@ -107,19 +178,31 @@ export function QuizSplit<Q extends Question | LearnerQuestion>({
       </nav>
       <div
         className={cn(
-          'min-h-0 min-w-0 overflow-y-auto md:block',
-          onQuestion ? 'block' : 'hidden'
+          'min-h-0 min-w-0 flex-col md:flex',
+          phoneOnQuestion ? 'flex' : 'hidden'
         )}
       >
-        <button
-          className="mx-4 mt-3 inline-flex cursor-pointer items-center gap-1.5 font-semibold text-fg-secondary underline md:hidden"
-          onClick={onBack}
-          type="button"
+        {phoneStrip ?? (
+          <button
+            className="mx-4 mt-3 inline-flex shrink-0 cursor-pointer items-center gap-1.5 self-start font-semibold text-fg-secondary underline md:hidden"
+            onClick={onBack}
+            ref={back}
+            type="button"
+          >
+            <Icon name="navigationBack" size={16} />
+            {m.quiz_editor_all_questions()}
+          </button>
+        )}
+        <div
+          className={cn(
+            'min-h-0 min-w-0 flex-1 overflow-y-auto',
+            paneClassName
+          )}
+          data-quiz-pane=""
+          ref={pane}
         >
-          <Icon name="navigationBack" size={16} />
-          {m.quiz_editor_all_questions()}
-        </button>
-        {children}
+          {children}
+        </div>
       </div>
     </div>
   );

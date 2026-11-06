@@ -82,36 +82,32 @@ function QuizEditorBody({
   blank,
   content,
   keys,
+  keysPending,
   opening,
+  pick,
   questions,
   quizId,
   sources,
   status,
-  target,
   title,
   undo,
 }: {
   blank: RefObject<BlankQuestion | null>;
   content: Y.Doc;
   keys: Y.Doc;
+  keysPending?: boolean;
   /** The paint before the rooms sync (`QuizOpeningPaint`). */
   opening?: boolean;
+  /** Kept by the page, so the question open in the paint stays open after it. */
+  pick: ReturnType<typeof useQuizPick>;
   questions: Question[];
   quizId: string;
   sources: ReactNode;
   status: ItemRoomStatus;
-  /** A question a link opens at (a review summary's). */
-  target?: string;
   title: string;
   undo: UndoTarget | null;
 }) {
-  const {
-    onQuestion,
-    open: pick,
-    picked,
-    setOnQuestion,
-    setPicked,
-  } = useQuizPick(target);
+  const { onQuestion, picked, setOnQuestion, setPicked } = pick;
   const index = Math.max(
     0,
     questions.findIndex((question) => question.id === picked)
@@ -122,12 +118,13 @@ function QuizEditorBody({
       removeUnchangedQuestion(content, keys, blank.current);
       blank.current = null;
     }
-    pick(id);
+    pick.open(id);
   };
   return (
     <QuizSplit
       action={
         <ToolbarButton
+          disabled={opening}
           label={m.quiz_add_question()}
           onClick={() => {
             const added = blankQuestion();
@@ -171,30 +168,34 @@ function QuizEditorBody({
     >
       {question && (
         <Suspense fallback={<Skeleton className="m-4 h-64" />}>
-          <QuestionPane
-            canMoveDown={index < questions.length - 1}
-            canMoveUp={index > 0}
-            context={title}
-            key={question.id}
-            number={index + 1}
-            onMove={(direction) =>
-              moveQuestion(content, question.id, index + direction)
-            }
-            onRemove={() => {
-              const next = questions[index + 1] ?? questions[index - 1];
-              removeQuestion(content, keys, question.id);
-              blank.current = null;
-              setPicked(next?.id ?? null);
-            }}
-            question={question}
-            status={status}
-            undo={undo}
-            uploadAsset={quizImageUpload(quizId)}
-            write={(next) => {
-              blank.current = null;
-              writeQuestion(content, keys, next);
-            }}
-          />
+          <div className="contents" inert={opening}>
+            <QuestionPane
+              canMoveDown={index < questions.length - 1}
+              canMoveUp={index > 0}
+              context={title}
+              key={question.id}
+              keysPending={keysPending}
+              number={index + 1}
+              onMove={(direction) =>
+                moveQuestion(content, question.id, index + direction)
+              }
+              onRemove={() => {
+                const next = questions[index + 1] ?? questions[index - 1];
+                removeQuestion(content, keys, question.id);
+                blank.current = null;
+                setPicked(next?.id ?? null);
+              }}
+              opening={opening}
+              question={question}
+              status={status}
+              undo={undo}
+              uploadAsset={quizImageUpload(quizId)}
+              write={(next) => {
+                blank.current = null;
+                writeQuestion(content, keys, next);
+              }}
+            />
+          </div>
         </Suspense>
       )}
     </QuizSplit>
@@ -207,12 +208,14 @@ const NO_ANSWERS = {};
  * or refused, and anyone who only views the quiz. */
 export function QuizReadSplit({
   banner,
+  paneClassName,
   questions,
   showAnswerKey,
   sources,
   target,
 }: {
   banner?: ReactNode;
+  paneClassName?: string;
   questions: (Question | LearnerQuestion)[];
   showAnswerKey?: boolean;
   sources?: ReactNode;
@@ -233,6 +236,7 @@ export function QuizReadSplit({
         onBack={() => setOnQuestion(false)}
         onOpen={open}
         onQuestion={onQuestion}
+        paneClassName={paneClassName}
         questions={questions}
         rowEnd={questionMarks}
       >
@@ -256,59 +260,60 @@ export function QuizReadSplit({
   );
 }
 
-/** A note on the opening (Epo 2026-11-06, A): the editor's own page from the first
- * paint, unable to take input, over a copy of what the read or device holds; the
- * rooms' page then takes its place with nothing moving. The read carries no keys,
- * so ticks and worked solutions fill in as the rooms sync. */
+/** The opening (Epo 2026-11-06, A): the editor's own page from the first paint.
+ * Its list works and its question takes no input until the rooms sync. It draws
+ * the device's copy, keys and all, else the read, showing no key it doesn't know. */
 function QuizOpeningPaint({
-  questions,
+  contentSeed,
+  keysSeed,
+  pick,
   quizId,
   sources,
   stored,
-  target,
   title,
 }: {
-  questions: Question[];
+  contentSeed: Y.Doc | null;
+  keysSeed: Y.Doc | null;
+  pick: ReturnType<typeof useQuizPick>;
   quizId: string;
   sources: ReactNode;
   stored: LearnerQuestion[];
-  target?: string;
   title: string;
 }) {
-  const start = useRef({ questions, stored });
   const [docs] = useState(() => {
-    const content = new Y.Doc();
-    const keys = new Y.Doc();
-    seedQuiz(
-      content,
-      keys,
-      start.current.questions.length
-        ? start.current.questions
-        : start.current.stored.map(withEmptyKeys)
-    );
+    const content = contentSeed ?? new Y.Doc();
+    const keys = keysSeed ?? new Y.Doc();
+    if (!contentSeed)
+      for (const question of stored)
+        try {
+          seedQuiz(content, keys, [withEmptyKeys(question)]);
+        } catch {
+          // A type this version can't draw: the rooms' page says so.
+        }
     return { content, keys };
   });
   useEffect(
     () => () => {
-      docs.content.destroy();
-      docs.keys.destroy();
+      if (!contentSeed) docs.content.destroy();
+      if (!keysSeed) docs.keys.destroy();
     },
-    [docs]
+    [contentSeed, docs, keysSeed]
   );
   const shown = useQuizQuestions(docs.content, docs.keys);
   const blank = useRef<BlankQuestion | null>(null);
   return (
-    <div className="flex h-full min-h-0 flex-col" inert>
+    <div className="flex h-full min-h-0 flex-col" data-quiz-opening="">
       <QuizEditorBody
         blank={blank}
         content={docs.content}
         keys={docs.keys}
+        keysPending={!keysSeed}
         opening
+        pick={pick}
         questions={shown}
         quizId={quizId}
         sources={sources}
         status="syncing"
-        target={target}
         title={title}
         undo={null}
       />
@@ -353,6 +358,7 @@ export function QuizEditor({
   onStatusChange?: (status: NoteEditorStatus | null) => void;
 }) {
   const rooms = useQuizRooms(quizId, { copy, edit: true });
+  const pick = useQuizPick(target);
   const questions = useQuizQuestions(rooms.content?.doc, rooms.keys?.doc);
   const headerActions = useContext(FileActionsTarget);
   useEffect(() => {
@@ -454,11 +460,11 @@ export function QuizEditor({
               blank={blank}
               content={rooms.content.doc}
               keys={rooms.keys.doc}
+              pick={pick}
               questions={questions}
               quizId={quizId}
               sources={sources}
               status={rooms.status}
-              target={target}
               title={title}
               undo={rooms.undo}
             />
@@ -467,14 +473,17 @@ export function QuizEditor({
       ) : (
         <div className="flex h-full min-h-0 flex-col">
           {isOutdatedBanner(rooms.offline) && <SaveBanner state="outdated" />}
-          <QuizOpeningPaint
-            questions={questions}
-            quizId={quizId}
-            sources={sources}
-            stored={stored}
-            target={target}
-            title={title}
-          />
+          {copy.seed !== undefined && rooms.keysSeed !== undefined && (
+            <QuizOpeningPaint
+              contentSeed={copy.seed?.doc ?? null}
+              keysSeed={copy.seed ? (rooms.keysSeed?.doc ?? null) : null}
+              pick={pick}
+              quizId={quizId}
+              sources={sources}
+              stored={stored}
+              title={title}
+            />
+          )}
         </div>
       )}
     </>

@@ -146,31 +146,28 @@ test.describe('study progress', () => {
       .getByRole('button', { exact: true, name: m.question_ui_true() })
       .first()
       .click();
-    await expect(
-      ownerPage.getByText(m.quiz_checked_count({ checked: 0, total: 2 }))
-    ).toBeVisible();
+    await expect(ownerPage.locator('[data-question-row]')).toHaveCount(2);
     // Another checked question by question: one right, one wrong.
     await ownerPage.goto(`/quizzes/${finishedQuiz.id}/attempt`);
-    const trueButtons = ownerPage.getByRole('button', {
-      exact: true,
-      name: m.question_ui_true(),
-    });
-    await trueButtons.nth(0).click();
-    await trueButtons.nth(1).click();
     for (let i = 0; i < 2; i++) {
+      await ownerPage
+        .getByRole('button', { exact: true, name: m.question_ui_true() })
+        .click();
       const checked = waitForApi(
         ownerPage,
         apiEndsWith(`/api/quizzes/${finishedQuiz.id}/check`, 'POST')
       );
-      // A checked question loses its button, so the first is the next one.
       await ownerPage
         .getByRole('button', {
           exact: true,
           name: m.question_ui_check(),
         })
-        .first()
         .click();
       expect((await checked).status()).toBe(200);
+      if (i === 0)
+        await ownerPage
+          .getByRole('button', { exact: true, name: m.action_next() })
+          .click();
     }
     await expect(
       ownerPage.getByRole('button', { name: m.quiz_redo() })

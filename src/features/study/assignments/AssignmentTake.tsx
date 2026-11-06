@@ -1,5 +1,12 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { isApiError, qk } from '@/api/client';
 import {
   onAssignmentEvent,
@@ -34,7 +41,7 @@ import {
   emptyAnswer,
 } from '@/features/quizzes/grade';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
-import { QuizSplit } from '@/features/quizzes/QuizSplit';
+import { QuizSplit, RowMark } from '@/features/quizzes/QuizSplit';
 import { keptAnswers, partsById } from '@/features/quizzes/stillAnswers';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -126,17 +133,21 @@ function clockText(ms: number) {
     : `${minutes}:${seconds}`;
 }
 
-/** Answering an assignment (A2): one question at a time beside a grid of
- * numbers, ruled lines for written answers, answers saving as they change, and
- * the server's clock. At zero, or when staff close the assignment (Epo
+/** Answering an assignment: one question at a time beside the quiz's list, on a
+ * phone under a strip of numbers (Epo Q679 B) with the clock and Submit along the
+ * bottom and no header, ruled lines for written answers, answers saving as they
+ * change, and the server's clock. At zero, or when staff close the assignment (Epo
  * 2026-11-05), it submits what is on the page; if the tab is closed the server
  * submits what was saved. */
 export function AssignmentTake({
   attempt,
+  leave,
   onClosed,
   workspaceId,
 }: {
   attempt: AssignmentAttempt;
+  /** The way out on a phone, which has no header here (answers stay saved). */
+  leave?: ReactNode;
   /** Staff closed it while it was open here: its results come next. */
   onClosed: () => void;
   workspaceId: string;
@@ -144,7 +155,6 @@ export function AssignmentTake({
   const qc = useQueryClient();
   const questions = attempt.questions as LearnerQuestion[];
   const [wantedIndex, setIndex] = useState(0);
-  const [onQuestion, setOnQuestion] = useState(true);
   // New questions can be fewer: the last one stands in.
   const index = Math.min(wantedIndex, Math.max(questions.length - 1, 0));
   const [answers, setAnswers] = useState<Answers>(attempt.answers);
@@ -298,6 +308,15 @@ export function AssignmentTake({
 
   const isAnswered = (q: (typeof questions)[number]) =>
     q.parts.some((part) => answered(answers[part.id]));
+  // A multi-part question with some of its parts left isn't done.
+  const isComplete = (q: (typeof questions)[number]) =>
+    q.parts.every((part) => answered(answers[part.id]));
+  const stateLabel = (q: (typeof questions)[number]) =>
+    isComplete(q)
+      ? m.assignment_legend_answered()
+      : isAnswered(q)
+        ? m.assignment_legend_part_answered()
+        : m.assignment_legend_not_answered();
   const answeredCount = questions.filter(isAnswered).length;
   const unanswered = questions.length - answeredCount;
   const go = (next: number) => {
@@ -307,43 +326,51 @@ export function AssignmentTake({
   const type = question?.parts[0]?.answer.type as QuestionType | undefined;
   const heading = useMemo(() => questionHeading(question), [question]);
 
+  const clock = left !== null && (
+    <span
+      aria-live="off"
+      className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-page-hover px-3.5 font-bold"
+      role="timer"
+    >
+      <Icon name="clock" size={16} />
+      {m.assignment_time_left({ time: clockText(left) })}
+    </span>
+  );
+  const savedState = (
+    <span
+      aria-live="polite"
+      className={cn(
+        't-meta',
+        save === 'failed' ? 'text-tint-error-fg' : 'text-fg-secondary'
+      )}
+    >
+      {save === 'saved'
+        ? m.assignment_saved()
+        : save === 'saving'
+          ? m.assignment_saving()
+          : m.assignment_not_saved()}
+    </span>
+  );
+  const submitButton = (
+    <Button disabled={submitting} onClick={() => setConfirming(true)}>
+      {submitting ? m.assignment_submitting() : m.assignment_submit()}
+    </Button>
+  );
+
   return (
     <RemovedAssetsContext.Provider value={removed}>
       <div className="flex min-h-0 flex-1 flex-col" data-assignment-take>
-        <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-divider border-b px-4 py-2.5 sm:px-5 lg:min-h-15">
+        <header className="hidden flex-wrap items-center gap-x-3 gap-y-2 border-divider border-b px-4 py-2.5 sm:px-5 md:flex lg:min-h-15">
           <div className="flex min-w-0 flex-1 items-center gap-2 max-lg:basis-full lg:flex-[1_1_0]">
             <span className="truncate font-bold">{attempt.title}</span>
             <span className="inline-flex h-5.5 shrink-0 items-center rounded-md bg-page-hover px-1.75 font-semibold text-fg-secondary text-xs">
               {m.assignment_chip()}
             </span>
           </div>
-          {left !== null && (
-            <span
-              aria-live="off"
-              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-page-hover px-3.5 font-bold"
-              role="timer"
-            >
-              <Icon name="clock" size={16} />
-              {m.assignment_time_left({ time: clockText(left) })}
-            </span>
-          )}
+          {clock}
           <div className="ml-auto flex shrink-0 items-center justify-end gap-3.5 lg:flex-[1_1_0]">
-            <span
-              aria-live="polite"
-              className={cn(
-                't-meta',
-                save === 'failed' ? 'text-tint-error-fg' : 'text-fg-secondary'
-              )}
-            >
-              {save === 'saved'
-                ? m.assignment_saved()
-                : save === 'saving'
-                  ? m.assignment_saving()
-                  : m.assignment_not_saved()}
-            </span>
-            <Button disabled={submitting} onClick={() => setConfirming(true)}>
-              {submitting ? m.assignment_submitting() : m.assignment_submit()}
-            </Button>
+            {savedState}
+            {submitButton}
           </div>
         </header>
         <QuizSplit
@@ -356,35 +383,86 @@ export function AssignmentTake({
             </p>
           }
           current={question?.id}
-          onBack={() => setOnQuestion(false)}
-          onOpen={(id) => {
-            go(questions.findIndex((q) => q.id === id));
-            setOnQuestion(true);
-          }}
-          onQuestion={onQuestion}
+          onBack={() => undefined}
+          onOpen={(id) => go(questions.findIndex((q) => q.id === id))}
+          onQuestion
+          phoneStrip={
+            <div className="flex shrink-0 items-center border-divider border-b md:hidden">
+              <span className="shrink-0 pl-2">{leave}</span>
+              <nav
+                aria-label={m.assignment_questions_nav()}
+                className="min-w-0 flex-1"
+              >
+                <ol className="flex gap-2 overflow-x-auto px-2.5 py-2.5 [scrollbar-width:none]">
+                  {questions.map((q, i) => {
+                    const marked = bookmarks.includes(q.id);
+                    const name = [
+                      m.assignment_question_n({ number: i + 1 }),
+                      stateLabel(q),
+                      ...(marked ? [m.assignment_legend_bookmarked()] : []),
+                    ].join(', ');
+                    return (
+                      <li className="shrink-0" key={q.id}>
+                        <button
+                          aria-current={i === index ? 'step' : undefined}
+                          aria-label={name}
+                          className={cn(
+                            'relative grid size-9 place-items-center rounded-[10px] border font-semibold outline-none focus-visible:ring-2 focus-visible:ring-action',
+                            isComplete(q)
+                              ? 'border-transparent bg-tint-accent-1 text-tint-accent-1-fg'
+                              : isAnswered(q)
+                                ? 'border-solid-accent-1 border-dashed text-fg'
+                                : 'border-line text-fg',
+                            i === index &&
+                              'border-2 border-solid-accent-1 border-solid'
+                          )}
+                          onClick={() => go(i)}
+                          type="button"
+                        >
+                          {i + 1}
+                          {marked && (
+                            <Icon
+                              className="absolute top-0 right-0.5 text-solid-accent-1"
+                              name="bookmark"
+                              size={11}
+                            />
+                          )}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </nav>
+            </div>
+          }
           questions={questions}
           rowEnd={(q) => (
             <>
               {bookmarks.includes(q.id) && (
-                <Icon
-                  className="text-solid-accent-1"
-                  name="bookmark"
-                  size={18}
-                />
+                <RowMark label={m.assignment_legend_bookmarked()}>
+                  <Icon
+                    className="text-solid-accent-1"
+                    name="bookmark"
+                    size={18}
+                  />
+                </RowMark>
               )}
               {isAnswered(q) ? (
-                <Icon
-                  className="text-tint-accent-1-fg"
-                  name="check"
-                  size={18}
-                />
+                <RowMark label={stateLabel(q)}>
+                  <span
+                    className={cn(
+                      'size-2.5 rounded-full border-2 border-solid-accent-1',
+                      isComplete(q) && 'bg-solid-accent-1'
+                    )}
+                  />
+                </RowMark>
               ) : (
                 questionMarks(q)
               )}
             </>
           )}
         >
-          <div className="px-4 pt-6 pb-24 sm:px-6 lg:px-21.5 lg:pt-12 lg:pb-10">
+          <div className="px-4 pt-6 pb-6 sm:px-6 md:pb-24 lg:px-21.5 lg:pt-12 lg:pb-10">
             {question && (
               <div
                 className="motion-safe:motion-text-in mx-auto flex w-full max-w-180 flex-col gap-3"
@@ -444,6 +522,13 @@ export function AssignmentTake({
             )}
           </div>
         </QuizSplit>
+        <div className="flex shrink-0 items-center gap-3 border-divider border-t px-4 py-2.5 md:hidden">
+          {clock}
+          <span className="ml-auto flex items-center gap-3">
+            {savedState}
+            {submitButton}
+          </span>
+        </div>
       </div>
       {confirming && (
         <Dialog

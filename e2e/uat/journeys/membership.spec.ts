@@ -329,6 +329,13 @@ test('membership: an editor demoted to viewer has open note, Office and quiz edi
   await expect(quizTab.locator('[data-question-row="q_1"]')).toBeVisible({
     timeout: 60_000,
   });
+  // The live page, not the paint that shows the same list until the rooms sync.
+  await expect(quizTab.locator('[data-quiz-opening]')).toHaveCount(0, {
+    timeout: 60_000,
+  });
+  await expect(
+    quizTab.getByRole('button', { name: m.quiz_add_question() })
+  ).toBeVisible();
 
   // The bystander: a second editor on the note and the DOCX.
   const bystander = await run.createActor('bystander');
@@ -396,10 +403,10 @@ test('membership: an editor demoted to viewer has open note, Office and quiz edi
   await expect(
     member.page.getByText(memberLine, { exact: true })
   ).toBeVisible();
-  // The quiz: no editing rows, the question still reads, under the strip.
-  await expect(quizTab.locator('[data-question-row]')).toHaveCount(0, {
-    timeout: 120_000,
-  });
+  // The quiz: nothing to edit with, the question still reads, under the strip.
+  await expect(
+    quizTab.getByRole('button', { name: m.quiz_add_question() })
+  ).toHaveCount(0, { timeout: 120_000 });
   await expect(quizTab.locator('[data-question-id="q_1"]')).toBeVisible();
   await expect(quizTab.getByText(m.editor_read_only_strip())).toBeVisible();
   expect(await membership(run, workspaceId, member.id)).toEqual([

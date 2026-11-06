@@ -1259,6 +1259,7 @@ function WorkspaceOpen() {
           >
             <div
               className="relative h-full"
+              data-viewer=""
               ref={viewerBox}
               style={{ '--office-inset': '0px' } as React.CSSProperties}
             >

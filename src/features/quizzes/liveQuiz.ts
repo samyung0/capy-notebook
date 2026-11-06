@@ -1019,6 +1019,11 @@ export function itemParts(keys: Y.Doc) {
 
 /** Seeds both documents from stored questions, as the server bootstraps a
  * quiz (the MSW stand-in and tests use it). */
+export function seedQuiz(content: Y.Doc, keys: Y.Doc, questions: Question[]) {
+  for (const question of questions)
+    writeQuestion(content, keys, question, 'seed');
+}
+
 /** A learner's question in the editor's shape, with its keys still to come. */
 export function withEmptyKeys(question: LearnerQuestion): Question {
   return {
@@ -1053,13 +1058,8 @@ export function withEmptyKeys(question: LearnerQuestion): Question {
             type: answer.type,
           });
         default:
-          return answer satisfies never;
+          throw new Error('Unknown answer type');
       }
     }),
   };
-}
-
-export function seedQuiz(content: Y.Doc, keys: Y.Doc, questions: Question[]) {
-  for (const question of questions)
-    writeQuestion(content, keys, question, 'seed');
 }

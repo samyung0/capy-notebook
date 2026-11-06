@@ -1,12 +1,13 @@
 import type { ResolvedEditorAsset } from '@/api/editorAssets';
 
 /** Signed links a tab already holds, by asset, in memory only (Epo 2026-11-06,
- * narrowing the 2026-09-11 "each consumer fetches its own" for note images): a
- * note and its Preview show an image once, offline too. */
+ * Q678 A, narrowing the 2026-09-11 "each consumer fetches its own"): a note and
+ * its Preview, a quiz's or a set's views, show an image once, offline too. One may
+ * keep working up to its lifetime after access goes; a refused read clears them. */
 const links = new Map<string, ResolvedEditorAsset>();
 
 /** How long before its expiry a link stops being handed out. */
-const EXPIRY_MARGIN_MS = 10_000;
+const EXPIRY_MARGIN_MS = 30_000;
 
 const live = (link: ResolvedEditorAsset) =>
   Date.parse(link.expiresAt) - Date.now() > EXPIRY_MARGIN_MS;
@@ -32,10 +33,16 @@ export async function assetLink(
     links.set(assetId, link);
     return link;
   } catch (error) {
-    // Unreachable, the browser may still have the image at its old link. An
-    // answer (a refusal, it's gone) ends it.
-    const answered = error instanceof Error && 'status' in error;
-    if (held && !answered) return held;
+    if (signal.aborted) throw error;
+    // Nothing decided (unreachable, a 5xx, a 429): the browser may still have the
+    // image at its old link. Only an answer about the asset ends it.
+    const status = (error as { status?: unknown }).status;
+    const refused =
+      typeof status === 'number' &&
+      status >= 400 &&
+      status < 500 &&
+      status !== 429;
+    if (held && !refused) return held;
     links.delete(assetId);
     throw error;
   }

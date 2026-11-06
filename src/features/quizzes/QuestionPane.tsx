@@ -7,6 +7,7 @@ import {
 import type { Question } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/Dialog';
+import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
 import { Popover, PopoverTrigger } from '@/components/ui/Popover';
@@ -261,9 +262,12 @@ function ImageBlock({
  * Marks in one row; an open part's marking scheme; other answer types as the
  * question dialog edits them. */
 function AnswerFields({
+  keysPending,
   onChange,
   part,
 }: {
+  /** The key isn't here yet: show none rather than a wrong one. */
+  keysPending?: boolean;
   onChange: (part: QuestionPart) => void;
   part: QuestionPart;
 }) {
@@ -310,6 +314,16 @@ function AnswerFields({
       {answer.type !== 'open' && marksField}
     </div>
   );
+  // An option's text is known without its key; every other answer is the key.
+  if (keysPending && answer.type !== 'mcq')
+    return (
+      <>
+        {row()}
+        <div data-keys-pending="">
+          <Skeleton className="mt-2.5 h-9 w-full" />
+        </div>
+      </>
+    );
   if (answer.type === 'short')
     return (
       <>
@@ -489,6 +503,7 @@ export function QuestionPane({
   canMoveDown,
   canMoveUp,
   context,
+  keysPending,
   number,
   opening,
   onMove,
@@ -499,7 +514,9 @@ export function QuestionPane({
   uploadAsset,
   write,
 }: {
-  /** Painted before its keys come: nothing to warn about yet. */
+  /** The read's question, whose keys are still to come. */
+  keysPending?: boolean;
+  /** Painted before its rooms sync: nothing to warn about yet. */
   opening?: boolean;
 
   canMoveDown: boolean;
@@ -592,7 +609,11 @@ export function QuestionPane({
           )}
         </div>
       </div>
-      <AnswerFields onChange={changePart} part={part} />
+      <AnswerFields
+        keysPending={keysPending}
+        onChange={changePart}
+        part={part}
+      />
       {part.solution.length > 0 ? (
         <>
           <div className="mt-2 flex items-center gap-2.5 font-semibold text-[12.5px] text-fg-muted">
@@ -608,7 +629,7 @@ export function QuestionPane({
             )}
           </div>
         </>
-      ) : (
+      ) : keysPending ? null : (
         <button
           className="t-meta cursor-pointer self-start text-fg-muted underline-offset-2 hover:text-fg hover:underline"
           onClick={() =>
