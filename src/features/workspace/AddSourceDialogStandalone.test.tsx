@@ -6,7 +6,8 @@ import { qk } from '@/api/client';
 import type { BillingInfo, Workspace } from '@/api/types';
 import { m } from '@/i18n';
 import { sourceUploadPolicy } from '@/mocks/sourceUploadPolicy';
-import { AddSourceDialog, type PendingSource } from './AddSourceDialog';
+import { AddSourceDialog } from './AddSourceDialog';
+import type { PendingSource } from './sourceBatch';
 
 vi.mock('@/components/ui/Dialog', async (original) => ({
   ...(await original<typeof import('@/components/ui/Dialog')>()),

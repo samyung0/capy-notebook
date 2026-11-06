@@ -140,3 +140,18 @@ it("an editor's View holds a write token and asks for its read channel", async (
   expect(queryClient.getQueryData(OPENED)).toMatchObject({ access: 'write' });
   leave();
 });
+
+it("an editor's View rejoining with an old write token mints no second one", async () => {
+  reset();
+  const answered = vi.fn(async () => openToken('write'));
+  opened.answer = answered;
+  queryClient.setQueryData(OPENED, openToken('write'), {
+    updatedAt: Date.now() - 10 * 60_000,
+  });
+  const leave = readNoteLive('n', [], () => {});
+  await flush();
+  await flush();
+  expect(answered).not.toHaveBeenCalled();
+  expect(requests).toEqual([{ access: 'read' }]);
+  leave();
+});

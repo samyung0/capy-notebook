@@ -9,39 +9,101 @@ import {
 } from '@/features/notes/richBlockConfig';
 import { cn } from '@/lib/cn';
 
-/** Streamdown loads with the first answer to draw, or ahead of it on intent,
- * not with the page (about 118 KB gzipped). 'failed': it couldn't load. */
-let body: typeof import('./proseBody').ProseBody | 'failed' | undefined;
-let loading: Promise<void> | undefined;
+/** How long an answer's words stay unseen for its Markdown code. */
+const HOLD_MS = 2000;
+/** The idle load's latest start, for a page that never goes idle. */
+const IDLE_LIMIT_MS = 5000;
+/** Without requestIdleCallback (Safari): this long after the open. */
+const IDLE_FALLBACK_MS = 2000;
+
+/** Streamdown loads at idle after a workspace opens, with the first answer to
+ * draw, or ahead of it on intent, never in the page's first load (about 118 KB
+ * gzipped). Until then: nothing yet, 'slow' past the hold, 'failed' if it
+ * couldn't load. */
+let body:
+  | typeof import('./proseBody').ProseBody
+  | 'slow'
+  | 'failed'
+  | undefined;
 const waiting = new Set<() => void>();
 const settle = (next: typeof body) => {
   body = next;
   for (const notify of waiting) notify();
 };
 
-const load = () =>
-  import('./proseBody').then(
+let importing: Promise<void> | undefined;
+const importBody = () => {
+  importing ??= import('./proseBody').then(
     (module) => settle(module.ProseBody),
     (error: unknown) => {
+      importing = undefined;
+      throw error;
+    }
+  );
+  return importing;
+};
+
+/** On intent: offline it asks for nothing, since the browser would keep the
+ * failure until a reload, and a failure says nothing. Only an answer that needs
+ * the code says it couldn't load (`loadProse`). */
+export function preloadProse() {
+  if (navigator.onLine === false) return;
+  importBody().catch(() => undefined);
+}
+
+/** After a workspace opens, when the page is first idle (Q681): saved chats then
+ * read formatted offline. Offline then, it waits for the connection. Returns the
+ * cancel. */
+export function preloadProseWhenIdle() {
+  const go = () => {
+    if (navigator.onLine === false)
+      addEventListener('online', preloadProse, { once: true });
+    else preloadProse();
+  };
+  if (typeof requestIdleCallback !== 'function') {
+    const timer = setTimeout(go, IDLE_FALLBACK_MS);
+    return () => {
+      clearTimeout(timer);
+      removeEventListener('online', preloadProse);
+    };
+  }
+  const idle = requestIdleCallback(go, { timeout: IDLE_LIMIT_MS });
+  return () => {
+    cancelIdleCallback(idle);
+    removeEventListener('online', preloadProse);
+  };
+}
+
+let needed: Promise<void> | undefined;
+
+/** For an answer on screen. */
+export function loadProse() {
+  needed ??= (async () => {
+    const hold = setTimeout(() => {
+      if (!body) settle('slow');
+    }, HOLD_MS);
+    try {
+      await importBody();
+    } catch (error) {
       settle('failed');
       // Online it's a release that removed the file, which a reload fixes. Offline
       // the page says so already; back online it tries once more, and the
       // browser may keep the failed import until a reload (error-handling.md).
-      if (navigator.onLine) showErrorToast(error);
-      else
+      if (navigator.onLine === false)
         addEventListener(
           'online',
           () => {
-            loading = load();
+            needed = undefined;
+            void loadProse();
           },
           { once: true }
         );
+      else showErrorToast(error);
+    } finally {
+      clearTimeout(hold);
     }
-  );
-
-export function loadProse() {
-  loading ??= load();
-  return loading;
+  })();
+  return needed;
 }
 
 const subscribe = (notify: () => void) => {
@@ -50,13 +112,13 @@ const subscribe = (notify: () => void) => {
 };
 const readBody = () => body;
 
-/** Streamdown's component once loaded. */
+/** Streamdown's component once loaded, else what the wait has come to. */
 export const useProseBody = () =>
   useSyncExternalStore(subscribe, readBody, readBody);
 
-/** A chat answer's Markdown (`ProseBody`). Until its code is here the words hold
- * their place unseen, so no raw Markdown flashes and little moves when it lands;
- * if it can't load they show as they are, which is still the answer. */
+/** A chat answer's Markdown (`ProseBody`). Its words hold their place unseen for
+ * a moment, so no raw Markdown flashes and little moves when the code lands. Past
+ * the hold, or if it can't load, they show as they are, which is still the answer. */
 export function Prose({
   text,
   className,
@@ -78,10 +140,11 @@ export function Prose({
         className
       )}
     >
-      {Body && Body !== 'failed' ? (
+      {typeof Body === 'function' ? (
         <Body text={text} />
       ) : (
         <p
+          aria-busy={Body !== 'failed' || undefined}
           className={cn('whitespace-pre-wrap', !Body && 'invisible')}
           data-prose={Body ?? 'loading'}
         >

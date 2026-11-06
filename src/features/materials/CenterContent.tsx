@@ -628,9 +628,29 @@ function MaterialContentBody({
   // refusal stays quiet here: the read says what shows.
   const opensNote =
     !staticNote && (kind === 'note' || seed?.row.kind === 'note');
+  const noteOpen = useRef(false);
   useEffect(() => {
-    if (opensNote)
-      void queryClient.prefetchQuery(materialTokenQuery(materialId));
+    if (!opensNote) return;
+    const token = materialTokenQuery(materialId);
+    noteOpen.current = true;
+    void queryClient.prefetchQuery(token);
+    // A read token nothing took goes with the note: an editor mounted later, this
+    // person raised meanwhile, would start from it.
+    return () => {
+      noteOpen.current = false;
+      const drop = () => {
+        if (
+          !noteOpen.current &&
+          queryClient.getQueryData(token.queryKey)?.access === 'read'
+        )
+          queryClient.removeQueries({ queryKey: token.queryKey });
+      };
+      drop();
+      queryClient
+        .getQueryCache()
+        .find({ queryKey: token.queryKey })
+        ?.promise?.then(drop, () => undefined);
+    };
   }, [materialId, opensNote, queryClient]);
   // An item's last read, painting until this one answers.
   const copied = useMaterialCopy(materialId, staticNote ? null : me?.id);

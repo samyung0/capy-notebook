@@ -3,10 +3,8 @@ import { useUpdateTask } from '@/api/hooks';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { OnboardingDialog } from '@/features/auth/OnboardingDialog';
 import { TaskEditDialog } from '@/features/tasks/TaskEditDialog';
-import {
-  AddSourceDialog,
-  type PendingSource,
-} from '@/features/workspace/AddSourceDialog';
+import { AddSourceDialog } from '@/features/workspace/AddSourceDialog';
+import type { PendingSource } from '@/features/workspace/sourceBatch';
 import { WorkspaceTransferDialog } from '@/features/workspace/WorkspaceMemberManager';
 import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsDialog';
 import { tasks, workspaces } from '@/mocks/db';

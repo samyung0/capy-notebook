@@ -361,18 +361,30 @@ a connection that is down while the browser reports online still takes
 TanStack's reload.
 
 Two pieces of a workspace page load only when wanted (Q619), so a failed load
-leaves the page. Add file (`LazyAddSourceDialog`, reached by the file panel, the
-Dashboard, the Files page, the Indexing tab and a failed file's menu) loads on hover
-or focus of what opens it and at the latest on the click, with nothing shown until
-then. If its code won't load, a toast says so and nothing opens: offline the offline
-copy, otherwise "An update is ready" with Reload. The chat's Markdown code
-(`Prose`) loads with the first answer to draw, or ahead of it on focusing the
-composer or hovering a saved chat. Until it lands an answer's words hold their
-place unseen, so no raw Markdown flashes and the thread settles at its end. If it
-won't load the words show as they are (`data-prose="failed"`), which is still the
-answer: offline with no toast of its own, trying once more when the connection is
-back, otherwise with the same update toast. Without a reload, a browser that keeps
-the failed import stays on those words.
+leaves the page. Hover or focus loads each ahead of the click, except offline, where
+it asks for nothing, since the browser would keep the failure until a reload. A
+preload that fails says nothing: only an open the user asked for shows a toast.
+
+- **Add file** (`LazyAddSourceDialog`; the file panel, the Dashboard, the Files page,
+  the Indexing tab, a failed file's row). With its code not here on the click, a
+  loading toast shows from 300 ms. A press or key once that toast is up means the
+  user moved elsewhere, as does leaving the page: nothing opens later, and the code
+  keeps loading for the next time. If it won't load, a toast says so and nothing
+  opens: offline the offline copy, stalled past 20 s the connection copy, otherwise
+  "An update is ready" with Reload. Any of these also ends a pending return from
+  connecting a drive, so re-entering the page doesn't try Import again.
+- **The chat's Markdown** (`Prose`) loads once a workspace page is first idle
+  (Q681, `preloadProseWhenIdle`: at most 5 s after it opened, 2 s without
+  `requestIdleCallback`), so saved chats read formatted offline later; offline at
+  that moment it waits for the connection. Before then, it loads with the first
+  answer to draw, or on focusing the composer or hovering a saved chat. An answer's words hold their
+  place unseen for 2 s, so no raw Markdown flashes, then show as they are, marked
+  `aria-busy`, and format when the code lands (`data-prose`: `loading`, `slow`,
+  `failed`). A thread stays at its end as that happens if the reader was there. If
+  it won't load the words stay as they are, which is still the answer: offline with
+  no toast of its own, trying once more when the connection is back, otherwise with
+  the update toast. A browser that keeps the failed import stays on those words until
+  a reload.
 
 ## Shared-resource security
 

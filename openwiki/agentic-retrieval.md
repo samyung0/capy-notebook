@@ -6034,7 +6034,7 @@ In the browser, `src/features/workspace/chat/MarkdownAnswer.tsx` draws an
 answer: `markdownSegments.ts` splits it into Markdown runs, callouts, reveals,
 tabs, chart, plot, html-embed and mermaid fences and library figures, and the
 Capy-owned components in `chat/blocks/` draw them (prose through Streamdown, which
-loads with the first answer to draw, see
+loads at idle after a workspace opens or with the first answer to draw, see
 [error handling](frontend/error-handling.md#boundary-tiers), with
 `$…$`/`$$…$$` math drawn by KaTeX, which loads with the first formula; a
 single `$` follows Pandoc's rule so prices stay text, and a formula KaTeX

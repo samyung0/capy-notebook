@@ -38,12 +38,17 @@ vi.mock('./NoteBody', async (original) => ({
 const { act } = await import('react');
 const { createRoot } = await import('react-dom/client');
 const { MaterialContent } = await import('./CenterContent');
+const TOKEN_KEY = ['material', 'm_1', 'collaboration-token'];
 
-async function open(kind: Material['kind'] | undefined, staticNote = false) {
+async function open(
+  kind: Material['kind'] | undefined,
+  staticNote = false,
+  client = new QueryClient()
+) {
   const root = createRoot(document.getElementById('root') as never);
   await act(async () => {
     root.render(
-      <QueryClientProvider client={new QueryClient()}>
+      <QueryClientProvider client={client}>
         <MaterialContent
           allowExternalAssets={false}
           centerQuiz={false}
@@ -117,4 +122,53 @@ it('a refused token at open stays quiet: nothing shows and nothing retries', asy
   expect(token.fetch).toHaveBeenCalledTimes(1);
   expect(document.body.textContent).toBe(shown);
   act(() => root.unmount());
+});
+
+it('a note let in after a refused token asks again and keeps the answer', async () => {
+  const client = new QueryClient();
+  token.fetch.mockClear();
+  token.fetch.mockRejectedValueOnce(new ApiError(403, 'forbidden'));
+  const refused = await open('note', false, client);
+  act(() => refused.unmount());
+  const root = await open('note', false, client);
+  expect(token.fetch).toHaveBeenCalledTimes(2);
+  expect(client.getQueryData(TOKEN_KEY)).toEqual({ access: 'write' });
+  act(() => root.unmount());
+});
+
+const flush = () =>
+  act(async () => {
+    await new Promise((settled) => setTimeout(settled));
+  });
+
+it('a read token nothing took goes when the note closes; an editor keeps its write token', async () => {
+  const client = new QueryClient();
+  token.fetch.mockClear();
+  token.fetch.mockResolvedValueOnce({ access: 'read' } as never);
+  const reader = await open('note', false, client);
+  await flush();
+  expect(client.getQueryData(TOKEN_KEY)).toEqual({ access: 'read' });
+  act(() => reader.unmount());
+  expect(client.getQueryState(TOKEN_KEY)).toBeUndefined();
+
+  const writer = await open('note', false, client);
+  await flush();
+  act(() => writer.unmount());
+  expect(client.getQueryData(TOKEN_KEY)).toEqual({ access: 'write' });
+});
+
+it('a read token that answers after the note closed goes too', async () => {
+  const client = new QueryClient();
+  let answer = (_: { access: string }) => {};
+  token.fetch.mockClear();
+  token.fetch.mockReturnValueOnce(
+    new Promise((done) => {
+      answer = done;
+    }) as never
+  );
+  const root = await open('note', false, client);
+  act(() => root.unmount());
+  answer({ access: 'read' });
+  await flush();
+  expect(client.getQueryState(TOKEN_KEY)).toBeUndefined();
 });

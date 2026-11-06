@@ -46,7 +46,7 @@ export interface ErrorDescription {
 }
 
 const CHUNK_LOAD_PATTERN =
-  /chunkloaderror|loading chunk \d+ failed|failed to fetch dynamically imported module|importing a module script failed/i;
+  /chunkloaderror|loading chunk \d+ failed|failed to fetch dynamically imported module|error loading dynamically imported module|importing a module script failed/i;
 const NETWORK_ERROR_PATTERN =
   /failed to fetch|networkerror|network error|load failed|connection refused|fetch failed/i;
 

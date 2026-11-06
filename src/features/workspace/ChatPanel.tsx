@@ -52,7 +52,7 @@ import {
 } from '@/lib/localPrefs';
 import { textLength } from '@/lib/textLength';
 import { userColorPairDark } from '@/lib/userColor';
-import { loadProse, useProseBody } from './chat/blocks/text';
+import { preloadProse, useProseBody } from './chat/blocks/text';
 import {
   CHAT_DOCK_TRANSITION,
   ChatDock,
@@ -585,12 +585,14 @@ export function ChatPanel({
     movedOnHidden.current = false;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [hidden]);
-  // A thread drawn ahead of its Markdown code changes height as that lands.
-  const proseBody = useProseBody();
+  // A thread drawn ahead of its Markdown code changes height as that lands: a
+  // reader at its end stays there, one who scrolled up keeps their place.
+  const proseLanded = typeof useProseBody() === 'function';
+  const atEnd = useRef(true);
   useEffect(() => {
-    if (proseBody && !hidden)
+    if (proseLanded && !hidden && atEnd.current)
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [proseBody]);
+  }, [proseLanded]);
 
   function submit() {
     const trimmed = text.trim();
@@ -708,6 +710,14 @@ export function ChatPanel({
           // Filling the page, the column stays 48rem wide in the middle.
           fill ? 'px-[max(--spacing(4),calc(50%_-_24rem))]' : 'px-4'
         )}
+        onScroll={
+          proseLanded
+            ? undefined
+            : ({ currentTarget: box }) => {
+                atEnd.current =
+                  box.scrollHeight - box.clientHeight - box.scrollTop < 8;
+              }
+        }
         ref={scrollRef}
       >
         {!messages.length && opening && (
@@ -808,7 +818,7 @@ export function ChatPanel({
                 )}
                 onChange={(e) => setText(e.target.value)}
                 // An answer is coming: its Markdown code gets a head start.
-                onFocus={() => void loadProse()}
+                onFocus={preloadProse}
                 onKeyDown={(e) => {
                   // The chosen send key sends; the other one adds a new line.
                   // An IME's Enter confirms its candidate and never sends.

@@ -2498,16 +2498,22 @@ for connection" (C9).
   once the read answers. It's one request: `materialTokenQuery`'s, which the
   editor reads, and which a viewer's first read channel takes from the cache (a
   viewer's token says read either way, `readToken` in `liveNoteRead.ts`). An
-  editor's View holds a write token and asks for its own read channel. Someone
-  refused gets that one extra refused request, which nothing shows or retries:
-  the read decides the page (Q644).
+  editor's View holds a write token and asks for its own read channel. A read token
+  nothing took goes when the note closes, so someone raised meanwhile doesn't start
+  an editor from it. Someone refused gets that one extra refused request, which
+  nothing shows or retries: the read decides the page (Q644), and opening it again
+  once let in asks afresh.
 - **A viewer** stays on the paint, which follows its room on a read channel
   (`LiveNote`, `readNoteLive`, Q158), from its copy when it has one. No cue says
   it is read-only (D9). A reopen loads no editor: a copy's row keeps its reader's
   last `canEditContent` (`copyLabel`), which decides until the read answers.
 - **An editor** builds Plate behind the paint: `NoteEditor` mounts `invisible
   absolute inset-0` and `inert`, and asks for its discussions and drafts
-  meanwhile; the mount still waits for the discussions' answer. Edits are held until there is an editor (C4, no spare client ids):
+  meanwhile. The mount doesn't wait for the discussions (Q680): their anchors land
+  on their text when they answer, the caret left where it was. With the token at
+  open (Q618) that took a note to editable about 0.8 to 1.3 s sooner under the
+  mock on 2026-11-06 (production build with MSW, the paint unchanged); MSW adds
+  about 1.1 s to each API call, so the real saving is unmeasured. Edits are held until there is an editor (C4, no spare client ids):
   keys are dropped and a phone shows no keyboard. Plate stays static until the
   first sync (C5): no early bind. Once `NoteEditorCore` painted (`onShown`) the
   paint goes and the editor shows in the same commit, at the block under the top
