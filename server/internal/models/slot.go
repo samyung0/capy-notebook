@@ -69,11 +69,13 @@ var operatorCapabilities = []Capability{
 
 // slotRequirements is the only place the slot -> capability policy lives.
 // Chat needs vision because its tools attach images (capture_page, pending
-// Office images), extraction because it reads the pages as images; the ops
+// Office images), extraction because it reads the pages as images, grading
+// because it marks drawn answers from their image (M4, Epo 2026-11-07); the ops
 // assignment check enforces it, not the runtime.
 var slotRequirements = map[Slot][]Capability{
 	SlotChat:       {CapabilityAgenticLoop, CapabilityVision},
 	SlotExtraction: {CapabilityVision},
+	SlotGrading:    {CapabilityVision},
 	SlotRetrieval:  {CapabilityEmbedding},
 	SlotCaptioning: {CapabilityVision},
 	SlotRerank:     {CapabilityRerank},

@@ -749,8 +749,10 @@ Open quiz parts signed in are graded on the `grading` slot's pin, OpenRouter's
 `deepseek/deepseek-v4.1-flash-1017` on its default route (migration `0153`; Epo
 2026-11-04), through the pipeline's `POST /grade`
 (`pipeline/pipeline/retrieval/grading.py`). The server loads the marking scheme
-from the stored quiz, so no endpoint grades arbitrary text. One call per answered
-open part, ten at a time per submission, waiting in the model's line. Each is
+from the stored quiz, so no endpoint grades arbitrary text. Drawn parts go the
+same way with their marking image, so the slot requires `vision` (M4, Epo
+2026-11-07; `models.slotRequirements`). One call per answered
+open or drawn part, ten at a time per submission, waiting in the model's line. Each is
 **charged** to whoever started the job (Epo 2026-11-03): the learner for a check
 of their own practice, the workspace owner for an assignment's answers, about 32
 credits a 40-part paper (surface `quiz`). A part that fails, or every part when
