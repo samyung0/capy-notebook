@@ -2,16 +2,21 @@ import { useEffect, useRef } from 'react';
 import { mountDrawingBoard } from '@/features/blocksuite/drawingBoard';
 
 /** The drawing answer's board on its own, for building it and for its spec, with
- * its handle on `window`. Not linked from anywhere. */
+ * its handle on `window`. Not linked from anywhere. `__reopen(doc, true)` opens a saved
+ * board as a teacher sees it. */
 export default function DevDrawingBoard() {
   const container = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const host = container.current;
     if (!host) return;
-    let board = mountDrawingBoard(host);
-    const reopen = (saved: string) => {
+    let board = mountDrawingBoard(host, { plane: true });
+    const reopen = (
+      saved: string,
+      readOnly = false,
+      fitPadding?: [number, number, number, number]
+    ) => {
       board.unmount();
-      board = mountDrawingBoard(host, { saved });
+      board = mountDrawingBoard(host, { fitPadding, readOnly, saved });
       Object.assign(window, { __board: board });
     };
     Object.assign(window, { __board: board, __reopen: reopen });

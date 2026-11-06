@@ -87,8 +87,21 @@ const inkIn = (page: Page, dataUrl: string) =>
     return dark;
   }, dataUrl);
 
+/** The marking image, as a data URL. */
 const toImage = (page: Page) =>
-  page.evaluate('window.__board.toImage()') as Promise<string>;
+  page.evaluate(async () => {
+    const board = (
+      window as unknown as { __board: { toImage(): Promise<Blob> } }
+    ).__board;
+    const blob = await board.toImage();
+    return new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.readAsDataURL(blob);
+    });
+  });
+const save = (page: Page) =>
+  page.evaluate('window.__board.save().doc') as Promise<string>;
 
 test('draws over the card, labels, and reopens from what it saved', async ({
   page,
@@ -131,7 +144,7 @@ test('draws over the card, labels, and reopens from what it saved', async ({
   // The stroke and label reach the image.
   expect(await inkIn(page, await toImage(page))).toBeGreaterThan(before);
 
-  const saved = (await page.evaluate('window.__board.save()')) as string;
+  const saved = await save(page);
   await page.evaluate(`window.__reopen(${JSON.stringify(saved)})`);
   await expect.poll(() => canvas(page)).toEqual(['plane', 'brush', 'text']);
 });
@@ -254,7 +267,7 @@ test('double click opens the plane: it plots, undoes each click, and Escape leav
   await expect(page.locator('.capy-plane-editor')).toHaveCount(0);
   expect(await inkIn(page, await toImage(page))).toBeGreaterThan(empty);
 
-  const saved = (await page.evaluate('window.__board.save()')) as string;
+  const saved = await save(page);
   await page.evaluate(`window.__reopen(${JSON.stringify(saved)})`);
   await expect.poll(() => marks(page)).toBe(2);
 
@@ -608,7 +621,7 @@ test('bar and pie charts are their own cards, with no coordinates', async ({
   await expect.poll(async () => (await chart()).spokes).toBe(1);
   await page.getByRole('button', { name: 'Done' }).click();
 
-  const saved = (await page.evaluate('window.__board.save()')) as string;
+  const saved = await save(page);
   await page.evaluate(`window.__reopen(${JSON.stringify(saved)})`);
   await expect.poll(async () => (await chart()).labels).toEqual(['Science']);
   expect(errors).toEqual([]);
@@ -764,16 +777,21 @@ test.describe('with a finger', () => {
         xywh: '[3000,3000,200,200]',
       });
     });
-    const size = await page.evaluate(
+    const [long, short] = await page.evaluate(
       async (url) => {
         const image = new Image();
         image.src = url;
         await image.decode();
-        return Math.max(image.width, image.height);
+        return [
+          Math.max(image.width, image.height),
+          Math.min(image.width, image.height),
+        ];
       },
       await toImage(page)
     );
-    expect(size).toBeLessThanOrEqual(2400);
+    expect(long).toBeLessThanOrEqual(2400);
+    // The far shape is drawn nearer, so the rest isn't squashed.
+    expect(short).toBeGreaterThan(600);
   });
 });
 
@@ -825,7 +843,7 @@ test('the workspace canvas stays in the URL at every width', async ({
   const board = page.locator('.capy-board');
   await board.waitFor();
 
-  // An iPad keeps the rail, with undo over the toolbar's end no more: top right.
+  // An iPad keeps the rail, and undo moves to the top right, clear of the toolbar.
   const rail = page.getByRole('navigation', { name: 'Workspace' });
   await page.setViewportSize({ height: 800, width: 900 });
   await expect(rail).toBeVisible();
@@ -859,4 +877,76 @@ test('the workspace canvas stays in the URL at every width', async ({
   await expect(page).toHaveURL(/panel=files/);
   await page.goBack();
   await expect(board).toBeVisible({ timeout: 30_000 });
+});
+
+test('a saved board leaves its undo history out, and a teacher opens it read-only', async ({
+  page,
+}) => {
+  test.slow();
+  await openBoard(page);
+  // 200 points plotted one undo step at a time, as clicks on the plane add them.
+  await page.evaluate(() => {
+    const root = document.querySelector('affine-edgeless-root') as unknown as {
+      gfx: {
+        doc: { captureSync(): void };
+        layer: { canvasElements: { marks: object[] }[] };
+      };
+    };
+    const [card] = root.gfx.layer.canvasElements;
+    for (let i = 0; i < 200; i++) {
+      root.gfx.doc.captureSync();
+      card.marks = [
+        ...card.marks,
+        { at: [i / 10, i / 20], id: `m${i}`, kind: 'dot' },
+      ];
+    }
+  });
+  const live = (await stats(page)) as Stats & { bytes: number };
+  const { bytes, doc } = (await page.evaluate('window.__board.save()')) as {
+    bytes: number;
+    doc: string;
+  };
+  expect(bytes).toBeLessThan(live.bytes / 4);
+
+  // Room for a question card pinned over the board's top left.
+  await page.evaluate(
+    `window.__reopen(${JSON.stringify(doc)}, true, [16, 16, 16, 372])`
+  );
+  await page.waitForFunction(() =>
+    (window as unknown as { __board?: { stats(): Stats } }).__board
+      ?.stats()
+      .canvas.includes('plane')
+  );
+  await expect(page.locator('.capy-board-history')).toHaveCount(0);
+  await expect(page.locator('edgeless-toolbar-widget')).toHaveCount(0);
+  const board = await page.locator('.capy-board').boundingBox();
+  const card = (await onCard(page))(0, 0);
+  expect(board && card[0] - board.x).toBeGreaterThanOrEqual(371);
+  const at = await onCard(page);
+  await page.mouse.dblclick(...at(0.5, 0.5));
+  await expect(page.locator('.capy-plane-editor')).toHaveCount(0);
+  expect(await inkIn(page, await toImage(page))).toBeGreaterThan(0);
+
+  // The board's styles leave the app's own truncate alone.
+  const alignSelf = await page.evaluate(() => {
+    const row = document.createElement('div');
+    row.className = 'flex items-center';
+    row.innerHTML = '<span class="truncate">x</span>';
+    document.body.append(row);
+    const value = getComputedStyle(row.firstElementChild as Element).alignSelf;
+    row.remove();
+    return value;
+  });
+  expect(alignSelf).not.toBe('stretch');
+
+  // What isn't a board says so, and mounts nothing.
+  const error = await page.evaluate(() => {
+    try {
+      (window as unknown as { __reopen(saved: string): void }).__reopen('AAAA');
+      return null;
+    } catch (thrown) {
+      return (thrown as Error).name;
+    }
+  });
+  expect(error).toBe('BoardLoadError');
 });

@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/TextArea';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { useMediaQuery } from '@/lib/useMediaQuery';
 import { useFrosted } from '@/theme/theme';
 import { ChatButtonIcon } from './ChatButtonIcon';
 import { VoiceButton, VoiceElapsed, type VoiceInput } from './VoiceInput';
@@ -39,8 +40,8 @@ const BUTTON = 52;
 const SETTLE_MS = 600;
 
 /**
- * Chat on the file page below md: a round button morphs into a one-line field.
- * Focusing the field leaves the page
+ * Chat on the file page below lg. Below md, and on Office files at any width,
+ * a round button morphs into a one-line field; from md the field shows itself. Focusing the field leaves the page
  * as it is (the keyboard overlays it, see useKeyboardHeight); sending is the
  * caller's (it opens the chat page). Voice input is the composer's own
  * (useVoiceInput in ChatPanel): its button sits left of Send, its elapsed time
@@ -74,11 +75,14 @@ export function ChatDock({
   fieldRef: RefObject<HTMLTextAreaElement | null>;
   voice: VoiceInput;
 }) {
+  const md = useMediaQuery('(min-width: 768px)');
+  const fieldOnly = md && !office;
   // The dock sits over the centre panel, outside its data-frosted card.
   const frosted = useFrosted('center');
   const voiceBusy = voice.phase !== 'idle';
   // A recording started on the chat page keeps the field open here.
   const [expanded, setExpanded] = useState(voiceBusy);
+  const open = fieldOnly || expanded;
   const draft = text.trim().length > 0;
   const rowRef = useRef<HTMLDivElement>(null);
   const settledAt = useRef(0);
@@ -133,7 +137,7 @@ export function ChatDock({
   // Scrolling the page either way folds the field into the button, focused or
   // not; a draft stays and shows as the button's dot. Positions are tracked
   // from mount, so the first scroll after opening already has a distance.
-  const folds = expanded && !voiceBusy;
+  const folds = !fieldOnly && expanded && !voiceBusy;
   const foldsRef = useRef(folds);
   foldsRef.current = folds;
   useEffect(() => {
@@ -176,13 +180,16 @@ export function ChatDock({
       // once rather than when the closing keyboard reports its height, so the
       // dock moves down while it narrows, not after.
       data-keyboard-overlay
-      data-office={office && !expanded}
-      data-open={expanded}
+      data-office={office && !open}
+      data-open={open}
       data-workspace-chat-dock
     >
       <div
-        className="motion-chat-dock-height relative"
-        data-open={expanded}
+        className={cn(
+          'motion-chat-dock-height relative',
+          fieldOnly && 'mx-auto max-w-xl'
+        )}
+        data-open={open}
         ref={rowRef}
         style={
           {
@@ -195,7 +202,7 @@ export function ChatDock({
           <div
             className={cn(
               'pointer-events-auto absolute left-0 flex h-9 min-w-40 items-center rounded-button bg-overlay pl-1 shadow-pop ring-1 ring-overlay-line',
-              expanded
+              open
                 ? 'bottom-[calc(100%+8px)] max-w-[min(18rem,100%)]'
                 : 'bottom-2 max-w-[min(18rem,calc(100%-60px))]'
             )}
@@ -221,37 +228,39 @@ export function ChatDock({
           // Over a frosted centre panel the open field is frosted glass
           // (motion-chat-dock), not an opaque bar.
           data-frost={frosted || undefined}
-          data-open={expanded}
+          data-open={open}
           // Focus anywhere in the field (text, history, send) keeps it open,
           // so Tab reaches its buttons.
           onBlur={(event) => {
             if (event.currentTarget.contains(event.relatedTarget)) return;
-            if (!(draft || voiceBusy)) setExpanded(false);
+            if (!(fieldOnly || draft || voiceBusy)) setExpanded(false);
           }}
           onFocus={() => {
             settledAt.current = performance.now() + SETTLE_MS;
           }}
         >
-          <button
-            aria-label={m.workspace_tab_chat()}
-            // The purple circle is the surface's own (motion-chat-dock), so it
-            // turns into the field instead of fading over it.
-            className="absolute right-0 bottom-0 grid size-13 place-items-center rounded-full"
-            data-chat-dock-trigger
-            data-workspace-chat-button
-            inert={expanded}
-            onClick={expand}
-            type="button"
-          >
-            <ChatButtonIcon />
-            {draft && (
-              <span className="absolute top-2.5 right-2.5 size-2.5 rounded-full bg-white ring-2 ring-[#3f3188]" />
-            )}
-          </button>
+          {!fieldOnly && (
+            <button
+              aria-label={m.workspace_tab_chat()}
+              // The purple circle is the surface's own (motion-chat-dock), so it
+              // turns into the field instead of fading over it.
+              className="absolute right-0 bottom-0 grid size-13 place-items-center rounded-full"
+              data-chat-dock-trigger
+              data-workspace-chat-button
+              inert={open}
+              onClick={expand}
+              type="button"
+            >
+              <ChatButtonIcon />
+              {draft && (
+                <span className="absolute top-2.5 right-2.5 size-2.5 rounded-full bg-white ring-2 ring-[#3f3188]" />
+              )}
+            </button>
+          )}
           <div
             className="absolute right-0 bottom-0 w-(--dock-width) p-1.5"
             data-chat-dock-field
-            inert={!expanded}
+            inert={!open}
             ref={fieldBox}
           >
             {/* A line of its own above the row, inside the measured box so
