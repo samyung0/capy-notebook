@@ -14,8 +14,8 @@ Windows lands and deploys these, one landing per deploy.
 | Layout service on the ingest host | Up, on UAT only; production has no GitHub environment yet | 0b45af688 is the first run with figures going through it |
 | `membership.spec.ts`: a real CLOSED frame on a bystander channel | Cause unknown; passed on an earlier run | The journey now records each close's code and reason |
 | Shared pages lose AI marking (Q640 B) | Windows | Next on its side |
-| New assignment's quiz picker | `claude/assignment-quiz-picker` eeb6035fc | Windows' review round |
-| Vendored BlockSuite, dev route only | `claude/drawing-answers` 9fbaf3afa | CI, comparing its build with `main`'s, Windows' review round |
+| New assignment's quiz picker | `claude/assignment-quiz-picker` 8bbfd6747, review round done with Epo's answers | CI, then Windows' train after the shared pages |
+| Vendored BlockSuite, dev route only | `claude/drawing-answers`, review round pushed | CI, then Windows' train after the picker |
 
 ## Next, in order (Epo, 2026-11-06)
 
@@ -35,7 +35,7 @@ boards K6, K7 and K8 on the study Design canvas. Scanned submissions build on it
 - [ ] Bring `vendor/blocksuite` to `main` in a lazy chunk (Epo, 2026-11-06: "sure"): on `claude/drawing-answers`, dev route only until the answer flow opens it
 - [ ] `drawing` answer type with its background (blank, squared grid, axes, figure) in the shared question format: Go, Rust, TypeScript, pipeline
 - [ ] The board: full screen, question pinned at top left, Done returning to a preview and "Edit drawing", phones
-- [ ] Saving: strokes kept, an image rendered for marking, and who pays for its storage
+- [ ] Saving: strokes kept, an image rendered for marking, charged to whoever pays for the work: the workspace owner for assignments, the member for their own practice, deleted with the attempt (Epo, 2026-11-06). First trace whether a saved answer's flavours reach minimatch in `schema.ts`
 - [ ] Marking by a vision model against the marking points, with the same approval and credits rules. Needs grading landed, and the prompt shown to Epo first
 - [ ] Results, the approve tab and the report show the drawing
 - [ ] Specs, wiki, test catalog
@@ -58,7 +58,9 @@ floating toolbars on e.g. tables and stuff, and affine has a table view as well.
 - **Scanned submissions** (`todo-study-tracking.md`, "Later"): needs its own design round.
 - **Study leftovers** (`todo-study-tracking.md` §11 "Can wait"): AI insights, the app-wide Learning page redesign, "Copy to my workspace", sharing practice with the class, gamification.
 - **Handed over by Windows, not started** (`todo-study-tracking.md`, "Where it stands"): a question with no answers through `insert_child`; dotted question ids in `quiz.rs`; locks in `source_imports.go`; the `StartAssignment` expired-attempt lock; `DeleteAssignment` returning 404; a whole run's figure cap; sweep starvation.
-- **Add dialog's retry** (`AddSourceDialog.tsx:1209`): passes a bucket link to the analysis worker that refuses other origins, the same mistake as Make a quiz's crash. Untested; probably fails analysis on real files. Asked Epo.
+- **Add dialog's retry** (`AddSourceDialog.tsx:1209`): passes a bucket link to the analysis worker that refuses other origins, so a retried file should say it can't be analyzed. Read from the code, not reproduced. Asked Epo.
+- **Make a quiz's page counts on Word and PowerPoint rows:** each row downloads the whole file and reads only the base, so an edited file's count can be wrong. Asked Epo about dropping them.
+- **Drag-and-drop copies** (`auto-scroll` and `hitbox` on 2.0.2 beside the vendored 1.4.0): matters at the notes cut.
 - **Results page and answers:** results hide answers after an assignment closes while Practice shows them. Optional, Epo hasn't decided.
 
 ## Older plan files
