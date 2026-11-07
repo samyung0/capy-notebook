@@ -948,7 +948,7 @@ func TestExploreCanCloneFollowsTheCloneRule(t *testing.T) {
 	now := time.Now().UTC()
 	due := now.Add(time.Hour)
 	if _, err := s.CreateAssignment(ctx, owner, ws.ID, AssignmentForm{Kind: AssignmentMarked, Title: "Paper", QuizID: inWorkspace.ID,
-		Questions: frozenFixture(t), DueAt: &due, Attempts: 1, AssignAll: true, Assignees: []string{}, Files: []AssignmentFileRef{}}, now); err != nil {
+		Questions: frozenFixture(t), DueAt: &due, Attempts: 1, AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, Files: []AssignmentFileRef{}}, now); err != nil {
 		t.Fatal(err)
 	}
 	check("assigned, class public editor", stranger, false)

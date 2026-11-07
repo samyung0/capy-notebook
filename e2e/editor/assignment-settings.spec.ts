@@ -101,7 +101,6 @@ test.describe('as a member', () => {
     const assigned = await page.evaluate(async () => {
       await fetch('/api/workspaces/ws_bio/assignments', {
         body: JSON.stringify({
-          approveAiMarks: true,
           assignAll: true,
           assignees: [],
           attempts: 1,
@@ -110,6 +109,7 @@ test.describe('as a member', () => {
           files: [],
           kind: 'marked',
           latePenaltyPct: 0,
+          marking: 'ai_approve',
           noLate: false,
           quizId: 'qz_bio_near',
           showAnswers: true,

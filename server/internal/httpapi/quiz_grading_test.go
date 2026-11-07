@@ -50,18 +50,19 @@ func openGradingAPI(t *testing.T, choice string) (http.Handler, *store.Store, *a
 	// The grading slot's model, behind the pipeline: each item's share.
 	pipe := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		if choice == "fail" || (choice == "fail-once" && calls.Load() == 1) {
-			w.WriteHeader(http.StatusBadGateway)
-			return
-		}
 		var body struct {
 			Question string `json:"question"`
 			Items    []any  `json:"items"`
 			Image    string `json:"image"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
+		// Counted before a failure, so a call that fails still shows what it sent.
 		if body.Image != "" {
 			gradedImages.Add(1)
+		}
+		if choice == "fail" || (choice == "fail-once" && calls.Load() == 1) {
+			w.WriteHeader(http.StatusBadGateway)
+			return
 		}
 		// One part never answers, until the caller gives up on it.
 		if choice == "slow-second" && strings.Contains(body.Question, "Second part") {
