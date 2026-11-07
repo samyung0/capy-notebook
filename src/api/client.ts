@@ -352,6 +352,8 @@ export const qk = {
       ? (['workspace', wsId, 'conversations'] as const)
       : (['account-chat', 'conversations'] as const),
   deletionPreflight: ['account', 'deletion'] as const,
+  /** Files › Canvas: the caller's marked drawings. */
+  drawings: ['drawings'] as const,
   /** The images and audio the caller pays for (the Embeds tab), all or one
    * access filter. */
   editorAssets: (access?: string) =>

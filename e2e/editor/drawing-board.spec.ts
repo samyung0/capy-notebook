@@ -6,7 +6,9 @@ import { expect, type Page, test } from '@playwright/test';
  * card, and the image for marking.
  */
 
-type Stats = { canvas: string[]; marks: number };
+type Stats = { canvas: string[]; marks: number; span: number };
+const STROKE_PATH = /<path d="([^"]*)" stroke="#e03131"/;
+const WHOLE_PIXELS = /^M[\d LM]+$/;
 const stats = (page: Page) =>
   page.evaluate('window.__board.stats()') as Promise<Stats>;
 const canvas = (page: Page) => stats(page).then(({ canvas: types }) => types);
@@ -461,6 +463,77 @@ test('the image stacks as the screen does, and many formulas settle', async ({
   expect(errors).toEqual([]);
 });
 
+test('the answer area is fitted, keeps its screen size, and stays out of the image', async ({
+  page,
+}) => {
+  test.slow();
+  await openBoard(page);
+  await page.evaluate(
+    "window.__mount({ answerArea: { label: 'Answer area' } })"
+  );
+  const chip = page.locator('.capy-answer-area');
+  await expect(chip).toHaveText('Answer area');
+  const boxes = () =>
+    page.evaluate(() => {
+      const box = (selector: string) => {
+        const { bottom, height, left, top, width } = (
+          document.querySelector(selector) as Element
+        ).getBoundingClientRect();
+        return { bottom, height, left, top, width };
+      };
+      return {
+        area: box('.edgeless-background rect[stroke="#9aa0a6"]'),
+        chip: box('.capy-answer-area'),
+      };
+    });
+  const { area, chip: label } = await boxes();
+  // Fitted: the box spans most of the window's width, its label on its corner.
+  expect(area.width).toBeGreaterThan(page.viewportSize()!.width / 2);
+  expect(area.left).toBeGreaterThan(0);
+  expect(label.height).toBeCloseTo(20, 0);
+  expect(label.bottom).toBeCloseTo(area.top, 0);
+  expect(label.left).toBeCloseTo(area.left, 0);
+  await page.evaluate(
+    "document.querySelector('affine-edgeless-root').gfx.viewport.setZoom(2)"
+  );
+  await expect.poll(async () => (await boxes()).chip.height).toBeCloseTo(20, 0);
+  // Only on screen: an empty board's span is the 820 × 520 default with its margin.
+  expect((await stats(page)).span).toBe(836);
+  await page.evaluate(
+    "window.__mount({ answerArea: { label: 'Answer area' }, readOnly: true })"
+  );
+  await expect(page.locator('affine-edgeless-root')).toHaveCount(1);
+  await expect(chip).toHaveCount(0);
+});
+
+test('a note scrolled out of view still reaches the image', async ({
+  page,
+}) => {
+  test.slow();
+  await openBoard(page);
+  // A dark note far to the right: BlockSuite hides a block out of view at no size.
+  await page.evaluate(`{ const gfx = document.querySelector('affine-edgeless-root').gfx;
+    const note = gfx.doc.addBlock('affine:note', { xywh: '[4000,0,400,300]',
+      background: '#000000', index: gfx.layer.generateIndex() }, gfx.doc.root.id);
+    gfx.doc.addBlock('affine:paragraph', {}, note); }`);
+  expect(
+    await page.evaluate(() =>
+      document
+        .querySelector('affine-edgeless-note')
+        ?.classList.contains('block-idle')
+    )
+  ).toBe(true);
+  expect(await inkIn(page, await toImage(page))).toBeGreaterThan(10_000);
+  // Left as it was found.
+  expect(
+    await page.evaluate(() =>
+      document
+        .querySelector('affine-edgeless-note')
+        ?.classList.contains('block-idle')
+    )
+  ).toBe(true);
+});
+
 test('a plane card has its pen and size, and fits its marks', async ({
   page,
 }) => {
@@ -794,9 +867,13 @@ test.describe('with a finger', () => {
       },
       await toImage(page)
     );
-    expect(long).toBeLessThanOrEqual(2400);
+    expect(long).toBeLessThanOrEqual(1568);
     // The far shape is drawn nearer, so the rest isn't squashed.
-    expect(short).toBeGreaterThan(600);
+    expect(short).toBeGreaterThan(long / 4);
+    // span is that drawn-nearer side in board units, not the 3,200 the board covers.
+    const { span } = await stats(page);
+    expect(span).toBeGreaterThan(820);
+    expect(span).toBeLessThan(3000);
   });
 });
 
@@ -954,4 +1031,209 @@ test('a saved board leaves its undo history out, and a teacher opens it read-onl
     }
   });
   expect(error).toBe('BoardLoadError');
+});
+
+test('a preview draws every kind on the board from its data, framed as the image', async ({
+  page,
+}) => {
+  test.slow();
+  await openBoard(page);
+  await page.evaluate(() => {
+    type Model = { deserializedXYWH: number[]; marks: unknown[]; type: string };
+    const root = document.querySelector('affine-edgeless-root') as unknown as {
+      gfx: {
+        layer: { canvasElements: Model[] };
+        surface: { addElement(props: Record<string, unknown>): string };
+      };
+      std: {
+        store: {
+          addBlock(
+            flavour: string,
+            props: Record<string, unknown>,
+            parent: string
+          ): string;
+          getModelById(id: string): {
+            text: { insert(text: string, at: number): void };
+          };
+          root: { id: string };
+          spaceDoc: { getText(name: string): object };
+        };
+      };
+    };
+    const { gfx, std } = root;
+    const { store } = std;
+    // A free Y.Text of the board's own Yjs, as the tools give shapes and text.
+    const YText = store.spaceDoc.getText('preview-spec')
+      .constructor as new () => {
+      insert(at: number, text: string): void;
+    };
+    const text = (value: string) => {
+      const y = new YText();
+      y.insert(0, value);
+      return y;
+    };
+    const add = (props: Record<string, unknown>) =>
+      gfx.surface.addElement(props);
+    const plane = gfx.layer.canvasElements.find(
+      ({ type }) => type === 'plane'
+    ) as Model;
+    plane.marks = [
+      { at: [2, 3], id: 'a', kind: 'dot' },
+      {
+        id: 'b',
+        kind: 'line',
+        points: [
+          [-1, -1],
+          [4, 2],
+        ],
+      },
+      {
+        id: 'c',
+        kind: 'curve',
+        points: [
+          [0, 0],
+          [1, 2],
+          [3, 1],
+          [5, 4],
+        ],
+      },
+    ];
+    const [x, y, w, h] = plane.deserializedXYWH;
+    add({
+      color: '#e03131',
+      lineWidth: 4,
+      points: Array.from({ length: 40 }, (_, i) => [
+        i * 6,
+        30 + Math.sin(i / 4) * 25,
+      ]),
+      type: 'brush',
+      xywh: `[${x},${y + h + 40},250,70]`,
+    });
+    const box = add({
+      fillColor: '#ffe066',
+      filled: true,
+      shapeType: 'rect',
+      strokeColor: '#000000',
+      strokeWidth: 2,
+      text: text('Force'),
+      type: 'shape',
+      xywh: `[${x + w + 60},${y},160,90]`,
+    });
+    const ring = add({
+      fillColor: 'transparent',
+      filled: false,
+      shapeType: 'ellipse',
+      strokeColor: '#1971c2',
+      strokeWidth: 2,
+      type: 'shape',
+      xywh: `[${x + w + 60},${y + 250},160,100]`,
+    });
+    add({
+      source: { id: box, position: [0.5, 1] },
+      stroke: '#000000',
+      strokeWidth: 2,
+      target: { id: ring, position: [0.5, 0] },
+      type: 'connector',
+    });
+    add({
+      color: '#000000',
+      fontSize: 20,
+      text: text('mass = 2 kg\nv = 3 m/s'),
+      textAlign: 'left',
+      type: 'text',
+      xywh: `[${x + w + 60},${y + 400},220,60]`,
+    });
+    add({
+      latex: '\\frac{1}{2}mv^2',
+      type: 'formula',
+      xywh: `[${x + 300},${y + h + 40},200,60]`,
+    });
+    add({
+      axisMax: 10,
+      axisStep: 2,
+      bars: [
+        { fill: '#4dabf7', id: '1', label: 'A', value: 4 },
+        { fill: '#ff8787', id: '2', label: 'B', value: 7 },
+      ],
+      kind: 'bar',
+      labels: [],
+      spokes: [],
+      type: 'chart',
+      xywh: `[${x},${y + h + 160},360,240]`,
+    });
+    add({
+      axisMax: 10,
+      axisStep: 2,
+      bars: [],
+      kind: 'pie',
+      labels: [],
+      spokes: [0, 120, 200],
+      type: 'chart',
+      xywh: `[${x + 400},${y + h + 160},240,240]`,
+    });
+    const note = store.addBlock(
+      'affine:note',
+      { xywh: `[${x + 520},${y + 40},260,90]` },
+      store.root.id
+    );
+    const paragraph = store.addBlock('affine:paragraph', {}, note);
+    store.getModelById(paragraph).text.insert('Energy is kept', 0);
+  });
+  const doc = await save(page);
+  const preview = (await page.evaluate(
+    ([saved]) =>
+      (
+        window as unknown as {
+          __preview(
+            saved: string,
+            size: { height: number; width: number }
+          ): string;
+        }
+      ).__preview(saved, { height: 400, width: 600 }),
+    [doc]
+  )) as string;
+  // The note shares its place in the stack with the card under it, and goes over it.
+  expect(preview.indexOf('Energy is kept')).toBeGreaterThan(
+    preview.indexOf('stroke="#dededb"')
+  );
+  for (const part of [
+    'stroke="#e03131"', // the brush
+    'fill="#ffe066"', // the filled box
+    '<ellipse',
+    'Force',
+    'mass = 2 kg',
+    '\\frac{1}{2}mv^2',
+    'fill="#4dabf7"', // a bar
+    '<circle', // the pie
+    'Energy is kept',
+  ])
+    expect(preview).toContain(part);
+  // Saved to whole pixels: the stroke, drawn through fractions, has none left.
+  const stroke = preview.match(STROKE_PATH)?.[1] ?? '';
+  expect(stroke).toMatch(WHOLE_PIXELS);
+  // Well formed: a list shows it as an image.
+  const drawn = await page.evaluate(async (svg) => {
+    const image = new Image();
+    image.src = `data:image/svg+xml,${encodeURIComponent(svg)}`;
+    await image.decode();
+    return [image.width, image.height];
+  }, preview);
+  expect(drawn).toEqual([600, 400]);
+  expect(
+    await page.evaluate(
+      ([saved]) => {
+        try {
+          (
+            window as unknown as {
+              __preview(saved: string, size: object): string;
+            }
+          ).__preview(saved, { height: 10, width: 10 });
+        } catch (error) {
+          return (error as Error).name;
+        }
+        return 'drawn';
+      },
+      ['AAAA']
+    )
+  ).toBe('BoardLoadError');
 });

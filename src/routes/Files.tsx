@@ -45,6 +45,7 @@ import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
 import { Tabs } from '@/components/ui/Tabs';
 import { AddFileDestinationDialog } from '@/features/files/AddFileDestinationDialog';
+import { CanvasTab } from '@/features/files/CanvasTab';
 import { EmbedsTab } from '@/features/files/EmbedsTab';
 import { fileKindLabel } from '@/features/files/fileKindLabel';
 import { fileCanClone, formatFileSize } from '@/features/files/fileUtils';
@@ -133,6 +134,7 @@ export default function Files() {
             { label: m.files_tab_files(), value: 'files' },
             { label: m.files_tab_blocks(), value: 'blocks' },
             { label: m.files_tab_embeds(), value: 'embeds' },
+            { label: m.files_tab_canvas(), value: 'canvas' },
             { label: m.files_tab_trash(), value: 'trash' },
           ]}
           value={tab}
@@ -144,6 +146,8 @@ export default function Files() {
           onViewChange={changeView}
           view={view}
         />
+      ) : tab === 'canvas' ? (
+        <CanvasTab onViewChange={changeView} view={view} />
       ) : tab === 'embeds' ? (
         <EmbedsTab
           access={access}

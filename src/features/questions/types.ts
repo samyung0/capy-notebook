@@ -9,6 +9,7 @@ export const QUESTION_TYPES = [
   'ordering',
   'open',
   'gaps',
+  'drawing',
 ] as const;
 
 export type QuestionType = (typeof QUESTION_TYPES)[number];
@@ -185,7 +186,19 @@ export type QuestionAnswer =
   | { type: 'ordering'; items: string[] }
   | { type: 'open'; accepted: string[]; hints: string[] }
   /** One accepted list per numbered gap written in the part's text. */
-  | { type: 'gaps'; accepted: string[][] };
+  | { type: 'gaps'; accepted: string[][] }
+  /** Answered on the drawing board, which every drawing part opens plain
+   * (Epo 2026-11-06), and marked like an open part against its marking items.
+   * A quiz's part may hold a drawn sample answer (Q3). */
+  | { type: 'drawing'; sample?: DrawnSample };
+
+/** A drawn sample answer: its board (to edit again) and its image (shown after
+ * a check and sent to marking), both the quiz's editor assets. */
+export type DrawnSample = { board: string; image: string };
+
+/** Answer types a model marks against the part's marking items. */
+export const modelMarked = (type: QuestionType) =>
+  type === 'open' || type === 'drawing';
 
 /** An open part's marking item; harder steps can carry more whole marks. */
 export type MarkItem = { text: string; marks: number };
@@ -202,7 +215,8 @@ export type QuestionPart = {
   blocks: QuestionBlock[];
   answer: QuestionAnswer;
   marks: number;
-  /** Open parts only, adding up to `marks`; closed answers are their own key. */
+  /** Open and drawing parts only, adding up to `marks`; closed answers are
+   * their own key. */
   markscheme?: MarkItem[];
   solution: QuestionBlock[];
   /** Attempt snapshots only; authored content rejects these fields. */
@@ -235,7 +249,8 @@ export type LearnerAnswer =
   | { type: 'short'; unit?: string }
   | { type: 'matching'; options: string[]; left: string[] }
   | { type: 'ordering'; items: string[] }
-  | { type: 'gaps'; gaps: number };
+  | { type: 'gaps'; gaps: number }
+  | { type: 'drawing' };
 export type LearnerPart = {
   id: string;
   group?: string;
@@ -472,6 +487,18 @@ export function replaceAssetIds(
     const assetId = ids.get(block.image.assetId);
     return assetId ? { ...block, image: { assetId } } : block;
   };
+  const answer = (part: Question['parts'][number]): QuestionAnswer =>
+    part.answer.type === 'drawing' && part.answer.sample
+      ? {
+          sample: {
+            board:
+              ids.get(part.answer.sample.board) ?? part.answer.sample.board,
+            image:
+              ids.get(part.answer.sample.image) ?? part.answer.sample.image,
+          },
+          type: 'drawing',
+        }
+      : part.answer;
   return {
     ...question,
     ...(question.groups && {
@@ -482,6 +509,7 @@ export function replaceAssetIds(
     }),
     parts: question.parts.map((part) => ({
       ...part,
+      answer: answer(part),
       blocks: part.blocks.map(swap),
       solution: part.solution.map(swap),
     })),
@@ -489,15 +517,23 @@ export function replaceAssetIds(
   };
 }
 
-/** Editor assets referenced by a quiz question's images. */
+/** Editor assets referenced by a quiz question's images and its drawn sample
+ * answers. */
 export function questionAssetIds(question: Question): string[] {
   return [
-    ...question.stem,
-    ...(question.groups ?? []).flatMap((group) => group.blocks),
-    ...question.parts.flatMap((part) => [...part.blocks, ...part.solution]),
-  ].flatMap((block) =>
-    block.type === 'image' && 'assetId' in block.image
-      ? [block.image.assetId]
-      : []
-  );
+    ...[
+      ...question.stem,
+      ...(question.groups ?? []).flatMap((group) => group.blocks),
+      ...question.parts.flatMap((part) => [...part.blocks, ...part.solution]),
+    ].flatMap((block) =>
+      block.type === 'image' && 'assetId' in block.image
+        ? [block.image.assetId]
+        : []
+    ),
+    ...question.parts.flatMap((part) =>
+      part.answer.type === 'drawing' && part.answer.sample
+        ? [part.answer.sample.board, part.answer.sample.image]
+        : []
+    ),
+  ];
 }

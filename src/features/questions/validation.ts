@@ -6,6 +6,7 @@ import { quantityValuePattern } from './quantity';
 import {
   CHART_KINDS,
   gapNumbers,
+  modelMarked,
   type Question,
   type QuestionBlock,
 } from './types';
@@ -534,6 +535,11 @@ const answerSchema = z.discriminatedUnion('type', [
     hints: z.array(text).max(limits.QUESTION_ANSWERS_MAX),
     type: z.literal('open'),
   }),
+  z.strictObject({
+    // A drawn sample answer's board and image, the quiz's editor assets.
+    sample: z.strictObject({ board: identifier, image: identifier }).optional(),
+    type: z.literal('drawing'),
+  }),
 ]);
 
 export const questionSchema = z.strictObject({
@@ -621,6 +627,7 @@ export type RuleIssue = {
     | 'markscheme-total'
     | 'awarded-range'
     | 'bank-solution'
+    | 'bank-drawn-sample'
     | 'quiz-markscheme'
     | 'open-answer-length'
     | 'quiz-question-parts'
@@ -681,8 +688,8 @@ export function ruleIssues(
         part.answer.accepted.map((_, i) => i + 1).join()
     )
       fail('gap-markers', m.question_validation_gap_markers());
-    // Only open parts have a marking scheme, which Jev grades against.
-    if ((part.answer.type === 'open') !== (part.markscheme !== undefined))
+    // Only model-marked parts have a marking scheme, which the model marks against.
+    if (modelMarked(part.answer.type) !== (part.markscheme !== undefined))
       fail('markscheme-open', m.question_validation_markscheme_open());
     if (
       part.markscheme &&
@@ -697,6 +704,8 @@ export function ruleIssues(
       fail('awarded-range', m.question_validation_awarded_range());
     if (policy.bank && part.solution.length === 0)
       fail('bank-solution', m.question_validation_bank_solution());
+    if (policy.bank && part.answer.type === 'drawing' && part.answer.sample)
+      fail('bank-drawn-sample', m.question_validation_bank_drawn_sample());
     if (policy.bank) return;
     // User quizzes (not the bank) cap marking items and sample answer length.
     if (part.markscheme && part.markscheme.length > limits.QUIZ_MARKSCHEME_MAX)
@@ -822,7 +831,7 @@ export function quizBounds(questions: Question[]) {
       m.question_validation_quiz_parts({ max: limits.QUIZ_PARTS_MAX })
     );
   if (
-    parts.filter((part) => part.answer.type === 'open').length >
+    parts.filter((part) => modelMarked(part.answer.type)).length >
     limits.QUIZ_OPEN_PARTS_MAX
   )
     throw new CopyError(

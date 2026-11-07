@@ -422,3 +422,25 @@ func TestRepairFigureFollowsTheSharedFixtures(t *testing.T) {
 		}
 	}
 }
+
+// A drawn sample answer's board and image are the quiz's assets: listed with
+// its images, copied with them, and dropped whole when either has no copy.
+func TestDrawnSampleAnswerAssets(t *testing.T) {
+	question := func() map[string]any {
+		return map[string]any{"parts": []any{map[string]any{
+			"blocks": []any{map[string]any{"type": "text", "text": "Draw it."}},
+			"answer": map[string]any{"type": "drawing", "sample": map[string]any{"board": "a_board", "image": "a_image"}},
+		}}}
+	}
+	q := question()
+	if got := AssetIDs(q); len(got) != 2 || got[0] != "a_board" || got[1] != "a_image" {
+		t.Fatalf("asset ids = %v", got)
+	}
+	if !RewriteAssetIDs(q, map[string]string{"a_board": "b_board", "a_image": "b_image"}) || AssetIDs(q)[0] != "b_board" {
+		t.Fatalf("copied = %v", AssetIDs(q))
+	}
+	q = question()
+	if !RewriteAssetIDs(q, map[string]string{"a_board": "b_board"}) || len(AssetIDs(q)) != 0 {
+		t.Fatalf("a half-copied sample stayed: %v", q)
+	}
+}

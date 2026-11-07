@@ -183,11 +183,11 @@ it("lists a class's To do: answers to approve for its owner, nothing when empty"
       kind: 'marked',
       latePenaltyPct: 0,
       manage: {
-        approveAiMarks: true,
         assignAll: true,
         assigned: 6,
         assignees: [],
         done: 5,
+        marking: 'ai_approve',
         showAnswers: true,
         shuffle: false,
         toApprove: 5,

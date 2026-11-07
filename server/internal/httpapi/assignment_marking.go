@@ -160,10 +160,25 @@ func (a *api) markAttemptAnswers(ctx context.Context, assignmentID, attemptID st
 	}
 	parts := make(map[string]openPart, len(answers))
 	byPart := make(map[string]store.AnswerToMark, len(answers))
+	var images map[string]keptImage
 	for _, answer := range answers {
-		parts[answer.PartID] = openPart{
+		part := openPart{
 			question: answer.Question, markscheme: answer.Items, itemMarks: answer.ItemMarks, answer: answer.Answer,
+			sampleAsset: answer.SampleImage,
 		}
+		if answer.Drawing {
+			if images == nil {
+				if images, err = a.keptDrawingImages(marking, attemptID); err != nil {
+					return err
+				}
+			}
+			image, kept := images[answer.PartID]
+			if !kept {
+				continue
+			}
+			part.image, part.imageType = image.data, image.contentType
+		}
+		parts[answer.PartID] = part
 		byPart[answer.PartID] = answer
 	}
 	grades := a.gradeWithModel(marking, payer, workspaceID, parts)
@@ -177,5 +192,15 @@ func (a *api) markAttemptAnswers(ctx context.Context, assignmentID, attemptID st
 	// Paid for, so they are kept even if the attempt's time ran out meanwhile.
 	saving, done := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer done()
-	return a.s.SaveAIMarks(saving, attemptID, marks, time.Now())
+	if err := a.s.SaveAIMarks(saving, attemptID, marks, time.Now()); err != nil {
+		return err
+	}
+	// The AI marking landed: its images go, whether or not staff approve it yet.
+	var marked []string
+	for id := range grades {
+		if byPart[id].Drawing {
+			marked = append(marked, id)
+		}
+	}
+	return a.s.DropDrawingImages(saving, attemptID, marked)
 }

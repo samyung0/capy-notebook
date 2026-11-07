@@ -44,6 +44,7 @@ import {
 } from '@/features/questions/QuestionView';
 import { TextEditor } from '@/features/questions/TextEditor';
 import {
+  modelMarked,
   QUESTION_TYPES,
   type QuestionAnswer,
   type QuestionBlock,
@@ -56,6 +57,11 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
 import { IMAGE_ACCEPT } from '@/lib/fitImage';
+import {
+  DrawnSampleField,
+  type UploadDrawnSample,
+} from './drawing/DrawnSample';
+import { pinnedQuestion } from './drawing/pinnedQuestion';
 
 const marksLabel = (count: number) =>
   count === 1 ? m.question_ui_one_mark() : m.question_ui_marks({ count });
@@ -311,7 +317,7 @@ function AnswerFields({
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-[200px_minmax(0,1fr)_140px]">
       {typeField}
       {middle}
-      {answer.type !== 'open' && marksField}
+      {!modelMarked(answer.type) && marksField}
     </div>
   );
   // An option's text is known without its key; every other answer is the key.
@@ -401,7 +407,8 @@ function AnswerFields({
         />
       </LabelledField>
     );
-  if (answer.type === 'open') {
+  // Open and drawing parts take their marks from their marking items.
+  if (modelMarked(answer.type)) {
     const items = part.markscheme ?? [];
     const total = items.reduce((sum, item) => sum + item.marks, 0);
     const setItems = (markscheme: typeof items) =>
@@ -512,6 +519,7 @@ export function QuestionPane({
   status,
   undo,
   uploadAsset,
+  uploadSample,
   write,
 }: {
   /** The read's question, whose keys are still to come. */
@@ -529,6 +537,7 @@ export function QuestionPane({
   status: ItemRoomStatus;
   undo: UndoTarget | null;
   uploadAsset: UploadQuestionAsset;
+  uploadSample: UploadDrawnSample;
   write: (question: Question) => void;
 }) {
   const [details, setDetails] = useState(false);
@@ -614,6 +623,20 @@ export function QuestionPane({
         onChange={changePart}
         part={part}
       />
+      {part.answer.type === 'drawing' && !keysPending && (
+        <DrawnSampleField
+          labelClassName="t-meta mt-2.5 font-semibold text-fg-secondary"
+          onChange={(sample) =>
+            changePart({
+              ...part,
+              answer: { type: 'drawing', ...(sample && { sample }) },
+            })
+          }
+          pinned={pinnedQuestion(question, part, number)}
+          sample={part.answer.sample}
+          upload={uploadSample}
+        />
+      )}
       {part.solution.length > 0 ? (
         <>
           <div className="mt-2 flex items-center gap-2.5 font-semibold text-[12.5px] text-fg-muted">
@@ -737,6 +760,7 @@ export function QuestionPane({
         question={question}
         questionNumber={number}
         uploadAsset={uploadAsset}
+        uploadSample={uploadSample}
       />
     </section>
   );

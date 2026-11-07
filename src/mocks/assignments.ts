@@ -11,11 +11,14 @@ import type {
   AssignmentPartReport,
   AssignmentQuestionReport,
   AssignmentReport,
+  MarkedDrawing,
   MaterialRef,
   SharingNotice,
   TodoList,
   WorkspaceActivity,
 } from '@/api/types';
+import { fromBase64, toBase64 } from '@/features/blocksuite/base64';
+import { SAVED, withElements } from '@/features/blocksuite/boardFixture';
 import type { Question, QuestionPart } from '@/features/questions/types';
 import type { Answers } from '@/features/quizzes/grade';
 import { scorePart } from '@/features/quizzes/grade';
@@ -48,7 +51,7 @@ type Row = {
   assignAll: boolean;
   assignees: string[];
   draft: boolean;
-  approveAiMarks: boolean;
+  marking: AssignmentFormReq['marking'];
   showAnswers: boolean;
   shuffle: boolean;
   files: { fileId?: string; materialId?: string }[];
@@ -65,9 +68,55 @@ type Attempt = {
   graded: AssignmentGradedQuestion[];
 };
 
+/** Drawings an assignment's Done stored, by id: their boards. */
+const mockDrawings = new Map<string, string>();
 const WS = 'ws_bio';
 const ASSIGNMENT_GRACE_MS = 15_000;
 const DAY = 86_400_000;
+
+// Files › Canvas: marked drawings the viewer pays for, with seeded boards.
+const wave = Array.from({ length: 60 }, (_, i) => [
+  i * 8,
+  120 + Math.sin(i / 5) * 60,
+]);
+mockDrawings.set('dr_marked_1', SAVED);
+mockDrawings.set(
+  'dr_marked_2',
+  toBase64(
+    withElements({
+      color: '#1c7ed6',
+      lineWidth: 4,
+      points: wave,
+      type: 'brush',
+      xywh: '[900,0,480,240]',
+    })
+  )
+);
+const markedDrawings: MarkedDrawing[] = [
+  {
+    assignment: true,
+    attemptId: 'at_1',
+    bytes: 86 * 1024,
+    createdAt: new Date(Date.now() - 4 * DAY).toISOString(),
+    id: 'dr_marked_1',
+    part: 1,
+    question: 1,
+    quizName: 'Distance and speed',
+    workspaceId: 'ws_bio',
+    workspaceName: 'Biology 101',
+  },
+  {
+    assignment: false,
+    attemptId: 'at_2',
+    bytes: 54 * 1024,
+    createdAt: new Date(Date.now() - DAY).toISOString(),
+    id: 'dr_marked_2',
+    question: 11,
+    quizName: 'Genetics check-in',
+    workspaceId: 'ws_bio',
+    workspaceName: 'Biology 101',
+  },
+];
 const at = (days: number, hours = 18) => {
   const d = new Date(Date.now() + days * DAY);
   d.setHours(hours, 0, 0, 0);
@@ -332,13 +381,13 @@ function seed() {
   );
   const files = db.files.filter((f) => f.workspaceId === WS);
   const common = {
-    approveAiMarks: true,
     assignAll: true,
     assignees: [],
     attempts: 1,
     draft: false,
     files: [],
     latePenaltyPct: 0,
+    marking: 'ai_approve' as const,
     noLate: false,
     showAnswers: true,
     shuffle: false,
@@ -655,7 +704,6 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
     ...(staff
       ? {
           manage: {
-            approveAiMarks: row.approveAiMarks,
             assignAll: row.assignAll,
             assigned: assigned.length,
             assignees: row.assignees,
@@ -667,6 +715,7 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
                   ) / decided.length
                 : undefined,
             done: row.kind === 'marked' ? countedRows.length : ticked.length,
+            marking: row.marking,
             quizId: row.quizId,
             quizTitle: material?.title,
             showAnswers: row.showAnswers,
@@ -943,7 +992,7 @@ function applyForm(row: Row, body: AssignmentFormReq) {
   row.latePenaltyPct = body.latePenaltyPct;
   row.assignAll = body.assignAll;
   row.assignees = body.assignees;
-  row.approveAiMarks = body.approveAiMarks;
+  row.marking = body.marking;
   row.showAnswers = body.showAnswers;
   row.shuffle = body.shuffle;
   row.files = body.files.map(({ fileId, materialId }) => ({
@@ -1110,7 +1159,6 @@ export const assignmentHandlers = (viewer: Viewer) => {
         seed();
         const body = (await request.json()) as AssignmentFormReq;
         const row: Row = {
-          approveAiMarks: true,
           assignAll: true,
           assignees: [],
           attempts: 1,
@@ -1119,6 +1167,7 @@ export const assignmentHandlers = (viewer: Viewer) => {
           id: newId('as'),
           kind: body.kind,
           latePenaltyPct: 0,
+          marking: 'ai_approve' as const,
           noLate: false,
           postedAt: new Date().toISOString(),
           quizId: body.quizId,
@@ -1323,6 +1372,67 @@ export const assignmentHandlers = (viewer: Viewer) => {
         return new HttpResponse(null, { status: 204 });
       }
     ),
+    // Done stores a drawing part's board (and image); its answer is the id.
+    http.put(
+      '/api/assignment-attempts/:id/drawings/:partId',
+      async ({ params, request }) => {
+        const found = attemptOf(params.id);
+        if (!found) return gone();
+        if (found.attempt.submittedAt)
+          return conflict(
+            'attempt_finished',
+            'This attempt has been submitted.'
+          );
+        const body = (await request.json()) as { board: string };
+        const id = `dr_${String(params.partId)}_${Date.now()}`;
+        mockDrawings.set(id, body.board);
+        return HttpResponse.json({ id });
+      }
+    ),
+    http.delete(
+      '/api/assignment-attempts/:id/drawings/:partId',
+      ({ params }) => {
+        const found = attemptOf(params.id);
+        if (!found) return gone();
+        delete found.attempt.answers[String(params.partId)];
+        return new HttpResponse(null, { status: 204 });
+      }
+    ),
+    http.get('/api/drawings', () =>
+      HttpResponse.json({
+        count: markedDrawings.length,
+        items: markedDrawings,
+        totalBytes: markedDrawings.reduce((sum, d) => sum + d.bytes, 0),
+      })
+    ),
+    http.delete('/api/drawings/:id', ({ params }) => {
+      const i = markedDrawings.findIndex((d) => d.id === params.id);
+      if (i < 0) return gone();
+      markedDrawings.splice(i, 1);
+      mockDrawings.delete(String(params.id));
+      return HttpResponse.json({ deleted: 1 });
+    }),
+    http.delete('/api/drawings', () => {
+      const deleted = markedDrawings.length;
+      for (const d of markedDrawings.splice(0)) mockDrawings.delete(d.id);
+      return HttpResponse.json({ deleted });
+    }),
+    http.get('/api/drawings/:id', async ({ params }) => {
+      const board = mockDrawings.get(String(params.id));
+      if (board === undefined) return gone();
+      // Stored gzipped, as drawings.go stores it.
+      const packed = await new Response(
+        new Blob([fromBase64(board) as Uint8Array<ArrayBuffer>])
+          .stream()
+          .pipeThrough(new CompressionStream('gzip'))
+      ).arrayBuffer();
+      return HttpResponse.json({
+        boardUrl: `data:application/gzip;base64,${toBase64(new Uint8Array(packed))}`,
+        bytes: board.length,
+        id: params.id,
+        partId: '',
+      });
+    }),
     http.post(
       '/api/assignment-attempts/:id/submit',
       async ({ params, request }) => {

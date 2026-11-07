@@ -77,6 +77,10 @@ import type {
   DeletionPreflight,
   Detail,
   Discussion,
+  DrawingOutputBody,
+  DrawingSavedOutputBody,
+  DrawingUpload,
+  DrawingsDeletedOutputBody,
   EditorAssetPage,
   ErrorModel,
   Event,
@@ -112,6 +116,7 @@ import type {
   ListAccountConversationsParams,
   ListAttemptsParams,
   ListConversationsParams,
+  ListDrawingsParams,
   ListEditorAssetsParams,
   ListModelsParams,
   ListNotificationsParams,
@@ -125,6 +130,7 @@ import type {
   ListWorkspacesParams,
   LocaleInputBody,
   MarkAssignmentWithAIOutputBody,
+  MarkedDrawings,
   Material,
   MaterialChildrenInputBody,
   MaterialChildrenOutputBody,
@@ -496,6 +502,125 @@ const res = await fetch(getSaveAssignmentAnswersUrl(id),
 
   const data: saveAssignmentAnswersResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as saveAssignmentAnswersResponse
+}
+
+
+
+export type deleteAssignmentDrawingResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteAssignmentDrawingResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type deleteAssignmentDrawingResponseSuccess = (deleteAssignmentDrawingResponse204) & {
+  headers: Headers;
+};
+export type deleteAssignmentDrawingResponseError = (deleteAssignmentDrawingResponseDefault) & {
+  headers: Headers;
+};
+
+export type deleteAssignmentDrawingResponse = (deleteAssignmentDrawingResponseSuccess | deleteAssignmentDrawingResponseError)
+
+export const getDeleteAssignmentDrawingUrl = (id: string,
+    partId: string,) => {
+
+
+
+
+  return `/api/assignment-attempts/${id}/drawings/${partId}`
+}
+
+/**
+ * @summary Forget a drawing part's stored drawing in a running attempt (Done on an emptied board)
+ */
+export const deleteAssignmentDrawing = async (id: string,
+    partId: string, options?: RequestInit): Promise<deleteAssignmentDrawingResponse> => {
+
+  const res = await fetch(getDeleteAssignmentDrawingUrl(id,partId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteAssignmentDrawingResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deleteAssignmentDrawingResponse
+}
+
+
+
+export type saveAssignmentDrawingResponse200 = {
+  data: DrawingSavedOutputBody
+  status: 200
+}
+
+export type saveAssignmentDrawingResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type saveAssignmentDrawingResponseSuccess = (saveAssignmentDrawingResponse200) & {
+  headers: Headers;
+};
+export type saveAssignmentDrawingResponseError = (saveAssignmentDrawingResponseDefault) & {
+  headers: Headers;
+};
+
+export type saveAssignmentDrawingResponse = (saveAssignmentDrawingResponseSuccess | saveAssignmentDrawingResponseError)
+
+export const getSaveAssignmentDrawingUrl = (id: string,
+    partId: string,) => {
+
+
+
+
+  return `/api/assignment-attempts/${id}/drawings/${partId}`
+}
+
+/**
+ * @summary Store a drawing part's board (and its marking image) for a running attempt
+ */
+export const saveAssignmentDrawing = async (id: string,
+    partId: string,
+    drawingUpload: NonReadonly<DrawingUpload>, options?: RequestInit): Promise<saveAssignmentDrawingResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getSaveAssignmentDrawingUrl(id,partId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(drawingUpload)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: saveAssignmentDrawingResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as saveAssignmentDrawingResponse
 }
 
 
@@ -3426,6 +3551,213 @@ const res = await fetch(getCreateMaterialCommentUrl(id),
 
   const data: createMaterialCommentResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createMaterialCommentResponse
+}
+
+
+
+export type deleteAllDrawingsResponse200 = {
+  data: DrawingsDeletedOutputBody
+  status: 200
+}
+
+export type deleteAllDrawingsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type deleteAllDrawingsResponseSuccess = (deleteAllDrawingsResponse200) & {
+  headers: Headers;
+};
+export type deleteAllDrawingsResponseError = (deleteAllDrawingsResponseDefault) & {
+  headers: Headers;
+};
+
+export type deleteAllDrawingsResponse = (deleteAllDrawingsResponseSuccess | deleteAllDrawingsResponseError)
+
+export const getDeleteAllDrawingsUrl = () => {
+
+
+
+
+  return `/api/drawings`
+}
+
+/**
+ * @summary Delete every marked drawing the caller pays for; their marks stay
+ */
+export const deleteAllDrawings = async ( options?: RequestInit): Promise<deleteAllDrawingsResponse> => {
+
+  const res = await fetch(getDeleteAllDrawingsUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteAllDrawingsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as deleteAllDrawingsResponse
+}
+
+
+
+export type listDrawingsResponse200 = {
+  data: MarkedDrawings
+  status: 200
+}
+
+export type listDrawingsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listDrawingsResponseSuccess = (listDrawingsResponse200) & {
+  headers: Headers;
+};
+export type listDrawingsResponseError = (listDrawingsResponseDefault) & {
+  headers: Headers;
+};
+
+export type listDrawingsResponse = (listDrawingsResponseSuccess | listDrawingsResponseError)
+
+export const getListDrawingsUrl = (params?: ListDrawingsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/drawings?${stringifiedParams}` : `/api/drawings`
+}
+
+/**
+ * @summary The caller's marked drawings, newest first (Files › Canvas)
+ */
+export const listDrawings = async (params?: ListDrawingsParams, options?: RequestInit): Promise<listDrawingsResponse> => {
+
+  const res = await fetch(getListDrawingsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listDrawingsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listDrawingsResponse
+}
+
+
+
+export type deleteDrawingResponse200 = {
+  data: DrawingsDeletedOutputBody
+  status: 200
+}
+
+export type deleteDrawingResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type deleteDrawingResponseSuccess = (deleteDrawingResponse200) & {
+  headers: Headers;
+};
+export type deleteDrawingResponseError = (deleteDrawingResponseDefault) & {
+  headers: Headers;
+};
+
+export type deleteDrawingResponse = (deleteDrawingResponseSuccess | deleteDrawingResponseError)
+
+export const getDeleteDrawingUrl = (id: string,) => {
+
+
+
+
+  return `/api/drawings/${id}`
+}
+
+/**
+ * @summary Delete one of the caller's marked drawings; its marks stay
+ */
+export const deleteDrawing = async (id: string, options?: RequestInit): Promise<deleteDrawingResponse> => {
+
+  const res = await fetch(getDeleteDrawingUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteDrawingResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as deleteDrawingResponse
+}
+
+
+
+export type getDrawingResponse200 = {
+  data: DrawingOutputBody
+  status: 200
+}
+
+export type getDrawingResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getDrawingResponseSuccess = (getDrawingResponse200) & {
+  headers: Headers;
+};
+export type getDrawingResponseError = (getDrawingResponseDefault) & {
+  headers: Headers;
+};
+
+export type getDrawingResponse = (getDrawingResponseSuccess | getDrawingResponseError)
+
+export const getGetDrawingUrl = (id: string,) => {
+
+
+
+
+  return `/api/drawings/${id}`
+}
+
+/**
+ * @summary A drawing answer's board, as a link that lasts the hour
+ */
+export const getDrawing = async (id: string, options?: RequestInit): Promise<getDrawingResponse> => {
+
+  const res = await fetch(getGetDrawingUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getDrawingResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getDrawingResponse
 }
 
 

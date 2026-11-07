@@ -4,7 +4,6 @@ import path from 'node:path';
 import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import { sentryVitePlugin } from '@sentry/vite-plugin';
 import tailwindcss from '@tailwindcss/vite';
-import { vanillaExtractPlugin } from '@vanilla-extract/vite-plugin';
 import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv } from 'vite';
 import { DEV_SHARE_LINK_SECRET } from './src/lib/shareLink';
@@ -280,11 +279,6 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
             : [],
       },
       react(),
-      // BlockSuite's few `.css.ts` styles (vendor/blocksuite/README.md). It starts a
-      // Vite server of its own, so only in a build where the board can load: one with
-      // MSW on or the canvas bench's. The dev server pre-bundles them instead
-      // (optimizeDeps). The answer flow turns this on for every build.
-      command === 'build' && (useMsw || benchRoutes) && vanillaExtractPlugin(),
       mathliveFonts(),
       embedFrame(env.VITE_EMBED_ORIGIN),
       policyHeaders(env),

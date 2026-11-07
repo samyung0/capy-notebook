@@ -123,7 +123,7 @@ kept their position.
 ## Shared question format
 
 `src/features/questions/types.ts` defines stem blocks and ordered parts. Each
-part has a stable ID, blocks, one of seven answer types, whole `marks` (1–20)
+part has a stable ID, blocks, one of eight answer types, whole `marks` (1–20)
 and worked-solution blocks. A multiple-choice part (`mcq`) has one or more
 correct options and is answered with checkboxes (multiple answers, `multi`,
 merged into it on every layer, Epo 2026-10-15; the learner UI redesign is
@@ -143,6 +143,95 @@ Alt+ArrowUp or Alt+ArrowDown moves the focused option with focus following it;
 a move swaps the two options and every pair's `right` with them, so each
 prompt keeps its answer, as removing an option does (Epo 2026-10-18,
 `StringList`'s `onMove` in `editorFields.tsx`).
+
+### Drawing parts
+
+A `drawing` part (Epo 2026-11-03) is answered on the drawing board
+(`src/features/blocksuite/drawingBoard.ts`) and marked like an open part: it
+carries a marking scheme, counts towards the quiz's AI-marked parts, and its
+`itemAwards` and `pending` work as an open part's. Its answer is `{type:
+'drawing'}` alone: every drawing part opens the same plain board, with no
+background types or starting board (Epo 2026-11-06, which replaced the blank,
+grid, axes and figure backgrounds agreed on 2026-11-03). Every validator
+refuses any other key on it, on the shared `drawing-*` fixtures. Go's
+`questions.ModelMarked`, Rust's `model_marked` and the browser's `modelMarked`
+say which types a model marks; the Rust validator keeps the frozen Node
+server's wording for a misplaced marking scheme. No model writes this type:
+generation, extraction and the bank pilot's schemas leave it out, since adding
+it would change what they are sent.
+
+Answering (`src/features/quizzes/drawing/`): before drawing, the part shows one
+generic squared grid with Draw answer (E1, Epo 2026-11-06), the same for every
+drawing part. Draw answer opens the board full screen (`DrawingBoardScreen`,
+loaded with BlockSuite only then): the question pinned at the top left, folded to
+one line under a top bar on phones, and Done at the top right, both hidden while a
+card (a plane, a chart) is open full screen with its own Done. The board shows a dashed
+answer area of 1,920 × 1,200 board units with a small "Answer area" label at its top
+left (`answerArea`, W3 and W4, Epo 2026-11-07) and opens fitted to it, on phones too;
+drawing inside it stays under the wide-board line below. It is on the page only:
+never in the marking image, the saved board or a preview, and not shown read only. As it changes, the
+board is kept on the device (`localDb` `drawingDrafts`) under the quiz or the
+assignment attempt (`DrawingDraftScope`), and reopens from there until Done. Done
+on an empty board leaves the part unanswered; past 250 KB (undo history stripped)
+it toasts and the board stays open; on a board whose marking image would be more
+than 2,000 board units on its longest side (`stats().span`, where lowercase
+labels fade in the 1,568 px image) it asks first, Keep drawing or Done anyway (W1,
+Epo 2026-11-07), though a time limit's Done never asks; otherwise the answer is the board's document
+and its WebP marking image, and the part shows the drawing with Edit drawing.
+Checked, it shows its verdict, the drawing and Open drawing, the whole board read
+only. A time limit running out with the board open presses its Done before the
+assignment is submitted; an assignment closing does not.
+
+Saving (migration 0156 `drawings`, `server/internal/store/drawings.go`): a
+practice board stays on the device until Check, which sends the board and its
+image with the answers; an assignment's goes up on Done (`PUT
+/api/assignment-attempts/{id}/drawings/{partId}`). The part's answer is then
+`{"drawing": id}`. The person attempting pays for the board (Epo 2026-11-06),
+through the storage gate. The marking image is kept only while its part waits on
+marking (Not marked), and never under "Manual grading only". No picture of a
+drawing is stored: answers, results, Approve, the report and Files › Canvas draw
+it from the board (`drawBoardPreview`, `DrawingPreview`), fetched through `GET
+/api/drawings/{id}` by the member or the assignment's staff. A practice board goes
+when its quiz is deleted for good, an assignment's with the assignment; a leaving
+member keeps their unmarked boards and loses the marked ones.
+
+Files › Canvas (`CanvasTab`, mocks S2 and S3) lists the payer's drawings whose
+parts are marked (`GET /api/drawings`), named by the quiz with no score; the
+payer deletes one (`DELETE /api/drawings/{id}`) or all (`DELETE
+/api/drawings`), the marks staying, and the result then says "Drawing deleted".
+Billing's storage bar splits into Files, "Notes, quizzes and images" and Canvas
+(`BillingInfo.storageBreakdown`, recounted from the same rows as the meter).
+Marking (M1, Epo 2026-11-07): a drawing goes to the grading slot's model on the
+open answer's path, credits and settings, its marking image sent as a data URL
+in place of the answer (`grading.py` `drawing_message`), with the system prompt
+plus `DRAWN_SECTION`; open-answer calls are unchanged. A drawing's quotes are not
+checked against text and it gets no copy check. A part left Not marked keeps its
+image so Check again (practice) or Mark with AI (assignments) can give it its one
+marking later; the image goes once that marking lands (`DropDrawingImages`),
+before any approval. The grading slot requires `vision` (M4, Epo 2026-11-07,
+`models.slotRequirements`).
+
+A quiz's drawing part may hold a drawn sample answer (Q3): `answer.sample:
+{board, image}`, two of the quiz's editor assets, the board gzipped under the
+`board` purpose (migration 0158, a drawing's 250 KB cap, kept out of Files ›
+Embeds) and the image an ordinary quiz image. The bank refuses it. The live
+quiz keeps it with the keys (`sampleBoard`, `sampleImage`), and it counts,
+copies and freezes with the quiz's other assets; a copy missing either asset
+drops it whole. Authors draw it from "Sample answer (optional)" under the
+marking scheme in the quiz editor and the question dialog (`DrawnSampleField`,
+A1–A3); results show it drawn from its board, and marking sends its image
+before the student's drawing.
+
+In an assignment, Done on an emptied board deletes the part's stored drawing
+(`DELETE /api/assignment-attempts/{id}/drawings/{partId}`), so it is neither
+submitted nor charged. A board still being drawn on the device belongs to the
+signed-in account: `claimAccountData` deletes another account's drafts, and
+everyone's on sign-out.
+
+A checked model-marked part (open or drawing) shows its marking scheme in the
+open, each point with a tick, a dash or a cross and its marks, then its sample
+answer, with the worked solution folded below (R1, Epo 2026-11-06,
+`QuestionReview`).
 
 ### Grouped parts
 

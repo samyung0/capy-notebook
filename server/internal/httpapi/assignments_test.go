@@ -59,7 +59,7 @@ func TestAssignmentRoutesAuthorize(t *testing.T) {
 	form := map[string]any{
 		"kind": "marked", "title": "Routes", "quizId": made.ID, "dueAt": time.Now().Add(time.Hour).Format(time.RFC3339),
 		"attempts": 1, "noLate": false, "latePenaltyPct": 20, "assignAll": true, "assignees": []string{}, "draft": false,
-		"approveAiMarks": true, "showAnswers": true, "shuffle": false, "files": []any{},
+		"marking": "ai_approve", "showAnswers": true, "shuffle": false, "files": []any{},
 	}
 	for _, user := range []string{"u_viewer", "u_other"} {
 		if rec := doReq(t, h, http.MethodPost, ws+"/assignments", user, form); rec.Code != http.StatusNotFound {
@@ -306,7 +306,7 @@ func startedAssignment(t *testing.T, h http.Handler) string {
 	created := doReq(t, h, http.MethodPost, ws+"/assignments", "u_owner", map[string]any{
 		"kind": "marked", "title": "Closing", "quizId": made.ID, "dueAt": time.Now().Add(time.Hour).Format(time.RFC3339),
 		"attempts": 1, "noLate": false, "latePenaltyPct": 0, "assignAll": true, "assignees": []string{}, "draft": false,
-		"approveAiMarks": true, "showAnswers": true, "shuffle": false, "files": []any{},
+		"marking": "ai_approve", "showAnswers": true, "shuffle": false, "files": []any{},
 	})
 	if created.Code != http.StatusCreated && created.Code != http.StatusOK {
 		t.Fatalf("create assignment: status = %d body=%s", created.Code, created.Body.String())

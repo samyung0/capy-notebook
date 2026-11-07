@@ -11,6 +11,13 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef } from 'react';
+import { forgetDrawingBoards } from '@/features/quizzes/drawing/drawingBoards';
+import {
+  answersForCheck,
+  answersForSave,
+  type DrawingValue,
+  drawingUpload,
+} from '@/features/quizzes/drawing/drawingValue';
 import type { Answers } from '@/features/quizzes/grade';
 import {
   durationBucket,
@@ -97,6 +104,7 @@ import type {
   Label,
   LearningOverview,
   LibraryFigure,
+  MarkedDrawings,
   Material,
   MaterialCollaborationToken,
   MaterialComment,
@@ -2976,7 +2984,10 @@ export function useCheckQuizQuestion(options?: MutationUiOptions) {
       quizId,
       ...body
     }: CheckQuizQuestionReq & { quizId: string }) =>
-      api.post<AttemptDetail>(`/quizzes/${quizId}/check`, body),
+      api.post<AttemptDetail>(`/quizzes/${quizId}/check`, {
+        ...body,
+        answers: answersForCheck(body.answers as Answers),
+      }),
     onSuccess: (attempt) => {
       // An embedded quiz records nothing: its attempt comes back without an id.
       if (!attempt.id) return;
@@ -3225,7 +3236,67 @@ export function useStartAssignment(workspaceId: string) {
 
 /** Saves a running attempt's answers: no toast, the page says Saved or not. */
 export const saveAssignmentAnswers = (attemptId: string, answers: Answers) =>
-  api.put<void>(`/assignment-attempts/${attemptId}/answers`, { answers });
+  api.put<void>(`/assignment-attempts/${attemptId}/answers`, {
+    answers: answersForSave(answers),
+  });
+
+/** Stores a drawing part's board and image with Done; the answer is its id. */
+export const saveAssignmentDrawing = (
+  attemptId: string,
+  partId: string,
+  value: DrawingValue
+) =>
+  api
+    .put<{ id: string }>(
+      `/assignment-attempts/${attemptId}/drawings/${encodeURIComponent(partId)}`,
+      drawingUpload(value)
+    )
+    .then(({ id }) => id);
+
+/** Forgets a drawing part's stored drawing (Done on an emptied board). */
+export const deleteAssignmentDrawing = (attemptId: string, partId: string) =>
+  api.del<void>(
+    `/assignment-attempts/${attemptId}/drawings/${encodeURIComponent(partId)}`
+  );
+
+/** Files › Canvas: the caller's marked drawings, newest first. Lazy, like the
+ * Trash tab; secondary, so it renders its own error state. */
+export const useMarkedDrawings = (enabled: boolean) =>
+  useInfiniteQuery({
+    enabled,
+    getNextPageParam: (last: MarkedDrawings) => last.nextCursor || undefined,
+    initialPageParam: '',
+    meta: { errorBoundary: false },
+    queryFn: ({ pageParam }: { pageParam: string }) =>
+      api.get<MarkedDrawings>(
+        `/drawings${pageParam ? `?${new URLSearchParams({ cursor: pageParam })}` : ''}`
+      ),
+    queryKey: qk.drawings,
+  });
+
+function invalidateAfterDrawingDelete(qc: QueryClient, ids: string[] | null) {
+  forgetDrawingBoards(ids);
+  qc.invalidateQueries({ queryKey: qk.drawings });
+  qc.invalidateQueries({ queryKey: qk.billing });
+}
+
+/** Delete one marked drawing; its marks stay. */
+export function useDeleteDrawing() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del<{ deleted: number }>(`/drawings/${id}`),
+    onSuccess: (_out, id) => invalidateAfterDrawingDelete(qc, [id]),
+  });
+}
+
+/** Delete every marked drawing the caller pays for. */
+export function useDeleteAllDrawings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.del<{ deleted: number }>('/drawings'),
+    onSuccess: () => invalidateAfterDrawingDelete(qc, null),
+  });
+}
 
 /** Its one caller reports a failure itself: no global toast. */
 export function useSubmitAssignmentAttempt(workspaceId: string) {
@@ -3234,7 +3305,7 @@ export function useSubmitAssignmentAttempt(workspaceId: string) {
     meta: { errorToast: false },
     mutationFn: ({ answers, id }: { answers: Answers; id: string }) =>
       api.post<AssignmentAttempt>(`/assignment-attempts/${id}/submit`, {
-        answers,
+        answers: answersForSave(answers),
       }),
     onSuccess: (attempt) => {
       qc.setQueryData(qk.assignmentAttempt(attempt.id), attempt);

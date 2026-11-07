@@ -40,6 +40,7 @@ func TestClassifySplitsEditorFromChat(t *testing.T) {
 		"/api/workspaces":                                   classDefault,
 		"/api/edit-incidents":                               classIncident,
 		"/api/files/f_1/thumbnail":                          classThumbnail,
+		"/api/assignment-attempts/at_1/drawings/p1":         classUpload,
 		"/api/workspaces/ws_1/voice-transcriptions":         classVoice,
 		"/api/voice-transcriptions":                         classVoice,
 		"/api/workspaces/ws_1/review":                       classReview,

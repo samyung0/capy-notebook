@@ -22,8 +22,9 @@ import { userToast } from '@/components/ui/userToast';
 import { AiWarning } from '@/features/questions/AiWarning';
 import { QuestionBlockView, TextView } from '@/features/questions/QuestionView';
 import type { Question, QuestionBlock } from '@/features/questions/types';
-import { questionMarks } from '@/features/questions/types';
-import { formatPoints } from '@/features/quizzes/grade';
+import { modelMarked, questionMarks } from '@/features/questions/types';
+import { ReviewedDrawing } from '@/features/quizzes/drawing/DrawingAnswer';
+import { type Answer, formatPoints } from '@/features/quizzes/grade';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -336,7 +337,7 @@ function ResultBody({
   const [items, setItems] = useState<Record<string, (number | null)[]>>(() =>
     Object.fromEntries(
       question.parts
-        .filter((p) => p.answer.type === 'open')
+        .filter((p) => modelMarked(p.answer.type))
         .map((p) => [
           p.id,
           (p.markscheme ?? []).map((_, i) =>
@@ -348,7 +349,7 @@ function ResultBody({
   const [closed, setClosed] = useState<Record<string, number>>(() =>
     Object.fromEntries(
       question.parts
-        .filter((p) => p.answer.type !== 'open')
+        .filter((p) => !modelMarked(p.answer.type))
         .map((p) => [p.id, p.awarded ?? 0])
     )
   );
@@ -363,7 +364,7 @@ function ResultBody({
         mark: {
           comment: comment.trim(),
           parts: question.parts.map((part) =>
-            part.answer.type === 'open'
+            modelMarked(part.answer.type)
               ? {
                   items: (items[part.id] ?? []).map((v) => v ?? 0),
                   partId: part.id,
@@ -394,7 +395,7 @@ function ResultBody({
         </div>
       )}
       {question.parts.map((part) =>
-        part.answer.type === 'open' ? (
+        modelMarked(part.answer.type) ? (
           <OpenPart
             answer={attempt.answers[part.id]}
             editing={staff}
@@ -516,11 +517,31 @@ function OpenPart({
         <p className="t-label text-fg-muted uppercase">
           {m.assignment_your_answer()}
         </p>
-        <div className="mt-1.5 whitespace-pre-wrap rounded-lg border border-line px-3 py-2">
-          {text || (
-            <span className="text-fg-muted">{m.assignment_not_answered()}</span>
-          )}
-        </div>
+        {part.answer.type === 'drawing' ? (
+          // Drawn from its board, with no frame (R2).
+          <div className="mt-1.5">
+            {answer ? (
+              <ReviewedDrawing
+                blocks={part.blocks}
+                marks={m.question_ui_marks({ count: part.marks })}
+                title={m.drawing_answer_question()}
+                value={answer as Answer}
+              />
+            ) : (
+              <span className="text-fg-muted">
+                {m.assignment_not_answered()}
+              </span>
+            )}
+          </div>
+        ) : (
+          <div className="mt-1.5 whitespace-pre-wrap rounded-lg border border-line px-3 py-2">
+            {text || (
+              <span className="text-fg-muted">
+                {m.assignment_not_answered()}
+              </span>
+            )}
+          </div>
+        )}
       </div>
       {part.pending && !editing && (
         <span

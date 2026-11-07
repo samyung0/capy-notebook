@@ -120,6 +120,8 @@ export type {
   InvoiceList,
   Label,
   LocaleInputBody,
+  MarkedDrawing,
+  MarkedDrawings,
   MaterialRef,
   MaterialUpdateResult,
   MicrosoftDriveHost,

@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, lazy, type ReactNode, Suspense } from 'react';
 import { CategoryChart } from '@/components/charts/CategoryChart';
 import { PlotChart } from '@/components/charts/PlotChart';
 import { Icon } from '@/components/ui/Icon';
@@ -24,6 +24,14 @@ import {
   type QuestionPart,
   questionMarks,
 } from './types';
+
+// A drawn sample answer's preview loads only where one shows: shared pages
+// render without it (Q3).
+const DrawnSampleView = lazy(() =>
+  import('@/features/quizzes/drawing/DrawnSample').then((module) => ({
+    default: module.DrawnSampleView,
+  }))
+);
 
 export type BlockSection = {
   groupId?: string;
@@ -702,62 +710,96 @@ export function QuestionReview({
         const items = part.markscheme ?? [];
         if (items.length === 0 && part.solution.length === 0)
           return renderAnswer?.(part);
+        const sample =
+          part.answer.type === 'open' ? (part.answer.accepted[0] ?? '') : '';
+        const solution = part.solution.length > 0 && (
+          <details className="col-start-2 min-w-0 text-sm">
+            <summary className="cursor-pointer font-semibold text-fg-secondary">
+              {m.question_ui_worked_solution()}
+            </summary>
+            <div className="grid gap-3 pt-3 text-fg-secondary">
+              {part.solution.map((block, i) => (
+                <QuestionBlockView block={block} key={i} />
+              ))}
+            </div>
+          </details>
+        );
+        if (items.length === 0)
+          return (
+            <>
+              {renderAnswer?.(part)}
+              {solution}
+            </>
+          );
+        // A model-marked part (R1, Epo 2026-11-06): its marking scheme in the
+        // open, each point with its mark once marked, then the sample answer.
         return (
           <>
             {renderAnswer?.(part)}
-            <details className="col-start-2 min-w-0 text-sm">
-              <summary className="cursor-pointer font-semibold text-fg-secondary">
-                {items.length === 0
-                  ? m.question_ui_worked_solution()
-                  : part.solution.length > 0
-                    ? m.question_ui_scheme_and_solution()
-                    : m.question_ui_marking_scheme()}
-              </summary>
-              <div className="grid gap-3 pt-3 text-fg-secondary">
-                <ul className="space-y-1 empty:hidden">
-                  {items.map((item, i) => {
-                    // Jev's marks per item, once the open part is graded.
-                    const award = part.itemAwards?.[i];
-                    return (
-                      <li className="flex items-baseline gap-4" key={i}>
-                        <TextView className="min-w-0 flex-1" text={item.text} />
-                        {award == null ? (
-                          <span className="shrink-0 text-fg-muted text-sm">
-                            [{item.marks}]
-                          </span>
-                        ) : (
-                          <span
-                            className={cn(
-                              'inline-flex shrink-0 items-center gap-1 font-semibold text-sm',
+            <div className="col-start-2 grid min-w-0 gap-1.5 text-sm">
+              <p className="t-meta font-bold text-fg-muted">
+                {m.question_ui_marking_scheme()}
+              </p>
+              <ul className="grid gap-1">
+                {items.map((item, i) => {
+                  const award = part.itemAwards?.[i];
+                  const tone =
+                    award == null
+                      ? 'text-fg-muted'
+                      : award === item.marks
+                        ? 'text-tint-success-fg'
+                        : award > 0
+                          ? 'text-tint-warning-fg'
+                          : 'text-tint-error-fg';
+                  return (
+                    <li
+                      className="grid grid-cols-[18px_minmax(0,1fr)_auto] items-baseline gap-2"
+                      key={i}
+                    >
+                      <span className={cn('self-center', tone)}>
+                        {award != null && (
+                          <Icon
+                            name={
                               award === item.marks
-                                ? 'text-tint-success-fg'
+                                ? 'check'
                                 : award > 0
-                                  ? 'text-tint-warning-fg'
-                                  : 'text-tint-error-fg'
-                            )}
-                          >
-                            <Icon
-                              name={
-                                award === item.marks
-                                  ? 'check'
-                                  : award > 0
-                                    ? 'minus'
-                                    : 'x'
-                              }
-                              size={12}
-                            />
-                            {award} / {item.marks}
-                          </span>
+                                  ? 'minus'
+                                  : 'x'
+                            }
+                            size={16}
+                          />
                         )}
-                      </li>
-                    );
-                  })}
-                </ul>
-                {part.solution.map((block, i) => (
-                  <QuestionBlockView block={block} key={i} />
-                ))}
-              </div>
-            </details>
+                      </span>
+                      <TextView className="min-w-0" text={item.text} />
+                      <span className={cn('shrink-0 text-sm', tone)}>
+                        {award == null
+                          ? `[${item.marks}]`
+                          : `${award} / ${item.marks}`}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+              {sample && (
+                <>
+                  <p className="t-meta mt-2 font-bold text-tint-success-fg">
+                    {m.question_ui_sample_answer_heading()}
+                  </p>
+                  <TextView className="text-fg-secondary" text={sample} />
+                </>
+              )}
+              {part.answer.type === 'drawing' && part.answer.sample && (
+                <>
+                  <p className="t-meta mt-2 font-bold text-tint-success-fg">
+                    {m.question_ui_sample_answer_heading()}
+                  </p>
+                  <Suspense fallback={null}>
+                    <DrawnSampleView sample={part.answer.sample} />
+                  </Suspense>
+                </>
+              )}
+            </div>
+            {solution}
           </>
         );
       }}

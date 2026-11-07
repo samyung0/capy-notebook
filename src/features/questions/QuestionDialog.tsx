@@ -32,6 +32,11 @@ import {
   UndoButtons,
 } from '@/features/collaboration/LiveItemControls';
 import type { UndoTarget } from '@/features/collaboration/undo';
+import {
+  DrawnSampleField,
+  type UploadDrawnSample,
+} from '@/features/quizzes/drawing/DrawnSample';
+import { pinnedQuestion } from '@/features/quizzes/drawing/pinnedQuestion';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -78,6 +83,7 @@ import {
   blankQuestion,
   gapNumbers,
   gapText,
+  modelMarked,
   QUESTION_TYPES,
   type Question,
   type QuestionAnswer,
@@ -131,7 +137,7 @@ function gapsAnswer(part: QuestionPart): QuestionPart {
     markscheme: undefined,
   };
 }
-/** Open answers carry a marking scheme worth the part's marks; closed ones
+/** Open and drawing answers carry a marking scheme worth the part's marks; closed ones
  * drop it. Turned away from blanks, the text blocks holding them go. */
 export function withAnswer(
   part: QuestionPart,
@@ -145,7 +151,7 @@ export function withAnswer(
     part.answer.type === 'gaps'
       ? part.blocks.filter((block) => gapNumbers([block]).length === 0)
       : part.blocks;
-  return answer.type === 'open'
+  return modelMarked(answer.type)
     ? {
         ...part,
         answer,
@@ -155,9 +161,9 @@ export function withAnswer(
     : { ...part, answer, blocks, itemAwards: undefined, markscheme: undefined };
 }
 
-// Only open parts have a marking scheme.
+// Only open and drawing parts have a marking scheme.
 const answerTitle = (part: QuestionPart) =>
-  part.answer.type === 'open'
+  modelMarked(part.answer.type)
     ? m.question_ui_answer_and_marking_scheme()
     : m.question_ui_answer_and_marks();
 
@@ -222,6 +228,8 @@ export interface QuestionDialogProps {
   question: Question;
   questionNumber?: number;
   uploadAsset?: UploadQuestionAsset;
+  /** A quiz's drawn sample answers (Q3); the bank has none. */
+  uploadSample?: UploadDrawnSample;
 }
 
 /** A plot has no editor, so it is never added empty. */
@@ -344,6 +352,7 @@ function QuestionDialogSession({
   policy = 'quiz',
   bankAssetsUrl,
   uploadAsset,
+  uploadSample,
   live,
 }: QuestionDialogProps) {
   const {
@@ -1405,8 +1414,9 @@ function QuestionDialogSession({
             {/* Learners see their own answer marked instead; the key is here
                 for the editor. An open part shows its optional sample answer
                 and its marking scheme. */}
-            {(part.answer.type !== 'open' ||
-              part.answer.accepted.length > 0 ||
+            {(!modelMarked(part.answer.type) ||
+              (part.answer.type === 'open' &&
+                part.answer.accepted.length > 0) ||
               (part.markscheme?.length ?? 0) > 0) && (
               // The key lives in the part's answer: a click selects that
               // block, brought into view only as far as it needs.
@@ -1430,16 +1440,17 @@ function QuestionDialogSession({
                 role="button"
                 tabIndex={0}
               >
-                {part.answer.type === 'open' ? (
+                {modelMarked(part.answer.type) ? (
                   <>
-                    {part.answer.accepted.length > 0 && (
-                      <div className="space-y-2">
-                        <h4 className="font-semibold text-sm text-tint-accent-1-fg">
-                          {m.question_ui_sample_answer_heading()}
-                        </h4>
-                        <AnswerView part={part} />
-                      </div>
-                    )}
+                    {part.answer.type === 'open' &&
+                      part.answer.accepted.length > 0 && (
+                        <div className="space-y-2">
+                          <h4 className="font-semibold text-sm text-tint-accent-1-fg">
+                            {m.question_ui_sample_answer_heading()}
+                          </h4>
+                          <AnswerView part={part} />
+                        </div>
+                      )}
                     {(part.markscheme?.length ?? 0) > 0 && (
                       <div className="space-y-2">
                         <h4 className="font-semibold text-sm text-tint-accent-1-fg">
@@ -1788,6 +1799,19 @@ function QuestionDialogSession({
                     max={limits.QUESTION_MARKS_MAX}
                     onChange={(marks) => editPart({ ...shown.part, marks })}
                     value={shown.part.marks}
+                  />
+                )}
+                {shown.part.answer.type === 'drawing' && uploadSample && (
+                  <DrawnSampleField
+                    onChange={(sample) =>
+                      editPart({
+                        ...shown.part,
+                        answer: { type: 'drawing', ...(sample && { sample }) },
+                      })
+                    }
+                    pinned={pinnedQuestion(draft, shown.part, questionNumber)}
+                    sample={shown.part.answer.sample}
+                    upload={uploadSample}
                   />
                 )}
               </div>

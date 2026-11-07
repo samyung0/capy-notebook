@@ -39,9 +39,11 @@ import { issueMessages, questionIssues } from '@/features/questions/issues';
 import {
   blankQuestion,
   type LearnerQuestion,
+  modelMarked,
   questionMarks,
 } from '@/features/questions/types';
 import { m } from '@/i18n';
+import { quizSampleUpload } from './drawing/DrawnSample';
 import {
   moveQuestion,
   questionState,
@@ -62,11 +64,11 @@ const QuestionPane = lazy(() =>
   }))
 );
 
-/** The quiz's AI-marked (open) parts against the cap. */
+/** The quiz's AI-marked (open and drawing) parts against the cap. */
 export function aiMarkedCount(questions: Question[]): string {
   const open = questions
     .flatMap((question) => question.parts)
-    .filter((part) => part.answer.type === 'open').length;
+    .filter((part) => modelMarked(part.answer.type)).length;
   return m.quiz_ai_marked_count({ count: open, max: QUIZ_OPEN_PARTS_MAX });
 }
 
@@ -190,6 +192,7 @@ function QuizEditorBody({
               status={status}
               undo={undo}
               uploadAsset={quizImageUpload(quizId)}
+              uploadSample={quizSampleUpload(quizId)}
               write={(next) => {
                 blank.current = null;
                 writeQuestion(content, keys, next);

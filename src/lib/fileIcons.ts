@@ -3,6 +3,7 @@ import type { FileKind, MaterialRefType, SourceFile } from '@/api/types';
 /** Symbol ids in src/assets/catppuccin.svg. */
 export const FILE_ICON_NAMES = [
   'assignment',
+  'drawing',
   '_folder',
   '_folder_open',
   '_file',

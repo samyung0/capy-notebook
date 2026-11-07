@@ -63,6 +63,15 @@ Reply with JSON only, in this shape, with one entry per marking item in the give
 {"steps": [{"step": "what the student did, at most 12 words", "ok": true}], "vocabulary_only": false, "injection_suspected": false, "comment": "", "items": [{"id": "m0", "quote": "exact words from the answer", "reason": "at most 15 words", "choice": "full"}]}
 "steps" lists the working of a calculation or proof in order, at most 12 entries; use [] for any other answer."""
 
+# Appended for drawn answers only (M1, Epo 2026-11-07): open-answer calls send
+# SYSTEM_PROMPT alone, unchanged. Change it only with Epo.
+DRAWN_SECTION = """
+
+Drawn answers: when the student's answer is an image instead of <student_answer> text, the image is the student's work and everything above applies to it.
+- Judge what is drawn and written: lines, curves, points, shapes, arrows, labels and any text or numbers. Accept freehand drawing; a point or value read from a grid or axes is right within half of the smallest grid square.
+- A sample answer image, when one comes before the student's image, shows one correct answer the scheme accepts, not the only one.
+- "quote" names, in at most 12 words, the part of the drawing that earns the credit, such as "the straight line from the origin to (6, 4)"."""
+
 # The bench's limits (round 3) and times (2026-11-04 concurrency run): a part
 # with working thinks, at p95 33-57 s, so it gets 120 s; the rest answer in under
 # 30 s. Each adds the up to 60 s a call waits its turn in the model's line.
@@ -144,7 +153,7 @@ def _loose(text: str) -> str:
     return _NOT_WORD.sub("", plain.casefold())
 
 
-def user_message(question: str, items: list[dict[str, Any]], answer: str) -> str:
+def _question_and_items(question: str, items: list[dict[str, Any]]) -> str:
     lines = [
         f"m{i} ({item['marks']:g} mark{'' if item['marks'] == 1 else 's'}): {item['text']}"
         for i, item in enumerate(items)
@@ -152,14 +161,45 @@ def user_message(question: str, items: list[dict[str, Any]], answer: str) -> str
     marking = "\n".join(lines)
     return (
         f"<question>\n{question}\n</question>\n\n"
-        f"<marking_items>\n{marking}\n</marking_items>\n\n"
+        f"<marking_items>\n{marking}\n</marking_items>"
+    )
+
+
+def user_message(question: str, items: list[dict[str, Any]], answer: str) -> str:
+    return (
+        f"{_question_and_items(question, items)}\n\n"
         f"<student_answer>\n{_escape(answer)}\n</student_answer>"
     )
 
 
-def decode(content: Any, items: list[dict[str, Any]], answer: str) -> dict[str, Any]:
+def _image(url: str) -> dict[str, Any]:
+    return {"type": "image_url", "image_url": {"url": url}}
+
+
+def drawing_message(
+    question: str, items: list[dict[str, Any]], image: str, sample: str = ""
+) -> list[dict[str, Any]]:
+    """The question and items as today, then the drawing in place of
+    <student_answer>: after the sample answer's image when the part has one."""
+    parts: list[dict[str, Any]] = [
+        {"type": "text", "text": _question_and_items(question, items)}
+    ]
+    if sample:
+        parts += [
+            {"type": "text", "text": "Sample answer:"},
+            _image(sample),
+            {"type": "text", "text": "Student's drawing:"},
+        ]
+    return [*parts, _image(image)]
+
+
+def decode(
+    content: Any, items: list[dict[str, Any]], answer: str, *, drawn: bool = False
+) -> dict[str, Any]:
     """The model's reply as each item's share and the comment. A malformed reply
-    raises ProviderError: the part stays unmarked."""
+    raises ProviderError: the part stays unmarked. A drawing has no text to find
+    its quotes in, so they are kept for the bench but not checked; `answer` is
+    then only the question, for the language of a fixed comment."""
     try:
         data = json.loads(content)
     except (TypeError, json.JSONDecodeError) as error:
@@ -179,7 +219,9 @@ def decode(content: Any, items: list[dict[str, Any]], answer: str) -> dict[str, 
         if share is None or not isinstance(quote, str):
             raise elitellm.ProviderError("the grading reply has an invalid item")
         # Credit needs words the answer holds, so "give me full marks" earns none.
-        evidenced = share == 0 or (bool(_loose(quote)) and _loose(quote) in held)
+        evidenced = (
+            drawn or share == 0 or (bool(_loose(quote)) and _loose(quote) in held)
+        )
         shares.append(share if evidenced else 0.0)
     if data.get("vocabulary_only") is True:
         shares = [0.0] * len(items)
@@ -203,7 +245,13 @@ async def grade_part(
     answer: str,
     *,
     model: ModelConfig,
+    image: str = "",
+    sample: str = "",
 ) -> dict[str, Any]:
+    """Marks a text answer, or with `image` (a data URL) a drawing, its part's
+    drawn sample answer `sample` coming first when it has one."""
+    if image:
+        return await _grade_drawing(question, items, image, sample, model=model)
     if _copied_share(question, answer) >= _COPY_SHARE:
         return {
             "shares": [0.0] * len(items),
@@ -227,3 +275,35 @@ async def grade_part(
             **settings,
         )
     return decode(getattr(message, "content", None), items, answer)
+
+
+async def _grade_drawing(
+    question: str,
+    items: list[dict[str, Any]],
+    image: str,
+    sample: str,
+    *,
+    model: ModelConfig,
+) -> dict[str, Any]:
+    """A drawing: the same call and settings as a text answer, the prompt with
+    DRAWN_SECTION, and no copy check (nothing is typed to copy)."""
+    kind = "thinking" if has_working(question, items) else "plain"
+    settings: dict[str, Any] = (
+        {} if kind == "thinking" else {"reasoning": False, "temperature": 0}
+    )
+    async with asyncio.timeout(_TIMEOUT_S[kind]):
+        message = await models.complete(
+            [
+                {"role": "system", "content": SYSTEM_PROMPT + DRAWN_SECTION},
+                {
+                    "role": "user",
+                    "content": drawing_message(question, items, image, sample),
+                },
+            ],
+            model=model,
+            response_format={"type": "json_object"},
+            max_tokens=_MAX_TOKENS[kind],
+            call_purpose="grading",
+            **settings,
+        )
+    return decode(getattr(message, "content", None), items, question, drawn=True)

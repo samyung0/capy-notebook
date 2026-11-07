@@ -193,6 +193,9 @@ func (s *Store) RemoveWorkspaceMemberWithResult(ctx context.Context, actorID, ws
 	if err != nil {
 		return nil, false, err
 	}
+	if err := dropLeaverMarkedDrawingsTx(ctx, tx, wsID, memberID); err != nil {
+		return nil, false, err
+	}
 	if leaving {
 		return nil, false, tx.Commit(ctx)
 	}

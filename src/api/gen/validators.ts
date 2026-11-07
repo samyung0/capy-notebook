@@ -197,6 +197,50 @@ export const SaveAssignmentAnswersResponse = zod.void()
 
 
 /**
+ * @summary Forget a drawing part's stored drawing in a running attempt (Done on an emptied board)
+ */
+export const deleteAssignmentDrawingPathPartIdMax = 128;
+
+
+
+export const DeleteAssignmentDrawingParams = zod.object({
+  "id": zod.string(),
+  "partId": zod.string().max(deleteAssignmentDrawingPathPartIdMax)
+})
+
+export const DeleteAssignmentDrawingResponse = zod.void()
+
+
+/**
+ * @summary Store a drawing part's board (and its marking image) for a running attempt
+ */
+export const saveAssignmentDrawingPathPartIdMax = 128;
+
+
+
+export const SaveAssignmentDrawingParams = zod.object({
+  "id": zod.string(),
+  "partId": zod.string().max(saveAssignmentDrawingPathPartIdMax)
+})
+
+export const saveAssignmentDrawingBodyBoardMax = 400000;
+
+export const saveAssignmentDrawingBodyImageMax = 420000;
+
+
+
+export const SaveAssignmentDrawingBody = zod.object({
+  "board": zod.string().max(saveAssignmentDrawingBodyBoardMax).describe('The board\'s saved document, base64'),
+  "image": zod.string().max(saveAssignmentDrawingBodyImageMax).optional().describe('The marking image (WebP, or JPEG or PNG where the browser makes no WebP), base64; left out when nothing will mark it')
+})
+
+export const SaveAssignmentDrawingResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "id": zod.string().describe('The stored drawing; the part\'s answer is {"drawing": id}')
+})
+
+
+/**
  * @summary Set or change a question's marks and comment in a member's answers
  */
 export const MarkAssignmentAnswerParams = zod.object({
@@ -319,12 +363,12 @@ export const GetAssignmentResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
-  "approveAiMarks": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
   "average": zod.number().optional(),
   "done": zod.int(),
+  "marking": zod.enum(['ai_approve', 'ai', 'manual']),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
@@ -383,7 +427,6 @@ export const updateAssignmentBodyTitleMax = 120;
 
 
 export const UpdateAssignmentBody = zod.object({
-  "approveAiMarks": zod.boolean(),
   "assignAll": zod.boolean(),
   "assignees": zod.array(zod.string()).max(updateAssignmentBodyAssigneesMax),
   "attempts": zod.int().min(1).max(updateAssignmentBodyAttemptsMax),
@@ -395,6 +438,7 @@ export const UpdateAssignmentBody = zod.object({
 })).max(updateAssignmentBodyFilesMax),
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int().min(updateAssignmentBodyLatePenaltyPctMin).max(updateAssignmentBodyLatePenaltyPctMax),
+  "marking": zod.enum(['ai_approve', 'ai', 'manual']),
   "noLate": zod.boolean(),
   "quizId": zod.string().optional(),
   "showAnswers": zod.boolean(),
@@ -420,12 +464,12 @@ export const UpdateAssignmentResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
-  "approveAiMarks": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
   "average": zod.number().optional(),
   "done": zod.int(),
+  "marking": zod.enum(['ai_approve', 'ai', 'manual']),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
@@ -506,12 +550,12 @@ export const SetAssignmentClosedResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
-  "approveAiMarks": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
   "average": zod.number().optional(),
   "done": zod.int(),
+  "marking": zod.enum(['ai_approve', 'ai', 'manual']),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
@@ -598,12 +642,12 @@ export const PublishAssignmentResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
-  "approveAiMarks": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
   "average": zod.number().optional(),
   "done": zod.int(),
+  "marking": zod.enum(['ai_approve', 'ai', 'manual']),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
@@ -727,12 +771,12 @@ export const RepublishAssignmentResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
-  "approveAiMarks": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
   "average": zod.number().optional(),
   "done": zod.int(),
+  "marking": zod.enum(['ai_approve', 'ai', 'manual']),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
@@ -1573,6 +1617,11 @@ export const GetBillingResponse = zod.object({
   "creditsUsedMicros": zod.int(),
   "planTier": zod.enum(['free', 'pro']),
   "renewalAt": zod.iso.datetime({"offset":true}).optional(),
+  "storageBreakdown": zod.object({
+  "canvasBytes": zod.int(),
+  "filesBytes": zod.int(),
+  "otherBytes": zod.int()
+}),
   "storageLimitBytes": zod.int(),
   "storageReservedBytes": zod.int(),
   "storageUsedBytes": zod.int(),
@@ -2073,6 +2122,85 @@ export const CreateMaterialCommentResponse = zod.object({
   "text": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "userId": zod.string()
+})
+
+
+/**
+ * @summary Delete every marked drawing the caller pays for; their marks stay
+ */
+export const DeleteAllDrawingsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "deleted": zod.int()
+})
+
+
+/**
+ * @summary The caller's marked drawings, newest first (Files › Canvas)
+ */
+export const listDrawingsQueryLimitDefault = 50;
+export const listDrawingsQueryLimitMax = 100;
+
+
+
+export const ListDrawingsQueryParams = zod.object({
+  "limit": zod.int().min(1).max(listDrawingsQueryLimitMax).default(listDrawingsQueryLimitDefault),
+  "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
+})
+
+export const ListDrawingsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "count": zod.int(),
+  "items": zod.array(zod.object({
+  "assignment": zod.boolean().describe('An assignment\'s answer; otherwise practice'),
+  "attemptId": zod.string(),
+  "bytes": zod.int(),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "part": zod.int().optional().describe('The part\'s number from 1, when the question has more than one'),
+  "question": zod.int().describe('The question\'s number, from 1'),
+  "quizName": zod.string(),
+  "workspaceId": zod.string().optional(),
+  "workspaceName": zod.string()
+})),
+  "nextCursor": zod.string().optional(),
+  "totalBytes": zod.int()
+})
+
+
+/**
+ * @summary Delete one of the caller's marked drawings; its marks stay
+ */
+export const deleteDrawingPathIdMax = 64;
+
+
+
+export const DeleteDrawingParams = zod.object({
+  "id": zod.string().max(deleteDrawingPathIdMax)
+})
+
+export const DeleteDrawingResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "deleted": zod.int()
+})
+
+
+/**
+ * @summary A drawing answer's board, as a link that lasts the hour
+ */
+export const getDrawingPathIdMax = 64;
+
+
+
+export const GetDrawingParams = zod.object({
+  "id": zod.string().max(getDrawingPathIdMax)
+})
+
+export const GetDrawingResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "boardUrl": zod.string().describe('The board\'s saved document, gzipped; the link is the same all hour and lasts two'),
+  "bytes": zod.int(),
+  "id": zod.string(),
+  "partId": zod.string()
 })
 
 
@@ -6899,12 +7027,12 @@ export const GetTodoResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
-  "approveAiMarks": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
   "average": zod.number().optional(),
   "done": zod.int(),
+  "marking": zod.enum(['ai_approve', 'ai', 'manual']),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
@@ -7594,12 +7722,12 @@ export const ListAssignmentsResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
-  "approveAiMarks": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
   "average": zod.number().optional(),
   "done": zod.int(),
+  "marking": zod.enum(['ai_approve', 'ai', 'manual']),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
@@ -7660,7 +7788,6 @@ export const createAssignmentBodyTitleMax = 120;
 
 
 export const CreateAssignmentBody = zod.object({
-  "approveAiMarks": zod.boolean(),
   "assignAll": zod.boolean(),
   "assignees": zod.array(zod.string()).max(createAssignmentBodyAssigneesMax),
   "attempts": zod.int().min(1).max(createAssignmentBodyAttemptsMax),
@@ -7672,6 +7799,7 @@ export const CreateAssignmentBody = zod.object({
 })).max(createAssignmentBodyFilesMax),
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int().min(createAssignmentBodyLatePenaltyPctMin).max(createAssignmentBodyLatePenaltyPctMax),
+  "marking": zod.enum(['ai_approve', 'ai', 'manual']),
   "noLate": zod.boolean(),
   "quizId": zod.string().optional(),
   "showAnswers": zod.boolean(),
@@ -7697,12 +7825,12 @@ export const CreateAssignmentResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
-  "approveAiMarks": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
   "average": zod.number().optional(),
   "done": zod.int(),
+  "marking": zod.enum(['ai_approve', 'ai', 'manual']),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),

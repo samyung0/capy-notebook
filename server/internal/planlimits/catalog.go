@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 )
 
@@ -42,8 +43,12 @@ type Limits struct {
 // EditorAssetBytes caps one editor asset of the purpose: an image takes the
 // image cap, audio the per-file cap uploads take (Epo 2026-10-15).
 func (l Limits) EditorAssetBytes(purpose string) int64 {
-	if purpose == "image" {
+	switch purpose {
+	case "image":
 		return l.ImageBytes
+	case "board":
+		// A drawn sample answer's board: a drawing's own cap, gzipped or not.
+		return fieldlimits.DrawingBoardBytes
 	}
 	return l.SourceFileBytes
 }

@@ -19,7 +19,11 @@ import { Tabs } from '@/components/ui/Tabs';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { answerLabels } from '@/features/questions/editorFields';
 import { optionLetter, TextView } from '@/features/questions/QuestionView';
-import { type Question, questionMarks } from '@/features/questions/types';
+import {
+  modelMarked,
+  type Question,
+  questionMarks,
+} from '@/features/questions/types';
 import { formatPoints } from '@/features/quizzes/grade';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -135,7 +139,13 @@ export function AssignmentReport({
             tabs={[
               { label: m.assignment_tab_questions(), value: 'questions' },
               { label: m.assignment_tab_members(), value: 'members' },
-              { label: m.assignment_tab_approve(), value: 'approve' },
+              {
+                label:
+                  assignment.manage?.marking === 'manual'
+                    ? m.assignment_tab_mark()
+                    : m.assignment_tab_approve(),
+                value: 'approve',
+              },
               { label: m.assignment_tab_settings(), value: 'settings' },
             ]}
             value={tab}
@@ -606,7 +616,7 @@ function PartStats({
           </div>
         </div>
       )}
-      {answer.type === 'open' && part.items && (
+      {modelMarked(answer.type) && part.items && (
         <>
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 sm:grid-cols-[minmax(0,1fr)_210px]">
             <p className="t-meta border-divider border-b pb-1.5 text-fg-secondary">

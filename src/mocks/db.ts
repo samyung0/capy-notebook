@@ -1362,6 +1362,34 @@ const seedQuizzes: EditableQuiz[] = [
         ],
         stem: [],
       },
+      // A drawing part (Epo 2026-11-03), answered on the drawing board.
+      {
+        id: 'q_draw',
+        labels: 'letters',
+        layout: 'paper',
+        parts: [
+          {
+            answer: { type: 'drawing' },
+            blocks: [
+              {
+                text: 'Draw a Punnett square for Aa × Aa and label each offspring genotype.',
+                type: 'text',
+              },
+            ],
+            id: 'q_draw:part',
+            marks: 2,
+            markscheme: [
+              {
+                marks: 1,
+                text: 'A two by two grid with A and a on each side.',
+              },
+              { marks: 1, text: 'Each box labelled AA, Aa, Aa or aa.' },
+            ],
+            solution: [],
+          },
+        ],
+        stem: [],
+      },
     ],
     revision: 1,
     topics: ['Genetics'],

@@ -3,11 +3,15 @@ import { CopyError } from '@/lib/errors';
 import { fitImageOffThread } from '@/lib/fitImageOffThread';
 import { api } from './client';
 import { materialQuery } from './hooks';
+import { DRAWING_BOARD_MAX } from './limits.generated';
 import { queryClient } from './queryClient';
 import { uploadWithTicket } from './uploadTurn';
 
 /** A note's media are images and audio only (Epo 2026-10-15). */
 export type EditorAssetPurpose = 'image' | 'audio';
+/** What may be uploaded: a note's media, and a quiz's drawn sample answer's
+ * gzipped board (Q3). */
+type UploadPurpose = EditorAssetPurpose | 'board';
 
 export interface EditorAsset {
   assetId: string;
@@ -45,10 +49,9 @@ export interface EditorAssetUploadOptions {
 
 /** The reader's plan cap, by purpose: what they add is charged to them. The
  * editors already hold the material, so this reads the cache. */
-async function editorAssetMaxBytes(
-  materialId: string,
-  purpose: EditorAssetPurpose
-) {
+async function editorAssetMaxBytes(materialId: string, purpose: UploadPurpose) {
+  // A board's cap is a drawing's, whatever the plan.
+  if (purpose === 'board') return DRAWING_BOARD_MAX;
   const { audioMaxBytes, imageMaxBytes } = await queryClient.ensureQueryData(
     materialQuery(materialId)
   );
@@ -66,7 +69,7 @@ async function editorAssetMaxBytes(
 export async function uploadEditorAsset(
   materialId: string,
   picked: File,
-  purpose: EditorAssetPurpose,
+  purpose: UploadPurpose,
   options: EditorAssetUploadOptions = {}
 ): Promise<EditorAsset> {
   const maxBytes = await editorAssetMaxBytes(materialId, purpose);

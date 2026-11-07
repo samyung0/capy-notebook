@@ -111,12 +111,13 @@ type AssignmentManage struct {
 	// QuizTitle is its quiz's current title, for the edit form.
 	QuizTitle string `json:"quizTitle,omitempty"`
 	// QuizTrashed: its quiz is in the trash, with nothing to open or republish.
-	QuizTrashed    bool     `json:"quizTrashed,omitempty"`
-	AssignAll      bool     `json:"assignAll"`
-	Assignees      []string `json:"assignees" nullable:"false"`
-	ApproveAIMarks bool     `json:"approveAiMarks"`
-	ShowAnswers    bool     `json:"showAnswers"`
-	Shuffle        bool     `json:"shuffle"`
+	QuizTrashed bool     `json:"quizTrashed,omitempty"`
+	AssignAll   bool     `json:"assignAll"`
+	Assignees   []string `json:"assignees" nullable:"false"`
+	// Marking: ai_approve (the AI, approved before members see it), ai or manual.
+	Marking     string `json:"marking" enum:"ai_approve,ai,manual"`
+	ShowAnswers bool   `json:"showAnswers"`
+	Shuffle     bool   `json:"shuffle"`
 	// Assigned counts who it went to; Done those who submitted or ticked it.
 	Assigned int `json:"assigned"`
 	Done     int `json:"done"`
@@ -176,7 +177,7 @@ type AssignmentForm struct {
 	AssignAll      bool
 	Assignees      []string
 	Draft          bool
-	ApproveAIMarks bool
+	Marking        string
 	ShowAnswers    bool
 	Shuffle        bool
 	Files          []AssignmentFileRef
@@ -214,7 +215,7 @@ func (s *Store) assignmentStaff(ctx context.Context, q rowQueryer, userID, wsID 
 const assignmentCols = `a.id, a.workspace_id, a.kind, a.title, a.posted_at, COALESCE(NULLIF(u.name,''), u.id, ''),
 	a.due_at, a.closed_at, a.no_late, a.late_penalty_pct, a.draft, a.time_limit_min, a.attempts_allowed, a.question_count, a.total_marks::float8,
 	a.source_quiz_id, COALESCE(m.title,''), m.topic_id, COALESCE(m.hidden, false), m.trashed_at IS NOT NULL,
-	a.assign_all, a.approve_ai_marks, a.show_answers, a.shuffle, a.released_at`
+	a.assign_all, a.marking, a.show_answers, a.shuffle, a.released_at`
 
 // readAssignments reads the rows matching where (assignments a, users u and
 // materials m aliased) and fills what the caller may see of them; a caller who
@@ -242,7 +243,7 @@ func (s *Store) readAssignments(ctx context.Context, userID string, staff bool, 
 		if err := rows.Scan(&a.ID, &a.WorkspaceID, &a.Kind, &a.Title, &a.PostedAt, &a.PostedBy,
 			&a.DueAt, &a.ClosedAt, &a.NoLate, &a.LatePenaltyPct, &a.Draft, &a.TimeLimitMin, &a.Attempts, &a.Questions, &a.Marks,
 			&manage.QuizID, &manage.QuizTitle, &src.topicID, &src.hidden, &src.trashed,
-			&manage.AssignAll, &manage.ApproveAIMarks, &manage.ShowAnswers, &manage.Shuffle, &src.released); err != nil {
+			&manage.AssignAll, &manage.Marking, &manage.ShowAnswers, &manage.Shuffle, &src.released); err != nil {
 			return nil, err
 		}
 		a.ClosedAt = assignmentClosedAt(a.NoLate, a.DueAt, a.ClosedAt, now)
@@ -767,11 +768,11 @@ func (s *Store) CreateAssignment(ctx context.Context, actorID, wsID string, form
 			}
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO assignments (id, workspace_id, created_by, kind, title, source_quiz_id,
-				due_at, time_limit_min, attempts_allowed, no_late, late_penalty_pct, assign_all, draft, approve_ai_marks, show_answers, shuffle, posted_at, created_at)
+				due_at, time_limit_min, attempts_allowed, no_late, late_penalty_pct, assign_all, draft, marking, show_answers, shuffle, posted_at, created_at)
 			VALUES ($1,$2,$3,$4,$5,NULLIF($6::text,''),$7,$8,$9,$10,$11,$12,true,$13,$14,$15,$16,$16)`,
 			id, wsID, actorID, form.Kind, strings.TrimSpace(form.Title), form.QuizID,
 			form.DueAt, form.TimeLimitMin, form.Attempts, form.NoLate, form.LatePenaltyPct, form.AssignAll,
-			form.ApproveAIMarks, form.ShowAnswers, form.Shuffle, now); err != nil {
+			form.Marking, form.ShowAnswers, form.Shuffle, now); err != nil {
 			return err
 		}
 		if err := writeAssignmentLists(ctx, tx, id, form); err != nil {
@@ -950,9 +951,9 @@ func (s *Store) UpdateAssignment(ctx context.Context, actorID, id string, form A
 			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE assignments SET title=$2, due_at=$3, time_limit_min=$4, attempts_allowed=$5,
-				no_late=$6, late_penalty_pct=$7, assign_all=$8, approve_ai_marks=$9, show_answers=$10, shuffle=$11 WHERE id=$1`,
+				no_late=$6, late_penalty_pct=$7, assign_all=$8, marking=$9, show_answers=$10, shuffle=$11 WHERE id=$1`,
 			id, strings.TrimSpace(form.Title), form.DueAt, form.TimeLimitMin, form.Attempts,
-			form.NoLate, form.LatePenaltyPct, form.AssignAll, form.ApproveAIMarks, form.ShowAnswers, form.Shuffle); err != nil {
+			form.NoLate, form.LatePenaltyPct, form.AssignAll, form.Marking, form.ShowAnswers, form.Shuffle); err != nil {
 			return err
 		}
 		return writeAssignmentLists(ctx, tx, id, form)
@@ -1508,6 +1509,13 @@ func truncateRunes(s string, limit int) string {
 	return string(r[:limit])
 }
 
+// How an assignment's AI-marked parts are marked (migration 0157).
+const (
+	MarkingAIApprove = "ai_approve"
+	MarkingAI        = "ai"
+	MarkingManual    = "manual"
+)
+
 // SaveAssignmentAnswers replaces the running attempt's saved answers. Past its
 // time it submits what was saved before and refuses (ErrAttemptFinished).
 func (s *Store) SaveAssignmentAnswers(ctx context.Context, userID, attemptID string, answers map[string]any, now time.Time) error {
@@ -1538,7 +1546,11 @@ func (s *Store) SaveAssignmentAnswers(ctx context.Context, userID, attemptID str
 			expired = true
 			return nil
 		}
-		raw, err := json.Marshal(answers)
+		drawings, err := attemptDrawingsTx(ctx, tx, attemptID)
+		if err != nil {
+			return err
+		}
+		raw, err := json.Marshal(withDrawingAnswers(answers, drawings))
 		if err != nil {
 			return err
 		}
@@ -1627,6 +1639,12 @@ func (s *Store) finishAttemptTx(ctx context.Context, tx pgx.Tx, r attemptRow, an
 			}
 		}
 	}
+	// A drawing part's answer is the drawing stored for it, whatever was sent.
+	drawings, err := attemptDrawingsTx(ctx, tx, r.id)
+	if err != nil {
+		return err
+	}
+	answers = withDrawingAnswers(answers, drawings)
 	frozen, err := decodeFrozen(r.frozen)
 	if err != nil {
 		return err
@@ -1682,6 +1700,10 @@ func gradeAttempt(frozen []map[string]any, answers map[string]any) ([]map[string
 			} else if isText && a["type"] == "open" && strings.TrimSpace(text) == "" {
 				continue
 			}
+			// A drawing part's answer is its stored drawing (withDrawingAnswers).
+			if a["type"] == "drawing" && !isDrawingAnswer(value) {
+				continue
+			}
 			given[id] = value
 		}
 		out, _, _ := questions.Graded(q, given, nil)
@@ -1690,7 +1712,7 @@ func gradeAttempt(frozen []map[string]any, answers map[string]any) ([]map[string
 			p, _ := raw.(map[string]any)
 			a, _ := p["answer"].(map[string]any)
 			id, _ := p["id"].(string)
-			if a["type"] == "open" && given[id] != nil {
+			if questions.ModelMarked(a["type"]) && given[id] != nil {
 				p["pending"] = true
 				delete(p, "itemAwards")
 			}
@@ -2138,7 +2160,7 @@ func applyPartMarks(question map[string]any, marks []AssignmentPartMark, actorID
 		partMarks, _ := p["marks"].(float64)
 		a, _ := p["answer"].(map[string]any)
 		var awarded float64
-		if a["type"] == "open" {
+		if questions.ModelMarked(a["type"]) {
 			_, itemMarks := questions.MarkItems(p)
 			if len(mark.Items) != len(itemMarks) {
 				return nil, assignmentInput("give a mark for every marking point")
@@ -2508,7 +2530,7 @@ func questionReports(frozen []map[string]any, attempts, others []reportAttempt) 
 		for _, raw := range list {
 			p, _ := raw.(map[string]any)
 			a, _ := p["answer"].(map[string]any)
-			open = open || a["type"] == "open"
+			open = open || questions.ModelMarked(a["type"])
 			report.Parts = append(report.Parts, partReport(p, attempts))
 		}
 		var fullMarks, marked int
@@ -2560,7 +2582,7 @@ func hasOpenPart(q map[string]any) bool {
 	parts, _ := q["parts"].([]any)
 	for _, raw := range parts {
 		p, _ := raw.(map[string]any)
-		if a, _ := p["answer"].(map[string]any); a["type"] == "open" {
+		if a, _ := p["answer"].(map[string]any); questions.ModelMarked(a["type"]) {
 			return true
 		}
 	}
@@ -2633,7 +2655,7 @@ func partReport(p map[string]any, attempts []reportAttempt) AssignmentPartReport
 		if len(out.WrongAnswers) > wrongAnswersShown {
 			out.WrongAnswers = out.WrongAnswers[:wrongAnswersShown]
 		}
-	case "open":
+	case "open", "drawing":
 		texts, marks := questions.MarkItems(p)
 		out.Items = make([]AssignmentItemReport, len(texts))
 		for i := range texts {

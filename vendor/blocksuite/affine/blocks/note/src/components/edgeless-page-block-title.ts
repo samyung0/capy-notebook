@@ -12,7 +12,7 @@ import { html } from 'lit';
 import { property } from 'lit/decorators.js';
 
 import { NoteConfigExtension } from '../config';
-import * as styles from './edgeless-page-block-title.css';
+import { pageBlockTitle } from '../note-styles';
 
 @requiredProperties({
   note: PropTypes.instanceOf(NoteBlockModel),
@@ -30,7 +30,7 @@ export class EdgelessPageBlockTitle extends SignalWatcher(
         std: this.std,
       });
 
-    return html`<div class=${styles.pageBlockTitle}>${title}</div>`;
+    return html`<div class=${pageBlockTitle}>${title}</div>`;
   }
 
   @consume({ context: stdContext })

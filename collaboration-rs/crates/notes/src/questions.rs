@@ -1198,6 +1198,7 @@ struct Part {
     answer: String,
     gaps: usize,
     open_accepted: Vec<String>,
+    drawn_sample: bool,
     awarded: Option<f64>,
     item_awards: Option<Vec<f64>>,
     marks: f64,
@@ -1206,9 +1207,29 @@ struct Part {
     solution: Vec<Block>,
 }
 
-/// `answerSchema`; returns the answer type, the gaps count and an open
-/// answer's accepted texts.
-fn answer(value: &Value) -> Result<(String, usize, Vec<String>), String> {
+/// What `answer` leaves for the part's own checks.
+struct Answer {
+    kind: String,
+    gaps: usize,
+    /// An open answer's accepted texts.
+    open_accepted: Vec<String>,
+    /// A drawing part holds a drawn sample answer.
+    drawn_sample: bool,
+}
+
+impl Answer {
+    fn of(kind: &str) -> Self {
+        Self {
+            kind: kind.into(),
+            gaps: 0,
+            open_accepted: vec![],
+            drawn_sample: false,
+        }
+    }
+}
+
+/// `answerSchema`.
+fn answer(value: &Value) -> Result<Answer, String> {
     let what = "answer";
     let map = object(value, what)?;
     let kind = map.get("type").and_then(Value::as_str).unwrap_or("");
@@ -1226,12 +1247,12 @@ fn answer(value: &Value) -> Result<(String, usize, Vec<String>), String> {
             {
                 return fail("Choose valid, distinct correct options.");
             }
-            Ok((kind.into(), 0, vec![]))
+            Ok(Answer::of(kind))
         }
         "boolean" => {
             strict(map, what, &["correct", "type"], &[])?;
             boolean(&map["correct"], what)?;
-            Ok((kind.into(), 0, vec![]))
+            Ok(Answer::of(kind))
         }
         "short" => {
             strict(map, what, &["accepted", "type"], &["unit"])?;
@@ -1252,7 +1273,7 @@ fn answer(value: &Value) -> Result<(String, usize, Vec<String>), String> {
             if unit && !accepted.iter().all(|a| valid_quantity_value(a)) {
                 return fail("Accepted answers must contain values only, in the required unit.");
             }
-            Ok((kind.into(), 0, vec![]))
+            Ok(Answer::of(kind))
         }
         "matching" => {
             strict(map, what, &["options", "pairs", "type"], &[])?;
@@ -1268,12 +1289,12 @@ fn answer(value: &Value) -> Result<(String, usize, Vec<String>), String> {
             if rights.iter().any(|r| *r >= options.len() as f64) {
                 return fail("Every pair needs a choice from the pool.");
             }
-            Ok((kind.into(), 0, vec![]))
+            Ok(Answer::of(kind))
         }
         "ordering" => {
             strict(map, what, &["items", "type"], &[])?;
             list(&map["items"], what, 2)?;
-            Ok((kind.into(), 0, vec![]))
+            Ok(Answer::of(kind))
         }
         "gaps" => {
             strict(map, what, &["accepted", "type"], &[])?;
@@ -1281,7 +1302,10 @@ fn answer(value: &Value) -> Result<(String, usize, Vec<String>), String> {
             for item in lists {
                 list(item, what, 1)?;
             }
-            Ok((kind.into(), lists.len(), vec![]))
+            Ok(Answer {
+                gaps: lists.len(),
+                ..Answer::of(kind)
+            })
         }
         "open" => {
             strict(map, what, &["accepted", "hints", "type"], &[])?;
@@ -1293,7 +1317,30 @@ fn answer(value: &Value) -> Result<(String, usize, Vec<String>), String> {
             for hint in array(&map["hints"], what, 0, QUESTION_ANSWERS_MAX)? {
                 text(hint, what)?;
             }
-            Ok((kind.into(), 0, accepted))
+            Ok(Answer {
+                open_accepted: accepted,
+                ..Answer::of(kind)
+            })
+        }
+        "drawing" => {
+            // Answered on the drawing board, opened plain (Epo 2026-11-06), with
+            // an optional drawn sample answer: its board and image, both the
+            // quiz's editor assets (Q3).
+            strict(map, what, &["type"], &["sample"])?;
+            let drawn_sample = match present(map, "sample") {
+                Some(sample) => {
+                    let sample = object(sample, "sample")?;
+                    strict(sample, "sample", &["board", "image"], &[])?;
+                    identifier(&sample["board"], "sample")?;
+                    identifier(&sample["image"], "sample")?;
+                    true
+                }
+                None => false,
+            };
+            Ok(Answer {
+                drawn_sample,
+                ..Answer::of(kind)
+            })
         }
         _ => fail(format!("{what}: invalid type")),
     }
@@ -1319,7 +1366,12 @@ fn part(value: &Value) -> Result<Part, String> {
         Some(group) => Some(identifier(group, what)?),
         None => None,
     };
-    let (answer, gaps, open_accepted) = answer(&map["answer"])?;
+    let Answer {
+        kind: answer,
+        gaps,
+        open_accepted,
+        drawn_sample,
+    } = answer(&map["answer"])?;
     let awarded = match present(map, "awarded") {
         Some(v) => {
             let n = number(v, what)?;
@@ -1375,6 +1427,7 @@ fn part(value: &Value) -> Result<Part, String> {
         answer,
         gaps,
         open_accepted,
+        drawn_sample,
         awarded,
         item_awards,
         marks,
@@ -1575,7 +1628,8 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
                 );
             }
         }
-        if (part.answer == "open") != part.markscheme.is_some() {
+        if model_marked(&part.answer) != part.markscheme.is_some() {
+            // The frozen Node corpus pins this wording (tests/validation.rs).
             return fail("Open answers need a marking scheme, and only open answers have one.");
         }
         let marks = part.markscheme.clone().unwrap_or_default();
@@ -1600,6 +1654,9 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
                     "Item awards must give none, half or all of each marking item's marks.",
                 );
             }
+        }
+        if policy.bank && part.drawn_sample {
+            return fail("A bank drawing part has no drawn sample answer.");
         }
         if policy.bank && part.solution.is_empty() {
             return fail("Bank questions need a worked solution for every part.");
@@ -1653,9 +1710,15 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
     }
     Ok(Question {
         id,
-        open_parts: parts.iter().filter(|p| p.answer == "open").count(),
+        open_parts: parts.iter().filter(|p| model_marked(&p.answer)).count(),
         part_ids: parts.into_iter().map(|p| p.id).collect(),
     })
+}
+
+/// Answer types a model marks against the part's marking items: written
+/// (open) and drawn answers.
+pub fn model_marked(answer: &str) -> bool {
+    answer == "open" || answer == "drawing"
 }
 
 /// `Number(digits)` as JS prints it (leading zeros dropped).

@@ -173,6 +173,9 @@ def test_the_grade_route_needs_the_secret_and_answers_shares(monkeypatch):
     assert done.status_code == 200
     assert done.json()["shares"] == [1.0]
     assert pinned["slot"].value == "grading"
+    drawn = {**body, "answer": "", "image": IMAGE, "sampleImage": IMAGE}
+    sent = http.post("/grade", json=drawn, headers={"X-Pipeline-Secret": secret})
+    assert sent.status_code == 200
 
 
 @pytest.mark.asyncio
@@ -188,3 +191,42 @@ async def test_a_call_past_its_time_fails_with_room_for_the_line(monkeypatch):
     monkeypatch.setattr(grading.models, "complete", never)
     with pytest.raises(TimeoutError):
         await grading.grade_part("Name a cell part.", ITEMS, ANSWER, model=None)
+
+
+IMAGE = "data:image/webp;base64,UklGRg=="
+
+
+@pytest.mark.asyncio
+async def test_a_drawing_goes_as_its_image_with_the_drawn_section(monkeypatch):
+    calls = []
+
+    async def complete(messages, **kwargs):
+        calls.append((messages, kwargs))
+        return SimpleNamespace(content=reply(quote="the line from the origin"))
+
+    monkeypatch.setattr(grading.models, "complete", complete)
+    out = await grading.grade_part(
+        "Draw the graph.", ITEMS, "", model=None, image=IMAGE
+    )
+    # A drawing has no text to hold its quote: the credit stands.
+    assert out["shares"] == [1.0]
+    ((messages, kwargs),) = calls
+    assert messages[0]["content"] == grading.SYSTEM_PROMPT + grading.DRAWN_SECTION
+    text, image = messages[1]["content"]
+    assert "<marking_items>" in text["text"] and "<student_answer>" not in text["text"]
+    assert image == {"type": "image_url", "image_url": {"url": IMAGE}}
+    assert kwargs["reasoning"] is False and kwargs["max_tokens"] == 2000
+
+
+def test_a_sample_answer_image_comes_before_the_students():
+    content = grading.drawing_message("Draw it.", ITEMS, IMAGE, sample=IMAGE)
+    assert [part.get("text") for part in content[1:]] == [
+        "Sample answer:",
+        None,
+        "Student's drawing:",
+        None,
+    ]
+
+
+def test_open_answers_keep_todays_prompt():
+    assert grading.DRAWN_SECTION not in grading.SYSTEM_PROMPT

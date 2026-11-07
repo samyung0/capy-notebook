@@ -4382,9 +4382,9 @@ cut. `src/features/blocksuite/drawingBoard.ts` imports just the editor parts the
 needs, so it's a lazy chunk of about 1.2 MB gzipped, and the app reaches it through
 `drawingBoard.boundary.d.ts`, so the app's type check skips the vendored sources.
 Nothing in production opens it yet: `/dev/drawing` is a dev-only route. A production
-build swaps that route for an empty module (`MSW_ENTRIES` in `vite.config.ts`) and runs no
-vanilla-extract plugin, so it neither ships nor transforms the vendored sources. The answer
-flow reverses both. `pnpm audit` covers these packages' dependencies but not the copied
+build swaps that route for an empty module (`MSW_ENTRIES` in `vite.config.ts`), so it
+doesn't ship the vendored sources; the answer flow reverses that. No vanilla-extract plugin
+runs: the board's only `.css.ts` styles, the canvas note's, are plain CSS (local change 24). `pnpm audit` covers these packages' dependencies but not the copied
 source, so an AFFiNE security fix stays unseen until someone re-copies.
 
 The dev server pre-bundles the board's BlockSuite (Q683): at start `vite.config.ts` reads
@@ -4465,17 +4465,28 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   labels sit at an angle inside the circle.
 - **Marking image (`toImage()`):** everything on the canvas as it stands, including each
   card with the view it was left at, so a plotted mark panned out of view isn't in it. It's
-  drawn layer by layer at a scale capped to 2400 px, so it stacks as the screen does and
+  drawn layer by layer at a scale capped to 1,568 px on its longest side (the size the
+  marking model reads, Epo 2026-11-06; 42-47% smaller than drawing at 2,400 px and
+  shrinking later), so it stacks as the screen does and
   fits a phone's canvas limit; AFFiNE's own export draws every note under every stroke at
-  the device's scale. On a board wider or taller than 2400 px, groups of elements more than
+  the device's scale. A note scrolled out of view is shown for the capture: BlockSuite
+  hides it with no size, which html2canvas drew as nothing and the capture threw on. On a board wider or taller than 1,568 px, groups of elements more than
   400 px apart are drawn 400 px apart, so one dragged far away doesn't squash the rest;
   the board itself stays as it is. The PNG goes through `fitImageOffThread` (WebP, 300 KB cap, Epo 2026-11-06), whose
   encode runs in a worker while the drawing stays on the page, and
-  comes back as a `File`.
+  comes back as a `File`. `stats().span` is that image's longest side in board units
+  (after the far groups are drawn nearer, with the margin), for the answer flow's wide-board
+  warning on Done.
 - **What the answer flow mounts:** `mountDrawingBoard(host, { readOnly, saved,
   onChange })`. Every answer starts on the same plain board (Epo 2026-11-06 dropped
   per-question backgrounds); the dev pages pass `plane: true` for a plane card to play
   with.
+  - `answerArea: { label }` draws a dashed 1,920 × 1,200 box at the board's origin with
+    the label in a black chip on its top left corner (Epo 2026-11-07, W3/W4), on the
+    layer under the strokes, the same size on screen at every zoom, and fits the first
+    view to it and what's drawn. It's only on screen: the image, `save()`, `stats().span`
+    and previews leave it out, and a read-only board draws none. Drawing inside it keeps
+    `span` at most 1,936.
   - `fitPadding` ([top, right, bottom, left] pixels) is the room the first fit leaves
     for what the page lays over the board, such as a pinned question card or a top bar;
     without it the fit leaves room for the board's own toolbar and undo.
@@ -4483,18 +4494,44 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     undo, symbol row or selection, and nothing opens for editing, so MathLive never
     loads.
   - `save()` returns `{ doc, bytes }`: the board copied into a fresh Yjs document, so no
-    undo history (200 undo steps on a card were 606 KB live and a few KB saved). The
+    undo history (200 undo steps on a card were 606 KB live and a few KB saved). Stroke
+    points are rounded to whole pixels and every place (`xywh`) to a tenth, which leaves
+    60% of the bytes with no visible change (pressure stays: perfect-freehand draws the
+    line from it). The
     answer flow refuses past Epo's 250 KB on Done.
   - `saved` is checked before anything mounts (`boardLoad.ts`), as BlockSuite's store
     skips a block it doesn't know and takes any tree on load: one page and one canvas,
     only the blocks and elements the board's tools make, each block under a parent it
     may have in one tree, and each card's fields within
     the limits its editor keeps (marks, bars, labels, spokes, axis values, formula
-    length). Anything else throws a `BoardLoadError` with a `reason`.
+    length), with a place (`[x,y,w,h]`) on everything but a connector and a group, whose
+    places BlockSuite works out (from the ends, each an element id or a finite point; from
+    the children) and never stores. Anything else throws a `BoardLoadError` with a
+    `reason`.
+- **Preview (`boardPreview.ts`):** `drawBoardPreview(saved, { width, height })` draws a
+  saved board as an SVG string from its data, for lists, results and marking views
+  (Epo 2026-11-06: what's on it, not every detail). It never loads the editor: it imports
+  yjs and the small modules the check uses (`boardData.ts` holds the cards' stored shape,
+  limits and chart geometry, `boardGeometry.ts` the framing, `graphTicks.ts` the grid
+  step), 12.7 KB minified on its own. Framed as the marking image is (everything, far
+  groups drawn nearer, 8 px round, on white), stacked by index with a note over a stroke
+  at the same index. Strokes are plain lines thinned to one point per preview pixel and
+  never thinner than a pixel; shapes their outline, fill and text; connectors straight
+  from end to end with their arrowheads; text and shape labels a line per line break;
+  plane cards their grid (while lines are 6 px apart), axes and marks; charts their bars
+  or circle and spokes; formulas their LaTeX as text; notes their box and a line per
+  paragraph; pasted images a grey box. No numbers or labels on cards. It checks the board
+  first and throws the same `BoardLoadError`. `fromBase64` uses `Uint8Array.fromBase64`
+  where the browser has it. A plane card with 5 strokes takes 0.4 ms
+  in Node, a 300 KB board (50 strokes of 300 points, 500 marks) 5 ms. Show it as an
+  `<img src="data:image/svg+xml,…">` in a list, so rows don't add SVG nodes to the page.
 - **Formulas:** a `formula` canvas element holding LaTeX, typed in MathLive (loaded on
   first open). AFFiNE keeps LaTeX as HTML in note cards, and its export (html2canvas)
   garbles that, so typing `$$` in a note here stays text; AFFiNE's inline spec stays
-  registered because paragraphs read it as they render. KaTeX lays the formula out in a
+  registered because paragraphs read it as they render (the specs only: its LaTeX node and
+  editor menu, which load KaTeX and shiki, are left out). KaTeX and its stylesheet load
+  once the board holds a formula or the formula editor opens (84 KB gzipped most boards
+  never need). It lays the formula out in a
   hidden host and its glyphs, rules and stretched SVGs (clipped as KaTeX clips them) are
   drawn onto a bitmap the canvas renderer draws. Tested in Chromium only. Size and
   expansion limits are set on KaTeX, and a saved answer holding more than 2,000

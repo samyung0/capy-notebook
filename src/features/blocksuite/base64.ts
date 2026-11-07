@@ -8,6 +8,13 @@ export function toBase64(bytes: Uint8Array) {
   return btoa(text);
 }
 
+/** The browser's own decoder where there is one, else a plain loop: `Uint8Array.from`
+ * with a mapper took 9 ms on a 300 KB board, and a list draws hundreds of previews. */
 export function fromBase64(saved: string) {
-  return Uint8Array.from(atob(saved), (char) => char.charCodeAt(0));
+  const typed = Uint8Array as { fromBase64?: (text: string) => Uint8Array };
+  if (typed.fromBase64) return typed.fromBase64(saved);
+  const text = atob(saved);
+  const bytes = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i);
+  return bytes;
 }

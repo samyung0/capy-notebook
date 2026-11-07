@@ -239,10 +239,11 @@ func Validate(q map[string]any, policy Policy) error {
 		if err != nil {
 			return err
 		}
-		// Only open parts carry a marking scheme: Jev grades against it. A
-		// closed part's answer is its own key and its solution explains it.
+		// Only model-marked parts (open and drawing) carry a marking scheme: the
+		// model marks against it. A closed part's answer is its own key and its
+		// solution explains it.
 		a, _ := p["answer"].(map[string]any)
-		open := a["type"] == "open"
+		open := ModelMarked(a["type"])
 		required, optional := "id blocks answer marks solution", "group"
 		if open {
 			required += " markscheme"
@@ -1015,7 +1016,7 @@ func QuizBounds(qs []map[string]any) error {
 		parts += len(list)
 		for _, raw := range list {
 			p, _ := raw.(map[string]any)
-			if a, _ := p["answer"].(map[string]any); a["type"] == "open" {
+			if a, _ := p["answer"].(map[string]any); ModelMarked(a["type"]) {
 				open++
 			}
 		}
@@ -1049,6 +1050,10 @@ func answer(value any, policy Policy) error {
 		required += " items"
 	case "open":
 		required += " accepted hints"
+	case "drawing":
+		// Answered on the drawing board, which every drawing part opens plain
+		// (Epo 2026-11-06); an optional drawn sample answer (Q3).
+		optional = "sample"
 	case "gaps":
 		// One accepted list per numbered gap in the part's text.
 		required += " accepted"
@@ -1154,9 +1159,37 @@ func answer(value any, policy Policy) error {
 		if !stringsArray(a["items"], 2, fieldlimits.QuestionAnswers, fieldlimits.QuestionText) {
 			return fail("invalid ordering items")
 		}
+	case "drawing":
+		raw, exists := a["sample"]
+		if !exists {
+			break
+		}
+		// The board (to edit again) and its image (shown after a check and sent
+		// to marking), both the quiz's own editor assets, as its images are; the
+		// bank has no private assets.
+		if policy.Bank {
+			return fail("a bank drawing part has no drawn sample answer")
+		}
+		sample, err := obj(raw)
+		if err != nil {
+			return err
+		}
+		if err := keys(sample, "board image", ""); err != nil {
+			return err
+		}
+		if !str(sample["board"], fieldlimits.QuestionID, true) || !str(sample["image"], fieldlimits.QuestionID, true) {
+			return fail("invalid drawn sample answer")
+		}
 	}
 	return nil
 }
+
+// ModelMarked says whether an answer type is marked by a model against the
+// part's marking items: written (open) and drawn answers.
+func ModelMarked(answerType any) bool {
+	return answerType == "open" || answerType == "drawing"
+}
+
 func index(v any, size int) bool {
 	n, ok := num(v)
 	return ok && n >= 0 && n < float64(size) && n == math.Trunc(n)
@@ -1267,7 +1300,8 @@ func shuffled(values []any) []any {
 	return out
 }
 
-// AssetIDs returns the editor assets referenced by a quiz question's images.
+// AssetIDs returns the editor assets referenced by a quiz question's images
+// and its drawn sample answers' boards and images.
 func AssetIDs(q map[string]any) []string {
 	var ids []string
 	for _, blocks := range blockLists(q) {
@@ -1277,7 +1311,35 @@ func AssetIDs(q map[string]any) []string {
 			}
 		}
 	}
+	parts, _ := q["parts"].([]any)
+	for _, raw := range parts {
+		if sample := drawnSample(raw); sample != nil {
+			ids = append(ids, sample["board"].(string), sample["image"].(string))
+		}
+	}
 	return ids
+}
+
+// DrawnSampleImage is the editor asset of a part's drawn sample answer image,
+// which marking sends before the student's drawing (Q3), or "".
+func DrawnSampleImage(part map[string]any) string {
+	if sample := drawnSample(part); sample != nil {
+		return sample["image"].(string)
+	}
+	return ""
+}
+
+// drawnSample is a part's drawn sample answer, {board, image}, or nil.
+func drawnSample(raw any) map[string]any {
+	p, _ := raw.(map[string]any)
+	a, _ := p["answer"].(map[string]any)
+	sample, _ := a["sample"].(map[string]any)
+	board, okBoard := sample["board"].(string)
+	image, okImage := sample["image"].(string)
+	if a["type"] != "drawing" || !okBoard || !okImage || board == "" || image == "" {
+		return nil
+	}
+	return sample
 }
 
 // RewriteAssetIDs maps image assets through idMap and removes images whose
@@ -1315,6 +1377,16 @@ func RewriteAssetIDs(q map[string]any, idMap map[string]string) bool {
 		p["solution"] = rewrite(p["solution"])
 		if len(p["blocks"].([]any)) == 0 {
 			return false
+		}
+		// A drawn sample answer goes whole when either asset has no replacement;
+		// the part stands without it.
+		if sample := drawnSample(p); sample != nil {
+			board, image := idMap[sample["board"].(string)], idMap[sample["image"].(string)]
+			if board == "" || image == "" {
+				delete(p["answer"].(map[string]any), "sample")
+			} else {
+				sample["board"], sample["image"] = board, image
+			}
 		}
 	}
 	return true

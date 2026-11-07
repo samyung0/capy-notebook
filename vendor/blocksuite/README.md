@@ -24,7 +24,9 @@ import it.
 
 - One `yjs`: the root `overrides` pins `yjs` to the app's patched 13.6.31.
 - One `zod`: the packages use the app's zod 4 range (local change 5).
-- `.css.ts` (vanilla-extract): `@vanilla-extract/vite-plugin` in `vite.config.ts`.
+- `.css.ts` (vanilla-extract): none that the board loads, and no plugin. The note's
+  three are plain CSS (local change 24); the outline fragment's seven need the same before
+  anything imports it.
 - Decorators: Lit's standard decorators with `accessor` fields. `vite.config.ts`
   sets `esbuild.target: 'es2022'` so esbuild lowers them (Rollup cannot parse
   `accessor`); this directory's `tsconfig.json` keeps upstream's
@@ -259,6 +261,14 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
     stretch` to every Tailwind `truncate` in the app once the board had loaded; it's
     scoped to the attachment and image fallback cards. A check of every rule the board
     loads against the app's Tailwind classes found no other bare selector.
+23. Note height (`affine/blocks` `note/src/note-edgeless-block.ts`, marked `Capy (local
+    change 23)`): a canvas note reads its content's height once a frame instead of on
+    every mutation batch. Each read forced a layout; a large board's first render spent
+    874 ms on them at 4x CPU slowdown (Windows' canvas-open report, 2026-11-06).
+24. Note styles (`affine/blocks` `note/src/note-styles.css` and `note-styles.ts`, marked
+    `Capy (local change 24)`): the canvas note's three vanilla-extract `.css.ts` files are
+    one plain stylesheet with fixed `affine-note-*` class names, so the app's build runs no
+    vanilla-extract plugin (Windows' canvas-open report, 2026-11-06).
 
 The specs named in local changes 6 to 9 are on the `blocksuite-notes` branch, with the
 note editor they pin.

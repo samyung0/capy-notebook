@@ -2,9 +2,11 @@ package httpapi
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"runtime/debug"
 	"strings"
@@ -44,14 +46,21 @@ type openPart struct {
 	markscheme []string
 	itemMarks  []float64
 	answer     string
+	// A drawing part: its marking image and type, in place of answer, and
+	// its drawn sample answer's image asset, sent before it when it has one.
+	image       []byte
+	imageType   string
+	sampleAsset string
 }
 
 // gradePlan is a grading request checked against the stored questions; open
-// holds the answered open parts, the ones a model may grade.
+// holds the answered open and drawing parts, the ones a model may grade, and
+// drawings the boards (and images) a check sent, which a signed-in check keeps.
 type gradePlan struct {
 	questions []map[string]any
 	answers   map[string]any
 	open      map[string]openPart
+	drawings  map[string]drawingUpload
 }
 
 // planGrading refuses answers to parts the questions do not have, ordering
@@ -59,7 +68,7 @@ type gradePlan struct {
 // it), and open answers that are not text or are too long. Blank open answers
 // earn 0 without a model call.
 func planGrading(qs []map[string]any, answers map[string]any) (gradePlan, error) {
-	plan := gradePlan{questions: qs, answers: answers, open: map[string]openPart{}}
+	plan := gradePlan{questions: qs, answers: answers, open: map[string]openPart{}, drawings: map[string]drawingUpload{}}
 	known := map[string]bool{}
 	for _, q := range qs {
 		parts, _ := q["parts"].([]any)
@@ -70,6 +79,23 @@ func planGrading(qs []map[string]any, answers map[string]any) (gradePlan, error)
 			a, _ := p["answer"].(map[string]any)
 			if a["type"] == "ordering" && answers[id] == nil {
 				return gradePlan{}, errGradeRequest
+			}
+			if a["type"] == "drawing" && answers[id] != nil {
+				drawing, imageType, err := sentDrawing(answers[id])
+				if err != nil {
+					return gradePlan{}, err
+				}
+				plan.drawings[id] = drawing
+				// Stored as the drawing's id once kept (store.withDrawingAnswers).
+				answers[id] = map[string]any{"drawing": ""}
+				if imageType != "" {
+					items, marks := questions.MarkItems(p)
+					plan.open[id] = openPart{
+						question: questions.GradingText(q, i), markscheme: items, itemMarks: marks,
+						image: drawing.Image, imageType: imageType, sampleAsset: questions.DrawnSampleImage(p),
+					}
+				}
+				continue
 			}
 			if a["type"] != "open" || answers[id] == nil {
 				continue
@@ -91,6 +117,31 @@ func planGrading(qs []map[string]any, answers map[string]any) (gradePlan, error)
 		}
 	}
 	return plan, nil
+}
+
+// sentDrawing reads a drawing part's answer as a check sends it, {board,
+// image} in base64, and checks both before anything is stored or marked.
+func sentDrawing(value any) (drawingUpload, string, error) {
+	m, ok := value.(map[string]any)
+	if !ok {
+		return drawingUpload{}, "", errGradeRequest
+	}
+	decode := func(key string) ([]byte, bool) {
+		text, isText := m[key].(string)
+		if !isText {
+			return nil, m[key] == nil
+		}
+		b, err := base64.StdEncoding.DecodeString(text)
+		return b, err == nil
+	}
+	board, okBoard := decode("board")
+	image, okImage := decode("image")
+	if !okBoard || !okImage || len(board) == 0 {
+		return drawingUpload{}, "", errGradeRequest
+	}
+	upload := drawingUpload{Board: board, Image: image}
+	imageType, err := checkedDrawing(upload)
+	return upload, imageType, err
 }
 
 // gradeRequestError answers a refused plan with 422 and passes others on.
@@ -221,7 +272,21 @@ func (a *api) gradePart(ctx context.Context, llm resolvedLLM, sessionID string, 
 	for i, text := range part.markscheme {
 		items[i] = map[string]any{"text": text, "marks": part.itemMarks[i]}
 	}
-	body := map[string]any{"question": part.question, "items": items, "answer": part.answer, "spendSessionId": sessionID}
+	body := map[string]any{"question": part.question, "items": items, "spendSessionId": sessionID}
+	// A drawing goes as its marking image in place of the answer (M1, Epo
+	// 2026-11-07), after its drawn sample answer's image when it has one (Q3).
+	if len(part.image) > 0 {
+		body["image"] = "data:" + part.imageType + ";base64," + base64.StdEncoding.EncodeToString(part.image)
+		if part.sampleAsset != "" {
+			sample, err := a.sampleImage(ctx, part.sampleAsset)
+			if err != nil {
+				return partGrade{}, err
+			}
+			body["sampleImage"] = sample
+		}
+	} else {
+		body["answer"] = part.answer
+	}
 	llm.attach(body)
 	raw, err := a.pipe.PostRawUntil(ctx, "/grade", body)
 	if err != nil {
@@ -481,4 +546,30 @@ func (a *api) checkQuestionComputation(ctx context.Context, in *computationCheck
 		}}, nil
 	}
 	return nil, huma.Error422UnprocessableEntity("partId must name an open part of the question")
+}
+
+// sampleImage reads a drawn sample answer's image asset as a data URL. An image
+// that can't be read fails the part, which stays Not marked: marking without
+// the sample would judge it on less than its author gave.
+func (a *api) sampleImage(ctx context.Context, assetID string) (string, error) {
+	asset, err := a.s.GetEditorAsset(ctx, assetID)
+	if err != nil {
+		return "", err
+	}
+	if asset.Purpose != "image" || a.blob == nil {
+		return "", fmt.Errorf("drawn sample answer %s is not a stored image", assetID)
+	}
+	r, err := a.blob.Open(ctx, asset.ObjectPath)
+	if err != nil {
+		return "", err
+	}
+	defer r.Close()
+	data, err := io.ReadAll(io.LimitReader(r, fieldlimits.DrawingImageBytes+1))
+	if err != nil {
+		return "", err
+	}
+	if len(data) > fieldlimits.DrawingImageBytes {
+		return "", fmt.Errorf("drawn sample answer %s is over the image cap", assetID)
+	}
+	return "data:" + asset.ContentType + ";base64," + base64.StdEncoding.EncodeToString(data), nil
 }

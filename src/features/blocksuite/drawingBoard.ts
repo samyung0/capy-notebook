@@ -21,7 +21,9 @@ import { SurfaceStoreExtension } from '@blocksuite/affine/blocks/surface/store';
 import { SurfaceViewExtension } from '@blocksuite/affine/blocks/surface/view';
 import {
   StoreExtensionManager,
+  type ViewExtensionContext,
   ViewExtensionManager,
+  ViewExtensionProvider,
 } from '@blocksuite/affine/ext-loader';
 import { FoundationStoreExtension } from '@blocksuite/affine/foundation/store';
 import { FoundationViewExtension } from '@blocksuite/affine/foundation/view';
@@ -41,8 +43,11 @@ import { Bound, getCommonBound } from '@blocksuite/affine/global/gfx';
 import { InlineCommentViewExtension } from '@blocksuite/affine/inlines/comment/view';
 import { FootnoteStoreExtension } from '@blocksuite/affine/inlines/footnote/store';
 import { FootnoteViewExtension } from '@blocksuite/affine/inlines/footnote/view';
+import {
+  LatexEditorUnitSpecExtension,
+  LatexInlineSpecExtension,
+} from '@blocksuite/affine/inlines/latex';
 import { LatexStoreExtension as InlineLatexStoreExtension } from '@blocksuite/affine/inlines/latex/store';
-import { LatexViewExtension as InlineLatexViewExtension } from '@blocksuite/affine/inlines/latex/view';
 import { LinkStoreExtension } from '@blocksuite/affine/inlines/link/store';
 import { LinkViewExtension } from '@blocksuite/affine/inlines/link/view';
 import { MentionViewExtension } from '@blocksuite/affine/inlines/mention/view';
@@ -52,7 +57,7 @@ import { ReferenceStoreExtension } from '@blocksuite/affine/inlines/reference/st
 import { ReferenceViewExtension } from '@blocksuite/affine/inlines/reference/view';
 import { ImageBlockModel } from '@blocksuite/affine/model';
 import { FeatureFlagService } from '@blocksuite/affine/shared/services';
-import { BlockStdScope } from '@blocksuite/affine/std';
+import { BlockStdScope, isGfxBlockComponent } from '@blocksuite/affine/std';
 import {
   type GfxBlockElementModel,
   type GfxController,
@@ -80,6 +85,7 @@ import {
   formulasDrawn,
   mountSymbolRow,
 } from './boardFormula';
+import { closeUp, IMAGE_SIDE_MAX } from './boardGeometry';
 import { addPlane, planeExtensions, planeMarks } from './boardPlane';
 import './boardChartEditor';
 import { closeBoardEditor } from './boardEditorShell';
@@ -115,6 +121,18 @@ const stores = new StoreExtensionManager([
   LinkStoreExtension,
   InlinePresetStoreExtension,
 ]);
+/** AFFiNE's inline LaTeX specs, which note paragraphs need to render, without its
+ * LaTeX node and editor menu: the board keeps `$$` as text, and those two load KaTeX
+ * and shiki with the board. KaTeX loads with the first formula card instead. */
+class InlineLatexViewExtension extends ViewExtensionProvider {
+  override name = 'affine-latex-inline';
+
+  override setup(context: ViewExtensionContext) {
+    super.setup(context);
+    context.register([LatexInlineSpecExtension, LatexEditorUnitSpecExtension]);
+  }
+}
+
 const VIEWS = [
   FoundationViewExtension,
   PointerViewExtension,
@@ -172,15 +190,14 @@ const surfaceOf = (gfx: GfxController) =>
 
 /** The plane card the dev pages start with. */
 const FIRST_PLANE = { h: 520, ppu: 41, w: 820 };
-/** The marking image's longest side, and its bytes after the shared compressor. */
-const IMAGE_SIDE_MAX = 2400;
+/** The marking image's bytes after the shared compressor. */
 const IMAGE_BYTES_MAX = 300 * 1024;
-/** On a board wider or taller than the image, a gap past this between groups of
- * elements shrinks to it in the image, so one dragged far away doesn't squash the rest
- * (Epo 2026-11-06). The board itself is left as it is. */
-const FAR_GAP = 400;
 
 export type DrawingBoardOptions = {
+  /** A dashed box with this label marks where to answer, and the first view fits it
+   * (Epo 2026-11-07, W3/W4). Only on screen: the image, save, span and previews leave
+   * it out, and a read-only board draws none. */
+  answerArea?: { label: string };
   /** Room the first fit leaves around the drawing, [top, right, bottom, left] in
    * pixels, for what the page lays over the board (a pinned question, a top bar).
    * Without it, room for the board's own toolbar and undo. */
@@ -197,6 +214,79 @@ export type DrawingBoardOptions = {
 
 export { BoardLoadError } from './boardLoad';
 
+/** The answer area in board units; drawing inside it keeps span under the wide-board
+ * warning's 2,000. */
+const AREA = new Bound(0, 0, 1920, 1200);
+
+/** The answer area's dashed box and label for the moving layer, kept the same size
+ * on screen at every zoom by `zoom`. */
+function answerArea(label: string) {
+  const svg = 'http://www.w3.org/2000/svg';
+  const box = document.createElementNS(svg, 'svg');
+  box.style.cssText =
+    'position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible';
+  const rect = document.createElementNS(svg, 'rect');
+  rect.setAttribute('width', String(AREA.w));
+  rect.setAttribute('height', String(AREA.h));
+  rect.setAttribute('fill', 'none');
+  rect.setAttribute('stroke', '#9aa0a6');
+  box.append(rect);
+  const chip = document.createElement('div');
+  chip.className = 'capy-answer-area';
+  chip.textContent = label;
+  chip.style.cssText =
+    'position:absolute;left:0;top:0;transform-origin:0 0;white-space:nowrap;height:20px;padding:0 7px;border-radius:4px 4px 4px 0;background:#222;color:#fff;font:600 12px/20px var(--affine-font-family)';
+  return {
+    box,
+    chip,
+    zoom: (zoom: number) => {
+      rect.setAttribute('stroke-width', String(1.5 / zoom));
+      rect.setAttribute('stroke-dasharray', `${8 / zoom} ${6 / zoom}`);
+      // Its bottom left on the box's top left corner.
+      chip.style.transform = `scale(${1 / zoom}) translateY(-100%)`;
+    },
+  };
+}
+
+const roundPlace = (xywh: string) =>
+  JSON.stringify(
+    (JSON.parse(xywh) as number[]).map((value) => Math.round(value * 10) / 10)
+  );
+
+/** The saved copy keeps strokes to whole pixels and places to a tenth: 60% of the
+ * size with no change to see (drawing answers' measure, 2026-11-06, for Epo's "every
+ * stored byte cut"). Pressure stays, as perfect-freehand draws the line from it. */
+function roundPlaces(doc: Y.Doc) {
+  const place = (map: Y.Map<unknown>, key: string) => {
+    const xywh = map.get(key);
+    if (typeof xywh !== 'string') return;
+    const rounded = roundPlace(xywh);
+    if (rounded !== xywh) map.set(key, rounded);
+  };
+  doc.transact(() => {
+    for (const block of doc.getMap<Y.Map<unknown>>('blocks').values()) {
+      place(block, 'prop:xywh');
+      const native = block.get('prop:elements') as Y.Map<unknown> | undefined;
+      const elements = native?.get('value') as
+        | Y.Map<Y.Map<unknown>>
+        | undefined;
+      for (const element of elements?.values() ?? []) {
+        place(element, 'xywh');
+        if (element.get('type') !== 'brush') continue;
+        const points = element.get('points') as number[][];
+        element.set(
+          'points',
+          points.map(([x, y, ...pressure]) => [
+            Math.round(x),
+            Math.round(y),
+            ...pressure,
+          ])
+        );
+      }
+    }
+  });
+}
+
 /** A pasted image drawn as the page draws it: an SVG too, which createImageBitmap
  * can't decode from a file. */
 async function decodeImage(file: Blob) {
@@ -209,52 +299,6 @@ async function decodeImage(file: Blob) {
   } finally {
     URL.revokeObjectURL(url);
   }
-}
-
-/** Board coordinates in the image: each group of nearby elements keeps its shape, and
- * gaps past FAR_GAP between groups shrink to it. */
-function closeUp(bounds: Bound[]) {
-  // Groups: bounds within FAR_GAP of each other, joined.
-  const group = bounds.map((_, i) => i);
-  const root = (i: number): number => {
-    if (group[i] !== i) group[i] = root(group[i]);
-    return group[i];
-  };
-  const near = (a: Bound, b: Bound) =>
-    a.x - FAR_GAP <= b.x + b.w &&
-    b.x - FAR_GAP <= a.x + a.w &&
-    a.y - FAR_GAP <= b.y + b.h &&
-    b.y - FAR_GAP <= a.y + a.h;
-  for (let i = 0; i < bounds.length; i++)
-    for (let j = i + 1; j < bounds.length; j++)
-      if (near(bounds[i], bounds[j])) group[root(i)] = root(j);
-  const groups = new Map<number, Bound>();
-  for (const [i, bound] of bounds.entries()) {
-    const id = root(i);
-    const seen = groups.get(id);
-    groups.set(id, seen ? seen.unite(bound) : bound);
-  }
-  // Along each axis, the gaps between the groups' spans shrink to FAR_GAP.
-  const shifts = (spans: [number, number][]) => {
-    const order = [...spans.keys()].sort((a, b) => spans[a][0] - spans[b][0]);
-    const shift = new Array<number>(spans.length).fill(0);
-    let end = Number.NEGATIVE_INFINITY;
-    let taken = 0;
-    for (const i of order) {
-      const [from, to] = spans[i];
-      if (from - end > FAR_GAP && end > Number.NEGATIVE_INFINITY)
-        taken += from - end - FAR_GAP;
-      shift[i] = taken;
-      end = Math.max(end, to);
-    }
-    return shift;
-  };
-  const ids = [...groups.keys()];
-  const boxes = ids.map((id) => groups.get(id) as Bound);
-  const dx = shifts(boxes.map((box) => [box.x, box.x + box.w]));
-  const dy = shifts(boxes.map((box) => [box.y, box.y + box.h]));
-  const by = new Map(ids.map((id, i) => [id, { dx: dx[i], dy: dy[i] }]));
-  return bounds.map((_, i) => by.get(root(i)) as { dx: number; dy: number });
 }
 
 /** BlockSuite's edgeless editor on an in-memory board, opened from a saved answer when
@@ -367,7 +411,15 @@ export function mountDrawingBoard(
     layer.style.left = `${left}px`;
     layer.style.top = `${top}px`;
     layer.style.transform = `scale(${gfx.viewport.zoom})`;
+    area?.zoom(gfx.viewport.zoom);
   };
+  const area = readOnly
+    ? null
+    : options.answerArea && answerArea(options.answerArea.label);
+  if (area) {
+    preview.before(area.box);
+    layer.append(area.chip);
+  }
   const subscription = gfx.viewport.viewportUpdated.subscribe(place);
   const everything = () => {
     const elements = gfx.layer.canvasElements;
@@ -375,6 +427,24 @@ export function mountDrawingBoard(
     return (
       getCommonBound([...elements, ...blocks]) ?? new Bound(0, 0, 820, 520)
     );
+  };
+  /** What the image draws: everything, far groups drawn nearer (FAR_GAP), with an
+   * 8-unit margin. `bound` is in board units. */
+  const framing = () => {
+    const items = [...gfx.layer.canvasElements, ...gfx.layer.blocks];
+    const bounds = items.map((item) => Bound.deserialize(item.xywh));
+    const whole = everything();
+    const far = Math.max(whole.w, whole.h) > IMAGE_SIDE_MAX;
+    const shifts = far ? closeUp(bounds) : bounds.map(() => ({ dx: 0, dy: 0 }));
+    const placed = bounds.map(
+      (box, i) =>
+        new Bound(box.x - shifts[i].dx, box.y - shifts[i].dy, box.w, box.h)
+    );
+    const all = getCommonBound(placed) ?? whole;
+    return {
+      bound: new Bound(all.x - 8, all.y - 8, all.w + 16, all.h + 16),
+      shiftOf: new Map(items.map((item, i) => [item.id, shifts[i]])),
+    };
   };
   let frame = requestAnimationFrame(function mountLayer() {
     const background = container.querySelector('.edgeless-background');
@@ -391,8 +461,14 @@ export function mountDrawingBoard(
       );
       store.resetHistory();
     }
+    const drawn = getCommonBound([
+      ...gfx.layer.canvasElements,
+      ...gfx.layer.blocks,
+    ]);
     gfx.viewport.setViewportByBound(
-      everything(),
+      area
+        ? (getCommonBound([AREA, ...(drawn ? [drawn] : [])]) ?? AREA)
+        : everything(),
       options.fitPadding ??
         (gfx.viewport.width < PHONE_WIDTH
           ? [64, 12, 96, 12]
@@ -409,7 +485,17 @@ export function mountDrawingBoard(
       return blob ? decodeImage(blob) : null;
     }
     const view = std.view.getBlock(block.id);
-    return view ? std.get(ExportManager)._html2canvas(view) : null;
+    if (!view) return null;
+    // A note out of view is BlockSuite's idle block: hidden with no size, which
+    // html2canvas draws as nothing at all. It's shown for the capture only.
+    const idle =
+      isGfxBlockComponent(view) && view.transformState$.value === 'idle';
+    if (idle) view.transformState$.value = 'active';
+    try {
+      return await std.get(ExportManager)._html2canvas(view);
+    } finally {
+      if (idle) view.transformState$.value = 'idle';
+    }
   };
 
   // An open plane writes its view on closing, and nothing else is in progress.
@@ -420,23 +506,30 @@ export function mountDrawingBoard(
 
   return {
     /** The board to store, with no undo history: a fresh document keeps only what's
-     * on the board (200 plane clicks were 606 KB live, 7.5 KB this way). */
+     * on the board (200 plane clicks were 606 KB live, 7.5 KB this way), rounded
+     * (roundPlaces). */
     save: () => {
       finishPlot();
       const fresh = new Y.Doc();
       Y.applyUpdate(fresh, Y.encodeStateAsUpdate(store.spaceDoc));
+      roundPlaces(fresh);
       const update = Y.encodeStateAsUpdate(fresh);
       fresh.destroy();
       return { bytes: update.byteLength, doc: toBase64(update) };
     },
     /** The board as it is, leaving a tool in use alone. */
     snapshot: () => toBase64(Y.encodeStateAsUpdate(store.spaceDoc)),
-    stats: () => ({
-      blocks: gfx.layer.blocks.map((block) => block.flavour),
-      bytes: Y.encodeStateAsUpdate(store.spaceDoc).byteLength,
-      canvas: gfx.layer.canvasElements.map((element) => element.type),
-      marks: planeMarks(gfx),
-    }),
+    stats: () => {
+      const { bound } = framing();
+      return {
+        blocks: gfx.layer.blocks.map((block) => block.flavour),
+        bytes: Y.encodeStateAsUpdate(store.spaceDoc).byteLength,
+        canvas: gfx.layer.canvasElements.map((element) => element.type),
+        marks: planeMarks(gfx),
+        /** The image's longest side in board units, for the wide-board warning on Done. */
+        span: Math.max(bound.w, bound.h),
+      };
+    },
     /** The canvas as it stands, for marking, through the shared image compressor:
      * every card with the view it was left at, and what's drawn over and around them.
      * Something dragged far away is drawn nearer (FAR_GAP). */
@@ -446,20 +539,7 @@ export function mountDrawingBoard(
       const renderer = surfaceOf(gfx)?.renderer;
       if (!(renderer instanceof CanvasRenderer))
         throw new Error('drawing board: no canvas renderer');
-      const items = [...gfx.layer.canvasElements, ...gfx.layer.blocks];
-      const bounds = items.map((item) => Bound.deserialize(item.xywh));
-      const whole = everything();
-      const far = Math.max(whole.w, whole.h) > IMAGE_SIDE_MAX;
-      const shifts = far
-        ? closeUp(bounds)
-        : bounds.map(() => ({ dx: 0, dy: 0 }));
-      const shiftOf = new Map(items.map((item, i) => [item.id, shifts[i]]));
-      const placed = bounds.map(
-        (box, i) =>
-          new Bound(box.x - shifts[i].dx, box.y - shifts[i].dy, box.w, box.h)
-      );
-      const all = getCommonBound(placed) ?? whole;
-      const bound = new Bound(all.x - 8, all.y - 8, all.w + 16, all.h + 16);
+      const { bound, shiftOf } = framing();
       const scale = Math.min(2, IMAGE_SIDE_MAX / Math.max(bound.w, bound.h));
       const output = document.createElement('canvas');
       output.width = Math.round(bound.w * scale);
@@ -522,9 +602,12 @@ export function mountDrawingBoard(
       );
       if (!png) throw new Error('drawing board: no image');
       // The encode runs in the compressor's worker; drawing needs the page.
+      // Line art keeps its ink at 0.75: 10-20% smaller than the shared 0.85
+      // (Epo 2026-11-06: minimise drawing storage).
       return fitImageOffThread(
         new File([png], 'drawing.png', { type: 'image/png' }),
-        IMAGE_BYTES_MAX
+        IMAGE_BYTES_MAX,
+        { quality: 0.75 }
       );
     },
     unmount: () => {

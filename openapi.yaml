@@ -692,8 +692,6 @@ components:
           format: uri
           readOnly: true
           type: string
-        approveAiMarks:
-          type: boolean
         assignAll:
           type: boolean
         assignees:
@@ -726,6 +724,12 @@ components:
           maximum: 50
           minimum: 0
           type: integer
+        marking:
+          enum:
+            - ai_approve
+            - ai
+            - manual
+          type: string
         noLate:
           type: boolean
         quizId:
@@ -752,7 +756,7 @@ components:
         - assignAll
         - assignees
         - draft
-        - approveAiMarks
+        - marking
         - showAnswers
         - shuffle
         - files
@@ -799,8 +803,6 @@ components:
     AssignmentManage:
       additionalProperties: false
       properties:
-        approveAiMarks:
-          type: boolean
         assignAll:
           type: boolean
         assigned:
@@ -816,6 +818,12 @@ components:
         done:
           format: int64
           type: integer
+        marking:
+          enum:
+            - ai_approve
+            - ai
+            - manual
+          type: string
         quizId:
           type: string
         quizTitle:
@@ -832,7 +840,7 @@ components:
       required:
         - assignAll
         - assignees
-        - approveAiMarks
+        - marking
         - showAnswers
         - shuffle
         - assigned
@@ -1586,6 +1594,8 @@ components:
         renewalAt:
           format: date-time
           type: string
+        storageBreakdown:
+          $ref: "#/components/schemas/StorageBreakdown"
         storageLimitBytes:
           format: int64
           type: integer
@@ -1604,6 +1614,7 @@ components:
         - storageUsedBytes
         - storageReservedBytes
         - storageLimitBytes
+        - storageBreakdown
         - creditsUsedMicros
         - creditsReservedMicros
         - creditsLimitMicros
@@ -2699,6 +2710,83 @@ components:
         - createdAt
         - updatedAt
         - comments
+      type: object
+    DrawingOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/DrawingOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        boardUrl:
+          description: The board's saved document, gzipped; the link is the same all hour and lasts two
+          type: string
+        bytes:
+          format: int64
+          type: integer
+        id:
+          type: string
+        partId:
+          type: string
+      required:
+        - id
+        - partId
+        - boardUrl
+        - bytes
+      type: object
+    DrawingSavedOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/DrawingSavedOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        id:
+          description: 'The stored drawing; the part''s answer is {"drawing": id}'
+          type: string
+      required:
+        - id
+      type: object
+    DrawingUpload:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/DrawingUpload.json
+          format: uri
+          readOnly: true
+          type: string
+        board:
+          description: The board's saved document, base64
+          format: base64
+          maxLength: 400000
+          type: string
+        image:
+          description: The marking image (WebP, or JPEG or PNG where the browser makes no WebP), base64; left out when nothing will mark it
+          format: base64
+          maxLength: 420000
+          type: string
+      required:
+        - board
+      type: object
+    DrawingsDeletedOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/DrawingsDeletedOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        deleted:
+          format: int64
+          type: integer
+      required:
+        - deleted
       type: object
     EditorAssetItem:
       additionalProperties: false
@@ -3997,6 +4085,72 @@ components:
           type: integer
       required:
         - total
+      type: object
+    MarkedDrawing:
+      additionalProperties: false
+      properties:
+        assignment:
+          description: An assignment's answer; otherwise practice
+          type: boolean
+        attemptId:
+          type: string
+        bytes:
+          format: int64
+          type: integer
+        createdAt:
+          format: date-time
+          type: string
+        id:
+          type: string
+        part:
+          description: The part's number from 1, when the question has more than one
+          format: int64
+          type: integer
+        question:
+          description: The question's number, from 1
+          format: int64
+          type: integer
+        quizName:
+          type: string
+        workspaceId:
+          type: string
+        workspaceName:
+          type: string
+      required:
+        - id
+        - attemptId
+        - assignment
+        - quizName
+        - workspaceName
+        - question
+        - bytes
+        - createdAt
+      type: object
+    MarkedDrawings:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/MarkedDrawings.json
+          format: uri
+          readOnly: true
+          type: string
+        count:
+          format: int64
+          type: integer
+        items:
+          items:
+            $ref: "#/components/schemas/MarkedDrawing"
+          type: array
+        nextCursor:
+          type: string
+        totalBytes:
+          format: int64
+          type: integer
+      required:
+        - items
+        - count
+        - totalBytes
       type: object
     Material:
       additionalProperties: false
@@ -7189,6 +7343,23 @@ components:
       required:
         - limitCents
       type: object
+    StorageBreakdown:
+      additionalProperties: false
+      properties:
+        canvasBytes:
+          format: int64
+          type: integer
+        filesBytes:
+          format: int64
+          type: integer
+        otherBytes:
+          format: int64
+          type: integer
+      required:
+        - filesBytes
+        - canvasBytes
+        - otherBytes
+      type: object
     StorageFullBy:
       enum:
         - self
@@ -8841,6 +9012,69 @@ paths:
       summary: Save a running attempt's answers
       tags:
         - Assignments
+  /api/assignment-attempts/{id}/drawings/{partId}:
+    delete:
+      operationId: deleteAssignmentDrawing
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: partId
+          required: true
+          schema:
+            maxLength: 128
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Forget a drawing part's stored drawing in a running attempt (Done on an emptied board)
+      tags:
+        - assignments
+    put:
+      operationId: saveAssignmentDrawing
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: partId
+          required: true
+          schema:
+            maxLength: 128
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DrawingUpload"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DrawingSavedOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Store a drawing part's board (and its marking image) for a running attempt
+      tags:
+        - assignments
   /api/assignment-attempts/{id}/marks:
     post:
       operationId: markAssignmentAnswer
@@ -10252,6 +10486,111 @@ paths:
       summary: Add a comment to a discussion
       tags:
         - Material collaboration
+  /api/drawings:
+    delete:
+      operationId: deleteAllDrawings
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DrawingsDeletedOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete every marked drawing the caller pays for; their marks stay
+      tags:
+        - assignments
+    get:
+      operationId: listDrawings
+      parameters:
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarkedDrawings"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: The caller's marked drawings, newest first (Files › Canvas)
+      tags:
+        - assignments
+  /api/drawings/{id}:
+    delete:
+      operationId: deleteDrawing
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DrawingsDeletedOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete one of the caller's marked drawings; its marks stay
+      tags:
+        - assignments
+    get:
+      operationId: getDrawing
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DrawingOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: A drawing answer's board, as a link that lasts the hour
+      tags:
+        - assignments
   /api/edit-incidents:
     post:
       operationId: reportEditIncident

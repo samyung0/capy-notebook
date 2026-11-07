@@ -1,15 +1,15 @@
 import type { GfxController } from '@blocksuite/affine/std/gfx';
 import { html, render } from 'lit';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
-import { axisNumber, tickStep } from '@/features/questions/graph';
+import { axisNumber } from '@/features/questions/graph';
+import { tickStep } from '@/features/questions/graphTicks';
 import { m } from '@/i18n';
+import { MARKS_MAX, type Mark } from './boardData';
 import { drawChip, openBoardEditor } from './boardEditorShell';
 import { minorStep, smoothThrough, snapTo, type Vec } from './boardGeometry';
 import {
   drawPlane,
   fitCard,
-  MARKS_MAX,
-  type Mark,
   markPoints,
   type PlaneElementModel,
   type PlaneView,

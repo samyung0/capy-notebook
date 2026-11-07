@@ -596,7 +596,7 @@ func TestResolveEditorAssetFollowsWhatItBelongsTo(t *testing.T) {
 	due := time.Now().Add(time.Hour)
 	made, err := st.CreateAssignment(ctx, "u_owner", ws.ID, store.AssignmentForm{
 		Kind: store.AssignmentMarked, Title: "Paper", QuizID: assigned.ID, Questions: frozen, DueAt: &due, Attempts: 1,
-		Assignees: []string{"u_viewer"}, ApproveAIMarks: true, ShowAnswers: true, Files: []store.AssignmentFileRef{},
+		Assignees: []string{"u_viewer"}, Marking: store.MarkingAIApprove, ShowAnswers: true, Files: []store.AssignmentFileRef{},
 	}, time.Now())
 	if err != nil {
 		t.Fatal(err)

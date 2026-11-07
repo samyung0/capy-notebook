@@ -8,6 +8,7 @@ import { m } from '@/i18n';
 import { isLonePart, partPlaces, subLabel } from './groups';
 import {
   blockWithoutBlanks,
+  modelMarked,
   type Question,
   type QuestionBlock,
   type QuestionPart,
@@ -277,7 +278,7 @@ export function questionIssues(
       (field === 'markscheme'
         ? rest.length === 0
         : field === 'marks' &&
-          part.answer.type === 'open' &&
+          modelMarked(part.answer.type) &&
           !normal.parts[at].markscheme?.length);
     const message =
       field === 'answer'

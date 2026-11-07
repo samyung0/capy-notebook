@@ -175,6 +175,12 @@ function partKeys(keys: Y.Doc | null, partId: string, type: string) {
   return key && plain<string>(key, 'type') === type ? key : undefined;
 }
 
+const readMarkscheme = (key: YMap | undefined): MarkItem[] =>
+  ordered(mapAt(key, 'markscheme')).map(({ entry }) => ({
+    marks: plain<number>(entry, 'marks') ?? 1,
+    text: text(entry, 'text'),
+  }));
+
 function readAnswer(
   answer: YMap | undefined,
   key: YMap | undefined
@@ -214,11 +220,17 @@ function readAnswer(
           hints: texts(mapAt(key, 'hints')),
           type,
         },
-        markscheme: ordered(mapAt(key, 'markscheme')).map(({ entry }) => ({
-          marks: plain<number>(entry, 'marks') ?? 1,
-          text: text(entry, 'text'),
-        })),
+        markscheme: readMarkscheme(key),
       };
+    case 'drawing': {
+      // A drawn sample answer is a key: its board and image asset ids.
+      const board = plain<string>(key, 'sampleBoard');
+      const image = plain<string>(key, 'sampleImage');
+      return {
+        answer: board && image ? { sample: { board, image }, type } : { type },
+        markscheme: readMarkscheme(key),
+      };
+    }
     case 'gaps': {
       const gaps = mapAt(key, 'gaps');
       const numbers: number[] = [];
@@ -369,6 +381,9 @@ export function readLearnerQuestions(
               break;
             case 'gaps':
               learner = { gaps: gapNumbers(blocks).length, type };
+              break;
+            case 'drawing':
+              learner = { type };
               break;
             default:
               learner = { type: type === 'boolean' ? 'boolean' : 'open' };
@@ -816,8 +831,14 @@ function writeKeys(key: YMap, part: QuestionPart, ids: PartIds) {
       list('accepted', answer.accepted, 'acc');
       break;
     case 'open':
-      list('accepted', answer.accepted, 'acc');
-      list('hints', answer.hints, 'hint');
+    case 'drawing':
+      if (answer.type === 'open') {
+        list('accepted', answer.accepted, 'acc');
+        list('hints', answer.hints, 'hint');
+      } else {
+        setPlain(key, 'sampleBoard', answer.sample?.board);
+        setPlain(key, 'sampleImage', answer.sample?.image);
+      }
       writeList(
         child(key, 'markscheme'),
         (part.markscheme ?? []).map((item) => ({
@@ -1052,6 +1073,8 @@ export function withEmptyKeys(question: LearnerQuestion): Question {
           return full(answer);
         case 'open':
           return full({ accepted: [], hints: [], type: answer.type });
+        case 'drawing':
+          return full(answer);
         case 'gaps':
           return full({
             accepted: Array.from({ length: answer.gaps }, () => []),

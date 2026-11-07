@@ -24,18 +24,27 @@ type AnswerToMark struct {
 	Items      []string
 	ItemMarks  []float64
 	Answer     string
+	// A drawing part: its marking image is the attempt's stored one for PartID;
+	// SampleImage is its drawn sample answer's image asset, or "".
+	Drawing     bool
+	SampleImage string
 }
 
 // AnswersToMark lists what the AI has yet to mark in an assignment, or in one of
 // its attempts (attemptID), and who pays: AI marking of an assignment's answers is
 // its workspace owner's (Epo 2026-11-03).
 func (s *Store) AnswersToMark(ctx context.Context, assignmentID, attemptID string) (payerID, workspaceID string, answers []AnswerToMark, err error) {
-	if err = s.pool.QueryRow(ctx, `SELECT w.user_id, a.workspace_id FROM assignments a
-		JOIN workspaces w ON w.id=a.workspace_id WHERE a.id=$1`, assignmentID).Scan(&payerID, &workspaceID); err != nil {
+	var marking string
+	if err = s.pool.QueryRow(ctx, `SELECT w.user_id, a.workspace_id, a.marking FROM assignments a
+		JOIN workspaces w ON w.id=a.workspace_id WHERE a.id=$1`, assignmentID).Scan(&payerID, &workspaceID, &marking); err != nil {
 		if isNoRows(err) {
 			err = ErrNotFound
 		}
 		return "", "", nil, err
+	}
+	// Marked by hand: nothing goes to the AI (Epo 2026-11-06).
+	if marking == MarkingManual {
+		return payerID, workspaceID, nil, nil
 	}
 	rows, err := s.pool.Query(ctx, `SELECT t.id, t.answers, t.questions FROM attempts t
 		WHERE t.assignment_id=$1 AND ($2='' OR t.id=$2) AND t.submitted_at IS NOT NULL AND t.waiting_answers > 0
@@ -76,14 +85,16 @@ func attemptAnswersToMark(attemptID string, rawAnswers, rawGraded []byte) ([]Ans
 			p, _ := raw.(map[string]any)
 			partID, _ := p["id"].(string)
 			text, _ := given[partID].(string)
+			drawn := isDrawingAnswer(given[partID])
 			pending, _ := p["pending"].(bool)
-			if _, marked := p["aiAwards"]; !pending || marked || strings.TrimSpace(text) == "" {
+			if _, marked := p["aiAwards"]; !pending || marked || (strings.TrimSpace(text) == "" && !drawn) {
 				continue
 			}
 			items, marks := questions.MarkItems(p)
 			out = append(out, AnswerToMark{
 				AttemptID: attemptID, QuestionID: questionID, PartID: partID,
 				Question: questions.GradingText(q, i), Items: items, ItemMarks: marks, Answer: text,
+				Drawing: drawn, SampleImage: questions.DrawnSampleImage(p),
 			})
 		}
 	}
@@ -115,10 +126,11 @@ func (s *Store) SaveAIMarks(ctx context.Context, attemptID string, marks []AIMar
 		if err != nil {
 			return err
 		}
-		var approval bool
-		if err := tx.QueryRow(ctx, `SELECT approve_ai_marks FROM assignments WHERE id=$1`, r.assignmentID).Scan(&approval); err != nil {
+		var marking string
+		if err := tx.QueryRow(ctx, `SELECT marking FROM assignments WHERE id=$1`, r.assignmentID).Scan(&marking); err != nil {
 			return err
 		}
+		approval := marking == MarkingAIApprove
 		graded, err := decodeFrozen(r.graded)
 		if err != nil {
 			return err

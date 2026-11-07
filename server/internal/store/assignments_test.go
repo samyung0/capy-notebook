@@ -284,7 +284,7 @@ func newAssignmentFixture(t *testing.T, label string) assignmentFixture {
 func (f assignmentFixture) form(t *testing.T, due time.Time) AssignmentForm {
 	t.Helper()
 	return AssignmentForm{Kind: AssignmentMarked, Title: "Paper", QuizID: f.quiz.ID, Questions: frozenFixture(t),
-		DueAt: &due, Attempts: 1, AssignAll: true, Assignees: []string{}, ApproveAIMarks: true, ShowAnswers: true, Files: []AssignmentFileRef{}}
+		DueAt: &due, Attempts: 1, AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: true, Files: []AssignmentFileRef{}}
 }
 
 // TestAssignmentRun walks a marked assignment: created with its quiz refused to

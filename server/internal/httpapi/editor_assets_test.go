@@ -28,6 +28,17 @@ func TestValidateEditorAssetMetadata(t *testing.T) {
 		}
 	})
 
+	t.Run("accepts a drawn sample answer's gzipped board", func(t *testing.T) {
+		if _, _, _, err := validateEditorAssetMetadata(reserveEditorAssetRequest{
+			Name: "sample.ydoc.gz", Purpose: "board", SizeBytes: 4096, ContentType: "application/gzip",
+		}, 100_000_000, freeAssetLimits); err != nil {
+			t.Fatalf("validateEditorAssetMetadata: %v", err)
+		}
+		if !editorAssetSignatureAllowed("board", ".gz", []byte{0x1f, 0x8b, 0x08}) {
+			t.Fatal("a gzip stream was refused")
+		}
+	})
+
 	tests := []struct {
 		name string
 		in   reserveEditorAssetRequest
