@@ -275,23 +275,25 @@ missed budget (open, View to Edit, key p50 and p90 per fixture); the
 keeps the medians (`MEDIANS`) and derives each budget (`budgetOf`): 1.3x the
 median, rounded up to 5 ms below a second and 50 ms above, and no keystroke
 budget below `KEY_BUDGET_FLOOR_MS` (30 ms), since a one-frame wobble fails
-anything smaller. The medians come from three runs of the `office` job below,
-all on 2026-10-04:
+anything smaller. The medians come from three runs of the `office` job below
+on 97e63a68a, 2026-11-07 (Q692, refreshed after the 0.5.1 pin and the ribbon):
+42323528888, 42325355691 and 42325364585, one each on AMD EPYC 7763, AMD EPYC
+9V45 and Intel Xeon 8370C runners. The EPYC 9V45 run was 30-40% faster on
+every figure, so the medians are mostly the other two runs'. Per fixture, the
+three runs and their median (ms):
 
-- DOCX: runs 37174928433, 37174944257 and 37174959817 (every metric within
-  3% of its median).
-- XLSX and PPTX View to Edit and keys: runs 37197306625, 37197311546 and
-  37197316994 on 15136468, all three on AMD EPYC 7763 runners. Their spread
-  was within 8% of the median except the key timings of a few milliseconds
-  (p50 11 to 14 ms, up to 18% apart), which the floor covers.
-- XLSX and PPTX open: runs 37200395852, 37200390235 and 37200383976 on
-  253762ea (one EPYC 9V45, two EPYC 7763), the first runs since their
-  viewers' `ready` moved to after the first paint. Against the earlier
-  medians, open moved +2% for course-guide.xlsx, -2% for
-  large-gradebook.xlsx, +5% for lecture.pptx and +26% for jp_llm2.pptx, whose
-  first slide's pictures now count (5,728 against 4,530 ms). The other XLSX
-  and PPTX metrics of those runs stayed within 80% of their budgets, so their
-  medians are unchanged.
+| Fixture | Open | View to Edit | Key p50 | Key p90 |
+|---|---|---|---|---|
+| exchange-plan.docx | 4211/3093/4213 -> 4211 | 3525/2207/3460 -> 3460 | 35/23/35 -> 35 | 44/32/43 -> 43 |
+| long-handbook.docx | 5754/3935/5282 -> 5282 | 5085/3143/4924 -> 4924 | 165/104/163 -> 163 | 184/122/187 -> 184 |
+| lecture.pptx | 2266/2015/1925 -> 2015 | 996/702/982 -> 982 | 14/8/16 -> 14 | 17/10/17 -> 17 |
+| jp_llm2.pptx | 4455/3011/4184 -> 4184 | 3093/1898/2909 -> 2909 | 65/38/62 -> 62 | 69/40/69 -> 69 |
+| course-guide.xlsx | 2015/1832/1856 -> 1856 | 1057/763/1044 -> 1044 | 5/3/6 -> 5 | 10/6/11 -> 10 |
+| large-gradebook.xlsx | 2850/2567/2753 -> 2753 | 3237/2077/3058 -> 3058 | 6/3/6 -> 6 | 10/8/12 -> 10 |
+
+The bench's earlier medians (2026-10-04, before the 0.5.1 pin) are in its
+history; the PC baseline the second BetterOffice sync is compared against is
+harness 2026-11-06-office-track/office-baseline/REPORT.md.
 
 Heap figures stay report-only: they go to the results JSON (`budget.heap`,
 and `budget: "report-only"` in the heap and co-editor cases), the job summary
