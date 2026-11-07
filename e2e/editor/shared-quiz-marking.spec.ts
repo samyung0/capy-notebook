@@ -57,8 +57,7 @@ for (const { screen, width } of SCREENS) {
     await expect(
       open.getByRole('button', { name: m.question_ui_check_again() })
     ).toHaveCount(0);
-    // The marking points and solution, closed until asked for.
-    await open.getByText(m.question_ui_scheme_and_solution()).first().click();
+    // The marking points, shown in the open beside Not marked (R1).
     await expect(
       open.getByText('Describes the low-CO₂ plateau', { exact: false }).first()
     ).toBeVisible();

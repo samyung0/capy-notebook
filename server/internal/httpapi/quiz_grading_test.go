@@ -56,7 +56,7 @@ func openGradingAPI(t *testing.T, choice string) (http.Handler, *store.Store, *a
 			Image    string `json:"image"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		// A failed call counts too: it carried the image as well.
+		// Counted before a failure, so a call that fails still shows what it sent.
 		if body.Image != "" {
 			gradedImages.Add(1)
 		}

@@ -105,7 +105,6 @@ test.describe('assignments', () => {
       `/api/workspaces/${workspaceId}/assignments`,
       {
         data: {
-          approveAiMarks: true,
           assignAll: true,
           assignees: [],
           attempts: 1,
@@ -114,6 +113,7 @@ test.describe('assignments', () => {
           files: [],
           kind: 'marked',
           latePenaltyPct: 0,
+          marking: 'ai_approve',
           noLate: false,
           quizId: quiz.id,
           showAnswers: true,
