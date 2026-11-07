@@ -47,10 +47,14 @@ declare global {
       painted?: number;
     };
     __benchInputs?: { at: number[]; presents: number[] };
+    /** Long animation frames' durations, for the hidden mount. */
+    __benchLoafs?: number[];
     __board?: {
+      fit(padding: [number, number, number, number]): void;
       save(): { bytes: number; doc: string };
       stats(): { blocks: string[]; canvas: string[] };
     };
+    __mount?: (options: object) => void;
   }
 }
 

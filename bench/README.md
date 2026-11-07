@@ -47,8 +47,11 @@ committed reports.
 a production build without MSW whose `/dev/drawing` route is kept by
 `VITE_BENCH_ROUTES=true` (deploys pin it off). It gates a blank board's cold open
 at 1x and a typical board's (a drawn answer) cold open, typing, pen stroke, pans
-and zooms at 4x CPU, each input to its painted frame; warm opens, a large board
-and the bytes each open downloads are report-only. `editor/scripts/board-stages.canvas.ts`,
+and zooms at 4x CPU, each input to its painted frame, and Draw as a drawing
+question runs it at 4x: the typical board's hidden mount (its longest frame) and
+showing it (to its first frame), with provisional budgets until Windows'
+calibration run; warm opens and mounts, a large board and the bytes each open
+downloads are report-only. `editor/scripts/board-stages.canvas.ts`,
 report only, splits the cold open into stages and times the list preview and Draw with
 the module already evaluated (`pnpm bench:canvas board-stages`). It runs as the `canvas` job of the `Performance` workflow, on dispatch
 only. Details: [editor-perf.md](../openwiki/editor-perf.md#drawing-board-pnpm-benchcanvas).

@@ -17,9 +17,12 @@ import { CPU_RATE, percentile, reportMetrics, throttleCpu } from './metrics';
  * The drawing board (BlockSuite's edgeless editor, `/dev/drawing`) in a production
  * build (Q686 A): a blank board's cold open at 1x, then at CPU_RATE (4x by default)
  * a typical board's and a large one's cold opens, and on each panning, zooming, a
- * pen stroke and typing in a note card, each input's delay to its painted frame.
- * Gated: the blank and typical cold opens and the typical board's inputs. Reported
- * only: warm opens, the large board and the bytes each open downloads.
+ * pen stroke and typing in a note card, each input's delay to its painted frame;
+ * and Draw as a drawing question runs it (fix 4): the typical board mounted hidden
+ * in a page that has the module, then shown. Gated: the blank and typical cold
+ * opens, the typical board's inputs, the hidden mount's longest frame and Draw's
+ * first frame. Reported only: warm opens and mounts, the large board and the bytes
+ * each open downloads.
  *
  * Both boards are made in the page through BlockSuite's own API and saved, so they
  * always match the board's current format: strokes, shapes, formulas and note
@@ -52,6 +55,10 @@ type Timings = {
   penP90Ms: number;
   typingP90Ms: number;
   zoomP90Ms: number;
+  /** The first hidden mount's longest frame, at CPU_RATE. */
+  hiddenMountLongestMs: number;
+  /** Draw on the board mounted ahead: showing it to its first frame, at CPU_RATE. */
+  drawShownMs: number;
 };
 
 /**
@@ -59,9 +66,15 @@ type Timings = {
  * 42252998330, 42253016137 and 42253034659 on 630705a96 (2026-11-07). The first
  * calibration (7d470b2e5, on 4cf06a4b6) measured the large board and the blank open
  * at 4x, so it doesn't carry over.
+ *
+ * PROVISIONAL until Windows' calibration run: `hiddenMountLongestMs` and
+ * `drawShownMs` are 3x a Mac run on 805e3c1f1 (2026-11-07: 381 and 23 ms), as the
+ * runner is 2-3x slower; their budgets are 1500 and 90 ms.
  */
 const MEDIANS: Timings | null = {
   blankOpenMs: 807,
+  drawShownMs: 69,
+  hiddenMountLongestMs: 1143,
   openMs: 2921,
   panP90Ms: 43,
   penP90Ms: 33,
@@ -82,6 +95,8 @@ function budgetOf(median: Timings): Timings {
   const input = (ms: number) => Math.max(INPUT_BUDGET_FLOOR_MS, limit(ms));
   return {
     blankOpenMs: limit(median.blankOpenMs),
+    drawShownMs: input(median.drawShownMs),
+    hiddenMountLongestMs: limit(median.hiddenMountLongestMs),
     openMs: limit(median.openMs),
     panP90Ms: input(median.panP90Ms),
     penP90Ms: input(median.penP90Ms),
@@ -405,6 +420,107 @@ async function interactions(browser: Browser, saved: string, errors: string[]) {
   return { pan, pen, typing, zoom };
 }
 
+/** The longest long animation frame since the last call; 0 when none. */
+const longestFrame = (page: Page) =>
+  page.evaluate(() => {
+    const loafs = window.__benchLoafs ?? [];
+    const longest = Math.max(0, ...loafs);
+    loafs.length = 0;
+    return longest;
+  });
+
+/** The board's host goes out of sight as DrawingBoardScreen's `hidden` puts it. */
+const setHidden = (page: Page, hidden: boolean) =>
+  page.evaluate((hidden) => {
+    const host = document.querySelector('.h-dvh.w-full') as HTMLElement;
+    host.style.opacity = hidden ? '0' : '';
+    host.inert = hidden;
+  }, hidden);
+
+/** Mounts a board with the answer area, as a drawing part does, and resolves after
+ * the first frame that holds it, then 300 ms more for the frames that follow. */
+const mountBoard = (page: Page, saved: string) =>
+  page.evaluate(async (saved) => {
+    window.__mount?.({ answerArea: { label: 'Answer area' }, saved });
+    await new Promise<void>((resolve) => {
+      const watch = () => {
+        if (!document.querySelector('.edgeless-background rect[stroke]')) {
+          requestAnimationFrame(watch);
+          return;
+        }
+        requestAnimationFrame(() => {
+          const channel = new MessageChannel();
+          channel.port1.onmessage = () => resolve();
+          channel.port2.postMessage(null);
+        });
+      };
+      watch();
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }, saved);
+
+/**
+ * Draw as a drawing question runs it (fix 4): in a fresh context the dev route
+ * loads the module and mounts nothing (`?unmounted`), then at CPU_RATE the board
+ * mounts hidden (cold: the page's first board) and again (warm), each with its
+ * longest frame; then Draw shows the board mounted ahead, fitted as Draw fits it,
+ * timed to the first task after its next frame.
+ */
+async function drawAhead(browser: Browser, saved: string) {
+  const runs: { cold: number; shown: number; warm: number }[] = [];
+  for (let i = 0; i < OPENS; i++) {
+    const context = await browser.newContext({
+      viewport: { height: 800, width: 1280 },
+    });
+    const page = await context.newPage();
+    await page.addInitScript(() => {
+      const loafs: number[] = [];
+      window.__benchLoafs = loafs;
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) loafs.push(entry.duration);
+      }).observe({
+        type: 'long-animation-frame',
+      } as PerformanceObserverInit);
+    });
+    await page.goto('/dev/drawing?unmounted');
+    await page.waitForFunction(() => '__mount' in window, null, {
+      timeout: 120_000,
+    });
+    await page.waitForTimeout(1000);
+    await setHidden(page, true);
+    await throttleCpu(page, CPU_RATE);
+    await longestFrame(page);
+    await mountBoard(page, saved);
+    const cold = await longestFrame(page);
+    await mountBoard(page, saved);
+    const warm = await longestFrame(page);
+    const shown = await page.evaluate(
+      () =>
+        new Promise<number>((resolve) => {
+          const start = performance.now();
+          const host = document.querySelector('.h-dvh.w-full') as HTMLElement;
+          host.style.opacity = '';
+          host.inert = false;
+          window.__board?.fit([90, 40, 130, 40]);
+          requestAnimationFrame(() => {
+            const channel = new MessageChannel();
+            channel.port1.onmessage = () => resolve(performance.now() - start);
+            channel.port2.postMessage(null);
+          });
+        })
+    );
+    runs.push({ cold, shown, warm });
+    await context.close();
+  }
+  return {
+    hiddenMountLongestMs: round(median(runs.map((run) => run.cold))),
+    hiddenMountLongestRunsMs: runs.map((run) => round(run.cold)),
+    shownMs: round(median(runs.map((run) => run.shown))),
+    shownRunsMs: runs.map((run) => round(run.shown)),
+    warmMountLongestMs: round(median(runs.map((run) => run.warm))),
+  };
+}
+
 test('the drawing board opens and responds within its budgets', async ({
   browser,
 }, testInfo) => {
@@ -429,9 +545,12 @@ test('the drawing board opens and responds within its budgets', async ({
 
   const onTypical = await interactions(browser, typical.saved.doc, errors);
   const onLarge = await interactions(browser, large.saved.doc, errors);
+  const draw = await drawAhead(browser, typical.saved.doc);
 
   const timings: Timings = {
     blankOpenMs: blankOpen.cold.paintedMs,
+    drawShownMs: draw.shownMs,
+    hiddenMountLongestMs: draw.hiddenMountLongestMs,
     openMs: typicalOpen.cold.paintedMs,
     panP90Ms: onTypical.pan.p90Ms,
     penP90Ms: onTypical.pen.p90Ms,
@@ -440,7 +559,8 @@ test('the drawing board opens and responds within its budgets', async ({
   };
   const budget = MEDIANS ? budgetOf(MEDIANS) : 'uncalibrated';
   const opened = ({ cold, warm }: typeof blankOpen) => ({ cold, warm });
-  // Gated: `timings`. Report-only: warm opens, the large board and the bytes.
+  // Gated: `timings`. Report-only: warm opens and mounts, the large board and
+  // the bytes.
   await reportMetrics(testInfo, 'canvas-board', {
     blank: { cpu: 1, open: opened(blankOpen) },
     boards: {
@@ -455,7 +575,7 @@ test('the drawing board opens and responds within its budgets', async ({
     },
     large: { open: opened(largeOpen), ...onLarge },
     timings,
-    typical: { open: opened(typicalOpen), ...onTypical },
+    typical: { draw, open: opened(typicalOpen), ...onTypical },
   });
 
   expect(errors).toEqual([]);
