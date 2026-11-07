@@ -194,6 +194,10 @@ const FIRST_PLANE = { h: 520, ppu: 41, w: 820 };
 const IMAGE_BYTES_MAX = 300 * 1024;
 
 export type DrawingBoardOptions = {
+  /** A dashed box with this label marks where to answer, and the first view fits it
+   * (Epo 2026-11-07, W3/W4). Only on screen: the image, save, span and previews leave
+   * it out, and a read-only board draws none. */
+  answerArea?: { label: string };
   /** Room the first fit leaves around the drawing, [top, right, bottom, left] in
    * pixels, for what the page lays over the board (a pinned question, a top bar).
    * Without it, room for the board's own toolbar and undo. */
@@ -209,6 +213,40 @@ export type DrawingBoardOptions = {
 };
 
 export { BoardLoadError } from './boardLoad';
+
+/** The answer area in board units; drawing inside it keeps span under the wide-board
+ * warning's 2,000. */
+const AREA = new Bound(0, 0, 1920, 1200);
+
+/** The answer area's dashed box and label for the moving layer, kept the same size
+ * on screen at every zoom by `zoom`. */
+function answerArea(label: string) {
+  const svg = 'http://www.w3.org/2000/svg';
+  const box = document.createElementNS(svg, 'svg');
+  box.style.cssText =
+    'position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible';
+  const rect = document.createElementNS(svg, 'rect');
+  rect.setAttribute('width', String(AREA.w));
+  rect.setAttribute('height', String(AREA.h));
+  rect.setAttribute('fill', 'none');
+  rect.setAttribute('stroke', '#9aa0a6');
+  box.append(rect);
+  const chip = document.createElement('div');
+  chip.className = 'capy-answer-area';
+  chip.textContent = label;
+  chip.style.cssText =
+    'position:absolute;left:0;top:0;transform-origin:0 0;white-space:nowrap;height:20px;padding:0 7px;border-radius:4px 4px 4px 0;background:#222;color:#fff;font:600 12px/20px var(--affine-font-family)';
+  return {
+    box,
+    chip,
+    zoom: (zoom: number) => {
+      rect.setAttribute('stroke-width', String(1.5 / zoom));
+      rect.setAttribute('stroke-dasharray', `${8 / zoom} ${6 / zoom}`);
+      // Its bottom left on the box's top left corner.
+      chip.style.transform = `scale(${1 / zoom}) translateY(-100%)`;
+    },
+  };
+}
 
 const roundPlace = (xywh: string) =>
   JSON.stringify(
@@ -373,7 +411,15 @@ export function mountDrawingBoard(
     layer.style.left = `${left}px`;
     layer.style.top = `${top}px`;
     layer.style.transform = `scale(${gfx.viewport.zoom})`;
+    area?.zoom(gfx.viewport.zoom);
   };
+  const area = readOnly
+    ? null
+    : options.answerArea && answerArea(options.answerArea.label);
+  if (area) {
+    preview.before(area.box);
+    layer.append(area.chip);
+  }
   const subscription = gfx.viewport.viewportUpdated.subscribe(place);
   const everything = () => {
     const elements = gfx.layer.canvasElements;
@@ -415,8 +461,14 @@ export function mountDrawingBoard(
       );
       store.resetHistory();
     }
+    const drawn = getCommonBound([
+      ...gfx.layer.canvasElements,
+      ...gfx.layer.blocks,
+    ]);
     gfx.viewport.setViewportByBound(
-      everything(),
+      area
+        ? (getCommonBound([AREA, ...(drawn ? [drawn] : [])]) ?? AREA)
+        : everything(),
       options.fitPadding ??
         (gfx.viewport.width < PHONE_WIDTH
           ? [64, 12, 96, 12]

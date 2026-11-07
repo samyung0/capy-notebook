@@ -463,6 +463,49 @@ test('the image stacks as the screen does, and many formulas settle', async ({
   expect(errors).toEqual([]);
 });
 
+test('the answer area is fitted, keeps its screen size, and stays out of the image', async ({
+  page,
+}) => {
+  test.slow();
+  await openBoard(page);
+  await page.evaluate(
+    "window.__mount({ answerArea: { label: 'Answer area' } })"
+  );
+  const chip = page.locator('.capy-answer-area');
+  await expect(chip).toHaveText('Answer area');
+  const boxes = () =>
+    page.evaluate(() => {
+      const box = (selector: string) => {
+        const { bottom, height, left, top, width } = (
+          document.querySelector(selector) as Element
+        ).getBoundingClientRect();
+        return { bottom, height, left, top, width };
+      };
+      return {
+        area: box('.edgeless-background rect[stroke="#9aa0a6"]'),
+        chip: box('.capy-answer-area'),
+      };
+    });
+  const { area, chip: label } = await boxes();
+  // Fitted: the box spans most of the window's width, its label on its corner.
+  expect(area.width).toBeGreaterThan(page.viewportSize()!.width / 2);
+  expect(area.left).toBeGreaterThan(0);
+  expect(label.height).toBeCloseTo(20, 0);
+  expect(label.bottom).toBeCloseTo(area.top, 0);
+  expect(label.left).toBeCloseTo(area.left, 0);
+  await page.evaluate(
+    "document.querySelector('affine-edgeless-root').gfx.viewport.setZoom(2)"
+  );
+  await expect.poll(async () => (await boxes()).chip.height).toBeCloseTo(20, 0);
+  // Only on screen: an empty board's span is the 820 × 520 default with its margin.
+  expect((await stats(page)).span).toBe(836);
+  await page.evaluate(
+    "window.__mount({ answerArea: { label: 'Answer area' }, readOnly: true })"
+  );
+  await expect(page.locator('affine-edgeless-root')).toHaveCount(1);
+  await expect(chip).toHaveCount(0);
+});
+
 test('a note scrolled out of view still reaches the image', async ({
   page,
 }) => {
