@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/Button';
+import { SimpleDialog } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { userToast } from '@/components/ui/userToast';
@@ -34,6 +35,10 @@ export type PinnedQuestion = {
 
 const DRAFT_DELAY_MS = 800;
 const PHONE_WIDTH = 768;
+/** Past this many board units on its longest side, the 1,568 px marking image
+ * loses lowercase labels (bench/grading 2026-11-06), so Done asks first (W1,
+ * Epo 2026-11-07). */
+const WIDE_BOARD_SPAN = 2000;
 
 /** The first fit's room, [top, right, bottom, left]: clear of the pinned
  * question (340px at 16px in) and Done, and of the toolbar when drawing. */
@@ -96,6 +101,7 @@ export default function DrawingBoardScreen({
   // Desktop shows the question until hidden; a phone folds it to one line.
   const [shown, setShown] = useState(true);
   const [unfolded, setUnfolded] = useState(false);
+  const [wide, setWide] = useState(false);
 
   useEffect(() => {
     const element = host.current;
@@ -159,12 +165,17 @@ export default function DrawingBoardScreen({
     );
   }, []);
 
-  const finish = async () => {
+  /** Done; `anyway` skips the wide-board question (Done anyway, a time limit). */
+  const finish = async (anyway = false) => {
     const current = board.current;
     if (!current || busy) return;
     if (readOnly || !onDone) return onClose();
     const stats = current.stats();
     const empty = stats.canvas.length === 0 && stats.blocks.length === 0;
+    if (!empty && !anyway && stats.span > WIDE_BOARD_SPAN) {
+      setWide(true);
+      return;
+    }
     const saved = empty ? null : current.save();
     if (saved && saved.bytes > DRAWING_BOARD_MAX) {
       userToast({ title: m.drawing_answer_too_big(), variant: 'error' });
@@ -193,19 +204,19 @@ export default function DrawingBoardScreen({
     }
   };
 
-  // A time limit running out presses Done here (finishOpenDrawing).
+  // A time limit running out presses Done here (finishOpenDrawing), asking nothing.
   const latestFinish = useRef(finish);
   latestFinish.current = finish;
   useEffect(() => {
     if (readOnly || !onDone) return;
-    return holdOpenDrawing(() => latestFinish.current());
+    return holdOpenDrawing(() => latestFinish.current(true));
   }, [onDone, readOnly]);
 
   const doneButton = (ref?: React.Ref<HTMLButtonElement>) => (
     <Button
       className={UNDER_CARD}
       disabled={!ready || busy}
-      onClick={finish}
+      onClick={() => finish()}
       ref={ref}
       variant={readOnly ? 'outline' : 'dark'}
     >
@@ -282,6 +293,38 @@ export default function DrawingBoardScreen({
       <div className={cn('absolute top-4 right-4 hidden md:block', UNDER_CARD)}>
         {doneButton()}
       </div>
+      <SimpleDialog
+        footer={
+          <>
+            <Button
+              onClick={() => {
+                setWide(false);
+                finish(true);
+              }}
+              size="lg"
+              variant="outline"
+            >
+              {m.drawing_wide_done_anyway()}
+            </Button>
+            <Button
+              autoFocus
+              onClick={() => setWide(false)}
+              size="lg"
+              variant="dark"
+            >
+              {m.drawing_wide_keep()}
+            </Button>
+          </>
+        }
+        onClose={() => setWide(false)}
+        // Phones keep their header close; wider screens have the two buttons only (W1).
+        onCloseClick={() => setWide(false)}
+        open={wide}
+        showCloseButton={false}
+        title={m.drawing_wide_title()}
+      >
+        <p className="text-[0.9375rem] sm:text-base">{m.drawing_wide_body()}</p>
+      </SimpleDialog>
     </div>,
     document.body
   );

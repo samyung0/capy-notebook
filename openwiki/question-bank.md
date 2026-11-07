@@ -169,7 +169,10 @@ card (a plane, a chart) is open full screen with its own Done. As it changes, th
 board is kept on the device (`localDb` `drawingDrafts`) under the quiz or the
 assignment attempt (`DrawingDraftScope`), and reopens from there until Done. Done
 on an empty board leaves the part unanswered; past 250 KB (undo history stripped)
-it toasts and the board stays open; otherwise the answer is the board's document
+it toasts and the board stays open; on a board whose marking image would be more
+than 2,000 board units on its longest side (`stats().span`, where lowercase
+labels fade in the 1,568 px image) it asks first, Keep drawing or Done anyway (W1,
+Epo 2026-11-07), though a time limit's Done never asks; otherwise the answer is the board's document
 and its WebP marking image, and the part shows the drawing with Edit drawing.
 Checked, it shows its verdict, the drawing and Open drawing, the whole board read
 only. A time limit running out with the board open presses its Done before the
