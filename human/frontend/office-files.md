@@ -393,5 +393,7 @@
 - Developer Epo decided (2026-11-07, Q703 A) the DOCX layout's retained primitive keeps upstream's size: Capy's tab and break counts are packed into its padding instead of growing it from 1,160 to 1,184 bytes.
 - Developer Epo decided (2026-11-07, Q704 A) opaque SmartArt and text-box drawings keep their namespace bindings in the stored XML, as upstream parses them.
 - Developer Epo decided (2026-11-07, Q705 A, #1921) a list level naming a theme font stores it as the seeded `listMarkerFonts` key, which restyles carry and the bridge resolves against the theme; an edited marker font still wins.
+- Developer Epo decided (2026-11-07, Q706 A, widens Q697) the XLSX pending-effect text appended to the agent's document reads strips the `_xlfn.` and `_xlws.` prefixes too, so every agent read shows the formula users see.
+- Developer Epo decided (2026-11-07, Q707 A) the agent's refusal of a disallowed formula quotes it as users see it, without storage prefixes: `the name Exfil (WEBSERVICE("http://example.com")) is not allowed: the function WEBSERVICE is not available; use a function the spreadsheet engine supports`.
 - Developer Epo decided (2026-11-07, Q699 C) the editors' zh-CN labels follow upstream's zh-CN glossary (`shared/i18n-glossary`, #1876), e.g. Redo 恢复, Comment 批注, Formula bar 公式栏, and the glossary test stays.
 - Developer Epo decided (2026-11-07, Q700 A, #1875) the hardcoded strings in Capy's editor components move into the en and zh-CN catalogs, and upstream's UI-string guard stays to catch new ones.
