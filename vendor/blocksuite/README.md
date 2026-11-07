@@ -269,6 +269,11 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
     `Capy (local change 24)`): the canvas note's three vanilla-extract `.css.ts` files are
     one plain stylesheet with fixed `affine-note-*` class names, so the app's build runs no
     vanilla-extract plugin (Windows' canvas-open report, 2026-11-06).
+25. Pointer clicks and drags (`framework/std` `event/control/pointer.ts`, marked `Capy
+    (local change 25)`): a press that went past the 2 px drag threshold never clicks, so
+    a pen stroke ending back near its start no longer adds a dot stroke; and the moves
+    inside the threshold (the latest 64) reach the drag as `dragMove`s right after
+    `dragStart`, so a stroke keeps its first points (Epo 2026-11-07).
 
 The specs named in local changes 6 to 9 are on the `blocksuite-notes` branch, with the
 note editor they pin.
