@@ -4,7 +4,7 @@ import { authHeaders } from '@/api/auth';
 import type { SourceFile, SourceSession } from '@/api/types';
 import { OfficeInsetContext } from '@/components/ui/floatingBarContext';
 import { userToast } from '@/components/ui/userToast';
-import { useCollaborationHeld } from '@/features/collaboration/held';
+import { isHeld, useCollaborationHeld } from '@/features/collaboration/held';
 import { frameInput } from '@/features/collaboration/idle';
 import { RoomProvider } from '@/features/collaboration/roomProvider';
 import { getLocale, m } from '@/i18n';
@@ -335,17 +335,17 @@ export function useOfficeRuntime({
     (kind: 'flush' | 'export') =>
       new Promise<ArrayBuffer>((resolve, reject) => {
         const id = crypto.randomUUID();
-        const timeout = setTimeout(() => {
+        const clear = frameRequestLimit(() => {
           frameRequests.current.delete(id);
           reject(new Error(m.source_edit_save_failed()));
-        }, 30_000);
+        });
         frameRequests.current.set(id, {
           reject: (error) => {
-            clearTimeout(timeout);
+            clear();
             reject(error);
           },
           resolve: (bytes) => {
-            clearTimeout(timeout);
+            clear();
             resolve(bytes);
           },
         });
@@ -831,10 +831,13 @@ export function useOfficeRuntime({
       if (message.type === 'collaboration-ready') {
         officeMark('collaboration-ready');
         setReplicaReady(true);
-        // A newly opened DOCX editor takes the focus (it waits for its frame
-        // to get it) unless Capy's focus is somewhere it keeps (the chat box,
-        // an open dialog or menu).
-        if (format === 'docx' && !keepsFocus(document.activeElement))
+        // A newly opened DOCX or XLSX editor takes the focus (it waits for
+        // its frame to get it) unless Capy's focus is somewhere it keeps (the
+        // chat box, an open dialog or menu; Q690).
+        if (
+          (format === 'docx' || format === 'xlsx') &&
+          !keepsFocus(document.activeElement)
+        )
           iframeRef.current?.focus({ preventScroll: true });
       }
       if (
@@ -1259,13 +1262,6 @@ const OFFICE_NOTICE_TOASTS: Record<
 };
 
 /**
- * The `set-capabilities` canEdit: an editable frame showing the room's
- * current document. While the tab holds back its collaboration messages
- * (pacing, pieces, a timeout; Epo 2026-10-18) a DOCX or PPTX editor pauses,
- * as for any pause; the XLSX editor takes `sending` instead and refuses edits
- * with a busy cursor.
- */
-/**
  * Hands an editor's engine what it did not write. A DOCX or PPTX engine takes
  * the room's updates as they arrived: this document's update event comes after
  * its collection, and the engine's Undo keeps what lands in what it deleted
@@ -1291,6 +1287,27 @@ export function deliverToEngine(
   };
 }
 
+/**
+ * A frame request's limit (30 s), for a frame that never answers; it starts
+ * over while the tab holds back its messages, since the XLSX runtime saves
+ * only once the hold ends (Q688). Returns what clears it.
+ */
+export function frameRequestLimit(expire: () => void) {
+  let timer: ReturnType<typeof setTimeout>;
+  const arm = () => {
+    timer = setTimeout(() => (isHeld() ? arm() : expire()), 30_000);
+  };
+  arm();
+  return () => clearTimeout(timer);
+}
+
+/**
+ * The `set-capabilities` canEdit: an editable frame showing the room's
+ * current document. While the tab holds back its collaboration messages
+ * (pacing, pieces, a timeout; Epo 2026-10-18) a DOCX or PPTX editor pauses,
+ * as for any pause; the XLSX editor takes `sending` instead and refuses edits
+ * with a busy cursor.
+ */
 export function frameCanEdit({
   current,
   editable,

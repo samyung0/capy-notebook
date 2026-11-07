@@ -1,6 +1,6 @@
 import { expect, type Page, test } from '@playwright/test';
 import { EDITOR_NOTE } from '../../src/mocks/editorSeed';
-import { officeEditMenu } from '../helpers/office';
+import { officeEditMenu, saveOffice } from '../helpers/office';
 import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 import { openEditorNote } from './helpers';
@@ -88,4 +88,65 @@ test('an XLSX grid is busy and takes no Delete while the tab holds back', async 
   await grid.focus();
   await page.keyboard.press('Delete');
   await expect(formula).toHaveValue('');
+});
+
+// Q688: File › Save while the tab holds back its messages waits for the hold
+// to end, then commits the open cell and saves. Enter during the hold stays
+// refused, the value left in the formula bar on its cell.
+test('an XLSX save during a hold waits for it, then commits the open cell and saves', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await page.goto('/workspaces/ws_bio');
+  await showPanelView(page, m.workspace_tab_files());
+  await page
+    .locator('[data-workspace-file-tree] a[href*="file=bio-office-xlsx"]')
+    .click();
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await page.getByRole('button', { name: m.material_mode() }).click();
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+  const grid = frame.getByTestId('xlsx-scroll');
+  const nameBox = frame.getByTestId('xlsx-name-box');
+  const formula = frame.getByTestId('xlsx-formula-input');
+  await nameBox.fill('H5');
+  await nameBox.press('Enter');
+  await expect(formula).toHaveValue('2');
+  // The frame's edits as they reach Capy.
+  const updates = await page.evaluateHandle(() => {
+    const seen = { count: 0 };
+    window.addEventListener('message', (event) => {
+      if (event.data?.type === 'update') seen.count += 1;
+    });
+    return seen;
+  });
+
+  await formula.fill('732001');
+  await hold(page, true);
+  await expect(grid).toHaveAttribute('aria-busy', 'true');
+  await formula.press('Enter');
+  await expect(nameBox).toHaveValue('H5');
+  await expect(formula).toHaveValue('732001');
+  await saveOffice(page, 'xlsx');
+  await page.waitForTimeout(1500);
+  expect(await updates.evaluate((seen) => seen.count)).toBe(0);
+
+  await hold(page, false);
+  await expect
+    .poll(() => updates.evaluate((seen) => seen.count), { timeout: 30_000 })
+    .toBeGreaterThan(0);
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'saved',
+    { timeout: 30_000 }
+  );
+  await expect(page.getByText(m.error_file_body())).toHaveCount(0);
+  await grid.focus();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowUp');
+  await expect(nameBox).toHaveValue('H5');
+  await expect(formula).toHaveValue('732001');
 });

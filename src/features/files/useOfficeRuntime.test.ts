@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
+import { setHeld } from '@/features/collaboration/held';
 import { RoomProvider } from '@/features/collaboration/roomProvider';
 import { m } from '@/i18n';
 import {
   deliverToEngine,
   frameBannerAction,
   frameCanEdit,
+  frameRequestLimit,
   keepsFocus,
   officeNotices,
   openRequestedPresenter,
@@ -168,6 +170,25 @@ describe('the frame editing while the tab holds back', () => {
 
   it('leaves the XLSX editor to its own sending state', () => {
     expect(frameCanEdit({ ...frame, format: 'xlsx' })).toBe(true);
+  });
+
+  // Q688: an XLSX save waits for the hold to end before the frame answers.
+  it("waits for the hold before a frame request's limit runs out", () => {
+    vi.useFakeTimers();
+    const expire = vi.fn();
+    const holder = {};
+    try {
+      setHeld(holder, true);
+      frameRequestLimit(expire);
+      vi.advanceTimersByTime(90_000);
+      expect(expire).not.toHaveBeenCalled();
+      setHeld(holder, false);
+      vi.advanceTimersByTime(30_000);
+      expect(expire).toHaveBeenCalledTimes(1);
+    } finally {
+      setHeld(holder, false);
+      vi.useRealTimers();
+    }
   });
 });
 
