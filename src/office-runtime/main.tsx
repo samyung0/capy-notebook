@@ -490,6 +490,15 @@ function OfficeRuntime() {
     },
     [fileFormat, growthBudgetBytes, imageMaxBytes]
   );
+  // An XLSX save while the tab holds back its messages waits for the hold to
+  // end, the editor drawn without it, then commits the open cell (Q688).
+  const savesAfterHold = useRef(false);
+  const holdEnded = useRef<(() => void)[]>([]);
+  useEffect(() => {
+    savesAfterHold.current = sending && fileFormat === 'xlsx';
+    if (!savesAfterHold.current)
+      for (const resolve of holdEnded.current.splice(0)) resolve();
+  }, [fileFormat, sending]);
 
   useEffect(() => {
     let failScenarioExport = false;
@@ -697,6 +706,8 @@ function OfficeRuntime() {
         revisionRef.current !== null
       ) {
         const replica = replicaRef.current;
+        if (savesAfterHold.current)
+          await new Promise<void>((resolve) => holdEnded.current.push(resolve));
         await flush();
         const state = await replica.encodeStateAsUpdate();
         const bytes = state.slice().buffer;
