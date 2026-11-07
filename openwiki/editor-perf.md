@@ -227,6 +227,21 @@ grid canvas is cleared for a frame, `window.__xlsxPaints`), the long tasks up
 to that paint, and `longestTask`, since the editor's workbook worker paints
 after the frame the apply returned in.
 
+PPTX first applies one edit on its own and reports the main thread's busy
+time after it (`busyAfterOneEdit`, report-only, Q692), which `toFrame`
+misses: after that frame the editor decodes and recolours the slides'
+pictures again (~800 ms on `jp_llm2.pptx` at the 0.5.1 pin against ~290 on
+the old one, harness `2026-11-06-office-track/office-baseline/REPORT.md`). A
+Chrome trace (`disabled-by-default-devtools.timeline` and
+`blink.user_timing`) runs for 8 s from the edit; a listener added after the
+runtime's marks the receiving task. `busyMs` sums the renderer main thread's
+tasks (DevTools' `RunTask`, all sizes: on that baseline trace the long tasks
+alone were about 340 of its ~810 ms) from that task until the thread is idle,
+no task of 1 ms or more for 500 ms (an untouched open editor runs only
+sub-millisecond timers); `settleMs` is the wall time to that point,
+`longestTaskMs` and `tasks` describe the stretch, and `idle: false` means the
+trace ended first. The ten edits follow it.
+
 XLSX has three more report-only cases. `large paste and row insert` posts a
 peer's 8,000-cell paste (1,000 rows by 8 columns from the fixture's cell) and
 row insert (a whole recalculation) straight to the runtime as host updates;
@@ -244,13 +259,19 @@ in its cell, and reports the typing span and the long tasks meanwhile.
 (`gen_large_xlsx.py 1 50000 values`, seeded with the load-test files) in Edit
 and scrolls it 60 and 600 px a frame for 3 s: grid paints and animation
 frames per second, the longest gap between paints, the long tasks, and the
-heap with the workers. The typing cases report the keystroke p95 and, for
+heap with the workers. Its scrolling is gated by a fixed ceiling
+(`SCROLL_BUDGET`, Q692) instead of 1.3x a median, whose spread was too wide
+(the slow run's longest gap 31 to 60 ms over three PC runs on 2026-11-07):
+both runs fail on a paint gap
+over 100 ms (six frames) or fewer than 50 paints per second. Its open and View
+to Edit stay report-only. The typing cases report the keystroke p95 and, for
 XLSX, Enter to the painted grid (`enterToPaintP50Ms`, `enterToPaintP95Ms`).
 
 It runs unthrottled: CDP's CPU throttle reaches neither the runtime frame nor
 the engine workers. Every file fails on unpainted keys, typing that sends no
 edit to the room, a viewer `ready` without timings, a worker fallback, or a
-missed budget (open, View to Edit, key p50 and p90 per fixture). The spec
+missed budget (open, View to Edit, key p50 and p90 per fixture); the
+50,000-row sheet fails on its scroll ceiling. The spec
 keeps the medians (`MEDIANS`) and derives each budget (`budgetOf`): 1.3x the
 median, rounded up to 5 ms below a second and 50 ms above, and no keystroke
 budget below `KEY_BUDGET_FLOOR_MS` (30 ms), since a one-frame wobble fails

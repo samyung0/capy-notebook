@@ -57,7 +57,11 @@ import { cdpSession, percentile, reportMetrics } from './metrics';
  * and row insert, the last a whole recalculation; the same done locally),
  * each to the next painted grid with the frame's main-thread long tasks, and
  * scrolling a 50,000-row sheet (rows-50k.xlsx: gen_large_xlsx.py 1 50000
- * values) with the grid's paints per second.
+ * values) with the grid's paints per second, gated by a fixed ceiling
+ * (SCROLL_BUDGET).
+ *
+ * PPTX only, report-only: the main thread's busy time after one co-editor
+ * edit, from a Chrome trace (busyAfterRemoteEdit).
  */
 
 interface Timings {
@@ -123,6 +127,13 @@ const MEDIANS: Record<Fixture['id'], Timings> = {
 
 /** No keystroke budget goes below this: a one-frame wobble fails anything smaller. */
 const KEY_BUDGET_FLOOR_MS = 30;
+
+/**
+ * Scrolling's fixed ceiling, on every scroll run (Q692; its spread is too
+ * wide for 1.3x a median): no gap between grid paints over 100 ms (six
+ * frames) and at least 50 paints a second.
+ */
+const SCROLL_BUDGET = { longestPaintGapMs: 100, paintsPerSecond: 50 };
 
 /**
  * 1.3x the median, the same rule as the editor budgets, rounded up to 5 ms
@@ -1146,6 +1157,89 @@ async function timeRemoteEdits(page: Page, fixture: Fixture) {
   };
 }
 
+/** The trace after the one edit, and the quiet that ends its busy stretch. */
+const BUSY_TRACE_MS = 8000;
+const IDLE_MS = 500;
+/** An open editor left alone runs only timers under this. */
+const WORK_TASK_MS = 1;
+
+interface TraceEvent {
+  dur?: number;
+  name: string;
+  ph: string;
+  pid: number;
+  tid: number;
+  ts: number;
+}
+
+/**
+ * PPTX, report-only (Q692): the main thread's busy time after one remote
+ * edit, which `toFrame` misses: after that frame the editor decodes and
+ * recolours the slides' pictures again. From a Chrome trace, as the
+ * 2026-11-07 baseline measured it: the renderer main thread's tasks
+ * (DevTools' `RunTask`, all sizes; long tasks alone miss over half of it)
+ * from the task that received the update until the thread is idle, no task of
+ * WORK_TASK_MS or more for IDLE_MS. `idle: false` when the trace ended first.
+ */
+async function busyAfterRemoteEdit(page: Page, fixture: Fixture) {
+  const browser = page.context().browser();
+  if (!browser) throw new Error('No browser to trace');
+  // After the runtime's listener, so the mark is in the receiving task.
+  await runtimeFrame(page).evaluate(() => {
+    const mark = (event: MessageEvent) => {
+      if ((event.data as { type?: unknown })?.type !== 'update') return;
+      performance.mark('office-bench-received');
+      window.removeEventListener('message', mark);
+    };
+    window.addEventListener('message', mark);
+  });
+  await browser.startTracing(page, {
+    categories: ['disabled-by-default-devtools.timeline', 'blink.user_timing'],
+  });
+  await remoteEdit(page, fixture, 0);
+  await page.waitForTimeout(BUSY_TRACE_MS);
+  const { traceEvents } = JSON.parse(
+    (await browser.stopTracing()).toString()
+  ) as { traceEvents: TraceEvent[] };
+  const received = traceEvents.find(
+    (event) => event.name === 'office-bench-received'
+  );
+  if (!received) throw new Error('The remote edit never reached the runtime');
+  const tasks = traceEvents
+    .filter(
+      (event): event is TraceEvent & { dur: number } =>
+        event.name === 'RunTask' &&
+        event.ph === 'X' &&
+        event.dur !== undefined &&
+        event.pid === received.pid &&
+        event.tid === received.tid &&
+        event.ts + event.dur >= received.ts
+    )
+    .sort((a, b) => a.ts - b.ts);
+  const [first] = tasks;
+  if (!first) throw new Error('No main-thread tasks in the trace');
+  let end = first.ts + first.dur;
+  for (const task of tasks) {
+    if (task.dur < WORK_TASK_MS * 1000) continue;
+    if (task.ts - end >= IDLE_MS * 1000) break;
+    end = Math.max(end, task.ts + task.dur);
+  }
+  const busy = tasks.filter((task) => task.ts < end);
+  const traceEnd = Math.max(...tasks.map((task) => task.ts + task.dur));
+  return {
+    busyMs: Math.round(
+      busy.reduce((total, task) => total + task.dur, 0) / 1000
+    ),
+    idle: traceEnd - end >= IDLE_MS * 1000,
+    longestTaskMs: Math.round(
+      Math.max(...busy.map((task) => task.dur)) / 1000
+    ),
+    // The receiving task's start to the end of the busy stretch.
+    settleMs: Math.round((end - first.ts) / 1000),
+    tasks: busy.length,
+  };
+}
+
 /**
  * One full pass of the view: every page, every sheet's rows and columns, or
  * every slide, then back to the start.
@@ -1580,6 +1674,11 @@ for (const fixture of FIXTURES) {
     // where no budget follows.
     const editHeap = await heap(page);
     await page.waitForTimeout(2000);
+    // PPTX: one edit on its own first, the editor otherwise untouched.
+    const busyAfterOneEdit =
+      fixture.format === 'pptx'
+        ? await busyAfterRemoteEdit(page, fixture)
+        : undefined;
     const remote = await timeRemoteEdits(page, fixture);
     await page.waitForTimeout(2000);
     const errors = await page.evaluate(() =>
@@ -1592,6 +1691,7 @@ for (const fixture of FIXTURES) {
       `office-${fixture.format}-${fixture.id}-co-editor`,
       {
         budget: 'report-only',
+        busyAfterOneEdit,
         errors,
         fixture: fixture.name,
         heap: { afterEdit: editHeap, afterRemoteEdits: await heap(page) },
@@ -1929,7 +2029,12 @@ test(`xlsx ${ROWS_FIXTURE.name}: open to Edit and scrolling`, async ({
     testInfo,
     `office-xlsx-${ROWS_FIXTURE.id}-scroll`,
     {
-      budget: 'report-only',
+      budget: {
+        edit: 'report-only',
+        heap: 'report-only',
+        open: 'report-only',
+        scroll: SCROLL_BUDGET,
+      },
       edit: { firstPaintMs: painted.ms, readyMs: replica.ms },
       fixture: ROWS_FIXTURE.name,
       heap: { afterEdit: editHeap, afterScroll: await heap(page) },
@@ -1939,7 +2044,14 @@ test(`xlsx ${ROWS_FIXTURE.name}: open to Edit and scrolling`, async ({
     },
     'unthrottled'
   );
-  expect(scroll.slow.paintsPerSecond).toBeGreaterThan(0);
+  for (const run of [scroll.slow, scroll.fast]) {
+    expect
+      .soft(run.longestPaintGapMs)
+      .toBeLessThanOrEqual(SCROLL_BUDGET.longestPaintGapMs);
+    expect
+      .soft(run.paintsPerSecond)
+      .toBeGreaterThanOrEqual(SCROLL_BUDGET.paintsPerSecond);
+  }
 });
 
 // A plain text file to switch to: opening it closes the Office file, as the
