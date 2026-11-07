@@ -463,6 +463,41 @@ test('the image stacks as the screen does, and many formulas settle', async ({
   expect(errors).toEqual([]);
 });
 
+test('a pen stroke keeps its first points, and closing on its start leaves no dot', async ({
+  page,
+}) => {
+  test.slow();
+  await openBoard(page);
+  const at = await onCard(page);
+  await page.locator('edgeless-pen-tool-button').first().click();
+  // A circle that starts with steps inside the 2 px drag threshold and ends 1 px
+  // from where it began.
+  const [cx, cy] = at(0.5, 0.5);
+  const radius = 60;
+  await page.mouse.move(cx + radius, cy);
+  await page.mouse.down();
+  for (let step = 1; step <= 4; step++)
+    await page.mouse.move(cx + radius, cy + step * 0.4);
+  for (let step = 1; step <= 36; step++) {
+    const angle = (step / 36) * 2 * Math.PI;
+    await page.mouse.move(
+      cx + radius * Math.cos(angle),
+      cy + radius * Math.sin(angle)
+    );
+  }
+  await page.mouse.move(cx + radius, cy - 1);
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  expect(await canvas(page)).toEqual(['plane', 'brush']);
+  const { first, zoom } = (await page.evaluate(`{
+    const gfx = document.querySelector('affine-edgeless-root').gfx;
+    const brush = gfx.layer.canvasElements.find((element) => element.type === 'brush');
+    ({ first: brush.points.slice(0, 2), zoom: gfx.viewport.zoom });
+  }`)) as { first: number[][]; zoom: number };
+  const [[x0, y0], [x1, y1]] = first;
+  expect(Math.hypot(x1 - x0, y1 - y0) * zoom).toBeLessThan(2);
+});
+
 test('the answer area is fitted, keeps its screen size, and stays out of the image', async ({
   page,
 }) => {

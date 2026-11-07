@@ -4374,6 +4374,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   `.capy-board`), then three sheets that only add things: Maths (a plane card or a label), Charts (a bar or pie chart card) and Formula. The
   toolbar and its pen touch the canvas only, never into a card. New shapes have no fill
   and a black outline.
+- **Pen strokes** keep the moves inside BlockSuite's 2 px drag threshold, and a stroke
+  ending back near its start (a closed circle) is no click, so it leaves no dot (local
+  change 25, in the pointer controller, so every tool's drags and clicks behave this way).
 - **Undo and redo** are the board's own, not in the toolbar: left of zoom, or below 768 px
   top right, where the page around the board reserves Done's width through
   `--capy-board-done-width`. Below that width the toolbar spans the screen less an 8 px
