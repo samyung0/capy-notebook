@@ -4379,8 +4379,22 @@ arrows and other structures retain native navigation.
 `vendor/blocksuite` (plain files; its README lists the local changes) is on `main`
 for the drawing answer's board only (Epo 2026-11-06). Notes stay on Plate until the
 cut. `src/features/blocksuite/drawingBoard.ts` imports just the editor parts the board
-needs, so it's a lazy chunk of about 1.2 MB gzipped, and the app reaches it through
+needs, so it's a lazy chunk of about 650 KB gzipped, and the app reaches it through
 `drawingBoard.boundary.d.ts`, so the app's type check skips the vendored sources.
+data-view (database and table views) stays out of it: its elements are defined by the
+database and data-view blocks, and Convert to database loads them on use (local change
+26); `createIcon` takes icons by reference, so only icons the code names ship (local
+change 27). The board takes a stroke as soon as Draw is clicked (fix 4 of the
+canvas-open report, Epo 2026-11-07): once a drawing part (`DrawingAnswer`) or a sample
+answer field (`DrawnSampleField`) shows, `useBoardAhead` in
+`quizzes/drawing/boardPrefetch.tsx` fetches and evaluates the module in idle time
+(within a second), then mounts that part's `DrawingBoardScreen` with `hidden`: out of
+sight, `inert`, and no time-limit Done. Draw only shows it, and Done or Close puts it
+away. One board is mounted ahead per page, held by the first drawing part that shows
+until it leaves; other parts mount theirs on Draw, with the module already there. A
+board that can't open says so when shown. A first mount took 240-430 ms at 4x CPU on a
+Mac (about 1 s on the CI runner) and showing one mounted ahead about 12 ms; a mounted
+board holds about 3-9 MB of JS heap and 3,500-5,700 DOM nodes.
 Nothing in production opens it yet: `/dev/drawing` is a dev-only route. A production
 build swaps that route for an empty module (`MSW_ENTRIES` in `vite.config.ts`), so it
 doesn't ship the vendored sources; the answer flow reverses that. No vanilla-extract plugin

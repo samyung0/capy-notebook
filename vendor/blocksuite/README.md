@@ -274,6 +274,19 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
     a pen stroke ending back near its start no longer adds a dot stroke; and the moves
     inside the threshold (the latest 64) reach the drag as `dragMove`s right after
     `dragStart`, so a stroke keeps its first points (Epo 2026-11-07).
+26. data-view out of the board (`affine/foundation` `src/effects.ts`, `affine/data-view`
+    `src/effects.ts`, `affine/blocks` `database/src/effects.ts`, `data-view/src/effects.ts`
+    and `root/src/configs/toolbar.ts`, marked `Capy (local change 26)`): data-view's
+    elements are defined by the database and data-view blocks (once, whichever comes
+    first) instead of by foundation, and the page toolbar's Convert to database loads
+    the database block and table view on use, so a board without those blocks loads
+    none of data-view (about 155 KB gzipped; Epo 2026-11-07, fix 6 of the canvas-open
+    report).
+27. Icons by reference (`affine/data-view` `src/core/utils/uni-icon.ts`, marked `Capy
+    (local change 27)`, and its 15 `createIcon` callers in data-view and the database
+    block): `createIcon` takes the icon itself instead of its name. A lookup by name kept
+    every icon of `@blocksuite/icons/lit` in the build wherever the icons load, which was
+    the board's chunk (about 90 KB gzipped more; Epo 2026-11-07, fix 7).
 
 The specs named in local changes 6 to 9 are on the `blocksuite-notes` branch, with the
 note editor they pin.

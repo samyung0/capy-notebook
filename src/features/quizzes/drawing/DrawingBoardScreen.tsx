@@ -71,6 +71,7 @@ const UNDER_CARD =
  */
 export default function DrawingBoardScreen({
   draft,
+  hidden = false,
   onClose,
   onDone,
   pinned,
@@ -81,6 +82,9 @@ export default function DrawingBoardScreen({
 }: {
   /** The device key a board being drawn is kept under, when the page has one. */
   draft?: string;
+  /** Mounted ahead and out of sight, so Draw shows a board that takes a stroke at
+   * once (fix 4, Epo 2026-11-07): no focus, no pointer, no time-limit Done. */
+  hidden?: boolean;
   onClose: () => void;
   onDone?: (value: DrawingValue | null) => void;
   /** An assignment's Done stores the drawing before the board closes, or
@@ -100,6 +104,8 @@ export default function DrawingBoardScreen({
   const phoneDone = useRef<HTMLButtonElement>(null);
   const board = useRef<Board | null>(null);
   const [ready, setReady] = useState(false);
+  // A board that can't open says so when it's shown, not while mounted ahead.
+  const [failed, setFailed] = useState<{ error: unknown } | null>(null);
   const [busy, setBusy] = useState(false);
   // Desktop shows the question until hidden; a phone folds it to one line.
   const [shown, setShown] = useState(true);
@@ -111,6 +117,7 @@ export default function DrawingBoardScreen({
     if (!element) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    setFailed(null);
     const keep = () => {
       if (!draft) return;
       clearTimeout(timer);
@@ -144,12 +151,7 @@ export default function DrawingBoardScreen({
         });
         setReady(true);
       } catch (error) {
-        userToast({
-          description: errorCopy(error, m.drawing_answer_open_failed()),
-          title: m.drawing_answer_open_failed(),
-          variant: 'error',
-        });
-        close.current();
+        setFailed({ error });
       }
     })();
     return () => {
@@ -159,6 +161,15 @@ export default function DrawingBoardScreen({
       board.current = null;
     };
   }, [draft, readOnly, saved]);
+  useEffect(() => {
+    if (!failed || hidden) return;
+    userToast({
+      description: errorCopy(failed.error, m.drawing_answer_open_failed()),
+      title: m.drawing_answer_open_failed(),
+      variant: 'error',
+    });
+    close.current();
+  }, [failed, hidden]);
 
   // On a phone the board's undo and redo sit left of Done (drawingBoard.css),
   // both 8px from the top and the edge.
@@ -226,9 +237,13 @@ export default function DrawingBoardScreen({
   const latestFinish = useRef(finish);
   latestFinish.current = finish;
   useEffect(() => {
-    if (readOnly || !onDone) return;
+    if (hidden || readOnly || !onDone) return;
     return holdOpenDrawing(() => latestFinish.current(true));
-  }, [onDone, readOnly]);
+  }, [hidden, onDone, readOnly]);
+  // A wide-board question left open when the board was put away isn't kept.
+  useEffect(() => {
+    if (hidden) setWide(false);
+  }, [hidden]);
 
   const doneButton = (ref?: React.Ref<HTMLButtonElement>) => (
     <Button
@@ -245,9 +260,14 @@ export default function DrawingBoardScreen({
 
   return createPortal(
     <div
+      aria-hidden={hidden || undefined}
       aria-label={pinned.title}
       aria-modal="true"
-      className="answer-board fixed inset-0 z-50 bg-canvas"
+      className={cn(
+        'answer-board fixed inset-0 z-50 bg-canvas',
+        hidden && 'invisible'
+      )}
+      inert={hidden}
       role="dialog"
     >
       <div className="absolute inset-0 [&>div]:h-full" ref={host} />

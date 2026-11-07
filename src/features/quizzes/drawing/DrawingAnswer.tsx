@@ -1,16 +1,10 @@
-import {
-  lazy,
-  type ReactNode,
-  Suspense,
-  useContext,
-  useEffect,
-  useState,
-} from 'react';
+import { lazy, type ReactNode, Suspense, useContext, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { QuestionBlockView } from '@/features/questions/QuestionView';
 import type { QuestionBlock } from '@/features/questions/types';
 import { m } from '@/i18n';
 import type { Answer } from '../grade';
+import { loadBoard, useBoardAhead } from './boardPrefetch';
 import type { PinnedQuestion } from './DrawingBoardScreen';
 import {
   DrawingPreview,
@@ -26,19 +20,7 @@ import {
   isDrawingValue,
 } from './drawingValue';
 
-// BlockSuite loads only for a drawing part: the chunk (about 1.16 MB) is fetched
-// when the part shows, in idle time, so Draw answer opens without waiting on it.
-const loadBoard = () => import('./DrawingBoardScreen');
 const DrawingBoardScreen = lazy(loadBoard);
-
-function usePrefetchedBoard() {
-  useEffect(() => {
-    const idle = window.requestIdleCallback ?? ((run) => setTimeout(run, 200));
-    const cancel = window.cancelIdleCallback ?? clearTimeout;
-    const handle = idle(() => void loadBoard().catch(() => undefined));
-    return () => cancel(handle);
-  }, []);
-}
 
 /**
  * A drawing part's answer area. Before drawing, one generic squared grid with
@@ -72,8 +54,8 @@ export function DrawingAnswer({
   const deleted = fetched === DRAWING_DELETED;
   const board = deleted ? null : fetched;
   const answered = isDrawingValue(value) || storedDrawingId(value) !== null;
-  usePrefetchedBoard();
   const taking = !(review || disabled);
+  const ahead = useBoardAhead(taking);
   const close = () => setOpen(false);
   const done = (next: DrawingValue | null) => {
     onChange(next);
@@ -122,10 +104,11 @@ export function DrawingAnswer({
           {m.drawing_answer_open()}
         </Button>
       )}
-      {open && (
+      {(open || ahead) && (
         <Suspense fallback={null}>
           <DrawingBoardScreen
             draft={taking && scope ? drawingDraftKey(scope, partId) : undefined}
+            hidden={!open}
             onClose={close}
             onDone={taking ? done : undefined}
             pinned={pinned}

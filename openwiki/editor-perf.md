@@ -312,8 +312,7 @@ local miss is not a regression by itself.
 measures the drawing board (BlockSuite's edgeless editor on `/dev/drawing`) in a
 production build without MSW ([`playwright.canvas.config.ts`](../bench/editor/scripts/playwright.canvas.config.ts)).
 The route is in that build only because the bench sets `VITE_BENCH_ROUTES=true`
-(`src/router.ts`, and `vite.config.ts` keeps the route and the vanilla-extract
-plugin for it); `scripts/env/config.py` pins it to `false` for every deploy, and
+(`src/router.ts`, and `vite.config.ts` keeps the route for it); `scripts/env/config.py` pins it to `false` for every deploy, and
 `scripts/env/test_config.py` checks that. The build takes a few minutes.
 
 Its boards are made in the page through BlockSuite's API and saved, so they
@@ -354,6 +353,27 @@ bench reports `budget: "uncalibrated"` and gates nothing. The first calibration 
 three runs on 4cf06a4b6, 2026-11-06) measured the large board and the blank
 open at 4x, so it doesn't carry over; it also showed one runner 40-60% slower
 on every figure, so rerun before reading a miss as a regression.
+
+The boards both benches open are made by
+[`canvasBoards.ts`](../bench/editor/scripts/canvasBoards.ts).
+[`board-stages.canvas.ts`](../bench/editor/scripts/board-stages.canvas.ts)
+(`pnpm bench:canvas board-stages`, report only) answers how long the board takes
+to show (Epo 2026-11-07): the blank and typical boards' cold opens split into the
+app's start, the board chunk's download, its parse and evaluate (chunk done to
+`board:mount-start`), the mount and the first full frame, at 1x and 4x CPU, local
+and over a 10 Mbps, 50 ms link; and `drawBoardPreview` on the typical and large
+boards at 180 by 120 and 600 by 400: the SVG string, the image's decode and its
+paint. On main 33ae38a79 on a Mac (about 2-3x faster than the runner), a typical
+board's preview took 3.4 ms plus a 3.4 ms decode at 4x, while its full open took
+1,252 ms at 4x locally (parse and evaluate 443 ms) and 2,754 ms over the link
+(download 927 ms). Fixes 4, 6 and 7 of the canvas-open report (Epo 2026-11-07)
+then cut the board chunk from 884 to 648 KB gzipped (data-view and the full icon
+set left it, vendored local changes 26 and 27): the typical open at 4x went from
+1,237 to 1,105 ms, parse and evaluate from 443 to 308 ms, and the download over
+the link from 927 to 740 ms. The probe also times Draw with the module already
+evaluated (`/dev/drawing?unmounted`): the first mount on the page, a second one,
+and showing a board mounted ahead out of sight, with the JS heap and DOM nodes a
+board adds.
 
 ## Formula parity audit (`pnpm bench:formula`)
 

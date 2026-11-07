@@ -1,3 +1,4 @@
+import { ImageIcon } from '@blocksuite/icons/lit';
 import { css, html } from 'lit';
 
 import { BaseCellRenderer } from '../../core/property/index.js';
@@ -25,7 +26,7 @@ export class ImageCell extends BaseCellRenderer<string, string> {
 }
 
 export const imagePropertyConfig = imagePropertyModelConfig.createPropertyMeta({
-  icon: createIcon('ImageIcon'),
+  icon: createIcon(ImageIcon),
   cellRenderer: {
     view: createFromBaseCellRenderer(ImageCell),
   },

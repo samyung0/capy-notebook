@@ -16,10 +16,15 @@ const SCREENS = [
 /** qz_2's drawing part: two marking points of one mark each. */
 const DRAWN = 'q_draw';
 
-/** Opens the part's board, draws one stroke across its middle, and presses Done. */
+/** Opens the part's board, draws one stroke across its middle, and presses Done.
+ * The board is mounted ahead out of sight while the question shows, so Draw only
+ * shows it (fix 4), and Done puts it away again. */
 async function drawAndDone(page: Page, question: Locator) {
-  await question.getByRole('button', { name: m.drawing_answer_draw() }).click();
   const board = page.locator('.answer-board');
+  await expect(board.and(page.locator('[inert]'))).toHaveCount(1, {
+    timeout: 60_000,
+  });
+  await question.getByRole('button', { name: m.drawing_answer_draw() }).click();
   await expect(board.locator('edgeless-pen-tool-button').first()).toBeVisible({
     timeout: 60_000,
   });
@@ -37,7 +42,7 @@ async function drawAndDone(page: Page, question: Locator) {
     .getByRole('button', { exact: true, name: m.drawing_board_done() })
     .first()
     .click();
-  await expect(board).toHaveCount(0, { timeout: 30_000 });
+  await expect(board).toBeHidden({ timeout: 30_000 });
 }
 
 /** The dev server's mock scenario panel sits over a phone's board toolbar. */

@@ -1,3 +1,4 @@
+import { ProgressIcon } from '@blocksuite/icons/lit';
 import { html } from 'lit';
 import { query, state } from 'lit/decorators.js';
 import { styleMap } from 'lit/directives/style-map.js';
@@ -161,7 +162,7 @@ export class ProgressCell extends BaseCellRenderer<number, number> {
 
 export const progressPropertyConfig =
   progressPropertyModelConfig.createPropertyMeta({
-    icon: createIcon('ProgressIcon'),
+    icon: createIcon(ProgressIcon),
     cellRenderer: {
       view: createFromBaseCellRenderer(ProgressCell),
     },

@@ -1,3 +1,4 @@
+import { DateTimeIcon } from '@blocksuite/icons/lit';
 import {
   popMenu,
   popupTargetFromElement,
@@ -160,7 +161,7 @@ export class DateCell extends BaseCellRenderer<number, number> {
 }
 
 export const datePropertyConfig = datePropertyModelConfig.createPropertyMeta({
-  icon: createIcon('DateTimeIcon'),
+  icon: createIcon(DateTimeIcon),
   cellRenderer: {
     view: createFromBaseCellRenderer(DateCell),
   },

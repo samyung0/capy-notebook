@@ -28,13 +28,12 @@ import { effects as componentToolbarEffects } from '@blocksuite/affine-component
 import { effects as componentTooltipContentWithShortcutEffects } from '@blocksuite/affine-components/tooltip-content-with-shortcut';
 import { effects as componentViewDropdownMenuEffects } from '@blocksuite/affine-components/view-dropdown-menu';
 import { effects as richTextEffects } from '@blocksuite/affine-rich-text/effects';
-import { effects as dataViewEffects } from '@blocksuite/data-view/effects';
 import { effects as stdEffects } from '@blocksuite/std/effects';
 
 export function effects() {
   stdEffects();
 
-  dataViewEffects();
+  // Capy (local change 26): data-view's elements are defined by the blocks that use them.
   richTextEffects();
 
   componentCaptionEffects();

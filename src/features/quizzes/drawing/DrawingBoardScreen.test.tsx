@@ -166,3 +166,35 @@ it('keeps a practice drawing on the device after Done, until Check', async () =>
   expect(deleteLocalDrawingDraft).not.toHaveBeenCalled();
   await act(async () => root.unmount());
 });
+
+it('a board mounted ahead is out of sight and takes no time-limit Done until shown', async () => {
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host as never);
+  const onDone = vi.fn();
+  const screen = (hidden: boolean) => (
+    <DrawingBoardScreen
+      draft="quiz:qz_2:p"
+      hidden={hidden}
+      onClose={() => undefined}
+      onDone={onDone}
+      pinned={PINNED}
+      withImage={false}
+    />
+  );
+  await act(async () => root.render(screen(true)));
+  // Earlier tests leave their boards: this one is the last.
+  const last = () => [...document.querySelectorAll('.answer-board')].at(-1);
+  const board = last() as HTMLElement;
+  expect(board.hasAttribute('inert')).toBe(true);
+  await act(async () => finishOpenDrawing());
+  expect(onDone).not.toHaveBeenCalled();
+
+  // Draw shows the same board: it doesn't mount again.
+  await act(async () => root.render(screen(false)));
+  expect(last()).toBe(board);
+  expect(board.hasAttribute('inert')).toBe(false);
+  await act(async () => finishOpenDrawing());
+  expect(onDone).toHaveBeenCalledOnce();
+  await act(async () => root.unmount());
+});

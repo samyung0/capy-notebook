@@ -1,3 +1,4 @@
+import { NumberIcon } from '@blocksuite/icons/lit';
 import { IS_MAC } from '@blocksuite/global/env';
 import { html } from 'lit';
 import { query } from 'lit/decorators.js';
@@ -118,7 +119,7 @@ export class NumberCell extends BaseCellRenderer<
 
 export const numberPropertyConfig =
   numberPropertyModelConfig.createPropertyMeta({
-    icon: createIcon('NumberIcon'),
+    icon: createIcon(NumberIcon),
     cellRenderer: {
       view: createFromBaseCellRenderer(NumberCell),
     },

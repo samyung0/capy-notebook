@@ -1,7 +1,4 @@
-import {
-  convertToDatabase,
-  DATABASE_CONVERT_WHITE_LIST,
-} from '@blocksuite/affine-block-database';
+import { DATABASE_CONVERT_WHITE_LIST } from '@blocksuite/affine-block-database';
 import {
   convertSelectedBlocksToLinkedDoc,
   getTitleFromSelectedModels,
@@ -58,7 +55,6 @@ import {
   getMostCommonValue,
   isInsideBlockByFlavour,
 } from '@blocksuite/affine-shared/utils';
-import { tableViewMeta } from '@blocksuite/data-view/view-presets';
 import {
   CopyIcon,
   DatabaseTableViewIcon,
@@ -315,7 +311,14 @@ const turnIntoDatabase = {
     return ok;
   },
   run({ host }) {
-    convertToDatabase(host, tableViewMeta.type);
+    // Capy (local change 26): loaded on use, so a board without databases loads none
+    // of data-view's views.
+    void Promise.all([
+      import('@blocksuite/affine-block-database'),
+      import('@blocksuite/data-view/view-presets'),
+    ]).then(([{ convertToDatabase }, { tableViewMeta }]) =>
+      convertToDatabase(host, tableViewMeta.type)
+    );
   },
 } as const satisfies ToolbarAction;
 

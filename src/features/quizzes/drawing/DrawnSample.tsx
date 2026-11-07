@@ -4,11 +4,12 @@ import { fromBase64, toBase64 } from '@/features/blocksuite/base64';
 import { assetLink } from '@/features/materials/resolvedAssetLinks';
 import type { DrawnSample } from '@/features/questions/types';
 import { m } from '@/i18n';
+import { loadBoard, useBoardAhead } from './boardPrefetch';
 import type { PinnedQuestion } from './DrawingBoardScreen';
 import { DrawingPreview } from './DrawingPreview';
 import type { DrawingValue } from './drawingValue';
 
-const DrawingBoardScreen = lazy(() => import('./DrawingBoardScreen'));
+const DrawingBoardScreen = lazy(loadBoard);
 
 /** Stores a drawn sample answer as the quiz's own assets and returns them. */
 export type UploadDrawnSample = (value: DrawingValue) => Promise<DrawnSample>;
@@ -107,6 +108,8 @@ export function DrawnSampleField({
 }) {
   const [open, setOpen] = useState(false);
   const board = useSampleBoard(sample);
+  // An existing sample is mounted ahead once its board is here.
+  const ahead = useBoardAhead(!sample || !!board);
   return (
     <div className="flex flex-col items-start gap-2">
       <p className={labelClassName}>{m.question_ui_sample_answer()}</p>
@@ -120,9 +123,10 @@ export function DrawnSampleField({
       >
         {sample ? m.drawing_sample_edit() : m.drawing_sample_draw()}
       </Button>
-      {open && (
+      {(open || ahead) && (
         <Suspense fallback={null}>
           <DrawingBoardScreen
+            hidden={!open}
             onClose={() => setOpen(false)}
             onDone={() => setOpen(false)}
             pinned={{

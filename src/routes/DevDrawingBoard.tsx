@@ -8,19 +8,25 @@ import {
 /** The drawing answer's board on its own, for building it, for its spec and for
  * bench:canvas, with its handle on `window`. Not linked from anywhere. `__reopen(doc,
  * true)` opens a saved board as a teacher sees it; `__mount(options)` opens one with
- * any options; `__preview(doc, size)` draws it as lists do. */
+ * any options; `__preview(doc, size)` draws it as lists do. `?unmounted` mounts
+ * nothing until `__mount`. */
 export default function DevDrawingBoard() {
   const container = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const host = container.current;
     if (!host) return;
     // The bench sets a saved board before the page loads, and times the mount.
+    // `?unmounted` loads the module and mounts nothing, as a drawing question
+    // does before Draw.
     const { __benchBoard } = window as Window & { __benchBoard?: string };
-    performance.mark('board:mount-start');
-    let board = mountDrawingBoard(host, { plane: true, saved: __benchBoard });
-    performance.mark('board:mount-end');
+    let board: ReturnType<typeof mountDrawingBoard> | undefined;
+    if (!new URLSearchParams(location.search).has('unmounted')) {
+      performance.mark('board:mount-start');
+      board = mountDrawingBoard(host, { plane: true, saved: __benchBoard });
+      performance.mark('board:mount-end');
+    }
     const mount = (options: DrawingBoardOptions) => {
-      board.unmount();
+      board?.unmount();
       board = mountDrawingBoard(host, options);
       Object.assign(window, { __board: board });
     };
@@ -35,7 +41,7 @@ export default function DevDrawingBoard() {
       __preview: drawBoardPreview,
       __reopen: reopen,
     });
-    return () => board.unmount();
+    return () => board?.unmount();
   }, []);
   return <div className="h-dvh w-full [&>div]:h-full" ref={container} />;
 }

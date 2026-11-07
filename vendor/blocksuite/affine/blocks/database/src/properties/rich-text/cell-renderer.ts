@@ -1,3 +1,4 @@
+import { TextIcon } from '@blocksuite/icons/lit';
 import { DefaultInlineManagerExtension } from '@blocksuite/affine-inline-preset';
 import type { RichText } from '@blocksuite/affine-rich-text';
 import {
@@ -411,7 +412,7 @@ declare global {
 
 export const richTextColumnConfig =
   richTextPropertyModelConfig.createPropertyMeta({
-    icon: createIcon('TextIcon'),
+    icon: createIcon(TextIcon),
 
     cellRenderer: {
       view: createFromBaseCellRenderer(RichTextCell),

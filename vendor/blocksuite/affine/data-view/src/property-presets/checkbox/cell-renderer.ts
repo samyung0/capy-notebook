@@ -1,5 +1,9 @@
 import { unsafeCSSVarV2 } from '@blocksuite/affine-shared/theme';
-import { CheckBoxCheckSolidIcon, CheckBoxUnIcon } from '@blocksuite/icons/lit';
+import {
+  CheckBoxCheckLinearIcon,
+  CheckBoxCheckSolidIcon,
+  CheckBoxUnIcon,
+} from '@blocksuite/icons/lit';
 import { css, html } from 'lit';
 import { query } from 'lit/decorators.js';
 
@@ -114,7 +118,7 @@ export class CheckboxCell extends BaseCellRenderer<boolean> {
 
 export const checkboxPropertyConfig =
   checkboxPropertyModelConfig.createPropertyMeta({
-    icon: createIcon('CheckBoxCheckLinearIcon'),
+    icon: createIcon(CheckBoxCheckLinearIcon),
     cellRenderer: {
       view: createFromBaseCellRenderer(CheckboxCell),
     },
