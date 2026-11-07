@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Icon } from '@/components/ui/Icon';
+import { formatPoints } from '@/features/quizzes/grade';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
@@ -13,15 +14,22 @@ import { dayLabel } from './assignmentText';
 import { NewAssignmentDialog } from './LazyNewAssignmentDialog';
 import { todoRows } from './todoRows';
 
-/** A chip naming a quiz: the assignment's quill, tinted (Epo 2026-11-03). */
-function WorkChip({ title, done }: { title: string; done?: boolean }) {
+/** A chip naming a quiz: the assignment's quill, tinted (Epo 2026-11-03);
+ * crossed out once done, grey on the To do page's Done tab. */
+function WorkChip({
+  title,
+  done,
+}: {
+  title: string;
+  done?: 'crossed' | 'grey';
+}) {
   return (
     <span
       className={cn(
         'inline-flex h-5.5 min-w-0 items-center gap-1 rounded-md px-1.75 font-semibold text-[13px]',
-        done
-          ? 'text-fg-muted line-through'
-          : 'bg-tint-accent-1 text-tint-accent-1-fg'
+        done === 'crossed' && 'text-fg-muted line-through',
+        done === 'grey' && 'bg-surface-hover-bg text-fg-secondary',
+        !done && 'bg-tint-accent-1 text-tint-accent-1-fg'
       )}
     >
       <Icon
@@ -34,9 +42,22 @@ function WorkChip({ title, done }: { title: string; done?: boolean }) {
   );
 }
 
-function FileChip({ file }: { file: Assignment['files'][number] }) {
+function FileChip({
+  file,
+  grey,
+}: {
+  file: Assignment['files'][number];
+  grey?: boolean;
+}) {
   return (
-    <span className="inline-flex h-5.5 min-w-0 items-center gap-1 rounded-md bg-tint-accent-1 px-1.75 font-semibold text-[13px] text-tint-accent-1-fg">
+    <span
+      className={cn(
+        'inline-flex h-5.5 min-w-0 items-center gap-1 rounded-md px-1.75 font-semibold text-[13px]',
+        grey
+          ? 'bg-surface-hover-bg text-fg-secondary'
+          : 'bg-tint-accent-1 text-tint-accent-1-fg'
+      )}
+    >
       <FileIcon
         className="size-3.5 shrink-0"
         name={
@@ -117,13 +138,16 @@ export function TodoSection({
 
 /** A To do list's rows, on the Dashboard and the To do page. A row is its own
  * button, with nothing else to press but a tick (Epo 2026-11-05); an assignment's
- * page starts or continues it. */
+ * page starts or continues it. Open work past its due date says Overdue. On the
+ * To do page's Done tab (`doneTab`) rows say when they were done, uncrossed. */
 export function TodoRows({
+  doneTab = false,
   manages,
   shown,
   toApprove,
   workspaceId,
 }: {
+  doneTab?: boolean;
   manages: boolean;
   shown: Assignment[];
   toApprove: Assignment[];
@@ -170,9 +194,15 @@ export function TodoRows({
       ))}
       {shown.map((a) => {
         const isDone = !!a.mine?.done;
-        const due = a.dueAt
-          ? m.assignment_due({ date: dayLabel(a.dueAt) })
-          : null;
+        const crossed = isDone && !doneTab;
+        const overdue = !isDone && !!a.mine?.missing && !!a.dueAt;
+        const meta = doneTab
+          ? doneMeta(a)
+          : a.dueAt
+            ? (overdue ? m.todo_overdue : m.assignment_due)({
+                date: dayLabel(a.dueAt),
+              })
+            : null;
         return (
           <Row key={a.id}>
             {a.kind === 'unmarked' && (
@@ -188,15 +218,23 @@ export function TodoRows({
             <button
               className={cn(
                 'flex min-h-10 min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 px-1.5 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset',
-                isDone && 'text-fg-muted line-through'
+                crossed && 'text-fg-muted line-through',
+                doneTab && 'text-fg-secondary'
               )}
               onClick={() => void openPage(a)}
               type="button"
             >
               {a.kind === 'marked' ? (
                 <>
-                  {isDone ? m.dashboard_finish() : m.dashboard_do()}
-                  <WorkChip done={isDone} title={a.title} />
+                  {doneTab
+                    ? m.todo_finished()
+                    : isDone
+                      ? m.dashboard_finish()
+                      : m.dashboard_do()}
+                  <WorkChip
+                    done={doneTab ? 'grey' : isDone ? 'crossed' : undefined}
+                    title={a.title}
+                  />
                   {a.timeLimitMin && !isDone && (
                     <span className="text-fg-secondary">
                       {m.assignment_minutes_short({ count: a.timeLimitMin })}
@@ -209,19 +247,21 @@ export function TodoRows({
                   {a.files.map((file) => (
                     <FileChip
                       file={file}
+                      grey={doneTab}
                       key={file.fileId ?? file.materialId}
                     />
                   ))}
                 </>
               )}
-              {due && (
+              {meta && (
                 <span
                   className={cn(
                     't-meta shrink-0 text-fg-secondary sm:ml-auto sm:pl-3',
-                    isDone && 'text-fg-muted line-through'
+                    crossed && 'text-fg-muted line-through',
+                    overdue && 'font-semibold text-tint-error-fg'
                   )}
                 >
-                  {due}
+                  {meta}
                 </span>
               )}
             </button>
@@ -230,6 +270,21 @@ export function TodoRows({
       })}
     </ul>
   );
+}
+
+/** A done row's meta: a quiz's mark or that it waits for one, then the day. */
+function doneMeta(a: Assignment) {
+  const parts = [
+    a.kind === 'marked' && a.mine?.waitingMarks
+      ? m.todo_waiting_marks()
+      : a.kind === 'marked' && a.mine?.mark !== undefined
+        ? `${formatPoints(a.mine.mark)}/${formatPoints(a.marks)}`
+        : null,
+    a.mine?.doneAt
+      ? m.assignment_done_on({ date: dayLabel(a.mine.doneAt) })
+      : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(' · ') : null;
 }
 
 /** Its hover fills the row, square, past the text's left edge like Activity's. */

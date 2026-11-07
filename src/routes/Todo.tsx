@@ -1,49 +1,137 @@
-import { Link } from '@tanstack/react-router';
-import { useState } from 'react';
+import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { useTodo } from '@/api/hooks';
 import { InlineErrorState } from '@/components/app/ErrorState';
-import { PageBody, PagePanel } from '@/components/app/layout';
+import {
+  ListToolbar,
+  type SortOption,
+  toggleValue,
+} from '@/components/app/ListToolbar';
+import { PageBody, PageHeader, PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
-import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
+import { Tabs } from '@/components/ui/Tabs';
 import { TodoRows } from '@/features/study/assignments/TodoSection';
-import { todoRows, todoSections } from '@/features/study/assignments/todoRows';
+import { todoCount, todoSections } from '@/features/study/assignments/todoRows';
 import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
 import { iconUrl } from '@/lib/icon-catalog';
+import {
+  commaList,
+  csv,
+  TODO_TYPES,
+  type TodoSearch,
+  type TodoSort,
+  type TodoType,
+} from '@/lib/listSearch';
 import { waitsForConnection } from '@/lib/online';
 
-/** To do (canvas B3bJMWbv8DjbKegLcAHXtn, board B): each class's Dashboard To do
- * across the viewer's classes, one section per workspace whose heading opens its
- * Dashboard. Items stop at 860px, left aligned (Epo 2026-11-05). */
+/** To do (canvas NzaizrnumE4jtTtm4p3BYT, board A; Epo 2026-11-08): tabs To do ·
+ * Done, the list pages' Sort and Filter, then each class's rows in a section
+ * whose heading opens its Dashboard. Approvals stay in the To do tab. Items
+ * stop at 860px, left aligned (Epo 2026-11-05). */
 export default function Todo() {
   const { data, error, fetchStatus, isLoading, refetch } = useTodo({
     errorBoundary: false,
   });
-  const [showDone, setShowDone] = useState(false);
+  const search = useSearch({ from: '/auth-shell/todo' });
+  const navigate = useNavigate({ from: '/todo' });
+  const setSearch = (patch: TodoSearch) =>
+    void navigate({ replace: true, search: (prev) => ({ ...prev, ...patch }) });
+
+  const tab = search.tab ?? 'todo';
+  const sorts: SortOption<TodoSort>[] =
+    tab === 'done'
+      ? [
+          { icon: 'clock', label: m.todo_sort_done(), value: 'done' },
+          { icon: 'workspaces', label: m.todo_sort_class(), value: 'class' },
+        ]
+      : [
+          { icon: 'schedule', label: m.todo_sort_due(), value: 'due' },
+          { icon: 'clock', label: m.todo_sort_posted(), value: 'posted' },
+          { icon: 'workspaces', label: m.todo_sort_class(), value: 'class' },
+        ];
+  const sort =
+    sorts.find((s) => s.value === search.sort)?.value ?? sorts[0].value;
+  const classes = commaList(search.class);
+  const types = commaList(search.type) as TodoType[];
   const workspaces = data?.workspaces ?? [];
-  const sections = todoSections(workspaces, showDone);
-  const anyDone = workspaces.some(
-    (w) => todoRows(w.items, w.manages).done.length > 0
-  );
+  const sections = todoSections(workspaces, {
+    classes,
+    reversed: search.dir === 'asc',
+    sort,
+    tab,
+    types,
+  });
+  const open = todoCount(workspaces);
+
   return (
-    <PagePanel>
-      <PageBody className="pt-2 sm:pt-6">
+    <PagePanel header={<PageHeader title={m.nav_todo()} />}>
+      <Tabs
+        className="page-tabs-px"
+        onChange={(next) =>
+          setSearch({
+            dir: undefined,
+            sort: undefined,
+            tab: next === 'done' ? 'done' : undefined,
+          })
+        }
+        tabs={[
+          {
+            label: (
+              <span className="inline-flex items-center gap-1.5">
+                {m.todo_tab_todo()}
+                {open > 0 && (
+                  <span className="rounded-full bg-surface-hover-bg px-1.75 font-bold text-fg-muted text-xs leading-4.5">
+                    {open}
+                  </span>
+                )}
+              </span>
+            ),
+            value: 'todo',
+          },
+          { label: m.todo_tab_done(), value: 'done' },
+        ]}
+        value={tab}
+      />
+      <ListToolbar
+        filters={[
+          {
+            key: 'class',
+            label: m.todo_filter_class(),
+            onToggle: (value) =>
+              setSearch({ class: csv(toggleValue(classes, value)) }),
+            options: workspaces.map((w) => ({
+              label: w.name,
+              value: w.workspaceId,
+            })),
+            selected: classes,
+          },
+          {
+            key: 'type',
+            label: m.todo_filter_type(),
+            onToggle: (value) =>
+              setSearch({ type: csv(toggleValue(types, value)) }),
+            options: TODO_TYPES.map((value) => ({
+              label: value === 'quiz' ? m.todo_type_quiz() : m.todo_type_task(),
+              value,
+            })),
+            selected: types,
+          },
+        ]}
+        onResetFilters={() => setSearch({ class: undefined, type: undefined })}
+        sortMenu={{
+          ascending: search.dir === 'asc',
+          onSortChange: (next, ascending) =>
+            setSearch({
+              dir: ascending ? 'asc' : undefined,
+              sort: next === sorts[0].value ? undefined : next,
+            }),
+          sort,
+          sorts,
+        }}
+      />
+      <PageBody belowToolbar>
         <div className="flex max-w-[860px] flex-col gap-5.5">
-          <header className="flex min-h-9 items-center justify-between gap-3">
-            <h1 className="t-page-title">{m.nav_todo()}</h1>
-            {anyDone && (
-              <Button
-                className="px-2.5"
-                iconLeft="view"
-                onClick={() => setShowDone(!showDone)}
-                size="sm"
-                variant="outline"
-              >
-                {showDone ? m.assignment_hide_done() : m.assignment_show_done()}
-              </Button>
-            )}
-          </header>
           {waitsForConnection(fetchStatus, data) ? (
             <QueryPausedState />
           ) : isLoading ? (
@@ -75,6 +163,7 @@ export default function Todo() {
                   </Link>
                 </h2>
                 <TodoRows
+                  doneTab={tab === 'done'}
                   manages={workspace.manages}
                   shown={shown}
                   toApprove={toApprove}
@@ -86,7 +175,7 @@ export default function Todo() {
         </div>
         {!!data && sections.length === 0 && (
           <p className="t-subtitle py-20 text-center font-normal text-fg-muted">
-            {m.todo_empty()}
+            {tab === 'done' ? m.todo_done_empty() : m.todo_empty()}
           </p>
         )}
       </PageBody>

@@ -69,6 +69,7 @@ import {
   MATERIAL_SORTS,
   materialListParams,
   parseFilesSearch,
+  parseTodoSearch,
   parseWorkspacesSearch,
   savedSort,
   WORKSPACE_SORT_DEFAULT,
@@ -274,13 +275,15 @@ const appRoutes = [
     path: '/workspaces',
     validateSearch: parseWorkspacesSearch,
   }),
-  page(
-    '/todo',
-    () => import('@/routes/Todo'),
-    ({ context: { queryClient: qc } }) => {
+  createRoute({
+    component: lazyPage(() => import('@/routes/Todo')),
+    getParentRoute: () => authShellRoute,
+    loader: ({ context: { queryClient: qc } }) => {
       qc.prefetchQuery(todoQuery());
-    }
-  ),
+    },
+    path: '/todo',
+    validateSearch: parseTodoSearch,
+  }),
   // biome-ignore assist/source/useSortedKeys: TanStack types `deps` in the loader from `loaderDeps`, which must come first.
   createRoute({
     component: lazyPage(() => import('@/routes/WorkspaceOpen')),

@@ -1032,9 +1032,15 @@ step and "What members see" link for an invite preview and board G5.
 
 **To do page.** `/todo` (`src/routes/Todo.tsx`, `GET /api/todo`,
 `store/assignment_todo.go`) lists each class's Dashboard rows across the classes
-the viewer owns or belongs to, in `TodoRows`, the rows both share. A class with
-nothing to show is left out; those with answers waiting come first, then by the
-soonest due.
+the viewer owns or belongs to, in `TodoRows`, the rows both share. Tabs To do
+(open work and answers waiting, with its count) and Done (done work the endpoint
+still returns, i.e. not closed: the quiz's mark or "Waiting for marks", then the
+day), then the list pages' Sort and Filter, all in the URL (`parseTodoSearch`:
+`tab=done`, `sort`, `dir=asc`, `class`, `type=quiz,task`). To do sorts by Due
+soonest (classes with answers waiting first), Recently posted or Class; Done by
+Recently done or Class. A class with nothing to show is left out. Open work past
+its due date says Overdue. The nav's To do row carries the notifications dot while
+`todoCount` (open plus waiting) is above zero (Epo 2026-11-08).
 
 **New assignment's Quiz field.** Its last rows make a quiz on the spot, wherever the
 dialog opens: New quiz opens Add file's Create tab (`?add=create`), Make a quiz from a
