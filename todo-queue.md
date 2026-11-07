@@ -7,7 +7,7 @@ plan that holds its detail. Change this file whenever something starts, lands or
 
 Windows lands and deploys these, one landing per deploy; Mac sessions review and push feature
 branches (Epo, 2026-11-06, after the account switch). Main is 6159c0f25: ribbon (protocol 27), the
-quiz Undo fix 779c114fa, canvas-enrich to 2b1fc744f. On the PC's opening train: `claude/quiz-image-back` 43b17c1ea and `claude/board-connector-load` 236859139. Main 33ae38a79 (2026-11-07) holds drawing answers (f63bef786 with the PC's review fixes Q693–Q695, canvas-enrich to 83150e8f0) and the pen fixes; UAT green at 33ae38a79, including a live vision-marking call (1017 read a sample and a student drawing: shares [1.0, 0.0]). New work branches from main.
+quiz Undo fix 779c114fa, canvas-enrich to 2b1fc744f. On the PC's opening train: `claude/quiz-image-back` 43b17c1ea and `claude/board-connector-load` 236859139. Main 33ae38a79 (2026-11-07) holds drawing answers (f63bef786 with the PC's review fixes Q693–Q695, canvas-enrich to 83150e8f0) and the pen fixes; UAT green at 33ae38a79, including a live vision-marking call (1017 read a sample and a student drawing: shares [1.0, 0.0]). Main a33c204f6 adds board-chunk-trim; UAT green there (deploy-uat 42357590925, uat-quality 42358510007), so UAT has everything for UI testing. New work branches from main.
 
 | Item | Where it is | Waiting on |
 |---|---|---|
@@ -51,7 +51,7 @@ boards K6, K7 and K8 on the study Design canvas. Scanned submissions build on it
 - [ ] Marking by a vision model against the marking points, with the same approval and credits rules. Needs grading landed, and the prompt shown to Epo first
 - [ ] Results, the approve tab and the report show the drawing
 - [ ] Specs, wiki, test catalog
-- [ ] Board open speed: Epo picked 4, 6 and 7 (2026-11-07), not 5. On `main` a33c204f6 (afb52c082, Windows' fix round 6bcad8fb0: opacity-0 plus inert hiding, the hidden mount in idle time, the draft written on Done and teardown, a retry on Draw, fitView on Draw; board chunk 667 KB gzipped); UAT chain at a33c204f6 running; canvas-enrich re-measuring Draw-to-drawable and the idle mount's long task. From the canvas-open report's fixes 4–7 (capy-harness `2026-11-06-office-track/canvas-open/REPORT-SUMMARY.md`; Windows 2026-11-07: Mac work, not started, needs Epo). Gate: bench:canvas. Then: 1,161 KB gzipped lazy, blank 630 ms / 2.4 s at 4x, typical 840 ms / 3.8 s, parse and evaluate 33–40%:
+- [ ] Board open speed: Epo picked 4, 6 and 7 (2026-11-07), not 5. On `main` a33c204f6 (afb52c082, Windows' fix round 6bcad8fb0: opacity-0 plus inert hiding, the hidden mount in idle time, the draft written on Done and teardown, a retry on Draw, fitView on Draw; board chunk 667 KB gzipped); UAT green at a33c204f6. On main, at 4x: Draw to drawable 8 ms blank, 19 ms typical; the hidden mount's longest task 193–358 ms cold, 53–131 ms warm (Mac). Open: Epo to say whether to split the cold mount, which needs more vendored BlockSuite changes. From the canvas-open report's fixes 4–7 (capy-harness `2026-11-06-office-track/canvas-open/REPORT-SUMMARY.md`; Windows 2026-11-07: Mac work, not started, needs Epo). Gate: bench:canvas. Then: 1,161 KB gzipped lazy, blank 630 ms / 2.4 s at 4x, typical 840 ms / 3.8 s, parse and evaluate 33–40%:
   - 4. Prefetch the board when a drawing question comes near
   - 5. Paint the stored marking image first, then swap in the live board
   - 6. Cut unused vendored BlockSuite packages (data-view about 155 KB gzipped)
