@@ -3094,6 +3094,7 @@
   "drawing_answer_hide_question": "Hide question",
   "drawing_answer_show_question": "Show question",
   "drawing_answer_too_big": "This drawing is too big to save. Remove some of it, then press Done again.",
+  "drawing_answer_area": "Answer area",
   "drawing_wide_title": "This drawing is very wide",
   "drawing_wide_body": "It's marked from one picture of the whole board, so small writing may be too small to read. Move parts closer together, or write labels bigger.",
   "drawing_wide_done_anyway": "Done anyway",

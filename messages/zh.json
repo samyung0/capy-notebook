@@ -3094,6 +3094,7 @@
   "drawing_answer_hide_question": "隐藏题目",
   "drawing_answer_show_question": "显示题目",
   "drawing_answer_too_big": "作图太大，无法保存。请删去部分内容后再按完成。",
+  "drawing_answer_area": "作答区",
   "drawing_wide_title": "这幅作图很宽",
   "drawing_wide_body": "批改时会把整块画板拍成一张图，较小的字可能看不清。请把各部分移近一些，或把标注写大一些。",
   "drawing_wide_done_anyway": "仍然完成",
