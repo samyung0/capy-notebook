@@ -357,10 +357,11 @@ a second and 50 ms above, inputs no lower than 30 ms). `MEDIANS` holds three
 runs on 630705a96 (2026-11-07): blank open 805/821/807 ms, typical open
 2784/2921/3036, pan p90 43/38/43, pen 33/33/33, typing 25/22/21, zoom 61/76/77,
 so the budgets are 1050, 3800, 60, 45, 30 and 100 ms. The hidden mount and
-Draw medians are provisional until Windows' calibration run (Epo 2026-11-07,
-"just put this into a perf gate", in place of splitting the cold mount): 3x a
-Mac run on 805e3c1f1 (longest frame 402/373/381 ms, Draw 23/23/22, warm mount
-134), so 1143 and 69 ms with budgets of 1500 and 90 ms. With `MEDIANS` null the
+Draw (Epo 2026-11-07, "just put this into a perf gate", in place of splitting
+the cold mount) are the medians of three later runs on 3249ce018: longest frame
+539/728/738 ms, Draw 43/62/61 ms (warm mount 230/303/316,
+report-only), so the budgets are 950 and 80 ms. A Mac run on 805e3c1f1 measured
+381 and 23 ms. With `MEDIANS` null the
 bench reports `budget: "uncalibrated"` and gates nothing. The first calibration (7d470b2e5,
 three runs on 4cf06a4b6, 2026-11-06) measured the large board and the blank
 open at 4x, so it doesn't carry over; it also showed one runner 40-60% slower

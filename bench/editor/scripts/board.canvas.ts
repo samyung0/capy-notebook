@@ -67,14 +67,14 @@ type Timings = {
  * calibration (7d470b2e5, on 4cf06a4b6) measured the large board and the blank open
  * at 4x, so it doesn't carry over.
  *
- * PROVISIONAL until Windows' calibration run: `hiddenMountLongestMs` and
- * `drawShownMs` are 3x a Mac run on 805e3c1f1 (2026-11-07: 381 and 23 ms), as the
- * runner is 2-3x slower; their budgets are 1500 and 90 ms.
+ * `hiddenMountLongestMs` and `drawShownMs` are the medians of three later runs,
+ * 42375517156, 42375520111 and 42375523741 on 3249ce018 (2026-11-07): 539/728/738
+ * and 43/62/61 ms, so their budgets are 950 and 80 ms.
  */
 const MEDIANS: Timings | null = {
   blankOpenMs: 807,
-  drawShownMs: 69,
-  hiddenMountLongestMs: 1143,
+  drawShownMs: 61,
+  hiddenMountLongestMs: 728,
   openMs: 2921,
   panP90Ms: 43,
   penP90Ms: 33,
