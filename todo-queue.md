@@ -7,7 +7,7 @@ plan that holds its detail. Change this file whenever something starts, lands or
 
 Windows lands and deploys these, one landing per deploy; Mac sessions review and push feature
 branches (Epo, 2026-11-06, after the account switch). Main is 6159c0f25: ribbon (protocol 27), the
-quiz Undo fix 779c114fa, canvas-enrich to 2b1fc744f. On the PC's opening train: `claude/quiz-image-back` 43b17c1ea and `claude/board-connector-load` 236859139. Waiting on Windows: `claude/board-pen-fixes` 7d3d4d627 (only test-catalog.md conflicts with main 5815ced56). Drawing answers (with canvas-enrich to 83150e8f0) is on main as f63bef786 plus the PC's review fixes Q693–Q695; new work branches from main.
+quiz Undo fix 779c114fa, canvas-enrich to 2b1fc744f. On the PC's opening train: `claude/quiz-image-back` 43b17c1ea and `claude/board-connector-load` 236859139. Main 33ae38a79 (2026-11-07) holds drawing answers (f63bef786 with the PC's review fixes Q693–Q695, canvas-enrich to 83150e8f0) and the pen fixes; one UAT chain at 33ae38a79 covers both, with a live vision-marking check. New work branches from main.
 
 | Item | Where it is | Waiting on |
 |---|---|---|
@@ -22,7 +22,7 @@ quiz Undo fix 779c114fa, canvas-enrich to 2b1fc744f. On the PC's opening train: 
 | Quiz's one layout in view, edit, study and assignments (A, S1, Epo 2026-11-06), add button aligned, image links shared in memory (Q678 A), number strip and no header when taking an assignment on a phone (Q679 B) | On `main` (369d457f6) | Done |
 | Quiz Undo reverting the answer key too (empty steps of the other document) | On `main` 6159c0f25 (779c114fa) | Done |
 | UAT note journey's `quizImageOnPick` (note.spec.ts:167): Back from a block's editor lost its toolbar to the dialog's focus trap, near-constant after the quiz layout | `claude/quiz-image-back` 43b17c1ea, 8 of 8 mock repro runs pass | Windows' merge, UAT run |
-| Pen strokes keep their first points and leave no dot when they close near the start (Epo 2026-11-07; BlockSuite local change 25 in `framework/std` pointer.ts, so every drag handler sees the replayed early moves) | `claude/board-pen-fixes` 7d3d4d627, from canvas-enrich 83150e8f0; merges clean onto drawing answers; board spec 21 of 21 per canvas-enrich | Windows (asked 2026-11-07, after drawing answers landed) |
+| Pen strokes keep their first points and leave no dot when they close near the start (Epo 2026-11-07; BlockSuite local change 25 in `framework/std` pointer.ts, so every drag handler sees the replayed early moves) | On `main` 33ae38a79 (7d3d4d627); drawing-board and drawing-answer specs 25/25 on the PC | UAT chain at 33ae38a79 |
 | A saved board with a connector or group couldn't reopen (`checkSavedBoard` wanted a stored place, which BlockSuite never stores for either) | `claude/board-connector-load` 236859139, from main e37508bb8; drawing-board spec 17 passed | Windows' merge |
 | bench:canvas (Q686 A): gated blank open at 1x, typical board's open, typing, pen, pan and zoom at 4x; warm opens, large board and bytes report-only | On `main` b4a2307d2, calibrated (runs 42252998330, 42253016137, 42253034659): budgets blank 1050, typical open 3800, pan 60, pen 45, typing 30, zoom 100 ms | Done |
 | Vendored BlockSuite, dev routes only | On `main` c69c01992 | Done |
@@ -51,6 +51,11 @@ boards K6, K7 and K8 on the study Design canvas. Scanned submissions build on it
 - [ ] Marking by a vision model against the marking points, with the same approval and credits rules. Needs grading landed, and the prompt shown to Epo first
 - [ ] Results, the approve tab and the report show the drawing
 - [ ] Specs, wiki, test catalog
+- [ ] Board open speed, the canvas-open report's fixes 4–7 (capy-harness `2026-11-06-office-track/canvas-open/REPORT-SUMMARY.md`; Windows 2026-11-07: Mac work, not started, needs Epo). Gate: bench:canvas. Then: 1,161 KB gzipped lazy, blank 630 ms / 2.4 s at 4x, typical 840 ms / 3.8 s, parse and evaluate 33–40%:
+  - 4. Prefetch the board when a drawing question comes near
+  - 5. Paint the stored marking image first, then swap in the live board
+  - 6. Cut unused vendored BlockSuite packages (data-view about 155 KB gzipped)
+  - 7. Ship only the board's icons (about 137 KB gzipped); a stub prototype cut 34% of bytes and 15–20% of cold open, needs vendored changes
 - [ ] Enrich the board (Epo, 2026-11-06: "a lot more enrichments" to come), in session `canvas-enrich`, mocks first: remake the shape chooser button (pure yellow is odd), move undo and redo beside the zoom buttons, and find how graphs, formulas, charts and coordinate planes can go on the canvas more easily
 
 ### 2. Note look: copy Notion's styles
