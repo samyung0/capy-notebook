@@ -4474,7 +4474,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   400 px apart are drawn 400 px apart, so one dragged far away doesn't squash the rest;
   the board itself stays as it is. The PNG goes through `fitImageOffThread` (WebP, 300 KB cap, Epo 2026-11-06), whose
   encode runs in a worker while the drawing stays on the page, and
-  comes back as a `File`.
+  comes back as a `File`. `stats().span` is that image's longest side in board units
+  (after the far groups are drawn nearer, with the margin), for the answer flow's wide-board
+  warning on Done.
 - **What the answer flow mounts:** `mountDrawingBoard(host, { readOnly, saved,
   onChange })`. Every answer starts on the same plain board (Epo 2026-11-06 dropped
   per-question backgrounds); the dev pages pass `plane: true` for a plane card to play
