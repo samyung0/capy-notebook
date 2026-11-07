@@ -64,8 +64,8 @@ Chat is bound to one workspace at every layer:
 
 ## Decisions needed
 
-- **D1, decided (E):** the workspace panels, the Chats left panel in the app
-  sidebar's place and the Chat panel filling the rest; a Chat item in the app
+- **D1, decided (E):** the workspace panels, the Chats left panel beside the
+  app sidebar (kept since 2026-11-07) and the Chat panel filling the rest; a Chat item in the app
   sidebar opens it, and the header's back arrow returns to where the user
   came from.
 - **D2, decided:** owned and member workspaces plus standalone files; not
@@ -163,8 +163,8 @@ listing stay workspace-only.
 
 - **Entry:** a Chat item in the app sidebar opens `/chat` (and
   `/chat/$conversationId`).
-- **Layout:** the workspace Chats left panel takes the app sidebar's place,
-  and the Chat panel fills the rest. The header's back arrow returns to the
+- **Layout:** the workspace Chats left panel sits beside the app sidebar
+  (kept since 2026-11-07), and the Chat panel fills the rest. The header's back arrow returns to the
   previous page.
 - **Data:** account conversations list and create, and the account stream
   route.

@@ -347,7 +347,6 @@ const appRoutes = [
       qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
     },
     path: '/chat/{-$conversationId}',
-    staticData: { hideSidebar: true },
   }),
   createRoute({
     component: lazyPage(() => import('@/routes/OpenShareLink')),

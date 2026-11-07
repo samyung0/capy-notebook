@@ -7,16 +7,11 @@ import {
 } from '@tanstack/react-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { isApiError } from '@/api/client';
-import {
-  fileQuery,
-  materialQuery,
-  useUnreadNotificationCount,
-} from '@/api/hooks';
+import { fileQuery, materialQuery } from '@/api/hooks';
 import { showErrorToast } from '@/api/queryClient';
 import type { Citation, ResourceRef } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { Panel } from '@/components/app/layout';
-import { ProfileMenu } from '@/components/app/ProfileMenu';
 import { Icon } from '@/components/ui/Icon';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { searchFromOpenItem } from '@/features/materials/openItem';
@@ -31,9 +26,9 @@ import { useMediaQuery } from '@/lib/useMediaQuery';
 
 /**
  * Chat across all the user's files (Epo 2026-10-27, option E): the
- * workspace's Chats left panel in the app sidebar's place and its Chat panel
- * filling the rest, the thread in a readable centred column. Below lg the
- * Chats list opens from the header's menu button. The URL names the shown
+ * workspace's Chats left panel beside the app sidebar (Epo 2026-11-07) and its
+ * Chat panel filling the rest, the thread in a readable centred column. Below
+ * lg the Chats list opens from the header's menu button. The URL names the shown
  * conversation; moving between chats replaces it, so the back arrow returns
  * to the page the user came from.
  */
@@ -44,9 +39,6 @@ export default function AccountChat() {
   const router = useRouter();
   const canGoBack = useCanGoBack();
   const lg = useMediaQuery('(min-width: 1024px)');
-  const { data: unread } = useUnreadNotificationCount({
-    errorBoundary: false,
-  });
   // The URL's conversation is the panel's first, ahead of the one a reload
   // kept (T19).
   const [request, setRequest] = useState<ChatRequest | undefined>(() =>
@@ -226,13 +218,6 @@ export default function AccountChat() {
                 onRemoved={onRemoved}
                 workspaceId={null}
               />
-              <div className="flex shrink-0 flex-col border-divider border-t px-2.5 py-2">
-                <ProfileMenu
-                  dot={(unread?.count ?? 0) > 0}
-                  notifications
-                  trigger="row"
-                />
-              </div>
             </div>
           </Panel>
         )}
