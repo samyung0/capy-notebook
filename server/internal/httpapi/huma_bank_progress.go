@@ -96,7 +96,7 @@ func (a *api) bankCheck(ctx context.Context, in *bankCheckInput) (*gradedQuestio
 	if err != nil {
 		return nil, bankHTTPError(err)
 	}
-	plan, err := planGrading([]map[string]any{q.Question}, in.Body.Answers)
+	plan, err := planGrading([]map[string]any{q.Question}, in.Body.Answers, sampleOwner{})
 	if err != nil {
 		return nil, gradeRequestError(err)
 	}

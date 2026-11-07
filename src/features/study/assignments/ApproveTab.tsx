@@ -219,7 +219,9 @@ export function ApproveTab({
             })}
           </p>
         ) : !manual &&
-          report.answers.some((row) => row.waiting && !row.aiMarked) ? (
+          report.answers.some(
+            (row) => row.waiting && !row.aiMarked && !row.handMarking
+          ) ? (
           <Button
             className="mt-2 w-full"
             disabled={marking}
@@ -297,7 +299,10 @@ export function ApproveTab({
                     </span>
                   ) : row.waiting ? (
                     <span className="inline-flex h-5.5 shrink-0 items-center rounded-md bg-tint-warning px-1.75 font-semibold text-tint-warning-fg text-xs">
-                      {m.assignment_not_marked()}
+                      {/* A drawing saved with no marking image (Q695). */}
+                      {row.handMarking
+                        ? m.assignment_mark_by_hand()
+                        : m.assignment_not_marked()}
                     </span>
                   ) : (
                     <span className="shrink-0 font-semibold text-fg-secondary">

@@ -8,6 +8,6 @@
 export interface DrawingSavedOutputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** The stored drawing; the part's answer is {"drawing": id} */
+  /** The stored drawing; the part's answer is {drawing: id} */
   id: string;
 }

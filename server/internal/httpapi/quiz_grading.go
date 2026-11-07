@@ -47,10 +47,17 @@ type openPart struct {
 	itemMarks  []float64
 	answer     string
 	// A drawing part: its marking image and type, in place of answer, and
-	// its drawn sample answer's image asset, sent before it when it has one.
-	image       []byte
-	imageType   string
-	sampleAsset string
+	// its drawn sample answer's image, sent before it when it has one.
+	image     []byte
+	imageType string
+	sample    sampleOwner
+}
+
+// sampleOwner is a drawing part's drawn sample answer image (assetID) and what
+// it must belong to: the quiz checked (materialID) or the assignment's frozen
+// copy (assignmentID). A bank question names neither, so it takes none.
+type sampleOwner struct {
+	assetID, materialID, assignmentID string
 }
 
 // gradePlan is a grading request checked against the stored questions; open
@@ -67,7 +74,7 @@ type gradePlan struct {
 // parts with no order (the shown order is always an answer, so a client sends
 // it), and open answers that are not text or are too long. Blank open answers
 // earn 0 without a model call.
-func planGrading(qs []map[string]any, answers map[string]any) (gradePlan, error) {
+func planGrading(qs []map[string]any, answers map[string]any, owner sampleOwner) (gradePlan, error) {
 	plan := gradePlan{questions: qs, answers: answers, open: map[string]openPart{}, drawings: map[string]drawingUpload{}}
 	known := map[string]bool{}
 	for _, q := range qs {
@@ -92,7 +99,8 @@ func planGrading(qs []map[string]any, answers map[string]any) (gradePlan, error)
 					items, marks := questions.MarkItems(p)
 					plan.open[id] = openPart{
 						question: questions.GradingText(q, i), markscheme: items, itemMarks: marks,
-						image: drawing.Image, imageType: imageType, sampleAsset: questions.DrawnSampleImage(p),
+						image: drawing.Image, imageType: imageType,
+						sample: sampleOwner{assetID: questions.DrawnSampleImage(p), materialID: owner.materialID, assignmentID: owner.assignmentID},
 					}
 				}
 				continue
@@ -277,8 +285,8 @@ func (a *api) gradePart(ctx context.Context, llm resolvedLLM, sessionID string, 
 	// 2026-11-07), after its drawn sample answer's image when it has one (Q3).
 	if len(part.image) > 0 {
 		body["image"] = "data:" + part.imageType + ";base64," + base64.StdEncoding.EncodeToString(part.image)
-		if part.sampleAsset != "" {
-			sample, err := a.sampleImage(ctx, part.sampleAsset)
+		if part.sample.assetID != "" {
+			sample, err := a.sampleImage(ctx, part.sample)
 			if err != nil {
 				return partGrade{}, err
 			}
@@ -476,7 +484,7 @@ func gradeAnonymous(stored json.RawMessage, body apimodel.GradeAnonymousQuizReq)
 	if q == nil {
 		return nil, noAnswersConfiguredError()
 	}
-	plan, err := planGrading([]map[string]any{q}, body.Answers)
+	plan, err := planGrading([]map[string]any{q}, body.Answers, sampleOwner{})
 	if err != nil {
 		return nil, gradeRequestError(err)
 	}
@@ -548,16 +556,21 @@ func (a *api) checkQuestionComputation(ctx context.Context, in *computationCheck
 	return nil, huma.Error422UnprocessableEntity("partId must name an open part of the question")
 }
 
-// sampleImage reads a drawn sample answer's image asset as a data URL. An image
-// that can't be read fails the part, which stays Not marked: marking without
-// the sample would judge it on less than its author gave.
-func (a *api) sampleImage(ctx context.Context, assetID string) (string, error) {
+// sampleImage reads a drawn sample answer's image asset as a data URL. It must be
+// a ready, untrashed image of the quiz checked or of the assignment's frozen
+// copy, so an author can't have the model read someone else's image (Q693). One
+// that isn't, or can't be read, fails the part, which stays Not marked: marking
+// without the sample would judge it on less than its author gave.
+func (a *api) sampleImage(ctx context.Context, owner sampleOwner) (string, error) {
+	assetID := owner.assetID
 	asset, err := a.s.GetEditorAsset(ctx, assetID)
 	if err != nil {
 		return "", err
 	}
-	if asset.Purpose != "image" || a.blob == nil {
-		return "", fmt.Errorf("drawn sample answer %s is not a stored image", assetID)
+	belongs := (owner.materialID != "" && asset.MaterialID == owner.materialID) ||
+		(owner.assignmentID != "" && asset.AssignmentID == owner.assignmentID)
+	if !belongs || asset.Purpose != "image" || asset.Status != "ready" || asset.Trashed || a.blob == nil {
+		return "", fmt.Errorf("drawn sample answer %s is not this quiz's stored image", assetID)
 	}
 	r, err := a.blob.Open(ctx, asset.ObjectPath)
 	if err != nil {

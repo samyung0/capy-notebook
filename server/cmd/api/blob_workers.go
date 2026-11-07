@@ -162,6 +162,9 @@ var sweptPrefixes = []string{
 	"previews/",
 	"editor-assets/",
 	"thumbs/",
+	// A drawing's board and image written before a refusal that raced past
+	// the check (Q693).
+	"drawings/",
 }
 
 // runBlobSweep reports unreferenced objects on a long interval.

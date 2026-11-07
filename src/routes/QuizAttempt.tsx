@@ -20,7 +20,10 @@ import {
 import type { LearnerQuestion } from '@/features/questions/types';
 import { AttemptBody } from '@/features/quizzes/AttemptBody';
 import { blockHomeCrumb } from '@/features/quizzes/crumbs';
-import { DrawingDraftScope } from '@/features/quizzes/drawing/drawingValue';
+import {
+  DrawingDraftScope,
+  quizDraftScope,
+} from '@/features/quizzes/drawing/drawingValue';
 import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
 import { useQuizRun } from '@/features/quizzes/quizRun';
 import { CloneItemDialog } from '@/features/workspace/CloneItemDialog';
@@ -98,7 +101,7 @@ function Attempt({ quizId }: { quizId: string }) {
 
   return (
     <RemovedAssetsContext.Provider value={removed}>
-      <DrawingDraftScope.Provider value={`quiz:${quiz.id}`}>
+      <DrawingDraftScope.Provider value={quizDraftScope(quiz.id)}>
         <AttemptBody
           actions={
             !quiz.canEdit &&

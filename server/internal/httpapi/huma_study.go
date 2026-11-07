@@ -401,7 +401,7 @@ func (a *api) checkReviewItem(ctx context.Context, in *reviewCheckInput) (*grade
 	if err != nil {
 		return nil, storedContentError(ctx, in.Body.MaterialID, err)
 	}
-	plan, err := planGrading([]map[string]any{q}, in.Body.Answers)
+	plan, err := planGrading([]map[string]any{q}, in.Body.Answers, sampleOwner{materialID: in.Body.MaterialID})
 	if err != nil {
 		return nil, gradeRequestError(err)
 	}

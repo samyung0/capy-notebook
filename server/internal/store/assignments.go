@@ -956,6 +956,11 @@ func (s *Store) UpdateAssignment(ctx context.Context, actorID, id string, form A
 			form.NoLate, form.LatePenaltyPct, form.AssignAll, form.Marking, form.ShowAnswers, form.Shuffle); err != nil {
 			return err
 		}
+		if form.Marking == MarkingManual {
+			if err := dropAssignmentDrawingImagesTx(ctx, tx, id); err != nil {
+				return err
+			}
+		}
 		return writeAssignmentLists(ctx, tx, id, form)
 	})
 	if err != nil {
@@ -1358,9 +1363,12 @@ type AssignmentAttempt struct {
 	WaitingMarks   float64 `json:"waitingMarks"`
 	WaitingAnswers int     `json:"waitingAnswers"`
 	// ShowAnswers: this view carries the keys.
-	ShowAnswers bool             `json:"showAnswers"`
-	Answers     map[string]any   `json:"answers" nullable:"false"`
-	Questions   []map[string]any `json:"questions" nullable:"false"`
+	ShowAnswers bool `json:"showAnswers"`
+	// DrawingImages: Done sends a drawing's marking image, which manual grading
+	// never reads, so the browser makes none then (Q693).
+	DrawingImages bool             `json:"drawingImages"`
+	Answers       map[string]any   `json:"answers" nullable:"false"`
+	Questions     []map[string]any `json:"questions" nullable:"false"`
 	// RemovedAssetIDs are the running attempt's images no longer there.
 	RemovedAssetIDs []string `json:"removedAssetIds" nullable:"false"`
 }
@@ -1894,9 +1902,9 @@ func (s *Store) attemptView(ctx context.Context, r attemptRow, staff bool, now t
 		Answers: map[string]any{}, Questions: []map[string]any{}, RemovedAssetIDs: []string{},
 	}
 	if err := s.pool.QueryRow(ctx, `SELECT a.title, COALESCE(NULLIF(u.name,''), u.id, ''),
-			COALESCE('/icons/' || NULLIF(u.avatar_icon_id,'') || '.svg', u.avatar_url, '')
+			COALESCE('/icons/' || NULLIF(u.avatar_icon_id,'') || '.svg', u.avatar_url, ''), a.marking <> 'manual'
 		FROM assignments a LEFT JOIN users u ON u.id=$2 WHERE a.id=$1`, r.assignmentID, r.userID).
-		Scan(&v.Title, &v.UserName, &v.UserAvatarURL); err != nil {
+		Scan(&v.Title, &v.UserName, &v.UserAvatarURL, &v.DrawingImages); err != nil {
 		return v, err
 	}
 	if len(r.answers) > 0 {
@@ -2089,6 +2097,14 @@ func (s *Store) MarkAssignmentAnswer(ctx context.Context, actorID, attemptID str
 		waited := questionWaiting(question)
 		changed, err := applyPartMarks(question, mark.Parts, actorID, now)
 		if err != nil {
+			return err
+		}
+		// A drawing marked by hand has had its marking: its image goes.
+		marked := make([]string, 0, len(mark.Parts))
+		for _, part := range mark.Parts {
+			marked = append(marked, part.PartID)
+		}
+		if err := dropDrawingImagesTx(ctx, tx, attemptID, marked); err != nil {
 			return err
 		}
 		if mark.ClearWarning {
@@ -2284,9 +2300,12 @@ type AssignmentAnswerRow struct {
 	// AIAwarded is the question's marks if the AI's are approved as they stand.
 	AIAwarded float64 `json:"aiAwarded"`
 	// AIWarning is what the row's warning icon shows: "warning", "error" or empty.
-	AIWarning string  `json:"aiWarning"`
-	Awarded   float64 `json:"awarded"`
-	Marks     float64 `json:"marks"`
+	AIWarning string `json:"aiWarning"`
+	// HandMarking: a waiting drawing has no marking image (saved under manual
+	// grading), so only staff mark it, whatever Mark with AI runs (Q695).
+	HandMarking bool    `json:"handMarking"`
+	Awarded     float64 `json:"awarded"`
+	Marks       float64 `json:"marks"`
 }
 
 // wrongAnswersShown caps a short part's common wrong answers.
@@ -2306,13 +2325,13 @@ func (s *Store) GetAssignmentReport(ctx context.Context, userID, id string, now 
 	if !staff {
 		return out, ErrNotFound
 	}
-	var kind string
+	var kind, marking string
 	var noLate bool
 	var penalty int
 	var due *time.Time
 	var raw []byte
-	if err := s.pool.QueryRow(ctx, `SELECT kind, no_late, late_penalty_pct, due_at, questions FROM assignments WHERE id=$1`, id).
-		Scan(&kind, &noLate, &penalty, &due, &raw); err != nil {
+	if err := s.pool.QueryRow(ctx, `SELECT kind, no_late, late_penalty_pct, due_at, questions, marking FROM assignments WHERE id=$1`, id).
+		Scan(&kind, &noLate, &penalty, &due, &raw, &marking); err != nil {
 		return out, err
 	}
 	frozen, err := decodeFrozen(raw)
@@ -2372,6 +2391,26 @@ func (s *Store) GetAssignmentReport(ctx context.Context, userID, id string, now 
 		}
 	}
 	out.Questions, out.Answers = questionReports(withRemoved(frozen, counted, waiting), counted, waiting)
+	if marking == MarkingManual {
+		return out, nil
+	}
+	// Under manual grading everything waits for staff alike; otherwise a drawing
+	// with no marking image is marked out by name (Q695).
+	byID := map[string]reportAttempt{}
+	var ids []string
+	for _, attempt := range append(append([]reportAttempt{}, counted...), waiting...) {
+		byID[attempt.id] = attempt
+		ids = append(ids, attempt.id)
+	}
+	kept, err := keptDrawingImageParts(ctx, s.pool, ids)
+	if err != nil {
+		return out, err
+	}
+	for i, row := range out.Answers {
+		if attempt, ok := byID[row.AttemptID]; ok && row.Waiting && !row.AIMarked {
+			out.Answers[i].HandMarking = needsHandMarking(attempt.graded[row.QuestionID], attempt.answers, attempt.id, kept)
+		}
+	}
 	return out, nil
 }
 

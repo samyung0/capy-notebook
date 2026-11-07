@@ -38,8 +38,8 @@ function StartMarked({ assignment }: { assignment: Assignment }) {
   const attempt = mine?.runningAttemptId ?? mine?.countedAttemptId;
   const once = useRef(false);
   useEffect(() => {
-    if (once.current) return;
-    once.current = true;
+    // Also once the start below lands and the assignment reads its attempt: the
+    // start's own callback is lost when this remounts (React's StrictMode).
     if (attempt) {
       void navigate({
         replace: true,
@@ -52,6 +52,8 @@ function StartMarked({ assignment }: { assignment: Assignment }) {
       });
       return;
     }
+    if (once.current) return;
+    once.current = true;
     if (!closed) start(assignment);
   }, [assignment, attempt, closed, navigate, start]);
   return (

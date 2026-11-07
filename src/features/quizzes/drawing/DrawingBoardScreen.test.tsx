@@ -30,6 +30,14 @@ vi.mock('@/features/blocksuite/drawingBoard', () => ({
   }),
 }));
 vi.mock('@/components/ui/userToast', () => ({ userToast() {} }));
+const deleteLocalDrawingDraft = vi.hoisted(() =>
+  vi.fn(() => Promise.resolve())
+);
+vi.mock('@/lib/localDb', () => ({
+  deleteLocalDrawingDraft,
+  localDrawingDraft: () => Promise.resolve(undefined),
+  saveLocalDrawingDraft: () => Promise.resolve(),
+}));
 vi.mock('@/components/ui/Dialog', () => ({
   SimpleDialog: ({
     children,
@@ -53,6 +61,9 @@ vi.mock('@/components/ui/Dialog', () => ({
 
 const { createRoot } = await import('react-dom/client');
 const { default: DrawingBoardScreen } = await import('./DrawingBoardScreen');
+const { finishOpenDrawing } = await import('./drawingValue');
+
+const PINNED = { body: null, marks: '', short: '1', summary: '', title: '1' };
 
 const button = (label: string) =>
   [...document.querySelectorAll('button')].find(
@@ -78,4 +89,80 @@ it('asks before Done on a wide board, and Done anyway makes the image', async ()
 
   await act(async () => button(m.drawing_wide_done_anyway()).click());
   expect(toImage).toHaveBeenCalledOnce();
+});
+
+it('a time limit pressing Done during a Done waits for its upload', async () => {
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host as never);
+  let release: (id: string) => void = () => undefined;
+  const store = vi.fn(
+    (_value: unknown) =>
+      new Promise<string | null>((resolve) => {
+        release = resolve;
+      })
+  );
+  const onDone = vi.fn();
+  await act(async () =>
+    root.render(
+      <DrawingBoardScreen
+        draft="assignment:at_1:p"
+        onClose={() => undefined}
+        onDone={onDone}
+        pinned={PINNED}
+        store={store}
+        withImage={false}
+      />
+    )
+  );
+  let first: Promise<void> = Promise.resolve();
+  await act(async () => {
+    first = finishOpenDrawing();
+  });
+  let submitted = false;
+  const timeLimit = finishOpenDrawing().then(() => {
+    submitted = true;
+  });
+  await act(async () => undefined);
+  expect(store).toHaveBeenCalledOnce();
+  expect(submitted).toBe(false);
+  // Marked by hand: no marking image is made (Q693).
+  expect(store.mock.calls[0][0]).toEqual({ board: 'AA==', image: '' });
+
+  await act(async () => {
+    release('dr_1');
+    await Promise.all([first, timeLimit]);
+  });
+  expect(submitted).toBe(true);
+  expect(onDone).toHaveBeenCalledWith({
+    board: 'AA==',
+    drawing: 'dr_1',
+    image: '',
+  });
+  // Stored, its draft goes.
+  expect(deleteLocalDrawingDraft).toHaveBeenCalledWith('assignment:at_1:p');
+  await act(async () => root.unmount());
+});
+
+it('keeps a practice drawing on the device after Done, until Check', async () => {
+  deleteLocalDrawingDraft.mockClear();
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host as never);
+  const onDone = vi.fn();
+  await act(async () =>
+    root.render(
+      <DrawingBoardScreen
+        draft="quiz:qz_1:p"
+        onClose={() => undefined}
+        onDone={onDone}
+        pinned={PINNED}
+        withImage={false}
+      />
+    )
+  );
+  await act(async () => finishOpenDrawing());
+  expect(onDone).toHaveBeenCalledOnce();
+  expect(deleteLocalDrawingDraft).not.toHaveBeenCalled();
+  await act(async () => root.unmount());
 });

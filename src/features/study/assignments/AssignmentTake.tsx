@@ -210,12 +210,16 @@ export function AssignmentTake({
   }, [attempt.id, reread]);
 
   // Done stores a drawing part's board at once (Epo 2026-11-06); saves name it.
-  const storeDrawing = useCallback(
-    (partId: string, value: DrawingValue | null) =>
-      value
-        ? saveAssignmentDrawing(attempt.id, partId, value)
-        : deleteAssignmentDrawing(attempt.id, partId).then(() => null),
-    [attempt.id]
+  // Marked by hand, it makes no marking image (Q693).
+  const storeDrawing = useMemo(
+    () => ({
+      store: (partId: string, value: DrawingValue | null) =>
+        value
+          ? saveAssignmentDrawing(attempt.id, partId, value)
+          : deleteAssignmentDrawing(attempt.id, partId).then(() => null),
+      withImage: attempt.drawingImages,
+    }),
+    [attempt.id, attempt.drawingImages]
   );
   const change = (partId: string, value: Answer) => {
     // Read at once by a submit that follows (a board finished at zero).

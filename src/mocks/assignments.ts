@@ -19,7 +19,11 @@ import type {
 } from '@/api/types';
 import { fromBase64, toBase64 } from '@/features/blocksuite/base64';
 import { SAVED, withElements } from '@/features/blocksuite/boardFixture';
-import type { Question, QuestionPart } from '@/features/questions/types';
+import {
+  modelMarked,
+  type Question,
+  type QuestionPart,
+} from '@/features/questions/types';
 import type { Answers } from '@/features/quizzes/grade';
 import { scorePart } from '@/features/quizzes/grade';
 import { learnerView } from './answerKeys';
@@ -70,6 +74,15 @@ type Attempt = {
 
 /** Drawings an assignment's Done stored, by id: their boards. */
 const mockDrawings = new Map<string, string>();
+
+/** For a spec: hands the Member scenario's attempts at an assignment to one of
+ * the class's members, so the owner's report shows them
+ * (e2e/editor/drawing-answer.spec.ts). */
+export function giveMockAttemptsTo(assignmentId: string, userId: string) {
+  for (const attempt of attempts.values())
+    if (attempt.assignmentId === assignmentId && attempt.userId === db.user.id)
+      attempt.userId = userId;
+}
 const WS = 'ws_bio';
 const ASSIGNMENT_GRACE_MS = 15_000;
 const DAY = 86_400_000;
@@ -294,6 +307,15 @@ function gradePaper(
   return questions.map((question) => ({
     ...question,
     parts: question.parts.map((part) => {
+      // A drawing Done stored waits for the AI, as an open answer does.
+      if (part.answer.type === 'drawing')
+        return (answers[part.id] as { drawing?: string } | undefined)?.drawing
+          ? { ...part, awarded: 0, pending: true }
+          : {
+              ...part,
+              awarded: 0,
+              itemAwards: (part.markscheme ?? []).map(() => 0),
+            };
       if (part.answer.type !== 'open') {
         const { awarded, items } = scorePart(part, answers[part.id]);
         return part.answer.type === 'matching' || part.answer.type === 'gaps'
@@ -572,6 +594,8 @@ const aiRow = (q: AssignmentGradedQuestion) => ({
     : q.parts.some((p) => p.aiComment)
       ? 'warning'
       : '',
+  // The mock keeps every drawing's marking image.
+  handMarking: false,
 });
 
 function submissions(assignmentId: string, userId: string) {
@@ -768,6 +792,8 @@ function attemptView(attempt: Attempt, row: Row, viewer: Viewer) {
     assignmentId: row.id,
     autoSubmitted: attempt.autoSubmitted,
     deadlineAt: attempt.deadlineAt,
+    // Manual grading makes no marking images (Q693).
+    drawingImages: row.marking !== 'manual',
     id: attempt.id,
     late: isLate(row, attempt.submittedAt),
     latePenaltyPct: penaltyOf(row, attempt.submittedAt),
@@ -923,7 +949,8 @@ function report(row: Row, viewer: Viewer): AssignmentReport {
   const answers: AssignmentAnswerRow[] = [];
   const questions: AssignmentQuestionReport[] = (row.questions ?? []).map(
     (question) => {
-      const isOpen = question.parts.some((p) => p.answer.type === 'open');
+      // Written and drawn answers wait for marking alike.
+      const isOpen = question.parts.some((p) => modelMarked(p.answer.type));
       const graded = countedRows.flatMap((a) => {
         const q = a.graded.find((g) => g.id === question.id);
         return q ? [{ attempt: a, q }] : [];

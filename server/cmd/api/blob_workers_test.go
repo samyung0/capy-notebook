@@ -28,3 +28,12 @@ func TestBlobSweepCoversParseBundleCrashOrphans(t *testing.T) {
 	}
 	t.Fatal("report-only blob sweep does not cover parse-bundles/")
 }
+
+func TestBlobSweepCoversDrawingOrphans(t *testing.T) {
+	for _, prefix := range sweptPrefixes {
+		if prefix == "drawings/" {
+			return
+		}
+	}
+	t.Fatal("report-only blob sweep does not cover drawings/")
+}

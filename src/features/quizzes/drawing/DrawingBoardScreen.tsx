@@ -77,6 +77,7 @@ export default function DrawingBoardScreen({
   readOnly = false,
   saved,
   store,
+  withImage = true,
 }: {
   /** The device key a board being drawn is kept under, when the page has one. */
   draft?: string;
@@ -89,6 +90,8 @@ export default function DrawingBoardScreen({
   pinned: PinnedQuestion;
   readOnly?: boolean;
   saved?: string;
+  /** Done makes the marking image; manual grading reads none (Q693). */
+  withImage?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   // The board mounts once; closing reads the latest handler.
@@ -167,10 +170,20 @@ export default function DrawingBoardScreen({
     );
   }, []);
 
-  /** Done; `anyway` skips the wide-board question (Done anyway, a time limit). */
-  const finish = async (anyway = false) => {
+  /** Done; `anyway` skips the wide-board question (Done anyway, a time limit).
+   * A Done pressed while one runs (a time limit during its upload) waits for
+   * it, so the attempt is submitted with the drawing stored. */
+  const finishing = useRef<Promise<void> | null>(null);
+  const finish = (anyway = false): Promise<void> => {
+    if (!finishing.current)
+      finishing.current = finishNow(anyway).finally(() => {
+        finishing.current = null;
+      });
+    return finishing.current;
+  };
+  const finishNow = async (anyway: boolean) => {
     const current = board.current;
-    if (!current || busy) return;
+    if (!current) return;
     if (readOnly || !onDone) return onClose();
     const stats = current.stats();
     const empty = stats.canvas.length === 0 && stats.blocks.length === 0;
@@ -189,11 +202,14 @@ export default function DrawingBoardScreen({
       if (saved) {
         value = {
           board: saved.doc,
-          image: await readAsDataUrl(await current.toImage()),
+          image: withImage ? await readAsDataUrl(await current.toImage()) : '',
         };
         if (store) value.drawing = (await store(value)) ?? undefined;
       } else if (store) await store(null);
-      if (draft) await deleteLocalDrawingDraft(draft).catch(() => undefined);
+      // Stored, the board has left the device; practice keeps its draft until
+      // Check sends it (Epo 2026-11-06).
+      if (draft && store)
+        await deleteLocalDrawingDraft(draft).catch(() => undefined);
       onDone(value);
     } catch (error) {
       userToast({

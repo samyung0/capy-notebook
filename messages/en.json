@@ -2992,6 +2992,7 @@
   "assignment_marked_by_ai": "Marked by AI",
   "assignment_clear_warning": "Clear warning",
   "assignment_ai_not_marked": "Not marked by AI",
+  "assignment_mark_by_hand": "Mark by hand",
   "assignment_mark_of": "Mark {total} of {marks}",
   "assignment_approve": "Approve",
   "dashboard_todo": "To do",

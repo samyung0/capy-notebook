@@ -16,6 +16,7 @@ export interface AssignmentAttempt {
   autoSubmitted: boolean;
   correct: number;
   deadlineAt?: string;
+  drawingImages: boolean;
   id: string;
   late: boolean;
   latePenaltyPct: number;

@@ -274,18 +274,31 @@ func (a *api) checkQuizQuestion(ctx context.Context, in *checkQuizQuestionInput)
 		}
 	}
 	answers := projectedAnswers([]map[string]any{q}, in.Body.Answers)
-	plan, err := planGrading([]map[string]any{q}, answers)
+	plan, err := planGrading([]map[string]any{q}, answers, sampleOwner{materialID: in.ID})
 	if err != nil {
 		return nil, gradeRequestError(err)
+	}
+	// A quick check in a note keeps nothing, drawings included.
+	keep := quiz.ParentMaterialID == ""
+	var packed map[string][]byte
+	if keep && len(plan.drawings) > 0 {
+		var size int64
+		if packed, size, err = packedCheckDrawings(plan); err != nil {
+			return nil, hErr(err)
+		}
+		// Keeping them must fit the learner's storage before marking is paid
+		// for (Q694); CheckQuizQuestion's own gate still decides.
+		if err := a.s.AssertStorageRoom(ctx, userID(ctx), size); err != nil {
+			return nil, hErr(err)
+		}
 	}
 	graded, _, _, err := a.gradeSignedIn(ctx, plan, quiz.WorkspaceID)
 	if err != nil {
 		return nil, err
 	}
-	// A quick check in a note keeps nothing, drawings included.
 	var drawings map[string]store.QuizDrawing
-	if quiz.ParentMaterialID == "" {
-		if drawings, err = a.keepCheckDrawings(ctx, plan, graded[0]); err != nil {
+	if keep {
+		if drawings, err = a.keepCheckDrawings(ctx, plan, packed, graded[0]); err != nil {
 			return nil, hErr(err)
 		}
 	}
@@ -310,7 +323,6 @@ func (a *api) checkQuizQuestion(ctx context.Context, in *checkQuizQuestionInput)
 func (a *api) recheckQuizQuestion(ctx context.Context, in *checkQuizQuestionInput, workspaceID string, held, answers map[string]any, order []string, marks map[string]float64) (*attemptDetailOutput, error) {
 	open := map[string]openPart{}
 	drawn := map[string]bool{}
-	var images map[string]keptImage
 	parts, _ := held["parts"].([]any)
 	for i, raw := range parts {
 		p, _ := raw.(map[string]any)
@@ -320,23 +332,34 @@ func (a *api) recheckQuizQuestion(ctx context.Context, in *checkQuizQuestionInpu
 		id, _ := p["id"].(string)
 		text, _ := answers[id].(string)
 		items, itemMarks := questions.MarkItems(p)
-		part := openPart{question: questions.GradingText(held, i), markscheme: items, itemMarks: itemMarks, answer: text, sampleAsset: questions.DrawnSampleImage(p)}
-		// A drawing left Not marked keeps its image for this one marking.
+		open[id] = openPart{question: questions.GradingText(held, i), markscheme: items, itemMarks: itemMarks, answer: text,
+			sample: sampleOwner{assetID: questions.DrawnSampleImage(p), materialID: in.ID}}
 		if given, _ := answers[id].(map[string]any); given["drawing"] != nil {
-			if images == nil {
-				var err error
-				if images, err = a.keptDrawingImages(ctx, in.Body.AttemptID); err != nil {
-					return nil, hErr(err)
-				}
-			}
-			image, kept := images[id]
-			if !kept {
-				continue
-			}
-			part.image, part.imageType = image.data, image.contentType
 			drawn[id] = true
 		}
-		open[id] = part
+	}
+	// A drawing left Not marked keeps its image for this one marking; one whose
+	// image is gone or unreadable stays Not marked.
+	if len(drawn) > 0 {
+		ids := make([]string, 0, len(drawn))
+		for id := range drawn {
+			ids = append(ids, id)
+		}
+		images, err := a.keptDrawingImages(ctx, in.Body.AttemptID, ids)
+		if err != nil {
+			return nil, hErr(err)
+		}
+		for _, id := range ids {
+			image, kept := images[id]
+			if !kept {
+				delete(open, id)
+				delete(drawn, id)
+				continue
+			}
+			part := open[id]
+			part.image, part.imageType = image.data, image.contentType
+			open[id] = part
+		}
 	}
 	if err := a.reserveGrading(ctx, len(open)); err != nil {
 		return nil, err

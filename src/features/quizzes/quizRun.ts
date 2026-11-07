@@ -7,6 +7,7 @@ import type { GradedQuestion, Question } from '@/api/types';
 import type { LearnerQuestion } from '@/features/questions/types';
 import { type LocalQuizAttempt, saveLocalQuizAttempt } from '@/lib/localDb';
 import { isString, PREF_KEYS, useLocalPref } from '@/lib/localPrefs';
+import { forgetDrawingDrafts, quizDraftScope } from './drawing/drawingValue';
 import { type Answers, runScore } from './grade';
 
 /** One try at a quiz: the questions checked so far, graded, with the answers
@@ -110,6 +111,8 @@ export function useQuizRun(
           startedAt: run.startedAt ?? undefined,
         });
         if (attempt.id !== attemptId) setAttemptId(attempt.id);
+        // Checked, a drawing's board is kept with the attempt (Epo 2026-11-06).
+        forgetDrawingDrafts(quizDraftScope(quizId), answers);
       } catch (err) {
         if (!(isApiError(err) && err.status === 409)) throw err;
         await qc.refetchQueries({

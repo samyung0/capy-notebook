@@ -63,7 +63,9 @@ func logAnswerPartsTx(ctx context.Context, tx pgx.Tx, userID string, mt Material
 			grader = "owner"
 		} else if text, _ := given[id].(string); kind == "open" && strings.TrimSpace(text) != "" {
 			grader = "ai"
-		} else if kind == "drawing" && isDrawingAnswer(given[id]) {
+		} else if _, aiMarked := p["itemAwards"]; kind == "drawing" && (aiMarked || isDrawingAnswer(given[id])) {
+			// A check's drawing has no stored id yet ({"drawing": ""}), but the
+			// model's marks per item say who marked it.
 			grader = "ai"
 		}
 		ids, types, graders = append(ids, id), append(types, kind), append(graders, grader)

@@ -112,10 +112,11 @@ const (
 	ExtractionQuestionCredits = 4
 	// A drawing answer's saved board (undo history stripped) and its marking
 	// image, each at most this many bytes (Epo 2026-11-06: 250 KB and 300 KB),
-	// the image at most DrawingImageSide px on its longer side.
+	// the image at most DrawingImageSide px on its longer side, as the browser
+	// makes it (Epo 2026-11-06, "go with 1568px").
 	DrawingBoardBytes = 250 << 10
 	DrawingImageBytes = 300 << 10
-	DrawingImageSide  = 2_400
+	DrawingImageSide  = 1_568
 	// A flashcard's front and back (human/frontend/plate-editor.md for the
 	// back); the collaboration server reads them from the embed catalog.
 	CardFront = 200

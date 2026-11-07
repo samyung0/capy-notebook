@@ -53,6 +53,8 @@ func (s *Store) AnswersToMark(ctx context.Context, assignmentID, attemptID strin
 		return "", "", nil, err
 	}
 	defer rows.Close()
+	var listed []AnswerToMark
+	var drawnIn []string
 	for rows.Next() {
 		var id string
 		var rawAnswers, rawGraded []byte
@@ -63,9 +65,69 @@ func (s *Store) AnswersToMark(ctx context.Context, assignmentID, attemptID strin
 		if err != nil {
 			return "", "", nil, err
 		}
-		answers = append(answers, found...)
+		for _, answer := range found {
+			if answer.Drawing {
+				drawnIn = append(drawnIn, id)
+				break
+			}
+		}
+		listed = append(listed, found...)
 	}
-	return payerID, workspaceID, answers, rows.Err()
+	if err := rows.Err(); err != nil {
+		return "", "", nil, err
+	}
+	rows.Close()
+	// A drawing with no marking image (saved under manual grading) is staff's to
+	// mark by hand (Q695): the report says so, and the AI is not asked.
+	kept, err := keptDrawingImageParts(ctx, s.pool, drawnIn)
+	if err != nil {
+		return "", "", nil, err
+	}
+	for _, answer := range listed {
+		if !answer.Drawing || kept[answer.AttemptID+"/"+answer.PartID] {
+			answers = append(answers, answer)
+		}
+	}
+	return payerID, workspaceID, answers, nil
+}
+
+// keptDrawingImageParts are the attempts' drawings that keep a marking image,
+// as attempt/part.
+func keptDrawingImageParts(ctx context.Context, q rowsQueryer, attemptIDs []string) (map[string]bool, error) {
+	kept := map[string]bool{}
+	if len(attemptIDs) == 0 {
+		return kept, nil
+	}
+	rows, err := q.Query(ctx, `SELECT attempt_id, part_id FROM drawings
+		WHERE attempt_id = ANY($1) AND image_key IS NOT NULL`, attemptIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var attemptID, partID string
+		if err := rows.Scan(&attemptID, &partID); err != nil {
+			return nil, err
+		}
+		kept[attemptID+"/"+partID] = true
+	}
+	return kept, rows.Err()
+}
+
+// needsHandMarking: a waiting drawing the AI has not marked and has no marking
+// image for (saved under manual grading), which only staff can mark (Q695).
+func needsHandMarking(q, answers map[string]any, attemptID string, kept map[string]bool) bool {
+	parts, _ := q["parts"].([]any)
+	for _, raw := range parts {
+		p, _ := raw.(map[string]any)
+		pending, _ := p["pending"].(bool)
+		_, aiMarked := p["aiAwards"]
+		id, _ := p["id"].(string)
+		if pending && !aiMarked && isDrawingAnswer(answers[id]) && !kept[attemptID+"/"+id] {
+			return true
+		}
+	}
+	return false
 }
 
 func attemptAnswersToMark(attemptID string, rawAnswers, rawGraded []byte) ([]AnswerToMark, error) {

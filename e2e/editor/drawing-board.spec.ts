@@ -159,6 +159,11 @@ test('a note card takes typing and leaves $$ as text', async ({ page }) => {
   const at = await onCard(page);
   await page.locator('edgeless-note-senior-button').first().click();
   await page.mouse.click(...at(0.5, 0.5));
+  // The new note takes the focus a moment later on a loaded machine; keys
+  // typed before then are lost.
+  await page.waitForFunction(
+    () => document.activeElement?.closest('affine-edgeless-note') != null
+  );
   await page.keyboard.type('see $$x^2$$ here');
   await expect(page.locator('affine-edgeless-note')).toContainText(
     'see $$x^2$$ here'

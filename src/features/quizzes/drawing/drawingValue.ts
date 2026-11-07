@@ -1,4 +1,5 @@
 import { createContext } from 'react';
+import { deleteLocalDrawingDraft } from '@/lib/localDb';
 import type { Answer, Answers } from '../grade';
 
 /** A drawing part's answer on this device, from its last Done: the board's
@@ -26,14 +27,27 @@ export const DrawingDraftScope = createContext<string | null>(null);
 export const drawingDraftKey = (scope: string, partId: string) =>
   `${scope}:${partId}`;
 
+/** A practice quiz's drafts: kept until Check sends their drawings. */
+export const quizDraftScope = (quizId: string) => `quiz:${quizId}`;
+
+/** Forgets the drafts of the drawings a check sent: they are on the server. */
+export function forgetDrawingDrafts(scope: string, answers: Answers) {
+  for (const [part, value] of Object.entries(answers))
+    if (isDrawingValue(value))
+      deleteLocalDrawingDraft(drawingDraftKey(scope, part)).catch(
+        () => undefined
+      );
+}
+
 /** Stores a drawing part's board with Done and returns its id, or with null
  * (Done on an emptied board) forgets it: an assignment's, whose attempt is on
  * the server from the start. Practice has none, so its drawings stay on the
- * device until Check sends them (Epo 2026-11-06). */
-export const DrawingUploader = createContext<
-  | ((partId: string, value: DrawingValue | null) => Promise<string | null>)
-  | null
->(null);
+ * device until Check sends them (Epo 2026-11-06). `withImage` says whether Done
+ * makes the marking image: an assignment marked by hand reads none (Q693). */
+export const DrawingUploader = createContext<{
+  store: (partId: string, value: DrawingValue | null) => Promise<string | null>;
+  withImage: boolean;
+} | null>(null);
 
 const DATA_URL_PREFIX = /^data:[^;,]+;base64,/;
 

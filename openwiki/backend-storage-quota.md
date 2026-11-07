@@ -83,6 +83,7 @@ Storage is charged once per logical row owned by a user:
 | Editor assets | `editor_assets.size_bytes` | `status = 'ready'` only       |
 | Materials     | `materials.size_bytes`     | always; set from content JSON |
 | An assignment's frozen questions | `assignments.frozen_bytes` | once published, to `frozen_by` |
+| Drawing answers | `drawings.board_bytes + image_bytes` | row exists, to the person attempting |
 | Trashed rows  | same as above              | until the 30-day purge        |
 | Chat Undo     | none                       | never: the browser keeps its payload, the server stores only the receipt (Epo 2026-10-21) |
 
@@ -264,6 +265,36 @@ those slots. The per-upload limit is 20 and is enforced server-side per request
 check the recipient plan's workspace-file cap. The workspace payload reports `fileCount` and
 `filesLimit`. Overflow is `files_limit_exceeded`; a too-large batch is
 `files_batch_exceeded`.
+
+### Drawing answers
+
+A drawing part's answer (migration 0156) is its saved board, gzipped, and a
+marking image kept only while its part waits on the AI. The person attempting
+pays, in practice and in assignments (Epo 2026-11-06), through the
+`drawings_storage_after` deltas; the board and image are counted blob
+references, so a replaced board, a dropped image and every cascade queue their
+objects for the reaper.
+
+- **Gate before the bucket.** An assignment's Done passes
+  `CheckAssignmentDrawing` (the attempt, the part and the payer's storage for
+  what the part adds over what it held) before any object is written, and the
+  save's own `gateStorageTx` decides again (Q693). A practice Check of a
+  drawing asks `AssertStorageRoom` for its boards and images before the model
+  is paid for (Q694): over the limit it is refused with
+  `storage_quota_exceeded`, no credits spent. Objects written before a refusal
+  that raced past the check are left to the report-only sweep, which covers
+  `drawings/`.
+- **The marking image.** Kept only until its part is marked: the AI's marking
+  landing (practice Check again, Mark with AI), a part marked by hand, or the
+  assignment switched to manual grading drops it. Under manual grading none is
+  made or written; a drawing saved so has no image, and Mark with AI leaves it
+  to staff (it reads as Mark by hand in Approve, Q695).
+- **Caps.** A board is at most `DrawingBoardBytes` (250 KiB) before gzip, an
+  image at most `DrawingImageBytes` (300 KiB) and 1,568 px on its longer side.
+  A drawn sample answer's board is a quiz `board` editor asset under the same
+  board cap (`editor_assets_size_check`, migration 0158).
+- **Seen and deleted.** Billing's breakdown shows them as Canvas; Files ›
+  Canvas lists the payer's marked drawings to delete.
 
 ## Counter model
 

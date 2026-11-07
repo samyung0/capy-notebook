@@ -161,6 +161,7 @@ export const GetAssignmentAttemptResponse = zod.object({
   "autoSubmitted": zod.boolean(),
   "correct": zod.number(),
   "deadlineAt": zod.iso.datetime({"offset":true}).optional(),
+  "drawingImages": zod.boolean(),
   "id": zod.string(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
@@ -199,13 +200,19 @@ export const SaveAssignmentAnswersResponse = zod.void()
 /**
  * @summary Forget a drawing part's stored drawing in a running attempt (Done on an emptied board)
  */
+export const deleteAssignmentDrawingPathIdMax = 64;
+
+
+export const deleteAssignmentDrawingPathIdRegExp = new RegExp('^[A-Za-z0-9_-]+$');
 export const deleteAssignmentDrawingPathPartIdMax = 128;
 
 
+export const deleteAssignmentDrawingPathPartIdRegExp = new RegExp('^[^/]+$');
+
 
 export const DeleteAssignmentDrawingParams = zod.object({
-  "id": zod.string(),
-  "partId": zod.string().max(deleteAssignmentDrawingPathPartIdMax)
+  "id": zod.string().max(deleteAssignmentDrawingPathIdMax).regex(deleteAssignmentDrawingPathIdRegExp),
+  "partId": zod.string().min(1).max(deleteAssignmentDrawingPathPartIdMax).regex(deleteAssignmentDrawingPathPartIdRegExp)
 })
 
 export const DeleteAssignmentDrawingResponse = zod.void()
@@ -214,13 +221,19 @@ export const DeleteAssignmentDrawingResponse = zod.void()
 /**
  * @summary Store a drawing part's board (and its marking image) for a running attempt
  */
+export const saveAssignmentDrawingPathIdMax = 64;
+
+
+export const saveAssignmentDrawingPathIdRegExp = new RegExp('^[A-Za-z0-9_-]+$');
 export const saveAssignmentDrawingPathPartIdMax = 128;
 
 
+export const saveAssignmentDrawingPathPartIdRegExp = new RegExp('^[^/]+$');
+
 
 export const SaveAssignmentDrawingParams = zod.object({
-  "id": zod.string(),
-  "partId": zod.string().max(saveAssignmentDrawingPathPartIdMax)
+  "id": zod.string().max(saveAssignmentDrawingPathIdMax).regex(saveAssignmentDrawingPathIdRegExp),
+  "partId": zod.string().min(1).max(saveAssignmentDrawingPathPartIdMax).regex(saveAssignmentDrawingPathPartIdRegExp)
 })
 
 export const saveAssignmentDrawingBodyBoardMax = 400000;
@@ -236,7 +249,7 @@ export const SaveAssignmentDrawingBody = zod.object({
 
 export const SaveAssignmentDrawingResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "id": zod.string().describe('The stored drawing; the part\'s answer is {"drawing": id}')
+  "id": zod.string().describe('The stored drawing; the part\'s answer is {drawing: id}')
 })
 
 
@@ -269,6 +282,7 @@ export const MarkAssignmentAnswerResponse = zod.object({
   "autoSubmitted": zod.boolean(),
   "correct": zod.number(),
   "deadlineAt": zod.iso.datetime({"offset":true}).optional(),
+  "drawingImages": zod.boolean(),
   "id": zod.string(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
@@ -308,6 +322,7 @@ export const SubmitAssignmentAttemptResponse = zod.object({
   "autoSubmitted": zod.boolean(),
   "correct": zod.number(),
   "deadlineAt": zod.iso.datetime({"offset":true}).optional(),
+  "drawingImages": zod.boolean(),
   "id": zod.string(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
@@ -699,6 +714,7 @@ export const GetAssignmentReportResponse = zod.object({
   "attemptId": zod.string(),
   "attemptNumber": zod.int(),
   "awarded": zod.number(),
+  "handMarking": zod.boolean(),
   "marks": zod.number(),
   "questionId": zod.string(),
   "userId": zod.string(),
@@ -826,6 +842,7 @@ export const StartAssignmentResponse = zod.object({
   "autoSubmitted": zod.boolean(),
   "correct": zod.number(),
   "deadlineAt": zod.iso.datetime({"offset":true}).optional(),
+  "drawingImages": zod.boolean(),
   "id": zod.string(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),

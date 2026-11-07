@@ -11,6 +11,7 @@ const { document, window } = parseHTML(
 Object.assign(globalThis, { document, IS_REACT_ACT_ENVIRONMENT: true, window });
 
 const start = vi.hoisted(() => vi.fn());
+const navigate = vi.hoisted(() => vi.fn());
 vi.mock('@/api/hooks', () => ({
   useSetAssignmentDone: () => ({ isPending: false, mutate: vi.fn() }),
   useStartAssignment: () => ({ isPending: false, mutate: start }),
@@ -19,7 +20,7 @@ vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: React.ReactNode }) => (
     <a href="/">{children}</a>
   ),
-  useNavigate: () => vi.fn(),
+  useNavigate: () => navigate,
 }));
 vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
 
@@ -52,5 +53,30 @@ it('leaves a way back and Start after a start that failed', async () => {
   );
   await act(async () => button?.click());
   expect(start).toHaveBeenCalledTimes(2);
+  act(() => root.unmount());
+});
+
+it('opens the attempt once the assignment reads it, though the start never called back', async () => {
+  start.mockReset();
+  navigate.mockReset();
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host);
+  await act(async () =>
+    root.render(<MemberAssignment assignment={assignment} />)
+  );
+  expect(start).toHaveBeenCalledTimes(1);
+  expect(navigate).not.toHaveBeenCalled();
+  const started = {
+    ...assignment,
+    mine: { runningAttemptId: 'at1' },
+  } as Assignment;
+  await act(async () => root.render(<MemberAssignment assignment={started} />));
+  expect(navigate).toHaveBeenCalledWith(
+    expect.objectContaining({
+      search: expect.objectContaining({ assignment: 'as1', attempt: 'at1' }),
+    })
+  );
+  expect(start).toHaveBeenCalledTimes(1);
   act(() => root.unmount());
 });

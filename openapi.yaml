@@ -501,6 +501,8 @@ components:
         awarded:
           format: double
           type: number
+        handMarking:
+          type: boolean
         marks:
           format: double
           type: number
@@ -519,6 +521,7 @@ components:
         - aiMarked
         - aiAwarded
         - aiWarning
+        - handMarking
         - awarded
         - marks
       type: object
@@ -559,6 +562,8 @@ components:
         deadlineAt:
           format: date-time
           type: string
+        drawingImages:
+          type: boolean
         id:
           type: string
         late:
@@ -628,6 +633,7 @@ components:
         - waitingMarks
         - waitingAnswers
         - showAnswers
+        - drawingImages
         - answers
         - questions
         - removedAssetIds
@@ -2746,7 +2752,7 @@ components:
           readOnly: true
           type: string
         id:
-          description: 'The stored drawing; the part''s answer is {"drawing": id}'
+          description: "The stored drawing; the part's answer is {drawing: id}"
           type: string
       required:
         - id
@@ -9020,12 +9026,16 @@ paths:
           name: id
           required: true
           schema:
+            maxLength: 64
+            pattern: ^[A-Za-z0-9_-]+$
             type: string
         - in: path
           name: partId
           required: true
           schema:
             maxLength: 128
+            minLength: 1
+            pattern: ^[^/]+$
             type: string
       responses:
         "204":
@@ -9046,12 +9056,16 @@ paths:
           name: id
           required: true
           schema:
+            maxLength: 64
+            pattern: ^[A-Za-z0-9_-]+$
             type: string
         - in: path
           name: partId
           required: true
           schema:
             maxLength: 128
+            minLength: 1
+            pattern: ^[^/]+$
             type: string
       requestBody:
         content:

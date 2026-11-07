@@ -1282,6 +1282,44 @@ Details live in [study-progress.md](study-progress.md).
 Sources: [study routes](../server/internal/httpapi/huma_study.go) and
 [study store](../server/internal/store/study.go).
 
+### Drawing answers
+
+A drawing part's answer is its saved board (and, while its part waits on the
+AI, a marking image), stored under `drawings/<attempt or user>/` and charged to
+the person attempting (see [study-progress.md](study-progress.md) and
+[backend-storage-quota.md](backend-storage-quota.md#drawing-answers)).
+
+- **Writing (assignment Done).** `PUT /api/assignment-attempts/{id}/drawings/{partId}`
+  writes nothing to the bucket until `CheckAssignmentDrawing` passes: the
+  caller's own running attempt, in a class they still belong to, the attempt's
+  time not run out, a drawing part of its frozen copy, and the caller's storage
+  for what the part adds (Q693). Another member's attempt, an unknown one or a
+  malformed id (the id names the bucket folder: at most 64 of `[A-Za-z0-9_-]`)
+  is refused first; the save checks it all again in its transaction. Marked by
+  hand, no marking image is made in the browser (`drawingImages` on the
+  attempt) or written. `DELETE` on the same path (Done on an emptied board)
+  takes the same checks.
+- **Writing (practice Check).** The boards a check sends are written under the
+  learner's own folder after marking, and only once the learner's storage has
+  room for them and their images (`AssertStorageRoom`, before any model is paid
+  for, Q694). A quick check of a quiz in a note keeps nothing.
+- **Reading.** `GET /api/drawings/{id}` (`ReadableDrawing`) opens a drawing for
+  whoever drew it, and an assignment's drawing for the class's owners and
+  editors while they are staff; another member, a teacher who left, an
+  outsider, and the owner over a member's practice drawing get 404. No shared
+  page reads a drawing.
+- **Marking.** A drawing's drawn sample answer image goes to the model only
+  when it is a ready, untrashed image of the quiz checked or of the
+  assignment's frozen copy; otherwise the part stays Not marked.
+- **Deleting.** A payer deletes their marked drawings from Files › Canvas
+  (`DELETE /api/drawings/{id}`, `DELETE /api/drawings`); one still waiting on
+  marking is not listed and not found. Drawings go with their assignment, with
+  a practice attempt's quiz when it is permanently deleted, and a leaver's
+  marked ones go as they leave.
+
+Sources: [drawing routes](../server/internal/httpapi/drawings.go) and
+[drawing store](../server/internal/store/drawings.go).
+
 ### Workspace chat, AI completion, and generation
 
 - Persisted streaming chat and chat history are open to any signed-in actor

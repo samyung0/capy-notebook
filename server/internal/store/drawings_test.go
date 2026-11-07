@@ -194,7 +194,7 @@ func TestAnEmptiedDrawingIsForgotten(t *testing.T) {
 	if _, err := f.s.SaveAssignmentDrawing(ctx, f.viewer, run.ID, "p4", board, nil, now); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.s.DeleteAssignmentDrawing(ctx, f.viewer, run.ID, "p4"); err != nil {
+	if err := f.s.DeleteAssignmentDrawing(ctx, f.viewer, run.ID, "p4", now); err != nil {
 		t.Fatal(err)
 	}
 	done, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.ID, map[string]any{}, now.Add(time.Minute))
@@ -203,5 +203,213 @@ func TestAnEmptiedDrawingIsForgotten(t *testing.T) {
 	}
 	if _, answered := done.Answers["p4"]; answered {
 		t.Fatalf("an emptied drawing was submitted: %v", done.Answers["p4"])
+	}
+}
+
+// drawingRun starts a member's attempt at a drawing assignment marked as marking
+// says, and saves a board (and an image) for its drawing part p4.
+func drawingRun(t *testing.T, f assignmentFixture, member, marking string, now time.Time) (Assignment, AssignmentAttempt) {
+	t.Helper()
+	ctx := context.Background()
+	form := f.form(t, now.Add(time.Hour))
+	form.Questions, form.Marking = drawingFrozen(t), marking
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return created, drawIn(t, f, created, member, now)
+}
+
+func drawIn(t *testing.T, f assignmentFixture, created Assignment, member string, now time.Time) AssignmentAttempt {
+	t.Helper()
+	ctx := context.Background()
+	run, err := f.s.StartAssignment(ctx, member, created.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	board := DrawingObject{Key: "drawings/" + run.ID + "/board.ydoc.gz", Bytes: 1000, Type: "application/gzip"}
+	image := &DrawingObject{Key: "drawings/" + run.ID + "/image.webp", Bytes: 500, Type: "image/webp"}
+	if _, err := f.s.SaveAssignmentDrawing(ctx, member, run.ID, "p4", board, image, now); err != nil {
+		t.Fatal(err)
+	}
+	return run
+}
+
+func keptImage(t *testing.T, f assignmentFixture, attemptID string) bool {
+	t.Helper()
+	held, err := f.s.AttemptDrawings(context.Background(), attemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return held["p4"].ImageKey != ""
+}
+
+// TestMarkingByHandOrSwitchingToManualDropsTheImage: a drawing marked by hand,
+// and every drawing of an assignment switched to manual grading, keep no marking
+// image (Epo 2026-11-06).
+func TestMarkingByHandOrSwitchingToManualDropsTheImage(t *testing.T) {
+	f := newAssignmentFixture(t, "drawing-image-drops")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	_, run := drawingRun(t, f, f.viewer, MarkingAIApprove, now)
+	if _, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.ID, map[string]any{}, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if !keptImage(t, f, run.ID) {
+		t.Fatal("a waiting drawing lost its image")
+	}
+	if _, err := f.s.MarkAssignmentAnswer(ctx, f.user, run.ID, AssignmentMark{
+		QuestionID: "q4", Parts: []AssignmentPartMark{{PartID: "p4", Items: []float64{1, 1}}},
+	}, now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if keptImage(t, f, run.ID) {
+		t.Fatal("a drawing marked by hand kept its image")
+	}
+
+	switched, other := drawingRun(t, f, f.other, MarkingAI, now)
+	form := f.form(t, now.Add(time.Hour))
+	form.Marking = MarkingManual
+	if _, err := f.s.UpdateAssignment(ctx, f.user, switched.ID, form, now); err != nil {
+		t.Fatal(err)
+	}
+	if keptImage(t, f, other.ID) {
+		t.Fatal("switching to manual grading kept a marking image")
+	}
+}
+
+// TestADrawingWithoutAnImageNeedsHandMarking (Epo 2026-11-07, Q695): saved under
+// manual grading, a drawing has no marking image; switched to the AI, Mark with
+// AI leaves it out and the report names it as needing hand marking, while a
+// drawing saved with its image goes to the AI.
+func TestADrawingWithoutAnImageNeedsHandMarking(t *testing.T) {
+	f := newAssignmentFixture(t, "drawing-hand-marking")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	created, run := drawingRun(t, f, f.viewer, MarkingManual, now)
+	if keptImage(t, f, run.ID) {
+		t.Fatal("manual grading kept a marking image")
+	}
+	form := f.form(t, now.Add(time.Hour))
+	form.Marking = MarkingAI
+	if _, err := f.s.UpdateAssignment(ctx, f.user, created.ID, form, now); err != nil {
+		t.Fatal(err)
+	}
+	withImage := drawIn(t, f, created, f.other, now)
+	for _, member := range []struct{ user, attempt string }{{f.viewer, run.ID}, {f.other, withImage.ID}} {
+		if _, err := f.s.SubmitAssignmentAttempt(ctx, member.user, member.attempt, map[string]any{}, now.Add(time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, _, answers, err := f.s.AnswersToMark(ctx, created.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(answers) != 1 || answers[0].AttemptID != withImage.ID || !answers[0].Drawing {
+		t.Fatalf("to mark = %+v, want the drawing with its image alone", answers)
+	}
+	report, err := f.s.GetAssignmentReport(ctx, f.user, created.ID, now.Add(2*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	hand := map[string]bool{}
+	for _, row := range report.Answers {
+		if row.QuestionID == "q4" {
+			hand[row.AttemptID] = row.HandMarking
+		}
+	}
+	if !hand[run.ID] || hand[withImage.ID] {
+		t.Fatalf("hand marking by attempt = %v", hand)
+	}
+}
+
+// TestDeletingADrawingChecksMembershipAndTime: Done on an emptied board forgets
+// a drawing only for a member still in the class, in an attempt still running.
+func TestDeletingADrawingChecksMembershipAndTime(t *testing.T) {
+	f := newAssignmentFixture(t, "drawing-delete-checks")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	created, run := drawingRun(t, f, f.viewer, MarkingAI, now)
+	held := func() int {
+		t.Helper()
+		drawings, err := f.s.AttemptDrawings(ctx, run.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(drawings)
+	}
+	if _, err := f.s.pool.Exec(ctx, `DELETE FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, f.ws.ID, f.viewer); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.DeleteAssignmentDrawing(ctx, f.viewer, run.ID, "p4", now); !errors.Is(err, ErrNotFound) || held() != 1 {
+		t.Fatalf("a member who left deleted their drawing: err %v, %d left", err, held())
+	}
+	if _, err := f.s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'viewer')`, f.ws.ID, f.viewer); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.pool.Exec(ctx, `UPDATE assignments SET closed_at=$2 WHERE id=$1`, created.ID, now.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.DeleteAssignmentDrawing(ctx, f.viewer, run.ID, "p4", now); !errors.Is(err, ErrAttemptFinished) || held() != 1 {
+		t.Fatalf("a closed attempt's drawing was deleted: err %v, %d left", err, held())
+	}
+}
+
+// TestReadableDrawingFollowsTheAssignmentStaff (security): a drawing opens for
+// whoever drew it and the class's owner and editors; another member, a teacher
+// who left, an outsider, and the owner over a member's practice drawing get
+// nothing.
+func TestReadableDrawingFollowsTheAssignmentStaff(t *testing.T) {
+	f := newAssignmentFixture(t, "drawing-readers")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	_, run := drawingRun(t, f, f.viewer, MarkingAI, now)
+	held, err := f.s.AttemptDrawings(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	drawing := held["p4"].ID
+	graded, given := gradeAttempt(frozenFixture(t), map[string]any{})
+	practice, err := f.s.CheckQuizQuestion(ctx, f.viewer, f.quiz.ID, QuizCheck{
+		Answers: given, Question: graded[0], Order: []string{"q1", "q2", "q3"}, Marks: map[string]float64{"q1": 1, "q2": 2, "q3": 3},
+		Drawings: map[string]QuizDrawing{"p1": {Board: DrawingObject{Key: "drawings/" + f.viewer + "/practice.ydoc.gz", Bytes: 100, Type: "application/gzip"}}},
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownPractice, err := f.s.AttemptDrawings(ctx, practice.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outsider := newBlobTestUser(t, f.s, "drawing-readers-outsider")
+	reads := func(user, id string) bool {
+		t.Helper()
+		_, err := f.s.ReadableDrawing(ctx, user, id)
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			t.Fatal(err)
+		}
+		return err == nil
+	}
+	for _, c := range []struct {
+		who, user, id string
+		want          bool
+	}{
+		{"the member who drew it", f.viewer, drawing, true},
+		{"the owner", f.user, drawing, true},
+		{"an editor", f.editor, drawing, true},
+		{"another member", f.other, drawing, false},
+		{"an outsider", outsider, drawing, false},
+		{"the member's own practice", f.viewer, ownPractice["p1"].ID, true},
+		{"the owner over a member's practice", f.user, ownPractice["p1"].ID, false},
+	} {
+		if got := reads(c.user, c.id); got != c.want {
+			t.Fatalf("%s reads it: %v, want %v", c.who, got, c.want)
+		}
+	}
+	if _, err := f.s.pool.Exec(ctx, `DELETE FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, f.ws.ID, f.editor); err != nil {
+		t.Fatal(err)
+	}
+	if reads(f.editor, drawing) {
+		t.Fatal("an editor who left still reads a member's drawing")
 	}
 }

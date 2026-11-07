@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // A drawing answer's stored objects (migration 0156): the board the member
@@ -68,76 +69,128 @@ func drawingPartIn(raw []byte, partID string) bool {
 	return false
 }
 
+// drawingAttempt is a member's running assignment attempt as a drawing reads it.
+type drawingAttempt struct {
+	frozen  []byte
+	marking string
+}
+
+// inDrawingAttempt runs fn on the caller's own running attempt in a class they
+// still belong to, as save and delete both need: anyone else's is ErrNotFound,
+// a submitted one ErrAttemptFinished, and one whose time ran out is submitted
+// first. commit false rolls back what fn did (a check before the bucket).
+func (s *Store) inDrawingAttempt(ctx context.Context, userID, attemptID string, now time.Time, commit bool, fn func(pgx.Tx, drawingAttempt) error) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var r attemptRow
+	var d drawingAttempt
+	err = tx.QueryRow(ctx, `SELECT a.workspace_id, t.submitted_at, t.deadline_at, a.closed_at, a.no_late, a.due_at, a.questions, a.marking
+		FROM attempts t JOIN assignments a ON a.id=t.assignment_id
+		WHERE t.id=$1 AND t.user_id=$2 FOR UPDATE OF t`, attemptID, userID).
+		Scan(&r.wsID, &r.submitted, &r.deadline, &r.closedAt, &r.noLate, &r.dueAt, &d.frozen, &d.marking)
+	if isNoRows(err) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := s.assignmentStaff(ctx, tx, userID, r.wsID); err != nil {
+		return err
+	}
+	if r.submitted != nil {
+		return ErrAttemptFinished
+	}
+	if r.expired(now) {
+		_ = tx.Rollback(ctx)
+		if err := s.finishAttemptIfRunning(ctx, attemptID, now); err != nil {
+			return err
+		}
+		return ErrAttemptFinished
+	}
+	if err := fn(tx, d); err != nil {
+		return err
+	}
+	if !commit {
+		return nil
+	}
+	return tx.Commit(ctx)
+}
+
+// CheckAssignmentDrawing refuses, before anything reaches the bucket, a drawing
+// that SaveAssignmentDrawing would refuse: not the caller's running attempt, not
+// a drawing part, or past the payer's storage (Epo 2026-11-07, Q693). Manual
+// says the assignment is marked by hand, so no marking image is written or
+// counted. Save checks all of it again.
+func (s *Store) CheckAssignmentDrawing(ctx context.Context, userID, attemptID, partID string, boardBytes, imageBytes int64, now time.Time) (manual bool, err error) {
+	err = s.inDrawingAttempt(ctx, userID, attemptID, now, false, func(tx pgx.Tx, d drawingAttempt) error {
+		if !drawingPartIn(d.frozen, partID) {
+			return ErrNotDrawingPart
+		}
+		manual = d.marking == MarkingManual
+		adds := boardBytes
+		if !manual {
+			adds += imageBytes
+		}
+		var held int64
+		err := tx.QueryRow(ctx, `SELECT board_bytes + image_bytes FROM drawings
+			WHERE attempt_id=$1 AND part_id=$2`, attemptID, partID).Scan(&held)
+		if err != nil && !isNoRows(err) {
+			return err
+		}
+		if adds <= held {
+			return nil
+		}
+		return s.gateStorageTx(ctx, tx, userID, adds-held)
+	})
+	return manual, err
+}
+
 // SaveAssignmentDrawing stores the board (and the marking image, when the
 // assignment's marking uses the AI) a member sent with Done for one part of
 // their running attempt, replacing what that part held. The person attempting
 // pays (Epo 2026-11-06): the growth passes their storage gate. The objects are
-// already in the bucket; a refusal leaves them to the orphan sweep.
+// already in the bucket, after CheckAssignmentDrawing; a refusal here (a race)
+// leaves them to the orphan sweep.
 func (s *Store) SaveAssignmentDrawing(ctx context.Context, userID, attemptID, partID string, board DrawingObject, image *DrawingObject, now time.Time) (Drawing, error) {
 	var saved Drawing
-	expired := false
-	err := s.inTx(ctx, func(tx pgx.Tx) error {
-		var r attemptRow
-		var marking string
-		err := tx.QueryRow(ctx, `SELECT a.workspace_id, t.submitted_at, t.deadline_at, a.closed_at, a.no_late, a.due_at, a.questions, a.marking
-			FROM attempts t JOIN assignments a ON a.id=t.assignment_id
-			WHERE t.id=$1 AND t.user_id=$2 FOR UPDATE OF t`, attemptID, userID).
-			Scan(&r.wsID, &r.submitted, &r.deadline, &r.closedAt, &r.noLate, &r.dueAt, &r.frozen, &marking)
-		if isNoRows(err) {
-			return ErrNotFound
-		}
-		if err != nil {
-			return err
-		}
-		if _, err := s.assignmentStaff(ctx, tx, userID, r.wsID); err != nil {
-			return err
-		}
-		if r.submitted != nil {
-			return ErrAttemptFinished
-		}
-		if r.expired(now) {
-			expired = true
-			return nil
-		}
-		if !drawingPartIn(r.frozen, partID) {
+	err := s.inDrawingAttempt(ctx, userID, attemptID, now, true, func(tx pgx.Tx, d drawingAttempt) error {
+		if !drawingPartIn(d.frozen, partID) {
 			return ErrNotDrawingPart
 		}
 		// Marked by hand, nothing reads a marking image: none is kept.
-		if marking == MarkingManual {
+		if d.marking == MarkingManual {
 			image = nil
 		}
+		var err error
 		saved, err = s.putDrawingTx(ctx, tx, userID, attemptID, partID, board, image)
 		return err
 	})
-	if err == nil && expired {
-		if err := s.finishAttemptIfRunning(ctx, attemptID, now); err != nil {
-			return Drawing{}, err
-		}
-		return Drawing{}, ErrAttemptFinished
-	}
 	return saved, err
 }
 
 // DeleteAssignmentDrawing forgets the drawing of one part of the member's
 // running attempt, as Done on an emptied board leaves the part unanswered: it is
 // neither submitted nor charged any longer. A part holding none is no error.
-func (s *Store) DeleteAssignmentDrawing(ctx context.Context, userID, attemptID, partID string) error {
-	return s.inTx(ctx, func(tx pgx.Tx) error {
-		var submitted *time.Time
-		err := tx.QueryRow(ctx, `SELECT submitted_at FROM attempts
-			WHERE id=$1 AND user_id=$2 AND assignment_id IS NOT NULL FOR UPDATE`, attemptID, userID).Scan(&submitted)
-		if isNoRows(err) {
-			return ErrNotFound
-		}
-		if err != nil {
-			return err
-		}
-		if submitted != nil {
-			return ErrAttemptFinished
-		}
-		_, err = tx.Exec(ctx, `DELETE FROM drawings WHERE attempt_id=$1 AND part_id=$2`, attemptID, partID)
+func (s *Store) DeleteAssignmentDrawing(ctx context.Context, userID, attemptID, partID string, now time.Time) error {
+	return s.inDrawingAttempt(ctx, userID, attemptID, now, true, func(tx pgx.Tx, _ drawingAttempt) error {
+		_, err := tx.Exec(ctx, `DELETE FROM drawings WHERE attempt_id=$1 AND part_id=$2`, attemptID, partID)
 		return err
 	})
+}
+
+// AssertStorageRoom checks, and rolls back, that userID's storage takes
+// requested more bytes: a practice check of a drawing asks before it pays for
+// marking (Epo 2026-11-07, Q694). The write's own gate still decides.
+func (s *Store) AssertStorageRoom(ctx context.Context, userID string, requested int64) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	return s.gateStorageTx(ctx, tx, userID, requested)
 }
 
 // putDrawingTx upserts the part's drawing after the payer's gate passes for
@@ -197,11 +250,27 @@ func attemptDrawingsTx(ctx context.Context, q rowsQueryer, attemptID string) (ma
 // their AI marking has landed (Epo 2026-11-06): nothing marks them again, and
 // the board stays.
 func (s *Store) DropDrawingImages(ctx context.Context, attemptID string, partIDs []string) error {
+	return dropDrawingImagesTx(ctx, s.pool, attemptID, partIDs)
+}
+
+type execer interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+func dropDrawingImagesTx(ctx context.Context, q execer, attemptID string, partIDs []string) error {
 	if len(partIDs) == 0 {
 		return nil
 	}
-	_, err := s.pool.Exec(ctx, `UPDATE drawings SET image_key=NULL, image_type=NULL, image_bytes=0, updated_at=now()
+	_, err := q.Exec(ctx, `UPDATE drawings SET image_key=NULL, image_type=NULL, image_bytes=0, updated_at=now()
 		WHERE attempt_id=$1 AND part_id = ANY($2) AND image_key IS NOT NULL`, attemptID, partIDs)
+	return err
+}
+
+// dropAssignmentDrawingImagesTx forgets every marking image of an assignment's
+// attempts once it is marked by hand: nothing marks from them (Epo 2026-11-06).
+func dropAssignmentDrawingImagesTx(ctx context.Context, tx pgx.Tx, assignmentID string) error {
+	_, err := tx.Exec(ctx, `UPDATE drawings d SET image_key=NULL, image_type=NULL, image_bytes=0, updated_at=now()
+		FROM attempts t WHERE t.id=d.attempt_id AND t.assignment_id=$1 AND d.image_key IS NOT NULL`, assignmentID)
 	return err
 }
 

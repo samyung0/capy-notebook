@@ -25,13 +25,21 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
-// gradedImages counts grading calls that carried a drawing's image.
-var gradedImages atomic.Int32
+// gradedImages counts grading calls that carried a drawing's image, and
+// gradedSamples those that carried a drawn sample answer's.
+var gradedImages, gradedSamples atomic.Int32
 
 // openGradingAPI serves the API with a stub grading model that gives every item
 // the same choice ("zero", "partial" or "full") and a stub Jev for the author's
 // computation check. The count covers both: every model call.
 func openGradingAPI(t *testing.T, choice string) (http.Handler, *store.Store, *atomic.Int32) {
+	t.Helper()
+	h, st, calls, _ := openGradingAPIWithBlob(t, choice)
+	return h, st, calls
+}
+
+// openGradingAPIWithBlob is openGradingAPI with its bucket, for what drawings put there.
+func openGradingAPIWithBlob(t *testing.T, choice string) (http.Handler, *store.Store, *atomic.Int32, *blob.Memory) {
 	t.Helper()
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -54,8 +62,12 @@ func openGradingAPI(t *testing.T, choice string) (http.Handler, *store.Store, *a
 			Question string `json:"question"`
 			Items    []any  `json:"items"`
 			Image    string `json:"image"`
+			Sample   string `json:"sampleImage"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body.Sample != "" {
+			gradedSamples.Add(1)
+		}
 		// Counted before a failure, so a call that fails still shows what it sent.
 		if body.Image != "" {
 			gradedImages.Add(1)
@@ -95,8 +107,9 @@ func openGradingAPI(t *testing.T, choice string) (http.Handler, *store.Store, *a
 	if choice == "no-pipeline" {
 		client = nil
 	}
-	h := httpapi.New(st, blob.NewMemory(), client, nil, "docling", cfg)
-	return h, st, &calls
+	mem := blob.NewMemory()
+	h := httpapi.New(st, mem, client, nil, "docling", cfg)
+	return h, st, &calls, mem
 }
 
 func gradingQuiz(t *testing.T, h http.Handler, privacy string) string {

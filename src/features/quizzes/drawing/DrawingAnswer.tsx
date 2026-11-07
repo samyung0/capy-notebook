@@ -131,7 +131,8 @@ export function DrawingAnswer({
             pinned={pinned}
             readOnly={!taking}
             saved={board ?? undefined}
-            store={upload ? (next) => upload(partId, next) : undefined}
+            store={upload ? (next) => upload.store(partId, next) : undefined}
+            withImage={upload?.withImage ?? true}
           />
         </Suspense>
       )}

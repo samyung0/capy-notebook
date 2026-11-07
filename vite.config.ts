@@ -15,10 +15,11 @@ import { mathliveFonts } from './vite-mathlive';
 const BETTEROFFICE_DOCX_SUBPATH = /^@betteroffice\/docx\/(.+)$/;
 /** Modules the share renderer imports but never runs: components load them
  * in effects, on click or behind a context the share page fills itself
- * (AppEmbed). Its server build gets an empty module instead, keeping the site
- * Worker small. Matched on the import as written, relative or not. */
+ * (AppEmbed), or open them on a press (the drawing board). Its server build
+ * gets an empty module instead, keeping the site Worker small. Matched on the
+ * import as written, relative or not. */
 const BROWSER_ONLY =
-  /^(jsxgraph|katex|mathlive|mermaid)$|\/(AppEmbed|editorAssets|HtmlEmbedSourceDialog|MediaPreview|mermaidPresets)$/;
+  /^(jsxgraph|katex|mathlive|mermaid)$|\/(AppEmbed|DrawingBoardScreen|editorAssets|HtmlEmbedSourceDialog|MediaPreview|mermaidPresets)$/;
 /** The markdown parser's entity decoder without a DOM. Under the `browser`
  * condition it decodes through a DOM element, which the markdown preview
  * worker (files/MarkdownPreview.worker.ts) does not have; Node's resolution

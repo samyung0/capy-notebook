@@ -165,8 +165,11 @@ test('a bookmark naming the old workspace opens the file in its own, replacing h
     page,
     `/workspaces/ws_scenarios?file=${FILE}&page=2&mode=edit&fullscreen=true`
   );
+  // The file's read, then the held workspace read (1.5 s): first in a shard,
+  // on a cold server, that took 5.4 s.
   await expect(page).toHaveURL(
-    new RegExp(`/workspaces/${MOVED_TO}\\?file=${FILE}(&panel=\\w+)?$`)
+    new RegExp(`/workspaces/${MOVED_TO}\\?file=${FILE}(&panel=\\w+)?$`),
+    { timeout: 15_000 }
   );
   await expect(
     page.getByText(MOVED_TO_NAME, { exact: true }).first()
