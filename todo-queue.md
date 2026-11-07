@@ -7,7 +7,7 @@ plan that holds its detail. Change this file whenever something starts, lands or
 
 Windows lands and deploys these, one landing per deploy; Mac sessions review and push feature
 branches (Epo, 2026-11-06, after the account switch). Main is 6159c0f25: ribbon (protocol 27), the
-quiz Undo fix 779c114fa, canvas-enrich to 2b1fc744f. On the PC's opening train: `claude/quiz-image-back` 43b17c1ea and `claude/board-connector-load` 236859139. Waiting on Windows: canvas-enrich to 83150e8f0 (speed-ups e87d5f85b, bf336ec54; `stats().span`; the answer-area option) and `claude/drawing-answers-flow-f90c14` b37678ede, which holds canvas-enrich 83150e8f0 and merges clean with main 5cf86d355.
+quiz Undo fix 779c114fa, canvas-enrich to 2b1fc744f. On the PC's opening train: `claude/quiz-image-back` 43b17c1ea and `claude/board-connector-load` 236859139. Waiting on Windows: canvas-enrich to 83150e8f0 (speed-ups e87d5f85b, bf336ec54; `stats().span`; the answer-area option) and `claude/drawing-answers-flow-f90c14` b37678ede (the PC is landing it with review fixes Q693–Q695 A; the branch is frozen, new work branches from main after it lands), which holds canvas-enrich 83150e8f0 and merges clean with main 5cf86d355.
 
 | Item | Where it is | Waiting on |
 |---|---|---|
