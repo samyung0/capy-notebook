@@ -22,6 +22,7 @@ export function mountDrawingBoard(
     bytes: number;
     canvas: string[];
     marks: number;
+    span: number;
   };
   toImage: () => Promise<File>;
   unmount: () => void;
