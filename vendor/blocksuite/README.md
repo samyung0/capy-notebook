@@ -287,6 +287,11 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
     block): `createIcon` takes the icon itself instead of its name. A lookup by name kept
     every icon of `@blocksuite/icons/lit` in the build wherever the icons load, which was
     the board's chunk (about 90 KB gzipped more; Epo 2026-11-07, fix 7).
+28. Dispatcher off on demand (`framework/std` `event/dispatcher.ts`, marked `Capy (local
+    change 28)`): a public `deactivate()`. A board kept mounted out of sight
+    (`putAway()` in `drawingBoard.ts`) calls it, since none of the events that turn the
+    dispatcher off fire when the board is hidden, and its document-level key and
+    clipboard handlers would otherwise still run.
 
 The specs named in local changes 6 to 9 are on the `blocksuite-notes` branch, with the
 note editor they pin.

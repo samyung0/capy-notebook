@@ -505,6 +505,14 @@ export function mountDrawingBoard(
   };
 
   return {
+    /** Out of sight but kept mounted: an open card closes, nothing stays selected,
+     * and the page's keys and pastes no longer reach it. */
+    putAway: () => {
+      finishPlot();
+      gfx.selection.clear();
+      std.selection.clear();
+      std.event.deactivate();
+    },
     /** The board to store, with no undo history: a fresh document keeps only what's
      * on the board (200 plane clicks were 606 KB live, 7.5 KB this way), rounded
      * (roundPlaces). */

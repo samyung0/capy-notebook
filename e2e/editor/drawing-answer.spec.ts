@@ -209,3 +209,83 @@ for (const { screen, width } of SCREENS) {
     await expect(page.getByText('1 / 2').first()).toBeVisible();
   });
 }
+
+type BoardRoot = HTMLElement & {
+  gfx: {
+    layer: { blocks: unknown[]; canvasElements: { type: string }[] };
+    selection: { selectedElements: unknown[] };
+  };
+};
+
+test('a board put away after Done takes none of the page keys or pastes', async ({
+  page,
+}) => {
+  test.slow();
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await page.goto('/quizzes/qz_2/attempt');
+  await hideMockPanel(page);
+  const question = await openQuestion(page);
+  await drawAndDone(page, question);
+
+  // Edit drawing, select the stroke without changing it, and Done: the board is put
+  // away out of sight, with nothing kept selected (putAway) and reopened from what
+  // Done saved.
+  const board = page.locator('.answer-board');
+  await question.getByRole('button', { name: m.drawing_answer_edit() }).click();
+  await expect(board.locator('edgeless-pen-tool-button').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await page.keyboard.press('v');
+  await page.mouse.click(1280 * 0.51, 800 * 0.468);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            document.querySelector(
+              '.answer-board affine-edgeless-root'
+            ) as BoardRoot
+          ).gfx.selection.selectedElements.length
+      )
+    )
+    .toBe(1);
+  await board
+    .getByRole('button', { exact: true, name: m.drawing_board_done() })
+    .first()
+    .click();
+  await expect(board).toBeHidden({ timeout: 30_000 });
+
+  // Another answer on the page takes typing, Backspace and a paste.
+  await page.evaluate(() => {
+    const other = document.createElement('textarea');
+    other.id = 'other-answer';
+    document.body.append(other);
+  });
+  const other = page.locator('#other-answer');
+  await other.click();
+  await page.keyboard.type('ab');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Delete');
+  await other.evaluate((element) => {
+    const data = new DataTransfer();
+    data.setData('text/plain', 'pasted');
+    element.dispatchEvent(
+      new ClipboardEvent('paste', { bubbles: true, clipboardData: data })
+    );
+  });
+  await expect(other).toHaveValue('a');
+  // The drawing is as it was: its stroke, and nothing pasted onto it.
+  expect(
+    await page.evaluate(() => {
+      const { layer } = (
+        document.querySelector(
+          '.answer-board affine-edgeless-root'
+        ) as BoardRoot
+      ).gfx;
+      return {
+        blocks: layer.blocks.length,
+        canvas: layer.canvasElements.map((element) => element.type),
+      };
+    })
+  ).toEqual({ blocks: 0, canvas: ['brush'] });
+});

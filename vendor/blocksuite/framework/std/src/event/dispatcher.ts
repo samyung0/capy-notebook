@@ -330,6 +330,12 @@ export class UIEventDispatcher extends LifeCycleWatcher {
     );
   }
 
+  /** Capy (local change 28): a board put away out of sight takes no more keys or
+   * pastes; none of the events that turn it off fire when it's hidden. */
+  deactivate() {
+    this._setActive(false);
+  }
+
   private _setActive(active: boolean) {
     if (active) {
       if (UIEventDispatcher._activeDispatcher !== this) {

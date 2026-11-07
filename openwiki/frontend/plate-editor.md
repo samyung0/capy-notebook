@@ -4390,7 +4390,9 @@ answer field (`DrawnSampleField`) shows, `useBoardAhead` in
 `quizzes/drawing/boardPrefetch.tsx` fetches and evaluates the module in idle time
 (within a second), then mounts that part's `DrawingBoardScreen` with `hidden`: out of
 sight, `inert`, and no time-limit Done. Draw only shows it, and Done or Close puts it
-away. One board is mounted ahead per page, held by the first drawing part that shows
+away: `putAway()` closes an open card, clears the selection and turns off BlockSuite's
+event dispatcher (local change 28), whose key and clipboard handlers sit on the
+document. Out of sight, a board runs no frames or resize callbacks. One board is mounted ahead per page, held by the first drawing part that shows
 until it leaves; other parts mount theirs on Draw, with the module already there. A
 board that can't open says so when shown. A first mount took 240-430 ms at 4x CPU on a
 Mac (about 1 s on the CI runner) and showing one mounted ahead about 12 ms; a mounted

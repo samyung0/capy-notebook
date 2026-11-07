@@ -14,8 +14,10 @@ const { document, window } = parseHTML(
 Object.assign(globalThis, { document, IS_REACT_ACT_ENVIRONMENT: true, window });
 
 const toImage = vi.hoisted(() => vi.fn(() => Promise.reject(new Error('x'))));
+const putAway = vi.hoisted(() => vi.fn());
 vi.mock('@/features/blocksuite/drawingBoard', () => ({
   mountDrawingBoard: () => ({
+    putAway,
     save: () => ({ bytes: 100, doc: 'AA==' }),
     snapshot: () => 'AA==',
     stats: () => ({
@@ -196,5 +198,10 @@ it('a board mounted ahead is out of sight and takes no time-limit Done until sho
   expect(board.hasAttribute('inert')).toBe(false);
   await act(async () => finishOpenDrawing());
   expect(onDone).toHaveBeenCalledOnce();
+
+  // Put away again, it keeps no selection and takes no more keys.
+  putAway.mockClear();
+  await act(async () => root.render(screen(true)));
+  expect(putAway).toHaveBeenCalledOnce();
   await act(async () => root.unmount());
 });

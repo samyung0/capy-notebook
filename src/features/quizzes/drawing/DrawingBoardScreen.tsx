@@ -240,9 +240,11 @@ export default function DrawingBoardScreen({
     if (hidden || readOnly || !onDone) return;
     return holdOpenDrawing(() => latestFinish.current(true));
   }, [hidden, onDone, readOnly]);
-  // A wide-board question left open when the board was put away isn't kept.
+  // Put away, the board keeps no selection or keys, and no wide-board question.
   useEffect(() => {
-    if (hidden) setWide(false);
+    if (!hidden) return;
+    setWide(false);
+    board.current?.putAway();
   }, [hidden]);
 
   const doneButton = (ref?: React.Ref<HTMLButtonElement>) => (

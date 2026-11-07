@@ -18,6 +18,7 @@ export function mountDrawingBoard(
 ): {
   save: () => { bytes: number; doc: string };
   snapshot: () => string;
+  putAway: () => void;
   stats: () => {
     blocks: string[];
     bytes: number;
