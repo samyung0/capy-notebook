@@ -227,6 +227,21 @@ grid canvas is cleared for a frame, `window.__xlsxPaints`), the long tasks up
 to that paint, and `longestTask`, since the editor's workbook worker paints
 after the frame the apply returned in.
 
+PPTX first applies one edit on its own and reports the main thread's busy
+time after it (`busyAfterOneEdit`, report-only, Q692), which `toFrame`
+misses: after that frame the editor decodes and recolours the slides'
+pictures again (~800 ms on `jp_llm2.pptx` at the 0.5.1 pin against ~290 on
+the old one, harness `2026-11-06-office-track/office-baseline/REPORT.md`). A
+Chrome trace (`disabled-by-default-devtools.timeline` and
+`blink.user_timing`) runs for 8 s from the edit; a listener added after the
+runtime's marks the receiving task. `busyMs` sums the renderer main thread's
+tasks (DevTools' `RunTask`, all sizes: on that baseline trace the long tasks
+alone were about 340 of its ~810 ms) from that task until the thread is idle,
+no task of 1 ms or more for 500 ms (an untouched open editor runs only
+sub-millisecond timers); `settleMs` is the wall time to that point,
+`longestTaskMs` and `tasks` describe the stretch, and `idle: false` means the
+trace ended first. The ten edits follow it.
+
 XLSX has three more report-only cases. `large paste and row insert` posts a
 peer's 8,000-cell paste (1,000 rows by 8 columns from the fixture's cell) and
 row insert (a whole recalculation) straight to the runtime as host updates;
@@ -244,33 +259,41 @@ in its cell, and reports the typing span and the long tasks meanwhile.
 (`gen_large_xlsx.py 1 50000 values`, seeded with the load-test files) in Edit
 and scrolls it 60 and 600 px a frame for 3 s: grid paints and animation
 frames per second, the longest gap between paints, the long tasks, and the
-heap with the workers. The typing cases report the keystroke p95 and, for
+heap with the workers. Its scrolling is gated by a fixed ceiling
+(`SCROLL_BUDGET`, Q692) instead of 1.3x a median, whose spread was too wide
+(the slow run's longest gap 31 to 60 ms over three PC runs on 2026-11-07):
+both runs fail on a paint gap
+over 100 ms (six frames) or fewer than 50 paints per second. Its open and View
+to Edit stay report-only. The typing cases report the keystroke p95 and, for
 XLSX, Enter to the painted grid (`enterToPaintP50Ms`, `enterToPaintP95Ms`).
 
 It runs unthrottled: CDP's CPU throttle reaches neither the runtime frame nor
 the engine workers. Every file fails on unpainted keys, typing that sends no
 edit to the room, a viewer `ready` without timings, a worker fallback, or a
-missed budget (open, View to Edit, key p50 and p90 per fixture). The spec
+missed budget (open, View to Edit, key p50 and p90 per fixture); the
+50,000-row sheet fails on its scroll ceiling. The spec
 keeps the medians (`MEDIANS`) and derives each budget (`budgetOf`): 1.3x the
 median, rounded up to 5 ms below a second and 50 ms above, and no keystroke
 budget below `KEY_BUDGET_FLOOR_MS` (30 ms), since a one-frame wobble fails
-anything smaller. The medians come from three runs of the `office` job below,
-all on 2026-10-04:
+anything smaller. The medians come from three runs of the `office` job below
+on 97e63a68a, 2026-11-07 (Q692, refreshed after the 0.5.1 pin and the ribbon):
+42323528888, 42325355691 and 42325364585, one each on AMD EPYC 7763, AMD EPYC
+9V45 and Intel Xeon 8370C runners. The EPYC 9V45 run was 30-40% faster on
+every figure, so the medians are mostly the other two runs'. Per fixture, the
+three runs and their median (ms):
 
-- DOCX: runs 37174928433, 37174944257 and 37174959817 (every metric within
-  3% of its median).
-- XLSX and PPTX View to Edit and keys: runs 37197306625, 37197311546 and
-  37197316994 on 15136468, all three on AMD EPYC 7763 runners. Their spread
-  was within 8% of the median except the key timings of a few milliseconds
-  (p50 11 to 14 ms, up to 18% apart), which the floor covers.
-- XLSX and PPTX open: runs 37200395852, 37200390235 and 37200383976 on
-  253762ea (one EPYC 9V45, two EPYC 7763), the first runs since their
-  viewers' `ready` moved to after the first paint. Against the earlier
-  medians, open moved +2% for course-guide.xlsx, -2% for
-  large-gradebook.xlsx, +5% for lecture.pptx and +26% for jp_llm2.pptx, whose
-  first slide's pictures now count (5,728 against 4,530 ms). The other XLSX
-  and PPTX metrics of those runs stayed within 80% of their budgets, so their
-  medians are unchanged.
+| Fixture | Open | View to Edit | Key p50 | Key p90 |
+|---|---|---|---|---|
+| exchange-plan.docx | 4211/3093/4213 -> 4211 | 3525/2207/3460 -> 3460 | 35/23/35 -> 35 | 44/32/43 -> 43 |
+| long-handbook.docx | 5754/3935/5282 -> 5282 | 5085/3143/4924 -> 4924 | 165/104/163 -> 163 | 184/122/187 -> 184 |
+| lecture.pptx | 2266/2015/1925 -> 2015 | 996/702/982 -> 982 | 14/8/16 -> 14 | 17/10/17 -> 17 |
+| jp_llm2.pptx | 4455/3011/4184 -> 4184 | 3093/1898/2909 -> 2909 | 65/38/62 -> 62 | 69/40/69 -> 69 |
+| course-guide.xlsx | 2015/1832/1856 -> 1856 | 1057/763/1044 -> 1044 | 5/3/6 -> 5 | 10/6/11 -> 10 |
+| large-gradebook.xlsx | 2850/2567/2753 -> 2753 | 3237/2077/3058 -> 3058 | 6/3/6 -> 6 | 10/8/12 -> 10 |
+
+The bench's earlier medians (2026-10-04, before the 0.5.1 pin) are in its
+history; the PC baseline the second BetterOffice sync is compared against is
+harness 2026-11-06-office-track/office-baseline/REPORT.md.
 
 Heap figures stay report-only: they go to the results JSON (`budget.heap`,
 and `budget: "report-only"` in the heap and co-editor cases), the job summary

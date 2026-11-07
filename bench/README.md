@@ -75,14 +75,19 @@ Edit steps skip the workers, whose read forces a GC). A co-editor case
 applies ten remote edits from a second peer in the open editor and reports,
 per edit, the wait before the frame handles it, the frame's synchronous apply
 (DOCX: only the hand-off to its engine worker) and the time to the next
-frame (a painted DOCX page; the next animation frame for XLSX and PPTX). It
-also reports the heap over two full
+frame (a painted DOCX page; the next animation frame for XLSX and PPTX). For
+PPTX it first applies one edit alone and reports the main thread's busy time
+until it is idle again (`busyAfterOneEdit`, from a Chrome trace), which the
+next frame misses. It also reports the heap over two full
 view-mode passes and over five view-mode opens and closes, and records the
 runner's CPU model in every result. It
 fails on unpainted keys, typing that reaches no edit, a remote edit that never
-reaches its frame or errors, a fallback to the main-thread engine, or a missed budget
-(from three CI runs per format); the end-of-file keys, the co-editor timings
-and the heap figures are report-only until a ceiling is defined. It runs as
+reaches its frame or errors, a fallback to the main-thread engine, a missed budget
+(from three CI runs per format), or scrolling a generated 50,000-row sheet
+(`rows-50k.xlsx`) over a fixed ceiling (a paint gap over 100 ms or under 50
+paints/s, slow or fast); the
+end-of-file keys, the co-editor timings, the PPTX busy time and the heap
+figures are report-only. It runs as
 the `office` job of the same `Performance` workflow, on dispatch only.
 
 The Office size ladder (`editor/scripts/gen_office_ladder.py`) generates
