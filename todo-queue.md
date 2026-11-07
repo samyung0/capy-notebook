@@ -7,7 +7,7 @@ plan that holds its detail. Change this file whenever something starts, lands or
 
 Windows lands and deploys these, one landing per deploy; Mac sessions review and push feature
 branches (Epo, 2026-11-06, after the account switch). Main is 6159c0f25: ribbon (protocol 27), the
-quiz Undo fix 779c114fa, canvas-enrich to 2b1fc744f. On the PC's opening train: `claude/quiz-image-back` 43b17c1ea and `claude/board-connector-load` 236859139. Waiting on Windows: canvas-enrich to 83150e8f0 (speed-ups e87d5f85b, bf336ec54; `stats().span`; the answer-area option) and `claude/drawing-answers-flow-f90c14` b37678ede (the PC is landing it with review fixes Q693–Q695 A; the branch is frozen, new work branches from main after it lands), which holds canvas-enrich 83150e8f0 and merges clean with main 5cf86d355.
+quiz Undo fix 779c114fa, canvas-enrich to 2b1fc744f. On the PC's opening train: `claude/quiz-image-back` 43b17c1ea and `claude/board-connector-load` 236859139. Waiting on Windows: `claude/board-pen-fixes` 7d3d4d627 (only test-catalog.md conflicts with main 5815ced56). Drawing answers (with canvas-enrich to 83150e8f0) is on main as f63bef786 plus the PC's review fixes Q693–Q695; new work branches from main.
 
 | Item | Where it is | Waiting on |
 |---|---|---|
@@ -22,7 +22,7 @@ quiz Undo fix 779c114fa, canvas-enrich to 2b1fc744f. On the PC's opening train: 
 | Quiz's one layout in view, edit, study and assignments (A, S1, Epo 2026-11-06), add button aligned, image links shared in memory (Q678 A), number strip and no header when taking an assignment on a phone (Q679 B) | On `main` (369d457f6) | Done |
 | Quiz Undo reverting the answer key too (empty steps of the other document) | On `main` 6159c0f25 (779c114fa) | Done |
 | UAT note journey's `quizImageOnPick` (note.spec.ts:167): Back from a block's editor lost its toolbar to the dialog's focus trap, near-constant after the quiz layout | `claude/quiz-image-back` 43b17c1ea, 8 of 8 mock repro runs pass | Windows' merge, UAT run |
-| Pen strokes keep their first points and leave no dot when they close near the start (Epo 2026-11-07; BlockSuite local change 25 in `framework/std` pointer.ts, so every drag handler sees the replayed early moves) | `claude/board-pen-fixes` 7d3d4d627, from canvas-enrich 83150e8f0; merges clean onto drawing answers; board spec 21 of 21 per canvas-enrich | Windows, after drawing answers |
+| Pen strokes keep their first points and leave no dot when they close near the start (Epo 2026-11-07; BlockSuite local change 25 in `framework/std` pointer.ts, so every drag handler sees the replayed early moves) | `claude/board-pen-fixes` 7d3d4d627, from canvas-enrich 83150e8f0; merges clean onto drawing answers; board spec 21 of 21 per canvas-enrich | Windows (asked 2026-11-07, after drawing answers landed) |
 | A saved board with a connector or group couldn't reopen (`checkSavedBoard` wanted a stored place, which BlockSuite never stores for either) | `claude/board-connector-load` 236859139, from main e37508bb8; drawing-board spec 17 passed | Windows' merge |
 | bench:canvas (Q686 A): gated blank open at 1x, typical board's open, typing, pen, pan and zoom at 4x; warm opens, large board and bytes report-only | On `main` b4a2307d2, calibrated (runs 42252998330, 42253016137, 42253034659): budgets blank 1050, typical open 3800, pan 60, pen 45, typing 30, zoom 100 ms | Done |
 | Vendored BlockSuite, dev routes only | On `main` c69c01992 | Done |
