@@ -4442,6 +4442,12 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   onChange })`. Every answer starts on the same plain board (Epo 2026-11-06 dropped
   per-question backgrounds); the dev pages pass `plane: true` for a plane card to play
   with.
+  - `answerArea: { label }` draws a dashed 1,920 × 1,200 box at the board's origin with
+    the label in a black chip on its top left corner (Epo 2026-11-07, W3/W4), on the
+    layer under the strokes, the same size on screen at every zoom, and fits the first
+    view to it and what's drawn. It's only on screen: the image, `save()`, `stats().span`
+    and previews leave it out, and a read-only board draws none. Drawing inside it keeps
+    `span` at most 1,936.
   - `fitPadding` ([top, right, bottom, left] pixels) is the room the first fit leaves
     for what the page lays over the board, such as a pinned question card or a top bar;
     without it the fit leaves room for the board's own toolbar and undo.
