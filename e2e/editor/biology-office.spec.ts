@@ -1398,6 +1398,73 @@ test('XLSX cell edit ends when focus moves into Capy, not on a window switch', a
   await expect(page.getByText(m.error_file_body())).toHaveCount(0);
 });
 
+// Q690: a newly opened XLSX grid takes the keyboard as a new DOCX does, unless
+// Capy's focus is in a field taking typing. Its load arrives 5 s late on every
+// open (the init script), so typing in the chat box comes first.
+test('a newly opened XLSX grid leaves the chat box its focus, and takes typing with no click', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await page.addInitScript(() => {
+    if (!location.pathname.includes('office-runtime')) return;
+    const add = window.addEventListener.bind(window);
+    window.addEventListener = ((
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+      options?: boolean | AddEventListenerOptions
+    ) => {
+      if (type !== 'message' || typeof listener !== 'function')
+        return add(type, listener, options);
+      return add(
+        type,
+        (event: Event) => {
+          if ((event as MessageEvent).data?.type === 'load')
+            setTimeout(() => listener.call(window, event), 5000);
+          else listener.call(window, event);
+        },
+        options
+      );
+    }) as typeof window.addEventListener;
+  });
+  await page.setViewportSize({ height: 800, width: 1280 });
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  const chat = page.getByRole('textbox', { name: m.chat_placeholder() });
+  const mode = page.getByRole('button', { name: m.material_mode() });
+  const grid = frame.getByTestId('xlsx-scroll');
+  const nameBox = frame.getByTestId('xlsx-name-box');
+  const formula = frame.getByTestId('xlsx-formula-input');
+
+  await test.step('a newly opened grid leaves the focus in the chat box', async () => {
+    await page.goto('/workspaces/ws_bio?file=bio-office-xlsx&mode=edit');
+    await showPanelView(page, m.workspace_tab_chat());
+    await chat.click();
+    await page.keyboard.type('hi');
+    await expect(officeEditMenu(page)).toHaveCount(0);
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 120_000 });
+    await page.waitForTimeout(1500);
+    await expect(chat).toBeFocused();
+    await page.keyboard.type(' there');
+    await expect(chat).toHaveValue('hi there');
+  });
+
+  await test.step('typing right after Edit reaches the active cell', async () => {
+    await mode.click();
+    await expect(officeEditMenu(page)).toHaveCount(0, { timeout: 30_000 });
+    await expect(frame.locator('canvas').first()).toBeVisible({
+      timeout: 60_000,
+    });
+    await mode.click();
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 60_000 });
+    await expect(grid).toBeFocused();
+    const cell = await nameBox.inputValue();
+    await page.keyboard.type('QZX');
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('ArrowUp');
+    await expect(nameBox).toHaveValue(cell);
+    await expect(formula).toHaveValue('QZX');
+  });
+});
+
 test("Office runtime keeps Capy's theme after reloading and asks for a page reload on a protocol mismatch", async ({
   page,
 }) => {

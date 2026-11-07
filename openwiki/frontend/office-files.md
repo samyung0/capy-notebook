@@ -1269,13 +1269,18 @@ itself. Until then its gates hold keys, pointer and text input, a composition
 begun after the pause never counts, and Ctrl/Cmd+S saves nothing. When the
 pause ends nothing moves the focus: it stays in Capy's field, Find, the
 document input (read-only never blurs it) or wherever it was. A newly opened
-DOCX editor focuses the document only through its frame: when the replica is
-ready (`collaboration-ready`) Capy focuses the frame unless its own focus is
-in a field taking typing (the chat box, say, also one behind a shadow root such
-as MathLive's) or anywhere in an open dialog, alert dialog or menu
-(`keepsFocus`), and the editor takes the focus
-once the frame has it. Closing or removing a header or footer from its Options
-menu, or Escape out of it, gives the document input the focus back. Each menu
+DOCX or XLSX editor focuses the document only through its frame: when the
+replica is ready (`collaboration-ready`) Capy focuses the frame unless its own
+focus is in a field taking typing (the chat box, say, also one behind a shadow
+root such as MathLive's) or anywhere in an open dialog, alert dialog or menu
+(`keepsFocus`), and the editor takes the focus once the frame has it: the DOCX
+document input, or the XLSX grid once its workbook opened and only while
+nothing else in the frame (the name box, the formula bar) has it
+(`takeKeyboard.ts`, Q690), so typing right after Edit reaches the active cell.
+Keys and clicks on the blank XLSX grid before its workbook opens are still
+dropped (Q689 holds them, which waits for a fork change). Closing or
+removing a header or footer from its Options menu, or Escape out of it, gives
+the document input the focus back. Each menu
 item says whether it edits (`edits`), declared where it is defined: DOCX's in
 docx-react's `hostMenus.tsx`, XLSX's and PPTX's from xlsx-react's
 `xlsxCommandEdits` and pptx-react's `PPTX_COMMAND_EDITS` (XLSX freezing panes
@@ -1594,7 +1599,12 @@ open), while an armed paint brush, a chart drag or an arrow burst is dropped;
 selection, scrolling and copy still work. A gesture that resumes after a wait
 (a cut's read, a row/column op or host clear waiting on a commit, an unmerge's
 merged-range read) does not edit if the pause began meanwhile: the cut ends as
-a copy.
+a copy. Enter in an open edit stays refused, the value left in its cell, but
+File › Save or Ctrl/Cmd+S waits for the hold to end (Q688): the runtime's
+`flush` waits until the editor has drawn without `sending`, then commits the
+open cell and the save goes on, and the host's 30 s limit on a frame request
+starts over while the tab is held (`frameRequestLimit`). Other flushes (a
+ribbon command, focus moving into Capy, a pause, Download, print) do not wait.
 Copy keeps the selection's own top-left corner, leading blanks included as in
 Excel, and trims only past the used range's last row and column; it reads that
 area in pieces of at most 100,000 cells (the engine's read cap) without

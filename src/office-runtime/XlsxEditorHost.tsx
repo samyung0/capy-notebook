@@ -40,6 +40,7 @@ import type {
   OfficeRenderer,
   OfficeThumbnailer,
 } from './runtimeMenus';
+import { takeKeyboard } from './takeKeyboard';
 import { xlsxIcons } from './xlsxIcons';
 import { runXlsxMenuItem, xlsxEditMenus, xlsxStrings } from './xlsxMenus';
 import {
@@ -307,8 +308,10 @@ export function XlsxEditorHost({
         onPendingChange={onPendingChange}
         onReady={(api) => {
           apiRef.current = api;
+          const stopTaking = takeKeyboard(api.focus);
           return () => {
             apiRef.current = null;
+            stopTaking();
           };
         }}
         onSave={onSave}
