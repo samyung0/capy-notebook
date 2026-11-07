@@ -11,34 +11,64 @@ getLocale();
 const { document, window } = parseHTML(
   '<!doctype html><html><body><div id="root"></div></body></html>'
 );
+// Idle callbacks run when a test says so.
+const idle = new Map<number, () => void>();
+let idleId = 0;
+Object.assign(window, {
+  cancelIdleCallback: (id: number) => idle.delete(id),
+  requestIdleCallback: (run: () => void) => {
+    idle.set(++idleId, run);
+    return idleId;
+  },
+});
 Object.assign(globalThis, { document, IS_REACT_ACT_ENVIRONMENT: true, window });
 
+type MountOptions = {
+  fitPadding?: number[];
+  onChange?: () => void;
+  saved?: string;
+};
 const toImage = vi.hoisted(() => vi.fn(() => Promise.reject(new Error('x'))));
 const putAway = vi.hoisted(() => vi.fn());
-vi.mock('@/features/blocksuite/drawingBoard', () => ({
-  mountDrawingBoard: () => ({
-    putAway,
-    save: () => ({ bytes: 100, doc: 'AA==' }),
-    snapshot: () => 'AA==',
-    stats: () => ({
-      blocks: [],
-      bytes: 100,
-      canvas: ['brush'],
-      marks: 0,
-      span: 2400,
-    }),
-    toImage,
-    unmount() {},
+const fit = vi.hoisted(() => vi.fn());
+const mountDrawingBoard = vi.hoisted(() =>
+  vi.fn((_host: unknown, _options: MountOptions): unknown => undefined)
+);
+vi.mock('@/features/blocksuite/drawingBoard', () => ({ mountDrawingBoard }));
+const handle = {
+  fit,
+  putAway,
+  save: () => ({ bytes: 100, doc: 'AA==' }),
+  snapshot: () => 'AA==',
+  stats: () => ({
+    blocks: [],
+    bytes: 100,
+    canvas: ['brush'],
+    marks: 0,
+    span: 2400,
   }),
-}));
-vi.mock('@/components/ui/userToast', () => ({ userToast() {} }));
+  toImage,
+  unmount() {},
+};
+mountDrawingBoard.mockImplementation(() => handle);
+const userToast = vi.hoisted(() => vi.fn());
+vi.mock('@/components/ui/userToast', () => ({ userToast }));
 const deleteLocalDrawingDraft = vi.hoisted(() =>
   vi.fn(() => Promise.resolve())
 );
+const localDrawingDraft = vi.hoisted(() =>
+  vi.fn(
+    (_key: string): Promise<{ doc: string } | undefined> =>
+      Promise.resolve(undefined)
+  )
+);
+const saveLocalDrawingDraft = vi.hoisted(() =>
+  vi.fn((_draft: unknown) => Promise.resolve())
+);
 vi.mock('@/lib/localDb', () => ({
   deleteLocalDrawingDraft,
-  localDrawingDraft: () => Promise.resolve(undefined),
-  saveLocalDrawingDraft: () => Promise.resolve(),
+  localDrawingDraft,
+  saveLocalDrawingDraft,
 }));
 vi.mock('@/components/ui/Dialog', () => ({
   SimpleDialog: ({
@@ -204,4 +234,133 @@ it('a board mounted ahead is out of sight and takes no time-limit Done until sho
   await act(async () => root.render(screen(true)));
   expect(putAway).toHaveBeenCalledOnce();
   await act(async () => root.unmount());
+});
+
+const runIdle = () =>
+  act(async () => {
+    for (const [id, run] of [...idle]) {
+      idle.delete(id);
+      run();
+    }
+  });
+
+function practice(onDone = vi.fn(), onClose = vi.fn()) {
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host as never);
+  const screen = (hidden: boolean) => (
+    <DrawingBoardScreen
+      draft="quiz:qz_3:p"
+      hidden={hidden}
+      onClose={onClose}
+      onDone={onDone}
+      pinned={PINNED}
+      saved="SAVED"
+      withImage={false}
+    />
+  );
+  return {
+    hide: () => act(async () => root.render(screen(true))),
+    show: () => act(async () => root.render(screen(false))),
+    unmount: () => act(async () => root.unmount()),
+  };
+}
+
+it('a board ahead mounts in idle time or on Draw, and Draw fits it to the screen as it is then', async () => {
+  mountDrawingBoard.mockClear();
+  const ahead = practice();
+  await ahead.hide();
+  expect(mountDrawingBoard).not.toHaveBeenCalled();
+  await runIdle();
+  expect(mountDrawingBoard).toHaveBeenCalledOnce();
+  // A tablet turned to a phone's width before Draw.
+  fit.mockClear();
+  Object.assign(window, { innerWidth: 600 });
+  await ahead.show();
+  expect(mountDrawingBoard).toHaveBeenCalledOnce();
+  expect(fit).toHaveBeenCalledWith([72, 12, 96, 12]);
+  await ahead.unmount();
+  Object.assign(window, { innerWidth: 1280 });
+
+  // Draw before the idle time mounts at once, and only once.
+  mountDrawingBoard.mockClear();
+  const early = practice();
+  await early.hide();
+  await early.show();
+  expect(mountDrawingBoard).toHaveBeenCalledOnce();
+  await runIdle();
+  expect(mountDrawingBoard).toHaveBeenCalledOnce();
+  await early.unmount();
+});
+
+it('a board ahead keeps no draft and leaves the device draft and the answer alone', async () => {
+  saveLocalDrawingDraft.mockClear();
+  deleteLocalDrawingDraft.mockClear();
+  localDrawingDraft.mockResolvedValueOnce({ doc: 'DRAFT' });
+  // BlockSuite settling a note card's height writes to the board as it mounts.
+  mountDrawingBoard.mockImplementationOnce((_host, options) => {
+    options.onChange?.();
+    return handle;
+  });
+  const onDone = vi.fn();
+  const ahead = practice(onDone);
+  await ahead.hide();
+  await runIdle();
+  expect(mountDrawingBoard.mock.lastCall?.[1].saved).toBe('DRAFT');
+  await ahead.unmount();
+  expect(saveLocalDrawingDraft).not.toHaveBeenCalled();
+  expect(deleteLocalDrawingDraft).not.toHaveBeenCalled();
+  expect(onDone).not.toHaveBeenCalled();
+});
+
+it('the last strokes go to the device at once on Done, and on teardown', async () => {
+  saveLocalDrawingDraft.mockClear();
+  const onDone = vi.fn();
+  const board = practice(onDone);
+  await board.show();
+  const stroke = () => mountDrawingBoard.mock.lastCall?.[1].onChange?.();
+  // A stroke, then Done well within the draft's 800 ms.
+  await act(async () => stroke());
+  await act(async () => finishOpenDrawing());
+  expect(saveLocalDrawingDraft).toHaveBeenCalledWith(
+    expect.objectContaining({ doc: 'AA==', key: 'quiz:qz_3:p' })
+  );
+  expect(saveLocalDrawingDraft.mock.invocationCallOrder[0]).toBeLessThan(
+    onDone.mock.invocationCallOrder[0]
+  );
+
+  await act(async () => stroke());
+  await board.unmount();
+  expect(saveLocalDrawingDraft).toHaveBeenCalledTimes(2);
+});
+
+it('a hidden mount that fails says nothing until Draw, and each Draw tries again', async () => {
+  userToast.mockClear();
+  mountDrawingBoard.mockClear();
+  const fail = () => {
+    throw new Error('no board');
+  };
+  mountDrawingBoard.mockImplementationOnce(fail).mockImplementationOnce(fail);
+  const onClose = vi.fn();
+  const onDone = vi.fn();
+  const board = practice(onDone, onClose);
+  await board.hide();
+  await runIdle();
+  expect(mountDrawingBoard).toHaveBeenCalledOnce();
+  expect(userToast).not.toHaveBeenCalled();
+
+  // Draw tries again; failing then, it says so and closes.
+  await board.show();
+  expect(mountDrawingBoard).toHaveBeenCalledTimes(2);
+  expect(userToast).toHaveBeenCalledOnce();
+  expect(onClose).toHaveBeenCalledOnce();
+
+  // The next Draw opens it.
+  await board.hide();
+  await board.show();
+  expect(mountDrawingBoard).toHaveBeenCalledTimes(3);
+  await act(async () => finishOpenDrawing());
+  expect(onDone).toHaveBeenCalledOnce();
+  expect(userToast).toHaveBeenCalledOnce();
+  await board.unmount();
 });

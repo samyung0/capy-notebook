@@ -313,12 +313,14 @@ const turnIntoDatabase = {
   run({ host }) {
     // Capy (local change 26): loaded on use, so a board without databases loads none
     // of data-view's views.
-    void Promise.all([
+    Promise.all([
       import('@blocksuite/affine-block-database'),
       import('@blocksuite/data-view/view-presets'),
-    ]).then(([{ convertToDatabase }, { tableViewMeta }]) =>
-      convertToDatabase(host, tableViewMeta.type)
-    );
+    ])
+      .then(([{ convertToDatabase }, { tableViewMeta }]) =>
+        convertToDatabase(host, tableViewMeta.type)
+      )
+      .catch(console.error);
   },
 } as const satisfies ToolbarAction;
 

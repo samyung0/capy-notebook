@@ -281,12 +281,17 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
     first) instead of by foundation, and the page toolbar's Convert to database loads
     the database block and table view on use, so a board without those blocks loads
     none of data-view (about 155 KB gzipped; Epo 2026-11-07, fix 6 of the canvas-open
-    report).
+    report). The callout block draws its icon with data-view's `<uni-lit>`, which only
+    data-view's effects define now, so an editor with callouts and no database or
+    data-view block shows callouts without icons (it matters once notes move to
+    BlockSuite).
 27. Icons by reference (`affine/data-view` `src/core/utils/uni-icon.ts`, marked `Capy
     (local change 27)`, and its 15 `createIcon` callers in data-view and the database
-    block): `createIcon` takes the icon itself instead of its name. A lookup by name kept
-    every icon of `@blocksuite/icons/lit` in the build wherever the icons load, which was
-    the board's chunk (about 90 KB gzipped more; Epo 2026-11-07, fix 7).
+    block, which aren't marked: each passes the imported icon where it passed its name,
+    and `rg "createIcon\("` finds them): `createIcon` takes the icon itself instead of
+    its name. A lookup by name kept every icon of `@blocksuite/icons/lit` in the build
+    wherever the icons load, which was the board's chunk (about 90 KB gzipped more; Epo
+    2026-11-07, fix 7).
 28. Dispatcher off on demand (`framework/std` `event/dispatcher.ts`, marked `Capy (local
     change 28)`): a public `deactivate()`. A board kept mounted out of sight
     (`putAway()` in `drawingBoard.ts`) calls it, since none of the events that turn the

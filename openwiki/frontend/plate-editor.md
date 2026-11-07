@@ -4388,15 +4388,24 @@ change 27). The board takes a stroke as soon as Draw is clicked (fix 4 of the
 canvas-open report, Epo 2026-11-07): once a drawing part (`DrawingAnswer`) or a sample
 answer field (`DrawnSampleField`) shows, `useBoardAhead` in
 `quizzes/drawing/boardPrefetch.tsx` fetches and evaluates the module in idle time
-(within a second), then mounts that part's `DrawingBoardScreen` with `hidden`: out of
-sight, `inert`, and no time-limit Done. Draw only shows it, and Done or Close puts it
-away: `putAway()` closes an open card, clears the selection and turns off BlockSuite's
-event dispatcher (local change 28), whose key and clipboard handlers sit on the
-document. Out of sight, a board runs no frames or resize callbacks. One board is mounted ahead per page, held by the first drawing part that shows
-until it leaves; other parts mount theirs on Draw, with the module already there. A
-board that can't open says so when shown. A first mount took 240-430 ms at 4x CPU on a
-Mac (about 1 s on the CI runner) and showing one mounted ahead about 12 ms; a mounted
-board holds about 3-9 MB of JS heap and 3,500-5,700 DOM nodes.
+(within a second, `whenIdle`), then renders that part's `DrawingBoardScreen` with
+`hidden`, which mounts the board in idle time too, or at once if Draw comes first: a
+mount is one long task. Hidden is `opacity: 0` with `inert` and `aria-hidden`, not
+`visibility: hidden`, since BlockSuite gives every card in view (notes, images) an
+inline `visibility: visible` that beats a hidden parent; `inert` keeps pointers off
+everything in it, and the board keeps its size, so it mounts and fits as if shown. A
+hidden board keeps no device draft (a note's height settling as it mounts isn't the
+student's) and takes no time-limit Done. Draw only shows it and fits it again at the
+window's width then; Done puts it away: `putAway()` closes an open card, clears the
+selection and turns off BlockSuite's event dispatcher (local change 28), whose key and
+clipboard handlers sit on the document. A Done that changes the answer mounts the board
+again, hidden and in idle time, for a fresh undo history. One board is mounted ahead
+per page, held by the first drawing part that shows until it leaves; other parts mount
+theirs on Draw, with the module already there. A hidden mount that fails says nothing
+and Draw tries again; a mount that fails when shown says so and closes, and the next
+Draw tries again. A first mount took 240-430 ms at 4x CPU on a Mac (about 1 s on the
+CI runner) and showing one mounted ahead about 12 ms; a mounted board holds about 3-9
+MB of JS heap and 3,500-5,700 DOM nodes.
 Nothing in production opens it yet: `/dev/drawing` is a dev-only route. A production
 build swaps that route for an empty module (`MSW_ENTRIES` in `vite.config.ts`), so it
 doesn't ship the vendored sources; the answer flow reverses that. No vanilla-extract plugin

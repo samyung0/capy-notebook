@@ -16,6 +16,7 @@ export function mountDrawingBoard(
   container: HTMLElement,
   options?: DrawingBoardOptions
 ): {
+  fit: (padding: [number, number, number, number]) => void;
   save: () => { bytes: number; doc: string };
   snapshot: () => string;
   putAway: () => void;

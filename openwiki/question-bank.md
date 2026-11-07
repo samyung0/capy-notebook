@@ -169,9 +169,10 @@ card (a plane, a chart) is open full screen with its own Done. The board shows a
 answer area of 1,920 × 1,200 board units with a small "Answer area" label at its top
 left (`answerArea`, W3 and W4, Epo 2026-11-07) and opens fitted to it, on phones too;
 drawing inside it stays under the wide-board line below. It is on the page only:
-never in the marking image, the saved board or a preview, and not shown read only. As it changes, the
-board is kept on the device (`localDb` `drawingDrafts`) under the quiz or the
-assignment attempt (`DrawingDraftScope`), and reopens from there until Done. Done
+never in the marking image, the saved board or a preview, and not shown read only. As it changes
+(800 ms after the last change, and at once on Done or when the board goes, so the last
+strokes stay), the board is kept on the device (`localDb` `drawingDrafts`) under the quiz
+or the assignment attempt (`DrawingDraftScope`), and reopens from there until Done. Done
 on an empty board leaves the part unanswered; past 250 KB (undo history stripped)
 it toasts and the board stays open; on a board whose marking image would be more
 than 2,000 board units on its longest side (`stats().span`, where lowercase

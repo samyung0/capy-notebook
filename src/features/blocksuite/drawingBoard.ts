@@ -446,6 +446,26 @@ export function mountDrawingBoard(
       shiftOf: new Map(items.map((item, i) => [item.id, shifts[i]])),
     };
   };
+  let room = options.fitPadding;
+  let fitted = false;
+  /** The first view: the answer area and what's drawn, or everything. */
+  const fitView = () => {
+    const drawn = getCommonBound([
+      ...gfx.layer.canvasElements,
+      ...gfx.layer.blocks,
+    ]);
+    gfx.viewport.setViewportByBound(
+      area
+        ? (getCommonBound([AREA, ...(drawn ? [drawn] : [])]) ?? AREA)
+        : everything(),
+      room ??
+        (gfx.viewport.width < PHONE_WIDTH
+          ? [64, 12, 96, 12]
+          : [90, 40, 130, 40])
+    );
+    place();
+    fitted = true;
+  };
   let frame = requestAnimationFrame(function mountLayer() {
     const background = container.querySelector('.edgeless-background');
     if (!background || !gfx.viewport.width) {
@@ -461,20 +481,7 @@ export function mountDrawingBoard(
       );
       store.resetHistory();
     }
-    const drawn = getCommonBound([
-      ...gfx.layer.canvasElements,
-      ...gfx.layer.blocks,
-    ]);
-    gfx.viewport.setViewportByBound(
-      area
-        ? (getCommonBound([AREA, ...(drawn ? [drawn] : [])]) ?? AREA)
-        : everything(),
-      options.fitPadding ??
-        (gfx.viewport.width < PHONE_WIDTH
-          ? [64, 12, 96, 12]
-          : [90, 40, 130, 40])
-    );
-    place();
+    fitView();
   });
 
   /** A pasted image from its file; a note card by html2canvas, as it's DOM. */
@@ -505,6 +512,13 @@ export function mountDrawingBoard(
   };
 
   return {
+    /** The first view again, with this room around it: a board mounted ahead, shown
+     * at the screen's width then (a tablet turned since). Before the first view, it
+     * only sets that view's room. */
+    fit: (padding: [number, number, number, number]) => {
+      room = padding;
+      if (fitted) fitView();
+    },
     /** Out of sight but kept mounted: an open card closes, nothing stays selected,
      * and the page's keys and pastes no longer reach it. */
     putAway: () => {

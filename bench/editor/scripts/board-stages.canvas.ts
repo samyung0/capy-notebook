@@ -278,15 +278,15 @@ async function firstDraws(
         const again = await mountReady(page, doc);
         // Mounted ahead out of sight, as an answer's board is: Draw only shows it.
         await page.evaluate(() => {
-          (document.querySelector('[class*="h-dvh"]') as HTMLElement).style.visibility =
-            'hidden';
+          (document.querySelector('[class*="h-dvh"]') as HTMLElement).style.opacity =
+            '0';
         });
         await mountReady(page, doc);
         const shown = await page.evaluate(
           () =>
             new Promise<number>((resolve) => {
               const start = performance.now();
-              (document.querySelector('[class*="h-dvh"]') as HTMLElement).style.visibility =
+              (document.querySelector('[class*="h-dvh"]') as HTMLElement).style.opacity =
                 '';
               requestAnimationFrame(() => {
                 const channel = new MessageChannel();

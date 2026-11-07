@@ -14,6 +14,7 @@ import {
   localDrawingDraft,
   saveLocalDrawingDraft,
 } from '@/lib/localDb';
+import { whenIdle } from './boardPrefetch';
 import {
   DRAWING_BOARD_MAX,
   type DrawingValue,
@@ -82,8 +83,9 @@ export default function DrawingBoardScreen({
 }: {
   /** The device key a board being drawn is kept under, when the page has one. */
   draft?: string;
-  /** Mounted ahead and out of sight, so Draw shows a board that takes a stroke at
-   * once (fix 4, Epo 2026-11-07): no focus, no pointer, no time-limit Done. */
+  /** Mounted ahead in idle time and out of sight, so Draw shows a board that
+   * takes a stroke at once (fix 4, Epo 2026-11-07): no focus, no pointer, no
+   * draft, no time-limit Done. */
   hidden?: boolean;
   onClose: () => void;
   onDone?: (value: DrawingValue | null) => void;
@@ -101,10 +103,16 @@ export default function DrawingBoardScreen({
   // The board mounts once; closing reads the latest handler.
   const close = useRef(onClose);
   close.current = onClose;
+  // Read by the mount and the draft, which outlive a render.
+  const hiddenNow = useRef(hidden);
+  hiddenNow.current = hidden;
+  /** A mount waiting for idle time, or a hidden mount that failed: Draw runs it. */
+  const mountNow = useRef<(() => void) | null>(null);
+  /** Writes the device draft at once if a write is waiting. */
+  const flushDraft = useRef<() => Promise<void>>(() => Promise.resolve());
   const phoneDone = useRef<HTMLButtonElement>(null);
   const board = useRef<Board | null>(null);
   const [ready, setReady] = useState(false);
-  // A board that can't open says so when it's shown, not while mounted ahead.
   const [failed, setFailed] = useState<{ error: unknown } | null>(null);
   const [busy, setBusy] = useState(false);
   // Desktop shows the question until hidden; a phone folds it to one line.
@@ -117,22 +125,32 @@ export default function DrawingBoardScreen({
     if (!element) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let pending = false;
+    let cancelIdle: (() => void) | undefined;
     setFailed(null);
-    const keep = () => {
-      if (!draft) return;
+    setReady(false);
+    const write = async () => {
       clearTimeout(timer);
-      timer = setTimeout(() => {
-        const current = board.current;
-        if (!current) return;
-        saveLocalDrawingDraft({
-          doc: current.snapshot(),
-          key: draft,
-          savedAt: new Date().toISOString(),
-        }).catch(() => {
-          // A browser without IndexedDB keeps the board on the page only.
-        });
-      }, DRAFT_DELAY_MS);
+      pending = false;
+      const current = board.current;
+      if (!(current && draft)) return;
+      await saveLocalDrawingDraft({
+        doc: current.snapshot(),
+        key: draft,
+        savedAt: new Date().toISOString(),
+      }).catch(() => {
+        // A browser without IndexedDB keeps the board on the page only.
+      });
     };
+    // Out of sight it keeps nothing: what changes then (a note's height settling)
+    // isn't the student's.
+    const keep = () => {
+      if (!draft || hiddenNow.current) return;
+      pending = true;
+      clearTimeout(timer);
+      timer = setTimeout(write, DRAFT_DELAY_MS);
+    };
+    flushDraft.current = () => (pending ? write() : Promise.resolve());
     (async () => {
       // A board drawn and not sent with Done is picked up where it was left.
       const kept =
@@ -140,36 +158,52 @@ export default function DrawingBoardScreen({
           ? await localDrawingDraft(draft).catch(() => undefined)
           : undefined;
       if (cancelled) return;
-      try {
-        board.current = mountDrawingBoard(element, {
-          // Where to draw (W3, W4); a read-only board draws none.
-          answerArea: { label: m.drawing_answer_area() },
-          fitPadding: fitPadding(readOnly),
-          onChange: readOnly ? undefined : keep,
-          readOnly,
-          saved: kept?.doc ?? saved,
-        });
-        setReady(true);
-      } catch (error) {
-        setFailed({ error });
-      }
+      const mount = () => {
+        mountNow.current = null;
+        cancelIdle?.();
+        try {
+          board.current = mountDrawingBoard(element, {
+            // Where to draw (W3, W4); a read-only board draws none.
+            answerArea: { label: m.drawing_answer_area() },
+            fitPadding: fitPadding(readOnly),
+            onChange: readOnly ? undefined : keep,
+            readOnly,
+            saved: kept?.doc ?? saved,
+          });
+          setReady(true);
+        } catch (error) {
+          // The next Draw tries again, as every Draw mounted before. Mounted
+          // ahead, it says nothing until then.
+          mountNow.current = mount;
+          if (!hiddenNow.current) setFailed({ error });
+        }
+      };
+      if (hiddenNow.current) {
+        // Mounting is a long task (240-430 ms at 4x CPU): ahead, it waits for
+        // idle time, and Draw coming first mounts at once.
+        cancelIdle = whenIdle(mount);
+        mountNow.current = mount;
+      } else mount();
     })();
     return () => {
       cancelled = true;
-      clearTimeout(timer);
+      cancelIdle?.();
+      mountNow.current = null;
+      // The last strokes are kept, not dropped with the timer.
+      if (pending) void write();
       board.current?.unmount();
       board.current = null;
     };
   }, [draft, readOnly, saved]);
   useEffect(() => {
-    if (!failed || hidden) return;
+    if (!failed) return;
     userToast({
       description: errorCopy(failed.error, m.drawing_answer_open_failed()),
       title: m.drawing_answer_open_failed(),
       variant: 'error',
     });
     close.current();
-  }, [failed, hidden]);
+  }, [failed]);
 
   // On a phone the board's undo and redo sit left of Done (drawingBoard.css),
   // both 8px from the top and the edge.
@@ -209,6 +243,9 @@ export default function DrawingBoardScreen({
     }
     setBusy(true);
     try {
+      // The board as Done leaves it is on the device first: practice opens it
+      // again from there, and a store that fails keeps it.
+      await flushDraft.current();
       let value: DrawingValue | null = null;
       if (saved) {
         value = {
@@ -241,11 +278,15 @@ export default function DrawingBoardScreen({
     return holdOpenDrawing(() => latestFinish.current(true));
   }, [hidden, onDone, readOnly]);
   // Put away, the board keeps no selection or keys, and no wide-board question.
+  // Draw mounts a board not mounted yet, or fits one mounted ahead to the screen
+  // as it is now.
   useEffect(() => {
-    if (!hidden) return;
-    setWide(false);
-    board.current?.putAway();
-  }, [hidden]);
+    if (hidden) {
+      setWide(false);
+      board.current?.putAway();
+    } else if (mountNow.current) mountNow.current();
+    else board.current?.fit(fitPadding(readOnly));
+  }, [hidden, readOnly]);
 
   const doneButton = (ref?: React.Ref<HTMLButtonElement>) => (
     <Button
@@ -265,9 +306,12 @@ export default function DrawingBoardScreen({
       aria-hidden={hidden || undefined}
       aria-label={pinned.title}
       aria-modal="true"
+      // Out of sight by opacity: BlockSuite shows its cards with an inline
+      // `visibility: visible`, which beats a hidden parent. `inert` keeps
+      // pointers off it.
       className={cn(
         'answer-board fixed inset-0 z-50 bg-canvas',
-        hidden && 'invisible'
+        hidden && 'opacity-0'
       )}
       inert={hidden}
       role="dialog"
