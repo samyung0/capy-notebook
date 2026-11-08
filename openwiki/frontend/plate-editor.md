@@ -4580,7 +4580,10 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   Plane and chart cards take a light or dark `PAPER` (dark paper is a dark note's), and a
   formula's black bitmap is inverted (hue kept) on a dark board. The marking image is
   always light: `toImage` lifts the dark variables (`data-board-light`) and switches the
-  signal to light while it draws, so the board shows light for that moment.
+  signal to light while it draws, so the board shows light for that moment. AFFiNE's
+  own dark placeholder and border greys (rgb(62, 62, 63) and rgb(46, 46, 46) on
+  rgb(30, 30, 30) panels) are lifted to readable ones, and the toolbar pieces' navy
+  (`--capy-navy`) lightens to #5683b3 on a dark board.
 - **Formulas:** a `formula` canvas element holding LaTeX, typed in MathLive (loaded on
   first open). Its card opens in the middle of the board and closes like a popup on a
   press anywhere else, another formula piece too (MathLive's keyboard and menus aside),

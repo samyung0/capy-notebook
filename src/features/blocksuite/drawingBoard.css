@@ -9,8 +9,9 @@
 
 /* The board fills the screen; AFFiNE's zoom rule reads this container. */
 .capy-board {
-  --capy-shape-button-roundedRect: #173654;
-  --capy-shape-button-stroke-roundedRect: #173654;
+  --capy-navy: #173654;
+  --capy-shape-button-roundedRect: var(--capy-navy);
+  --capy-shape-button-stroke-roundedRect: var(--capy-navy);
   --capy-shape-button-ellipse: #1e96eb;
   --capy-shape-button-stroke-ellipse: #1e96eb;
   --capy-shape-button-triangle: #fff;
@@ -19,7 +20,9 @@
   container: viewport / inline-size;
 }
 
+/* The toolbar's navy pieces, lighter so they read on the dark bar. */
 html.dark:not([data-board-light]) .capy-board {
+  --capy-navy: #5683b3;
   --capy-note-edge: var(--affine-border-color);
 }
 

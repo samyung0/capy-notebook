@@ -189,10 +189,14 @@ const PHONE_WIDTH = 768;
 // Catppuccin flavour, which AFFiNE's own [data-theme=dark] never matches. On
 // <html>, so its popovers outside the board take it too; data-board-light lifts
 // it while the marking image is drawn.
+// AFFiNE's own dark placeholders and hairlines nearly vanish on its panels
+// (rgb(62, 62, 63) on rgb(30, 30, 30)): lifted to readable greys.
 const darkPalette = document.createElement('style');
-darkPalette.textContent = `html.dark:not([data-board-light]){${Object.entries(
-  combinedDarkCssVariables
-)
+darkPalette.textContent = `html.dark:not([data-board-light]){${Object.entries({
+  ...combinedDarkCssVariables,
+  '--affine-border-color': 'rgb(64, 64, 68)',
+  '--affine-placeholder-color': 'rgb(138, 138, 145)',
+})
   .map(([name, value]) => `${name}:${value}`)
   .join(';')}}`;
 document.head.append(darkPalette);

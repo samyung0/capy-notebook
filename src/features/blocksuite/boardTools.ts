@@ -1101,9 +1101,14 @@ const FORMULA_PIECES: Piece[] = [
 
 const PIECE_SHADOW = 'drop-shadow(0 0 5px rgba(0, 0, 0, 0.2))';
 
+/** Navy lightens on a dark board (--capy-navy); the fallback is for a drag preview
+ * drawn outside it. */
 const pieceArt = (piece: Piece) =>
   unsafeSVG(
-    `<svg width="${piece.w}" height="${piece.h}" viewBox="${piece.viewBox}" aria-hidden="true">${piece.body}</svg>`
+    `<svg width="${piece.w}" height="${piece.h}" viewBox="${piece.viewBox}" aria-hidden="true">${piece.body.replace(
+      /(fill|stroke)="#173654"/g,
+      'style="$1:var(--capy-navy, #173654)"'
+    )}</svg>`
   );
 
 /** Puts down the card a piece stands for, centred where it was dropped. */
