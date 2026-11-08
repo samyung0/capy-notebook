@@ -49,6 +49,7 @@ sits in the dialog header and archived rows show icon buttons.
 | Office storage capacity probes | Live UAT measurement via `pnpm exec playwright test --config bench/parsers/scripts/office_storage_ingest.config.ts`. `bench/parsers/scripts/compare_office_storage.py` verifies paired input hashes, complete phase triples, unchanged ingest images, clean teardown and cache removal before assembling exact byte tables. (The engine probe `office_storage.ts` and the charging run were retired with the Node collaboration server, Epo 2026-10-08.) |
 | Review automation contracts      | `pnpm review:validate-boundaries` / `pnpm review:validate-scanners` |
 | Deployment and dev tunnel        | `pnpm test:deployment` |
+| Drawing board type check (in `pnpm typecheck`, pre-commit and CI `check`) | `pnpm typecheck:board` (`scripts/typecheck-board.mjs`, `tsconfig.board.json`): type-checks `src/features/blocksuite`, which the root `tsconfig.json` leaves out (the app sees it through `drawingBoard.boundary.d.ts`). The board pulls in vendored BlockSuite as `.ts` sources; their errors (about 120, upstream's undeclared deps and unimported tag-map augmentations) are counted and ignored, any other error or a tsc failure fails |
 | Local grading comparison         | `python -m unittest discover -s bench/grading/scripts -p test_benchmark.py` |
 | Paired Laya/Jev grading scores    | `python -m unittest discover -s bench/grading/scripts -p test_laya_cpu.py` |
 | Office size split (XML/media/other) | `python -m unittest discover -s bench/editor/scripts -p test_office_sizes.py` |
