@@ -326,6 +326,8 @@ function drawPlane(box: Box, fields: Fields, pen: Pen) {
     dots += `M${num(X(u))} ${num(Y(v))}h0`;
   };
   for (const mark of marks) {
+    // No labels on previews, as no numbers.
+    if (mark.kind === 'label') continue;
     if (mark.kind === 'dot') {
       dot(mark.at);
       continue;

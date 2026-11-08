@@ -10,10 +10,15 @@ export type Color =
   | { dark: string; light: string };
 
 /** What's plotted on a plane, in its own units. A line or curve grows a click at a time,
- * each click one undo step. */
+ * each click one undo step. A label is text centred on its point (Epo 2026-11-08). */
 export type Mark =
   | { id: string; kind: 'dot'; at: Vec }
+  | { id: string; kind: 'label'; at: Vec; text: string }
   | { id: string; kind: 'line' | 'curve'; points: Vec[] };
+
+/** The points a mark is drawn through, or at. */
+export const pointsOf = (mark: Mark): Vec[] =>
+  'points' in mark ? mark.points : [mark.at];
 
 /** Most marks one plane holds. */
 export const MARKS_MAX = 500;

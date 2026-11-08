@@ -4482,7 +4482,10 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   has one, Undo, Redo; the board's own undo and redo hide meanwhile) and Done on its
   own (Epo 2026-11-08). Done leaves, as does Escape when no mark is open (Escape closes
   an open menu first). Inside, the wheel pans, Ctrl or pinch zooms, and Move drags.
-  Point, Line and Curve snap to the fine squares for the current zoom, so the
+  Label (Epo 2026-11-08) types text centred where it's clicked, a `label` mark at that
+  coordinate that moves and zooms with the plane (a click near one edits it; up to 24
+  characters; previews leave labels out, as numbers). Point, Line and Curve snap to the
+  fine squares for the current zoom, so the
   plane has no edge and no fixed scale (the numbers are the question editor's, `tickStep`
   and `axisNumber` in `graph.ts`, with no JSXGraph). Numbers leave with their axis and
   marks keep their thickness. The view stops 1e9 units from the origin, and a grid too
@@ -4502,7 +4505,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   move and resize like a plane card, the eraser leaves them alone, and their editor fills
   the board on the same shell. Bar chart: numbers on the value axis only, up to a top and
   step the student types (Fit, in the menu, takes the top to the first line above the
-  tallest bar). Hovering shows where a press would set the bar, a dashed line with its
+  tallest bar). The wheel or a pinch zooms the value axis: its top moves, the step
+  following in 1, 2, 2.5 or 5 for about five lines, bars staying on 0; the zoom is
+  written as one undo step once it rests 300 ms. Hovering shows where a press would set the bar, a dashed line with its
   value, as the plane shows where a point would go. Dragging in a place sets its bar, in half steps, with the value in the chip; a free place
   after the last bar starts the next, up to 24, in the current fill. Labels are typed under
   the bars. Pie chart: no grid or axes, starting with a line at 12 o'clock. A click adds a

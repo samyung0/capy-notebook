@@ -97,7 +97,13 @@ function elementProblem(fields: Fields): string | null {
       finite(fields.x0) &&
       finite(fields.y0) &&
       (fields.polar === undefined || typeof fields.polar === 'boolean') &&
-      listUpTo(fields.marks, MARKS_MAX)
+      listUpTo(fields.marks, MARKS_MAX) &&
+      (fields.marks as Fields[]).every(
+        (mark) =>
+          mark?.kind !== 'label' ||
+          (typeof mark.text === 'string' &&
+            mark.text.length <= LABEL_LENGTH_MAX)
+      )
       ? null
       : 'plane fields';
   if (type === 'chart') {

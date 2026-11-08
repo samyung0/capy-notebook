@@ -5,7 +5,7 @@ import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import { axisNumber } from '@/features/questions/graph';
 import { tickStep } from '@/features/questions/graphTicks';
 import { m } from '@/i18n';
-import { MARKS_MAX, type Mark, PAPER } from './boardData';
+import { LABEL_LENGTH_MAX, MARKS_MAX, type Mark, PAPER } from './boardData';
 import { drawChip, openBoardEditor } from './boardEditorShell';
 import { minorStep, smoothThrough, snapTo, type Vec } from './boardGeometry';
 import {
@@ -19,9 +19,10 @@ import {
 } from './boardPlane';
 import { mathsIcon } from './boardTools';
 
-type Tool = 'move' | 'point' | 'line' | 'curve' | 'erase';
+type Tool = 'move' | 'point' | 'line' | 'curve' | 'label' | 'erase';
 
 const PIXELS_TO_ERASE = 12;
+const PIXELS_TO_LABEL = 24;
 const PPU_MIN = 1e-6;
 const PPU_MAX = 1e6;
 /** How far from the origin the view goes, in the plane's units. */
@@ -29,19 +30,20 @@ const VIEW_MAX = 1e9;
 
 /** Whether a mark has become what it set out to be. Leaving keeps what has, and removes
  * what hasn't, as AFFiNE removes a connector it cancels. */
-const whole = (mark: Mark) => mark.kind === 'dot' || mark.points.length > 1;
+const whole = (mark: Mark) => !('points' in mark) || mark.points.length > 1;
 
 const TOOLS: { icon: string; id: Tool; label: () => string }[] = [
   { icon: 'move', id: 'move', label: m.drawing_board_move_plane },
   { icon: 'point', id: 'point', label: m.drawing_board_point },
   { icon: 'line', id: 'line', label: m.drawing_board_line_through_points },
   { icon: 'curve', id: 'curve', label: m.drawing_board_curve },
+  { icon: 'label', id: 'label', label: m.drawing_board_plane_label },
   { icon: 'erase', id: 'erase', label: m.drawing_board_erase_mark },
 ];
 
 /** How far a mark is from a point on the plane, in plane units. */
 function distanceTo(mark: Mark, [x, y]: Vec) {
-  if (mark.kind === 'dot') return Math.hypot(x - mark.at[0], y - mark.at[1]);
+  if (!('points' in mark)) return Math.hypot(x - mark.at[0], y - mark.at[1]);
   const between = (a: Vec, b: Vec) => {
     const [dx, dy] = [b[0] - a[0], b[1] - a[1]];
     const length = dx * dx + dy * dy;
@@ -65,16 +67,24 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   /** The line or curve still taking clicks. Undo simply shortens it. */
   let openId: string | null = null;
   const openMark = () => model.marks.find((mark) => mark.id === openId);
+  /** The label being typed, at its point on the plane; `id` when it's an old one. */
+  let typing: { at: Vec; id?: string; text: string } | null = null;
   let frame = 0;
 
   const shell = openBoardEditor(gfx, model.id, {
     fit: () => fitMarks(),
     onEscape: () => {
+      if (typing) {
+        typing = null;
+        drawControls();
+        return true;
+      }
       if (!openMark()) return false;
       finish();
       return true;
     },
     onLeave: () => {
+      commitLabel();
       openId = null;
       const kept = model.marks.filter(whole);
       if (kept.length < model.marks.length)
@@ -153,7 +163,8 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       model.marks,
       PAPER[theme.theme]
     );
-    if (!pointer || tool === 'move' || tool === 'erase') return;
+    if (!pointer || tool === 'move' || tool === 'erase' || tool === 'label')
+      return;
     const X = (x: number) => (x - view.x0) * view.ppu;
     const Y = (y: number) => (view.y0 - y) * view.ppu;
     ctx.strokeStyle = '#1e96eb';
@@ -231,6 +242,20 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       if (model.marks.length >= MARKS_MAX) return;
       openId = newId();
       add({ id: openId, kind: tool, points: [at] });
+    } else if (tool === 'label') {
+      commitLabel();
+      // Clicking near a label edits it; elsewhere a new one goes where it was clicked.
+      const here = toPlane(px);
+      const near = model.marks.find(
+        (mark) =>
+          mark.kind === 'label' &&
+          distanceTo(mark, here) <= PIXELS_TO_LABEL / view.ppu
+      );
+      if (near?.kind === 'label')
+        typing = { at: near.at, id: near.id, text: near.text };
+      else if (model.marks.length < MARKS_MAX) typing = { at: here, text: '' };
+      drawControls();
+      controls.querySelector<HTMLInputElement>('.capy-chart-label')?.select();
     } else if (tool === 'erase') {
       const here = toPlane(px);
       const reach = PIXELS_TO_ERASE / view.ppu;
@@ -245,6 +270,27 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       }
       if (nearest) write(model.marks.filter((mark) => mark !== nearest));
     }
+  };
+
+  const commitLabel = () => {
+    const field = controls.querySelector<HTMLInputElement>('.capy-chart-label');
+    const open = typing;
+    typing = null;
+    if (!open || !field) return;
+    const text = field.value.trim();
+    const others = model.marks.filter((mark) => mark.id !== open.id);
+    if (text) {
+      const label: Mark = {
+        at: open.at,
+        id: open.id ?? newId(),
+        kind: 'label',
+        text,
+      };
+      if (!open.id) write([...model.marks, label]);
+      else if (text !== open.text)
+        write(model.marks.map((mark) => (mark.id === open.id ? label : mark)));
+    } else if (open.id) write(others);
+    drawControls();
   };
 
   const hold = () => {
@@ -409,6 +455,22 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
               </button>`
             : null
         }
+        ${
+          typing
+            ? html`<input
+                aria-label=${m.drawing_board_chart_label()}
+                class="capy-chart-label"
+                maxlength=${LABEL_LENGTH_MAX}
+                style="left:${(typing.at[0] - view.x0) * view.ppu}px;top:${(view.y0 - typing.at[1]) * view.ppu}px"
+                type="text"
+                .value=${typing.text}
+                @blur=${commitLabel}
+                @keydown=${(event: KeyboardEvent) => {
+                  if (event.key === 'Enter') commitLabel();
+                }}
+              />`
+            : null
+        }
         <div class="capy-plane-tools">
           <div class="capy-plane-row">
             ${TOOLS.map(
@@ -419,6 +481,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
                   title=${label()}
                   type="button"
                   @click=${() => {
+                    commitLabel();
                     finish();
                     tool = id;
                     drawControls();

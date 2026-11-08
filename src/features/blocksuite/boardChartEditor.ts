@@ -36,6 +36,25 @@ const PIXELS_TO_LABEL = 30;
 const DEGREES_TO_ERASE = 8;
 /** Most numbered lines the axis takes. */
 const AXIS_LINES_MAX = 100;
+/** The smallest axis top zooming in reaches. */
+const AXIS_MIN = 1e-3;
+/** A zoom is written, one undo step, once it has rested this long. */
+const ZOOM_SETTLE_MS = 300;
+const NICE_STEPS = [1, 2, 2.5, 5, 10];
+
+/** An axis to a top, about five numbered lines in 1, 2, 2.5 or 5 steps. */
+function niceAxis(top: number) {
+  const rough = top / 5;
+  const power = 10 ** Math.floor(Math.log10(rough));
+  const axisStep =
+    (NICE_STEPS.find((step) => step * power >= rough) ?? 10) * power;
+  return {
+    axisMax: Number(
+      (Math.ceil(top / axisStep - 1e-9) * axisStep).toPrecision(12)
+    ),
+    axisStep: Number(axisStep.toPrecision(12)),
+  };
+}
 
 /** A bar or pie chart, filling the board for editing. Each change is written at once,
  * one undo step. */
@@ -53,6 +72,10 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   } | null = null;
   /** The bar being dragged up. */
   let live: { slot: number; value: number } | null = null;
+  /** The value axis while a zoom is still moving (Epo 2026-11-08), and its top
+   * before rounding. */
+  let zoom: { axisMax: number; axisStep: number; top: number } | null = null;
+  let zoomTimer: ReturnType<typeof setTimeout> | undefined;
   let pointer: Vec | null = null;
 
   const shell = openBoardEditor(gfx, model.id, {
@@ -65,6 +88,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     },
     onLeave: () => {
       commitLabel();
+      settleZoom();
       cancelAnimationFrame(frame);
     },
     onUpdate: () => {
@@ -113,11 +137,9 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   /** A bar's height from the pointer's, in half steps up to the axis's end. */
   const valueAt = ([, y]: Vec) => {
     const { base, height } = barPlot(screen(), pads(), slots());
-    const value = ((base - y) / height) * model.axisMax;
-    return Math.max(
-      0,
-      Math.min(model.axisMax, snapTo(value, model.axisStep / 2))
-    );
+    const { axisMax, axisStep } = axis();
+    const value = ((base - y) / height) * axisMax;
+    return Math.max(0, Math.min(axisMax, snapTo(value, axisStep / 2)));
   };
   const angleAt = ([x, y]: Vec) => {
     const { cx, cy } = pieCircle(screen(), pads());
@@ -155,7 +177,8 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       if (slot >= bars.length)
         bars = [...bars, { fill: newFill(), id: '', label: '', value }];
     }
-    const { axisMax, axisStep, fills, kind, labels, spokes } = model;
+    const { fills, kind, labels, spokes } = model;
+    const { axisMax, axisStep } = axis();
     drawChart(
       ctx,
       area,
@@ -357,8 +380,52 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     if (axisMax !== model.axisMax) update({ axisMax });
   };
 
+  const axis = () => zoom ?? model;
+  const settleZoom = () => {
+    clearTimeout(zoomTimer);
+    const settled = zoom;
+    zoom = null;
+    if (
+      settled &&
+      (settled.axisMax !== model.axisMax || settled.axisStep !== model.axisStep)
+    )
+      update({ axisMax: settled.axisMax, axisStep: settled.axisStep });
+  };
+  /** Wheel and pinch change the axis's top, the step following; bars stay on 0. */
+  const zoomBy = (factor: number) => {
+    const top = Math.max(
+      AXIS_MIN,
+      Math.min(AXIS_MAX, (zoom?.top ?? model.axisMax) * factor)
+    );
+    zoom = { ...niceAxis(top), top };
+    clearTimeout(zoomTimer);
+    zoomTimer = setTimeout(settleZoom, ZOOM_SETTLE_MS);
+    redraw();
+  };
+  if (isBar)
+    canvas.addEventListener(
+      'wheel',
+      (event) => {
+        event.preventDefault();
+        zoomBy(Math.exp(event.deltaY * (event.ctrlKey ? 0.01 : 0.002)));
+      },
+      { passive: false }
+    );
+
+  const touches = new Map<number, Vec>();
+  let pinch = 0;
   let pressed = false;
   canvas.addEventListener('pointerdown', (event) => {
+    touches.set(event.pointerId, local(event));
+    if (isBar && touches.size === 2) {
+      const [a, b] = [...touches.values()];
+      pinch = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      pressed = false;
+      live = null;
+      pointer = null;
+      redraw();
+      return;
+    }
     if (event.button) return;
     canvas.setPointerCapture(event.pointerId);
     pressed = true;
@@ -373,11 +440,22 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   });
   canvas.addEventListener('pointermove', (event) => {
     const at = local(event);
+    if (touches.has(event.pointerId)) touches.set(event.pointerId, at);
+    if (pinch && touches.size === 2) {
+      const [a, b] = [...touches.values()];
+      const distance = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      // Fingers apart zoom in: a lower top.
+      if (distance) zoomBy(pinch / distance);
+      pinch = distance;
+      return;
+    }
     pointer = pressed || event.pointerType === 'mouse' ? at : null;
     if (live && pressed) live = { ...live, value: valueAt(at) };
     redraw();
   });
   canvas.addEventListener('pointerup', (event) => {
+    touches.delete(event.pointerId);
+    if (touches.size < 2) pinch = 0;
     if (!pressed) return;
     pressed = false;
     const at = local(event);
@@ -412,7 +490,9 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     if (event.pointerType !== 'mouse') pointer = null;
     redraw();
   });
-  canvas.addEventListener('pointercancel', () => {
+  canvas.addEventListener('pointercancel', (event) => {
+    touches.delete(event.pointerId);
+    pinch = 0;
     pressed = false;
     live = null;
     pointer = null;

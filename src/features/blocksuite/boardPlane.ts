@@ -19,7 +19,7 @@ import {
 } from '@blocksuite/affine/std/gfx';
 import { axisNumber } from '@/features/questions/graph';
 import { tickStep } from '@/features/questions/graphTicks';
-import { CARD_PAPER, type Mark, type Paper } from './boardData';
+import { CARD_PAPER, type Mark, type Paper, pointsOf } from './boardData';
 import { minorStep, smoothThrough, ticks, type Vec } from './boardGeometry';
 
 /** The plane's top left corner in its own units, and board pixels per unit. A polar
@@ -249,7 +249,12 @@ function drawMarks(
   };
   for (const mark of marks) {
     if (mark.kind === 'dot') dot(mark.at);
-    else {
+    else if (mark.kind === 'label') {
+      ctx.font = '15px Arial, sans-serif';
+      ctx.fillStyle = paper.text;
+      ctx.textBaseline = 'middle';
+      haloText(ctx, mark.text, X(mark.at[0]), Y(mark.at[1]), 'center', paper);
+    } else {
       trace(mark.kind === 'curve' ? smoothThrough(mark.points) : mark.points);
       for (const point of mark.points) dot(point);
     }
@@ -351,10 +356,7 @@ export const openPlane = (gfx: GfxController, model: PlaneElementModel) =>
 
 /** Every point a plane's marks reach, and its origin, so the axes stay in view. */
 export function markPoints(marks: Mark[]) {
-  return [
-    [0, 0] as Vec,
-    ...marks.flatMap((mark) => (mark.kind === 'dot' ? [mark.at] : mark.points)),
-  ];
+  return [[0, 0] as Vec, ...marks.flatMap(pointsOf)];
 }
 
 /** Sizes a card to its marks at its scale, its top left staying put. Past the longest
