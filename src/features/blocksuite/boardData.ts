@@ -1,4 +1,4 @@
-import type { Box, Vec } from './boardGeometry';
+import { type Box, smoothThrough, type Vec } from './boardGeometry';
 
 /** What a saved board's cards hold, and their limits, apart from the editor: the
  * board's check and its preview read them without loading BlockSuite. */
@@ -10,15 +10,70 @@ export type Color =
   | { dark: string; light: string };
 
 /** What's plotted on a plane, in its own units. A line or curve grows a click at a time,
- * each click one undo step. A label is text centred on its point (Epo 2026-11-08). */
+ * each click one undo step. A label is text centred on its point (Epo 2026-11-08). An
+ * ellipse (Epo 2026-11-08) is upright, held by its four handles: right, top, left and
+ * bottom, so it starts as a circle and its handles stretch it. */
 export type Mark =
   | { id: string; kind: 'dot'; at: Vec }
   | { id: string; kind: 'label'; at: Vec; text: string }
-  | { id: string; kind: 'line' | 'curve'; points: Vec[] };
+  | { id: string; kind: 'line' | 'curve' | 'ellipse'; points: Vec[] };
 
 /** The points a mark is drawn through, or at. */
 export const pointsOf = (mark: Mark): Vec[] =>
   'points' in mark ? mark.points : [mark.at];
+
+/** An upright ellipse's handles from its box: right, top, left, bottom. */
+export const ellipseIn = (
+  left: number,
+  right: number,
+  bottom: number,
+  top: number
+): Vec[] => {
+  const [cx, cy] = [(left + right) / 2, (bottom + top) / 2];
+  return [
+    [right, cy],
+    [cx, top],
+    [left, cy],
+    [cx, bottom],
+  ];
+};
+
+/** The handles after one is pulled: right and left move only their side across, top
+ * and bottom only theirs up and down, so it stays an upright ellipse. */
+export function pullEllipse(points: Vec[], index: number, to: Vec): Vec[] {
+  let [right, top, left, bottom] = [
+    points[0][0],
+    points[1][1],
+    points[2][0],
+    points[3][1],
+  ];
+  if (index === 0) right = to[0];
+  else if (index === 1) top = to[1];
+  else if (index === 2) left = to[0];
+  else bottom = to[1];
+  return ellipseIn(
+    Math.min(left, right),
+    Math.max(left, right),
+    Math.min(bottom, top),
+    Math.max(bottom, top)
+  );
+}
+
+/** What a line, curve or ellipse draws through, as short straight steps. */
+export function pathOf(
+  mark: Extract<Mark, { points: Vec[] }>,
+  perSegment = 16
+): Vec[] {
+  if (mark.kind === 'curve') return smoothThrough(mark.points, perSegment);
+  if (mark.kind === 'line') return mark.points;
+  const [[right, cy], [cx, top]] = mark.points;
+  const [rx, ry] = [right - cx, top - cy];
+  const steps = perSegment * 4;
+  return Array.from({ length: steps + 1 }, (_, i): Vec => {
+    const turn = (i / steps) * Math.PI * 2;
+    return [cx + rx * Math.cos(turn), cy + ry * Math.sin(turn)];
+  });
+}
 
 /** Most marks one plane holds. */
 export const MARKS_MAX = 500;

@@ -35,6 +35,25 @@ it('passes through every plotted point', () => {
     expect(curve[index * 8]).toEqual(point);
 });
 
+it('closes a loop without a corner where it ends on its start', () => {
+  const curve = smoothThrough(
+    [
+      [0, 0],
+      [1, 1],
+      [2, 0],
+      [1, -1],
+      [0, 0],
+    ],
+    8
+  );
+  const [start, next] = curve;
+  const [before, end] = curve.slice(-2);
+  const arriving = Math.atan2(end[1] - before[1], end[0] - before[0]);
+  const leaving = Math.atan2(next[1] - start[1], next[0] - start[0]);
+  // The turn between two short steps of the curve; without the loop, a 90° corner.
+  expect(Math.abs(arriving - leaving)).toBeLessThan(0.6);
+});
+
 it("reads a pie angle clockwise from 12 o'clock", () => {
   const centre: Vec = [5, 5];
   for (const degrees of [0, 45, 126, 205, 290]) {

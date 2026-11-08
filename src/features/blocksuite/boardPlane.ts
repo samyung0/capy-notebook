@@ -21,8 +21,8 @@ import {
 } from '@blocksuite/affine/std/gfx';
 import { axisNumber } from '@/features/questions/graph';
 import { tickStep } from '@/features/questions/graphTicks';
-import { type Mark, PAPER, type Paper, pointsOf } from './boardData';
-import { minorStep, smoothThrough, ticks, type Vec } from './boardGeometry';
+import { type Mark, PAPER, type Paper, pathOf, pointsOf } from './boardData';
+import { minorStep, ticks, type Vec } from './boardGeometry';
 
 /** The plane's top left corner in its own units, and board pixels per unit. A polar
  * plane draws rings and spokes round its origin instead of squares (Epo 2026-11-08). */
@@ -258,7 +258,7 @@ function drawMarks(
       ctx.textBaseline = 'middle';
       haloText(ctx, mark.text, X(mark.at[0]), Y(mark.at[1]), 'center', paper);
     } else {
-      trace(mark.kind === 'curve' ? smoothThrough(mark.points) : mark.points);
+      trace(pathOf(mark));
       for (const point of mark.points) dot(point);
     }
   }

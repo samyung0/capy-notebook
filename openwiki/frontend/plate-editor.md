@@ -4494,7 +4494,11 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   stays selected, and Erase still removes. Where points coincide, the last drawn moves.
   Label (Epo 2026-11-08) types text centred where it's clicked, a `label` mark at that
   coordinate that moves and zooms with the plane (a click near one edits it; up to 24
-  characters; previews leave labels out, as numbers). Point, Line and Curve snap to the
+  characters; previews leave labels out, as numbers). Ellipse (Epo 2026-11-08, square
+  planes only) places a circle a grid step round, an `ellipse` mark of four handles
+  (right, top, left, bottom); pulling one moves only its side, so it stays upright, and
+  Move drags it whole. A curve clicked back onto its first point closes, smooth there,
+  and ends. Point, Line and Curve snap to the
   fine squares for the current zoom, so the
   plane has no edge and no fixed scale (the numbers are the question editor's, `tickStep`
   and `axisNumber` in `graph.ts`, with no JSXGraph). Numbers leave with their axis and

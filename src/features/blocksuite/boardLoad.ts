@@ -101,9 +101,19 @@ function elementProblem(fields: Fields): string | null {
       listUpTo(fields.marks, MARKS_MAX) &&
       (fields.marks as Fields[]).every(
         (mark) =>
-          mark?.kind !== 'label' ||
-          (typeof mark.text === 'string' &&
-            mark.text.length <= LABEL_LENGTH_MAX)
+          (mark?.kind !== 'label' ||
+            (typeof mark.text === 'string' &&
+              mark.text.length <= LABEL_LENGTH_MAX)) &&
+          // An ellipse is drawn from exactly its four handles.
+          (mark?.kind !== 'ellipse' ||
+            (listUpTo(mark.points, 4) &&
+              (mark.points as unknown[]).length === 4 &&
+              (mark.points as unknown[]).every(
+                (point) =>
+                  Array.isArray(point) &&
+                  point.length === 2 &&
+                  point.every(finite)
+              )))
       )
       ? null
       : 'plane fields';

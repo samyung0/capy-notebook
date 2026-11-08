@@ -30,14 +30,19 @@ export function clockAngle([cx, cy]: Vec, [x, y]: Vec) {
   return Math.round((degrees + 360) % 360);
 }
 
-/** A smooth curve through the points (Catmull-Rom), as many short segments. */
+/** A smooth curve through the points (Catmull-Rom), as many short segments. One that
+ * ends on its first point is a loop, smooth there too. */
 export function smoothThrough(points: Vec[], perSegment = 16): Vec[] {
   const out: Vec[] = [];
+  const first = points[0];
+  const end = points.at(-1);
+  const loop =
+    points.length > 3 && end?.[0] === first[0] && end[1] === first[1];
   for (let i = 0; i < points.length - 1; i++) {
-    const p0 = points[i - 1] ?? points[i];
+    const p0 = points[i - 1] ?? ((loop && points.at(-2)) || points[i]);
     const p1 = points[i];
     const p2 = points[i + 1];
-    const p3 = points[i + 2] ?? p2;
+    const p3 = points[i + 2] ?? (loop ? points[1] : p2);
     for (let step = 0; step < perSegment; step++) {
       const t = step / perSegment;
       const at = (axis: 0 | 1) =>

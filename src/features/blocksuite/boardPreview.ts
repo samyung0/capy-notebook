@@ -9,13 +9,13 @@ import {
   INK,
   type Mark,
   onScreen,
+  pathOf,
   pieCircle,
 } from './boardData';
 import {
   type Box,
   closeUp,
   IMAGE_SIDE_MAX,
-  smoothThrough,
   ticks,
   unite,
   type Vec,
@@ -336,9 +336,7 @@ function drawPlane(box: Box, fields: Fields, pen: Pen) {
       dot(mark.at);
       continue;
     }
-    const path =
-      mark.kind === 'curve' ? smoothThrough(mark.points, 6) : mark.points;
-    traces += path
+    traces += pathOf(mark, 6)
       .map(([u, v], i) => `${i ? 'L' : 'M'}${num(X(u))} ${num(Y(v))}`)
       .join('');
     for (const point of mark.points) dot(point);

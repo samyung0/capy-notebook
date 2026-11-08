@@ -6,11 +6,14 @@ import { axisNumber } from '@/features/questions/graph';
 import { tickStep } from '@/features/questions/graphTicks';
 import { m } from '@/i18n';
 import {
+  ellipseIn,
   LABEL_LENGTH_MAX,
   MARKS_MAX,
   type Mark,
   PAPER,
+  pathOf,
   pointsOf,
+  pullEllipse,
 } from './boardData';
 import { drawChip, openBoardEditor } from './boardEditorShell';
 import { minorStep, smoothThrough, snapTo, type Vec } from './boardGeometry';
@@ -25,7 +28,7 @@ import {
 } from './boardPlane';
 import { mathsIcon } from './boardTools';
 
-type Tool = 'move' | 'point' | 'line' | 'curve' | 'label' | 'erase';
+type Tool = 'move' | 'point' | 'line' | 'curve' | 'ellipse' | 'label' | 'erase';
 
 const PIXELS_TO_ERASE = 12;
 const PIXELS_TO_LABEL = 24;
@@ -51,6 +54,7 @@ const TOOLS: { icon: string; id: Tool; label: () => string }[] = [
   { icon: 'point', id: 'point', label: m.drawing_board_point },
   { icon: 'line', id: 'line', label: m.drawing_board_line_through_points },
   { icon: 'curve', id: 'curve', label: m.drawing_board_curve },
+  { icon: 'ellipse', id: 'ellipse', label: m.drawing_board_ellipse },
   { icon: 'label', id: 'label', label: m.drawing_board_plane_label },
   { icon: 'erase', id: 'erase', label: m.drawing_board_erase_mark },
 ];
@@ -66,8 +70,7 @@ function distanceTo(mark: Mark, [x, y]: Vec) {
       : 0;
     return Math.hypot(x - a[0] - t * dx, y - a[1] - t * dy);
   };
-  const points =
-    mark.kind === 'curve' ? smoothThrough(mark.points) : mark.points;
+  const points = pathOf(mark);
   return points.length > 1
     ? Math.min(...points.slice(1).map((p, i) => between(points[i], p)))
     : Math.hypot(x - points[0][0], y - points[0][1]);
@@ -75,10 +78,13 @@ function distanceTo(mark: Mark, [x, y]: Vec) {
 
 /** A mark with one of its points at `to`, or (`index` null) all of it moved by `to`. */
 function moved(mark: Mark, index: number | null, to: Vec): Mark {
-  if (index !== null)
+  if (index !== null) {
+    if (mark.kind === 'ellipse')
+      return { ...mark, points: pullEllipse(mark.points, index, to) };
     return 'points' in mark
       ? { ...mark, points: mark.points.map((p, i) => (i === index ? to : p)) }
       : { ...mark, at: to };
+  }
   const by = (p: Vec): Vec => [p[0] + to[0], p[1] + to[1]];
   return 'points' in mark
     ? { ...mark, points: mark.points.map(by) }
@@ -238,9 +244,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     if ('points' in mark) {
-      const path = (
-        mark.kind === 'curve' ? smoothThrough(mark.points) : mark.points
-      ).map(toScreen);
+      const path = pathOf(mark).map(toScreen);
       for (const [colour, width] of [
         [HALO, 10],
         [BLUE, 2],
@@ -314,7 +318,6 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     if (
       !pointer ||
       grab ||
-      hover ||
       tool === 'move' ||
       tool === 'erase' ||
       tool === 'label'
@@ -325,7 +328,13 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     ctx.strokeStyle = '#1e96eb';
     ctx.fillStyle = '#1e96eb';
     ctx.lineWidth = 2;
-    const at = snapped(pointer);
+    // Over a point, the next click lands on it (closing a curve on its first, say).
+    const under =
+      hover?.index != null && model.marks.find(({ id }) => id === hover?.id);
+    const at =
+      under && hover?.index != null
+        ? pointsOf(under)[hover.index]
+        : snapped(pointer);
     const open = openMark();
     if (open && open.kind !== 'dot') {
       const path =
@@ -337,6 +346,15 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
         if (i) ctx.lineTo(X(x), Y(y));
         else ctx.moveTo(X(x), Y(y));
       ctx.stroke();
+    }
+    if (tool === 'ellipse') {
+      // The circle a click places.
+      const r = tickStep(view.ppu) * view.ppu;
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath();
+      ctx.ellipse(X(at[0]), Y(at[1]), r, r, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
     }
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 4]);
@@ -383,7 +401,16 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     const at = exact ?? snapped(px);
     const open = openMark();
     if (tool === 'point') add({ at, id: newId(), kind: 'dot' });
-    else if (tool === 'line' || tool === 'curve') {
+    else if (tool === 'ellipse') {
+      // A circle a grid step round, centred where it's placed; its handles stretch it.
+      const r = tickStep(view.ppu);
+      add({
+        id: newId(),
+        kind: 'ellipse',
+        points: ellipseIn(at[0] - r, at[0] + r, at[1] - r, at[1] + r),
+      });
+      finish();
+    } else if (tool === 'line' || tool === 'curve') {
       if (open?.kind === tool) {
         const last = open.points.at(-1);
         if (last?.[0] === at[0] && last[1] === at[1]) {
@@ -391,7 +418,11 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
           return;
         }
         replaceOpen({ ...open, points: [...open.points, at] });
-        if (tool === 'line') finish();
+        // A line ends at its second point, a curve once it closes on its first.
+        const [first] = open.points;
+        const closes =
+          open.points.length > 2 && first[0] === at[0] && first[1] === at[1];
+        if (tool === 'line' || closes) finish();
         return;
       }
       if (model.marks.length >= MARKS_MAX) return;
@@ -654,7 +685,10 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
         }
         <div class="capy-plane-tools">
           <div class="capy-plane-row">
-            ${TOOLS.map(
+            ${TOOLS.filter(
+              // Upright ellipses belong to x and y, not to rings and spokes.
+              ({ id }) => !(view.polar && id === 'ellipse')
+            ).map(
               ({ icon, id, label }) =>
                 html`<button
                   aria-label=${label()}

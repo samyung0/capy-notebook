@@ -32,6 +32,29 @@ describe('checkSavedBoard', () => {
     expect(
       reason(withElement({ children: new Y.Map(), type: 'group' }))
     ).toBeNull();
+    expect(
+      reason(
+        withElement({
+          marks: [
+            {
+              id: 'e',
+              kind: 'ellipse',
+              points: [
+                [2, 0],
+                [0, 1],
+                [-2, 0],
+                [0, -1],
+              ],
+            },
+          ],
+          ppu: 30,
+          type: 'plane',
+          x0: -5,
+          xywh: '[0,0,300,200]',
+          y0: 5,
+        })
+      )
+    ).toBeNull();
   });
 
   it('refuses a block out of place', () => {
