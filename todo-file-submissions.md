@@ -50,6 +50,44 @@ bench: `bench/grading/reports/2026-11-08-page-answer-costs.md`.
   - This supersedes the Q693 storage refusal on assignment drawings; practice
     checks keep Q694.
 
+## Answers shown after submitting (Epo asked 2026-11-08)
+
+**Today:**
+- With Show answers on, which New assignment defaults to, a member gets keys,
+  marking points and worked solutions the moment they submit, while the
+  assignment is still open for others (`openwiki/study-progress.md:808`, 978;
+  `gradedWithoutKeys` strips them only when it's off).
+- Marks waiting for approval don't show.
+- With more than one attempt, a member can use the keys on the next attempt
+  (accepted 2026-11-05).
+- So yes: one early submitter can share every answer.
+
+**Other apps keep "when" apart from "what":**
+- **Moodle:** each review item (right answer, whether correct, marks,
+  feedback) has its own timing: during, immediately after, later while open,
+  or after the quiz is closed.
+  [St Olaf guide](https://stolafcarleton.teamdynamix.com/TDClient/1893/StOlaf/KB/ArticleDet?ID=147541),
+  [VCC KB](https://vcc.teamdynamix.com/TDClient/50/Portal/KB/ArticleDet?ID=2989)
+- **Canvas New Quizzes:** shows correct answers from a set date and can hide
+  them again; teachers ask for "release at the due date".
+  [Canvas idea](https://community.canvaslms.com/t5/Canvas-Ideas/New-Quizzes-Show-and-Hide-Quiz-Results-by-Date/m-p/510182),
+  [UMN how-to](https://it.umn.edu/services-technologies/how-tos/canvas-showing-quiz-answers-students)
+- **Google Forms:** releases grades immediately or "Later, after manual
+  review". "Respondent can see" (missed questions, correct answers, point
+  values) is set separately.
+  [Google support](https://support.google.com/docs/answer/7032287?hl=en-IN)
+- **Microsoft Forms:** one switch, "Show results automatically", or the
+  teacher posts scores later.
+  [Microsoft support](https://support.microsoft.com/en-us/education/display-answers-and-points-on-quiz-questions)
+- **Sharing is the reason these options exist:** guides recommend showing
+  right answers only after the quiz closes.
+
+**Recommendation (question R, mock C3):**
+- A Show answers dropdown, default After it closes. "Closes" means closed by
+  hand, or at the due date when No late submissions is on.
+- With late submissions allowed, answers wait until the owner closes it.
+- Marks still show on submit.
+
 ## Credits and storage never block an assignment: what changes
 
 **Credits, today:**
@@ -305,11 +343,17 @@ O1. **Bounding the overshoot:** one uploaded paper an attempt, at most the
     member's source file cap in total (10 / 30 MiB) across its files; drawings
     stay bounded by their per-part caps. OK?
 
-O2. **The member's side of "not graded":**
-    - Should the member's results say "Not graded: you have no AI credits
-      left" with a Top up link?
-    - After topping up, may the member press Mark with AI themselves, or does
-      only the owner?
+O2. **Settled (Epo 2026-11-08, "no need unless its practice"):** on an
+    assignment only the owner presses Mark with AI; a member re-checks only in
+    their own practice. This is unchanged from today, so nothing is recorded.
+
+R. **When answers are shown (mock C3):**
+   - Replace the "Show answers after submitting" switch with a Show answers
+     dropdown: After it closes (default) / Right after submitting / Never.
+   - Marks keep showing on submit.
+   - Also: should per-question right/wrong wait for closing too? For multiple
+     choice it gives the answer away as well, which is Moodle's "Whether
+     correct" option.
 
 O3. **Untimed assignments without uploads** open straight into the attempt,
     so they have no start dialog for the storage warning. Should a one-line
