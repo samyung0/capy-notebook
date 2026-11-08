@@ -234,6 +234,37 @@ func TestDrawnSampleOfAnotherMaterialIsNeverSent(t *testing.T) {
 	}
 }
 
+// TestAssignmentDrawingSavesPastStorage (Epo 2026-11-08, superseding Q693's
+// refusal): storage never blocks an assignment, so a member at their limit saves
+// a drawing all the same and goes over it, the bytes charged to them.
+func TestAssignmentDrawingSavesPastStorage(t *testing.T) {
+	h, st, _, _ := openGradingAPIWithBlob(t, "full")
+	ctx := context.Background()
+	id := drawingAssignment(t, h, "ai_approve")
+	attempt := startDrawingAttempt(t, h, id, "u_viewer")
+	usage, err := st.StorageUsage(ctx, "u_viewer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var held int64
+	_ = st.Pool().QueryRow(ctx, `SELECT used_bytes FROM user_storage WHERE user_id='u_viewer'`).Scan(&held)
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO user_storage (user_id, used_bytes) VALUES ('u_viewer',$1)
+		ON CONFLICT (user_id) DO UPDATE SET used_bytes=EXCLUDED.used_bytes`, usage.LimitBytes); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = st.Pool().Exec(context.Background(), `UPDATE user_storage SET used_bytes=$1 WHERE user_id='u_viewer'`, held)
+	})
+	expectStatus(t, doReq(t, h, http.MethodPut, "/api/assignment-attempts/"+attempt+"/drawings/draw-a", "u_viewer", drawingDone(t)), http.StatusOK, "Done at the limit")
+	after, err := st.StorageUsage(ctx, "u_viewer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.UsedBytes <= usage.LimitBytes {
+		t.Fatalf("used %d after saving at the limit %d, want over it", after.UsedBytes, usage.LimitBytes)
+	}
+}
+
 // TestPracticeDrawingCheckOverStorageCallsNoModel (Epo 2026-11-07, Q694): a
 // practice check of a drawing past the learner's storage is refused with the
 // storage message before any marking is paid for.

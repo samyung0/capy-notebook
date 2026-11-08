@@ -276,9 +276,14 @@ references, so a replaced board, a dropped image and every cascade queue their
 objects for the reaper.
 
 - **Gate before the bucket.** An assignment's Done passes
-  `CheckAssignmentDrawing` (the attempt, the part and the payer's storage for
-  what the part adds over what it held) before any object is written, and the
-  save's own `gateStorageTx` decides again (Q693). A practice Check of a
+  `CheckAssignmentDrawing` (the attempt, the part and the account's state)
+  before any object is written, and the save checks again. Storage never
+  blocks an assignment (Epo 2026-11-08, superseding Q693's refusal): both use
+  `admitAccountTx`, the account half of `gateStorageTx` with no quota check, so
+  a member at the limit saves the drawing, is charged for it and goes over,
+  into the usual over-quota states. Before you start warns such a member when
+  the paper has drawing parts (`drawingParts`); an assignment's pages show the
+  owner nothing about it. A practice Check of a
   drawing asks `AssertStorageRoom` for its boards and images before the model
   is paid for (Q694): over the limit it is refused with
   `storage_quota_exceeded`, no credits spent. Objects written before a refusal

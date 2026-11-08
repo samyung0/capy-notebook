@@ -419,6 +419,8 @@ components:
           type: string
         draft:
           type: boolean
+        drawingParts:
+          type: boolean
         dueAt:
           format: date-time
           type: string
@@ -482,6 +484,7 @@ components:
         - attempts
         - questions
         - marks
+        - drawingParts
         - topicIds
         - files
         - gradesHidden

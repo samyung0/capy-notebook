@@ -2919,6 +2919,7 @@
   "assignment_overdue": "已过期",
   "assignment_open": "打开",
   "assignment_timer_starts": "按下开始后计时",
+  "assignment_storage_full_drawings": "你的存储空间已满。你仍可作答并提交，绘图会超出存储上限。",
   "assignment_not_now": "稍后",
   "assignment_minutes": "{count} 分钟",
   "assignment_minutes_one": "1 分钟",

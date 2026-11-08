@@ -57,7 +57,10 @@ bench: `bench/grading/reports/2026-11-08-page-answer-costs.md`.
     save past the limit into the existing over-quota states.
   - A later attempt started while over the limit can't upload, and its start
     shows a warning when there are drawing parts (S6).
-  - The owner's Members tab warns (T4).
+  - Built 2026-11-08: drawings save past the limit, and Before you start warns
+    a member whose storage is full when the paper has drawing parts (S6).
+  - The owner sees it on a members page, never on the assignment's pages
+    (Epo, T4 updated); where is question U.
   - This supersedes the Q693 storage refusal on assignment drawings; practice
     checks keep Q694.
 
@@ -402,6 +405,10 @@ S. **Built 2026-11-08** (Show grades, Release grades, S7).
 
 T. **Notify at release?** A bell notification "Grades released: Past paper 2025
    P1" to each member. No marks notification exists today.
+
+U. **Where the owner sees a member's full storage.** Study → Members is not
+   built yet ("Coming soon"); the one member list today is Workspace settings →
+   Sharing. Put a Storage full chip there now, or wait for Study → Members?
 
 O3. **Untimed assignments without uploads** open straight into the attempt,
     so they have no start dialog for the storage warning. Should a one-line

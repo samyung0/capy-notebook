@@ -87,6 +87,9 @@ type Assignment struct {
 	// Questions and Marks are the frozen copy's; 0 on a draft and when unmarked.
 	Questions int     `json:"questions"`
 	Marks     float64 `json:"marks"`
+	// DrawingParts: the frozen copy asks for a drawing, which Before you start
+	// warns about when the member's storage is full (S6).
+	DrawingParts bool `json:"drawingParts"`
 	// TopicIDs: its quiz's topic, or its files' with the most-used first.
 	TopicIDs []string         `json:"topicIds" nullable:"false"`
 	Files    []AssignmentFile `json:"files" nullable:"false"`
@@ -229,7 +232,9 @@ func (s *Store) assignmentStaff(ctx context.Context, q rowQueryer, userID, wsID 
 const assignmentCols = `a.id, a.workspace_id, a.kind, a.title, a.posted_at, COALESCE(NULLIF(u.name,''), u.id, ''),
 	a.due_at, a.closed_at, a.no_late, a.late_penalty_pct, a.draft, a.time_limit_min, a.attempts_allowed, a.question_count, a.total_marks::float8,
 	a.source_quiz_id, COALESCE(m.title,''), m.topic_id, COALESCE(m.hidden, false), m.trashed_at IS NOT NULL,
-	a.assign_all, a.marking, a.answers_shown, a.grades_shown, a.grades_released_at, a.shuffle, a.released_at`
+	a.assign_all, a.marking, a.answers_shown, a.grades_shown, a.grades_released_at, a.shuffle, a.released_at,
+	EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(a.questions, '[]')) q, jsonb_array_elements(q->'parts') p
+		WHERE p->'answer'->>'type' = 'drawing')`
 
 // readAssignments reads the rows matching where (assignments a, users u and
 // materials m aliased) and fills what the caller may see of them; a caller who
@@ -257,7 +262,7 @@ func (s *Store) readAssignments(ctx context.Context, userID string, staff bool, 
 		if err := rows.Scan(&a.ID, &a.WorkspaceID, &a.Kind, &a.Title, &a.PostedAt, &a.PostedBy,
 			&a.DueAt, &a.ClosedAt, &a.NoLate, &a.LatePenaltyPct, &a.Draft, &a.TimeLimitMin, &a.Attempts, &a.Questions, &a.Marks,
 			&manage.QuizID, &manage.QuizTitle, &src.topicID, &src.hidden, &src.trashed,
-			&manage.AssignAll, &manage.Marking, &manage.ShowAnswers, &manage.ShowGrades, &manage.GradesReleasedAt, &manage.Shuffle, &src.released); err != nil {
+			&manage.AssignAll, &manage.Marking, &manage.ShowAnswers, &manage.ShowGrades, &manage.GradesReleasedAt, &manage.Shuffle, &src.released, &a.DrawingParts); err != nil {
 			return nil, err
 		}
 		a.ClosedAt = assignmentClosedAt(a.NoLate, a.DueAt, a.ClosedAt, now)

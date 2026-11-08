@@ -1,7 +1,7 @@
 import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
-import { useStartAssignment } from '@/api/hooks';
-import type { Assignment } from '@/api/types';
+import { useMe, useStartAssignment } from '@/api/hooks';
+import { type Assignment, StorageUsageLevel } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import {
   Dialog,
@@ -80,7 +80,9 @@ export function useAssignmentStart(workspaceId: string, onCancel?: () => void) {
   return { dialog, start, starting: isPending };
 }
 
-/** Before you start (A0): only the time and the paper's size. */
+/** Before you start (A0): only the time and the paper's size, and when the
+ * member's storage is full and the paper asks for drawings, that they save past
+ * the limit (S6, Epo 2026-11-08). */
 function BeforeYouStart({
   assignment,
   error,
@@ -94,6 +96,10 @@ function BeforeYouStart({
   onStart: () => void;
   starting: boolean;
 }) {
+  const { data: me } = useMe({ errorBoundary: false });
+  const storageFull =
+    assignment.drawingParts &&
+    me?.account?.storageUsage === StorageUsageLevel.full;
   return (
     <Dialog onOpenChange={(open) => !open && !starting && onCancel()} open>
       <DialogContent
@@ -121,6 +127,11 @@ function BeforeYouStart({
         <p className="t-meta mt-3.5 text-fg-secondary">
           {paperMeta(assignment)}
         </p>
+        {storageFull && (
+          <p className="t-meta mt-3 rounded-lg bg-tint-warning px-3 py-2.5 text-tint-warning-fg">
+            {m.assignment_storage_full_drawings()}
+          </p>
+        )}
         <FormAlert errorId={error?.errorId} message={error?.message ?? null} />
         <DialogFooter className="max-sm:justify-end">
           <Button disabled={starting} onClick={onCancel} variant="ghost">

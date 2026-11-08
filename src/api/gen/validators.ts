@@ -370,6 +370,7 @@ export const GetAssignmentResponse = zod.object({
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),
   "draft": zod.boolean(),
+  "drawingParts": zod.boolean(),
   "dueAt": zod.iso.datetime({"offset":true}).optional(),
   "files": zod.array(zod.object({
   "fileId": zod.string().optional(),
@@ -476,6 +477,7 @@ export const UpdateAssignmentResponse = zod.object({
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),
   "draft": zod.boolean(),
+  "drawingParts": zod.boolean(),
   "dueAt": zod.iso.datetime({"offset":true}).optional(),
   "files": zod.array(zod.object({
   "fileId": zod.string().optional(),
@@ -566,6 +568,7 @@ export const SetAssignmentClosedResponse = zod.object({
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),
   "draft": zod.boolean(),
+  "drawingParts": zod.boolean(),
   "dueAt": zod.iso.datetime({"offset":true}).optional(),
   "files": zod.array(zod.object({
   "fileId": zod.string().optional(),
@@ -662,6 +665,7 @@ export const PublishAssignmentResponse = zod.object({
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),
   "draft": zod.boolean(),
+  "drawingParts": zod.boolean(),
   "dueAt": zod.iso.datetime({"offset":true}).optional(),
   "files": zod.array(zod.object({
   "fileId": zod.string().optional(),
@@ -731,6 +735,7 @@ export const ReleaseAssignmentGradesResponse = zod.object({
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),
   "draft": zod.boolean(),
+  "drawingParts": zod.boolean(),
   "dueAt": zod.iso.datetime({"offset":true}).optional(),
   "files": zod.array(zod.object({
   "fileId": zod.string().optional(),
@@ -866,6 +871,7 @@ export const RepublishAssignmentResponse = zod.object({
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),
   "draft": zod.boolean(),
+  "drawingParts": zod.boolean(),
   "dueAt": zod.iso.datetime({"offset":true}).optional(),
   "files": zod.array(zod.object({
   "fileId": zod.string().optional(),
@@ -7128,6 +7134,7 @@ export const GetTodoResponse = zod.object({
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),
   "draft": zod.boolean(),
+  "drawingParts": zod.boolean(),
   "dueAt": zod.iso.datetime({"offset":true}).optional(),
   "files": zod.array(zod.object({
   "fileId": zod.string().optional(),
@@ -7827,6 +7834,7 @@ export const ListAssignmentsResponse = zod.object({
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),
   "draft": zod.boolean(),
+  "drawingParts": zod.boolean(),
   "dueAt": zod.iso.datetime({"offset":true}).optional(),
   "files": zod.array(zod.object({
   "fileId": zod.string().optional(),
@@ -7935,6 +7943,7 @@ export const CreateAssignmentResponse = zod.object({
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),
   "draft": zod.boolean(),
+  "drawingParts": zod.boolean(),
   "dueAt": zod.iso.datetime({"offset":true}).optional(),
   "files": zod.array(zod.object({
   "fileId": zod.string().optional(),

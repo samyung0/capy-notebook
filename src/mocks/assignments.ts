@@ -719,6 +719,9 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
     closed: isClosed(row),
     closedAt: closedAtOf(row),
     draft: row.draft,
+    drawingParts: (row.questions ?? []).some((q) =>
+      q.parts.some((p) => p.answer.type === 'drawing')
+    ),
     dueAt: row.dueAt,
     files: row.files.flatMap((f): Assignment['files'] => {
       const file = db.files.find((x) => x.id === f.fileId);

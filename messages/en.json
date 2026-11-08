@@ -2919,6 +2919,7 @@
   "assignment_overdue": "Overdue",
   "assignment_open": "Open",
   "assignment_timer_starts": "The timer starts when you press Start",
+  "assignment_storage_full_drawings": "Your storage is full. You can still answer and submit; your drawings will go over your storage limit.",
   "assignment_not_now": "Not now",
   "assignment_minutes": "{count} minutes",
   "assignment_minutes_one": "1 minute",

@@ -178,6 +178,7 @@ it("lists a class's To do: answers to approve for its owner, nothing when empty"
       attempts: 1,
       closed: false,
       draft: false,
+      drawingParts: false,
       files: [],
       gradesHidden: false,
       id: 'as_1',
