@@ -370,6 +370,54 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
     </div>
   </section>
 
+  <!-- C4 -->
+  <section class="board" id="c4">
+    <header><h2><b>C4</b>Proposal: Show marks beside Show answers (question S)</h2>
+      <p>Marking takes its own row; Show marks and Show answers share the next. Show marks: Right after submitting (today, the default) or When I release them. Answers never show before marks: with When I release them, Show answers offers When marks are released or Never.</p></header>
+    <div class="frames">
+      <div class="lap-wrap"><div class="lap" data-shell="owner" style="height:700px">
+        <div class="main"></div>
+        <div class="scrim"><div class="dialog" style="position:relative">
+          <h3>New assignment</h3>
+          <div class="field"><span class="lb">Quiz</span><div class="input">Past paper 2025 P1<svg><use href="#i-down"/></svg></div></div>
+          <div class="two">
+            <div class="field"><span class="lb">Due</span><div class="input" style="justify-content:flex-start;gap:8px"><svg><use href="#i-cal"/></svg>Wed 11 Nov</div></div>
+            <div class="field"><span class="lb">Time limit</span><div class="input">No limit<svg><use href="#i-down"/></svg></div></div>
+          </div>
+          <div class="field"><span class="lb">Marking</span><div class="input">AI grades, approval required<svg><use href="#i-down"/></svg></div></div>
+          <div class="two">
+            <div class="field newmark" style="margin:0"><span class="lb">Show marks</span><div class="input">When I release them<svg><use href="#i-down"/></svg></div></div>
+            <div class="field"><span class="lb">Show answers</span><div class="input">When marks are released<svg><use href="#i-down"/></svg></div></div>
+          </div>
+          <div class="sw"><span class="l">Allow submission with uploads</span><span class="t on"></span></div>
+          <div class="adv"><svg><use href="#i-right"/></svg>Advanced</div>
+          <div class="foot"><span class="btn ghost">Cancel</span><span class="btn">Create</span></div>
+          <div class="menu" style="left:24px;top:370px;width:236px">
+            <div class="mi">Right after submitting</div>
+            <div class="mi on">When I release them<svg class="tick"><use href="#i-check"/></svg></div>
+          </div>
+        </div></div>
+      </div></div>
+      <div class="phone">
+        <div data-tpl="ph-top"></div>
+        <div class="ph-body" style="opacity:.35"><span class="title">Assignments</span></div>
+        <div class="ph-sheet"><div class="dialog">
+          <h3>New assignment</h3>
+          <div class="field"><span class="lb">Quiz</span><div class="input">Past paper 2025 P1<svg><use href="#i-down"/></svg></div></div>
+          <div class="two">
+            <div class="field"><span class="lb">Due</span><div class="input" style="justify-content:flex-start;gap:6px"><svg><use href="#i-cal"/></svg>Wed 11 Nov</div></div>
+            <div class="field"><span class="lb">Time limit</span><div class="input">No limit<svg><use href="#i-down"/></svg></div></div>
+          </div>
+          <div class="field"><span class="lb">Marking</span><div class="input">AI grades, approval required<svg><use href="#i-down"/></svg></div></div>
+          <div class="field newmark" style="margin:0"><span class="lb">Show marks</span><div class="input">When I release them<svg><use href="#i-down"/></svg></div></div>
+          <div class="field"><span class="lb">Show answers</span><div class="input">When marks are released<svg><use href="#i-down"/></svg></div></div>
+          <div class="adv"><svg><use href="#i-right"/></svg>Advanced</div>
+          <div class="foot"><span class="btn ghost">Cancel</span><span class="btn">Create</span></div>
+        </div></div>
+      </div>
+    </div>
+  </section>
+
   <!-- C2 -->
   <section class="board" id="c2">
     <header><h2><b>C2</b>New assignment, Unmarked: Allow file uploads</h2>
@@ -965,6 +1013,89 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
     </div>
   </section>
 
+  <!-- S7 -->
+  <section class="board" id="s7">
+    <header><h2><b>S7</b>Proposal: member, marks not released yet</h2>
+      <p>Submitting says when marks come instead of "Your mark so far". On Assignments the row reads Submitted where the mark goes. Results opens to their own answers with no mark, no right or wrong and no comments, under a strip saying who releases them. Once released, everything reads as today.</p></header>
+    <div class="frames">
+      <div class="lap-wrap"><div class="lap" data-shell="member">
+        <div class="main">
+          <div class="title" style="margin:0">Assignments</div>
+          <ul class="list" style="margin-top:14px;max-width:760px">
+            <li style="min-height:62px"><span style="flex:1;min-width:0"><b style="font-weight:600">Past paper 2025 P1</b><br><span class="meta">Marked · Due Wed 11 Nov</span></span><span class="chip newmark" style="margin:0">Submitted</span></li>
+            <li style="min-height:62px"><span style="flex:1;min-width:0"><b style="font-weight:600">Genetics worksheet</b><br><span class="meta">Marked · Due Tue 10 Nov</span></span><b>18 / 20</b></li>
+            <li style="min-height:62px"><span style="flex:1;min-width:0"><b style="font-weight:600">Osmosis check</b><br><span class="meta">Marked · Due Fri 6 Nov</span></span><b>9 / 12</b></li>
+          </ul>
+          <div style="margin-top:34px;max-width:760px;border:1px solid var(--divider);border-radius:12px;padding:22px 24px;text-align:center">
+            <div style="font-size:20px;font-weight:800">Submitted</div>
+            <div class="meta" style="margin-top:4px">Past paper 2025 P1 · Sun 8 Nov, 14:32</div>
+            <p class="newmark" style="margin:14px auto 0;display:inline-block;font-weight:500">Your marks will show when Kate Malone releases them.</p>
+            <div style="margin-top:16px;display:flex;gap:8px;justify-content:center"><span class="btn out">See your answers<svg><use href="#i-fwd"/></svg></span><span class="btn out">Back to Assignments</span></div>
+          </div>
+          <div class="cap">The page after Submit (below the list here only to show both).</div>
+        </div>
+      </div></div>
+      <div class="phone">
+        <div data-tpl="ph-top"></div>
+        <div class="ph-body">
+          <div class="back"><svg><use href="#i-back"/></svg>Assignments</div>
+          <div><div class="title">Past paper 2025 P1</div><div class="meta">Submitted Sun 8 Nov · 12 questions</div></div>
+          <div class="newmark" style="margin:0;font-size:13px;background:var(--chip);padding:9px 11px;border-radius:7px">Marks not released yet. Kate Malone releases them; until then you can read your answers.</div>
+          <div style="display:grid;gap:2px">
+            <div class="qr" style="display:flex;gap:8px;padding:8px 4px;border-bottom:1px solid var(--divider)"><span class="meta" style="width:24px">Q1</span><span style="flex:1">Define osmosis.</span><span class="meta">Answered</span></div>
+            <div class="qr" style="display:flex;gap:8px;padding:8px 4px;border-bottom:1px solid var(--divider)"><span class="meta" style="width:24px">Q2</span><span style="flex:1">Which cell organelle…</span><span class="meta">Answered</span></div>
+            <div class="qr" style="display:flex;gap:8px;padding:8px 4px;border-bottom:1px solid var(--divider)"><span class="meta" style="width:24px">Q3</span><span style="flex:1">Explain how water enters…</span><span class="meta">Answered</span></div>
+            <div class="qr" style="display:flex;gap:8px;padding:8px 4px;border-bottom:1px solid var(--divider)"><span class="meta" style="width:24px">Q4</span><span style="flex:1">Calculate the percentage…</span><span class="meta">Blank</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- T5 -->
+  <section class="board" id="t5">
+    <header><h2><b>T5</b>Proposal: owner, Release marks</h2>
+      <p>With Show marks set to When I release them, the report header carries "Marks not released" and a Release marks button. Its confirm counts who gets them and warns about answers still waiting; those show to the member once approved, as later mark changes do (Canvas's rule). Afterwards the chip reads "Released Mon 16 Nov". Answers set to "When marks are released" go out at the same moment.</p></header>
+    <div class="frames">
+      <div class="lap-wrap"><div class="lap" data-shell="owner">
+        <div class="main">
+          <div class="back"><svg><use href="#i-back"/></svg>Assignments</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="title" style="margin:0">Past paper 2025 P1</span><span class="chips"><span class="chip">Closed Wed 11 Nov</span><span class="chip">6 of 6 submitted</span><span class="chip warn">2 to approve</span><span class="chip newmark" style="margin:0">Marks not released</span></span></div>
+            <span class="btn newmark" style="margin:0">Release marks</span>
+          </div>
+          <div class="tabs"><span>Questions</span><span class="on">Members</span><span>Approve AI marks</span><span>Settings</span></div>
+          <table class="table" style="margin-top:6px">
+            <tr><th>Member</th><th>Submitted</th><th>Time taken</th><th>Mark</th><th></th></tr>
+            <tr><td><span class="who"><span class="av">BL</span>Ben Lee</span></td><td>Sat 7 Nov</td><td>38 min</td><td><b>26</b> / 40</td><td></td></tr>
+            <tr><td><span class="who"><span class="av">CM</span>Cara Moss</span></td><td>Sun 8 Nov</td><td>47 min</td><td><b>24</b> / 40</td><td><span class="chip warn">1 to approve</span></td></tr>
+            <tr><td><span class="who"><span class="av">EP</span>Eve Park</span></td><td>Fri 6 Nov</td><td>52 min</td><td><b>31</b> / 40</td><td></td></tr>
+            <tr><td><span class="who"><span class="av">FA</span>Farah Ali</span></td><td>Sun 8 Nov</td><td>41 min</td><td><b>20</b> / 40</td><td><span class="chip warn">1 to approve</span></td></tr>
+          </table>
+          <div class="scrim" style="position:absolute;inset:0;display:grid;place-items:center"><div class="dialog" style="width:440px">
+            <h3>Release marks?</h3>
+            <p style="margin:0;color:var(--fg2)">6 members see their marks and answers now. 2 answers still wait for your approval; each shows once you approve it.</p>
+            <div class="foot"><span class="btn ghost">Cancel</span><span class="btn">Release marks</span></div>
+          </div></div>
+        </div>
+      </div></div>
+      <div class="phone">
+        <div data-tpl="ph-top"></div>
+        <div class="ph-body" style="gap:10px">
+          <div class="title" style="font-size:20px">Past paper 2025 P1</div>
+          <span class="chips"><span class="chip">6 of 6 submitted</span><span class="chip warn">2 to approve</span><span class="chip newmark" style="margin:0">Marks not released</span></span>
+          <div><span class="btn newmark" style="margin:0">Release marks</span></div>
+          <div class="tabs" style="margin:0;font-size:13px"><span>Questions</span><span class="on">Members</span><span>Approve AI marks</span></div>
+          <ul class="list" style="margin:0">
+            <li style="min-height:56px"><span class="av">BL</span><span style="flex:1;min-width:0"><b style="font-weight:600">Ben Lee</b><br><span class="meta">26 / 40</span></span></li>
+            <li style="min-height:56px"><span class="av">CM</span><span style="flex:1;min-width:0"><b style="font-weight:600">Cara Moss</b><br><span class="meta">24 / 40 · 1 to approve</span></span></li>
+            <li style="min-height:56px"><span class="av">EP</span><span style="flex:1;min-width:0"><b style="font-weight:600">Eve Park</b><br><span class="meta">31 / 40</span></span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="picks">
     <h2>What each pick settles</h2>
     <ul>
@@ -972,6 +1103,7 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
       <li><b>S4 + S5 (Epo 2026-11-08)</b>: the member picks Answer here or Upload your paper, then uploads the whole paper and labels nothing. S1 and S2 are kept below only for the record.</li>
       <li><b>S3 + T2</b>: Unmarked tasks collect files with Hand in; nothing is AI-marked there (question H).</li>
       <li><b>T1</b>: page answers reuse Approve AI marks and its Marking dropdown unchanged.</li>
+      <li><b>C4 + S7 + T5</b>: a Show marks choice, what a member sees before release, and the owner's Release marks (question S).</li>
     </ul>
   </section>
 </main>

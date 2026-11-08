@@ -88,6 +88,56 @@ bench: `bench/grading/reports/2026-11-08-page-answer-costs.md`.
 - With late submissions allowed, answers wait until the owner closes it.
 - Marks still show on submit.
 
+## Releasing marks (Epo asked 2026-11-08)
+
+Epo asked whether to have a separate show-score option, how to display an
+assignment whose score isn't released, and whether topic mastery should wait.
+
+**What a member sees today:**
+- Closed parts' marks, and AI marks once approved (or at once with "AI grades,
+  no approval needed"), from the moment they're decided. They show on the
+  Submitted page ("Your mark so far"), on Results and on the Assignments row
+  (`AssignmentsPage.tsx:503`).
+- Topic labels on Learning read `answer_events`, which are written at submit for
+  closed parts and when open parts are marked (`learning_overview.go:530`). So a
+  label can move on a mark the owner hasn't released yet.
+- Reviews (FSRS) are rated only when the assignment closes and its quiz becomes
+  practice.
+- No notification is sent when marks land.
+
+**How other apps do it:**
+- **Canvas:** an automatic or manual posting policy, per course or per
+  assignment. Under manual, students see no grade, no comments and no
+  notifications until Post grades. After posting, later regrades show at once.
+- **Google Classroom:** grades are drafts that students can't see until the
+  teacher presses Return.
+- **Google Forms:** "Release grades" is either "Immediately after each
+  submission" or "Later, after manual review".
+
+**Recommendation (question S, mocks C4, S7, T5):**
+- **A Show marks select** beside Show answers: Right after submitting (the
+  default, today's behaviour) or When I release them. No "after it closes"
+  option for marks: marking often finishes after the close, so the owner
+  decides.
+- **Answers never show before marks.** With When I release them, Show answers
+  offers When marks are released or Never.
+- **Release marks** button on the report (T5). It confirms how many members get
+  them and how many answers still wait for approval. After release, an approved
+  or changed mark shows at once, as in Canvas. The chip then reads "Released
+  {date}".
+- **Before release (S7):**
+  - The Submitted page says "Your marks will show when {owner} releases them".
+  - The Assignments row shows a Submitted chip where the mark goes.
+  - Results lists their own answers with Answered or Blank, and no marks,
+    right/wrong or comments.
+- **Mastery and reviews wait for what the member can see.** Answer events are
+  still written as now: the log stays complete and the owner's report reads it.
+  The topic-label read leaves out an assignment's events until its marks are
+  visible to that member, and reviews rate at release or at close, whichever is
+  later. With Right after submitting nothing changes.
+- **Not in this:** a bell notification at release. We have no marks
+  notifications today (question T).
+
 ## Credits and storage never block an assignment: what changes
 
 **Credits, today:**
@@ -352,6 +402,14 @@ R. **Built (Epo 2026-11-08, "its only a select right? otherwise just build
    closes (default) / Right after submitting / Never (migration 0159). Marks
    and per-part right/wrong still show on submit; whether right/wrong should
    wait too is for Epo to judge on the build.
+
+S. **Releasing marks (mocks C4, S7, T5):** a Show marks select (Right after
+   submitting / When I release them), a Release marks button on the report,
+   the member's view before release, and topic labels and reviews waiting for
+   release. Yes as proposed?
+
+T. **Notify at release?** A bell notification "Marks released: Past paper 2025
+   P1" to each member. No marks notification exists today.
 
 O3. **Untimed assignments without uploads** open straight into the attempt,
     so they have no start dialog for the storage warning. Should a one-line
