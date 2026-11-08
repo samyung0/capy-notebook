@@ -1,28 +1,45 @@
 # File uploads as assignment submissions
 
-Epo's request (2026-11-08): an "Allow file uploads" option at assignment
-creation for quiz (Marked) and general (Unmarked) assignments; whether AI marks
-quizzes from uploaded files, and how to limit scanned PDFs; whether to chunk and
-index submissions; and whether a normal scanned upload goes to the caption/VLM
-slot while only Make a quiz uses the layout/OCR service.
+Epo's request (2026-11-08): an option at assignment creation for quiz (Marked)
+and general (Unmarked) assignments to take uploaded files; whether AI marks
+quizzes from uploads, and how to handle scanned PDFs; whether to chunk and index
+submissions; and whether a normal scanned upload goes to the caption/VLM slot
+while only Make a quiz uses the layout/OCR service.
 
-Status: **phase 1. A and B decided (2026-11-08); B2 and C–L open.** No
-feature code.
+Status: **phase 1.** No feature code.
+- Decided: A, B, and marking from all the pages together.
+- Open: who pays (Q1, conflicts with a recorded decision), M (how pages are
+  marked), and C–L.
+
+Mocks: https://claude.ai/artifact/4ihgjU6i3BQn3q6ngQA9bQ
+(`artifacts/2026-11-08-file-submissions-mocks.html`). Costs and the whole-paper
+bench: `bench/grading/reports/2026-11-08-page-answer-costs.md`.
 
 ## Decisions so far (recorded in `human/study-progress.md`)
 
-- **A (Epo 2026-11-08, "sure"):** an "Allow file uploads" switch, off by
-  default, on Marked and Unmarked. Shuffle questions moves into Advanced. An
-  Unmarked assignment's Files field sits below Due and Assign to. Mocks C1 and C2
-  updated.
-- **B (Epo 2026-11-08):** S2, files on each question. "NEVER ask the student to
-  label each question to each page, upload a single 10 page pdf and nth else
-  should be needed." S1's Questions dropdowns are dropped, and R1 below is
-  superseded: matching pages to questions is the app's job.
-- **B2 (open):** where a whole-paper PDF goes in S2, and how its pages reach each
-  question's marking call (see "Questions for Epo"). Mocks: https://claude.ai/artifact/4ihgjU6i3BQn3q6ngQA9bQ
-(`artifacts/2026-11-08-file-submissions-mocks.html`). Costs:
-`bench/grading/reports/2026-11-08-page-answer-costs.md`.
+- **A (Epo 2026-11-08, "sure"):**
+  - New assignment gets a switch, off by default, on Marked and Unmarked. It is
+    named **"Allow submission with uploads"** (Epo's later message).
+  - Shuffle questions moves into Advanced.
+  - An Unmarked assignment's Files field sits below Due and Assign to.
+  - Mocks C1 and C2 are updated.
+- **B (Epo 2026-11-08, superseding the same day's S2):**
+  - Opening a Marked assignment that allows uploads shows a new screen: do the
+    quiz on the site, or upload files (mocks S4, S5).
+  - The member never labels which page holds which question: "upload a single
+    10 page pdf and nth else should be needed".
+- **Marking (Epo 2026-11-08):**
+  - The pages are marked together, since nobody says where each answer is: one
+    call for the whole paper, or a map call then grading.
+  - "3 page is very little": there is no per-question page cap.
+- **Not recorded, conflicts with a decision (Q1):** "everything, literally
+  everything is charged to the person attempting".
+  - Today an assignment's AI marking is charged to the workspace owner: Epo
+    2026-11-03 in `human/observability-metering.md:178`.
+  - In code, `store/assignment_marking.go:38` takes `workspaces.user_id` as the
+    payer.
+  - Only practice checks and drawing storage are charged to the person
+    attempting.
 
 ## 1. Parsing today (answer to Epo's last question)
 
@@ -61,12 +78,12 @@ feature code.
 - So nothing in the app runs OCR apart from the VLM page read at ingest. The
   question and mark-scheme files are read by the extraction model from images.
 
-## 2. AI marking of uploads: recommendation
+## 2. AI marking of uploads
 
-**Yes, AI marks uploads.** Build it on the drawing path: same grading slot
-(vision, required since M4), same Marking dropdown (AI with approval / AI
-without / Manual), owner pays for assignments, Not marked when credits run out
-or the call fails, and Check again / Mark with AI later.
+**Yes, AI marks uploads, on the drawing path:** the vision grading slot, the
+Marking dropdown (AI with approval / AI without / Manual), Not marked when
+credits run out or a call fails, and Check again / Mark with AI later. The
+payer waits on Q1.
 
 **Measured cost per page** (1017, catalog rates; report above):
 
@@ -74,45 +91,49 @@ or the call fails, and Check again / Mark with AI later.
 |---|---|---|
 | Text layer (born-digital PDF) | 0 model cost to read | Grading from text: 0.15–0.6 credits a part |
 | OCR (ingest VLM page read) | 1.0 credit charged (0.27–0.41 in tokens) | The only "OCR" there is; then grade the text |
-| Page image sent to the grading model | about 0.2 credits a page a call (1,000 tokens at 1,568 px) | Output still sets most of the cost: 0.6–1.0 credits a part with one page |
+| Page image in a grading call | about 0.2 credits a page a call at 1,568 px (0.12 at 1,024) | Output sets most of a call's cost |
 | Layout service | free | Boxes only; no use for marking |
 
-All page-image grading calls in the test found and marked the right part on a
-page with other answers. One credit is $0.001 to the payer; Pro gets 10,000 a
-month, Free 200.
+One credit is $0.001 to the payer; Pro gets 10,000 a month, Free 200.
 
-**Per member, a typical paper** (20 open or drawn parts over 10 questions, 8
-pages, about 1.5 pages a question):
+**Whole paper, nothing labelled: bench of a 10-page handwritten paper** (16
+parts, 7 planted mistakes, an answer over two pages, one out of order, a graph,
+a blank; two runs each):
 
-| How each part's call sees the pages | Credits a member | Class of 30 |
-|---|---:|---:|
-| Typed answers today (about 0.8 a part) | 16 | 480 |
-| **Only its question's pages (recommended)** | **18** | **540** |
-| Read every page once with the VLM, then grade text | 17 | 510 |
-| The whole submission in every call | 44 | 1,320 |
+| Method | Parts right | Credits a member | Wall time |
+|---|---|---|---|
+| G1 one call, all pages at 1,568 px | 15/16 both runs | 8.4 / 16.8 | 21 / 48 s |
+| G1 one call, all pages at 1,024 px | 16/16 both runs | 19.3 / 5.0 | 49 / 12 s |
+| **G2 map call (1,024 px), then one call per part with its pages (1,568 px)** | **16/16 both runs** | **10.4 / 5.7** | **11 / 8 s** |
 
-The cost to limit is pages × calls, not pages alone. So:
+- **Epo is right that one call can mark a whole 10-page paper.** G1 got 15–16
+  of 16, but its cost swings 4× with how long it reasons.
+- **G1 puts every part in one reply,** so a failure or a cut-off loses the
+  whole paper, and a 40-part paper risks the output cap.
+- **G2's map found every part's pages** in both runs, including the two-page
+  answer, the out-of-order one and the blank.
+- **G2 is steady and parallel.** A failure loses one part (Not marked, as
+  today), and it reuses the per-part prompt.
+- **Either way it costs about the same as the same parts typed** (about 0.8
+  credits a part).
 
-- **R1 (superseded by B: the member never labels pages): the app finds each
-  question's pages** (B2). Each part's call gets only its question's pages, as
-  1,568 px images: the drawing image size Epo already set.
-- **R2: at most 3 pages a question go to the model.** A question with more is
-  left Not marked for hand marking, as a drawing saved under Manual is today
-  (Q695). Worst case is about 1.2 credits a part, or 48 credits for a 40-part
-  paper.
-- **R3: at most 20 pages and 10 files a submission,** refused at upload.
-- **R4: born-digital pages go as their text** (the `page_layer` test Make a
-  quiz uses). That is cheaper, and quotes can then be checked as for typed
-  answers.
-- **R5 (optional, mock C1b): New assignment shows the owner an estimate**,
-  "AI marking about N credits a member", from the quiz's open and drawn parts.
-- **Not recommended:** the owner choosing which pages or parts the AI marks.
-  The Marking dropdown (Manual) and Mark with AI per member already cover it.
-  A pass that auto-matches pages to questions could come later: one call over
-  all pages at 1,024 px is about 0.15 credits a page.
+**Recommended (M2 below): G2, map then grade.**
+- **Map call:** every page at 1,024 px, reasoning off, returns each part's
+  pages. Cost: about 0.12 credits a page; a 40-page paper's map is about 20k
+  input tokens.
+- **Part calls:** each gets its mapped pages at 1,568 px, with no page cap.
+- **A part the map finds on no page** earns nothing and makes no call.
+- **Born-digital pages** go as their text (the `page_layer` test Make a quiz
+  uses): cheaper, and quotes can be checked.
+- **Approve** shows each part's mapped pages (T1), so a wrong map is visible,
+  and the owner can change the mark as today.
+- **Limit: 40 pages a submission** (Make a quiz's run cap), refused at upload.
 
-**Prompt (needs Epo's OK before it's built, P1).** Today's prompt word for
-word, plus this section, sent only when pages go with a part:
+**Prompts (need Epo's OK before they're built).**
+
+P1, appended to today's grading prompt only when pages go with a part. The user
+turn is today's question and items, then "Student's pages:", then "Page n:"
+and each image in order:
 
 ```
 Page answers: when the student's answer comes as page images instead of <student_answer> text, the pages are the student's written work and everything above applies to them.
@@ -121,18 +142,21 @@ Page answers: when the student's answer comes as page images instead of <student
 - "quote" copies, in at most 12 words, the words or working on the page that earn the credit.
 ```
 
-The user turn is today's question and items. If the member also typed an
-answer, `<student_answer>` follows. Then "Student's pages:" and the images in
-page order. As for drawings, quotes from images are not checked.
+P2, the map call's system prompt. The user turn is "Question parts:" with one
+line a part (label and question text), then "Pages:" and each page as
+"Page n:" and its image:
+
+```
+You see every page of one student's handwritten answer paper, in order, and the list of question parts. For each part, give the page numbers where the student writes its answer. Answers may run over several pages or come out of order; a part the student did not answer gets []. Reply with JSON only, such as {"1a": [1], "6": [5, 6]}.
+```
 
 **Storage** follows the drawing decisions (2026-11-06):
-- The member pays for their uploads.
-- The files go with the assignment.
-- A member who leaves keeps, and pays for, the files of parts not marked yet.
+- The member pays for their uploads, and the files go with the assignment.
+- A member who leaves keeps, and pays for, files whose parts aren't marked yet.
 - Uploads are attempt files, not workspace files: no ingest job, no file tree
   entry, no parse charge.
-- Plan caps: the member's source file cap for a PDF (10 / 30 MiB). Photos are
-  compressed to the 2 MiB image cap in the browser, with the insert compressor.
+- A PDF takes the member's source file cap (10 / 30 MiB). Photos are
+  compressed to the 2 MiB image cap in the browser.
 
 ## 3. Chunk and index submissions: recommendation, no (for now)
 
@@ -160,86 +184,71 @@ page order. As for drawings, quotes from images are not checked.
 
 https://claude.ai/artifact/4ihgjU6i3BQn3q6ngQA9bQ (laptop and 360 px for each
 board):
-- **C1:** New assignment, Marked, with the Allow file uploads switch.
+- **C1:** New assignment, Marked, with the "Allow submission with uploads" switch.
   - C1a has no estimate.
-  - C1b adds the credit estimate in the footer.
+  - C1b adds a credit estimate in the footer.
 - **C2:** New assignment, Unmarked, with the same switch.
-- **S1:** Member, Marked, whole-paper upload (U2).
-  - "Your pages" ends the question list.
-  - Each page gets a Questions dropdown.
-  - Picked pages show on the question rows.
-  - A page with no question is flagged.
-  - The phone adds Take photo.
-- **S2:** Member, Marked, photos attached to each question (U1). This is the
-  alternative to S1.
+- **S4:** the new choice screen, Answer here or Upload your paper.
+- **S5:** the upload screen.
+  - One place for the whole paper; pages show in order.
+  - No labelling.
+  - View questions opens the paper read only.
+  - Submit.
 - **S3:** Member, Unmarked: a Your work section with Add files, and Hand in in
   place of Mark as done.
-- **T1:** Owner, Approve AI marks.
-  - Shows the picked page in place of the typed answer, with Open file.
-  - A question over the page cap is Not marked.
+- **T1:** Owner, Approve AI marks, showing the mapped page in place of the typed
+  answer, with Open file.
 - **T2:** Owner, Unmarked task's Members tab: handed-in date and files.
+- **S1 and S2** are kept on the page, marked as not picked or superseded.
 
 ## 5. Build outline (phase 2, after the decisions)
 
 - **Data:**
   - `assignments.allow_uploads`;
-  - submission files on the attempt (blob key, name, type, bytes, pages, payer);
-  - each page's question ids;
-  - charged through `gateStorageTx` as drawings are.
+  - an attempt's mode (site or upload);
+  - submission files on the attempt (blob key, name, type, bytes, pages,
+    payer);
+  - the map's pages a part;
+  - storage charged through `gateStorageTx` as drawings are.
 - **Upload:** presigned B2 upload outside the workspace file tree. The browser
   counts and draws pages with the PDF viewer already in the app.
 - **Marking:**
-  - `quiz_grading.go` sends each part its question's pages.
-  - The pipeline renders PDF pages with `capture.render_file` at 1,568 px and
-    sends born-digital pages as text.
-  - `grading.py` gets the P1 section.
-- **UI:** C1/C2 switch, S1 or S2, S3, T1, T2, as approved.
+  - The map call, then `quiz_grading.go` sends each part its mapped pages.
+  - The pipeline renders PDF pages with `capture.render_file` and sends
+    born-digital pages as text.
+  - `grading.py` gets P1, and a new map prompt gets P2.
+- **UI:** C1/C2, S4, S5, S3, T1, T2, as approved.
 - **Docs and tests:** openwiki question-bank, study-progress, storage-quota and
   test-catalog; Go store and grading tests; vitest; the grading bench gets real
-  scans (see the report's "Not tested").
+  scans (the report's "Not tested").
 
 ## Questions for Epo
 
-B2. **A whole-paper PDF in S2.** Where does it go, and how do its pages reach
-    each question?
-    - **Where:** one "Your paper" upload at the end of the question list, with
-      no dropdowns (S1's place, without the labelling), beside the per-question
-      uploads.
-    - **How, M1 (recommended): one matching call at Submit.** One call reads
-      every page at 1,024 px and returns the questions each page answers, about
-      0.15 credits a page (1.5 for 10 pages), paid by the owner. Each part's
-      marking call then gets only its question's pages, so R2's 3-page cap
-      still holds. The owner sees the matched pages in Approve, and the member
-      sees nothing extra.
-    - **How, M2: every page goes to every part's call.** The pages come first,
-      so the provider can cache them across one member's parts: about 2 credits
-      for the first call, then about 0.2 a call for 10 pages. A cache hit isn't
-      guaranteed (calls run 10 at a time, and providers fall back). Finding the
-      part gets harder as pages grow. The message order changes, which is a
-      prompt change.
+Q1. **Who pays.** Today an assignment's AI marking is charged to the workspace
+    owner, by your 2026-11-03 decision. Only practice checks and drawing
+    storage go to the person attempting.
+    - Should all assignment marking (typed, drawn and uploaded) move to the
+      person attempting?
+    - Or only uploaded papers?
 
-A. **Scope:** an "Allow file uploads" switch on both Marked and Unmarked
-   assignments, off by default (C1, C2)?
+    Who pays the map call follows the same answer.
 
-B. **How members give pages to questions:**
-   - S1 (U2): one upload for the whole paper, then a Questions dropdown on each
-     page. Recommended: it fits both a scanned PDF and phone photos.
-   - S2 (U1): photos added on each question.
+M. **Marking method:** G2 (map, then one call per part with its pages;
+   recommended), or G1 (one call for the whole paper)? And are prompts P1 and
+   P2 OK?
 
-C. **AI marks uploads on Marked assignments:**
-   - each part's call gets only its question's pages, as 1,568 px images;
-   - with the P1 prompt section above;
-   - typed text, if any, goes with the pages.
+C. **Typed and uploaded mixed:** S4 makes it one or the other per attempt.
+   Should a member who picked Upload still be able to type answers into the
+   app?
 
-   OK to build, and is the P1 wording OK?
+D. **Limits:** 40 pages a submission; born-digital pages sent as text. Other
+   numbers?
 
-D. **Limits:** 20 pages and 10 files a submission; at most 3 pages a question
-   sent to the model, more left Not marked for hand marking; born-digital pages
-   sent as text. Other numbers?
-
-E. **Closed parts** (multiple choice, true/false, matching) are answered in
-   the app as today, and pages don't mark them. Or should the AI read choices
-   off the pages?
+E. **Closed parts** (multiple choice, true/false, matching) in an uploaded
+   paper:
+   - should the map-then-grade path read the chosen option off the page, and
+     mark it against the key in code?
+   - or should upload mode leave them Not marked for hand marking?
 
 F. **Credit estimate:** C1a (none) or C1b ("AI marking about N credits a
    member" in New assignment's footer)?
@@ -250,21 +259,16 @@ G. **Indexing:** none for now (section 3), with a later owner-only "Index
 H. **Unmarked tasks:** Hand in with files, no AI and no marks (S3, T2). Should
    the owner be able to leave a comment on a hand-in?
 
-I. **Storage:**
-   - The member pays for and keeps their uploads, as for drawings.
-   - The uploads are deleted with the assignment.
-   - A leaving member keeps files with unmarked parts.
-
-   Should they also list on the payer's Files page (a Submissions tab beside
+I. **Storage:** the member pays for and keeps their uploads, as for drawings.
+   Should the uploads also list on their Files page (a Submissions tab beside
    Canvas)?
 
-J. **Time limits:** the clock covers uploading, with no extra upload window
-   after time runs out; an owner who wants one sets a longer limit. OK?
+J. **Time limits:** does a timed assignment's clock cover uploading too?
 
 K. **File types:**
    - Marked: PDF and images (JPG, PNG, WebP; HEIC converted in the browser).
    - Unmarked: any type the normal upload accepts, stored and opened in the
      viewer.
 
-L. **Own practice:** page answers in a member's own practice (they pay) later,
-   not in this round?
+L. **Own practice:** page answers in a member's own practice later, not in
+   this round?

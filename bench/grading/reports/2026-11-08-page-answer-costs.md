@@ -72,3 +72,44 @@ answers that run over several pages, Chinese handwriting, a mark scheme
 needing a drawn diagram from a page. Synthetic handwriting in a script font is
 easier to read than a student's. These go in the grading bench before the
 prompt is final.
+
+## Whole paper, nothing labelled (same day, after Epo: "upload a single 10 page pdf and nth else should be needed")
+
+Epo ruled out members labelling pages and asked whether one call can mark a
+whole paper. `scripts/paper_fixture.py` draws a 10-page handwritten answer paper
+for a 16-part, 22-mark quiz with planted mistakes (7 parts wrong). Q6 runs over
+pages 5–6, Q10 is answered after Q11, Q7 is a drawn graph and Q12 is blank.
+`scripts/paper_marking.py` compares:
+- **G1, one call:** every page plus every part's question and items, with a
+  bench-only "Whole paper" section after `SYSTEM_PROMPT`, reasoning on, at
+  1,568 or 1,024 px.
+- **G2, map then grade:** one map call that sees every page at 1,024 px
+  (reasoning off) and returns each part's pages. Then one call per part with
+  only those pages at 1,568 px: `SYSTEM_PROMPT` + `DRAWN_SECTION` + the
+  todo's P1 "Page answers" section, ten at a time, thinking as production
+  picks it.
+
+Two runs each (run 2 mostly cached):
+
+| Method | Parts right | Credits, run 1 / 2 | Output tokens (reasoning), run 1 / 2 | Wall s, run 1 / 2 |
+|---|---|---|---|---|
+| G1 one call, 1,568 px | 15/16, 15/16 | 8.4 / 16.8 | 5,076 (2,483) / 13,801 (10,836) | 21 / 48 |
+| G1 one call, 1,024 px | 16/16, 16/16 | 19.3 / 5.0 | 15,197 (12,737) / 3,986 (1,916) | 49 / 12 |
+| G2 map + 16 part calls | 16/16, 16/16 | 10.4 / 5.7 (map 1.2 / 0.3) | 4,178 / 3,790 | 11 / 8 |
+
+- **The map was right both times:** every part found its pages, including Q6's
+  two pages, the out-of-order Q10 and the blank Q12's page.
+- **G1 1,568 px gave Q9 0 of 2 in both runs.** Q9's answer is "cell wall,
+  chloroplasts, vacuole"; the other methods gave 2. The reply wasn't kept;
+  the likely cause is the bare-list rule (7) read differently in a long reply.
+- **G1's cost and time swing about 4× between runs** with how long it reasons:
+  the whole paper is one reply. G2's cost is steady and its calls run in
+  parallel.
+- **What a failure loses:** a G1 failure or cut-off loses every part, while a
+  G2 failure loses one part (Not marked, as today). A 40-part paper in one G1
+  reply risks the output cap.
+- **Cost per member, 10 pages, 16 parts:** about 6–10 credits with G2, against
+  roughly 13 for the same parts typed today (about 0.8 a part).
+
+Raw records: `2026-11-08-paper-marking.jsonl` (marks and pages per part,
+usage; no model text kept).
