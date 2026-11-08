@@ -6,6 +6,7 @@ import { axisNumber } from '@/features/questions/graph';
 import { tickStep } from '@/features/questions/graphTicks';
 import { m } from '@/i18n';
 import {
+  ellipseCentre,
   ellipseIn,
   LABEL_LENGTH_MAX,
   MARKS_MAX,
@@ -16,7 +17,13 @@ import {
   pullEllipse,
 } from './boardData';
 import { drawChip, openBoardEditor } from './boardEditorShell';
-import { minorStep, smoothThrough, snapTo, type Vec } from './boardGeometry';
+import {
+  minorStep,
+  smoothThrough,
+  snapTo,
+  tidy,
+  type Vec,
+} from './boardGeometry';
 import {
   drawPlane,
   fitCard,
@@ -77,15 +84,20 @@ function distanceTo(mark: Mark, [x, y]: Vec) {
 }
 
 /** A mark with one of its points at `to`, or (`index` null) all of it moved by `to`. */
-function moved(mark: Mark, index: number | null, to: Vec): Mark {
+function moved(
+  mark: Mark,
+  index: number | null,
+  to: Vec,
+  uniform: boolean
+): Mark {
   if (index !== null) {
     if (mark.kind === 'ellipse')
-      return { ...mark, points: pullEllipse(mark.points, index, to) };
+      return { ...mark, points: pullEllipse(mark.points, index, to, uniform) };
     return 'points' in mark
       ? { ...mark, points: mark.points.map((p, i) => (i === index ? to : p)) }
       : { ...mark, at: to };
   }
-  const by = (p: Vec): Vec => [p[0] + to[0], p[1] + to[1]];
+  const by = (p: Vec): Vec => [tidy(p[0] + to[0]), tidy(p[1] + to[1])];
   return 'points' in mark
     ? { ...mark, points: mark.points.map(by) }
     : { ...mark, at: by(mark.at) };
@@ -170,6 +182,8 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   let hover: { id: string; index: number | null } | null = null;
   /** The press on a mark: a tap does the tool's job, a drag moves it. Until it lifts the
    * moved copy is only drawn, so the drag is one undo step. */
+  /** A new circle being sized: pressed at its middle, its radius from the drag. */
+  let sizing: { centre: Vec; r: number | null; start: Vec } | null = null;
   let grab: {
     id: string;
     index: number | null;
@@ -347,6 +361,25 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
         else ctx.moveTo(X(x), Y(y));
       ctx.stroke();
     }
+    if (sizing?.r) {
+      // The circle being sized, and its radius.
+      const [cx, cy] = sizing.centre;
+      const r = sizing.r * view.ppu;
+      ctx.beginPath();
+      ctx.ellipse(X(cx), Y(cy), r, r, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(X(cx), Y(cy), 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      drawChip(
+        ctx,
+        `r = ${axisNumber(sizing.r, minor())}`,
+        X(cx) + r,
+        Y(cy),
+        width
+      );
+      return;
+    }
     if (tool === 'ellipse') {
       // The circle a click places.
       const r = tickStep(view.ppu) * view.ppu;
@@ -396,21 +429,22 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     drawControls();
     redraw();
   };
+  /** A circle round `at`; its handles stretch it into an ellipse. */
+  const addCircle = (at: Vec, r: number) => {
+    add({
+      id: newId(),
+      kind: 'ellipse',
+      points: ellipseIn(at[0] - r, at[0] + r, at[1] - r, at[1] + r),
+    });
+    finish();
+  };
   /** A press lands where it lifts, so a finger can line it up against the chip. */
   const place = (px: Vec, exact?: Vec) => {
     const at = exact ?? snapped(px);
     const open = openMark();
     if (tool === 'point') add({ at, id: newId(), kind: 'dot' });
-    else if (tool === 'ellipse') {
-      // A circle a grid step round, centred where it's placed; its handles stretch it.
-      const r = tickStep(view.ppu);
-      add({
-        id: newId(),
-        kind: 'ellipse',
-        points: ellipseIn(at[0] - r, at[0] + r, at[1] - r, at[1] + r),
-      });
-      finish();
-    } else if (tool === 'line' || tool === 'curve') {
+    else if (tool === 'ellipse') addCircle(at, tickStep(view.ppu));
+    else if (tool === 'line' || tool === 'curve') {
       if (open?.kind === tool) {
         const last = open.points.at(-1);
         if (last?.[0] === at[0] && last[1] === at[1]) {
@@ -562,6 +596,10 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     pointer = at;
     const target = pickable(at);
     grab = target && { ...target, preview: null, start: at };
+    sizing =
+      tool === 'ellipse' && !grab
+        ? { centre: snapped(at), r: null, start: at }
+        : null;
     redraw();
   });
   canvas.addEventListener('pointermove', (event) => {
@@ -577,6 +615,22 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       pinch = distance;
       return;
     }
+    if (sizing && last && pressed) {
+      if (
+        sizing.r === null &&
+        Math.hypot(at[0] - sizing.start[0], at[1] - sizing.start[1]) <
+          PIXELS_TO_DRAG
+      )
+        return;
+      const [x, y] = toPlane(at);
+      const step = minor();
+      sizing.r = Math.max(
+        step,
+        snapTo(Math.hypot(x - sizing.centre[0], y - sizing.centre[1]), step)
+      );
+      redraw();
+      return;
+    }
     const picked = grab && model.marks.find(({ id }) => id === grab?.id);
     if (grab && picked && last && pressed) {
       if (
@@ -587,12 +641,22 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
         return;
       const step = minor();
       const [from, to] = [toPlane(grab.start), toPlane(at)];
+      // A whole mark lands its first point (an ellipse its middle) on the grid, so one
+      // off it from before comes back.
+      const anchor =
+        picked.kind === 'ellipse'
+          ? ellipseCentre(picked.points)
+          : pointsOf(picked)[0];
       grab.preview = moved(
         picked,
         grab.index,
         grab.index === null
-          ? [snapTo(to[0] - from[0], step), snapTo(to[1] - from[1], step)]
-          : snapped(at)
+          ? [
+              snapTo(anchor[0] + to[0] - from[0], step) - anchor[0],
+              snapTo(anchor[1] + to[1] - from[1], step) - anchor[1],
+            ]
+          : snapped(at),
+        event.shiftKey
       );
       canvas.style.cursor = 'grabbing';
       redraw();
@@ -614,7 +678,12 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     const held = grab;
     grab = null;
     canvas.style.cursor = '';
-    if (held?.preview) {
+    const sized = sizing;
+    sizing = null;
+    if (sized && was && pressed) {
+      // Dragged, the size it was dragged to; a click, a grid step round.
+      addCircle(sized.centre, sized.r ?? tickStep(view.ppu));
+    } else if (held?.preview) {
       const { preview } = held;
       const before = model.marks.find(({ id }) => id === preview.id);
       if (JSON.stringify(preview) !== JSON.stringify(before))
@@ -638,6 +707,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     pressed = false;
     pinch = 0;
     grab = null;
+    sizing = null;
     redraw();
   });
   canvas.addEventListener('pointerleave', () => {

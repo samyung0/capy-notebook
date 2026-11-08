@@ -1,4 +1,4 @@
-import { type Box, smoothThrough, type Vec } from './boardGeometry';
+import { type Box, smoothThrough, tidy, type Vec } from './boardGeometry';
 
 /** What a saved board's cards hold, and their limits, apart from the editor: the
  * board's check and its preview read them without loading BlockSuite. */
@@ -29,34 +29,42 @@ export const ellipseIn = (
   bottom: number,
   top: number
 ): Vec[] => {
-  const [cx, cy] = [(left + right) / 2, (bottom + top) / 2];
+  const [cx, cy] = [tidy((left + right) / 2), tidy((bottom + top) / 2)];
   return [
-    [right, cy],
-    [cx, top],
-    [left, cy],
-    [cx, bottom],
+    [tidy(right), cy],
+    [cx, tidy(top)],
+    [tidy(left), cy],
+    [cx, tidy(bottom)],
   ];
 };
 
-/** The handles after one is pulled: right and left move only their side across, top
- * and bottom only theirs up and down, so it stays an upright ellipse. */
-export function pullEllipse(points: Vec[], index: number, to: Vec): Vec[] {
-  let [right, top, left, bottom] = [
-    points[0][0],
-    points[1][1],
-    points[2][0],
-    points[3][1],
-  ];
-  if (index === 0) right = to[0];
-  else if (index === 1) top = to[1];
-  else if (index === 2) left = to[0];
-  else bottom = to[1];
-  return ellipseIn(
-    Math.min(left, right),
-    Math.max(left, right),
-    Math.min(bottom, top),
-    Math.max(bottom, top)
-  );
+/** The middle of an upright ellipse, from its handles. */
+export const ellipseCentre = (points: Vec[]): Vec => [
+  points[1][0],
+  points[0][1],
+];
+
+/** The handles after one is pulled: right or left sets the width and top or bottom the
+ * height, about the middle, so it stays put on the grid. `uniform` (Shift) scales the
+ * other way by as much, keeping its shape. A pull onto the middle keeps the size. */
+export function pullEllipse(
+  points: Vec[],
+  index: number,
+  to: Vec,
+  uniform = false
+): Vec[] {
+  const [cx, cy] = ellipseCentre(points);
+  let [rx, ry] = [points[0][0] - cx, points[1][1] - cy];
+  if (index % 2 === 0) {
+    const next = Math.abs(to[0] - cx) || rx;
+    if (uniform && rx) ry *= next / rx;
+    rx = next;
+  } else {
+    const next = Math.abs(to[1] - cy) || ry;
+    if (uniform && ry) rx *= next / ry;
+    ry = next;
+  }
+  return ellipseIn(cx - rx, cx + rx, cy - ry, cy + ry);
 }
 
 /** What a line, curve or ellipse draws through, as short straight steps. */

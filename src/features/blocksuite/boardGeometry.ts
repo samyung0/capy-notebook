@@ -20,8 +20,11 @@ export function ticks(from: number, to: number, every: number) {
 }
 
 /** The nearest multiple of `step`, without the float dust that would show in a label. */
+/** A number without float dust (0.30000000000000004 is 0.3). */
+export const tidy = (value: number) => Number(value.toPrecision(12));
+
 export function snapTo(value: number, step: number) {
-  return Number((Math.round(value / step) * step).toPrecision(12));
+  return tidy(Math.round(value / step) * step);
 }
 
 /** Degrees clockwise from 12 o'clock, to the nearest degree, as a protractor reads. */
