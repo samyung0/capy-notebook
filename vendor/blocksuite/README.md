@@ -306,6 +306,12 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
     30)`): an element whose `erasable` is `false` is left out of the eraser's reach. The
     board's plane and chart cards set it (their marks are erased inside them), so they can
     answer `getLineIntersections` truthfully, which connectors need for their anchors.
+31. Auto-complete for shapes and notes only (`widgets/edgeless-selected-rect`
+    `src/edgeless-auto-complete.ts`, marked `Capy (local change 31)`): the next-shape
+    arrows and next-note plus buttons render only for a single selected shape or note.
+    Upstream hid them for other elements only while the pointer was over them, so a
+    selected connector (or plane, chart) showed note buttons once the pointer moved
+    away, and pressing one read a `background` the element doesn't have.
 
 The specs named in local changes 6 to 9 are on the `blocksuite-notes` branch, with the
 note editor they pin.

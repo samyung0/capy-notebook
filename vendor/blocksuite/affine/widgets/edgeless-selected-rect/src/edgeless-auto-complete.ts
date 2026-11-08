@@ -682,7 +682,7 @@ export class EdgelessAutoComplete extends WithDisposable(LitElement) {
   }
 
   override firstUpdated() {
-    const { _disposables, edgeless, gfx } = this;
+    const { _disposables, gfx } = this;
 
     _disposables.add(
       this.gfx.selection.slots.updated.subscribe(() => {
@@ -698,21 +698,6 @@ export class EdgelessAutoComplete extends WithDisposable(LitElement) {
     );
 
     _disposables.add(() => this.removeOverlay());
-
-    _disposables.add(
-      edgeless.host.event.add('pointerMove', ctx => {
-        const evt = ctx.get('pointerState');
-        const [x, y] = gfx.viewport.toModelCoord(evt.x, evt.y);
-        const elm = gfx.getElementByPoint(x, y);
-
-        if (!elm) {
-          this._isHover = false;
-          return;
-        }
-
-        this._isHover = elm === this.current ? true : false;
-      })
-    );
 
     this.edgeless.handleEvent('dragStart', () => {
       this._isMoving = true;
@@ -742,10 +727,11 @@ export class EdgelessAutoComplete extends WithDisposable(LitElement) {
     const isShape = this.current instanceof ShapeElementModel;
     const isMindMap = this.current.group instanceof MindmapElementModel;
 
-    if (
-      this._isMoving ||
-      (this._isHover && !isShape && !this._canAutoComplete())
-    ) {
+    // Capy (local change 31): only a single shape or note gets the buttons. Upstream
+    // hid them for anything else only while hovered (a hit test on every pointer move,
+    // removed), so a selected connector, plane or chart showed note buttons once the
+    // pointer left it, and a press threw.
+    if (this._isMoving || !this._canAutoComplete()) {
       this.removeOverlay();
       return nothing;
     }
@@ -764,9 +750,6 @@ export class EdgelessAutoComplete extends WithDisposable(LitElement) {
       ${isMindMap ? this._renderMindMapButtons() : this._renderArrow()}
     </div>`;
   }
-
-  @state()
-  private accessor _isHover = true;
 
   @state()
   private accessor _isMoving = false;
