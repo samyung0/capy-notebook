@@ -43,7 +43,8 @@ export type ChartData = {
   axisMax: number;
   axisStep: number;
   bars: ChartBar[];
-  fills: SliceFill[];
+  /** Absent on a chart saved before pies had fills. */
+  fills?: SliceFill[];
   kind: ChartKind;
   labels: PieLabel[];
   spokes: number[];
@@ -132,7 +133,7 @@ export function pieCircle(frame: Box, pads: Pads) {
 /** A pie's filled slices, clockwise from one line to the next (the whole round with
  * one line). A fill whose line is gone draws nothing. */
 export function filledSlices({
-  fills,
+  fills = [],
   spokes,
 }: Pick<ChartData, 'fills' | 'spokes'>) {
   const sorted = [...spokes].sort((a, b) => a - b);

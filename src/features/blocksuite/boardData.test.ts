@@ -22,4 +22,8 @@ describe('filledSlices', () => {
       filledSlices({ fills: [{ fill: '#1e96eb', from: 90 }], spokes: [90] })
     ).toEqual([{ fill: '#1e96eb', from: 90, to: 450 }]);
   });
+
+  it('draws no fills for a pie saved before it had any', () => {
+    expect(filledSlices({ spokes: [0, 120] })).toEqual([]);
+  });
 });

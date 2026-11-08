@@ -135,7 +135,7 @@ export class ChartElementModel extends GfxPrimitiveElementModel<{
   axisMax: number;
   axisStep: number;
   bars: ChartBar[];
-  fills: SliceFill[];
+  fills?: SliceFill[];
   index: string;
   kind: ChartKind;
   labels: PieLabel[];
@@ -180,7 +180,9 @@ export class ChartElementModel extends GfxPrimitiveElementModel<{
   accessor bars: ChartBar[] = [];
 
   @field()
-  accessor fills: SliceFill[] = [];
+  /** Absent on a chart saved before pies had fills: a field's default only applies
+   * to a new chart. */
+  accessor fills: SliceFill[] | undefined = [];
 
   @field()
   accessor kind: ChartKind = 'bar';

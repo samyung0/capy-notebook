@@ -340,7 +340,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     });
     if (near !== undefined)
       update({
-        fills: model.fills.filter((slice) => slice.from !== near),
+        fills: (model.fills ?? []).filter((slice) => slice.from !== near),
         spokes: model.spokes.filter((spoke) => spoke !== near),
       });
   };
@@ -350,7 +350,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     if (!model.spokes.length) return;
     const from = lineBefore(angleAt(at));
     const fill = newFill();
-    const others = model.fills.filter(
+    const others = (model.fills ?? []).filter(
       (slice) => slice.from !== from && model.spokes.includes(slice.from)
     );
     update({
