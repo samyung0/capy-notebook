@@ -387,7 +387,7 @@ board):
 
 ## Questions for Epo
 
-O1. **Bounding the overshoot:** one uploaded paper an attempt, at most the
+O1. **Decided (Epo 2026-11-08, "sure on all"): bounding the overshoot:** one uploaded paper an attempt, at most the
     member's source file cap in total (10 / 30 MiB) across its files; drawings
     stay bounded by their per-part caps. OK?
 
@@ -403,22 +403,22 @@ R. **Built (Epo 2026-11-08, "its only a select right? otherwise just build
 
 S. **Built 2026-11-08** (Show grades, Release grades, S7).
 
-T. **Notify at release?** A bell notification "Grades released: Past paper 2025
+T. **Decided: yes (Epo 2026-11-08, "sure on all").** Notify at release? A bell notification "Grades released: Past paper 2025
    P1" to each member. No marks notification exists today.
 
 U. **Settled 2026-11-08:** Study → Members, built from the 3 Nov mocks with the
    Storage full chip on `claude/study-members` (343178998, 12da95d19), not
    pushed.
 
-O3. **Untimed assignments without uploads** open straight into the attempt,
+O3. **Decided: no strip (Epo 2026-11-08, "sure on all").** Untimed assignments without uploads open straight into the attempt,
     so they have no start dialog for the storage warning. Should a one-line
     strip show at the top of the attempt instead?
 
-O4. **Frozen accounts** (`over_quota_frozen`, read-only everywhere): can they
+O4. **Decided: yes (Epo 2026-11-08, "sure on all").** Frozen accounts (`over_quota_frozen`, read-only everywhere): can they
     still attempt and submit assignments? Recommended: yes, since an
     assignment answer isn't a material they edit.
 
-M. **Marking an uploaded paper: two steps, three prompts to approve.**
+M. **Approved word for word (Epo 2026-11-08, "sure on all", after a cheap run of each: `bench/grading/reports/2026-11-08-paper-prompts.md`). The build drops a read answer whose pages are `[]` (R guessed the unanswered choice part 3 times in 8).** Marking an uploaded paper: two steps, three prompts.
    1. **Read** (new call, reasoning off, every page at 1,024 px): each part's
       pages, and the answer for closed types, marked in code against the key.
    2. **Grade** open, long and drawn parts 4 to a call, each batch with the
@@ -468,11 +468,11 @@ M. **Marking an uploaded paper: two steps, three prompts to approve.**
    2026-11-08: "testing early on doesnt help too much, i can test it myself
    with some messy answers"): the other closed types and real photos.
 
-N. **Quiz size:** raise the 100-part cap (`fieldlimits.QuizParts`) for papers
+N. **Decided: raise to 150 (Epo 2026-11-08, "sure on all").** Quiz size: raise the 100-part cap (`fieldlimits.QuizParts`) for papers
    like 120 multiple-choice questions? This affects every quiz, not only
    uploads.
 
-C. **Typed and uploaded mixed:** S4 makes it one or the other per attempt.
+C. **Decided: no mixing (Epo 2026-11-08, "sure on all").** Typed and uploaded mixed: S4 makes it one or the other per attempt.
    Should a member who picked Upload still be able to type answers into the
    app?
 
@@ -499,20 +499,20 @@ V. **Multiple choice, one answer or several.** Epo merged "multiple answers"
    - A: split again into single mcq and a separate multi type.
    - B: as A, with a mark per correct letter (IELTS scoring).
 
-W. **Where the upload sits.** The mode is picked first, in Before you start
+W. **Decided (Epo 2026-11-08, "sure on all"); S5 is redrawn so before it is built.** Where the upload sits. The mode is picked first, in Before you start
    (S4). Upload file opens the questions read-only with the clock running and
    "Your paper" with Submit at the end (S5 to be redrawn so). OK?
 
-F. **Credit estimate:** C1a (none) or C1b ("AI marking about N credits a
+F. **Decided: C1a, none (Epo 2026-11-08, "sure on all").** Credit estimate: C1a (none) or C1b ("AI marking about N credits a
    member" in New assignment's footer)?
 
-G. **Indexing:** none for now (section 3), with a later owner-only "Index
+G. **Decided: none for now (Epo 2026-11-08, "sure on all").** Indexing: none for now (section 3), with a later owner-only "Index
    submissions" once something uses it?
 
-H. **Unmarked tasks:** Hand in with files, no AI and no marks (S3, T2). Should
+H. **Decided: no hand-in comment this round (Epo 2026-11-08, "sure on all").** Unmarked tasks: Hand in with files, no AI and no marks (S3, T2). Should
    the owner be able to leave a comment on a hand-in?
 
-I. **Storage:** the member pays for and keeps their uploads, as for drawings.
+I. **Decided (Epo 2026-11-08): yes, a Submissions tab after Canvas so members delete a paper once it is marked, marks kept; mocks F1 (member) and F2 (owner after a delete) for Epo to look at.** Storage: the member pays for and keeps their uploads, as for drawings.
    Should the uploads also list on their Files page (a Submissions tab beside
    Canvas)?
 
@@ -521,5 +521,5 @@ J. **Decided (Epo 2026-11-08):** the clock covers uploading too.
 K. **Decided (Epo 2026-11-08):** every file type the normal upload and Make a
    quiz accept, Marked and Unmarked.
 
-L. **Own practice:** page answers in a member's own practice later, not in
+L. **Decided: later (Epo 2026-11-08, "sure on all").** Own practice: page answers in a member's own practice later, not in
    this round?

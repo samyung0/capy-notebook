@@ -211,6 +211,30 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
 .files-inline span { display: inline-flex; gap: 4px; align-items: center }
 .files-inline svg { width: 14px; height: 14px }
 
+/* Files › Submissions (F1, F2) */
+.acct-rail .it { font-size: 10px }
+.ftabs { display: flex; gap: 4px; border-bottom: 1px solid var(--divider); margin: 10px -28px 0; padding: 0 16px }
+.ftabs span { padding: 8px 12px; color: var(--muted) }
+.ftabs span.on { color: var(--fg); font-weight: 600; box-shadow: inset 0 -2px 0 var(--fg) }
+.ftabs span.new { box-shadow: 0 0 0 2px var(--accent); border-radius: 6px }
+.ftabs span.on.new { box-shadow: inset 0 -2px 0 var(--fg), 0 0 0 2px var(--accent) }
+.fbar { display: flex; align-items: center; gap: 8px; margin-top: 10px }
+.fbar .meta { margin-right: auto }
+.btn.danger { background: transparent; border-color: transparent; color: var(--bad) }
+.iconbtn { width: 30px; height: 30px; display: grid; place-items: center; color: var(--fg2) }
+.iconbtn svg { width: 17px; height: 17px }
+.frow { display: grid; grid-template-columns: 72px minmax(0, 1fr) 120px 80px 30px; gap: 12px; align-items: center; min-height: 76px; border-bottom: 1px solid var(--divider); padding: 8px 0 }
+.frow .thumb { height: 60px; display: grid; place-items: center }
+.frow .thumb .sheet { height: 60px; width: auto; padding: 6px 4px 0 5px; font-size: 4px; line-height: 6px; background-position: 0 6px;
+  background-image: repeating-linear-gradient(to bottom, transparent 0 5px, var(--paper-line) 5px 6px) }
+.frow .nm { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.frow .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.frow .r { text-align: right }
+.ph-frow { grid-template-columns: 56px minmax(0, 1fr) 30px; gap: 10px; min-height: 70px }
+.ph-frow .thumb .sheet { height: 54px }
+.gone { border: 1px dashed var(--border); border-radius: 8px; padding: 18px; display: flex; gap: 12px; align-items: center; color: var(--fg2); font-size: 13px }
+.gone svg { width: 22px; height: 22px; color: var(--muted); flex: none }
+
 .picks { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px }
 .picks h2 { margin: 0 0 8px; font-size: 18px }
 .picks ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; max-width: 90ch }
@@ -241,6 +265,9 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
     <symbol id="i-clip" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9 4h6v3H9zM8.5 11h7M8.5 15h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
     <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3L5 14h6l-1 7 8-11h-6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
     <symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="13" y="4" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="4" y="13" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="13" y="13" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="i-todo" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 12l3 3 5-6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   </defs>
 </svg>
 
@@ -902,6 +929,112 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
     </div>
   </section>
 
+  <!-- F1 -->
+  <section class="board" id="f1">
+    <header><h2><b>F1</b>Member: Files › Submissions, uploaded papers they can delete once marked</h2>
+      <p>Epo 2026-11-08 (question I). A new tab after Canvas, built the same way: a paper lists once every part it answers is marked (for an Unmarked task, once the owner has seen the hand-in, question H), newest first, named by its file and then its assignment and workspace. The ⋮ menu has Open result and Delete file; Delete all clears the list. Deleting frees the storage and the marks stay. The papers never enter the workspace's files, so a viewer member can hand them in and other members never see them.</p></header>
+    <div class="frames">
+      <div class="lap-wrap"><div class="lap" style="grid-template-columns:60px 1fr">
+        <nav class="rail acct-rail">
+          <div class="it"><svg><use href="#i-grid"/></svg>Workspaces</div>
+          <div class="it"><svg><use href="#i-todo"/></svg>To do</div>
+          <div class="it on"><svg><use href="#i-folder"/></svg>Files</div>
+          <div class="it"><svg><use href="#i-book"/></svg>Learning</div>
+          <div class="it"><svg><use href="#i-spark"/></svg>Chat</div>
+        </nav>
+        <div class="main">
+          <div class="title" style="margin:0">Files</div>
+          <div class="ftabs"><span>Files</span><span>Blocks</span><span>Embeds</span><span>Canvas</span><span class="on new">Submissions</span><span>Trash</span></div>
+          <div class="fbar"><span class="meta">3 marked · 12.9 MB</span><span class="btn danger sm"><svg><use href="#i-trash"/></svg>Delete all</span><span class="iconbtn"><svg><use href="#i-dash"/></svg></span></div>
+          <div class="frow"><div class="thumb"><div class="sheet photo">1  osmosis is the net
+   movement of water
+
+2  3x + 7 = 22
+   x = 5</div></div><div style="display:grid;gap:2px;min-width:0"><span class="nm">Past paper 2025 P1 scan.pdf</span><span class="meta sub">Past paper 2025 P1 · Assignment · Biology 101</span></div><span class="meta">2 days ago</span><span class="meta r">4.8 MB</span><span class="iconbtn"><svg><use href="#i-dots"/></svg></span></div>
+          <div class="frow"><div class="thumb"><div class="sheet photo">3  Water goes in by
+   osmosis through the
+   membrane</div></div><div style="display:grid;gap:2px;min-width:0"><span class="nm">Osmosis test.jpg</span><span class="meta sub">Osmosis test · Assignment · Biology 101</span></div><span class="meta">5 days ago</span><span class="meta r">1.9 MB</span><span class="iconbtn"><svg><use href="#i-dots"/></svg></span></div>
+          <div class="frow"><div class="thumb"><div class="sheet photo">4  F = ma
+   = 1200 x 2
+   = 2400 N</div></div><div style="display:grid;gap:2px;min-width:0"><span class="nm">Forces quiz pages.pdf</span><span class="meta sub">Forces quiz · Assignment · Physics</span></div><span class="meta">Thu 29 Oct</span><span class="meta r">6.2 MB</span><span class="iconbtn"><svg><use href="#i-dots"/></svg></span></div>
+          <div class="menu" style="right:40px;top:200px;width:180px"><div class="mi on"><svg class="ficon"><use href="#i-fwd"/></svg>Open result</div><div class="mi" style="color:var(--bad)"><svg class="ficon"><use href="#i-trash"/></svg>Delete file</div></div>
+        </div>
+      </div></div>
+      <div class="phone">
+        <div class="ph-top"><b>Files</b><svg style="margin-left:auto"><use href="#i-dots"/></svg></div>
+        <div class="ph-body" style="gap:8px;padding-top:0">
+          <div class="ftabs" style="margin:0 -16px;padding:0 6px;font-size:13px;overflow:hidden"><span>Blocks</span><span>Embeds</span><span>Canvas</span><span class="on new">Submissions</span><span>Trash</span></div>
+          <div class="fbar" style="margin-top:2px"><span class="meta">3 marked · 12.9 MB</span><span class="btn danger sm" style="padding:0 6px"><svg><use href="#i-trash"/></svg>Delete all</span></div>
+          <div class="frow ph-frow"><div class="thumb"><div class="sheet photo">1  osmosis is the net
+   movement of water
+
+2  3x + 7 = 22
+   x = 5</div></div><div style="display:grid;gap:2px;min-width:0"><span class="nm">Past paper 2025 P1 scan.pdf</span><span class="meta sub">Past paper 2025 P1 · Assignment · Biology 101</span><span class="meta sub">2 days ago · 4.8 MB</span></div><span class="iconbtn"><svg><use href="#i-dots"/></svg></span></div>
+          <div class="frow ph-frow"><div class="thumb"><div class="sheet photo">3  Water goes in by
+   osmosis through the
+   membrane</div></div><div style="display:grid;gap:2px;min-width:0"><span class="nm">Osmosis test.jpg</span><span class="meta sub">Osmosis test · Assignment · Biology 101</span><span class="meta sub">5 days ago · 1.9 MB</span></div><span class="iconbtn"><svg><use href="#i-dots"/></svg></span></div>
+          <div class="frow ph-frow"><div class="thumb"><div class="sheet photo">4  F = ma
+   = 1200 x 2
+   = 2400 N</div></div><div style="display:grid;gap:2px;min-width:0"><span class="nm">Forces quiz pages.pdf</span><span class="meta sub">Forces quiz · Assignment · Physics</span><span class="meta sub">Thu 29 Oct · 6.2 MB</span></div><span class="iconbtn"><svg><use href="#i-dots"/></svg></span></div>
+        </div>
+        <div class="ph-sheet">
+          <div class="dialog">
+            <h3 style="font-size:17px">Delete this file?</h3>
+            <p style="margin:0;color:var(--fg2)">Past paper 2025 P1 scan.pdf goes for good. Its marks stay.</p>
+            <div class="foot" style="margin-top:2px"><span class="btn out">Cancel</span><span class="btn" style="background:var(--bad);border-color:var(--bad);color:#fff">Delete file</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- F2 -->
+  <section class="board" id="f2">
+    <header><h2><b>F2</b>Owner: a paper the member deleted</h2>
+      <p>Where T1 showed the mapped pages, Approve and the member's result say the file is gone; the marks and the AI's quotes stay, and the mark selects still work.</p></header>
+    <div class="frames">
+      <div class="lap-wrap"><div class="lap" data-shell="owner">
+        <div class="main">
+          <div class="back"><svg><use href="#i-back"/></svg>Assignments</div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px"><span class="title" style="margin:0">Osmosis test</span><span class="chips"><span class="chip">Assignment</span><span class="chip">Closed</span></span></div>
+          <div class="tabs"><span>Questions</span><span>Members</span><span class="on">Approve AI marks</span><span>Settings</span></div>
+          <div class="appr">
+            <div class="l">
+              <div class="input" style="height:32px">Question 3 · 6 marks<svg><use href="#i-down"/></svg></div>
+              <div class="mrow on"><span class="av">CM</span><span class="nm">Cara Moss</span><span>5 / 6</span></div>
+              <div class="mrow"><span class="av">FA</span><span class="nm">Farah Ali</span><span>4 / 6</span></div>
+              <div class="mrow"><span class="av">EP</span><span class="nm">Eve Park</span><span>6 / 6</span></div>
+            </div>
+            <div class="r">
+              <div class="stem">Explain how water enters a root hair cell from the soil. <span class="mk">(6 marks)</span></div>
+              <div style="display:flex;align-items:center;gap:8px"><span class="av">CM</span><b style="font-weight:600">Cara Moss</b></div>
+              <div class="gone newmark" style="margin:0"><svg><use href="#i-page"/></svg>Cara Moss deleted Osmosis test.jpg after it was marked.</div>
+              <table class="pts">
+                <tr><th>MARKING POINTS</th><th>AI</th><th>MARK</th></tr>
+                <tr><td>Names the partially permeable membrane (2)<span class="q">"through the partially permeable membrane"</span></td><td class="ai">2</td><td class="mk"><div class="sel">2 / 2<svg><use href="#i-down"/></svg></div></td></tr>
+                <tr><td>Water moves from dilute to concentrated solution (2)<span class="q">"soil water is more dilute than the cell sap"</span></td><td class="ai">2</td><td class="mk"><div class="sel">2 / 2<svg><use href="#i-down"/></svg></div></td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="phone">
+        <div data-tpl="ph-top"></div>
+        <div class="ph-body" style="gap:10px">
+          <div class="title" style="font-size:20px">Osmosis test</div>
+          <div class="tabs" style="margin:0;font-size:13px"><span>Questions</span><span>Members</span><span class="on">Approve AI marks</span></div>
+          <div class="input" style="height:32px">Question 3 · 6 marks<svg><use href="#i-down"/></svg></div>
+          <div class="mrow" style="display:flex;gap:9px;align-items:center;background:var(--select);padding:7px 9px;border-radius:7px"><span class="av">CM</span><span style="flex:1">Cara Moss</span><span>5 / 6</span></div>
+          <div class="gone newmark" style="margin:0;padding:14px"><svg><use href="#i-page"/></svg>Cara Moss deleted Osmosis test.jpg after it was marked.</div>
+          <table class="pts">
+            <tr><th>MARKING POINTS</th><th>AI</th><th>MARK</th></tr>
+            <tr><td>Names the partially permeable membrane (2)</td><td class="ai">2</td><td class="mk"><div class="sel">2 / 2<svg><use href="#i-down"/></svg></div></td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="picks">
     <h2>What each pick settles</h2>
     <ul>
@@ -909,6 +1042,7 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
       <li><b>S4 + S5 (Epo 2026-11-08)</b>: Before you start offers Attempt online or Upload file; the member uploads the whole paper and labels nothing.</li>
       <li><b>S3 + T2</b>: Unmarked tasks collect files with Hand in; nothing is AI-marked there (question H).</li>
       <li><b>T1</b>: page answers reuse Approve AI marks and its Marking dropdown unchanged.</li>
+      <li><b>F1 + F2</b>: a member deletes a marked paper from Files › Submissions; the owner then sees it is gone, marks kept (question I).</li>
       <li><b>C4 + S7 + T5</b>: Show grades Automatic or Manual, what a member sees before release, and the owner's Release grades (question S).</li>
     </ul>
   </section>
