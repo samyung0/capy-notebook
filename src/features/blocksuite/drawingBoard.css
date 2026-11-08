@@ -193,9 +193,11 @@ html.dark:not([data-board-light]) .capy-board {
   touch-action: none;
 }
 
-/* The open editor's paper is see-through like a card's, so the board under it goes. */
+/* The open editor's paper is see-through like a card's, so the board under it goes.
+   Opacity, as AFFiNE's note cards set their own visibility and would stay. */
 .capy-board[data-editor-open] > editor-host {
-  visibility: hidden;
+  pointer-events: none;
+  opacity: 0;
 }
 
 .capy-plane-editor canvas {
