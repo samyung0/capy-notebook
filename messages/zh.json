@@ -3146,7 +3146,7 @@
   "canvas_question_part": "第 {number} 题 ({part})",
   "canvas_practice": "练习",
   "canvas_assignment": "作业",
-  "canvas_empty": "已批改的绘图会显示在这里，方便你删除。",
+  "canvas_empty": "绘图批改完成且所属作业关闭后会显示在这里，方便你删除。",
   "canvas_load_failed": "无法加载你的绘图。",
   "canvas_delete_title": "删除这个绘图？",
   "canvas_delete_body": "{name} 的绘图将被永久删除，分数会保留。",

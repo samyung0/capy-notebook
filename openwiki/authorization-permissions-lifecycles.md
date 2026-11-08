@@ -1313,7 +1313,9 @@ the person attempting (see [study-progress.md](study-progress.md) and
   assignment's frozen copy; otherwise the part stays Not marked.
 - **Deleting.** A payer deletes their marked drawings from Files › Canvas
   (`DELETE /api/drawings/{id}`, `DELETE /api/drawings`); one still waiting on
-  marking is not listed and not found. Drawings go with their assignment, with
+  marking is not listed and not found, and an assignment's waits until the
+  assignment has closed and, under Show grades Manual, its grades are released,
+  so staff can still revise marks (Epo 2026-11-08). Drawings go with their assignment, with
   a practice attempt's quiz when it is permanently deleted, and a leaver's
   marked ones go as they leave.
 

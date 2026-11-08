@@ -3146,7 +3146,7 @@
   "canvas_question_part": "Question {number} ({part})",
   "canvas_practice": "Practice",
   "canvas_assignment": "Assignment",
-  "canvas_empty": "Marked drawings show here, so you can delete them.",
+  "canvas_empty": "Drawings show here once they are marked and their assignment has closed, so you can delete them.",
   "canvas_load_failed": "Your drawings could not be loaded.",
   "canvas_delete_title": "Delete this drawing?",
   "canvas_delete_body": "The drawing for {name} goes for good. Its marks stay.",

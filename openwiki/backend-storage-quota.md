@@ -299,7 +299,8 @@ objects for the reaper.
   A drawn sample answer's board is a quiz `board` editor asset under the same
   board cap (`editor_assets_size_check`, migration 0158).
 - **Seen and deleted.** Billing's breakdown shows them as Canvas; Files ›
-  Canvas lists the payer's marked drawings to delete.
+  Canvas lists the payer's marked drawings to delete, an assignment's once it
+  has closed with its grades released.
 
 ## Counter model
 

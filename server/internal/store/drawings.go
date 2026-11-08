@@ -363,12 +363,17 @@ func dropLeaverMarkedDrawingsTx(ctx context.Context, tx pgx.Tx, wsID, userID str
 }
 
 // markedDrawingSQL finds, for a drawing d of attempt t, the question and part
-// it answers, only once that part is marked (graded, not waiting on anyone).
+// it answers, only once that part is marked (graded, not waiting on anyone)
+// and, for an assignment, once it has closed with its grades out, so staff can
+// still revise marks while it runs (Epo 2026-11-08).
 const markedDrawingSQL = `SELECT q.n AS question, p.n AS part, jsonb_array_length(q.v->'parts') AS parts
 	FROM jsonb_array_elements(COALESCE(t.questions, '[]'::jsonb)) WITH ORDINALITY q(v, n),
 		jsonb_array_elements(q.v->'parts') WITH ORDINALITY p(v, n)
 	WHERE p.v->>'id' = d.part_id AND p.v ? 'awarded'
 		AND COALESCE((p.v->>'pending')::boolean, false) = false
+		AND (t.assignment_id IS NULL OR EXISTS (SELECT 1 FROM assignments a WHERE a.id = t.assignment_id
+			AND (a.closed_at IS NOT NULL OR (a.no_late AND a.due_at <= now()))
+			AND (a.grades_shown = 'automatic' OR a.grades_released_at IS NOT NULL)))
 	LIMIT 1`
 
 // MarkedDrawing is one of a payer's marked drawings, for Files › Canvas.
@@ -395,8 +400,8 @@ type MarkedDrawings struct {
 }
 
 // ListMarkedDrawings lists the drawings userID pays for whose parts are marked
-// (Epo 2026-11-06): only those may be deleted, so only those show. A drawing
-// still waiting on marking never lists.
+// (Epo 2026-11-06), an assignment's only once it has closed with its grades out
+// (2026-11-08): only those may be deleted, so only those show.
 func (s *Store) ListMarkedDrawings(ctx context.Context, userID, cursor string, limit int) (MarkedDrawings, error) {
 	out := MarkedDrawings{Items: []MarkedDrawing{}}
 	if err := s.pool.QueryRow(ctx, `SELECT count(*), COALESCE(sum(d.board_bytes + d.image_bytes), 0)

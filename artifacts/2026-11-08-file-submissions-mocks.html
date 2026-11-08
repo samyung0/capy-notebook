@@ -520,66 +520,86 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
 
   <!-- S5 -->
   <section class="board" id="s5">
-    <header><h2><b>S5</b>Member: upload the paper and submit, nothing to label</h2>
-      <p>One place for the whole paper: a PDF, or photos in order. Pages show in order and can be removed or reordered by dragging. No questions to pick: marking finds each answer itself. View questions opens the paper read only for anyone answering on paper at home. Submit sends it; marks arrive as AI marking finishes.</p></header>
+    <header><h2><b>S5</b>Member, Upload file: the questions read only, then Your paper and Submit</h2>
+      <p>Redrawn for W (Epo 2026-11-08, "sure on all"). Upload file in Before you start opens the assignment's own layout with the clock running: the question list, each question shown read only with its marks and no answer field, and a last row, Your paper, after the questions. Your paper takes one PDF, or photos in order, which can be removed or dragged into order; nothing is labelled. Submit and the clock sit along the bottom as when attempting online; Submit with no pages yet asks first. Attempt online and upload never mix in one attempt (C).</p></header>
     <div class="frames">
       <div class="lap-wrap"><div class="lap" data-shell="member">
-        <div class="main" style="display:flex;flex-direction:column;gap:14px">
-          <div class="back"><svg><use href="#i-back"/></svg>Assignments</div>
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px">
-            <div><div class="title" style="margin:0">Past paper 2025 P1</div><div class="meta">Upload file · Due Wed 11 Nov</div></div>
-            <div style="display:flex;gap:8px"><span class="btn out">View questions</span><span class="btn">Submit</span></div>
-          </div>
-          <div class="newmark" style="margin:0;display:grid;gap:12px">
-            <div class="secthead"><h4 class="sub">Your paper</h4><span class="btn out sm"><svg><use href="#i-plus"/></svg>Add files</span></div>
-            <div class="meta">Past paper P1 answers.pdf · 10 pages · 3.4 MB</div>
-            <div class="pages" style="grid-template-columns:repeat(5, 120px);gap:12px">
-              <div class="sheet">Name: Cara Moss
+        <div class="main" style="padding:0">
+          <div class="split">
+            <div class="qlist">
+              <div class="back" style="margin:0 0 6px 8px"><svg><use href="#i-back"/></svg>Assignments</div>
+              <div style="font-weight:700;font-size:15px;margin:0 0 6px 8px">Past paper 2025 P1</div>
+              <div class="qr"><span class="ql">1</span><span class="qt">Define osmosis and name the organelle…</span><span class="meta">3</span></div>
+              <div class="qr"><span class="ql">2</span><span class="qt">Solve 3x + 7 = 22. Show your working.</span><span class="meta">2</span></div>
+              <div class="qr"><span class="ql">3</span><span class="qt">Expand and factorise…</span><span class="meta">3</span></div>
+              <div class="qr"><span class="ql">4</span><span class="qt">A car accelerates uniformly from rest…</span><span class="meta">4</span></div>
+              <div class="qr"><span class="ql">5</span><span class="qt">Explain why the rate of photosynthesis…</span><span class="meta">3</span></div>
+              <div class="qr"><span class="ql">6</span><span class="qt">Describe the journey of blood…</span><span class="meta">4</span></div>
+              <div class="qr"><span class="ql">7</span><span class="qt">Sketch the graph of y = 2x + 1</span><span class="meta">2</span></div>
+              <div class="qr"><span class="ql">8</span><span class="qt">Mean and median</span><span class="meta">3</span></div>
+              <div class="qr"><span class="ql">9</span><span class="qt">Two differences between plant and…</span><span class="meta">2</span></div>
+              <div class="qr"><span class="ql">10</span><span class="qt">Calculate the lamp's resistance</span><span class="meta">2</span></div>
+              <div class="sep"></div>
+              <div class="qr on newmark" style="margin:0"><span class="ql"><svg class="ficon" style="width:14px"><use href="#i-page"/></svg></span><span class="qt" style="font-weight:600">Your paper</span><span class="pg">10 pages</span></div>
+            </div>
+            <div class="qpane">
+              <div class="secthead"><h4 class="sub" style="font-size:18px">Your paper</h4><span class="btn out sm"><svg><use href="#i-plus"/></svg>Add files</span></div>
+              <div class="meta">Past paper P1 answers.pdf · 10 pages · 3.4 MB. Marking finds each answer on its own; drag pages to reorder.</div>
+              <div class="pages" style="grid-template-columns:repeat(5, minmax(0, 1fr));gap:10px">
+                <div class="sheet">Name: Cara Moss
 1 (a) Osmosis is
   the net movement<span class="no">1</span></div>
-              <div class="sheet">2  3x + 7 = 22
+                <div class="sheet">2  3x + 7 = 22
    3x = 15
    x = 5<span class="no">2</span></div>
-              <div class="sheet">3 (b) x^2 - 9
+                <div class="sheet">3 (b) x^2 - 9
 4 (a) a = (v-u)/t<span class="no">3</span></div>
-              <div class="sheet">4 (b) s = 144 m
+                <div class="sheet">4 (b) s = 144 m
 5  Because CO2<span class="no">4</span></div>
-              <div class="sheet">6  The right
+                <div class="sheet">6  The right
    ventricle pumps<span class="no">5</span></div>
-              <div class="sheet">   oxygenated. It
+                <div class="sheet">   oxygenated. It
    then goes back<span class="no">6</span></div>
-              <div class="sheet">7
+                <div class="sheet">7
   [graph]<span class="no">7</span></div>
-              <div class="sheet">8 (a) mean = 8
+                <div class="sheet">8 (a) mean = 8
 9  cell wall<span class="no">8</span></div>
-              <div class="sheet">10  R = V / I
+                <div class="sheet">10  R = V / I
       = 4 ohms<span class="no">9</span></div>
-              <div class="sheet">12
+                <div class="sheet">12
    (rough working)<span class="no">10</span></div>
+              </div>
+              <div class="qbar"><span class="saved"><svg class="ficon" style="width:15px;vertical-align:-3px"><use href="#i-clock"/></svg> 42:10 left</span><span class="btn">Submit</span></div>
             </div>
           </div>
         </div>
       </div></div>
       <div class="phone">
-        <div data-tpl="ph-top"></div>
+        <div class="strip"><svg class="ficon" style="width:16px;margin-right:2px"><use href="#i-back"/></svg><span class="q">1</span><span class="q">2</span><span class="q">3</span><span class="q">4</span><span class="q">5</span><span class="q">6</span><span class="q">7</span><span class="q pg on newmark" style="margin:0"><svg><use href="#i-page"/></svg>Paper</span></div>
         <div class="ph-body">
-          <div class="back"><svg><use href="#i-back"/></svg>Assignments</div>
-          <div><div class="title">Past paper 2025 P1</div><div class="meta">Upload file · Due Wed 11 Nov</div></div>
-          <div class="newmark" style="margin:0;display:grid;gap:10px">
-            <div style="display:flex;gap:8px"><span class="btn out sm"><svg><use href="#i-cam"/></svg>Take photo</span><span class="btn out sm"><svg><use href="#i-plus"/></svg>Add files</span></div>
-            <div class="meta">Past paper P1 answers.pdf · 10 pages</div>
-            <div class="pages" style="grid-template-columns:repeat(3, 1fr);gap:8px">
-              <div class="sheet" style="font-size:6px;line-height:10px;padding:12px 6px 0 8px">1 (a) Osmosis<span class="no">1</span></div>
-              <div class="sheet" style="font-size:6px;line-height:10px;padding:12px 6px 0 8px">2 3x + 7 = 22<span class="no">2</span></div>
+          <div class="secthead"><h4 class="sub" style="font-size:17px">Your paper</h4></div>
+          <div style="display:flex;gap:8px"><span class="btn out sm"><svg><use href="#i-cam"/></svg>Take photo</span><span class="btn out sm"><svg><use href="#i-plus"/></svg>Add files</span></div>
+          <div class="meta">Past paper P1 answers.pdf · 10 pages</div>
+          <div class="pages" style="grid-template-columns:repeat(3, 1fr);gap:8px">
+              <div class="sheet" style="font-size:6px;line-height:10px;padding:12px 6px 0 8px">Name: Cara Moss<span class="no">1</span></div>
+              <div class="sheet" style="font-size:6px;line-height:10px;padding:12px 6px 0 8px">2  3x + 7 = 22<span class="no">2</span></div>
               <div class="sheet" style="font-size:6px;line-height:10px;padding:12px 6px 0 8px">3 (b) x^2 - 9<span class="no">3</span></div>
-              <div class="sheet" style="font-size:6px;line-height:10px;padding:12px 6px 0 8px">4 (b) s = 144<span class="no">4</span></div>
-              <div class="sheet" style="font-size:6px;line-height:10px;padding:12px 6px 0 8px">6 The right<span class="no">5</span></div>
-              <div class="sheet" style="font-size:6px;line-height:10px;padding:12px 6px 0 8px">oxygenated<span class="no">6</span></div>
-            </div>
-            <span class="meta">+ 4 more pages</span>
+              <div class="sheet" style="font-size:6px;line-height:10px;padding:12px 6px 0 8px">4 (b) s = 144 m<span class="no">4</span></div>
+              <div class="sheet" style="font-size:6px;line-height:10px;padding:12px 6px 0 8px">6  The right<span class="no">5</span></div>
+              <div class="sheet" style="font-size:6px;line-height:10px;padding:12px 6px 0 8px">   oxygenated. It<span class="no">6</span></div>
           </div>
+          <span class="meta">+ 4 more pages</span>
         </div>
-        <div class="ph-bar"><span class="btn out sm" style="margin-right:auto">View questions</span><span class="btn">Submit</span></div>
+        <div class="ph-bar"><span class="meta" style="margin-right:auto;display:inline-flex;gap:5px;align-items:center"><svg class="ficon" style="width:15px"><use href="#i-clock"/></svg>42:10 left</span><span class="btn">Submit</span></div>
+      </div>
+      <div class="phone">
+        <div class="strip"><svg class="ficon" style="width:16px;margin-right:2px"><use href="#i-back"/></svg><span class="q">1</span><span class="q on">2</span><span class="q">3</span><span class="q">4</span><span class="q">5</span><span class="q">6</span><span class="q">7</span><span class="q pg"><svg><use href="#i-page"/></svg>Paper</span></div>
+        <div class="ph-body">
+          <div class="meta">Question 2 · 2 marks</div>
+          <div class="stem">Solve 3x + 7 = 22. Show your working.</div>
+          <div class="meta newmark" style="margin:0;padding:8px 10px">Answer this on your paper, then add it under Your paper.</div>
+        </div>
+        <div class="ph-bar"><span class="meta" style="margin-right:auto;display:inline-flex;gap:5px;align-items:center"><svg class="ficon" style="width:15px"><use href="#i-clock"/></svg>42:10 left</span><span class="btn">Submit</span></div>
       </div>
     </div>
   </section>
@@ -932,7 +952,7 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
   <!-- F1 -->
   <section class="board" id="f1">
     <header><h2><b>F1</b>Member: Files › Submissions, uploaded papers they can delete once marked</h2>
-      <p>Epo 2026-11-08 (question I). A new tab after Canvas, built the same way: a paper lists once every part it answers is marked (for an Unmarked task, once the owner has seen the hand-in, question H), newest first, named by its file and then its assignment and workspace. The ⋮ menu has Open result and Delete file; Delete all clears the list. Deleting frees the storage and the marks stay. The papers never enter the workspace's files, so a viewer member can hand them in and other members never see them.</p></header>
+      <p>Epo 2026-11-08 (question I). A new tab after Canvas, built the same way: a paper lists once its assignment is closed, every part it answers is marked and, under Show grades Manual, grades are released (Epo 2026-11-08, "Yes, both tabs": Canvas waits the same way for assignment drawings, practice drawings don't), newest first, named by its file and then its assignment and workspace. The ⋮ menu has Open result and Delete file; Delete all clears the list. Deleting frees the storage and the marks stay. The papers never enter the workspace's files, so a viewer member can hand them in and other members never see them.</p></header>
     <div class="frames">
       <div class="lap-wrap"><div class="lap" style="grid-template-columns:60px 1fr">
         <nav class="rail acct-rail">
