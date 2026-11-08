@@ -250,10 +250,8 @@ test('double click opens the plane: it plots, undoes each click, and Escape leav
   ] as const)
     await page.mouse.click(...at(x, y));
   await expect.poll(() => marks(page)).toBe(1);
-  await page
-    .locator('.capy-board-history button')
-    .first()
-    .dispatchEvent('click');
+  await page.locator('.capy-plane-editor .capy-menu-button').click();
+  await page.getByRole('menuitem', { name: 'Undo' }).click();
   await page.mouse.click(...at(0.55, 0.3));
   await expect(
     page.getByRole('button', { name: 'Finish curve' })
@@ -815,14 +813,14 @@ test('a formula that cannot be read stays open, and a root stops at its contents
   expect(inkAbove).toBe(0);
 });
 
-test('a phone has undo at the top and the toolbar at full width', async ({
+test('a phone has the menu at the top and the toolbar at full width', async ({
   page,
 }) => {
   test.slow();
   await page.setViewportSize({ height: 720, width: 360 });
   await openBoard(page);
-  const undo = await page.locator('.capy-board-history').boundingBox();
-  expect(undo?.y).toBeLessThan(60);
+  const menu = await page.locator('.capy-board-menu').boundingBox();
+  expect(menu?.y).toBeLessThan(60);
   expect(
     await page.locator('edgeless-toolbar-widget smooth-corner').boundingBox()
   ).toMatchObject({ width: 344, x: 8 });
@@ -859,9 +857,11 @@ test.describe('with a finger', () => {
     await page.touchscreen.tap(...at(0.6, 0.5));
     await page.getByRole('button', { name: 'Finish curve' }).tap();
     await expect.poll(() => marks(page)).toBe(1);
-    const undo = page.locator('.capy-board-history button').first();
-    await undo.tap();
-    await undo.tap();
+    // Undo is in the menu, which closes after each.
+    for (const _ of [1, 2]) {
+      await page.locator('.capy-plane-editor .capy-menu-button').tap();
+      await page.getByRole('menuitem', { name: 'Undo' }).tap();
+    }
     await expect.poll(() => marks(page)).toBe(0);
     await page.getByRole('button', { name: 'Done' }).tap();
 
@@ -967,14 +967,14 @@ test('the workspace canvas stays in the URL at every width', async ({
   const board = page.locator('.capy-board');
   await board.waitFor();
 
-  // An iPad keeps the rail, and undo moves to the top right, clear of the toolbar.
+  // An iPad keeps the rail, and the menu sits top right, clear of the toolbar.
   const rail = page.getByRole('navigation', { name: 'Workspace' });
   await page.setViewportSize({ height: 800, width: 900 });
   await expect(rail).toBeVisible();
   await expect(board).toBeVisible();
   const boardBox = await board.boundingBox();
-  const undoBox = await page.locator('.capy-board-history').boundingBox();
-  expect(undoBox && boardBox && undoBox.y - boardBox.y).toBe(8);
+  const menuBox = await page.locator('.capy-board-menu').boundingBox();
+  expect(menuBox && boardBox && menuBox.y - boardBox.y).toBe(8);
 
   // Below the rail the board stays, and only the back button leaves it.
   await page.setViewportSize({ height: 800, width: 700 });
@@ -1041,7 +1041,11 @@ test('a saved board leaves its undo history out, and a teacher opens it read-onl
       ?.stats()
       .canvas.includes('plane')
   );
-  await expect(page.locator('.capy-board-history')).toHaveCount(0);
+  // A teacher's menu zooms but has no undo.
+  await page.locator('.capy-board-menu .capy-menu-button').click();
+  await expect(page.getByRole('menuitem', { name: 'Undo' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Zoom in' })).toBeVisible();
+  await page.keyboard.press('Escape');
   await expect(page.locator('edgeless-toolbar-widget')).toHaveCount(0);
   const board = await page.locator('.capy-board').boundingBox();
   const card = (await onCard(page))(0, 0);

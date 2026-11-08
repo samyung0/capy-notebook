@@ -58,91 +58,17 @@ html.dark:not([data-board-light]) .capy-board {
   );
 }
 
-/* Zoom at the bottom right, none on phones (pinch does it). */
-.capy-board affine-edgeless-zoom-toolbar-widget {
-  right: 12px;
-  left: auto;
-}
-
-/* Undo and redo: flat, left of zoom, with a thin divider. Zoom is 144 px wide, or
-   a 36 px button up to 1200 px. */
-.capy-board-history {
+/* The ☰ menu (boardMenu.ts) top right of the board, left of any Done the page around
+   it places and sizes through --capy-board-done-width; an open card has its own. */
+.capy-board > .capy-board-menu {
   position: absolute;
-  right: 156px;
-  bottom: 20px;
+  top: 8px;
+  right: calc(8px + var(--capy-board-done-width, 0px));
   z-index: 2;
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  height: 40px;
-  padding: 4px 5px 4px 4px;
-  color: var(--affine-icon-color);
 }
 
-.capy-board-history::after {
-  width: 1px;
-  height: 20px;
-  margin-left: 5px;
-  content: "";
-  background: var(--affine-border-color);
-}
-
-.capy-board-history button {
-  all: unset;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  cursor: pointer;
-  border-radius: 4px;
-}
-
-.capy-board-history button:hover {
-  background: var(--affine-hover-color);
-}
-
-.capy-board-history button:focus-visible {
-  outline: 2px solid var(--affine-primary-color);
-}
-
-.capy-board-history button:disabled {
-  cursor: default;
-  background: none;
-  opacity: 0.35;
-}
-
-@container viewport (width <= 1200px) {
-  .capy-board-history {
-    right: 48px;
-  }
-}
-
-/* Where they no longer fit beside the toolbar: top right, left of Done, which the
-   page around the board places and sizes through --capy-board-done-width. */
-@container viewport (width < 980px) {
-  .capy-board-history {
-    top: 8px;
-    right: calc(8px + var(--capy-board-done-width, 0px));
-    bottom: auto;
-    height: 40px;
-    padding: 0;
-  }
-
-  .capy-board-history::after {
-    display: none;
-  }
-
-  .capy-board-history button {
-    width: 40px;
-    height: 40px;
-  }
-}
-
-@container viewport (width < 768px) {
-  .capy-board affine-edgeless-zoom-toolbar-widget {
-    display: none;
-  }
+.capy-board[data-editor-open] .capy-board-menu {
+  display: none;
 }
 
 /* The formula card, in the middle of the board. */
@@ -311,9 +237,7 @@ html.dark:not([data-board-light]) .capy-board {
   background: var(--affine-hover-color);
 }
 
-.capy-plane-zoom,
-.capy-plane-tools,
-.capy-editor-menu {
+.capy-plane-tools {
   position: absolute;
   background: var(--affine-background-overlay-panel-color);
   border: 1px solid var(--affine-border-color);
@@ -321,8 +245,8 @@ html.dark:not([data-board-light]) .capy-board {
   box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
 }
 
-/* Top right of an open card: the menu (Fit, Undo, Redo) and Done, each on its own
-   (Epo 2026-11-08). The board's own undo and redo hide meanwhile. */
+/* Top right of an open card: the ☰ menu and Done, each on its own (Epo 2026-11-08).
+   The board's menu hides meanwhile. */
 .capy-editor-top {
   position: absolute;
   top: 8px;
@@ -330,15 +254,6 @@ html.dark:not([data-board-light]) .capy-board {
   display: flex;
   gap: 6px;
   align-items: center;
-}
-
-.capy-plane-editor .capy-editor-menu-button {
-  width: 40px;
-  height: 40px;
-  background: var(--affine-background-overlay-panel-color);
-  border: 1px solid var(--affine-border-color);
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
 }
 
 .capy-plane-editor .capy-editor-done,
@@ -351,40 +266,6 @@ html.dark:not([data-board-light]) .capy-board {
   background: var(--affine-text-primary-color);
   border-radius: 8px;
   box-shadow: 0 4px 12px rgb(0 0 0 / 14%);
-}
-
-.capy-editor-menu {
-  top: 46px;
-  right: 0;
-  display: flex;
-  flex-direction: column;
-  min-width: 140px;
-  padding: 4px;
-}
-
-.capy-plane-editor .capy-editor-menu button {
-  gap: 8px;
-  justify-content: flex-start;
-  padding: 0 10px;
-  font-size: 14px;
-}
-
-.capy-plane-editor .capy-editor-menu button:disabled {
-  cursor: default;
-  background: none;
-  opacity: 0.4;
-}
-
-.capy-board[data-editor-open] .capy-board-history {
-  display: none;
-}
-
-.capy-plane-zoom {
-  right: 12px;
-  bottom: 12px;
-  display: flex;
-  padding: 3px;
-  font-size: 18px;
 }
 
 .capy-plane-editor .capy-plane-finish {
@@ -459,12 +340,6 @@ html.dark:not([data-board-light]) .capy-board {
   box-shadow: 0 0 0 2px var(--affine-primary-color) inset;
 }
 
-@container viewport (width < 768px) {
-  .capy-plane-zoom {
-    display: none;
-  }
-}
-
 .capy-chart-editor canvas,
 .capy-chart-editor:not([data-tool="move"]) canvas {
   cursor: crosshair;
@@ -520,4 +395,95 @@ html.dark:not([data-board-light]) .capy-board {
   .capy-chart-axis {
     top: 60px;
   }
+}
+
+/* The ☰ menu, on the board and on an open card. Its button keeps its panel under the
+   hover tint, and the editor's own button rules are out-ranked here. */
+.capy-menu {
+  position: relative;
+}
+
+.capy-board .capy-menu button {
+  all: unset;
+  box-sizing: border-box;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  color: var(--affine-icon-color);
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.capy-board .capy-menu button:hover {
+  background: var(--affine-hover-color);
+}
+
+.capy-board .capy-menu button:focus-visible {
+  outline: 2px solid var(--affine-primary-color);
+}
+
+.capy-board .capy-menu .capy-menu-button {
+  width: 40px;
+  height: 40px;
+  background: var(--affine-background-overlay-panel-color);
+  border: 1px solid var(--affine-border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
+}
+
+.capy-board .capy-menu .capy-menu-button:hover {
+  background: linear-gradient(
+      var(--affine-hover-color),
+      var(--affine-hover-color)
+    )
+    var(--affine-background-overlay-panel-color);
+}
+
+.capy-menu-list {
+  position: absolute;
+  top: 46px;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--affine-background-overlay-panel-color);
+  border: 1px solid var(--affine-border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
+}
+
+.capy-board .capy-menu-list > button {
+  justify-content: flex-start;
+  padding: 0 10px;
+  font-size: 14px;
+  color: var(--affine-text-primary-color);
+}
+
+.capy-board .capy-menu-list button:disabled {
+  cursor: default;
+  background: none;
+  opacity: 0.4;
+}
+
+/* − 100% +, under the entries. */
+.capy-menu-zoom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 4px;
+  margin-top: 4px;
+  border-top: 1px solid var(--affine-border-color);
+}
+
+.capy-board .capy-menu-zoom button {
+  width: 36px;
+}
+
+.capy-board .capy-menu-zoom .capy-menu-percent {
+  flex: 1;
+  font-size: 14px;
+  color: var(--affine-text-primary-color);
 }

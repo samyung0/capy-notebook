@@ -65,6 +65,9 @@ import {
   type GfxBlockElementModel,
   type GfxController,
   GfxControllerIdentifier,
+  ZOOM_MAX,
+  ZOOM_MIN,
+  ZOOM_STEP,
 } from '@blocksuite/affine/std/gfx';
 import { HistoryExtension, Text } from '@blocksuite/affine/store';
 import { TestWorkspace } from '@blocksuite/affine/store/test';
@@ -72,7 +75,6 @@ import { EdgelessAutoConnectViewExtension } from '@blocksuite/affine/widgets/edg
 import { EdgelessDraggingAreaViewExtension } from '@blocksuite/affine/widgets/edgeless-dragging-area/view';
 import { EdgelessSelectedRectViewExtension } from '@blocksuite/affine/widgets/edgeless-selected-rect/view';
 import { EdgelessToolbarViewExtension } from '@blocksuite/affine/widgets/edgeless-toolbar/view';
-import { EdgelessZoomToolbarViewExtension } from '@blocksuite/affine/widgets/edgeless-zoom-toolbar/view';
 import { SlashMenuViewExtension } from '@blocksuite/affine/widgets/slash-menu/view';
 import { ToolbarViewExtension } from '@blocksuite/affine/widgets/toolbar/view';
 import { ViewportOverlayViewExtension } from '@blocksuite/affine/widgets/viewport-overlay/view';
@@ -95,10 +97,10 @@ import { addPlane, planeExtensions, planeMarks } from './boardPlane';
 import './boardChartEditor';
 import { closeBoardEditor } from './boardEditorShell';
 import { checkSavedBoard } from './boardLoad';
+import { BoardMenu } from './boardMenu';
 import './boardPlaneEditor';
 import {
   boardToolbar,
-  hugeIcon,
   noLatexMarkdown,
   outlineNewShapes,
   StampTool,
@@ -164,7 +166,6 @@ const VIEWS = [
   EdgelessDraggingAreaViewExtension,
   EdgelessSelectedRectViewExtension,
   EdgelessToolbarViewExtension,
-  EdgelessZoomToolbarViewExtension,
   SlashMenuViewExtension,
   ToolbarViewExtension,
   ViewportOverlayViewExtension,
@@ -372,46 +373,53 @@ export function mountDrawingBoard(
         ],
     store,
   });
-  // Undo and redo sit outside the toolbar: beside zoom, or on a phone top right,
-  // left of Done. BlockSuite keeps them on the keyboard only; a phone has none.
-  const history = document.createElement('div');
-  history.className = 'capy-board-history';
-  const drawHistory = () =>
-    render(
-      html`<button
-          aria-label=${m.drawing_board_undo()}
-          ?disabled=${!store.canUndo}
-          title=${m.drawing_board_undo()}
-          type="button"
-          @click=${() => store.undo()}
-        >
-          ${hugeIcon(Undo03Icon)}
-        </button>
-        <button
-          aria-label=${m.drawing_board_redo()}
-          ?disabled=${!store.canRedo}
-          title=${m.drawing_board_redo()}
-          type="button"
-          @click=${() => store.redo()}
-        >
-          ${hugeIcon(Redo03Icon)}
-        </button>`,
-      history
-    );
-  drawHistory();
-  const historyUpdates = store
-    .get(HistoryExtension)
-    .onUpdated.subscribe(drawHistory);
   render(
     html`<div class="affine-edgeless-viewport capy-board">${std.render()}</div>`,
     container
   );
   const board = container.querySelector('.capy-board');
-  if (!readOnly) board?.append(history);
+  const gfx = std.get(GfxControllerIdentifier);
+  // Top right, left of any Done the page puts there: undo, redo and zoom, so the
+  // bottom row holds only the toolbar (Epo 2026-11-08). A teacher's has zoom only.
+  const zoomTo = (zoom: number) =>
+    gfx.viewport.smoothZoom(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom)));
+  const menu = new BoardMenu(() => ({
+    entries: [
+      ...(readOnly
+        ? []
+        : [
+            {
+              disabled: !store.canUndo,
+              icon: Undo03Icon,
+              label: m.drawing_board_undo(),
+              run: () => store.undo(),
+            },
+            {
+              disabled: !store.canRedo,
+              icon: Redo03Icon,
+              label: m.drawing_board_redo(),
+              run: () => store.redo(),
+            },
+          ]),
+      { label: m.drawing_board_fit(), run: () => gfx.fitToScreen() },
+    ],
+    zoom: {
+      in: () => zoomTo(gfx.viewport.zoom + ZOOM_STEP),
+      out: () => zoomTo(gfx.viewport.zoom - ZOOM_STEP),
+      percent: { reset: () => zoomTo(1), value: () => gfx.viewport.zoom },
+    },
+  }));
+  menu.element.classList.add('capy-board-menu');
+  board?.append(menu.element);
+  const historyUpdates = store
+    .get(HistoryExtension)
+    .onUpdated.subscribe(() => menu.open && menu.draw());
+  const zoomUpdates = gfx.viewport.viewportUpdated.subscribe(
+    () => menu.open && menu.draw()
+  );
   // A double click types on the canvas, so the label is in the exported image.
   store.get(FeatureFlagService).setFlag('enable_edgeless_text', false);
   store.get(FeatureFlagService).setFlag('enable_note_menu_media', false);
-  const gfx = std.get(GfxControllerIdentifier);
   outlineNewShapes(gfx);
   // The canvas draws in the app's light or dark (the dark class ThemeProvider sets).
   const root = document.documentElement;
@@ -683,12 +691,13 @@ export function mountDrawingBoard(
       cancelAnimationFrame(frame);
       subscription.unsubscribe();
       historyUpdates.unsubscribe();
+      zoomUpdates.unsubscribe();
+      menu.dispose();
       if (onChange) store.spaceDoc.off('update', onChange);
       symbols?.unmount();
       themeWatch.disconnect();
       closeBoardEditor(gfx);
       forgetFormulas();
-      render(null, history);
       render(null, container);
     },
   };

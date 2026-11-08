@@ -136,6 +136,10 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       drawControls();
       redraw();
     },
+    zoom: {
+      in: () => zoomCentre(1.5),
+      out: () => zoomCentre(1 / 1.5),
+    },
   });
   if (!shell) return;
   const { box, canvas, controls, ctx, root } = shell;
@@ -456,6 +460,10 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     view.y0 = y + py / view.ppu;
     hold();
   };
+  const zoomCentre = (factor: number) => {
+    const { height, width } = box();
+    zoomAt(factor, [width / 2, height / 2]);
+  };
   const panBy = (dx: number, dy: number) => {
     view.x0 -= dx / view.ppu;
     view.y0 += dy / view.ppu;
@@ -617,41 +625,17 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
           ? m.drawing_board_finish_line()
           : null;
     render(
-      html`<div class="capy-plane-zoom">
-          <button
-            aria-label=${m.drawing_board_zoom_out()}
-            title=${m.drawing_board_zoom_out()}
-            type="button"
-            @click=${() => {
-              const { height, width } = box();
-              zoomAt(1 / 1.5, [width / 2, height / 2]);
-            }}
-          >
-            −
-          </button>
-          <button
-            aria-label=${m.drawing_board_zoom_in()}
-            title=${m.drawing_board_zoom_in()}
-            type="button"
-            @click=${() => {
-              const { height, width } = box();
-              zoomAt(1.5, [width / 2, height / 2]);
-            }}
-          >
-            +
-          </button>
-        </div>
-        ${
-          finishLabel
-            ? html`<button
+      html`${
+        finishLabel
+          ? html`<button
                 class="capy-plane-finish"
                 type="button"
                 @click=${finish}
               >
                 ${finishLabel}
               </button>`
-            : null
-        }
+          : null
+      }
         ${
           typing
             ? html`<input

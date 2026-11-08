@@ -95,6 +95,11 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       drawControls();
       redraw();
     },
+    // A bar chart zooms its value axis: in lowers the top.
+    zoom:
+      model.kind === 'bar'
+        ? { in: () => zoomBy(1 / 1.5), out: () => zoomBy(1.5) }
+        : undefined,
   });
   if (!shell) return;
   const { box, canvas, controls, ctx, root } = shell;

@@ -1,9 +1,9 @@
 import type { GfxController } from '@blocksuite/affine/std/gfx';
 import { HistoryExtension } from '@blocksuite/affine/store';
-import { Menu01Icon, Redo03Icon, Undo03Icon } from '@hugeicons/core-free-icons';
-import { html, nothing, render } from 'lit';
+import { Redo03Icon, Undo03Icon } from '@hugeicons/core-free-icons';
+import { render } from 'lit';
 import { m } from '@/i18n';
-import { hugeIcon } from './boardTools';
+import { BoardMenu, type MenuZoom } from './boardMenu';
 
 const closing = new WeakMap<GfxController, () => void>();
 
@@ -18,8 +18,9 @@ export function openBoardEditor(
   gfx: GfxController,
   cardId: string,
   hooks: {
-    /** The menu's Fit, where the card has one. */
+    /** The menu's Fit and zoom row, where the card has them. */
     fit?: () => void;
+    zoom?: MenuZoom;
     /** Before it goes: whatever it has to write. */
     onLeave: () => void;
     /** Escape's own use, if it has one right now. */
@@ -62,70 +63,33 @@ export function openBoardEditor(
 
   const box = () => root.getBoundingClientRect();
 
-  let menuOpen = false;
-  const setMenu = (open: boolean) => {
-    menuOpen = open;
-    drawTop();
-  };
-  const run = (action: () => void) => () => {
-    action();
-    setMenu(false);
-  };
-  const drawTop = () =>
-    render(
-      html`<button
-          aria-expanded=${menuOpen}
-          aria-haspopup="menu"
-          aria-label=${m.drawing_board_menu()}
-          class="capy-editor-menu-button"
-          title=${m.drawing_board_menu()}
-          type="button"
-          @click=${() => setMenu(!menuOpen)}
-        >
-          ${hugeIcon(Menu01Icon)}
-        </button>
-        <button class="capy-editor-done" type="button" @click=${close}>
-          ${m.drawing_board_done()}
-        </button>
-        ${
-          menuOpen
-            ? html`<div class="capy-editor-menu" role="menu">
-                ${
-                  hooks.fit
-                    ? html`<button role="menuitem" type="button" @click=${run(hooks.fit)}>
-                        ${m.drawing_board_fit()}
-                      </button>`
-                    : nothing
-                }
-                <button
-                  ?disabled=${!gfx.doc.canUndo}
-                  role="menuitem"
-                  type="button"
-                  @click=${run(() => gfx.doc.undo())}
-                >
-                  ${hugeIcon(Undo03Icon)} ${m.drawing_board_undo()}
-                </button>
-                <button
-                  ?disabled=${!gfx.doc.canRedo}
-                  role="menuitem"
-                  type="button"
-                  @click=${run(() => gfx.doc.redo())}
-                >
-                  ${hugeIcon(Redo03Icon)} ${m.drawing_board_redo()}
-                </button>
-              </div>`
-            : nothing
-        }`,
-      top
-    );
-  // The menu closes on a press anywhere else.
-  const away = (event: PointerEvent) => {
-    if (menuOpen && !event.composedPath().includes(top)) setMenu(false);
-  };
-  root.addEventListener('pointerdown', away, true);
+  const menu = new BoardMenu(() => ({
+    entries: [
+      ...(hooks.fit ? [{ label: m.drawing_board_fit(), run: hooks.fit }] : []),
+      {
+        disabled: !gfx.doc.canUndo,
+        icon: Undo03Icon,
+        label: m.drawing_board_undo(),
+        run: () => gfx.doc.undo(),
+      },
+      {
+        disabled: !gfx.doc.canRedo,
+        icon: Redo03Icon,
+        label: m.drawing_board_redo(),
+        run: () => gfx.doc.redo(),
+      },
+    ],
+    zoom: hooks.zoom,
+  }));
+  const done = document.createElement('button');
+  done.className = 'capy-editor-done';
+  done.type = 'button';
+  done.textContent = m.drawing_board_done();
+  done.addEventListener('click', () => close());
+  top.append(menu.element, done);
   const history = gfx.doc
     .get(HistoryExtension)
-    .onUpdated.subscribe(() => menuOpen && drawTop());
+    .onUpdated.subscribe(() => menu.open && menu.draw());
 
   const close = () => {
     hooks.onLeave();
@@ -138,8 +102,8 @@ export function openBoardEditor(
     window.removeEventListener('keydown', onKey, true);
     updates?.unsubscribe();
     history.unsubscribe();
+    menu.dispose();
     render(null, controls);
-    render(null, top);
     root.remove();
     board.removeAttribute('data-editor-open');
     closing.delete(gfx);
@@ -164,7 +128,7 @@ export function openBoardEditor(
     const command = event.metaKey || event.ctrlKey;
     if (key === 'escape') {
       event.preventDefault();
-      if (menuOpen) setMenu(false);
+      if (menu.open) menu.set(false);
       else if (!hooks.onEscape()) close();
     } else if (command && (key === 'y' || (key === 'z' && event.shiftKey))) {
       event.preventDefault();
@@ -178,7 +142,6 @@ export function openBoardEditor(
   root.addEventListener('keydown', (event) => event.stopPropagation());
 
   const updates = gfx.surface?.elementUpdated.subscribe(hooks.onUpdate);
-  drawTop();
 
   return {
     box,

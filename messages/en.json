@@ -3093,6 +3093,7 @@
   "drawing_board_fill_slice": "Fill a slice",
   "drawing_board_zoom_in": "Zoom in",
   "drawing_board_zoom_out": "Zoom out",
+  "drawing_board_zoom_reset": "Zoom to 100%",
   "drawing_board_formula_error": "This formula can't be read. Check it and try again.",
   "drawing_board_formula_too_long": "This formula is too long.",
   "drawing_board_fill_blue": "Blue",

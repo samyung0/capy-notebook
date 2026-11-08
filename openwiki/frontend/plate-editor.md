@@ -4450,11 +4450,13 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
 - **Pen strokes** keep the moves inside BlockSuite's 2 px drag threshold, and a stroke
   ending back near its start (a closed circle) is no click, so it leaves no dot (local
   change 25, in the pointer controller, so every tool's drags and clicks behave this way).
-- **Undo and redo** are the board's own, not in the toolbar: left of zoom, or below 768 px
-  top right, where the page around the board reserves Done's width through
-  `--capy-board-done-width`. Below that width the toolbar spans the screen less an 8 px
-  gutter and zoom is hidden, since pinch does it. Zoom's row folds into AFFiNE's ⋯ up to
-  1200 px, which needs `.capy-board` to be the `viewport` container.
+- **The ☰ menu** (`boardMenu.ts`, Epo 2026-11-08) sits top right, left of any Done the
+  page around the board places (its width through `--capy-board-done-width`), so the
+  bottom row holds only the toolbar: Undo, Redo, Fit (to screen), then a row of −, the
+  zoom (which resets to 100%) and +. An entry closes it, the zoom row keeps it open, as
+  do a press anywhere else and Escape. A teacher's board has Fit and zoom only.
+  AFFiNE's zoom toolbar isn't loaded. Below 768 px the toolbar spans the screen less an
+  8 px gutter, which needs `.capy-board` to be the `viewport` container.
 - **Selecting** shows AFFiNE's own toolbar. It reads the editor's mode, so the board
   reports edgeless (`boardToolbar` in `boardTools.ts`) and hides what makes no sense on an
   answer: Frame, Comment, a note's page mode entries and the linked doc entries. Connect shows its name. A plane card
@@ -4480,9 +4482,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   leave the card; its marks are stored as on any plane, and its editor snaps them to where
   a ring crosses a spoke.
 - **Editing a plane** (`boardPlaneEditor.ts`, on the shell in `boardEditorShell.ts`): it
-  opens over the whole board. At its top right sit a menu button (Fit where the card
-  has one, Undo, Redo; the board's own undo and redo hide meanwhile) and Done on its
-  own (Epo 2026-11-08). Done leaves, as does Escape when no mark is open (Escape closes
+  opens over the whole board. At its top right sit the same ☰ menu (Fit where the card
+  has one, Undo, Redo, and − and + where it zooms; the board's menu hides meanwhile)
+  and Done on its own (Epo 2026-11-08). Done leaves, as does Escape when no mark is open (Escape closes
   an open menu first). Inside, the wheel pans, Ctrl or pinch zooms, and Move drags.
   A point's dot picks up with any tool but Erase (Epo 2026-11-08, option C): it rings
   blue under the mouse, a drag moves it to the grid with the coordinate chip, and a tap

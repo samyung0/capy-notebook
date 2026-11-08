@@ -3093,6 +3093,7 @@
   "drawing_board_fill_slice": "填充扇形",
   "drawing_board_zoom_in": "放大",
   "drawing_board_zoom_out": "缩小",
+  "drawing_board_zoom_reset": "缩放至 100%",
   "drawing_board_formula_error": "无法识别此公式，请检查后重试。",
   "drawing_board_formula_too_long": "公式过长。",
   "drawing_board_fill_blue": "蓝色",
