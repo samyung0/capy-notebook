@@ -130,7 +130,7 @@ export function MemberProfilePage({
   return (
     <PracticeFrame className="lg:pt-6">
       <div>{back}</div>
-      <div className="mt-4 flex flex-wrap items-center gap-x-3.5 gap-y-3">
+      <div className="mt-4 flex flex-wrap items-center gap-x-3.5 gap-y-5">
         {/* The button wraps under the name on phones, at the left. */}
         <div className="flex min-w-0 flex-1 basis-60 items-center gap-3.5">
           <Avatar
@@ -154,12 +154,16 @@ export function MemberProfilePage({
             </span>
           </div>
         </div>
-        <Button iconLeft="ai" onClick={() => setDrafting(true)}>
+        <Button
+          iconLeft="ai"
+          onClick={() => setDrafting(true)}
+          variant="outline"
+        >
           {m.member_draft_follow_up()}
         </Button>
       </div>
 
-      <div className="mt-7.5 flex flex-col gap-8.5 lg:flex-row lg:gap-8">
+      <div className="mt-5 flex flex-col gap-8.5 sm:mt-7.5 lg:flex-row lg:gap-8">
         <div className="flex min-w-0 flex-col gap-8.5 lg:w-158 lg:shrink">
           {data.assignments.length > 0 && (
             <section>
