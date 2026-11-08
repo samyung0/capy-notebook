@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from paper_fixture import PAGES, PARTS  # noqa: E402
 
 REPO, ENV, PAGES_DIR, OUT = (Path(a) for a in sys.argv[1:5])
-RUNS = int(sys.argv[5]) if len(sys.argv) > 5 else 1
+RUNS = int(sys.argv[5]) if len(sys.argv) > 5 and sys.argv[5].isdigit() else 1
 MODEL = "deepseek/deepseek-v4.1-flash-1017"
 ROUTE = {"order": ["wafer/us", "InferenceNet", "Cloudflare"], "allow_fallbacks": False}
 SHARES = {"none": 0.0, "partial": 0.5, "full": 1.0}
@@ -184,4 +184,5 @@ async def main():
         OUT.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

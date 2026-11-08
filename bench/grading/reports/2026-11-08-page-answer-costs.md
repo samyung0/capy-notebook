@@ -113,3 +113,51 @@ Two runs each (run 2 mostly cached):
 
 Raw records: `2026-11-08-paper-marking.jsonl` (marks and pages per part,
 usage; no model text kept).
+
+## Fewer calls: closed parts read at once, open parts in batches (same day)
+
+Epo asked whether every part needs its own call, since an exam can have 120+
+multiple-choice questions. `scripts/paper_batching.py` checks two ways to cut
+calls. Two runs each.
+
+**Closed parts need no grading call.** Today they are marked in code against
+the key. From a page, the model only has to read which option was marked.
+- The sheet: a 120-question bubble answer sheet (A–D), with 10 erased marks
+  (a faint fill beside a dark one), 6 double marks and 5 blanks planted.
+- One call with no reasoning returns every question's letter, or null for a
+  blank, a double mark or a mark it can't read. Code compares the letters with
+  the truth, as it would with the key.
+
+| Sheet | Right | Credits | Time |
+|---|---|---|---|
+| 2 pages of 60, 1,568 px | 120/120, 120/120 | 1.27 / 0.90 | 3 s |
+| 1 page of 120, 1,568 px | 104/120, 104/120 | 1.08 / 0.90 | 3 s |
+
+- **60 a page reads perfectly, erased and double marks included.**
+- **At 120 a page it fails:** it reads blanks and double marks as letters, and
+  shifts some rows by one option.
+- So a dense page needs more pixels or splitting: a crop per column, or a
+  larger render. Neither was tested.
+
+**Open parts in batches.** Same map call, then several parts a call with their
+pages' union (the "Whole paper" section after P1):
+
+| Method | Calls | Parts right | Credits |
+|---|---|---|---|
+| G2, one call a part | 17 | 16/16, 16/16 | 10.4 / 5.7 |
+| Batches of 4 | 5 | 16/16, 16/16 | 9.9 / 12.7 |
+| Batches of 8 | 3 | 15/16, 15/16 | 8.0 / 5.5 |
+| G1, all 16 in one call | 1 | 15/16, 15/16 (1,568 px) | 8.4 / 16.8 |
+
+- **Batches of 4 matched one call a part.** Batches of 8, like the single
+  call, gave Q9's bare list 0 both times.
+- **Calls are not what costs.** Output tokens are, and they are the same work
+  however it's split. A call only repeats the system prompt, about 1,300
+  tokens, mostly cached at 0.03 credits.
+- **Batching cuts call count and time, not credits.**
+
+Raw records: `2026-11-08-paper-batching.jsonl`.
+
+Not tested: real scans and photos, pencil marks, options circled on a printed
+question paper instead of a bubble sheet, and multi-select, true/false and
+matching read the same way.

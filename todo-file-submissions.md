@@ -117,17 +117,39 @@ a blank; two runs each):
 - **Either way it costs about the same as the same parts typed** (about 0.8
   credits a part).
 
-**Recommended (M2 below): G2, map then grade.**
+**Fewer calls (Epo asked: "a single exam can have like 120+ mc questions").**
+Benched the same day:
+- **Closed parts need no grading call:** one read call returns the marked
+  option for every question, and code marks it against the key as today.
+  - A 120-question bubble sheet on 2 pages of 60 read 120/120 in both runs
+    (erased marks, double marks and blanks included), for about 1 credit and
+    3 s.
+  - 120 on one page read only 104/120, so a dense page needs splitting (a crop
+    per column) or more pixels; neither was tested.
+- **Open parts can go 4 to a call:** 16/16 in both runs with 5 calls instead
+  of 17. Batches of 8, like one call for all, missed one part both times.
+- **Calls don't drive the cost;** output tokens do. Batching cuts call count
+  and time, not credits.
+
+**Recommended (question M): map, then read closed parts, then grade open
+parts in batches.**
 - **Map call:** every page at 1,024 px, reasoning off, returns each part's
-  pages. Cost: about 0.12 credits a page; a 40-page paper's map is about 20k
-  input tokens.
-- **Part calls:** each gets its mapped pages at 1,568 px, with no page cap.
+  pages, about 0.12 credits a page. A 40-page paper's map is about 20k input
+  tokens.
+- **Closed parts:** one read call over their pages, about 60 bubbles a page at
+  1,568 px, then code marks against the key. A blank, a double mark or an
+  unreadable mark reads as null and scores 0. The owner can change it in
+  Approve.
+- **Open and drawn parts:** batches of up to 4 parts, grouped by question,
+  each with its mapped pages at 1,568 px and no page cap. A failed batch leaves
+  only its parts Not marked.
 - **A part the map finds on no page** earns nothing and makes no call.
-- **Born-digital pages** go as their text (the `page_layer` test Make a quiz
-  uses): cheaper, and quotes can be checked.
-- **Approve** shows each part's mapped pages (T1), so a wrong map is visible,
-  and the owner can change the mark as today.
-- **Limit: 40 pages a submission** (Make a quiz's run cap), refused at upload.
+- **Born-digital pages** go as their text (Make a quiz's `page_layer` test):
+  cheaper, and quotes can be checked.
+- **Approve** shows each part's mapped pages (T1), so a wrong map is visible.
+- **Limit:** 40 pages a submission (Make a quiz's run cap), refused at upload.
+- **Today's 100-part quiz cap** (`fieldlimits.QuizParts`) still stops a
+  120-question paper; raising it is its own decision (question N).
 
 **Prompts (need Epo's OK before they're built).**
 
@@ -233,9 +255,18 @@ Q1. **Who pays.** Today an assignment's AI marking is charged to the workspace
 
     Who pays the map call follows the same answer.
 
-M. **Marking method:** G2 (map, then one call per part with its pages;
-   recommended), or G1 (one call for the whole paper)? And are prompts P1 and
-   P2 OK?
+M. **Marking method:**
+   - Recommended: map, then one read call for closed parts, then open parts
+     4 to a call.
+   - Or G1, one call for the whole paper.
+
+   Are prompts P1 and P2 OK? The closed-part read prompt (P3) and the batch
+   section are in `bench/grading/scripts/paper_batching.py` and
+   `paper_marking.py` (`MC_READ`, `WHOLE`) and would be shown before building.
+
+N. **Quiz size:** raise the 100-part cap (`fieldlimits.QuizParts`) for papers
+   like 120 multiple-choice questions? This affects every quiz, not only
+   uploads.
 
 C. **Typed and uploaded mixed:** S4 makes it one or the other per attempt.
    Should a member who picked Upload still be able to type answers into the
@@ -244,11 +275,10 @@ C. **Typed and uploaded mixed:** S4 makes it one or the other per attempt.
 D. **Limits:** 40 pages a submission; born-digital pages sent as text. Other
    numbers?
 
-E. **Closed parts** (multiple choice, true/false, matching) in an uploaded
-   paper:
-   - should the map-then-grade path read the chosen option off the page, and
-     mark it against the key in code?
-   - or should upload mode leave them Not marked for hand marking?
+E. **Closed parts in an uploaded paper:** read the marked option off the page
+   and mark it in code (recommended, benched for single-letter multiple
+   choice). Multi-select, true/false and matching would be read the same way
+   but are untested. OK?
 
 F. **Credit estimate:** C1a (none) or C1b ("AI marking about N credits a
    member" in New assignment's footer)?
