@@ -603,3 +603,10 @@ func (s *Store) DeleteSubmittedPapers(ctx context.Context, userID string, ids []
 			AND ($2::text[] IS NULL OR f.id = ANY($2)) AND `+paperDeletableSQL, userID, ids)
 	return int(tag.RowsAffected()), err
 }
+
+// MarkPaperBatch makes an upload batch a paper's, which settles with no
+// notification: the member watches it land on the page.
+func (s *Store) MarkPaperBatch(ctx context.Context, batchID, userID string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE source_batches SET paper=true WHERE id=$1 AND user_id=$2`, batchID, userID)
+	return err
+}

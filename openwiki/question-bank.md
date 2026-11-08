@@ -706,7 +706,7 @@ at a probability of 0.3 or more; the save is never blocked. Usage is in
 [observability-metering.md](observability-metering.md).
 
 User quizzes (not the bank) are bounded so a whole quiz stays within one
-grading budget: at most 100 parts per quiz, 7 per question, 5 marking items per part
+grading budget: at most 150 parts per quiz (Epo 2026-11-08, from 100), 7 per question, 5 marking items per part
 and 100 open parts per quiz, and a sample answer of at most 5,000 characters;
 learners' open answers have the same 5,000-character cap. Open parts are called
 "AI-marked parts" in the UI and in errors; the cap was 20 until Epo raised it

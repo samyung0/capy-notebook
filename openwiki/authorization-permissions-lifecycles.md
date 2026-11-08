@@ -1319,6 +1319,17 @@ the person attempting (see [study-progress.md](study-progress.md) and
   a practice attempt's quiz when it is permanently deleted, and a leaver's
   marked ones go as they leave.
 
+A paper (an assignment answered on paper, migration 0161) is the member's own
+standalone uploads, linked to the attempt by `files.attempt_id`, so a viewer
+member hands one in and no other member sees it. Its member adds, removes and
+orders files while the attempt runs; `GET /api/assignment-attempts/{id}/paper/{fileId}/links`
+signs a file for its member and, once submitted, for the class's owners and
+editors (`PaperFileBlob`); nothing else reads it. The files go with the attempt
+and its assignment (cascade), never list in Files, search, Recent or the trash
+path, and their member deletes them from Files › Submissions under the drawings'
+rule. A frozen account still attempts and submits, drawings and papers included
+(Epo 2026-11-08, O4): an answer is no material it edits.
+
 Sources: [drawing routes](../server/internal/httpapi/drawings.go) and
 [drawing store](../server/internal/store/drawings.go).
 

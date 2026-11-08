@@ -54,7 +54,7 @@ pub const QUESTION_UNIT_MAX: usize = 100;
 pub const QUIZ_MARKSCHEME_MAX: usize = 5;
 pub const QUIZ_OPEN_ANSWER_MAX: usize = 5000;
 pub const QUIZ_OPEN_PARTS_MAX: usize = 100;
-pub const QUIZ_PARTS_MAX: usize = 100;
+pub const QUIZ_PARTS_MAX: usize = 150;
 pub const QUIZ_QUESTION_PARTS_MAX: usize = 7;
 
 /// What an element gives its document's index text (`index_text`).

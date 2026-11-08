@@ -697,7 +697,9 @@ function PaperAnswer({
         <span className="t-meta text-fg-secondary">
           {pages.length === 0
             ? m.assignment_paper_no_pages()
-            : m.assignment_paper_pages({ pages: pages.join(', ') })}
+            : pages.length === 1
+              ? m.assignment_paper_page({ page: pages[0]! })
+              : m.assignment_paper_pages({ pages: pages.join(', ') })}
         </span>
         <Button
           className="ml-auto"

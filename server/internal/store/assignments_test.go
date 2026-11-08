@@ -2844,12 +2844,16 @@ func TestManualGradesWaitForRelease(t *testing.T) {
 		t.Fatalf("closing before release made practice: %d, %v", released, err)
 	}
 
-	if _, err := f.s.ReleaseAssignmentGrades(ctx, f.viewer, created.ID, at); !errors.Is(err, ErrForbidden) {
+	if _, _, err := f.s.ReleaseAssignmentGrades(ctx, f.viewer, created.ID, at); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("a member's release = %v", err)
 	}
-	released, err := f.s.ReleaseAssignmentGrades(ctx, f.user, created.ID, at)
+	released, told, err := f.s.ReleaseAssignmentGrades(ctx, f.user, created.ID, at)
 	if err != nil || released.Manage.GradesReleasedAt == nil || released.GradesHidden {
 		t.Fatalf("release = %+v, %v", released.Manage, err)
+	}
+	// The bell tells the member who handed it in (T, Epo 2026-11-08).
+	if len(told) != 1 || told[0].UserID != f.viewer || !strings.Contains(string(told[0].Data), "grades_released") {
+		t.Fatalf("told = %+v", told)
 	}
 	shown, err := f.s.GetAssignmentAttempt(ctx, f.viewer, run.ID, at)
 	if err != nil {

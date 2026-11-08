@@ -135,12 +135,13 @@ func TestQuizBoundsCapPartsAndOpenParts(t *testing.T) {
 		}
 		return qs
 	}
-	// Every part of a full quiz may be AI-marked (Epo 2026-11-03).
-	if err := QuizBounds(many(100, 100)); err != nil {
-		t.Fatalf("100 AI-marked parts rejected: %v", err)
+	// 150 parts, 120 multiple-choice among them (Epo 2026-11-08), up to 100 of
+	// them AI-marked.
+	if err := QuizBounds(many(150, 100)); err != nil {
+		t.Fatalf("150 parts, 100 AI-marked, rejected: %v", err)
 	}
-	if QuizBounds(many(101, 0)) == nil {
-		t.Fatal("accepted 101 parts")
+	if QuizBounds(many(151, 0)) == nil {
+		t.Fatal("accepted 151 parts")
 	}
 }
 

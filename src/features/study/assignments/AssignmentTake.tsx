@@ -591,6 +591,8 @@ export function AssignmentTake({
                       <QuestionRunner
                         answers={answers}
                         disabled={paper}
+                        // On paper, the question alone: no field to answer in.
+                        frameAnswer={paper ? () => null : undefined}
                         headerMarks={false}
                         onChange={change}
                         question={heading.rest}

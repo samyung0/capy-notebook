@@ -425,6 +425,11 @@ func (a *api) checkSourceUpload(
 		return "", "", err
 	}
 	*batch = body.BatchID
+	if body.AttemptID != "" {
+		if err := a.s.MarkPaperBatch(ctx, body.BatchID, userID(ctx)); err != nil {
+			return "", "", err
+		}
+	}
 	name = strings.TrimSpace(string(body.Name))
 	topicName = strings.TrimSpace(string(body.TopicName))
 	if name == "" {

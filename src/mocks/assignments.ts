@@ -482,7 +482,6 @@ function seed() {
     },
     {
       ...common,
-      allowUploads: true,
       dueAt: at(3),
       id: 'as_paper',
       kind: 'marked',
@@ -491,6 +490,19 @@ function seed() {
       quizId: quizzes[0]?.id,
       timeLimitMin: 60,
       title: 'Past paper 2025 P1',
+    },
+    // Members may hand in a paper (Epo 2026-11-08, S4/S5).
+    {
+      ...common,
+      allowUploads: true,
+      dueAt: at(4),
+      id: 'as_upload',
+      kind: 'marked',
+      postedAt: at(-1, 10),
+      questions: pastPaper(),
+      quizId: quizzes[0]?.id,
+      timeLimitMin: 60,
+      title: 'Mock exam on paper',
     },
     {
       ...common,
@@ -564,6 +576,24 @@ function seed() {
         if (attempt.userId === ben) part.aiError = 'error';
         if (attempt.userId === 'u_mock_farah') part.aiError = 'credits';
       }
+  }
+  // T1: Ben handed in a paper, read and waiting on its open parts.
+  const upload = rows.get('as_upload')!;
+  seedAttempt(upload, ben, 4, 1, 40, 1);
+  for (const attempt of attempts.values()) {
+    if (attempt.assignmentId !== upload.id) continue;
+    attempt.paper = 'read';
+    attempt.paperFiles = [
+      {
+        id: 'f_scan',
+        kind: 'image',
+        name: 'Mock exam scan.jpg',
+        sizeBytes: 1_900_000,
+        status: 'ready',
+      },
+    ];
+    for (const q of attempt.graded)
+      for (const part of q.parts) part.pages = [1];
   }
   const genetics = rows.get('as_genetics')!;
   for (const [i, id] of class6.entries())

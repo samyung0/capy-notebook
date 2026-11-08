@@ -279,9 +279,13 @@ objects for the reaper.
   `CheckAssignmentDrawing` (the attempt, the part and the account's state)
   before any object is written, and the save checks again. Storage never
   blocks an assignment (Epo 2026-11-08, superseding Q693's refusal): both use
-  `admitAccountTx`, the account half of `gateStorageTx` with no quota check, so
-  a member at the limit saves the drawing, is charged for it and goes over,
-  into the usual over-quota states. Before you start warns such a member when
+  `admitAccountTx`, the account half of `gateStorageTx` with no quota check
+  that admits a frozen account too (O4), so a member at the limit saves the
+  drawing, is charged for it and goes over, into the usual over-quota states.
+  A paper's files (an assignment answered on paper, `files.attempt_id`) reserve
+  the same way (`reservePaperStorageTx`), within 15 files and the member's
+  source file cap across them; Upload file can only start while storage is not
+  full, and Files › Submissions deletes them once marked and closed. Before you start warns such a member when
   the paper has drawing parts (`drawingParts`); an assignment's pages show the
   owner nothing about it. A practice Check of a
   drawing asks `AssertStorageRoom` for its boards and images before the model

@@ -399,6 +399,17 @@ the attempt, and supersede "attempt files, no ingest, no parse charge" above:
   change to general file access.
 - **Page cap:** 15 pages a paper for now (Epo's figure, held; to confirm).
 
+**Built 2026-11-08** (ec78b1621, d239fc362 and after): all of the above, plus
+Files › Canvas waiting for close and release, the quiz part cap at 150 (N),
+the Grades released bell (T), frozen accounts attempting and submitting with
+drawings and papers (O4), and a paper's upload batch settling with no bell.
+Verified: Go store/httpapi suites, pipeline `test_paper.py`, vitest, e2e
+`assignment-paper.spec.ts` with the other assignment specs, screens against
+C1, S4, S5, T1, F1 at laptop and 360 px.
+**Not built yet:** Unmarked hand-ins (S3, T2); Approve's page view is two
+pages a row rather than T1's full-width strip, since pages are no longer
+cropped.
+
 ## 5. Build outline (phase 2, after the decisions)
 
 - **Data:**

@@ -34,9 +34,9 @@ import (
 // shared page, where they stay Not marked. The response carries the key for what
 // was just checked.
 
-// answersMaxBytes bounds a request of answers: a hundred 5,000-character open
+// answersMaxBytes bounds a request of answers: 150 5,000-character open
 // answers at up to four bytes a character plus every closed answer of a
-// 100-part quiz.
+// 150-part quiz.
 const answersMaxBytes = 4 << 20
 
 var errGradeRequest = errors.New("answers must name parts of these questions, give every ordering part an order, and keep an open answer to text of at most 5,000 characters")

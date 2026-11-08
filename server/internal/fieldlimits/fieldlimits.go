@@ -94,11 +94,11 @@ const (
 	QuestionSVGBytes       = 256 << 10
 	QuestionImageDimension = 10_000
 	QuestionAssetURL       = 4_096
-	// User quizzes (not the question bank) are bounded tighter: 100 parts,
-	// all of which may be AI-marked (open) parts, so a whole past paper fits
-	// one quiz (Epo 2026-11-03; it was 20), each with at most 5 marking items.
-	// Each open part is graded in its own request.
-	QuizParts         = 100
+	// User quizzes (not the question bank) are bounded tighter: 150 parts,
+	// so a whole past paper fits one quiz, 120 multiple-choice questions
+	// included (Epo 2026-11-08; 100 from 2026-11-03, 20 before), each with at
+	// most 5 marking items.
+	QuizParts         = 150
 	QuizQuestionParts = 7
 	QuizOpenParts     = 100
 	QuizMarkscheme    = 5

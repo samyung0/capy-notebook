@@ -138,8 +138,11 @@ func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (U
 			return UploadSession{}, err
 		}
 	}
-	if _, err := s.lockFileEditorMutationTx(ctx, tx, in.WorkspaceID, in.CreatedBy, in.CreatedBy); err != nil {
-		return UploadSession{}, err
+	// A paper's file is the member's answer: admitAccountTx below admits it.
+	if in.AttemptID == "" {
+		if _, err := s.lockFileEditorMutationTx(ctx, tx, in.WorkspaceID, in.CreatedBy, in.CreatedBy); err != nil {
+			return UploadSession{}, err
+		}
 	}
 	if err := s.assertUploadTopicFitsTx(ctx, tx, in.WorkspaceID, in.TopicName); err != nil {
 		return UploadSession{}, err
@@ -148,6 +151,10 @@ func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (U
 	if in.AttemptID != "" {
 		if in.WorkspaceID != "" {
 			return UploadSession{}, ErrPaperClosed
+		}
+		// Account before attempt, as submitting takes them.
+		if err := s.admitAccountTx(ctx, tx, in.CreatedBy); err != nil {
+			return UploadSession{}, err
 		}
 		if err := s.checkPaperUploadTx(ctx, tx, in.AttemptID, in.CreatedBy, in.DeclaredSize, in.PaperMaxBytes, time.Now()); err != nil {
 			return UploadSession{}, err
@@ -233,8 +240,12 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, actorID, uploadID, so
 		return File{}, ErrNotFound
 	}
 	if attemptID != "" {
-		// A paper's file joins only an attempt still taking files.
+		// A paper's file joins only an attempt still taking files. Locks go
+		// workspace, account, attempt, as submitting takes them.
 		if err := lockAttemptWorkspaceTx(ctx, tx, attemptID); err != nil {
+			return File{}, err
+		}
+		if err := s.admitAccountTx(ctx, tx, actorID); err != nil {
 			return File{}, err
 		}
 		var open bool
@@ -244,8 +255,7 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, actorID, uploadID, so
 		if !open {
 			return File{}, ErrPaperClosed
 		}
-	}
-	if _, err := s.lockFileEditorMutationTx(ctx, tx, workspaceID, payerID, actorID); err != nil {
+	} else if _, err := s.lockFileEditorMutationTx(ctx, tx, workspaceID, payerID, actorID); err != nil {
 		return File{}, err
 	}
 	if err := s.lockStorageRowTx(ctx, tx, payerID); err != nil {
@@ -337,31 +347,12 @@ func (s *Store) finalizeUploadSessionTx(
 	}
 
 	if !ready {
-		jobID := uid("job")
-		actor := ""
-		if u.CreatedBy != nil {
-			actor = *u.CreatedBy
-		}
-		reservationID, err := s.beginIngestSpendTx(ctx, tx, actor, u.WorkspaceID)
+		queued, err := s.queueIngestTx(ctx, tx, u, fileID, parser, sourceETag, processingPlan)
 		if err != nil {
 			return File{}, err
 		}
-		payload, err := s.ingestJobPayload(ctx, tx, actor, map[string]any{
-			"fileId": fileID, "workspaceId": u.WorkspaceID, "blobPath": u.FinalPath,
-			"kind": u.Kind, "parser": parser,
-			"parseMode":      u.ParseMode,
-			"processingPlan": processingPlan,
-			"sourceETag":     sourceETag,
-			"sourceRevision": int64(1),
-			"reservationId":  reservationID,
-		})
-		if err != nil {
-			return File{}, err
-		}
-		if _, err := tx.Exec(ctx,
-			`INSERT INTO jobs (id, type, payload) VALUES ($1,$2,$3)`,
-			jobID, initialPipelineJobType(processingPlan), payload); err != nil {
-			return File{}, err
+		if !queued {
+			status, ready = "ready", true
 		}
 	}
 
@@ -499,4 +490,45 @@ func (s *Store) PruneUploadSessions(ctx context.Context) error {
 		WHERE completed_at < now() - interval '30 days'
 		   OR (response IS NULL AND created_at < now() - interval '1 day')`)
 	return err
+}
+
+// queueIngestTx queues a finalized upload's ingest job on its uploader's
+// credits. A paper's file the uploader has no credits for is kept ready with
+// no parse instead (queued false): credits never refuse a paper (Epo
+// 2026-11-08), its pages still render for marking, and marking then waits as
+// No credits.
+func (s *Store) queueIngestTx(ctx context.Context, tx pgx.Tx, u UploadSession, fileID, parser, sourceETag string, plan sourceupload.ProcessingPlan) (bool, error) {
+	actor := ""
+	if u.CreatedBy != nil {
+		actor = *u.CreatedBy
+	}
+	reservationID, err := s.beginIngestSpendTx(ctx, tx, actor, u.WorkspaceID)
+	if errors.Is(err, ErrCreditsExhausted) {
+		var paper bool
+		if err := tx.QueryRow(ctx, `SELECT attempt_id IS NOT NULL FROM upload_sessions WHERE id=$1`, u.ID).Scan(&paper); err != nil {
+			return false, err
+		}
+		if paper {
+			_, err := tx.Exec(ctx, `UPDATE files SET status='ready' WHERE id=$1`, fileID)
+			return false, err
+		}
+	}
+	if err != nil {
+		return false, err
+	}
+	payload, err := s.ingestJobPayload(ctx, tx, actor, map[string]any{
+		"fileId": fileID, "workspaceId": u.WorkspaceID, "blobPath": u.FinalPath,
+		"kind": u.Kind, "parser": parser,
+		"parseMode":      u.ParseMode,
+		"processingPlan": plan,
+		"sourceETag":     sourceETag,
+		"sourceRevision": int64(1),
+		"reservationId":  reservationID,
+	})
+	if err != nil {
+		return false, err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO jobs (id, type, payload) VALUES ($1,$2,$3)`,
+		uid("job"), initialPipelineJobType(plan), payload)
+	return true, err
 }

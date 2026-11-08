@@ -449,10 +449,11 @@ func (s *Store) gateStorageTx(ctx context.Context, tx pgx.Tx, userID string, req
 	return nil
 }
 
-// admitAccountTx is gateStorageTx's account half alone, with no quota check: an
-// assignment's drawing saves past the storage limit, so storage never blocks
-// attempting or submitting (Epo 2026-11-08). Its bytes still count, putting the
-// account over quota as any other overshoot does.
+// admitAccountTx admits an assignment answer's bytes (a drawing, a paper's
+// file) with no quota check: storage never blocks attempting or submitting,
+// and a frozen account still attempts and submits, an answer being no material
+// it edits (Epo 2026-11-08, O4). Its bytes still count, putting the account over
+// quota as any other overshoot does; only a locked account is refused.
 func (s *Store) admitAccountTx(ctx context.Context, tx pgx.Tx, userID string) error {
 	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
 		return err
@@ -461,7 +462,7 @@ func (s *Store) admitAccountTx(ctx context.Context, tx pgx.Tx, userID string) er
 	if err != nil {
 		return err
 	}
-	return status.Err()
+	return status.MutateErr()
 }
 
 func (s *Store) reserveStorageTx(ctx context.Context, tx pgx.Tx, userID string, requested int64) error {

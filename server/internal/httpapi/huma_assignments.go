@@ -263,9 +263,12 @@ func (a *api) releaseAssignmentGrades(ctx context.Context, in *assignmentIDInput
 	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
 	}
-	res, err := a.s.ReleaseAssignmentGrades(ctx, userID(ctx), in.ID, time.Now())
+	res, sent, err := a.s.ReleaseAssignmentGrades(ctx, userID(ctx), in.ID, time.Now())
 	if err != nil {
 		return nil, assignmentError(err)
+	}
+	for i := range sent {
+		a.publishNotificationEvent(ctx, sent[i].UserID, notificationEvent{Type: "created", Notification: &sent[i]})
 	}
 	return &assignmentOutput{Body: res}, nil
 }

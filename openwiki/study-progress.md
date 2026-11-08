@@ -991,6 +991,41 @@ points and solutions (`gradedWithoutKeys`), so an early submitter has no answers
 pass on while classmates still answer; per-part marks still show on submit.
 Reopening hides the keys again.
 
+**Answering on paper** (Epo 2026-11-08, todo-file-submissions.md 5a, migration
+0161, mocks C1, S4, S5, T1, F1, F2):
+- New assignment's "Allow submission with uploads" (`allow_uploads`) lets a member
+  pick Upload file beside Attempt online in Before you start, which then shows
+  for every such assignment, timed or not. Upload file needs storage not full
+  (S6); the attempt runs with `attempts.paper = 'upload'`, the clock covering the
+  upload. Typed and uploaded answers never mix in one attempt.
+- The page shows the questions read only (no answer fields) and Your paper as the
+  last row. Its files are the member's own standalone uploads through the normal
+  source upload with `attemptId` (`files.attempt_id`, in `attempt_position`
+  order): ingest runs and charges them as any upload, but credits never refuse
+  one and its bytes save past the storage limit. At most 15 files within the
+  member's source file cap across them (O1). They can be removed and dragged
+  into order until Submit, and never list in Files, search or Recent.
+- An upload attempt's matching options and ordering items are shuffled with the
+  attempt as the seed (`questions.LearnerViewsSeeded`), so the letters on paper
+  match what the read call is given.
+- Submitting leaves every part waiting with nothing logged (`paper = 'reading'`).
+  Marking waits for the files' ingest, then the pipeline's `/paper` reads every
+  page and grades the open and drawn parts on their pages, one call
+  (`observability-metering.md`). Go maps each closed answer from the member's
+  letters to the stored answer and marks it against the key, drops an answer
+  read with no pages, stores each part's `pages`, logs the answers
+  (`paper = 'read'`), then saves the AI's marks and failures as for typed
+  answers. Mark with AI later grades the waiting open parts again on their
+  pages. Under manual marking nothing is read.
+- Approve shows a part's pages of the paper with Whole paper a click away (T1),
+  through `GET /api/assignment-attempts/{id}/paper/{fileId}/links` (the member,
+  or staff once submitted).
+- Files › Submissions lists a paper's files once every part is marked and the
+  assignment has closed with its grades out, as Files › Canvas now does for
+  assignment drawings (Epo 2026-11-08, "Yes, both tabs"); deleting keeps the
+  marks, and Approve then says the member deleted it (F2).
+- Releasing grades rings each member who handed in (`grades_released`).
+
 **Show grades** (C4, S7, T5; Epo 2026-11-08, migration 0160 `grades_shown`,
 `grades_released_at`). Automatic, the default, shows marks as they are decided.
 Manual holds them until an owner or editor presses Release grades in the report

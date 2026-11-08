@@ -1280,23 +1280,57 @@ func (s *Store) SetAssignmentClosed(ctx context.Context, actorID, id string, clo
 // Show grades is manual (Epo 2026-11-08, mock T5). Marks decided later show as
 // they land. Once it has also closed, the sweep makes its quiz practice and
 // rates what was submitted.
-func (s *Store) ReleaseAssignmentGrades(ctx context.Context, actorID, id string, now time.Time) (Assignment, error) {
+func (s *Store) ReleaseAssignmentGrades(ctx context.Context, actorID, id string, now time.Time) (Assignment, []Notification, error) {
 	wsID, err := s.assignmentWorkspace(ctx, id)
 	if err != nil {
-		return Assignment{}, err
+		return Assignment{}, nil, err
 	}
+	var sent []Notification
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
 		if err := s.lockAssignmentStaffTx(ctx, tx, wsID, actorID); err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx, `UPDATE assignments SET grades_released_at=$2
-			WHERE id=$1 AND NOT draft AND grades_shown='manual' AND grades_released_at IS NULL`, id, now)
-		return err
+		var title string
+		err := tx.QueryRow(ctx, `UPDATE assignments SET grades_released_at=$2
+			WHERE id=$1 AND NOT draft AND grades_shown='manual' AND grades_released_at IS NULL
+			RETURNING title`, id, now).Scan(&title)
+		if isNoRows(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		// The bell tells each member who handed something in (T, Epo 2026-11-08).
+		rows, err := tx.Query(ctx, `SELECT DISTINCT user_id FROM attempts
+			WHERE assignment_id=$1 AND submitted_at IS NOT NULL`, id)
+		if err != nil {
+			return err
+		}
+		members, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			return err
+		}
+		data, err := json.Marshal(map[string]string{"code": "grades_released", "assignmentId": id, "title": title})
+		if err != nil {
+			return err
+		}
+		href := "/workspaces/" + wsID + "?study=assignments&assignment=" + id
+		for _, member := range members {
+			n, err := CreateNotificationTx(ctx, tx, NotificationParams{
+				UserID: member, Kind: NotifSystem, Data: data, Href: href, WorkspaceID: wsID, At: now,
+			})
+			if err != nil {
+				return err
+			}
+			sent = append(sent, n)
+		}
+		return nil
 	})
 	if err != nil {
-		return Assignment{}, err
+		return Assignment{}, nil, err
 	}
-	return s.GetAssignment(ctx, actorID, id, now)
+	a, err := s.GetAssignment(ctx, actorID, id, now)
+	return a, sent, err
 }
 
 // RunningAttemptUsers names who has an attempt running on the assignment.

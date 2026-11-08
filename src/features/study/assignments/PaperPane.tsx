@@ -26,23 +26,61 @@ pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 /** A page yet to be measured takes a4's shape. */
 const SHEET_RATIO = 210 / 297;
 
-/** One page of a paper, numbered across its files. */
+/** Removing and reordering a running paper's files, page by page. */
+type PaperEdit = {
+  dragged: string | null;
+  onDragStart: (fileId: string) => void;
+  onDrop: (fileId: string) => void;
+  onRemove: (file: PaperFile) => void;
+  removing: boolean;
+};
+
+/** One page of a paper, numbered across its files; while it runs, a file's
+ * first page carries its remove button and every page drags the file. */
 function Sheet({
   children,
+  edit,
+  file,
+  firstOfFile,
   number,
   ratio = SHEET_RATIO,
 }: {
   children: React.ReactNode;
+  edit?: PaperEdit;
+  file: PaperFile;
+  firstOfFile: boolean;
   number: number;
   ratio?: number;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1.5" data-paper-page={number}>
+    <div
+      className={cn(
+        'flex min-w-0 flex-col gap-1.5',
+        edit && 'cursor-grab',
+        edit?.dragged === file.id && 'opacity-50'
+      )}
+      data-paper-page={number}
+      draggable={!!edit}
+      onDragOver={edit && ((e) => e.preventDefault())}
+      onDragStart={edit && (() => edit.onDragStart(file.id))}
+      onDrop={edit && (() => edit.onDrop(file.id))}
+    >
       <div
         className="relative w-full overflow-hidden rounded-[3px] border border-[#dcdfdf] bg-white shadow-[0_1px_3px_rgba(0,0,0,.08)]"
         style={{ aspectRatio: ratio }}
       >
         {children}
+        {edit && firstOfFile && (
+          <button
+            aria-label={m.assignment_paper_remove_file({ name: file.name })}
+            className="absolute top-1.5 right-1.5 grid size-6 place-items-center rounded-full bg-black/55 text-white outline-none focus-visible:ring-2 focus-visible:ring-action"
+            disabled={edit.removing}
+            onClick={() => edit.onRemove(file)}
+            type="button"
+          >
+            <Icon name="x" size={14} />
+          </button>
+        )}
       </div>
       <span className="t-meta text-center text-fg-muted">{number}</span>
     </div>
@@ -53,6 +91,7 @@ function Sheet({
  * (its text is read as one page, as Make a quiz does). */
 function FilePages({
   attemptId,
+  edit,
   file,
   first,
   only,
@@ -60,6 +99,7 @@ function FilePages({
   width,
 }: {
   attemptId: string;
+  edit?: PaperEdit;
   file: PaperFile;
   /** The paper's number for this file's first page. */
   first: number;
@@ -85,13 +125,14 @@ function FilePages({
   if (!pdf) {
     if (!shown(1)) return null;
     return (
-      <Sheet number={first}>
+      <Sheet edit={edit} file={file} firstOfFile number={first}>
         {file.kind === 'image' ? (
           links?.url && (
             <img
               alt=""
               className="h-full w-full object-contain"
               decoding="async"
+              draggable={false}
               src={links.url}
             />
           )
@@ -131,7 +172,14 @@ function FilePages({
       {Array.from({ length: count }, (_, i) => i + 1)
         .filter(shown)
         .map((page) => (
-          <Sheet key={page} number={first + page - 1} ratio={ratios[page]}>
+          <Sheet
+            edit={edit}
+            file={file}
+            firstOfFile={page === 1}
+            key={page}
+            number={first + page - 1}
+            ratio={ratios[page]}
+          >
             <Page
               className="[&_canvas]:h-auto! [&_canvas]:w-full!"
               loading={<Skeleton className="h-full w-full rounded-none" />}
@@ -151,23 +199,22 @@ function FilePages({
   );
 }
 
-/** A paper's pages, numbered across its files as the read call numbers them;
- * `only` keeps the pages a part was found on (Approve, mock T1), and `wrap`
- * puts each file's pages in what the caller adds around them. */
+/** A paper's pages in one grid, numbered across its files as the read call
+ * numbers them; `only` keeps the pages a part was found on (Approve, mock T1). */
 export function PaperPages({
   attemptId,
   className,
+  edit,
   files,
   only,
   width = 220,
-  wrap = (_file, pages) => pages,
 }: {
   attemptId: string;
   className?: string;
+  edit?: PaperEdit;
   files: readonly PaperFile[];
   only?: readonly number[];
   width?: number;
-  wrap?: (file: PaperFile, pages: React.ReactNode) => React.ReactNode;
 }) {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const onCount = useRef((fileId: string, pages: number) =>
@@ -176,27 +223,26 @@ export function PaperPages({
     )
   ).current;
   let first = 1;
-  return files.map((file) => {
-    const start = first;
-    first += counts[file.id] ?? 1;
-    return (
-      <div className="contents" key={file.id}>
-        {wrap(
-          file,
-          <div className={cn('grid gap-3', className)}>
-            <FilePages
-              attemptId={attemptId}
-              file={file}
-              first={start}
-              onCount={onCount}
-              only={only}
-              width={width}
-            />
-          </div>
-        )}
-      </div>
-    );
-  });
+  return (
+    <div className={cn('grid gap-3', className)}>
+      {files.map((file) => {
+        const start = first;
+        first += counts[file.id] ?? 1;
+        return (
+          <FilePages
+            attemptId={attemptId}
+            edit={edit}
+            file={file}
+            first={start}
+            key={file.id}
+            onCount={onCount}
+            only={only}
+            width={width}
+          />
+        );
+      })}
+    </div>
+  );
 }
 
 /** S5's Your paper (Epo 2026-11-08): the whole paper as a PDF or photos, in
@@ -255,7 +301,7 @@ export function PaperPane({
   return (
     <div className="mx-auto flex w-full max-w-180 flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="mr-auto font-extrabold text-[1.25rem] leading-snug tracking-[-0.01rem] lg:text-[1.375rem]">
+        <h2 className="mr-auto font-extrabold text-[1.25rem] leading-snug tracking-[-0.01rem] max-md:basis-full lg:text-[1.375rem]">
           {m.assignment_paper_title()}
         </h2>
         <Button
@@ -302,49 +348,33 @@ export function PaperPane({
       {files.length === 0 && uploading.length === 0 && (
         <p className="text-fg-muted">{m.assignment_paper_empty()}</p>
       )}
+      {files.length > 0 && (
+        <p className="t-meta text-fg-secondary">
+          {files.length === 1
+            ? m.assignment_paper_file_meta({
+                name: files[0]!.name,
+                size: formatFileSize(files[0]!.sizeBytes),
+              })
+            : m.assignment_paper_file_meta({
+                name: m.assignment_paper_files({ count: files.length }),
+                size: formatFileSize(
+                  files.reduce((n, f) => n + f.sizeBytes, 0)
+                ),
+              })}
+        </p>
+      )}
       <PaperPages
         attemptId={attemptId}
         className="grid-cols-3 sm:grid-cols-5"
+        edit={{
+          dragged,
+          onDragStart: setDragged,
+          onDrop: drop,
+          onRemove: (file) => remove(file.id),
+          removing,
+        }}
         files={files}
         width={160}
-        wrap={(file, pages) => (
-          <section
-            className={cn(
-              'flex flex-col gap-2 rounded-lg',
-              dragged === file.id && 'opacity-50'
-            )}
-            draggable={files.length > 1}
-            onDragOver={(e) => e.preventDefault()}
-            onDragStart={() => setDragged(file.id)}
-            onDrop={() => drop(file.id)}
-          >
-            <div className="flex items-center gap-2">
-              {files.length > 1 && (
-                <Icon
-                  className="cursor-grab text-fg-muted"
-                  name="gripVertical"
-                  size={18}
-                />
-              )}
-              <span className="t-meta min-w-0 flex-1 truncate text-fg-secondary">
-                {m.assignment_paper_file_meta({
-                  name: file.name,
-                  size: formatFileSize(file.sizeBytes),
-                })}
-              </span>
-              <Button
-                disabled={removing}
-                iconLeft="trash"
-                onClick={() => remove(file.id)}
-                size="sm"
-                variant="danger-light"
-              >
-                {m.assignment_paper_remove()}
-              </Button>
-            </div>
-            {pages}
-          </section>
-        )}
       />
       {uploading.map((name) => (
         <p className="t-meta text-fg-secondary" key={name}>
