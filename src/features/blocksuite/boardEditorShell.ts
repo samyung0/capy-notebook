@@ -65,7 +65,9 @@ export function openBoardEditor(
 
   const menu = new BoardMenu(() => ({
     entries: [
-      ...(hooks.fit ? [{ label: m.drawing_board_fit(), run: hooks.fit }] : []),
+      ...(hooks.fit
+        ? [{ label: m.drawing_board_fit_to_screen(), run: hooks.fit }]
+        : []),
       {
         disabled: !gfx.doc.canUndo,
         icon: Undo03Icon,

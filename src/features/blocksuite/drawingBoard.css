@@ -92,16 +92,19 @@ html.dark:not([data-board-light]) .capy-board {
 }
 
 .capy-formula-field math-field {
-  /* The formula sits in the middle of the field's height. */
-  display: flex;
-  align-items: center;
+  display: block;
   width: 100%;
-  min-height: 56px;
   font-size: 22px;
   outline: none;
   border: 0;
   border-bottom: 1px solid var(--affine-text-primary-color);
   border-radius: 0;
+}
+
+/* The formula and its buttons sit in the middle of the field's height. */
+.capy-formula-field math-field::part(container) {
+  align-items: center;
+  min-height: 56px;
 }
 
 .capy-formula-actions {

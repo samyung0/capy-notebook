@@ -401,7 +401,7 @@ export function mountDrawingBoard(
               run: () => store.redo(),
             },
           ]),
-      { label: m.drawing_board_fit(), run: () => gfx.fitToScreen() },
+      { label: m.drawing_board_fit_to_screen(), run: () => gfx.fitToScreen() },
     ],
     zoom: {
       in: () => zoomTo(gfx.viewport.zoom + ZOOM_STEP),

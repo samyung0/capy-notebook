@@ -701,7 +701,8 @@ test('bar and pie charts are their own cards, with no coordinates', async ({
   await expect.poll(async () => (await chart()).values).toEqual([3, 5]);
 
   // Fit brings the axis to the tallest, and a typed one holds.
-  await page.getByRole('button', { name: 'Fit' }).click();
+  await page.locator('.capy-chart-editor .capy-menu-button').click();
+  await page.getByRole('menuitem', { name: 'Fit to screen' }).click();
   await expect.poll(async () => (await chart()).axisMax).toBe(6);
   const axis = page.getByRole('textbox', { name: 'Axis to' });
   await axis.fill('10');

@@ -4452,9 +4452,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   change 25, in the pointer controller, so every tool's drags and clicks behave this way).
 - **The ☰ menu** (`boardMenu.ts`, Epo 2026-11-08) sits top right, left of any Done the
   page around the board places (its width through `--capy-board-done-width`), so the
-  bottom row holds only the toolbar: Undo, Redo, Fit (to screen), then a row of −, the
+  bottom row holds only the toolbar: Undo, Redo, Fit to screen, then a row of −, the
   zoom (which resets to 100%) and +. An entry closes it, the zoom row keeps it open, as
-  do a press anywhere else and Escape. A teacher's board has Fit and zoom only.
+  do a press anywhere else and Escape. A teacher's board has Fit to screen and zoom only.
   AFFiNE's zoom toolbar isn't loaded. Below 768 px the toolbar spans the screen less an
   8 px gutter, which needs `.capy-board` to be the `viewport` container.
 - **Selecting** shows AFFiNE's own toolbar. It reads the editor's mode, so the board
@@ -4482,7 +4482,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   leave the card; its marks are stored as on any plane, and its editor snaps them to where
   a ring crosses a spoke.
 - **Editing a plane** (`boardPlaneEditor.ts`, on the shell in `boardEditorShell.ts`): it
-  opens over the whole board. At its top right sit the same ☰ menu (Fit where the card
+  opens over the whole board. At its top right sit the same ☰ menu (Fit to screen where the card
   has one, Undo, Redo, and − and + where it zooms; the board's menu hides meanwhile)
   and Done on its own (Epo 2026-11-08). Done leaves, as does Escape when no mark is open (Escape closes
   an open menu first). Inside, the wheel pans, Ctrl or pinch zooms, and Move drags.
