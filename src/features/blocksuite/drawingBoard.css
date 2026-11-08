@@ -15,7 +15,12 @@
   --capy-shape-button-stroke-ellipse: #1e96eb;
   --capy-shape-button-triangle: #fff;
   --capy-shape-button-stroke-triangle: #d9dde3;
+  --capy-note-edge: #e6e6e6;
   container: viewport / inline-size;
+}
+
+html.dark:not([data-board-light]) .capy-board {
+  --capy-note-edge: var(--affine-border-color);
 }
 
 /* Note cards are tight (N2, Epo 2026-11-08): 8 by 10 px padding, a hairline and a
@@ -34,7 +39,17 @@
   height: 100%;
   border: 0 !important;
   border-radius: 6px !important;
-  box-shadow: 0 0 0 1px #e6e6e6 !important;
+  box-shadow: 0 0 0 1px var(--capy-note-edge) !important;
+}
+
+/* No ground of its own: the dots sit on the panel's colour, or on its frost over
+   the page frame. */
+.capy-board .edgeless-background {
+  background-color: transparent;
+  background-image: radial-gradient(
+    var(--affine-edgeless-grid-color) 1px,
+    transparent 1px
+  );
 }
 
 /* Zoom at the bottom right, none on phones (pinch does it). */
@@ -133,10 +148,10 @@
   }
 }
 
-/* The formula card. */
+/* The formula card, in the middle of the board. */
 .capy-formula {
   position: absolute;
-  top: 16px;
+  top: 50%;
   left: 50%;
   z-index: 3;
   box-sizing: border-box;
@@ -145,12 +160,12 @@
   gap: 8px;
   width: min(420px, calc(100% - 16px));
   padding: 10px;
-  color: #1d1d1f;
-  background: #fff;
+  color: var(--affine-text-primary-color);
+  background: var(--affine-background-overlay-panel-color);
   border: 1px solid var(--affine-border-color);
   border-radius: 8px;
   box-shadow: 0 8px 24px rgb(0 0 0 / 10%);
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
 }
 
 .capy-formula-field math-field {
@@ -160,7 +175,7 @@
   font-size: 22px;
   outline: none;
   border: 0;
-  border-bottom: 1px solid #1d1d1f;
+  border-bottom: 1px solid var(--affine-text-primary-color);
   border-radius: 0;
 }
 
@@ -183,7 +198,7 @@
 }
 
 .capy-formula-actions .ghost {
-  color: #1d1d1f;
+  color: var(--affine-text-primary-color);
 }
 
 .capy-formula-actions .ghost:hover {
@@ -191,8 +206,8 @@
 }
 
 .capy-formula-actions .primary {
-  color: #fff;
-  background: #1d1d1f;
+  color: var(--affine-background-primary-color);
+  background: var(--affine-text-primary-color);
 }
 
 /* The maths symbols under a canvas label being typed. */
@@ -204,7 +219,7 @@
   flex-wrap: wrap;
   max-width: calc(100% - 16px);
   padding: 3px;
-  background: #fff;
+  background: var(--affine-background-overlay-panel-color);
   border: 1px solid var(--affine-border-color);
   border-radius: 6px;
   box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
@@ -222,7 +237,7 @@
   width: 32px;
   height: 32px;
   font-size: 15px;
-  color: #333;
+  color: var(--affine-text-primary-color);
   cursor: pointer;
   border-radius: 4px;
 }
@@ -248,7 +263,7 @@
   z-index: 3;
   overflow: hidden;
   touch-action: none;
-  background: #fff;
+  background: var(--affine-background-primary-color);
 }
 
 .capy-plane-editor canvas {
@@ -297,7 +312,7 @@
 .capy-plane-zoom,
 .capy-plane-tools {
   position: absolute;
-  background: #fff;
+  background: var(--affine-background-overlay-panel-color);
   border: 1px solid var(--affine-border-color);
   border-radius: 8px;
   box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
@@ -318,12 +333,12 @@
 }
 
 .capy-plane-top .primary {
-  color: #fff;
-  background: #1d1d1f;
+  color: var(--affine-background-primary-color);
+  background: var(--affine-text-primary-color);
 }
 
 .capy-plane-top .primary:hover {
-  background: #1d1d1f;
+  background: var(--affine-text-primary-color);
 }
 
 .capy-plane-zoom {
@@ -341,15 +356,15 @@
   padding: 0 12px;
   font-size: 13px;
   font-weight: 600;
-  color: #fff;
+  color: var(--affine-background-primary-color);
   white-space: nowrap;
-  background: #1d1d1f;
+  background: var(--affine-text-primary-color);
   box-shadow: 0 4px 12px rgb(0 0 0 / 14%);
   transform: translateX(-50%);
 }
 
 .capy-plane-editor .capy-plane-finish:hover {
-  background: #1d1d1f;
+  background: var(--affine-text-primary-color);
 }
 
 /* Undo and redo stay within reach over an open plane or chart, beside its zoom. */
@@ -358,7 +373,7 @@
   bottom: 12px;
   z-index: 4;
   height: 44px;
-  background: #fff;
+  background: var(--affine-background-overlay-panel-color);
   border: 1px solid var(--affine-border-color);
   border-radius: 8px;
   box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
@@ -469,8 +484,8 @@
   padding: 6px 10px;
   font-size: 13px;
   font-weight: 500;
-  color: #55555b;
-  background: #fff;
+  color: var(--affine-text-secondary-color);
+  background: var(--affine-background-overlay-panel-color);
   border: 1px solid var(--affine-border-color);
   border-radius: 8px;
   box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
@@ -485,9 +500,9 @@
 .capy-chart-axis input {
   all: unset;
   width: 34px;
-  color: #1d1d1f;
+  color: var(--affine-text-primary-color);
   text-align: center;
-  border-bottom: 1px solid #1d1d1f;
+  border-bottom: 1px solid var(--affine-text-primary-color);
 }
 
 .capy-chart-label {
@@ -498,9 +513,9 @@
   font:
     500 13px Arial,
     sans-serif;
-  color: #1d1d1f;
+  color: var(--affine-text-primary-color);
   text-align: center;
-  background: #fff;
+  background: var(--affine-background-overlay-panel-color);
   border-bottom: 1px solid #1e96eb;
   transform: translate(-50%, -50%);
 }

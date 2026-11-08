@@ -19,6 +19,7 @@ import {
   type ChartBar,
   LABEL_LENGTH_MAX,
   LABELS_MAX,
+  PAPER,
   type Pads,
   type PieLabel,
   pieCircle,
@@ -159,6 +160,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       area,
       { axisMax, axisStep, bars, kind, labels, spokes },
       (color) => resolve.getColorValue(color, 'transparent', true),
+      PAPER[resolve.theme],
       pads(),
       isBar ? slots() : undefined
     );

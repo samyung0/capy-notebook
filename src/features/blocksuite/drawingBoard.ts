@@ -55,8 +55,11 @@ import { InlinePresetStoreExtension } from '@blocksuite/affine/inlines/preset/st
 import { InlinePresetViewExtension } from '@blocksuite/affine/inlines/preset/view';
 import { ReferenceStoreExtension } from '@blocksuite/affine/inlines/reference/store';
 import { ReferenceViewExtension } from '@blocksuite/affine/inlines/reference/view';
-import { ImageBlockModel } from '@blocksuite/affine/model';
-import { FeatureFlagService } from '@blocksuite/affine/shared/services';
+import { ColorScheme, ImageBlockModel } from '@blocksuite/affine/model';
+import {
+  FeatureFlagService,
+  ThemeProvider,
+} from '@blocksuite/affine/shared/services';
 import { BlockStdScope, isGfxBlockComponent } from '@blocksuite/affine/std';
 import {
   type GfxBlockElementModel,
@@ -74,6 +77,7 @@ import { SlashMenuViewExtension } from '@blocksuite/affine/widgets/slash-menu/vi
 import { ToolbarViewExtension } from '@blocksuite/affine/widgets/toolbar/view';
 import { ViewportOverlayViewExtension } from '@blocksuite/affine/widgets/viewport-overlay/view';
 import { Redo03Icon, Undo03Icon } from '@hugeicons/core-free-icons';
+import { combinedDarkCssVariables } from '@toeverything/theme';
 import { html, render } from 'lit';
 import * as Y from 'yjs';
 import { m } from '@/i18n';
@@ -180,6 +184,18 @@ const readOnlyViews = new ViewExtensionManager(
 );
 
 const PHONE_WIDTH = 768;
+
+// AFFiNE's dark palette under the app's dark themes: they set data-theme to a
+// Catppuccin flavour, which AFFiNE's own [data-theme=dark] never matches. On
+// <html>, so its popovers outside the board take it too; data-board-light lifts
+// it while the marking image is drawn.
+const darkPalette = document.createElement('style');
+darkPalette.textContent = `html.dark:not([data-board-light]){${Object.entries(
+  combinedDarkCssVariables
+)
+  .map(([name, value]) => `${name}:${value}`)
+  .join(';')}}`;
+document.head.append(darkPalette);
 
 /** The board has no frames, but resizing a selection clears their highlight. */
 class NoFrameOverlay extends Overlay {
@@ -392,6 +408,17 @@ export function mountDrawingBoard(
   store.get(FeatureFlagService).setFlag('enable_note_menu_media', false);
   const gfx = std.get(GfxControllerIdentifier);
   outlineNewShapes(gfx);
+  // The canvas draws in the app's light or dark (the dark class ThemeProvider sets).
+  const root = document.documentElement;
+  const theme$ = std.get(ThemeProvider).app$;
+  const followTheme = () => {
+    theme$.value = root.classList.contains('dark')
+      ? ColorScheme.Dark
+      : ColorScheme.Light;
+  };
+  followTheme();
+  const themeWatch = new MutationObserver(followTheme);
+  themeWatch.observe(root, { attributeFilter: ['class'] });
   // Canvas labels measure and draw in this font (the stylesheet's @font-face).
   void document.fonts
     .load('24px "blocksuite:surface:Inter"')
@@ -496,6 +523,8 @@ export function mountDrawingBoard(
     }
     const view = std.view.getBlock(block.id);
     if (!view) return null;
+    // Drawn in the palette toImage just switched to.
+    await view.updateComplete;
     // A note out of view is BlockSuite's idle block: hidden with no size, which
     // html2canvas draws as nothing at all. It's shown for the capture only.
     const idle =
@@ -512,6 +541,72 @@ export function mountDrawingBoard(
   const finishPlot = () => {
     closeBoardEditor(gfx);
     gfx.tool.setTool(DefaultTool);
+  };
+
+  /** The marking image: see toImage. */
+  const drawImage = async () => {
+    await formulasDrawn(gfx);
+    const renderer = surfaceOf(gfx)?.renderer;
+    if (!(renderer instanceof CanvasRenderer))
+      throw new Error('drawing board: no canvas renderer');
+    const { bound, shiftOf } = framing();
+    const scale = Math.min(2, IMAGE_SIDE_MAX / Math.max(bound.w, bound.h));
+    const output = document.createElement('canvas');
+    output.width = Math.round(bound.w * scale);
+    output.height = Math.round(bound.h * scale);
+    const ctx = output.getContext('2d');
+    if (!ctx) throw new Error('drawing board: no 2d canvas');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, output.width, output.height);
+    // Layer by layer, so what's covered on the screen is covered here. BlockSuite's
+    // export draws every note under every stroke, at the device's scale. Each group
+    // drawn nearer is drawn on its own.
+    for (const layer of gfx.layer.layers) {
+      if (layer.type === 'canvas') {
+        const byShift = new Map<string, typeof layer.elements>();
+        for (const element of layer.elements) {
+          const { dx, dy } = shiftOf.get(element.id) ?? { dx: 0, dy: 0 };
+          const key = `${dx},${dy}`;
+          byShift.set(key, [...(byShift.get(key) ?? []), element]);
+        }
+        for (const [key, elements] of byShift) {
+          const [dx, dy] = key.split(',').map(Number);
+          const from = new Bound(bound.x + dx, bound.y + dy, bound.w, bound.h);
+          ctx.drawImage(
+            renderer.getCanvasByBound(
+              from,
+              elements,
+              undefined,
+              false,
+              false,
+              scale
+            ),
+            0,
+            0,
+            output.width,
+            output.height
+          );
+        }
+        continue;
+      }
+      for (const block of layer.elements) {
+        const { h, w, x, y } = Bound.deserialize(block.xywh);
+        const { dx, dy } = shiftOf.get(block.id) ?? { dx: 0, dy: 0 };
+        const place = [
+          (x - dx - bound.x) * scale,
+          (y - dy - bound.y) * scale,
+          w * scale,
+          h * scale,
+        ] as const;
+        const image = await blockImage(block);
+        if (image) ctx.drawImage(image, ...place);
+      }
+    }
+    const png = await new Promise<Blob | null>((resolve) =>
+      output.toBlob(resolve, 'image/png')
+    );
+    if (!png) throw new Error('drawing board: no image');
+    return png;
   };
 
   return {
@@ -560,72 +655,16 @@ export function mountDrawingBoard(
      * Something dragged far away is drawn nearer (FAR_GAP). */
     toImage: async () => {
       if (!readOnly) finishPlot();
-      await formulasDrawn(gfx);
-      const renderer = surfaceOf(gfx)?.renderer;
-      if (!(renderer instanceof CanvasRenderer))
-        throw new Error('drawing board: no canvas renderer');
-      const { bound, shiftOf } = framing();
-      const scale = Math.min(2, IMAGE_SIDE_MAX / Math.max(bound.w, bound.h));
-      const output = document.createElement('canvas');
-      output.width = Math.round(bound.w * scale);
-      output.height = Math.round(bound.h * scale);
-      const ctx = output.getContext('2d');
-      if (!ctx) throw new Error('drawing board: no 2d canvas');
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(0, 0, output.width, output.height);
-      // Layer by layer, so what's covered on the screen is covered here. BlockSuite's
-      // export draws every note under every stroke, at the device's scale. Each group
-      // drawn nearer is drawn on its own.
-      for (const layer of gfx.layer.layers) {
-        if (layer.type === 'canvas') {
-          const byShift = new Map<string, typeof layer.elements>();
-          for (const element of layer.elements) {
-            const { dx, dy } = shiftOf.get(element.id) ?? { dx: 0, dy: 0 };
-            const key = `${dx},${dy}`;
-            byShift.set(key, [...(byShift.get(key) ?? []), element]);
-          }
-          for (const [key, elements] of byShift) {
-            const [dx, dy] = key.split(',').map(Number);
-            const from = new Bound(
-              bound.x + dx,
-              bound.y + dy,
-              bound.w,
-              bound.h
-            );
-            ctx.drawImage(
-              renderer.getCanvasByBound(
-                from,
-                elements,
-                undefined,
-                false,
-                false,
-                scale
-              ),
-              0,
-              0,
-              output.width,
-              output.height
-            );
-          }
-          continue;
-        }
-        for (const block of layer.elements) {
-          const { h, w, x, y } = Bound.deserialize(block.xywh);
-          const { dx, dy } = shiftOf.get(block.id) ?? { dx: 0, dy: 0 };
-          const place = [
-            (x - dx - bound.x) * scale,
-            (y - dy - bound.y) * scale,
-            w * scale,
-            h * scale,
-          ] as const;
-          const image = await blockImage(block);
-          if (image) ctx.drawImage(image, ...place);
-        }
+      // Marked on white in the light palette, whatever the app's theme.
+      root.dataset.boardLight = '';
+      theme$.value = ColorScheme.Light;
+      let png: Blob;
+      try {
+        png = await drawImage();
+      } finally {
+        delete root.dataset.boardLight;
+        followTheme();
       }
-      const png = await new Promise<Blob | null>((resolve) =>
-        output.toBlob(resolve, 'image/png')
-      );
-      if (!png) throw new Error('drawing board: no image');
       // The encode runs in the compressor's worker; drawing needs the page.
       // Line art keeps its ink at 0.75: 10-20% smaller than the shared 0.85
       // (Epo 2026-11-06: minimise drawing storage).
@@ -641,6 +680,7 @@ export function mountDrawingBoard(
       historyUpdates.unsubscribe();
       if (onChange) store.spaceDoc.off('update', onChange);
       symbols?.unmount();
+      themeWatch.disconnect();
       closeBoardEditor(gfx);
       forgetFormulas();
       render(null, history);

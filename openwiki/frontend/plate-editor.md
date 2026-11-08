@@ -4572,8 +4572,19 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   0/8/16/24/32; the preview draws it the same. AFFiNE's slash menu is registered, offering
   text styles, lists, alignment, inline styles, Image, dates and the move/copy/delete
   actions; Image stores its file in the board's blob store, as a pasted image does.
+- **Theme:** the board follows the app's light or dark. The app's dark themes set
+  `data-theme` to a Catppuccin flavour, which AFFiNE's `[data-theme=dark]` never matches,
+  so `drawingBoard.ts` puts AFFiNE's dark variables under `html.dark` (on `<html>`, for
+  its popovers too) and sets BlockSuite's theme signal from the `dark` class. The board
+  paints no ground: its dots sit on the panel's colour, or its frost over the page frame.
+  Plane and chart cards take a light or dark `PAPER` (dark paper is a dark note's), and a
+  formula's black bitmap is inverted (hue kept) on a dark board. The marking image is
+  always light: `toImage` lifts the dark variables (`data-board-light`) and switches the
+  signal to light while it draws, so the board shows light for that moment.
 - **Formulas:** a `formula` canvas element holding LaTeX, typed in MathLive (loaded on
-  first open). AFFiNE keeps LaTeX as HTML in note cards, and its export (html2canvas)
+  first open). Its card opens in the middle of the board and closes like a popup on a
+  press anywhere else, another formula piece too (MathLive's keyboard and menus aside),
+  discarding what was typed, as Cancel does. AFFiNE keeps LaTeX as HTML in note cards, and its export (html2canvas)
   garbles that, so typing `$$` in a note here stays text; AFFiNE's inline spec stays
   registered because paragraphs read it as they render (the specs only: its LaTeX node and
   editor menu, which load KaTeX and shiki, are left out). KaTeX and its stylesheet load

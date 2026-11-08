@@ -1,10 +1,11 @@
+import { ThemeProvider } from '@blocksuite/affine/shared/services';
 import type { GfxController } from '@blocksuite/affine/std/gfx';
 import { html, render } from 'lit';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import { axisNumber } from '@/features/questions/graph';
 import { tickStep } from '@/features/questions/graphTicks';
 import { m } from '@/i18n';
-import { MARKS_MAX, type Mark } from './boardData';
+import { MARKS_MAX, type Mark, PAPER } from './boardData';
 import { drawChip, openBoardEditor } from './boardEditorShell';
 import { minorStep, smoothThrough, snapTo, type Vec } from './boardGeometry';
 import {
@@ -60,6 +61,7 @@ function distanceTo(mark: Mark, [x, y]: Vec) {
  * once, so undo steps through it click by click; the view is written on leaving. Escape
  * ends the open mark, or leaves as Done does when there's none. */
 function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
+  const theme = gfx.std.get(ThemeProvider);
   /** The line or curve still taking clicks. Undo simply shortens it. */
   let openId: string | null = null;
   const openMark = () => model.marks.find((mark) => mark.id === openId);
@@ -143,7 +145,13 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
 
   const draw = () => {
     const { height, width } = shell.sizeCanvas();
-    drawPlane(ctx, { h: height, w: width, x: 0, y: 0 }, view, model.marks);
+    drawPlane(
+      ctx,
+      { h: height, w: width, x: 0, y: 0 },
+      view,
+      model.marks,
+      PAPER[theme.theme]
+    );
     if (!pointer || tool === 'move' || tool === 'erase') return;
     const X = (x: number) => (x - view.x0) * view.ppu;
     const Y = (y: number) => (view.y0 - y) * view.ppu;

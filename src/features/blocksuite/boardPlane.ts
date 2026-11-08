@@ -19,7 +19,7 @@ import {
 } from '@blocksuite/affine/std/gfx';
 import { axisNumber } from '@/features/questions/graph';
 import { tickStep } from '@/features/questions/graphTicks';
-import type { Mark } from './boardData';
+import { type Mark, PAPER, type Paper } from './boardData';
 import { minorStep, smoothThrough, ticks, type Vec } from './boardGeometry';
 
 /** The plane's top left corner in its own units, and board pixels per unit. A polar
@@ -50,7 +50,8 @@ export function drawPlane(
   ctx: CanvasRenderingContext2D,
   frame: Frame,
   view: PlaneView,
-  marks: Mark[]
+  marks: Mark[],
+  paper: Paper
 ) {
   const X = (x: number) => frame.x + (x - view.x0) * view.ppu;
   const Y = (y: number) => frame.y + (view.y0 - y) * view.ppu;
@@ -61,17 +62,17 @@ export function drawPlane(
   ctx.save();
   ctx.beginPath();
   ctx.rect(frame.x, frame.y, frame.w, frame.h);
-  ctx.fillStyle = '#fff';
+  ctx.fillStyle = paper.paper;
   ctx.fill();
   ctx.clip();
 
   const step = tickStep(view.ppu);
   const minor = minorStep(step);
   if (view.polar) {
-    drawPolarGrid(ctx, frame, view, X, Y, step, minor);
-    drawMarks(ctx, X, Y, marks);
+    drawPolarGrid(ctx, frame, view, X, Y, step, minor, paper);
+    drawMarks(ctx, X, Y, marks, paper);
     ctx.restore();
-    ctx.strokeStyle = '#d9d9d6';
+    ctx.strokeStyle = paper.edge;
     ctx.lineWidth = 1;
     ctx.strokeRect(frame.x, frame.y, frame.w, frame.h);
     return;
@@ -90,13 +91,13 @@ export function drawPlane(
     }
     ctx.stroke();
   };
-  grid(minor, '#f1f1ef');
-  grid(step, '#dededb');
+  grid(minor, paper.minor);
+  grid(step, paper.major);
 
   // Numbers sit by their axis and leave with it (Epo 2026-11-06).
   const axisX = X(0);
   const axisY = Y(0);
-  ctx.strokeStyle = '#6f6f6c';
+  ctx.strokeStyle = paper.axis;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(axisX, frame.y);
@@ -105,34 +106,35 @@ export function drawPlane(
   ctx.lineTo(frame.x + frame.w, axisY);
   ctx.stroke();
   ctx.font = '12px Arial, sans-serif';
-  ctx.fillStyle = '#55555b';
+  ctx.fillStyle = paper.number;
   ctx.textBaseline = 'middle';
   const label = (text: string, x: number, y: number, align: CanvasTextAlign) =>
-    haloText(ctx, text, x, y, align);
+    haloText(ctx, text, x, y, align, paper);
   for (const x of ticks(left, right, step))
     label(axisNumber(x, step), X(x), axisY + 14, 'center');
   for (const y of ticks(bottom, top, step))
     label(axisNumber(y, step), axisX - 7, Y(y), 'right');
 
-  drawMarks(ctx, X, Y, marks);
+  drawMarks(ctx, X, Y, marks, paper);
   ctx.restore();
-  ctx.strokeStyle = '#d9d9d6';
+  ctx.strokeStyle = paper.edge;
   ctx.lineWidth = 1;
   ctx.strokeRect(frame.x, frame.y, frame.w, frame.h);
 }
 
-/** Text with a white halo, so grid lines don't cross it. */
+/** Text with a halo of the paper, so grid lines don't cross it. */
 function haloText(
   ctx: CanvasRenderingContext2D,
   text: string,
   x: number,
   y: number,
-  align: CanvasTextAlign
+  align: CanvasTextAlign,
+  paper: Paper
 ) {
   if (!text) return;
   ctx.textAlign = align;
   ctx.lineWidth = 3;
-  ctx.strokeStyle = '#fff';
+  ctx.strokeStyle = paper.paper;
   ctx.strokeText(text, x, y);
   ctx.fillText(text, x, y);
 }
@@ -146,7 +148,8 @@ function drawPolarGrid(
   X: (x: number) => number,
   Y: (y: number) => number,
   step: number,
-  minor: number
+  minor: number,
+  paper: Paper
 ) {
   const ox = X(0);
   const oy = Y(0);
@@ -168,24 +171,31 @@ function drawPolarGrid(
     }
     ctx.stroke();
   };
-  rings(minor, '#f1f1ef');
+  rings(minor, paper.minor);
   const far = reach * view.ppu;
   for (let a = 0; a < 360; a += POLAR_SPOKE) {
     const t = (a * Math.PI) / 180;
     ctx.strokeStyle =
-      a % 90 === 0 ? '#6f6f6c' : a % 30 === 0 ? '#dededb' : '#f1f1ef';
+      a % 90 === 0 ? paper.axis : a % 30 === 0 ? paper.major : paper.minor;
     ctx.lineWidth = a % 90 === 0 ? 1.5 : 1;
     ctx.beginPath();
     ctx.moveTo(ox, oy);
     ctx.lineTo(ox + far * Math.cos(t), oy - far * Math.sin(t));
     ctx.stroke();
   }
-  rings(step, '#dededb');
+  rings(step, paper.major);
   ctx.font = '12px Arial, sans-serif';
-  ctx.fillStyle = '#55555b';
+  ctx.fillStyle = paper.number;
   ctx.textBaseline = 'middle';
   for (let r = step; r <= reach; r += step)
-    haloText(ctx, axisNumber(r, step), ox + r * view.ppu, oy + 14, 'center');
+    haloText(
+      ctx,
+      axisNumber(r, step),
+      ox + r * view.ppu,
+      oy + 14,
+      'center',
+      paper
+    );
   // Each 30° spoke's angle, just inside where it leaves the card.
   const inset = 16;
   const [left, right] = [frame.x + inset, frame.x + frame.w - inset];
@@ -208,7 +218,7 @@ function drawPolarGrid(
     ];
     const k = Math.min(...hits);
     if (!(k > 24)) continue;
-    haloText(ctx, `${a}°`, ox + dx * k, oy + dy * k, 'center');
+    haloText(ctx, `${a}°`, ox + dx * k, oy + dy * k, 'center', paper);
   }
 }
 
@@ -217,14 +227,15 @@ function drawMarks(
   ctx: CanvasRenderingContext2D,
   X: (x: number) => number,
   Y: (y: number) => number,
-  marks: Mark[]
+  marks: Mark[],
+  paper: Paper
 ) {
-  ctx.strokeStyle = '#000';
+  ctx.strokeStyle = paper.ink;
   ctx.lineWidth = 2;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   const dot = ([x, y]: Vec) => {
-    ctx.fillStyle = '#000';
+    ctx.fillStyle = paper.ink;
     ctx.beginPath();
     ctx.arc(X(x), Y(y), DOT_RADIUS, 0, Math.PI * 2);
     ctx.fill();
@@ -315,11 +326,18 @@ Object.assign(elementsCtorMap, { plane: PlaneElementModel });
 const planeRenderer: ElementRenderer<PlaneElementModel> = (
   model,
   ctx,
-  matrix
+  matrix,
+  renderer
 ) => {
   const [, , w, h] = model.deserializedXYWH;
   ctx.setTransform(matrix);
-  drawPlane(ctx, { h, w, x: 0, y: 0 }, model, model.marks);
+  drawPlane(
+    ctx,
+    { h, w, x: 0, y: 0 },
+    model,
+    model.marks,
+    PAPER[renderer.getColorScheme()]
+  );
 };
 
 /** The full-screen editor, set by its module so this one stays light. */

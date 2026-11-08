@@ -58,6 +58,44 @@ export const INK = '#000';
 export const TEXT = '#1d1d1f';
 export const NUMBER = '#55555b';
 
+/** A plane or chart card's colours, with the board's light or dark: paper, grid,
+ * axes and ink. Dark paper is a dark note's. The marking image is always light. */
+export type Paper = {
+  axis: string;
+  edge: string;
+  ink: string;
+  major: string;
+  minor: string;
+  number: string;
+  paper: string;
+  rule: string;
+  text: string;
+};
+export const PAPER: Record<'dark' | 'light', Paper> = {
+  dark: {
+    axis: '#9a9a9a',
+    edge: '#3a3a3a',
+    ink: '#fff',
+    major: '#3a3a3a',
+    minor: '#2e2e2e',
+    number: '#a6a6ab',
+    paper: '#252525',
+    rule: '#363636',
+    text: '#eaeaea',
+  },
+  light: {
+    axis: '#6f6f6c',
+    edge: '#d9d9d6',
+    ink: INK,
+    major: '#dededb',
+    minor: '#f1f1ef',
+    number: NUMBER,
+    paper: '#fff',
+    rule: '#e4e4e2',
+    text: TEXT,
+  },
+};
+
 /** A bar's width within its slot. */
 export const BAR_SHARE = 0.56;
 

@@ -13,6 +13,7 @@ import {
   polygonNearestPoint,
   type SerializedXYWH,
 } from '@blocksuite/affine/global/gfx';
+import { ColorScheme } from '@blocksuite/affine/model';
 import {
   field,
   type GfxController,
@@ -280,7 +281,12 @@ const formulaRenderer: ElementRenderer<FormulaElementModel> = (
       .rotateSelf(model.rotate)
       .translateSelf(-w / 2, -h / 2)
   );
+  // Black ink, so on a dark board it's turned light, its colours about kept. The
+  // marking image is drawn light.
+  if (renderer.getColorScheme() === ColorScheme.Dark)
+    ctx.filter = 'invert(1) hue-rotate(180deg)';
   ctx.drawImage(drawn.canvas, 0, 0, w, h);
+  ctx.filter = 'none';
 };
 
 class FormulaElementView extends GfxElementModelView<FormulaElementModel> {
@@ -333,7 +339,21 @@ async function openEditor(gfx: GfxController, model?: FormulaElementModel) {
   field.mathVirtualKeyboardPolicy = 'auto';
   const card = document.createElement('div');
   card.className = 'capy-formula';
+  // Like a popup: a press anywhere else (another formula piece too) cancels it.
+  // MathLive's keyboard, menu and suggestions open outside the card.
+  const away = (event: PointerEvent) => {
+    const inside = event
+      .composedPath()
+      .some(
+        (el) =>
+          el === card ||
+          (el instanceof Element &&
+            el.matches('.ML__keyboard, .ML__popover, .ui-menu-container'))
+      );
+    if (!inside) close();
+  };
   const close = () => {
+    document.removeEventListener('pointerdown', away, true);
     render(null, card);
     card.remove();
   };
@@ -412,6 +432,7 @@ async function openEditor(gfx: GfxController, model?: FormulaElementModel) {
     if ((event as KeyboardEvent).key === 'Escape') close();
   });
   board.append(card);
+  document.addEventListener('pointerdown', away, true);
   field.focus();
 }
 

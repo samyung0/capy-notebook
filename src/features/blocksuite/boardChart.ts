@@ -25,12 +25,11 @@ import {
   type ChartBar,
   type ChartData,
   type ChartKind,
-  INK,
-  NUMBER,
   onScreen,
+  PAPER,
+  type Paper,
   type PieLabel,
   pieCircle,
-  TEXT,
 } from './boardData';
 import { ticks } from './boardGeometry';
 import type { Frame } from './boardPlane';
@@ -40,13 +39,14 @@ export function drawChart(
   frame: Frame,
   chart: ChartData,
   resolve: (color: Color) => string,
+  paper: Paper,
   pads = CARD_PADS[chart.kind],
   slots = Math.max(chart.bars.length, 1)
 ) {
   ctx.save();
   ctx.beginPath();
   ctx.rect(frame.x, frame.y, frame.w, frame.h);
-  ctx.fillStyle = '#fff';
+  ctx.fillStyle = paper.paper;
   ctx.fill();
   ctx.clip();
   ctx.font = '12px Arial, sans-serif';
@@ -64,12 +64,12 @@ export function drawChart(
     ctx.lineWidth = 1;
     ctx.textAlign = 'right';
     for (const value of ticks(0, chart.axisMax, chart.axisStep)) {
-      ctx.strokeStyle = '#e4e4e2';
+      ctx.strokeStyle = paper.rule;
       ctx.beginPath();
       ctx.moveTo(left, Y(value));
       ctx.lineTo(left + width, Y(value));
       ctx.stroke();
-      ctx.fillStyle = NUMBER;
+      ctx.fillStyle = paper.number;
       ctx.fillText(`${Number(value.toPrecision(10))}`, left - 7, Y(value));
     }
     ctx.textAlign = 'center';
@@ -80,12 +80,12 @@ export function drawChart(
       const y = Y(Math.min(bar.value, chart.axisMax));
       ctx.fillStyle = resolve(bar.fill);
       ctx.fillRect(x, y, w, base - y);
-      ctx.strokeStyle = INK;
+      ctx.strokeStyle = paper.ink;
       ctx.strokeRect(x, y, w, base - y);
-      ctx.fillStyle = TEXT;
+      ctx.fillStyle = paper.text;
       ctx.fillText(bar.label, x + w / 2, base + 14);
     }
-    ctx.strokeStyle = '#6f6f6c';
+    ctx.strokeStyle = paper.axis;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(left, top);
@@ -94,7 +94,7 @@ export function drawChart(
     ctx.stroke();
   } else {
     const { cx, cy, r } = pieCircle(frame, pads);
-    ctx.strokeStyle = INK;
+    ctx.strokeStyle = paper.ink;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
@@ -105,13 +105,13 @@ export function drawChart(
       ctx.lineTo(...onScreen(cx, cy, r, spoke));
       ctx.stroke();
     }
-    ctx.fillStyle = TEXT;
+    ctx.fillStyle = paper.text;
     ctx.textAlign = 'center';
     for (const { angle, text } of chart.labels)
       ctx.fillText(text, ...onScreen(cx, cy, r * LABEL_REACH, angle));
   }
   ctx.restore();
-  ctx.strokeStyle = '#d9d9d6';
+  ctx.strokeStyle = paper.edge;
   ctx.lineWidth = 1;
   ctx.strokeRect(frame.x, frame.y, frame.w, frame.h);
 }
@@ -193,8 +193,12 @@ const chartRenderer: ElementRenderer<ChartElementModel> = (
 ) => {
   const [, , w, h] = model.deserializedXYWH;
   ctx.setTransform(matrix);
-  drawChart(ctx, { h, w, x: 0, y: 0 }, model, (color) =>
-    renderer.getColorValue(color, 'transparent', true)
+  drawChart(
+    ctx,
+    { h, w, x: 0, y: 0 },
+    model,
+    (color) => renderer.getColorValue(color, 'transparent', true),
+    PAPER[renderer.getColorScheme()]
   );
 };
 
