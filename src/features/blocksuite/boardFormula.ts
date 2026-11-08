@@ -23,7 +23,7 @@ import { html, render } from 'lit';
 import { inertTex } from '@/features/materials/inertTex';
 import { getLocale, m } from '@/i18n';
 import { LATEX_MAX } from './boardData';
-import { setFormulaOpener } from './boardTools';
+import { type FormulaStart, setFormulaOpener } from './boardTools';
 
 const FONT_SIZE = 24;
 /** Bitmap pixels per board pixel, so a formula stays sharp when zoomed in. */
@@ -415,7 +415,34 @@ async function openEditor(gfx: GfxController, model?: FormulaElementModel) {
   field.focus();
 }
 
-setFormulaOpener((gfx) => void openEditor(gfx));
+/** A starter from the toolbar's Formulas slot (Epo 2026-11-08): its card where it was
+ * dropped, then the editor on it to fill in. */
+async function placeFormula(gfx: GfxController, start: FormulaStart) {
+  if (gfx.doc.readonly) return;
+  let drawn: Drawn;
+  try {
+    drawn = await drawing(start.latex);
+  } catch {
+    return;
+  }
+  const { h, w } = drawn;
+  const [cx, cy] = start.at;
+  const id = gfx.surface?.addElement({
+    latex: start.latex,
+    type: 'formula',
+    xywh: new Bound(cx - w / 2, cy - h / 2, w, h).serialize(),
+  });
+  gfx.doc.captureSync();
+  gfx.tool.setTool(DefaultTool);
+  if (!id) return;
+  gfx.selection.set({ editing: false, elements: [id] });
+  const model = gfx.getElementById(id);
+  if (model instanceof FormulaElementModel) await openEditor(gfx, model);
+}
+
+setFormulaOpener(
+  (gfx, start) => void (start ? placeFormula(gfx, start) : openEditor(gfx))
+);
 
 const SYMBOLS = ['²', '³', '√', 'π', 'θ', '±', '≤', '≥', '≠', '∞', '→', '°'];
 /** Superscripts read better with something under them on the button. */

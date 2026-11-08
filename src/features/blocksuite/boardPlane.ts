@@ -22,8 +22,17 @@ import { tickStep } from '@/features/questions/graphTicks';
 import type { Mark } from './boardData';
 import { minorStep, smoothThrough, ticks, type Vec } from './boardGeometry';
 
-/** The plane's top left corner in its own units, and board pixels per unit. */
-export type PlaneView = { ppu: number; x0: number; y0: number };
+/** The plane's top left corner in its own units, and board pixels per unit. A polar
+ * plane draws rings and spokes round its origin instead of squares (Epo 2026-11-08). */
+export type PlaneView = {
+  polar?: boolean;
+  ppu: number;
+  x0: number;
+  y0: number;
+};
+
+/** A polar plane's spokes: a light one every 15°, a darker one every 30°. */
+export const POLAR_SPOKE = 15;
 export type Frame = { h: number; w: number; x: number; y: number };
 
 const DOT_RADIUS = 4.5;
@@ -58,6 +67,15 @@ export function drawPlane(
 
   const step = tickStep(view.ppu);
   const minor = minorStep(step);
+  if (view.polar) {
+    drawPolarGrid(ctx, frame, view, X, Y, step, minor);
+    drawMarks(ctx, X, Y, marks);
+    ctx.restore();
+    ctx.strokeStyle = '#d9d9d6';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(frame.x, frame.y, frame.w, frame.h);
+    return;
+  }
   const grid = (every: number, color: string) => {
     ctx.strokeStyle = color;
     ctx.lineWidth = 1;
@@ -89,25 +107,118 @@ export function drawPlane(
   ctx.font = '12px Arial, sans-serif';
   ctx.fillStyle = '#55555b';
   ctx.textBaseline = 'middle';
-  const label = (
-    text: string,
-    x: number,
-    y: number,
-    align: CanvasTextAlign
-  ) => {
-    if (!text) return;
-    ctx.textAlign = align;
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = '#fff';
-    ctx.strokeText(text, x, y);
-    ctx.fillText(text, x, y);
-  };
+  const label = (text: string, x: number, y: number, align: CanvasTextAlign) =>
+    haloText(ctx, text, x, y, align);
   for (const x of ticks(left, right, step))
     label(axisNumber(x, step), X(x), axisY + 14, 'center');
   for (const y of ticks(bottom, top, step))
     label(axisNumber(y, step), axisX - 7, Y(y), 'right');
 
-  // Marks keep their thickness whatever the plane's zoom.
+  drawMarks(ctx, X, Y, marks);
+  ctx.restore();
+  ctx.strokeStyle = '#d9d9d6';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(frame.x, frame.y, frame.w, frame.h);
+}
+
+/** Text with a white halo, so grid lines don't cross it. */
+function haloText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  align: CanvasTextAlign
+) {
+  if (!text) return;
+  ctx.textAlign = align;
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = '#fff';
+  ctx.strokeText(text, x, y);
+  ctx.fillText(text, x, y);
+}
+
+/** Rings at the grid's steps round the origin, numbered along 0°, and spokes with their
+ * angles where they leave the card. */
+function drawPolarGrid(
+  ctx: CanvasRenderingContext2D,
+  frame: Frame,
+  view: PlaneView,
+  X: (x: number) => number,
+  Y: (y: number) => number,
+  step: number,
+  minor: number
+) {
+  const ox = X(0);
+  const oy = Y(0);
+  // Out to the card's farthest corner, in plane units.
+  const reach =
+    Math.max(
+      Math.hypot(frame.x - ox, frame.y - oy),
+      Math.hypot(frame.x + frame.w - ox, frame.y - oy),
+      Math.hypot(frame.x - ox, frame.y + frame.h - oy),
+      Math.hypot(frame.x + frame.w - ox, frame.y + frame.h - oy)
+    ) / view.ppu;
+  const rings = (every: number, color: string) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let r = every; r <= reach; r += every) {
+      ctx.moveTo(ox + r * view.ppu, oy);
+      ctx.arc(ox, oy, r * view.ppu, 0, Math.PI * 2);
+    }
+    ctx.stroke();
+  };
+  rings(minor, '#f1f1ef');
+  const far = reach * view.ppu;
+  for (let a = 0; a < 360; a += POLAR_SPOKE) {
+    const t = (a * Math.PI) / 180;
+    ctx.strokeStyle =
+      a % 90 === 0 ? '#6f6f6c' : a % 30 === 0 ? '#dededb' : '#f1f1ef';
+    ctx.lineWidth = a % 90 === 0 ? 1.5 : 1;
+    ctx.beginPath();
+    ctx.moveTo(ox, oy);
+    ctx.lineTo(ox + far * Math.cos(t), oy - far * Math.sin(t));
+    ctx.stroke();
+  }
+  rings(step, '#dededb');
+  ctx.font = '12px Arial, sans-serif';
+  ctx.fillStyle = '#55555b';
+  ctx.textBaseline = 'middle';
+  for (let r = step; r <= reach; r += step)
+    haloText(ctx, axisNumber(r, step), ox + r * view.ppu, oy + 14, 'center');
+  // Each 30° spoke's angle, just inside where it leaves the card.
+  const inset = 16;
+  const [left, right] = [frame.x + inset, frame.x + frame.w - inset];
+  const [top, bottom] = [frame.y + inset, frame.y + frame.h - inset];
+  for (let a = 30; a < 360; a += 30) {
+    if (a % 90 === 0 && a !== 90 && a !== 270) continue;
+    const t = (a * Math.PI) / 180;
+    const [dx, dy] = [Math.cos(t), -Math.sin(t)];
+    const hits = [
+      dx > 0
+        ? (right - ox) / dx
+        : dx < 0
+          ? (left - ox) / dx
+          : Number.POSITIVE_INFINITY,
+      dy > 0
+        ? (bottom - oy) / dy
+        : dy < 0
+          ? (top - oy) / dy
+          : Number.POSITIVE_INFINITY,
+    ];
+    const k = Math.min(...hits);
+    if (!(k > 24)) continue;
+    haloText(ctx, `${a}°`, ox + dx * k, oy + dy * k, 'center');
+  }
+}
+
+/** Dots, lines and curves; marks keep their thickness whatever the plane's zoom. */
+function drawMarks(
+  ctx: CanvasRenderingContext2D,
+  X: (x: number) => number,
+  Y: (y: number) => number,
+  marks: Mark[]
+) {
   ctx.strokeStyle = '#000';
   ctx.lineWidth = 2;
   ctx.lineCap = 'round';
@@ -132,16 +243,13 @@ export function drawPlane(
       for (const point of mark.points) dot(point);
     }
   }
-  ctx.restore();
-  ctx.strokeStyle = '#d9d9d6';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(frame.x, frame.y, frame.w, frame.h);
 }
 
 export class PlaneElementModel extends GfxPrimitiveElementModel<{
   fit: boolean;
   index: string;
   marks: Mark[];
+  polar: boolean;
   ppu: number;
   rotate: number;
   seed: number;
@@ -181,6 +289,9 @@ export class PlaneElementModel extends GfxPrimitiveElementModel<{
 
   @field()
   accessor marks: Mark[] = [];
+
+  @field()
+  accessor polar = false;
 
   @field()
   accessor ppu = 41;
@@ -341,16 +452,23 @@ export const planeExtensions = [
   planeInteraction,
 ];
 
-/** A card on the canvas, its plane's origin towards the lower left. */
-export function addPlane(gfx: GfxController, box: Bound, ppu: number) {
+/** A card on the canvas, its plane's origin towards the lower left, or in the middle
+ * of a polar one. */
+export function addPlane(
+  gfx: GfxController,
+  box: Bound,
+  ppu: number,
+  polar: boolean
+) {
   return gfx.surface?.addElement({
     fit: true,
     marks: [],
+    polar,
     ppu,
     type: 'plane',
-    x0: -1,
+    x0: polar ? -box.w / 2 / ppu : -1,
     xywh: box.serialize(),
-    y0: (box.h * 0.7) / ppu,
+    y0: (box.h * (polar ? 0.5 : 0.7)) / ppu,
   });
 }
 
