@@ -406,9 +406,9 @@ S. **Built 2026-11-08** (Show grades, Release grades, S7).
 T. **Notify at release?** A bell notification "Grades released: Past paper 2025
    P1" to each member. No marks notification exists today.
 
-U. **Where the owner sees a member's full storage.** Study → Members is not
-   built yet ("Coming soon"); the one member list today is Workspace settings →
-   Sharing. Put a Storage full chip there now, or wait for Study → Members?
+U. **Settled 2026-11-08:** Study → Members, built from the 3 Nov mocks with the
+   Storage full chip on `claude/study-members` (343178998, 12da95d19), not
+   pushed.
 
 O3. **Untimed assignments without uploads** open straight into the attempt,
     so they have no start dialog for the storage warning. Should a one-line
