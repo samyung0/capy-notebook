@@ -448,8 +448,11 @@ under the workspace's `study` key).
   topic (the same generate run as New assignment's Generate questions); Assign
   practice opens New assignment. Board F3's AI pick of questions and the ⋮
   menu are not built.
-- Phones (below the `@4xl` container) stack each line: the name, then the
-  assignments, "Practice this week: n questions" and the chips.
+- Phones and narrow panes (below the `@4xl` container, where the table no
+  longer fits) get a plain list instead of either view (Epo 2026-11-08): the
+  name and any Storage full chip, "3 of 4 done · 2 missing" under it and the
+  overall on the right, with Sort but no Show. Practice and topic labels are
+  left to the profile.
 
 MSW (`src/mocks/members.ts`) serves Biology 101's viewers with the boards' own
 numbers, Farah's storage full.

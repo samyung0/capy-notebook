@@ -131,28 +131,30 @@ function MembersList({
           show === 'topics' ? 'mb-2' : 'mb-1.5'
         )}
       >
-        <Menu
-          align="start"
-          items={(['summary', 'topics'] as const).map((value) => ({
-            checked: show === value,
-            label:
-              value === 'topics'
-                ? m.members_show_topics()
-                : m.members_show_summary(),
-            onClick: () => void setShow(value),
-          }))}
-          trigger={
-            <Button
-              className="px-2.5"
-              iconRight="chevronDown"
-              size="sm"
-              variant="outline"
-            >
-              {m.members_show({ view: showLabel })}
-            </Button>
-          }
-        />
-        {show === 'summary' ? (
+        <div className="@4xl:block hidden">
+          <Menu
+            align="start"
+            items={(['summary', 'topics'] as const).map((value) => ({
+              checked: show === value,
+              label:
+                value === 'topics'
+                  ? m.members_show_topics()
+                  : m.members_show_summary(),
+              onClick: () => void setShow(value),
+            }))}
+            trigger={
+              <Button
+                className="px-2.5"
+                iconRight="chevronDown"
+                size="sm"
+                variant="outline"
+              >
+                {m.members_show({ view: showLabel })}
+              </Button>
+            }
+          />
+        </div>
+        <div className={cn(show === 'topics' && '@4xl:hidden')}>
           <Menu
             align="start"
             items={(['attention', 'name'] as const).map((value) => ({
@@ -174,8 +176,9 @@ function MembersList({
               </Button>
             }
           />
-        ) : (
-          <span className="t-meta ml-auto text-fg-muted">
+        </div>
+        {show === 'topics' && (
+          <span className="t-meta ml-auto @4xl:inline hidden text-fg-muted">
             {m.members_labels_need()}
           </span>
         )}
@@ -200,13 +203,26 @@ function MembersList({
         />
       ) : data.members.length === 0 ? (
         <p className="t-meta mt-6 text-fg-muted">{m.members_empty()}</p>
-      ) : show === 'topics' ? (
-        <TopicsGrid data={data} onOpen={(mp) => void open(mp)} />
       ) : (
-        <SummaryList
-          members={sortMembers(data.members, sort)}
-          onOpen={(mp) => void open(mp)}
-        />
+        <>
+          {/* Where the table fits: the boards' Summary or By topic. */}
+          <div className="@4xl:block hidden">
+            {show === 'topics' ? (
+              <TopicsGrid data={data} onOpen={(mp) => void open(mp)} />
+            ) : (
+              <SummaryList
+                members={sortMembers(data.members, sort)}
+                onOpen={(mp) => void open(mp)}
+              />
+            )}
+          </div>
+          {/* Phones and narrow panes: a plain list; labels wait for the
+              profile (Epo 2026-11-08). */}
+          <PhoneList
+            members={sortMembers(data.members, sort)}
+            onOpen={(mp) => void open(mp)}
+          />
+        </>
       )}
       {creating && (
         <NewAssignmentDialog
@@ -223,7 +239,7 @@ function MembersList({
 }
 
 const GRID =
-  '@4xl:grid @4xl:grid-cols-[240px_280px_180px_minmax(0,1fr)] @4xl:items-center @4xl:gap-3 @4xl:px-3';
+  'grid grid-cols-[240px_280px_180px_minmax(0,1fr)] items-center gap-3 px-3';
 
 /** Summary (board Main): one 52px line per member; a line opens the profile. */
 function SummaryList({
@@ -238,7 +254,7 @@ function SummaryList({
       <div
         aria-hidden
         className={cn(
-          'hidden h-9 border-divider border-b font-semibold text-[13px] text-fg-muted',
+          'h-9 border-divider border-b font-semibold text-[13px] text-fg-muted',
           GRID
         )}
       >
@@ -253,34 +269,96 @@ function SummaryList({
           // to it, and the storage chip is a control of its own.
           <li
             className={cn(
-              'flex @4xl:min-h-13 cursor-pointer flex-col gap-1 border-divider border-b @4xl:py-0 py-2.5 hover:bg-surface-hover-bg',
+              'min-h-13 cursor-pointer border-divider border-b py-1.5 hover:bg-surface-hover-bg',
               GRID
             )}
             key={member.userId}
             onClick={() => onOpen(member)}
           >
             <MemberName member={member} onOpen={() => onOpen(member)} />
-            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 @4xl:pl-0 pl-10">
+            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
               <AssignmentsCell member={member} />
             </div>
-            <div className="t-meta @4xl:pl-0 pl-10 font-semibold @4xl:text-sm text-fg-muted">
-              <span className="@4xl:hidden">
-                {member.practiceWeek > 0 &&
-                  `${m.members_col_practice()}: ${questionsText(member.practiceWeek)}`}
-              </span>
-              <span className="@4xl:inline hidden">
-                {member.practiceWeek > 0
-                  ? questionsText(member.practiceWeek)
-                  : '–'}
-              </span>
+            <div className="font-semibold text-fg-muted">
+              {member.practiceWeek > 0
+                ? questionsText(member.practiceWeek)
+                : '–'}
             </div>
-            <div className="flex flex-wrap gap-1.5 @4xl:pl-0 pl-10">
+            <div className="flex flex-wrap gap-1.5">
               <FocusCell member={member} />
             </div>
           </li>
         ))}
       </ul>
     </>
+  );
+}
+
+/** Below the table's width: name, then "3 of 4 done · 2 missing", the overall
+ * on the right. No practice or labels; the profile has them. */
+function PhoneList({
+  members,
+  onOpen,
+}: {
+  members: MemberProgress[];
+  onOpen: (member: MemberProgress) => void;
+}) {
+  return (
+    <ul className="mt-1 @4xl:hidden">
+      {members.map((member) => (
+        <li
+          className="flex min-h-16 cursor-pointer items-center gap-3 border-divider border-b py-3"
+          key={member.userId}
+          onClick={() => onOpen(member)}
+        >
+          <Avatar
+            aria-hidden
+            className="size-9 shrink-0 text-xs"
+            name={member.name}
+            src={member.avatarUrl || undefined}
+          />
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="flex min-w-0 items-center gap-2">
+              <button
+                className="min-w-0 truncate rounded-sm text-left font-semibold outline-none focus-visible:ring-2 focus-visible:ring-action"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onOpen(member);
+                }}
+                type="button"
+              >
+                {member.name}
+              </button>
+              {member.storageFull && <StorageFullChip />}
+            </span>
+            {member.assigned > 0 && (
+              <span className="t-meta truncate text-fg-muted">
+                {m.assignment_done_of({
+                  done: member.done,
+                  total: member.assigned,
+                })}
+                {member.missing > 0 && (
+                  <>
+                    {' · '}
+                    <span className="font-semibold text-tint-error-fg">
+                      {m.members_missing({ count: member.missing })}
+                    </span>
+                  </>
+                )}
+              </span>
+            )}
+          </div>
+          <span
+            className={cn(
+              'shrink-0 font-bold',
+              member.overall === undefined && 'text-fg-muted'
+            )}
+          >
+            {member.overall === undefined ? '–' : percentText(member.overall)}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -383,13 +461,13 @@ function FocusCell({ member }: { member: MemberProgress }) {
       );
     case 'not_started':
       return (
-        <span className="t-meta font-semibold @4xl:text-sm text-fg-muted">
+        <span className="font-semibold text-fg-muted">
           {m.learning_not_started()}
         </span>
       );
     default:
       return (
-        <span className="t-meta font-semibold @4xl:text-sm text-fg-muted">
+        <span className="font-semibold text-fg-muted">
           {m.members_nothing_flagged()}
         </span>
       );
