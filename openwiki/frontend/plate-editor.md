@@ -4609,7 +4609,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   rgb(30, 30, 30) panels) are lifted to readable ones, and the toolbar pieces' navy
   (`--capy-navy`) lightens to #5683b3 on a dark board.
 - **Formulas:** a `formula` canvas element holding LaTeX, typed in MathLive (loaded on
-  first open). Its card opens in the middle of the board and closes like a popup on a
+  first open) with the question editor's field styles (`mathField.css`: app selection
+  colours, caret on the line), the caret after the formula and nothing selected. Its
+  card opens in the middle of the board and closes like a popup on a
   press anywhere else, another formula piece too (MathLive's keyboard and menus aside),
   discarding what was typed, as Cancel does. AFFiNE keeps LaTeX as HTML in note cards, and its export (html2canvas)
   garbles that, so typing `$$` in a note here stays text; AFFiNE's inline spec stays

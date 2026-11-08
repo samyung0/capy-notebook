@@ -23,6 +23,7 @@ import {
 } from '@blocksuite/affine/std/gfx';
 import { html, render } from 'lit';
 import { inertTex } from '@/features/materials/inertTex';
+import mathFieldStyles from '@/features/questions/mathField.css?inline';
 import { getLocale, m } from '@/i18n';
 import { LATEX_MAX } from './boardData';
 import { type FormulaStart, setFormulaOpener } from './boardTools';
@@ -381,7 +382,11 @@ async function openEditor(gfx: GfxController, model?: FormulaElementModel) {
   MathfieldElement.soundsDirectory = null;
   MathfieldElement.locale = getLocale();
   const field = new MathfieldElement();
-  field.value = inertTex(model?.latex ?? '');
+  // The question editor's look inside MathLive's shadow root: the app's selection
+  // colours, no dark group highlight, the caret on the line.
+  const styles = document.createElement('style');
+  styles.textContent = mathFieldStyles;
+  field.shadowRoot?.append(styles);
   field.mathVirtualKeyboardPolicy = 'auto';
   const card = document.createElement('div');
   card.className = 'capy-formula';
@@ -478,6 +483,12 @@ async function openEditor(gfx: GfxController, model?: FormulaElementModel) {
     if ((event as KeyboardEvent).key === 'Escape') close();
   });
   board.append(card);
+  // Once connected, as MathLive selects everything when it connects: the caret after
+  // the formula, nothing selected.
+  field.setValue(inertTex(model?.latex ?? ''), {
+    selectionMode: 'after',
+    silenceNotifications: true,
+  });
   document.addEventListener('pointerdown', away, true);
   field.focus();
 }

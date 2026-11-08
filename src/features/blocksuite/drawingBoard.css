@@ -166,7 +166,9 @@ html.dark:not([data-board-light]) .capy-board {
 }
 
 .capy-formula-field math-field {
-  display: block;
+  /* The formula sits in the middle of the field's height. */
+  display: flex;
+  align-items: center;
   width: 100%;
   min-height: 56px;
   font-size: 22px;
