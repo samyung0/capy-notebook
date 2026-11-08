@@ -24,10 +24,17 @@ bench: `bench/grading/reports/2026-11-08-page-answer-costs.md`.
   - An Unmarked assignment's Files field sits below Due and Assign to.
   - Mocks C1 and C2 are updated.
 - **B (Epo 2026-11-08, superseding the same day's S2):**
-  - Opening a Marked assignment that allows uploads shows a new screen: do the
-    quiz on the site, or upload files (mocks S4, S5).
+  - Opening a Marked assignment that allows uploads shows Before you start,
+    the timed assignment's dialog, with its time limit when there is one and
+    two buttons: Attempt online and Upload file (mock S4, Epo's later message;
+    no separate choice screen). Upload file opens S5.
   - The member never labels which page holds which question: "upload a single
-    10 page pdf and nth else should be needed".
+    10 page pdf and nth else should be needed". Mocks S1 and S2 are removed.
+- **Show answers (Epo 2026-11-08, built 6bf29212d, names from Epo's later
+  message):** a select beside Marking: After assignment close (default),
+  After submission, Do not show.
+- **Show grades (Epo 2026-11-08, mock C4):** a select beside Show answers:
+  Automatic or Manual.
 - **Marking (Epo 2026-11-08):**
   - The pages are marked together, since nobody says where each answer is: one
     call for the whole paper, or a map call then grading.
@@ -114,29 +121,27 @@ assignment whose score isn't released, and whether topic mastery should wait.
 - **Google Forms:** "Release grades" is either "Immediately after each
   submission" or "Later, after manual review".
 
-**Recommendation (question S, mocks C4, S7, T5):**
-- **A Show marks select** beside Show answers: Right after submitting (the
-  default, today's behaviour) or When I release them. No "after it closes"
-  option for marks: marking often finishes after the close, so the owner
-  decides.
-- **Answers never show before marks.** With When I release them, Show answers
-  offers When marks are released or Never.
-- **Release marks** button on the report (T5). It confirms how many members get
-  them and how many answers still wait for approval. After release, an approved
-  or changed mark shows at once, as in Canvas. The chip then reads "Released
-  {date}".
+**Decided:** Show grades, Automatic (default) or Manual (C4).
+
+**Still proposed (question S, mocks S7, T5):**
+- **Answers never show before grades.** With Manual, After submission answers
+  go out at the release, and After assignment close ones at the release or the
+  close, whichever is later.
+- **Release grades** button on the report (T5). It confirms how many members
+  get them and how many answers still wait for approval. After release, an
+  approved or changed mark shows at once, as in Canvas. The chip then reads
+  "Released {date}".
 - **Before release (S7):**
-  - The Submitted page says "Your marks will show when {owner} releases them".
+  - The Submitted page says "Your grade will show when {owner} releases it".
   - The Assignments row shows a Submitted chip where the mark goes.
   - Results lists their own answers with Answered or Blank, and no marks,
     right/wrong or comments.
 - **Mastery and reviews wait for what the member can see.** Answer events are
   still written as now: the log stays complete and the owner's report reads it.
-  The topic-label read leaves out an assignment's events until its marks are
+  The topic-label read leaves out an assignment's events until its grades are
   visible to that member, and reviews rate at release or at close, whichever is
-  later. With Right after submitting nothing changes.
-- **Not in this:** a bell notification at release. We have no marks
-  notifications today (question T).
+  later. With Automatic nothing changes.
+- **Not in this:** a bell notification at release (question T).
 
 ## Credits and storage never block an assignment: what changes
 
@@ -403,12 +408,12 @@ R. **Built (Epo 2026-11-08, "its only a select right? otherwise just build
    and per-part right/wrong still show on submit; whether right/wrong should
    wait too is for Epo to judge on the build.
 
-S. **Releasing marks (mocks C4, S7, T5):** a Show marks select (Right after
-   submitting / When I release them), a Release marks button on the report,
-   the member's view before release, and topic labels and reviews waiting for
-   release. Yes as proposed?
+S. **Releasing grades (mocks S7, T5):** with Show grades Manual, a Release
+   grades button on the report, the member's view before release, answers
+   waiting for the release, and topic labels and reviews waiting for it too.
+   Yes as proposed?
 
-T. **Notify at release?** A bell notification "Marks released: Past paper 2025
+T. **Notify at release?** A bell notification "Grades released: Past paper 2025
    P1" to each member. No marks notification exists today.
 
 O3. **Untimed assignments without uploads** open straight into the attempt,

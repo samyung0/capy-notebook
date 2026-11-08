@@ -976,9 +976,9 @@ and an earlier one marked after the release moves its mark alone.
 waiting part never reads as lost; Submitted (A4) says the same as "Your mark so
 far". Right, partly, wrong and not marked counts sit above every question, which
 opens to its answer, marking points and worked solution. Show answers (C3, Epo
-2026-11-08) picks when a member reads those: After it closes (the default: closed
-by hand, or at the due date under No late submissions), Right after submitting, or
-Never. Until then the server leaves marks and comments and removes keys, marking
+2026-11-08) picks when a member reads those: After assignment close (the
+default: closed by hand, or at the due date under No late submissions), After
+submission, or Do not show. Until then the server leaves marks and comments and removes keys, marking
 points and solutions (`gradedWithoutKeys`), so an early submitter has no answers to
 pass on while classmates still answer; per-part marks still show on submit.
 Reopening hides the keys again. Practise again shows once its quiz is practice. The top right

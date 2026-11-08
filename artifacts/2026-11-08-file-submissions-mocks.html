@@ -23,6 +23,7 @@
   --bad-bg: #fbe4e8; --bad: #c23c55;
   --paper: #f7f5ef; --paper-line: #c7d3e6; --ink: #24306b;
   --scrim: rgb(0 0 0 / 0.28);
+  --accent-tint: #efecfb;
   --sans: "Fustat", "Helvetica Neue", Arial, sans-serif;
   --hand: "Kalam", "Bradley Hand", "Comic Sans MS", cursive;
 }
@@ -31,13 +32,13 @@
   --divider: rgb(255 255 255 / 0.08); --border: rgb(255 255 255 / 0.14); --hover: rgb(255 255 255 / 0.06);
   --select: #313244; --primary: #e4e6f2; --on-primary: #1e1e2e; --accent: #b4a6f5; --chip: #313244;
   --warn-bg: #3d3122; --warn: #f2bd7b; --ok-bg: #213a2d; --ok: #8fd6aa; --bad-bg: #40232b; --bad: #f19aab;
-  --paper: #ebe7dc; --paper-line: #b6c3d8; --ink: #24306b; --scrim: rgb(0 0 0 / 0.5); color-scheme: dark } }
+  --paper: #ebe7dc; --paper-line: #b6c3d8; --ink: #24306b; --scrim: rgb(0 0 0 / 0.5); --accent-tint: #2d2a45; color-scheme: dark } }
 :root[data-theme="dark"] {
   --page: #181825; --panel: #1e1e2e; --fg: #e4e6f2; --fg2: #c3c7dc; --muted: #9399b2;
   --divider: rgb(255 255 255 / 0.08); --border: rgb(255 255 255 / 0.14); --hover: rgb(255 255 255 / 0.06);
   --select: #313244; --primary: #e4e6f2; --on-primary: #1e1e2e; --accent: #b4a6f5; --chip: #313244;
   --warn-bg: #3d3122; --warn: #f2bd7b; --ok-bg: #213a2d; --ok: #8fd6aa; --bad-bg: #40232b; --bad: #f19aab;
-  --paper: #ebe7dc; --paper-line: #b6c3d8; --ink: #24306b; --scrim: rgb(0 0 0 / 0.5); color-scheme: dark }
+  --paper: #ebe7dc; --paper-line: #b6c3d8; --ink: #24306b; --scrim: rgb(0 0 0 / 0.5); --accent-tint: #2d2a45; color-scheme: dark }
 
 * { box-sizing: border-box }
 body { background: var(--page); color: var(--fg); font-family: var(--sans); font-size: 14px; line-height: 1.45;
@@ -116,6 +117,10 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
 .sw .t.on { background: var(--accent) } .sw .t.on::after { left: 17px }
 .sw.new .l { font-weight: 600 }
 .newmark { box-shadow: 0 0 0 2px var(--accent); border-radius: 6px; padding: 3px 6px; margin: -3px -6px }
+.timebox { display: flex; align-items: center; gap: 16px; background: var(--accent-tint); border-radius: 12px; padding: 16px 18px }
+.timebox .clk { width: 56px; height: 56px; border-radius: 50%; background: var(--panel); color: var(--accent); display: grid; place-items: center; flex: none }
+.timebox .clk svg { width: 28px; height: 28px }
+.timebox b { display: block; font-size: 28px; font-weight: 800; line-height: 1.15; letter-spacing: -0.02rem }
 .adv { display: flex; align-items: center; gap: 7px } .adv svg { width: 14px; height: 14px }
 .foot { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 6px }
 .foot .est { margin-right: auto; font-size: 12.5px; color: var(--muted) }
@@ -224,6 +229,7 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
     <symbol id="i-pdf" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z" fill="#fde4e4" stroke="#d9534f" stroke-width="1.5" stroke-linejoin="round"/><text x="12" y="17" font-size="6" text-anchor="middle" fill="#d9534f" font-family="Arial" font-weight="700">PDF</text></symbol>
     <symbol id="i-img" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2" fill="#e3effb" stroke="#4a8bd6" stroke-width="1.5"/><path d="M6 17l4-5 3 3 2-2 3 4" fill="none" stroke="#4a8bd6" stroke-width="1.5" stroke-linejoin="round"/></symbol>
     <symbol id="i-doc" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" fill="#e5ecfb" stroke="#3a6fd8" stroke-width="1.5"/><path d="M8 9h8M8 12h8M8 15h5" stroke="#3a6fd8" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 7.5V12l3 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-dots" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/></symbol>
     <symbol id="i-dash" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="13" y="4" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="4" y="13" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="13" y="13" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
@@ -338,15 +344,15 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
           </div>
           <div class="two">
             <div class="field"><span class="lb">Marking</span><div class="input">AI grades, approval required<svg><use href="#i-down"/></svg></div></div>
-            <div class="field newmark" style="margin:0"><span class="lb">Show answers</span><div class="input">After it closes<svg><use href="#i-down"/></svg></div></div>
+            <div class="field newmark" style="margin:0"><span class="lb">Show answers</span><div class="input">After assignment close<svg><use href="#i-down"/></svg></div></div>
           </div>
           <div class="sw"><span class="l">Allow submission with uploads</span><span class="t on"></span></div>
           <div class="adv"><svg><use href="#i-right"/></svg>Advanced</div>
           <div class="foot"><span class="btn ghost">Cancel</span><span class="btn">Create</span></div>
           <div class="menu" style="right:24px;top:286px;width:230px">
-            <div class="mi on">After it closes<svg class="tick"><use href="#i-check"/></svg></div>
-            <div class="mi">Right after submitting</div>
-            <div class="mi">Never</div>
+            <div class="mi on">After assignment close<svg class="tick"><use href="#i-check"/></svg></div>
+            <div class="mi">After submission</div>
+            <div class="mi">Do not show</div>
           </div>
         </div></div>
       </div></div>
@@ -361,7 +367,7 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
             <div class="field"><span class="lb">Time limit</span><div class="input">No limit<svg><use href="#i-down"/></svg></div></div>
           </div>
           <div class="field"><span class="lb">Marking</span><div class="input">AI grades, approval required<svg><use href="#i-down"/></svg></div></div>
-          <div class="field newmark" style="margin:0"><span class="lb">Show answers</span><div class="input">After it closes<svg><use href="#i-down"/></svg></div></div>
+          <div class="field newmark" style="margin:0"><span class="lb">Show answers</span><div class="input">After assignment close<svg><use href="#i-down"/></svg></div></div>
           <div class="sw"><span class="l">Allow submission with uploads</span><span class="t on"></span></div>
           <div class="adv"><svg><use href="#i-right"/></svg>Advanced</div>
           <div class="foot"><span class="btn ghost">Cancel</span><span class="btn">Create</span></div>
@@ -372,8 +378,8 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
 
   <!-- C4 -->
   <section class="board" id="c4">
-    <header><h2><b>C4</b>Proposal: Show marks beside Show answers (question S)</h2>
-      <p>Marking takes its own row; Show marks and Show answers share the next. Show marks: Right after submitting (today, the default) or When I release them. Answers never show before marks: with When I release them, Show answers offers When marks are released or Never.</p></header>
+    <header><h2><b>C4</b>Show grades: Automatic or Manual (question S)</h2>
+      <p>Epo 2026-11-08. Marking takes its own row; Show grades and Show answers share the next. Show grades: Automatic (today, the default) or Manual, released with Release grades (T5). Show answers: After assignment close (default), After submission or Do not show. Answers never come before grades, so with Manual they wait for the release too.</p></header>
     <div class="frames">
       <div class="lap-wrap"><div class="lap" data-shell="owner" style="height:700px">
         <div class="main"></div>
@@ -386,15 +392,15 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
           </div>
           <div class="field"><span class="lb">Marking</span><div class="input">AI grades, approval required<svg><use href="#i-down"/></svg></div></div>
           <div class="two">
-            <div class="field newmark" style="margin:0"><span class="lb">Show marks</span><div class="input">When I release them<svg><use href="#i-down"/></svg></div></div>
-            <div class="field"><span class="lb">Show answers</span><div class="input">When marks are released<svg><use href="#i-down"/></svg></div></div>
+            <div class="field newmark" style="margin:0"><span class="lb">Show grades</span><div class="input">Manual<svg><use href="#i-down"/></svg></div></div>
+            <div class="field"><span class="lb">Show answers</span><div class="input">After assignment close<svg><use href="#i-down"/></svg></div></div>
           </div>
           <div class="sw"><span class="l">Allow submission with uploads</span><span class="t on"></span></div>
           <div class="adv"><svg><use href="#i-right"/></svg>Advanced</div>
           <div class="foot"><span class="btn ghost">Cancel</span><span class="btn">Create</span></div>
           <div class="menu" style="left:24px;top:370px;width:236px">
-            <div class="mi">Right after submitting</div>
-            <div class="mi on">When I release them<svg class="tick"><use href="#i-check"/></svg></div>
+            <div class="mi">Automatic</div>
+            <div class="mi on">Manual<svg class="tick"><use href="#i-check"/></svg></div>
           </div>
         </div></div>
       </div></div>
@@ -409,8 +415,8 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
             <div class="field"><span class="lb">Time limit</span><div class="input">No limit<svg><use href="#i-down"/></svg></div></div>
           </div>
           <div class="field"><span class="lb">Marking</span><div class="input">AI grades, approval required<svg><use href="#i-down"/></svg></div></div>
-          <div class="field newmark" style="margin:0"><span class="lb">Show marks</span><div class="input">When I release them<svg><use href="#i-down"/></svg></div></div>
-          <div class="field"><span class="lb">Show answers</span><div class="input">When marks are released<svg><use href="#i-down"/></svg></div></div>
+          <div class="field newmark" style="margin:0"><span class="lb">Show grades</span><div class="input">Manual<svg><use href="#i-down"/></svg></div></div>
+          <div class="field"><span class="lb">Show answers</span><div class="input">After assignment close<svg><use href="#i-down"/></svg></div></div>
           <div class="adv"><svg><use href="#i-right"/></svg>Advanced</div>
           <div class="foot"><span class="btn ghost">Cancel</span><span class="btn">Create</span></div>
         </div></div>
@@ -459,208 +465,28 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
     </div>
   </section>
 
-  <!-- S1 -->
-  <section class="board" id="s1">
-    <header><h2><b>S1</b>Member, Marked: whole-paper upload, then pick questions per page (U2)</h2>
-      <p><b>Not picked (Epo 2026-11-08): members are never asked to label pages; see S4 and S5.</b>"Your pages" sits at the end of the question list. Files are a scan (PDF) or photos; every page gets a Questions dropdown. A question's rows show the pages picked for it. A page with no question is flagged before Submit. The phone adds Take photo and puts Your pages last in the number strip.</p></header>
-    <div class="frames">
-      <div class="lap-wrap"><div class="lap nostudy" data-shell="member-nostudy">
-        <div class="main" style="padding:0">
-          <div class="split">
-            <div class="qlist">
-              <div class="back" style="margin:0 0 8px 8px"><svg><use href="#i-back"/></svg>Assignments</div>
-              <div class="qr"><span class="ql">Q1</span><span class="qt">Define osmosis.</span><span class="dot"></span></div>
-              <div class="qr"><span class="ql">Q2</span><span class="qt">Which cell organelle…</span><span class="dot"></span></div>
-              <div class="qr"><span class="ql">Q3</span><span class="qt">Explain how water enters a root hair cell</span><span class="pg"><svg><use href="#i-page"/></svg>p2</span></div>
-              <div class="qr"><span class="ql">Q4</span><span class="qt">Calculate the percentage change in mass</span><span class="pg"><svg><use href="#i-page"/></svg>p2–3</span></div>
-              <div class="qr"><span class="ql">Q5</span><span class="qt">Draw the potato cylinder results</span><span class="pg"><svg><use href="#i-page"/></svg>p3</span></div>
-              <div class="qr"><span class="ql">Q6</span><span class="qt">Suggest one improvement</span><span class="dot off"></span></div>
-              <div class="sep"></div>
-              <div class="qr on newmark" style="margin:0"><svg class="ficon"><use href="#i-page"/></svg><span class="qt" style="font-weight:600">Your pages</span><span class="pg">4</span></div>
-            </div>
-            <div class="qpane" style="position:relative">
-              <div class="secthead"><h4 class="sub" style="font-size:17px">Your pages</h4><span class="btn out sm"><svg><use href="#i-plus"/></svg>Add files</span></div>
-              <div class="meta" style="margin-top:-8px">Osmosis test scan.pdf · 3 pages &nbsp;·&nbsp; IMG_2041.jpg</div>
-              <div class="pages" style="grid-template-columns:repeat(4, 150px)">
-                <div class="pg-card"><div class="sheet">Name: Cara Moss
-1  Osmosis is the net
-   movement of water
-   across a partially
-   permeable membrane
-   from dilute to more
-   concentrated.
-
-2  (b) cell wall<span class="no">1</span><span class="x">×</span></div><div class="pick">Q1, Q2<svg><use href="#i-down"/></svg></div></div>
-                <div class="pg-card"><div class="sheet">3  Water goes in by
-   osmosis through the
-   membrane, the soil
-   water is more dilute
-   than the cell sap.
-
-4  change = 2.1 - 2.5
-     = -0.4 g<span class="no">2</span><span class="x">×</span></div><div class="pick">Q3, Q4<svg><use href="#i-down"/></svg></div></div>
-                <div class="pg-card"><div class="sheet">   % = -0.4 / 2.5 x 100
-     = -16 %
-
-5  [graph sketched]
-   mass change vs
-   concentration,
-   crosses 0 at 0.3<span class="no">3</span><span class="x">×</span></div><div class="pick">Q4, Q5<svg><use href="#i-down"/></svg></div></div>
-                <div class="pg-card"><div class="sheet photo">6  Use more potato
-   cylinders and take
-   a mean.
-
-   (rough working)
-   2.5 2.4 2.6<span class="no">4</span><span class="x">×</span></div><div class="pick need newmark" style="margin:0">Pick questions<svg><use href="#i-down"/></svg></div></div>
-              </div>
-              <div class="menu" style="left:470px;top:356px">
-                <div class="mi"><span class="cb"></span>Q1<span class="qt">Define osmosis.</span></div>
-                <div class="mi"><span class="cb"></span>Q2<span class="qt">Which cell organelle…</span></div>
-                <div class="mi"><span class="cb"></span>Q3<span class="qt">Explain how water…</span></div>
-                <div class="mi"><span class="cb"></span>Q4<span class="qt">Calculate the…</span></div>
-                <div class="mi"><span class="cb"></span>Q5<span class="qt">Draw the potato…</span></div>
-                <div class="mi on"><span class="cb on"><svg><use href="#i-check"/></svg></span>Q6<span class="qt">Suggest one…</span></div>
-                <div class="mi"><span class="cb"></span><span class="qt" style="color:var(--fg2)">Not an answer</span></div>
-              </div>
-              <div class="qbar"><span class="saved">Saved</span><span class="btn">Submit</span></div>
-            </div>
-          </div>
-        </div>
-      </div><div class="cap">Phone typing stays where it is: Q1 and Q2 were typed in the app; Q3–Q5 are on paper.</div></div>
-      <div class="phone">
-        <div class="strip"><svg style="width:16px;height:16px;flex:none"><use href="#i-back"/></svg>
-          <span class="q done">1</span><span class="q done">2</span><span class="q done">3</span><span class="q done">4</span><span class="q done">5</span><span class="q">6</span>
-          <span class="q pg on newmark" style="margin:0"><svg><use href="#i-page"/></svg>4</span></div>
-        <div class="ph-body">
-          <div class="secthead"><h4 class="sub" style="font-size:17px">Your pages</h4></div>
-          <div style="display:flex;gap:8px"><span class="btn out sm"><svg><use href="#i-cam"/></svg>Take photo</span><span class="btn out sm"><svg><use href="#i-plus"/></svg>Add files</span></div>
-          <div class="pages" style="grid-template-columns:1fr 1fr;gap:10px">
-            <div class="pg-card"><div class="sheet">Name: Cara Moss
-1  Osmosis is the net
-   movement of water
-   across a partially
-   permeable membrane<span class="no">1</span><span class="x">×</span></div><div class="pick">Q1, Q2<svg><use href="#i-down"/></svg></div></div>
-            <div class="pg-card"><div class="sheet">3  Water goes in by
-   osmosis through the
-   membrane, the soil
-   water is more dilute<span class="no">2</span><span class="x">×</span></div><div class="pick">Q3, Q4<svg><use href="#i-down"/></svg></div></div>
-            <div class="pg-card"><div class="sheet">   % = -0.4 / 2.5 x 100
-     = -16 %
-5  [graph sketched]<span class="no">3</span><span class="x">×</span></div><div class="pick">Q4, Q5<svg><use href="#i-down"/></svg></div></div>
-            <div class="pg-card"><div class="sheet photo">6  Use more potato
-   cylinders and take
-   a mean.<span class="no">4</span><span class="x">×</span></div><div class="pick need">Pick questions<svg><use href="#i-down"/></svg></div></div>
-          </div>
-        </div>
-        <div class="ph-bar"><span class="meta" style="margin-right:auto">Saved</span><span class="btn">Submit</span></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- S2 -->
-  <section class="board" id="s2">
-    <header><h2><b>S2</b>Member, Marked: photos on each question (U1)</h2>
-      <p><b>Superseded (Epo 2026-11-08): replaced by S4 and S5.</b>No matching step: each open or drawn part gets Add photos under its ruled lines, and the photos belong to that question. Simpler for phone homework, clumsy for one scanned PDF of the whole paper.</p></header>
-    <div class="frames">
-      <div class="lap-wrap"><div class="lap nostudy">
-        <div class="main" style="padding:0">
-          <div class="split">
-            <div class="qlist">
-              <div class="back" style="margin:0 0 8px 8px"><svg><use href="#i-back"/></svg>Assignments</div>
-              <div class="qr"><span class="ql">Q1</span><span class="qt">Define osmosis.</span><span class="dot"></span></div>
-              <div class="qr"><span class="ql">Q2</span><span class="qt">Which cell organelle…</span><span class="dot"></span></div>
-              <div class="qr on"><span class="ql">Q3</span><span class="qt">Explain how water enters a root hair cell</span><span class="dot"></span></div>
-              <div class="qr"><span class="ql">Q4</span><span class="qt">Calculate the percentage change in mass</span><span class="dot off"></span></div>
-              <div class="qr"><span class="ql">Q5</span><span class="qt">Draw the potato cylinder results</span><span class="dot off"></span></div>
-              <div class="qr"><span class="ql">Q6</span><span class="qt">Suggest one improvement</span><span class="dot off"></span></div>
-            </div>
-            <div class="qpane">
-              <div class="meta">Question 3 of 6</div>
-              <div class="stem">Explain how water enters a root hair cell from the soil. <span class="mk">(6 marks)</span></div>
-              <div class="ruled"></div>
-              <div class="newmark" style="display:grid;gap:10px;margin:0">
-                <div style="display:flex;gap:12px;align-items:flex-start">
-                  <div class="sheet photo" style="width:120px">3  Water goes in by
-   osmosis through
-   the membrane...<span class="x">×</span></div>
-                  <div class="sheet photo" style="width:120px;transform:rotate(.8deg)">   ...so water
-   moves into the
-   root hair cell.<span class="x">×</span></div>
-                </div>
-                <div><span class="btn out sm"><svg><use href="#i-plus"/></svg>Add photos</span></div>
-              </div>
-              <div class="qbar"><span class="saved">Saved</span><span class="btn out">Previous</span><span class="btn out">Next</span><span class="btn">Submit</span></div>
-            </div>
-          </div>
-        </div>
-      </div></div>
-      <div class="phone">
-        <div class="strip"><svg style="width:16px;height:16px;flex:none"><use href="#i-back"/></svg>
-          <span class="q done">1</span><span class="q done">2</span><span class="q done on">3</span><span class="q">4</span><span class="q">5</span><span class="q">6</span></div>
-        <div class="ph-body">
-          <div class="stem">Explain how water enters a root hair cell from the soil. <span class="mk">(6 marks)</span></div>
-          <div class="ruled" style="height:96px"></div>
-          <div class="newmark" style="display:grid;gap:10px;margin:0">
-            <div style="display:flex;gap:10px">
-              <div class="sheet photo" style="width:110px">3  Water goes in by
-   osmosis through
-   the membrane...<span class="x">×</span></div>
-              <div class="sheet photo" style="width:110px;transform:rotate(.8deg)">   ...so water
-   moves into the
-   root hair cell.<span class="x">×</span></div>
-            </div>
-            <div style="display:flex;gap:8px"><span class="btn out sm"><svg><use href="#i-cam"/></svg>Take photo</span><span class="btn out sm"><svg><use href="#i-plus"/></svg>Add photos</span></div>
-          </div>
-        </div>
-        <div class="ph-bar"><span class="meta" style="margin-right:auto">Saved</span><span class="btn">Submit</span></div>
-      </div>
-    </div>
-  </section>
-
   <!-- S4 -->
   <section class="board" id="s4">
-    <header><h2><b>S4</b>Member opens a Marked assignment that allows uploads: choose how to answer</h2>
-      <p>New screen (Epo 2026-11-08), shown in place of going straight in. Answer here starts today's attempt (Before you start first when it is timed). Upload your paper opens S5. The choice can't be mixed in one submission.</p></header>
+    <header><h2><b>S4</b>Member opens a Marked assignment that allows uploads: Before you start</h2>
+      <p>Epo 2026-11-08: the same Before you start dialog as a timed assignment, with the time when there is a limit, and two buttons: Attempt online or Upload file. It shows for every assignment that allows uploads, timed or not (phone: no time limit). Attempt online starts today's attempt; Upload file opens S5. The choice can't be mixed in one submission.</p></header>
     <div class="frames">
       <div class="lap-wrap"><div class="lap" data-shell="member">
-        <div class="main">
-          <div class="back"><svg><use href="#i-back"/></svg>Assignments</div>
-          <div class="title" style="margin-top:6px">Past paper 2025 P1</div>
-          <div class="meta">Marked · 12 questions · 40 marks · Due Wed 11 Nov</div>
-          <div class="newmark" style="margin:26px 0 0;display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:700px">
-            <div style="border:1px solid var(--border);border-radius:10px;padding:18px;display:grid;gap:10px;align-content:start">
-              <svg style="width:22px;height:22px"><use href="#i-bolt"/></svg>
-              <h4 class="sub">Answer here</h4>
-              <span class="meta" style="font-size:13px">Type and draw your answers in Capy.</span>
-              <div><span class="btn">Start</span></div>
-            </div>
-            <div style="border:1px solid var(--border);border-radius:10px;padding:18px;display:grid;gap:10px;align-content:start">
-              <svg style="width:22px;height:22px"><use href="#i-page"/></svg>
-              <h4 class="sub">Upload your paper</h4>
-              <span class="meta" style="font-size:13px">A scan or photos of your written answers.</span>
-              <div><span class="btn out">Upload</span></div>
-            </div>
-          </div>
-        </div>
+        <div class="main"></div>
+        <div class="scrim"><div class="dialog" style="width:520px;gap:14px">
+          <h3>Past paper 2025 P1</h3>
+          <div class="timebox"><span class="clk"><svg><use href="#i-clock"/></svg></span><div><b>60 min</b><span class="meta" style="font-size:13px;color:var(--fg2)">The timer starts when you press Attempt online or Upload file</span></div></div>
+          <div class="meta" style="font-size:13px;color:var(--fg2)">12 questions · 40 marks</div>
+          <div class="foot"><span class="btn ghost">Not now</span><span class="btn out newmark" style="margin:0">Upload file</span><span class="btn newmark" style="margin:0">Attempt online</span></div>
+        </div></div>
       </div></div>
       <div class="phone">
         <div data-tpl="ph-top"></div>
-        <div class="ph-body">
-          <div class="back"><svg><use href="#i-back"/></svg>Assignments</div>
-          <div><div class="title">Past paper 2025 P1</div><div class="meta">Marked · 12 questions · 40 marks · Due Wed 11 Nov</div></div>
-          <div class="newmark" style="margin:0;display:grid;gap:12px">
-            <div style="border:1px solid var(--border);border-radius:10px;padding:14px;display:flex;gap:12px;align-items:center">
-              <svg style="width:20px;height:20px;flex:none"><use href="#i-bolt"/></svg>
-              <div style="flex:1"><h4 class="sub">Answer here</h4><span class="meta">Type and draw your answers in Capy.</span></div>
-              <span class="btn sm">Start</span>
-            </div>
-            <div style="border:1px solid var(--border);border-radius:10px;padding:14px;display:flex;gap:12px;align-items:center">
-              <svg style="width:20px;height:20px;flex:none"><use href="#i-page"/></svg>
-              <div style="flex:1"><h4 class="sub">Upload your paper</h4><span class="meta">A scan or photos of your answers.</span></div>
-              <span class="btn out sm">Upload</span>
-            </div>
-          </div>
-        </div>
+        <div class="ph-body" style="opacity:.35"><span class="title">Assignments</span></div>
+        <div class="ph-sheet"><div class="dialog" style="gap:14px">
+          <h3>Genetics worksheet</h3>
+          <div class="meta" style="font-size:13px;color:var(--fg2)">8 questions · 20 marks · Due Tue 10 Nov</div>
+          <div class="foot" style="flex-wrap:wrap"><span class="btn ghost">Not now</span><span class="btn out newmark" style="margin:0">Upload file</span><span class="btn newmark" style="margin:0">Attempt online</span></div>
+        </div></div>
       </div>
     </div>
   </section>
@@ -674,7 +500,7 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
         <div class="main" style="display:flex;flex-direction:column;gap:14px">
           <div class="back"><svg><use href="#i-back"/></svg>Assignments</div>
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px">
-            <div><div class="title" style="margin:0">Past paper 2025 P1</div><div class="meta">Upload your paper · Due Wed 11 Nov</div></div>
+            <div><div class="title" style="margin:0">Past paper 2025 P1</div><div class="meta">Upload file · Due Wed 11 Nov</div></div>
             <div style="display:flex;gap:8px"><span class="btn out">View questions</span><span class="btn">Submit</span></div>
           </div>
           <div class="newmark" style="margin:0;display:grid;gap:12px">
@@ -711,7 +537,7 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
         <div data-tpl="ph-top"></div>
         <div class="ph-body">
           <div class="back"><svg><use href="#i-back"/></svg>Assignments</div>
-          <div><div class="title">Past paper 2025 P1</div><div class="meta">Upload your paper · Due Wed 11 Nov</div></div>
+          <div><div class="title">Past paper 2025 P1</div><div class="meta">Upload file · Due Wed 11 Nov</div></div>
           <div class="newmark" style="margin:0;display:grid;gap:10px">
             <div style="display:flex;gap:8px"><span class="btn out sm"><svg><use href="#i-cam"/></svg>Take photo</span><span class="btn out sm"><svg><use href="#i-plus"/></svg>Add files</span></div>
             <div class="meta">Past paper P1 answers.pdf · 10 pages</div>
@@ -976,38 +802,27 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
   <!-- S6 -->
   <section class="board" id="s6">
     <header><h2><b>S6</b>Member whose storage is full, starting an assignment</h2>
-      <p>Epo 2026-11-08. Laptop: the choice screen (S4) with Upload your paper turned off and the reason under it. Phone: Before you start (timed assignments) with drawing parts shows one warning line; Start still works, and drawings save past the limit.</p></header>
+      <p>Epo 2026-11-08. Laptop: Before you start (S4) with Upload file turned off and the reason above the buttons. Phone: Before you start (timed assignments) with drawing parts shows one warning line; Start still works, and drawings save past the limit.</p></header>
     <div class="frames">
       <div class="lap-wrap"><div class="lap" data-shell="member">
-        <div class="main">
-          <div class="back"><svg><use href="#i-back"/></svg>Assignments</div>
-          <div class="title" style="margin-top:6px">Past paper 2025 P1</div>
-          <div class="meta">Marked · 12 questions · 40 marks · Due Wed 11 Nov</div>
-          <div style="margin:26px 0 0;display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:700px">
-            <div style="border:1px solid var(--border);border-radius:10px;padding:18px;display:grid;gap:10px;align-content:start">
-              <svg style="width:22px;height:22px"><use href="#i-bolt"/></svg>
-              <h4 class="sub">Answer here</h4>
-              <span class="meta" style="font-size:13px">Type and draw your answers in Capy.</span>
-              <div><span class="btn">Start</span></div>
-            </div>
-            <div class="newmark" style="margin:0;border:1px solid var(--border);border-radius:10px;padding:18px;display:grid;gap:10px;align-content:start">
-              <svg style="width:22px;height:22px;opacity:.45"><use href="#i-page"/></svg>
-              <h4 class="sub" style="color:var(--muted)">Upload your paper</h4>
-              <span style="font-size:13px;color:var(--warn)">Your storage is full. Free up space to upload.</span>
-              <div style="display:flex;gap:8px;align-items:center"><span class="btn out" style="opacity:.45">Upload</span><span class="link">Storage<svg><use href="#i-fwd"/></svg></span></div>
-            </div>
-          </div>
-        </div>
+        <div class="main"></div>
+        <div class="scrim"><div class="dialog" style="width:520px;gap:14px">
+          <h3>Past paper 2025 P1</h3>
+          <div class="timebox"><span class="clk"><svg><use href="#i-clock"/></svg></span><div><b>60 min</b><span class="meta" style="font-size:13px;color:var(--fg2)">The timer starts when you press Attempt online or Upload file</span></div></div>
+          <div class="meta" style="font-size:13px;color:var(--fg2)">12 questions · 40 marks</div>
+          <div class="newmark" style="margin:0;font-size:13px;color:var(--warn);background:var(--warn-bg);padding:9px 11px;border-radius:7px">Your storage is full, so you can't upload a file. You can still attempt online.</div>
+          <div class="foot"><span class="btn ghost">Not now</span><span class="btn out" style="opacity:.45">Upload file</span><span class="btn">Attempt online</span></div>
+        </div></div>
       </div></div>
       <div class="phone">
         <div data-tpl="ph-top"></div>
         <div class="ph-body" style="opacity:.35"><span class="title">Past paper 2025 P1</span></div>
         <div class="ph-sheet"><div class="dialog" style="gap:14px">
-          <h3>Before you start</h3>
-          <div style="display:flex;align-items:center;gap:10px;font-size:30px;font-weight:800"><svg style="width:28px;height:28px"><use href="#i-cal"/></svg>60 min</div>
-          <div class="meta" style="font-size:13px">12 questions · 40 marks</div>
+          <h3>Past paper 2025 P1</h3>
+          <div class="timebox" style="padding:14px"><span class="clk" style="width:48px;height:48px"><svg><use href="#i-clock"/></svg></span><div><b>60 min</b><span class="meta" style="font-size:12.5px;color:var(--fg2)">The timer starts when you press Start</span></div></div>
+          <div class="meta" style="font-size:13px;color:var(--fg2)">12 questions · 40 marks</div>
           <div class="newmark" style="margin:0;font-size:13px;color:var(--warn);background:var(--warn-bg);padding:9px 11px;border-radius:7px">Your storage is full. You can still answer and submit; your drawings will go over your storage limit.</div>
-          <div class="foot"><span class="btn ghost">Cancel</span><span class="btn">Start</span></div>
+          <div class="foot"><span class="btn ghost">Not now</span><span class="btn">Start</span></div>
         </div></div>
       </div>
     </div>
@@ -1015,8 +830,8 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
 
   <!-- S7 -->
   <section class="board" id="s7">
-    <header><h2><b>S7</b>Proposal: member, marks not released yet</h2>
-      <p>Submitting says when marks come instead of "Your mark so far". On Assignments the row reads Submitted where the mark goes. Results opens to their own answers with no mark, no right or wrong and no comments, under a strip saying who releases them. Once released, everything reads as today.</p></header>
+    <header><h2><b>S7</b>Proposal: member, grades not released yet (Show grades Manual)</h2>
+      <p>Submitting says when grades come instead of "Your mark so far". On Assignments the row reads Submitted where the mark goes. Results opens to their own answers with no mark, no right or wrong and no comments, under a strip saying who releases them. Once released, everything reads as today.</p></header>
     <div class="frames">
       <div class="lap-wrap"><div class="lap" data-shell="member">
         <div class="main">
@@ -1029,7 +844,7 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
           <div style="margin-top:34px;max-width:760px;border:1px solid var(--divider);border-radius:12px;padding:22px 24px;text-align:center">
             <div style="font-size:20px;font-weight:800">Submitted</div>
             <div class="meta" style="margin-top:4px">Past paper 2025 P1 · Sun 8 Nov, 14:32</div>
-            <p class="newmark" style="margin:14px auto 0;display:inline-block;font-weight:500">Your marks will show when Kate Malone releases them.</p>
+            <p class="newmark" style="margin:14px auto 0;display:inline-block;font-weight:500">Your grade will show when Kate Malone releases it.</p>
             <div style="margin-top:16px;display:flex;gap:8px;justify-content:center"><span class="btn out">See your answers<svg><use href="#i-fwd"/></svg></span><span class="btn out">Back to Assignments</span></div>
           </div>
           <div class="cap">The page after Submit (below the list here only to show both).</div>
@@ -1040,7 +855,7 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
         <div class="ph-body">
           <div class="back"><svg><use href="#i-back"/></svg>Assignments</div>
           <div><div class="title">Past paper 2025 P1</div><div class="meta">Submitted Sun 8 Nov · 12 questions</div></div>
-          <div class="newmark" style="margin:0;font-size:13px;background:var(--chip);padding:9px 11px;border-radius:7px">Marks not released yet. Kate Malone releases them; until then you can read your answers.</div>
+          <div class="newmark" style="margin:0;font-size:13px;background:var(--chip);padding:9px 11px;border-radius:7px">Grades not released yet. Kate Malone releases them; until then you can read your answers.</div>
           <div style="display:grid;gap:2px">
             <div class="qr" style="display:flex;gap:8px;padding:8px 4px;border-bottom:1px solid var(--divider)"><span class="meta" style="width:24px">Q1</span><span style="flex:1">Define osmosis.</span><span class="meta">Answered</span></div>
             <div class="qr" style="display:flex;gap:8px;padding:8px 4px;border-bottom:1px solid var(--divider)"><span class="meta" style="width:24px">Q2</span><span style="flex:1">Which cell organelle…</span><span class="meta">Answered</span></div>
@@ -1054,15 +869,15 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
 
   <!-- T5 -->
   <section class="board" id="t5">
-    <header><h2><b>T5</b>Proposal: owner, Release marks</h2>
-      <p>With Show marks set to When I release them, the report header carries "Marks not released" and a Release marks button. Its confirm counts who gets them and warns about answers still waiting; those show to the member once approved, as later mark changes do (Canvas's rule). Afterwards the chip reads "Released Mon 16 Nov". Answers set to "When marks are released" go out at the same moment.</p></header>
+    <header><h2><b>T5</b>Proposal: owner, Release grades</h2>
+      <p>With Show grades set to Manual, the report header carries "Grades not released" and a Release grades button. Its confirm counts who gets them and warns about answers still waiting; those show to the member once approved, as later mark changes do (Canvas's rule). Afterwards the chip reads "Released Mon 16 Nov". Answers set to After submission go out at the same moment; After assignment close ones wait for the close as well.</p></header>
     <div class="frames">
       <div class="lap-wrap"><div class="lap" data-shell="owner">
         <div class="main">
           <div class="back"><svg><use href="#i-back"/></svg>Assignments</div>
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px">
-            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="title" style="margin:0">Past paper 2025 P1</span><span class="chips"><span class="chip">Closed Wed 11 Nov</span><span class="chip">6 of 6 submitted</span><span class="chip warn">2 to approve</span><span class="chip newmark" style="margin:0">Marks not released</span></span></div>
-            <span class="btn newmark" style="margin:0">Release marks</span>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="title" style="margin:0">Past paper 2025 P1</span><span class="chips"><span class="chip">Closed Wed 11 Nov</span><span class="chip">6 of 6 submitted</span><span class="chip warn">2 to approve</span><span class="chip newmark" style="margin:0">Grades not released</span></span></div>
+            <span class="btn newmark" style="margin:0">Release grades</span>
           </div>
           <div class="tabs"><span>Questions</span><span class="on">Members</span><span>Approve AI marks</span><span>Settings</span></div>
           <table class="table" style="margin-top:6px">
@@ -1073,9 +888,9 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
             <tr><td><span class="who"><span class="av">FA</span>Farah Ali</span></td><td>Sun 8 Nov</td><td>41 min</td><td><b>20</b> / 40</td><td><span class="chip warn">1 to approve</span></td></tr>
           </table>
           <div class="scrim" style="position:absolute;inset:0;display:grid;place-items:center"><div class="dialog" style="width:440px">
-            <h3>Release marks?</h3>
-            <p style="margin:0;color:var(--fg2)">6 members see their marks and answers now. 2 answers still wait for your approval; each shows once you approve it.</p>
-            <div class="foot"><span class="btn ghost">Cancel</span><span class="btn">Release marks</span></div>
+            <h3>Release grades?</h3>
+            <p style="margin:0;color:var(--fg2)">6 members see their grades now. 2 answers still wait for your approval; each shows once you approve it.</p>
+            <div class="foot"><span class="btn ghost">Cancel</span><span class="btn">Release grades</span></div>
           </div></div>
         </div>
       </div></div>
@@ -1083,8 +898,8 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
         <div data-tpl="ph-top"></div>
         <div class="ph-body" style="gap:10px">
           <div class="title" style="font-size:20px">Past paper 2025 P1</div>
-          <span class="chips"><span class="chip">6 of 6 submitted</span><span class="chip warn">2 to approve</span><span class="chip newmark" style="margin:0">Marks not released</span></span>
-          <div><span class="btn newmark" style="margin:0">Release marks</span></div>
+          <span class="chips"><span class="chip">6 of 6 submitted</span><span class="chip warn">2 to approve</span><span class="chip newmark" style="margin:0">Grades not released</span></span>
+          <div><span class="btn newmark" style="margin:0">Release grades</span></div>
           <div class="tabs" style="margin:0;font-size:13px"><span>Questions</span><span class="on">Members</span><span>Approve AI marks</span></div>
           <ul class="list" style="margin:0">
             <li style="min-height:56px"><span class="av">BL</span><span style="flex:1;min-width:0"><b style="font-weight:600">Ben Lee</b><br><span class="meta">26 / 40</span></span></li>
@@ -1100,10 +915,10 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
     <h2>What each pick settles</h2>
     <ul>
       <li><b>C1a or C1b</b>: whether New assignment shows the owner a credit estimate when AI marks uploads (question F).</li>
-      <li><b>S4 + S5 (Epo 2026-11-08)</b>: the member picks Answer here or Upload your paper, then uploads the whole paper and labels nothing. S1 and S2 are kept below only for the record.</li>
+      <li><b>S4 + S5 (Epo 2026-11-08)</b>: Before you start offers Attempt online or Upload file; the member uploads the whole paper and labels nothing.</li>
       <li><b>S3 + T2</b>: Unmarked tasks collect files with Hand in; nothing is AI-marked there (question H).</li>
       <li><b>T1</b>: page answers reuse Approve AI marks and its Marking dropdown unchanged.</li>
-      <li><b>C4 + S7 + T5</b>: a Show marks choice, what a member sees before release, and the owner's Release marks (question S).</li>
+      <li><b>C4 + S7 + T5</b>: Show grades Automatic or Manual, what a member sees before release, and the owner's Release grades (question S).</li>
     </ul>
   </section>
 </main>
