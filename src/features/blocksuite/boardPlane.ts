@@ -5,7 +5,9 @@ import {
 } from '@blocksuite/affine/blocks/surface';
 import {
   Bound,
+  getPointsFromBoundWithRotation,
   type IVec,
+  linePolygonIntersects,
   pointInPolygon,
   polygonNearestPoint,
   type SerializedXYWH,
@@ -284,9 +286,19 @@ export class PlaneElementModel extends GfxPrimitiveElementModel<{
     );
   }
 
-  /** The eraser asks this, so it leaves a card alone: its marks are erased inside. */
-  override getLineIntersections() {
-    return null;
+  /** The eraser leaves a card alone: its marks are erased inside (vendored local
+   * change 30). */
+  get erasable() {
+    return false;
+  }
+
+  /** Where a connector meets the card's edge. */
+  override getLineIntersections(start: IVec, end: IVec) {
+    return linePolygonIntersects(
+      start,
+      end,
+      getPointsFromBoundWithRotation(this)
+    );
   }
 
   override getNearestPoint(point: IVec) {

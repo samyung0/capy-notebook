@@ -302,6 +302,10 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
     element's width instead of AFFiNE's 96 px. The board's Charts slot is 60 px (Epo
     2026-11-08). The toolbar's paging still counts every slot as 96 px, so it pages a
     little early on a narrow screen.
+30. Elements the eraser skips (`gfx/brush` `src/eraser-tool.ts`, marked `Capy (local change
+    30)`): an element whose `erasable` is `false` is left out of the eraser's reach. The
+    board's plane and chart cards set it (their marks are erased inside them), so they can
+    answer `getLineIntersections` truthfully, which connectors need for their anchors.
 
 The specs named in local changes 6 to 9 are on the `blocksuite-notes` branch, with the
 note editor they pin.
