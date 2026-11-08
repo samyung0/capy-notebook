@@ -396,9 +396,9 @@ function drawNote(box: Box, note: Fields, blocks: Record<string, Fields>) {
   };
   walk(note['sys:children']);
   const { h, w, x, y } = box;
-  const pad = 16;
-  const inner = { h: h - pad * 2, w: w - pad * 2, x: x + pad, y: y + pad };
-  return `${rect(box, colour(note['prop:background'], '#fff'), '#d9d9d6', 1)}<svg x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" viewBox="${num(x)} ${num(y)} ${num(w)} ${num(h)}" overflow="hidden">${lines(inner, texts.join('\n'), FONT_SIZE_NOTE, '#1d1d1f', 'left')}</svg>`;
+  // The board's tight card (N2): 8 by 10 px padding, a hairline, a 6 px corner.
+  const inner = { h: h - 16, w: w - 20, x: x + 10, y: y + 8 };
+  return `<rect x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" rx="6" fill="${colour(note['prop:background'], '#fff')}" stroke="#e6e6e6" stroke-width="1"/><svg x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" viewBox="${num(x)} ${num(y)} ${num(w)} ${num(h)}" overflow="hidden">${lines(inner, texts.join('\n'), FONT_SIZE_NOTE, '#1d1d1f', 'left')}</svg>`;
 }
 
 function lines(

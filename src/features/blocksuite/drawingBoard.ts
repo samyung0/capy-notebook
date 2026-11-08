@@ -70,6 +70,7 @@ import { EdgelessDraggingAreaViewExtension } from '@blocksuite/affine/widgets/ed
 import { EdgelessSelectedRectViewExtension } from '@blocksuite/affine/widgets/edgeless-selected-rect/view';
 import { EdgelessToolbarViewExtension } from '@blocksuite/affine/widgets/edgeless-toolbar/view';
 import { EdgelessZoomToolbarViewExtension } from '@blocksuite/affine/widgets/edgeless-zoom-toolbar/view';
+import { SlashMenuViewExtension } from '@blocksuite/affine/widgets/slash-menu/view';
 import { ToolbarViewExtension } from '@blocksuite/affine/widgets/toolbar/view';
 import { ViewportOverlayViewExtension } from '@blocksuite/affine/widgets/viewport-overlay/view';
 import { Redo03Icon, Undo03Icon } from '@hugeicons/core-free-icons';
@@ -160,6 +161,7 @@ const VIEWS = [
   EdgelessSelectedRectViewExtension,
   EdgelessToolbarViewExtension,
   EdgelessZoomToolbarViewExtension,
+  SlashMenuViewExtension,
   ToolbarViewExtension,
   ViewportOverlayViewExtension,
 ];
@@ -170,6 +172,7 @@ const READ_ONLY_TOOLS = new Set<unknown>([
   EdgelessDraggingAreaViewExtension,
   EdgelessSelectedRectViewExtension,
   EdgelessToolbarViewExtension,
+  SlashMenuViewExtension,
   ToolbarViewExtension,
 ]);
 const readOnlyViews = new ViewExtensionManager(

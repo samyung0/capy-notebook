@@ -4566,6 +4566,12 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   where the browser has it. A plane card with 5 strokes takes 0.4 ms
   in Node, a 300 KB board (50 strokes of 300 points, 500 marks) 5 ms. Show it as an
   `<img src="data:image/svg+xml,…">` in a list, so rows don't add SVG nodes to the page.
+- **Note cards:** every note on the board is a tight card (8×10 px padding, a 1 px
+  hairline, a 6 px corner, no shadow, the same size while typing), set in
+  `drawingBoard.css` over the note's stored style, since AFFiNE's corner field only takes
+  0/8/16/24/32; the preview draws it the same. AFFiNE's slash menu is registered, offering
+  text styles, lists, alignment, inline styles, Image, dates and the move/copy/delete
+  actions; Image stores its file in the board's blob store, as a pasted image does.
 - **Formulas:** a `formula` canvas element holding LaTeX, typed in MathLive (loaded on
   first open). AFFiNE keeps LaTeX as HTML in note cards, and its export (html2canvas)
   garbles that, so typing `$$` in a note here stays text; AFFiNE's inline spec stays

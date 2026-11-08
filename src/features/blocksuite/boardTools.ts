@@ -1030,23 +1030,23 @@ const CHART_PIECES: Piece[] = [
   {
     body: `<path d="M18 20L34 20A16 16 0 0 1 8.82 33.11z" fill="#1e96eb"></path><path d="M18 20L8.82 33.11A16 16 0 0 1 22.14 4.55z" fill="#173654"></path><path d="M19.98 18.48L24.12 3.03A16 16 0 0 1 35.98 18.48z" fill="#f6c343"></path>`,
     dy: -11,
-    h: 38,
+    h: 34,
     kind: 'pie',
     r: 0,
     viewBox: '0 0 38 38',
-    w: 38,
-    x: 44,
-    y: 16,
+    w: 34,
+    x: 42,
+    y: 19,
   },
   {
-    body: `<rect x="0" y="18" width="9" height="30" rx="2" fill="#1e96eb"></rect><rect x="11" y="3" width="9" height="45" rx="2" fill="#173654"></rect><rect x="22" y="27" width="9" height="21" rx="2" fill="#f6c343"></rect>`,
+    body: `<rect x="0" y="18" width="8" height="30" rx="2" fill="#1e96eb"></rect><rect x="10" y="3" width="8" height="45" rx="2" fill="#173654"></rect><rect x="20" y="27" width="8" height="21" rx="2" fill="#f6c343"></rect>`,
     dy: -9,
     h: 46,
     kind: 'bar',
     r: 0,
-    viewBox: '0 0 31 46',
-    w: 31,
-    x: 22,
+    viewBox: '0 0 28 46',
+    w: 28,
+    x: 24,
     y: 25,
   },
 ];
@@ -1157,6 +1157,12 @@ abstract class CapyPieceSlot extends EdgelessToolbarToolMixin(
       height: calc(100% + var(--safe));
       overflow: hidden;
       pointer-events: none;
+      /* Above the toolbar's buttons, whose hover backgrounds are positioned too: the
+         pieces reach past the slot into its neighbours. */
+      z-index: 1;
+    }
+    :host(:hover) .slot {
+      z-index: 2;
     }
     .piece {
       position: absolute;
