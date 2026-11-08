@@ -1,3 +1,4 @@
+import { ThemeProvider } from '@blocksuite/affine/shared/services';
 import type { GfxController } from '@blocksuite/affine/std/gfx';
 import { HistoryExtension } from '@blocksuite/affine/store';
 import { Redo03Icon, Undo03Icon } from '@hugeicons/core-free-icons';
@@ -103,6 +104,7 @@ export function openBoardEditor(
     stacksSwapped();
     window.removeEventListener('keydown', onKey, true);
     updates?.unsubscribe();
+    unwatchTheme();
     history.unsubscribe();
     menu.dispose();
     render(null, controls);
@@ -144,6 +146,13 @@ export function openBoardEditor(
   root.addEventListener('keydown', (event) => event.stopPropagation());
 
   const updates = gfx.surface?.elementUpdated.subscribe(hooks.onUpdate);
+  // The card draws in the board's light or dark, so a switch redraws it. The signal
+  // calls at once on subscribing, before the card's editor is set up: that one's skipped.
+  let themeSeen = false;
+  const unwatchTheme = gfx.std.get(ThemeProvider).theme$.subscribe(() => {
+    if (themeSeen) hooks.onUpdate();
+    themeSeen = true;
+  });
 
   return {
     box,
