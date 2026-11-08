@@ -18,8 +18,12 @@ func (a *api) registerTodo(api huma.API) {
 	reg(api, http.MethodGet, "/api/todo", "getTodo", "Assignments", "The To do page: what each of the caller's classes holds for them", http.StatusOK, a.getTodo)
 }
 
-func (a *api) getTodo(ctx context.Context, _ *struct{}) (*todoOutput, error) {
-	res, err := a.s.ListTodo(ctx, userID(ctx), time.Now())
+type todoInput struct {
+	Done bool `query:"done" doc:"The Done tab instead: what was given to the caller that they finished or that closed"`
+}
+
+func (a *api) getTodo(ctx context.Context, in *todoInput) (*todoOutput, error) {
+	res, err := a.s.ListTodo(ctx, userID(ctx), time.Now(), in.Done)
 	if err != nil {
 		return nil, hErr(err)
 	}

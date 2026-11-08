@@ -7023,6 +7023,10 @@ export const UpdateTaskResponse = zod.object({
 /**
  * @summary The To do page: what each of the caller's classes holds for them
  */
+export const GetTodoQueryParams = zod.object({
+  "done": zod.boolean().optional().describe('The Done tab instead: what was given to the caller that they finished or that closed')
+})
+
 export const GetTodoResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "workspaces": zod.array(zod.object({

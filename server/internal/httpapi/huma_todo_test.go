@@ -16,4 +16,7 @@ func TestTodoRouteIsTheCallersOwn(t *testing.T) {
 	if rec := doReq(t, h, http.MethodGet, "/api/todo", "u_owner", nil); rec.Code != http.StatusOK {
 		t.Fatalf("signed in: status = %d body=%s", rec.Code, rec.Body.String())
 	}
+	if rec := doReq(t, h, http.MethodGet, "/api/todo?done=true", "u_owner", nil); rec.Code != http.StatusOK {
+		t.Fatalf("Done tab: status = %d body=%s", rec.Code, rec.Body.String())
+	}
 }

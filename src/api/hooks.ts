@@ -3472,15 +3472,20 @@ export const learningOverviewQuery = () =>
 export const useLearningOverview = (options?: QueryUiOptions) =>
   useQuery({ ...learningOverviewQuery(), meta: queryMeta(options) });
 
-/** The To do page: each class's Dashboard To do, across the viewer's classes. */
-export const todoQuery = () =>
+/** The To do page: each class's Dashboard To do, across the viewer's classes.
+ * done: its Done tab instead, work given to the viewer that they finished or
+ * that closed; under qk.todo, so whatever refreshes To do refreshes it. */
+export const todoQuery = (done?: boolean) =>
   queryOptions({
     ...persisted,
-    queryFn: () => api.get<TodoList>('/todo'),
-    queryKey: qk.todo,
+    queryFn: () => api.get<TodoList>(done ? '/todo?done=true' : '/todo'),
+    queryKey: done ? qk.todoDone : qk.todo,
   });
 export const useTodo = (options?: QueryUiOptions) =>
   useQuery({ ...todoQuery(), meta: queryMeta(options) });
+/** The To do page's list for a tab. */
+export const useTodoTab = (tab: 'todo' | 'done', options?: QueryUiOptions) =>
+  useQuery({ ...todoQuery(tab === 'done'), meta: queryMeta(options) });
 
 /** How many questions a practice group holds, for its start dialog. */
 export const useStudyQuestionCount = (

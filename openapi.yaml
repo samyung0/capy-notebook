@@ -13727,6 +13727,14 @@ paths:
   /api/todo:
     get:
       operationId: getTodo
+      parameters:
+        - description: "The Done tab instead: what was given to the caller that they finished or that closed"
+          explode: false
+          in: query
+          name: done
+          schema:
+            description: "The Done tab instead: what was given to the caller that they finished or that closed"
+            type: boolean
       responses:
         "200":
           content:

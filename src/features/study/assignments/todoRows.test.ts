@@ -87,7 +87,7 @@ it('sorts rows and classes by the newest post, and classes by name', () => {
   ).toEqual(['Biology', 'Art']);
 });
 
-it('lists done work on the Done tab, newest done first', () => {
+it('lists the Done tab newest first, closed work by the day it closed', () => {
   const done = (id: string, doneAt: string) =>
     row(id, { mine: { done: true, doneAt } as Assignment['mine'] });
   const sections = todoSections(
@@ -95,12 +95,16 @@ it('lists done work on the Done tab, newest done first', () => {
       workspace('a', [
         done('mon', '2026-11-03T00:00:00Z'),
         done('wed', '2026-11-05T00:00:00Z'),
-        row('open'),
+        row('closed-tue', { closedAt: '2026-11-04T00:00:00Z' }),
       ]),
     ],
     view({ sort: 'done', tab: 'done' })
   );
-  expect(sections[0]?.shown.map((a) => a.id)).toEqual(['wed', 'mon']);
+  expect(sections[0]?.shown.map((a) => a.id)).toEqual([
+    'wed',
+    'closed-tue',
+    'mon',
+  ]);
 });
 
 it('keeps the classes and types the filter picks', () => {

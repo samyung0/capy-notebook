@@ -16,16 +16,16 @@ func TestListTodo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mine, err := f.s.ListTodo(ctx, f.viewer, now)
+	mine, err := f.s.ListTodo(ctx, f.viewer, now, false)
 	if err != nil || len(mine.Workspaces) != 1 || mine.Workspaces[0].Manages || mine.Workspaces[0].WorkspaceID != f.ws.ID {
 		t.Fatalf("a member's To do = %+v, err %v", mine, err)
 	}
 	// Out of the class there is nothing, and in it with nothing assigned too.
 	stranger := newBlobTestUser(t, f.s, "assignment-todo-stranger")
-	if none, err := f.s.ListTodo(ctx, stranger, now); err != nil || len(none.Workspaces) != 0 {
+	if none, err := f.s.ListTodo(ctx, stranger, now, false); err != nil || len(none.Workspaces) != 0 {
 		t.Fatalf("a non-member's To do = %+v, err %v", none, err)
 	}
-	if none, err := f.s.ListTodo(ctx, f.editor, now); err != nil || len(none.Workspaces) != 0 {
+	if none, err := f.s.ListTodo(ctx, f.editor, now, false); err != nil || len(none.Workspaces) != 0 {
 		t.Fatalf("an editor with nothing assigned or waiting = %+v, err %v", none, err)
 	}
 	if items := mine.Workspaces[0].Items; len(items) != 1 || items[0].ID != created.ID || items[0].Mine == nil || items[0].Manage != nil {
@@ -39,7 +39,11 @@ func TestListTodo(t *testing.T) {
 	if _, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.ID, map[string]any{"p3": "Water moves in"}, now); err != nil {
 		t.Fatal(err)
 	}
-	staff, err := f.s.ListTodo(ctx, f.user, now)
+	// Submitted, it is on the Done tab while still open.
+	if done, err := f.s.ListTodo(ctx, f.viewer, now, true); err != nil || len(done.Workspaces) != 1 || !done.Workspaces[0].Items[0].Mine.Done {
+		t.Fatalf("a member's Done = %+v, err %v", done, err)
+	}
+	staff, err := f.s.ListTodo(ctx, f.user, now, false)
 	if err != nil || len(staff.Workspaces) != 1 || !staff.Workspaces[0].Manages || staff.Workspaces[0].Items[0].Manage.ToApprove != 1 {
 		t.Fatalf("staff's To do = %+v, err %v", staff, err)
 	}
@@ -47,8 +51,28 @@ func TestListTodo(t *testing.T) {
 	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now); err != nil {
 		t.Fatal(err)
 	}
-	closed, err := f.s.ListTodo(ctx, f.viewer, now)
+	closed, err := f.s.ListTodo(ctx, f.viewer, now, false)
 	if err != nil || len(closed.Workspaces) != 0 {
 		t.Fatalf("a closed assignment stayed: %+v, err %v", closed, err)
+	}
+
+	// Closed with nothing done, another member finds it on the Done tab.
+	other, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(24*time.Hour)), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.SetAssignmentClosed(ctx, f.user, other.ID, true, now); err != nil {
+		t.Fatal(err)
+	}
+	done, err := f.s.ListTodo(ctx, f.viewer, now, true)
+	if err != nil || len(done.Workspaces) != 1 {
+		t.Fatalf("a member's Done = %+v, err %v", done, err)
+	}
+	found := false
+	for _, a := range done.Workspaces[0].Items {
+		found = found || (a.ID == other.ID && !a.Mine.Done && a.ClosedAt != nil)
+	}
+	if !found {
+		t.Fatalf("closed work missing from Done: %+v", done.Workspaces[0].Items)
 	}
 }

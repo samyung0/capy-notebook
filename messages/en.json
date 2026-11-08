@@ -22,6 +22,7 @@
   "todo_type_quiz": "Quizzes",
   "todo_type_task": "Tasks",
   "todo_overdue": "Overdue · {date}",
+  "todo_closed": "Closed",
   "todo_finished": "Finished",
   "todo_waiting_marks": "Waiting for marks",
   "todo_done_empty": "Nothing done yet",

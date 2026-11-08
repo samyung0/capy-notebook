@@ -1033,12 +1033,13 @@ step and "What members see" link for an invite preview and board G5.
 **To do page.** `/todo` (`src/routes/Todo.tsx`, `GET /api/todo`,
 `store/assignment_todo.go`) lists each class's Dashboard rows across the classes
 the viewer owns or belongs to, in `TodoRows`, the rows both share. Tabs To do
-(open work and answers waiting, with its count) and Done (done work the endpoint
-still returns, i.e. not closed: the quiz's mark or "Waiting for marks", then the
-day), then the list pages' Sort and Filter, all in the URL (`parseTodoSearch`:
+(open work and answers waiting, with its count) and Done (`GET /api/todo?done=true`,
+`qk.todoDone` under `qk.todo`: what was given to the viewer that they finished,
+with the quiz's mark or "Waiting for marks" then the day, or that closed undone,
+"Closed" with "Not done · Closed {day}"; read only while the tab is open), then the list pages' Sort and Filter, all in the URL (`parseTodoSearch`:
 `tab=done`, `sort`, `dir=asc`, `class`, `type=quiz,task`). To do sorts by Due
 soonest (classes with answers waiting first), Recently posted or Class; Done by
-Recently done or Class. A class with nothing to show is left out. Open work past
+Recently done (the day it closed for work never done) or Class. A class with nothing to show is left out. Open work past
 its due date says Overdue. The nav's To do row carries the notifications dot while
 `todoCount` (open plus waiting) is above zero (Epo 2026-11-08).
 

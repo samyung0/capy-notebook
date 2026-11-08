@@ -99,6 +99,7 @@ import type {
   GetSourceSessionParams,
   GetSourceUploadPolicyParams,
   GetStudyQuestionCountParams,
+  GetTodoParams,
   GetWorkspaceReviewParams,
   GradeAnonymousQuizReq,
   GradedQuestion,
@@ -10199,20 +10200,27 @@ export type getTodoResponseError = (getTodoResponseDefault) & {
 
 export type getTodoResponse = (getTodoResponseSuccess | getTodoResponseError)
 
-export const getGetTodoUrl = () => {
+export const getGetTodoUrl = (params?: GetTodoParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/todo`
+  return stringifiedParams.length > 0 ? `/api/todo?${stringifiedParams}` : `/api/todo`
 }
 
 /**
  * @summary The To do page: what each of the caller's classes holds for them
  */
-export const getTodo = async ( options?: RequestInit): Promise<getTodoResponse> => {
+export const getTodo = async (params?: GetTodoParams, options?: RequestInit): Promise<getTodoResponse> => {
 
-  const res = await fetch(getGetTodoUrl(),
+  const res = await fetch(getGetTodoUrl(params),
   {
     ...options,
     method: 'GET'

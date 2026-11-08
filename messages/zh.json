@@ -22,6 +22,7 @@
   "todo_type_quiz": "测验",
   "todo_type_task": "任务",
   "todo_overdue": "已逾期 · {date}",
+  "todo_closed": "已关闭",
   "todo_finished": "已完成",
   "todo_waiting_marks": "等待评分",
   "todo_done_empty": "还没有完成的项目",

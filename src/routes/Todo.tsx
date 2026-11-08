@@ -1,5 +1,5 @@
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
-import { useTodo } from '@/api/hooks';
+import { useTodo, useTodoTab } from '@/api/hooks';
 import { InlineErrorState } from '@/components/app/ErrorState';
 import {
   ListToolbar,
@@ -27,18 +27,21 @@ import { waitsForConnection } from '@/lib/online';
 
 /** To do (canvas NzaizrnumE4jtTtm4p3BYT, board A; Epo 2026-11-08): tabs To do ·
  * Done, the list pages' Sort and Filter, then each class's rows in a section
- * whose heading opens its Dashboard. Approvals stay in the To do tab. Items
- * stop at 860px, left aligned (Epo 2026-11-05). */
+ * whose heading opens its Dashboard. Approvals stay in the To do tab; Done
+ * reads its own list, closed work included. Items stop at 860px, left aligned
+ * (Epo 2026-11-05). */
 export default function Todo() {
-  const { data, error, fetchStatus, isLoading, refetch } = useTodo({
+  const search = useSearch({ from: '/auth-shell/todo' });
+  const tab = search.tab ?? 'todo';
+  const { data, error, fetchStatus, isLoading, refetch } = useTodoTab(tab, {
     errorBoundary: false,
   });
-  const search = useSearch({ from: '/auth-shell/todo' });
+  // The To do count always comes from To do's list.
+  const { data: todo } = useTodo({ errorBoundary: false });
   const navigate = useNavigate({ from: '/todo' });
   const setSearch = (patch: TodoSearch) =>
     void navigate({ replace: true, search: (prev) => ({ ...prev, ...patch }) });
 
-  const tab = search.tab ?? 'todo';
   const sorts: SortOption<TodoSort>[] =
     tab === 'done'
       ? [
@@ -62,7 +65,7 @@ export default function Todo() {
     tab,
     types,
   });
-  const open = todoCount(workspaces);
+  const open = todoCount(todo?.workspaces ?? []);
 
   return (
     <PagePanel header={<PageHeader title={m.nav_todo()} />}>

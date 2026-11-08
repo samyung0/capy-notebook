@@ -139,7 +139,8 @@ export function TodoSection({
 /** A To do list's rows, on the Dashboard and the To do page. A row is its own
  * button, with nothing else to press but a tick (Epo 2026-11-05); an assignment's
  * page starts or continues it. Open work past its due date says Overdue. On the
- * To do page's Done tab (`doneTab`) rows say when they were done, uncrossed. */
+ * To do page's Done tab (`doneTab`) rows say when they were done, uncrossed, or
+ * that they closed undone. */
 export function TodoRows({
   doneTab = false,
   manages,
@@ -227,7 +228,9 @@ export function TodoRows({
               {a.kind === 'marked' ? (
                 <>
                   {doneTab
-                    ? m.todo_finished()
+                    ? isDone
+                      ? m.todo_finished()
+                      : m.todo_closed()
                     : isDone
                       ? m.dashboard_finish()
                       : m.dashboard_do()}
@@ -235,7 +238,7 @@ export function TodoRows({
                     done={doneTab ? 'grey' : isDone ? 'crossed' : undefined}
                     title={a.title}
                   />
-                  {a.timeLimitMin && !isDone && (
+                  {a.timeLimitMin && !isDone && !doneTab && (
                     <span className="text-fg-secondary">
                       {m.assignment_minutes_short({ count: a.timeLimitMin })}
                     </span>
@@ -272,8 +275,16 @@ export function TodoRows({
   );
 }
 
-/** A done row's meta: a quiz's mark or that it waits for one, then the day. */
+/** A Done tab row's meta: a quiz's mark or that it waits for one, then the day;
+ * closed undone, that and the day it closed. */
 function doneMeta(a: Assignment) {
+  if (!a.mine?.done)
+    return [
+      m.assignment_not_done(),
+      a.closedAt && m.assignment_closed_on({ date: dayLabel(a.closedAt) }),
+    ]
+      .filter(Boolean)
+      .join(' · ');
   const parts = [
     a.kind === 'marked' && a.mine?.waitingMarks
       ? m.todo_waiting_marks()

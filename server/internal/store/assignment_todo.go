@@ -31,12 +31,18 @@ const (
 
 	todoStaffRows  = `a.workspace_id = ANY($1) AND (` + todoWaiting + ` OR (` + todoOpenRows + ` AND ` + todoNamed + `))`
 	todoMemberRows = `a.workspace_id = ANY($1) AND ` + todoOpenRows + ` AND (a.assign_all OR ` + todoNamed + `)`
+
+	// The Done tab reads everything given to the caller; isFinished decides.
+	todoStaffGiven  = `a.workspace_id = ANY($1) AND NOT a.draft AND ` + todoNamed
+	todoMemberGiven = `a.workspace_id = ANY($1) AND NOT a.draft AND (a.assign_all OR ` + todoNamed + `)`
 )
 
 // ListTodo is what each class's Dashboard lists under To do, across the classes
 // the caller belongs to: answers waiting for them and what was given to them
 // and is still open, done or not. A class with nothing for them is left out.
-func (s *Store) ListTodo(ctx context.Context, userID string, now time.Time) (TodoList, error) {
+// finished lists the To do page's Done tab instead (Epo 2026-11-08): what was
+// given to them that they finished or that closed, open or not.
+func (s *Store) ListTodo(ctx context.Context, userID string, now time.Time, finished bool) (TodoList, error) {
 	out := TodoList{Workspaces: []TodoWorkspace{}}
 	rows, err := s.pool.Query(ctx, `SELECT w.id, w.name, w.icon_id, w.user_id=$1 OR COALESCE(wm.role='editor', false)
 		FROM workspaces w
@@ -73,11 +79,15 @@ func (s *Store) ListTodo(ctx context.Context, userID string, now time.Time) (Tod
 	}
 	rows.Close()
 
+	staffRows, memberRows, keep := todoStaffRows, todoMemberRows, isTodo
+	if finished {
+		staffRows, memberRows, keep = todoStaffGiven, todoMemberGiven, isFinished
+	}
 	for _, group := range []struct {
 		ids   []string
 		staff bool
 		where string
-	}{{staff, true, todoStaffRows}, {members, false, todoMemberRows}} {
+	}{{staff, true, staffRows}, {members, false, memberRows}} {
 		if len(group.ids) == 0 {
 			continue
 		}
@@ -86,7 +96,7 @@ func (s *Store) ListTodo(ctx context.Context, userID string, now time.Time) (Tod
 			return out, err
 		}
 		for _, a := range list {
-			if isTodo(a) {
+			if keep(a) {
 				c := classes[a.WorkspaceID]
 				c.Items = append(c.Items, a)
 			}
@@ -110,6 +120,11 @@ func isTodo(a Assignment) bool {
 		return true
 	}
 	return a.Mine != nil && !a.Draft && a.ClosedAt == nil
+}
+
+// isFinished: work given to the caller that they did or that closed.
+func isFinished(a Assignment) bool {
+	return a.Mine != nil && !a.Draft && (a.Mine.Done || a.ClosedAt != nil)
 }
 
 // todoBefore: the soonest due first, then those with no due date, newest first.

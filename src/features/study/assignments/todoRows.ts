@@ -36,7 +36,7 @@ const time = (iso: string | undefined, missing: number) =>
 /** A row's place, smallest first; work with no date goes last. */
 const KEY: Record<TodoSort, (a: Assignment) => number> = {
   class: (a) => time(a.dueAt, Number.POSITIVE_INFINITY),
-  done: (a) => -time(a.mine?.doneAt, 0),
+  done: (a) => -time(a.mine?.doneAt ?? a.closedAt, 0),
   due: (a) => time(a.dueAt, Number.POSITIVE_INFINITY),
   posted: (a) => -Date.parse(a.postedAt),
 };
@@ -44,8 +44,9 @@ const compare = (x: number, y: number) => (x === y ? 0 : x < y ? -1 : 1);
 const typeOf = (a: Assignment): TodoType =>
   a.kind === 'marked' ? 'quiz' : 'task';
 
-/** The To do page's sections for a tab: a class with something to show, its
- * rows in the sort's order. Classes go by their first row; by due, those with
+/** The To do page's sections for a tab, from that tab's list: a class with
+ * something to show, its rows in the sort's order. Done goes by the day it was
+ * done, or closed if it never was. Classes go by their first row; by due, those with
  * answers waiting come first, and Class goes by name. */
 export function todoSections(workspaces: TodoWorkspace[], view: TodoView) {
   const key = KEY[view.sort];
@@ -60,9 +61,13 @@ export function todoSections(workspaces: TodoWorkspace[], view: TodoView) {
       (w) => view.classes.length === 0 || view.classes.includes(w.workspaceId)
     )
     .map((workspace) => {
-      const rows = todoRows(workspace.items, workspace.manages);
-      const shown = order(view.tab === 'done' ? rows.done : rows.open);
-      const toApprove = view.tab === 'done' ? [] : order(rows.toApprove);
+      // The Done tab's list (todoDoneQuery) is all done or closed already.
+      const rows =
+        view.tab === 'done'
+          ? { open: workspace.items, toApprove: [] }
+          : todoRows(workspace.items, workspace.manages);
+      const shown = order(rows.open);
+      const toApprove = order(rows.toApprove);
       return {
         first: Math.min(...[...toApprove, ...shown].map(key)),
         shown,

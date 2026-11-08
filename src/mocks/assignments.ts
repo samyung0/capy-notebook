@@ -1138,8 +1138,10 @@ export const assignmentHandlers = (viewer: Viewer) => {
     return attempt && row ? { attempt, row } : null;
   };
   return [
-    http.get('/api/todo', () => {
+    http.get('/api/todo', ({ request }) => {
       seed();
+      // ?done=true: the Done tab, what the viewer did or what closed.
+      const finished = new URL(request.url).searchParams.get('done') === 'true';
       const workspaces = db.workspaces
         .filter((ws) => ws.kind === 'class')
         .map((ws) => ({
@@ -1147,10 +1149,11 @@ export const assignmentHandlers = (viewer: Viewer) => {
           items: [...rows.values()]
             .filter((row) => row.workspaceId === ws.id)
             .map((row) => toAssignment(row, viewer))
-            .filter(
-              (a) =>
-                (a.manage?.toApprove ?? 0) > 0 ||
-                (a.mine && !a.draft && !a.closedAt)
+            .filter((a) =>
+              finished
+                ? a.mine && !a.draft && (a.mine.done || a.closedAt)
+                : (a.manage?.toApprove ?? 0) > 0 ||
+                  (a.mine && !a.draft && !a.closedAt)
             ),
           manages: viewer === 'owner',
           name: ws.name,
