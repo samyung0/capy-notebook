@@ -13,6 +13,7 @@ import {
   markPoints,
   type PlaneElementModel,
   type PlaneView,
+  POLAR_SPOKE,
   setPlaneEditor,
 } from './boardPlane';
 import { mathsIcon } from './boardTools';
@@ -107,6 +108,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     model.y0 - cardH / 2 / model.ppu,
   ];
   const view: PlaneView = {
+    polar: model.polar,
     ppu: model.ppu,
     x0: centre[0] - start.width / 2 / model.ppu,
     y0: centre[1] + start.height / 2 / model.ppu,
@@ -120,10 +122,15 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     view.y0 - py / view.ppu,
   ];
   const minor = () => minorStep(tickStep(view.ppu));
+  /** To grid points; on a polar plane, to where a ring crosses a spoke. */
   const snapped = (px: Vec): Vec => {
     const [x, y] = toPlane(px);
     const step = minor();
-    return [snapTo(x, step), snapTo(y, step)];
+    if (!view.polar) return [snapTo(x, step), snapTo(y, step)];
+    const r = snapTo(Math.hypot(x, y), step);
+    const spoke = (POLAR_SPOKE * Math.PI) / 180;
+    const t = snapTo(Math.atan2(y, x), spoke);
+    return [r * Math.cos(t), r * Math.sin(t)];
   };
 
   const write = (marks: Mark[]) =>

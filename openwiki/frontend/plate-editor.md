@@ -4435,8 +4435,17 @@ The board adds to BlockSuite through its own extensions (`boardTools.ts`, `board
 vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
 
 - **Toolbar:** AFFiNE's shape pieces in the eraser's fixed colours (CSS variables on
-  `.capy-board`), then three sheets that only add things: Maths (a plane card or a label), Charts (a bar or pie chart card) and Formula. The
-  toolbar and its pen touch the canvas only, never into a card. New shapes have no fill
+  `.capy-board`), then three slots of pieces drawn like AFFiNE's shapes (Epo 2026-11-08,
+  canvas NsamYcLR4imjm5Xi2fWFj2 "Picked"): Graphs (a polar disc behind a coordinate plane),
+  Charts (a pie behind bars) and Formulas (d/dx, ∫, Σ, √x). `CapyPieceSlot` runs on
+  BlockSuite's `EdgelessDraggableElementController` as the shape slot does: a piece lifts
+  under the pointer, a click or a drag picks it up, it lands where it's dropped and a new
+  one rises into the slot once it leaves the toolbar; Escape or the toolbar puts it back.
+  A finger has nothing to carry it with, so a tap puts the card in the middle of the view
+  and a drag brings it out (a second controller without click-to-carry).
+  Pieces sit round the slot's middle, so a phone's narrower slot keeps them. A formula
+  piece puts down its starter card (`placeFormula`) and opens the editor on it. There is no
+  label tool. The toolbar and its pen touch the canvas only, never into a card. New shapes have no fill
   and a black outline.
 - **Pen strokes** keep the moves inside BlockSuite's 2 px drag threshold, and a stroke
   ending back near its start (a closed circle) is no click, so it leaves no dot (local
@@ -4463,7 +4472,11 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   each time the plane is left, a card with marks takes their size at the plane's scale plus
   40 px, its top left staying put; past 1600 px it zooms out instead. Dragging a corner
   makes it Custom size, as resizing a note does. Neither is in the undo history. Pen
-  strokes over a card stay where they are, so they can stop lining up.
+  strokes over a card stay where they are, so they can stop lining up. A **polar** card
+  (`polar: true`, its origin in the middle) draws rings at the grid's steps, numbered along
+  0°, and spokes every 15° (darker every 30°, the axes every 90°) labelled where they
+  leave the card; its marks are stored as on any plane, and its editor snaps them to where
+  a ring crosses a spoke.
 - **Editing a plane** (`boardPlaneEditor.ts`, on the shell in `boardEditorShell.ts`): it
   opens over the whole board. Done leaves, as does Escape when no mark is open. Inside, the wheel pans, Ctrl or pinch zooms, and Move drags.
   Point, Line and Curve snap to the fine squares for the current zoom, so the

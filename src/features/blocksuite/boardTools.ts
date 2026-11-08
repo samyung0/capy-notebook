@@ -4,7 +4,6 @@ import {
   EdgelessShapeToolButton,
   ShapeTool,
 } from '@blocksuite/affine/gfx/shape';
-import { TextTool } from '@blocksuite/affine/gfx/text';
 import { Bound } from '@blocksuite/affine/global/gfx';
 import { SignalWatcher } from '@blocksuite/affine/global/lit';
 import { LatexExtension } from '@blocksuite/affine/inlines/latex';
@@ -38,17 +37,20 @@ import {
 } from '@blocksuite/affine/std/gfx';
 import type { ExtensionType } from '@blocksuite/affine/store';
 import {
+  EdgelessDraggableElementController,
   EdgelessToolbarToolMixin,
+  type OverlayLayer,
   SeniorToolIdentifier,
 } from '@blocksuite/affine/widgets/edgeless-toolbar';
 import { Pen01Icon } from '@hugeicons/core-free-icons';
-import { css, html, LitElement, svg, type TemplateResult } from 'lit';
+import { css, html, LitElement, nothing, svg, type TemplateResult } from 'lit';
 import { property } from 'lit/decorators.js';
+import { classMap } from 'lit/directives/class-map.js';
+import { styleMap } from 'lit/directives/style-map.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import * as Y from 'yjs';
 import { m } from '@/i18n';
 import { addChart, type ChartElementModel, openChart } from './boardChart';
-import type { ChartKind } from './boardData';
 import {
   addPlane,
   fitCard,
@@ -946,8 +948,13 @@ export const boardToolbar = [
   }),
 ];
 
-/** The formula button's action, set by the formula module. */
-let openFormula: (gfx: GfxController) => void = () => undefined;
+/** Where a formula starter was dropped, and the formula it starts with. */
+export type FormulaStart = { at: Vec; latex: string };
+
+/** The formula card's action, set by the formula module: the editor for a new
+ * formula, or a starter's card where it was dropped. */
+let openFormula: (gfx: GfxController, start?: FormulaStart) => void = () =>
+  undefined;
 export function setFormulaOpener(open: typeof openFormula) {
   openFormula = open;
 }
@@ -958,103 +965,168 @@ const NEW_CHART = {
   pie: { h: 300, w: 300 },
 } as const;
 
-/** A menu over its toolbar button, in rows of an icon and a name. */
-abstract class CapyMenu extends LitElement {
-  static override styles = [
-    POPPER_STYLES,
-    css`
-      :host {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-        width: 200px;
-        padding: 6px;
-        background: var(--affine-background-overlay-panel-color);
-        border: 1px solid var(--affine-border-color);
-        border-bottom: 0;
-        border-radius: 8px 8px 0 0;
-      }
-      button {
-        justify-content: flex-start;
-        gap: 8px;
-        width: 100%;
-        padding: 0 8px;
-        font-size: 13.5px;
-        font-weight: 500;
-        color: var(--affine-text-primary-color);
-      }
-      button svg {
-        flex: none;
-        color: var(--affine-icon-color);
-      }
-    `,
-  ];
+type PieceKind =
+  | 'bar'
+  | 'cart'
+  | 'deriv'
+  | 'int'
+  | 'pie'
+  | 'polar'
+  | 'sqrt'
+  | 'sum';
+/** A piece in a toolbar slot: its art, where it rests in a 96 × 64 slot (kept round
+ * the middle when the slot is narrower), turned by
+ * `r`°, and how far it lifts (turned by `hr`°) under the pointer. */
+type Piece = {
+  body: string;
+  dy: number;
+  h: number;
+  hr?: number;
+  kind: PieceKind;
+  r: number;
+  viewBox: string;
+  w: number;
+  x: number;
+  y: number;
+};
 
-  protected get gfx() {
-    return this.edgeless.std.get(GfxControllerIdentifier);
+/** What each Formulas piece starts its card with. */
+const FORMULA_STARTS: Partial<Record<PieceKind, string>> = {
+  deriv: String.raw`\frac{d}{dx}f(x)`,
+  int: String.raw`\int f(x)\,dx`,
+  sqrt: String.raw`\sqrt{x}`,
+  sum: String.raw`\sum_{i=1}^{n} a_i`,
+};
+
+/** Drawn like AFFiNE's shape pieces (canvas NsamYcLR4imjm5Xi2fWFj2 "Picked", Epo
+ * 2026-11-08): flat fills, cut off by the bar's bottom edge. */
+const GRAPH_PIECES: Piece[] = [
+  {
+    body: `<circle cx="26" cy="26" r="26" fill="#173654"></circle><path d="M26 1L26 51M38.5 4.35L13.5 47.65M47.65 13.5L4.35 38.5M51 26L1 26M47.65 38.5L4.35 13.5M38.5 47.65L13.5 4.35" stroke="#fff" stroke-opacity=".22" stroke-width="1"></path><circle cx="26" cy="26" r="18" fill="none" stroke="#fff" stroke-opacity=".3" stroke-width="1.3"></circle><circle cx="26" cy="26" r="9" fill="none" stroke="#fff" stroke-opacity=".3" stroke-width="1.3"></circle><path d="M26 26h25" stroke="#fff" stroke-opacity=".75" stroke-width="1.6" stroke-linecap="round"></path><path d="M34 26A8 8 0 0 0 32.13 20.86" fill="none" stroke="#f6c343" stroke-width="1.8"></path><path d="M26 26L39.79 14.43" stroke="#f6c343" stroke-width="2.6" stroke-linecap="round"></path><circle cx="39.79" cy="14.43" r="3.4" fill="#f6c343"></circle>`,
+    dy: -10,
+    h: 52,
+    kind: 'polar',
+    r: 0,
+    viewBox: '0 0 52 52',
+    w: 52,
+    x: 40,
+    y: 7,
+  },
+  {
+    body: `<rect x=".75" y=".75" width="46.5" height="46.5" rx="5" fill="#fff" stroke="#d9dde3" stroke-width="1.5"></rect><path d="M13 6v36M6 33h36" stroke="#173654" stroke-width="2.6" stroke-linecap="round"></path><path d="M8 9c4 17 9 21 16 21s12-4 16-21" fill="none" stroke="#1e96eb" stroke-width="3.2" stroke-linecap="round"></path>`,
+    dy: -11,
+    h: 48,
+    hr: -10,
+    kind: 'cart',
+    r: -7,
+    viewBox: '0 0 48 48',
+    w: 48,
+    x: 6,
+    y: 17,
+  },
+];
+
+const CHART_PIECES: Piece[] = [
+  {
+    body: `<path d="M18 20L34 20A16 16 0 0 1 8.82 33.11z" fill="#1e96eb"></path><path d="M18 20L8.82 33.11A16 16 0 0 1 22.14 4.55z" fill="#173654"></path><path d="M19.98 18.48L24.12 3.03A16 16 0 0 1 35.98 18.48z" fill="#f6c343"></path>`,
+    dy: -11,
+    h: 38,
+    kind: 'pie',
+    r: 0,
+    viewBox: '0 0 38 38',
+    w: 38,
+    x: 44,
+    y: 16,
+  },
+  {
+    body: `<rect x="0" y="18" width="9" height="30" rx="2" fill="#1e96eb"></rect><rect x="11" y="3" width="9" height="45" rx="2" fill="#173654"></rect><rect x="22" y="27" width="9" height="21" rx="2" fill="#f6c343"></rect>`,
+    dy: -9,
+    h: 46,
+    kind: 'bar',
+    r: 0,
+    viewBox: '0 0 31 46',
+    w: 31,
+    x: 22,
+    y: 25,
+  },
+];
+
+const FORMULA_PIECES: Piece[] = [
+  {
+    body: `<rect x="0" y="0" width="28" height="34" rx="4" fill="#1e96eb"></rect><text x="14" y="14" text-anchor="middle" font-family="Times New Roman, serif" font-style="italic" font-weight="700" font-size="12" fill="#fff">d</text><path d="M6 17.5h16" stroke="#fff" stroke-width="1.6" stroke-linecap="round"></path><text x="14" y="29" text-anchor="middle" font-family="Times New Roman, serif" font-style="italic" font-weight="700" font-size="12" fill="#fff">dx</text>`,
+    dy: -9,
+    h: 34,
+    hr: 12,
+    kind: 'deriv',
+    r: 8,
+    viewBox: '0 0 28 34',
+    w: 28,
+    x: 62,
+    y: 6,
+  },
+  {
+    body: `<path d="M20 6c-2-3-7-3-8.5 2.5L8.5 51c-1.2 5.5-6 6.2-8 3" fill="none" stroke="#1e96eb" stroke-width="4.6" stroke-linecap="round"></path>`,
+    dy: -10,
+    h: 60,
+    kind: 'int',
+    r: 0,
+    viewBox: '0 0 24 60',
+    w: 24,
+    x: 3,
+    y: 10,
+  },
+  {
+    body: `<path d="M30 7V3.5H4.5L18 19 4.5 34.5H30V31" fill="none" stroke="#173654" stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round"></path>`,
+    dy: -12,
+    h: 38,
+    kind: 'sum',
+    r: 0,
+    viewBox: '0 0 34 38',
+    w: 34,
+    x: 19,
+    y: 27,
+  },
+  {
+    body: `<path d="M3 27l6-3 7 18L27 4h38" fill="none" stroke="#173654" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M36 17l14 18M50 17L36 35" stroke="#173654" stroke-width="4.8" stroke-linecap="round"></path>`,
+    dy: -11,
+    h: 31,
+    kind: 'sqrt',
+    r: 0,
+    viewBox: '0 0 68 46',
+    w: 46,
+    x: 54,
+    y: 38,
+  },
+];
+
+const PIECE_SHADOW = 'drop-shadow(0 0 5px rgba(0, 0, 0, 0.2))';
+
+const pieceArt = (piece: Piece) =>
+  unsafeSVG(
+    `<svg width="${piece.w}" height="${piece.h}" viewBox="${piece.viewBox}" aria-hidden="true">${piece.body}</svg>`
+  );
+
+/** Puts down the card a piece stands for, centred where it was dropped. */
+function placePiece(gfx: GfxController, kind: PieceKind, [cx, cy]: Vec) {
+  const centred = (w: number, h: number) =>
+    new Bound(cx - w / 2, cy - h / 2, w, h);
+  if (kind === 'cart' || kind === 'polar') {
+    const { h, ppu, w } = NEW_PLANE;
+    finishPlacing(gfx, addPlane(gfx, centred(w, h), ppu, kind === 'polar'));
+  } else if (kind === 'bar' || kind === 'pie') {
+    const { h, w } = NEW_CHART[kind];
+    finishPlacing(gfx, addChart(gfx, centred(w, h), kind));
+  } else {
+    const latex = FORMULA_STARTS[kind];
+    if (latex) openFormula(gfx, { at: [cx, cy], latex });
   }
-
-  /** A new card's box, in the middle of the view. */
-  protected centred(w: number, h: number) {
-    const { centerX, centerY } = this.gfx.viewport;
-    return new Bound(centerX - w / 2, centerY - h / 2, w, h);
-  }
-
-  protected placed(id: string | undefined) {
-    finishPlacing(this.gfx, id);
-    this.onDone();
-  }
-
-  protected row(icon: string, label: string, run: () => void) {
-    return html`<button type="button" @click=${run}>
-      ${unsafeSVG(mathsIcon(icon))}${label}
-    </button>`;
-  }
-
-  @property({ attribute: false })
-  accessor edgeless!: EdgelessShapeToolButton['edgeless'];
-
-  @property({ attribute: false })
-  accessor onDone: () => void = () => undefined;
 }
 
-class CapyMathsMenu extends CapyMenu {
-  override render() {
-    return html`${this.row('plane', m.drawing_board_add_plane(), () =>
-      this.placed(
-        addPlane(
-          this.gfx,
-          this.centred(NEW_PLANE.w, NEW_PLANE.h),
-          NEW_PLANE.ppu
-        )
-      )
-    )}${this.row('label', m.drawing_board_label(), () => {
-      this.gfx.tool.setTool(TextTool);
-      this.onDone();
-    })}`;
-  }
-}
-
-class CapyChartsMenu extends CapyMenu {
-  override render() {
-    const chart = (kind: ChartKind) => () =>
-      this.placed(
-        addChart(
-          this.gfx,
-          this.centred(NEW_CHART[kind].w, NEW_CHART[kind].h),
-          kind
-        )
-      );
-    return html`${this.row(
-      'bars',
-      m.drawing_board_bar_chart(),
-      chart('bar')
-    )}${this.row('pie', m.drawing_board_pie_chart(), chart('pie'))}`;
-  }
-}
-
-/** A sheet on the toolbar beside the pen, eraser and shapes, rising on hover. */
-abstract class CapySheetButton extends EdgelessToolbarToolMixin(
+/** A slot of pieces beside the pen, eraser and shapes, as AFFiNE's shape slot works:
+ * a piece lifts under the pointer; clicking or dragging picks it up, it follows the
+ * pointer and lands where it's dropped, and once it leaves the toolbar a new one
+ * rises into the slot. Back over the toolbar it returns (Epo 2026-11-08). */
+abstract class CapyPieceSlot extends EdgelessToolbarToolMixin(
   SignalWatcher(LitElement)
 ) {
   static override styles = css`
@@ -1067,26 +1139,47 @@ abstract class CapySheetButton extends EdgelessToolbarToolMixin(
       display: block;
       width: 100%;
       height: 64px;
-      overflow: hidden;
     }
-    .art {
-      position: absolute;
-      left: 17px;
-      top: 16px;
-      line-height: 0;
-      filter: drop-shadow(0 2px 6px rgb(0 0 0 / 14%));
-      transition: transform 0.3s;
-    }
-    .wrap {
-      position: relative;
+    .box {
+      display: flex;
+      justify-content: center;
+      align-items: flex-end;
       width: 100%;
       height: 64px;
-      overflow: hidden;
-      cursor: pointer;
     }
-    .wrap:hover .art,
-    .art[data-open='true'] {
-      transform: translateY(-8px);
+    .slot {
+      /* AFFiNE's room for the pieces' shadows above and beside the slot */
+      --safe: 10px;
+      position: relative;
+      flex-shrink: 0;
+      box-sizing: border-box;
+      width: calc(100% + 2 * var(--safe));
+      height: calc(100% + var(--safe));
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .piece {
+      position: absolute;
+      line-height: 0;
+      transform: rotate(var(--r));
+      transition:
+        transform 0.3s,
+        z-index 0.1s;
+      pointer-events: auto;
+      cursor: grab;
+    }
+    .piece:hover,
+    .piece.cancel {
+      transform: translateY(var(--dy)) rotate(var(--hr));
+      z-index: 1;
+    }
+    .piece.next {
+      transform: translateY(64px) rotate(var(--r));
+      transition: transform 0.5s cubic-bezier(0.39, 0.28, 0.09, 0.95);
+      pointer-events: none;
+    }
+    .piece.next.coming {
+      transform: rotate(var(--r));
     }
   `;
 
@@ -1098,115 +1191,125 @@ abstract class CapySheetButton extends EdgelessToolbarToolMixin(
     return false;
   }
 
+  protected abstract pieces: Piece[];
   protected abstract name(): string;
-  protected abstract art(): unknown;
-  protected abstract press(): void;
+
+  /** A mouse: a click picks a piece up to carry. */
+  private drag: EdgelessDraggableElementController<Piece> | undefined;
+  /** A finger has nothing to carry it with: a tap puts the card in the middle of the
+   * view, and a drag brings it out. */
+  private touch: EdgelessDraggableElementController<Piece> | undefined;
+
+  override updated() {
+    if (this.drag || !this.edgeless || !this.toolbarContainer) return;
+    const gfx = this.edgeless.std.get(GfxControllerIdentifier);
+    const options = (clickToDrag: boolean) => ({
+      clickToDrag,
+      edgeless: this.edgeless,
+      onDrop: (element: { data: Piece }, bound: Bound) =>
+        placePiece(gfx, element.data.kind, [
+          bound.x + bound.w / 2,
+          bound.y + bound.h / 2,
+        ]),
+      onEnterOrLeaveScope: (overlay: OverlayLayer, isOutside?: boolean) => {
+        overlay.element.style.filter = isOutside ? 'none' : PIECE_SHADOW;
+      },
+      onOverlayCreated: (overlay: OverlayLayer) => {
+        overlay.element.style.filter = PIECE_SHADOW;
+      },
+      scopeElement: this.toolbarContainer ?? undefined,
+    });
+    this.drag = new EdgelessDraggableElementController(this, options(true));
+    this.touch = new EdgelessDraggableElementController(this, {
+      ...options(false),
+      onElementClick: ({ data }) =>
+        placePiece(gfx, data.kind, [
+          gfx.viewport.centerX,
+          gfx.viewport.centerY,
+        ]),
+    });
+  }
 
   override render() {
+    const states = this.touch?.states.draggingElement
+      ? this.touch.states
+      : this.drag?.states;
+    const { cancelled, dragOut, draggingElement } = states ?? {};
+    const held = draggingElement?.data.kind;
     return html`<edgeless-toolbar-button
-      .tooltip=${this.popper ? '' : this.name()}
+      .tooltip=${held ? '' : this.name()}
       .tooltipOffset=${5}
-      @click=${() => this.press()}
     >
-      <div class="wrap">
-        <span class="art" data-open=${!!this.popper}>
-          <svg height="62" viewBox="0 0 62 62" width="62">${this.art()}</svg>
-        </span>
-      </div>
+      <div class="box"><div class="slot">
+        ${this.pieces.map((piece) => {
+          const isHeld = held === piece.kind;
+          const vars = {
+            '--dy': `${piece.dy}px`,
+            '--hr': `${piece.hr ?? piece.r}deg`,
+            '--r': `${piece.r}deg`,
+            filter: PIECE_SHADOW,
+            // From the slot's middle, as AFFiNE's pieces are: narrower on phones.
+            left: `calc(50% + ${piece.x - 48}px)`,
+            top: `${piece.y + 10}px`,
+          };
+          return html`${
+            isHeld
+              ? html`<div
+                  class=${classMap({
+                    coming: !!dragOut && !cancelled,
+                    next: true,
+                    piece: true,
+                  })}
+                  style=${styleMap(vars)}
+                >
+                  ${pieceArt(piece)}
+                </div>`
+              : nothing
+          }<div
+            class=${classMap({ cancel: isHeld && !dragOut, piece: true })}
+            data-kind=${piece.kind}
+            style=${styleMap({ ...vars, opacity: isHeld ? '0' : '1' })}
+            @click=${(event: MouseEvent) => event.stopPropagation()}
+            @mousedown=${(event: MouseEvent) =>
+              this.drag?.onMouseDown(event, {
+                data: piece,
+                preview: pieceArt(piece),
+              })}
+            @touchstart=${(event: TouchEvent) => {
+              // No mouse events after it, which would pick the piece up to carry.
+              event.preventDefault();
+              this.touch?.onTouchStart(event, {
+                data: piece,
+                preview: pieceArt(piece),
+              });
+            }}
+          >
+            ${pieceArt(piece)}
+          </div>`;
+        })}
+      </div></div>
     </edgeless-toolbar-button>`;
   }
 }
 
-/** A sheet that opens a menu of what it adds. */
-abstract class CapyMenuButton extends CapySheetButton {
-  protected abstract menu: string;
-
-  private readonly closeMenu = () => {
-    closePopper(this);
-    document.removeEventListener('pointerdown', this.onOutside, true);
-    this.requestUpdate();
-  };
-
-  private readonly onOutside = (event: PointerEvent) => {
-    if (!event.composedPath().includes(this)) this.closeMenu();
-  };
-
-  protected press() {
-    if (this.popper) {
-      this.closeMenu();
-      return;
-    }
-    openPopper(this, this.menu, 100, {
-      marginLeft: 'auto',
-      marginRight: '10px',
-      maxWidth: '100%',
-      width: 'fit-content',
-    });
-    const menu = (this.popper as { element: CapyMenu } | null)?.element;
-    if (menu) menu.onDone = this.closeMenu;
-    document.addEventListener('pointerdown', this.onOutside, true);
-    this.requestUpdate();
-  }
-
-  override disconnectedCallback() {
-    super.disconnectedCallback();
-    document.removeEventListener('pointerdown', this.onOutside, true);
-  }
-}
-
-/** Graph paper with a curve. */
-class CapyMathsButton extends CapyMenuButton {
-  protected menu = 'capy-maths-menu';
-
+class CapyGraphSlot extends CapyPieceSlot {
+  protected pieces = GRAPH_PIECES;
   protected name() {
-    return m.drawing_board_maths();
-  }
-
-  protected art() {
-    return svg`<g transform="rotate(-5 31 31)">
-      <rect fill="#fff" height="60" rx="3" stroke="#dfe1e6" width="54" x="4" y="4"></rect>
-      <path d="M13 4v60M22 4v60M31 4v60M40 4v60M49 4v60M4 13h54M4 22h54M4 31h54M4 40h54M4 49h54" stroke="#e8ecf1"></path>
-      <path d="M13 4v60M4 40h54" stroke="#85858a" stroke-width="1.3"></path>
-      <path d="M8 14c5 21 10 31 17 31s12-12 21-35" fill="none" stroke="#2b9be8" stroke-linecap="round" stroke-width="2.4"></path>
-    </g>`;
+    return m.drawing_board_graphs();
   }
 }
 
-/** A sheet with bars on it. */
-class CapyChartsButton extends CapyMenuButton {
-  protected menu = 'capy-charts-menu';
-
+class CapyChartSlot extends CapyPieceSlot {
+  protected pieces = CHART_PIECES;
   protected name() {
     return m.drawing_board_charts();
   }
-
-  protected art() {
-    return svg`<g transform="rotate(4 31 31)">
-      <rect fill="#fff" height="60" rx="3" stroke="#dfe1e6" width="54" x="4" y="4"></rect>
-      <path d="M12 12v32h38" fill="none" stroke="#85858a" stroke-width="1.3"></path>
-      <rect fill="#2b9be8" height="24" width="8" x="17" y="20"></rect>
-      <rect fill="#f6c343" height="14" width="8" x="28" y="30"></rect>
-      <rect fill="#1c3a5e" height="19" width="8" x="39" y="25"></rect>
-    </g>`;
-  }
 }
 
-/** A sheet with a formula on it. Pressing it opens the formula card. */
-class CapyFormulaButton extends CapySheetButton {
+class CapyFormulaSlot extends CapyPieceSlot {
+  protected pieces = FORMULA_PIECES;
   protected name() {
-    return m.drawing_board_formula();
-  }
-
-  protected art() {
-    return svg`<g transform="rotate(-3 31 31)">
-      <rect fill="#fff" height="60" rx="3" stroke="#dfe1e6" width="54" x="4" y="4"></rect>
-      <path d="M12 26l3-2 4 13 5-24h24" fill="none" stroke="#1c3a5e" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2"></path>
-      <path d="M31 19l10 12M41 19 31 31" fill="none" stroke="#2b9be8" stroke-linecap="round" stroke-width="2.4"></path>
-    </g>`;
-  }
-
-  protected press() {
-    openFormula(this.edgeless.std.get(GfxControllerIdentifier));
+    return m.drawing_board_formulas();
   }
 }
 
@@ -1225,51 +1328,64 @@ export const noLatexMarkdown: ExtensionType = {
   },
 };
 
+/** A toolbar slot: its element gets the board and the toolbar, which a piece leaves
+ * to be placed. */
 const seniorTool = (
   id: string,
   name: () => string,
-  content: (block: BlockComponent) => TemplateResult
+  content: (block: BlockComponent, toolbar: HTMLElement) => TemplateResult
 ): ExtensionType => ({
   setup: (di) => {
     di.addImpl(
       SeniorToolIdentifier(id),
       () =>
-        ({ block }: { block: BlockComponent }) => ({
-          content: content(block),
-          name: name(),
-        })
+        ({
+          block,
+          toolbarContainer,
+        }: {
+          block: BlockComponent;
+          toolbarContainer: HTMLElement;
+        }) => ({ content: content(block, toolbarContainer), name: name() })
     );
   },
 });
 
-/** The toolbar's sheets, after the shapes. */
+/** The toolbar's slots, after the shapes. */
 export const sheetTools = [
   seniorTool(
-    'capy-maths',
-    m.drawing_board_maths,
-    (block) => html`<capy-maths-button .edgeless=${block}></capy-maths-button>`
+    'capy-graphs',
+    m.drawing_board_graphs,
+    (block, toolbar) =>
+      html`<capy-graph-slot
+        .edgeless=${block}
+        .toolbarContainer=${toolbar}
+      ></capy-graph-slot>`
   ),
   seniorTool(
     'capy-charts',
     m.drawing_board_charts,
-    (block) =>
-      html`<capy-charts-button .edgeless=${block}></capy-charts-button>`
+    (block, toolbar) =>
+      html`<capy-chart-slot
+        .edgeless=${block}
+        .toolbarContainer=${toolbar}
+      ></capy-chart-slot>`
   ),
   seniorTool(
-    'capy-formula',
-    m.drawing_board_formula,
-    (block) =>
-      html`<capy-formula-button .edgeless=${block}></capy-formula-button>`
+    'capy-formulas',
+    m.drawing_board_formulas,
+    (block, toolbar) =>
+      html`<capy-formula-slot
+        .edgeless=${block}
+        .toolbarContainer=${toolbar}
+      ></capy-formula-slot>`
   ),
 ];
 
 for (const [tag, element] of [
   ['capy-shape-panel', CapyShapePanel],
   ['capy-shape-button', CapyShapeButton],
-  ['capy-maths-menu', CapyMathsMenu],
-  ['capy-maths-button', CapyMathsButton],
-  ['capy-charts-menu', CapyChartsMenu],
-  ['capy-charts-button', CapyChartsButton],
-  ['capy-formula-button', CapyFormulaButton],
+  ['capy-graph-slot', CapyGraphSlot],
+  ['capy-chart-slot', CapyChartSlot],
+  ['capy-formula-slot', CapyFormulaSlot],
 ] as const)
   if (!customElements.get(tag)) customElements.define(tag, element);

@@ -24,6 +24,24 @@ async function openBoard(page: Page, url = '/dev/drawing') {
   );
 }
 
+/** Picks a piece out of a toolbar slot (a click lifts it) and drops it in the middle
+ * of the board. */
+async function placePiece(page: Page, slot: string, kind: string) {
+  // The dev scenario panel sits over the toolbar's right end.
+  await page.addStyleTag({
+    content: '[data-testid="mock-scenario-panel"] { display: none; }',
+  });
+  await page.locator(`${slot} .piece[data-kind="${kind}"]`).first().click();
+  const board = await page.locator('affine-edgeless-root').boundingBox();
+  if (!board) throw new Error('no board');
+  const middle = [
+    board.x + board.width / 2,
+    board.y + board.height * 0.4,
+  ] as const;
+  await page.mouse.move(...middle, { steps: 6 });
+  await page.mouse.click(...middle);
+}
+
 /** A point on the first card, from 0 to 1 across it, on the page. */
 async function onCard(page: Page) {
   const box = (await page.evaluate(() => {
@@ -105,9 +123,7 @@ const toImage = (page: Page) =>
 const save = (page: Page) =>
   page.evaluate('window.__board.save().doc') as Promise<string>;
 
-test('draws over the card, labels, and reopens from what it saved', async ({
-  page,
-}) => {
+test('draws over the card and reopens from what it saved', async ({ page }) => {
   test.slow();
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -128,27 +144,14 @@ test('draws over the card, labels, and reopens from what it saved', async ({
   await expect(page.locator('edgeless-note-menu')).toBeVisible();
   await expect(page.locator('edgeless-note-menu .divider')).toHaveCount(0);
 
-  // A label goes on top of the card from the maths menu.
-  await page.keyboard.press('v');
-  await page.locator('capy-maths-button').first().click();
-  await page.getByRole('button', { exact: true, name: 'Label' }).click();
-  await page.mouse.click(...at(0.7, 0.3));
-  await page.keyboard.type('label');
-  // A blank line in a label is one line tall.
-  await page.keyboard.press('Enter');
-  const blank = page.locator('edgeless-text-editor v-line').nth(1);
-  expect((await blank.boundingBox())?.height).toBeLessThan(60);
-  await page.keyboard.press('Backspace');
-  await page.mouse.click(...at(0.05, 0.9));
-  await expect.poll(() => canvas(page)).toEqual(['plane', 'brush', 'text']);
   expect(errors).toEqual([]);
 
-  // The stroke and label reach the image.
+  // The stroke reaches the image.
   expect(await inkIn(page, await toImage(page))).toBeGreaterThan(before);
 
   const saved = await save(page);
   await page.evaluate(`window.__reopen(${JSON.stringify(saved)})`);
-  await expect.poll(() => canvas(page)).toEqual(['plane', 'brush', 'text']);
+  await expect.poll(() => canvas(page)).toEqual(['plane', 'brush']);
 });
 
 test('a note card takes typing and leaves $$ as text', async ({ page }) => {
@@ -671,14 +674,12 @@ test('bar and pie charts are their own cards, with no coordinates', async ({
         words: bars?.map(({ label }) => label),
       };
     });
-  const charts = async (name: string) => {
-    await page.locator('capy-charts-button').first().click();
-    await page.getByRole('button', { exact: true, name }).click();
-  };
+  const charts = (kind: 'bar' | 'pie') =>
+    placePiece(page, 'capy-chart-slot', kind);
   const toolbar = page.locator('affine-toolbar-widget');
 
   // A bar chart: three places to start from. A plane's Size isn't on its toolbar.
-  await charts('Bar chart');
+  await charts('bar');
   await expect(toolbar.getByLabel('Edit the chart')).toBeVisible();
   await expect(
     toolbar.locator('.label', { hasText: 'Fit to size' })
@@ -725,7 +726,7 @@ test('bar and pie charts are their own cards, with no coordinates', async ({
 
   // A pie: a line at each click, a label, and the eraser.
   await page.keyboard.press('v');
-  await charts('Pie chart');
+  await charts('pie');
   await toolbar.getByLabel('Edit the chart').click();
   await page.mouse.click(...at(0.7, 0.5));
   await expect.poll(async () => (await chart()).spokes).toBe(2);
@@ -772,16 +773,17 @@ test('a formula that cannot be read stays open, and a root stops at its contents
 }) => {
   test.slow();
   await openBoard(page);
-  await page.locator('capy-formula-button').first().click();
+  // The √x piece puts down its card and opens it to fill in.
+  await placePiece(page, 'capy-formula-slot', 'sqrt');
   const field = page.locator('.capy-formula math-field');
   await field.waitFor();
+  await expect.poll(() => canvas(page)).toEqual(['plane', 'formula']);
   await field.evaluate((element) => {
     (element as HTMLInputElement).value = '\\nosuchcommand{';
   });
   await page.locator('.capy-formula .primary').click();
   await expect(page.locator('.capy-formula-error')).toBeVisible();
   await expect(field).toBeVisible();
-  await expect.poll(() => canvas(page)).toEqual(['plane']);
 
   await field.evaluate((element) => {
     (element as HTMLInputElement).value = '\\sqrt{x}+y';
@@ -868,13 +870,13 @@ test.describe('with a finger', () => {
       content: '[data-testid="mock-scenario-panel"] { display: none; }',
     });
     await page.keyboard.press('Escape');
-    // Two to a page on a phone: Note and Pen, Shapes and Maths, Charts and Formula.
+    // Two to a page on a phone: Note and Pen, Shapes and Graphs, Charts and Formulas.
     const next = page.locator('.senior-nav-button-wrapper.next icon-button');
     await next.tap();
-    await expect(page.locator('capy-maths-button')).toHaveCount(1);
+    await expect(page.locator('capy-graph-slot')).toHaveCount(1);
     await next.tap();
-    await page.locator('capy-charts-button').first().tap();
-    await page.getByRole('button', { exact: true, name: 'Bar chart' }).tap();
+    // A tap puts the bars in the middle of the view.
+    await page.locator('capy-chart-slot .piece[data-kind="bar"]').tap();
     await page
       .locator('affine-toolbar-widget')
       .getByLabel('Edit the chart')

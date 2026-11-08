@@ -96,6 +96,7 @@ function elementProblem(fields: Fields): string | null {
       (fields.ppu as number) > 0 &&
       finite(fields.x0) &&
       finite(fields.y0) &&
+      (fields.polar === undefined || typeof fields.polar === 'boolean') &&
       listUpTo(fields.marks, MARKS_MAX)
       ? null
       : 'plane fields';

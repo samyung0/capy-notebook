@@ -293,7 +293,25 @@ function drawPlane(box: Box, fields: Fields, pen: Pen) {
   const Y = (v: number) => y + (y0 - v) * ppu;
   const step = tickStep(ppu);
   let grid = '';
-  if (step * ppu > pen.pixel * 6) {
+  if (step * ppu > pen.pixel * 6 && fields.polar === true) {
+    // Rings round the origin and a spoke every 30°, out to the farthest corner.
+    const [ox, oy] = [X(0), Y(0)];
+    const far = Math.max(
+      ...[
+        [x, y],
+        [x + w, y],
+        [x, y + h],
+        [x + w, y + h],
+      ].map(([cx, cy]) => Math.hypot(cx - ox, cy - oy))
+    );
+    for (let r = step * ppu; r <= far; r += step * ppu)
+      grid += `M${num(ox + r)} ${num(oy)}a${num(r)} ${num(r)} 0 1 0 ${num(-2 * r)} 0a${num(r)} ${num(r)} 0 1 0 ${num(2 * r)} 0`;
+    for (let a = 30; a < 360; a += 30) {
+      if (a % 90 === 0) continue;
+      const t = (a * Math.PI) / 180;
+      grid += `M${num(ox)} ${num(oy)}L${num(ox + far * Math.cos(t))} ${num(oy - far * Math.sin(t))}`;
+    }
+  } else if (step * ppu > pen.pixel * 6) {
     for (const u of ticks(x0, x0 + w / ppu, step))
       grid += `M${num(X(u))} ${num(y)}V${num(y + h)}`;
     for (const v of ticks(y0 - h / ppu, y0, step))
