@@ -284,7 +284,7 @@ func newAssignmentFixture(t *testing.T, label string) assignmentFixture {
 func (f assignmentFixture) form(t *testing.T, due time.Time) AssignmentForm {
 	t.Helper()
 	return AssignmentForm{Kind: AssignmentMarked, Title: "Paper", QuizID: f.quiz.ID, Questions: frozenFixture(t),
-		DueAt: &due, Attempts: 1, AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: true, Files: []AssignmentFileRef{}}
+		DueAt: &due, Attempts: 1, AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterSubmit, Files: []AssignmentFileRef{}}
 }
 
 // TestAssignmentRun walks a marked assignment: created with its quiz refused to
@@ -511,7 +511,7 @@ func TestAssignmentAssignTo(t *testing.T) {
 		t.Fatalf("all members = %+v manage %+v, err %v", staff, staff.Manage, err)
 	}
 
-	form := AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1, AssignAll: false, Assignees: []string{f.viewer, f.user}, Marking: MarkingAIApprove, Files: []AssignmentFileRef{}}
+	form := AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1, AssignAll: false, Assignees: []string{f.viewer, f.user}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, Files: []AssignmentFileRef{}}
 	named, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
@@ -1791,7 +1791,7 @@ func TestPersonalWorkspaceStartsNoAssignment(t *testing.T) {
 		t.Fatal(err)
 	}
 	unmarked, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1,
-		AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, Files: []AssignmentFileRef{}}, now)
+		AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, Files: []AssignmentFileRef{}}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2231,7 +2231,7 @@ func TestLockedOwnerStartsNoAssignment(t *testing.T) {
 		t.Fatal(err)
 	}
 	unmarked, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1,
-		AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, Files: []AssignmentFileRef{}}, now)
+		AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, Files: []AssignmentFileRef{}}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2327,7 +2327,7 @@ func TestMovingAFileLeavesItsAssignments(t *testing.T) {
 	now := time.Now().UTC()
 	file := uploadWorkspaceFile(t, f.s, f.user, f.ws.ID)
 	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1,
-		AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, Files: []AssignmentFileRef{{FileID: file.ID}}}, now)
+		AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, Files: []AssignmentFileRef{{FileID: file.ID}}}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2739,5 +2739,44 @@ func TestAssignmentSaysItsQuizIsTrashed(t *testing.T) {
 	}
 	if !got.Manage.QuizTrashed {
 		t.Fatal("a trashed quiz doesn't read as trashed")
+	}
+}
+
+// Answers shown after it closes (Epo 2026-11-08, mock C3): a member's results
+// carry their marks but no keys while classmates can still answer, and the keys
+// once it closes.
+func TestAnswersShownAfterClose(t *testing.T) {
+	f := newAssignmentFixture(t, "answers-after-close")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	form := f.form(t, now.Add(time.Hour))
+	form.ShowAnswers = AnswersAfterClose
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.ID, map[string]any{"p3": "The membrane is dilute."}, now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	open, err := f.s.GetAssignmentAttempt(ctx, f.viewer, run.ID, now.Add(2*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if open.ShowAnswers || openPart(t, open.Questions)["markscheme"] != nil {
+		t.Fatalf("keys while open: %+v", openPart(t, open.Questions))
+	}
+	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	closed, err := f.s.GetAssignmentAttempt(ctx, f.viewer, run.ID, now.Add(2*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !closed.ShowAnswers || openPart(t, closed.Questions)["markscheme"] == nil {
+		t.Fatalf("no keys after closing: %+v", openPart(t, closed.Questions))
 	}
 }

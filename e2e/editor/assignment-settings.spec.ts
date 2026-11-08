@@ -112,7 +112,7 @@ test.describe('as a member', () => {
           marking: 'ai_approve',
           noLate: false,
           quizId: 'qz_bio_near',
-          showAnswers: true,
+          showAnswers: 'submitted',
           shuffle: false,
           title: 'Assigned while open',
         }),

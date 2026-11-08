@@ -129,7 +129,7 @@ export function NewAssignmentDialog({
       marking: manage?.marking ?? 'ai_approve',
       noLate: existing?.noLate ?? false,
       quizId: manage?.quizId ?? presetQuizId,
-      showAnswers: manage?.showAnswers ?? true,
+      showAnswers: manage?.showAnswers ?? 'closed',
       shuffle: manage?.shuffle ?? false,
       timeLimitMin: existing?.timeLimitMin,
       title:
@@ -468,8 +468,9 @@ export function NewAssignmentDialog({
           </div>
           {kind === 'marked' && (
             <div className="flex flex-col gap-2 pt-0.5">
-              {/* One dropdown for every AI-marked part (A4, Epo 2026-11-06). */}
-              <div className="mb-1 max-w-75">
+              {/* Marking (A4, Epo 2026-11-06) beside when members read the
+                  keys (C3, Epo 2026-11-08). */}
+              <div className="mb-1 grid gap-4 sm:grid-cols-2">
                 <Field label={m.assignment_field_marking()}>
                   <Controller
                     control={control}
@@ -499,12 +500,36 @@ export function NewAssignmentDialog({
                     )}
                   />
                 </Field>
+                <Field label={m.assignment_field_answers()}>
+                  <Controller
+                    control={control}
+                    name="showAnswers"
+                    render={({ field }) => (
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                      >
+                        <SelectTrigger
+                          aria-label={m.assignment_field_answers()}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="closed">
+                            {m.assignment_answers_closed()}
+                          </SelectItem>
+                          <SelectItem value="submitted">
+                            {m.assignment_answers_submitted()}
+                          </SelectItem>
+                          <SelectItem value="never">
+                            {m.assignment_answers_never()}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                </Field>
               </div>
-              <SwitchRow
-                control={control}
-                label={m.assignment_switch_answers()}
-                name="showAnswers"
-              />
               <SwitchRow
                 control={control}
                 label={m.assignment_switch_shuffle()}
@@ -616,7 +641,7 @@ function SwitchRow({
 }: {
   control: Control<AssignmentFormReq>;
   label: string;
-  name: 'draft' | 'noLate' | 'showAnswers' | 'shuffle';
+  name: 'draft' | 'noLate' | 'shuffle';
 }) {
   return (
     <Controller

@@ -173,7 +173,7 @@ for (const { screen, width } of SCREENS) {
           marking: 'ai_approve',
           noLate: false,
           quizId: 'qz_2',
-          showAnswers: true,
+          showAnswers: 'submitted',
           shuffle: false,
           title: 'Drawn answers',
         }),

@@ -770,7 +770,7 @@ draft or published: a draft is invisible to members, and publishing posts it.
 
 | Table or column | Holds |
 | --- | --- |
-| `assignments` | Kind, title, `source_quiz_id`, the frozen `questions` with their keys, `question_count`, `total_marks`, `due_at`, `time_limit_min`, `attempts_allowed`, `no_late`, `late_penalty_pct`, `assign_all`, `draft`, `marking` (`ai_approve`, `ai` or `manual`, migration 0157), `show_answers`, `shuffle`, `posted_at`, `closed_at` (closed by hand; a No late submissions one closes from its due date without it), `released_at` (its quiz became practice, once) |
+| `assignments` | Kind, title, `source_quiz_id`, the frozen `questions` with their keys, `question_count`, `total_marks`, `due_at`, `time_limit_min`, `attempts_allowed`, `no_late`, `late_penalty_pct`, `assign_all`, `draft`, `marking` (`ai_approve`, `ai` or `manual`, migration 0157), `answers_shown` (`closed`, `submitted` or `never`, migration 0159), `shuffle`, `posted_at`, `closed_at` (closed by hand; a No late submissions one closes from its due date without it), `released_at` (its quiz became practice, once) |
 | `assignment_assignees` | Picked names and a staff member's own "You" |
 | `assignment_files` | An unmarked assignment's files and materials, in order; a file moved to another workspace leaves (`moveFileTx`) |
 | `assignment_done` | A member's tick |
@@ -804,8 +804,8 @@ still delete an assignment, and Republish, which writes, is refused for them. Th
 attempt at it (`frozenAssetReadable`), never another member, and they paste for
 nobody (`AdoptEditorAssets`).
 Members are only ever served this copy:
-answer-free while running (`questions.LearnerViews`), with keys only after
-submitting if Show answers is on.
+answer-free while running (`questions.LearnerViews`), with keys after
+submitting only as Show answers allows (below).
 
 **One row** (Epo 2026-11-04). A quiz and its assignment are the same content: lists
 hold one row, and making an assignment changes nothing about the quiz. Whether it
@@ -975,9 +975,13 @@ and an earlier one marked after the release moves its mark alone.
 **Results** (A5). The mark top right is marks decided over marks decided, so a
 waiting part never reads as lost; Submitted (A4) says the same as "Your mark so
 far". Right, partly, wrong and not marked counts sit above every question, which
-opens to its answer, marking points and worked solution. Show answers off leaves
-marks and comments and removes keys, marking points and solutions on the server
-(`gradedWithoutKeys`). Practise again shows once its quiz is practice. The top right
+opens to its answer, marking points and worked solution. Show answers (C3, Epo
+2026-11-08) picks when a member reads those: After it closes (the default: closed
+by hand, or at the due date under No late submissions), Right after submitting, or
+Never. Until then the server leaves marks and comments and removes keys, marking
+points and solutions (`gradedWithoutKeys`), so an early submitter has no answers to
+pass on while classmates still answer; per-part marks still show on submit.
+Reopening hides the keys again. Practise again shows once its quiz is practice. The top right
 shows the mark after any late penalty, with the unpenalised mark under it.
 
 **The report** (G3, G3m, A3; `GET /api/assignments/{id}/report`, owner and editor
@@ -997,7 +1001,7 @@ pane starts from it, so Approve saves what shows; changing a mark approves it to
 A rule the answer broke shows as a warning above its marking points (red for copying
 and instructions to the marker, amber for any other), with an icon on its row. Clear
 warning takes it off at once (`clearWarning`), and Approve keeps it for the member
-unless it was cleared. With Show answers off a member reads no warning until the
+unless it was cleared. While the keys are hidden from them a member reads no warning until the
 assignment closes, since it could quote the marking scheme while they can still
 resubmit; reopening hides it again.
 `POST /api/assignments/{id}/approve-ai-marks` takes every AI mark on one question

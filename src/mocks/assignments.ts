@@ -56,7 +56,7 @@ type Row = {
   assignees: string[];
   draft: boolean;
   marking: AssignmentFormReq['marking'];
-  showAnswers: boolean;
+  showAnswers: AssignmentFormReq['showAnswers'];
   shuffle: boolean;
   files: { fileId?: string; materialId?: string }[];
 };
@@ -411,7 +411,7 @@ function seed() {
     latePenaltyPct: 0,
     marking: 'ai_approve' as const,
     noLate: false,
-    showAnswers: true,
+    showAnswers: 'submitted' as const,
     shuffle: false,
     workspaceId: WS,
   };
@@ -818,7 +818,10 @@ function attemptView(attempt: Attempt, row: Row, viewer: Viewer) {
       waitingAnswers: 0,
       waitingMarks: 0,
     } satisfies AssignmentAttempt;
-  const show = viewer === 'owner' || row.showAnswers;
+  const show =
+    viewer === 'owner' ||
+    row.showAnswers === 'submitted' ||
+    (row.showAnswers === 'closed' && !!closedAtOf(row));
   return {
     ...common,
     ...totals(attempt.graded),
@@ -1198,7 +1201,7 @@ export const assignmentHandlers = (viewer: Viewer) => {
           noLate: false,
           postedAt: new Date().toISOString(),
           quizId: body.quizId,
-          showAnswers: true,
+          showAnswers: 'closed' as const,
           shuffle: false,
           title: body.title,
           workspaceId: String(params.id),

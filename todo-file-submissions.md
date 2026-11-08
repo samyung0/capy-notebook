@@ -347,13 +347,11 @@ O2. **Settled (Epo 2026-11-08, "no need unless its practice"):** on an
     assignment only the owner presses Mark with AI; a member re-checks only in
     their own practice. This is unchanged from today, so nothing is recorded.
 
-R. **When answers are shown (mock C3):**
-   - Replace the "Show answers after submitting" switch with a Show answers
-     dropdown: After it closes (default) / Right after submitting / Never.
-   - Marks keep showing on submit.
-   - Also: should per-question right/wrong wait for closing too? For multiple
-     choice it gives the answer away as well, which is Moodle's "Whether
-     correct" option.
+R. **Built (Epo 2026-11-08, "its only a select right? otherwise just build
+   first and lets see"):** the switch is now a Show answers select, After it
+   closes (default) / Right after submitting / Never (migration 0159). Marks
+   and per-part right/wrong still show on submit; whether right/wrong should
+   wait too is for Epo to judge on the build.
 
 O3. **Untimed assignments without uploads** open straight into the attempt,
     so they have no start dialog for the storage warning. Should a one-line

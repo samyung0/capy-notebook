@@ -130,7 +130,7 @@ func TestAIWarningStaysHiddenWithShowAnswersOff(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	form := f.form(t, now.Add(time.Hour))
-	form.Marking, form.ShowAnswers = MarkingAI, false
+	form.Marking, form.ShowAnswers = MarkingAI, AnswersNever
 	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)

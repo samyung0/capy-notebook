@@ -64,7 +64,9 @@ vi.mock('@/components/ui/Dialog', () => ({
   ),
 }));
 vi.mock('@/components/ui/Select', () => ({
-  Select: pass,
+  Select: ({ children, value }: { children?: ReactNode; value?: string }) => (
+    <div data-value={value}>{children}</div>
+  ),
   SelectContent: pass,
   SelectItem: pass,
   SelectTrigger: pass,
@@ -96,7 +98,7 @@ const existing = {
     marking: 'ai_approve',
     quizId: 'qz1',
     quizTitle: 'Cells',
-    showAnswers: true,
+    showAnswers: 'submitted',
     shuffle: false,
   },
   noLate: false,
@@ -232,5 +234,14 @@ it('saves an edit without an assignee who has left', async () => {
   const root = await show(existing);
   await submitForm();
   expect(save.mock.calls[0][0].assignees).toEqual(['ann']);
+  act(() => root.unmount());
+});
+
+it('shows answers after it closes unless the owner picks otherwise', async () => {
+  const root = await show();
+  const values = [...host.querySelectorAll('[data-value]')].map((select) =>
+    select.getAttribute('data-value')
+  );
+  expect(values).toContain('closed');
   act(() => root.unmount());
 });

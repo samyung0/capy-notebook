@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AssignmentManageMarking } from './assignmentManageMarking.ts';
+import type { AssignmentManageShowAnswers } from './assignmentManageShowAnswers.ts';
 
 export interface AssignmentManage {
   assignAll: boolean;
@@ -16,7 +17,7 @@ export interface AssignmentManage {
   quizId?: string;
   quizTitle?: string;
   quizTrashed?: boolean;
-  showAnswers: boolean;
+  showAnswers: AssignmentManageShowAnswers;
   shuffle: boolean;
   toApprove: number;
 }

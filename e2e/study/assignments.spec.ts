@@ -116,7 +116,7 @@ test.describe('assignments', () => {
           marking: 'ai_approve',
           noLate: false,
           quizId: quiz.id,
-          showAnswers: true,
+          showAnswers: 'submitted',
           shuffle: false,
           title: 'Cells check',
         },

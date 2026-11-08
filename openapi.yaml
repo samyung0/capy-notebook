@@ -741,7 +741,11 @@ components:
         quizId:
           type: string
         showAnswers:
-          type: boolean
+          enum:
+            - closed
+            - submitted
+            - never
+          type: string
         shuffle:
           type: boolean
         timeLimitMin:
@@ -837,7 +841,11 @@ components:
         quizTrashed:
           type: boolean
         showAnswers:
-          type: boolean
+          enum:
+            - closed
+            - submitted
+            - never
+          type: string
         shuffle:
           type: boolean
         toApprove:

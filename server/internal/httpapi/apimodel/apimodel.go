@@ -479,8 +479,10 @@ type AssignmentFormReq struct {
 	Assignees []string `json:"assignees" nullable:"false" maxItems:"500"`
 	Draft     bool     `json:"draft"`
 	// Marking of AI-marked parts: ai_approve, ai or manual (Epo 2026-11-06).
-	Marking     string                    `json:"marking" enum:"ai_approve,ai,manual"`
-	ShowAnswers bool                      `json:"showAnswers"`
+	Marking string `json:"marking" enum:"ai_approve,ai,manual"`
+	// ShowAnswers is when members read the keys on their results: after it
+	// closes, right after submitting, or never (Epo 2026-11-08, mock C3).
+	ShowAnswers string                    `json:"showAnswers" enum:"closed,submitted,never"`
 	Shuffle     bool                      `json:"shuffle"`
 	Files       []store.AssignmentFileRef `json:"files" nullable:"false" maxItems:"20"`
 }

@@ -387,7 +387,7 @@ export const GetAssignmentResponse = zod.object({
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
-  "showAnswers": zod.boolean(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
 }).optional(),
@@ -456,7 +456,7 @@ export const UpdateAssignmentBody = zod.object({
   "marking": zod.enum(['ai_approve', 'ai', 'manual']),
   "noLate": zod.boolean(),
   "quizId": zod.string().optional(),
-  "showAnswers": zod.boolean(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
   "shuffle": zod.boolean(),
   "timeLimitMin": zod.int().min(1).max(updateAssignmentBodyTimeLimitMinMax).optional(),
   "title": zod.string().min(1).max(updateAssignmentBodyTitleMax)
@@ -488,7 +488,7 @@ export const UpdateAssignmentResponse = zod.object({
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
-  "showAnswers": zod.boolean(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
 }).optional(),
@@ -574,7 +574,7 @@ export const SetAssignmentClosedResponse = zod.object({
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
-  "showAnswers": zod.boolean(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
 }).optional(),
@@ -666,7 +666,7 @@ export const PublishAssignmentResponse = zod.object({
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
-  "showAnswers": zod.boolean(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
 }).optional(),
@@ -796,7 +796,7 @@ export const RepublishAssignmentResponse = zod.object({
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
-  "showAnswers": zod.boolean(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
 }).optional(),
@@ -7053,7 +7053,7 @@ export const GetTodoResponse = zod.object({
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
-  "showAnswers": zod.boolean(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
 }).optional(),
@@ -7748,7 +7748,7 @@ export const ListAssignmentsResponse = zod.object({
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
-  "showAnswers": zod.boolean(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
 }).optional(),
@@ -7819,7 +7819,7 @@ export const CreateAssignmentBody = zod.object({
   "marking": zod.enum(['ai_approve', 'ai', 'manual']),
   "noLate": zod.boolean(),
   "quizId": zod.string().optional(),
-  "showAnswers": zod.boolean(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
   "shuffle": zod.boolean(),
   "timeLimitMin": zod.int().min(1).max(createAssignmentBodyTimeLimitMinMax).optional(),
   "title": zod.string().min(1).max(createAssignmentBodyTitleMax)
@@ -7851,7 +7851,7 @@ export const CreateAssignmentResponse = zod.object({
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
-  "showAnswers": zod.boolean(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
 }).optional(),

@@ -7,6 +7,7 @@
 import type { AssignmentFileRef } from './assignmentFileRef.ts';
 import type { AssignmentFormReqKind } from './assignmentFormReqKind.ts';
 import type { AssignmentFormReqMarking } from './assignmentFormReqMarking.ts';
+import type { AssignmentFormReqShowAnswers } from './assignmentFormReqShowAnswers.ts';
 
 export interface AssignmentFormReq {
   /** A URL to the JSON Schema for this object. */
@@ -32,7 +33,7 @@ export interface AssignmentFormReq {
   marking: AssignmentFormReqMarking;
   noLate: boolean;
   quizId?: string;
-  showAnswers: boolean;
+  showAnswers: AssignmentFormReqShowAnswers;
   shuffle: boolean;
   /**
      * @minimum 1

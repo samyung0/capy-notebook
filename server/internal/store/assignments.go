@@ -115,8 +115,10 @@ type AssignmentManage struct {
 	AssignAll   bool     `json:"assignAll"`
 	Assignees   []string `json:"assignees" nullable:"false"`
 	// Marking: ai_approve (the AI, approved before members see it), ai or manual.
-	Marking     string `json:"marking" enum:"ai_approve,ai,manual"`
-	ShowAnswers bool   `json:"showAnswers"`
+	Marking string `json:"marking" enum:"ai_approve,ai,manual"`
+	// ShowAnswers is when members read the keys on their results: closed,
+	// submitted or never.
+	ShowAnswers string `json:"showAnswers" enum:"closed,submitted,never"`
 	Shuffle     bool   `json:"shuffle"`
 	// Assigned counts who it went to; Done those who submitted or ticked it.
 	Assigned int `json:"assigned"`
@@ -178,7 +180,7 @@ type AssignmentForm struct {
 	Assignees      []string
 	Draft          bool
 	Marking        string
-	ShowAnswers    bool
+	ShowAnswers    string
 	Shuffle        bool
 	Files          []AssignmentFileRef
 }
@@ -215,7 +217,7 @@ func (s *Store) assignmentStaff(ctx context.Context, q rowQueryer, userID, wsID 
 const assignmentCols = `a.id, a.workspace_id, a.kind, a.title, a.posted_at, COALESCE(NULLIF(u.name,''), u.id, ''),
 	a.due_at, a.closed_at, a.no_late, a.late_penalty_pct, a.draft, a.time_limit_min, a.attempts_allowed, a.question_count, a.total_marks::float8,
 	a.source_quiz_id, COALESCE(m.title,''), m.topic_id, COALESCE(m.hidden, false), m.trashed_at IS NOT NULL,
-	a.assign_all, a.marking, a.show_answers, a.shuffle, a.released_at`
+	a.assign_all, a.marking, a.answers_shown, a.shuffle, a.released_at`
 
 // readAssignments reads the rows matching where (assignments a, users u and
 // materials m aliased) and fills what the caller may see of them; a caller who
@@ -768,7 +770,7 @@ func (s *Store) CreateAssignment(ctx context.Context, actorID, wsID string, form
 			}
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO assignments (id, workspace_id, created_by, kind, title, source_quiz_id,
-				due_at, time_limit_min, attempts_allowed, no_late, late_penalty_pct, assign_all, draft, marking, show_answers, shuffle, posted_at, created_at)
+				due_at, time_limit_min, attempts_allowed, no_late, late_penalty_pct, assign_all, draft, marking, answers_shown, shuffle, posted_at, created_at)
 			VALUES ($1,$2,$3,$4,$5,NULLIF($6::text,''),$7,$8,$9,$10,$11,$12,true,$13,$14,$15,$16,$16)`,
 			id, wsID, actorID, form.Kind, strings.TrimSpace(form.Title), form.QuizID,
 			form.DueAt, form.TimeLimitMin, form.Attempts, form.NoLate, form.LatePenaltyPct, form.AssignAll,
@@ -951,7 +953,7 @@ func (s *Store) UpdateAssignment(ctx context.Context, actorID, id string, form A
 			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE assignments SET title=$2, due_at=$3, time_limit_min=$4, attempts_allowed=$5,
-				no_late=$6, late_penalty_pct=$7, assign_all=$8, marking=$9, show_answers=$10, shuffle=$11 WHERE id=$1`,
+				no_late=$6, late_penalty_pct=$7, assign_all=$8, marking=$9, answers_shown=$10, shuffle=$11 WHERE id=$1`,
 			id, strings.TrimSpace(form.Title), form.DueAt, form.TimeLimitMin, form.Attempts,
 			form.NoLate, form.LatePenaltyPct, form.AssignAll, form.Marking, form.ShowAnswers, form.Shuffle); err != nil {
 			return err
@@ -1378,7 +1380,8 @@ type attemptRow struct {
 	id, assignmentID, userID, wsID, sourceID string
 	startedAt, deadline, submitted, dueAt    *time.Time
 	closedAt, released                       *time.Time
-	noLate, auto, showAnswers, shuffle       bool
+	noLate, auto, shuffle                    bool
+	showAnswers                              string
 	latePenaltyPct                           int
 	correct, total, waitingMarks             float64
 	waitingAnswers                           int
@@ -1387,7 +1390,7 @@ type attemptRow struct {
 
 const attemptRowCols = `t.id, t.assignment_id, t.user_id, a.workspace_id, COALESCE(a.source_quiz_id,''),
 	t.started_at, t.deadline_at, t.submitted_at, a.due_at, a.closed_at, a.released_at,
-	a.no_late, a.late_penalty_pct, t.auto_submitted, a.show_answers, a.shuffle, t.correct::float8, t.total::float8, t.waiting_marks::float8, t.waiting_answers,
+	a.no_late, a.late_penalty_pct, t.auto_submitted, a.answers_shown, a.shuffle, t.correct::float8, t.total::float8, t.waiting_marks::float8, t.waiting_answers,
 	t.answers, t.questions, a.questions`
 
 func scanAttemptRow(row pgx.Row) (attemptRow, error) {
@@ -1522,6 +1525,14 @@ const (
 	MarkingAIApprove = "ai_approve"
 	MarkingAI        = "ai"
 	MarkingManual    = "manual"
+)
+
+// When members read an assignment's keys, marking points and solutions on their
+// results (migration 0159): marks show on submit whichever it is.
+const (
+	AnswersAfterClose  = "closed"
+	AnswersAfterSubmit = "submitted"
+	AnswersNever       = "never"
 )
 
 // SaveAssignmentAnswers replaces the running attempt's saved answers. Past its
@@ -1939,7 +1950,8 @@ func (s *Store) attemptView(ctx context.Context, r attemptRow, staff bool, now t
 	v.Late = assignmentLate(r.noLate, r.dueAt, *r.submitted)
 	v.LatePenaltyPct = penaltyFor(v.Late, r.latePenaltyPct)
 	v.Mark = penalisedMark(r.correct, v.LatePenaltyPct)
-	v.ShowAnswers = staff || r.showAnswers
+	closed := assignmentClosedAt(r.noLate, r.dueAt, r.closedAt, now) != nil
+	v.ShowAnswers = staff || r.showAnswers == AnswersAfterSubmit || (r.showAnswers == AnswersAfterClose && closed)
 	graded, err := decodeFrozen(r.graded)
 	if err != nil {
 		return v, err
@@ -1951,7 +1963,7 @@ func (s *Store) attemptView(ctx context.Context, r attemptRow, staff bool, now t
 		withoutAIMarks(graded)
 	}
 	if !v.ShowAnswers {
-		graded = gradedWithoutKeys(graded, assignmentClosedAt(r.noLate, r.dueAt, r.closedAt, now) != nil)
+		graded = gradedWithoutKeys(graded, closed)
 	}
 	v.Questions = graded
 	return v, nil
