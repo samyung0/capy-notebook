@@ -19,7 +19,7 @@ import {
 } from '@blocksuite/affine/std/gfx';
 import { axisNumber } from '@/features/questions/graph';
 import { tickStep } from '@/features/questions/graphTicks';
-import { CARD_PAPER, type Mark, type Paper, pointsOf } from './boardData';
+import { type Mark, PAPER, type Paper, pointsOf } from './boardData';
 import { minorStep, smoothThrough, ticks, type Vec } from './boardGeometry';
 
 /** The plane's top left corner in its own units, and board pixels per unit. A polar
@@ -230,8 +230,6 @@ function drawMarks(
   marks: Mark[],
   paper: Paper
 ) {
-  ctx.strokeStyle = paper.ink;
-  ctx.lineWidth = 2;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   const dot = ([x, y]: Vec) => {
@@ -240,7 +238,10 @@ function drawMarks(
     ctx.arc(X(x), Y(y), DOT_RADIUS, 0, Math.PI * 2);
     ctx.fill();
   };
+  // Set per line: a label's halo before it leaves the paper's colour behind.
   const trace = (points: Vec[]) => {
+    ctx.strokeStyle = paper.ink;
+    ctx.lineWidth = 2;
     ctx.beginPath();
     for (const [i, [x, y]] of points.entries())
       if (i) ctx.lineTo(X(x), Y(y));
@@ -341,7 +342,7 @@ const planeRenderer: ElementRenderer<PlaneElementModel> = (
     { h, w, x: 0, y: 0 },
     model,
     model.marks,
-    CARD_PAPER[renderer.getColorScheme()]
+    PAPER[renderer.getColorScheme()]
   );
 };
 

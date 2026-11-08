@@ -260,7 +260,11 @@ html.dark:not([data-board-light]) .capy-board {
   z-index: 3;
   overflow: hidden;
   touch-action: none;
-  background: var(--affine-background-primary-color);
+}
+
+/* The open editor's paper is see-through like a card's, so the board under it goes. */
+.capy-board[data-editor-open] > editor-host {
+  visibility: hidden;
 }
 
 .capy-plane-editor canvas {

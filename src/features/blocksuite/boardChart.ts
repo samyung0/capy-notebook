@@ -22,12 +22,12 @@ import {
   BAR_SHARE,
   barPlot,
   CARD_PADS,
-  CARD_PAPER,
   type ChartBar,
   type ChartData,
   type ChartKind,
   filledSlices,
   onScreen,
+  PAPER,
   type Paper,
   type PieLabel,
   pieCircle,
@@ -214,7 +214,7 @@ const chartRenderer: ElementRenderer<ChartElementModel> = (
     { h, w, x: 0, y: 0 },
     model,
     (color) => renderer.getColorValue(color, 'transparent', true),
-    CARD_PAPER[renderer.getColorScheme()]
+    PAPER[renderer.getColorScheme()]
   );
 };
 

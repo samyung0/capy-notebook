@@ -4515,9 +4515,10 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   Finish slicing (shown once there's a line) moves to Fill, where a click gives the slice
   under it the picked fill (`fills`, keyed by the line the slice starts at; erasing that
   line drops it, No fill clears it). Labels sit at an angle inside the circle.
-- **See-through cards:** on the board, plane and chart paper (`CARD_PAPER`) and note
-  fills are half see-through so the panel's frost over the page frame shows; an open
-  editor's paper is solid. The marking image draws them on white, so it's unchanged.
+- **See-through cards:** plane and chart paper (`PAPER`) and note fills are half
+  see-through so the panel's frost over the page frame shows. An open editor uses the
+  same paper with no ground of its own and hides the board's `editor-host` under it
+  (`data-editor-open`). The marking image draws them on white, so it's unchanged.
 - **Marking image (`toImage()`):** everything on the canvas as it stands, including each
   card with the view it was left at, so a plotted mark panned out of view isn't in it. It's
   drawn layer by layer at a scale capped to 1,568 px on its longest side (the size the

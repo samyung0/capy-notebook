@@ -67,7 +67,9 @@ export const TEXT = '#1d1d1f';
 export const NUMBER = '#55555b';
 
 /** A plane or chart card's colours, with the board's light or dark: paper, grid,
- * axes and ink. Dark paper is a dark note's. The marking image is always light. */
+ * axes and ink. Dark paper is a dark note's. The paper is half see-through, on the
+ * board and open for editing alike, so the panel's frost shows (Epo 2026-11-08). The
+ * marking image is always light. */
 export type Paper = {
   axis: string;
   edge: string;
@@ -87,7 +89,7 @@ export const PAPER: Record<'dark' | 'light', Paper> = {
     major: '#3a3a3a',
     minor: '#2e2e2e',
     number: '#a6a6ab',
-    paper: '#252525',
+    paper: 'rgba(37, 37, 37, 0.5)',
     rule: '#363636',
     text: '#eaeaea',
   },
@@ -98,17 +100,10 @@ export const PAPER: Record<'dark' | 'light', Paper> = {
     major: '#dededb',
     minor: '#f1f1ef',
     number: NUMBER,
-    paper: '#fff',
+    paper: 'rgba(255, 255, 255, 0.5)',
     rule: '#e4e4e2',
     text: TEXT,
   },
-};
-
-/** On the board a card's paper is half see-through, so the panel's frost over the
- * page frame shows (Epo 2026-11-08); open for editing it's solid. */
-export const CARD_PAPER: Record<'dark' | 'light', Paper> = {
-  dark: { ...PAPER.dark, paper: 'rgba(37, 37, 37, 0.5)' },
-  light: { ...PAPER.light, paper: 'rgba(255, 255, 255, 0.5)' },
 };
 
 /** A bar's width within its slot. */
