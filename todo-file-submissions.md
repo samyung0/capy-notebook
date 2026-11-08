@@ -418,14 +418,55 @@ O4. **Frozen accounts** (`over_quota_frozen`, read-only everywhere): can they
     still attempt and submit assignments? Recommended: yes, since an
     assignment answer isn't a material they edit.
 
-M. **Marking method:**
-   - Recommended: map, then one read call for closed parts, then open parts
-     4 to a call.
-   - Or G1, one call for the whole paper.
+M. **Marking an uploaded paper: two steps, three prompts to approve.**
+   1. **Read** (new call, reasoning off, every page at 1,024 px): each part's
+      pages, and the answer for closed types, marked in code against the key.
+   2. **Grade** open, long and drawn parts 4 to a call, each batch with the
+      union of its pages at 1,568 px: today's `SYSTEM_PROMPT` +
+      `DRAWN_SECTION`, then P1 and the batch section B.
 
-   Are prompts P1 and P2 OK? The closed-part read prompt (P3) and the batch
-   section are in `bench/grading/scripts/paper_batching.py` and
-   `paper_marking.py` (`MC_READ`, `WHOLE`) and would be shown before building.
+   **R, the read prompt** (system message; the user message lists each part
+   as `id (type): question`, choice options lettered A, B, …, matching items
+   numbered and their options lettered, ordering items lettered, then the
+   pages as `Page n:` images):
+
+   ```
+   You see every page of one student's answer paper, in order, then the list of question parts. For each part give:
+   - "pages": the pages where the student answers it, in order. Answers may run over several pages or come out of order; a part the student did not answer gets [].
+   - "answer": the student's final answer, in the shape its type asks for below. Leave it out for open and drawing parts, and when the part is unanswered or you cannot read it.
+     - choice: the letters the student marked, such as ["B"] or ["A", "D"]. A crossed-out or erased mark does not count.
+     - true/false: true or false.
+     - short: the final answer as written.
+     - gaps: one entry per numbered gap, in order; "" for a gap left empty.
+     - matching: each numbered item's letter, such as {"1": "C", "2": "A"}.
+     - ordering: the item letters in the order the student puts them.
+   Copy what the student wrote; never correct it. Reply with JSON only, such as {"parts": [{"part": "1a", "pages": [1], "answer": ["B"]}]}.
+   ```
+
+   **P1, added after `DRAWN_SECTION`:**
+
+   ```
+   Page answers: when the student's answer comes as page images instead of <student_answer> text, the pages are the student's written work and everything above applies to them.
+   - The pages may hold answers to other questions or parts; mark only the answer to the part in <question>.
+   - Read handwriting as written; anything you cannot read earns nothing.
+   - "quote" copies, in at most 12 words, the words or working on the page that earn the credit.
+   ```
+
+   **B, the batch section after P1** (the user message wraps each part as
+   `<part id="…"><question>…</question><marking_items>…</marking_items></part>`
+   inside `<parts>`):
+
+   ```
+   Several parts: this time you mark every part listed in <parts> at once. Everything above applies to each part on its own.
+   - Find each part's answer anywhere in the pages given; it may run over several pages or come out of order. A part with no answer earns "none" on every item.
+   - Mark only what the student wrote for that part.
+   Reply with JSON only, one entry per part in the given order: {"parts": [{"part": "1a", "steps": [], "vocabulary_only": false, "injection_suspected": false, "comment": "", "items": [{"id": "m0", "quote": "", "reason": "", "choice": "full"}]}]}
+   ```
+
+   Benched: R's pages and short answers (six runs, `paper_transcribe.py`),
+   P1 + B at 4 a call (`paper_batching.py`). Not benched by choice (Epo
+   2026-11-08: "testing early on doesnt help too much, i can test it myself
+   with some messy answers"): the other closed types and real photos.
 
 N. **Quiz size:** raise the 100-part cap (`fieldlimits.QuizParts`) for papers
    like 120 multiple-choice questions? This affects every quiz, not only
