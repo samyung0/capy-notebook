@@ -25,7 +25,6 @@ import {
   weekdayLabel,
 } from '../assignments/assignmentText';
 import { NewAssignmentDialog } from '../assignments/LazyNewAssignmentDialog';
-import { MakePractice } from '../practice/MakePractice';
 import { PracticeFrame } from '../practice/studyPage';
 import { LabelChip, TopicSquares } from '../topicLabels';
 import { topicName } from './membersRows';
@@ -77,7 +76,6 @@ export function MemberProfilePage({
     memberId,
     { errorBoundary: false }
   );
-  const [drafting, setDrafting] = useState(false);
   const [assigning, setAssigning] = useState(false);
   const back = (
     <button
@@ -130,40 +128,30 @@ export function MemberProfilePage({
   return (
     <PracticeFrame className="lg:pt-6">
       <div>{back}</div>
-      <div className="mt-4 flex flex-wrap items-center gap-x-3.5 gap-y-5">
-        {/* The button wraps under the name on phones, at the left. */}
-        <div className="flex min-w-0 flex-1 basis-60 items-center gap-3.5">
-          <Avatar
-            aria-hidden
-            className="size-12 shrink-0 text-base"
-            name={data.name}
-            src={data.avatarUrl || undefined}
-          />
-          <div className="flex min-w-0 flex-1 flex-col">
-            <div className="flex min-w-0 items-center gap-2">
-              <h1 className="t-page-title truncate">{data.name}</h1>
-              {data.storageFull && <StorageFullChip />}
-            </div>
-            <span className="t-meta text-fg-muted">
-              {[
-                m.member_joined({ date: dayMonth(data.joinedAt) }),
-                data.lastActiveAt ? activeText(data.lastActiveAt) : null,
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </span>
+      <div className="mt-4 flex min-w-0 items-center gap-3.5">
+        <Avatar
+          aria-hidden
+          className="size-12 shrink-0 text-base"
+          name={data.name}
+          src={data.avatarUrl || undefined}
+        />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex min-w-0 items-center gap-2">
+            <h1 className="t-page-title truncate">{data.name}</h1>
+            {data.storageFull && <StorageFullChip />}
           </div>
+          <span className="t-meta text-fg-muted">
+            {[
+              m.member_joined({ date: dayMonth(data.joinedAt) }),
+              data.lastActiveAt ? activeText(data.lastActiveAt) : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </span>
         </div>
-        <Button
-          iconLeft="ai"
-          onClick={() => setDrafting(true)}
-          variant="outline"
-        >
-          {m.member_draft_follow_up()}
-        </Button>
       </div>
 
-      <div className="mt-5 flex flex-col gap-8.5 sm:mt-7.5 lg:flex-row lg:gap-8">
+      <div className="mt-7.5 flex flex-col gap-8.5 lg:flex-row lg:gap-8">
         <div className="flex min-w-0 flex-col gap-8.5 lg:w-158 lg:shrink">
           {data.assignments.length > 0 && (
             <section>
@@ -227,13 +215,6 @@ export function MemberProfilePage({
               </p>
               <div className="mt-2 flex flex-wrap gap-2 pl-6.5">
                 <Button
-                  onClick={() => setDrafting(true)}
-                  size="sm"
-                  variant="outline"
-                >
-                  {m.member_draft_follow_up()}
-                </Button>
-                <Button
                   onClick={() => setAssigning(true)}
                   size="sm"
                   variant="outline"
@@ -265,16 +246,6 @@ export function MemberProfilePage({
           )}
         </div>
       </div>
-      {drafting && (
-        <MakePractice
-          initialTopicId={(focus ?? data.topics[0])?.topicId}
-          onClose={() => setDrafting(false)}
-          onlyYou={false}
-          onMade={() => setDrafting(false)}
-          title={m.member_draft_follow_up()}
-          workspaceId={workspaceId}
-        />
-      )}
       {assigning && (
         <NewAssignmentDialog
           onClose={() => setAssigning(false)}

@@ -3159,7 +3159,6 @@
   "member_active_yesterday": "昨天活跃",
   "member_active_on": "{date} 活跃",
   "member_overall": "总分",
-  "member_draft_follow_up": "草拟跟进测验",
   "member_assign_practice": "布置练习",
   "member_needs_practice_on": "需要练习：{topic}",
   "member_missed_of": "{asked} 题中答错 {wrong} 题",

@@ -3159,7 +3159,6 @@
   "member_active_yesterday": "active yesterday",
   "member_active_on": "active {date}",
   "member_overall": "Overall",
-  "member_draft_follow_up": "Draft a follow-up quiz",
   "member_assign_practice": "Assign practice",
   "member_needs_practice_on": "Needs practice: {topic}",
   "member_missed_of": "Missed {wrong} of {asked} questions",

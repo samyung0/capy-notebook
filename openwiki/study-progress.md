@@ -433,21 +433,20 @@ under the workspace's `study` key).
   assigned quiz counts only what was answered. Hide study progress doesn't hide
   them from staff. Wide grids scroll sideways.
 - **Profile** (G2, `member=<id>`, keeping `show`): back to Members, name, "Joined
-  2 Sep · active today" (their latest answer or submission), Draft a follow-up
-  quiz, then Assignments (mark of total and Submitted, In progress, Missing,
+  2 Sep · active today" (their latest answer or submission), then Assignments (mark of total and Submitted, In progress, Missing,
   Done or the due date; a row opens their results, or the report's Members tab
   before a submission) with Overall, and Topics as Summary shows them. On the
   right: the weakest topic needing practice (lowest share right) with "Missed 3
-  of 4 questions", Draft a follow-up quiz and Assign practice; Still missing
+  of 4 questions" and Assign practice; Still missing
   (up to five questions whose latest check was not right, most missed first,
   from the quizzes Summary counts, the prompt from `questions.PromptText`); and
   Recent activity (the latest five: an attempt at a class practice quiz with its
   title and question count, a day's reviews in a topic, and submissions). A
   member's own practice quiz is private, so it shows as its topic, never its
-  title. Draft a follow-up quiz opens `MakePractice` as the owner on the focus
-  topic (the same generate run as New assignment's Generate questions); Assign
-  practice opens New assignment. Board F3's AI pick of questions and the ⋮
-  menu are not built.
+  title. Assign practice opens New assignment. Board G2's Draft a follow-up
+  quiz (F3) was removed (Epo 2026-11-08): the labels already show which topics
+  to make a quiz on; remaking a quiz from another one is queued instead. The ⋮
+  menu is not built.
 - Phones and narrow panes (below the `@4xl` container, where the table no
   longer fits) get a plain list instead of either view (Epo 2026-11-08): the
   name and any Storage full chip, "3 of 4 done · 2 missing" under it and the
