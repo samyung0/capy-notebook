@@ -297,6 +297,11 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
     (`putAway()` in `drawingBoard.ts`) calls it, since none of the events that turn the
     dispatcher off fire when the board is hidden, and its document-level key and
     clipboard handlers would otherwise still run.
+29. Narrower toolbar slots (`widgets/edgeless-toolbar` `edgeless-toolbar.ts`, marked
+    `Capy (local change 29)`): a slot whose element carries `data-own-width` takes that
+    element's width instead of AFFiNE's 96 px. The board's Charts slot is 60 px (Epo
+    2026-11-08). The toolbar's paging still counts every slot as 96 px, so it pages a
+    little early on a narrow screen.
 
 The specs named in local changes 6 to 9 are on the `blocksuite-notes` branch, with the
 note editor they pin.

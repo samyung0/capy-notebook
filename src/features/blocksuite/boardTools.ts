@@ -1035,7 +1035,7 @@ const CHART_PIECES: Piece[] = [
     r: 0,
     viewBox: '0 0 38 38',
     w: 34,
-    x: 42,
+    x: 40,
     y: 19,
   },
   {
@@ -1046,7 +1046,7 @@ const CHART_PIECES: Piece[] = [
     r: 0,
     viewBox: '0 0 28 46',
     w: 28,
-    x: 24,
+    x: 22,
     y: 25,
   },
 ];
@@ -1134,6 +1134,11 @@ abstract class CapyPieceSlot extends EdgelessToolbarToolMixin(
       display: block;
       width: 100%;
       height: 64px;
+    }
+    /* Charts' two pieces (52 px across) need less room than a full slot, as the
+       eraser does (Epo 2026-11-08). */
+    :host([data-own-width]) {
+      width: 60px;
     }
     edgeless-toolbar-button {
       display: block;
@@ -1372,6 +1377,7 @@ export const sheetTools = [
     m.drawing_board_charts,
     (block, toolbar) =>
       html`<capy-chart-slot
+        data-own-width
         .edgeless=${block}
         .toolbarContainer=${toolbar}
       ></capy-chart-slot>`
