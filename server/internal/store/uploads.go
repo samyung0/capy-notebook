@@ -59,6 +59,10 @@ type NewUploadSession struct {
 	ParseMode    string
 	ExpiresAt    time.Time
 	BatchID      string
+	// AttemptID makes the upload a file of that running paper attempt; its bytes
+	// then fit PaperMaxBytes across the paper and save past the storage limit.
+	AttemptID     string
+	PaperMaxBytes int64
 }
 
 // OpenSourceBatch records a submission's batch on its first upload reservation
@@ -128,6 +132,12 @@ func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (U
 		return UploadSession{}, err
 	}
 	defer tx.Rollback(ctx)
+	if in.AttemptID != "" {
+		// The attempt's workspace first, as submitting takes it.
+		if err := lockAttemptWorkspaceTx(ctx, tx, in.AttemptID); err != nil {
+			return UploadSession{}, err
+		}
+	}
 	if _, err := s.lockFileEditorMutationTx(ctx, tx, in.WorkspaceID, in.CreatedBy, in.CreatedBy); err != nil {
 		return UploadSession{}, err
 	}
@@ -135,7 +145,17 @@ func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (U
 		return UploadSession{}, err
 	}
 	// The uploader pays (Sam 2026-10-18).
-	if err := s.reserveStorageTx(ctx, tx, in.CreatedBy, in.DeclaredSize); err != nil {
+	if in.AttemptID != "" {
+		if in.WorkspaceID != "" {
+			return UploadSession{}, ErrPaperClosed
+		}
+		if err := s.checkPaperUploadTx(ctx, tx, in.AttemptID, in.CreatedBy, in.DeclaredSize, in.PaperMaxBytes, time.Now()); err != nil {
+			return UploadSession{}, err
+		}
+		if err := s.reservePaperStorageTx(ctx, tx, in.CreatedBy, in.DeclaredSize); err != nil {
+			return UploadSession{}, err
+		}
+	} else if err := s.reserveStorageTx(ctx, tx, in.CreatedBy, in.DeclaredSize); err != nil {
 		return UploadSession{}, err
 	}
 	if in.WorkspaceID != "" {
@@ -146,12 +166,12 @@ func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (U
 	_, err = tx.Exec(ctx, `INSERT INTO upload_sessions
 		(id, target, workspace_id, user_id, created_by, topic_id, topic_name,
 		 object_path, final_path, name, kind, content_type, declared_size, reserved_size, parse_mode,
-		 expires_at, batch_id, hidden)
-		VALUES ($1,'source',NULLIF($2,''),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12,$13,$14,$15,$16)`,
+		 expires_at, batch_id, hidden, attempt_id)
+		VALUES ($1,'source',NULLIF($2,''),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12,$13,$14,$15,$16,NULLIF($17,''))`,
 		in.ID, in.WorkspaceID, in.CreatedBy, nullStr(in.CreatedBy), in.TopicID, in.TopicName,
 		in.ObjectPath, in.FinalPath,
 		in.Name, in.Kind, in.ContentType, in.DeclaredSize, in.ParseMode,
-		in.ExpiresAt, nullStr(in.BatchID), in.Hidden)
+		in.ExpiresAt, nullStr(in.BatchID), in.Hidden, in.AttemptID)
 	if err != nil {
 		return UploadSession{}, err
 	}
@@ -200,10 +220,10 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, actorID, uploadID, so
 	}
 	defer tx.Rollback(ctx)
 
-	var workspaceID, payerID string
+	var workspaceID, payerID, attemptID string
 	var createdBy *string
-	if err := tx.QueryRow(ctx, `SELECT COALESCE(workspace_id, ''), user_id, created_by`+uploadSessionFrom+`id=$1`, uploadID).
-		Scan(&workspaceID, &payerID, &createdBy); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(workspace_id, ''), user_id, created_by, COALESCE(attempt_id, '')`+uploadSessionFrom+`id=$1`, uploadID).
+		Scan(&workspaceID, &payerID, &createdBy, &attemptID); err != nil {
 		if isNoRows(err) {
 			return File{}, ErrNotFound
 		}
@@ -211,6 +231,19 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, actorID, uploadID, so
 	}
 	if actorID == "" || createdBy == nil || *createdBy != actorID {
 		return File{}, ErrNotFound
+	}
+	if attemptID != "" {
+		// A paper's file joins only an attempt still taking files.
+		if err := lockAttemptWorkspaceTx(ctx, tx, attemptID); err != nil {
+			return File{}, err
+		}
+		var open bool
+		if err := tx.QueryRow(ctx, `SELECT paper='upload' AND submitted_at IS NULL FROM attempts WHERE id=$1 FOR UPDATE`, attemptID).Scan(&open); err != nil {
+			return File{}, err
+		}
+		if !open {
+			return File{}, ErrPaperClosed
+		}
 	}
 	if _, err := s.lockFileEditorMutationTx(ctx, tx, workspaceID, payerID, actorID); err != nil {
 		return File{}, err
@@ -277,16 +310,27 @@ func (s *Store) finalizeUploadSessionTx(
 	// The SHA-256 every source session names from the first open (Epo
 	// 2026-10-17); ingest and the first save write the same value.
 	// A file hidden from members is hidden from its insert on (Epo 2026-11-04).
+	// A paper's file goes last in its paper; it is no file of the Files list,
+	// so it never joins Recent.
 	_, err = tx.Exec(ctx, `INSERT INTO files
-		(id, workspace_id, user_id, created_by, topic_id, name, kind, size_bytes, added_at, status, parser, blob_path, source_etag, parse_mode, batch_id, source_sha256, hidden)
+		(id, workspace_id, user_id, created_by, topic_id, name, kind, size_bytes, added_at, status, parser, blob_path, source_etag, parse_mode, batch_id, source_sha256, hidden,
+		 attempt_id, attempt_position)
 		VALUES ($1,NULLIF($2,''),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
-			(SELECT batch_id FROM upload_sessions WHERE id=$15),NULLIF($16,''),$17)`,
+			(SELECT batch_id FROM upload_sessions WHERE id=$15),NULLIF($16,''),$17,
+			(SELECT attempt_id FROM upload_sessions WHERE id=$15),
+			(SELECT CASE WHEN s.attempt_id IS NOT NULL THEN
+				(SELECT COALESCE(max(f.attempt_position), 0) + 1 FROM files f WHERE f.attempt_id = s.attempt_id) END
+			 FROM upload_sessions s WHERE s.id=$15))`,
 		fileID, u.WorkspaceID, u.UserID, u.CreatedBy, topicID, u.Name, u.Kind, u.DeclaredSize,
 		now, status, parser, u.FinalPath, sourceETag, u.ParseMode, u.ID, sourceSHA256, u.Hidden)
 	if err != nil {
 		return File{}, err
 	}
-	if u.CreatedBy != nil {
+	var paper bool
+	if err := tx.QueryRow(ctx, `SELECT attempt_id IS NOT NULL FROM upload_sessions WHERE id=$1`, u.ID).Scan(&paper); err != nil {
+		return File{}, err
+	}
+	if u.CreatedBy != nil && !paper {
 		if err := markCreatedTx(ctx, tx, *u.CreatedBy, OpenFile, fileID); err != nil {
 			return File{}, err
 		}

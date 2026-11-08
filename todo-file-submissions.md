@@ -364,6 +364,41 @@ board):
   warning in Before you start.
 - **S1 and S2** are kept on the page, marked as not picked or superseded.
 
+## 5a. Upload build design (2026-11-08, after "sure" on S5/F1/F2)
+
+Epo: "how does the create quiz upload handle? it should be the same upload
+pipeline right? then do the same thing". So a paper's files are ordinary
+standalone uploads (no workspace) through the normal source upload, linked to
+the attempt, and supersede "attempt files, no ingest, no parse charge" above:
+- **Data (migration 0161):** `assignments.allow_uploads`; `attempts.paper`
+  ('upload' while attempting by upload, 'reading' once submitted until the
+  read lands, 'read' after); `files.attempt_id` (ON DELETE CASCADE: the files
+  go with the attempt and its assignment) and `files.attempt_position`; a check
+  that a paper file has no workspace.
+- **Upload:** the source upload ticket and upload take `attemptId`: the
+  member's own running upload-mode attempt, before its deadline. Storage saves
+  past the limit (an upload attempt could only start while not full, S6);
+  the credit estimate check is skipped (credits never block a submission).
+  The ingest job runs as for any upload, charged to the member.
+- **Kept out of** the Files list, search, Recent, move, clone and trash;
+  listed only in Files › Submissions, deleted there under the close rule.
+- **Marking:** at submit an upload attempt's parts all wait and nothing is
+  logged; `paper='reading'`. Marking waits for the files' ingest to settle,
+  then one pipeline call `/paper` (R at 1,024 px, then P1 + B four open parts
+  a call at 1,568 px) returns each part's pages, closed answers and open
+  grades. Go turns closed answers into each type's answer shape (letters to
+  option indices / texts), drops an answer with no pages, regrades the
+  attempt with them, logs answers, stores `pages` on each part, then saves
+  the open grades as AI marks and failures as No credits / Grade Error.
+  Office and text files go as their indexed text, one page each, as Make a
+  quiz does. A later Mark with AI regrades only the open parts on their pages.
+- **Order:** an upload attempt's matching options and ordering items are
+  shuffled with the attempt as seed, so the letters on paper match the read.
+- **Staff view:** `GET /api/assignments/attempts/{id}/paper` lists the files
+  (and a page render route) for staff of the workspace and the member; no
+  change to general file access.
+- **Page cap:** 15 pages a paper for now (Epo's figure, held; to confirm).
+
 ## 5. Build outline (phase 2, after the decisions)
 
 - **Data:**

@@ -484,9 +484,11 @@ type AssignmentFormReq struct {
 	// closes, right after submitting, or never (Epo 2026-11-08, mock C3).
 	ShowAnswers string `json:"showAnswers" enum:"closed,submitted,never"`
 	// ShowGrades: automatic, or manual until staff release them (mock C4).
-	ShowGrades string                    `json:"showGrades" enum:"automatic,manual"`
-	Shuffle    bool                      `json:"shuffle"`
-	Files      []store.AssignmentFileRef `json:"files" nullable:"false" maxItems:"20"`
+	ShowGrades string `json:"showGrades" enum:"automatic,manual"`
+	Shuffle    bool   `json:"shuffle"`
+	// AllowUploads lets members hand in a paper instead (Epo 2026-11-08).
+	AllowUploads bool                      `json:"allowUploads"`
+	Files        []store.AssignmentFileRef `json:"files" nullable:"false" maxItems:"20"`
 }
 
 // GradedQuestion is one checked question with its key and, on each part, the

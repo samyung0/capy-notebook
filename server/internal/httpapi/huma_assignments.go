@@ -143,7 +143,7 @@ func assignmentForm(b apimodel.AssignmentFormReq) store.AssignmentForm {
 		Kind: b.Kind, Title: b.Title, QuizID: b.QuizID, DueAt: b.DueAt, TimeLimitMin: b.TimeLimitMin, Attempts: b.Attempts,
 		NoLate: b.NoLate, LatePenaltyPct: b.LatePenaltyPct,
 		AssignAll: b.AssignAll, Assignees: b.Assignees, Draft: b.Draft, Marking: b.Marking,
-		ShowAnswers: b.ShowAnswers, ShowGrades: b.ShowGrades, Shuffle: b.Shuffle, Files: b.Files,
+		ShowAnswers: b.ShowAnswers, ShowGrades: b.ShowGrades, Shuffle: b.Shuffle, AllowUploads: b.AllowUploads, Files: b.Files,
 	}
 }
 
@@ -277,11 +277,19 @@ func (a *api) setAssignmentDone(ctx context.Context, in *assignmentDoneInput) (*
 	return &Empty{}, assignmentError(a.s.SetAssignmentDone(ctx, userID(ctx), in.ID, in.Body.Done, time.Now()))
 }
 
-func (a *api) startAssignment(ctx context.Context, in *assignmentIDInput) (*assignmentAttemptOutput, error) {
+type startAssignmentInput struct {
+	ID   string `path:"id"`
+	Body struct {
+		// Upload starts an attempt answered on paper (Upload file, mock S4).
+		Upload bool `json:"upload,omitempty"`
+	}
+}
+
+func (a *api) startAssignment(ctx context.Context, in *startAssignmentInput) (*assignmentAttemptOutput, error) {
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
-	res, err := a.s.StartAssignment(ctx, userID(ctx), in.ID, time.Now())
+	res, err := a.s.StartAssignment(ctx, userID(ctx), in.ID, in.Body.Upload, time.Now())
 	if err != nil {
 		return nil, assignmentError(err)
 	}

@@ -617,6 +617,7 @@ func registerRoutes(api huma.API, a *api) {
 	a.registerStudy(api)
 	a.registerAssignments(api)
 	a.registerDrawings(api)
+	a.registerPapers(api)
 	a.registerTodo(api)
 	a.registerSchedule(api)
 	a.registerExplore(api)

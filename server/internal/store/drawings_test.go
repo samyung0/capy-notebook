@@ -71,7 +71,7 @@ func TestAssignmentDrawingIsChargedToTheMemberAndGoesWithTheAssignment(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestMarkedDrawingsListAndDeleteForTheirPayer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +194,7 @@ func TestAnEmptiedDrawingIsForgotten(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func drawingRun(t *testing.T, f assignmentFixture, member, marking string, now t
 func drawIn(t *testing.T, f assignmentFixture, created Assignment, member string, now time.Time) AssignmentAttempt {
 	t.Helper()
 	ctx := context.Background()
-	run, err := f.s.StartAssignment(ctx, member, created.ID, now)
+	run, err := f.s.StartAssignment(ctx, member, created.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}

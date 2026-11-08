@@ -90,6 +90,9 @@ type Assignment struct {
 	// DrawingParts: the frozen copy asks for a drawing, which Before you start
 	// warns about when the member's storage is full (S6).
 	DrawingParts bool `json:"drawingParts"`
+	// AllowUploads: a member may hand in a paper instead of answering in the app
+	// ("Allow submission with uploads", Epo 2026-11-08).
+	AllowUploads bool `json:"allowUploads"`
 	// TopicIDs: its quiz's topic, or its files' with the most-used first.
 	TopicIDs []string         `json:"topicIds" nullable:"false"`
 	Files    []AssignmentFile `json:"files" nullable:"false"`
@@ -197,6 +200,7 @@ type AssignmentForm struct {
 	ShowAnswers    string
 	ShowGrades     string
 	Shuffle        bool
+	AllowUploads   bool
 	Files          []AssignmentFileRef
 }
 
@@ -232,7 +236,7 @@ func (s *Store) assignmentStaff(ctx context.Context, q rowQueryer, userID, wsID 
 const assignmentCols = `a.id, a.workspace_id, a.kind, a.title, a.posted_at, COALESCE(NULLIF(u.name,''), u.id, ''),
 	a.due_at, a.closed_at, a.no_late, a.late_penalty_pct, a.draft, a.time_limit_min, a.attempts_allowed, a.question_count, a.total_marks::float8,
 	a.source_quiz_id, COALESCE(m.title,''), m.topic_id, COALESCE(m.hidden, false), m.trashed_at IS NOT NULL,
-	a.assign_all, a.marking, a.answers_shown, a.grades_shown, a.grades_released_at, a.shuffle, a.released_at,
+	a.assign_all, a.marking, a.answers_shown, a.grades_shown, a.grades_released_at, a.shuffle, a.released_at, a.allow_uploads,
 	EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(a.questions, '[]')) q, jsonb_array_elements(q->'parts') p
 		WHERE p->'answer'->>'type' = 'drawing')`
 
@@ -262,7 +266,7 @@ func (s *Store) readAssignments(ctx context.Context, userID string, staff bool, 
 		if err := rows.Scan(&a.ID, &a.WorkspaceID, &a.Kind, &a.Title, &a.PostedAt, &a.PostedBy,
 			&a.DueAt, &a.ClosedAt, &a.NoLate, &a.LatePenaltyPct, &a.Draft, &a.TimeLimitMin, &a.Attempts, &a.Questions, &a.Marks,
 			&manage.QuizID, &manage.QuizTitle, &src.topicID, &src.hidden, &src.trashed,
-			&manage.AssignAll, &manage.Marking, &manage.ShowAnswers, &manage.ShowGrades, &manage.GradesReleasedAt, &manage.Shuffle, &src.released, &a.DrawingParts); err != nil {
+			&manage.AssignAll, &manage.Marking, &manage.ShowAnswers, &manage.ShowGrades, &manage.GradesReleasedAt, &manage.Shuffle, &src.released, &a.AllowUploads, &a.DrawingParts); err != nil {
 			return nil, err
 		}
 		a.ClosedAt = assignmentClosedAt(a.NoLate, a.DueAt, a.ClosedAt, now)
@@ -805,11 +809,11 @@ func (s *Store) CreateAssignment(ctx context.Context, actorID, wsID string, form
 			}
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO assignments (id, workspace_id, created_by, kind, title, source_quiz_id,
-				due_at, time_limit_min, attempts_allowed, no_late, late_penalty_pct, assign_all, draft, marking, answers_shown, grades_shown, shuffle, posted_at, created_at)
-			VALUES ($1,$2,$3,$4,$5,NULLIF($6::text,''),$7,$8,$9,$10,$11,$12,true,$13,$14,$15,$16,$17,$17)`,
+				due_at, time_limit_min, attempts_allowed, no_late, late_penalty_pct, assign_all, draft, marking, answers_shown, grades_shown, shuffle, allow_uploads, posted_at, created_at)
+			VALUES ($1,$2,$3,$4,$5,NULLIF($6::text,''),$7,$8,$9,$10,$11,$12,true,$13,$14,$15,$16,$18,$17,$17)`,
 			id, wsID, actorID, form.Kind, strings.TrimSpace(form.Title), form.QuizID,
 			form.DueAt, form.TimeLimitMin, form.Attempts, form.NoLate, form.LatePenaltyPct, form.AssignAll,
-			form.Marking, form.ShowAnswers, form.ShowGrades, form.Shuffle, now); err != nil {
+			form.Marking, form.ShowAnswers, form.ShowGrades, form.Shuffle, now, form.AllowUploads); err != nil {
 			return err
 		}
 		if err := writeAssignmentLists(ctx, tx, id, form); err != nil {
@@ -988,9 +992,9 @@ func (s *Store) UpdateAssignment(ctx context.Context, actorID, id string, form A
 			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE assignments SET title=$2, due_at=$3, time_limit_min=$4, attempts_allowed=$5,
-				no_late=$6, late_penalty_pct=$7, assign_all=$8, marking=$9, answers_shown=$10, grades_shown=$11, shuffle=$12 WHERE id=$1`,
+				no_late=$6, late_penalty_pct=$7, assign_all=$8, marking=$9, answers_shown=$10, grades_shown=$11, shuffle=$12, allow_uploads=$13 WHERE id=$1`,
 			id, strings.TrimSpace(form.Title), form.DueAt, form.TimeLimitMin, form.Attempts,
-			form.NoLate, form.LatePenaltyPct, form.AssignAll, form.Marking, form.ShowAnswers, form.ShowGrades, form.Shuffle); err != nil {
+			form.NoLate, form.LatePenaltyPct, form.AssignAll, form.Marking, form.ShowAnswers, form.ShowGrades, form.Shuffle, form.AllowUploads); err != nil {
 			return err
 		}
 		if form.Marking == MarkingManual {
@@ -1434,6 +1438,39 @@ type AssignmentAttempt struct {
 	Questions     []map[string]any `json:"questions" nullable:"false"`
 	// RemovedAssetIDs are the running attempt's images no longer there.
 	RemovedAssetIDs []string `json:"removedAssetIds" nullable:"false"`
+	// Paper: answered on paper ("upload", "reading" or "read"), with its
+	// files in order; "" when answered in the app.
+	Paper      string      `json:"paper,omitempty" enum:"upload,reading,read"`
+	PaperFiles []PaperFile `json:"paperFiles" nullable:"false"`
+}
+
+// PaperFile is one file of an attempt's paper: the member's own upload.
+type PaperFile struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Kind      string `json:"kind"`
+	SizeBytes int64  `json:"sizeBytes"`
+	// Status is its ingest's: marking waits for it to settle.
+	Status string `json:"status"`
+}
+
+// paperFiles are an attempt's paper files in order.
+func paperFiles(ctx context.Context, q rowsQueryer, attemptID string) ([]PaperFile, error) {
+	rows, err := q.Query(ctx, `SELECT id, name, kind, size_bytes, status FROM files
+		WHERE attempt_id=$1 ORDER BY attempt_position, id`, attemptID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []PaperFile{}
+	for rows.Next() {
+		var f PaperFile
+		if err := rows.Scan(&f.ID, &f.Name, &f.Kind, &f.SizeBytes, &f.Status); err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
 }
 
 // attemptRow is an assignment attempt with its assignment's rules.
@@ -1448,19 +1485,21 @@ type attemptRow struct {
 	correct, total, waitingMarks             float64
 	waitingAnswers                           int
 	answers, graded, frozen                  []byte
+	// paper is PaperUpload, PaperReading or PaperRead, or "" in the app.
+	paper string
 }
 
 const attemptRowCols = `t.id, t.assignment_id, t.user_id, a.workspace_id, COALESCE(a.source_quiz_id,''),
 	t.started_at, t.deadline_at, t.submitted_at, a.due_at, a.closed_at, a.released_at,
 	a.no_late, a.late_penalty_pct, t.auto_submitted, a.answers_shown, a.grades_shown, a.grades_released_at, a.shuffle, t.correct::float8, t.total::float8, t.waiting_marks::float8, t.waiting_answers,
-	t.answers, t.questions, a.questions`
+	t.answers, t.questions, a.questions, COALESCE(t.paper, '')`
 
 func scanAttemptRow(row pgx.Row) (attemptRow, error) {
 	var r attemptRow
 	err := row.Scan(&r.id, &r.assignmentID, &r.userID, &r.wsID, &r.sourceID,
 		&r.startedAt, &r.deadline, &r.submitted, &r.dueAt, &r.closedAt, &r.released,
 		&r.noLate, &r.latePenaltyPct, &r.auto, &r.showAnswers, &r.showGrades, &r.gradesReleased, &r.shuffle, &r.correct, &r.total, &r.waitingMarks, &r.waitingAnswers,
-		&r.answers, &r.graded, &r.frozen)
+		&r.answers, &r.graded, &r.frozen, &r.paper)
 	if isNoRows(err) {
 		return r, ErrNotFound
 	}
@@ -1484,8 +1523,11 @@ func (r attemptRow) timedOut(now time.Time) bool {
 }
 
 // StartAssignment starts the member's attempt, or returns the one running. A
-// time limit starts the clock here, on the server.
-func (s *Store) StartAssignment(ctx context.Context, userID, id string, now time.Time) (AssignmentAttempt, error) {
+// time limit starts the clock here, on the server. upload starts one answered
+// on paper (Upload file in Before you start): the assignment must allow it,
+// and the member's storage must not be full (S6), since the paper's files then
+// save past the limit.
+func (s *Store) StartAssignment(ctx context.Context, userID, id string, upload bool, now time.Time) (AssignmentAttempt, error) {
 	var attemptID string
 	var view AssignmentAttempt
 	wsID, err := s.assignmentWorkspace(ctx, id)
@@ -1504,14 +1546,14 @@ func (s *Store) StartAssignment(ctx context.Context, userID, id string, now time
 			return err
 		}
 		var kind, title, wsName string
-		var draft, noLate bool
+		var draft, noLate, allowUploads bool
 		var due, closedAt *time.Time
 		var limit, allowed int
 		var hasLimit *int
 		var total float64
-		err := tx.QueryRow(ctx, `SELECT a.kind, a.title, w.name, a.draft, a.no_late, a.due_at, a.closed_at, a.time_limit_min, a.attempts_allowed, a.total_marks::float8
+		err := tx.QueryRow(ctx, `SELECT a.kind, a.title, w.name, a.draft, a.no_late, a.due_at, a.closed_at, a.time_limit_min, a.attempts_allowed, a.total_marks::float8, a.allow_uploads
 			FROM assignments a JOIN workspaces w ON w.id=a.workspace_id WHERE a.id=$1 FOR SHARE OF a`, id).
-			Scan(&kind, &title, &wsName, &draft, &noLate, &due, &closedAt, &hasLimit, &allowed, &total)
+			Scan(&kind, &title, &wsName, &draft, &noLate, &due, &closedAt, &hasLimit, &allowed, &total, &allowUploads)
 		if isNoRows(err) {
 			return ErrNotFound
 		}
@@ -1556,6 +1598,17 @@ func (s *Store) StartAssignment(ctx context.Context, userID, id string, now time
 		if used >= allowed {
 			return ErrAssignmentNoAttempts
 		}
+		var paper *string
+		if upload {
+			if !allowUploads {
+				return assignmentInput("this assignment takes answers in the app only")
+			}
+			if err := s.storageFullErr(ctx, tx, userID); err != nil {
+				return err
+			}
+			paper = new(string)
+			*paper = PaperUpload
+		}
 		attemptID = uid("at")
 		var deadline *time.Time
 		if limit > 0 {
@@ -1563,9 +1616,9 @@ func (s *Store) StartAssignment(ctx context.Context, userID, id string, now time
 			deadline = &at
 		}
 		_, err = tx.Exec(ctx, `INSERT INTO attempts (id, user_id, workspace_id, kind, assignment_id, quiz_name, workspace_name,
-				total, started_at, taken_at, deadline_at)
-			VALUES ($1,$2,$3,'assignment',$4,$5,$6,$7,$8,$8,$9)`,
-			attemptID, userID, wsID, id, title, truncateRunes(wsName, 80), total, now, deadline)
+				total, started_at, taken_at, deadline_at, paper)
+			VALUES ($1,$2,$3,'assignment',$4,$5,$6,$7,$8,$8,$9,$10)`,
+			attemptID, userID, wsID, id, title, truncateRunes(wsName, 80), total, now, deadline, paper)
 		return err
 	})
 	if err != nil {
@@ -1581,6 +1634,14 @@ func truncateRunes(s string, limit int) string {
 	}
 	return string(r[:limit])
 }
+
+// An attempt answered on paper (migration 0161): PaperUpload while it runs,
+// PaperReading once submitted until its pages are read, then PaperRead.
+const (
+	PaperUpload  = "upload"
+	PaperReading = "reading"
+	PaperRead    = "read"
+)
 
 // How an assignment's AI-marked parts are marked (migration 0157).
 const (
@@ -1718,6 +1779,9 @@ func (s *Store) SubmitAssignmentAttempt(ctx context.Context, userID, attemptID s
 // owner, and no model is called. answers nil means what was saved. It logs the
 // decided parts and, once its quiz shows as practice, rates them.
 func (s *Store) finishAttemptTx(ctx context.Context, tx pgx.Tx, r attemptRow, answers map[string]any, auto bool, now time.Time) error {
+	if r.paper == PaperUpload {
+		return s.handInPaperTx(ctx, tx, r, auto, now)
+	}
 	if answers == nil {
 		answers = map[string]any{}
 		if len(r.answers) > 0 {
@@ -1979,6 +2043,14 @@ func (s *Store) attemptView(ctx context.Context, r attemptRow, staff bool, now t
 		SubmittedAt: r.submitted, AutoSubmitted: r.auto, Correct: r.correct, Total: r.total,
 		WaitingMarks: r.waitingMarks, WaitingAnswers: r.waitingAnswers,
 		Answers: map[string]any{}, Questions: []map[string]any{}, RemovedAssetIDs: []string{},
+		Paper: r.paper, PaperFiles: []PaperFile{},
+	}
+	if r.paper != "" {
+		files, err := paperFiles(ctx, s.pool, r.id)
+		if err != nil {
+			return v, err
+		}
+		v.PaperFiles = files
 	}
 	if err := s.pool.QueryRow(ctx, `SELECT a.title, COALESCE(NULLIF(u.name,''), u.id, ''),
 			COALESCE('/icons/' || NULLIF(u.avatar_icon_id,'') || '.svg', u.avatar_url, ''), a.marking <> 'manual'
@@ -2000,7 +2072,11 @@ func (s *Store) attemptView(ctx context.Context, r attemptRow, staff bool, now t
 		if r.shuffle {
 			frozen = shuffledQuestions(r.id, frozen)
 		}
-		v.Questions = questions.LearnerViews(frozen)
+		if r.paper != "" {
+			v.Questions = questions.LearnerViewsSeeded(frozen, r.id)
+		} else {
+			v.Questions = questions.LearnerViews(frozen)
+		}
 		var ids []string
 		for _, q := range frozen {
 			ids = append(ids, questions.AssetIDs(q)...)

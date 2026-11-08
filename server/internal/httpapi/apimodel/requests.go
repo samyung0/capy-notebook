@@ -352,6 +352,10 @@ type CreateSourceUploadReq struct {
 	// Hidden is the upload dialog's "Who can see it" (Epo 2026-11-04, V1);
 	// the Make a quiz dialog's uploads always send it.
 	Hidden bool `json:"hidden,omitempty" doc:"The file starts hidden from members: only the workspace's owners and editors see it. A file outside a workspace has no members, so it is refused there"`
+	// AttemptID hands the file in as part of the caller's running paper
+	// attempt (Epo 2026-11-08): uploaded with no workspace, it saves past the
+	// storage limit, and running out of credits never refuses it.
+	AttemptID string `json:"attemptId,omitempty" maxLength:"64"`
 }
 
 // ImportSourcesReq pulls files from a connected Drive/OneDrive account.

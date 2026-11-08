@@ -30,6 +30,8 @@ type AnswerToMark struct {
 	// SampleImage is its drawn sample answer's image asset, or "".
 	Drawing     bool
 	SampleImage string
+	// Pages: a paper's open or drawn part, graded on these pages of its paper.
+	Pages []int
 }
 
 // AnswersToMark lists what the AI has yet to mark in an assignment, or in one of
@@ -152,15 +154,16 @@ func attemptAnswersToMark(attemptID string, rawAnswers, rawGraded []byte) ([]Ans
 			partID, _ := p["id"].(string)
 			text, _ := given[partID].(string)
 			drawn := isDrawingAnswer(given[partID])
+			pages := paperPages(given[partID])
 			pending, _ := p["pending"].(bool)
-			if _, marked := p["aiAwards"]; !pending || marked || (strings.TrimSpace(text) == "" && !drawn) {
+			if _, marked := p["aiAwards"]; !pending || marked || (strings.TrimSpace(text) == "" && !drawn && len(pages) == 0) {
 				continue
 			}
 			items, marks := questions.MarkItems(p)
 			out = append(out, AnswerToMark{
 				AttemptID: attemptID, QuestionID: questionID, PartID: partID,
 				Question: questions.GradingText(q, i), Items: items, ItemMarks: marks, Answer: text,
-				Drawing: drawn, SampleImage: questions.DrawnSampleImage(p),
+				Drawing: drawn, SampleImage: questions.DrawnSampleImage(p), Pages: pages,
 			})
 		}
 	}

@@ -203,7 +203,11 @@ func (a *api) takeSourceTicket(w http.ResponseWriter, r *http.Request, batch *st
 	if err != nil {
 		return uploadTurn{}, err
 	}
-	if err := a.s.AssertSourceUploadRoom(ctx, wsID, uid(r), topicName, body.SizeBytes); err != nil {
+	if body.AttemptID != "" {
+		if err := a.s.AssertPaperUpload(ctx, body.AttemptID, uid(r), body.SizeBytes, limits.SourceFileBytes, time.Now()); err != nil {
+			return uploadTurn{}, err
+		}
+	} else if err := a.s.AssertSourceUploadRoom(ctx, wsID, uid(r), topicName, body.SizeBytes); err != nil {
 		return uploadTurn{}, err
 	}
 	return a.uploads.take(uid(r), sourceUploadTarget(wsID), sourceClaim(&body))
@@ -372,6 +376,7 @@ func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *strin
 		ContentType: body.ContentType, DeclaredSize: body.SizeBytes,
 		ParseMode: body.ParseMode,
 		ExpiresAt: time.Now().UTC().Add(uploadSessionTTL), BatchID: body.BatchID,
+		AttemptID: body.AttemptID, PaperMaxBytes: limits.SourceFileBytes,
 	}); err != nil {
 		return store.File{}, err
 	}
@@ -451,7 +456,12 @@ func (a *api) checkSourceUpload(
 	if body.DurationSeconds > sourceupload.AudioMaxDurationSeconds {
 		return "", "", huma.Error400BadRequest(fmt.Sprintf("audio uploads are at most %d hours", sourceupload.AudioMaxDurationSeconds/3600))
 	}
-	if sourceupload.NeedsIngestJob(name, body.Kind, body.ParseMode) {
+	if body.AttemptID != "" && wsID != "" {
+		return "", "", huma.Error400BadRequest("a paper's file goes in no workspace")
+	}
+	// Credits never block handing in a paper (Epo 2026-11-08): its parse may then
+	// fail, and its answers wait as No credits.
+	if sourceupload.NeedsIngestJob(name, body.Kind, body.ParseMode) && body.AttemptID == "" {
 		if err := a.s.AssertCreditsForEstimate(ctx, userID(ctx), body.EstimatedCreditMicros); err != nil {
 			return "", "", err
 		}

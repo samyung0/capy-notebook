@@ -20,7 +20,7 @@ func submitOpenAnswer(t *testing.T, f assignmentFixture, approval bool, now time
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestAIWarningStaysHiddenWithShowAnswersOff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}

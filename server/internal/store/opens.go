@@ -170,7 +170,7 @@ func (s *Store) RecentOpens(ctx context.Context, userID string, materialKinds []
 		LEFT JOIN files f ON f.id = o.file_id
 		LEFT JOIN materials m ON m.id = o.material_id
 		WHERE o.user_id = $1 AND (
-			(f.id IS NOT NULL AND f.trashed_at IS NULL AND (
+			(f.id IS NOT NULL AND f.trashed_at IS NULL AND f.attempt_id IS NULL AND (
 				(f.workspace_id IS NULL AND f.user_id = $1)
 				OR f.workspace_id IN (`+visibleWorkspacesSQL("$1")+`))
 				AND workspace_item_visible(f.hidden, f.workspace_id, $1))

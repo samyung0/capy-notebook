@@ -111,11 +111,14 @@ func (a *api) markAnswers(ctx context.Context, assignmentID, attemptID string) {
 			report(panicError("marking", r))
 		}
 	}()
+	// Listed before any paper is read: a part its read leaves unmarked waits
+	// for the next Mark with AI rather than trying again at once.
 	_, listed, err := a.s.AnswersToMark(ctx, assignmentID, attemptID)
 	if err != nil {
 		report(err)
 		return
 	}
+	a.readPapers(ctx, assignmentID, attemptID)
 	if len(listed) == 0 {
 		return
 	}
@@ -164,10 +167,27 @@ func (a *api) markAttemptAnswers(ctx context.Context, assignmentID, attemptID st
 	parts := make(map[string]openPart, len(answers))
 	byPart := make(map[string]store.AnswerToMark, len(answers))
 	var drawn []string
+	// A paper's parts are graded on their pages, by /paper.
+	again := map[string][]int{}
+	typed := answers[:0]
 	for _, answer := range answers {
+		if len(answer.Pages) > 0 {
+			again[answer.PartID] = answer.Pages
+			continue
+		}
+		typed = append(typed, answer)
 		if answer.Drawing {
 			drawn = append(drawn, answer.PartID)
 		}
+	}
+	answers = typed
+	if len(again) > 0 {
+		if err := a.markPaper(ctx, attemptID, again); err != nil {
+			return err
+		}
+	}
+	if len(answers) == 0 {
+		return nil
 	}
 	// Only the drawings being marked are read; one unreadable stays Not marked.
 	images, err := a.keptDrawingImages(marking, attemptID, drawn)

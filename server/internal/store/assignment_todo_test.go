@@ -32,7 +32,7 @@ func TestListTodo(t *testing.T) {
 		t.Fatalf("a member's rows = %+v", items)
 	}
 
-	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}

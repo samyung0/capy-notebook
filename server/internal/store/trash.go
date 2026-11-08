@@ -160,7 +160,8 @@ func (s *Store) trashFileTx(ctx context.Context, tx pgx.Tx, actorID, fileID stri
 		var purgeAfter time.Time
 		err := tx.QueryRow(ctx, `UPDATE files SET trashed_at=now(), trashed_by=$3, trash_episode_id=$4,
 			purge_after=now() + interval '30 days'
-			WHERE id=$1 AND workspace_id IS NOT DISTINCT FROM NULLIF($2, '') AND trashed_at IS NULL RETURNING purge_after`,
+			WHERE id=$1 AND workspace_id IS NOT DISTINCT FROM NULLIF($2, '') AND trashed_at IS NULL
+				AND attempt_id IS NULL RETURNING purge_after`,
 			fileID, wsID, actorID, episode).Scan(&purgeAfter)
 		if isNoRows(err) {
 			return nil, ErrNotFound
