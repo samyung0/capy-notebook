@@ -77,6 +77,7 @@ floating toolbars on e.g. tables and stuff, and affine has a table view as well.
 - **Study leftovers** (`todo-study-tracking.md` §11 "Can wait"): AI insights, the app-wide Learning page redesign, "Copy to my workspace", sharing practice with the class, gamification.
 - **Handed over by Windows, not started** (`todo-study-tracking.md`, "Where it stands"): a question with no answers through `insert_child`; dotted question ids in `quiz.rs`; locks in `source_imports.go`; the `StartAssignment` expired-attempt lock; `DeleteAssignment` returning 404; a whole run's figure cap; sweep starvation.
 - **Drag-and-drop copies** (`auto-scroll` and `hitbox` on 2.0.2 beside the vendored 1.4.0): matters at the notes cut.
+- **Remake a quiz from another one** (Epo, 2026-11-08): write a new quiz based on an existing one, in place of Members' "Draft a follow-up quiz", which was removed from the member profile on `claude/study-members` ("its not that useful, teacher can see which topic the user is weaker anyway, and make a quiz on those topics").
 - **Results page and answers:** results hide answers after an assignment closes while Practice shows them. Optional, Epo hasn't decided.
 
 ## Older plan files
