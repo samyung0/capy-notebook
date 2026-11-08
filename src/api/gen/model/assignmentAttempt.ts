@@ -14,6 +14,7 @@ export interface AssignmentAttempt {
   answers: AssignmentAttemptAnswers;
   assignmentId: string;
   autoSubmitted: boolean;
+  closesAt?: string;
   correct: number;
   deadlineAt?: string;
   drawingImages: boolean;

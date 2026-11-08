@@ -99,7 +99,7 @@ import type {
   GetSourceSessionParams,
   GetSourceUploadPolicyParams,
   GetStudyQuestionCountParams,
-  GetTodoParams,
+  GetTodoDoneParams,
   GetWorkspaceReviewParams,
   GradeAnonymousQuizReq,
   GradedQuestion,
@@ -205,6 +205,7 @@ import type {
   Syllabus,
   Tag,
   Task,
+  TodoDonePage,
   TodoList,
   TopUpReq,
   Topic,
@@ -10200,27 +10201,20 @@ export type getTodoResponseError = (getTodoResponseDefault) & {
 
 export type getTodoResponse = (getTodoResponseSuccess | getTodoResponseError)
 
-export const getGetTodoUrl = (params?: GetTodoParams,) => {
-  const normalizedParams = new URLSearchParams();
+export const getGetTodoUrl = () => {
 
-  Object.entries(params || {}).forEach(([key, value]) => {
 
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
 
-  const stringifiedParams = normalizedParams.toString();
 
-  return stringifiedParams.length > 0 ? `/api/todo?${stringifiedParams}` : `/api/todo`
+  return `/api/todo`
 }
 
 /**
  * @summary The To do page: what each of the caller's classes holds for them
  */
-export const getTodo = async (params?: GetTodoParams, options?: RequestInit): Promise<getTodoResponse> => {
+export const getTodo = async ( options?: RequestInit): Promise<getTodoResponse> => {
 
-  const res = await fetch(getGetTodoUrl(params),
+  const res = await fetch(getGetTodoUrl(),
   {
     ...options,
     method: 'GET'
@@ -10234,6 +10228,63 @@ export const getTodo = async (params?: GetTodoParams, options?: RequestInit): Pr
 
   const data: getTodoResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getTodoResponse
+}
+
+
+
+export type getTodoDoneResponse200 = {
+  data: TodoDonePage
+  status: 200
+}
+
+export type getTodoDoneResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getTodoDoneResponseSuccess = (getTodoDoneResponse200) & {
+  headers: Headers;
+};
+export type getTodoDoneResponseError = (getTodoDoneResponseDefault) & {
+  headers: Headers;
+};
+
+export type getTodoDoneResponse = (getTodoDoneResponseSuccess | getTodoDoneResponseError)
+
+export const getGetTodoDoneUrl = (params?: GetTodoDoneParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/todo/done?${stringifiedParams}` : `/api/todo/done`
+}
+
+/**
+ * @summary The To do page's Done tab: what was given to the caller that they finished or that closed, a page at a time
+ */
+export const getTodoDone = async (params?: GetTodoDoneParams, options?: RequestInit): Promise<getTodoDoneResponse> => {
+
+  const res = await fetch(getGetTodoDoneUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getTodoDoneResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getTodoDoneResponse
 }
 
 

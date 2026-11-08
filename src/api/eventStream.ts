@@ -16,9 +16,16 @@ export type NotificationStreamEvent =
   | {
       ids?: string[];
       notification?: AppNotification;
-      /** `billing` and `customization` carry nothing: they ask the tab to
-       * refetch billing, or /api/me and adopt the look another device synced. */
-      type: 'billing' | 'created' | 'customization' | 'read' | 'removed';
+      /** `billing`, `customization` and `todo` carry nothing: they ask the tab
+       * to refetch billing, /api/me to adopt the look another device synced, or
+       * the To do lists. */
+      type:
+        | 'billing'
+        | 'created'
+        | 'customization'
+        | 'read'
+        | 'removed'
+        | 'todo';
     }
   /** A standalone file's ingest progress: it has no workspace channel, so it
    * rides the owner's notifications. */

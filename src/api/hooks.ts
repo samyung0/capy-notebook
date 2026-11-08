@@ -148,6 +148,7 @@ import type {
   StudyTopics,
   Tag,
   Task,
+  TodoDonePage,
   TodoList,
   Topic,
   TopUpReq,
@@ -437,10 +438,22 @@ export function onAssignmentEvent(listener: (event: AssignmentEvent) => void) {
   };
 }
 
+// A class's submissions arrive in bursts; one refetch answers them.
+let todoTimer: ReturnType<typeof setTimeout> | undefined;
+
 export function applyNotificationEvent(
   qc: QueryClient,
   event: NotificationStreamEvent
 ) {
+  // Something on To do changed (Epo 2026-11-08): its lists and the nav dot.
+  if (event.type === 'todo') {
+    clearTimeout(todoTimer);
+    todoTimer = setTimeout(
+      () => void qc.invalidateQueries({ queryKey: qk.todo }),
+      1000
+    );
+    return;
+  }
   // A standalone file's ingest progress (no workspace to stream it on).
   if (event.type === 'ingest') {
     applyIngestEvent(qc, null, event);
@@ -592,6 +605,7 @@ export function useEventStream(wsId: string) {
         qk.notifications,
         qk.notificationUnread,
         qk.billing,
+        qk.todo,
         // Standalone files' ingest events ride the notifications.
         qk.ownedFilesRoot,
       ];
@@ -3472,20 +3486,38 @@ export const learningOverviewQuery = () =>
 export const useLearningOverview = (options?: QueryUiOptions) =>
   useQuery({ ...learningOverviewQuery(), meta: queryMeta(options) });
 
-/** The To do page: each class's Dashboard To do, across the viewer's classes.
- * done: its Done tab instead, work given to the viewer that they finished or
- * that closed; under qk.todo, so whatever refreshes To do refreshes it. */
-export const todoQuery = (done?: boolean) =>
+/** The To do page: each class's Dashboard To do, across the viewer's classes. */
+export const todoQuery = () =>
   queryOptions({
     ...persisted,
-    queryFn: () => api.get<TodoList>(done ? '/todo?done=true' : '/todo'),
-    queryKey: done ? qk.todoDone : qk.todo,
+    queryFn: () => api.get<TodoList>('/todo'),
+    queryKey: qk.todo,
   });
 export const useTodo = (options?: QueryUiOptions) =>
   useQuery({ ...todoQuery(), meta: queryMeta(options) });
-/** The To do page's list for a tab. */
-export const useTodoTab = (tab: 'todo' | 'done', options?: QueryUiOptions) =>
-  useQuery({ ...todoQuery(tab === 'done'), meta: queryMeta(options) });
+
+export interface TodoDoneParams {
+  class?: string[];
+  dir?: 'asc';
+  sort?: 'done' | 'class';
+  type?: string[];
+}
+/** The To do page's Done tab (Epo 2026-11-08): work given to the viewer that
+ * they finished or that closed, sorted and filtered by the server, a page at a
+ * time. Under qk.todo, so whatever refreshes To do refreshes it. */
+export const useTodoDone = (params: TodoDoneParams, enabled: boolean) =>
+  useInfiniteQuery({
+    enabled,
+    getNextPageParam: (last: TodoDonePage) => last.nextCursor || undefined,
+    initialPageParam: '',
+    meta: { errorBoundary: false },
+    placeholderData: keepPreviousData,
+    queryFn: ({ pageParam }) =>
+      api.get<TodoDonePage>(
+        `/todo/done${listSearch({ ...params }, pageParam)}`
+      ),
+    queryKey: qk.todoDone(params),
+  });
 
 /** How many questions a practice group holds, for its start dialog. */
 export const useStudyQuestionCount = (

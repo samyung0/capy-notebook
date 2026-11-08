@@ -160,6 +160,7 @@ export type {
   Tag,
   TagInput,
   Task,
+  TodoDonePage,
   TodoList,
   TodoWorkspace,
   Topic,

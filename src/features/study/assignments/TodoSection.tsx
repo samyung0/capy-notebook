@@ -1,5 +1,7 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { type ReactNode, useState } from 'react';
+import { qk } from '@/api/client';
 import { useAssignments, useSetAssignmentDone } from '@/api/hooks';
 import type { Assignment, FileKind, MaterialRefType } from '@/api/types';
 import { Button } from '@/components/ui/Button';
@@ -155,9 +157,14 @@ export function TodoRows({
   workspaceId: string;
 }) {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const { mutate: setDone } = useSetAssignmentDone(workspaceId);
-  const openPage = (a: Assignment) =>
-    navigate({
+  const openPage = (a: Assignment) => {
+    // Closing at a No late due date sends no event: past it, To do rereads
+    // (Epo 2026-11-08) while its page says it closed.
+    if (a.noLate && a.dueAt && Date.parse(a.dueAt) <= Date.now())
+      void qc.invalidateQueries({ queryKey: qk.todo });
+    return navigate({
       params: { workspaceId },
       search: {
         assignment: a.id,
@@ -169,6 +176,7 @@ export function TodoRows({
       },
       to: '/workspaces/$workspaceId',
     });
+  };
   return (
     <ul className="-mx-1.5 border-divider border-t">
       {toApprove.map((a) => (

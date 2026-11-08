@@ -14,7 +14,9 @@ import type {
   MarkedDrawing,
   MaterialRef,
   SharingNotice,
+  TodoDonePage,
   TodoList,
+  TodoWorkspace,
   WorkspaceActivity,
 } from '@/api/types';
 import { fromBase64, toBase64 } from '@/features/blocksuite/base64';
@@ -791,6 +793,7 @@ function attemptView(attempt: Attempt, row: Row, viewer: Viewer) {
   const common = {
     assignmentId: row.id,
     autoSubmitted: attempt.autoSubmitted,
+    closesAt: row.noLate ? row.dueAt : undefined,
     deadlineAt: attempt.deadlineAt,
     // Manual grading makes no marking images (Q693).
     drawingImages: row.marking !== 'manual',
@@ -1138,10 +1141,8 @@ export const assignmentHandlers = (viewer: Viewer) => {
     return attempt && row ? { attempt, row } : null;
   };
   return [
-    http.get('/api/todo', ({ request }) => {
+    http.get('/api/todo', () => {
       seed();
-      // ?done=true: the Done tab, what the viewer did or what closed.
-      const finished = new URL(request.url).searchParams.get('done') === 'true';
       const workspaces = db.workspaces
         .filter((ws) => ws.kind === 'class')
         .map((ws) => ({
@@ -1149,11 +1150,10 @@ export const assignmentHandlers = (viewer: Viewer) => {
           items: [...rows.values()]
             .filter((row) => row.workspaceId === ws.id)
             .map((row) => toAssignment(row, viewer))
-            .filter((a) =>
-              finished
-                ? a.mine && !a.draft && (a.mine.done || a.closedAt)
-                : (a.manage?.toApprove ?? 0) > 0 ||
-                  (a.mine && !a.draft && !a.closedAt)
+            .filter(
+              (a) =>
+                (a.manage?.toApprove ?? 0) > 0 ||
+                (a.mine && !a.draft && !a.closedAt)
             ),
           manages: viewer === 'owner',
           name: ws.name,
@@ -1161,6 +1161,61 @@ export const assignmentHandlers = (viewer: Viewer) => {
         }))
         .filter((ws) => ws.items.length > 0);
       return HttpResponse.json({ workspaces } satisfies TodoList);
+    }),
+    // The Done tab: done or closed, sorted, filtered and paged like the server.
+    http.get('/api/todo/done', ({ request }) => {
+      seed();
+      const search = new URL(request.url).searchParams;
+      const list = (key: string) =>
+        (search.get(key) ?? '').split(',').filter(Boolean);
+      const classes = list('class');
+      const kinds = list('type').map((t) =>
+        t === 'quiz' ? 'marked' : 'unmarked'
+      );
+      const asc = search.get('dir') === 'asc';
+      const at = (a: Assignment) =>
+        Date.parse(a.mine?.doneAt ?? a.closedAt ?? '') || 0;
+      const named = db.workspaces.filter((ws) => ws.kind === 'class');
+      const nameOf = (a: Assignment) =>
+        named.find((ws) => ws.id === a.workspaceId)?.name ?? '';
+      const done = [...rows.values()]
+        .map((row) => toAssignment(row, viewer))
+        .filter(
+          (a) =>
+            a.mine &&
+            !a.draft &&
+            (a.mine.done || a.closedAt) &&
+            (classes.length === 0 || classes.includes(a.workspaceId)) &&
+            (kinds.length === 0 || kinds.includes(a.kind))
+        )
+        .sort((a, b) =>
+          search.get('sort') === 'class'
+            ? (asc ? -1 : 1) * nameOf(a).localeCompare(nameOf(b)) ||
+              at(b) - at(a)
+            : (asc ? 1 : -1) * (at(a) - at(b))
+        );
+      const offset = Number(search.get('cursor') ?? 0);
+      const page = done.slice(offset, offset + 30);
+      const workspaces: TodoWorkspace[] = [];
+      for (const a of page) {
+        let ws = workspaces.find((w) => w.workspaceId === a.workspaceId);
+        if (!ws) {
+          const source = named.find((w) => w.id === a.workspaceId);
+          ws = {
+            iconId: source?.iconId ?? '',
+            items: [],
+            manages: viewer === 'owner',
+            name: source?.name ?? '',
+            workspaceId: a.workspaceId,
+          };
+          workspaces.push(ws);
+        }
+        ws.items.push(a);
+      }
+      return HttpResponse.json({
+        nextCursor: offset + 30 < done.length ? String(offset + 30) : undefined,
+        workspaces,
+      } satisfies TodoDonePage);
     }),
     http.get('/api/workspaces/:id/assignments', ({ params }) => {
       seed();

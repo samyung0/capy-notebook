@@ -309,6 +309,14 @@ func assignmentClosedAt(noLate bool, due, closed *time.Time, now time.Time) *tim
 	return closed
 }
 
+// noLateDue is the due date that closes it under No late submissions.
+func noLateDue(noLate bool, due *time.Time) *time.Time {
+	if noLate {
+		return due
+	}
+	return nil
+}
+
 // assignmentLate is whether a submission came after the due date. Under No late
 // submissions nothing is late: a running attempt is submitted for its member.
 func assignmentLate(noLate bool, due *time.Time, submitted time.Time) bool {
@@ -1347,7 +1355,10 @@ type AssignmentAttempt struct {
 	StartedAt     *time.Time `json:"startedAt,omitempty"`
 	// DeadlineAt is when the time runs out; Now is the server's clock, which
 	// the page's timer counts against.
-	DeadlineAt    *time.Time `json:"deadlineAt,omitempty"`
+	DeadlineAt *time.Time `json:"deadlineAt,omitempty"`
+	// ClosesAt is a No late submissions due date, which ends it as its time
+	// running out does; the page shows it in its last hour (Epo 2026-11-08).
+	ClosesAt      *time.Time `json:"closesAt,omitempty"`
 	Now           time.Time  `json:"now"`
 	SubmittedAt   *time.Time `json:"submittedAt,omitempty"`
 	AutoSubmitted bool       `json:"autoSubmitted"`
@@ -1897,6 +1908,7 @@ func (s *Store) finishAttemptIfRunning(ctx context.Context, attemptID string, no
 func (s *Store) attemptView(ctx context.Context, r attemptRow, staff bool, now time.Time) (AssignmentAttempt, error) {
 	v := AssignmentAttempt{
 		ID: r.id, AssignmentID: r.assignmentID, UserID: r.userID, StartedAt: r.startedAt, DeadlineAt: r.deadline, Now: now,
+		ClosesAt:    noLateDue(r.noLate, r.dueAt),
 		SubmittedAt: r.submitted, AutoSubmitted: r.auto, Correct: r.correct, Total: r.total,
 		WaitingMarks: r.waitingMarks, WaitingAnswers: r.waitingAnswers,
 		Answers: map[string]any{}, Questions: []map[string]any{}, RemovedAssetIDs: []string{},

@@ -855,8 +855,11 @@ opening reads the attempt afresh, never from a cache, so its answers and clock a
 the server's: that read failing asks to retry, while a later refresh failing leaves
 the running attempt on the page. Nothing retries a failed save but the next change
 and Submit, which sends them all; a submit that fails at zero leaves Submit to
-press. A shuffled paper's order comes from a seed of the attempt's id, so a reload
-keeps it. Bookmarks stay in this browser. Taking it never joins a room, since it
+press. A No late due date ends it as its time running out does: the attempt's
+`closesAt` carries it, the page counts to the earlier of that and `deadlineAt`, and
+shows the clock always when timed but only in the last hour when only the due date
+ends it (Epo 2026-11-08). A shuffled paper's order comes from a seed of the
+attempt's id, so a reload keeps it. Bookmarks stay in this browser. Taking it never joins a room, since it
 serves the frozen copy.
 
 **Settings** (Epo 2026-11-05, `AssignmentSettingsTab`). The report has no ⋮: its last
@@ -1033,15 +1036,30 @@ step and "What members see" link for an invite preview and board G5.
 **To do page.** `/todo` (`src/routes/Todo.tsx`, `GET /api/todo`,
 `store/assignment_todo.go`) lists each class's Dashboard rows across the classes
 the viewer owns or belongs to, in `TodoRows`, the rows both share. Tabs To do
-(open work and answers waiting, with its count) and Done (`GET /api/todo?done=true`,
-`qk.todoDone` under `qk.todo`: what was given to the viewer that they finished,
-with the quiz's mark or "Waiting for marks" then the day, or that closed undone,
-"Closed" with "Not done · Closed {day}"; read only while the tab is open), then the list pages' Sort and Filter, all in the URL (`parseTodoSearch`:
-`tab=done`, `sort`, `dir=asc`, `class`, `type=quiz,task`). To do sorts by Due
-soonest (classes with answers waiting first), Recently posted or Class; Done by
-Recently done (the day it closed for work never done) or Class. A class with nothing to show is left out. Open work past
-its due date says Overdue. The nav's To do row carries the notifications dot while
-`todoCount` (open plus waiting) is above zero (Epo 2026-11-08).
+(open work and answers waiting, with its count, all of it in one read) and Done
+(`GET /api/todo/done`, `ListTodoDone`, `qk.todoDone` under `qk.todo`, read only
+while the tab is open: what was given to the viewer that they finished, with the
+quiz's mark or "Waiting for marks" then the day, or that closed undone, "Closed"
+with "Not done · Closed {day}"; thirty a page, the next loading near the end as on
+Files, sorted and filtered in SQL with an offset cursor), then the list pages' Sort
+and Filter, all in the URL (`parseTodoSearch`: `tab=done`, `sort`, `dir=asc`,
+`class`, `type=quiz,task`). To do sorts by Due soonest (classes with answers
+waiting first), Recently posted or Class, in the browser; Done by Recently done
+(the day it closed for work never done) or Class, on the server. Class lists every
+class workspace (`useWorkspaces`). A class with nothing to show is left out. Open
+work past its due date says Overdue. The nav's To do row carries the notifications
+dot while `todoCount` (open plus waiting) is above zero (Epo 2026-11-08).
+
+**Keeping To do current** (Epo 2026-11-08). A `todo` event on the user's stream
+(`publishTodo`, after the commit, best effort) asks every open tab to refetch
+`qk.todo`, its Done pages too, a second after the last of a burst. Posting,
+editing (those it was given to before and after), closing, reopening, republishing,
+deleting and approving AI marks tell everyone it is given to and the class's staff
+(`TodoAudience`); a submission or a mark tells the staff and that member; a tick
+tells the member's own tabs. Reconnecting refetches To do with the notifications.
+A No late due date closes with no request, so nothing is sent: clicking a row past
+it refetches To do while its page says it closed. The sweep's own submissions send
+nothing either.
 
 **New assignment's Quiz field.** Its last rows make a quiz on the spot, wherever the
 dialog opens: New quiz opens Add file's Create tab (`?add=create`), Make a quiz from a

@@ -556,6 +556,9 @@ components:
           type: string
         autoSubmitted:
           type: boolean
+        closesAt:
+          format: date-time
+          type: string
         correct:
           format: double
           type: number
@@ -7662,6 +7665,24 @@ components:
         - done
         - dueDate
       type: object
+    TodoDonePage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/TodoDonePage.json
+          format: uri
+          readOnly: true
+          type: string
+        nextCursor:
+          type: string
+        workspaces:
+          items:
+            $ref: "#/components/schemas/TodoWorkspace"
+          type: array
+      required:
+        - workspaces
+      type: object
     TodoList:
       additionalProperties: false
       properties:
@@ -13727,14 +13748,6 @@ paths:
   /api/todo:
     get:
       operationId: getTodo
-      parameters:
-        - description: "The Done tab instead: what was given to the caller that they finished or that closed"
-          explode: false
-          in: query
-          name: done
-          schema:
-            description: "The Done tab instead: what was given to the caller that they finished or that closed"
-            type: boolean
       responses:
         "200":
           content:
@@ -13749,6 +13762,67 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: "The To do page: what each of the caller's classes holds for them"
+      tags:
+        - Assignments
+  /api/todo/done:
+    get:
+      operationId: getTodoDone
+      parameters:
+        - description: "done: the day it was done, or closed if it never was; class: by class name, then done"
+          explode: false
+          in: query
+          name: sort
+          schema:
+            default: done
+            description: "done: the day it was done, or closed if it never was; class: by class name, then done"
+            enum:
+              - done
+              - class
+            type: string
+        - explode: false
+          in: query
+          name: dir
+          schema:
+            default: desc
+            enum:
+              - asc
+              - desc
+            type: string
+        - description: Comma-separated class workspace ids
+          explode: false
+          in: query
+          name: class
+          schema:
+            description: Comma-separated class workspace ids
+            type: string
+        - description: "Comma-separated: quiz, task"
+          explode: false
+          in: query
+          name: type
+          schema:
+            description: "Comma-separated: quiz, task"
+            type: string
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TodoDonePage"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "The To do page's Done tab: what was given to the caller that they finished or that closed, a page at a time"
       tags:
         - Assignments
   /api/topics/{id}:

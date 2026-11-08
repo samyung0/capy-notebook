@@ -1,6 +1,7 @@
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
-import { useTodo, useTodoTab } from '@/api/hooks';
+import { useTodo, useTodoDone, useWorkspaces } from '@/api/hooks';
 import { InlineErrorState } from '@/components/app/ErrorState';
+import { ListEnd } from '@/components/app/ListEnd';
 import {
   ListToolbar,
   type SortOption,
@@ -11,7 +12,11 @@ import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Tabs } from '@/components/ui/Tabs';
 import { TodoRows } from '@/features/study/assignments/TodoSection';
-import { todoCount, todoSections } from '@/features/study/assignments/todoRows';
+import {
+  mergeTodoPages,
+  todoCount,
+  todoSections,
+} from '@/features/study/assignments/todoRows';
 import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
 import { iconUrl } from '@/lib/icon-catalog';
@@ -33,11 +38,13 @@ import { waitsForConnection } from '@/lib/online';
 export default function Todo() {
   const search = useSearch({ from: '/auth-shell/todo' });
   const tab = search.tab ?? 'todo';
-  const { data, error, fetchStatus, isLoading, refetch } = useTodoTab(tab, {
-    errorBoundary: false,
-  });
-  // The To do count always comes from To do's list.
-  const { data: todo } = useTodo({ errorBoundary: false });
+  const {
+    data: todo,
+    error: todoError,
+    fetchStatus: todoFetch,
+    isLoading: todoLoading,
+    refetch: todoRefetch,
+  } = useTodo({ errorBoundary: false });
   const navigate = useNavigate({ from: '/todo' });
   const setSearch = (patch: TodoSearch) =>
     void navigate({ replace: true, search: (prev) => ({ ...prev, ...patch }) });
@@ -57,14 +64,48 @@ export default function Todo() {
     sorts.find((s) => s.value === search.sort)?.value ?? sorts[0].value;
   const classes = commaList(search.class);
   const types = commaList(search.type) as TodoType[];
-  const workspaces = data?.workspaces ?? [];
-  const sections = todoSections(workspaces, {
-    classes,
-    reversed: search.dir === 'asc',
-    sort,
-    tab,
-    types,
-  });
+  // Done is paged, sorted and filtered by the server (Epo 2026-11-08).
+  const {
+    data: done,
+    error: doneError,
+    fetchNextPage,
+    fetchStatus: doneFetch,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+    isLoading: doneLoading,
+    refetch: doneRefetch,
+  } = useTodoDone(
+    {
+      class: classes,
+      dir: search.dir,
+      sort: sort === 'class' ? 'class' : undefined,
+      type: types,
+    },
+    tab === 'done'
+  );
+  const { data: allWorkspaces } = useWorkspaces({}, { errorBoundary: false });
+  const classOptions = (allWorkspaces ?? [])
+    .filter((w) => w.kind === 'class')
+    .map((w) => ({ label: w.name, value: w.id }));
+  const onDone = tab === 'done';
+  const data = onDone ? done : todo;
+  const error = onDone ? doneError : todoError;
+  const fetchStatus = onDone ? doneFetch : todoFetch;
+  const isLoading = onDone ? doneLoading : todoLoading;
+  const refetch = onDone ? doneRefetch : todoRefetch;
+  const sections = onDone
+    ? mergeTodoPages(done?.pages ?? []).map((workspace) => ({
+        shown: workspace.items,
+        toApprove: [],
+        workspace,
+      }))
+    : todoSections(todo?.workspaces ?? [], {
+        classes,
+        reversed: search.dir === 'asc',
+        sort: sort === 'done' ? 'due' : sort,
+        types,
+      });
   const open = todoCount(todo?.workspaces ?? []);
 
   return (
@@ -103,10 +144,7 @@ export default function Todo() {
             label: m.todo_filter_class(),
             onToggle: (value) =>
               setSearch({ class: csv(toggleValue(classes, value)) }),
-            options: workspaces.map((w) => ({
-              label: w.name,
-              value: w.workspaceId,
-            })),
+            options: classOptions,
             selected: classes,
           },
           {
@@ -176,6 +214,14 @@ export default function Todo() {
             ))
           )}
         </div>
+        {onDone && (
+          <ListEnd
+            fetchNextPage={fetchNextPage}
+            hasNextPage={hasNextPage}
+            isFetchingNextPage={isFetchingNextPage}
+            isFetchNextPageError={isFetchNextPageError}
+          />
+        )}
         {!!data && sections.length === 0 && (
           <p className="t-subtitle py-20 text-center font-normal text-fg-muted">
             {tab === 'done' ? m.todo_done_empty() : m.todo_empty()}

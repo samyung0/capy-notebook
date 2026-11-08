@@ -1,6 +1,12 @@
 import { expect, it } from 'vitest';
 import type { Assignment, TodoWorkspace } from '@/api/types';
-import { type TodoView, todoCount, todoRows, todoSections } from './todoRows';
+import {
+  mergeTodoPages,
+  type TodoView,
+  todoCount,
+  todoRows,
+  todoSections,
+} from './todoRows';
 
 const row = (id: string, patch: Partial<Assignment> = {}) =>
   ({
@@ -38,7 +44,6 @@ const view = (patch: Partial<TodoView> = {}): TodoView => ({
   classes: [],
   reversed: false,
   sort: 'due',
-  tab: 'todo',
   types: [],
   ...patch,
 });
@@ -87,24 +92,13 @@ it('sorts rows and classes by the newest post, and classes by name', () => {
   ).toEqual(['Biology', 'Art']);
 });
 
-it('lists the Done tab newest first, closed work by the day it closed', () => {
-  const done = (id: string, doneAt: string) =>
-    row(id, { mine: { done: true, doneAt } as Assignment['mine'] });
-  const sections = todoSections(
-    [
-      workspace('a', [
-        done('mon', '2026-11-03T00:00:00Z'),
-        done('wed', '2026-11-05T00:00:00Z'),
-        row('closed-tue', { closedAt: '2026-11-04T00:00:00Z' }),
-      ]),
-    ],
-    view({ sort: 'done', tab: 'done' })
-  );
-  expect(sections[0]?.shown.map((a) => a.id)).toEqual([
-    'wed',
-    'closed-tue',
-    'mon',
+it('merges the Done pages, a class split across pages keeping its place', () => {
+  const merged = mergeTodoPages([
+    { workspaces: [workspace('a', [row('1')]), workspace('b', [row('2')])] },
+    { workspaces: [workspace('a', [row('3')])] },
   ]);
+  expect(merged.map((w) => w.workspaceId)).toEqual(['a', 'b']);
+  expect(merged[0]?.items.map((a) => a.id)).toEqual(['1', '3']);
 });
 
 it('keeps the classes and types the filter picks', () => {

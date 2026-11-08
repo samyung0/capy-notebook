@@ -1,4 +1,4 @@
-import type { Assignment, TodoWorkspace } from '@/api/types';
+import type { Assignment, TodoDonePage, TodoWorkspace } from '@/api/types';
 import type { TodoSort, TodoType } from '@/lib/listSearch';
 
 /** What a class's To do lists: answers waiting for its staff, and what was given
@@ -26,17 +26,15 @@ export interface TodoView {
   classes: string[];
   /** The sort's order turned around. */
   reversed: boolean;
-  sort: TodoSort;
-  tab: 'todo' | 'done';
+  sort: Exclude<TodoSort, 'done'>;
   types: TodoType[];
 }
 
 const time = (iso: string | undefined, missing: number) =>
   iso ? Date.parse(iso) : missing;
 /** A row's place, smallest first; work with no date goes last. */
-const KEY: Record<TodoSort, (a: Assignment) => number> = {
+const KEY: Record<TodoView['sort'], (a: Assignment) => number> = {
   class: (a) => time(a.dueAt, Number.POSITIVE_INFINITY),
-  done: (a) => -time(a.mine?.doneAt ?? a.closedAt, 0),
   due: (a) => time(a.dueAt, Number.POSITIVE_INFINITY),
   posted: (a) => -Date.parse(a.postedAt),
 };
@@ -44,10 +42,9 @@ const compare = (x: number, y: number) => (x === y ? 0 : x < y ? -1 : 1);
 const typeOf = (a: Assignment): TodoType =>
   a.kind === 'marked' ? 'quiz' : 'task';
 
-/** The To do page's sections for a tab, from that tab's list: a class with
- * something to show, its rows in the sort's order. Done goes by the day it was
- * done, or closed if it never was. Classes go by their first row; by due, those with
- * answers waiting come first, and Class goes by name. */
+/** The To do tab's sections: a class with something to show, its rows in the
+ * sort's order. Classes go by their first row; by due, those with answers
+ * waiting come first, and Class goes by name. */
 export function todoSections(workspaces: TodoWorkspace[], view: TodoView) {
   const key = KEY[view.sort];
   const keep = (a: Assignment) =>
@@ -61,11 +58,7 @@ export function todoSections(workspaces: TodoWorkspace[], view: TodoView) {
       (w) => view.classes.length === 0 || view.classes.includes(w.workspaceId)
     )
     .map((workspace) => {
-      // The Done tab's list (todoDoneQuery) is all done or closed already.
-      const rows =
-        view.tab === 'done'
-          ? { open: workspace.items, toApprove: [] }
-          : todoRows(workspace.items, workspace.manages);
+      const rows = todoRows(workspace.items, workspace.manages);
       const shown = order(rows.open);
       const toApprove = order(rows.toApprove);
       return {
@@ -87,4 +80,20 @@ export function todoSections(workspaces: TodoWorkspace[], view: TodoView) {
       return compare(a.first, b.first);
     });
   return view.reversed ? sections.reverse() : sections;
+}
+
+/** The Done tab's pages as one list of classes, in the server's order: a class
+ * split across pages keeps its first place and gathers its rows. */
+export function mergeTodoPages(pages: TodoDonePage[]) {
+  const merged: TodoWorkspace[] = [];
+  const at = new Map<string, number>();
+  for (const page of pages)
+    for (const w of page.workspaces) {
+      const i = at.get(w.workspaceId);
+      if (i === undefined) {
+        at.set(w.workspaceId, merged.length);
+        merged.push({ ...w, items: [...w.items] });
+      } else merged[i]?.items.push(...w.items);
+    }
+  return merged;
 }

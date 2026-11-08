@@ -173,6 +173,7 @@ func (a *api) createAssignment(ctx context.Context, in *createAssignmentInput) (
 	if err != nil {
 		return nil, assignmentError(err)
 	}
+	a.publishTodo(ctx, a.todoAudience(ctx, res.ID, false)...)
 	return &assignmentOutput{Body: res}, nil
 }
 
@@ -188,10 +189,13 @@ func (a *api) updateAssignment(ctx context.Context, in *updateAssignmentInput) (
 	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
 	}
+	// Those it was given to before the edit hear too, in case they were dropped.
+	before := a.todoAudience(ctx, in.ID, false)
 	res, err := a.s.UpdateAssignment(ctx, userID(ctx), in.ID, assignmentForm(in.Body), time.Now())
 	if err != nil {
 		return nil, assignmentError(err)
 	}
+	a.publishTodo(ctx, append(before, a.todoAudience(ctx, in.ID, false)...)...)
 	return &assignmentOutput{Body: res}, nil
 }
 
@@ -199,7 +203,12 @@ func (a *api) deleteAssignment(ctx context.Context, in *assignmentIDInput) (*Emp
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
-	return &Empty{}, assignmentError(a.s.DeleteAssignment(ctx, userID(ctx), in.ID))
+	audience := a.todoAudience(ctx, in.ID, false)
+	if err := a.s.DeleteAssignment(ctx, userID(ctx), in.ID); err != nil {
+		return nil, assignmentError(err)
+	}
+	a.publishTodo(ctx, audience...)
+	return &Empty{}, nil
 }
 
 func (a *api) publishAssignment(ctx context.Context, in *assignmentIDInput) (*assignmentOutput, error) {
@@ -241,6 +250,7 @@ func (a *api) freezeAssignment(ctx context.Context, id string, freeze func(conte
 	if err != nil {
 		return nil, assignmentError(err)
 	}
+	a.publishTodo(ctx, a.todoAudience(ctx, id, false)...)
 	return &assignmentOutput{Body: res}, nil
 }
 
@@ -255,6 +265,7 @@ func (a *api) setAssignmentClosed(ctx context.Context, in *assignmentClosedInput
 	if in.Body.Closed {
 		a.publishAssignmentClosed(ctx, in.ID)
 	}
+	a.publishTodo(ctx, a.todoAudience(ctx, in.ID, false)...)
 	return &assignmentOutput{Body: res}, nil
 }
 
@@ -262,7 +273,12 @@ func (a *api) setAssignmentDone(ctx context.Context, in *assignmentDoneInput) (*
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
-	return &Empty{}, assignmentError(a.s.SetAssignmentDone(ctx, userID(ctx), in.ID, in.Body.Done, time.Now()))
+	if err := a.s.SetAssignmentDone(ctx, userID(ctx), in.ID, in.Body.Done, time.Now()); err != nil {
+		return nil, assignmentError(err)
+	}
+	// The member's other tabs and devices.
+	a.publishTodo(ctx, userID(ctx))
+	return &Empty{}, nil
 }
 
 func (a *api) startAssignment(ctx context.Context, in *assignmentIDInput) (*assignmentAttemptOutput, error) {
@@ -343,6 +359,7 @@ func (a *api) approveAssignmentAIMarks(ctx context.Context, in *approveAIMarksIn
 	if err != nil {
 		return nil, assignmentError(err)
 	}
+	a.publishTodo(ctx, a.todoAudience(ctx, in.ID, false)...)
 	out := &approveAIMarksOutput{}
 	out.Body.Approved = approved
 	return out, nil
@@ -376,6 +393,8 @@ func (a *api) submitAssignmentAttempt(ctx context.Context, in *assignmentAnswers
 	if res.WaitingAnswers > 0 && res.SubmittedAt != nil && !res.SubmittedAt.Before(now.Add(-time.Millisecond)) {
 		a.markAnswersSoon(res.AssignmentID, res.ID)
 	}
+	// The class's staff, for answers to approve, and the member's other tabs.
+	a.publishTodo(ctx, append(a.todoAudience(ctx, res.AssignmentID, true), userID(ctx))...)
 	return &assignmentAttemptOutput{Body: res}, nil
 }
 
@@ -387,6 +406,7 @@ func (a *api) markAssignmentAnswer(ctx context.Context, in *assignmentMarkInput)
 	if err != nil {
 		return nil, assignmentError(err)
 	}
+	a.publishTodo(ctx, append(a.todoAudience(ctx, res.AssignmentID, true), res.UserID)...)
 	return &assignmentAttemptOutput{Body: res}, nil
 }
 

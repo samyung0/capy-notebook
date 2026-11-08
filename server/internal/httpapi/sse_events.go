@@ -35,6 +35,7 @@ type notificationEvent struct {
 	ExtractionID string `json:"extractionId,omitempty"`
 	// assignment_closed: staff closed an assignment the user is taking.
 	AssignmentID string `json:"assignmentId,omitempty"`
+	// todo: something on the user's To do changed; the event carries no rows.
 }
 
 func (a *api) publishNotificationEvent(ctx context.Context, userID string, event notificationEvent) {
@@ -68,6 +69,36 @@ func (a *api) publishAssignmentClosed(ctx context.Context, id string) {
 // on the new.
 func (a *api) publishAssignmentRepublished(ctx context.Context, id string) {
 	a.tellRunningAttempts(ctx, id, "assignment_republished")
+}
+
+// todoAudience is whom publishTodo tells about an assignment: everyone it is
+// given to and the class's staff, or with staffOnly its staff alone. A failed
+// read is logged and tells no one: best effort, as the lists refetch on load.
+func (a *api) todoAudience(ctx context.Context, id string, staffOnly bool) []string {
+	if a.rdb == nil {
+		return nil
+	}
+	members, staff, err := a.s.TodoAudience(ctx, id)
+	if err != nil {
+		obs.Log(ctx).Warn("to do audience not read", "assignment_id", id, "error", err)
+		return nil
+	}
+	if staffOnly {
+		return staff
+	}
+	return append(members, staff...)
+}
+
+// publishTodo tells each user's open tabs to refetch To do (Epo 2026-11-08),
+// once the change committed.
+func (a *api) publishTodo(ctx context.Context, users ...string) {
+	seen := map[string]bool{}
+	for _, user := range users {
+		if !seen[user] {
+			seen[user] = true
+			a.publishNotificationEvent(ctx, user, notificationEvent{Type: "todo"})
+		}
+	}
 }
 
 func (a *api) tellRunningAttempts(ctx context.Context, id, event string) {
