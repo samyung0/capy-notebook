@@ -775,6 +775,146 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
     </div>
   </section>
 
+  <!-- T3 -->
+  <section class="board" id="t3">
+    <header><h2><b>T3</b>Owner: waiting for approval vs waiting to be graded, with the reason</h2>
+      <p>Epo 2026-11-08. Marking is charged to the person attempting, and running out never blocks a submission. The list row and the report header split today's "N to approve" into "to approve" (AI marked, waiting for you) and "not graded" (no AI mark yet). On Approve AI marks, a strip above the list says why, one line per reason, and each ungraded row names its reason. Mark with AI stays where it is; it charges each member's own credits.</p></header>
+    <div class="frames">
+      <div class="lap-wrap"><div class="lap" data-shell="owner">
+        <div class="main">
+          <div class="back"><svg><use href="#i-back"/></svg>Assignments</div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px"><span class="title" style="margin:0">Past paper 2025 P1</span><span class="chips"><span class="chip">Assignment · 60 min</span><span class="chip">Due Wed 11 Nov</span><span class="chip">5 of 6 submitted</span><span class="chip warn newmark" style="margin:0">3 to approve</span><span class="chip bad newmark" style="margin:0">4 not graded</span></span></div>
+          <div class="tabs"><span>Questions</span><span>Members</span><span class="on">Approve AI marks</span><span>Settings</span></div>
+          <div class="newmark" style="margin:12px 0 0;display:grid;gap:4px;font-size:13px;background:var(--bad-bg);color:var(--fg);padding:10px 12px;border-radius:7px">
+            <span><b style="font-weight:600">3 answers not graded: Farah Ali and Gus Ito have no AI credits left.</b> Mark with AI once they top up.</span>
+            <span><b style="font-weight:600">1 answer not graded: the AI provider failed.</b> Mark with AI to try again.</span>
+          </div>
+          <div class="appr" style="height:calc(100% - 196px)">
+            <div class="l">
+              <div class="input" style="height:32px">Question 3 · 6 marks<svg><use href="#i-down"/></svg></div>
+              <div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px;color:var(--fg2)">1 to approve · 3 not graded<span class="btn out sm">Approve all</span></div>
+              <span class="btn out sm" style="justify-content:center">Mark with AI</span>
+              <div class="mrow on"><span class="av">FA</span><span class="nm">Farah Ali</span><span class="chip bad">No credits</span></div>
+              <div class="mrow"><span class="av">GI</span><span class="nm">Gus Ito</span><span class="chip bad">No credits</span></div>
+              <div class="mrow"><span class="av">BL</span><span class="nm">Ben Lee</span><span class="chip bad">Provider error</span></div>
+              <div class="mrow"><span class="av">CM</span><span class="nm">Cara Moss</span><span class="chip warn">To approve</span></div>
+              <div class="mrow"><span class="av">EP</span><span class="nm">Eve Park</span><span>5 / 6</span></div>
+            </div>
+            <div class="r">
+              <div class="stem">Explain how water enters a root hair cell from the soil. <span class="mk">(6 marks)</span></div>
+              <div style="display:flex;align-items:center;gap:8px"><span class="av">FA</span><b style="font-weight:600">Farah Ali</b></div>
+              <div style="border-left:3px solid var(--divider);padding-left:12px;color:var(--fg2)">Water goes into the root hair cell by osmosis. It crosses the partially permeable membrane and then moves on towards the xylem.</div>
+              <div class="meta newmark" style="margin:0;padding:2px 6px">Not graded: Farah has no AI credits left.</div>
+              <table class="pts">
+                <tr><th>MARKING POINTS</th><th>AI</th><th>MARK</th></tr>
+                <tr><td>Names the partially permeable membrane (2)</td><td class="ai">–</td><td class="mk"><div class="sel">– / 2<svg><use href="#i-down"/></svg></div></td></tr>
+                <tr><td>Water moves from dilute to concentrated solution (2)</td><td class="ai">–</td><td class="mk"><div class="sel">– / 2<svg><use href="#i-down"/></svg></div></td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div><div class="cap">The Assignments list row reads the same: "Past paper 2025 P1 · 3 to approve · 4 not graded".</div></div>
+      <div class="phone">
+        <div data-tpl="ph-top"></div>
+        <div class="ph-body" style="gap:10px">
+          <div class="title" style="font-size:20px">Past paper 2025 P1</div>
+          <span class="chips"><span class="chip">5 of 6 submitted</span><span class="chip warn">3 to approve</span><span class="chip bad">4 not graded</span></span>
+          <div class="tabs" style="margin:0;font-size:13px"><span>Questions</span><span>Members</span><span class="on">Approve AI marks</span></div>
+          <div class="newmark" style="margin:0;display:grid;gap:4px;font-size:12.5px;background:var(--bad-bg);padding:9px 11px;border-radius:7px">
+            <span><b style="font-weight:600">3 not graded: Farah Ali and Gus Ito have no AI credits left.</b></span>
+            <span><b style="font-weight:600">1 not graded: the AI provider failed.</b></span>
+          </div>
+          <div class="input" style="height:32px">Question 3 · 6 marks<svg><use href="#i-down"/></svg></div>
+          <span class="btn out sm" style="justify-content:center">Mark with AI</span>
+          <div style="display:grid;gap:2px">
+            <div style="display:flex;gap:9px;align-items:center;background:var(--select);padding:7px 9px;border-radius:7px"><span class="av">FA</span><span style="flex:1">Farah Ali</span><span class="chip bad">No credits</span></div>
+            <div style="display:flex;gap:9px;align-items:center;padding:7px 9px"><span class="av">GI</span><span style="flex:1">Gus Ito</span><span class="chip bad">No credits</span></div>
+            <div style="display:flex;gap:9px;align-items:center;padding:7px 9px"><span class="av">BL</span><span style="flex:1">Ben Lee</span><span class="chip bad">Provider error</span></div>
+            <div style="display:flex;gap:9px;align-items:center;padding:7px 9px"><span class="av">CM</span><span style="flex:1">Cara Moss</span><span class="chip warn">To approve</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- T4 -->
+  <section class="board" id="t4">
+    <header><h2><b>T4</b>Owner, Members tab: a member with no storage left</h2>
+      <p>Epo 2026-11-08. A warning chip on the member's row while their storage is full (their drawings and uploads saved past the limit). The hover or tap text says what it means for them.</p></header>
+    <div class="frames">
+      <div class="lap-wrap"><div class="lap" data-shell="owner">
+        <div class="main">
+          <div class="back"><svg><use href="#i-back"/></svg>Assignments</div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px"><span class="title" style="margin:0">Past paper 2025 P1</span><span class="chips"><span class="chip">Assignment · 60 min</span><span class="chip">Due Wed 11 Nov</span><span class="chip">5 of 6 submitted</span></span></div>
+          <div class="tabs"><span>Questions</span><span class="on">Members</span><span>Approve AI marks</span><span>Settings</span></div>
+          <table class="table" style="margin-top:6px">
+            <tr><th>Member</th><th>Submitted</th><th>Time taken</th><th>Mark</th><th></th></tr>
+            <tr><td><span class="who"><span class="av">BL</span>Ben Lee</span></td><td>Sat 7 Nov</td><td>38 min</td><td><b>26</b> / 40</td><td><span class="chip bad">1 not graded</span></td></tr>
+            <tr><td><span class="who"><span class="av">CM</span>Cara Moss</span></td><td>Sun 8 Nov</td><td>47 min</td><td><b>24</b> / 40</td><td><span class="chip warn">1 to approve</span></td></tr>
+            <tr><td><span class="who"><span class="av">DK</span>Dan Kim</span></td><td style="color:var(--fg2)">Not submitted</td><td></td><td></td><td><span class="chip warn newmark" style="margin:0">Storage full</span></td></tr>
+            <tr><td><span class="who"><span class="av">EP</span>Eve Park</span></td><td>Fri 6 Nov</td><td>52 min</td><td><b>31</b> / 40</td><td></td></tr>
+            <tr><td><span class="who"><span class="av">FA</span>Farah Ali</span></td><td>Sun 8 Nov</td><td>41 min</td><td><b>20</b> / 40</td><td><span class="chips"><span class="chip bad">2 not graded</span><span class="chip warn newmark" style="margin:0">Storage full</span></span></td></tr>
+            <tr><td><span class="who"><span class="av">GI</span>Gus Ito</span></td><td>Sat 7 Nov</td><td>55 min</td><td><b>19</b> / 40</td><td><span class="chip bad">1 not graded</span></td></tr>
+          </table>
+          <div class="menu" style="left:560px;top:376px;width:300px;padding:9px 11px;font-size:12.5px;color:var(--fg2)">Dan's storage is full. They can still answer and submit; they can't upload a paper until they free up space.</div>
+        </div>
+      </div></div>
+      <div class="phone">
+        <div data-tpl="ph-top"></div>
+        <div class="ph-body" style="gap:10px">
+          <div class="title" style="font-size:20px">Past paper 2025 P1</div>
+          <div class="tabs" style="margin:0;font-size:13px"><span>Questions</span><span class="on">Members</span><span>Approve AI marks</span></div>
+          <ul class="list" style="margin:0">
+            <li style="min-height:56px"><span class="av">BL</span><span style="flex:1;min-width:0"><b style="font-weight:600">Ben Lee</b><br><span class="meta">26 / 40 · 1 not graded</span></span></li>
+            <li style="min-height:56px"><span class="av">DK</span><span style="flex:1;min-width:0"><b style="font-weight:600">Dan Kim</b><br><span class="meta">Not submitted</span></span><span class="chip warn newmark" style="margin:0">Storage full</span></li>
+            <li style="min-height:56px"><span class="av">EP</span><span style="flex:1;min-width:0"><b style="font-weight:600">Eve Park</b><br><span class="meta">31 / 40</span></span></li>
+            <li style="min-height:56px"><span class="av">FA</span><span style="flex:1;min-width:0"><b style="font-weight:600">Farah Ali</b><br><span class="meta">20 / 40 · 2 not graded</span></span><span class="chip warn newmark" style="margin:0">Storage full</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- S6 -->
+  <section class="board" id="s6">
+    <header><h2><b>S6</b>Member whose storage is full, starting an assignment</h2>
+      <p>Epo 2026-11-08. Laptop: the choice screen (S4) with Upload your paper turned off and the reason under it. Phone: Before you start (timed assignments) with drawing parts shows one warning line; Start still works, and drawings save past the limit.</p></header>
+    <div class="frames">
+      <div class="lap-wrap"><div class="lap" data-shell="member">
+        <div class="main">
+          <div class="back"><svg><use href="#i-back"/></svg>Assignments</div>
+          <div class="title" style="margin-top:6px">Past paper 2025 P1</div>
+          <div class="meta">Marked · 12 questions · 40 marks · Due Wed 11 Nov</div>
+          <div style="margin:26px 0 0;display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:700px">
+            <div style="border:1px solid var(--border);border-radius:10px;padding:18px;display:grid;gap:10px;align-content:start">
+              <svg style="width:22px;height:22px"><use href="#i-bolt"/></svg>
+              <h4 class="sub">Answer here</h4>
+              <span class="meta" style="font-size:13px">Type and draw your answers in Capy.</span>
+              <div><span class="btn">Start</span></div>
+            </div>
+            <div class="newmark" style="margin:0;border:1px solid var(--border);border-radius:10px;padding:18px;display:grid;gap:10px;align-content:start">
+              <svg style="width:22px;height:22px;opacity:.45"><use href="#i-page"/></svg>
+              <h4 class="sub" style="color:var(--muted)">Upload your paper</h4>
+              <span style="font-size:13px;color:var(--warn)">Your storage is full. Free up space to upload.</span>
+              <div style="display:flex;gap:8px;align-items:center"><span class="btn out" style="opacity:.45">Upload</span><span class="link">Storage<svg><use href="#i-fwd"/></svg></span></div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="phone">
+        <div data-tpl="ph-top"></div>
+        <div class="ph-body" style="opacity:.35"><span class="title">Past paper 2025 P1</span></div>
+        <div class="ph-sheet"><div class="dialog" style="gap:14px">
+          <h3>Before you start</h3>
+          <div style="display:flex;align-items:center;gap:10px;font-size:30px;font-weight:800"><svg style="width:28px;height:28px"><use href="#i-cal"/></svg>60 min</div>
+          <div class="meta" style="font-size:13px">12 questions · 40 marks</div>
+          <div class="newmark" style="margin:0;font-size:13px;color:var(--warn);background:var(--warn-bg);padding:9px 11px;border-radius:7px">Your storage is full. You can still answer and submit; your drawings will go over your storage limit.</div>
+          <div class="foot"><span class="btn ghost">Cancel</span><span class="btn">Start</span></div>
+        </div></div>
+      </div>
+    </div>
+  </section>
+
   <section class="picks">
     <h2>What each pick settles</h2>
     <ul>

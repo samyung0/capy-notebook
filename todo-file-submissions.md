@@ -7,9 +7,9 @@ submissions; and whether a normal scanned upload goes to the caption/VLM slot
 while only Make a quiz uses the layout/OCR service.
 
 Status: **phase 1.** No feature code.
-- Decided: A, B, and marking from all the pages together.
-- Open: who pays (Q1, conflicts with a recorded decision), M (how pages are
-  marked), and C–L.
+- Decided: A, B, marking from all the pages together, the person attempting
+  pays, and credits or storage never blocking a submission.
+- Open: O1–O4, M, N and C–L.
 
 Mocks: https://claude.ai/artifact/4ihgjU6i3BQn3q6ngQA9bQ
 (`artifacts/2026-11-08-file-submissions-mocks.html`). Costs and the whole-paper
@@ -32,14 +32,64 @@ bench: `bench/grading/reports/2026-11-08-page-answer-costs.md`.
   - The pages are marked together, since nobody says where each answer is: one
     call for the whole paper, or a map call then grading.
   - "3 page is very little": there is no per-question page cap.
-- **Not recorded, conflicts with a decision (Q1):** "everything, literally
-  everything is charged to the person attempting".
-  - Today an assignment's AI marking is charged to the workspace owner: Epo
-    2026-11-03 in `human/observability-metering.md:178`.
-  - In code, `store/assignment_marking.go:38` takes `workspaces.user_id` as the
-    payer.
-  - Only practice checks and drawing storage are charged to the person
-    attempting.
+- **Payer (Epo 2026-11-08, "all assignment markings"):**
+  - All AI marking of an assignment is charged to the person attempting:
+    typed, drawn and uploaded answers, the page map and the option read.
+  - This supersedes the 2026-11-03 owner-pays line, now tagged in
+    `human/observability-metering.md`.
+- **Credits (Epo 2026-11-08):**
+  - Running out never blocks a submission; answers reach the owner ungraded.
+  - The owner sees "to approve" and "not graded" as separate counts, plus why
+    answers weren't graded (mock T3).
+- **Storage (Epo 2026-11-08):**
+  - Running out never blocks attempting or submitting. Drawings and uploads
+    save past the limit into the existing over-quota states.
+  - A later attempt started while over the limit can't upload, and its start
+    shows a warning when there are drawing parts (S6).
+  - The owner's Members tab warns (T4).
+  - This supersedes the Q693 storage refusal on assignment drawings; practice
+    checks keep Q694.
+
+## Credits and storage never block an assignment: what changes
+
+**Credits, today:**
+- A part that can't be paid for, or whose call fails, is simply absent from
+  the results: `gradeWithModel`, `server/internal/httpapi/quiz_grading.go:216`.
+- It shows "Not marked", and no reason is stored.
+- The owner's "N to approve" (`ApproveTab.tsx:119`) counts AI-marked answers
+  waiting for approval and answers never graded together.
+
+**Credits, to build:**
+- Each ungraded part stores why: `credits` or `provider`.
+- Counts split into "to approve" and "not graded" on the Assignments list row,
+  the report header, Approve and the Members tab.
+- A strip on Approve gives one line a reason (T3).
+- Mark with AI stays the owner's button and charges each member's own
+  credits. Nothing retries by itself (AGENTS.md).
+
+**Storage, today:**
+- An assignment drawing is refused at the limit: `CheckAssignmentDrawing` →
+  `gateStorageTx`, `server/internal/store/drawings.go:127`.
+- The Q693 review added that refusal.
+
+**Storage, to build:**
+- Assignment drawings and uploaded papers skip the refusal but are still
+  charged, so the account goes over.
+- An attempt started over the limit gets no Upload (S6 laptop), and a warning
+  when it has drawing parts (S6 phone).
+- The owner sees "Storage full" on the member's row (T4).
+
+**Corrections to the numbers in Epo's message:**
+- A quiz allows 100 parts and 100 AI-marked parts (`fieldlimits.QuizParts`,
+  `QuizOpenParts`), not 40.
+- A drawing part holds at most a 250 KB board plus a 300 KB marking image
+  (`DrawingBoardBytes`, `DrawingImageBytes`).
+- The marking image is dropped once its part is marked.
+- **How far over the limit an attempt can go:**
+  - Worst case: about 25 MB of boards across 100 drawing parts (images
+    dropped after marking), plus the uploaded paper, at most the member's
+    source file cap (10 / 30 MiB).
+  - A typical paper with a few drawings adds well under 2 MB.
 
 ## 1. Parsing today (answer to Epo's last question)
 
@@ -186,8 +236,8 @@ You see every page of one student's handwritten answer paper, in order, and the 
   - Digital pages cost 0.4 credits a page to parse, scanned pages 1.0 a page,
     and embedding adds next to nothing.
   - A class of 30 handing in 8 scanned pages each is about 240 credits.
-  - Ingest charges the uploader, which is the member, against "the owner pays
-    for assignments".
+  - Ingest charges the uploader, the member, which now matches the person
+    attempting paying for marking.
 - **What it would enable:**
   - search across submissions;
   - the chat agent citing a member's work ("who misread water potential?");
@@ -221,6 +271,11 @@ board):
 - **T1:** Owner, Approve AI marks, showing the mapped page in place of the typed
   answer, with Open file.
 - **T2:** Owner, Unmarked task's Members tab: handed-in date and files.
+- **T3:** Owner, "to approve" and "not graded" counts, with the reasons on
+  Approve.
+- **T4:** Owner, Members tab "Storage full" on a member's row.
+- **S6:** Member over storage: Upload turned off on the choice screen; the
+  warning in Before you start.
 - **S1 and S2** are kept on the page, marked as not picked or superseded.
 
 ## 5. Build outline (phase 2, after the decisions)
@@ -246,14 +301,23 @@ board):
 
 ## Questions for Epo
 
-Q1. **Who pays.** Today an assignment's AI marking is charged to the workspace
-    owner, by your 2026-11-03 decision. Only practice checks and drawing
-    storage go to the person attempting.
-    - Should all assignment marking (typed, drawn and uploaded) move to the
-      person attempting?
-    - Or only uploaded papers?
+O1. **Bounding the overshoot:** one uploaded paper an attempt, at most the
+    member's source file cap in total (10 / 30 MiB) across its files; drawings
+    stay bounded by their per-part caps. OK?
 
-    Who pays the map call follows the same answer.
+O2. **The member's side of "not graded":**
+    - Should the member's results say "Not graded: you have no AI credits
+      left" with a Top up link?
+    - After topping up, may the member press Mark with AI themselves, or does
+      only the owner?
+
+O3. **Untimed assignments without uploads** open straight into the attempt,
+    so they have no start dialog for the storage warning. Should a one-line
+    strip show at the top of the attempt instead?
+
+O4. **Frozen accounts** (`over_quota_frozen`, read-only everywhere): can they
+    still attempt and submit assignments? Recommended: yes, since an
+    assignment answer isn't a material they edit.
 
 M. **Marking method:**
    - Recommended: map, then one read call for closed parts, then open parts
