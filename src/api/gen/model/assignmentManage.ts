@@ -6,6 +6,7 @@
  */
 import type { AssignmentManageMarking } from './assignmentManageMarking.ts';
 import type { AssignmentManageShowAnswers } from './assignmentManageShowAnswers.ts';
+import type { AssignmentManageShowGrades } from './assignmentManageShowGrades.ts';
 
 export interface AssignmentManage {
   assignAll: boolean;
@@ -13,11 +14,13 @@ export interface AssignmentManage {
   assignees: string[];
   average?: number;
   done: number;
+  gradesReleasedAt?: string;
   marking: AssignmentManageMarking;
   quizId?: string;
   quizTitle?: string;
   quizTrashed?: boolean;
   showAnswers: AssignmentManageShowAnswers;
+  showGrades: AssignmentManageShowGrades;
   shuffle: boolean;
   toApprove: number;
 }

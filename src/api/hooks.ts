@@ -3210,6 +3210,16 @@ export function useSetAssignmentClosed(workspaceId: string, id: string) {
   });
 }
 
+/** Release grades on an assignment whose grades are shown by hand (T5). */
+export function useReleaseAssignmentGrades(workspaceId: string, id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api.post<Assignment>(`/assignments/${id}/release-grades`, {}),
+    onSuccess: () => refreshAssignment(qc, workspaceId, id),
+  });
+}
+
 export function useSetAssignmentDone(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({

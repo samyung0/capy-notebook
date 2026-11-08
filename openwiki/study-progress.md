@@ -981,7 +981,20 @@ default: closed by hand, or at the due date under No late submissions), After
 submission, or Do not show. Until then the server leaves marks and comments and removes keys, marking
 points and solutions (`gradedWithoutKeys`), so an early submitter has no answers to
 pass on while classmates still answer; per-part marks still show on submit.
-Reopening hides the keys again. Practise again shows once its quiz is practice. The top right
+Reopening hides the keys again.
+
+**Show grades** (C4, S7, T5; Epo 2026-11-08, migration 0160 `grades_shown`,
+`grades_released_at`). Automatic, the default, shows marks as they are decided.
+Manual holds them until an owner or editor presses Release grades in the report
+header (`POST /api/assignments/{id}/release-grades`), which confirms with how
+many answers still wait for approval. Until then a member's `gradesHidden`
+results carry their answers and the questions without marks, outcomes,
+comments or keys (Answered or Blank per question), their row reads Submitted,
+and the Submitted page says who releases it. Answers never show before grades.
+The topic-label read leaves out events of an attempt on such an assignment, and
+the sweep makes its quiz practice, rating what was submitted, only once it has
+closed and its grades are released. After release, later marks show as they
+land. Practise again shows once its quiz is practice. The top right
 shows the mark after any late penalty, with the unpenalised mark under it.
 
 **The report** (G3, G3m, A3; `GET /api/assignments/{id}/report`, owner and editor

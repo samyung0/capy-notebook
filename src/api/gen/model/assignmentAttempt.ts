@@ -17,6 +17,7 @@ export interface AssignmentAttempt {
   correct: number;
   deadlineAt?: string;
   drawingImages: boolean;
+  gradesHidden: boolean;
   id: string;
   late: boolean;
   latePenaltyPct: number;

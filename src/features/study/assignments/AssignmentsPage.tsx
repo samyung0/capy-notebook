@@ -497,6 +497,12 @@ function MemberList({ workspaceId }: { workspaceId: string }) {
           {m.assignment_mark_done()}
         </Button>
       );
+    if (mine.done && row.gradesHidden)
+      return (
+        <span className="t-meta inline-flex h-5.5 items-center rounded-md bg-page-hover px-1.75 font-semibold text-fg-secondary text-xs">
+          {m.assignment_submitted()}
+        </span>
+      );
     if (mine.done)
       return (
         <span className="font-bold">

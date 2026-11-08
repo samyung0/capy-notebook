@@ -117,6 +117,7 @@ test.describe('assignments', () => {
           noLate: false,
           quizId: quiz.id,
           showAnswers: 'submitted',
+          showGrades: 'automatic',
           shuffle: false,
           title: 'Cells check',
         },

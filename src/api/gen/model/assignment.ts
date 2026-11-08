@@ -18,6 +18,7 @@ export interface Assignment {
   draft: boolean;
   dueAt?: string;
   files: AssignmentFile[];
+  gradesHidden: boolean;
   id: string;
   kind: AssignmentKind;
   latePenaltyPct: number;

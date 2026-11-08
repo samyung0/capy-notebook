@@ -66,7 +66,7 @@ func drawingAssignment(t *testing.T, h http.Handler, marking string) string {
 	rec := doReq(t, h, http.MethodPost, ws+"/assignments", "u_owner", map[string]any{
 		"kind": "marked", "title": "Drawn", "quizId": made.ID, "dueAt": time.Now().Add(time.Hour).Format(time.RFC3339),
 		"attempts": 1, "noLate": false, "latePenaltyPct": 0, "assignAll": true, "assignees": []string{}, "draft": false,
-		"marking": marking, "showAnswers": "submitted", "shuffle": false, "files": []any{},
+		"marking": marking, "showAnswers": "submitted", "showGrades": "automatic", "shuffle": false, "files": []any{},
 	})
 	if rec.Code != http.StatusOK && rec.Code != http.StatusCreated {
 		t.Fatalf("create assignment: status = %d body=%s", rec.Code, rec.Body.String())

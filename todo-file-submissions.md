@@ -33,8 +33,11 @@ bench: `bench/grading/reports/2026-11-08-page-answer-costs.md`.
 - **Show answers (Epo 2026-11-08, built 6bf29212d, names from Epo's later
   message):** a select beside Marking: After assignment close (default),
   After submission, Do not show.
-- **Show grades (Epo 2026-11-08, mock C4):** a select beside Show answers:
-  Automatic or Manual.
+- **Show grades (Epo 2026-11-08, mocks C4, S7, T5, built):** a select
+  beside Show answers, Automatic or Manual; Manual holds marks until Release
+  grades, with practice, reviews and topic labels waiting too.
+- **T3 (Epo 2026-11-08):** the error badge reads No credits or Grade Error; no
+  banner and no member names in an error summary.
 - **Marking (Epo 2026-11-08):**
   - The pages are marked together, since nobody says where each answer is: one
     call for the whole paper, or a map call then grading.
@@ -123,24 +126,10 @@ assignment whose score isn't released, and whether topic mastery should wait.
 
 **Decided:** Show grades, Automatic (default) or Manual (C4).
 
-**Still proposed (question S, mocks S7, T5):**
-- **Answers never show before grades.** With Manual, After submission answers
-  go out at the release, and After assignment close ones at the release or the
-  close, whichever is later.
-- **Release grades** button on the report (T5). It confirms how many members
-  get them and how many answers still wait for approval. After release, an
-  approved or changed mark shows at once, as in Canvas. The chip then reads
-  "Released {date}".
-- **Before release (S7):**
-  - The Submitted page says "Your grade will show when {owner} releases it".
-  - The Assignments row shows a Submitted chip where the mark goes.
-  - Results lists their own answers with Answered or Blank, and no marks,
-    right/wrong or comments.
-- **Mastery and reviews wait for what the member can see.** Answer events are
-  still written as now: the log stays complete and the owner's report reads it.
-  The topic-label read leaves out an assignment's events until its grades are
-  visible to that member, and reviews rate at release or at close, whichever is
-  later. With Automatic nothing changes.
+**Built (Epo 2026-11-08, "sure build it now, can tune later"):** as proposed
+in S7 and T5. Practice also waits for the release, since its keys would give
+the answers away early.
+
 - **Not in this:** a bell notification at release (question T).
 
 ## Credits and storage never block an assignment: what changes
@@ -408,10 +397,7 @@ R. **Built (Epo 2026-11-08, "its only a select right? otherwise just build
    and per-part right/wrong still show on submit; whether right/wrong should
    wait too is for Epo to judge on the build.
 
-S. **Releasing grades (mocks S7, T5):** with Show grades Manual, a Release
-   grades button on the report, the member's view before release, answers
-   waiting for the release, and topic labels and reviews waiting for it too.
-   Yes as proposed?
+S. **Built 2026-11-08** (Show grades, Release grades, S7).
 
 T. **Notify at release?** A bell notification "Grades released: Past paper 2025
    P1" to each member. No marks notification exists today.

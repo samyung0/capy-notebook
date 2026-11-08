@@ -284,7 +284,7 @@ func newAssignmentFixture(t *testing.T, label string) assignmentFixture {
 func (f assignmentFixture) form(t *testing.T, due time.Time) AssignmentForm {
 	t.Helper()
 	return AssignmentForm{Kind: AssignmentMarked, Title: "Paper", QuizID: f.quiz.ID, Questions: frozenFixture(t),
-		DueAt: &due, Attempts: 1, AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterSubmit, Files: []AssignmentFileRef{}}
+		DueAt: &due, Attempts: 1, AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterSubmit, ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{}}
 }
 
 // TestAssignmentRun walks a marked assignment: created with its quiz refused to
@@ -511,7 +511,7 @@ func TestAssignmentAssignTo(t *testing.T) {
 		t.Fatalf("all members = %+v manage %+v, err %v", staff, staff.Manage, err)
 	}
 
-	form := AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1, AssignAll: false, Assignees: []string{f.viewer, f.user}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, Files: []AssignmentFileRef{}}
+	form := AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1, AssignAll: false, Assignees: []string{f.viewer, f.user}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{}}
 	named, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
@@ -1791,7 +1791,7 @@ func TestPersonalWorkspaceStartsNoAssignment(t *testing.T) {
 		t.Fatal(err)
 	}
 	unmarked, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1,
-		AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, Files: []AssignmentFileRef{}}, now)
+		AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{}}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2231,7 +2231,7 @@ func TestLockedOwnerStartsNoAssignment(t *testing.T) {
 		t.Fatal(err)
 	}
 	unmarked, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1,
-		AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, Files: []AssignmentFileRef{}}, now)
+		AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{}}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2327,7 +2327,7 @@ func TestMovingAFileLeavesItsAssignments(t *testing.T) {
 	now := time.Now().UTC()
 	file := uploadWorkspaceFile(t, f.s, f.user, f.ws.ID)
 	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1,
-		AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, Files: []AssignmentFileRef{{FileID: file.ID}}}, now)
+		AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{{FileID: file.ID}}}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2778,5 +2778,90 @@ func TestAnswersShownAfterClose(t *testing.T) {
 	}
 	if !closed.ShowAnswers || openPart(t, closed.Questions)["markscheme"] == nil {
 		t.Fatalf("no keys after closing: %+v", openPart(t, closed.Questions))
+	}
+}
+
+// Grades shown by hand (Epo 2026-11-08, mocks C4, S7, T5): until staff release
+// them a member's results hold their answers alone, their row no mark, their
+// topic labels none of these answers, and closing makes no practice; release
+// shows them all, and the sweep then makes it practice.
+func TestManualGradesWaitForRelease(t *testing.T) {
+	f := newAssignmentFixture(t, "grades-manual")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	form := f.form(t, now.Add(time.Hour))
+	form.ShowGrades = GradesManual
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.ID, map[string]any{"p2": "osmosis"}, now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	at := now.Add(time.Minute)
+	asked := func() int {
+		t.Helper()
+		topics, err := f.s.WorkspaceStudyTopics(ctx, f.viewer, f.ws.ID, false, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n := 0
+		for _, topic := range topics.Topics {
+			n += topic.Asked
+		}
+		return n
+	}
+
+	hidden, err := f.s.GetAssignmentAttempt(ctx, f.viewer, run.ID, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(hidden)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hidden.GradesHidden || hidden.Correct != 0 || hidden.Total != 0 || strings.Contains(string(raw), `"awarded"`) || strings.Contains(string(raw), "markscheme") {
+		t.Fatalf("grades before release: %s", raw)
+	}
+	list, err := f.s.ListAssignments(ctx, f.viewer, f.ws.ID, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row := list.Items[0]; !row.GradesHidden || row.Mine == nil || !row.Mine.Done || row.Mine.Mark != nil {
+		t.Fatalf("row before release = %+v / %+v", row, row.Mine)
+	}
+	if n := asked(); n != 0 {
+		t.Fatalf("topic labels counted %d answers before release", n)
+	}
+	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, at); err != nil {
+		t.Fatal(err)
+	}
+	if _, released, err := f.s.SweepAssignments(ctx, 50, at.Add(time.Minute)); err != nil || released != 0 {
+		t.Fatalf("closing before release made practice: %d, %v", released, err)
+	}
+
+	if _, err := f.s.ReleaseAssignmentGrades(ctx, f.viewer, created.ID, at); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("a member's release = %v", err)
+	}
+	released, err := f.s.ReleaseAssignmentGrades(ctx, f.user, created.ID, at)
+	if err != nil || released.Manage.GradesReleasedAt == nil || released.GradesHidden {
+		t.Fatalf("release = %+v, %v", released.Manage, err)
+	}
+	shown, err := f.s.GetAssignmentAttempt(ctx, f.viewer, run.ID, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shown.GradesHidden || shown.Correct != 2 || !shown.ShowAnswers {
+		t.Fatalf("after release = %+v", shown)
+	}
+	if n := asked(); n == 0 {
+		t.Fatal("topic labels left the answers out after release")
+	}
+	if _, practice, err := f.s.SweepAssignments(ctx, 50, at.Add(time.Minute)); err != nil || practice != 1 {
+		t.Fatalf("sweep after release made practice %d, %v", practice, err)
 	}
 }

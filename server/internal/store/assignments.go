@@ -90,6 +90,9 @@ type Assignment struct {
 	// TopicIDs: its quiz's topic, or its files' with the most-used first.
 	TopicIDs []string         `json:"topicIds" nullable:"false"`
 	Files    []AssignmentFile `json:"files" nullable:"false"`
+	// GradesHidden: Show grades is manual and staff have not released them, so a
+	// member reads no marks, comments or keys yet.
+	GradesHidden bool `json:"gradesHidden"`
 	// PracticeQuizID is its quiz once that shows as practice to the caller.
 	PracticeQuizID *string           `json:"practiceQuizId,omitempty"`
 	Manage         *AssignmentManage `json:"manage,omitempty"`
@@ -119,7 +122,11 @@ type AssignmentManage struct {
 	// ShowAnswers is when members read the keys on their results: closed,
 	// submitted or never.
 	ShowAnswers string `json:"showAnswers" enum:"closed,submitted,never"`
-	Shuffle     bool   `json:"shuffle"`
+	// ShowGrades is when members see their marks: automatic, or manual from
+	// GradesReleasedAt, when staff released them.
+	ShowGrades       string     `json:"showGrades" enum:"automatic,manual"`
+	GradesReleasedAt *time.Time `json:"gradesReleasedAt,omitempty"`
+	Shuffle          bool       `json:"shuffle"`
 	// Assigned counts who it went to; Done those who submitted or ticked it.
 	Assigned int `json:"assigned"`
 	Done     int `json:"done"`
@@ -181,6 +188,7 @@ type AssignmentForm struct {
 	Draft          bool
 	Marking        string
 	ShowAnswers    string
+	ShowGrades     string
 	Shuffle        bool
 	Files          []AssignmentFileRef
 }
@@ -217,7 +225,7 @@ func (s *Store) assignmentStaff(ctx context.Context, q rowQueryer, userID, wsID 
 const assignmentCols = `a.id, a.workspace_id, a.kind, a.title, a.posted_at, COALESCE(NULLIF(u.name,''), u.id, ''),
 	a.due_at, a.closed_at, a.no_late, a.late_penalty_pct, a.draft, a.time_limit_min, a.attempts_allowed, a.question_count, a.total_marks::float8,
 	a.source_quiz_id, COALESCE(m.title,''), m.topic_id, COALESCE(m.hidden, false), m.trashed_at IS NOT NULL,
-	a.assign_all, a.marking, a.answers_shown, a.shuffle, a.released_at`
+	a.assign_all, a.marking, a.answers_shown, a.grades_shown, a.grades_released_at, a.shuffle, a.released_at`
 
 // readAssignments reads the rows matching where (assignments a, users u and
 // materials m aliased) and fills what the caller may see of them; a caller who
@@ -245,10 +253,11 @@ func (s *Store) readAssignments(ctx context.Context, userID string, staff bool, 
 		if err := rows.Scan(&a.ID, &a.WorkspaceID, &a.Kind, &a.Title, &a.PostedAt, &a.PostedBy,
 			&a.DueAt, &a.ClosedAt, &a.NoLate, &a.LatePenaltyPct, &a.Draft, &a.TimeLimitMin, &a.Attempts, &a.Questions, &a.Marks,
 			&manage.QuizID, &manage.QuizTitle, &src.topicID, &src.hidden, &src.trashed,
-			&manage.AssignAll, &manage.Marking, &manage.ShowAnswers, &manage.Shuffle, &src.released); err != nil {
+			&manage.AssignAll, &manage.Marking, &manage.ShowAnswers, &manage.ShowGrades, &manage.GradesReleasedAt, &manage.Shuffle, &src.released); err != nil {
 			return nil, err
 		}
 		a.ClosedAt = assignmentClosedAt(a.NoLate, a.DueAt, a.ClosedAt, now)
+		a.GradesHidden = gradesHidden(manage.ShowGrades, manage.GradesReleasedAt)
 		a.Closed = a.ClosedAt != nil || (a.Kind == AssignmentUnmarked && a.DueAt != nil && !a.DueAt.After(now))
 		a.TopicIDs, a.Files = []string{}, []AssignmentFile{}
 		if src.topicID != nil {
@@ -309,6 +318,11 @@ func assignmentClosedAt(noLate bool, due, closed *time.Time, now time.Time) *tim
 		return due
 	}
 	return closed
+}
+
+// gradesHidden: grades wait for staff to release them.
+func gradesHidden(shown string, released *time.Time) bool {
+	return shown == GradesManual && released == nil
 }
 
 // assignmentLate is whether a submission came after the due date. Under No late
@@ -495,6 +509,10 @@ func (s *Store) fillAssignmentMine(ctx context.Context, userID string, ids []str
 			mine.LatePenaltyPct = penaltyFor(mine.Late, a.LatePenaltyPct)
 			mark := penalisedMark(*mine.Correct, mine.LatePenaltyPct)
 			mine.Mark = &mark
+		}
+		if a.GradesHidden {
+			mine.Correct, mine.Mark, mine.Total, mine.WaitingMarks, mine.WaitingAnswers = nil, nil, nil, 0, 0
+			mine.LatePenaltyPct = 0
 		}
 		mine.Done = mine.DoneAt != nil
 		mine.Missing = a.Kind == AssignmentMarked && !mine.Done && a.DueAt != nil && !a.DueAt.After(now)
@@ -770,11 +788,11 @@ func (s *Store) CreateAssignment(ctx context.Context, actorID, wsID string, form
 			}
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO assignments (id, workspace_id, created_by, kind, title, source_quiz_id,
-				due_at, time_limit_min, attempts_allowed, no_late, late_penalty_pct, assign_all, draft, marking, answers_shown, shuffle, posted_at, created_at)
-			VALUES ($1,$2,$3,$4,$5,NULLIF($6::text,''),$7,$8,$9,$10,$11,$12,true,$13,$14,$15,$16,$16)`,
+				due_at, time_limit_min, attempts_allowed, no_late, late_penalty_pct, assign_all, draft, marking, answers_shown, grades_shown, shuffle, posted_at, created_at)
+			VALUES ($1,$2,$3,$4,$5,NULLIF($6::text,''),$7,$8,$9,$10,$11,$12,true,$13,$14,$15,$16,$17,$17)`,
 			id, wsID, actorID, form.Kind, strings.TrimSpace(form.Title), form.QuizID,
 			form.DueAt, form.TimeLimitMin, form.Attempts, form.NoLate, form.LatePenaltyPct, form.AssignAll,
-			form.Marking, form.ShowAnswers, form.Shuffle, now); err != nil {
+			form.Marking, form.ShowAnswers, form.ShowGrades, form.Shuffle, now); err != nil {
 			return err
 		}
 		if err := writeAssignmentLists(ctx, tx, id, form); err != nil {
@@ -953,9 +971,9 @@ func (s *Store) UpdateAssignment(ctx context.Context, actorID, id string, form A
 			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE assignments SET title=$2, due_at=$3, time_limit_min=$4, attempts_allowed=$5,
-				no_late=$6, late_penalty_pct=$7, assign_all=$8, marking=$9, answers_shown=$10, shuffle=$11 WHERE id=$1`,
+				no_late=$6, late_penalty_pct=$7, assign_all=$8, marking=$9, answers_shown=$10, grades_shown=$11, shuffle=$12 WHERE id=$1`,
 			id, strings.TrimSpace(form.Title), form.DueAt, form.TimeLimitMin, form.Attempts,
-			form.NoLate, form.LatePenaltyPct, form.AssignAll, form.Marking, form.ShowAnswers, form.Shuffle); err != nil {
+			form.NoLate, form.LatePenaltyPct, form.AssignAll, form.Marking, form.ShowAnswers, form.ShowGrades, form.Shuffle); err != nil {
 			return err
 		}
 		if form.Marking == MarkingManual {
@@ -1237,6 +1255,29 @@ func (s *Store) SetAssignmentClosed(ctx context.Context, actorID, id string, clo
 	return s.GetAssignment(ctx, actorID, id, now)
 }
 
+// ReleaseAssignmentGrades shows members their grades on an assignment whose
+// Show grades is manual (Epo 2026-11-08, mock T5). Marks decided later show as
+// they land. Once it has also closed, the sweep makes its quiz practice and
+// rates what was submitted.
+func (s *Store) ReleaseAssignmentGrades(ctx context.Context, actorID, id string, now time.Time) (Assignment, error) {
+	wsID, err := s.assignmentWorkspace(ctx, id)
+	if err != nil {
+		return Assignment{}, err
+	}
+	err = s.inTx(ctx, func(tx pgx.Tx) error {
+		if err := s.lockAssignmentStaffTx(ctx, tx, wsID, actorID); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `UPDATE assignments SET grades_released_at=$2
+			WHERE id=$1 AND NOT draft AND grades_shown='manual' AND grades_released_at IS NULL`, id, now)
+		return err
+	})
+	if err != nil {
+		return Assignment{}, err
+	}
+	return s.GetAssignment(ctx, actorID, id, now)
+}
+
 // RunningAttemptUsers names who has an attempt running on the assignment.
 func (s *Store) RunningAttemptUsers(ctx context.Context, id string) ([]string, error) {
 	rows, err := s.pool.Query(ctx, `SELECT user_id FROM attempts WHERE assignment_id=$1 AND submitted_at IS NULL`, id)
@@ -1366,6 +1407,9 @@ type AssignmentAttempt struct {
 	WaitingAnswers int     `json:"waitingAnswers"`
 	// ShowAnswers: this view carries the keys.
 	ShowAnswers bool `json:"showAnswers"`
+	// GradesHidden: the grades wait for release, so the view holds the answers
+	// given and the questions without marks, comments or keys.
+	GradesHidden bool `json:"gradesHidden"`
 	// DrawingImages: Done sends a drawing's marking image, which manual grading
 	// never reads, so the browser makes none then (Q693).
 	DrawingImages bool             `json:"drawingImages"`
@@ -1381,7 +1425,8 @@ type attemptRow struct {
 	startedAt, deadline, submitted, dueAt    *time.Time
 	closedAt, released                       *time.Time
 	noLate, auto, shuffle                    bool
-	showAnswers                              string
+	showAnswers, showGrades                  string
+	gradesReleased                           *time.Time
 	latePenaltyPct                           int
 	correct, total, waitingMarks             float64
 	waitingAnswers                           int
@@ -1390,14 +1435,14 @@ type attemptRow struct {
 
 const attemptRowCols = `t.id, t.assignment_id, t.user_id, a.workspace_id, COALESCE(a.source_quiz_id,''),
 	t.started_at, t.deadline_at, t.submitted_at, a.due_at, a.closed_at, a.released_at,
-	a.no_late, a.late_penalty_pct, t.auto_submitted, a.answers_shown, a.shuffle, t.correct::float8, t.total::float8, t.waiting_marks::float8, t.waiting_answers,
+	a.no_late, a.late_penalty_pct, t.auto_submitted, a.answers_shown, a.grades_shown, a.grades_released_at, a.shuffle, t.correct::float8, t.total::float8, t.waiting_marks::float8, t.waiting_answers,
 	t.answers, t.questions, a.questions`
 
 func scanAttemptRow(row pgx.Row) (attemptRow, error) {
 	var r attemptRow
 	err := row.Scan(&r.id, &r.assignmentID, &r.userID, &r.wsID, &r.sourceID,
 		&r.startedAt, &r.deadline, &r.submitted, &r.dueAt, &r.closedAt, &r.released,
-		&r.noLate, &r.latePenaltyPct, &r.auto, &r.showAnswers, &r.shuffle, &r.correct, &r.total, &r.waitingMarks, &r.waitingAnswers,
+		&r.noLate, &r.latePenaltyPct, &r.auto, &r.showAnswers, &r.showGrades, &r.gradesReleased, &r.shuffle, &r.correct, &r.total, &r.waitingMarks, &r.waitingAnswers,
 		&r.answers, &r.graded, &r.frozen)
 	if isNoRows(err) {
 		return r, ErrNotFound
@@ -1533,6 +1578,12 @@ const (
 	AnswersAfterClose  = "closed"
 	AnswersAfterSubmit = "submitted"
 	AnswersNever       = "never"
+)
+
+// When members see their grades (migration 0160).
+const (
+	GradesAutomatic = "automatic"
+	GradesManual    = "manual"
 )
 
 // SaveAssignmentAnswers replaces the running attempt's saved answers. Past its
@@ -1951,11 +2002,18 @@ func (s *Store) attemptView(ctx context.Context, r attemptRow, staff bool, now t
 	v.LatePenaltyPct = penaltyFor(v.Late, r.latePenaltyPct)
 	v.Mark = penalisedMark(r.correct, v.LatePenaltyPct)
 	closed := assignmentClosedAt(r.noLate, r.dueAt, r.closedAt, now) != nil
-	v.ShowAnswers = staff || r.showAnswers == AnswersAfterSubmit || (r.showAnswers == AnswersAfterClose && closed)
 	graded, err := decodeFrozen(r.graded)
 	if err != nil {
 		return v, err
 	}
+	if !staff && gradesHidden(r.showGrades, r.gradesReleased) {
+		v.GradesHidden = true
+		v.Correct, v.Mark, v.Total, v.WaitingMarks, v.WaitingAnswers, v.LatePenaltyPct = 0, 0, 0, 0, 0, 0
+		v.Questions = questions.LearnerViews(graded)
+		return v, nil
+	}
+	// Answers never show before grades.
+	v.ShowAnswers = staff || r.showAnswers == AnswersAfterSubmit || (r.showAnswers == AnswersAfterClose && closed)
 	if err := s.nameCommenters(ctx, graded); err != nil {
 		return v, err
 	}
@@ -2764,6 +2822,7 @@ func (s *Store) SweepAssignments(ctx context.Context, limit int, now time.Time) 
 	}
 	rows, err = s.pool.Query(ctx, `SELECT id FROM assignments
 		WHERE released_at IS NULL AND kind='marked' AND NOT draft AND (closed_at IS NOT NULL OR (no_late AND due_at <= $1))
+			AND (grades_shown='automatic' OR grades_released_at IS NOT NULL)
 		ORDER BY random() LIMIT $2`, now, limit)
 	if err != nil {
 		return finished, 0, err

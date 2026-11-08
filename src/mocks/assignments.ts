@@ -57,6 +57,8 @@ type Row = {
   draft: boolean;
   marking: AssignmentFormReq['marking'];
   showAnswers: AssignmentFormReq['showAnswers'];
+  showGrades: AssignmentFormReq['showGrades'];
+  gradesReleasedAt?: string;
   shuffle: boolean;
   files: { fileId?: string; materialId?: string }[];
 };
@@ -412,6 +414,7 @@ function seed() {
     marking: 'ai_approve' as const,
     noLate: false,
     showAnswers: 'submitted' as const,
+    showGrades: 'automatic' as const,
     shuffle: false,
     workspaceId: WS,
   };
@@ -699,6 +702,7 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
             })
           ),
         ];
+  const gradesHidden = row.showGrades === 'manual' && !row.gradesReleasedAt;
   return {
     attempts: row.attempts,
     closed: isClosed(row),
@@ -712,6 +716,7 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
       if (mt) return [{ kind: mt.kind, materialId: mt.id, name: mt.title }];
       return [];
     }),
+    gradesHidden,
     id: row.id,
     kind: row.kind,
     latePenaltyPct: row.latePenaltyPct,
@@ -719,7 +724,7 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
     noLate: row.noLate,
     postedAt: row.postedAt,
     postedBy: db.user.name,
-    practiceQuizId: row.releasedAt ? row.quizId : undefined,
+    practiceQuizId: row.releasedAt && !gradesHidden ? row.quizId : undefined,
     questions: questions.length,
     timeLimitMin: row.timeLimitMin,
     title: row.title,
@@ -739,10 +744,12 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
                   ) / decided.length
                 : undefined,
             done: row.kind === 'marked' ? countedRows.length : ticked.length,
+            gradesReleasedAt: row.gradesReleasedAt,
             marking: row.marking,
             quizId: row.quizId,
             quizTitle: material?.title,
             showAnswers: row.showAnswers,
+            showGrades: row.showGrades,
             shuffle: row.shuffle,
             toApprove: assigned
               .flatMap((id) => submissions(row.id, id))
@@ -759,24 +766,25 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
                 a.userId === db.user.id &&
                 a.submittedAt
             ).length,
-            correct: myTotals?.correct,
+            correct: gradesHidden ? undefined : myTotals?.correct,
             countedAttemptId: mine?.id,
             done: !!mine || !!tick,
             doneAt: mine?.submittedAt ?? tick,
             late: isLate(row, mine?.submittedAt),
             latePenaltyPct: penaltyOf(row, mine?.submittedAt),
             mark:
-              myTotals &&
-              penalised(myTotals.correct, penaltyOf(row, mine?.submittedAt)),
+              myTotals && !gradesHidden
+                ? penalised(myTotals.correct, penaltyOf(row, mine?.submittedAt))
+                : undefined,
             missing:
               row.kind === 'marked' &&
               !mine &&
               !!row.dueAt &&
               Date.parse(row.dueAt) <= Date.now(),
             runningAttemptId: running?.id,
-            total: myTotals?.total,
-            waitingAnswers: myTotals?.waitingAnswers ?? 0,
-            waitingMarks: myTotals?.waitingMarks ?? 0,
+            total: gradesHidden ? undefined : myTotals?.total,
+            waitingAnswers: gradesHidden ? 0 : (myTotals?.waitingAnswers ?? 0),
+            waitingMarks: gradesHidden ? 0 : (myTotals?.waitingMarks ?? 0),
           },
         }
       : {}),
@@ -810,10 +818,31 @@ function attemptView(attempt: Attempt, row: Row, viewer: Viewer) {
       ...common,
       answers: attempt.answers,
       correct: 0,
+      gradesHidden: false,
       mark: 0,
       questions: (row.questions ?? []).map(learnerView),
       showAnswers: false,
       status: 'running' as const,
+      total: 0,
+      waitingAnswers: 0,
+      waitingMarks: 0,
+    } satisfies AssignmentAttempt;
+  // Show grades Manual: a member reads their answers alone until release.
+  if (
+    viewer !== 'owner' &&
+    row.showGrades === 'manual' &&
+    !row.gradesReleasedAt
+  )
+    return {
+      ...common,
+      answers: attempt.answers,
+      correct: 0,
+      gradesHidden: true,
+      mark: 0,
+      questions: attempt.graded.map((q) => learnerView(q as Question)),
+      showAnswers: false,
+      status: 'submitted' as const,
+      submittedAt: attempt.submittedAt,
       total: 0,
       waitingAnswers: 0,
       waitingMarks: 0,
@@ -826,6 +855,7 @@ function attemptView(attempt: Attempt, row: Row, viewer: Viewer) {
     ...common,
     ...totals(attempt.graded),
     answers: attempt.answers,
+    gradesHidden: false,
     mark: penalised(
       totals(attempt.graded).correct,
       penaltyOf(row, attempt.submittedAt)
@@ -1024,6 +1054,7 @@ function applyForm(row: Row, body: AssignmentFormReq) {
   row.assignees = body.assignees;
   row.marking = body.marking;
   row.showAnswers = body.showAnswers;
+  row.showGrades = body.showGrades;
   row.shuffle = body.shuffle;
   row.files = body.files.map(({ fileId, materialId }) => ({
     fileId,
@@ -1202,6 +1233,7 @@ export const assignmentHandlers = (viewer: Viewer) => {
           postedAt: new Date().toISOString(),
           quizId: body.quizId,
           showAnswers: 'closed' as const,
+          showGrades: 'automatic' as const,
           shuffle: false,
           title: body.title,
           workspaceId: String(params.id),
@@ -1288,6 +1320,13 @@ export const assignmentHandlers = (viewer: Viewer) => {
             detail: { assignmentId: row.id, type: 'assignment_closed' },
           })
         );
+      return HttpResponse.json(toAssignment(row, viewer));
+    }),
+    http.post('/api/assignments/:id/release-grades', ({ params }) => {
+      const row = rowOf(params.id);
+      if (!row) return gone();
+      if (row.showGrades === 'manual')
+        row.gradesReleasedAt ??= new Date().toISOString();
       return HttpResponse.json(toAssignment(row, viewer));
     }),
     http.put('/api/assignments/:id/done', async ({ params, request }) => {

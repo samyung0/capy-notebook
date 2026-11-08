@@ -162,6 +162,7 @@ export const GetAssignmentAttemptResponse = zod.object({
   "correct": zod.number(),
   "deadlineAt": zod.iso.datetime({"offset":true}).optional(),
   "drawingImages": zod.boolean(),
+  "gradesHidden": zod.boolean(),
   "id": zod.string(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
@@ -283,6 +284,7 @@ export const MarkAssignmentAnswerResponse = zod.object({
   "correct": zod.number(),
   "deadlineAt": zod.iso.datetime({"offset":true}).optional(),
   "drawingImages": zod.boolean(),
+  "gradesHidden": zod.boolean(),
   "id": zod.string(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
@@ -323,6 +325,7 @@ export const SubmitAssignmentAttemptResponse = zod.object({
   "correct": zod.number(),
   "deadlineAt": zod.iso.datetime({"offset":true}).optional(),
   "drawingImages": zod.boolean(),
+  "gradesHidden": zod.boolean(),
   "id": zod.string(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
@@ -374,6 +377,7 @@ export const GetAssignmentResponse = zod.object({
   "materialId": zod.string().optional(),
   "name": zod.string()
 })),
+  "gradesHidden": zod.boolean(),
   "id": zod.string(),
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
@@ -383,11 +387,13 @@ export const GetAssignmentResponse = zod.object({
   "assignees": zod.array(zod.string()),
   "average": zod.number().optional(),
   "done": zod.int(),
+  "gradesReleasedAt": zod.iso.datetime({"offset":true}).optional(),
   "marking": zod.enum(['ai_approve', 'ai', 'manual']),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
   "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
 }).optional(),
@@ -457,6 +463,7 @@ export const UpdateAssignmentBody = zod.object({
   "noLate": zod.boolean(),
   "quizId": zod.string().optional(),
   "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "timeLimitMin": zod.int().min(1).max(updateAssignmentBodyTimeLimitMinMax).optional(),
   "title": zod.string().min(1).max(updateAssignmentBodyTitleMax)
@@ -475,6 +482,7 @@ export const UpdateAssignmentResponse = zod.object({
   "materialId": zod.string().optional(),
   "name": zod.string()
 })),
+  "gradesHidden": zod.boolean(),
   "id": zod.string(),
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
@@ -484,11 +492,13 @@ export const UpdateAssignmentResponse = zod.object({
   "assignees": zod.array(zod.string()),
   "average": zod.number().optional(),
   "done": zod.int(),
+  "gradesReleasedAt": zod.iso.datetime({"offset":true}).optional(),
   "marking": zod.enum(['ai_approve', 'ai', 'manual']),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
   "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
 }).optional(),
@@ -561,6 +571,7 @@ export const SetAssignmentClosedResponse = zod.object({
   "materialId": zod.string().optional(),
   "name": zod.string()
 })),
+  "gradesHidden": zod.boolean(),
   "id": zod.string(),
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
@@ -570,11 +581,13 @@ export const SetAssignmentClosedResponse = zod.object({
   "assignees": zod.array(zod.string()),
   "average": zod.number().optional(),
   "done": zod.int(),
+  "gradesReleasedAt": zod.iso.datetime({"offset":true}).optional(),
   "marking": zod.enum(['ai_approve', 'ai', 'manual']),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
   "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
 }).optional(),
@@ -653,6 +666,7 @@ export const PublishAssignmentResponse = zod.object({
   "materialId": zod.string().optional(),
   "name": zod.string()
 })),
+  "gradesHidden": zod.boolean(),
   "id": zod.string(),
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
@@ -662,11 +676,81 @@ export const PublishAssignmentResponse = zod.object({
   "assignees": zod.array(zod.string()),
   "average": zod.number().optional(),
   "done": zod.int(),
+  "gradesReleasedAt": zod.iso.datetime({"offset":true}).optional(),
   "marking": zod.enum(['ai_approve', 'ai', 'manual']),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
   "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
+  "shuffle": zod.boolean(),
+  "toApprove": zod.int()
+}).optional(),
+  "marks": zod.number(),
+  "mine": zod.object({
+  "attemptsUsed": zod.int(),
+  "correct": zod.number().optional(),
+  "countedAttemptId": zod.string().optional(),
+  "done": zod.boolean(),
+  "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "late": zod.boolean(),
+  "latePenaltyPct": zod.int(),
+  "mark": zod.number().optional(),
+  "missing": zod.boolean(),
+  "runningAttemptId": zod.string().optional(),
+  "total": zod.number().optional(),
+  "waitingAnswers": zod.int(),
+  "waitingMarks": zod.number()
+}).optional(),
+  "noLate": zod.boolean(),
+  "postedAt": zod.iso.datetime({"offset":true}),
+  "postedBy": zod.string(),
+  "practiceQuizId": zod.string().optional(),
+  "questions": zod.int(),
+  "timeLimitMin": zod.int().optional(),
+  "title": zod.string(),
+  "topicIds": zod.array(zod.string()),
+  "workspaceId": zod.string()
+})
+
+
+/**
+ * @summary Show members their grades on an assignment whose grades are released by hand
+ */
+export const ReleaseAssignmentGradesParams = zod.object({
+  "id": zod.string()
+})
+
+export const ReleaseAssignmentGradesResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "attempts": zod.int(),
+  "closed": zod.boolean(),
+  "closedAt": zod.iso.datetime({"offset":true}).optional(),
+  "draft": zod.boolean(),
+  "dueAt": zod.iso.datetime({"offset":true}).optional(),
+  "files": zod.array(zod.object({
+  "fileId": zod.string().optional(),
+  "kind": zod.string(),
+  "materialId": zod.string().optional(),
+  "name": zod.string()
+})),
+  "gradesHidden": zod.boolean(),
+  "id": zod.string(),
+  "kind": zod.enum(['marked', 'unmarked']),
+  "latePenaltyPct": zod.int(),
+  "manage": zod.object({
+  "assignAll": zod.boolean(),
+  "assigned": zod.int(),
+  "assignees": zod.array(zod.string()),
+  "average": zod.number().optional(),
+  "done": zod.int(),
+  "gradesReleasedAt": zod.iso.datetime({"offset":true}).optional(),
+  "marking": zod.enum(['ai_approve', 'ai', 'manual']),
+  "quizId": zod.string().optional(),
+  "quizTitle": zod.string().optional(),
+  "quizTrashed": zod.boolean().optional(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
 }).optional(),
@@ -783,6 +867,7 @@ export const RepublishAssignmentResponse = zod.object({
   "materialId": zod.string().optional(),
   "name": zod.string()
 })),
+  "gradesHidden": zod.boolean(),
   "id": zod.string(),
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
@@ -792,11 +877,13 @@ export const RepublishAssignmentResponse = zod.object({
   "assignees": zod.array(zod.string()),
   "average": zod.number().optional(),
   "done": zod.int(),
+  "gradesReleasedAt": zod.iso.datetime({"offset":true}).optional(),
   "marking": zod.enum(['ai_approve', 'ai', 'manual']),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
   "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
 }).optional(),
@@ -843,6 +930,7 @@ export const StartAssignmentResponse = zod.object({
   "correct": zod.number(),
   "deadlineAt": zod.iso.datetime({"offset":true}).optional(),
   "drawingImages": zod.boolean(),
+  "gradesHidden": zod.boolean(),
   "id": zod.string(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
@@ -7040,6 +7128,7 @@ export const GetTodoResponse = zod.object({
   "materialId": zod.string().optional(),
   "name": zod.string()
 })),
+  "gradesHidden": zod.boolean(),
   "id": zod.string(),
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
@@ -7049,11 +7138,13 @@ export const GetTodoResponse = zod.object({
   "assignees": zod.array(zod.string()),
   "average": zod.number().optional(),
   "done": zod.int(),
+  "gradesReleasedAt": zod.iso.datetime({"offset":true}).optional(),
   "marking": zod.enum(['ai_approve', 'ai', 'manual']),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
   "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
 }).optional(),
@@ -7735,6 +7826,7 @@ export const ListAssignmentsResponse = zod.object({
   "materialId": zod.string().optional(),
   "name": zod.string()
 })),
+  "gradesHidden": zod.boolean(),
   "id": zod.string(),
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
@@ -7744,11 +7836,13 @@ export const ListAssignmentsResponse = zod.object({
   "assignees": zod.array(zod.string()),
   "average": zod.number().optional(),
   "done": zod.int(),
+  "gradesReleasedAt": zod.iso.datetime({"offset":true}).optional(),
   "marking": zod.enum(['ai_approve', 'ai', 'manual']),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
   "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
 }).optional(),
@@ -7820,6 +7914,7 @@ export const CreateAssignmentBody = zod.object({
   "noLate": zod.boolean(),
   "quizId": zod.string().optional(),
   "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "timeLimitMin": zod.int().min(1).max(createAssignmentBodyTimeLimitMinMax).optional(),
   "title": zod.string().min(1).max(createAssignmentBodyTitleMax)
@@ -7838,6 +7933,7 @@ export const CreateAssignmentResponse = zod.object({
   "materialId": zod.string().optional(),
   "name": zod.string()
 })),
+  "gradesHidden": zod.boolean(),
   "id": zod.string(),
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
@@ -7847,11 +7943,13 @@ export const CreateAssignmentResponse = zod.object({
   "assignees": zod.array(zod.string()),
   "average": zod.number().optional(),
   "done": zod.int(),
+  "gradesReleasedAt": zod.iso.datetime({"offset":true}).optional(),
   "marking": zod.enum(['ai_approve', 'ai', 'manual']),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
   "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
 }).optional(),

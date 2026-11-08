@@ -113,6 +113,7 @@ test.describe('as a member', () => {
           noLate: false,
           quizId: 'qz_bio_near',
           showAnswers: 'submitted',
+          showGrades: 'automatic',
           shuffle: false,
           title: 'Assigned while open',
         }),

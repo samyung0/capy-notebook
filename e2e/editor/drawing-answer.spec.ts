@@ -174,6 +174,7 @@ for (const { screen, width } of SCREENS) {
           noLate: false,
           quizId: 'qz_2',
           showAnswers: 'submitted',
+          showGrades: 'automatic',
           shuffle: false,
           title: 'Drawn answers',
         }),

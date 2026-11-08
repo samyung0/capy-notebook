@@ -426,6 +426,8 @@ components:
           items:
             $ref: "#/components/schemas/AssignmentFile"
           type: array
+        gradesHidden:
+          type: boolean
         id:
           type: string
         kind:
@@ -482,6 +484,7 @@ components:
         - marks
         - topicIds
         - files
+        - gradesHidden
       type: object
     AssignmentAnswerRow:
       additionalProperties: false
@@ -564,6 +567,8 @@ components:
           type: string
         drawingImages:
           type: boolean
+        gradesHidden:
+          type: boolean
         id:
           type: string
         late:
@@ -633,6 +638,7 @@ components:
         - waitingMarks
         - waitingAnswers
         - showAnswers
+        - gradesHidden
         - drawingImages
         - answers
         - questions
@@ -746,6 +752,11 @@ components:
             - submitted
             - never
           type: string
+        showGrades:
+          enum:
+            - automatic
+            - manual
+          type: string
         shuffle:
           type: boolean
         timeLimitMin:
@@ -768,6 +779,7 @@ components:
         - draft
         - marking
         - showAnswers
+        - showGrades
         - shuffle
         - files
       type: object
@@ -828,6 +840,9 @@ components:
         done:
           format: int64
           type: integer
+        gradesReleasedAt:
+          format: date-time
+          type: string
         marking:
           enum:
             - ai_approve
@@ -846,6 +861,11 @@ components:
             - submitted
             - never
           type: string
+        showGrades:
+          enum:
+            - automatic
+            - manual
+          type: string
         shuffle:
           type: boolean
         toApprove:
@@ -856,6 +876,7 @@ components:
         - assignees
         - marking
         - showAnswers
+        - showGrades
         - shuffle
         - assigned
         - done
@@ -9371,6 +9392,31 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Give a draft to its members
+      tags:
+        - Assignments
+  /api/assignments/{id}/release-grades:
+    post:
+      operationId: releaseAssignmentGrades
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assignment"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Show members their grades on an assignment whose grades are released by hand
       tags:
         - Assignments
   /api/assignments/{id}/report:

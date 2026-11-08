@@ -702,25 +702,21 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
   <!-- T3 -->
   <section class="board" id="t3">
     <header><h2><b>T3</b>Owner: waiting for approval vs waiting to be graded, with the reason</h2>
-      <p>Epo 2026-11-08. Marking is charged to the person attempting, and running out never blocks a submission. The list row and the report header split today's "N to approve" into "to approve" (AI marked, waiting for you) and "not graded" (no AI mark yet). On Approve AI marks, a strip above the list says why, one line per reason, and each ungraded row names its reason. Mark with AI stays where it is; it charges each member's own credits.</p></header>
+      <p>Epo 2026-11-08. Marking is charged to the person attempting, and running out never blocks a submission. The list row and the report header split today's "N to approve" into "to approve" (AI marked, waiting for you) and "not graded" (no AI mark yet). No banner (Epo: the badge says enough): each ungraded row carries its reason, No credits or Grade Error, and the answer pane says it in one line. Mark with AI stays where it is; it charges each member's own credits.</p></header>
     <div class="frames">
       <div class="lap-wrap"><div class="lap" data-shell="owner">
         <div class="main">
           <div class="back"><svg><use href="#i-back"/></svg>Assignments</div>
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px"><span class="title" style="margin:0">Past paper 2025 P1</span><span class="chips"><span class="chip">Assignment · 60 min</span><span class="chip">Due Wed 11 Nov</span><span class="chip">5 of 6 submitted</span><span class="chip warn newmark" style="margin:0">3 to approve</span><span class="chip bad newmark" style="margin:0">4 not graded</span></span></div>
           <div class="tabs"><span>Questions</span><span>Members</span><span class="on">Approve AI marks</span><span>Settings</span></div>
-          <div class="newmark" style="margin:12px 0 0;display:grid;gap:4px;font-size:13px;background:var(--bad-bg);color:var(--fg);padding:10px 12px;border-radius:7px">
-            <span><b style="font-weight:600">3 answers not graded: Farah Ali and Gus Ito have no AI credits left.</b> Mark with AI once they top up.</span>
-            <span><b style="font-weight:600">1 answer not graded: the AI provider failed.</b> Mark with AI to try again.</span>
-          </div>
-          <div class="appr" style="height:calc(100% - 196px)">
+          <div class="appr" style="height:calc(100% - 130px)">
             <div class="l">
               <div class="input" style="height:32px">Question 3 · 6 marks<svg><use href="#i-down"/></svg></div>
               <div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px;color:var(--fg2)">1 to approve · 3 not graded<span class="btn out sm">Approve all</span></div>
               <span class="btn out sm" style="justify-content:center">Mark with AI</span>
               <div class="mrow on"><span class="av">FA</span><span class="nm">Farah Ali</span><span class="chip bad">No credits</span></div>
               <div class="mrow"><span class="av">GI</span><span class="nm">Gus Ito</span><span class="chip bad">No credits</span></div>
-              <div class="mrow"><span class="av">BL</span><span class="nm">Ben Lee</span><span class="chip bad">Provider error</span></div>
+              <div class="mrow"><span class="av">BL</span><span class="nm">Ben Lee</span><span class="chip bad">Grade Error</span></div>
               <div class="mrow"><span class="av">CM</span><span class="nm">Cara Moss</span><span class="chip warn">To approve</span></div>
               <div class="mrow"><span class="av">EP</span><span class="nm">Eve Park</span><span>5 / 6</span></div>
             </div>
@@ -728,7 +724,7 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
               <div class="stem">Explain how water enters a root hair cell from the soil. <span class="mk">(6 marks)</span></div>
               <div style="display:flex;align-items:center;gap:8px"><span class="av">FA</span><b style="font-weight:600">Farah Ali</b></div>
               <div style="border-left:3px solid var(--divider);padding-left:12px;color:var(--fg2)">Water goes into the root hair cell by osmosis. It crosses the partially permeable membrane and then moves on towards the xylem.</div>
-              <div class="meta newmark" style="margin:0;padding:2px 6px">Not graded: Farah has no AI credits left.</div>
+              <div class="meta newmark" style="margin:0;padding:2px 6px">Not graded: no AI credits left.</div>
               <table class="pts">
                 <tr><th>MARKING POINTS</th><th>AI</th><th>MARK</th></tr>
                 <tr><td>Names the partially permeable membrane (2)</td><td class="ai">–</td><td class="mk"><div class="sel">– / 2<svg><use href="#i-down"/></svg></div></td></tr>
@@ -744,16 +740,12 @@ h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
           <div class="title" style="font-size:20px">Past paper 2025 P1</div>
           <span class="chips"><span class="chip">5 of 6 submitted</span><span class="chip warn">3 to approve</span><span class="chip bad">4 not graded</span></span>
           <div class="tabs" style="margin:0;font-size:13px"><span>Questions</span><span>Members</span><span class="on">Approve AI marks</span></div>
-          <div class="newmark" style="margin:0;display:grid;gap:4px;font-size:12.5px;background:var(--bad-bg);padding:9px 11px;border-radius:7px">
-            <span><b style="font-weight:600">3 not graded: Farah Ali and Gus Ito have no AI credits left.</b></span>
-            <span><b style="font-weight:600">1 not graded: the AI provider failed.</b></span>
-          </div>
           <div class="input" style="height:32px">Question 3 · 6 marks<svg><use href="#i-down"/></svg></div>
           <span class="btn out sm" style="justify-content:center">Mark with AI</span>
           <div style="display:grid;gap:2px">
             <div style="display:flex;gap:9px;align-items:center;background:var(--select);padding:7px 9px;border-radius:7px"><span class="av">FA</span><span style="flex:1">Farah Ali</span><span class="chip bad">No credits</span></div>
             <div style="display:flex;gap:9px;align-items:center;padding:7px 9px"><span class="av">GI</span><span style="flex:1">Gus Ito</span><span class="chip bad">No credits</span></div>
-            <div style="display:flex;gap:9px;align-items:center;padding:7px 9px"><span class="av">BL</span><span style="flex:1">Ben Lee</span><span class="chip bad">Provider error</span></div>
+            <div style="display:flex;gap:9px;align-items:center;padding:7px 9px"><span class="av">BL</span><span style="flex:1">Ben Lee</span><span class="chip bad">Grade Error</span></div>
             <div style="display:flex;gap:9px;align-items:center;padding:7px 9px"><span class="av">CM</span><span style="flex:1">Cara Moss</span><span class="chip warn">To approve</span></div>
           </div>
         </div>

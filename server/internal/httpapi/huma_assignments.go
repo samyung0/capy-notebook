@@ -84,6 +84,7 @@ func (a *api) registerAssignments(api huma.API) {
 	reg(api, http.MethodPost, "/api/assignments/{id}/publish", "publishAssignment", tag, "Give a draft to its members", http.StatusOK, a.publishAssignment)
 	reg(api, http.MethodPost, "/api/assignments/{id}/republish", "republishAssignment", tag, "Replace an open assignment's questions with its quiz as it is now", http.StatusOK, a.republishAssignment)
 	reg(api, http.MethodPut, "/api/assignments/{id}/closed", "setAssignmentClosed", tag, "Close an assignment to late submissions, or reopen it", http.StatusOK, a.setAssignmentClosed)
+	reg(api, http.MethodPost, "/api/assignments/{id}/release-grades", "releaseAssignmentGrades", tag, "Show members their grades on an assignment whose grades are released by hand", http.StatusOK, a.releaseAssignmentGrades)
 	reg(api, http.MethodPut, "/api/assignments/{id}/done", "setAssignmentDone", tag, "A member's tick on an unmarked assignment", http.StatusNoContent, a.setAssignmentDone)
 	reg(api, http.MethodPost, "/api/assignments/{id}/start", "startAssignment", tag, "Start an attempt, starting its clock, or return the one running", http.StatusOK, a.startAssignment)
 	reg(api, http.MethodPost, "/api/assignments/{id}/mark-with-ai", "markAssignmentWithAI", tag, "Have the AI mark the answers still waiting, in the background", http.StatusOK, a.markAssignmentWithAI)
@@ -142,7 +143,7 @@ func assignmentForm(b apimodel.AssignmentFormReq) store.AssignmentForm {
 		Kind: b.Kind, Title: b.Title, QuizID: b.QuizID, DueAt: b.DueAt, TimeLimitMin: b.TimeLimitMin, Attempts: b.Attempts,
 		NoLate: b.NoLate, LatePenaltyPct: b.LatePenaltyPct,
 		AssignAll: b.AssignAll, Assignees: b.Assignees, Draft: b.Draft, Marking: b.Marking,
-		ShowAnswers: b.ShowAnswers, Shuffle: b.Shuffle, Files: b.Files,
+		ShowAnswers: b.ShowAnswers, ShowGrades: b.ShowGrades, Shuffle: b.Shuffle, Files: b.Files,
 	}
 }
 
@@ -254,6 +255,17 @@ func (a *api) setAssignmentClosed(ctx context.Context, in *assignmentClosedInput
 	}
 	if in.Body.Closed {
 		a.publishAssignmentClosed(ctx, in.ID)
+	}
+	return &assignmentOutput{Body: res}, nil
+}
+
+func (a *api) releaseAssignmentGrades(ctx context.Context, in *assignmentIDInput) (*assignmentOutput, error) {
+	if err := a.requireAccountEdit(ctx); err != nil {
+		return nil, err
+	}
+	res, err := a.s.ReleaseAssignmentGrades(ctx, userID(ctx), in.ID, time.Now())
+	if err != nil {
+		return nil, assignmentError(err)
 	}
 	return &assignmentOutput{Body: res}, nil
 }

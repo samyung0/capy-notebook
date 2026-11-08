@@ -99,6 +99,7 @@ const existing = {
     quizId: 'qz1',
     quizTitle: 'Cells',
     showAnswers: 'submitted',
+    showGrades: 'automatic',
     shuffle: false,
   },
   noLate: false,
@@ -237,11 +238,12 @@ it('saves an edit without an assignee who has left', async () => {
   act(() => root.unmount());
 });
 
-it('shows answers after it closes unless the owner picks otherwise', async () => {
+it('shows grades automatically and answers after it closes by default', async () => {
   const root = await show();
   const values = [...host.querySelectorAll('[data-value]')].map((select) =>
     select.getAttribute('data-value')
   );
+  expect(values).toContain('automatic');
   expect(values).toContain('closed');
   act(() => root.unmount());
 });

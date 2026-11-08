@@ -130,6 +130,7 @@ export function NewAssignmentDialog({
       noLate: existing?.noLate ?? false,
       quizId: manage?.quizId ?? presetQuizId,
       showAnswers: manage?.showAnswers ?? 'closed',
+      showGrades: manage?.showGrades ?? 'automatic',
       shuffle: manage?.shuffle ?? false,
       timeLimitMin: existing?.timeLimitMin,
       title:
@@ -468,9 +469,9 @@ export function NewAssignmentDialog({
           </div>
           {kind === 'marked' && (
             <div className="flex flex-col gap-2 pt-0.5">
-              {/* Marking (A4, Epo 2026-11-06) beside when members read the
-                  keys (C3, Epo 2026-11-08). */}
-              <div className="mb-1 grid gap-4 sm:grid-cols-2">
+              {/* Marking (A4, Epo 2026-11-06) on its own row, then when
+                  members see grades and keys (C4, C3, Epo 2026-11-08). */}
+              <div className="mb-1 grid gap-4">
                 <Field label={m.assignment_field_marking()}>
                   <Controller
                     control={control}
@@ -500,35 +501,63 @@ export function NewAssignmentDialog({
                     )}
                   />
                 </Field>
-                <Field label={m.assignment_field_answers()}>
-                  <Controller
-                    control={control}
-                    name="showAnswers"
-                    render={({ field }) => (
-                      <Select
-                        onValueChange={field.onChange}
-                        value={field.value}
-                      >
-                        <SelectTrigger
-                          aria-label={m.assignment_field_answers()}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label={m.assignment_field_grades()}>
+                    <Controller
+                      control={control}
+                      name="showGrades"
+                      render={({ field }) => (
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
                         >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="closed">
-                            {m.assignment_answers_closed()}
-                          </SelectItem>
-                          <SelectItem value="submitted">
-                            {m.assignment_answers_submitted()}
-                          </SelectItem>
-                          <SelectItem value="never">
-                            {m.assignment_answers_never()}
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
-                </Field>
+                          <SelectTrigger
+                            aria-label={m.assignment_field_grades()}
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="automatic">
+                              {m.assignment_grades_automatic()}
+                            </SelectItem>
+                            <SelectItem value="manual">
+                              {m.assignment_grades_manual()}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  </Field>
+                  <Field label={m.assignment_field_answers()}>
+                    <Controller
+                      control={control}
+                      name="showAnswers"
+                      render={({ field }) => (
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                        >
+                          <SelectTrigger
+                            aria-label={m.assignment_field_answers()}
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="closed">
+                              {m.assignment_answers_closed()}
+                            </SelectItem>
+                            <SelectItem value="submitted">
+                              {m.assignment_answers_submitted()}
+                            </SelectItem>
+                            <SelectItem value="never">
+                              {m.assignment_answers_never()}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  </Field>
+                </div>
               </div>
               <SwitchRow
                 control={control}

@@ -482,9 +482,11 @@ type AssignmentFormReq struct {
 	Marking string `json:"marking" enum:"ai_approve,ai,manual"`
 	// ShowAnswers is when members read the keys on their results: after it
 	// closes, right after submitting, or never (Epo 2026-11-08, mock C3).
-	ShowAnswers string                    `json:"showAnswers" enum:"closed,submitted,never"`
-	Shuffle     bool                      `json:"shuffle"`
-	Files       []store.AssignmentFileRef `json:"files" nullable:"false" maxItems:"20"`
+	ShowAnswers string `json:"showAnswers" enum:"closed,submitted,never"`
+	// ShowGrades: automatic, or manual until staff release them (mock C4).
+	ShowGrades string                    `json:"showGrades" enum:"automatic,manual"`
+	Shuffle    bool                      `json:"shuffle"`
+	Files      []store.AssignmentFileRef `json:"files" nullable:"false" maxItems:"20"`
 }
 
 // GradedQuestion is one checked question with its key and, on each part, the

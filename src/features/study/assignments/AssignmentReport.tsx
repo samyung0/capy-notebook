@@ -1,6 +1,6 @@
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
-import { useAssignmentReport } from '@/api/hooks';
+import { useAssignmentReport, useReleaseAssignmentGrades } from '@/api/hooks';
 import type {
   Assignment,
   AssignmentMemberRow,
@@ -12,6 +12,7 @@ import type {
 import { ErrorState } from '@/components/app/ErrorState';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/Dialog';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
@@ -114,7 +115,20 @@ export function AssignmentReport({
     manage?.average === undefined
       ? null
       : m.assignment_chip_average({ percent: percentText(manage.average) }),
+    !marked || assignment.draft || manage?.showGrades !== 'manual'
+      ? null
+      : manage.gradesReleasedAt
+        ? m.assignment_grades_released_on({
+            date: dayLabel(manage.gradesReleasedAt),
+          })
+        : m.assignment_grades_not_released(),
   ].filter(Boolean) as string[];
+  // Show grades Manual (T5): the button stays until they are released.
+  const releasable =
+    marked &&
+    !assignment.draft &&
+    manage?.showGrades === 'manual' &&
+    !manage.gradesReleasedAt;
 
   return (
     <PracticeFrame>
@@ -128,6 +142,12 @@ export function AssignmentReport({
             </span>
           ))}
         </div>
+        {releasable && (
+          <ReleaseGrades
+            assignment={assignment}
+            className="max-sm:basis-full sm:ml-auto"
+          />
+        )}
       </div>
       {assignment.draft ? (
         <AssignmentSettingsTab assignment={assignment} className="mt-6" />
@@ -730,5 +750,48 @@ function OptionBars({
         );
       })}
     </ul>
+  );
+}
+
+/** Release grades (T5), confirming first how many answers still wait. */
+function ReleaseGrades({
+  assignment,
+  className,
+}: {
+  assignment: Assignment;
+  className?: string;
+}) {
+  const [asking, setAsking] = useState(false);
+  const { mutate, isPending } = useReleaseAssignmentGrades(
+    assignment.workspaceId,
+    assignment.id
+  );
+  const waiting = assignment.manage?.toApprove ?? 0;
+  return (
+    <div className={className}>
+      <Button disabled={isPending} onClick={() => setAsking(true)}>
+        {m.assignment_release_grades()}
+      </Button>
+      {asking && (
+        <ConfirmDialog
+          body={[
+            m.assignment_release_grades_body(),
+            waiting === 1
+              ? m.assignment_release_waiting_one()
+              : waiting > 1
+                ? m.assignment_release_waiting({ count: waiting })
+                : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          confirmLabel={m.assignment_release_grades()}
+          danger={false}
+          onClose={() => setAsking(false)}
+          onConfirm={() => mutate()}
+          open
+          title={m.assignment_release_grades_title()}
+        />
+      )}
+    </div>
   );
 }

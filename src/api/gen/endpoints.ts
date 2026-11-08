@@ -1215,6 +1215,56 @@ export const publishAssignment = async (id: string, options?: RequestInit): Prom
 
 
 
+export type releaseAssignmentGradesResponse200 = {
+  data: Assignment
+  status: 200
+}
+
+export type releaseAssignmentGradesResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type releaseAssignmentGradesResponseSuccess = (releaseAssignmentGradesResponse200) & {
+  headers: Headers;
+};
+export type releaseAssignmentGradesResponseError = (releaseAssignmentGradesResponseDefault) & {
+  headers: Headers;
+};
+
+export type releaseAssignmentGradesResponse = (releaseAssignmentGradesResponseSuccess | releaseAssignmentGradesResponseError)
+
+export const getReleaseAssignmentGradesUrl = (id: string,) => {
+
+
+
+
+  return `/api/assignments/${id}/release-grades`
+}
+
+/**
+ * @summary Show members their grades on an assignment whose grades are released by hand
+ */
+export const releaseAssignmentGrades = async (id: string, options?: RequestInit): Promise<releaseAssignmentGradesResponse> => {
+
+  const res = await fetch(getReleaseAssignmentGradesUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: releaseAssignmentGradesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as releaseAssignmentGradesResponse
+}
+
+
+
 export type getAssignmentReportResponse200 = {
   data: AssignmentReportBody
   status: 200
