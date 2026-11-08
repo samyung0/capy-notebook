@@ -15,7 +15,7 @@ import (
 var markingAttemptTimeout = 10 * time.Minute
 
 // assignmentMarking is what the gateway is marking: the run's progress per
-// assignment, and one lock per payer, since a payer's sessions are few
+// assignment, and one lock per payer (the member attempting), since a payer's sessions are few
 // (store.ConcurrentLLMLeases) and thirty submissions at once would use them all.
 type assignmentMarking struct {
 	mu     sync.Mutex
@@ -111,7 +111,7 @@ func (a *api) markAnswers(ctx context.Context, assignmentID, attemptID string) {
 			report(panicError("marking", r))
 		}
 	}()
-	payer, _, listed, err := a.s.AnswersToMark(ctx, assignmentID, attemptID)
+	_, listed, err := a.s.AnswersToMark(ctx, assignmentID, attemptID)
 	if err != nil {
 		report(err)
 		return
@@ -123,15 +123,16 @@ func (a *api) markAnswers(ctx context.Context, assignmentID, attemptID string) {
 	defer a.marking.finish(assignmentID)
 	var order []string
 	counts := map[string]int{}
+	payers := map[string]string{}
 	for _, answer := range listed {
 		if counts[answer.AttemptID] == 0 {
 			order = append(order, answer.AttemptID)
 		}
 		counts[answer.AttemptID]++
+		payers[answer.AttemptID] = answer.PayerID
 	}
-	lock := a.marking.payer(payer)
 	for _, id := range order {
-		if err := a.markAttemptInTurn(ctx, lock, assignmentID, id); err != nil {
+		if err := a.markAttemptInTurn(ctx, a.marking.payer(payers[id]), assignmentID, id); err != nil {
 			report(err)
 		}
 		a.marking.progressed(assignmentID, counts[id])
@@ -154,10 +155,12 @@ func (a *api) markAttemptInTurn(ctx context.Context, lock *sync.Mutex, assignmen
 func (a *api) markAttemptAnswers(ctx context.Context, assignmentID, attemptID string) error {
 	marking, cancel := context.WithTimeout(ctx, markingAttemptTimeout)
 	defer cancel()
-	payer, workspaceID, answers, err := a.s.AnswersToMark(marking, assignmentID, attemptID)
+	workspaceID, answers, err := a.s.AnswersToMark(marking, assignmentID, attemptID)
 	if err != nil || len(answers) == 0 {
 		return err
 	}
+	// The person attempting pays for all of it (Epo 2026-11-08).
+	payer := answers[0].PayerID
 	parts := make(map[string]openPart, len(answers))
 	byPart := make(map[string]store.AnswerToMark, len(answers))
 	var drawn []string
@@ -186,7 +189,7 @@ func (a *api) markAttemptAnswers(ctx context.Context, assignmentID, attemptID st
 		parts[answer.PartID] = part
 		byPart[answer.PartID] = answer
 	}
-	grades := a.gradeWithModel(marking, payer, workspaceID, parts)
+	grades, failed := a.gradeWithModel(marking, payer, workspaceID, parts)
 	marks := make([]store.AIMark, 0, len(grades))
 	for id, grade := range grades {
 		answer := byPart[id]
@@ -198,6 +201,14 @@ func (a *api) markAttemptAnswers(ctx context.Context, assignmentID, attemptID st
 	saving, done := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer done()
 	if err := a.s.SaveAIMarks(saving, attemptID, marks, time.Now()); err != nil {
+		return err
+	}
+	// What could not be marked says why on the owner's rows (mock T3).
+	reasons := make([]store.AIFailure, 0, len(failed))
+	for id, reason := range failed {
+		reasons = append(reasons, store.AIFailure{QuestionID: byPart[id].QuestionID, PartID: id, Reason: reason})
+	}
+	if err := a.s.SaveAIFailures(saving, attemptID, reasons); err != nil {
 		return err
 	}
 	// The AI marking landed: its images go, whether or not staff approve it yet.

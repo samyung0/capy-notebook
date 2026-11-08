@@ -301,7 +301,7 @@ func TestADrawingWithoutAnImageNeedsHandMarking(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	_, _, answers, err := f.s.AnswersToMark(ctx, created.ID, "")
+	_, answers, err := f.s.AnswersToMark(ctx, created.ID, "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -16,6 +16,7 @@ export interface AssignmentManage {
   done: number;
   gradesReleasedAt?: string;
   marking: AssignmentManageMarking;
+  notGraded: number;
   quizId?: string;
   quizTitle?: string;
   quizTrashed?: boolean;

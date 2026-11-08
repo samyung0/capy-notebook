@@ -421,6 +421,8 @@ export type AssignmentGradedPart = QuestionPart & {
   markedBy?: string;
   /** Staff only: the AI's marks per marking point. */
   aiAwards?: number[];
+  /** Staff only: why the AI left it unmarked (mock T3). */
+  aiError?: 'credits' | 'error';
 };
 export type AssignmentGradedQuestion = Omit<Question, 'parts'> & {
   parts: AssignmentGradedPart[];

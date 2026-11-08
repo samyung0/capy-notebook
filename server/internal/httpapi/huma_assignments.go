@@ -303,7 +303,7 @@ type markAssignmentWithAIOutput struct {
 }
 
 // markAssignmentWithAI runs the AI over what still waits, as credits come back or
-// after a failure (Epo 2026-11-03). Staff only: reading the report checks that.
+// after a failure (Epo 2026-11-03), each attempt on its member's credits. Staff only: reading the report checks that.
 func (a *api) markAssignmentWithAI(ctx context.Context, in *assignmentIDInput) (*markAssignmentWithAIOutput, error) {
 	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
@@ -311,7 +311,7 @@ func (a *api) markAssignmentWithAI(ctx context.Context, in *assignmentIDInput) (
 	if _, err := a.s.GetAssignmentReport(ctx, userID(ctx), in.ID, time.Now()); err != nil {
 		return nil, assignmentError(err)
 	}
-	payer, workspaceID, answers, err := a.s.AnswersToMark(ctx, in.ID, "")
+	_, answers, err := a.s.AnswersToMark(ctx, in.ID, "")
 	if err != nil {
 		return nil, assignmentError(err)
 	}
@@ -320,16 +320,11 @@ func (a *api) markAssignmentWithAI(ctx context.Context, in *assignmentIDInput) (
 	if len(answers) == 0 {
 		return out, nil
 	}
-	// Refused here while the page waits: no credits, or a suspended owner.
-	llm, err := a.gradingLLM(ctx, payer)
-	if err != nil {
+	// Refused here while the page waits only when grading is not set up: each
+	// member pays for their own, and one without credits shows No credits.
+	if _, err := a.gradingLLM(ctx, userID(ctx)); err != nil {
 		return nil, hErr(err)
 	}
-	charge, err := a.beginProviderSession(ctx, payer, workspaceID, store.SurfaceQuiz, llm.Rates, store.TokenRates{}, llm.Thinking)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	charge.release(ctx)
 	a.markAnswersSoon(in.ID, "")
 	return out, nil
 }

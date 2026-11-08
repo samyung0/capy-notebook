@@ -386,7 +386,9 @@ function StaffList({
 }
 
 function StaffTitle({ row }: { row: Assignment }) {
-  const waiting = row.manage?.toApprove ?? 0;
+  // Waiting answers split into AI-marked (to approve) and not graded (T3).
+  const notGraded = row.manage?.notGraded ?? 0;
+  const waiting = (row.manage?.toApprove ?? 0) - notGraded;
   return (
     <div className="flex min-w-0 items-center gap-2">
       <span className="truncate font-semibold">{row.title}</span>
@@ -398,6 +400,11 @@ function StaffTitle({ row }: { row: Assignment }) {
       {waiting > 0 && (
         <span className="t-meta shrink-0 font-semibold text-tint-warning-fg">
           {m.assignment_to_approve({ count: waiting })}
+        </span>
+      )}
+      {notGraded > 0 && (
+        <span className="t-meta shrink-0 font-semibold text-tint-error-fg">
+          {m.assignment_not_graded({ count: notGraded })}
         </span>
       )}
     </div>

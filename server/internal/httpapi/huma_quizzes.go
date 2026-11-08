@@ -366,7 +366,7 @@ func (a *api) recheckQuizQuestion(ctx context.Context, in *checkQuizQuestionInpu
 	}
 	marking, cancel := context.WithTimeout(ctx, gradingCheckTimeout)
 	defer cancel()
-	grades := a.gradeWithModel(marking, userID(ctx), workspaceID, open)
+	grades, _ := a.gradeWithModel(marking, userID(ctx), workspaceID, open)
 	remarked := make(map[string]bool, len(grades))
 	for _, raw := range parts {
 		p, _ := raw.(map[string]any)

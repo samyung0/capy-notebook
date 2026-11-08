@@ -45,7 +45,7 @@ func openPart(t *testing.T, questions []map[string]any) map[string]any {
 	return nil
 }
 
-// TestAIMarksWaitForApproval: the owner pays and sees the marks; they change no
+// TestAIMarksWaitForApproval: the member attempting pays, the owner sees the marks; they change no
 // total, a member reads none of them, and Approve all makes them the marks.
 func TestAIMarksWaitForApproval(t *testing.T) {
 	f := newAssignmentFixture(t, "ai-marks-wait")
@@ -53,12 +53,12 @@ func TestAIMarksWaitForApproval(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	id, attempt := submitOpenAnswer(t, f, true, now)
 
-	payer, workspace, answers, err := f.s.AnswersToMark(ctx, id, "")
+	workspace, answers, err := f.s.AnswersToMark(ctx, id, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if payer != f.user || workspace != f.ws.ID || len(answers) != 1 || answers[0].PartID != "p3" || answers[0].Answer == "" || len(answers[0].Items) != 2 {
-		t.Fatalf("to mark = %s %s %+v", payer, workspace, answers)
+	if workspace != f.ws.ID || len(answers) != 1 || answers[0].PayerID != f.viewer || answers[0].PartID != "p3" || answers[0].Answer == "" || len(answers[0].Items) != 2 {
+		t.Fatalf("to mark = %s %+v", workspace, answers)
 	}
 	if err := f.s.SaveAIMarks(ctx, attempt, []AIMark{{QuestionID: "q3", PartID: "p3", Items: []float64{2, 0}, Comment: "Says nothing of dilution."}}, now); err != nil {
 		t.Fatal(err)
@@ -82,7 +82,7 @@ func TestAIMarksWaitForApproval(t *testing.T) {
 	if part := openPart(t, member.Questions); part["aiAwards"] != nil || part["aiComment"] != nil {
 		t.Fatalf("a member read the AI's mark: %+v", part)
 	}
-	if _, _, left, err := f.s.AnswersToMark(ctx, id, ""); err != nil || len(left) != 0 {
+	if _, left, err := f.s.AnswersToMark(ctx, id, ""); err != nil || len(left) != 0 {
 		t.Fatalf("still to mark = %+v, err %v", left, err)
 	}
 

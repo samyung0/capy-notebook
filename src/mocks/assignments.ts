@@ -512,6 +512,16 @@ function seed() {
   seedAttempt(paper, eve, 4, 0, 52, 2);
   seedAttempt(paper, 'u_mock_farah', 2, 2, 41, 0);
   seedAttempt(paper, 'u_mock_gus', 1, 2, 55, 1);
+  // T3: Ben's grade failed and Farah had no credits; the rest read Not marked.
+  for (const attempt of attempts.values()) {
+    if (attempt.assignmentId !== paper.id) continue;
+    for (const q of attempt.graded)
+      for (const part of q.parts) {
+        if (!part.pending) continue;
+        if (attempt.userId === ben) part.aiError = 'error';
+        if (attempt.userId === 'u_mock_farah') part.aiError = 'credits';
+      }
+  }
   const genetics = rows.get('as_genetics')!;
   for (const [i, id] of class6.entries())
     seedAttempt(genetics, id, 8 + (i % 3), 0, 20 + i, 1);
@@ -591,6 +601,7 @@ const aiRow = (q: AssignmentGradedQuestion) => ({
         : (p.awarded ?? 0)),
     0
   ),
+  aiError: q.parts.find((p) => p.pending && !p.aiAwards && p.aiError)?.aiError,
   aiMarked: q.parts.every((p) => !p.pending || p.aiAwards),
   aiWarning: q.parts.some((p) => p.aiFlag)
     ? 'error'
@@ -746,6 +757,19 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
             done: row.kind === 'marked' ? countedRows.length : ticked.length,
             gradesReleasedAt: row.gradesReleasedAt,
             marking: row.marking,
+            notGraded:
+              row.marking === 'manual'
+                ? 0
+                : assigned
+                    .flatMap((id) => submissions(row.id, id))
+                    .reduce(
+                      (sum, a) =>
+                        sum +
+                        a.graded.filter((q) =>
+                          q.parts.some((p) => p.pending && !p.aiAwards)
+                        ).length,
+                      0
+                    ),
             quizId: row.quizId,
             quizTitle: material?.title,
             showAnswers: row.showAnswers,
@@ -1382,6 +1406,7 @@ export const assignmentHandlers = (viewer: Viewer) => {
             part.aiAwards = (part.markscheme ?? []).map((item, i) =>
               i === 0 ? item.marks : 0
             );
+            delete part.aiError;
             part.aiComment = 'Offered two answers for one point.';
             total++;
           }

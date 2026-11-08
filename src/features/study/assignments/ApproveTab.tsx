@@ -116,7 +116,13 @@ export function ApproveTab({
       <p className="t-meta mt-6 text-fg-muted">{m.assignment_no_open()}</p>
     );
 
-  const toApprove = rows.filter((row) => row.waiting).length;
+  const toApprove = rows.filter(
+    (row) => row.waiting && (manual || row.aiMarked)
+  ).length;
+  // Under AI marking, answers the AI left unmarked count apart (T3).
+  const notGraded = manual
+    ? 0
+    : rows.filter((row) => row.waiting && !row.aiMarked).length;
   // Approve all clears a question: by member there is none to clear.
   const approvable = !member && rows.some((row) => row.waiting && row.aiMarked);
   const questionNumber = (id: string) =>
@@ -187,6 +193,8 @@ export function ApproveTab({
         <div className="mt-2 flex items-center justify-between px-2.5">
           <span className="t-meta text-fg-secondary">
             {m.assignment_to_approve({ count: toApprove })}
+            {notGraded > 0 &&
+              ` · ${m.assignment_not_graded({ count: notGraded })}`}
           </span>
           <span
             className={cn(manual && 'hidden')}
@@ -296,6 +304,13 @@ export function ApproveTab({
                       {m.assignment_ai_mark({
                         mark: markText(row.aiAwarded, row.marks),
                       })}
+                    </span>
+                  ) : row.waiting && row.aiError && !row.handMarking ? (
+                    // Why the AI left it unmarked (T3).
+                    <span className="inline-flex h-5.5 shrink-0 items-center rounded-md bg-tint-error px-1.75 font-semibold text-tint-error-fg text-xs">
+                      {row.aiError === 'credits'
+                        ? m.assignment_no_credits()
+                        : m.assignment_grade_error()}
                     </span>
                   ) : row.waiting ? (
                     <span className="inline-flex h-5.5 shrink-0 items-center rounded-md bg-tint-warning px-1.75 font-semibold text-tint-warning-fg text-xs">
@@ -593,7 +608,11 @@ function MarkForm({
                 marks
               ),
             })
-          : m.assignment_ai_not_marked()}
+          : parts.some((p) => p.aiError === 'credits')
+            ? m.assignment_not_graded_credits()
+            : parts.some((p) => p.aiError === 'error')
+              ? m.assignment_not_graded_error()
+              : m.assignment_ai_not_marked()}
         {' · '}
         <b className="font-bold text-fg">
           {m.assignment_mark_of({

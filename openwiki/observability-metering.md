@@ -754,10 +754,12 @@ same way with their marking image, so the slot requires `vision` (M4, Epo
 2026-11-07; `models.slotRequirements`). One call per answered
 open or drawn part, ten at a time per submission, waiting in the model's line. Each is
 **charged** to whoever started the job (Epo 2026-11-03): the learner for a check
-of their own practice, the workspace owner for an assignment's answers, about 32
-credits a 40-part paper (surface `quiz`). A part that fails, or every part when
-there is nothing to pay with, stays "Not marked" and is not retried; closed parts
-still mark and a submission never fails for it.
+of their own practice, and for an assignment's answers the member attempting
+(Epo 2026-11-08, superseding the workspace owner), about 32 credits a 40-part
+paper (surface `quiz`). A part that fails, or every part when there is nothing to
+pay with, stays "Not marked" and is not retried; closed parts still mark and a
+submission never fails for it. On an assignment the part keeps why (`aiError`:
+`credits` or `error`), which the owner's row shows as No credits or Grade Error.
 
 A shared page marks no open answer, so a visitor's check there calls no model and
 costs nothing, signed in or out (Epo 2026-11-05, Q640 B;

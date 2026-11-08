@@ -492,6 +492,11 @@ components:
         aiAwarded:
           format: double
           type: number
+        aiError:
+          enum:
+            - credits
+            - error
+          type: string
         aiMarked:
           type: boolean
         aiWarning:
@@ -849,6 +854,9 @@ components:
             - ai
             - manual
           type: string
+        notGraded:
+          format: int64
+          type: integer
         quizId:
           type: string
         quizTitle:
@@ -881,6 +889,7 @@ components:
         - assigned
         - done
         - toApprove
+        - notGraded
       type: object
     AssignmentMark:
       additionalProperties: false

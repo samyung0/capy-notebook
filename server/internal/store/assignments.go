@@ -134,8 +134,12 @@ type AssignmentManage struct {
 	// the marks decided so far (0 to 1), once at least five submitted.
 	Average *float64 `json:"average,omitempty"`
 	// ToApprove counts answers waiting for the owner, in any submission of a
-	// member's: one that does not count yet can still become the highest.
+	// member's: one that does not count yet can still become the highest. Under AI
+	// marking NotGraded is how many of them have no AI mark yet (no credits, a
+	// grade error, or not tried); the page shows the rest as to approve (Epo
+	// 2026-11-08, mock T3).
 	ToApprove int `json:"toApprove"`
+	NotGraded int `json:"notGraded"`
 }
 
 // AssignmentMine is the caller's own state on an assignment given to them.
@@ -427,23 +431,31 @@ func (s *Store) fillAssignmentManage(ctx context.Context, ids []string, at map[s
 			FROM l GROUP BY 1),
 		w AS (SELECT t.assignment_id, sum(t.waiting_answers)::int AS n
 			FROM attempts t JOIN e ON e.assignment_id=t.assignment_id AND e.user_id=t.user_id
-			WHERE t.submitted_at IS NOT NULL GROUP BY 1)
-		SELECT c.assignment_id, c.n, COALESCE(d.n, 0), COALESCE(r.n, 0), r.mean, COALESCE(w.n, 0)
+			WHERE t.submitted_at IS NOT NULL GROUP BY 1),
+		u AS (SELECT t.assignment_id, count(*)::int AS n
+			FROM attempts t JOIN e ON e.assignment_id=t.assignment_id AND e.user_id=t.user_id
+			JOIN assignments a ON a.id=t.assignment_id AND a.marking <> 'manual',
+			LATERAL jsonb_array_elements(t.questions) q
+			WHERE t.submitted_at IS NOT NULL AND t.waiting_answers > 0
+				AND EXISTS (SELECT 1 FROM jsonb_array_elements(q->'parts') p
+					WHERE p->>'pending' = 'true' AND NOT p ? 'aiAwards')
+			GROUP BY 1)
+		SELECT c.assignment_id, c.n, COALESCE(d.n, 0), COALESCE(r.n, 0), r.mean, COALESCE(w.n, 0), COALESCE(u.n, 0)
 		FROM c LEFT JOIN d ON d.assignment_id=c.assignment_id LEFT JOIN r ON r.assignment_id=c.assignment_id
-		LEFT JOIN w ON w.assignment_id=c.assignment_id`, ids)
+		LEFT JOIN w ON w.assignment_id=c.assignment_id LEFT JOIN u ON u.assignment_id=c.assignment_id`, ids)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var id string
-		var assigned, ticked, submitted, waiting int
+		var assigned, ticked, submitted, waiting, ungraded int
 		var mean *float64
-		if err := rows.Scan(&id, &assigned, &ticked, &submitted, &mean, &waiting); err != nil {
+		if err := rows.Scan(&id, &assigned, &ticked, &submitted, &mean, &waiting, &ungraded); err != nil {
 			return err
 		}
 		m := list[at[id]].Manage
-		m.Assigned, m.Done, m.ToApprove = assigned, ticked+submitted, waiting
+		m.Assigned, m.Done, m.ToApprove, m.NotGraded = assigned, ticked+submitted, waiting, ungraded
 		if submitted >= assignmentAggregateMin {
 			m.Average = mean
 		}
@@ -2373,9 +2385,12 @@ type AssignmentAnswerRow struct {
 	AIWarning string `json:"aiWarning"`
 	// HandMarking: a waiting drawing has no marking image (saved under manual
 	// grading), so only staff mark it, whatever Mark with AI runs (Q695).
-	HandMarking bool    `json:"handMarking"`
-	Awarded     float64 `json:"awarded"`
-	Marks       float64 `json:"marks"`
+	HandMarking bool `json:"handMarking"`
+	// AIError is why the AI left it unmarked: "credits" (the member has none)
+	// or "error" (the grade failed), shown as No credits or Grade Error (mock T3).
+	AIError string  `json:"aiError,omitempty" enum:"credits,error"`
+	Awarded float64 `json:"awarded"`
+	Marks   float64 `json:"marks"`
 }
 
 // wrongAnswersShown caps a short part's common wrong answers.
@@ -2662,7 +2677,7 @@ func questionReports(frozen []map[string]any, attempts, others []reportAttempt) 
 			// By their own copy: a republish may have changed the question since.
 			if hasOpenPart(graded) {
 				rows = append(rows, AssignmentAnswerRow{QuestionID: id, UserID: attempt.userID, AttemptID: attempt.id, AttemptNumber: attempt.number,
-					Waiting: waiting, AIMarked: waiting && questionAIMarked(graded), AIAwarded: questionAIAwarded(graded), AIWarning: questionAIWarning(graded), Awarded: awarded, Marks: marks})
+					Waiting: waiting, AIMarked: waiting && questionAIMarked(graded), AIAwarded: questionAIAwarded(graded), AIWarning: questionAIWarning(graded), AIError: questionAIError(graded), Awarded: awarded, Marks: marks})
 			}
 		}
 		for _, attempt := range others {
@@ -2670,7 +2685,7 @@ func questionReports(frozen []map[string]any, attempts, others []reportAttempt) 
 			if graded != nil && questionWaiting(graded) {
 				awarded, marks := questionMarks(graded)
 				rows = append(rows, AssignmentAnswerRow{QuestionID: id, UserID: attempt.userID, AttemptID: attempt.id, AttemptNumber: attempt.number,
-					Waiting: true, AIMarked: questionAIMarked(graded), AIAwarded: questionAIAwarded(graded), AIWarning: questionAIWarning(graded), Awarded: awarded, Marks: marks})
+					Waiting: true, AIMarked: questionAIMarked(graded), AIAwarded: questionAIAwarded(graded), AIWarning: questionAIWarning(graded), AIError: questionAIError(graded), Awarded: awarded, Marks: marks})
 			}
 		}
 		if marked >= assignmentAggregateMin {

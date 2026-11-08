@@ -189,6 +189,7 @@ it("lists a class's To do: answers to approve for its owner, nothing when empty"
         assignees: [],
         done: 5,
         marking: 'ai_approve',
+        notGraded: 0,
         showAnswers: 'submitted',
         showGrades: 'automatic',
         shuffle: false,

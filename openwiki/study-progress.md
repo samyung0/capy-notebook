@@ -915,7 +915,15 @@ already open to them, the same short window a No late due date has.
 **Submitting.** `POST …/submit` grades closed parts with the same deterministic
 Go scoring as a quiz (`questions.Graded`). An answered open part is left
 `pending` ("Not marked"), and the AI then marks it in the background, on the
-workspace owner's credits (`markAnswersSoon`); a blank one earns 0. With Approve
+credits of the member attempting (`markAnswersSoon`, Epo 2026-11-08; one lock per
+member); a blank one earns 0. A part it could not mark keeps why, `aiError`
+`credits` (that member has none left) or `error` (the grade failed), which only
+staff read: Approve AI marks shows it on the row as No credits or Grade Error and
+in the answer pane as one line, with no banner and no names (mock T3). Waiting
+answers count as `toApprove`, and `notGraded` how many of them have no AI mark,
+which the Assignments row, the report header and Approve AI marks show apart from
+those to approve. Mark with AI runs each attempt on its member's credits and is
+refused only when grading isn't set up. With Approve
 AI marks on, its mark waits beside the answer (`aiAwards`, `aiComment`, `aiFlag`)
 where only staff read it; off, it is the mark at once (`markedBy: "ai"`). A part left
 Not marked joins no review; a quiz check can check it again (below). At zero the

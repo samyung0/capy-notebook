@@ -123,6 +123,11 @@ export function AssignmentReport({
           })
         : m.assignment_grades_not_released(),
   ].filter(Boolean) as string[];
+  const notGraded = marked ? (manage?.notGraded ?? 0) : 0;
+  const toApprove =
+    marked && manage?.marking !== 'manual'
+      ? (manage?.toApprove ?? 0) - notGraded
+      : 0;
   // Show grades Manual (T5): the button stays until they are released.
   const releasable =
     marked &&
@@ -141,6 +146,17 @@ export function AssignmentReport({
               {chip}
             </span>
           ))}
+          {/* Waiting answers: AI-marked to approve, and not graded (T3). */}
+          {toApprove > 0 && (
+            <span className={cn(CHIP, 'bg-tint-warning text-tint-warning-fg')}>
+              {m.assignment_to_approve({ count: toApprove })}
+            </span>
+          )}
+          {notGraded > 0 && (
+            <span className={cn(CHIP, 'bg-tint-error text-tint-error-fg')}>
+              {m.assignment_not_graded({ count: notGraded })}
+            </span>
+          )}
         </div>
         {releasable && (
           <ReleaseGrades

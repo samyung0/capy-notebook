@@ -36,8 +36,9 @@ bench: `bench/grading/reports/2026-11-08-page-answer-costs.md`.
 - **Show grades (Epo 2026-11-08, mocks C4, S7, T5, built):** a select
   beside Show answers, Automatic or Manual; Manual holds marks until Release
   grades, with practice, reviews and topic labels waiting too.
-- **T3 (Epo 2026-11-08):** the error badge reads No credits or Grade Error; no
-  banner and no member names in an error summary.
+- **T3 (Epo 2026-11-08, built):** the error badge reads No credits or Grade
+  Error; no banner and no member names in an error summary. The member
+  attempting pays for all AI marking of an assignment (built with it).
 - **Marking (Epo 2026-11-08):**
   - The pages are marked together, since nobody says where each answer is: one
     call for the whole paper, or a map call then grading.

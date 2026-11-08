@@ -27,6 +27,7 @@ export * from './approveAIMarksOutputBody.ts';
 export * from './assignableRole.ts';
 export * from './assignment.ts';
 export * from './assignmentAnswerRow.ts';
+export * from './assignmentAnswerRowAiError.ts';
 export * from './assignmentAnswersInputBody.ts';
 export * from './assignmentAnswersInputBodyAnswers.ts';
 export * from './assignmentAttempt.ts';
