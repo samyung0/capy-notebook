@@ -20,6 +20,13 @@ export function dayLabel(iso: string) {
     .replace(',', '');
 }
 
+/** "Mon". */
+export function weekdayLabel(iso: string) {
+  return new Intl.DateTimeFormat(dateLocale(), { weekday: 'short' }).format(
+    new Date(iso)
+  );
+}
+
 /** "24 Oct". */
 export function dayMonth(iso: string) {
   return new Intl.DateTimeFormat(dateLocale(), {

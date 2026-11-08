@@ -8,7 +8,7 @@ type TopicLabel = SummaryTopic['label'];
  * Needs practice), in plan §5's colours. */
 const LABEL: Record<TopicLabel, { className: string; name: () => string }> = {
   attempted: {
-    className: 'border border-strong text-fg-secondary',
+    className: 'border border-line-strong text-fg-secondary',
     name: m.topic_label_attempted,
   },
   familiar: {
@@ -56,6 +56,22 @@ export function LabelChip({
   );
 }
 
+/** By topic's cell (board G4): the label filling its column, 26px tall. */
+export function LabelPill({ label }: { label: TopicLabel }) {
+  const { className, name } = LABEL[label];
+  return (
+    <span
+      className={cn(
+        't-meta flex h-6.5 w-full items-center justify-center rounded-md font-bold',
+        className,
+        label === 'not_started' && 'px-0'
+      )}
+    >
+      {label === 'not_started' ? '–' : name()}
+    </span>
+  );
+}
+
 const MAX_SQUARES = 10;
 export type SquareResult = 'right' | 'partial' | 'wrong' | 'unattempted';
 
@@ -96,4 +112,31 @@ export function topicSquares(t: {
     ...shares.flatMap((s) => repeat(s.k, s.n)),
     ...repeat('unattempted', grey),
   ];
+}
+
+const SQUARE: Record<SquareResult, string> = {
+  partial: 'bg-solid-warning',
+  right: 'bg-solid-success',
+  unattempted: 'bg-fg-muted/30',
+  wrong: 'bg-solid-error',
+};
+
+/** A topic's squares in a row, as topicSquares has them. */
+export function TopicSquares({
+  className,
+  topic,
+}: {
+  className?: string;
+  topic: Parameters<typeof topicSquares>[0];
+}) {
+  return (
+    <span aria-hidden className={cn('gap-[3px]', className)}>
+      {topicSquares(topic).map((result, i) => (
+        <span
+          className={cn('size-2 shrink-0 rounded-[1px]', SQUARE[result])}
+          key={`${i}-${result}`}
+        />
+      ))}
+    </span>
+  );
 }

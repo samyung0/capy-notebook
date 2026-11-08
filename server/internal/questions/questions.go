@@ -1653,3 +1653,19 @@ func RepairFigure(block map[string]any) map[string]any {
 	out[list] = kept
 	return out
 }
+
+// PromptText is a question's words for a one-line listing: its stem, or its
+// first part's text when the stem is empty, figures as their descriptions.
+func PromptText(q map[string]any) string {
+	stem, _ := q["stem"].([]any)
+	if text := strings.TrimSpace(blocksText(stem)); text != "" {
+		return text
+	}
+	parts, _ := q["parts"].([]any)
+	if len(parts) == 0 {
+		return ""
+	}
+	p, _ := parts[0].(map[string]any)
+	blocks, _ := p["blocks"].([]any)
+	return strings.TrimSpace(blocksText(blocks))
+}

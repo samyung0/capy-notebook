@@ -1,7 +1,7 @@
 ---
 type: Backend
 title: "Study Progress and Review"
-description: "Per-user study progress in a workspace, FSRS review state in Go, suggested reviews and their scoring, recorded review sessions, Study → Practice (suggestions, every quiz as practice, topic sessions and their result), Hide study progress, Study → Summary and its topic labels, Learning's Overview, Past reviews and All results tabs, the workspace Dashboard's activity, the answer events log, lifecycle and access."
+description: "Per-user study progress in a workspace, FSRS review state in Go, suggested reviews and their scoring, recorded review sessions, Study → Practice (suggestions, every quiz as practice, topic sessions and their result), Hide study progress, Study → Summary and its topic labels, Study → Members (a class's members for its staff), Learning's Overview, Past reviews and All results tabs, the workspace Dashboard's activity, the answer events log, lifecycle and access."
 tags: [backend, frontend, study, review, fsrs, flashcards, quizzes, progress]
 ---
 
@@ -156,6 +156,8 @@ result body resetting the session's list.
 | `GET /api/review/sessions?sort=&dir=&workspaceId=&has=&offset=&limit=` | Past reviews: finished sessions with their quiz marks and cards remembered (Good or Easy). Sort date, quiz, cards or time; `has` quiz and/or flashcards. |
 | `GET /api/learning/overview` | `LearningOverview`, Learning's Overview tab, below. |
 | `GET /api/workspaces/{id}/study/topics` | `StudyTopics`, Study → Summary: `enabled` and each topic's standing. Refused (403) to a class's owner and editors. |
+| `GET /api/workspaces/{id}/study/members` | `MembersProgress`, Study → Members: each viewer member's marks, practice this week, full storage and topic standings, and the topic columns. A class's owner and editors only: a member 403, anyone else and a personal workspace 404. |
+| `GET /api/workspaces/{id}/study/members/{memberId}` | `MemberProfile`, a member's profile: assignments, topics, questions still missed, recent work. The same rule; a member who isn't a viewer 404. |
 | `POST /api/review/ratings` | `{materialId, itemId, rating, session?, attempt?}` for a card; `attempt` (`{id, startedAt}`, minted by the study page when a run begins) adds the rating to that flashcard attempt for a workspace set, creating it with the first rating (`recordCardTx`, under the account lock, as quiz attempts, and the rating lock); another user's, another set's or a quiz attempt's id is 422 (`ErrFlashcardAttempt`); a question is 422 (it is rated by a check). Needs read access to the material, so standalone shared sets can be rated too; an embedded set is 422 (`ErrStudyEmbedded`), its study page sends nothing. |
 | `POST /api/review/check` | `{materialId, itemId, answers, session?}` for a question: grades it on the server (open parts by the grading model), rates it from `correct / total` and returns `{correct, total, question}`, the question with its key and awards. A card is 422. |
 | `POST /api/quizzes/{id}/check` | `{questionId, answers, attemptId?, startedAt?}`: grades one question on the server ([question-bank.md](question-bank.md#answer-keys-and-server-grading)) and adds it to the learner's attempt, whose `AttemptDetail` so far it returns; a missing or unknown `attemptId` (another user's, another quiz's, deleted) starts a new attempt, a question already checked in the attempt is 409. Its side effect is below. |
@@ -339,15 +341,14 @@ The page is `src/features/study/practice/PracticePage.tsx`, lazy-loaded into
 the centre while nothing is open and the URL has `study=practice`
 (`parseWorkspaceOpenSearch`). From lg it fills the centre panel without a
 file header (28px 36px padding); one column keeps the header for the Files
-dropdown and ⋮, which with the dropdown's foot lead to Practice, Summary and
-Assignments, each only for whoever has that page. The rail's Study opens it and
+dropdown and ⋮, which with the dropdown's foot lead to Practice, Members,
+Summary and Assignments, each only for whoever has that page. The rail's Study opens it and
 its panel (`StudyPanel.tsx`)
 lists Study's pages: in a class, Members, Assignments and Practice for owner
 and editor members, Summary, Assignments and Practice for others; in a
-personal workspace, Summary and Practice for everyone. Practice, Summary and
-[Assignments](#assignments) are built; the rest show as muted rows with a
-"Coming soon" title and do nothing. Practice's row is current on the page, during a topic session
-and on its result.
+personal workspace, Summary and Practice for everyone. All four are built
+([Members](#members), [Assignments](#assignments)). Practice's row is current on the
+page, during a topic session and on its result.
 
 Data: `GET /api/workspaces/{id}/practice` (`qk.practice`, under the
 workspace's `study` key, so `invalidateStudy` refreshes it) and the topics.
@@ -393,6 +394,65 @@ not attempted, a quiz left partway included; above 10 they scale to 10 and any
 unattempted question keeps at least 1 grey; `topicSquares`), and Practise, which starts that topic's session.
 Assignments' overall joins it once they exist. While study progress is hidden it
 says so, with a Workspace settings button. Make my own practice sits at the top right.
+
+### Members
+
+`src/features/study/members/MembersPage.tsx`, `study=members` (boards Main, G4
+and G2 on the study-tracking canvas, Epo 2026-11-02/03; built 2026-11-08), for a
+class's owner and teaching assistants (editor members) only: anyone else is sent
+to Practice, and the routes refuse them. Members never see it. It lists the
+class's viewer members; `GET /api/workspaces/{id}/study/members`
+(`WorkspaceMembersProgress` in `store/members_progress.go`, `qk.membersProgress`,
+under the workspace's `study` key).
+
+- **Show: Summary** (Main): one 52px line per member: Assignments ("76% · 3 of
+  4 done", then "2 missing"), Practice this week (questions checked in quizzes
+  and reviews over the last seven days, never assignments; "–" for none) and
+  Needs practice (the topics labelled so, as amber chips; else a grey Attempted
+  while nothing is past Attempted, Not started before any answer, Nothing
+  flagged otherwise). Overall is the counted submission's mark after any late
+  penalty (`countedAttemptOrder`, `attemptMarkSQL`) over the marks decided so
+  far, summed across submitted marked assignments; "x of y" counts published
+  assignments given to them, submitted or ticked; missing is marked ones past
+  due with nothing submitted. Sort: Needs attention (missing, then topics
+  needing practice, then lowest overall; no grade yet sorts after a grade;
+  `sortMembers`) or Name. A line opens the profile; there is no accordion.
+- **Storage full** (Epo 2026-11-08, added since the mock): a red chip by the
+  name while the member's own storage is full (`StorageUsage.Full`). Hover or
+  tap says their assignment drawings still save and go over the limit, but they
+  can't upload new files until they free up space
+  ([backend-storage-quota.md](backend-storage-quota.md)). It shows on Members and
+  the profile, never on an assignment's pages.
+- **Show: By topic** (G4, `show=topics`): members × topics, 64px rows, each cell
+  the member's label as a pill with "9 of 10 right" (or "–" and Not started),
+  under a pinned All members row: how many need practice when any do, else the
+  commonest label, a tie to the stronger (`topicCount`). Columns are the
+  topics any member has standing in, in topic order with Other files last, each
+  with its size, the most questions any member can answer in it. A member's
+  labels are exactly their own Summary's (`topicStandings` read as them), so an
+  assigned quiz counts only what was answered. Hide study progress doesn't hide
+  them from staff. Wide grids scroll sideways.
+- **Profile** (G2, `member=<id>`, keeping `show`): back to Members, name, "Joined
+  2 Sep · active today" (their latest answer or submission), Draft a follow-up
+  quiz, then Assignments (mark of total and Submitted, In progress, Missing,
+  Done or the due date; a row opens their results, or the report's Members tab
+  before a submission) with Overall, and Topics as Summary shows them. On the
+  right: the weakest topic needing practice (lowest share right) with "Missed 3
+  of 4 questions", Draft a follow-up quiz and Assign practice; Still missing
+  (up to five questions whose latest check was not right, most missed first,
+  from the quizzes Summary counts, the prompt from `questions.PromptText`); and
+  Recent activity (the latest five: an attempt at a class practice quiz with its
+  title and question count, a day's reviews in a topic, and submissions). A
+  member's own practice quiz is private, so it shows as its topic, never its
+  title. Draft a follow-up quiz opens `MakePractice` as the owner on the focus
+  topic (the same generate run as New assignment's Generate questions); Assign
+  practice opens New assignment. Board F3's AI pick of questions and the ⋮
+  menu are not built.
+- Phones (below the `@4xl` container) stack each line: the name, then the
+  assignments, "Practice this week: n questions" and the chips.
+
+MSW (`src/mocks/members.ts`) serves Biology 101's viewers with the boards' own
+numbers, Farah's storage full.
 
 ### Make my own practice
 
@@ -630,7 +690,7 @@ per topic label, weakest first, "38 of 120 items tried" (rated items with curren
 content, of all items) and the last practice. A row opens the workspace's Dashboard.
 
 **You teach** lists a class's owner or editor's classes with their member count; a
-row opens the class's Practice until Members exists.
+row opens the class's Members.
 
 With nothing in any section the page shows the ink book, "No quizzes or flashcards
 yet" and an outline Go to Workspaces. An empty section is not shown.
@@ -1066,6 +1126,9 @@ Sources: [store](../server/internal/store/assignments.go),
 
 - `server/internal/store/assignments_test.go` and
   `e2e/study/assignments.spec.ts`: see [test-catalog.md](test-catalog.md).
+- `server/internal/store/members_progress_test.go` and
+  `src/features/study/members/membersRows.test.ts`: Members; see
+  [test-catalog.md](test-catalog.md).
 - `server/internal/review/review_test.go` also holds the answer-history
   order Epo signed off (`TestHistoryWeightsOrder`).
 - `server/internal/review/topic_label_test.go`: the label counts Epo reviewed, a

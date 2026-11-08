@@ -123,9 +123,12 @@ alone, and the store checks each of these itself (`assignmentStaff`,
 | Read every assignment, the report, any member's results; change marks | Yes | Yes | No | No | No |
 | See and take it, read own results, tick an unmarked one | If they ticked "You" | If they ticked "You" | No | Yes | No |
 | A running attempt | Only their own | Only their own | No | Their own | No |
+| Study → Members and a member's profile: every viewer member's marks, topic labels, practice counts and full storage | Yes | Yes | No | No (403) | No (403) |
 
 Everything else answers 404, as does every route in a personal workspace, where
-they are hidden and not deleted. Who pays and a frozen account: making or marking
+they are hidden and not deleted; a class's own viewer members get 403 from
+Members (`membersStaff`). Members shows the owner a member's practice as counts
+only, never answers, and their labels even while Hide study progress is on. Who pays and a frozen account: making or marking
 is editing and refused when frozen; a member's own start, save, submit and tick
 are study data and go through, as ratings do.
 
