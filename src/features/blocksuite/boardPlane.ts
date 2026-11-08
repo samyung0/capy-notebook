@@ -21,7 +21,8 @@ import {
 } from '@blocksuite/affine/std/gfx';
 import { axisNumber } from '@/features/questions/graph';
 import { tickStep } from '@/features/questions/graphTicks';
-import { type Mark, PAPER, type Paper, pointsOf } from './boardData';
+import { LATEX_MAX, type Mark, PAPER, type Paper, pointsOf } from './boardData';
+import { type Drawn, drawing, laidOut, replay } from './boardFormulaDraw';
 import { curvePieces, minorStep, ticks, type Vec } from './boardGeometry';
 
 /** The plane's top left corner in its own units, and board pixels per unit. A polar
@@ -55,7 +56,9 @@ export function drawPlane(
   marks: Mark[],
   paper: Paper,
   /** Marks whose points show (the editor's, under the pointer). */
-  shown: ReadonlySet<string> = NONE
+  shown: ReadonlySet<string> = NONE,
+  /** Draws again once a formula on it is laid out. */
+  refresh: () => void = () => undefined
 ) {
   const X = (x: number) => frame.x + (x - view.x0) * view.ppu;
   const Y = (y: number) => frame.y + (view.y0 - y) * view.ppu;
@@ -74,7 +77,7 @@ export function drawPlane(
   const minor = minorStep(step);
   if (view.polar) {
     drawPolarGrid(ctx, frame, view, X, Y, step, minor, paper);
-    drawMarks(ctx, X, Y, marks, paper, shown);
+    drawMarks(ctx, X, Y, marks, paper, shown, refresh);
     ctx.restore();
     ctx.strokeStyle = paper.edge;
     ctx.lineWidth = 1;
@@ -119,7 +122,7 @@ export function drawPlane(
   for (const y of ticks(bottom, top, step))
     label(axisNumber(y, step), axisX - 7, Y(y), 'right');
 
-  drawMarks(ctx, X, Y, marks, paper, shown);
+  drawMarks(ctx, X, Y, marks, paper, shown, refresh);
   ctx.restore();
   ctx.strokeStyle = paper.edge;
   ctx.lineWidth = 1;
@@ -272,7 +275,8 @@ function drawMarks(
   Y: (y: number) => number,
   marks: Mark[],
   paper: Paper,
-  shown: ReadonlySet<string>
+  shown: ReadonlySet<string>,
+  refresh: () => void
 ) {
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
@@ -289,6 +293,17 @@ function drawMarks(
       ctx.fillStyle = paper.text;
       ctx.textBaseline = 'middle';
       haloText(ctx, mark.text, X(mark.at[0]), Y(mark.at[1]), 'center', paper);
+    } else if (mark.kind === 'formula') {
+      const drawn = formulaAt(mark.latex, refresh);
+      if (!drawn) continue;
+      const box = formulaBox(drawn, X(mark.at[0]), Y(mark.at[1]));
+      ctx.save();
+      // KaTeX's ink is black; dark paper turns it light, its colours about kept.
+      if (paper.dark) ctx.filter = 'invert(1) hue-rotate(180deg)';
+      ctx.translate(box.x, box.y);
+      ctx.scale(FORMULA_SCALE, FORMULA_SCALE);
+      replay(ctx, drawn);
+      ctx.restore();
     } else {
       // Set per mark: a label's halo before it leaves the paper's colour behind.
       ctx.strokeStyle = paper.ink;
@@ -301,6 +316,26 @@ function drawMarks(
 }
 
 const NONE: ReadonlySet<string> = new Set();
+
+/** A formula on a plane at 18 px, as KaTeX lays it out at 24, so it reads beside a
+ * label's 15 px text; it keeps that size as the plane zooms. */
+export const FORMULA_SCALE = 0.75;
+
+/** A formula laid out, or nothing yet: it's laid out and `refresh` draws again. One
+ * KaTeX can't read stays undrawn. */
+export function formulaAt(latex: string, refresh: () => void) {
+  if (latex.length > LATEX_MAX) return;
+  const drawn = laidOut(latex);
+  if (!drawn) drawing(latex).then(refresh, () => undefined);
+  return drawn;
+}
+
+/** Where a formula's laid-out box sits on screen, centred on its point. */
+export function formulaBox(drawn: Drawn, x: number, y: number) {
+  const w = drawn.w * FORMULA_SCALE;
+  const h = drawn.h * FORMULA_SCALE;
+  return { h, w, x: x - w / 2, y: y - h / 2 };
+}
 
 export class PlaneElementModel extends GfxPrimitiveElementModel<{
   fit: boolean;
@@ -392,7 +427,9 @@ const planeRenderer: ElementRenderer<PlaneElementModel> = (
     { h, w, x: 0, y: 0 },
     model,
     model.marks,
-    PAPER[renderer.getColorScheme()]
+    PAPER[renderer.getColorScheme()],
+    undefined,
+    () => renderer.refresh()
   );
 };
 

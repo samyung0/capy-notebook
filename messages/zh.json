@@ -3040,6 +3040,7 @@
   "drawing_board_maths": "数学",
   "drawing_board_point": "点",
   "drawing_board_plane_label": "标签",
+  "drawing_board_plane_formula": "公式",
   "drawing_board_line_through_points": "过两点的直线",
   "drawing_board_curve": "过点的曲线。再次点击最后一点以完成。",
   "drawing_board_shapes": "形状",

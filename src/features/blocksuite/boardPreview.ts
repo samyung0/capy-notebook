@@ -330,8 +330,9 @@ function drawPlane(box: Box, fields: Fields, pen: Pen) {
     dots += `M${num(X(u))} ${num(Y(v))}h0`;
   };
   for (const mark of marks) {
-    // No labels on previews, as no numbers.
-    if (mark.kind === 'label') continue;
+    // No labels on previews, as no numbers, and no formulas: the preview can't lay
+    // them out, and better none than a broken one (Epo 2026-11-08).
+    if (mark.kind === 'label' || mark.kind === 'formula') continue;
     if (mark.kind === 'dot') {
       dot(mark.at);
       continue;

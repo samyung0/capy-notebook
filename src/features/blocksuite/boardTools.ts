@@ -39,7 +39,6 @@ import type { ExtensionType } from '@blocksuite/affine/store';
 import {
   EdgelessDraggableElementController,
   EdgelessToolbarToolMixin,
-  type OverlayLayer,
   SeniorToolIdentifier,
 } from '@blocksuite/affine/widgets/edgeless-toolbar';
 import { Pen01Icon } from '@hugeicons/core-free-icons';
@@ -1106,6 +1105,10 @@ const PIECE_SHADOW = 'drop-shadow(0 0 5px rgba(0, 0, 0, 0.2))';
 
 /** Navy lightens on a dark board (--capy-navy); the fallback is for a drag preview
  * drawn outside it. */
+/** The part of a dragged piece's overlay its shadow is set on (BlockSuite's own type
+ * isn't exported). */
+type OverlayLayer = { element: HTMLElement };
+
 const pieceArt = (piece: Piece) =>
   unsafeSVG(
     `<svg width="${piece.w}" height="${piece.h}" viewBox="${piece.viewBox}" aria-hidden="true">${piece.body.replace(
@@ -1292,14 +1295,14 @@ abstract class CapyPieceSlot extends EdgelessToolbarToolMixin(
             @mousedown=${(event: MouseEvent) =>
               this.drag?.onMouseDown(event, {
                 data: piece,
-                preview: pieceArt(piece),
+                preview: html`${pieceArt(piece)}`,
               })}
             @touchstart=${(event: TouchEvent) => {
               // No mouse events after it, which would pick the piece up to carry.
               event.preventDefault();
               this.touch?.onTouchStart(event, {
                 data: piece,
-                preview: pieceArt(piece),
+                preview: html`${pieceArt(piece)}`,
               });
             }}
           >

@@ -104,6 +104,10 @@ function elementProblem(fields: Fields): string | null {
           (mark?.kind !== 'label' ||
             (typeof mark.text === 'string' &&
               mark.text.length <= LABEL_LENGTH_MAX)) &&
+          // A formula is text KaTeX lays out, within the formula card's limit.
+          (mark?.kind !== 'formula' ||
+            (typeof mark.latex === 'string' &&
+              mark.latex.length <= LATEX_MAX)) &&
           // An ellipse is drawn from exactly its four handles.
           (mark?.kind !== 'ellipse' ||
             (listUpTo(mark.points, 4) &&

@@ -12,10 +12,12 @@ export type Color =
 /** What's plotted on a plane, in its own units. A line or curve grows a click at a time,
  * each click one undo step. A label is text centred on its point (Epo 2026-11-08). An
  * ellipse (Epo 2026-11-08) is upright, held by its four handles: right, top, left and
- * bottom, so it starts as a circle and its handles stretch it. */
+ * bottom, so it starts as a circle and its handles stretch it. A formula (Epo
+ * 2026-11-08) is LaTeX centred on its point, drawn by KaTeX. */
 export type Mark =
   | { id: string; kind: 'dot'; at: Vec }
   | { id: string; kind: 'label'; at: Vec; text: string }
+  | { id: string; kind: 'formula'; at: Vec; latex: string }
   | { id: string; kind: 'line' | 'curve' | 'ellipse'; points: Vec[] };
 
 /** The points a mark is drawn through, or at. */
@@ -136,6 +138,8 @@ export const NUMBER = '#55555b';
  * marking image is always light. */
 export type Paper = {
   axis: string;
+  /** Dark paper: black ink drawn from elsewhere (a formula) is turned light. */
+  dark: boolean;
   edge: string;
   ink: string;
   major: string;
@@ -148,6 +152,7 @@ export type Paper = {
 export const PAPER: Record<'dark' | 'light', Paper> = {
   dark: {
     axis: '#9a9a9a',
+    dark: true,
     edge: '#3a3a3a',
     ink: '#fff',
     major: '#3a3a3a',
@@ -159,6 +164,7 @@ export const PAPER: Record<'dark' | 'light', Paper> = {
   },
   light: {
     axis: '#6f6f6c',
+    dark: false,
     edge: '#d9d9d6',
     ink: INK,
     major: '#dededb',

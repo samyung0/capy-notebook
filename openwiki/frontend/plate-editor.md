@@ -4495,7 +4495,12 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   Label (Epo 2026-11-08) types text centred where it's clicked, a `label` mark at that
   coordinate that moves and zooms with the plane (a click near one edits it; up to 24
   characters; previews leave labels out, as numbers); after one, the tool goes back to
-  Move. Ellipse (Epo 2026-11-08, square
+  Move. Formula (Epo 2026-11-08) opens the board's formula card (`openFormulaCard`) for
+  a `formula` mark centred where it's clicked (a click on one opens it again, emptied it
+  goes); KaTeX's layout (`boardFormulaDraw.ts`, loaded only once a formula is on the
+  board or a plane) is replayed at 18 px, inverted on dark paper, keeping its size as
+  the plane zooms. Move drags it whole; Erase takes it. Previews leave formulas out, as
+  they can't lay them out (Epo: none rather than broken); the marking image has them. Ellipse (Epo 2026-11-08, square
   planes only): a press and drag sizes a circle from its middle (the chip shows `r`), a
   click places one a grid step round. It's an `ellipse` mark of four handles (right,
   top, left, bottom); pulling one sets the width or height about the middle, so it

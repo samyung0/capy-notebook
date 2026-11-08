@@ -36,6 +36,7 @@ describe('checkSavedBoard', () => {
       reason(
         withElement({
           marks: [
+            { at: [1, 1], id: 'f', kind: 'formula', latex: 'x^2' },
             {
               id: 'e',
               kind: 'ellipse',

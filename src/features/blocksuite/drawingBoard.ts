@@ -87,11 +87,11 @@ import { fitImageOffThread } from '@/lib/fitImageOffThread';
 import { fromBase64, toBase64 } from './base64';
 import { chartExtensions } from './boardChart';
 import {
-  forgetFormulas,
   formulaExtensions,
   formulasDrawn,
   mountSymbolRow,
 } from './boardFormula';
+import { forgetFormulas } from './boardFormulaDraw';
 import { closeUp, IMAGE_SIDE_MAX } from './boardGeometry';
 import { addPlane, planeExtensions, planeMarks } from './boardPlane';
 import './boardChartEditor';
@@ -520,7 +520,8 @@ export function mountDrawingBoard(
       addPlane(
         gfx,
         new Bound(0, 0, FIRST_PLANE.w, FIRST_PLANE.h),
-        FIRST_PLANE.ppu
+        FIRST_PLANE.ppu,
+        false
       );
       store.resetHistory();
     }

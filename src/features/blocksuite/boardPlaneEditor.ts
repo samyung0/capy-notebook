@@ -17,10 +17,13 @@ import {
   pullEllipse,
 } from './boardData';
 import { drawChip, openBoardEditor } from './boardEditorShell';
+import { openFormulaCard } from './boardFormula';
+import { laidOut } from './boardFormulaDraw';
 import { minorStep, snapTo, tidy, type Vec } from './boardGeometry';
 import {
   drawPlane,
   fitCard,
+  formulaBox,
   markPoints,
   type PlaneElementModel,
   type PlaneView,
@@ -30,7 +33,15 @@ import {
 } from './boardPlane';
 import { mathsIcon } from './boardTools';
 
-type Tool = 'move' | 'point' | 'line' | 'curve' | 'ellipse' | 'label' | 'erase';
+type Tool =
+  | 'move'
+  | 'point'
+  | 'line'
+  | 'curve'
+  | 'ellipse'
+  | 'label'
+  | 'formula'
+  | 'erase';
 
 const PIXELS_TO_ERASE = 12;
 const PIXELS_TO_LABEL = 24;
@@ -58,6 +69,7 @@ const TOOLS: { icon: string; id: Tool; label: () => string }[] = [
   { icon: 'curve', id: 'curve', label: m.drawing_board_curve },
   { icon: 'ellipse', id: 'ellipse', label: m.drawing_board_ellipse },
   { icon: 'label', id: 'label', label: m.drawing_board_plane_label },
+  { icon: 'formula', id: 'formula', label: m.drawing_board_plane_formula },
   { icon: 'erase', id: 'erase', label: m.drawing_board_erase_mark },
 ];
 
@@ -207,7 +219,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     let best: { id: string; index: number } | null = null;
     let reach = PIXELS_TO_GRAB;
     for (const mark of model.marks) {
-      if (mark.kind === 'label') continue;
+      if (mark.kind === 'label' || mark.kind === 'formula') continue;
       for (const [index, point] of pointsOf(mark).entries()) {
         const [x, y] = toScreen(point);
         const distance = Math.hypot(x - px[0], y - px[1]);
@@ -220,13 +232,28 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     return best;
   };
   /** The line, curve or label under a pixel. */
+  /** Whether a pixel is on a formula: its laid-out box, or near its point until then. */
+  const onFormula = (mark: Extract<Mark, { kind: 'formula' }>, px: Vec) => {
+    const [x, y] = toScreen(mark.at);
+    const drawn = laidOut(mark.latex);
+    if (!drawn) return Math.hypot(px[0] - x, px[1] - y) <= PIXELS_TO_LABEL;
+    const box = formulaBox(drawn, x, y);
+    return (
+      px[0] >= box.x - 4 &&
+      px[0] <= box.x + box.w + 4 &&
+      px[1] >= box.y - 4 &&
+      px[1] <= box.y + box.h + 4
+    );
+  };
   const markAt = (px: Vec) => {
     const here = toPlane(px);
-    return model.marks.find(
-      (mark) =>
-        mark.kind !== 'dot' &&
-        distanceTo(mark, here) <=
-          (mark.kind === 'label' ? PIXELS_TO_LABEL : PIXELS_TO_ERASE) / view.ppu
+    return model.marks.find((mark) =>
+      mark.kind === 'formula'
+        ? onFormula(mark, px)
+        : mark.kind !== 'dot' &&
+          distanceTo(mark, here) <=
+            (mark.kind === 'label' ? PIXELS_TO_LABEL : PIXELS_TO_ERASE) /
+              view.ppu
     );
   };
   const pickable = (px: Vec) => {
@@ -269,6 +296,14 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
         traceMark(ctx, mark, ...screenAxes());
         ctx.stroke();
       }
+    }
+    if (mark.kind === 'formula') {
+      const drawn = laidOut(mark.latex);
+      if (!drawn) return;
+      const box = formulaBox(drawn, ...toScreen(mark.at));
+      ctx.fillStyle = HALO;
+      ctx.fillRect(box.x - 4, box.y - 4, box.w + 8, box.h + 8);
+      return;
     }
     if (mark.kind === 'label') {
       const [x, y] = toScreen(mark.at);
@@ -313,7 +348,8 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       marks,
       PAPER[theme.theme],
       // The open mark's points, and those of the mark under the pointer or held.
-      new Set([openId, near, grab?.id].filter((id): id is string => !!id))
+      new Set([openId, near, grab?.id].filter((id): id is string => !!id)),
+      redraw
     );
     const picked = preview ? grab : hover;
     const mark = picked && marks.find(({ id }) => id === picked.id);
@@ -350,7 +386,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
         ? pointsOf(under)[hover.index]
         : snapped(pointer);
     const open = openMark();
-    if (open && open.kind !== 'dot') {
+    if (open && 'points' in open) {
       traceMark(
         ctx,
         open.kind === 'curve'
@@ -476,11 +512,43 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       else if (model.marks.length < MARKS_MAX) typing = { at: here, text: '' };
       drawControls();
       controls.querySelector<HTMLInputElement>('.capy-chart-label')?.select();
+    } else if (tool === 'formula') {
+      // A click on a formula opens it again; elsewhere a new one goes where it was
+      // clicked. One formula, then back to Move.
+      const near = model.marks.find(
+        (mark): mark is Extract<Mark, { kind: 'formula' }> =>
+          mark.kind === 'formula' && onFormula(mark, px)
+      );
+      const at = near?.at ?? toPlane(px);
+      if (!near && model.marks.length >= MARKS_MAX) return;
+      tool = 'move';
+      drawControls();
+      void openFormulaCard(gfx, near?.latex ?? '', (latex) => {
+        if (latex) {
+          const formula: Mark = {
+            at,
+            id: near?.id ?? newId(),
+            kind: 'formula',
+            latex,
+          };
+          write(
+            near
+              ? model.marks.map((mark) =>
+                  mark.id === near.id ? formula : mark
+                )
+              : [...model.marks, formula]
+          );
+        } else if (near)
+          write(model.marks.filter((mark) => mark.id !== near.id));
+      });
     } else if (tool === 'erase') {
       const here = toPlane(px);
       const reach = PIXELS_TO_ERASE / view.ppu;
-      let nearest: Mark | null = null;
-      let best = reach;
+      let nearest: Mark | null =
+        model.marks.find(
+          (mark) => mark.kind === 'formula' && onFormula(mark, px)
+        ) ?? null;
+      let best = nearest ? 0 : reach;
       for (const mark of model.marks) {
         const distance = distanceTo(mark, here);
         if (distance <= best) {
