@@ -31,11 +31,14 @@ export type ChartBar = {
   value: number;
 };
 export type PieLabel = { angle: number; id: string; text: string };
+/** A pie slice's fill, by the line it starts at (clockwise). */
+export type SliceFill = { fill: Color; from: number };
 
 export type ChartData = {
   axisMax: number;
   axisStep: number;
   bars: ChartBar[];
+  fills: SliceFill[];
   kind: ChartKind;
   labels: PieLabel[];
   spokes: number[];
@@ -96,6 +99,13 @@ export const PAPER: Record<'dark' | 'light', Paper> = {
   },
 };
 
+/** On the board a card's paper is half see-through, so the panel's frost over the
+ * page frame shows (Epo 2026-11-08); open for editing it's solid. */
+export const CARD_PAPER: Record<'dark' | 'light', Paper> = {
+  dark: { ...PAPER.dark, paper: 'rgba(37, 37, 37, 0.5)' },
+  light: { ...PAPER.light, paper: 'rgba(255, 255, 255, 0.5)' },
+};
+
 /** A bar's width within its slot. */
 export const BAR_SHARE = 0.56;
 
@@ -117,6 +127,21 @@ export function pieCircle(frame: Box, pads: Pads) {
     cy: frame.y + pads.top + height / 2,
     r: Math.min(width, height) / 2,
   };
+}
+
+/** A pie's filled slices, clockwise from one line to the next (the whole round with
+ * one line). A fill whose line is gone draws nothing. */
+export function filledSlices({
+  fills,
+  spokes,
+}: Pick<ChartData, 'fills' | 'spokes'>) {
+  const sorted = [...spokes].sort((a, b) => a - b);
+  return sorted.flatMap((from, i) => {
+    const fill = fills.find((slice) => slice.from === from)?.fill;
+    if (!fill) return [];
+    const next = sorted[(i + 1) % sorted.length];
+    return [{ fill, from, to: next > from ? next : next + 360 }];
+  });
 }
 
 /** A clockwise angle from 12 o'clock to a point on the screen, where y goes down. */

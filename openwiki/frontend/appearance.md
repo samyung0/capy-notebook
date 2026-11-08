@@ -70,7 +70,7 @@ Canvas (the drawing board, `frontend/plate-editor.md`), each icon
 over its 11px label in a 48px-high item, 8px apart, that takes the sidebar's dark
 fill while current. Labels sit on the frame plainly, with no halo (Epo 2026-11-08). The app sidebar's rows are 32px high and 2px apart from `sm` (the
 phone drawer keeps 36px and 4px for touch).
-Your avatar sits at its foot and opens the profile menu upwards, headed by
+Your avatar (44px, no ring) sits at its foot and opens the profile menu upwards, headed by
 the workspace's part: Invite member (owners and editors), Workspace
 settings, and Clone for readers who may.
 

@@ -101,7 +101,7 @@ function elementProblem(fields: Fields): string | null {
       ? null
       : 'plane fields';
   if (type === 'chart') {
-    const { axisMax, axisStep, bars, kind, labels, spokes } = fields;
+    const { axisMax, axisStep, bars, fills, kind, labels, spokes } = fields;
     const fine =
       (kind === 'bar' || kind === 'pie') &&
       finite(axisMax) &&
@@ -112,6 +112,9 @@ function elementProblem(fields: Fields): string | null {
       listUpTo(bars, BARS_MAX) &&
       listUpTo(spokes, SPOKES_MAX) &&
       (spokes as unknown[]).every(finite) &&
+      (fills === undefined ||
+        (listUpTo(fills, SPOKES_MAX) &&
+          (fills as Fields[]).every((slice) => finite(slice?.from)))) &&
       listUpTo(labels, LABELS_MAX) &&
       (labels as Fields[]).every(
         (label) =>

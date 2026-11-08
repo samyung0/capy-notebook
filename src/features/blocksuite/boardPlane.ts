@@ -19,7 +19,7 @@ import {
 } from '@blocksuite/affine/std/gfx';
 import { axisNumber } from '@/features/questions/graph';
 import { tickStep } from '@/features/questions/graphTicks';
-import { type Mark, PAPER, type Paper } from './boardData';
+import { CARD_PAPER, type Mark, type Paper } from './boardData';
 import { minorStep, smoothThrough, ticks, type Vec } from './boardGeometry';
 
 /** The plane's top left corner in its own units, and board pixels per unit. A polar
@@ -336,7 +336,7 @@ const planeRenderer: ElementRenderer<PlaneElementModel> = (
     { h, w, x: 0, y: 0 },
     model,
     model.marks,
-    PAPER[renderer.getColorScheme()]
+    CARD_PAPER[renderer.getColorScheme()]
   );
 };
 

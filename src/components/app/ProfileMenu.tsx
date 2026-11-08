@@ -268,9 +268,8 @@ function OwnAvatarButton({
   return (
     <button
       aria-busy={pending}
-      // The ring is the avatar's border, so focus shows as an outline.
       className={cn(
-        'relative size-10 shrink-0 cursor-pointer rounded-full outline-none ring-1 ring-surface focus-visible:outline-2 focus-visible:outline-action focus-visible:outline-offset-2',
+        'relative size-11 shrink-0 cursor-pointer rounded-full outline-none focus-visible:outline-2 focus-visible:outline-action focus-visible:outline-offset-2',
         className
       )}
       title={name}
@@ -278,11 +277,11 @@ function OwnAvatarButton({
       {...props}
     >
       {pending ? (
-        <Skeleton className="size-10 rounded-full" />
+        <Skeleton className="size-11 rounded-full" />
       ) : (
         <Avatar
           aria-hidden
-          className="size-10 text-[13px]"
+          className="size-11 text-sm"
           name={name}
           src={avatarUrl}
         />

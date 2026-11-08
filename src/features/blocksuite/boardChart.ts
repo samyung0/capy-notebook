@@ -22,14 +22,16 @@ import {
   BAR_SHARE,
   barPlot,
   CARD_PADS,
+  CARD_PAPER,
   type ChartBar,
   type ChartData,
   type ChartKind,
+  filledSlices,
   onScreen,
-  PAPER,
   type Paper,
   type PieLabel,
   pieCircle,
+  type SliceFill,
 } from './boardData';
 import { ticks } from './boardGeometry';
 import type { Frame } from './boardPlane';
@@ -94,6 +96,16 @@ export function drawChart(
     ctx.stroke();
   } else {
     const { cx, cy, r } = pieCircle(frame, pads);
+    for (const { fill, from, to } of filledSlices(chart)) {
+      // The canvas measures from 3 o'clock, the pie from 12.
+      const at = (degrees: number) => ((degrees - 90) * Math.PI) / 180;
+      ctx.fillStyle = resolve(fill);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, r, at(from), at(to));
+      ctx.closePath();
+      ctx.fill();
+    }
     ctx.strokeStyle = paper.ink;
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -123,6 +135,7 @@ export class ChartElementModel extends GfxPrimitiveElementModel<{
   axisMax: number;
   axisStep: number;
   bars: ChartBar[];
+  fills: SliceFill[];
   index: string;
   kind: ChartKind;
   labels: PieLabel[];
@@ -167,6 +180,9 @@ export class ChartElementModel extends GfxPrimitiveElementModel<{
   accessor bars: ChartBar[] = [];
 
   @field()
+  accessor fills: SliceFill[] = [];
+
+  @field()
   accessor kind: ChartKind = 'bar';
 
   @field()
@@ -198,7 +214,7 @@ const chartRenderer: ElementRenderer<ChartElementModel> = (
     { h, w, x: 0, y: 0 },
     model,
     (color) => renderer.getColorValue(color, 'transparent', true),
-    PAPER[renderer.getColorScheme()]
+    CARD_PAPER[renderer.getColorScheme()]
   );
 };
 

@@ -14,6 +14,7 @@ import {
 } from './boardChart';
 import {
   AXIS_MAX,
+  BAR_SHARE,
   BARS_MAX,
   barPlot,
   type ChartBar,
@@ -29,7 +30,7 @@ import { drawChip, openBoardEditor } from './boardEditorShell';
 import { clockAngle, snapTo, type Vec } from './boardGeometry';
 import { fillRow, mathsIcon } from './boardTools';
 
-type Tool = 'draw' | 'label' | 'erase';
+type Tool = 'draw' | 'fill' | 'label' | 'erase';
 
 const PIXELS_TO_LABEL = 30;
 const DEGREES_TO_ERASE = 8;
@@ -55,6 +56,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   let pointer: Vec | null = null;
 
   const shell = openBoardEditor(gfx, model.id, {
+    fit: model.kind === 'bar' ? () => fitAxis() : undefined,
     onEscape: () => {
       if (!typing) return false;
       typing = null;
@@ -121,15 +123,14 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     const { cx, cy } = pieCircle(screen(), pads());
     return clockAngle([cx, -cy], [x, -y]);
   };
-  /** The sector a new line closes: from the line before it, clockwise. */
-  const sectorTo = (angle: number) => {
-    const before = [...model.spokes]
+  /** The line before an angle, clockwise: where its slice starts. */
+  const lineBefore = (angle: number) =>
+    [...model.spokes]
       .sort((a, b) => a - b)
       .filter((spoke) => spoke <= angle)
-      .at(-1);
-    const from = before ?? Math.max(...model.spokes, 0);
-    return (angle - from + 360) % 360;
-  };
+      .at(-1) ?? Math.max(...model.spokes, 0);
+  /** The sector a new line closes: from the line before it, clockwise. */
+  const sectorTo = (angle: number) => (angle - lineBefore(angle) + 360) % 360;
   /** The pie label under a point, if any. */
   const labelAt = ([x, y]: Vec) => {
     const { cx, cy, r } = pieCircle(screen(), pads());
@@ -154,11 +155,11 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       if (slot >= bars.length)
         bars = [...bars, { fill: newFill(), id: '', label: '', value }];
     }
-    const { axisMax, axisStep, kind, labels, spokes } = model;
+    const { axisMax, axisStep, fills, kind, labels, spokes } = model;
     drawChart(
       ctx,
       area,
-      { axisMax, axisStep, bars, kind, labels, spokes },
+      { axisMax, axisStep, bars, fills, kind, labels, spokes },
       (color) => resolve.getColorValue(color, 'transparent', true),
       PAPER[resolve.theme],
       pads(),
@@ -178,6 +179,35 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
         base - (plot * live.value) / axisMax + 20,
         width
       );
+    }
+    // Where a press would set a bar, as the plane shows where a point would go.
+    if (isBar && tool === 'draw' && pointer && !live) {
+      const slot = slotAt(pointer);
+      if (slot <= model.bars.length && slot < BARS_MAX) {
+        const value = valueAt(pointer);
+        const {
+          base,
+          height: plot,
+          left,
+          slotW,
+        } = barPlot(area, pads(), slots());
+        const y = base - (plot * value) / axisMax;
+        const w = slotW * BAR_SHARE;
+        const x = left + slotW * slot + (slotW - w) / 2;
+        ctx.strokeStyle = '#1e96eb';
+        ctx.fillStyle = '#1e96eb';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + w, y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.arc(x + w / 2, y, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+        drawChip(ctx, `${Number(value.toPrecision(10))}`, x + w / 2, y, width);
+      }
     }
     if (!isBar && tool === 'draw' && pointer) {
       const { cx, cy, r } = pieCircle(area, pads());
@@ -286,7 +316,23 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       return Math.min(apart, 360 - apart) <= DEGREES_TO_ERASE;
     });
     if (near !== undefined)
-      update({ spokes: model.spokes.filter((spoke) => spoke !== near) });
+      update({
+        fills: model.fills.filter((slice) => slice.from !== near),
+        spokes: model.spokes.filter((spoke) => spoke !== near),
+      });
+  };
+
+  /** The pie slice under a point takes the picked fill; No fill clears it. */
+  const fillAt = (at: Vec) => {
+    if (!model.spokes.length) return;
+    const from = lineBefore(angleAt(at));
+    const fill = newFill();
+    const others = model.fills.filter(
+      (slice) => slice.from !== from && model.spokes.includes(slice.from)
+    );
+    update({
+      fills: fill === 'transparent' ? others : [...others, { fill, from }],
+    });
   };
 
   const setAxis = (event: Event, which: 'axisMax' | 'axisStep') => {
@@ -304,7 +350,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     else field.value = String(model[which]);
   };
   /** The axis ends at the first numbered line above the tallest bar. */
-  const fit = () => {
+  const fitAxis = () => {
     const tallest = Math.max(...model.bars.map(({ value }) => value), 0);
     const axisMax =
       Math.max(Math.ceil(tallest / model.axisStep), 1) * model.axisStep;
@@ -357,6 +403,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       commitLabel();
       openLabel(at);
     } else if (tool === 'erase') eraseAt(at);
+    else if (tool === 'fill') fillAt(at);
     else if (!isBar && model.spokes.length < SPOKES_MAX) {
       const angle = angleAt(at);
       if (!model.spokes.includes(angle))
@@ -377,9 +424,16 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   });
 
   const tools: { icon: string; id: Tool; label: () => string }[] = [
-    isBar
-      ? { icon: 'bars', id: 'draw', label: m.drawing_board_bars }
-      : { icon: 'pie', id: 'draw', label: m.drawing_board_pie },
+    ...(isBar
+      ? [{ icon: 'bars', id: 'draw' as const, label: m.drawing_board_bars }]
+      : [
+          { icon: 'pie', id: 'draw' as const, label: m.drawing_board_pie },
+          {
+            icon: 'fill',
+            id: 'fill' as const,
+            label: m.drawing_board_fill_slice,
+          },
+        ]),
     { icon: 'label', id: 'label', label: m.drawing_board_chart_label },
     { icon: 'erase', id: 'erase', label: m.drawing_board_erase_mark },
   ];
@@ -411,18 +465,6 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
             </div>`
           : nothing
       }
-        <div class="capy-plane-top">
-          ${
-            isBar
-              ? html`<button type="button" @click=${fit}>
-                  ${m.drawing_board_fit()}
-                </button>`
-              : nothing
-          }
-          <button class="primary" type="button" @click=${shell.close}>
-            ${m.drawing_board_done()}
-          </button>
-        </div>
         ${
           typing
             ? html`<input
@@ -439,8 +481,28 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
               />`
             : nothing
         }
+        ${
+          !isBar && tool === 'draw' && model.spokes.length
+            ? html`<button
+                class="capy-plane-finish"
+                type="button"
+                @click=${() => {
+                  tool = 'fill';
+                  pointer = null;
+                  drawControls();
+                  redraw();
+                }}
+              >
+                ${m.drawing_board_finish_slicing()}
+              </button>`
+            : nothing
+        }
         <div class="capy-plane-tools">
-          ${isBar && tool === 'draw' ? fillRow(gfx, drawControls) : nothing}
+          ${
+            (isBar && tool === 'draw') || tool === 'fill'
+              ? fillRow(gfx, drawControls)
+              : nothing
+          }
           <div class="capy-plane-row">
             ${tools.map(
               ({ icon, id, label }) =>

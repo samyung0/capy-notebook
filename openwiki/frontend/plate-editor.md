@@ -4478,7 +4478,10 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   leave the card; its marks are stored as on any plane, and its editor snaps them to where
   a ring crosses a spoke.
 - **Editing a plane** (`boardPlaneEditor.ts`, on the shell in `boardEditorShell.ts`): it
-  opens over the whole board. Done leaves, as does Escape when no mark is open. Inside, the wheel pans, Ctrl or pinch zooms, and Move drags.
+  opens over the whole board. At its top right sit a menu button (Fit where the card
+  has one, Undo, Redo; the board's own undo and redo hide meanwhile) and Done on its
+  own (Epo 2026-11-08). Done leaves, as does Escape when no mark is open (Escape closes
+  an open menu first). Inside, the wheel pans, Ctrl or pinch zooms, and Move drags.
   Point, Line and Curve snap to the fine squares for the current zoom, so the
   plane has no edge and no fixed scale (the numbers are the question editor's, `tickStep`
   and `axisNumber` in `graph.ts`, with no JSXGraph). Numbers leave with their axis and
@@ -4498,12 +4501,18 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   kind `bar` or `pie`, holding plain data, since a coordinate means nothing on either. They
   move and resize like a plane card, the eraser leaves them alone, and their editor fills
   the board on the same shell. Bar chart: numbers on the value axis only, up to a top and
-  step the student types (Fit takes the top to the first line above the tallest bar).
-  Dragging in a place sets its bar, in half steps, with the value in the chip; a free place
+  step the student types (Fit, in the menu, takes the top to the first line above the
+  tallest bar). Hovering shows where a press would set the bar, a dashed line with its
+  value, as the plane shows where a point would go. Dragging in a place sets its bar, in half steps, with the value in the chip; a free place
   after the last bar starts the next, up to 24, in the current fill. Labels are typed under
   the bars. Pie chart: no grid or axes, starting with a line at 12 o'clock. A click adds a
-  line, whose chip shows the sector it closes, from the line before it clockwise, and
-  labels sit at an angle inside the circle.
+  line, whose chip shows the sector it closes, from the line before it clockwise;
+  Finish slicing (shown once there's a line) moves to Fill, where a click gives the slice
+  under it the picked fill (`fills`, keyed by the line the slice starts at; erasing that
+  line drops it, No fill clears it). Labels sit at an angle inside the circle.
+- **See-through cards:** on the board, plane and chart paper (`CARD_PAPER`) and note
+  fills are half see-through so the panel's frost over the page frame shows; an open
+  editor's paper is solid. The marking image draws them on white, so it's unchanged.
 - **Marking image (`toImage()`):** everything on the canvas as it stands, including each
   card with the view it was left at, so a plotted mark panned out of view isn't in it. It's
   drawn layer by layer at a scale capped to 1,568 px on its longest side (the size the

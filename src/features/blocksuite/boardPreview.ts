@@ -5,6 +5,7 @@ import {
   barPlot,
   CARD_PADS,
   type ChartData,
+  filledSlices,
   INK,
   type Mark,
   onScreen,
@@ -360,6 +361,19 @@ function drawChart(box: Box, chart: ChartData, pen: Pen) {
     out += `<path d="M${num(left)} ${num(top)}V${num(base)}H${num(left + width)}" stroke="#6f6f6c" stroke-width="${num(Math.max(1.5, pen.pixel))}"/>`;
   } else {
     const { cx, cy, r } = pieCircle(box, CARD_PADS.pie);
+    for (const { fill, from, to } of filledSlices({
+      fills: chart.fills ?? [],
+      spokes: chart.spokes,
+    })) {
+      const paint = colour(fill, 'none');
+      if (to - from >= 360) {
+        out += `<circle cx="${num(cx)}" cy="${num(cy)}" r="${num(r)}" fill="${paint}"/>`;
+        continue;
+      }
+      const [x0, y0] = onScreen(cx, cy, r, from);
+      const [x1, y1] = onScreen(cx, cy, r, to);
+      out += `<path d="M${num(cx)} ${num(cy)}L${num(x0)} ${num(y0)}A${num(r)} ${num(r)} 0 ${to - from > 180 ? 1 : 0} 1 ${num(x1)} ${num(y1)}Z" fill="${paint}"/>`;
+    }
     const spokes = chart.spokes
       .map((spoke) => {
         const [sx, sy] = onScreen(cx, cy, r, spoke);

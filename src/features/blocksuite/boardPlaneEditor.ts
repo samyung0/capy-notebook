@@ -68,6 +68,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   let frame = 0;
 
   const shell = openBoardEditor(gfx, model.id, {
+    fit: () => fitMarks(),
     onEscape: () => {
       if (!openMark()) return false;
       finish();
@@ -263,7 +264,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     view.y0 += dy / view.ppu;
     hold();
   };
-  const fit = () => {
+  const fitMarks = () => {
     const seen = markPoints(model.marks);
     const xs = seen.map(([x]) => x);
     const ys = seen.map(([, y]) => y);
@@ -373,13 +374,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
           ? m.drawing_board_finish_line()
           : null;
     render(
-      html`<div class="capy-plane-top">
-          <button type="button" @click=${fit}>${m.drawing_board_fit()}</button>
-          <button class="primary" type="button" @click=${shell.close}>
-            ${m.drawing_board_done()}
-          </button>
-        </div>
-        <div class="capy-plane-zoom">
+      html`<div class="capy-plane-zoom">
           <button
             aria-label=${m.drawing_board_zoom_out()}
             title=${m.drawing_board_zoom_out()}

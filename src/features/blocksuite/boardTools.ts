@@ -596,7 +596,7 @@ class CapyShapePanel extends SignalWatcher(LitElement) {
     POPPER_STYLES,
     css`
       :host {
-        background: #fff;
+        background: var(--affine-background-overlay-panel-color);
         border: 1px solid var(--affine-border-color);
         border-bottom: 0;
         border-radius: 10px 10px 0 0;
@@ -786,6 +786,7 @@ const ICONS: Record<string, string> = {
     '<path d="M4 6c2 9 5 13 8 13s6-5 8-14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="4.5" cy="7" r="2" fill="currentColor"/><circle cx="12" cy="19" r="2" fill="currentColor"/><circle cx="19.5" cy="7" r="2" fill="currentColor"/>',
   erase:
     '<path d="m9 20 11-11-5-5L4 15l5 5Zm0 0h11M8 11l5 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
+  fill: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 12V3a9 9 0 0 1 7.79 13.5Z" fill="currentColor"/>',
   formula:
     '<path d="M18 5H7l6 7-6 7h11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
   label:
