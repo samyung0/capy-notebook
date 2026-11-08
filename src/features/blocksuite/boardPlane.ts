@@ -21,8 +21,8 @@ import {
 } from '@blocksuite/affine/std/gfx';
 import { axisNumber } from '@/features/questions/graph';
 import { tickStep } from '@/features/questions/graphTicks';
-import { type Mark, PAPER, type Paper, pathOf, pointsOf } from './boardData';
-import { minorStep, ticks, type Vec } from './boardGeometry';
+import { type Mark, PAPER, type Paper, pointsOf } from './boardData';
+import { curvePieces, minorStep, ticks, type Vec } from './boardGeometry';
 
 /** The plane's top left corner in its own units, and board pixels per unit. A polar
  * plane draws rings and spokes round its origin instead of squares (Epo 2026-11-08). */
@@ -53,7 +53,9 @@ export function drawPlane(
   frame: Frame,
   view: PlaneView,
   marks: Mark[],
-  paper: Paper
+  paper: Paper,
+  /** Marks whose points show (the editor's, under the pointer). */
+  shown: ReadonlySet<string> = NONE
 ) {
   const X = (x: number) => frame.x + (x - view.x0) * view.ppu;
   const Y = (y: number) => frame.y + (view.y0 - y) * view.ppu;
@@ -72,7 +74,7 @@ export function drawPlane(
   const minor = minorStep(step);
   if (view.polar) {
     drawPolarGrid(ctx, frame, view, X, Y, step, minor, paper);
-    drawMarks(ctx, X, Y, marks, paper);
+    drawMarks(ctx, X, Y, marks, paper, shown);
     ctx.restore();
     ctx.strokeStyle = paper.edge;
     ctx.lineWidth = 1;
@@ -117,7 +119,7 @@ export function drawPlane(
   for (const y of ticks(bottom, top, step))
     label(axisNumber(y, step), axisX - 7, Y(y), 'right');
 
-  drawMarks(ctx, X, Y, marks, paper);
+  drawMarks(ctx, X, Y, marks, paper, shown);
   ctx.restore();
   ctx.strokeStyle = paper.edge;
   ctx.lineWidth = 1;
@@ -225,12 +227,52 @@ function drawPolarGrid(
 }
 
 /** Dots, lines and curves; marks keep their thickness whatever the plane's zoom. */
+/** A line, curve or ellipse as a canvas path, smooth at any zoom; the caller strokes
+ * it. */
+export function traceMark(
+  ctx: CanvasRenderingContext2D,
+  mark: Extract<Mark, { points: Vec[] }>,
+  X: (x: number) => number,
+  Y: (y: number) => number
+) {
+  ctx.beginPath();
+  if (mark.kind === 'ellipse') {
+    const [[right, cy], [cx, top]] = mark.points;
+    ctx.ellipse(
+      X(cx),
+      Y(cy),
+      Math.abs(X(right) - X(cx)),
+      Math.abs(Y(top) - Y(cy)),
+      0,
+      0,
+      Math.PI * 2
+    );
+    return;
+  }
+  const [first] = mark.points;
+  ctx.moveTo(X(first[0]), Y(first[1]));
+  if (mark.kind === 'curve')
+    for (const [, c1, c2, to] of curvePieces(mark.points))
+      ctx.bezierCurveTo(
+        X(c1[0]),
+        Y(c1[1]),
+        X(c2[0]),
+        Y(c2[1]),
+        X(to[0]),
+        Y(to[1])
+      );
+  else for (const [x, y] of mark.points.slice(1)) ctx.lineTo(X(x), Y(y));
+}
+
+/** The marks; a line's, curve's or ellipse's points only where `shown` names it (Epo
+ * 2026-11-08: the editor shows them under the pointer), a single point always. */
 function drawMarks(
   ctx: CanvasRenderingContext2D,
   X: (x: number) => number,
   Y: (y: number) => number,
   marks: Mark[],
-  paper: Paper
+  paper: Paper,
+  shown: ReadonlySet<string>
 ) {
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
@@ -240,16 +282,6 @@ function drawMarks(
     ctx.arc(X(x), Y(y), DOT_RADIUS, 0, Math.PI * 2);
     ctx.fill();
   };
-  // Set per line: a label's halo before it leaves the paper's colour behind.
-  const trace = (points: Vec[]) => {
-    ctx.strokeStyle = paper.ink;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    for (const [i, [x, y]] of points.entries())
-      if (i) ctx.lineTo(X(x), Y(y));
-      else ctx.moveTo(X(x), Y(y));
-    ctx.stroke();
-  };
   for (const mark of marks) {
     if (mark.kind === 'dot') dot(mark.at);
     else if (mark.kind === 'label') {
@@ -258,11 +290,17 @@ function drawMarks(
       ctx.textBaseline = 'middle';
       haloText(ctx, mark.text, X(mark.at[0]), Y(mark.at[1]), 'center', paper);
     } else {
-      trace(pathOf(mark));
-      for (const point of mark.points) dot(point);
+      // Set per mark: a label's halo before it leaves the paper's colour behind.
+      ctx.strokeStyle = paper.ink;
+      ctx.lineWidth = 2;
+      traceMark(ctx, mark, X, Y);
+      ctx.stroke();
+      if (shown.has(mark.id)) for (const point of mark.points) dot(point);
     }
   }
 }
+
+const NONE: ReadonlySet<string> = new Set();
 
 export class PlaneElementModel extends GfxPrimitiveElementModel<{
   fit: boolean;

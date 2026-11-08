@@ -17,13 +17,7 @@ import {
   pullEllipse,
 } from './boardData';
 import { drawChip, openBoardEditor } from './boardEditorShell';
-import {
-  minorStep,
-  smoothThrough,
-  snapTo,
-  tidy,
-  type Vec,
-} from './boardGeometry';
+import { minorStep, snapTo, tidy, type Vec } from './boardGeometry';
 import {
   drawPlane,
   fitCard,
@@ -32,6 +26,7 @@ import {
   type PlaneView,
   POLAR_SPOKE,
   setPlaneEditor,
+  traceMark,
 } from './boardPlane';
 import { mathsIcon } from './boardTools';
 
@@ -180,6 +175,8 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   /** Under the mouse: a point to pick up (with any tool but Erase), or with Move a
    * whole mark (`index` null). Nothing stays selected (Epo 2026-11-08, C). */
   let hover: { id: string; index: number | null } | null = null;
+  /** The line, curve or ellipse under the mouse, whose points show (Epo 2026-11-08). */
+  let near: string | null = null;
   /** The press on a mark: a tap does the tool's job, a drag moves it. Until it lifts the
    * moved copy is only drawn, so the drag is one undo step. */
   /** A new circle being sized: pressed at its middle, its radius from the drag. */
@@ -196,6 +193,11 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     view.y0 - py / view.ppu,
   ];
   const minor = () => minorStep(tickStep(view.ppu));
+  const screenAxes = () =>
+    [
+      (x: number) => (x - view.x0) * view.ppu,
+      (y: number) => (view.y0 - y) * view.ppu,
+    ] as const;
   const toScreen = ([x, y]: Vec): Vec => [
     (x - view.x0) * view.ppu,
     (view.y0 - y) * view.ppu,
@@ -258,17 +260,13 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     if ('points' in mark) {
-      const path = pathOf(mark).map(toScreen);
       for (const [colour, width] of [
         [HALO, 10],
         [BLUE, 2],
       ] as const) {
         ctx.strokeStyle = colour;
         ctx.lineWidth = width;
-        ctx.beginPath();
-        for (const [i, [x, y]] of path.entries())
-          if (i) ctx.lineTo(x, y);
-          else ctx.moveTo(x, y);
+        traceMark(ctx, mark, ...screenAxes());
         ctx.stroke();
       }
     }
@@ -313,7 +311,9 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       { h: height, w: width, x: 0, y: 0 },
       view,
       marks,
-      PAPER[theme.theme]
+      PAPER[theme.theme],
+      // The open mark's points, and those of the mark under the pointer or held.
+      new Set([openId, near, grab?.id].filter((id): id is string => !!id))
     );
     const picked = preview ? grab : hover;
     const mark = picked && marks.find(({ id }) => id === picked.id);
@@ -351,14 +351,14 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
         : snapped(pointer);
     const open = openMark();
     if (open && open.kind !== 'dot') {
-      const path =
+      traceMark(
+        ctx,
         open.kind === 'curve'
-          ? smoothThrough([...open.points, at])
-          : [...open.points.slice(-1), at];
-      ctx.beginPath();
-      for (const [i, [x, y]] of path.entries())
-        if (i) ctx.lineTo(X(x), Y(y));
-        else ctx.moveTo(X(x), Y(y));
+          ? { ...open, points: [...open.points, at] }
+          : { ...open, points: [...open.points.slice(-1), at] },
+        X,
+        Y
+      );
       ctx.stroke();
     }
     if (sizing?.r) {
@@ -510,6 +510,8 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       else if (text !== open.text)
         write(model.marks.map((mark) => (mark.id === open.id ? label : mark)));
     } else if (open.id) write(others);
+    // One label, then back to Move, as the other tools do.
+    if (tool === 'label') tool = 'move';
     drawControls();
   };
 
@@ -668,6 +670,10 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     }
     pointer = last || event.pointerType === 'mouse' ? at : null;
     hover = !last && event.pointerType === 'mouse' ? pickable(at) : null;
+    near =
+      !last && event.pointerType === 'mouse'
+        ? (pointAt(at)?.id ?? markAt(at)?.id ?? null)
+        : null;
     canvas.style.cursor = hover ? 'grab' : '';
     redraw();
   });
@@ -713,6 +719,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   canvas.addEventListener('pointerleave', () => {
     pointer = null;
     hover = null;
+    near = null;
     redraw();
   });
 

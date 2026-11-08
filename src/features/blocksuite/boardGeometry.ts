@@ -33,19 +33,30 @@ export function clockAngle([cx, cy]: Vec, [x, y]: Vec) {
   return Math.round((degrees + 360) % 360);
 }
 
-/** A smooth curve through the points (Catmull-Rom), as many short segments. One that
- * ends on its first point is a loop, smooth there too. */
-export function smoothThrough(points: Vec[], perSegment = 16): Vec[] {
-  const out: Vec[] = [];
+/** The four points a Catmull-Rom segment from `points[i]` to the next reads. A curve
+ * that ends on its first point is a loop, so its ends read across the join. */
+function around(points: Vec[], i: number): [Vec, Vec, Vec, Vec] {
   const first = points[0];
   const end = points.at(-1);
   const loop =
     points.length > 3 && end?.[0] === first[0] && end[1] === first[1];
+  const p1 = points[i];
+  const p2 = points[i + 1];
+  return [
+    points[i - 1] ?? ((loop && points.at(-2)) || p1),
+    p1,
+    p2,
+    points[i + 2] ?? (loop ? points[1] : p2),
+  ];
+}
+
+/** A smooth curve through the points (Catmull-Rom), as many short segments, for
+ * hit tests and small previews. One that ends on its first point is a loop, smooth
+ * there too. */
+export function smoothThrough(points: Vec[], perSegment = 16): Vec[] {
+  const out: Vec[] = [];
   for (let i = 0; i < points.length - 1; i++) {
-    const p0 = points[i - 1] ?? ((loop && points.at(-2)) || points[i]);
-    const p1 = points[i];
-    const p2 = points[i + 1];
-    const p3 = points[i + 2] ?? (loop ? points[1] : p2);
+    const [p0, p1, p2, p3] = around(points, i);
     for (let step = 0; step < perSegment; step++) {
       const t = step / perSegment;
       const at = (axis: 0 | 1) =>
@@ -60,6 +71,20 @@ export function smoothThrough(points: Vec[], perSegment = 16): Vec[] {
   const last = points.at(-1);
   if (last) out.push(last);
   return out;
+}
+
+/** The same curve as cubic Bézier pieces, `[from, control, control, to]`, which a
+ * canvas draws smooth at any zoom. */
+export function curvePieces(points: Vec[]): [Vec, Vec, Vec, Vec][] {
+  return points.slice(0, -1).map((_, i) => {
+    const [p0, p1, p2, p3] = around(points, i);
+    return [
+      p1,
+      [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6],
+      [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6],
+      p2,
+    ];
+  });
 }
 
 export type Box = { h: number; w: number; x: number; y: number };

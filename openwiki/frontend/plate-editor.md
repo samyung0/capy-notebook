@@ -4494,12 +4494,18 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   stays selected, and Erase still removes. Where points coincide, the last drawn moves.
   Label (Epo 2026-11-08) types text centred where it's clicked, a `label` mark at that
   coordinate that moves and zooms with the plane (a click near one edits it; up to 24
-  characters; previews leave labels out, as numbers). Ellipse (Epo 2026-11-08, square
+  characters; previews leave labels out, as numbers); after one, the tool goes back to
+  Move. Ellipse (Epo 2026-11-08, square
   planes only): a press and drag sizes a circle from its middle (the chip shows `r`), a
   click places one a grid step round. It's an `ellipse` mark of four handles (right,
   top, left, bottom); pulling one sets the width or height about the middle, so it
   stays upright and on the grid, and Shift scales it evenly. Move drags it whole, its
-  middle (any other mark's first point) landing on the grid. A curve clicked back onto its first point closes, smooth there,
+  middle (any other mark's first point) landing on the grid. Curves draw as cubic Bézier pieces of their
+  Catmull-Rom curve (`curvePieces`) and ellipses as canvas ellipses, smooth at any zoom;
+  the sampled path (`smoothThrough`, `pathOf`) is for hit tests and previews. A line's,
+  curve's or ellipse's points show only in the editor, on the mark under the pointer,
+  held or still open (Epo 2026-11-08); a single point always shows, on cards, previews
+  and the marking image too. A curve clicked back onto its first point closes, smooth there,
   and ends. Point, Line and Curve snap to the
   fine squares for the current zoom, so the
   plane has no edge and no fixed scale (the numbers are the question editor's, `tickStep`
