@@ -435,13 +435,32 @@ C. **Typed and uploaded mixed:** S4 makes it one or the other per attempt.
    Should a member who picked Upload still be able to type answers into the
    app?
 
-D. **Limits:** 40 pages a submission; born-digital pages sent as text. Other
-   numbers?
+D. **Limits:** Epo floated 15 pages (all pages go in one call) but is holding
+   it until grading is settled. Born-digital pages sent as text.
 
-E. **Closed parts in an uploaded paper:** read the marked option off the page
-   and mark it in code (recommended, benched for single-letter multiple
-   choice). Multi-select, true/false and matching would be read the same way
-   but are untested. OK?
+E. **How an uploaded paper is graded (bench 2026-11-08, "One read call"):**
+   - One call over every page returns each part's pages, and for closed types
+     (multiple choice, fill in the blanks, ordering, matching, true/false,
+     short) the answer as written, put into that type's answer shape and
+     marked in code against the key. Pages 16/16 and short answers 5/5 in six
+     runs, about 1–2 credits for 10 pages.
+   - Open, long and drawn parts: no crop, since the model's boxes clip the
+     answer too often. They are graded from their whole mapped pages, and Approve
+     shows the marker those pages (T1), the whole paper a click away.
+   - Still to bench: reading matching, ordering, fill-in-the-blank and
+     multi-select; real phone photos.
+
+V. **Multiple choice, one answer or several.** Epo merged "multiple answers"
+   into mcq on 2026-10-15 (`human/question-bank.md`, commit 4519a67cc); IELTS
+   "Choose TWO" in the bank prompt and Make a quiz extraction rely on it.
+   - C (recommended): keep one type; a key with one correct option takes a
+     radio, one with several says "Choose 2" with checkboxes.
+   - A: split again into single mcq and a separate multi type.
+   - B: as A, with a mark per correct letter (IELTS scoring).
+
+W. **Where the upload sits.** The mode is picked first, in Before you start
+   (S4). Upload file opens the questions read-only with the clock running and
+   "Your paper" with Submit at the end (S5 to be redrawn so). OK?
 
 F. **Credit estimate:** C1a (none) or C1b ("AI marking about N credits a
    member" in New assignment's footer)?
@@ -456,12 +475,10 @@ I. **Storage:** the member pays for and keeps their uploads, as for drawings.
    Should the uploads also list on their Files page (a Submissions tab beside
    Canvas)?
 
-J. **Time limits:** does a timed assignment's clock cover uploading too?
+J. **Decided (Epo 2026-11-08):** the clock covers uploading too.
 
-K. **File types:**
-   - Marked: PDF and images (JPG, PNG, WebP; HEIC converted in the browser).
-   - Unmarked: any type the normal upload accepts, stored and opened in the
-     viewer.
+K. **Decided (Epo 2026-11-08):** every file type the normal upload and Make a
+   quiz accept, Marked and Unmarked.
 
 L. **Own practice:** page answers in a member's own practice later, not in
    this round?

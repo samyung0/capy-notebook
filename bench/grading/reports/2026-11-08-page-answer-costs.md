@@ -161,3 +161,33 @@ Raw records: `2026-11-08-paper-batching.jsonl`.
 Not tested: real scans and photos, pencil marks, options circled on a printed
 question paper instead of a bubble sheet, and multi-select, true/false and
 matching read the same way.
+
+## One read call: pages, boxes and short answers (same day)
+
+Epo asked whether one call can map every part to its answer, with closed answers
+read off the page and marked in code, and whether long, open and drawn answers
+could be cropped by a box. `scripts/paper_transcribe.py` sends the 10-page
+paper once (reasoning off, prompt `TRANSCRIBE`) and asks per part for its pages,
+one box per page around the answer (thousandths of the page), and, for the five
+short parts, the final answer written. Boxes are scored against where
+`paper_fixture.py` drew each answer: how much of the answer the box covers, as
+returned and with a margin of 2% or 4% of the page on every side. Six runs:
+
+| Render | Pages right | Short answers right | Covers ≥ 90%: as returned / +2% / +4% | Credits |
+|---|---|---|---|---|
+| 1,024 px | 16/16 every run | 5/5 every run | 11–14 / 14 / 16 of 16 in four runs; 0 / 4 / 6 in one | 0.9–1.9 |
+| 1,568 px | 16/16 every run | 5/5 every run | 0–8 / 4–6 / 9–11 of 16 | 1.0–2.9 |
+
+- **The page map and short answers hold:** every part's pages right in all six
+  runs, the two-page Q6, out-of-order Q10 and blank Q12 included. 3–8 s.
+- **Boxes don't:** the same request swings from covering every answer to
+  clipping most of them, and the larger render is worse. A crop would sometimes
+  cut a student's working off, so it can't stand in for the page.
+- So: mark closed parts from the read answers, grade open, long and drawn parts
+  from their whole mapped pages (16/16 in the earlier runs), and show the marker
+  those pages.
+
+Not tested: reading matching, ordering, fill-in-the-blank and multi-select
+answers; real scans and phone photos.
+
+Raw records: `2026-11-08-paper-transcribe.jsonl` (scores and boxes per part).
