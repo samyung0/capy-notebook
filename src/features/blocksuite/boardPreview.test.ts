@@ -32,6 +32,25 @@ it('keeps a long stroke to what the preview can show', () => {
   expect(stroke.split('L').length).toBeLessThan(400);
 });
 
+it('opens and draws a highlighter stroke', () => {
+  const svg = drawBoardPreview(
+    toBase64(
+      withElements({
+        color: '#84cfff4d',
+        lineWidth: 22,
+        points: [
+          [0, 0],
+          [80, 10],
+        ],
+        type: 'highlighter',
+        xywh: '[0,600,80,10]',
+      })
+    ),
+    SIZE
+  );
+  expect(svg).toContain('stroke="#84cfff4d"');
+});
+
 it('draws a connector saved before the board placed it, between its ends', () => {
   const svg = drawBoardPreview(
     toBase64(

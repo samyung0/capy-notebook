@@ -4552,11 +4552,12 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     undo history (200 undo steps on a card were 606 KB live and a few KB saved). Stroke
     points are rounded to whole pixels and every place (`xywh`) to a tenth, which leaves
     60% of the bytes with no visible change (pressure stays: perfect-freehand draws the
-    line from it). The
+    line from it); highlighter strokes from the pen menu are rounded the same way. The
     answer flow refuses past Epo's 250 KB on Done.
   - `saved` is checked before anything mounts (`boardLoad.ts`), as BlockSuite's store
     skips a block it doesn't know and takes any tree on load: one page and one canvas,
-    only the blocks and elements the board's tools make, each block under a parent it
+    only the blocks and elements the board's tools make (the pen menu's highlighter
+    included, which the preview draws as a see-through stroke), each block under a parent it
     may have in one tree, and each card's fields within
     the limits its editor keeps (marks, bars, labels, spokes, axis values, formula
     length), with a place (`[x,y,w,h]`) on everything but a connector and a group, whose

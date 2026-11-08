@@ -295,7 +295,8 @@ function roundPlaces(doc: Y.Doc) {
         | undefined;
       for (const element of elements?.values() ?? []) {
         place(element, 'xywh');
-        if (element.get('type') !== 'brush') continue;
+        const type = element.get('type');
+        if (type !== 'brush' && type !== 'highlighter') continue;
         const points = element.get('points') as number[][];
         element.set(
           'points',

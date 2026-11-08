@@ -143,6 +143,8 @@ type Item = {
 /** One preview pixel in board units: lines never thinner, points never closer. */
 type Pen = { pixel: number };
 
+/** AFFiNE's own highlighter default, see-through. */
+const HIGHLIGHTER = '#84cfff4d';
 const FONT_SIZE_NOTE = 15;
 const LINE_HEIGHT = 1.3;
 
@@ -153,7 +155,9 @@ function drawItem(
 ) {
   switch (kind) {
     case 'brush':
-      return drawBrush(box, fields, pen);
+      return drawBrush(box, fields, pen, INK);
+    case 'highlighter':
+      return drawBrush(box, fields, pen, HIGHLIGHTER);
     case 'shape':
       return drawShape(box, fields, pen);
     case 'text':
@@ -181,13 +185,13 @@ function drawItem(
   }
 }
 
-function drawBrush({ x, y }: Box, fields: Fields, pen: Pen) {
+function drawBrush({ x, y }: Box, fields: Fields, pen: Pen, ink: string) {
   const points = ((fields.points as unknown[] | undefined) ?? []).filter(
     (point): point is number[] => Array.isArray(point) && point.length >= 2
   );
   if (!points.length) return '';
   const width = Math.max(Number(fields.lineWidth) || 4, pen.pixel);
-  const stroke = colour(fields.color, INK);
+  const stroke = colour(fields.color, ink);
   if (points.length === 1)
     return `<circle cx="${num(x + points[0][0])}" cy="${num(y + points[0][1])}" r="${num(width / 2)}" fill="${stroke}"/>`;
   let d = '';

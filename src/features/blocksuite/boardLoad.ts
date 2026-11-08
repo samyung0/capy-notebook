@@ -37,6 +37,7 @@ const ELEMENTS = new Set([
   'connector',
   'formula',
   'group',
+  'highlighter',
   'plane',
   'shape',
   'text',
