@@ -122,6 +122,7 @@ import type {
   ListNotificationsParams,
   ListOwnedFilesParams,
   ListOwnedMaterialsParams,
+  ListPapersParams,
   ListPastReviewsParams,
   ListRecentParams,
   ListTagsParams,
@@ -149,6 +150,7 @@ import type {
   NotificationPrefs,
   PDFAnnotation,
   PDFAnnotationBody,
+  PaperOrderInputBody,
   PastReviewsOutputBody,
   PendingWorkspaceInvite,
   Practice,
@@ -197,10 +199,12 @@ import type {
   SourceSession,
   SourceUploadPolicy,
   SpendingLimitReq,
+  StartAssignmentInputBody,
   StudyPreferences,
   StudyQuestionCountOutputBody,
   StudySummary,
   StudyTopics,
+  SubmittedPapers,
   Syllabus,
   Tag,
   Task,
@@ -686,6 +690,175 @@ const res = await fetch(getMarkAssignmentAnswerUrl(id),
 
   const data: markAssignmentAnswerResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as markAssignmentAnswerResponse
+}
+
+
+
+export type orderPaperFilesResponse204 = {
+  data: void
+  status: 204
+}
+
+export type orderPaperFilesResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type orderPaperFilesResponseSuccess = (orderPaperFilesResponse204) & {
+  headers: Headers;
+};
+export type orderPaperFilesResponseError = (orderPaperFilesResponseDefault) & {
+  headers: Headers;
+};
+
+export type orderPaperFilesResponse = (orderPaperFilesResponseSuccess | orderPaperFilesResponseError)
+
+export const getOrderPaperFilesUrl = (id: string,) => {
+
+
+
+
+  return `/api/assignment-attempts/${id}/paper/order`
+}
+
+/**
+ * @summary Put a running attempt's paper files in order
+ */
+export const orderPaperFiles = async (id: string,
+    paperOrderInputBody: NonReadonly<PaperOrderInputBody>, options?: RequestInit): Promise<orderPaperFilesResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getOrderPaperFilesUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(paperOrderInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: orderPaperFilesResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as orderPaperFilesResponse
+}
+
+
+
+export type removePaperFileResponse204 = {
+  data: void
+  status: 204
+}
+
+export type removePaperFileResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type removePaperFileResponseSuccess = (removePaperFileResponse204) & {
+  headers: Headers;
+};
+export type removePaperFileResponseError = (removePaperFileResponseDefault) & {
+  headers: Headers;
+};
+
+export type removePaperFileResponse = (removePaperFileResponseSuccess | removePaperFileResponseError)
+
+export const getRemovePaperFileUrl = (id: string,
+    fileId: string,) => {
+
+
+
+
+  return `/api/assignment-attempts/${id}/paper/${fileId}`
+}
+
+/**
+ * @summary Remove a file from a running attempt's paper
+ */
+export const removePaperFile = async (id: string,
+    fileId: string, options?: RequestInit): Promise<removePaperFileResponse> => {
+
+  const res = await fetch(getRemovePaperFileUrl(id,fileId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: removePaperFileResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as removePaperFileResponse
+}
+
+
+
+export type getPaperFileLinksResponse200 = {
+  data: FileLinks
+  status: 200
+}
+
+export type getPaperFileLinksResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getPaperFileLinksResponseSuccess = (getPaperFileLinksResponse200) & {
+  headers: Headers;
+};
+export type getPaperFileLinksResponseError = (getPaperFileLinksResponseDefault) & {
+  headers: Headers;
+};
+
+export type getPaperFileLinksResponse = (getPaperFileLinksResponseSuccess | getPaperFileLinksResponseError)
+
+export const getGetPaperFileLinksUrl = (id: string,
+    fileId: string,) => {
+
+
+
+
+  return `/api/assignment-attempts/${id}/paper/${fileId}/links`
+}
+
+/**
+ * @summary A paper file's presigned reads, for its member or the class's staff
+ */
+export const getPaperFileLinks = async (id: string,
+    fileId: string, options?: RequestInit): Promise<getPaperFileLinksResponse> => {
+
+  const res = await fetch(getGetPaperFileLinksUrl(id,fileId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getPaperFileLinksResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getPaperFileLinksResponse
 }
 
 
@@ -1395,14 +1568,29 @@ export const getStartAssignmentUrl = (id: string,) => {
 /**
  * @summary Start an attempt, starting its clock, or return the one running
  */
-export const startAssignment = async (id: string, options?: RequestInit): Promise<startAssignmentResponse> => {
+export const startAssignment = async (id: string,
+    startAssignmentInputBody: NonReadonly<StartAssignmentInputBody>, options?: RequestInit): Promise<startAssignmentResponse> => {
 
-  const res = await fetch(getStartAssignmentUrl(id),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getStartAssignmentUrl(id),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(startAssignmentInputBody)
   }
 )
 
@@ -8236,6 +8424,163 @@ export const readNotification = async (id: string, options?: RequestInit): Promi
 
   const data: readNotificationResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as readNotificationResponse
+}
+
+
+
+export type deleteAllPapersResponse200 = {
+  data: DrawingsDeletedOutputBody
+  status: 200
+}
+
+export type deleteAllPapersResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type deleteAllPapersResponseSuccess = (deleteAllPapersResponse200) & {
+  headers: Headers;
+};
+export type deleteAllPapersResponseError = (deleteAllPapersResponseDefault) & {
+  headers: Headers;
+};
+
+export type deleteAllPapersResponse = (deleteAllPapersResponseSuccess | deleteAllPapersResponseError)
+
+export const getDeleteAllPapersUrl = () => {
+
+
+
+
+  return `/api/papers`
+}
+
+/**
+ * @summary Delete every paper file the caller may delete; their marks stay
+ */
+export const deleteAllPapers = async ( options?: RequestInit): Promise<deleteAllPapersResponse> => {
+
+  const res = await fetch(getDeleteAllPapersUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteAllPapersResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as deleteAllPapersResponse
+}
+
+
+
+export type listPapersResponse200 = {
+  data: SubmittedPapers
+  status: 200
+}
+
+export type listPapersResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listPapersResponseSuccess = (listPapersResponse200) & {
+  headers: Headers;
+};
+export type listPapersResponseError = (listPapersResponseDefault) & {
+  headers: Headers;
+};
+
+export type listPapersResponse = (listPapersResponseSuccess | listPapersResponseError)
+
+export const getListPapersUrl = (params?: ListPapersParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/papers?${stringifiedParams}` : `/api/papers`
+}
+
+/**
+ * @summary The caller's handed-in paper files they may delete, newest first (Files › Submissions)
+ */
+export const listPapers = async (params?: ListPapersParams, options?: RequestInit): Promise<listPapersResponse> => {
+
+  const res = await fetch(getListPapersUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listPapersResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listPapersResponse
+}
+
+
+
+export type deletePaperResponse200 = {
+  data: DrawingsDeletedOutputBody
+  status: 200
+}
+
+export type deletePaperResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type deletePaperResponseSuccess = (deletePaperResponse200) & {
+  headers: Headers;
+};
+export type deletePaperResponseError = (deletePaperResponseDefault) & {
+  headers: Headers;
+};
+
+export type deletePaperResponse = (deletePaperResponseSuccess | deletePaperResponseError)
+
+export const getDeletePaperUrl = (id: string,) => {
+
+
+
+
+  return `/api/papers/${id}`
+}
+
+/**
+ * @summary Delete one of the caller's deletable paper files; its marks stay
+ */
+export const deletePaper = async (id: string, options?: RequestInit): Promise<deletePaperResponse> => {
+
+  const res = await fetch(getDeletePaperUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deletePaperResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as deletePaperResponse
 }
 
 

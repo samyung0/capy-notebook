@@ -168,6 +168,14 @@ export const GetAssignmentAttemptResponse = zod.object({
   "latePenaltyPct": zod.int(),
   "mark": zod.number(),
   "now": zod.iso.datetime({"offset":true}),
+  "paper": zod.enum(['upload', 'reading', 'read']).optional(),
+  "paperFiles": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "removedAssetIds": zod.array(zod.string()),
   "showAnswers": zod.boolean(),
@@ -290,6 +298,14 @@ export const MarkAssignmentAnswerResponse = zod.object({
   "latePenaltyPct": zod.int(),
   "mark": zod.number(),
   "now": zod.iso.datetime({"offset":true}),
+  "paper": zod.enum(['upload', 'reading', 'read']).optional(),
+  "paperFiles": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "removedAssetIds": zod.array(zod.string()),
   "showAnswers": zod.boolean(),
@@ -303,6 +319,68 @@ export const MarkAssignmentAnswerResponse = zod.object({
   "userName": zod.string(),
   "waitingAnswers": zod.int(),
   "waitingMarks": zod.number()
+})
+
+
+/**
+ * @summary Put a running attempt's paper files in order
+ */
+export const orderPaperFilesPathIdMax = 64;
+
+
+
+export const OrderPaperFilesParams = zod.object({
+  "id": zod.string().max(orderPaperFilesPathIdMax)
+})
+
+export const orderPaperFilesBodyFileIdsMax = 15;
+
+
+
+export const OrderPaperFilesBody = zod.object({
+  "fileIds": zod.array(zod.string()).max(orderPaperFilesBodyFileIdsMax)
+})
+
+export const OrderPaperFilesResponse = zod.void()
+
+
+/**
+ * @summary Remove a file from a running attempt's paper
+ */
+export const removePaperFilePathIdMax = 64;
+
+export const removePaperFilePathFileIdMax = 64;
+
+
+
+export const RemovePaperFileParams = zod.object({
+  "id": zod.string().max(removePaperFilePathIdMax),
+  "fileId": zod.string().max(removePaperFilePathFileIdMax)
+})
+
+export const RemovePaperFileResponse = zod.void()
+
+
+/**
+ * @summary A paper file's presigned reads, for its member or the class's staff
+ */
+export const getPaperFileLinksPathIdMax = 64;
+
+export const getPaperFileLinksPathFileIdMax = 64;
+
+
+
+export const GetPaperFileLinksParams = zod.object({
+  "id": zod.string().max(getPaperFileLinksPathIdMax),
+  "fileId": zod.string().max(getPaperFileLinksPathFileIdMax)
+})
+
+export const GetPaperFileLinksResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "expiresAt": zod.iso.datetime({"offset":true}),
+  "previewUrl": zod.string().optional(),
+  "storageFull": zod.enum(['self', 'payer']).optional(),
+  "url": zod.string()
 })
 
 
@@ -331,6 +409,14 @@ export const SubmitAssignmentAttemptResponse = zod.object({
   "latePenaltyPct": zod.int(),
   "mark": zod.number(),
   "now": zod.iso.datetime({"offset":true}),
+  "paper": zod.enum(['upload', 'reading', 'read']).optional(),
+  "paperFiles": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "removedAssetIds": zod.array(zod.string()),
   "showAnswers": zod.boolean(),
@@ -366,6 +452,7 @@ export const GetAssignmentParams = zod.object({
 
 export const GetAssignmentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean(),
   "attempts": zod.int(),
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),
@@ -450,6 +537,7 @@ export const updateAssignmentBodyTitleMax = 120;
 
 
 export const UpdateAssignmentBody = zod.object({
+  "allowUploads": zod.boolean().optional(),
   "assignAll": zod.boolean(),
   "assignees": zod.array(zod.string()).max(updateAssignmentBodyAssigneesMax),
   "attempts": zod.int().min(1).max(updateAssignmentBodyAttemptsMax),
@@ -473,6 +561,7 @@ export const UpdateAssignmentBody = zod.object({
 
 export const UpdateAssignmentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean(),
   "attempts": zod.int(),
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),
@@ -564,6 +653,7 @@ export const SetAssignmentClosedBody = zod.object({
 
 export const SetAssignmentClosedResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean(),
   "attempts": zod.int(),
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),
@@ -661,6 +751,7 @@ export const PublishAssignmentParams = zod.object({
 
 export const PublishAssignmentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean(),
   "attempts": zod.int(),
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),
@@ -731,6 +822,7 @@ export const ReleaseAssignmentGradesParams = zod.object({
 
 export const ReleaseAssignmentGradesResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean(),
   "attempts": zod.int(),
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),
@@ -867,6 +959,7 @@ export const RepublishAssignmentParams = zod.object({
 
 export const RepublishAssignmentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean(),
   "attempts": zod.int(),
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),
@@ -935,6 +1028,10 @@ export const StartAssignmentParams = zod.object({
   "id": zod.string()
 })
 
+export const StartAssignmentBody = zod.object({
+  "upload": zod.boolean().optional()
+})
+
 export const StartAssignmentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "answers": zod.record(zod.string(), zod.unknown()),
@@ -949,6 +1046,14 @@ export const StartAssignmentResponse = zod.object({
   "latePenaltyPct": zod.int(),
   "mark": zod.number(),
   "now": zod.iso.datetime({"offset":true}),
+  "paper": zod.enum(['upload', 'reading', 'read']).optional(),
+  "paperFiles": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "removedAssetIds": zod.array(zod.string()),
   "showAnswers": zod.boolean(),
@@ -5586,6 +5691,65 @@ export const ReadNotificationResponse = zod.void()
 
 
 /**
+ * @summary Delete every paper file the caller may delete; their marks stay
+ */
+export const DeleteAllPapersResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "deleted": zod.int()
+})
+
+
+/**
+ * @summary The caller's handed-in paper files they may delete, newest first (Files › Submissions)
+ */
+export const listPapersQueryLimitDefault = 50;
+export const listPapersQueryLimitMax = 100;
+
+
+
+export const ListPapersQueryParams = zod.object({
+  "limit": zod.int().min(1).max(listPapersQueryLimitMax).default(listPapersQueryLimitDefault),
+  "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
+})
+
+export const ListPapersResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "count": zod.int(),
+  "items": zod.array(zod.object({
+  "assignmentId": zod.string(),
+  "attemptId": zod.string(),
+  "bytes": zod.int(),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "quizName": zod.string(),
+  "workspaceId": zod.string().optional(),
+  "workspaceName": zod.string()
+})),
+  "nextCursor": zod.string().optional(),
+  "totalBytes": zod.int()
+})
+
+
+/**
+ * @summary Delete one of the caller's deletable paper files; its marks stay
+ */
+export const deletePaperPathIdMax = 64;
+
+
+
+export const DeletePaperParams = zod.object({
+  "id": zod.string().max(deletePaperPathIdMax)
+})
+
+export const DeletePaperResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "deleted": zod.int()
+})
+
+
+/**
  * @summary Get a shared flashcard set for signed-out visitors
  */
 export const GetAnonymousFlashcardsParams = zod.object({
@@ -7130,6 +7294,7 @@ export const GetTodoResponse = zod.object({
   "iconId": zod.string(),
   "items": zod.array(zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean(),
   "attempts": zod.int(),
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),
@@ -7830,6 +7995,7 @@ export const ListAssignmentsResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "items": zod.array(zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean(),
   "attempts": zod.int(),
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),
@@ -7916,6 +8082,7 @@ export const createAssignmentBodyTitleMax = 120;
 
 
 export const CreateAssignmentBody = zod.object({
+  "allowUploads": zod.boolean().optional(),
   "assignAll": zod.boolean(),
   "assignees": zod.array(zod.string()).max(createAssignmentBodyAssigneesMax),
   "attempts": zod.int().min(1).max(createAssignmentBodyAttemptsMax),
@@ -7939,6 +8106,7 @@ export const CreateAssignmentBody = zod.object({
 
 export const CreateAssignmentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean(),
   "attempts": zod.int(),
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),

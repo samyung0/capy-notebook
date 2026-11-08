@@ -394,6 +394,7 @@ export const qk = {
   ownedMaterials: (params?: unknown) =>
     ['materials', 'owned', params ?? null] as const,
   ownedMaterialsRoot: ['materials', 'owned'] as const,
+  papers: ['papers'] as const,
   pastReviews: (params?: unknown) =>
     ['review', 'past', params ?? null] as const,
   /** The workspace's Practice page; refreshed with the rest of study. */

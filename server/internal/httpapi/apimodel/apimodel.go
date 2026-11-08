@@ -487,7 +487,7 @@ type AssignmentFormReq struct {
 	ShowGrades string `json:"showGrades" enum:"automatic,manual"`
 	Shuffle    bool   `json:"shuffle"`
 	// AllowUploads lets members hand in a paper instead (Epo 2026-11-08).
-	AllowUploads bool                      `json:"allowUploads"`
+	AllowUploads bool                      `json:"allowUploads,omitempty"`
 	Files        []store.AssignmentFileRef `json:"files" nullable:"false" maxItems:"20"`
 }
 

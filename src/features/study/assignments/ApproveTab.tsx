@@ -10,6 +10,7 @@ import type {
   AssignmentAnswerRow,
   AssignmentGradedQuestion,
   AssignmentReport,
+  PaperFile,
 } from '@/api/types';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
@@ -39,6 +40,7 @@ import { errorCopy } from '@/lib/errors';
 import { questionLine } from '../practice/practiceText';
 import type { AssignmentsSearch } from './AssignmentsPage';
 import { markSteps, markText } from './assignmentText';
+import { PaperPages } from './LazyPaper';
 
 type Selected = { attemptId: string; questionId: string };
 const same = (row: AssignmentAnswerRow, s: Selected | null) =>
@@ -391,6 +393,7 @@ function MarkPane({
       name={name}
       onApproved={onApproved}
       onPrevious={onPrevious}
+      paperFiles={attempt.paper ? attempt.paperFiles : undefined}
       question={question}
       waiting={row.waiting}
     />
@@ -407,11 +410,14 @@ function MarkForm({
   name,
   onApproved,
   onPrevious,
+  paperFiles,
   question,
   waiting,
 }: {
   answers: Record<string, unknown>;
   assignment: Assignment;
+  /** A paper's files: its parts show the pages they were read on (T1). */
+  paperFiles?: PaperFile[];
   attemptId: string;
   attemptNumber: number;
   avatar?: string;
@@ -511,7 +517,14 @@ function MarkForm({
         const text = answers[part.id];
         return (
           <div className="mt-3" key={part.id}>
-            {part.answer.type === 'drawing' && text ? (
+            {paperFiles ? (
+              <PaperAnswer
+                attemptId={attemptId}
+                files={paperFiles}
+                name={first}
+                pages={part.pages ?? []}
+              />
+            ) : part.answer.type === 'drawing' && text ? (
               // Drawn from its board, Open drawing for the whole board (R3).
               <ReviewedDrawing
                 blocks={part.blocks}
@@ -653,6 +666,57 @@ function MarkForm({
           {waiting ? m.assignment_approve() : m.action_save()}
         </Button>
       </div>
+    </div>
+  );
+}
+
+/** A paper's answer (T1): the pages it was read on, the whole paper a click
+ * away; once the member deleted the paper, that it is gone (F2). */
+function PaperAnswer({
+  attemptId,
+  files,
+  name,
+  pages,
+}: {
+  attemptId: string;
+  files: PaperFile[];
+  name: string;
+  pages: number[];
+}) {
+  const [whole, setWhole] = useState(false);
+  if (files.length === 0)
+    return (
+      <p className="flex items-center gap-3 rounded-lg border border-line border-dashed p-4 text-fg-secondary">
+        <Icon className="shrink-0 text-fg-muted" name="fileText" size={22} />
+        {m.assignment_paper_deleted({ name })}
+      </p>
+    );
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="t-meta text-fg-secondary">
+          {pages.length === 0
+            ? m.assignment_paper_no_pages()
+            : m.assignment_paper_pages({ pages: pages.join(', ') })}
+        </span>
+        <Button
+          className="ml-auto"
+          onClick={() => setWhole(!whole)}
+          size="sm"
+          variant="outline"
+        >
+          {whole
+            ? m.assignment_paper_found_pages()
+            : m.assignment_paper_whole()}
+        </Button>
+      </div>
+      <PaperPages
+        attemptId={attemptId}
+        className="grid-cols-1 sm:grid-cols-2"
+        files={files}
+        only={whole ? undefined : pages}
+        width={480}
+      />
     </div>
   );
 }

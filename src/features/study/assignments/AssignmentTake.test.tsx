@@ -60,6 +60,7 @@ const attempt = (over: Partial<AssignmentAttempt> = {}) =>
     assignmentId: 'as1',
     id: 'at1',
     now: new Date().toISOString(),
+    paperFiles: [],
     questions: [
       {
         id: 'q1',

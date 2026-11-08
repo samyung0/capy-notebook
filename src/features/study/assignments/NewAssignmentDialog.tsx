@@ -115,6 +115,7 @@ export function NewAssignmentDialog({
     watch,
   } = useForm<AssignmentFormReq>({
     defaultValues: {
+      allowUploads: existing?.allowUploads ?? false,
       assignAll: manage?.assignAll ?? true,
       assignees: manage?.assignees ?? [],
       attempts: existing?.attempts ?? 1,
@@ -168,8 +169,8 @@ export function NewAssignmentDialog({
   const dueAt = watch('dueAt');
   const noLate = watch('noLate');
   const attempts = watch('attempts');
-  const [advancedOpen, setAdvancedOpen] = useState(() =>
-    advancedStartsOpen(existing)
+  const [advancedOpen, setAdvancedOpen] = useState(
+    () => advancedStartsOpen(existing) || !!manage?.shuffle
   );
   // The policy goes with a marked assignment's due date; a published one is past
   // being a draft.
@@ -559,18 +560,26 @@ export function NewAssignmentDialog({
                   </Field>
                 </div>
               </div>
+              {/* C1 (Epo 2026-11-08): members may hand in a paper instead. */}
               <SwitchRow
                 control={control}
-                label={m.assignment_switch_shuffle()}
-                name="shuffle"
+                label={m.assignment_switch_uploads()}
+                name="allowUploads"
               />
             </div>
           )}
-          {(hasPolicy || hasDraft) && (
+          {(kind === 'marked' || hasDraft) && (
             <AdvancedSection
               onToggle={() => setAdvancedOpen(!advancedOpen)}
               open={advancedOpen}
             >
+              {kind === 'marked' && (
+                <SwitchRow
+                  control={control}
+                  label={m.assignment_switch_shuffle()}
+                  name="shuffle"
+                />
+              )}
               {hasPolicy && (
                 <SwitchRow
                   control={control}
@@ -670,7 +679,7 @@ function SwitchRow({
 }: {
   control: Control<AssignmentFormReq>;
   label: string;
-  name: 'draft' | 'noLate' | 'shuffle';
+  name: 'allowUploads' | 'draft' | 'noLate' | 'shuffle';
 }) {
   return (
     <Controller

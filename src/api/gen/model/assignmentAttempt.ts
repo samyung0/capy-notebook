@@ -5,8 +5,10 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AssignmentAttemptAnswers } from './assignmentAttemptAnswers.ts';
+import type { AssignmentAttemptPaper } from './assignmentAttemptPaper.ts';
 import type { AssignmentAttemptQuestionsItem } from './assignmentAttemptQuestionsItem.ts';
 import type { AssignmentAttemptStatus } from './assignmentAttemptStatus.ts';
+import type { PaperFile } from './paperFile.ts';
 
 export interface AssignmentAttempt {
   /** A URL to the JSON Schema for this object. */
@@ -23,6 +25,8 @@ export interface AssignmentAttempt {
   latePenaltyPct: number;
   mark: number;
   now: string;
+  paper?: AssignmentAttemptPaper;
+  paperFiles: PaperFile[];
   questions: AssignmentAttemptQuestionsItem[];
   removedAssetIds: string[];
   showAnswers: boolean;

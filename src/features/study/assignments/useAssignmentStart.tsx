@@ -27,7 +27,8 @@ export function paperMeta(a: Pick<Assignment, 'questions' | 'marks'>) {
 
 /** Starting a marked assignment, from its row, the Dashboard or its link:
  * a running attempt opens; a time limit asks first, since Start starts the
- * clock (board A0); no limit opens straight away. */
+ * clock (board A0), and so does one that takes uploads, which asks how (S4);
+ * otherwise it opens straight away. */
 export function useAssignmentStart(workspaceId: string, onCancel?: () => void) {
   const navigate = useNavigate();
   const { mutate, isPending } = useStartAssignment(workspaceId);
@@ -41,27 +42,30 @@ export function useAssignmentStart(workspaceId: string, onCancel?: () => void) {
       search: { assignment, attempt, study: 'assignments' as const },
       to: '.',
     });
-  const run = (a: Assignment) => {
+  const run = (a: Assignment, upload = false) => {
     setStartError(null);
-    mutate(a.id, {
-      onError: (error) => {
-        const message = errorCopy(error, m.assignment_start_failed());
-        // Before you start stays open with the refusal; with no dialog, a toast.
-        if (asking) {
-          setStartError({ errorId: unexpectedErrorId(error), message });
-        } else {
-          userToast({ title: message, variant: 'error' });
-        }
-      },
-      onSuccess: (attempt) => {
-        setAsking(null);
-        void open(a.id, attempt.id);
-      },
-    });
+    mutate(
+      { id: a.id, upload },
+      {
+        onError: (error) => {
+          const message = errorCopy(error, m.assignment_start_failed());
+          // Before you start stays open with the refusal; with no dialog, a toast.
+          if (asking) {
+            setStartError({ errorId: unexpectedErrorId(error), message });
+          } else {
+            userToast({ title: message, variant: 'error' });
+          }
+        },
+        onSuccess: (attempt) => {
+          setAsking(null);
+          void open(a.id, attempt.id);
+        },
+      }
+    );
   };
   const start = (a: Assignment) => {
     if (a.mine?.runningAttemptId) void open(a.id, a.mine.runningAttemptId);
-    else if (a.timeLimitMin) setAsking(a);
+    else if (a.timeLimitMin || a.allowUploads) setAsking(a);
     else run(a);
   };
   const dialog = asking && (
@@ -73,7 +77,7 @@ export function useAssignmentStart(workspaceId: string, onCancel?: () => void) {
         setStartError(null);
         onCancel?.();
       }}
-      onStart={() => run(asking)}
+      onStart={(upload) => run(asking, upload)}
       starting={isPending}
     />
   );
@@ -82,7 +86,8 @@ export function useAssignmentStart(workspaceId: string, onCancel?: () => void) {
 
 /** Before you start (A0): only the time and the paper's size, and when the
  * member's storage is full and the paper asks for drawings, that they save past
- * the limit (S6, Epo 2026-11-08). */
+ * the limit (S6, Epo 2026-11-08). An assignment that takes uploads offers
+ * Upload file beside Attempt online (S4), turned off while storage is full. */
 function BeforeYouStart({
   assignment,
   error,
@@ -93,13 +98,12 @@ function BeforeYouStart({
   assignment: Assignment;
   error: { errorId: string | null; message: string } | null;
   onCancel: () => void;
-  onStart: () => void;
+  onStart: (upload: boolean) => void;
   starting: boolean;
 }) {
   const { data: me } = useMe({ errorBoundary: false });
-  const storageFull =
-    assignment.drawingParts &&
-    me?.account?.storageUsage === StorageUsageLevel.full;
+  const full = me?.account?.storageUsage === StorageUsageLevel.full;
+  const uploads = assignment.allowUploads;
   return (
     <Dialog onOpenChange={(open) => !open && !starting && onCancel()} open>
       <DialogContent
@@ -111,34 +115,49 @@ function BeforeYouStart({
         <DialogTitle className="truncate" closable={false}>
           {assignment.title}
         </DialogTitle>
-        <div className="mt-2 flex items-center gap-4 rounded-xl bg-tint-accent-1 px-5 py-4.5">
-          <span className="grid size-16 shrink-0 place-items-center rounded-full bg-surface text-tint-accent-1-fg">
-            <Icon name="clock" size={32} />
-          </span>
-          <div className="min-w-0">
-            <p className="font-extrabold text-[1.875rem] leading-tight tracking-[-0.02rem]">
-              {minutesText(assignment.timeLimitMin ?? 0)}
-            </p>
-            <p className="t-meta text-fg-secondary">
-              {m.assignment_timer_starts()}
-            </p>
+        {!!assignment.timeLimitMin && (
+          <div className="mt-2 flex items-center gap-4 rounded-xl bg-tint-accent-1 px-5 py-4.5">
+            <span className="grid size-16 shrink-0 place-items-center rounded-full bg-surface text-tint-accent-1-fg">
+              <Icon name="clock" size={32} />
+            </span>
+            <div className="min-w-0">
+              <p className="font-extrabold text-[1.875rem] leading-tight tracking-[-0.02rem]">
+                {minutesText(assignment.timeLimitMin)}
+              </p>
+              <p className="t-meta text-fg-secondary">
+                {uploads
+                  ? m.assignment_timer_starts_uploads()
+                  : m.assignment_timer_starts()}
+              </p>
+            </div>
           </div>
-        </div>
+        )}
         <p className="t-meta mt-3.5 text-fg-secondary">
           {paperMeta(assignment)}
         </p>
-        {storageFull && (
+        {full && (uploads || assignment.drawingParts) && (
           <p className="t-meta mt-3 rounded-lg bg-tint-warning px-3 py-2.5 text-tint-warning-fg">
-            {m.assignment_storage_full_drawings()}
+            {uploads
+              ? m.assignment_storage_full_upload()
+              : m.assignment_storage_full_drawings()}
           </p>
         )}
         <FormAlert errorId={error?.errorId} message={error?.message ?? null} />
-        <DialogFooter className="max-sm:justify-end">
+        <DialogFooter className="max-sm:flex-wrap max-sm:justify-end">
           <Button disabled={starting} onClick={onCancel} variant="ghost">
             {m.assignment_not_now()}
           </Button>
-          <Button disabled={starting} onClick={onStart}>
-            {m.assignment_start()}
+          {uploads && (
+            <Button
+              disabled={starting || full}
+              onClick={() => onStart(true)}
+              variant="outline"
+            >
+              {m.assignment_upload_file()}
+            </Button>
+          )}
+          <Button disabled={starting} onClick={() => onStart(false)}>
+            {uploads ? m.assignment_attempt_online() : m.assignment_start()}
           </Button>
         </DialogFooter>
       </DialogContent>

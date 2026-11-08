@@ -175,6 +175,7 @@ it("lists a class's To do: answers to approve for its owner, nothing when empty"
   expect(render()).not.toContain(m.dashboard_todo());
   page.assignments = [
     {
+      allowUploads: false,
       attempts: 1,
       closed: false,
       draft: false,

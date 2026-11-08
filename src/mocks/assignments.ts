@@ -13,7 +13,9 @@ import type {
   AssignmentReport,
   MarkedDrawing,
   MaterialRef,
+  PaperFile,
   SharingNotice,
+  SubmittedPaper,
   TodoList,
   WorkspaceActivity,
 } from '@/api/types';
@@ -60,6 +62,7 @@ type Row = {
   showGrades: AssignmentFormReq['showGrades'];
   gradesReleasedAt?: string;
   shuffle: boolean;
+  allowUploads: boolean;
   files: { fileId?: string; materialId?: string }[];
 };
 type Attempt = {
@@ -72,7 +75,45 @@ type Attempt = {
   autoSubmitted: boolean;
   answers: Answers;
   graded: AssignmentGradedQuestion[];
+  /** Answered on paper (S5): its state and files. */
+  paper?: 'upload' | 'reading' | 'read';
+  paperFiles?: PaperFile[];
 };
+
+/** A paper file's bytes, as links read them. */
+const paperUrls = new Map<string, string>();
+
+/** A handwritten page, drawn: a seeded paper's one image. */
+const SCAN = `data:image/svg+xml,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="620" height="877"><rect width="620" height="877" fill="#f7f5ef"/>' +
+    Array.from(
+      { length: 24 },
+      (_, i) =>
+        `<line x1="30" x2="590" y1="${80 + i * 32}" y2="${80 + i * 32}" stroke="#c7d3e6"/>`
+    ).join('') +
+    '<g font-family="Bradley Hand, cursive" font-size="22" fill="#24306b"><text x="40" y="70">Name: Ben Lee</text><text x="40" y="134">1  B</text><text x="40" y="198">3  Water goes in by osmosis through the</text><text x="70" y="230">partially permeable membrane.</text></g></svg>'
+)}`;
+
+/** Upload file's files (the source upload with attemptId): a running paper's. */
+export function addPaperFile(
+  attemptId: string,
+  name: string,
+  kind: string,
+  bytes: Blob
+) {
+  const attempt = attempts.get(attemptId);
+  if (attempt?.paper !== 'upload' || attempt.submittedAt) return null;
+  const file: PaperFile = {
+    id: newId('f'),
+    kind,
+    name,
+    sizeBytes: bytes.size,
+    status: 'ready',
+  };
+  paperUrls.set(file.id, URL.createObjectURL(bytes));
+  attempt.paperFiles = [...(attempt.paperFiles ?? []), file];
+  return file;
+}
 
 /** Drawings an assignment's Done stored, by id: their boards. */
 const mockDrawings = new Map<string, string>();
@@ -405,6 +446,7 @@ function seed() {
   );
   const files = db.files.filter((f) => f.workspaceId === WS);
   const common = {
+    allowUploads: false,
     assignAll: true,
     assignees: [],
     attempts: 1,
@@ -440,6 +482,7 @@ function seed() {
     },
     {
       ...common,
+      allowUploads: true,
       dueAt: at(3),
       id: 'as_paper',
       kind: 'marked',
@@ -671,6 +714,20 @@ function finish(row: Row, attempt: Attempt, answers: Answers, auto: boolean) {
   attempt.autoSubmitted = auto;
   attempt.submittedAt = new Date().toISOString();
   attempt.graded = gradePaper(row.questions ?? [], answers);
+  // A paper: the mock reads it at once, every part on its first page, waiting.
+  if (attempt.paper === 'upload') {
+    attempt.paper = 'read';
+    attempt.answers = {};
+    attempt.graded = attempt.graded.map((q) => ({
+      ...q,
+      parts: q.parts.map((p) => ({
+        ...p,
+        awarded: 0,
+        pages: [1],
+        pending: true,
+      })),
+    }));
+  }
 }
 
 function toAssignment(row: Row, viewer: Viewer): Assignment {
@@ -715,6 +772,7 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
         ];
   const gradesHidden = row.showGrades === 'manual' && !row.gradesReleasedAt;
   return {
+    allowUploads: row.allowUploads,
     attempts: row.attempts,
     closed: isClosed(row),
     closedAt: closedAtOf(row),
@@ -833,6 +891,8 @@ function attemptView(attempt: Attempt, row: Row, viewer: Viewer) {
     late: isLate(row, attempt.submittedAt),
     latePenaltyPct: penaltyOf(row, attempt.submittedAt),
     now: new Date().toISOString(),
+    paper: attempt.paper,
+    paperFiles: attempt.paperFiles ?? [],
     removedAssetIds: [],
     startedAt: attempt.startedAt,
     title: row.title,
@@ -1083,6 +1143,7 @@ function applyForm(row: Row, body: AssignmentFormReq) {
   row.showAnswers = body.showAnswers;
   row.showGrades = body.showGrades;
   row.shuffle = body.shuffle;
+  row.allowUploads = !!body.allowUploads;
   row.files = body.files.map(({ fileId, materialId }) => ({
     fileId,
     materialId,
@@ -1247,6 +1308,7 @@ export const assignmentHandlers = (viewer: Viewer) => {
         seed();
         const body = (await request.json()) as AssignmentFormReq;
         const row: Row = {
+          allowUploads: false,
           assignAll: true,
           assignees: [],
           attempts: 1,
@@ -1366,7 +1428,10 @@ export const assignmentHandlers = (viewer: Viewer) => {
       done.set(id, ticks);
       return new HttpResponse(null, { status: 204 });
     }),
-    http.post('/api/assignments/:id/start', ({ params }) => {
+    http.post('/api/assignments/:id/start', async ({ params, request }) => {
+      const { upload } = (await request.json().catch(() => ({}))) as {
+        upload?: boolean;
+      };
       const row = rowOf(params.id);
       if (!row) return gone();
       sweep(row);
@@ -1391,6 +1456,9 @@ export const assignmentHandlers = (viewer: Viewer) => {
           : undefined,
         graded: [],
         id: newId('at'),
+        ...(upload && row.allowUploads
+          ? { paper: 'upload' as const, paperFiles: [] }
+          : {}),
         startedAt: new Date().toISOString(),
         userId: db.user.id,
       };
@@ -1529,6 +1597,80 @@ export const assignmentHandlers = (viewer: Viewer) => {
         id: params.id,
         partId: '',
       });
+    }),
+    http.delete('/api/assignment-attempts/:id/paper/:fileId', ({ params }) => {
+      const found = attemptOf(params.id);
+      if (found?.attempt.paper !== 'upload') return gone();
+      found.attempt.paperFiles = (found.attempt.paperFiles ?? []).filter(
+        (f) => f.id !== params.fileId
+      );
+      return new HttpResponse(null, { status: 204 });
+    }),
+    http.put(
+      '/api/assignment-attempts/:id/paper/order',
+      async ({ params, request }) => {
+        const found = attemptOf(params.id);
+        if (found?.attempt.paper !== 'upload') return gone();
+        const { fileIds } = (await request.json()) as { fileIds: string[] };
+        const files = found.attempt.paperFiles ?? [];
+        found.attempt.paperFiles = fileIds.flatMap((id) =>
+          files.filter((f) => f.id === id)
+        );
+        return new HttpResponse(null, { status: 204 });
+      }
+    ),
+    http.get(
+      '/api/assignment-attempts/:id/paper/:fileId/links',
+      ({ params }) => {
+        const url = paperUrls.get(String(params.fileId)) ?? SCAN;
+        return HttpResponse.json({
+          expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+          url,
+        });
+      }
+    ),
+    // Files › Submissions: papers of closed assignments, every part marked.
+    http.get('/api/papers', () => {
+      const items: SubmittedPaper[] = [...attempts.values()].flatMap((a) => {
+        const row = rowOf(a.assignmentId);
+        const marked = a.graded.every((q) => q.parts.every((p) => !p.pending));
+        if (
+          !row ||
+          a.userId !== db.user.id ||
+          a.paper !== 'read' ||
+          !marked ||
+          !closedAtOf(row)
+        )
+          return [];
+        return (a.paperFiles ?? []).map((f) => ({
+          assignmentId: row.id,
+          attemptId: a.id,
+          bytes: f.sizeBytes,
+          createdAt: a.submittedAt ?? a.startedAt,
+          id: f.id,
+          kind: f.kind,
+          name: f.name,
+          quizName: row.title,
+          workspaceId: row.workspaceId,
+          workspaceName:
+            db.workspaces.find((w) => w.id === row.workspaceId)?.name ?? '',
+        }));
+      });
+      return HttpResponse.json({
+        count: items.length,
+        items,
+        totalBytes: items.reduce((n, p) => n + p.bytes, 0),
+      });
+    }),
+    http.delete('/api/papers/:id', ({ params }) => {
+      for (const a of attempts.values())
+        a.paperFiles = a.paperFiles?.filter((f) => f.id !== params.id);
+      return HttpResponse.json({ deleted: 1 });
+    }),
+    http.delete('/api/papers', () => {
+      for (const a of attempts.values())
+        if (a.userId === db.user.id && a.paper === 'read') a.paperFiles = [];
+      return HttpResponse.json({ deleted: 1 });
     }),
     http.post(
       '/api/assignment-attempts/:id/submit',

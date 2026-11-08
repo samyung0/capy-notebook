@@ -13,6 +13,7 @@ import type { AssignmentFormReqShowGrades } from './assignmentFormReqShowGrades.
 export interface AssignmentFormReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  allowUploads?: boolean;
   assignAll: boolean;
   /** @maxItems 500 */
   assignees: string[];

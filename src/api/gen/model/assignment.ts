@@ -12,6 +12,7 @@ import type { AssignmentMine } from './assignmentMine.ts';
 export interface Assignment {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  allowUploads: boolean;
   attempts: number;
   closed: boolean;
   closedAt?: string;
