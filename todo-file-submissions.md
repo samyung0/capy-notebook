@@ -6,8 +6,21 @@ quizzes from uploaded files, and how to limit scanned PDFs; whether to chunk and
 index submissions; and whether a normal scanned upload goes to the caption/VLM
 slot while only Make a quiz uses the layout/OCR service.
 
-Status: **phase 1, waiting on Epo's answers (questions at the end).** No
-feature code. Mocks: https://claude.ai/artifact/4ihgjU6i3BQn3q6ngQA9bQ
+Status: **phase 1. A and B decided (2026-11-08); B2 and C–L open.** No
+feature code.
+
+## Decisions so far (recorded in `human/study-progress.md`)
+
+- **A (Epo 2026-11-08, "sure"):** an "Allow file uploads" switch, off by
+  default, on Marked and Unmarked. Shuffle questions moves into Advanced. An
+  Unmarked assignment's Files field sits below Due and Assign to. Mocks C1 and C2
+  updated.
+- **B (Epo 2026-11-08):** S2, files on each question. "NEVER ask the student to
+  label each question to each page, upload a single 10 page pdf and nth else
+  should be needed." S1's Questions dropdowns are dropped, and R1 below is
+  superseded: matching pages to questions is the app's job.
+- **B2 (open):** where a whole-paper PDF goes in S2, and how its pages reach each
+  question's marking call (see "Questions for Epo"). Mocks: https://claude.ai/artifact/4ihgjU6i3BQn3q6ngQA9bQ
 (`artifacts/2026-11-08-file-submissions-mocks.html`). Costs:
 `bench/grading/reports/2026-11-08-page-answer-costs.md`.
 
@@ -80,8 +93,8 @@ pages, about 1.5 pages a question):
 
 The cost to limit is pages × calls, not pages alone. So:
 
-- **R1: members pick the questions each page answers** (mock S1, or mock S2's
-  photos per question). Each part's call gets only its question's pages, as
+- **R1 (superseded by B: the member never labels pages): the app finds each
+  question's pages** (B2). Each part's call gets only its question's pages, as
   1,568 px images: the drawing image size Epo already set.
 - **R2: at most 3 pages a question go to the model.** A question with more is
   left Not marked for hand marking, as a drawing saved under Manual is today
@@ -186,6 +199,24 @@ board):
   scans (see the report's "Not tested").
 
 ## Questions for Epo
+
+B2. **A whole-paper PDF in S2.** Where does it go, and how do its pages reach
+    each question?
+    - **Where:** one "Your paper" upload at the end of the question list, with
+      no dropdowns (S1's place, without the labelling), beside the per-question
+      uploads.
+    - **How, M1 (recommended): one matching call at Submit.** One call reads
+      every page at 1,024 px and returns the questions each page answers, about
+      0.15 credits a page (1.5 for 10 pages), paid by the owner. Each part's
+      marking call then gets only its question's pages, so R2's 3-page cap
+      still holds. The owner sees the matched pages in Approve, and the member
+      sees nothing extra.
+    - **How, M2: every page goes to every part's call.** The pages come first,
+      so the provider can cache them across one member's parts: about 2 credits
+      for the first call, then about 0.2 a call for 10 pages. A cache hit isn't
+      guaranteed (calls run 10 at a time, and providers fall back). Finding the
+      part gets harder as pages grow. The message order changes, which is a
+      prompt change.
 
 A. **Scope:** an "Allow file uploads" switch on both Marked and Unmarked
    assignments, off by default (C1, C2)?
