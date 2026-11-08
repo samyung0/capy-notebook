@@ -1235,7 +1235,8 @@ func Authored(q map[string]any) map[string]any {
 
 // LearnerView is a question as readers who are not editing see it: no answer
 // keys, accepted answers, marking schemes or worked solutions, with matching
-// options and ordering items shuffled. An allowlist keeps new author-only
+// options and ordering items shuffled; an mcq with several correct options
+// says only `multiple: true`. An allowlist keeps new author-only
 // fields out. Stored content is read with checked assertions, so a malformed
 // question loses fields instead of panicking.
 func LearnerView(q map[string]any) map[string]any {
@@ -1254,6 +1255,11 @@ func LearnerView(q map[string]any) map[string]any {
 		switch a["type"] {
 		case "mcq":
 			learner["options"] = a["options"]
+			// Only whether several options are correct, so a learner knows to
+			// pick more than one (Epo 2026-11-08); the key itself stays out.
+			if correct, _ := a["correct"].([]any); len(correct) > 1 {
+				learner["multiple"] = true
+			}
 		case "short":
 			if unit, ok := a["unit"]; ok {
 				learner["unit"] = unit

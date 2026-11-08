@@ -242,6 +242,27 @@ func TestLearnerViewKeepsGroups(t *testing.T) {
 	}
 }
 
+// An mcq's learner view says whether several options are correct, never which.
+func TestLearnerViewMarksMultipleChoice(t *testing.T) {
+	for file, want := range map[string]any{"mcq.json": nil, "mcq-several-correct.json": true} {
+		raw, err := os.ReadFile("testdata/" + file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var f struct{ Question map[string]any }
+		if err := json.Unmarshal(raw, &f); err != nil {
+			t.Fatal(err)
+		}
+		answer := LearnerView(f.Question)["parts"].([]any)[0].(map[string]any)["answer"].(map[string]any)
+		if answer["multiple"] != want {
+			t.Errorf("%s: multiple = %v, want %v", file, answer["multiple"], want)
+		}
+		if _, ok := answer["correct"]; ok {
+			t.Errorf("%s: leaked correct", file)
+		}
+	}
+}
+
 // Scoring goes by part, so it needs no change for groups; what it returns keeps
 // them, as a stored attempt's snapshot does.
 func TestGradedAndAuthoredKeepGroups(t *testing.T) {

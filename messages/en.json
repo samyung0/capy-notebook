@@ -1821,6 +1821,7 @@
   "question_ui_short_answer": "Short answer",
   "question_ui_answer_type": "Answer type",
   "question_ui_options_and_correct_answers": "Options and correct answers",
+  "question_ui_multiple_answers": "Multiple answers can be selected",
   "question_ui_add_option": "Add option",
   "question_ui_correct_answer": "Correct answer",
   "question_ui_true": "True",

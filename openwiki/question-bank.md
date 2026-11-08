@@ -125,9 +125,14 @@ kept their position.
 `src/features/questions/types.ts` defines stem blocks and ordered parts. Each
 part has a stable ID, blocks, one of eight answer types, whole `marks` (1–20)
 and worked-solution blocks. A multiple-choice part (`mcq`) has one or more
-correct options and is answered with checkboxes (multiple answers, `multi`,
-merged into it on every layer, Epo 2026-10-15; the learner UI redesign is
-Epo's). Only open parts carry a marking scheme: items of
+correct options (multiple answers, `multi`, merged into it on every layer,
+Epo 2026-10-15). With one correct option it is answered as a single choice,
+picking an option replacing the last; with several the options toggle like
+checkboxes under a muted "Multiple answers can be selected" hint, shown in the
+question editor beside the options as well (Epo 2026-11-08). A learner has no
+key, so the learner view carries `multiple: true` on such a part and nothing
+else about its key; a live quiz's content document holds the same flag,
+written with the options by the browser and the server. Only open parts carry a marking scheme: items of
 text and whole marks that add up to the part's marks, because the model grades against
 them. An open part takes at most one sample answer (`accepted`, 0 or 1 items),
 and it is optional: the editor shows one Sample answer input, and grading never
@@ -792,7 +797,8 @@ schemes or worked solutions; editing sends them to whoever may edit; checking
 an answer or submitting an attempt returns the key for what was just checked.
 Grading happens only on the server, and retakes and Try again are unlimited.
 Answer-free questions are `questions.LearnerView` (`server/internal/questions/questions.go`):
-part ids, blocks and marks, mcq options in stored order, a short answer's
+part ids, blocks and marks, mcq options in stored order (with `multiple: true`
+when several are correct), a short answer's
 unit, matching `left` items with shuffled `options`, shuffled ordering `items`
 and the number of `gaps`. It reads stored content with checked assertions, so a
 malformed question loses fields instead of failing the read.

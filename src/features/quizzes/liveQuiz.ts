@@ -22,8 +22,9 @@ import { keyBetween } from '@/lib/orderKey';
  * parts}, group id -> {blocks}, part id -> {order, marks, blocks, answer,
  * group?}. A group has no order of its own: it sits where its first part sits,
  * and what a merge leaves reads repaired (`repairGroups`, Epo 2026-11-04). The
- * answer map holds the type and what a learner may see: mcq options, a short
- * answer's unit and matching left items. The keys document, which only editors with write
+ * answer map holds the type and what a learner may see: mcq options and
+ * `multiple` (true while several are correct), a short answer's unit and
+ * matching left items. The keys document, which only editors with write
  * access join, holds `keys`: part id -> {type, solution, correct | accepted |
  * hints | markscheme | gaps | options | pairs | items}. Editors type ordering
  * items and matching options there; readers get them outside Yjs, as the
@@ -362,7 +363,13 @@ export function readLearnerQuestions(
           let learner: LearnerAnswer;
           switch (type) {
             case 'mcq':
-              learner = { options: texts(mapAt(answer, 'options')), type };
+              learner = {
+                options: texts(mapAt(answer, 'options')),
+                type,
+                ...(plain<boolean>(answer, 'multiple') === true
+                  ? { multiple: true as const }
+                  : {}),
+              };
               break;
             case 'short': {
               const unit = plain<string>(answer, 'unit');
@@ -790,6 +797,7 @@ function writeContentAnswer(part: YMap, answer: QuestionAnswer): PartIds {
         answer.options.map((value) => ({ text: value })),
         'opt'
       );
+      setPlain(map, 'multiple', answer.correct.length > 1 ? true : undefined);
       break;
     case 'short':
       setPlain(map, 'unit', answer.unit);

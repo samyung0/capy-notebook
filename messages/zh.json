@@ -1821,6 +1821,7 @@
   "question_ui_short_answer": "简答题",
   "question_ui_answer_type": "答案类型",
   "question_ui_options_and_correct_answers": "选项与正确答案",
+  "question_ui_multiple_answers": "可以选择多个答案",
   "question_ui_add_option": "添加选项",
   "question_ui_correct_answer": "正确答案",
   "question_ui_true": "正确",
