@@ -4467,7 +4467,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   renderer with a clip, so a card stacks with strokes and reaches the marking image with
   no special case. A card is a picture on the canvas: Select moves it, its corners resize
   it, between 120 by 80 and 4000 px, showing more or less of the plane at the same scale,
-  scrolling over it moves the canvas, and the eraser leaves it alone. A fresh board starts
+  scrolling over it moves the canvas, and the eraser leaves it alone (`erasable` false,
+  which the vendored eraser reads: local change 30), while a connector meets its edge
+  at four anchors as on a shape. A fresh board starts
   with one. Double click, double tap or the pen opens it. **Fit to size**, on by default:
   each time the plane is left, a card with marks takes their size at the plane's scale plus
   40 px, its top left staying put; past 1600 px it zooms out instead. Dragging a corner
@@ -4600,7 +4602,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   its popovers too) and sets BlockSuite's theme signal from the `dark` class. The board
   paints no ground: its dots sit on the panel's colour, or its frost over the page frame.
   Plane and chart cards take a light or dark `PAPER` (dark paper is a dark note's), and a
-  formula's black bitmap is inverted (hue kept) on a dark board. The marking image is
+  formula's black ink is inverted (hue kept) on a dark board. The marking image is
   always light: `toImage` lifts the dark variables (`data-board-light`) and switches the
   signal to light while it draws, so the board shows light for that moment. AFFiNE's
   own dark placeholder and border greys (rgb(62, 62, 63) and rgb(46, 46, 46) on
@@ -4615,12 +4617,13 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   editor menu, which load KaTeX and shiki, are left out). KaTeX and its stylesheet load
   once the board holds a formula or the formula editor opens (84 KB gzipped most boards
   never need). It lays the formula out in a
-  hidden host and its glyphs, rules and stretched SVGs (clipped as KaTeX clips them) are
-  drawn onto a bitmap the canvas renderer draws. Tested in Chromium only. Size and
-  expansion limits are set on KaTeX, and a saved answer holding more than 2,000
-  characters draws nothing. Bitmaps stay until the board closes: sharp up to 128 MB, plain
-  up to 256 MB, and past that a formula isn't drawn, on screen or in the image. Saving
-  answers still needs limits on the server.
+  hidden host and where its glyphs, rules and stretched SVGs sit (clipped as KaTeX clips
+  them) is kept as drawing steps, which the canvas renderer replays at the card's size
+  each frame, so a formula stays sharp at any size and zoom. Resizing keeps its shape
+  (`lockRatio`, as AFFiNE's images). Tested in Chromium only. Size and expansion limits
+  are set on KaTeX, and a saved answer holding more than 2,000 characters draws
+  nothing. Laid-out formulas stay until the board closes. Saving answers still needs
+  limits on the server.
 - **Labels** come from the Maths menu's Label, which can place one on top of a card (a
   double click there opens the plane), or a double click on empty canvas. They have a
   maths symbol row while typing. BlockSuite's default canvas font has no

@@ -19,6 +19,7 @@ import {
   type GfxController,
   GfxElementModelView,
   GfxPrimitiveElementModel,
+  GfxViewInteractionExtension,
 } from '@blocksuite/affine/std/gfx';
 import { html, render } from 'lit';
 import { inertTex } from '@/features/materials/inertTex';
@@ -27,13 +28,6 @@ import { LATEX_MAX } from './boardData';
 import { type FormulaStart, setFormulaOpener } from './boardTools';
 
 const FONT_SIZE = 24;
-/** Bitmap pixels per board pixel, so a formula stays sharp when zoomed in. */
-const SHARPNESS = 3;
-/** The longest bitmap side, whatever a formula asks for. */
-const BITMAP_MAX = 4096;
-/** Bitmaps' memory: sharp up to the first, plain up to the second, then none. */
-const SHARP_BYTES_MAX = 128 * 1024 * 1024;
-const BITMAP_BYTES_MAX = 256 * 1024 * 1024;
 /** What MathLive writes that KaTeX has no command for. */
 const KATEX_OPTIONS = {
   macros: {
@@ -66,20 +60,39 @@ const loadKatex = () => {
   return katexLoad;
 };
 
-type Drawn = { canvas: HTMLCanvasElement; h: number; w: number };
+/** One step of drawing a formula, at its laid-out size from its top left. */
+type Step =
+  | {
+      color: string;
+      font: string;
+      kind: 'text';
+      text: string;
+      x: number;
+      y: number;
+    }
+  | { color: string; h: number; kind: 'rule'; w: number; x: number; y: number }
+  | {
+      clip: { h: number; w: number; x: number; y: number } | null;
+      h: number;
+      image: HTMLImageElement;
+      kind: 'shape';
+      w: number;
+      x: number;
+      y: number;
+    };
+/** A formula as glyphs, rules and stretched shapes, replayed at whatever size its card
+ * has, so it stays sharp when the card grows or the board zooms in. */
+type Drawn = { h: number; steps: Step[]; w: number };
 
 const drawings = new Map<string, Promise<Drawn>>();
 const ready = new Map<string, Drawn>();
-let bitmapBytes = 0;
-
-class OverBudget extends Error {}
 
 /** KaTeX lays a formula out in HTML, which BlockSuite's export (html2canvas) can't
- * read, so its glyphs, rules and stretched SVGs are drawn onto a canvas from where
- * they sit. The canvas is what the board and the marking image show. */
+ * read, so where its glyphs, rules and stretched SVGs sit is kept as steps the board
+ * and the marking image draw. */
 async function layOut(latex: string): Promise<Drawn> {
   const host = document.createElement('div');
-  // The padding keeps tall glyphs and stretched delimiters inside the bitmap.
+  // The padding keeps tall glyphs and stretched delimiters inside the card.
   host.style.cssText = `position:fixed;left:0;top:0;visibility:hidden;pointer-events:none;padding:${FONT_SIZE / 3}px 2px;font-size:${FONT_SIZE}px;font-weight:400;color:#000;white-space:nowrap;width:max-content`;
   const katex = await loadKatex();
   document.body.append(host);
@@ -92,20 +105,9 @@ async function layOut(latex: string): Promise<Drawn> {
     });
     await document.fonts.ready;
     const box = host.getBoundingClientRect();
-    const canvas = document.createElement('canvas');
-    // Past the budget for sharp formulas, new ones are plain, and past the whole
-    // budget they aren't kept at all (drawing()).
-    const sharpness = Math.min(
-      bitmapBytes < SHARP_BYTES_MAX ? SHARPNESS : 1,
-      BITMAP_MAX / Math.max(box.width, box.height, 1)
-    );
-    canvas.width = Math.ceil(box.width * sharpness);
-    canvas.height = Math.ceil(box.height * sharpness);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('no canvas context');
-    ctx.scale(sharpness, sharpness);
-    ctx.textRendering = 'geometricPrecision';
-    ctx.translate(-box.x, -box.y);
+    const measure = document.createElement('canvas').getContext('2d');
+    if (!measure) throw new Error('no canvas context');
+    const steps: Step[] = [];
     const stretched: SVGElement[] = [];
     const walk = (node: Node) => {
       if (node.nodeType === Node.TEXT_NODE) {
@@ -114,17 +116,19 @@ async function layOut(latex: string): Promise<Drawn> {
         range.selectNodeContents(node);
         const at = range.getBoundingClientRect();
         const style = getComputedStyle(node.parentElement);
-        ctx.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-        ctx.fillStyle = style.color;
-        ctx.textBaseline = 'alphabetic';
-        const metrics = ctx.measureText(node.textContent);
+        const font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+        measure.font = font;
+        const metrics = measure.measureText(node.textContent);
         const ascent = metrics.fontBoundingBoxAscent;
         const height = ascent + metrics.fontBoundingBoxDescent;
-        ctx.fillText(
-          node.textContent,
-          at.left,
-          at.top + (at.height - height) / 2 + ascent
-        );
+        steps.push({
+          color: style.color,
+          font,
+          kind: 'text',
+          text: node.textContent,
+          x: at.left - box.x,
+          y: at.top - box.y + (at.height - height) / 2 + ascent,
+        });
         return;
       }
       if (!(node instanceof Element)) return;
@@ -135,15 +139,25 @@ async function layOut(latex: string): Promise<Drawn> {
       const style = getComputedStyle(node);
       const at = node.getBoundingClientRect();
       const bottom = Number.parseFloat(style.borderBottomWidth);
-      if (bottom > 0 && style.borderBottomStyle !== 'none') {
-        ctx.fillStyle = style.borderBottomColor;
-        ctx.fillRect(at.left, at.bottom - bottom, at.width, bottom);
-      }
+      if (bottom > 0 && style.borderBottomStyle !== 'none')
+        steps.push({
+          color: style.borderBottomColor,
+          h: bottom,
+          kind: 'rule',
+          w: at.width,
+          x: at.left - box.x,
+          y: at.bottom - bottom - box.y,
+        });
       const top = Number.parseFloat(style.borderTopWidth);
-      if (top > 0 && style.borderTopStyle !== 'none') {
-        ctx.fillStyle = style.borderTopColor;
-        ctx.fillRect(at.left, at.top, at.width, top);
-      }
+      if (top > 0 && style.borderTopStyle !== 'none')
+        steps.push({
+          color: style.borderTopColor,
+          h: top,
+          kind: 'rule',
+          w: at.width,
+          x: at.left - box.x,
+          y: at.top - box.y,
+        });
       for (const child of node.childNodes) walk(child);
     };
     walk(host);
@@ -164,26 +178,58 @@ async function layOut(latex: string): Promise<Drawn> {
           ? el
           : clipOf(el.parentElement);
       })(shape.parentElement)?.getBoundingClientRect();
-      ctx.save();
-      if (cut) {
-        ctx.beginPath();
-        ctx.rect(cut.left, cut.top, cut.width, cut.height);
-        ctx.clip();
-      }
-      ctx.drawImage(image, at.left, at.top, at.width, at.height);
-      ctx.restore();
+      steps.push({
+        clip: cut
+          ? {
+              h: cut.height,
+              w: cut.width,
+              x: cut.left - box.x,
+              y: cut.top - box.y,
+            }
+          : null,
+        h: at.height,
+        image,
+        kind: 'shape',
+        w: at.width,
+        x: at.left - box.x,
+        y: at.top - box.y,
+      });
     }
-    return { canvas, h: box.height, w: box.width };
+    return { h: box.height, steps, w: box.width };
   } finally {
     host.remove();
   }
 }
 
-/** Lets go of every bitmap, when the board closes. */
+/** Draws a laid-out formula from the context's origin at its laid-out size. */
+function replay(ctx: CanvasRenderingContext2D, { steps }: Drawn) {
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+  for (const step of steps) {
+    if (step.kind === 'text') {
+      ctx.font = step.font;
+      ctx.fillStyle = step.color;
+      ctx.fillText(step.text, step.x, step.y);
+    } else if (step.kind === 'rule') {
+      ctx.fillStyle = step.color;
+      ctx.fillRect(step.x, step.y, step.w, step.h);
+    } else {
+      ctx.save();
+      if (step.clip) {
+        ctx.beginPath();
+        ctx.rect(step.clip.x, step.clip.y, step.clip.w, step.clip.h);
+        ctx.clip();
+      }
+      ctx.drawImage(step.image, step.x, step.y, step.w, step.h);
+      ctx.restore();
+    }
+  }
+}
+
+/** Forgets every laid-out formula, when the board closes. */
 export function forgetFormulas() {
   ready.clear();
   drawings.clear();
-  bitmapBytes = 0;
 }
 
 export function drawing(latex: string) {
@@ -191,17 +237,12 @@ export function drawing(latex: string) {
   if (!pending) {
     pending = layOut(latex).then(
       (drawn) => {
-        // Nothing is thrown out to make room: the renderer would draw it again, for
-        // ever, on a board with many formulas. Over budget stays a failed draw.
-        const bytes = drawn.canvas.width * drawn.canvas.height * 4;
-        if (bitmapBytes + bytes > BITMAP_BYTES_MAX) throw new OverBudget();
-        bitmapBytes += bytes;
         ready.set(latex, drawn);
         return drawn;
       },
       (error) => {
         // Not kept, so the next draw tries again.
-        if (!(error instanceof OverBudget)) drawings.delete(latex);
+        drawings.delete(latex);
         throw error;
       }
     );
@@ -285,7 +326,8 @@ const formulaRenderer: ElementRenderer<FormulaElementModel> = (
   // marking image is drawn light.
   if (renderer.getColorScheme() === ColorScheme.Dark)
     ctx.filter = 'invert(1) hue-rotate(180deg)';
-  ctx.drawImage(drawn.canvas, 0, 0, w, h);
+  ctx.scale(w / drawn.w, h / drawn.h);
+  replay(ctx, drawn);
   ctx.filter = 'none';
 };
 
@@ -301,6 +343,10 @@ class FormulaElementView extends GfxElementModelView<FormulaElementModel> {
 export const formulaExtensions = [
   ElementRendererExtension('formula', formulaRenderer),
   FormulaElementView,
+  // Resizing keeps the formula's shape, as AFFiNE does for images.
+  GfxViewInteractionExtension('formula', {
+    resizeConstraint: { lockRatio: true },
+  }),
 ];
 
 /** Every formula on the board is drawn, before the board becomes an image. One that
