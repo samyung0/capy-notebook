@@ -196,6 +196,8 @@ func (a *api) updateAssignment(ctx context.Context, in *updateAssignmentInput) (
 		return nil, assignmentError(err)
 	}
 	a.publishTodo(ctx, append(before, a.todoAudience(ctx, in.ID, false)...)...)
+	// A page taking it rereads: a moved or lifted No late due date moves its clock.
+	a.publishAssignmentUpdated(ctx, in.ID)
 	return &assignmentOutput{Body: res}, nil
 }
 

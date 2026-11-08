@@ -101,6 +101,14 @@ it('merges the Done pages, a class split across pages keeping its place', () => 
   expect(merged[0]?.items.map((a) => a.id)).toEqual(['1', '3']);
 });
 
+it('skips a Done row a later page repeats', () => {
+  const merged = mergeTodoPages([
+    { workspaces: [workspace('a', [row('1'), row('2')])] },
+    { workspaces: [workspace('a', [row('2'), row('3')])] },
+  ]);
+  expect(merged[0]?.items.map((a) => a.id)).toEqual(['1', '2', '3']);
+});
+
 it('keeps the classes and types the filter picks', () => {
   const classes = [
     workspace('a', [

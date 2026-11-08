@@ -33,7 +33,8 @@ type notificationEvent struct {
 	Status         string `json:"status,omitempty"`
 	// extraction: a Make a quiz run ended (Status done or failed).
 	ExtractionID string `json:"extractionId,omitempty"`
-	// assignment_closed: staff closed an assignment the user is taking.
+	// assignment_closed, assignment_republished, assignment_updated: staff
+	// closed, gave new questions to or edited an assignment the user is taking.
 	AssignmentID string `json:"assignmentId,omitempty"`
 	// todo: something on the user's To do changed; the event carries no rows.
 }
@@ -69,6 +70,12 @@ func (a *api) publishAssignmentClosed(ctx context.Context, id string) {
 // on the new.
 func (a *api) publishAssignmentRepublished(ctx context.Context, id string) {
 	a.tellRunningAttempts(ctx, id, "assignment_republished")
+}
+
+// publishAssignmentUpdated tells whoever is taking it that its settings
+// changed, so the page rereads the attempt (Epo 2026-11-08). Best effort.
+func (a *api) publishAssignmentUpdated(ctx context.Context, id string) {
+	a.tellRunningAttempts(ctx, id, "assignment_updated")
 }
 
 // todoAudience is whom publishTodo tells about an assignment: everyone it is

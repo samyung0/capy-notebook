@@ -112,8 +112,14 @@ function useBookmarks(attemptId: string) {
   return { marks, toggle };
 }
 
-/** The clock left, counted from the server's time at the read. */
-function useTimeLeft(deadlineAt: string | undefined, serverNow: string) {
+/** The clock left, counted from the server's time at the read. With `within`,
+ * it ticks each second only from that long before the end: until then it
+ * rechecks once a minute, which also survives a sleeping laptop. */
+function useTimeLeft(
+  deadlineAt: string | undefined,
+  serverNow: string,
+  within?: number
+) {
   const offset = useRef(Date.parse(serverNow) - Date.now());
   const left = useCallback(
     () =>
@@ -124,10 +130,26 @@ function useTimeLeft(deadlineAt: string | undefined, serverNow: string) {
   );
   const [ms, setMs] = useState(left);
   useEffect(() => {
+    // An end taken away (No late turned off) leaves no clock.
+    setMs(left());
     if (!deadlineAt) return;
-    const tick = setInterval(() => setMs(left()), 1000);
-    return () => clearInterval(tick);
-  }, [deadlineAt, left]);
+    let tick: ReturnType<typeof setInterval> | undefined;
+    let later: ReturnType<typeof setTimeout> | undefined;
+    const arm = () => {
+      const wait = within === undefined ? 0 : (left() ?? 0) - within;
+      if (wait > 0) {
+        later = setTimeout(arm, Math.min(wait, 60_000));
+        return;
+      }
+      setMs(left());
+      tick = setInterval(() => setMs(left()), 1000);
+    };
+    arm();
+    return () => {
+      clearTimeout(later);
+      clearInterval(tick);
+    };
+  }, [deadlineAt, left, within]);
   return ms;
 }
 
@@ -187,7 +209,8 @@ export function AssignmentTake({
   // It ends at the earlier of its time running out and a No late due date.
   const left = useTimeLeft(
     earliest(attempt.deadlineAt, attempt.closesAt),
-    attempt.now
+    attempt.now,
+    attempt.deadlineAt ? undefined : HOUR
   );
   const latest = useRef(answers);
   latest.current = answers;
@@ -339,6 +362,11 @@ export function AssignmentTake({
         if (event.type === 'assignment_republished') {
           reread();
           userToast({ title: m.assignment_questions_updated() });
+          return;
+        }
+        // Its settings changed: a moved due date moves the clock.
+        if (event.type === 'assignment_updated') {
+          reread();
           return;
         }
         onClosed();

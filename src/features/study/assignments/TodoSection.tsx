@@ -204,7 +204,8 @@ export function TodoRows({
       {shown.map((a) => {
         const isDone = !!a.mine?.done;
         const crossed = isDone && !doneTab;
-        const overdue = !isDone && !!a.mine?.missing && !!a.dueAt;
+        const overdue =
+          !doneTab && !isDone && !!a.dueAt && Date.parse(a.dueAt) <= Date.now();
         const meta = doneTab
           ? doneMeta(a)
           : a.dueAt
@@ -214,7 +215,8 @@ export function TodoRows({
             : null;
         return (
           <Row key={a.id}>
-            {a.kind === 'unmarked' && (
+            {/* Closed work takes no tick (Epo 2026-11-08). */}
+            {a.kind === 'unmarked' && !a.closedAt && (
               <span className="grid w-7 shrink-0 justify-items-start pl-1.5">
                 <Checkbox
                   aria-label={a.title}
@@ -254,6 +256,7 @@ export function TodoRows({
                 </>
               ) : (
                 <>
+                  {doneTab && !isDone && m.todo_closed()}
                   <span className="min-w-0">{a.title}</span>
                   {a.files.map((file) => (
                     <FileChip
@@ -297,7 +300,7 @@ function doneMeta(a: Assignment) {
     a.kind === 'marked' && a.mine?.waitingMarks
       ? m.todo_waiting_marks()
       : a.kind === 'marked' && a.mine?.mark !== undefined
-        ? `${formatPoints(a.mine.mark)}/${formatPoints(a.marks)}`
+        ? `${formatPoints(a.mine.mark)}/${formatPoints(a.mine.total ?? a.marks)}`
         : null,
     a.mine?.doneAt
       ? m.assignment_done_on({ date: dayLabel(a.mine.doneAt) })

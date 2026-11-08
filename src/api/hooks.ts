@@ -448,10 +448,14 @@ export function applyNotificationEvent(
   // Something on To do changed (Epo 2026-11-08): its lists and the nav dot.
   if (event.type === 'todo') {
     clearTimeout(todoTimer);
-    todoTimer = setTimeout(
-      () => void qc.invalidateQueries({ queryKey: qk.todo }),
-      1000
-    );
+    // The class Dashboards' To do reads each class's assignments.
+    todoTimer = setTimeout(() => {
+      void qc.invalidateQueries({ queryKey: qk.todo });
+      void qc.invalidateQueries({
+        predicate: ({ queryKey }) =>
+          queryKey[0] === 'workspace' && queryKey[3] === 'assignments',
+      });
+    }, 1000);
     return;
   }
   // A standalone file's ingest progress (no workspace to stream it on).
@@ -465,7 +469,8 @@ export function applyNotificationEvent(
   }
   if (
     event.type === 'assignment_closed' ||
-    event.type === 'assignment_republished'
+    event.type === 'assignment_republished' ||
+    event.type === 'assignment_updated'
   ) {
     for (const listener of assignmentListeners) listener(event);
     return;

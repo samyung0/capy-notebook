@@ -267,3 +267,13 @@ func (s *Store) TodoAudience(ctx context.Context, id string) (members, staff []s
 	}
 	return members, staff, rows.Err()
 }
+
+// AttemptUserID is whose attempt it is.
+func (s *Store) AttemptUserID(ctx context.Context, attemptID string) (string, error) {
+	var user string
+	err := s.pool.QueryRow(ctx, `SELECT user_id FROM attempts WHERE id=$1`, attemptID).Scan(&user)
+	if isNoRows(err) {
+		return "", ErrNotFound
+	}
+	return user, err
+}

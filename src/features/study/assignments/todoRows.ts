@@ -83,17 +83,23 @@ export function todoSections(workspaces: TodoWorkspace[], view: TodoView) {
 }
 
 /** The Done tab's pages as one list of classes, in the server's order: a class
- * split across pages keeps its first place and gathers its rows. */
+ * split across pages keeps its first place and gathers its rows. Pages go by
+ * offset, so a row a later page repeats (work that closed meanwhile shifts
+ * them) is skipped. */
 export function mergeTodoPages(pages: TodoDonePage[]) {
   const merged: TodoWorkspace[] = [];
   const at = new Map<string, number>();
+  const seen = new Set<string>();
   for (const page of pages)
     for (const w of page.workspaces) {
+      const items = w.items.filter((a) => !seen.has(a.id));
+      for (const a of items) seen.add(a.id);
+      if (items.length === 0) continue;
       const i = at.get(w.workspaceId);
       if (i === undefined) {
         at.set(w.workspaceId, merged.length);
-        merged.push({ ...w, items: [...w.items] });
-      } else merged[i]?.items.push(...w.items);
+        merged.push({ ...w, items });
+      } else merged[i]?.items.push(...items);
     }
   return merged;
 }
