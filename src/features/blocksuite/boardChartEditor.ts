@@ -26,7 +26,7 @@ import {
   pieCircle,
   SPOKES_MAX,
 } from './boardData';
-import { drawChip, openBoardEditor } from './boardEditorShell';
+import { drawChip, openBoardEditor, toolTip } from './boardEditorShell';
 import { clockAngle, snapTo, type Vec } from './boardGeometry';
 import { fillRow, mathsIcon } from './boardTools';
 
@@ -90,6 +90,11 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       commitLabel();
       settleZoom();
       cancelAnimationFrame(frame);
+    },
+    onShortcut: (key) => {
+      const found = tools.find((each) => each.key === key);
+      if (found) pick(found.id);
+      return !!found;
     },
     onUpdate: () => {
       drawControls();
@@ -508,20 +513,52 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     redraw();
   });
 
-  const tools: { icon: string; id: Tool; label: () => string }[] = [
-    ...(isBar
-      ? [{ icon: 'bars', id: 'draw' as const, label: m.drawing_board_bars }]
-      : [
-          { icon: 'pie', id: 'draw' as const, label: m.drawing_board_pie },
-          {
-            icon: 'fill',
-            id: 'fill' as const,
-            label: m.drawing_board_fill_slice,
-          },
-        ]),
-    { icon: 'label', id: 'label', label: m.drawing_board_chart_label },
-    { icon: 'erase', id: 'erase', label: m.drawing_board_erase_mark },
-  ];
+  /** With their keys, shown in their tooltips (Epo 2026-11-08). */
+  const tools: { icon: string; id: Tool; key: string; label: () => string }[] =
+    [
+      ...(isBar
+        ? [
+            {
+              icon: 'bars',
+              id: 'draw' as const,
+              key: 'D',
+              label: m.drawing_board_bars,
+            },
+          ]
+        : [
+            {
+              icon: 'pie',
+              id: 'draw' as const,
+              key: 'D',
+              label: m.drawing_board_pie,
+            },
+            {
+              icon: 'fill',
+              id: 'fill' as const,
+              key: 'F',
+              label: m.drawing_board_fill_slice,
+            },
+          ]),
+      {
+        icon: 'label',
+        id: 'label',
+        key: 'T',
+        label: m.drawing_board_chart_label,
+      },
+      {
+        icon: 'erase',
+        id: 'erase',
+        key: 'E',
+        label: m.drawing_board_erase_mark,
+      },
+    ];
+  const pick = (id: Tool) => {
+    commitLabel();
+    tool = id;
+    pointer = null;
+    drawControls();
+    redraw();
+  };
 
   const drawControls = () => {
     root.dataset.tool = tool;
@@ -590,21 +627,14 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
           }
           <div class="capy-plane-row">
             ${tools.map(
-              ({ icon, id, label }) =>
+              ({ icon, id, key, label }) =>
                 html`<button
                   aria-label=${label()}
                   aria-pressed=${tool === id}
-                  title=${label()}
                   type="button"
-                  @click=${() => {
-                    commitLabel();
-                    tool = id;
-                    pointer = null;
-                    drawControls();
-                    redraw();
-                  }}
+                  @click=${() => pick(id)}
                 >
-                  ${unsafeSVG(mathsIcon(icon))}
+                  ${unsafeSVG(mathsIcon(icon))} ${toolTip(label(), key)}
                 </button>`
             )}
           </div>

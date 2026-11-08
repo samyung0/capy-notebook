@@ -2,7 +2,7 @@ import { ThemeProvider } from '@blocksuite/affine/shared/services';
 import type { GfxController } from '@blocksuite/affine/std/gfx';
 import { HistoryExtension } from '@blocksuite/affine/store';
 import { Redo03Icon, Undo03Icon } from '@hugeicons/core-free-icons';
-import { render } from 'lit';
+import { html, render } from 'lit';
 import { m } from '@/i18n';
 import { BoardMenu, type MenuZoom } from './boardMenu';
 
@@ -26,6 +26,8 @@ export function openBoardEditor(
     onLeave: () => void;
     /** Escape's own use, if it has one right now. */
     onEscape: () => boolean;
+    /** A tool's letter key (`P`), true when it was one. */
+    onShortcut?: (key: string) => boolean;
     onUpdate: () => void;
   }
 ) {
@@ -140,7 +142,12 @@ export function openBoardEditor(
     } else if (command && key === 'z') {
       event.preventDefault();
       gfx.doc.undo();
-    }
+    } else if (
+      !(command || event.altKey || event.shiftKey) &&
+      event.code.startsWith('Key') &&
+      hooks.onShortcut?.(event.code.slice(3))
+    )
+      event.preventDefault();
   };
   window.addEventListener('keydown', onKey, true);
   root.addEventListener('keydown', (event) => event.stopPropagation());
@@ -205,3 +212,13 @@ export function drawChip(
   ctx.fillStyle = '#fff';
   ctx.fillText(text, chipX + 7, chipY + 11);
 }
+
+/** AFFiNE's tooltip with its shortcut, as the board's toolbar shows them, for a button
+ * in an open card. It goes inside the button. */
+export const toolTip = (tip: string, key: string) =>
+  html`<affine-tooltip tip-position="top" .offsetY=${10}>
+    <affine-tooltip-content-with-shortcut
+      data-tip=${tip}
+      data-shortcut=${key}
+    ></affine-tooltip-content-with-shortcut>
+  </affine-tooltip>`;

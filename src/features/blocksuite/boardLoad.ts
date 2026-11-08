@@ -108,6 +108,10 @@ function elementProblem(fields: Fields): string | null {
           (mark?.kind !== 'formula' ||
             (typeof mark.latex === 'string' &&
               mark.latex.length <= LATEX_MAX)) &&
+          // A vector runs from one point to one other.
+          (mark?.kind !== 'vector' ||
+            (listUpTo(mark.points, 2) &&
+              (mark.points as unknown[]).length === 2)) &&
           // An ellipse is drawn from exactly its four handles.
           (mark?.kind !== 'ellipse' ||
             (listUpTo(mark.points, 4) &&

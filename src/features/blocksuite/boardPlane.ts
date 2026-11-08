@@ -267,6 +267,28 @@ export function traceMark(
   else for (const [x, y] of mark.points.slice(1)) ctx.lineTo(X(x), Y(y));
 }
 
+/** A vector's arrowhead, filled with the context's fill, at its second point. */
+export function arrowHead(
+  ctx: CanvasRenderingContext2D,
+  mark: Extract<Mark, { points: Vec[] }>,
+  X: (x: number) => number,
+  Y: (y: number) => number
+) {
+  const [from, to] = mark.points.slice(-2);
+  if (!(from && to)) return;
+  const [x, y] = [X(to[0]), Y(to[1])];
+  const turn = Math.atan2(y - Y(from[1]), x - X(from[0]));
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  for (const side of [-1, 1])
+    ctx.lineTo(
+      x - ARROW_LENGTH * Math.cos(turn + side * ARROW_SPREAD),
+      y - ARROW_LENGTH * Math.sin(turn + side * ARROW_SPREAD)
+    );
+  ctx.closePath();
+  ctx.fill();
+}
+
 /** The marks; a line's, curve's or ellipse's points only where `shown` names it (Epo
  * 2026-11-08: the editor shows them under the pointer), a single point always. */
 function drawMarks(
@@ -310,12 +332,20 @@ function drawMarks(
       ctx.lineWidth = 2;
       traceMark(ctx, mark, X, Y);
       ctx.stroke();
+      if (mark.kind === 'vector') {
+        ctx.fillStyle = paper.ink;
+        arrowHead(ctx, mark, X, Y);
+      }
       if (shown.has(mark.id)) for (const point of mark.points) dot(point);
     }
   }
 }
 
 const NONE: ReadonlySet<string> = new Set();
+
+/** A vector's arrowhead, in screen pixels: a mark keeps its size as the plane zooms. */
+const ARROW_LENGTH = 12;
+const ARROW_SPREAD = Math.PI / 7;
 
 /** A formula on a plane at 18 px, as KaTeX lays it out at 24, so it reads beside a
  * label's 15 px text; it keeps that size as the plane zooms. */

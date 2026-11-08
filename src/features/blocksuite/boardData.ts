@@ -13,12 +13,17 @@ export type Color =
  * each click one undo step. A label is text centred on its point (Epo 2026-11-08). An
  * ellipse (Epo 2026-11-08) is upright, held by its four handles: right, top, left and
  * bottom, so it starts as a circle and its handles stretch it. A formula (Epo
- * 2026-11-08) is LaTeX centred on its point, drawn by KaTeX. */
+ * 2026-11-08) is LaTeX centred on its point, drawn by KaTeX. A vector is a line
+ * from its first point to its second, with an arrowhead there. */
 export type Mark =
   | { id: string; kind: 'dot'; at: Vec }
   | { id: string; kind: 'label'; at: Vec; text: string }
   | { id: string; kind: 'formula'; at: Vec; latex: string }
-  | { id: string; kind: 'line' | 'curve' | 'ellipse'; points: Vec[] };
+  | {
+      id: string;
+      kind: 'line' | 'vector' | 'curve' | 'ellipse';
+      points: Vec[];
+    };
 
 /** The points a mark is drawn through, or at. */
 export const pointsOf = (mark: Mark): Vec[] =>
@@ -75,7 +80,7 @@ export function pathOf(
   perSegment = 16
 ): Vec[] {
   if (mark.kind === 'curve') return smoothThrough(mark.points, perSegment);
-  if (mark.kind === 'line') return mark.points;
+  if (mark.kind === 'line' || mark.kind === 'vector') return mark.points;
   const [[right, cy], [cx, top]] = mark.points;
   const [rx, ry] = [right - cx, top - cy];
   const steps = perSegment * 4;

@@ -90,9 +90,10 @@ import {
   formulaExtensions,
   formulasDrawn,
   mountSymbolRow,
+  openBlankFormula,
 } from './boardFormula';
 import { forgetFormulas } from './boardFormulaDraw';
-import { closeUp, IMAGE_SIDE_MAX } from './boardGeometry';
+import { closeUp, IMAGE_SIDE_MAX, type Vec } from './boardGeometry';
 import { addPlane, planeExtensions, planeMarks } from './boardPlane';
 import './boardChartEditor';
 import { closeBoardEditor } from './boardEditorShell';
@@ -103,6 +104,7 @@ import {
   boardToolbar,
   noLatexMarkdown,
   outlineNewShapes,
+  placePiece,
   StampTool,
   setBoardPreview,
   shapeButtonTool,
@@ -417,6 +419,30 @@ export function mountDrawingBoard(
   const zoomUpdates = gfx.viewport.viewportUpdated.subscribe(
     () => menu.open && menu.draw()
   );
+  // The slots' keys (their tooltips show them): a card in the view's middle. Off while
+  // typing anywhere, while a card is open (it takes the keys), and out of sight.
+  const slotKeys = (event: KeyboardEvent) => {
+    if (readOnly || event.metaKey || event.ctrlKey || event.altKey) return;
+    if (!board?.checkVisibility() || board.hasAttribute('data-editor-open'))
+      return;
+    const [target] = event.composedPath();
+    if (
+      target instanceof Element &&
+      target.closest('input, textarea, [contenteditable="true"], math-field')
+    )
+      return;
+    const centre: Vec = [gfx.viewport.centerX, gfx.viewport.centerY];
+    const piece = {
+      KeyB: event.shiftKey ? 'pie' : 'bar',
+      KeyG: event.shiftKey ? 'polar' : 'cart',
+    }[event.code] as 'pie' | 'bar' | 'polar' | 'cart' | undefined;
+    if (piece) placePiece(gfx, piece, centre);
+    else if (event.code === 'KeyM' && !event.shiftKey) openBlankFormula(gfx);
+    else return;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  document.addEventListener('keydown', slotKeys);
   // A double click types on the canvas, so the label is in the exported image.
   store.get(FeatureFlagService).setFlag('enable_edgeless_text', false);
   store.get(FeatureFlagService).setFlag('enable_note_menu_media', false);
@@ -693,6 +719,7 @@ export function mountDrawingBoard(
       subscription.unsubscribe();
       historyUpdates.unsubscribe();
       zoomUpdates.unsubscribe();
+      document.removeEventListener('keydown', slotKeys);
       menu.dispose();
       if (onChange) store.spaceDoc.off('update', onChange);
       symbols?.unmount();

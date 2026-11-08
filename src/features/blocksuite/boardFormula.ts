@@ -186,6 +186,9 @@ function openEditor(gfx: GfxController, model?: FormulaElementModel) {
   });
 }
 
+/** An empty formula card, for the M key: Save puts it in the view's middle. */
+export const openBlankFormula = (gfx: GfxController) => openEditor(gfx);
+
 /** The formula card in the middle of the board, holding `latex`. Save hands back what
  * was typed once KaTeX has laid it out (an empty field hands back ''), Cancel or a
  * press elsewhere nothing. A plane's formulas use it too. */

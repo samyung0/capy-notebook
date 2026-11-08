@@ -4450,6 +4450,11 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
 - **Pen strokes** keep the moves inside BlockSuite's 2 px drag threshold, and a stroke
   ending back near its start (a closed circle) is no click, so it leaves no dot (local
   change 25, in the pointer controller, so every tool's drags and clicks behave this way).
+- **Slot keys and tooltips** (Epo 2026-11-08): each piece's tooltip names it with its
+  key, the slot's between pieces. G puts a coordinate plane in the view's middle, ⇧G a
+  polar one, B a bar chart, ⇧B a pie chart, and M opens an empty formula card (a
+  formula piece starts filled in, so has no key); none of these is one of AFFiNE's,
+  and they're off while typing, while a card is open and with the board out of sight.
 - **The ☰ menu** (`boardMenu.ts`, Epo 2026-11-08) sits top right, left of any Done the
   page around the board places (its width through `--capy-board-done-width`), so the
   bottom row holds only the toolbar: Undo, Redo, Fit to screen, then a row of −, the
@@ -4500,7 +4505,12 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   goes); KaTeX's layout (`boardFormulaDraw.ts`, loaded only once a formula is on the
   board or a plane) is replayed at 18 px, inverted on dark paper, keeping its size as
   the plane zooms. Move drags it whole; Erase takes it. Previews leave formulas out, as
-  they can't lay them out (Epo: none rather than broken); the marking image has them. Ellipse (Epo 2026-11-08, square
+  they can't lay them out (Epo: none rather than broken); the marking image has them.
+  Vector (Epo 2026-11-08) is a line of two clicks with an arrowhead (12 px, kept as
+  the plane zooms) at its second point, a `vector` mark of two points. Each tool's
+  button shows AFFiNE's tooltip with its key, and the open card takes those keys: V
+  Move, P Point, L Line, A Vector, C Curve, O Ellipse, T Label, F Formula, E Erase (a
+  chart: D its bars or slices, F Fill, T Label, E Erase). Ellipse (Epo 2026-11-08, square
   planes only): a press and drag sizes a circle from its middle (the chip shows `r`), a
   click places one a grid step round. It's an `ellipse` mark of four handles (right,
   top, left, bottom); pulling one sets the width or height about the middle, so it

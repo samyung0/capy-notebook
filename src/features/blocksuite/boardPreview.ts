@@ -325,6 +325,7 @@ function drawPlane(box: Box, fields: Fields, pen: Pen) {
   const axes = `M${num(X(0))} ${num(y)}V${num(y + h)}M${num(x)} ${num(Y(0))}H${num(x + w)}`;
   const ink = Math.max(2, pen.pixel);
   let traces = '';
+  let heads = '';
   let dots = '';
   const dot = ([u, v]: Vec) => {
     dots += `M${num(X(u))} ${num(Y(v))}h0`;
@@ -341,8 +342,18 @@ function drawPlane(box: Box, fields: Fields, pen: Pen) {
       .map(([u, v], i) => `${i ? 'L' : 'M'}${num(X(u))} ${num(Y(v))}`)
       .join('');
     // A line's points show only in the editor, a single point always.
+    const [from, to] = mark.points.slice(-2);
+    if (mark.kind === 'vector' && from && to) {
+      // Its arrowhead, as the card draws it, never under four preview pixels.
+      const [tx, ty] = [X(to[0]), Y(to[1])];
+      const turn = Math.atan2(ty - Y(from[1]), tx - X(from[0]));
+      const size = Math.max(12, pen.pixel * 4);
+      const side = (sign: number) =>
+        `${num(tx - size * Math.cos(turn + (sign * Math.PI) / 7))} ${num(ty - size * Math.sin(turn + (sign * Math.PI) / 7))}`;
+      heads += `M${num(tx)} ${num(ty)}L${side(-1)}L${side(1)}Z`;
+    }
   }
-  return `<svg x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" viewBox="${num(x)} ${num(y)} ${num(w)} ${num(h)}" overflow="hidden">${rect(box, '#fff', 'none', 0)}${grid ? `<path d="${grid}" stroke="#dededb" stroke-width="${num(Math.max(1, pen.pixel))}"/>` : ''}<path d="${axes}" stroke="#6f6f6c" stroke-width="${num(Math.max(1.5, pen.pixel))}"/>${traces ? `<path d="${traces}" stroke="${INK}" stroke-width="${num(ink)}"/>` : ''}${dots ? `<path d="${dots}" stroke="${INK}" stroke-width="${num(Math.max(9, pen.pixel * 2))}"/>` : ''}</svg>${rect(box, 'none', '#d9d9d6', Math.max(1, pen.pixel))}`;
+  return `<svg x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" viewBox="${num(x)} ${num(y)} ${num(w)} ${num(h)}" overflow="hidden">${rect(box, '#fff', 'none', 0)}${grid ? `<path d="${grid}" stroke="#dededb" stroke-width="${num(Math.max(1, pen.pixel))}"/>` : ''}<path d="${axes}" stroke="#6f6f6c" stroke-width="${num(Math.max(1.5, pen.pixel))}"/>${traces ? `<path d="${traces}" stroke="${INK}" stroke-width="${num(ink)}"/>` : ''}${heads ? `<path d="${heads}" fill="${INK}" stroke="none"/>` : ''}${dots ? `<path d="${dots}" stroke="${INK}" stroke-width="${num(Math.max(9, pen.pixel * 2))}"/>` : ''}</svg>${rect(box, 'none', '#d9d9d6', Math.max(1, pen.pixel))}`;
 }
 
 /** Bars and the axes, or the circle and its spokes. */

@@ -16,11 +16,12 @@ import {
   pointsOf,
   pullEllipse,
 } from './boardData';
-import { drawChip, openBoardEditor } from './boardEditorShell';
+import { drawChip, openBoardEditor, toolTip } from './boardEditorShell';
 import { openFormulaCard } from './boardFormula';
 import { laidOut } from './boardFormulaDraw';
 import { minorStep, snapTo, tidy, type Vec } from './boardGeometry';
 import {
+  arrowHead,
   drawPlane,
   fitCard,
   formulaBox,
@@ -37,6 +38,7 @@ type Tool =
   | 'move'
   | 'point'
   | 'line'
+  | 'vector'
   | 'curve'
   | 'ellipse'
   | 'label'
@@ -62,15 +64,27 @@ const VIEW_MAX = 1e9;
  * what hasn't, as AFFiNE removes a connector it cancels. */
 const whole = (mark: Mark) => !('points' in mark) || mark.points.length > 1;
 
-const TOOLS: { icon: string; id: Tool; label: () => string }[] = [
-  { icon: 'move', id: 'move', label: m.drawing_board_move_plane },
-  { icon: 'point', id: 'point', label: m.drawing_board_point },
-  { icon: 'line', id: 'line', label: m.drawing_board_line_through_points },
-  { icon: 'curve', id: 'curve', label: m.drawing_board_curve },
-  { icon: 'ellipse', id: 'ellipse', label: m.drawing_board_ellipse },
-  { icon: 'label', id: 'label', label: m.drawing_board_plane_label },
-  { icon: 'formula', id: 'formula', label: m.drawing_board_plane_formula },
-  { icon: 'erase', id: 'erase', label: m.drawing_board_erase_mark },
+/** With their keys, shown in their tooltips (Epo 2026-11-08). */
+const TOOLS: { icon: string; id: Tool; key: string; label: () => string }[] = [
+  { icon: 'move', id: 'move', key: 'V', label: m.drawing_board_move_plane },
+  { icon: 'point', id: 'point', key: 'P', label: m.drawing_board_point },
+  {
+    icon: 'line',
+    id: 'line',
+    key: 'L',
+    label: m.drawing_board_line_through_points,
+  },
+  { icon: 'vector', id: 'vector', key: 'A', label: m.drawing_board_vector },
+  { icon: 'curve', id: 'curve', key: 'C', label: m.drawing_board_curve },
+  { icon: 'ellipse', id: 'ellipse', key: 'O', label: m.drawing_board_ellipse },
+  { icon: 'label', id: 'label', key: 'T', label: m.drawing_board_plane_label },
+  {
+    icon: 'formula',
+    id: 'formula',
+    key: 'F',
+    label: m.drawing_board_plane_formula,
+  },
+  { icon: 'erase', id: 'erase', key: 'E', label: m.drawing_board_erase_mark },
 ];
 
 /** How far a mark is from a point on the plane, in plane units. */
@@ -156,6 +170,11 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       });
       if (model.fit) fitCard(model);
       cancelAnimationFrame(frame);
+    },
+    onShortcut: (key) => {
+      const found = tools().find((each) => each.key === key);
+      if (found) pick(found.id);
+      return !!found;
     },
     onUpdate: () => {
       drawControls();
@@ -296,6 +315,10 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
         traceMark(ctx, mark, ...screenAxes());
         ctx.stroke();
       }
+      if (mark.kind === 'vector') {
+        ctx.fillStyle = BLUE;
+        arrowHead(ctx, mark, ...screenAxes());
+      }
     }
     if (mark.kind === 'formula') {
       const drawn = laidOut(mark.latex);
@@ -387,15 +410,13 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
         : snapped(pointer);
     const open = openMark();
     if (open && 'points' in open) {
-      traceMark(
-        ctx,
+      const next =
         open.kind === 'curve'
           ? { ...open, points: [...open.points, at] }
-          : { ...open, points: [...open.points.slice(-1), at] },
-        X,
-        Y
-      );
+          : { ...open, points: [...open.points.slice(-1), at] };
+      traceMark(ctx, next, X, Y);
       ctx.stroke();
+      if (open.kind === 'vector') arrowHead(ctx, next, X, Y);
     }
     if (sizing?.r) {
       // The circle being sized, and its radius.
@@ -480,7 +501,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     const open = openMark();
     if (tool === 'point') add({ at, id: newId(), kind: 'dot' });
     else if (tool === 'ellipse') addCircle(at, tickStep(view.ppu));
-    else if (tool === 'line' || tool === 'curve') {
+    else if (tool === 'line' || tool === 'vector' || tool === 'curve') {
       if (open?.kind === tool) {
         const last = open.points.at(-1);
         if (last?.[0] === at[0] && last[1] === at[1]) {
@@ -488,11 +509,11 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
           return;
         }
         replaceOpen({ ...open, points: [...open.points, at] });
-        // A line ends at its second point, a curve once it closes on its first.
         const [first] = open.points;
         const closes =
           open.points.length > 2 && first[0] === at[0] && first[1] === at[1];
-        if (tool === 'line' || closes) finish();
+        // A line or vector ends at its second point, a curve once it closes on its first.
+        if (tool !== 'curve' || closes) finish();
         return;
       }
       if (model.marks.length >= MARKS_MAX) return;
@@ -791,6 +812,16 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     redraw();
   });
 
+  // Upright ellipses belong to x and y, not to rings and spokes.
+  const tools = () =>
+    TOOLS.filter(({ id }) => !(view.polar && id === 'ellipse'));
+  const pick = (id: Tool) => {
+    commitLabel();
+    finish();
+    hover = null;
+    tool = id;
+    drawControls();
+  };
   const drawControls = () => {
     root.dataset.tool = tool;
     const open = openMark();
@@ -830,25 +861,15 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
         }
         <div class="capy-plane-tools">
           <div class="capy-plane-row">
-            ${TOOLS.filter(
-              // Upright ellipses belong to x and y, not to rings and spokes.
-              ({ id }) => !(view.polar && id === 'ellipse')
-            ).map(
-              ({ icon, id, label }) =>
+            ${tools().map(
+              ({ icon, id, key, label }) =>
                 html`<button
                   aria-label=${label()}
                   aria-pressed=${tool === id}
-                  title=${label()}
                   type="button"
-                  @click=${() => {
-                    commitLabel();
-                    finish();
-                    hover = null;
-                    tool = id;
-                    drawControls();
-                  }}
+                  @click=${() => pick(id)}
                 >
-                  ${unsafeSVG(mathsIcon(icon))}
+                  ${unsafeSVG(mathsIcon(icon))} ${toolTip(label(), key)}
                 </button>`
             )}
           </div>

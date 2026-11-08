@@ -43,7 +43,7 @@ import {
 } from '@blocksuite/affine/widgets/edgeless-toolbar';
 import { Pen01Icon } from '@hugeicons/core-free-icons';
 import { css, html, LitElement, nothing, svg, type TemplateResult } from 'lit';
-import { property } from 'lit/decorators.js';
+import { property, state } from 'lit/decorators.js';
 import { classMap } from 'lit/directives/class-map.js';
 import { styleMap } from 'lit/directives/style-map.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
@@ -799,6 +799,8 @@ const ICONS: Record<string, string> = {
     '<path d="M6 21V3M6 18h15M3.5 5.5 6 3l2.5 2.5M18.5 15.5 21 18l-2.5 2.5M6 13h1.5M6 8h1.5M11 18v-1.5M16 18v-1.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
   point:
     '<path d="M12 3v5M12 16v5M3 12h5M16 12h5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="12" r="2.6" fill="currentColor"/>',
+  vector:
+    '<path d="M5 19 17.5 6.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M20 4l-1.4 6.6-5.2-5.2Z" fill="currentColor"/><circle cx="5" cy="19" r="2.2" fill="currentColor"/>',
 };
 
 /** A Hugeicons icon's data as an SVG, for the board's Lit templates. */
@@ -992,6 +994,20 @@ type Piece = {
   y: number;
 };
 
+/** Each piece's tooltip, with its shortcut where it has one (Epo 2026-11-08). The keys
+ * place the card in the view's middle. A formula piece starts its card filled in, so
+ * it has no key: M (the slot's) opens an empty one. */
+const PIECE_TIPS: Record<PieceKind, { key?: string; tip: () => string }> = {
+  bar: { key: 'B', tip: m.drawing_board_bar_chart },
+  cart: { key: 'G', tip: m.drawing_board_coordinate_plane },
+  deriv: { tip: m.drawing_board_derivative },
+  int: { tip: m.drawing_board_integral },
+  pie: { key: '⇧ B', tip: m.drawing_board_pie_chart },
+  polar: { key: '⇧ G', tip: m.drawing_board_polar_plane },
+  sqrt: { tip: m.drawing_board_square_root },
+  sum: { tip: m.drawing_board_sum },
+};
+
 /** What each Formulas piece starts its card with. */
 const FORMULA_STARTS: Partial<Record<PieceKind, string>> = {
   deriv: String.raw`\frac{d}{dx}f(x)`,
@@ -1118,7 +1134,7 @@ const pieceArt = (piece: Piece) =>
   );
 
 /** Puts down the card a piece stands for, centred where it was dropped. */
-function placePiece(gfx: GfxController, kind: PieceKind, [cx, cy]: Vec) {
+export function placePiece(gfx: GfxController, kind: PieceKind, [cx, cy]: Vec) {
   const centred = (w: number, h: number) =>
     new Bound(cx - w / 2, cy - h / 2, w, h);
   if (kind === 'cart' || kind === 'polar') {
@@ -1214,7 +1230,12 @@ abstract class CapyPieceSlot extends EdgelessToolbarToolMixin(
   }
 
   protected abstract pieces: Piece[];
-  protected abstract name(): string;
+  /** The slot's own tooltip, between its pieces. */
+  protected abstract slotTip: { key: string; tip: () => string };
+
+  /** The piece under the pointer, which the tooltip names. */
+  @state()
+  private accessor hovered: PieceKind | null = null;
 
   /** A mouse: a click picks a piece up to carry. */
   private drag: EdgelessDraggableElementController<Piece> | undefined;
@@ -1258,8 +1279,16 @@ abstract class CapyPieceSlot extends EdgelessToolbarToolMixin(
       : this.drag?.states;
     const { cancelled, dragOut, draggingElement } = states ?? {};
     const held = draggingElement?.data.kind;
+    const shown = this.hovered ? PIECE_TIPS[this.hovered] : this.slotTip;
     return html`<edgeless-toolbar-button
-      .tooltip=${held ? '' : this.name()}
+      .tooltip=${
+        held
+          ? ''
+          : html`<affine-tooltip-content-with-shortcut
+              data-tip=${shown.tip()}
+              data-shortcut=${shown.key ?? ''}
+            ></affine-tooltip-content-with-shortcut>`
+      }
       .tooltipOffset=${5}
     >
       <div class="box"><div class="slot">
@@ -1291,6 +1320,12 @@ abstract class CapyPieceSlot extends EdgelessToolbarToolMixin(
             class=${classMap({ cancel: isHeld && !dragOut, piece: true })}
             data-kind=${piece.kind}
             style=${styleMap({ ...vars, opacity: isHeld ? '0' : '1' })}
+            @mouseenter=${() => {
+              this.hovered = piece.kind;
+            }}
+            @mouseleave=${() => {
+              this.hovered = null;
+            }}
             @click=${(event: MouseEvent) => event.stopPropagation()}
             @mousedown=${(event: MouseEvent) =>
               this.drag?.onMouseDown(event, {
@@ -1316,23 +1351,17 @@ abstract class CapyPieceSlot extends EdgelessToolbarToolMixin(
 
 class CapyGraphSlot extends CapyPieceSlot {
   protected pieces = GRAPH_PIECES;
-  protected name() {
-    return m.drawing_board_graphs();
-  }
+  protected slotTip = { key: 'G', tip: m.drawing_board_graphs };
 }
 
 class CapyChartSlot extends CapyPieceSlot {
   protected pieces = CHART_PIECES;
-  protected name() {
-    return m.drawing_board_charts();
-  }
+  protected slotTip = { key: 'B', tip: m.drawing_board_charts };
 }
 
 class CapyFormulaSlot extends CapyPieceSlot {
   protected pieces = FORMULA_PIECES;
-  protected name() {
-    return m.drawing_board_formulas();
-  }
+  protected slotTip = { key: 'M', tip: m.drawing_board_formulas };
 }
 
 const NEVER_MATCHES = /(?!)/;
