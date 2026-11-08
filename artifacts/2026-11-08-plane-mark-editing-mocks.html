@@ -1,0 +1,811 @@
+<title>Plane mark editing</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fustat:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one column of three live plane editors (A, B, C), each with its rules beside
+   a short "try" list, then a comparison table. Colours copy the board's own paper. */
+:root {
+  --bg: #f7f5f8;
+  --fg: #1d1d1f;
+  --muted: #66666d;
+  --rule: #e3e1e6;
+  --frost-a: #e9dcf3;
+  --frost-b: #f6e1e8;
+  --paper: rgba(255, 255, 255, 0.5);
+  --minor: #f1f1ef;
+  --major: #dededb;
+  --axis: #6f6f6c;
+  --number: #55555b;
+  --ink: #000000;
+  --blue: #1e96eb;
+  --blue-soft: rgba(30, 150, 235, 0.14);
+  --chip-bg: #111111;
+  --chip-fg: #ffffff;
+  --panel: #ffffff;
+  --panel-edge: rgba(0, 0, 0, 0.1);
+  --hover: rgba(0, 0, 0, 0.05);
+  --done-bg: #111111;
+  --done-fg: #ffffff;
+  --pick: #e8f4fd;
+  --font: "Fustat", "Helvetica Neue", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141416; --fg: #ececef; --muted: #a2a2aa; --rule: #2c2c31;
+    --frost-a: #2a2135; --frost-b: #33232c; --paper: rgba(37, 37, 37, 0.5);
+    --minor: #2e2e2e; --major: #3a3a3a; --axis: #9a9a9a; --number: #a6a6ab;
+    --ink: #ffffff; --blue: #45aaf2; --blue-soft: rgba(69, 170, 242, 0.18);
+    --chip-bg: #f2f2f2; --chip-fg: #111111; --panel: #232326;
+    --panel-edge: rgba(255, 255, 255, 0.1); --hover: rgba(255, 255, 255, 0.07);
+    --done-bg: #f2f2f2; --done-fg: #111111; --pick: #1f3546;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141416; --fg: #ececef; --muted: #a2a2aa; --rule: #2c2c31;
+  --frost-a: #2a2135; --frost-b: #33232c; --paper: rgba(37, 37, 37, 0.5);
+  --minor: #2e2e2e; --major: #3a3a3a; --axis: #9a9a9a; --number: #a6a6ab;
+  --ink: #ffffff; --blue: #45aaf2; --blue-soft: rgba(69, 170, 242, 0.18);
+  --chip-bg: #f2f2f2; --chip-fg: #111111; --panel: #232326;
+  --panel-edge: rgba(255, 255, 255, 0.1); --hover: rgba(255, 255, 255, 0.07);
+  --done-bg: #f2f2f2; --done-fg: #111111; --pick: #1f3546;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.5 var(--font);
+}
+main {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding-block: 32px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+h1, h2 { margin: 0; text-wrap: balance; font-weight: 700; }
+h1 { font-size: 26px; line-height: 1.2; }
+h2 { font-size: 18px; line-height: 1.3; display: flex; gap: 10px; align-items: baseline; }
+h2 .tag {
+  font-size: 12.5px; font-weight: 600; letter-spacing: 0.04em;
+  color: var(--blue);
+}
+p { margin: 0; max-width: 68ch; }
+.muted { color: var(--muted); }
+header { display: flex; flex-direction: column; gap: 8px; }
+section { display: flex; flex-direction: column; gap: 14px; }
+.head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.reset {
+  font: 600 13px var(--font); color: var(--fg); background: transparent;
+  border: 1px solid var(--rule); border-radius: 6px; height: 32px; padding: 0 12px; cursor: pointer;
+}
+.reset:hover { background: var(--hover); }
+.reset:focus-visible, .frame:focus-visible, .tool:focus-visible, .top button:focus-visible, .bin:focus-visible, .menu button:focus-visible {
+  outline: 2px solid var(--blue); outline-offset: 2px;
+}
+.split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+@media (min-width: 900px) { .split { grid-template-columns: minmax(0, 1fr) 260px; } }
+.rules { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.rules ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+.rules .label { font-size: 12.5px; font-weight: 600; color: var(--muted); letter-spacing: 0.04em; }
+
+/* The frame stands in for the workspace panel: frost over the page frame, then the
+   editor's half see-through paper on top. */
+.frame {
+  position: relative;
+  height: 440px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: linear-gradient(135deg, var(--frost-a), var(--frost-b));
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+@media (max-width: 600px) { .frame { height: 400px; } }
+.frame canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.top { position: absolute; top: 8px; right: 8px; display: flex; gap: 6px; align-items: center; }
+.top button {
+  all: unset; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;
+  height: 40px; border-radius: 8px; cursor: pointer;
+}
+.top .menu-button {
+  width: 40px; background: var(--panel); border: 1px solid var(--panel-edge);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 8%); color: var(--fg);
+}
+.top .done {
+  padding: 0 16px; font: 600 14px var(--font); background: var(--done-bg); color: var(--done-fg);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 14%);
+}
+.menu {
+  position: absolute; top: 54px; right: 8px; min-width: 150px; padding: 4px;
+  background: var(--panel); border: 1px solid var(--panel-edge); border-radius: 8px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 8%); display: flex; flex-direction: column;
+}
+.menu button {
+  all: unset; box-sizing: border-box; height: 34px; padding: 0 10px; border-radius: 6px;
+  font: 500 14px var(--font); color: var(--fg); cursor: pointer; display: flex; align-items: center; gap: 8px;
+}
+.menu button:hover { background: var(--hover); }
+.menu button:disabled { opacity: 0.4; cursor: default; background: none; }
+.tools {
+  position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 2px; padding: 4px; max-width: calc(100% - 16px); overflow-x: auto;
+  background: var(--panel); border: 1px solid var(--panel-edge); border-radius: 8px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
+}
+.tool {
+  all: unset; box-sizing: border-box; width: 40px; height: 40px; flex: none; border-radius: 6px;
+  display: inline-flex; align-items: center; justify-content: center; color: var(--fg); cursor: pointer;
+}
+.tool:hover { background: var(--hover); }
+.tool[aria-pressed="true"] { color: var(--blue); background: var(--hover); }
+.tool[aria-disabled="true"] { opacity: 0.35; cursor: default; }
+.tool.new { box-shadow: inset 0 0 0 1.5px var(--blue); }
+.tool svg, .top svg, .bin svg, .menu svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.menu svg { width: 18px; height: 18px; }
+.bin {
+  all: unset; position: absolute; box-sizing: border-box; width: 34px; height: 34px; border-radius: 6px;
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  background: var(--panel); color: var(--fg); border: 1px solid var(--panel-edge);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 10%);
+}
+.bin:hover { color: #e03131; }
+.bin svg { width: 18px; height: 18px; }
+
+table { border-collapse: collapse; width: 100%; min-width: 640px; }
+.table-wrap { overflow-x: auto; }
+th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--rule); font-size: 13.5px; }
+th { font-size: 12.5px; color: var(--muted); font-weight: 600; letter-spacing: 0.04em; }
+td:first-child { color: var(--muted); width: 22%; }
+.pick { background: var(--pick); }
+kbd {
+  font: 500 12px var(--font); padding: 1px 6px; border: 1px solid var(--rule); border-bottom-width: 2px;
+  border-radius: 4px; background: var(--panel);
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<main>
+  <header>
+    <h1>Moving marks on a plane</h1>
+    <p class="muted">Today the open plane only adds and erases marks: a wrong point means erasing and drawing again. Three ways to pick up a point, a line, a curve or a label and move it. Each plane below works: drag, zoom with the wheel or a pinch, and use the ☰ menu's Undo.</p>
+  </header>
+
+  <section id="a">
+    <div class="head">
+      <h2><span class="tag">A</span>Move picks up marks</h2>
+      <button class="reset" type="button" data-reset="a">Reset</button>
+    </div>
+    <div class="split">
+      <div class="frame" tabindex="0" data-plane="a" aria-label="Plane A, Move picks up marks"></div>
+      <div class="rules">
+        <span class="label">HOW IT WORKS</span>
+        <ul>
+          <li>The Move tool (as today) grabs whatever is under it: a point's dot moves that point, a line or curve moves all of it, a label moves the label.</li>
+          <li>Pressing empty paper pans, as today.</li>
+          <li>A mark stays picked: blue with its points ringed, and a bin above it. <kbd>Delete</kbd> also removes it, <kbd>Esc</kbd> lets go.</li>
+          <li>The row stays at six tools.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="b">
+    <div class="head">
+      <h2><span class="tag">B</span>A Select tool beside Move</h2>
+      <button class="reset" type="button" data-reset="b">Reset</button>
+    </div>
+    <div class="split">
+      <div class="frame" tabindex="0" data-plane="b" aria-label="Plane B, a Select tool beside Move"></div>
+      <div class="rules">
+        <span class="label">HOW IT WORKS</span>
+        <ul>
+          <li>A new Select tool (the arrow, ringed blue here) picks up marks like A. Move becomes a hand that only pans.</li>
+          <li>Dragging over empty paper with Select draws a box that picks every mark inside it, so several move together.</li>
+          <li>Bin, <kbd>Delete</kbd> and <kbd>Esc</kbd> as in A.</li>
+          <li>Seven tools in the row.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="c">
+    <div class="head">
+      <h2><span class="tag">C</span>Points move with any tool</h2>
+      <button class="reset" type="button" data-reset="c">Reset</button>
+    </div>
+    <div class="split">
+      <div class="frame" tabindex="0" data-plane="c" aria-label="Plane C, points move with any tool"></div>
+      <div class="rules">
+        <span class="label">HOW IT WORKS</span>
+        <ul>
+          <li>With any tool, a point's dot can be dragged: it turns blue under the pointer. A tap on it still does the tool's job (Line starts from it).</li>
+          <li>Move also drags whole lines, curves and labels; empty paper pans.</li>
+          <li>Nothing stays picked: no bin, removing stays with Erase.</li>
+          <li>The row stays at six tools.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Side by side</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th></th><th class="pick">A · Move picks up</th><th>B · Select tool</th><th>C · Any tool</th></tr></thead>
+        <tbody>
+          <tr><td>Move one point</td><td class="pick">Drag its dot with Move</td><td>Drag its dot with Select</td><td>Drag its dot with any tool</td></tr>
+          <tr><td>Move a whole line</td><td class="pick">Drag the line with Move</td><td>Drag the line with Select</td><td>Drag the line with Move</td></tr>
+          <tr><td>Pan the plane</td><td class="pick">Drag empty paper with Move</td><td>Drag with the hand (Move)</td><td>Drag empty paper with Move</td></tr>
+          <tr><td>Remove a mark</td><td class="pick">Bin, <kbd>Delete</kbd> or Erase</td><td>Bin, <kbd>Delete</kbd> or Erase</td><td>Erase</td></tr>
+          <tr><td>Several at once</td><td class="pick">No</td><td>Box with Select</td><td>No</td></tr>
+          <tr><td>Tools in the row</td><td class="pick">6, as today</td><td>7</td><td>6, as today</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">All three: points land on the grid as they do when drawn, one drag is one undo step, the coordinate chip follows a dragged point, and the board card shows the moved marks when Done closes the plane. My pick is A: nothing new to learn, and Move already means "move things" on the rest of the board.</p>
+  </section>
+</main>
+
+<script>
+(() => {
+  const ICON = {
+    move: '<path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/>',
+    hand: '<path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11V4.5a1.5 1.5 0 0 1 3 0V12M14 11.5V6a1.5 1.5 0 0 1 3 0v8c0 4-2.5 7-6.5 7-2.5 0-4-1.2-5.3-3.2L3.6 14.6a1.5 1.5 0 0 1 2.4-1.8L8 15"/>',
+    select: '<path d="M5 3.5l13 7.2-6 1.6-2.6 5.7z"/><path d="M12 12.3l5 5"/>',
+    point: '<path d="M12 3v5M12 16v5M3 12h5M16 12h5"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/>',
+    line: '<path d="M5 19L19 5"/><circle cx="5" cy="19" r="1.6" fill="currentColor"/><circle cx="19" cy="5" r="1.6" fill="currentColor"/>',
+    curve: '<path d="M4 5c2 9 4 13 8 13s6-4 8-13"/><circle cx="4" cy="5" r="1.4" fill="currentColor"/><circle cx="20" cy="5" r="1.4" fill="currentColor"/>',
+    label: '<path d="M5 5h14M12 5v14M9 19h6"/>',
+    erase: '<path d="M8.5 20H20M4.6 15.4l9.8-9.8a2 2 0 0 1 2.8 0l2.2 2.2a2 2 0 0 1 0 2.8L11 19H8.2l-3.6-3.6"/><path d="M9 11l5 5"/>',
+    menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+    undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
+    redo: '<path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>',
+    bin: '<path d="M4 7h16M10 11v6M14 11v6M5.5 7l1 12a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>',
+  };
+  const svg = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[name]}</svg>`;
+
+  const TOOLS = {
+    a: [['move', 'Move'], ['point', 'Point'], ['line', 'Line'], ['curve', 'Curve'], ['label', 'Label'], ['erase', 'Erase']],
+    b: [['select', 'Select'], ['hand', 'Move'], ['point', 'Point'], ['line', 'Line'], ['curve', 'Curve'], ['label', 'Label'], ['erase', 'Erase']],
+    c: [['move', 'Move'], ['point', 'Point'], ['line', 'Line'], ['curve', 'Curve'], ['label', 'Label'], ['erase', 'Erase']],
+  };
+  const SAMPLE = () => [
+    { id: 'p', kind: 'dot', at: [-5, 3] },
+    { id: 'l', kind: 'line', points: [[1, 1], [5, 4]] },
+    { id: 'c', kind: 'curve', points: [[-7, -2], [-4, -5], [-1, -2]] },
+    { id: 't', kind: 'label', at: [6, 5], text: 'A' },
+  ];
+  const DRAG_PX = 4;
+  const POINT_PX = 11;
+  const LINE_PX = 8;
+
+  const niceStep = (ppu) => {
+    const raw = 50 / ppu;
+    const p = 10 ** Math.floor(Math.log10(raw));
+    for (const m of [1, 2, 5, 10]) if (m * p >= raw - 1e-9) return m * p;
+    return 10 * p;
+  };
+  const minorStep = (step) => {
+    const p = 10 ** Math.floor(Math.log10(step));
+    return Math.round(step / p) === 2 ? step / 4 : step / 5;
+  };
+  const fmt = (v, step) => {
+    const d = Math.max(0, -Math.floor(Math.log10(step)) + 1);
+    return String(+v.toFixed(d)).replace('-', '−');
+  };
+  const smooth = (pts, per = 16) => {
+    if (pts.length < 3) return pts;
+    const out = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i - 1] ?? pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] ?? p2;
+      for (let s = 0; s < per; s++) {
+        const t = s / per;
+        const at = (k) => 0.5 * (2 * p1[k] + (p2[k] - p0[k]) * t + (2 * p0[k] - 5 * p1[k] + 4 * p2[k] - p3[k]) * t * t + (3 * p1[k] - p0[k] - 3 * p2[k] + p3[k]) * t * t * t);
+        out.push([at(0), at(1)]);
+      }
+    }
+    out.push(pts[pts.length - 1]);
+    return out;
+  };
+  const segDist = (p, a, b) => {
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const len = dx * dx + dy * dy;
+    const t = len ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len)) : 0;
+    return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
+  };
+  const clone = (marks) => JSON.parse(JSON.stringify(marks));
+  const pointsOf = (m) => (m.kind === 'dot' || m.kind === 'label' ? [m.at] : m.points);
+  const token = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  class Plane {
+    constructor(el, option) {
+      this.el = el;
+      this.option = option;
+      this.canvas = document.createElement('canvas');
+      this.ctx = this.canvas.getContext('2d');
+      el.append(this.canvas);
+      this.tool = TOOLS[option][0][0];
+      this.reset();
+      this.buildChrome();
+      this.pointers = new Map();
+      this.bind();
+      new ResizeObserver(() => this.draw()).observe(el);
+    }
+
+    reset() {
+      this.marks = SAMPLE();
+      this.selected = new Set();
+      this.past = [];
+      this.future = [];
+      this.open = null;
+      this.view = null;
+      this.hover = null;
+      this.drag = null;
+      this.box = null;
+      this.menuOpen = false;
+      if (this.menu) this.renderMenu();
+      this.draw();
+    }
+
+    buildChrome() {
+      const top = document.createElement('div');
+      top.className = 'top';
+      top.innerHTML = `<button class="menu-button" type="button" aria-label="Menu" aria-haspopup="menu">${svg('menu')}</button><button class="done" type="button" title="Back to the board, in the app">Done</button>`;
+      this.el.append(top);
+      top.querySelector('.menu-button').addEventListener('click', () => { this.menuOpen = !this.menuOpen; this.renderMenu(); });
+      top.querySelector('.done').addEventListener('click', () => { this.select([]); this.menuOpen = false; this.renderMenu(); });
+      this.menu = document.createElement('div');
+      this.menu.className = 'menu';
+      this.menu.setAttribute('role', 'menu');
+      this.el.append(this.menu);
+      this.renderMenu();
+
+      const row = document.createElement('div');
+      row.className = 'tools';
+      for (const [id, label] of TOOLS[this.option]) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'tool' + (this.option === 'b' && id === 'select' ? ' new' : '');
+        b.dataset.tool = id;
+        b.title = label;
+        b.setAttribute('aria-label', label);
+        if (id === 'curve' || id === 'label') {
+          b.setAttribute('aria-disabled', 'true');
+          b.title = `${label} (not part of this mock)`;
+        }
+        b.innerHTML = svg(id);
+        b.addEventListener('click', () => {
+          if (b.getAttribute('aria-disabled') === 'true') return;
+          this.setTool(id);
+        });
+        row.append(b);
+      }
+      this.row = row;
+      this.el.append(row);
+      this.setTool(this.tool);
+
+      this.bin = document.createElement('button');
+      this.bin.className = 'bin';
+      this.bin.type = 'button';
+      this.bin.title = 'Remove';
+      this.bin.setAttribute('aria-label', 'Remove');
+      this.bin.innerHTML = svg('bin');
+      this.bin.hidden = true;
+      this.bin.addEventListener('click', () => this.removeSelected());
+      this.el.append(this.bin);
+    }
+
+    renderMenu() {
+      this.menu.hidden = !this.menuOpen;
+      this.menu.innerHTML = `<button type="button" role="menuitem" data-act="fit">Fit</button><button type="button" role="menuitem" data-act="undo" ${this.past.length ? '' : 'disabled'}>${svg('undo')} Undo</button><button type="button" role="menuitem" data-act="redo" ${this.future.length ? '' : 'disabled'}>${svg('redo')} Redo</button>`;
+      for (const b of this.menu.querySelectorAll('button')) b.addEventListener('click', () => {
+        const act = b.dataset.act;
+        if (act === 'undo') this.undo();
+        if (act === 'redo') this.redo();
+        if (act === 'fit') this.view = null;
+        this.menuOpen = false;
+        this.renderMenu();
+        this.draw();
+      });
+    }
+
+    setTool(id) {
+      this.tool = id;
+      this.open = null;
+      if (id !== 'move' && id !== 'select') this.select([]);
+      for (const b of this.row.children) b.setAttribute('aria-pressed', String(b.dataset.tool === id));
+      this.draw();
+    }
+
+    // History: one entry per finished change.
+    commit(before) {
+      this.past.push(before);
+      this.future = [];
+      if (this.menuOpen) this.renderMenu();
+    }
+    undo() { if (!this.past.length) return; this.future.push(clone(this.marks)); this.marks = this.past.pop(); this.pruneSelection(); }
+    redo() { if (!this.future.length) return; this.past.push(clone(this.marks)); this.marks = this.future.pop(); this.pruneSelection(); }
+    pruneSelection() { this.select([...this.selected].filter((id) => this.marks.some((m) => m.id === id))); }
+
+    select(ids) { this.selected = new Set(ids); this.draw(); }
+    removeSelected() {
+      if (!this.selected.size) return;
+      const before = clone(this.marks);
+      this.marks = this.marks.filter((m) => !this.selected.has(m.id));
+      this.commit(before);
+      this.select([]);
+    }
+
+    // Coordinates.
+    size() { const r = this.el.getBoundingClientRect(); return { w: r.width, h: r.height }; }
+    ensureView() {
+      if (this.view) return;
+      const { w, h } = this.size();
+      const ppu = Math.max(22, Math.min(40, w / 22));
+      this.view = { ppu, x0: -w / 2 / ppu, y0: h / 2 / ppu + 0.6 };
+    }
+    X(x) { return (x - this.view.x0) * this.view.ppu; }
+    Y(y) { return (this.view.y0 - y) * this.view.ppu; }
+    toPlane([px, py]) { return [this.view.x0 + px / this.view.ppu, this.view.y0 - py / this.view.ppu]; }
+    snapStep() { return minorStep(niceStep(this.view.ppu)); }
+    snap(v) { const s = this.snapStep(); return [Math.round(v[0] / s) * s, Math.round(v[1] / s) * s]; }
+    local(e) { const r = this.el.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+
+    // What's under a screen point: a point's dot first, then labels, then line bodies.
+    hit(px) {
+      let best = null;
+      for (const m of this.marks) {
+        if (m.kind === 'label') continue;
+        pointsOf(m).forEach((p, i) => {
+          const d = Math.hypot(this.X(p[0]) - px[0], this.Y(p[1]) - px[1]);
+          if (d <= POINT_PX && (!best || d < best.d)) best = { mark: m, index: i, d };
+        });
+      }
+      if (best) return best;
+      this.ctx.font = '15px Arial, sans-serif';
+      for (const m of this.marks) {
+        if (m.kind !== 'label') continue;
+        const w = this.ctx.measureText(m.text).width / 2 + 6;
+        if (Math.abs(this.X(m.at[0]) - px[0]) <= w && Math.abs(this.Y(m.at[1]) - px[1]) <= 13) return { mark: m, index: -1, d: 0 };
+      }
+      for (const m of this.marks) {
+        if (m.kind !== 'line' && m.kind !== 'curve') continue;
+        const path = (m.kind === 'curve' ? smooth(m.points) : m.points).map(([x, y]) => [this.X(x), this.Y(y)]);
+        for (let i = 1; i < path.length; i++) {
+          const d = segDist(px, path[i - 1], path[i]);
+          if (d <= LINE_PX && (!best || d < best.d)) best = { mark: m, index: -1, d };
+        }
+      }
+      return best;
+    }
+
+    picksUp() { return this.option === 'a' ? this.tool === 'move' : this.option === 'b' ? this.tool === 'select' : false; }
+
+    bind() {
+      const el = this.el;
+      el.addEventListener('pointerdown', (e) => {
+        if (e.target !== this.canvas) return;
+        if (this.menuOpen) { this.menuOpen = false; this.renderMenu(); }
+        el.focus({ preventScroll: true });
+        this.canvas.setPointerCapture(e.pointerId);
+        this.pointers.set(e.pointerId, this.local(e));
+        if (this.pointers.size === 2) { this.startPinch(); return; }
+        this.press(this.local(e), e);
+      });
+      el.addEventListener('pointermove', (e) => {
+        const px = this.local(e);
+        if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, px);
+        if (this.pinch) { this.movePinch(); return; }
+        this.move(px);
+      });
+      const up = (e) => {
+        const had = this.pointers.delete(e.pointerId);
+        if (this.pinch) { if (this.pointers.size < 2) this.pinch = null; return; }
+        if (had) this.release(this.local(e));
+      };
+      el.addEventListener('pointerup', up);
+      el.addEventListener('pointercancel', up);
+      el.addEventListener('pointerleave', () => { if (!this.drag) { this.hover = null; this.pointer = null; this.draw(); } });
+      el.addEventListener('wheel', (e) => {
+        if (e.target !== this.canvas) return;
+        e.preventDefault();
+        this.zoomAt(this.local(e), Math.exp(-e.deltaY * 0.0015));
+      }, { passive: false });
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { this.open = null; this.select([]); }
+        else if ((e.key === 'Delete' || e.key === 'Backspace') && this.selected.size) { e.preventDefault(); this.removeSelected(); }
+        else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) this.redo(); else this.undo(); this.draw(); }
+      });
+    }
+
+    zoomAt(px, k) {
+      const before = this.toPlane(px);
+      this.view.ppu = Math.max(6, Math.min(200, this.view.ppu * k));
+      const after = this.toPlane(px);
+      this.view.x0 += before[0] - after[0];
+      this.view.y0 += before[1] - after[1];
+      this.draw();
+    }
+    startPinch() {
+      this.drag = null; this.box = null;
+      const [a, b] = [...this.pointers.values()];
+      this.pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]) };
+    }
+    movePinch() {
+      const [a, b] = [...this.pointers.values()];
+      const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      this.zoomAt([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], d / this.pinch.d);
+      this.pinch.d = d;
+    }
+
+    press(px, e) {
+      const at = this.toPlane(px);
+      const hit = this.hit(px);
+      const base = { start: px, startAt: at, moved: false, before: clone(this.marks) };
+      if (this.tool === 'erase') {
+        if (hit) { const before = clone(this.marks); this.marks = this.marks.filter((m) => m !== hit.mark); this.commit(before); this.select([]); }
+        return;
+      }
+      if (this.picksUp()) {
+        if (hit) {
+          const keep = this.selected.has(hit.mark.id) && hit.index < 0 && this.option === 'b';
+          if (!keep) this.select([hit.mark.id]);
+          this.drag = { ...base, kind: hit.index >= 0 ? 'point' : 'whole', mark: hit.mark.id, index: hit.index, ids: [...this.selected] };
+        } else if (this.option === 'b') {
+          this.select([]);
+          this.drag = { ...base, kind: 'box' };
+        } else {
+          this.select([]);
+          this.drag = { ...base, kind: 'pan', view: { ...this.view } };
+        }
+        return;
+      }
+      if (this.option === 'c' && hit && hit.index >= 0) {
+        this.drag = { ...base, kind: 'point', mark: hit.mark.id, index: hit.index, ids: [hit.mark.id], tap: true };
+        return;
+      }
+      if (this.option === 'c' && this.tool === 'move' && hit) {
+        this.drag = { ...base, kind: 'whole', mark: hit.mark.id, index: -1, ids: [hit.mark.id] };
+        return;
+      }
+      if (this.tool === 'move' || this.tool === 'hand') {
+        this.drag = { ...base, kind: 'pan', view: { ...this.view } };
+        return;
+      }
+      this.drag = { ...base, kind: 'tap' };
+    }
+
+    move(px) {
+      this.pointer = px;
+      const d = this.drag;
+      if (!d) {
+        const hit = this.hit(px);
+        this.hover = hit;
+        const grab = hit && (this.picksUp() || (this.option === 'c' && (hit.index >= 0 || this.tool === 'move')));
+        this.canvas.style.cursor = this.tool === 'erase' ? (hit ? 'pointer' : 'default')
+          : grab ? 'grab'
+          : this.tool === 'move' || this.tool === 'hand' ? 'grab'
+          : this.tool === 'select' ? 'default' : 'crosshair';
+        this.draw();
+        return;
+      }
+      if (!d.moved && Math.hypot(px[0] - d.start[0], px[1] - d.start[1]) < DRAG_PX) return;
+      d.moved = true;
+      this.canvas.style.cursor = d.kind === 'box' ? 'default' : 'grabbing';
+      if (d.kind === 'pan') {
+        this.view.x0 = d.view.x0 - (px[0] - d.start[0]) / this.view.ppu;
+        this.view.y0 = d.view.y0 + (px[1] - d.start[1]) / this.view.ppu;
+      } else if (d.kind === 'box') {
+        this.box = [d.start, px];
+        const [x1, x2] = [Math.min(d.start[0], px[0]), Math.max(d.start[0], px[0])];
+        const [y1, y2] = [Math.min(d.start[1], px[1]), Math.max(d.start[1], px[1])];
+        const inside = this.marks.filter((m) => pointsOf(m).every(([x, y]) => this.X(x) >= x1 && this.X(x) <= x2 && this.Y(y) >= y1 && this.Y(y) <= y2));
+        this.selected = new Set(inside.map((m) => m.id));
+      } else if (d.kind === 'point') {
+        const at = this.snap(this.toPlane(px));
+        this.marks = clone(d.before);
+        const m = this.marks.find((each) => each.id === d.mark);
+        if (m.kind === 'dot') m.at = at; else m.points[d.index] = at;
+        d.at = at;
+      } else if (d.kind === 'whole') {
+        const now = this.toPlane(px);
+        const [dx, dy] = this.snap([now[0] - d.startAt[0], now[1] - d.startAt[1]]);
+        this.marks = clone(d.before);
+        for (const m of this.marks) {
+          if (!d.ids.includes(m.id)) continue;
+          if (m.at) m.at = [m.at[0] + dx, m.at[1] + dy];
+          else m.points = m.points.map(([x, y]) => [x + dx, y + dy]);
+        }
+      }
+      this.draw();
+    }
+
+    release(px) {
+      const d = this.drag;
+      this.drag = null;
+      this.box = null;
+      if (!d) return;
+      if (d.moved && (d.kind === 'point' || d.kind === 'whole')) {
+        if (JSON.stringify(d.before) !== JSON.stringify(this.marks)) this.commit(d.before);
+      } else if (!d.moved && (d.kind === 'tap' || d.tap)) {
+        this.toolTap(d.tap ? this.snapToHit(d) : this.snap(this.toPlane(px)));
+      }
+      this.move(px);
+    }
+
+    snapToHit(d) {
+      const m = this.marks.find((each) => each.id === d.mark);
+      return m.kind === 'dot' ? m.at : m.points[d.index];
+    }
+
+    toolTap(at) {
+      if (this.tool === 'point') {
+        const before = clone(this.marks);
+        this.marks.push({ id: crypto.randomUUID(), kind: 'dot', at });
+        this.commit(before);
+      } else if (this.tool === 'line') {
+        if (!this.open) { this.open = at; }
+        else {
+          const before = clone(this.marks);
+          this.marks.push({ id: crypto.randomUUID(), kind: 'line', points: [this.open, at] });
+          this.open = null;
+          this.commit(before);
+        }
+      }
+      this.draw();
+    }
+
+    draw() {
+      const { w, h } = this.size();
+      if (!w || !h) return;
+      this.ensureView();
+      const dpr = window.devicePixelRatio || 1;
+      if (this.canvas.width !== Math.round(w * dpr) || this.canvas.height !== Math.round(h * dpr)) {
+        this.canvas.width = Math.round(w * dpr);
+        this.canvas.height = Math.round(h * dpr);
+      }
+      const ctx = this.ctx;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      const c = {
+        paper: token('--paper'), minor: token('--minor'), major: token('--major'), axis: token('--axis'),
+        number: token('--number'), ink: token('--ink'), blue: token('--blue'), soft: token('--blue-soft'),
+        chipBg: token('--chip-bg'), chipFg: token('--chip-fg'), panel: token('--panel'),
+      };
+      ctx.fillStyle = c.paper;
+      ctx.fillRect(0, 0, w, h);
+      const step = niceStep(this.view.ppu);
+      const minor = minorStep(step);
+      const left = this.view.x0, right = left + w / this.view.ppu, top = this.view.y0, bottom = top - h / this.view.ppu;
+      const grid = (every, colour) => {
+        ctx.strokeStyle = colour; ctx.lineWidth = 1; ctx.beginPath();
+        for (let x = Math.ceil(left / every) * every; x <= right; x += every) { ctx.moveTo(this.X(x), 0); ctx.lineTo(this.X(x), h); }
+        for (let y = Math.ceil(bottom / every) * every; y <= top; y += every) { ctx.moveTo(0, this.Y(y)); ctx.lineTo(w, this.Y(y)); }
+        ctx.stroke();
+      };
+      grid(minor, c.minor);
+      grid(step, c.major);
+      const ax = this.X(0), ay = this.Y(0);
+      ctx.strokeStyle = c.axis; ctx.lineWidth = 1.5; ctx.beginPath();
+      ctx.moveTo(ax, 0); ctx.lineTo(ax, h); ctx.moveTo(0, ay); ctx.lineTo(w, ay); ctx.stroke();
+      ctx.font = '12px Arial, sans-serif'; ctx.fillStyle = c.number; ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center';
+      for (let x = Math.ceil(left / step) * step; x <= right; x += step) if (Math.abs(x) > step / 2) ctx.fillText(fmt(x, step), this.X(x), ay + 14);
+      ctx.textAlign = 'right';
+      for (let y = Math.ceil(bottom / step) * step; y <= top; y += step) if (Math.abs(y) > step / 2) ctx.fillText(fmt(y, step), ax - 7, this.Y(y));
+
+      const lit = (m) => this.selected.has(m.id) || (this.drag && this.drag.ids && this.drag.ids.includes(m.id) && this.drag.moved);
+      const hovered = (m) => !this.drag && this.hover && this.hover.mark.id === m.id && (this.picksUp() || this.option === 'c');
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      for (const m of this.marks) {
+        const on = lit(m);
+        const hov = hovered(m) && !on;
+        const pts = pointsOf(m);
+        if (m.kind === 'line' || m.kind === 'curve') {
+          const path = m.kind === 'curve' ? smooth(m.points) : m.points;
+          if (on || (hov && (this.option !== 'c' || this.tool === 'move') && this.hover.index < 0)) {
+            ctx.strokeStyle = c.soft; ctx.lineWidth = 10; ctx.beginPath();
+            path.forEach(([x, y], i) => (i ? ctx.lineTo(this.X(x), this.Y(y)) : ctx.moveTo(this.X(x), this.Y(y))));
+            ctx.stroke();
+          }
+          ctx.strokeStyle = on ? c.blue : c.ink; ctx.lineWidth = 2; ctx.beginPath();
+          path.forEach(([x, y], i) => (i ? ctx.lineTo(this.X(x), this.Y(y)) : ctx.moveTo(this.X(x), this.Y(y))));
+          ctx.stroke();
+        }
+        if (m.kind === 'label') {
+          ctx.font = '15px Arial, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          if (on || hov) {
+            const tw = ctx.measureText(m.text).width + 12;
+            ctx.fillStyle = c.soft;
+            ctx.fillRect(this.X(m.at[0]) - tw / 2, this.Y(m.at[1]) - 12, tw, 24);
+            if (on) { ctx.strokeStyle = c.blue; ctx.lineWidth = 1.5; ctx.strokeRect(this.X(m.at[0]) - tw / 2, this.Y(m.at[1]) - 12, tw, 24); }
+          }
+          ctx.fillStyle = on ? c.blue : c.ink;
+          ctx.fillText(m.text, this.X(m.at[0]), this.Y(m.at[1]));
+          continue;
+        }
+        pts.forEach((p, i) => {
+          const x = this.X(p[0]), y = this.Y(p[1]);
+          const hotPoint = hov && this.hover.index === i;
+          const dragged = this.drag && this.drag.moved && this.drag.kind === 'point' && this.drag.mark === m.id && this.drag.index === i;
+          if (on || hotPoint || dragged) {
+            ctx.fillStyle = c.panel; ctx.strokeStyle = c.blue; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(x, y, hotPoint || dragged ? 7.5 : 6.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = c.blue; ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+          } else {
+            ctx.fillStyle = c.ink; ctx.beginPath(); ctx.arc(x, y, 4.5, 0, Math.PI * 2); ctx.fill();
+          }
+        });
+      }
+
+      // An open line follows the pointer, as the editor draws it today.
+      if (this.open && this.pointer) {
+        const at = this.snap(this.toPlane(this.pointer));
+        ctx.strokeStyle = c.blue; ctx.lineWidth = 2; ctx.beginPath();
+        ctx.moveTo(this.X(this.open[0]), this.Y(this.open[1])); ctx.lineTo(this.X(at[0]), this.Y(at[1])); ctx.stroke();
+        ctx.fillStyle = c.blue; ctx.beginPath(); ctx.arc(this.X(this.open[0]), this.Y(this.open[1]), 4.5, 0, Math.PI * 2); ctx.fill();
+      }
+      // Crosshair for the drawing tools, unless the pointer is over a point it can drag.
+      const overGrab = this.hover && this.option === 'c' && this.hover.index >= 0;
+      if (this.pointer && !this.drag && (this.tool === 'point' || this.tool === 'line') && !overGrab) {
+        const at = this.snap(this.toPlane(this.pointer));
+        const x = this.X(at[0]), y = this.Y(at[1]);
+        ctx.strokeStyle = c.blue; ctx.lineWidth = 1; ctx.setLineDash([4, 4]); ctx.beginPath();
+        ctx.moveTo(x, y); ctx.lineTo(x, ay); ctx.moveTo(x, y); ctx.lineTo(ax, y); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = c.blue; ctx.beginPath(); ctx.arc(x, y, 4.5, 0, Math.PI * 2); ctx.fill();
+        this.chip(`(${fmt(at[0], 0.1)}, ${fmt(at[1], 0.1)})`, x, y, w, c);
+      }
+      if (this.drag && this.drag.moved && this.drag.kind === 'point' && this.drag.at) {
+        const [px, py] = this.drag.at;
+        this.chip(`(${fmt(px, 0.1)}, ${fmt(py, 0.1)})`, this.X(px), this.Y(py), w, c);
+      }
+      if (this.box) {
+        const [[x1, y1], [x2, y2]] = this.box;
+        ctx.fillStyle = c.soft; ctx.fillRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
+        ctx.strokeStyle = c.blue; ctx.lineWidth = 1; ctx.setLineDash([4, 3]);
+        ctx.strokeRect(Math.min(x1, x2) + 0.5, Math.min(y1, y2) + 0.5, Math.abs(x2 - x1), Math.abs(y2 - y1)); ctx.setLineDash([]);
+      }
+      this.placeBin(w, h);
+    }
+
+    chip(text, x, y, width, c) {
+      const ctx = this.ctx;
+      ctx.font = '13px Arial, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      const tw = ctx.measureText(text).width + 14;
+      const cx = Math.min(width - tw - 4, x + 10), cy = Math.max(4, y - 30);
+      ctx.fillStyle = c.chipBg; ctx.fillRect(cx, cy, tw, 22);
+      ctx.fillStyle = c.chipFg; ctx.fillText(text, cx + 7, cy + 11);
+    }
+
+    // The bin sits above what's picked, clear of the frame's edges.
+    placeBin(w, h) {
+      if (!this.bin) return;
+      const picked = this.marks.filter((m) => this.selected.has(m.id));
+      const show = this.option !== 'c' && picked.length && !(this.drag && this.drag.moved);
+      this.bin.hidden = !show;
+      if (!show) return;
+      const pts = picked.flatMap(pointsOf).map(([x, y]) => [this.X(x), this.Y(y)]);
+      const minX = Math.min(...pts.map((p) => p[0])), maxX = Math.max(...pts.map((p) => p[0]));
+      const minY = Math.min(...pts.map((p) => p[1]));
+      const left = Math.max(8, Math.min(w - 42, (minX + maxX) / 2 - 17));
+      const top = Math.max(56, Math.min(h - 110, minY - 52));
+      this.bin.style.left = `${left}px`;
+      this.bin.style.top = `${top}px`;
+    }
+  }
+
+  const planes = {};
+  for (const el of document.querySelectorAll('[data-plane]')) planes[el.dataset.plane] = new Plane(el, el.dataset.plane);
+  for (const b of document.querySelectorAll('[data-reset]')) b.addEventListener('click', () => planes[b.dataset.reset].reset());
+  const redraw = () => Object.values(planes).forEach((p) => p.draw());
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', redraw);
+  new MutationObserver(redraw).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+})();
+</script>

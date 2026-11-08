@@ -4482,6 +4482,12 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   has one, Undo, Redo; the board's own undo and redo hide meanwhile) and Done on its
   own (Epo 2026-11-08). Done leaves, as does Escape when no mark is open (Escape closes
   an open menu first). Inside, the wheel pans, Ctrl or pinch zooms, and Move drags.
+  A point's dot picks up with any tool but Erase (Epo 2026-11-08, option C): it rings
+  blue under the mouse, a drag moves it to the grid with the coordinate chip, and a tap
+  still does the tool's job at that point (Line starts from it). Move also drags a
+  whole line, curve or label (snapped by grid steps) and pans on empty paper. The
+  moved copy is only drawn until the pointer lifts, so a drag is one undo step; nothing
+  stays selected, and Erase still removes. Where points coincide, the last drawn moves.
   Label (Epo 2026-11-08) types text centred where it's clicked, a `label` mark at that
   coordinate that moves and zooms with the plane (a click near one edits it; up to 24
   characters; previews leave labels out, as numbers). Point, Line and Curve snap to the
