@@ -3486,10 +3486,15 @@ export const learningOverviewQuery = () =>
 export const useLearningOverview = (options?: QueryUiOptions) =>
   useQuery({ ...learningOverviewQuery(), meta: queryMeta(options) });
 
+/** To do goes stale in 15 s and rereads on focus (Epo 2026-11-08), so work a
+ * No late due date closed (no event) leaves soon. */
+const todoFresh = { refetchOnWindowFocus: true, staleTime: 15_000 } as const;
+
 /** The To do page: each class's Dashboard To do, across the viewer's classes. */
 export const todoQuery = () =>
   queryOptions({
     ...persisted,
+    ...todoFresh,
     queryFn: () => api.get<TodoList>('/todo'),
     queryKey: qk.todo,
   });
@@ -3517,6 +3522,7 @@ export const useTodoDone = (params: TodoDoneParams, enabled: boolean) =>
         `/todo/done${listSearch({ ...params }, pageParam)}`
       ),
     queryKey: qk.todoDone(params),
+    ...todoFresh,
   });
 
 /** How many questions a practice group holds, for its start dialog. */

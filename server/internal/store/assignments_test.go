@@ -604,8 +604,8 @@ func TestAssignmentLateMissingAndTimeOut(t *testing.T) {
 	}
 	afterGrace := pastDue.Add(assignmentGrace + time.Second)
 	finished, _, err := f.s.SweepAssignments(ctx, 50, afterGrace)
-	if err != nil || finished == 0 {
-		t.Fatalf("sweep = %d, err %v", finished, err)
+	if err != nil || len(finished) == 0 {
+		t.Fatalf("sweep = %v, err %v", finished, err)
 	}
 	swept, err := f.s.GetAssignmentAttempt(ctx, third, running.ID, afterGrace)
 	if err != nil || swept.Status != "submitted" || swept.AutoSubmitted {
@@ -810,12 +810,12 @@ func TestAssignmentNoLateSweepSubmitsRunningAttempts(t *testing.T) {
 	if err := f.s.SaveAssignmentAnswers(ctx, f.viewer, run.ID, map[string]any{"p2": "osmosis"}, now); err != nil {
 		t.Fatal(err)
 	}
-	if finished, _, err := f.s.SweepAssignments(ctx, 50, due.Add(time.Second)); err != nil || finished != 0 {
-		t.Fatalf("swept %d inside the grace, err %v", finished, err)
+	if finished, _, err := f.s.SweepAssignments(ctx, 50, due.Add(time.Second)); err != nil || len(finished) != 0 {
+		t.Fatalf("swept %v inside the grace, err %v", finished, err)
 	}
 	past := due.Add(time.Minute)
-	if finished, _, err := f.s.SweepAssignments(ctx, 50, past); err != nil || finished == 0 {
-		t.Fatalf("swept %d past the grace, err %v", finished, err)
+	if finished, _, err := f.s.SweepAssignments(ctx, 50, past); err != nil || len(finished) == 0 || finished[0].UserID != f.viewer {
+		t.Fatalf("swept %v past the grace, err %v", finished, err)
 	}
 	var submitted bool
 	if err := f.s.pool.QueryRow(ctx, `SELECT submitted_at IS NOT NULL AND auto_submitted FROM attempts WHERE id=$1`, run.ID).Scan(&submitted); err != nil {

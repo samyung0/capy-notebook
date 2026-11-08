@@ -1057,9 +1057,10 @@ editing (those it was given to before and after), closing, reopening, republishi
 deleting and approving AI marks tell everyone it is given to and the class's staff
 (`TodoAudience`); a submission or a mark tells the staff and that member; a tick
 tells the member's own tabs. Reconnecting refetches To do with the notifications.
-A No late due date closes with no request, so nothing is sent: clicking a row past
-it refetches To do while its page says it closed. The sweep's own submissions send
-nothing either.
+A No late due date closes with no request, so nothing is sent: To do's lists go
+stale in 15 s and refetch on window focus, and clicking a row past it refetches To
+do while its page says it closed. The sweep submitting an attempt left running
+tells the class's staff and that member (`publishSweptTodo`).
 
 **New assignment's Quiz field.** Its last rows make a quiz on the spot, wherever the
 dialog opens: New quiz opens Add file's Create tab (`?add=create`), Make a quiz from a

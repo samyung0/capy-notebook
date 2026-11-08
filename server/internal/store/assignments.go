@@ -2744,23 +2744,24 @@ func partReport(p map[string]any, attempts []reportAttempt) AssignmentPartReport
 // The quiz stays hidden while another open assignment uses it. One row that
 // fails is logged and passed over; each batch is a random pick, so rows that keep
 // failing never fill it every minute and hold up the rest.
-func (s *Store) SweepAssignments(ctx context.Context, limit int, now time.Time) (finished, released int, err error) {
-	rows, err := s.pool.Query(ctx, `SELECT t.id FROM attempts t JOIN assignments a ON a.id=t.assignment_id
+// finished names the attempts it submitted, whose To do changed.
+func (s *Store) SweepAssignments(ctx context.Context, limit int, now time.Time) (finished []SweptAttempt, released int, err error) {
+	rows, err := s.pool.Query(ctx, `SELECT t.id, t.assignment_id, t.user_id FROM attempts t JOIN assignments a ON a.id=t.assignment_id
 		WHERE t.assignment_id IS NOT NULL AND t.submitted_at IS NULL
 			AND (t.deadline_at <= $1 OR a.closed_at <= $1 OR (a.no_late AND a.due_at <= $1)) ORDER BY random() LIMIT $2`, now.Add(-assignmentGrace), limit)
 	if err != nil {
-		return 0, 0, err
+		return nil, 0, err
 	}
-	attemptIDs, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	due, err := pgx.CollectRows(rows, pgx.RowToStructByPos[SweptAttempt])
 	if err != nil {
-		return 0, 0, err
+		return nil, 0, err
 	}
-	for _, id := range attemptIDs {
-		if err := s.finishAttemptIfRunning(ctx, id, now); err != nil {
-			obs.Log(ctx).Warn("assignment attempt not submitted", "attempt_id", id, "error", err)
+	for _, t := range due {
+		if err := s.finishAttemptIfRunning(ctx, t.ID, now); err != nil {
+			obs.Log(ctx).Warn("assignment attempt not submitted", "attempt_id", t.ID, "error", err)
 			continue
 		}
-		finished++
+		finished = append(finished, t)
 	}
 	rows, err = s.pool.Query(ctx, `SELECT id FROM assignments
 		WHERE released_at IS NULL AND kind='marked' AND NOT draft AND (closed_at IS NOT NULL OR (no_late AND due_at <= $1))
@@ -2780,6 +2781,11 @@ func (s *Store) SweepAssignments(ctx context.Context, limit int, now time.Time) 
 		released++
 	}
 	return finished, released, nil
+}
+
+// SweptAttempt is an attempt the sweep submitted for its member.
+type SweptAttempt struct {
+	ID, AssignmentID, UserID string
 }
 
 // releaseAssignment makes its quiz a normal visible one, practice for members,
