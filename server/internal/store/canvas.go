@@ -78,6 +78,10 @@ func (s *Store) SaveWorkspaceCanvas(ctx context.Context, userID, materialID, boa
 	if err != nil {
 		return Material{}, err
 	}
+	// A stale tab hears that first (UpdateMaterial checks it again, in its transaction).
+	if current.Revision != revision {
+		return Material{}, ErrConflict
+	}
 	if err := s.assertCanvasAssets(ctx, materialID, boardAssetID, imageAssetIDs); err != nil {
 		return Material{}, err
 	}

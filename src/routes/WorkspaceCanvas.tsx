@@ -74,24 +74,37 @@ export default function WorkspaceCanvas({
     let tooBig = false;
     let revision = 0;
     let materialId = '';
+    /** The board as it was left, once unmounted: what a save still in flight
+     * writes the copy from, at the revision it lands on. */
+    let leftDoc: string | null = null;
     const draftKey = () => `canvas:${materialId}`;
 
     /** The device copy: the live snapshot at the revision it was taken on, written
      * after each change and on leaving, so a reload mid-draw keeps the strokes. */
     const keep = () => {
-      if (!board || stopped) return Promise.resolve();
+      const doc = board ? board.snapshot() : leftDoc;
+      if (!doc || stopped) return Promise.resolve();
       return saveLocalDrawingDraft({
-        doc: board.snapshot(),
+        doc,
         key: draftKey(),
         revision,
         savedAt: new Date().toISOString(),
       }).catch(() => undefined);
     };
     const forget = () => deleteLocalDrawingDraft(draftKey()).catch(() => 0);
-    const flush = async () => {
+    /** A board uploaded for a save that didn't land stops being charged. */
+    const dropAsset = async (assetId: string) => {
+      try {
+        const { deleteEditorAsset } = await import('@/api/editorAssets');
+        await deleteEditorAsset(assetId);
+      } catch {
+        // Charged until the next successful save's prune.
+      }
+    };
+    const flush = async (prepared?: { bytes: number; doc: string }) => {
       if (!(board && dirty) || stopped || saving) return;
       dirty = false;
-      const { bytes, doc } = board.save({ finish: false });
+      const { bytes, doc } = prepared ?? board.save({ finish: false });
       if (bytes > CANVAS_BOARD_MAX) {
         // The last good save stands; said once until it fits again.
         if (!tooBig)
@@ -100,6 +113,7 @@ export default function WorkspaceCanvas({
         return;
       }
       tooBig = false;
+      let uploaded: string | null = null;
       saving = (async () => {
         const { uploadEditorAsset } = await import('@/api/editorAssets');
         const asset = await uploadEditorAsset(
@@ -108,11 +122,13 @@ export default function WorkspaceCanvas({
           'board',
           { maxBytes: CANVAS_BOARD_MAX }
         );
+        uploaded = asset.assetId;
         const next = await saveWorkspaceCanvas(workspaceId, {
           boardAssetId: asset.assetId,
           imageAssetIds: [],
           revision,
         });
+        uploaded = null;
         revision = next.revision;
         // Nothing drawn since: the copy has gone up. Drawn since: the copy is
         // rewritten at the new revision.
@@ -120,6 +136,8 @@ export default function WorkspaceCanvas({
         else await forget();
       })()
         .catch((error: unknown) => {
+          // A board uploaded for a save that didn't land stops being charged.
+          if (uploaded) void dropAsset(uploaded);
           if (isCanvasConflict(error)) {
             // The other tab's save stands; this tab's copy must not come back.
             stopped = true;
@@ -208,11 +226,15 @@ export default function WorkspaceCanvas({
       clearTimeout(timer);
       clearTimeout(keepTimer);
       window.removeEventListener('pagehide', hidden);
-      // Leaving mid-draw within the app: the copy, then the save, which outlives
-      // this page.
-      if (dirty) {
+      // Leaving mid-draw within the app: an open card's view is finished into the
+      // document, the copy written, then the save, which outlives this page; one
+      // already in flight rewrites the copy from `leftDoc` at the revision it
+      // lands on.
+      if (board && dirty) {
+        const finished = board.save();
+        leftDoc = finished.doc;
         void keep();
-        if (!saving) void flush();
+        if (!saving) void flush(finished);
       }
       mounted.current = null;
       board?.unmount();

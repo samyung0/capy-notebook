@@ -51,6 +51,19 @@ func (a *api) registerCanvas(api huma.API) {
 		"Record a save of the caller's canvas: its new board asset and images; the server counts the version", http.StatusOK, a.saveWorkspaceCanvas)
 }
 
+// requireWorkspaceMember: a canvas is a member's (Epo 2026-11-09); a link or public
+// visitor, who has a workspace id but no membership, finds none.
+func (a *api) requireWorkspaceMember(ctx context.Context, wsID string) error {
+	role, err := a.s.WorkspaceRole(ctx, userID(ctx), wsID)
+	if err != nil {
+		return hErr(err)
+	}
+	if role == "" {
+		return huma.Error404NotFound("not found")
+	}
+	return nil
+}
+
 func canvasResponse(mt store.Material) (*canvasOutput, error) {
 	board, err := materialdoc.ReadCanvasBoard(mt.Content)
 	if err != nil {
@@ -66,8 +79,8 @@ func canvasResponse(mt store.Material) (*canvasOutput, error) {
 // first open. Any member has one; a frozen account opens an existing one but
 // makes none (a material it would pay for).
 func (a *api) workspaceCanvas(ctx context.Context, in *canvasInput) (*canvasOutput, error) {
-	if _, err := a.s.WorkspaceRole(ctx, userID(ctx), in.ID); err != nil {
-		return nil, hErr(err)
+	if err := a.requireWorkspaceMember(ctx, in.ID); err != nil {
+		return nil, err
 	}
 	mt, err := a.s.WorkspaceCanvas(ctx, userID(ctx), in.ID)
 	if err != nil {
@@ -84,8 +97,8 @@ func (a *api) saveWorkspaceCanvas(ctx context.Context, in *saveCanvasInput) (*ca
 	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
 	}
-	if _, err := a.s.WorkspaceRole(ctx, userID(ctx), in.ID); err != nil {
-		return nil, hErr(err)
+	if err := a.requireWorkspaceMember(ctx, in.ID); err != nil {
+		return nil, err
 	}
 	mt, err := a.s.WorkspaceCanvas(ctx, userID(ctx), in.ID)
 	if err != nil {
@@ -98,6 +111,9 @@ func (a *api) saveWorkspaceCanvas(ctx context.Context, in *saveCanvasInput) (*ca
 	saved, err := a.s.SaveWorkspaceCanvas(ctx, userID(ctx), mt.ID, in.Body.BoardAssetID, images, in.Body.Revision)
 	if errors.Is(err, store.ErrConflict) {
 		return nil, huma.Error409Conflict("this canvas was saved from another tab; reload to keep drawing")
+	}
+	if errors.Is(err, materialdoc.ErrInvalid) {
+		return nil, huma.Error400BadRequest(err.Error())
 	}
 	if err != nil {
 		return nil, hErr(err)

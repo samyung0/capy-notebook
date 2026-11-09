@@ -4694,17 +4694,21 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     the material revision it was taken at, written 400 ms after each change and on
     `pagehide`) when the last save didn't go up and the copy's revision is the material's
     current one; an older copy (another tab's or device's save landed since) is deleted.
-    It saves 2 s after the last change and when the page within the app leaves the
-    canvas: `save({ finish: false })`, the cleaned-up document that leaves the drawer's
-    tool and open card alone, gzipped, uploaded as a new `board` asset under
+    It saves 2 s after the last change (`save({ finish: false })`, the cleaned-up document
+    that leaves the drawer's tool and open card alone) and when the page within the app
+    leaves the canvas (`save()`, which finishes an open card's view into it; a save still
+    in flight then rewrites the copy from the document as left, at the revision it lands
+    on), gzipped, uploaded as a new `board` asset under
     `CANVAS_BOARD_MAX` (2 MiB before gzip, the board catalog; over it the board says so
     and the last good save stands), then `PUT /api/workspaces/{id}/canvas` with the
     asset and the revision it read; the server checks the asset is a ready `board`
     asset of the canvas (images likewise) and counts the version. 409 (the same person's
     other tab saved first) says so, deletes this tab's copy and stops saving until a
     reload; any other failure waits for the next change or open, the copy holding the
-    work (no retry loop). A closed tab keeps the copy only: the upload can't run as a
-    keepalive request. A canvas opens no room (the collaboration token route refuses
+    work (no retry loop), and the board asset uploaded for the failed save is deleted
+    again. A closed tab keeps the copy only: the upload can't run as a keepalive request.
+    Both routes answer 404 to a non-member (a link or public visitor), and a save naming
+    an asset that isn't a ready board or image asset of the canvas is a 400. A canvas opens no room (the collaboration token route refuses
     it); the Canvas tab shows to members only, since a link or public visitor has none.
     Restoring a trashed canvas beside the live one made since is refused (409
     `canvas_exists`). Images on the canvas are the next piece (`todo-board-images.md`);

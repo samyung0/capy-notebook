@@ -111,6 +111,11 @@ export async function uploadEditorAsset(
   return { ...asset, name: picked.name };
 }
 
+/** Deletes one of the caller's assets: a board uploaded for a save that then
+ * failed (the workspace canvas), so it stops being charged. */
+export const deleteEditorAsset = (assetId: string) =>
+  api.del<void>(`/editor-assets/${encodeURIComponent(assetId)}`);
+
 // Resolve at render/download time. Nothing persists the URL; a tab's views share
 // it in memory until it expires (`resolvedAssetLinks.ts`).
 export function resolveEditorAsset(assetId: string, signal?: AbortSignal) {
