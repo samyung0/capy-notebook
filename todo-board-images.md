@@ -78,23 +78,60 @@ New catalog limits, generated to every layer like the others: images per board, 
 per image after compression, and a board total across its images. The answer flow
 refuses past them on Done with a message, as it does for the board's 250 KiB.
 
-## Decisions for Epo
+## How Plate handles an image (the model for the workspace canvas)
 
-1. **Answer-board images at all?** (a) Allowed, stored with the drawing as above
-   (recommended). (b) Turn off pasting and uploading images on answer boards.
-2. **Who pays for answer-board images?** The person attempting, like the board itself
-   (recommended, as you said). The alternative, the quiz owner, would split one
-   drawing's bytes between two payers.
-3. **When they upload:** with the board at Done or Check (recommended, matching
-   2026-11-06's "server on Done"), or as soon as they're pasted (faster Done, but stores
-   images for answers never handed in).
-4. **Caps:** images per answer board (suggest 10), bytes per image after compression
-   (suggest 300 KiB, the marking image's cap, or the plan's note image cap), and whether
-   a full storage blocks them like practice boards or never blocks, as assignments
-   don't (suggest: the board's rules).
-5. **Uploaded GIFs:** compressing keeps one frame of an animated GIF (`fitImage`). Keep
-   them still on the board (recommended; KLIPY covers moving GIFs on the workspace
-   canvas), or keep the original GIF within the cap.
-6. **Workspace canvas:** who pays for its images once it's stored: whoever uploads them,
-   as in notes (M16), or the workspace owner. And is this plan's step 4 (wait for the
-   canvas's server storage) the right order?
+- **Upload at once.** A pasted, dropped or picked image becomes an upload placeholder in
+  the note straight away and uploads in the browser (`uploadEditorAsset`). The
+  placeholder shows the local file while it uploads; when the upload completes, the node
+  takes the asset id (`setNodes({assetId, ...})`) and the placeholder goes. Quizzes and
+  flashcard sets do the same (`quizImageUpload`, `CardDialog`).
+- **Owner and payer.** The asset names the material (`editor_assets.material_id`, and its
+  workspace) and is billed to whoever uploaded it (M16).
+- **Caps.** Compressed first (`fitImage`: long side within the image limit, WebP at 0.85),
+  then the uploader's plan image cap, 2 MiB on every plan (migration 0114). Over it after
+  shrinking, the placeholder says the file is too large and nothing is sent.
+- **Storage full.** The upload's reservation is refused (`storage_quota_exceeded`) and
+  the placeholder shows the error; nothing is stored.
+- **Animated GIFs.** Kept as they are, frames and all, when within the side limit and the
+  cap; refused past either, since a canvas would keep one frame. (The earlier draft of
+  this plan said compression keeps one frame: wrong.)
+- **Seen in Files.** Every image a person pays for is listed on the Files page's Embeds
+  tab (`GET /api/editor-assets`), named by its note, with kind, size and workspace.
+- **Removed images.** Content a material saves without an asset trashes that asset a
+  minute later (`pruneMaterialAssetsTx`), and the trash sweep deletes it a day after.
+
+## Workspace canvas, the Plate way (proposed)
+
+1. Pasting, dropping or picking an image adds the `affine:image` block with the local
+   file shown at once (the blob source holds it under BlockSuite's hash), and uploads it
+   through `uploadEditorAsset` right away.
+2. When the upload completes, the block's `sourceId` becomes the asset id (an
+   `updateBlock`, as Plate's `setNodes`), and the blob source keeps the file under that id
+   for this session. A board saved mid-upload keeps the hash, and that block shows an
+   empty frame elsewhere, as D13 had for notes.
+3. The asset is listed on Files › Embeds, named by the canvas, and a removed image is
+   trashed by the canvas's save the way a note's is.
+4. This needs the canvas stored on the server first: an asset has to name what it belongs
+   to, and the canvas today lives only in the browser on a dev page. The canvas's own
+   storage (where its document lives, its size cap and warning) is its own piece of work.
+
+## Decided (Epo 2026-11-09)
+
+1. Images on answer boards: yes, stored with the drawing.
+2. The person attempting pays for them.
+3. Answer-board images upload with the board at Done or Check.
+4. Answer boards: at most 10 images, and a full storage handled as the drawing's
+   (an assignment never refused, practice refused). The workspace canvas follows Plate's
+   asset rules: the plan image cap per image, refused when storage is full.
+5. The workspace canvas's owner pays for its images (no collaboration yet).
+
+## Still open
+
+1. **Workspace canvas upload timing:** upload at once and list on Files › Embeds, as
+   Plate does (proposed above), or something else?
+2. **Bytes per image on answer boards:** Plate's 2 MiB cap, or smaller, since a student
+   pays for up to 10 per answer and the marking image is 300 KiB (suggest 1 MiB).
+3. **Animated GIFs:** follow Plate, keep them moving within the side limit and the cap
+   (recommended).
+4. **Where the workspace canvas lives on the server**, which its images wait on: its own
+   plan.
