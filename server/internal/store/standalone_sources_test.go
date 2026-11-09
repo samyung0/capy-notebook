@@ -144,7 +144,7 @@ func TestAStandaloneRoomsDrainSavesAsItsPayer(t *testing.T) {
 		t.Fatal(err)
 	}
 	addWorkspaceEditor(t, s, target.ID, editor)
-	if _, err := s.MoveFiles(ctx, owner, []string{file.ID}, MoveTarget{WorkspaceID: target.ID}, false); err != nil {
+	if _, err := s.MoveFiles(ctx, owner, []string{file.ID}, MoveTarget{WorkspaceID: target.ID}); err != nil {
 		t.Fatal(err)
 	}
 

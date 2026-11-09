@@ -26,6 +26,8 @@ export function kindLabel(kind: string): string {
       return m.billing_kind_email();
     case 'web_search':
       return m.billing_kind_web_search();
+    case 'extraction_question':
+      return m.billing_kind_extraction_question();
     default:
       return kind;
   }

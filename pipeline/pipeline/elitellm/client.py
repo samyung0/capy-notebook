@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import os
 import re
@@ -27,11 +28,21 @@ DEEPINFRA_EMBED_URL = "https://api.deepinfra.com/v1/openai/embeddings"
 # OpenRouter models, each held on vetted providers with fallbacks off
 # (OpenRouter tries `order` in turn and nothing outside it). Default routing
 # moves between providers that differ on image input, so a model with no entry
-# is refused, never routed. 0731 is the ingest descriptor model (decision
-# 2026-10-15), off Relace since its endpoint answered 429 for every summary
-# (decision 2026-10-20); 1017 reads pages and images for captioning (decisions
-# 2026-10-19 and 2026-10-21); GLM-5.3-Flash serves chat (decision 2026-10-21,
-# replacing Z.AI's own endpoint). OpenRouter bills each provider's listed price.
+# is refused, never routed. DeepInfra is never on a chat or vision route (Epo
+# 2026-11-04); only the Qwen embedding pin uses it, on DeepInfra's own API.
+# 0731 is the ingest descriptor model (decision 2026-10-15), off Relace since
+# its endpoint answered 429 for every summary (decision 2026-10-20); 1017
+# reads pages, captions images and writes ghost text (decisions 2026-10-19,
+# 2026-10-21, 2026-10-28) on Wafer's US endpoint, then InferenceNet, then
+# Cloudflare (Epo 2026-11-04); Make a quiz's calls on it take the extraction
+# slot's route below, InferenceNet first. The catalog prices 1017 at the
+# highest of the three providers' list prices in each column (Epo
+# 2026-11-04). `order` takes an endpoint tag: "wafer/us" ($0.038 /
+# $0.50 per million input / output) is named so OpenRouter cannot pick
+# Wafer's dearer "wafer/mxfp4" ($0.16 in); by name alone it took wafer/us in
+# five calls of five (2026-11-04 probe).
+# GLM-5.3-Flash serves chat (decision 2026-10-21, replacing Z.AI's own
+# endpoint). OpenRouter bills each provider's listed price.
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_ROUTING: dict[str, dict[str, Any]] = {
     "deepseek/deepseek-v4-flash-0731": {
@@ -39,7 +50,7 @@ OPENROUTER_ROUTING: dict[str, dict[str, Any]] = {
         "allow_fallbacks": False,
     },
     "deepseek/deepseek-v4.1-flash-1017": {
-        "order": ["InferenceNet", "Cloudflare"],
+        "order": ["wafer/us", "InferenceNet", "Cloudflare"],
         "allow_fallbacks": False,
     },
     "z-ai/glm-5.3-flash": {
@@ -54,6 +65,32 @@ OPENROUTER_ROUTING: dict[str, dict[str, Any]] = {
         "allow_fallbacks": False,
     },
 }
+# A slot's own route on a model that also serves other slots, for the calls a
+# caller binds to that slot (bind_route_slot); every other call on the model
+# takes its route above. Make a quiz on 1017 goes InferenceNet first (Epo
+# 2026-11-04): on Wafer two runs lost every open part's model answer and one
+# ran away (bench/extraction/reports/2026-11-03-keys-in-one-prompt.md).
+OPENROUTER_SLOT_ROUTING: dict[tuple[str, str], dict[str, Any]] = {
+    ("deepseek/deepseek-v4.1-flash-1017", "extraction"): {
+        "order": ["InferenceNet", "Cloudflare", "wafer/us"],
+        "allow_fallbacks": False,
+    },
+}
+_route_slot: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "openrouter_route_slot", default=""
+)
+
+
+def bind_route_slot(slot: str) -> contextvars.Token[str]:
+    """Route this context's OpenRouter calls by the slot's own route, where
+    OPENROUTER_SLOT_ROUTING has one."""
+    return _route_slot.set(slot)
+
+
+def reset_route_slot(token: contextvars.Token[str]) -> None:
+    _route_slot.reset(token)
+
+
 # The zai pin keeps its catalog identity; OpenRouter names the model with an
 # org prefix.
 ZAI_OPENROUTER_MODELS = {"glm-5.3-flash": "z-ai/glm-5.3-flash"}
@@ -251,13 +288,17 @@ def openrouter_reasoning(spec: ModelConfig, thinking: str) -> dict[str, Any]:
     """GLM cannot turn reasoning off, and a request without an effort reasons
     as at max, so every GLM request names its effort (decision 2026-10-21).
     MiniMax reasons at the chat pin's effort too. The DeepSeek pins run with
-    reasoning off."""
+    reasoning off at instant, as captions, page reads, summaries and ghost text
+    ask, and otherwise at the call's effort: Make a quiz's page windows reason
+    at mid on 1017 (Epo 2026-11-03)."""
     if spec.model_slug in MINIMAX_EFFORTS:
         if thinking not in MINIMAX_EFFORTS[spec.model_slug]:
             raise RegistryError("MiniMax supports only low, mid, or high reasoning")
         return {"effort": MINIMAX_EFFORTS[spec.model_slug][thinking]}
     if spec.provider_slug != "zai":
-        return {"enabled": False}
+        if thinking == "instant":
+            return {"enabled": False}
+        return {"effort": _THINKING_TO_OPENAI[thinking]}
     if thinking not in ("low", "high", "max"):
         raise RegistryError("GLM-5.3-Flash supports only low, high, or max reasoning")
     return {"effort": thinking}
@@ -485,7 +526,9 @@ def openrouter_request(
         if spec.provider_slug == "zai"
         else spec.model_slug
     )
-    routing = OPENROUTER_ROUTING.get(model or "")
+    routing = OPENROUTER_SLOT_ROUTING.get(
+        (model or "", _route_slot.get())
+    ) or OPENROUTER_ROUTING.get(model or "")
     if routing is None:
         raise RegistryError(
             f"elitellm has no OpenRouter provider pin for {spec.model_slug!r}"
@@ -542,6 +585,20 @@ def _call_timeout() -> float:
     if _interactive():
         return cfg.interactive_provider_timeout_s
     return cfg.ingest_provider_timeout_s
+
+
+# The first event can't come before the request has gone: a Make a quiz call with 28 page
+# images is 8.6 MB and took 20 to 58 s to start from a home connection, where a flat
+# 15 s failed every run.
+FIRST_EVENT_S_PER_MB = 8.0
+
+
+def _first_event_bound(body: dict[str, Any]) -> float:
+    """The wait for a stream's first event, with time to upload a large request. A
+    request of a megabyte or less keeps the flat bound."""
+    megabytes = len(json.dumps(body)) / 1_000_000
+    extra = FIRST_EVENT_S_PER_MB * megabytes if megabytes > 1 else 0.0
+    return _call_timeout() + extra
 
 
 def _stream_idle() -> float:
@@ -679,7 +736,7 @@ async def _stream_sse(
     the receipt window is derived from. httpx's own read timeout is off so
     this timer decides.
     """
-    first_idle, later_idle = _call_timeout(), _stream_idle()
+    first_idle, later_idle = _first_event_bound(body), _stream_idle()
     loop = asyncio.get_running_loop()
     backstop = _stream_backstop()
     backstop_at = loop.time() + backstop

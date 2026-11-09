@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { PREF_KEYS, writePref } from '@/lib/localPrefs';
 
-export const GETTING_STARTED_STEPS = ['upload', 'chat', 'plan'] as const;
+export const GETTING_STARTED_STEPS = ['upload', 'chat', 'practice'] as const;
 export type GettingStartedStep = (typeof GETTING_STARTED_STEPS)[number];
 
 /** The Get started list of the account that onboarded in this browser: the

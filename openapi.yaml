@@ -153,17 +153,21 @@ components:
         - bbox
         - bytes
       type: object
-    AddChapterReq:
+    AddTopicReq:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/AddChapterReq.json
+          example: https://example.com/schemas/AddTopicReq.json
           format: uri
           readOnly: true
           type: string
+        description:
+          description: One optional line on what the topic covers
+          maxLength: 200
+          type: string
         name:
-          description: Chapter name
+          description: Topic name
           maxLength: 60
           minLength: 1
           type: string
@@ -362,18 +366,813 @@ components:
         - updatedAt
         - author
       type: object
+    ApproveAIMarksInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ApproveAIMarksInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        questionId:
+          type: string
+      required:
+        - questionId
+      type: object
+    ApproveAIMarksOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ApproveAIMarksOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        approved:
+          format: int64
+          type: integer
+      required:
+        - approved
+      type: object
     AssignableRole:
       enum:
         - editor
         - viewer
       type: string
-    Attempt:
+    Assignment:
       additionalProperties: false
       properties:
-        chapters:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/Assignment.json
+          format: uri
+          readOnly: true
+          type: string
+        allowUploads:
+          type: boolean
+        attempts:
+          format: int64
+          type: integer
+        closed:
+          type: boolean
+        closedAt:
+          format: date-time
+          type: string
+        draft:
+          type: boolean
+        drawingParts:
+          type: boolean
+        dueAt:
+          format: date-time
+          type: string
+        files:
+          items:
+            $ref: "#/components/schemas/AssignmentFile"
+          type: array
+        gradesHidden:
+          type: boolean
+        id:
+          type: string
+        kind:
+          enum:
+            - marked
+            - unmarked
+          type: string
+        latePenaltyPct:
+          format: int64
+          type: integer
+        manage:
+          $ref: "#/components/schemas/AssignmentManage"
+        marks:
+          format: double
+          type: number
+        mine:
+          $ref: "#/components/schemas/AssignmentMine"
+        noLate:
+          type: boolean
+        postedAt:
+          format: date-time
+          type: string
+        postedBy:
+          type: string
+        practiceQuizId:
+          type: string
+        questions:
+          format: int64
+          type: integer
+        timeLimitMin:
+          format: int64
+          type: integer
+        title:
+          type: string
+        topicIds:
           items:
             type: string
           type: array
+        workspaceId:
+          type: string
+      required:
+        - id
+        - workspaceId
+        - kind
+        - title
+        - postedAt
+        - postedBy
+        - closed
+        - draft
+        - noLate
+        - latePenaltyPct
+        - attempts
+        - questions
+        - marks
+        - drawingParts
+        - allowUploads
+        - topicIds
+        - files
+        - gradesHidden
+      type: object
+    AssignmentAnswerRow:
+      additionalProperties: false
+      properties:
+        aiAwarded:
+          format: double
+          type: number
+        aiError:
+          enum:
+            - credits
+            - error
+            - file
+          type: string
+        aiMarked:
+          type: boolean
+        aiWarning:
+          type: string
+        attemptId:
+          type: string
+        attemptNumber:
+          format: int64
+          type: integer
+        awarded:
+          format: double
+          type: number
+        handMarking:
+          type: boolean
+        marking:
+          type: boolean
+        marks:
+          format: double
+          type: number
+        questionId:
+          type: string
+        userId:
+          type: string
+        waiting:
+          type: boolean
+      required:
+        - questionId
+        - userId
+        - attemptId
+        - attemptNumber
+        - waiting
+        - aiMarked
+        - aiAwarded
+        - aiWarning
+        - handMarking
+        - awarded
+        - marks
+      type: object
+    AssignmentAnswersInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/AssignmentAnswersInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        answers:
+          additionalProperties: {}
+          type: object
+      required:
+        - answers
+      type: object
+    AssignmentAttempt:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/AssignmentAttempt.json
+          format: uri
+          readOnly: true
+          type: string
+        answers:
+          additionalProperties: {}
+          type: object
+        assignmentId:
+          type: string
+        autoSubmitted:
+          type: boolean
+        closesAt:
+          format: date-time
+          type: string
+        correct:
+          format: double
+          type: number
+        deadlineAt:
+          format: date-time
+          type: string
+        drawingImages:
+          type: boolean
+        gradesHidden:
+          type: boolean
+        id:
+          type: string
+        late:
+          type: boolean
+        latePenaltyPct:
+          format: int64
+          type: integer
+        mark:
+          format: double
+          type: number
+        marking:
+          type: boolean
+        now:
+          format: date-time
+          type: string
+        paper:
+          enum:
+            - upload
+            - reading
+            - read
+          type: string
+        paperFiles:
+          items:
+            $ref: "#/components/schemas/PaperFile"
+          type: array
+        questions:
+          items:
+            additionalProperties: {}
+            type: object
+          type: array
+        removedAssetIds:
+          items:
+            type: string
+          type: array
+        showAnswers:
+          type: boolean
+        startedAt:
+          format: date-time
+          type: string
+        status:
+          enum:
+            - running
+            - submitted
+          type: string
+        submittedAt:
+          format: date-time
+          type: string
+        title:
+          type: string
+        total:
+          format: double
+          type: number
+        userAvatarUrl:
+          type: string
+        userId:
+          type: string
+        userName:
+          type: string
+        waitingAnswers:
+          format: int64
+          type: integer
+        waitingMarks:
+          format: double
+          type: number
+      required:
+        - id
+        - assignmentId
+        - userId
+        - userName
+        - title
+        - status
+        - now
+        - autoSubmitted
+        - late
+        - latePenaltyPct
+        - correct
+        - mark
+        - total
+        - waitingMarks
+        - waitingAnswers
+        - showAnswers
+        - gradesHidden
+        - drawingImages
+        - answers
+        - questions
+        - removedAssetIds
+        - paperFiles
+      type: object
+    AssignmentClosedInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/AssignmentClosedInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        closed:
+          type: boolean
+      required:
+        - closed
+      type: object
+    AssignmentDoneInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/AssignmentDoneInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        done:
+          type: boolean
+      required:
+        - done
+      type: object
+    AssignmentFile:
+      additionalProperties: false
+      properties:
+        fileId:
+          type: string
+        kind:
+          type: string
+        materialId:
+          type: string
+        name:
+          type: string
+      required:
+        - name
+        - kind
+      type: object
+    AssignmentFileRef:
+      additionalProperties: false
+      properties:
+        fileId:
+          type: string
+        materialId:
+          type: string
+      type: object
+    AssignmentFormReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/AssignmentFormReq.json
+          format: uri
+          readOnly: true
+          type: string
+        allowUploads:
+          type: boolean
+        assignAll:
+          type: boolean
+        assignees:
+          items:
+            type: string
+          maxItems: 500
+          type: array
+        attempts:
+          format: int64
+          maximum: 10
+          minimum: 1
+          type: integer
+        draft:
+          type: boolean
+        dueAt:
+          format: date-time
+          type: string
+        files:
+          items:
+            $ref: "#/components/schemas/AssignmentFileRef"
+          maxItems: 20
+          type: array
+        kind:
+          enum:
+            - marked
+            - unmarked
+          type: string
+        latePenaltyPct:
+          format: int64
+          maximum: 50
+          minimum: 0
+          type: integer
+        marking:
+          enum:
+            - ai_approve
+            - ai
+            - manual
+          type: string
+        noLate:
+          type: boolean
+        quizId:
+          type: string
+        showAnswers:
+          enum:
+            - closed
+            - submitted
+            - never
+          type: string
+        showGrades:
+          enum:
+            - automatic
+            - manual
+          type: string
+        shuffle:
+          type: boolean
+        timeLimitMin:
+          format: int64
+          maximum: 1440
+          minimum: 1
+          type: integer
+        title:
+          maxLength: 120
+          minLength: 1
+          type: string
+      required:
+        - kind
+        - title
+        - attempts
+        - noLate
+        - latePenaltyPct
+        - assignAll
+        - assignees
+        - draft
+        - marking
+        - showAnswers
+        - showGrades
+        - shuffle
+        - files
+      type: object
+    AssignmentItemReport:
+      additionalProperties: false
+      properties:
+        awarded:
+          format: int64
+          type: integer
+        marked:
+          format: int64
+          type: integer
+        marks:
+          format: double
+          type: number
+        text:
+          type: string
+      required:
+        - text
+        - marks
+        - awarded
+        - marked
+      type: object
+    AssignmentList:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/AssignmentList.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/Assignment"
+          type: array
+        members:
+          format: int64
+          type: integer
+      required:
+        - items
+      type: object
+    AssignmentManage:
+      additionalProperties: false
+      properties:
+        assignAll:
+          type: boolean
+        assigned:
+          format: int64
+          type: integer
+        assignees:
+          items:
+            type: string
+          type: array
+        average:
+          format: double
+          type: number
+        done:
+          format: int64
+          type: integer
+        gradesReleasedAt:
+          format: date-time
+          type: string
+        marking:
+          enum:
+            - ai_approve
+            - ai
+            - manual
+          type: string
+        notGraded:
+          format: int64
+          type: integer
+        quizId:
+          type: string
+        quizTitle:
+          type: string
+        quizTrashed:
+          type: boolean
+        showAnswers:
+          enum:
+            - closed
+            - submitted
+            - never
+          type: string
+        showGrades:
+          enum:
+            - automatic
+            - manual
+          type: string
+        shuffle:
+          type: boolean
+        toApprove:
+          format: int64
+          type: integer
+      required:
+        - assignAll
+        - assignees
+        - marking
+        - showAnswers
+        - showGrades
+        - shuffle
+        - assigned
+        - done
+        - toApprove
+        - notGraded
+      type: object
+    AssignmentMark:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/AssignmentMark.json
+          format: uri
+          readOnly: true
+          type: string
+        clearWarning:
+          type: boolean
+        comment:
+          maxLength: 2000
+          type: string
+        parts:
+          items:
+            $ref: "#/components/schemas/AssignmentPartMark"
+          type: array
+        questionId:
+          type: string
+      required:
+        - questionId
+        - parts
+        - comment
+      type: object
+    AssignmentMarkingProgress:
+      additionalProperties: false
+      properties:
+        done:
+          format: int64
+          type: integer
+        total:
+          format: int64
+          type: integer
+      required:
+        - done
+        - total
+      type: object
+    AssignmentMemberRow:
+      additionalProperties: false
+      properties:
+        attemptId:
+          type: string
+        avatarUrl:
+          type: string
+        correct:
+          format: double
+          type: number
+        files:
+          items:
+            $ref: "#/components/schemas/PaperFile"
+          nullable: true
+          type: array
+        late:
+          type: boolean
+        latePenaltyPct:
+          format: int64
+          type: integer
+        mark:
+          format: double
+          type: number
+        marking:
+          type: boolean
+        minutes:
+          format: int64
+          type: integer
+        missing:
+          type: boolean
+        name:
+          type: string
+        running:
+          type: boolean
+        submittedAt:
+          format: date-time
+          type: string
+        total:
+          format: double
+          type: number
+        userId:
+          type: string
+        waitingAnswers:
+          format: int64
+          type: integer
+      required:
+        - userId
+        - name
+        - waitingAnswers
+        - late
+        - latePenaltyPct
+        - running
+        - missing
+      type: object
+    AssignmentMine:
+      additionalProperties: false
+      properties:
+        attemptsUsed:
+          format: int64
+          type: integer
+        correct:
+          format: double
+          type: number
+        countedAttemptId:
+          type: string
+        done:
+          type: boolean
+        doneAt:
+          format: date-time
+          type: string
+        handIn:
+          items:
+            $ref: "#/components/schemas/PaperFile"
+          nullable: true
+          type: array
+        late:
+          type: boolean
+        latePenaltyPct:
+          format: int64
+          type: integer
+        mark:
+          format: double
+          type: number
+        missing:
+          type: boolean
+        runningAttemptId:
+          type: string
+        total:
+          format: double
+          type: number
+        waitingAnswers:
+          format: int64
+          type: integer
+        waitingMarks:
+          format: double
+          type: number
+      required:
+        - done
+        - attemptsUsed
+        - waitingMarks
+        - waitingAnswers
+        - late
+        - latePenaltyPct
+        - missing
+      type: object
+    AssignmentPartMark:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            format: double
+            type: number
+          nullable: true
+          type: array
+        mark:
+          format: double
+          type: number
+        partId:
+          type: string
+      required:
+        - partId
+      type: object
+    AssignmentPartReport:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: "#/components/schemas/AssignmentItemReport"
+          nullable: true
+          type: array
+        options:
+          items:
+            format: int64
+            type: integer
+          nullable: true
+          type: array
+        partId:
+          type: string
+        wrongAnswers:
+          items:
+            $ref: "#/components/schemas/AssignmentWrongAnswer"
+          nullable: true
+          type: array
+      required:
+        - partId
+      type: object
+    AssignmentQuestionReport:
+      additionalProperties: false
+      properties:
+        average:
+          format: double
+          type: number
+        parts:
+          items:
+            $ref: "#/components/schemas/AssignmentPartReport"
+          type: array
+        percent:
+          format: double
+          type: number
+        question:
+          additionalProperties: {}
+          type: object
+        submitted:
+          format: int64
+          type: integer
+      required:
+        - question
+        - submitted
+        - parts
+      type: object
+    AssignmentReportBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/AssignmentReportBody.json
+          format: uri
+          readOnly: true
+          type: string
+        answers:
+          items:
+            $ref: "#/components/schemas/AssignmentAnswerRow"
+          type: array
+        marking:
+          $ref: "#/components/schemas/AssignmentMarkingProgress"
+        members:
+          items:
+            $ref: "#/components/schemas/AssignmentMemberRow"
+          type: array
+        papersToRead:
+          format: int64
+          type: integer
+        questions:
+          items:
+            $ref: "#/components/schemas/AssignmentQuestionReport"
+          type: array
+      required:
+        - members
+        - questions
+        - answers
+        - papersToRead
+      type: object
+    AssignmentWrongAnswer:
+      additionalProperties: false
+      properties:
+        count:
+          format: int64
+          type: integer
+        text:
+          type: string
+      required:
+        - text
+        - count
+      type: object
+    Attempt:
+      additionalProperties: false
+      properties:
         correct:
           format: double
           type: number
@@ -401,6 +1200,10 @@ components:
         takenAt:
           format: date-time
           type: string
+        topics:
+          items:
+            type: string
+          type: array
         total:
           format: double
           type: number
@@ -416,7 +1219,7 @@ components:
         - kind
         - quizName
         - workspaceName
-        - chapters
+        - topics
         - correct
         - total
         - pct
@@ -461,10 +1264,6 @@ components:
           items:
             $ref: "#/components/schemas/AttemptCard"
           type: array
-        chapters:
-          items:
-            type: string
-          type: array
         correct:
           format: double
           type: number
@@ -499,6 +1298,10 @@ components:
         takenAt:
           format: date-time
           type: string
+        topics:
+          items:
+            type: string
+          type: array
         total:
           format: double
           type: number
@@ -517,7 +1320,7 @@ components:
         - kind
         - quizName
         - workspaceName
-        - chapters
+        - topics
         - correct
         - total
         - pct
@@ -639,13 +1442,6 @@ components:
           format: uri
           readOnly: true
           type: string
-        chapterId:
-          description: Where a new quiz is filed; goes with quizName
-          type: string
-        chapterName:
-          description: Files a new quiz in the chapter of this name (any case), created when missing; goes with quizName, exclusive with chapterId
-          maxLength: 60
-          type: string
         questionIds:
           description: Bank questions to copy, in this order
           items:
@@ -660,6 +1456,13 @@ components:
         quizName:
           description: Name of a new quiz; exclusive with quizId
           maxLength: 120
+          type: string
+        topicId:
+          description: Where a new quiz is filed; goes with quizName
+          type: string
+        topicName:
+          description: Files a new quiz in the topic of this name (any case), created when missing; goes with quizName, exclusive with topicId
+          maxLength: 60
           type: string
         workspaceId:
           minLength: 1
@@ -807,6 +1610,25 @@ components:
         - score
         - reviewedAt
       type: object
+    BankTopic:
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        reviewed:
+          format: int64
+          type: integer
+        total:
+          format: int64
+          type: integer
+      required:
+        - id
+        - label
+        - total
+        - reviewed
+      type: object
     BillingCheckoutReq:
       additionalProperties: false
       properties:
@@ -859,6 +1681,8 @@ components:
         renewalAt:
           format: date-time
           type: string
+        storageBreakdown:
+          $ref: "#/components/schemas/StorageBreakdown"
         storageLimitBytes:
           format: int64
           type: integer
@@ -877,6 +1701,7 @@ components:
         - storageUsedBytes
         - storageReservedBytes
         - storageLimitBytes
+        - storageBreakdown
         - creditsUsedMicros
         - creditsReservedMicros
         - creditsLimitMicros
@@ -1021,35 +1846,6 @@ components:
       required:
         - assetId
       type: object
-    Chapter:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/Chapter.json
-          format: uri
-          readOnly: true
-          type: string
-        fileIds:
-          items:
-            type: string
-          type: array
-        id:
-          type: string
-        name:
-          type: string
-        order:
-          format: int64
-          type: integer
-        workspaceId:
-          type: string
-      required:
-        - id
-        - workspaceId
-        - name
-        - order
-        - fileIds
-      type: object
     CheckBankQuestionReq:
       additionalProperties: false
       properties:
@@ -1122,27 +1918,6 @@ components:
         - itemId
         - answers
       type: object
-    CheckSharedNoteQuizReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/CheckSharedNoteQuizReq.json
-          format: uri
-          readOnly: true
-          type: string
-        answers:
-          additionalProperties: {}
-          description: The learner's answers to the question's parts, by part id
-          type: object
-        questionId:
-          maxLength: 128
-          minLength: 1
-          type: string
-      required:
-        - questionId
-        - answers
-      type: object
     Citation:
       additionalProperties: false
       properties:
@@ -1203,17 +1978,17 @@ components:
           format: uri
           readOnly: true
           type: string
-        chapterId:
-          description: A chapter of the workspace; exclusive with chapterName
-          type: string
-        chapterName:
-          description: A chapter of this name (any case), created when missing
-          maxLength: 60
-          type: string
         name:
           description: The copy's name
           maxLength: 120
           minLength: 1
+          type: string
+        topicId:
+          description: A topic of the workspace; exclusive with topicName
+          type: string
+        topicName:
+          description: A topic of this name (any case), created when missing
+          maxLength: 60
           type: string
         workspaceId:
           description: Omitted for a standalone copy
@@ -1230,17 +2005,17 @@ components:
           format: uri
           readOnly: true
           type: string
-        chapterId:
-          description: A chapter of the workspace; exclusive with chapterName
-          type: string
-        chapterName:
-          description: A chapter of this name (any case), created when missing
-          maxLength: 60
-          type: string
         title:
           description: The copy's title, unique in its workspace
           maxLength: 120
           minLength: 1
+          type: string
+        topicId:
+          description: A topic of the workspace; exclusive with topicName
+          type: string
+        topicName:
+          description: A topic of this name (any case), created when missing
+          maxLength: 60
           type: string
         workspaceId:
           description: Omitted for a standalone copy
@@ -1381,6 +2156,22 @@ components:
         - computational
         - probability
       type: object
+    ConfirmExtractionReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ConfirmExtractionReq.json
+          format: uri
+          readOnly: true
+          type: string
+        questions:
+          format: int64
+          minimum: 1
+          type: integer
+      required:
+        - questions
+      type: object
     ContentOrderItem:
       additionalProperties: false
       properties:
@@ -1482,9 +2273,6 @@ components:
           format: uri
           readOnly: true
           type: string
-        chapterId:
-          description: A chapter of the workspace
-          type: string
         format:
           enum:
             - docx
@@ -1494,6 +2282,9 @@ components:
           description: The file's name without its extension
           maxLength: 120
           minLength: 1
+          type: string
+        topicId:
+          description: A topic of the workspace
           type: string
       required:
         - format
@@ -1628,6 +2419,32 @@ components:
         - start
         - end
       type: object
+    CreateExtractionReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/CreateExtractionReq.json
+          format: uri
+          readOnly: true
+          type: string
+        answers:
+          items:
+            $ref: "#/components/schemas/ExtractionFile"
+          type: array
+        paper:
+          items:
+            $ref: "#/components/schemas/ExtractionFile"
+          minItems: 1
+          type: array
+        title:
+          maxLength: 120
+          minLength: 1
+          type: string
+      required:
+        - title
+        - paper
+      type: object
     CreateFlashcardSetReq:
       additionalProperties: false
       properties:
@@ -1661,12 +2478,12 @@ components:
         kind:
           $ref: "#/components/schemas/MaterialKind"
           description: Material kind
-        scopeChapters:
+        scopeFileNames:
           items:
             type: string
           nullable: true
           type: array
-        scopeFileNames:
+        scopeTopics:
           items:
             type: string
           nullable: true
@@ -1686,11 +2503,6 @@ components:
           format: uri
           readOnly: true
           type: string
-        chapters:
-          items:
-            type: string
-          nullable: true
-          type: array
         name:
           maxLength: 120
           type: string
@@ -1702,24 +2514,13 @@ components:
             type: object
           nullable: true
           type: array
+        topics:
+          items:
+            type: string
+          nullable: true
+          type: array
         workspaceId:
           type: string
-      type: object
-    CreateStudyPlanReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/CreateStudyPlanReq.json
-          format: uri
-          readOnly: true
-          type: string
-        name:
-          maxLength: 60
-          minLength: 1
-          type: string
-      required:
-        - name
       type: object
     CreateWorkspaceInviteReq:
       additionalProperties: false
@@ -1761,6 +2562,9 @@ components:
           minLength: 1
           pattern: ^$|^((sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$
           type: string
+        kind:
+          $ref: "#/components/schemas/WorkspaceKind"
+          description: "What it is used for, personal when omitted. A clone ignores it: an owner's or editor's keeps the source's, anyone else's is personal"
         name:
           description: Workspace name
           maxLength: 80
@@ -1994,6 +2798,83 @@ components:
         - updatedAt
         - comments
       type: object
+    DrawingOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/DrawingOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        boardUrl:
+          description: The board's saved document, gzipped; the link is the same all hour and lasts two
+          type: string
+        bytes:
+          format: int64
+          type: integer
+        id:
+          type: string
+        partId:
+          type: string
+      required:
+        - id
+        - partId
+        - boardUrl
+        - bytes
+      type: object
+    DrawingSavedOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/DrawingSavedOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        id:
+          description: "The stored drawing; the part's answer is {drawing: id}"
+          type: string
+      required:
+        - id
+      type: object
+    DrawingUpload:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/DrawingUpload.json
+          format: uri
+          readOnly: true
+          type: string
+        board:
+          description: The board's saved document, base64
+          format: base64
+          maxLength: 400000
+          type: string
+        image:
+          description: The marking image (WebP, or JPEG or PNG where the browser makes no WebP), base64; left out when nothing will mark it
+          format: base64
+          maxLength: 420000
+          type: string
+      required:
+        - board
+      type: object
+    DrawingsDeletedOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/DrawingsDeletedOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        deleted:
+          format: int64
+          type: integer
+      required:
+        - deleted
+      type: object
     EditorAssetItem:
       additionalProperties: false
       properties:
@@ -2186,6 +3067,186 @@ components:
         - cover
         - subjects
       type: object
+    Extraction:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/Extraction.json
+          format: uri
+          readOnly: true
+          type: string
+        answered:
+          format: int64
+          type: integer
+        confirmed:
+          format: int64
+          type: integer
+        createdAt:
+          format: date-time
+          type: string
+        error:
+          type: string
+        errorCode:
+          type: string
+        finishedAt:
+          format: date-time
+          type: string
+        found:
+          $ref: "#/components/schemas/ExtractionFound"
+        id:
+          type: string
+        quizId:
+          type: string
+        recorded:
+          format: int64
+          type: integer
+        report:
+          $ref: "#/components/schemas/ExtractionReport"
+        status:
+          enum:
+            - running
+            - confirming
+            - done
+            - failed
+            - cancelled
+          type: string
+        title:
+          type: string
+        workspaceId:
+          type: string
+      required:
+        - id
+        - workspaceId
+        - title
+        - status
+        - recorded
+        - answered
+        - createdAt
+      type: object
+    ExtractionFile:
+      additionalProperties: false
+      properties:
+        fileId:
+          minLength: 1
+          type: string
+        images:
+          items:
+            type: string
+          type: array
+        pages:
+          items:
+            format: int64
+            type: integer
+          type: array
+      required:
+        - fileId
+      type: object
+    ExtractionFound:
+      additionalProperties: false
+      properties:
+        answerFiles:
+          format: int64
+          type: integer
+        availableCredits:
+          format: int64
+          type: integer
+        chargedCredits:
+          format: int64
+          type: integer
+        paperName:
+          type: string
+        paperPages:
+          format: int64
+          type: integer
+        questions:
+          items:
+            $ref: "#/components/schemas/ExtractionFoundQuestion"
+          type: array
+        unreadAnswers:
+          items:
+            type: string
+          type: array
+      required:
+        - questions
+        - chargedCredits
+        - availableCredits
+        - unreadAnswers
+        - paperName
+        - paperPages
+        - answerFiles
+      type: object
+    ExtractionFoundQuestion:
+      additionalProperties: false
+      properties:
+        first:
+          format: int64
+          type: integer
+        label:
+          type: string
+        last:
+          format: int64
+          type: integer
+        parts:
+          items:
+            type: string
+          type: array
+      required:
+        - label
+        - first
+        - last
+        - parts
+      type: object
+    ExtractionReport:
+      additionalProperties: false
+      properties:
+        answersMissing:
+          items:
+            type: string
+          type: array
+        expected:
+          items:
+            type: string
+          type: array
+        figures:
+          items:
+            type: string
+          type: array
+        figuresLeftOut:
+          items:
+            type: string
+          type: array
+        missing:
+          items:
+            type: string
+          type: array
+        pages:
+          format: int64
+          type: integer
+        recorded:
+          items:
+            type: string
+          type: array
+        stopped:
+          enum:
+            - ""
+            - quiz_full
+            - credits
+            - output_limit
+          type: string
+        windows:
+          format: int64
+          type: integer
+      required:
+        - expected
+        - missing
+        - recorded
+        - figures
+        - figuresLeftOut
+        - stopped
+        - pages
+        - windows
+      type: object
     File:
       additionalProperties: false
       properties:
@@ -2198,12 +3259,11 @@ components:
         addedAt:
           format: date-time
           type: string
-        chapterId:
-          nullable: true
-          type: string
         errorId:
           type: string
         hasBytes:
+          type: boolean
+        hidden:
           type: boolean
         id:
           type: string
@@ -2248,6 +3308,9 @@ components:
         thumbnailUrl:
           description: Hour-stable presigned GET of the page-1 thumbnail; list rows only
           type: string
+        topicId:
+          nullable: true
+          type: string
         workspaceId:
           type: string
         workspaceName:
@@ -2255,7 +3318,7 @@ components:
       required:
         - id
         - workspaceId
-        - chapterId
+        - topicId
         - position
         - name
         - kind
@@ -2478,28 +3541,6 @@ components:
         - canEdit
         - canEditContent
       type: object
-    GenerateDetail:
-      enum:
-        - brief
-        - standard
-        - detailed
-      type: string
-    GenerateDiagramType:
-      enum:
-        - auto
-        - flowchart
-        - sequence
-        - class
-        - state
-        - er
-      type: string
-    GenerateKind:
-      enum:
-        - flashcards
-        - quiz
-        - mindmap
-        - diagram
-      type: string
     GenerateQuestionType:
       enum:
         - mcq
@@ -2518,35 +3559,30 @@ components:
           format: uri
           readOnly: true
           type: string
-        chapters:
-          items:
-            type: string
-          type: array
         count:
           format: int64
           maximum: 50
           minimum: 1
           type: integer
-        detail:
-          $ref: "#/components/schemas/GenerateDetail"
-          default: standard
-        diagramType:
-          $ref: "#/components/schemas/GenerateDiagramType"
-          default: auto
         fileIds:
           items:
             type: string
           type: array
-        kind:
-          $ref: "#/components/schemas/GenerateKind"
         levels:
           items:
             $ref: "#/components/schemas/CognitiveLevel"
           type: array
+        mix:
+          description: Add the caller's answered questions to the new ones
+          type: boolean
         title:
           maxLength: 120
           minLength: 1
           type: string
+        topics:
+          items:
+            type: string
+          type: array
         types:
           default:
             - mcq
@@ -2555,7 +3591,7 @@ components:
           minItems: 1
           type: array
       required:
-        - kind
+        - count
         - title
       type: object
     GradeAnonymousQuizReq:
@@ -2571,15 +3607,9 @@ components:
           additionalProperties: {}
           description: The learner's answers to the question's parts, by part id
           type: object
-        localId:
-          maxLength: 64
-          type: string
         questionId:
           maxLength: 128
           minLength: 1
-          type: string
-        turnstileToken:
-          maxLength: 2048
           type: string
       required:
         - questionId
@@ -2607,6 +3637,20 @@ components:
         - correct
         - total
         - question
+      type: object
+    HiddenBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/HiddenBody.json
+          format: uri
+          readOnly: true
+          type: string
+        hidden:
+          type: boolean
+      required:
+        - hidden
       type: object
     ImportSourcesAccepted:
       additionalProperties: false
@@ -2648,11 +3692,6 @@ components:
           maximum: 10000
           minimum: 1
           type: integer
-        chapterId:
-          type: string
-        chapterName:
-          maxLength: 60
-          type: string
         driveIds:
           items:
             type: string
@@ -2663,6 +3702,9 @@ components:
           maxItems: 20
           minItems: 1
           type: array
+        hidden:
+          description: "The file starts hidden from members: only the workspace's owners and editors see it. A file outside a workspace has no members, so it is refused there"
+          type: boolean
         parseMode:
           enum:
             - fast
@@ -2675,6 +3717,11 @@ components:
           type: string
         requestId:
           maxLength: 128
+          type: string
+        topicId:
+          type: string
+        topicName:
+          maxLength: 60
           type: string
       required:
         - provider
@@ -2916,32 +3963,151 @@ components:
         - name
         - color
       type: object
-    LearningProgress:
+    LearningLabelCount:
+      additionalProperties: false
+      properties:
+        count:
+          format: int64
+          type: integer
+        label:
+          enum:
+            - not_started
+            - attempted
+            - needs_practice
+            - familiar
+            - proficient
+            - mastered
+          type: string
+      required:
+        - label
+        - count
+      type: object
+    LearningOverview:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/LearningProgress.json
+          example: https://example.com/schemas/LearningOverview.json
           format: uri
           readOnly: true
           type: string
-        active:
+        next:
           items:
-            $ref: "#/components/schemas/ProgressWorkspace"
+            $ref: "#/components/schemas/LearningRow"
           type: array
-        finished:
+        teaches:
           items:
-            $ref: "#/components/schemas/ProgressWorkspace"
+            $ref: "#/components/schemas/LearningTeach"
           type: array
-        hiddenCount:
+        workspaces:
+          items:
+            $ref: "#/components/schemas/LearningWorkspace"
+          type: array
+      required:
+        - next
+        - workspaces
+        - teaches
+      type: object
+    LearningRow:
+      additionalProperties: false
+      properties:
+        answered:
           format: int64
           type: integer
-        lead:
-          $ref: "#/components/schemas/ProgressMap"
+        at:
+          format: date-time
+          type: string
+        group:
+          enum:
+            - topic
+            - others
+            - workspace
+            - ""
+          type: string
+        kind:
+          enum:
+            - session
+            - quiz
+            - start
+            - review
+          type: string
+        materialId:
+          type: string
+        materialKind:
+          enum:
+            - quiz
+            - flashcards
+            - ""
+          type: string
+        sessionId:
+          type: string
+        suggestion:
+          $ref: "#/components/schemas/ReviewSuggestion"
+        title:
+          type: string
+        topicName:
+          type: string
+        total:
+          format: int64
+          type: integer
+        workspaceId:
+          type: string
+        workspaceName:
+          type: string
       required:
-        - active
-        - finished
-        - hiddenCount
+        - kind
+        - workspaceId
+        - workspaceName
+        - answered
+        - total
+      type: object
+    LearningTeach:
+      additionalProperties: false
+      properties:
+        iconId:
+          type: string
+        members:
+          format: int64
+          type: integer
+        name:
+          type: string
+        workspaceId:
+          type: string
+      required:
+        - workspaceId
+        - name
+        - iconId
+        - members
+      type: object
+    LearningWorkspace:
+      additionalProperties: false
+      properties:
+        iconId:
+          type: string
+        items:
+          format: int64
+          type: integer
+        labels:
+          items:
+            $ref: "#/components/schemas/LearningLabelCount"
+          type: array
+        lastPractisedAt:
+          format: date-time
+          type: string
+        name:
+          type: string
+        tried:
+          format: int64
+          type: integer
+        workspaceId:
+          type: string
+      required:
+        - workspaceId
+        - name
+        - iconId
+        - labels
+        - tried
+        - items
       type: object
     LibraryFigure:
       additionalProperties: false
@@ -2992,6 +4158,87 @@ components:
       required:
         - locale
       type: object
+    MarkAssignmentWithAIOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/MarkAssignmentWithAIOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        total:
+          format: int64
+          type: integer
+      required:
+        - total
+      type: object
+    MarkedDrawing:
+      additionalProperties: false
+      properties:
+        assignment:
+          description: An assignment's answer; otherwise practice
+          type: boolean
+        attemptId:
+          type: string
+        bytes:
+          format: int64
+          type: integer
+        createdAt:
+          format: date-time
+          type: string
+        id:
+          type: string
+        part:
+          description: The part's number from 1, when the question has more than one
+          format: int64
+          type: integer
+        question:
+          description: The question's number, from 1
+          format: int64
+          type: integer
+        quizName:
+          type: string
+        workspaceId:
+          type: string
+        workspaceName:
+          type: string
+      required:
+        - id
+        - attemptId
+        - assignment
+        - quizName
+        - workspaceName
+        - question
+        - bytes
+        - createdAt
+      type: object
+    MarkedDrawings:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/MarkedDrawings.json
+          format: uri
+          readOnly: true
+          type: string
+        count:
+          format: int64
+          type: integer
+        items:
+          items:
+            $ref: "#/components/schemas/MarkedDrawing"
+          type: array
+        nextCursor:
+          type: string
+        totalBytes:
+          format: int64
+          type: integer
+      required:
+        - items
+        - count
+        - totalBytes
+      type: object
     Material:
       additionalProperties: false
       properties:
@@ -3006,9 +4253,6 @@ components:
           type: integer
         capabilities:
           $ref: "#/components/schemas/AccessCapabilities"
-        chapterId:
-          nullable: true
-          type: string
         color:
           $ref: "#/components/schemas/UserColor"
         content:
@@ -3024,6 +4268,8 @@ components:
           additionalProperties:
             $ref: "#/components/schemas/Provenance"
           type: object
+        hidden:
+          type: boolean
         id:
           type: string
         imageMaxBytes:
@@ -3058,11 +4304,11 @@ components:
           type: integer
         role:
           $ref: "#/components/schemas/WorkspaceRole"
-        scopeChapters:
+        scopeFileNames:
           items:
             type: string
           type: array
-        scopeFileNames:
+        scopeTopics:
           items:
             type: string
           type: array
@@ -3071,6 +4317,9 @@ components:
         storageFull:
           $ref: "#/components/schemas/StorageFullBy"
         title:
+          type: string
+        topicId:
+          nullable: true
           type: string
         updatedAt:
           format: date-time
@@ -3089,9 +4338,9 @@ components:
         - contentBytes
         - nodeCount
         - maxDepth
-        - chapterId
+        - topicId
         - position
-        - scopeChapters
+        - scopeTopics
         - scopeFileNames
         - privacy
         - createdAt
@@ -3221,17 +4470,18 @@ components:
     MaterialListItem:
       additionalProperties: false
       properties:
+        assigned:
+          type: boolean
+        assignmentId:
+          type: string
         cardCount:
           format: int64
           type: integer
-        chapterId:
-          nullable: true
-          type: string
-        chapterName:
-          type: string
         createdAt:
           format: date-time
           type: string
+        hidden:
+          type: boolean
         id:
           type: string
         kind:
@@ -3255,6 +4505,11 @@ components:
           type: integer
         title:
           type: string
+        topicId:
+          nullable: true
+          type: string
+        topicName:
+          type: string
         updatedAt:
           format: date-time
           type: string
@@ -3268,8 +4523,8 @@ components:
         - title
         - workspaceId
         - workspaceName
-        - chapterId
-        - chapterName
+        - topicId
+        - topicName
         - privacy
         - createdAt
         - updatedAt
@@ -3296,12 +4551,15 @@ components:
     MaterialRef:
       additionalProperties: false
       properties:
-        chapterId:
-          nullable: true
+        assigned:
+          type: boolean
+        assignmentId:
           type: string
         createdAt:
           format: date-time
           type: string
+        hidden:
+          type: boolean
         id:
           type: string
         maxDepth:
@@ -3320,13 +4578,16 @@ components:
           type: integer
         title:
           type: string
+        topicId:
+          nullable: true
+          type: string
         type:
           $ref: "#/components/schemas/MaterialRefType"
       required:
         - id
         - type
         - title
-        - chapterId
+        - topicId
         - position
         - createdAt
         - sizeBytes
@@ -3375,6 +4636,220 @@ components:
         - nodeCount
         - maxDepth
         - updatedAt
+      type: object
+    MemberActivity:
+      additionalProperties: false
+      properties:
+        at:
+          format: date-time
+          type: string
+        group:
+          enum:
+            - topic
+            - others
+          type: string
+        kind:
+          enum:
+            - practice
+            - review
+            - assignment
+          type: string
+        questions:
+          format: int64
+          type: integer
+        title:
+          type: string
+        topicName:
+          type: string
+      required:
+        - kind
+        - questions
+        - at
+      type: object
+    MemberAssignment:
+      additionalProperties: false
+      properties:
+        attemptId:
+          type: string
+        doneAt:
+          format: date-time
+          type: string
+        dueAt:
+          format: date-time
+          type: string
+        id:
+          type: string
+        kind:
+          enum:
+            - marked
+            - unmarked
+          type: string
+        mark:
+          format: double
+          type: number
+        missing:
+          type: boolean
+        running:
+          type: boolean
+        title:
+          type: string
+        total:
+          format: double
+          type: number
+        waitingMarks:
+          format: double
+          type: number
+      required:
+        - id
+        - kind
+        - title
+        - waitingMarks
+        - running
+        - missing
+      type: object
+    MemberProfile:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/MemberProfile.json
+          format: uri
+          readOnly: true
+          type: string
+        activity:
+          items:
+            $ref: "#/components/schemas/MemberActivity"
+          type: array
+        assigned:
+          format: int64
+          type: integer
+        assignments:
+          items:
+            $ref: "#/components/schemas/MemberAssignment"
+          type: array
+        avatarUrl:
+          type: string
+        done:
+          format: int64
+          type: integer
+        joinedAt:
+          format: date-time
+          type: string
+        lastActiveAt:
+          format: date-time
+          type: string
+        missed:
+          items:
+            $ref: "#/components/schemas/MissedQuestion"
+          type: array
+        missing:
+          format: int64
+          type: integer
+        name:
+          type: string
+        overall:
+          format: double
+          type: number
+        storageFull:
+          type: boolean
+        topics:
+          items:
+            $ref: "#/components/schemas/SummaryTopic"
+          type: array
+        userId:
+          type: string
+      required:
+        - userId
+        - name
+        - joinedAt
+        - storageFull
+        - assignments
+        - topics
+        - missed
+        - activity
+        - assigned
+        - done
+        - missing
+      type: object
+    MemberProgress:
+      additionalProperties: false
+      properties:
+        assigned:
+          format: int64
+          type: integer
+        avatarUrl:
+          type: string
+        done:
+          format: int64
+          type: integer
+        missing:
+          format: int64
+          type: integer
+        name:
+          type: string
+        overall:
+          format: double
+          type: number
+        practiceWeek:
+          format: int64
+          type: integer
+        storageFull:
+          type: boolean
+        topics:
+          items:
+            $ref: "#/components/schemas/SummaryTopic"
+          type: array
+        userId:
+          type: string
+      required:
+        - userId
+        - name
+        - practiceWeek
+        - storageFull
+        - topics
+        - assigned
+        - done
+        - missing
+      type: object
+    MembersProgress:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/MembersProgress.json
+          format: uri
+          readOnly: true
+          type: string
+        members:
+          items:
+            $ref: "#/components/schemas/MemberProgress"
+          type: array
+        topics:
+          items:
+            $ref: "#/components/schemas/MembersTopic"
+          type: array
+      required:
+        - members
+        - topics
+      type: object
+    MembersTopic:
+      additionalProperties: false
+      properties:
+        group:
+          enum:
+            - topic
+            - others
+          type: string
+        name:
+          type: string
+        questions:
+          format: int64
+          type: integer
+        topicId:
+          type: string
+      required:
+        - group
+        - questions
       type: object
     Message:
       additionalProperties: false
@@ -3440,6 +4915,38 @@ components:
         - id
         - driveType
         - webUrl
+      type: object
+    MissedQuestion:
+      additionalProperties: false
+      properties:
+        at:
+          format: date-time
+          type: string
+        group:
+          enum:
+            - topic
+            - others
+          type: string
+        materialId:
+          type: string
+        misses:
+          format: int64
+          type: integer
+        questionId:
+          type: string
+        text:
+          type: string
+        topicId:
+          type: string
+        topicName:
+          type: string
+      required:
+        - materialId
+        - questionId
+        - text
+        - group
+        - misses
+        - at
       type: object
     ModelOption:
       additionalProperties: false
@@ -3526,16 +5033,6 @@ components:
           format: uri
           readOnly: true
           type: string
-        chapterId:
-          description: A chapter of the workspace; exclusive with chapterName
-          type: string
-        chapterName:
-          description: A chapter of this name (any case), created when missing
-          maxLength: 60
-          type: string
-        confirmProgressLoss:
-          description: Drop the left workspaces' study progress and plan steps for these files
-          type: boolean
         fileIds:
           items:
             type: string
@@ -3543,6 +5040,13 @@ components:
           minItems: 1
           nullable: true
           type: array
+        topicId:
+          description: A topic of the workspace; exclusive with topicName
+          type: string
+        topicName:
+          description: A topic of this name (any case), created when missing
+          maxLength: 60
+          type: string
         workspaceId:
           minLength: 1
           type: string
@@ -3876,6 +5380,44 @@ components:
         - x
         - "y"
       type: object
+    PaperFile:
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+        name:
+          type: string
+        sizeBytes:
+          format: int64
+          type: integer
+        status:
+          type: string
+      required:
+        - id
+        - name
+        - kind
+        - sizeBytes
+        - status
+      type: object
+    PaperOrderInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/PaperOrderInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        fileIds:
+          items:
+            type: string
+          maxItems: 15
+          type: array
+      required:
+        - fileIds
+      type: object
     PastReview:
       additionalProperties: false
       properties:
@@ -3884,20 +5426,15 @@ components:
           type: integer
         cards:
           $ref: "#/components/schemas/SessionScore"
-        chapterId:
-          type: string
-        chapterName:
-          type: string
         finishedAt:
           description: Omitted on the result page of a session not finished yet
           format: date-time
           type: string
         group:
           enum:
-            - chapter
+            - topic
             - others
             - workspace
-            - plan
           type: string
         iconId:
           type: string
@@ -3916,6 +5453,10 @@ components:
           $ref: "#/components/schemas/SessionScore"
         startedAt:
           format: date-time
+          type: string
+        topicId:
+          type: string
+        topicName:
           type: string
         total:
           format: int64
@@ -3991,82 +5532,93 @@ components:
         - sentAt
         - expiresAt
       type: object
-    PlanStep:
-      additionalProperties: false
-      properties:
-        kind:
-          enum:
-            - file
-            - material
-          type: string
-        locked:
-          type: boolean
-        targetId:
-          description: The file or material
-          type: string
-        title:
-          type: string
-        workspaceId:
-          type: string
-      required:
-        - kind
-        - workspaceId
-        - targetId
-        - title
-        - locked
-      type: object
-    PlanStepInput:
-      additionalProperties: false
-      properties:
-        kind:
-          enum:
-            - file
-            - material
-          type: string
-        targetId:
-          description: The file or material
-          minLength: 1
-          type: string
-        workspaceId:
-          type: string
-      required:
-        - kind
-        - workspaceId
-        - targetId
-      type: object
     PlanTier:
       enum:
         - free
         - pro
       type: string
-    PlanWorkspace:
+    Practice:
       additionalProperties: false
       properties:
-        chapters:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/Practice.json
+          format: uri
+          readOnly: true
+          type: string
+        members:
+          format: int64
+          type: integer
+        quizzes:
           items:
-            $ref: "#/components/schemas/ProgressChapter"
+            $ref: "#/components/schemas/PracticeQuiz"
           type: array
-        cover:
-          $ref: "#/components/schemas/Cover"
-        hidden:
+        reviews:
+          items:
+            $ref: "#/components/schemas/PracticeReview"
+          type: array
+        suggestions:
+          items:
+            $ref: "#/components/schemas/ReviewSuggestion"
+          type: array
+      required:
+        - suggestions
+        - quizzes
+        - reviews
+      type: object
+    PracticeQuiz:
+      additionalProperties: false
+      properties:
+        assignmentClosedAt:
+          format: date-time
+          type: string
+        average:
+          format: double
+          type: number
+        best:
+          $ref: "#/components/schemas/SessionScore"
+        id:
+          type: string
+        onlyYou:
           type: boolean
-        iconId:
+        questions:
+          format: int64
+          type: integer
+        title:
           type: string
-        items:
-          items:
-            $ref: "#/components/schemas/ProgressItem"
-          type: array
-        name:
+        topicId:
           type: string
-        workspaceId:
+        triedBy:
+          format: int64
+          type: integer
+      required:
+        - id
+        - title
+        - questions
+      type: object
+    PracticeReview:
+      additionalProperties: false
+      properties:
+        best:
+          $ref: "#/components/schemas/SessionScore"
+        group:
+          enum:
+            - topic
+            - others
+          type: string
+        lastAt:
+          format: date-time
+          type: string
+        questions:
+          format: int64
+          type: integer
+        topicId:
           type: string
       required:
-        - workspaceId
-        - name
-        - iconId
-        - hidden
-        - chapters
-        - items
+        - group
+        - questions
+        - best
+        - lastAt
       type: object
     PreviousAttempt:
       additionalProperties: false
@@ -4091,109 +5643,6 @@ components:
         - public
         - link
       type: string
-    ProgressChapter:
-      additionalProperties: false
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        order:
-          format: int64
-          type: integer
-      required:
-        - id
-        - name
-        - order
-      type: object
-    ProgressItem:
-      additionalProperties: false
-      properties:
-        chapterId:
-          nullable: true
-          type: string
-        createdAt:
-          format: date-time
-          type: string
-        doneAt:
-          format: date-time
-          type: string
-        id:
-          type: string
-        kind:
-          type: string
-        position:
-          format: int64
-          type: integer
-        state:
-          enum:
-            - started
-            - done
-          type: string
-        title:
-          type: string
-        type:
-          enum:
-            - file
-            - material
-          type: string
-      required:
-        - id
-        - type
-        - kind
-        - title
-        - chapterId
-        - position
-        - createdAt
-      type: object
-    ProgressMap:
-      additionalProperties: false
-      properties:
-        chapters:
-          items:
-            $ref: "#/components/schemas/ProgressChapter"
-          type: array
-        items:
-          items:
-            $ref: "#/components/schemas/ProgressItem"
-          type: array
-        workspaceId:
-          type: string
-      required:
-        - workspaceId
-        - chapters
-        - items
-      type: object
-    ProgressWorkspace:
-      additionalProperties: false
-      properties:
-        cover:
-          $ref: "#/components/schemas/Cover"
-        done:
-          format: int64
-          type: integer
-        hidden:
-          type: boolean
-        iconId:
-          type: string
-        lastStudiedAt:
-          format: date-time
-          type: string
-        name:
-          type: string
-        total:
-          format: int64
-          type: integer
-        workspaceId:
-          type: string
-      required:
-        - workspaceId
-        - name
-        - iconId
-        - done
-        - total
-        - lastStudiedAt
-      type: object
     ProjectMaterialReq:
       additionalProperties: false
       properties:
@@ -4433,9 +5882,6 @@ components:
           type: boolean
         capabilities:
           $ref: "#/components/schemas/AccessCapabilities"
-        chapterCount:
-          format: int64
-          type: integer
         clones:
           format: int64
           type: integer
@@ -4459,6 +5905,9 @@ components:
           type: string
         isOwner:
           type: boolean
+        kind:
+          $ref: "#/components/schemas/WorkspaceKind"
+          description: "What it is used for: decides who sees what in Study and how an editor is named"
         name:
           type: string
         privacy:
@@ -4473,6 +5922,9 @@ components:
           items:
             $ref: "#/components/schemas/Tag"
           type: array
+        topicCount:
+          format: int64
+          type: integer
       required:
         - author
         - clones
@@ -4481,11 +5933,12 @@ components:
         - id
         - name
         - iconId
+        - kind
         - privacy
         - shareRole
         - sharePath
         - tags
-        - chapterCount
+        - topicCount
         - fileCount
         - filesLimit
         - createdAt
@@ -4543,10 +5996,6 @@ components:
           type: boolean
         canEditContent:
           type: boolean
-        chapters:
-          items:
-            type: string
-          type: array
         createdAt:
           format: date-time
           type: string
@@ -4577,6 +6026,10 @@ components:
           type: integer
         sharePath:
           type: string
+        topics:
+          items:
+            type: string
+          type: array
         workspaceId:
           type: string
         workspaceName:
@@ -4587,7 +6040,7 @@ components:
         - name
         - workspaceId
         - workspaceName
-        - chapters
+        - topics
         - questions
         - createdAt
         - privacy
@@ -4626,6 +6079,43 @@ components:
         - materialId
         - itemId
         - rating
+      type: object
+    ReadableMaterialsInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ReadableMaterialsInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        ids:
+          description: Materials this device keeps a copy of
+          items:
+            type: string
+          maxItems: 500
+          minItems: 1
+          type: array
+          uniqueItems: true
+      required:
+        - ids
+      type: object
+    ReadableMaterialsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ReadableMaterialsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        ids:
+          description: The ones the caller can still read
+          items:
+            type: string
+          type: array
+      required:
+        - ids
       type: object
     RecentOpen:
       additionalProperties: false
@@ -4751,25 +6241,6 @@ components:
         - after
         - end
       type: object
-    ReorderChaptersReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/ReorderChaptersReq.json
-          format: uri
-          readOnly: true
-          type: string
-        ids:
-          description: Chapter ids in the desired order
-          items:
-            type: string
-          minItems: 1
-          nullable: true
-          type: array
-      required:
-        - ids
-      type: object
     ReorderContentReq:
       additionalProperties: false
       properties:
@@ -4779,10 +6250,6 @@ components:
           format: uri
           readOnly: true
           type: string
-        chapterId:
-          description: Destination chapter; null means the unfiled bucket
-          nullable: true
-          type: string
         items:
           description: Destination content in the desired mixed order
           items:
@@ -4790,9 +6257,32 @@ components:
           minItems: 1
           nullable: true
           type: array
+        topicId:
+          description: Destination topic; null means the unfiled bucket
+          nullable: true
+          type: string
       required:
-        - chapterId
+        - topicId
         - items
+      type: object
+    ReorderTopicsReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ReorderTopicsReq.json
+          format: uri
+          readOnly: true
+          type: string
+        ids:
+          description: Topic ids in the desired order
+          items:
+            type: string
+          minItems: 1
+          nullable: true
+          type: array
+      required:
+        - ids
       type: object
     ReportEditIncidentReq:
       additionalProperties: false
@@ -4987,6 +6477,12 @@ components:
           maximum: 4
           minimum: 1
           type: integer
+        reason:
+          enum:
+            - new
+            - missed
+            - fading
+          type: string
         total:
           format: double
           type: number
@@ -5045,72 +6541,17 @@ components:
         question:
           additionalProperties: {}
           type: object
+        reason:
+          enum:
+            - new
+            - missed
+            - fading
+          type: string
       required:
         - materialId
         - materialTitle
         - itemId
         - kind
-      type: object
-    ReviewOverview:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/ReviewOverview.json
-          format: uri
-          readOnly: true
-          type: string
-        plans:
-          items:
-            $ref: "#/components/schemas/ReviewPlan"
-          type: array
-        suggestions:
-          items:
-            $ref: "#/components/schemas/ReviewSuggestion"
-          type: array
-        unfinished:
-          items:
-            $ref: "#/components/schemas/UnfinishedSession"
-          type: array
-        workspaces:
-          items:
-            $ref: "#/components/schemas/ReviewWorkspace"
-          type: array
-      required:
-        - suggestions
-        - unfinished
-        - plans
-        - workspaces
-      type: object
-    ReviewPlan:
-      additionalProperties: false
-      properties:
-        canReview:
-          type: boolean
-        iconId:
-          type: string
-        lastReviewedAt:
-          format: date-time
-          type: string
-        name:
-          type: string
-        planId:
-          type: string
-        reviewable:
-          format: int64
-          type: integer
-        workspaceId:
-          type: string
-        workspaceName:
-          type: string
-      required:
-        - planId
-        - name
-        - workspaceId
-        - workspaceName
-        - iconId
-        - reviewable
-        - canReview
       type: object
     ReviewResult:
       additionalProperties: false
@@ -5147,8 +6588,6 @@ components:
         answered:
           format: int64
           type: integer
-        chapterId:
-          type: string
         done:
           items:
             $ref: "#/components/schemas/ReviewAnswer"
@@ -5157,10 +6596,9 @@ components:
           $ref: "#/components/schemas/ReviewEvidence"
         group:
           enum:
-            - chapter
+            - topic
             - others
             - workspace
-            - plan
           type: string
         items:
           items:
@@ -5173,14 +6611,13 @@ components:
             - fading
             - learned
           type: string
-        planId:
-          description: The plan of a plan group
-          type: string
         removedAssetIds:
           items:
             type: string
           nullable: true
           type: array
+        topicId:
+          type: string
         total:
           format: int64
           type: integer
@@ -5194,16 +6631,13 @@ components:
     ReviewSessionRef:
       additionalProperties: false
       properties:
-        chapterId:
-          type: string
         evidence:
           $ref: "#/components/schemas/ReviewEvidence"
         group:
           enum:
-            - chapter
+            - topic
             - others
             - workspace
-            - plan
           type: string
         id:
           description: Minted by the browser when the session starts
@@ -5222,8 +6656,7 @@ components:
             - fading
             - learned
           type: string
-        planId:
-          description: The plan of a plan group
+        topicId:
           type: string
         workspaceId:
           minLength: 1
@@ -5237,15 +6670,11 @@ components:
     ReviewSuggestion:
       additionalProperties: false
       properties:
-        chapterId:
-          type: string
-        chapterName:
-          type: string
         evidence:
           $ref: "#/components/schemas/ReviewEvidence"
         group:
           enum:
-            - chapter
+            - topic
             - others
             - workspace
           type: string
@@ -5260,6 +6689,10 @@ components:
             - fading
             - learned
           type: string
+        topicId:
+          type: string
+        topicName:
+          type: string
         workspaceId:
           type: string
         workspaceName:
@@ -5272,30 +6705,6 @@ components:
         - mode
         - items
         - evidence
-      type: object
-    ReviewWorkspace:
-      additionalProperties: false
-      properties:
-        canReview:
-          type: boolean
-        iconId:
-          type: string
-        lastReviewedAt:
-          format: date-time
-          type: string
-        name:
-          type: string
-        reviewable:
-          format: int64
-          type: integer
-        workspaceId:
-          type: string
-      required:
-        - workspaceId
-        - name
-        - iconId
-        - reviewable
-        - canReview
       type: object
     Row:
       additionalProperties: false
@@ -5385,6 +6794,12 @@ components:
         materialId:
           minLength: 1
           type: string
+        reason:
+          enum:
+            - new
+            - missed
+            - fading
+          type: string
       required:
         - materialId
         - itemId
@@ -5440,40 +6855,6 @@ components:
         noteAiEnabled:
           type: boolean
       type: object
-    SetStudyEnabledReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/SetStudyEnabledReq.json
-          format: uri
-          readOnly: true
-          type: string
-        enabled:
-          type: boolean
-      required:
-        - enabled
-      type: object
-    SetStudyItemReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/SetStudyItemReq.json
-          format: uri
-          readOnly: true
-          type: string
-        fileId:
-          type: string
-        materialId:
-          type: string
-        state:
-          description: Omitted marks the item unread
-          enum:
-            - done
-            - removed
-          type: string
-      type: object
     ShareRedemption:
       additionalProperties: false
       properties:
@@ -5501,11 +6882,29 @@ components:
         - editor
         - viewer
       type: string
+    SharingNotice:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SharingNotice.json
+          format: uri
+          readOnly: true
+          type: string
+        due:
+          type: boolean
+        owner:
+          $ref: "#/components/schemas/MaterialAuthor"
+      required:
+        - due
+      type: object
     Slot:
       enum:
         - chat
         - editor
         - ingest
+        - extraction
+        - grading
         - retrieval
         - captioning
         - rerank
@@ -6264,6 +7663,10 @@ components:
           items:
             $ref: "#/components/schemas/SourceUploadParseModePolicy"
           type: array
+        textMaxBytes:
+          description: The flat cap on one text file (txt, md, json, source code, CSV, TSV), on every plan
+          format: int64
+          type: integer
         vlmIngestPageCreditMicros:
           format: int64
           type: integer
@@ -6273,6 +7676,7 @@ components:
         - accept
         - maxBytes
         - imageMaxBytes
+        - textMaxBytes
         - allowNoExtension
         - digitalParsePageCreditMicros
         - vlmIngestPageCreditMicros
@@ -6296,6 +7700,35 @@ components:
       required:
         - limitCents
       type: object
+    StartAssignmentInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/StartAssignmentInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        upload:
+          type: boolean
+      type: object
+    StorageBreakdown:
+      additionalProperties: false
+      properties:
+        canvasBytes:
+          format: int64
+          type: integer
+        filesBytes:
+          format: int64
+          type: integer
+        otherBytes:
+          format: int64
+          type: integer
+      required:
+        - filesBytes
+        - canvasBytes
+        - otherBytes
+      type: object
     StorageFullBy:
       enum:
         - self
@@ -6307,80 +7740,6 @@ components:
         - near_limit
         - full
       type: string
-    StudyItem:
-      additionalProperties: false
-      properties:
-        fileId:
-          type: string
-        materialId:
-          type: string
-        state:
-          enum:
-            - started
-            - done
-            - removed
-          type: string
-        updatedAt:
-          format: date-time
-          type: string
-      required:
-        - state
-        - updatedAt
-      type: object
-    StudyPlan:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/StudyPlan.json
-          format: uri
-          readOnly: true
-          type: string
-        createdAt:
-          format: date-time
-          type: string
-        id:
-          type: string
-        name:
-          type: string
-        steps:
-          items:
-            $ref: "#/components/schemas/PlanStep"
-          type: array
-        updatedAt:
-          format: date-time
-          type: string
-        workspaceId:
-          type: string
-      required:
-        - id
-        - workspaceId
-        - name
-        - createdAt
-        - updatedAt
-        - steps
-      type: object
-    StudyPlans:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/StudyPlans.json
-          format: uri
-          readOnly: true
-          type: string
-        plans:
-          items:
-            $ref: "#/components/schemas/StudyPlan"
-          type: array
-        workspaces:
-          items:
-            $ref: "#/components/schemas/PlanWorkspace"
-          type: array
-      required:
-        - plans
-        - workspaces
-      type: object
     StudyPreferences:
       additionalProperties: false
       properties:
@@ -6442,6 +7801,21 @@ components:
             - story
           type: string
       type: object
+    StudyQuestionCountOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/StudyQuestionCountOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        total:
+          format: int64
+          type: integer
+      required:
+        - total
+      type: object
     StudySummary:
       additionalProperties: false
       properties:
@@ -6451,12 +7825,6 @@ components:
           format: uri
           readOnly: true
           type: string
-        enabled:
-          type: boolean
-        items:
-          items:
-            $ref: "#/components/schemas/StudyItem"
-          type: array
         quickReview:
           items:
             $ref: "#/components/schemas/ReviewItem"
@@ -6471,11 +7839,25 @@ components:
         unfinished:
           $ref: "#/components/schemas/UnfinishedSession"
       required:
-        - enabled
-        - items
         - recentAttempts
         - reviewable
         - quickReview
+      type: object
+    StudyTopics:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/StudyTopics.json
+          format: uri
+          readOnly: true
+          type: string
+        topics:
+          items:
+            $ref: "#/components/schemas/SummaryTopic"
+          type: array
+      required:
+        - topics
       type: object
     Subject:
       additionalProperties: false
@@ -6486,13 +7868,74 @@ components:
           type: string
         topics:
           items:
-            $ref: "#/components/schemas/Topic"
+            $ref: "#/components/schemas/BankTopic"
           nullable: true
           type: array
       required:
         - id
         - label
         - topics
+      type: object
+    SubmittedPaper:
+      additionalProperties: false
+      properties:
+        assignmentId:
+          type: string
+        attemptId:
+          type: string
+        bytes:
+          format: int64
+          type: integer
+        createdAt:
+          format: date-time
+          type: string
+        id:
+          type: string
+        kind:
+          type: string
+        name:
+          type: string
+        quizName:
+          type: string
+        workspaceId:
+          type: string
+        workspaceName:
+          type: string
+      required:
+        - id
+        - name
+        - kind
+        - assignmentId
+        - quizName
+        - workspaceName
+        - bytes
+        - createdAt
+      type: object
+    SubmittedPapers:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SubmittedPapers.json
+          format: uri
+          readOnly: true
+          type: string
+        count:
+          format: int64
+          type: integer
+        items:
+          items:
+            $ref: "#/components/schemas/SubmittedPaper"
+          type: array
+        nextCursor:
+          type: string
+        totalBytes:
+          format: int64
+          type: integer
+      required:
+        - items
+        - count
+        - totalBytes
       type: object
     SubscriptionBlocker:
       additionalProperties: false
@@ -6515,6 +7958,54 @@ components:
         - canceled
         - trialing
       type: string
+    SummaryTopic:
+      additionalProperties: false
+      properties:
+        asked:
+          format: int64
+          type: integer
+        group:
+          enum:
+            - topic
+            - others
+          type: string
+        label:
+          enum:
+            - not_started
+            - attempted
+            - needs_practice
+            - familiar
+            - proficient
+            - mastered
+          type: string
+        lastAt:
+          format: date-time
+          type: string
+        name:
+          type: string
+        partial:
+          format: int64
+          type: integer
+        right:
+          format: int64
+          type: integer
+        topicId:
+          type: string
+        unattempted:
+          format: int64
+          type: integer
+        wrong:
+          format: int64
+          type: integer
+      required:
+        - group
+        - label
+        - right
+        - partial
+        - wrong
+        - asked
+        - unattempted
+      type: object
     Syllabus:
       additionalProperties: false
       properties:
@@ -6589,6 +8080,62 @@ components:
         - done
         - dueDate
       type: object
+    TodoDonePage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/TodoDonePage.json
+          format: uri
+          readOnly: true
+          type: string
+        nextCursor:
+          type: string
+        workspaces:
+          items:
+            $ref: "#/components/schemas/TodoWorkspace"
+          type: array
+      required:
+        - workspaces
+      type: object
+    TodoList:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/TodoList.json
+          format: uri
+          readOnly: true
+          type: string
+        workspaces:
+          items:
+            $ref: "#/components/schemas/TodoWorkspace"
+          type: array
+      required:
+        - workspaces
+      type: object
+    TodoWorkspace:
+      additionalProperties: false
+      properties:
+        iconId:
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/Assignment"
+          type: array
+        manages:
+          type: boolean
+        name:
+          type: string
+        workspaceId:
+          type: string
+      required:
+        - workspaceId
+        - name
+        - iconId
+        - manages
+        - items
+      type: object
     ToolError:
       additionalProperties: false
       properties:
@@ -6620,21 +8167,34 @@ components:
     Topic:
       additionalProperties: false
       properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/Topic.json
+          format: uri
+          readOnly: true
+          type: string
+        description:
+          type: string
+        fileIds:
+          items:
+            type: string
+          type: array
         id:
           type: string
-        label:
+        name:
           type: string
-        reviewed:
+        order:
           format: int64
           type: integer
-        total:
-          format: int64
-          type: integer
+        workspaceId:
+          type: string
       required:
         - id
-        - label
-        - total
-        - reviewed
+        - workspaceId
+        - name
+        - description
+        - order
+        - fileIds
       type: object
     TopicPage:
       additionalProperties: false
@@ -6929,14 +8489,11 @@ components:
         answered:
           format: int64
           type: integer
-        chapterName:
-          type: string
         group:
           enum:
-            - chapter
+            - topic
             - others
             - workspace
-            - plan
           type: string
         iconId:
           type: string
@@ -6944,6 +8501,8 @@ components:
           type: string
         lastAnswerAt:
           format: date-time
+          type: string
+        topicName:
           type: string
         total:
           format: int64
@@ -6961,23 +8520,6 @@ components:
         - answered
         - total
         - lastAnswerAt
-      type: object
-    UpdateChapterReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/UpdateChapterReq.json
-          format: uri
-          readOnly: true
-          type: string
-        name:
-          maxLength: 60
-          minLength: 1
-          type: string
-        order:
-          format: int64
-          type: integer
       type: object
     UpdateCommentReq:
       additionalProperties: false
@@ -7053,11 +8595,11 @@ components:
           format: uri
           readOnly: true
           type: string
-        chapterId:
-          type: string
         name:
           maxLength: 120
           minLength: 1
+          type: string
+        topicId:
           type: string
       type: object
     UpdateFlashcardSetReq:
@@ -7101,20 +8643,20 @@ components:
           format: uri
           readOnly: true
           type: string
-        chapterId:
-          description: Chapter to file under; empty string unfiles; omit to leave unchanged
-          type: string
-        scopeChapters:
+        scopeFileNames:
           items:
             type: string
           type: array
-        scopeFileNames:
+        scopeTopics:
           items:
             type: string
           type: array
         title:
           maxLength: 120
           minLength: 1
+          type: string
+        topicId:
+          description: Topic to file under; empty string unfiles; omit to leave unchanged
           type: string
       type: object
     UpdateMeReq:
@@ -7147,14 +8689,14 @@ components:
           format: uri
           readOnly: true
           type: string
-        chapters:
-          items:
-            type: string
-          type: array
         name:
           maxLength: 120
           minLength: 1
           type: string
+        topics:
+          items:
+            type: string
+          type: array
       type: object
     UpdateStandaloneSharingReq:
       additionalProperties: false
@@ -7170,25 +8712,6 @@ components:
           description: Visibility for a standalone material
       required:
         - privacy
-      type: object
-    UpdateStudyPlanReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/UpdateStudyPlanReq.json
-          format: uri
-          readOnly: true
-          type: string
-        name:
-          maxLength: 60
-          minLength: 1
-          type: string
-        steps:
-          items:
-            $ref: "#/components/schemas/PlanStepInput"
-          maxItems: 200
-          type: array
       type: object
     UpdateTaskReq:
       additionalProperties: false
@@ -7208,6 +8731,27 @@ components:
           maxLength: 80
           minLength: 1
           type: string
+      type: object
+    UpdateTopicReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/UpdateTopicReq.json
+          format: uri
+          readOnly: true
+          type: string
+        description:
+          description: One line on what the topic covers; empty clears it
+          maxLength: 200
+          type: string
+        name:
+          maxLength: 60
+          minLength: 1
+          type: string
+        order:
+          format: int64
+          type: integer
       type: object
     UpdateWorkspaceMemberReq:
       additionalProperties: false
@@ -7248,6 +8792,9 @@ components:
           minLength: 1
           pattern: ^$|^((sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$
           type: string
+        kind:
+          $ref: "#/components/schemas/WorkspaceKind"
+          description: The owner's alone; nothing is deleted when it changes
         name:
           maxLength: 80
           minLength: 1
@@ -7471,9 +9018,6 @@ components:
           type: boolean
         capabilities:
           $ref: "#/components/schemas/AccessCapabilities"
-        chapterCount:
-          format: int64
-          type: integer
         cover:
           $ref: "#/components/schemas/Cover"
           description: The card's cover art; absent means none
@@ -7494,6 +9038,9 @@ components:
           type: string
         isOwner:
           type: boolean
+        kind:
+          $ref: "#/components/schemas/WorkspaceKind"
+          description: "What it is used for: decides who sees what in Study and how an editor is named"
         name:
           type: string
         privacy:
@@ -7508,23 +9055,61 @@ components:
           items:
             $ref: "#/components/schemas/Tag"
           type: array
+        topicCount:
+          format: int64
+          type: integer
       required:
         - autoProcess
         - description
         - id
         - name
         - iconId
+        - kind
         - privacy
         - shareRole
         - sharePath
         - tags
-        - chapterCount
+        - topicCount
         - fileCount
         - filesLimit
         - createdAt
         - isOwner
         - capabilities
         - canClone
+      type: object
+    WorkspaceActivity:
+      additionalProperties: false
+      properties:
+        actorAvatarUrl:
+          type: string
+        actorId:
+          type: string
+        actorName:
+          type: string
+        assignmentId:
+          type: string
+        at:
+          format: date-time
+          type: string
+        fileId:
+          type: string
+        hidden:
+          type: boolean
+        kind:
+          enum:
+            - uploaded
+            - added
+            - agent
+            - assigned
+          type: string
+        materialId:
+          type: string
+        title:
+          type: string
+      required:
+        - kind
+        - title
+        - at
       type: object
     WorkspaceAttemptsOutputBody:
       additionalProperties: false
@@ -7555,6 +9140,34 @@ components:
         - userId
         - name
       type: object
+    WorkspaceDashboard:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/WorkspaceDashboard.json
+          format: uri
+          readOnly: true
+          type: string
+        activity:
+          items:
+            $ref: "#/components/schemas/WorkspaceActivity"
+          type: array
+        members:
+          format: int64
+          type: integer
+        ownerName:
+          type: string
+      required:
+        - ownerName
+        - members
+        - activity
+      type: object
+    WorkspaceKind:
+      enum:
+        - class
+        - personal
+      type: string
     WorkspaceMember:
       additionalProperties: false
       properties:
@@ -7626,9 +9239,6 @@ components:
         avgScore:
           format: int64
           type: integer
-        chapters:
-          format: int64
-          type: integer
         fileChanges:
           items:
             $ref: "#/components/schemas/FileChange"
@@ -7655,6 +9265,9 @@ components:
         quizzes:
           format: int64
           type: integer
+        topics:
+          format: int64
+          type: integer
       required:
         - indexed
         - notIndexed
@@ -7662,7 +9275,7 @@ components:
         - fileChanges
         - noteChanges
         - moreNoteChanges
-        - chapters
+        - topics
         - files
         - quizzes
         - attempts
@@ -7681,10 +9294,6 @@ components:
           type: string
         authorAvatarUrl:
           type: string
-        chapters:
-          items:
-            $ref: "#/components/schemas/WorkspaceSummaryChapter"
-          type: array
         description:
           type: string
         files:
@@ -7702,6 +9311,10 @@ components:
           items:
             type: string
           type: array
+        topics:
+          items:
+            $ref: "#/components/schemas/WorkspaceSummaryTopic"
+          type: array
       required:
         - name
         - iconId
@@ -7709,20 +9322,7 @@ components:
         - description
         - privacy
         - tags
-        - chapters
-        - files
-      type: object
-    WorkspaceSummaryChapter:
-      additionalProperties: false
-      properties:
-        files:
-          items:
-            $ref: "#/components/schemas/WorkspaceSummaryFile"
-          type: array
-        name:
-          type: string
-      required:
-        - name
+        - topics
         - files
       type: object
     WorkspaceSummaryFile:
@@ -7740,6 +9340,19 @@ components:
         - name
         - sizeBytes
         - addedAt
+      type: object
+    WorkspaceSummaryTopic:
+      additionalProperties: false
+      properties:
+        files:
+          items:
+            $ref: "#/components/schemas/WorkspaceSummaryFile"
+          type: array
+        name:
+          type: string
+      required:
+        - name
+        - files
       type: object
 info:
   title: Capy Notebook API
@@ -7789,6 +9402,659 @@ paths:
       summary: Schedule account deletion
       tags:
         - Account
+  /api/assignment-attempts/{id}:
+    get:
+      operationId: getAssignmentAttempt
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignmentAttempt"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "An attempt: running, or its results"
+      tags:
+        - Assignments
+  /api/assignment-attempts/{id}/answers:
+    put:
+      operationId: saveAssignmentAnswers
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignmentAnswersInputBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Save a running attempt's answers
+      tags:
+        - Assignments
+  /api/assignment-attempts/{id}/drawings/{partId}:
+    delete:
+      operationId: deleteAssignmentDrawing
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            pattern: ^[A-Za-z0-9_-]+$
+            type: string
+        - in: path
+          name: partId
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[^/]+$
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Forget a drawing part's stored drawing in a running attempt (Done on an emptied board)
+      tags:
+        - assignments
+    put:
+      operationId: saveAssignmentDrawing
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            pattern: ^[A-Za-z0-9_-]+$
+            type: string
+        - in: path
+          name: partId
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[^/]+$
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DrawingUpload"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DrawingSavedOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Store a drawing part's board (and its marking image) for a running attempt
+      tags:
+        - assignments
+  /api/assignment-attempts/{id}/marks:
+    post:
+      operationId: markAssignmentAnswer
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignmentMark"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignmentAttempt"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Set or change a question's marks and comment in a member's answers
+      tags:
+        - Assignments
+  /api/assignment-attempts/{id}/paper/order:
+    put:
+      operationId: orderPaperFiles
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaperOrderInputBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Put a running attempt's paper files in order
+      tags:
+        - assignments
+  /api/assignment-attempts/{id}/paper/{fileId}:
+    delete:
+      operationId: removePaperFile
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+        - in: path
+          name: fileId
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Remove a file from a running attempt's paper
+      tags:
+        - assignments
+  /api/assignment-attempts/{id}/paper/{fileId}/links:
+    get:
+      operationId: getPaperFileLinks
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+        - in: path
+          name: fileId
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileLinks"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: A paper file's presigned reads, for its member or the class's staff
+      tags:
+        - assignments
+  /api/assignment-attempts/{id}/submit:
+    post:
+      operationId: submitAssignmentAttempt
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignmentAnswersInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignmentAttempt"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "Submit a running attempt: closed parts marked, open parts left for the owner"
+      tags:
+        - Assignments
+  /api/assignments/{id}:
+    delete:
+      operationId: deleteAssignment
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete an assignment with its results
+      tags:
+        - Assignments
+    get:
+      operationId: getAssignment
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assignment"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: An assignment
+      tags:
+        - Assignments
+    put:
+      operationId: updateAssignment
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignmentFormReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assignment"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Change an assignment's settings
+      tags:
+        - Assignments
+  /api/assignments/{id}/approve-ai-marks:
+    post:
+      operationId: approveAssignmentAIMarks
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApproveAIMarksInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApproveAIMarksOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Approve every AI mark on one question
+      tags:
+        - Assignments
+  /api/assignments/{id}/closed:
+    put:
+      operationId: setAssignmentClosed
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignmentClosedInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assignment"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Close an assignment to late submissions, or reopen it
+      tags:
+        - Assignments
+  /api/assignments/{id}/done:
+    put:
+      operationId: setAssignmentDone
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignmentDoneInputBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: A member's tick on an unmarked assignment
+      tags:
+        - Assignments
+  /api/assignments/{id}/hand-in/{fileId}:
+    delete:
+      operationId: removeHandInFile
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+        - in: path
+          name: fileId
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Remove a file from the caller's open hand-in
+      tags:
+        - assignments
+  /api/assignments/{id}/hand-in/{fileId}/links:
+    get:
+      operationId: getHandInFileLinks
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+        - in: path
+          name: fileId
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileLinks"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: A hand-in file's presigned reads, for its member or, once handed in, the class's staff
+      tags:
+        - assignments
+  /api/assignments/{id}/mark-with-ai:
+    post:
+      operationId: markAssignmentWithAI
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarkAssignmentWithAIOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Have the AI mark the answers still waiting, in the background
+      tags:
+        - Assignments
+  /api/assignments/{id}/publish:
+    post:
+      operationId: publishAssignment
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assignment"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Give a draft to its members
+      tags:
+        - Assignments
+  /api/assignments/{id}/release-grades:
+    post:
+      operationId: releaseAssignmentGrades
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assignment"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Show members their grades on an assignment whose grades are released by hand
+      tags:
+        - Assignments
+  /api/assignments/{id}/report:
+    get:
+      operationId: getAssignmentReport
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignmentReportBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "An assignment's report: its questions, members and answers to mark"
+      tags:
+        - Assignments
+  /api/assignments/{id}/republish:
+    post:
+      operationId: republishAssignment
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assignment"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Replace an open assignment's questions with its quiz as it is now
+      tags:
+        - Assignments
+  /api/assignments/{id}/start:
+    post:
+      operationId: startAssignment
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartAssignmentInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignmentAttempt"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Start an attempt, starting its clock, or return the one running
+      tags:
+        - Assignments
   /api/attempts:
     get:
       operationId: listAttempts
@@ -8518,57 +10784,6 @@ paths:
       summary: Start a credit top-up checkout
       tags:
         - Billing & integrations
-  /api/chapters/{id}:
-    delete:
-      operationId: deleteChapter
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "204":
-          description: No Content
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Delete a chapter
-      tags:
-        - Content
-    patch:
-      operationId: updateChapter
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateChapterReq"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Chapter"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Update a chapter
-      tags:
-        - Content
   /api/chat/edit-operations/{operationId}/undo:
     post:
       operationId: undoEditOperation
@@ -8900,6 +11115,111 @@ paths:
       summary: Add a comment to a discussion
       tags:
         - Material collaboration
+  /api/drawings:
+    delete:
+      operationId: deleteAllDrawings
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DrawingsDeletedOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete every marked drawing the caller pays for; their marks stay
+      tags:
+        - assignments
+    get:
+      operationId: listDrawings
+      parameters:
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarkedDrawings"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: The caller's marked drawings, newest first (Files › Canvas)
+      tags:
+        - assignments
+  /api/drawings/{id}:
+    delete:
+      operationId: deleteDrawing
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DrawingsDeletedOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete one of the caller's marked drawings; its marks stay
+      tags:
+        - assignments
+    get:
+      operationId: getDrawing
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DrawingOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: A drawing answer's board, as a link that lasts the hour
+      tags:
+        - assignments
   /api/edit-incidents:
     post:
       operationId: reportEditIncident
@@ -9164,6 +11484,87 @@ paths:
       summary: Public workspaces
       tags:
         - Explore
+  /api/extractions/{id}:
+    get:
+      operationId: getExtraction
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Extraction"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: A Make a quiz run its starter began
+      tags:
+        - Generate
+  /api/extractions/{id}/cancel:
+    post:
+      operationId: cancelExtraction
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Extraction"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: End a run waiting on its starter
+      tags:
+        - Generate
+  /api/extractions/{id}/confirm:
+    post:
+      operationId: confirmExtraction
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmExtractionReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Extraction"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Make the first questions of a run waiting on its starter
+      tags:
+        - Generate
   /api/files:
     get:
       operationId: listOwnedFiles
@@ -9552,6 +11953,37 @@ paths:
       summary: Create source room token
       tags:
         - Source collaboration
+  /api/files/{id}/hidden:
+    put:
+      operationId: setFileHidden
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HiddenBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HiddenBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Hide a workspace file from members, or show it again
+      tags:
+        - Content
   /api/files/{id}/links:
     get:
       operationId: getFileLinks
@@ -10020,15 +12452,15 @@ paths:
       summary: Update a label
       tags:
         - Schedule
-  /api/learning/plans:
+  /api/learning/overview:
     get:
-      operationId: listLearningPlans
+      operationId: getLearningOverview
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/StudyPlans"
+                $ref: "#/components/schemas/LearningOverview"
           description: OK
         default:
           content:
@@ -10036,41 +12468,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Every study plan of the user
-      tags:
-        - Study
-  /api/learning/progress:
-    get:
-      operationId: getLearningProgress
-      parameters:
-        - description: A listed workspace whose map to return instead of the most recently studied one
-          explode: false
-          in: query
-          name: lead
-          schema:
-            description: A listed workspace whose map to return instead of the most recently studied one
-            type: string
-        - description: Also list workspaces hiding study progress, marked hidden
-          explode: false
-          in: query
-          name: all
-          schema:
-            description: Also list workspaces hiding study progress, marked hidden
-            type: boolean
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/LearningProgress"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: "Learning's Progress tab: workspaces in progress and finished, the leading one's items"
+      summary: "Learning's Overview: what to do next across workspaces and how each stands"
       tags:
         - Study
   /api/library/figures/{id}:
@@ -10217,6 +12615,31 @@ paths:
       summary: Create a standalone note
       tags:
         - Materials
+  /api/materials/readable:
+    post:
+      operationId: readableMaterials
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReadableMaterialsInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadableMaterialsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List which of these materials the caller can read
+      tags:
+        - Material collaboration
   /api/materials/{id}:
     delete:
       operationId: deleteMaterial
@@ -10254,6 +12677,13 @@ paths:
           required: true
           schema:
             type: string
+        - description: Leave the document out (an empty value), for a device holding its own copy
+          explode: false
+          in: query
+          name: noContent
+          schema:
+            description: Leave the document out (an empty value), for a device holding its own copy
+            type: boolean
       responses:
         "200":
           content:
@@ -10419,6 +12849,37 @@ paths:
       summary: Create a quiz or flashcard set embedded in a note
       tags:
         - Materials
+  /api/materials/{id}/hidden:
+    put:
+      operationId: setMaterialHidden
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HiddenBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HiddenBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Hide a workspace material from members, or show it again
+      tags:
+        - Content
   /api/materials/{id}/metadata:
     patch:
       operationId: updateMaterial
@@ -10866,6 +13327,86 @@ paths:
       summary: Mark one notification read
       tags:
         - Account
+  /api/papers:
+    delete:
+      operationId: deleteAllPapers
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DrawingsDeletedOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete every paper file the caller may delete; their marks stay
+      tags:
+        - assignments
+    get:
+      operationId: listPapers
+      parameters:
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmittedPapers"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: The caller's handed-in paper and hand-in files they may delete, newest first (Files › Submissions)
+      tags:
+        - assignments
+  /api/papers/{id}:
+    delete:
+      operationId: deletePaper
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DrawingsDeletedOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete one of the caller's deletable paper files; its marks stay
+      tags:
+        - assignments
   /api/public/flashcards/{token}:
     get:
       operationId: getAnonymousFlashcards
@@ -11025,7 +13566,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Grade one question of a quiz embedded in a shared note
+      summary: Check one question of a quiz embedded in a shared note; an answered open part stays Not marked
       tags:
         - Sharing
   /api/public/quizzes/{token}:
@@ -11119,7 +13660,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Grade one question of a signed-out attempt at a shared quiz
+      summary: Check one question of a shared quiz; an answered open part stays Not marked
       tags:
         - Sharing
   /api/public/workspaces/{token}/summary:
@@ -11456,25 +13997,6 @@ paths:
       summary: Grade and rate one question of a review session
       tags:
         - Study
-  /api/review/overview:
-    get:
-      operationId: getReviewOverview
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ReviewOverview"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: "Learning's Review tab: suggested reviews, sessions to continue, every workspace"
-      tags:
-        - Study
   /api/review/ratings:
     post:
       operationId: rateReviewItem
@@ -11511,8 +14033,7 @@ paths:
               - cards
               - time
               - workspace
-              - plan
-              - chapter
+              - topic
               - status
             type: string
         - explode: false
@@ -11697,42 +14218,6 @@ paths:
       summary: Open a signed share link once
       tags:
         - Sharing
-  /api/shared/notes/{token}/quizzes/{quizId}/check:
-    post:
-      operationId: checkSharedNoteQuiz
-      parameters:
-        - in: path
-          name: token
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: quizId
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CheckSharedNoteQuizReq"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GradedQuestion"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Grade a signed-in check of one question of a quiz embedded in a shared note
-      tags:
-        - Sharing
   /api/source-upload-policy:
     get:
       operationId: getSourceUploadPolicy
@@ -11833,55 +14318,6 @@ paths:
       summary: Get standalone source import status
       tags:
         - Content
-  /api/study/plans/{id}:
-    delete:
-      operationId: deleteStudyPlan
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            format: uuid
-            type: string
-      responses:
-        "204":
-          description: No Content
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Delete a study plan
-      tags:
-        - Study
-    patch:
-      operationId: updateStudyPlan
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            format: uuid
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateStudyPlanReq"
-        required: true
-      responses:
-        "204":
-          description: No Content
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Rename a study plan or replace its steps
-      tags:
-        - Study
   /api/tags:
     get:
       operationId: listTags
@@ -11983,6 +14419,137 @@ paths:
       summary: Update a task
       tags:
         - Schedule
+  /api/todo:
+    get:
+      operationId: getTodo
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TodoList"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "The To do page: what each of the caller's classes holds for them"
+      tags:
+        - Assignments
+  /api/todo/done:
+    get:
+      operationId: getTodoDone
+      parameters:
+        - description: "done: the day it was done, or closed if it never was; class: by class name, then done"
+          explode: false
+          in: query
+          name: sort
+          schema:
+            default: done
+            description: "done: the day it was done, or closed if it never was; class: by class name, then done"
+            enum:
+              - done
+              - class
+            type: string
+        - explode: false
+          in: query
+          name: dir
+          schema:
+            default: desc
+            enum:
+              - asc
+              - desc
+            type: string
+        - description: Comma-separated class workspace ids
+          explode: false
+          in: query
+          name: class
+          schema:
+            description: Comma-separated class workspace ids
+            type: string
+        - description: "Comma-separated: quiz, task"
+          explode: false
+          in: query
+          name: type
+          schema:
+            description: "Comma-separated: quiz, task"
+            type: string
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TodoDonePage"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "The To do page's Done tab: what was given to the caller that they finished or that closed, a page at a time"
+      tags:
+        - Assignments
+  /api/topics/{id}:
+    delete:
+      operationId: deleteTopic
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete a topic
+      tags:
+        - Content
+    patch:
+      operationId: updateTopic
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTopicReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Topic"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Update a topic
+      tags:
+        - Content
   /api/trash:
     get:
       operationId: listTrash
@@ -12386,9 +14953,9 @@ paths:
       summary: Update a workspace
       tags:
         - Workspaces
-  /api/workspaces/{id}/chapters:
+  /api/workspaces/{id}/assignments:
     get:
-      operationId: listChapters
+      operationId: listAssignments
       parameters:
         - in: path
           name: id
@@ -12400,9 +14967,7 @@ paths:
           content:
             application/json:
               schema:
-                items:
-                  $ref: "#/components/schemas/Chapter"
-                type: array
+                $ref: "#/components/schemas/AssignmentList"
           description: OK
         default:
           content:
@@ -12410,11 +14975,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: List chapters
+      summary: "A class's assignments: all of them for its owner and teaching assistants, a member's own otherwise"
       tags:
-        - Content
+        - Assignments
     post:
-      operationId: addChapter
+      operationId: createAssignment
       parameters:
         - in: path
           name: id
@@ -12425,14 +14990,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/AddChapterReq"
+              $ref: "#/components/schemas/AssignmentFormReq"
         required: true
       responses:
         "201":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Chapter"
+                $ref: "#/components/schemas/Assignment"
           description: Created
         default:
           content:
@@ -12440,36 +15005,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Add a chapter
+      summary: Give a class an assignment, freezing its quiz
       tags:
-        - Content
-  /api/workspaces/{id}/chapters/reorder:
-    post:
-      operationId: reorderChapters
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ReorderChaptersReq"
-        required: true
-      responses:
-        "204":
-          description: No Content
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Reorder chapters
-      tags:
-        - Content
+        - Assignments
   /api/workspaces/{id}/clone:
     post:
       operationId: cloneWorkspace
@@ -12552,7 +15090,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Move and reorder chapter content
+      summary: Move and reorder topic content
       tags:
         - Content
   /api/workspaces/{id}/conversations:
@@ -12669,6 +15207,62 @@ paths:
       summary: Put every archived conversation back in the list
       tags:
         - Chat
+  /api/workspaces/{id}/dashboard:
+    get:
+      operationId: getWorkspaceDashboard
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceDashboard"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "The workspace's Dashboard: its owner, member count and latest activity"
+      tags:
+        - Study
+  /api/workspaces/{id}/extractions:
+    post:
+      operationId: createExtraction
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateExtractionReq"
+        required: true
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Extraction"
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Start reading the questions on selected pages into a new quiz
+      tags:
+        - Generate
   /api/workspaces/{id}/files:
     get:
       operationId: listWorkspaceFiles
@@ -12756,7 +15350,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Generate a quiz, flashcards, mindmap, or diagram
+      summary: Generate a quiz from workspace sources
       tags:
         - Generate
   /api/workspaces/{id}/invites:
@@ -12979,6 +15573,31 @@ paths:
       summary: Change a workspace member role
       tags:
         - Workspace collaboration
+  /api/workspaces/{id}/practice:
+    get:
+      operationId: getWorkspacePractice
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Practice"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "The workspace's Practice page: suggestions, quizzes and the caller's topic reviews"
+      tags:
+        - Study
   /api/workspaces/{id}/recent:
     get:
       operationId: listWorkspaceRecent
@@ -13019,24 +15638,16 @@ paths:
           schema:
             default: workspace
             enum:
-              - chapter
+              - topic
               - others
               - workspace
-              - plan
             type: string
-        - description: The chapter of a chapter group
+        - description: The topic of a topic group
           explode: false
           in: query
-          name: chapterId
+          name: topicId
           schema:
-            description: The chapter of a chapter group
-            type: string
-        - description: The plan of a plan group, one of the user's plans kept in this workspace
-          explode: false
-          in: query
-          name: planId
-          schema:
-            description: The plan of a plan group, one of the user's plans kept in this workspace
+            description: The topic of a topic group
             type: string
         - description: A suggestion's mode; omitted for a review from the workspace list
           explode: false
@@ -13048,6 +15659,36 @@ paths:
               - tricky
               - fading
               - learned
+            type: string
+        - description: quiz serves questions only, whatever the review items preference (Practice's topic sessions)
+          explode: false
+          in: query
+          name: items
+          schema:
+            description: quiz serves questions only, whatever the review items preference (Practice's topic sessions)
+            enum:
+              - quiz
+            type: string
+        - description: The session's size, picked in its start dialog
+          explode: false
+          in: query
+          name: count
+          schema:
+            description: The session's size, picked in its start dialog
+            format: int64
+            maximum: 1000
+            minimum: 0
+            type: integer
+        - description: Which items come first; recommended by default
+          explode: false
+          in: query
+          name: order
+          schema:
+            description: Which items come first; recommended by default
+            enum:
+              - recommended
+              - unattempted
+              - incorrect
             type: string
       responses:
         "200":
@@ -13096,6 +15737,51 @@ paths:
       summary: Update workspace sharing
       tags:
         - Workspaces
+  /api/workspaces/{id}/sharing-notice:
+    get:
+      operationId: getSharingNotice
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SharingNotice"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Whether a class member is yet to be told what they share
+      tags:
+        - Assignments
+    put:
+      operationId: markSharingNoticeSeen
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Record that a class member was told what they share
+      tags:
+        - Assignments
   /api/workspaces/{id}/sources/import:
     post:
       operationId: importSources
@@ -13222,13 +15908,6 @@ paths:
           required: true
           schema:
             type: string
-        - description: Draw Reviewable, QuickReview and Unfinished from this plan of the user's, kept in this workspace
-          explode: false
-          in: query
-          name: planId
-          schema:
-            description: Draw Reviewable, QuickReview and Unfinished from this plan of the user's, kept in this workspace
-            type: string
       responses:
         "200":
           content:
@@ -13270,63 +15949,9 @@ paths:
       summary: Each quiz's and set's attempt count and latest attempts
       tags:
         - Study
-  /api/workspaces/{id}/study/enabled:
-    put:
-      operationId: setWorkspaceStudy
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SetStudyEnabledReq"
-        required: true
-      responses:
-        "204":
-          description: No Content
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Show or hide study progress in a workspace
-      tags:
-        - Study
-  /api/workspaces/{id}/study/items:
-    put:
-      operationId: setStudyItem
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SetStudyItemReq"
-        required: true
-      responses:
-        "204":
-          description: No Content
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Mark a file or material read, unread or removed
-      tags:
-        - Study
-  /api/workspaces/{id}/study/plans:
+  /api/workspaces/{id}/study/members:
     get:
-      operationId: listWorkspacePlans
+      operationId: getWorkspaceMembersProgress
       parameters:
         - in: path
           name: id
@@ -13338,7 +15963,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/StudyPlans"
+                $ref: "#/components/schemas/MembersProgress"
           description: OK
         default:
           content:
@@ -13346,37 +15971,79 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Plans kept in a workspace, then plans elsewhere with a step in it
+      summary: "Study → Members: each member's assignments, practice and topic labels, for a class's owner and teaching assistants"
       tags:
         - Study
-    post:
-      operationId: createStudyPlan
+  /api/workspaces/{id}/study/members/{memberId}:
+    get:
+      operationId: getWorkspaceMemberProfile
       parameters:
         - in: path
           name: id
           required: true
           schema:
             type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateStudyPlanReq"
-        required: true
+        - in: path
+          name: memberId
+          required: true
+          schema:
+            type: string
       responses:
-        "201":
+        "200":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/StudyPlan"
-          description: Created
+                $ref: "#/components/schemas/MemberProfile"
+          description: OK
         default:
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Add an empty study plan to a workspace
+      summary: "A member's profile: assignments, topics, questions still missed and recent work, for a class's owner and teaching assistants"
+      tags:
+        - Study
+  /api/workspaces/{id}/study/question-count:
+    get:
+      operationId: getStudyQuestionCount
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: group
+          schema:
+            default: workspace
+            enum:
+              - topic
+              - others
+              - workspace
+            type: string
+        - description: The topic of a topic group
+          explode: false
+          in: query
+          name: topicId
+          schema:
+            description: The topic of a topic group
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudyQuestionCountOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: How many questions a practice group holds, for its start dialog
       tags:
         - Study
   /api/workspaces/{id}/study/reset:
@@ -13400,6 +16067,115 @@ paths:
       summary: Clear study progress in a workspace
       tags:
         - Study
+  /api/workspaces/{id}/study/topics:
+    get:
+      operationId: getWorkspaceStudyTopics
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudyTopics"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "Study → Summary: the caller's own standing per topic"
+      tags:
+        - Study
+  /api/workspaces/{id}/topics:
+    get:
+      operationId: listTopics
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/Topic"
+                type: array
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List topics
+      tags:
+        - Content
+    post:
+      operationId: addTopic
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddTopicReq"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Topic"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Add a topic
+      tags:
+        - Content
+  /api/workspaces/{id}/topics/reorder:
+    post:
+      operationId: reorderTopics
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReorderTopicsReq"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Reorder topics
+      tags:
+        - Content
   /api/workspaces/{id}/transfer:
     post:
       operationId: transferWorkspace

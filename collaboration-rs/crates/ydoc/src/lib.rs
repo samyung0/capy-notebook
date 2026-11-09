@@ -955,15 +955,17 @@ pub fn apply_deleting(
 /// deleted items still hold their content, over the transaction's own delete
 /// set: items that existed before it, at or past `since` (an Office room's
 /// seed, whose content a delete only marks in the stored change). An item
-/// the commit did not collect (kept) does not count.
+/// the commit did not collect (kept) does not count. [Lost] says what the
+/// returned update leaves out of what `update` told.
 pub fn apply_freeing(
     doc: &Doc,
     update: Update,
     since: Option<&StateVector>,
-) -> Result<(Vec<u8>, u64), yrs::error::UpdateError> {
+) -> Result<(Vec<u8>, u64, Lost), yrs::error::UpdateError> {
     let mut txn = doc.transact_mut();
     txn.apply_update(update)?;
     let deleted = deleted_payloads(&txn, since);
+    let lost = lost_in_commit(&txn);
     let changed = committed_update(txn);
     let txn = doc.transact();
     let freed = deleted
@@ -975,7 +977,27 @@ pub fn apply_freeing(
         })
         .map(|(_, bytes)| bytes)
         .sum();
-    Ok((changed, freed))
+    Ok((changed, freed, lost))
+}
+
+/// What an applied update told and its commit's own update will not (Epo
+/// 2026-11-04, Q549). A replica whose Undo can bring deleted content back needs
+/// it from the writer's bytes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Lost {
+    /// Items landed in content this document holds deleted: its commit
+    /// collects them before encoding.
+    pub landed: bool,
+    /// It deleted what this document holds deleted: the commit's delete set
+    /// leaves that out.
+    pub deletions: bool,
+}
+
+fn lost_in_commit(txn: &yrs::TransactionMut<'_>) -> Lost {
+    Lost {
+        landed: !txn.insert_set().intersect(txn.delete_set()).is_empty(),
+        deletions: !txn.redundant_deletes().is_empty(),
+    }
 }
 
 /// An item's payload bytes: a string's, a binary's length, a value's strings

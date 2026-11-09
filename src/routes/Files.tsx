@@ -45,6 +45,7 @@ import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
 import { Tabs } from '@/components/ui/Tabs';
 import { AddFileDestinationDialog } from '@/features/files/AddFileDestinationDialog';
+import { CanvasTab } from '@/features/files/CanvasTab';
 import { EmbedsTab } from '@/features/files/EmbedsTab';
 import { fileKindLabel } from '@/features/files/fileKindLabel';
 import { fileCanClone, formatFileSize } from '@/features/files/fileUtils';
@@ -54,6 +55,7 @@ import {
   SelectionAction,
   SelectionBar,
 } from '@/features/files/SelectionBar';
+import { SubmissionsTab } from '@/features/files/SubmissionsTab';
 import {
   collectSelectionPages,
   useFileSelection,
@@ -64,12 +66,13 @@ import {
 } from '@/features/materials/countLabels';
 import { relativeTime } from '@/features/materials/MaterialListCard';
 import { MaterialsTab } from '@/features/materials/MaterialsTab';
+import { ContentActions } from '@/features/workspace/ContentActions';
+import { resumedConnect } from '@/features/workspace/connectResume';
+import { toFileActionTarget } from '@/features/workspace/contentActionTarget';
 import {
   AddSourceDialog,
-  resumedConnect,
-} from '@/features/workspace/AddSourceDialog';
-import { ContentActions } from '@/features/workspace/ContentActions';
-import { toFileActionTarget } from '@/features/workspace/contentActionTarget';
+  addSourceIntent,
+} from '@/features/workspace/LazyAddSourceDialog';
 import {
   type RetryProcessing,
   retryFailedFile,
@@ -132,6 +135,8 @@ export default function Files() {
             { label: m.files_tab_files(), value: 'files' },
             { label: m.files_tab_blocks(), value: 'blocks' },
             { label: m.files_tab_embeds(), value: 'embeds' },
+            { label: m.files_tab_canvas(), value: 'canvas' },
+            { label: m.files_tab_submissions(), value: 'submissions' },
             { label: m.files_tab_trash(), value: 'trash' },
           ]}
           value={tab}
@@ -143,6 +148,10 @@ export default function Files() {
           onViewChange={changeView}
           view={view}
         />
+      ) : tab === 'submissions' ? (
+        <SubmissionsTab onViewChange={changeView} view={view} />
+      ) : tab === 'canvas' ? (
+        <CanvasTab onViewChange={changeView} view={view} />
       ) : tab === 'embeds' ? (
         <EmbedsTab
           access={access}
@@ -205,7 +214,7 @@ function ActiveFiles({
       value: 'size',
     },
     {
-      icon: 'chapter',
+      icon: 'topic',
       label: m.files_sort_kind(),
       value: 'kind',
     },
@@ -266,6 +275,7 @@ function ActiveFiles({
   } | null>(resumeProvider ? { resume: true, workspaceId: null } : null);
   const addFile = (
     <Button
+      {...addSourceIntent}
       className="px-1.5 font-bold text-link"
       disabled={frozen}
       iconLeft="plus"
@@ -369,10 +379,9 @@ function ActiveFiles({
         }
         sortMenu={{ ...sorting, hiddenFromMd: view === 'list', sorts }}
         view={view}
-        wide
       />
       {/* Mouse only: the selection bar's clear button is the keyboard way. */}
-      <PageBody belowToolbar onClick={clearOnBlank(selection.clear)} wide>
+      <PageBody belowToolbar onClick={clearOnBlank(selection.clear)}>
         {waitsForConnection(fetchStatus, data) ? (
           <QueryPausedState />
         ) : isLoading ? (
@@ -529,20 +538,18 @@ const FileItem = memo(function FileItem({
                 },
               ]}
               canClone
-              chapters={[]}
               content={toFileActionTarget(file)}
               display="menu"
               menuAlign="end"
               menuTriggerIcon={itemMenuIcon(view)}
               readOnly
+              topics={[]}
               workspaceId={file.workspaceId}
-              workspaceName={file.workspaceName}
             />
           ) : (
             // The server reads what the caller may do with each row.
             <ContentActions
               {...fileRowActions(file)}
-              chapters={[]}
               content={toFileActionTarget(file)}
               display="menu"
               leadingItems={
@@ -564,8 +571,8 @@ const FileItem = memo(function FileItem({
               renameFieldLabel={m.files_file_name()}
               renameTitle={m.files_rename()}
               showMove={false}
+              topics={[]}
               workspaceId={file.workspaceId}
-              workspaceName={workspace?.name ?? file.workspaceName}
             />
           )
         }
@@ -749,7 +756,7 @@ function TrashTab({
   }
   return (
     <>
-      <div className="page-px-wide -mb-3 flex items-center">
+      <div className="page-px -mb-3 flex items-center">
         {selection.selecting ? (
           <SelectionBar
             allSelected={
@@ -805,7 +812,7 @@ function TrashTab({
         )}
       </div>
       {/* Mouse only: the selection bar's clear button is the keyboard way. */}
-      <PageBody belowToolbar onClick={clearOnBlank(selection.clear)} wide>
+      <PageBody belowToolbar onClick={clearOnBlank(selection.clear)}>
         <div className="flex flex-col gap-3">
           <p className="t-meta text-fg-muted" role="note">
             {m.trash_notice()}

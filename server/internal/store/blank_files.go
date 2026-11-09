@@ -11,7 +11,7 @@ import (
 // blob store at BlobPath.
 type BlankFileDraft struct {
 	WorkspaceID, ActorUserID, Name, Kind string
-	ChapterID                            *string
+	TopicID                              *string
 	SizeBytes                            int64
 	BlobPath, Parser, SHA256             string
 }
@@ -31,7 +31,7 @@ func (s *Store) CreateBlankFile(ctx context.Context, d BlankFileDraft) (File, er
 	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, d.WorkspaceID, d.ActorUserID); err != nil {
 		return File{}, err
 	}
-	chapterID, err := resolveUploadChapterID(ctx, tx, d.WorkspaceID, d.ChapterID, "")
+	topicID, err := s.resolveUploadTopicID(ctx, tx, d.WorkspaceID, d.TopicID, "")
 	if err != nil {
 		return File{}, err
 	}
@@ -43,9 +43,9 @@ func (s *Store) CreateBlankFile(ctx context.Context, d BlankFileDraft) (File, er
 	}
 	fileID := uid("f")
 	if _, err := tx.Exec(ctx, `INSERT INTO files
-		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, parser, blob_path, parse_mode, source_sha256)
+		(id, workspace_id, user_id, created_by, topic_id, name, kind, size_bytes, added_at, status, parser, blob_path, parse_mode, source_sha256)
 		VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,'ready',$9,$10,$11,$12)`,
-		fileID, d.WorkspaceID, d.ActorUserID, chapterID, d.Name, d.Kind, d.SizeBytes, time.Now().UTC(),
+		fileID, d.WorkspaceID, d.ActorUserID, topicID, d.Name, d.Kind, d.SizeBytes, time.Now().UTC(),
 		d.Parser, d.BlobPath, sourceupload.ParseModeNone, d.SHA256); err != nil {
 		return File{}, err
 	}

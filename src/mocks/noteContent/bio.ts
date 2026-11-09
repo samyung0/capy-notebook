@@ -65,10 +65,10 @@ function cellQuestion(
 /** Biology 101 — showcase headings, marks, lists, callouts, media, study blocks. */
 export const bioNotes: SeedNote[] = [
   {
-    chapterId: 'ch_1',
     daysAgo: 0,
     id: 'mat_note_1',
     title: 'Lecture notes — the cell',
+    topicId: 'ch_1',
     value: [
       heading(1, 'Lecture notes — the cell'),
       toc(),
@@ -203,10 +203,10 @@ export const bioNotes: SeedNote[] = [
     workspaceName: 'Biology 101',
   },
   {
-    chapterId: 'ch_2',
     daysAgo: 2,
     id: 'mat_note_bio_transport',
     title: 'Membranes & transport cheatsheet',
+    topicId: 'ch_2',
     value: [
       heading(1, 'Membranes & transport'),
       p([
@@ -257,10 +257,10 @@ export const bioNotes: SeedNote[] = [
     workspaceName: 'Biology 101',
   },
   {
-    chapterId: null,
     daysAgo: 0,
     id: 'mat_note_bio_feature_matrix',
     title: 'Editor feature matrix (all blocks)',
+    topicId: null,
     value: [
       heading(1, 'Editor feature matrix'),
       toc(),
@@ -503,10 +503,10 @@ export const bioNotes: SeedNote[] = [
   // The starter note a new workspace will get from the template workspace
   // (human/miscellaneous.md 2026-10-26), seeded here until that exists.
   {
-    chapterId: null,
     daysAgo: 1,
     id: 'mat_note_bio_welcome',
     title: 'Welcome to Capy Notebook',
+    topicId: null,
     value: [
       heading(1, 'Welcome to Capy Notebook'),
       p(

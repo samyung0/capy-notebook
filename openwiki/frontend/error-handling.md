@@ -42,9 +42,7 @@ the note placeholder (`errorCopy`) show it inline:
 An unexpected failure (`unexpectedErrorId` in `src/lib/errors.ts`: an API 5xx
 without one of the typed codes `provider_busy`, `ai_unavailable`,
 `generate_empty`, `bank_unavailable`, `upload_queue_full` (the gateway's
-upload line is full: busy, try again), `rate_limit_unavailable`,
-`captcha_unavailable` (siteverify could not check a signed-out answer check;
-the quiz shows it under the question's Check with `captcha_failed`), or an unknown status
+upload line is full: busy, try again), `rate_limit_unavailable`, or an unknown status
 without a code)
 shows its request's trace id as a small (`text-xs`) "Error ID: …" line under
 the Retry action, spaced well apart from it (`ErrorId`). It has no copy button:
@@ -84,10 +82,22 @@ inline, not as a toast, so the draft and its context stay on screen:
 - Such a mutation opts out of the global toast (`errorToast: false`), so the
   failure is reported once.
 
+Make a quiz follows the same rule in its dialog: a refused start shows in the step
+picker's `FormAlert`, selection kept. A run that fails shows copy for its
+`errorCode` (`extractionFailure`) as a page `ErrorState` with Back to the pages,
+and the same copy in the toast when its page isn't open; there is no automatic
+retry beyond the server's one. A file that couldn't be added or read says so on
+its dialog row.
+
 A file's trash confirmation (`TrashConfirmDialog` from `ContentActions`)
 follows the same rule: it stays open with a spinner while the delete runs
 and shows a refusal in its `FormAlert` (`trashErrorMessage`), such as an
 audio file still being transcribed (`audio_transcribing`).
+
+Submitting an assignment, Before you start, Make my own practice and deleting or
+leaving a workspace do the same. Start and Submit have no dialog when a timer or a
+closing assignment triggers them, or when there's no time limit to confirm, and then
+a refusal is a toast.
 
 ## Input length limits
 
@@ -102,7 +112,7 @@ Counts are Unicode code points (`textLength`), matching the backend's runes.
   limit is soft: no `maxLength`, so pasting is not cut; the form's zod
   validation marks the field and disables Save.
 - An untitled field with a limit gets a silent `maxLength` (searches, the new
-  chapter name, the AI prompt at 4,000, link URL/text, short and gap answers at
+  topic name, the AI prompt at 4,000, link URL/text, short and gap answers at
   1,000).
 - Long free text without a title shows `CharCount` under the box: chat (5,000,
   send disabled when over), note comments (3,000, enforced by the API on the
@@ -112,7 +122,7 @@ Counts are Unicode code points (`textLength`), matching the backend's runes.
 ## TanStack Query defaults
 
 Queries stay fresh for five minutes by default. Notifications and workspace
-chapter, file, and material lists use five seconds and refetch on window focus
+topic, file, and material lists use five seconds and refetch on window focus
 when stale. The workspace list options also apply to route prefetches.
 Route loaders only prime the cache and never return the prefetch: a returned
 promise makes TanStack Router hold the whole matched branch, app shell
@@ -129,7 +139,9 @@ editing continues to receive content through Yjs.
 
 The query client throws a query error to the nearest boundary only when the
 query has no cached data. A failed background refresh therefore keeps rendering
-the last usable result. Secondary and optional queries must opt out with:
+the last usable result. An open material does too, its editor included
+(`MaterialContentBody`, which opts out): only a refusal (any 4xx) replaces it
+with the file error. Secondary and optional queries must opt out with:
 
 ```ts
 meta: { errorBoundary: false }
@@ -146,8 +158,8 @@ subscribes to those fields. A list that fails without data must never fall
 through to its empty state ("No workspaces yet" reads as data loss after a
 redeploy): a region that fills a page or a page tab renders `ErrorState`
 `variant="panel"` with Retry (Trash); anything smaller, and anything inside
-a dialog, renders `InlineErrorState`, one bold line and Retry (the dashboard
-recent workspaces and recents card, search results, Billing's invoices under
+a dialog, renders `InlineErrorState`, one bold line and Retry (To do's list,
+search results, Billing's invoices under
 the plan and its Details table, a question bank page that failed between loaded
 questions, workspace settings' Statistics tab and member list). Billing's Details table drops its loaded rows when any page fails,
 next pages included, and shows only the inline error. The /notifications page
@@ -210,12 +222,26 @@ safety limits. `sourceAnalysisIssue` in `sourceDetails.ts` owns the rules; see
 
 Abort errors and account-blocking errors are also excluded from the global
 mutation toast. Toast IDs are derived from the normalized error kind, so repeated
-failures of the same kind update/deduplicate instead of stacking. The global
-Toaster stays at the bottom right and normally displays at most three toasts.
-While an error is present, the shared list expands with no count cap so other
-toasts cannot cover the error.
-Warnings and errors last twelve seconds; other toasts with a button last seven,
-and the rest keep Sonner's four-second duration (`userToast`).
+failures of the same kind count up on one toast instead of stacking.
+
+The toaster (`AppToaster`, `userToast` and `dismissToast` in
+`src/components/ui/userToast.ts`) shows toasts centred at the bottom, over
+dialogs, drawers and the phone chat button (S1, E2 and P3, Epo 2026-11-03):
+
+- An open error stays at the bottom until closed; other toasts show just
+  above it (8px apart), so an error never holds them up. Each of the two
+  places shows one toast at a time: a different toast waits until the shown
+  one has closed, a second error behind the first.
+- A toast whose update changes it to or from an error (a working toast that
+  failed) moves to the other place.
+- The same toast again (the same id, or the same copy without one) counts up
+  on the shown or waiting toast (×2, ×3) and restarts its timer. A new copy
+  under the same id replaces it in place, so a working toast
+  (`variant: 'loading'`) turns into its done toast.
+- Errors stay until closed with their ×. Warnings last twelve seconds, other
+  toasts with a button seven, the rest four, and a working toast until it is
+  updated. Timers pause while the toast is hovered or the tab is hidden.
+- Its look (board K2) is in `appearance.md` § Shared pieces.
 
 ## Persisted query cache
 
@@ -226,9 +252,9 @@ not offline use: without a service worker the app itself does not load offline.
 - Opt-in per query: a definition spreads `persisted`, whose 7-day `gcTime` keeps
   a restored query until it is used and marks it for storage. Query `meta` cannot
   carry the mark, because hooks replace it with `queryMeta(options)`.
-- Stored: `/me`, workspace lists (not searches), a workspace and its chapters,
-  files, materials, conversations, study states and study plans, file metadata,
-  the dashboard recents, notifications and the unread count, learning progress,
+- Stored: `/me`, workspace lists (not searches), a workspace and its topics,
+  files, materials, conversations, study states, file metadata,
+  the dashboard recents, notifications and the unread count,
   the review overview, quiz attempts (the quiz page resumes its open one from
   it), calendar events, labels, tasks, tags, notification preferences,
   integrations, models, Explore, and the question bank's syllabus and progress.
@@ -248,7 +274,8 @@ not offline use: without a service worker the app itself does not load offline.
   error after the fetched history (Q576 F2). Clicking the shown conversation again
   does nothing. Undo and Redo answered in the tab outlive a seed. A failed
   refetch's kept data is stored like any other (every persisted query).
-- Never stored: file, note, quiz and card bodies, collaboration tokens,
+- Never stored in this cache: file, note, quiz and card bodies (a device keeps
+  those apart, as [device copies](plate-editor.md#device-copies)), collaboration tokens,
   presigned links, review sessions,
   answer keys (quiz and bank edit views), ingest slots, workspace stats, upload
   policy, billing, usage, account deletion preflight, searches, members and
@@ -333,6 +360,32 @@ nudge's page load waits for the connection the same way (plate-editor
 a connection that is down while the browser reports online still takes
 TanStack's reload.
 
+Two pieces of a workspace page load only when wanted (Q619), so a failed load
+leaves the page. Hover or focus loads each ahead of the click, except offline, where
+it asks for nothing, since the browser would keep the failure until a reload. A
+preload that fails says nothing: only an open the user asked for shows a toast.
+
+- **Add file** (`LazyAddSourceDialog`; the file panel, the Dashboard, the Files page,
+  the Indexing tab, a failed file's row). With its code not here on the click, a
+  loading toast shows from 300 ms. A press or key once that toast is up means the
+  user moved elsewhere, as does leaving the page: nothing opens later, and the code
+  keeps loading for the next time. If it won't load, a toast says so and nothing
+  opens: offline the offline copy, stalled past 20 s the connection copy, otherwise
+  "An update is ready" with Reload. Any of these also ends a pending return from
+  connecting a drive, so re-entering the page doesn't try Import again.
+- **The chat's Markdown** (`Prose`) loads once a workspace page is first idle
+  (Q681, `preloadProseWhenIdle`: at most 5 s after it opened, 2 s without
+  `requestIdleCallback`), so saved chats read formatted offline later; offline at
+  that moment it waits for the connection. Before then, it loads with the first
+  answer to draw, or on focusing the composer or hovering a saved chat. An answer's words hold their
+  place unseen for 2 s, so no raw Markdown flashes, then show as they are, marked
+  `aria-busy`, and format when the code lands (`data-prose`: `loading`, `slow`,
+  `failed`). A thread stays at its end as that happens if the reader was there. If
+  it won't load the words stay as they are, which is still the answer: offline with
+  no toast of its own, trying once more when the connection is back, otherwise with
+  the update toast. A browser that keeps the failed import stays on those words until
+  a reload.
+
 ## Shared-resource security
 
 Public workspace summaries at `/w/:id.:signature` render on the server. Unsigned or
@@ -365,17 +418,21 @@ stays a 500.
 ## Offline and paused work
 
 Nothing app-wide sits above the page, so connection and account state never
-shift the layout. The dashboard banner slot (`DashboardBanner`) shows only the
-viewer's own account, one tinted card with a faint icon at a time, and is
-empty otherwise:
-frozen, over-quota grace, storage full (red), storage near the limit (amber),
-offline, reconnecting (stream disconnected). The full and near cards read
+shift the layout. `AccountStatusBanner` shows only the viewer's own account, one
+tinted card with a faint icon at a time, and is empty otherwise: frozen,
+over-quota grace, storage full (red), storage near the limit (amber), offline,
+reconnecting (stream disconnected). The full and near cards read
 `account.storageUsage` from `/me` and show "You've used X of Y" (whole
-megabytes, "96 MB of 100 MB") with a usage
-meter (`[data-testid="storage-usage-meter"]`) above the Subscription and
-Settings links. The connection card carries `[data-connection-status="offline"]`
+megabytes, "96 MB of 100 MB") with a Subscription link. The connection card carries `[data-connection-status="offline"]`
 or `"reconnecting"`. Suspended, deleted and deletion-pending accounts keep the
 full-screen `AccountBlockedScreen`.
+
+It sits inside the page below the title of Workspaces and of a workspace's
+Dashboard (Epo 2026-11-05, Q631;
+`[data-testid="account-status-banner"]`, `data-kind` naming the state), with its
+link a solid dark button at the right, on its own right-aligned row on phones.
+Only those two pages have it; Study and the other centre pages stay as they are,
+and the entry toast below still shows.
 
 Inside a workspace, `WorkspaceHealth` raises one `userToast` per visit for the
 workspace storage status, and one while offline (also whenever the browser
@@ -400,13 +457,13 @@ inside workspaces: the server's capabilities drop `canEdit` for a frozen
 account, so edit mode, comments and create controls disappear, and
 drop only a material's `canEditContent` while its payer is at or over its
 limit (full or grace), so edit mode, comments, PDF marks and quiz or card
-edits disappear while rename, move and delete stay. `?mode=edit` falls back to view in both.
+edits disappear while rename, move and delete stay, and a note or item opens for reading.
 A write that still meets `account_over_quota` or `storage_quota_exceeded`
 inside a workspace (a stale capability, or creation at the limit) shows only
 the workspace status toast: `deferStorageRefusal` (in `src/lib/errors.ts`,
 called first by the mutation cache and by surfaces with their own error toast
 or strip: the source transfer runner, sharing, clone, note media uploads, the PDF
-annotation strip and the generate panel) hands each refusal once to
+annotation strip and Make my own practice) hands each refusal once to
 `WorkspaceHealth`. A quota refusal carries its numbers only for the charged
 account, so one without numbers is another payer's item and keeps its own
 toast, worded like the strip. The
@@ -425,9 +482,10 @@ disable their create controls, Schedule hides event and label Edit, the Canvas
 page is read-only, the dashboard calendar stops creating slots, and their page
 headers show the same red triangle (`AccountStatusButton`) that opens the
 storage details dialog. Flashcard study and quiz attempts only disable
-cloning. A room that turns read-only while open for a storage or frozen
-refusal (`room-read-only`, or a `collaboration-read-only` refusal on
-reconnect) drops the note or source editor to view mode under a grey strip
+cloning. A room that turns read-only while open for a storage, frozen or
+lapsed-plan refusal or a demotion (`room-read-only` on the writer's next update,
+or a read token or `collaboration-read-only` refusal on rejoining) drops the
+note or source editor to view mode under a grey strip
 reading "This file is read-only now" and discards its unsaved edits (a source
 also clears its local drafts without ever reporting Saved, and shows its
 latest saved state through the viewer's session); what was saved before
@@ -450,7 +508,9 @@ the pause to an error. A paused query is not loading (`isLoading` is false), so
 a page gated on it checks `waitsForConnection(fetchStatus, data)`
 (`src/lib/online.ts`) before its missing state and shows `QueryPausedState`;
 the workspace page does this, so opening a workspace offline reads "Waiting
-for connection", not private or unavailable. The waiting state is only for a
+for connection", not private or unavailable. An opened material with nothing to
+paint reads the same (`isPending` in `MaterialContentBody`), not the file error.
+The waiting state is only for a
 query without data (Epo 2026-10-17): a page or list holding data, such as a
 stale or restored list whose refetch is paused, keeps showing it. Quiz
 attempts and flashcard study read fresh on purpose (`fresh: true`, drawn only
@@ -533,11 +593,11 @@ each row's workspace and member for its icon; a `chat_turn` event patches a
 conversation's running mark in every cached conversation list,
 [agentic-retrieval.md](../agentic-retrieval.md#following-a-running-turn)), `ingest` (patched into
 the file caches) and `tree` (`{kind: files | materials}`, which invalidates
-that workspace list plus the chapters list after a 300 ms trailing debounce
+that workspace list plus the topics list after a 300 ms trailing debounce
 per kind, so one ingest's several writes cost one refetch; a hidden tab only
 marks them stale and reads them on focus). Neither Redis Pub/Sub nor Postgres
 NOTIFY replays missed events, so every successful connection refetches the
-notification list, the unread count, the file, material and chapter lists,
+notification list, the unread count, the file, material and topic lists,
 and the conversation lists. A connection that succeeds after a failed attempt (a redeploy, a
 dropped network) also refetches every active query in error, so the error
 states above recover without Retry. There is no polling while disconnected; the workspace lists keep only
@@ -667,7 +727,8 @@ Playwright tests should use `expectErrorSurface(page, variant, text?)` from
 ## Collaborative source failures
 
 Source editors expose connecting, reconnecting, saving, saved, offline,
-unsaved, error and recovery states, shown in the header like the note editor's
+unsaved, error and recovery states (a note's and an item's have no connecting
+or reconnecting words, Epo 2026-11-04), shown in the header like the note editor's
 (see [plate-editor.md](plate-editor.md#connection-lifetime-and-refusals)).
 Saved requires an explicit durable checkpoint receipt. A failed save the
 server retries keeps the mounted editor and its pending receipts, shows Not
@@ -739,8 +800,13 @@ not for the account itself; `lostAccess` on the failure message) clears the
 drafts and reloads to the
 file-missing or no-access panel, with no download: the user may no longer see
 that content. A storage or frozen refusal at save drops every writer to view
-under the read-only strip. A trashed or deleted file, or lost access, replaces
-the editor with the file-missing or no-access panel. Drafts are written as
+under the read-only strip. A refused read (any 4xx but 408 and 429) replaces the
+page with "This item is unavailable", which never says blocked rather than gone.
+A room's refusal alone keeps the page (Epo 2026-11-05): a reader's as it was, an
+editor's mounted and read-only under the grey "You no longer have access" strip
+with no save status; with no 4403 close before it, the page also asks for its
+read, which may refuse (Q644; see
+[authorization](../authorization-permissions-lifecycles.md)). Drafts are written as
 each local edit happens, by a dedicated drafts worker, with the whole document
 once per offline episode and at unmount (see
 [plate-editor.md](plate-editor.md#offline-editing-and-drafts)). Draft storage
@@ -759,12 +825,16 @@ reload to continue from the last saved version."), and edits from another
 lineage (a newer version over unsaved edits, a draft from another version, a
 note room that moved on) the `changed` one ("This file changed while your
 edits were waiting to sync. Copy anything you need, then reload."). Unsent
-edits whose group was last edited over 7 days ago (Epo 2026-10-24; for notes
-until the merge view, Q251) open once under the `expired` one ("These edits
-are more than 7 days old and too old to sync. Copy anything you need, then
-reload."): their rows are deleted as they open (reported as
-`draft_unrestorable` / `expired`) and no draft sweep sends them. Notes have
-no recovery renderer (Epo 2026-10-24, Q251): their refused, other-lineage
+edits whose group was last edited over 7 days ago (Epo 2026-10-24) open an
+Office or text file once under the `expired` one ("These edits are more than 7
+days old and too old to sync. Copy anything you need, then reload."): their rows
+are deleted as they open (reported as `draft_unrestorable` / `expired`) and no
+draft sweep sends them. A quiz, a set or a diagram opens as usual instead, under
+a toast with Download ("Some old edits can't sync. Download them now or they'll
+be discarded.", Epo 2026-11-04, D14) that stays until dismissed: a diagram's source,
+a set's cards as tab-separated lines or a quiz's questions as JSON
+(`expiredDrafts.ts`). Its rows go when it closes, so a tab closed first shows it
+again at the next open. Notes have no recovery renderer (Epo 2026-10-24, Q251): their refused, other-lineage
 and expired edits, and blocks of a saved copy someone else changed
 meanwhile (Q229), open the live note with the merge view under the `review`
 strip ("Some of your edits couldn't sync into this note.", Review and
@@ -832,7 +902,7 @@ another tab) counts as started, and `nothing_to_process` toasts that there
 are no saved changes to process. A queued or processing note shows no action,
 and there is no Cancel for a note. Notes past the list's cap (the owner's
 files per workspace) show as one "Notes not shown" count line under the
-list. The source coverage bar counts files only. Chapter-level quizzes and
+list. The source coverage bar counts files only. Topic-level quizzes and
 flashcard sets are not indexed and not listed; an embedded one's edits show
 under its note.
 

@@ -1,11 +1,5 @@
-import {
-  type ComponentProps,
-  createContext,
-  type ReactNode,
-  useContext,
-  useMemo,
-} from 'react';
-import { defaultRehypePlugins, Streamdown } from 'streamdown';
+import { type ReactNode, useEffect, useSyncExternalStore } from 'react';
+import { showErrorToast } from '@/api/queryClient';
 import { Icon } from '@/components/ui/Icon';
 import {
   CALLOUT_CONTAINER_CLASS,
@@ -14,123 +8,117 @@ import {
   type CalloutVariant,
 } from '@/features/notes/richBlockConfig';
 import { cn } from '@/lib/cn';
-import { TableCell, TableFrame, TableHead, TableRow } from './ChatTable';
-import { Cites } from './Cite';
-import { CodeBlock } from './CodeBlock';
-import { citedPassages, citeMarkers } from './citeMarkers';
-import { chatMath, MathSpan, prepareMath } from './math';
 
-const plugins = { math: chatMath };
-const rehypePlugins = [...Object.values(defaultRehypePlugins), citeMarkers];
-const TRAILING_NEWLINE = /\n$/;
-const LANGUAGE_CLASS = /language-(\S+)/;
+/** How long an answer's words stay unseen for its Markdown code. */
+const HOLD_MS = 2000;
+/** The idle load's latest start, for a page that never goes idle. */
+const IDLE_LIMIT_MS = 5000;
+/** Without requestIdleCallback (Safari): this long after the open. */
+const IDLE_FALLBACK_MS = 2000;
 
-/** Streamdown marks a fenced block's `code` with `data-block` (via `pre`). */
-function Code({
-  className,
-  children,
-  ...props
-}: ComponentProps<'code'> & { 'data-block'?: string }) {
-  if ('data-block' in props) {
-    return (
-      <CodeBlock
-        code={String(children ?? '').replace(TRAILING_NEWLINE, '')}
-        language={LANGUAGE_CLASS.exec(className ?? '')?.[1]}
-      />
-    );
-  }
-  return (
-    <code className="rounded bg-code-inline px-1 py-px font-mono text-[0.9em] text-code-inline-fg">
-      {children}
-    </code>
-  );
-}
-
-function Heading({ children }: { children?: ReactNode }) {
-  return (
-    <h2 className="mt-3 font-semibold text-[17px] tracking-tight first:mt-0">
-      {children}
-    </h2>
-  );
-}
-
-/** Inside a link, where an image is drawn as its alt text alone. */
-const InLink = createContext(false);
-
-function Link({ children, href }: ComponentProps<'a'>) {
-  return (
-    <a
-      className="text-link underline underline-offset-3 hover:text-link-hover"
-      href={href}
-      rel="noopener noreferrer"
-      target="_blank"
-    >
-      <InLink value>{children}</InLink>
-    </a>
-  );
-}
-
-/** An answer draws no picture from a URL: an image becomes a link to it, as
- * in agent-written notes (inside a link, its alt text). */
-function Image({ alt, src }: ComponentProps<'img'>) {
-  const label = alt || src;
-  return useContext(InLink) ? label : <Link href={src}>{label}</Link>;
-}
-
-const components = {
-  a: Link,
-  blockquote: ({ children }: { children?: ReactNode }) => (
-    <blockquote className="border-line border-l-2 pl-2.5 text-fg-secondary">
-      {children}
-    </blockquote>
-  ),
-  code: Code,
-  h1: Heading,
-  h2: Heading,
-  h3: ({ children }: { children?: ReactNode }) => (
-    <h3 className="mt-2 font-semibold text-[15px] first:mt-0">{children}</h3>
-  ),
-  h4: ({ children }: { children?: ReactNode }) => (
-    <h4 className="mt-1 font-semibold text-sm first:mt-0">{children}</h4>
-  ),
-  img: Image,
-  li: ({ children }: { children?: ReactNode }) => (
-    <li className="[&+li]:mt-2 [&>p]:inline">{children}</li>
-  ),
-  ol: ({ children, start }: { children?: ReactNode; start?: number }) => (
-    <ol
-      className="ml-5 list-outside list-decimal whitespace-normal marker:[font-variant-numeric:normal]"
-      start={start}
-    >
-      {children}
-    </ol>
-  ),
-  // A `<picture>` source loads nothing.
-  source: () => null,
-  span: (props: ComponentProps<typeof MathSpan> & { 'data-cite'?: string }) =>
-    props['data-cite'] === undefined ? (
-      <MathSpan {...props} />
-    ) : (
-      <Cites passages={citedPassages(props['data-cite'])} />
-    ),
-  // Markdown tables take the chat's table look, without Streamdown's framed
-  // card and its copy, download and full-screen buttons.
-  table: TableFrame,
-  tbody: ({ children }: { children?: ReactNode }) => <tbody>{children}</tbody>,
-  td: TableCell,
-  th: TableHead,
-  thead: ({ children }: { children?: ReactNode }) => <thead>{children}</thead>,
-  tr: TableRow,
-  ul: ({ children }: { children?: ReactNode }) => (
-    <ul className="ml-5 list-outside list-disc whitespace-normal">
-      {children}
-    </ul>
-  ),
+/** Streamdown loads at idle after a workspace opens, with the first answer to
+ * draw, or ahead of it on intent, never in the page's first load (about 118 KB
+ * gzipped). Until then: nothing yet, 'slow' past the hold, 'failed' if it
+ * couldn't load. */
+let body:
+  | typeof import('./proseBody').ProseBody
+  | 'slow'
+  | 'failed'
+  | undefined;
+const waiting = new Set<() => void>();
+const settle = (next: typeof body) => {
+  body = next;
+  for (const notify of waiting) notify();
 };
 
-/** Markdown in a chat answer, with `$…$` / `$$…$$` math and `[#n]` citation
- * markers. Streamdown's root is `display: contents`, so its blocks sit in the
- * wrapper with their 12px gap; a heading adds its own room above. */
+let importing: Promise<void> | undefined;
+const importBody = () => {
+  importing ??= import('./proseBody').then(
+    (module) => settle(module.ProseBody),
+    (error: unknown) => {
+      importing = undefined;
+      throw error;
+    }
+  );
+  return importing;
+};
+
+/** On intent: offline it asks for nothing, since the browser would keep the
+ * failure until a reload, and a failure says nothing. Only an answer that needs
+ * the code says it couldn't load (`loadProse`). */
+export function preloadProse() {
+  if (navigator.onLine === false) return;
+  importBody().catch(() => undefined);
+}
+
+/** After a workspace opens, when the page is first idle (Q681): saved chats then
+ * read formatted offline. Offline then, it waits for the connection. Returns the
+ * cancel. */
+export function preloadProseWhenIdle() {
+  const go = () => {
+    if (navigator.onLine === false)
+      addEventListener('online', preloadProse, { once: true });
+    else preloadProse();
+  };
+  if (typeof requestIdleCallback !== 'function') {
+    const timer = setTimeout(go, IDLE_FALLBACK_MS);
+    return () => {
+      clearTimeout(timer);
+      removeEventListener('online', preloadProse);
+    };
+  }
+  const idle = requestIdleCallback(go, { timeout: IDLE_LIMIT_MS });
+  return () => {
+    cancelIdleCallback(idle);
+    removeEventListener('online', preloadProse);
+  };
+}
+
+let needed: Promise<void> | undefined;
+
+/** For an answer on screen. */
+export function loadProse() {
+  needed ??= (async () => {
+    const hold = setTimeout(() => {
+      if (!body) settle('slow');
+    }, HOLD_MS);
+    try {
+      await importBody();
+    } catch (error) {
+      settle('failed');
+      // Online it's a release that removed the file, which a reload fixes. Offline
+      // the page says so already; back online it tries once more, and the
+      // browser may keep the failed import until a reload (error-handling.md).
+      if (navigator.onLine === false)
+        addEventListener(
+          'online',
+          () => {
+            needed = undefined;
+            void loadProse();
+          },
+          { once: true }
+        );
+      else showErrorToast(error);
+    } finally {
+      clearTimeout(hold);
+    }
+  })();
+  return needed;
+}
+
+const subscribe = (notify: () => void) => {
+  waiting.add(notify);
+  return () => waiting.delete(notify);
+};
+const readBody = () => body;
+
+/** Streamdown's component once loaded, else what the wait has come to. */
+export const useProseBody = () =>
+  useSyncExternalStore(subscribe, readBody, readBody);
+
+/** A chat answer's Markdown (`ProseBody`). Its words hold their place unseen for
+ * a moment, so no raw Markdown flashes and little moves when the code lands. Past
+ * the hold, or if it can't load, they show as they are, which is still the answer. */
 export function Prose({
   text,
   className,
@@ -140,7 +128,10 @@ export function Prose({
   className?: string;
   muted?: boolean;
 }) {
-  const source = useMemo(() => prepareMath(text), [text]);
+  const Body = useProseBody();
+  useEffect(() => {
+    if (!Body) void loadProse();
+  }, [Body]);
   return (
     <div
       className={cn(
@@ -149,14 +140,17 @@ export function Prose({
         className
       )}
     >
-      <Streamdown
-        className="contents [&>*:not(:last-child)]:mb-4"
-        components={components}
-        plugins={plugins}
-        rehypePlugins={rehypePlugins}
-      >
-        {source}
-      </Streamdown>
+      {typeof Body === 'function' ? (
+        <Body text={text} />
+      ) : (
+        <p
+          aria-busy={Body !== 'failed' || undefined}
+          className={cn('whitespace-pre-wrap', !Body && 'invisible')}
+          data-prose={Body ?? 'loading'}
+        >
+          {text}
+        </p>
+      )}
     </div>
   );
 }

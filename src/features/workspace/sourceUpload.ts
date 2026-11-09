@@ -37,6 +37,17 @@ export function isTextKind(
   return policy.kinds.some((entry) => entry.kind === kind && entry.text);
 }
 
+/** Whether the flat text cap holds the file: txt, md, json, source code, CSV
+ * and TSV (Q629, Q630). Excel and an unrecognized name keep the plan's cap. */
+export function isTextFile(
+  name: string,
+  kind: FileKind,
+  policy: SourceUploadPolicy
+): boolean {
+  const ext = fileExt(name);
+  return ext === 'csv' || ext === 'tsv' || isTextKind(kind, policy);
+}
+
 /** What a source gets before its upload (Epo 2026-10-24): an Office file's
  * pictures compressed and its EMF and WMF pictures removed, or an image
  * file shrunk to at most 5 megapixels. */

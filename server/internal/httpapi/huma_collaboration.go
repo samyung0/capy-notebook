@@ -114,6 +114,7 @@ func (a *api) registerCollaboration(api huma.API) {
 	regWithMaxBody(api, http.MethodPatch, "/api/comments/{id}", "updateMaterialComment", tag, "Edit an authored comment", http.StatusOK, commentBodyMaxBytes, a.updateMaterialComment)
 	reg(api, http.MethodDelete, "/api/comments/{id}", "deleteMaterialComment", tag, "Soft-delete a comment", http.StatusNoContent, a.deleteMaterialComment)
 	reg(api, http.MethodPost, "/api/materials/{id}/collaboration-token", "createMaterialCollaborationToken", tag, "Create a short-lived material room token", http.StatusCreated, a.createMaterialCollaborationToken)
+	reg(api, http.MethodPost, "/api/materials/readable", "readableMaterials", tag, "List which of these materials the caller can read", http.StatusOK, a.readableMaterials)
 	// The handler decodes the 2 MiB body once (decodeProjectionBody, then
 	// materialdoc.NewProjection) instead of Huma decoding it twice, into a
 	// generic value for schema validation and then into the struct. The
@@ -246,6 +247,31 @@ func (a *api) requestMaterialIndex(ctx context.Context, in *materialIndexInput) 
 	}
 	out := &materialIndexOutput{}
 	out.Body.JobID = jobID
+	return out, nil
+}
+
+type readableMaterialsInput struct {
+	Body struct {
+		IDs []string `json:"ids" minItems:"1" maxItems:"500" uniqueItems:"true" nullable:"false" doc:"Materials this device keeps a copy of"`
+	}
+}
+
+type readableMaterialsOutput struct {
+	Body struct {
+		IDs []string `json:"ids" nullable:"false" doc:"The ones the caller can still read"`
+	}
+}
+
+// readableMaterials answers a device's sweep of its kept copies at page load:
+// a copy of anything the caller can no longer read is deleted there
+// (Epo 2026-11-04). One query, however many it asks about.
+func (a *api) readableMaterials(ctx context.Context, in *readableMaterialsInput) (*readableMaterialsOutput, error) {
+	ids, err := a.s.ReadableMaterialIDs(ctx, userID(ctx), in.Body.IDs)
+	if err != nil {
+		return nil, err
+	}
+	out := &readableMaterialsOutput{}
+	out.Body.IDs = ids
 	return out, nil
 }
 

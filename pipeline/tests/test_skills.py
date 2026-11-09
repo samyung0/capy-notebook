@@ -21,7 +21,7 @@ async def test_read_skill_lists_the_skills_and_returns_the_formats():
             if s["function"]["name"] == "read_skill"
         )
 
-    # The output-files preference's building skill is the chapters'; the
+    # The output-files preference's building skill is the topics'; the
     # other is for a request that asks for its format (Epo 2026-10-14).
     listed = described()
     assert f"- editing: {skills.SKILLS['editing'].when}." in listed

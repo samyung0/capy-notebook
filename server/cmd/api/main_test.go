@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"os/exec"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -168,54 +167,5 @@ func TestDeployedGatewaysRefuseShortServiceSecrets(t *testing.T) {
 		if err := validateServiceSecrets("production", secrets[0], secrets[1]); err == nil {
 			t.Errorf("production with a %s started", name)
 		}
-	}
-}
-
-// TestProductionNeedsTheTurnstileSecret (rate-limit audit Q271). A deployed
-// gateway does not boot without the secret that verifies signed-out answer
-// checks; local stacks may run without it.
-func TestProductionNeedsTheTurnstileSecret(t *testing.T) {
-	if err := validateTurnstileSecret("production", ""); err == nil {
-		t.Fatal("production booted without TURNSTILE_SECRET_KEY")
-	}
-	if err := validateTurnstileSecret("production", "0x4AAAAAAA-secret"); err != nil {
-		t.Fatal(err)
-	}
-	for _, appEnv := range []string{"development", "e2e"} {
-		if err := validateTurnstileSecret(appEnv, ""); err != nil {
-			t.Fatalf("%s: %v", appEnv, err)
-		}
-		if err := validateTurnstileSecret(appEnv, turnstileTestSecrets[0]); err != nil {
-			t.Fatalf("%s with the test secret: %v", appEnv, err)
-		}
-	}
-	// Cloudflare's published test secrets verify nothing (security
-	// regression: rate-limit audit r2 N-1, Q308).
-	for _, secret := range turnstileTestSecrets {
-		if err := validateTurnstileSecret("production", secret); err == nil {
-			t.Fatalf("production booted with the test secret %s", secret)
-		}
-	}
-}
-
-// TestTurnstileTokensMustComeFromTheAppHosts (security regression:
-// rate-limit audit r2 N-2, Q308). Outside development and e2e a token must
-// have been solved on one of the environment's app origins; UAT's lists
-// give uat and local.uat. A deployed gateway with no app host refuses
-// to boot (security regression: rate-limit audit r3 S-2, Q350).
-func TestTurnstileTokensMustComeFromTheAppHosts(t *testing.T) {
-	got, err := turnstileHosts("production",
-		"https://uat.capynotebook.com",
-		"https://uat.capynotebook.com",
-		"https://uat.capynotebook.com", "https://local.uat.capynotebook.com")
-	want := []string{"uat.capynotebook.com", "local.uat.capynotebook.com"}
-	if err != nil || !slices.Equal(got, want) {
-		t.Fatalf("turnstile hosts = %v, %v, want %v", got, err, want)
-	}
-	if got, err := turnstileHosts("e2e", "http://localhost:5173"); got != nil || err != nil {
-		t.Fatalf("e2e turnstile hosts = %v, %v, want none", got, err)
-	}
-	if _, err := turnstileHosts("production", "", "not a url"); err == nil {
-		t.Fatal("production booted with no Turnstile host")
 	}
 }

@@ -30,7 +30,7 @@ for (const [format, name] of [
     });
     const mode = page.getByRole('button', { name: m.material_mode() });
     await mode.click();
-    await expect(officeEditMenu(page, format)).toBeVisible({ timeout: 30_000 });
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
     await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
     await expect(mode).toBeEnabled();
 

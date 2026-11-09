@@ -2,7 +2,12 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { expect, type Page, test } from '@playwright/test';
 import { unzipSync } from 'fflate';
-import { officeEditMenu, officeMenu } from '../helpers/office';
+import {
+  officeEditMenu,
+  officeMenu,
+  officeTab,
+  ribbonCommand,
+} from '../helpers/office';
 import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 
@@ -79,20 +84,18 @@ function animatedGif(size: number) {
   ]);
 }
 
-/** Insert › Image through Capy's picker. */
+/** Insert › Image through the ribbon's picker. */
 async function insert(
   page: Page,
   format: 'docx' | 'pptx',
   file: { buffer: Buffer; mimeType: string; name: string }
 ) {
-  await officeMenu(page, format, 'Insert').click();
+  await officeTab(page, 'insert').click();
   const chooser = page.waitForEvent('filechooser');
-  await page
-    .getByRole('menuitem', {
-      exact: true,
-      name: format === 'docx' ? 'Image' : m.files_office_pptx_image(),
-    })
-    .click();
+  await ribbonCommand(
+    page,
+    format === 'docx' ? 'insert-image' : 'insert.image'
+  ).click();
   await (await chooser).setFiles(file);
 }
 
@@ -153,7 +156,7 @@ for (const [format, name] of [
       timeout: 60_000,
     });
     await page.getByRole('button', { name: m.material_mode() }).click();
-    await expect(officeEditMenu(page, format)).toBeVisible({ timeout: 30_000 });
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
     const before = media(await download(page, format));
 
     // Nothing shrinks an animated GIF over the cap: Capy's notice, not the
@@ -261,7 +264,7 @@ test('docx Insert › Image refuses a picture past the growth budget of the file
     )
   );
   await page.getByRole('button', { name: m.material_mode() }).click();
-  await expect(officeEditMenu(page, 'docx')).toBeVisible({ timeout: 30_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
   const before = media(await download(page, 'docx'));
   const buffer = Buffer.from(await makeImage(page, 'webp'), 'base64');
   await insert(page, 'docx', {
@@ -290,7 +293,7 @@ test('a DOCX with no growth budget left opens to view only with the size-limit n
   await expect(page.getByText(m.files_size_limit())).toBeVisible({
     timeout: 30_000,
   });
-  await expect(officeEditMenu(page, 'docx')).toHaveCount(0);
+  await expect(officeEditMenu(page)).toHaveCount(0);
   // The saved view loads into a fresh frame.
   await expect(frame.locator('canvas').first()).toBeVisible({
     timeout: 60_000,
@@ -330,7 +333,7 @@ test('pptx Insert › Image shrinks a picture toward the growth budget and refus
     )
   );
   await page.getByRole('button', { name: m.material_mode() }).click();
-  await expect(officeEditMenu(page, 'pptx')).toBeVisible({ timeout: 30_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
   const before = media(await download(page, 'pptx'));
   const buffer = Buffer.from(await makeImage(page, 'photo'), 'base64');
   await insert(page, 'pptx', {

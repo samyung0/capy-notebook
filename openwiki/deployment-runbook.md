@@ -60,6 +60,19 @@ routes change in step. A collaboration service ahead of its gateway can, for
 example, misread the gateway's `epoch-reset` answer and keep a discarded room
 refused until the gateway catches up.
 
+The release that brings migration `0144` (one line per model) deploys the app,
+the ingest host and Ops together, right after the migration (Epo 2026-11-04):
+the migration drops `model_capacities.interactive_reserve`, which the previous
+release's ingest workers and Ops registry still read, so they fail admissions
+and the registry until they run the new release.
+
+The release that brings migration `0153` (the grading slot) deploys the app, the
+retrieval pipeline, the ingest host and Ops together, right after the migration:
+the previous release's pipeline and ingest workers raise on the new slot, so calls
+pinned to 1017's new version fail (ghost text, Make a quiz, page reads), a restart
+of the old registry fails, and old Ops refuses the row. Deploying UAT and then
+ingest at the same commit leaves those failures for the minutes between the two.
+
 Where the two must be split (a manual rollout, a partial rollback), the
 gateway goes first or with the collaboration service, never after it. A text
 checkpoint now carries `preview` (2026-10-13, `thumbnails.md`): a gateway
@@ -141,9 +154,10 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    verifies them in the Worker; CI renders the same GitHub secret into the app
    host's env file and passes it to `wrangler deploy --secrets-file`, and `wrangler.jsonc` lists it under
    `secrets.required`. Changing it invalidates every shared link, including
-   quiz and flashcard links, and resets the anonymous grading IP hashes.
+   quiz and flashcard links.
    `JEV_TYPESAFE_API_KEY` (manifest secret, target `app`) is the typesafe.ai
-   key that grades open quiz parts; without it grading answers 503.
+   key behind the quiz editor's needs-a-calculation check; without it that
+   check answers 503.
    `ALIBABA_MODELSTUDIO_KEY` (secret) and `ALIBABA_MODELSTUDIO_URL`
    (variable) also reach the app target for chat voice input, which the API
    calls itself (the same Singapore workspace and key as uploaded audio,
@@ -173,7 +187,7 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    `/p/*` routes serve signed-out shared quizzes', flashcards' and notes'
    images under the same signature check. The Worker inlines only the CSS
    rules a page's HTML uses (`workers/site/usedCss.ts`) and preloads the full
-   stylesheets, which the page applies before it hydrates. Anonymous grading skips
+   stylesheets, which the page applies before it hydrates. A shared page's check skips
    the Worker and posts to `/api/public/quizzes/{token}/grade` directly, since
    Worker subrequests reach the API without the visitor's IP. There is no
    KV/R2 cache. Only the `run_worker_first` paths reach the Worker; every other
@@ -989,10 +1003,14 @@ Ops model catalog before allowing platform model calls. Each environment stores
 its own provider/model limits in `model_capacities`; new databases start
 without limits and missing capacity fails explicitly. GLM-5.3-Flash keeps its
 `zai/glm-5.3-flash` capacity row but runs through OpenRouter on DigitalOcean,
-then Z.AI (decision 2026-10-21): production and UAT get 150 total / 125
-interactive reserve, local development 8 / 4. Rows already in a database keep
-their values (UAT had 48 / 40 from migration 0097), so raise them in Ops.
-Production's Qwen embedding is 200 / 80.
+then Z.AI (decision 2026-10-21): production and UAT get 150 in flight, local
+development 8. Rows already in a database keep their values (UAT had 48 from
+migration 0097), so raise them in Ops. Production's Qwen embedding is 200.
+A total is the model's whole capacity, shared by every use with no reserve
+(Epo 2026-11-04); calls past it wait their turn. DeepSeek V4.1 Flash 1017
+(`openrouter` / `deepseek/deepseek-v4.1-flash-1017`) shares one OpenRouter
+account's 100 in flight between environments: set it in Ops at deploy to 84 in
+production and 16 in UAT; local development is not counted (Epo 2026-11-04).
 UAT and full local development must use limits appropriate to their own
 provider accounts.
 `deploy/model-capacities.sql` is an opt-in bootstrap after migrations. It inserts
@@ -1005,7 +1023,7 @@ Apply to one explicitly selected database with
 an account, divide its quota among them before applying the script.
 
 Migration `0134_alibaba_rerank.sql` makes Alibaba `qwen3-rerank` the `rerank`
-default with a capacity of 64 (32 reserved), replacing DeepInfra
+default with a capacity of 64, replacing DeepInfra
 `Qwen/Qwen3-Reranker-4B` from `0030_rerank_slot.sql`. It reuses the
 environment's `ALIBABA_MODELSTUDIO_KEY` and `ALIBABA_MODELSTUDIO_URL` (the
 Singapore workspace's `.../compatible-mode/v1` base), now also passed to the
@@ -1191,32 +1209,24 @@ for phase in http_request_firewall_custom http_ratelimit http_request_cache_sett
 done
 ```
 
-**Rate limiting rules** (Epo 2026-10-24, Q303, Q324). The zone is on
-Cloudflare Pro, which allows two rate limiting rules; the phase holds both,
-and `scripts/deploy/test_cloudflare_rules.py` refuses a third. Each counts
-per IP with the data centre (`cf.colo.id`).
+**Rate limiting rule** (Epo 2026-10-24, Q303; 2026-11-06, Q641). The zone is on
+Cloudflare Free, which allows one rate limiting rule, counting 10 s and
+blocking for 10 s; `scripts/deploy/test_cloudflare_rules.py` refuses a second.
+It counts per IP with the data centre (`cf.colo.id`).
 
 - `capy_public_api_rate_limit` covers `/api/public/` on every host of both
   environments: 100 requests in 10 s from one address, then blocked for 10 s.
-  `/api/public/` is the costliest path a signed-out caller reaches (grading
-  calls Jev; a public note read is up to about 2 MiB). It stops floods before
+  `/api/public/` is the costliest path a signed-out caller reaches (a public
+  note read is up to about 2 MiB). It stops floods before
   the tunnel and Redis. It covers direct `/api/public/` calls only: the site
   Worker's own reads of `/api/public/` reach the origin without passing the
   zone's rate-limit phase (a same-zone subrequest, the Worker has no
   `global_fetch_strictly_public`); the Worker signs the visitor's address
   into each read and Go counts it per visitor and shared page, 300 a minute
   (Q244; [observability-metering.md](observability-metering.md#6-rate-limiting)).
-- `capy_share_pages_rate_limit` covers the shared pages a visitor opens,
-  `/share/` and `/w/` on the app hosts of both environments (`app`,
-  `uat`): past 600 requests a minute from one address,
-  a Managed Challenge. On Pro a challenge action must set
-  `mitigation_timeout` 0, so the rule throttles (each request past the rate
-  is challenged) rather than holding a challenge for a set time. The rule
-  matches `/share/` and `/w/` only: `/p/` serves the pages' images and audio,
-  which cannot answer a challenge, so it stays bounded by the gateway's
-  per-visitor share-read class (Epo 2026-10-24, Q329).
-
-Everything else has no edge limit. A rule must leave `/webhooks/` out: Stripe
+Shared pages (`/share/`, `/w/`, `/p/`) have no edge limit, as Q310 first
+decided: the gateway's per-visitor share-read class bounds what they read.
+Everything else has no edge limit either. A rule must leave `/webhooks/` out: Stripe
 and Clerk burst deliveries and retries from small sets of IPs, and rate
 limiting them can lose subscription or identity events. Super Bot Fight Mode
 and the managed WAF rulesets stay off until they are tested on chosen routes
@@ -1489,10 +1499,7 @@ Two content security policies, both built once per SPA build by
 - **Scripts, enforced on the Worker's pages.** The share, summary and error
   pages the site Worker renders are also sent with an enforced
   `Content-Security-Policy` (`pagePolicy`):
-  - `script-src` names only `'self'`, Clerk's packages on its frontend API
-    (`https://{host}/npm/@clerk/`, the host decoded from
-    `VITE_CLERK_PUBLISHABLE_KEY`, and a key that names no plain host fails the
-    build; shared quizzes and flashcard sets load clerk-js from it) and this
+  - `script-src` names only `'self'` and this
     PostHog project's script assets (`/static/` and
     `/array/{VITE_POSTHOG_KEY}/config.js` on the host posthog-js loads them
     from, `src/lib/posthogHost.ts`: `https://{eu|us}-assets.i.posthog.com` for
@@ -1510,7 +1517,9 @@ Two content security policies, both built once per SPA build by
     (`src/lib/zodJitless.ts`), so Zod never probes `new Function` (the summary
     and error pages' script builds no schema);
   - `script-src-attr 'none'` (no event-handler attributes),
-    `worker-src 'self' blob:` (clerk-js's timer worker),
+    `worker-src 'self' blob:` (only clerk-js's timer worker was known to need
+    `blob:`; the pages run clean without it locally, and it stays for PostHog's
+    lazy extensions, which only a deployed page can check),
     `style-src 'self' 'unsafe-inline'` (the Worker inlines the page's CSS;
     MathLive and Mermaid write style attributes),
     `frame-src` `VITE_EMBED_ORIGIN` and `https://www.youtube-nocookie.com`,
@@ -1518,14 +1527,12 @@ Two content security policies, both built once per SPA build by
   - `frame-ancestors 'self'`: only the app may frame these pages, and
     nothing in it does today, so an outside site (an LMS, a blog) cannot
     embed a shared quiz or note;
-  - on a shared quiz and a shared note only (the pages that grade signed-out
-    answers), `https://challenges.cloudflare.com` in `script-src` and
-    `frame-src` for Cloudflare Turnstile (`allowTurnstile` in
-    `workers/site/handler.ts`; Epo 2026-10-24, Q271). Flashcard, summary and
-    error pages do not get it.
 
   The SPA gets the same `script-src` report-only, inside its image header,
-  plus `https://challenges.cloudflare.com` (Clerk's Turnstile on sign-up) and
+  plus Clerk's packages on its frontend API (`https://{host}/npm/@clerk/`, the
+  host decoded from `VITE_CLERK_PUBLISHABLE_KEY`, and a key that names no plain
+  host fails the build; no page the Worker renders loads Clerk, Epo 2026-11-06,
+  Q668), `https://challenges.cloudflare.com` (Clerk's Turnstile on sign-up) and
   `https://apis.google.com` (the Drive picker), to learn what the app itself
   would need before anything there is enforced.
 
@@ -1583,41 +1590,6 @@ it; a new script or frame host on a public page goes into `scriptSources` or
 `capy-web` security report. The HTML embed frame, the Office runtime and Ops
 keep their own policies (§2.3, `workers/office/_headers`, the Ops application
 below).
-
-### 2.5 Turnstile widget (signed-out answer checks)
-
-Each signed-out answer check (a shared quiz's Submit, a quiz embedded in a
-shared note) carries a Cloudflare Turnstile token, and the API verifies it
-with siteverify before grading (Epo 2026-10-24, Q271; observability-metering
-§ anonymous grading). Dashboard work, by hand, once per environment:
-
-1. Cloudflare dashboard → Turnstile → Add widget. Mode **Managed**. Hostnames:
-   the environment's app hosts that serve share pages (UAT:
-   `uat.capynotebook.com` and `local.uat.capynotebook.com`; production: its
-   app hostname). One widget
-   per environment, so a leaked UAT key cannot pass production checks.
-2. GitHub environment (`uat`, `production`): variable
-   `VITE_TURNSTILE_SITE_KEY` (the widget's site key, built into the share
-   pages) and secret `TURNSTILE_SECRET_KEY` (its secret key, for the API).
-   `scripts/env/config.py` refuses a build without the site key and an app
-   render without the secret, and a production gateway does not boot without
-   the secret or with one of Cloudflare's published test secrets
-   (`validateTurnstileSecret`, Q308), or when `APP_URL`,
-   `CORS_ALLOWED_ORIGINS` and `COLLABORATION_ALLOWED_ORIGINS` name no host to
-   check tokens against (`turnstileHosts`, Q350).
-3. Deploy, open a shared quiz signed out and submit: the check is graded. A
-   403 `captcha_failed` means the token did not verify (wrong key pair, or a
-   host siteverify names that is not among the gateway's `APP_URL`,
-   `CORS_ALLOWED_ORIGINS` and `COLLABORATION_ALLOWED_ORIGINS` hosts); a 503
-   `captcha_unavailable` means siteverify could not answer (the API refuses
-   rather than skipping the check).
-
-Local stacks and e2e use Cloudflare's published test keys, which always pass:
-site key `1x00000000000000000000AA`, secret
-`1x0000000000000000000000000000000AA` (`deploy/.env.example`, the Compose
-files, `playwright.config.ts`). The API still calls siteverify with the test
-secret, so a local signed-out check needs Cloudflare reachable; it checks no
-hostname there, since test tokens name none of the app hosts.
 
 ---
 
@@ -1864,7 +1836,9 @@ deployed retrieval service holds a read-only key; only the loader on the
 developer PC holds a key that can write.
 
 1. Create the bucket `capy-notebook-knowledge-base`, **private**. It holds one
-   object per book at `books/<sha256>.pdf`; nothing else writes into it.
+   object per book at `books/<sha256>.pdf` and one JPEG per shown figure at
+   `figures/<sha256>/<page>_<box>.jpg`, which the loader stores at publish
+   (Epo 2026-11-04); nothing else writes into it.
 2. Two application keys, each **scoped to that bucket only**; each secret is
    shown once:
    - **Reader**, `listFiles` and `readFiles`: the retrieval service's
@@ -1873,7 +1847,8 @@ developer PC holds a key that can write.
      let either environment change the books every tenant renders.
    - **Writer**, `readFiles` and `writeFiles`: only in the developer PC's
      ignored `.env.local` as `KNOWLEDGE_BASE_B2_WRITER_KEY_ID` and
-     `KNOWLEDGE_BASE_B2_WRITER_APP_KEY`, for the builder's source upload. It
+     `KNOWLEDGE_BASE_B2_WRITER_APP_KEY`, for the builder's source upload and
+     the loader's figure crops (the read key lists the bucket for them). It
      never goes to GitHub or a host; a CI test fails if any deploy
      file names these variables.
 
@@ -1883,8 +1858,10 @@ developer PC holds a key that can write.
 3. Endpoint `https://s3.eu-central-003.backblazeb2.com`, region
    `eu-central-003`.
 4. No CORS rules and no lifecycle rule. The browser never touches this bucket:
-   `capture_library_page` renders a page server-side and the books are
-   permanent.
+   `capture_library_page` renders a page server-side, Go proxies a figure's
+   stored crop, and the books are permanent. Stale crops (a box moved at a
+   republish, or a figure hidden later) stay unreachable; `crops --verify` in
+   the loader lists them.
 5. The five variables are **all or none**, enforced at import of
    `pipeline.config`: set all five and `capture_library_page` is offered;
    set none and the tool is simply unoffered. A **partial set raises while the
@@ -2048,7 +2025,7 @@ those services start.
    worker. The worker also needs `DEEPINFRA_API_KEY` for the seeded Qwen
    embedding route, `OPENROUTER_API_KEY` for the file-descriptor pin
    (DeepSeek V4 Flash 0731 on Reka, DigitalOcean or StreamLake), the captioning pin (DeepSeek
-   V4.1 Flash 1017 on InferenceNet, then Cloudflare: standalone-image captions
+   V4.1 Flash 1017 on Wafer's US endpoint, then InferenceNet, then Cloudflare: standalone-image captions
    and the VLM read of text-less document pages) and GLM-5.3-Flash, the same
    key the app host's `retrieval` and `ops` containers carry (Ops reads it too,
    to flag a missing credential). No Z.AI key is read since 2026-10-21. The
@@ -2091,10 +2068,11 @@ those services start.
    Configure its platform model capacities through Ops (§1.3) before ingest.
    `CAPY_PARSE_COORDINATOR_CONCURRENCY` is a production-only input listed in
    `.env.prod.example` and `ingest-host.env.example`; local/UAT Compose fixes it at one.
-   So are the VLM page-read gates, `CAPY_VLM_PAGE_CAPACITY` (page reads in
-   flight across the workers) and `CAPY_VLM_PAGES_PER_JOB`: production 40 and
-   40 (the production ingest Compose's values when the GitHub variables are
-   blank; 64 overall until 2026-10-29, lowered so 1017's route holds at most 120), local/UAT Compose fixes 20 and 10.
+   So is `CAPY_VLM_PAGES_PER_JOB`, the page reads one job sends at once:
+   production 40 (the production ingest Compose's value when the GitHub
+   variable is blank), local/UAT Compose fixes 10. Across jobs page reads wait
+   in 1017's line with its other calls; the `CAPY_VLM_PAGE_CAPACITY` gate is
+   gone (Epo 2026-11-04), so delete that GitHub variable if it is set.
    Production limits are eight coordinator processes, seven parse children
    (`CAPY_PARSE_WORKERS`), parser depth 8 (`CAPY_PARSE_QUEUE_DEPTH`, parsing
    plus waiting) and 500 text-less pages per document
@@ -2728,6 +2706,54 @@ docker exec "$parser" sh -c 'test -w /tmp || echo read-only'                  # 
 
 ---
 
+### 7.6 Layout service
+
+Make a quiz finds figures with PP-DocLayout_plus-L's ONNX export under
+onnxruntime (`layout/app.py`). One pool runs on this host and serves UAT and
+production together, with no split and no queue of its own (Epo 2026-11-04). The
+service is stateless: a JPEG in, regions out, nothing stored, only counts and
+timings logged. It is its own compose project under `/opt/capy-layout`, outside
+the UAT and production projects and the release workflows, like the library
+database (§7.3). The image holds the model: `layout/Dockerfile` adds it from a
+pinned Hugging Face revision and checks its SHA-256 at build, so the build needs
+the network and the running service does not. It runs at a low CPU weight
+(`cpu_shares: 128`, no `cpus` cap) with onnxruntime's spinning off, so the parser
+beside it keeps the cores when both are busy; sizes come from the
+[capacity test](../bench/extraction/reports/2026-11-04-layout-capacity.md).
+
+1. Check out the reviewed commit under `/opt/capy-layout/src`.
+2. Create `/opt/capy-layout/.env` (mode 0600) from `deploy/layout.env.example`.
+   `LAYOUT_REVISION` is that commit, `LAYOUT_BIND_ADDRESS` the host's WireGuard
+   address `10.77.0.2`, and `CAPY_LAYOUT_TOKEN` comes from `openssl rand -hex 32`.
+3. Build and start:
+
+   ```bash
+   docker compose --project-name capy-layout --env-file /opt/capy-layout/.env \
+     -f /opt/capy-layout/src/deploy/docker-compose.layout.yml up -d --build
+   ```
+
+4. Check it. `docker inspect --format '{{.State.Health.Status}}' capy-layout`
+   reports `healthy`, `curl http://10.77.0.2:8092/healthz` answers `ok`, `ss -tlnp
+   | grep 8092` shows the WireGuard address alone, and a probe of the public
+   address is refused. The container uses host networking like the parser, because
+   the host firewall drops forwarded traffic into Docker bridges.
+5. Give both environments the service. In `deploy/.env.uat` and `deploy/.env.prod`
+   set `CAPY_LAYOUT_URL=http://10.77.0.2:8092` and the same `CAPY_LAYOUT_TOKEN`,
+   then push them (§12.7) and deploy the app. Retrieval makes the calls, over
+   WireGuard, as it reads the library database.
+
+The container runs as uid 10003 with no capabilities, no privilege gain, Docker's
+default seccomp profile, a read-only root and `pids_limit: 128`. The body is capped
+by `LAYOUT_MAX_BYTES` and the image by `LAYOUT_MAX_PIXELS`.
+
+**Without it, nothing breaks.** Past `LAYOUT_QUEUE_DEPTH` requests in the service,
+the next is answered 429; the client waits about 2 s and tries again, 4 tries in
+all. A page whose request fails, stays busy or runs out of time, or any page while
+`CAPY_LAYOUT_URL` is unset, takes the box call for its figures: one more
+model call a page, with looser crops (68 whole, 64 tight and 56 both of 80, against 76, 73 and 70)
+([report](../bench/extraction/reports/2026-11-04-figure-matching.md)). `/healthz`
+counts `served`, `busy` and each refusal; a rising `busy` means the pool is short.
+
 ## 8. Database
 
 1. Apply migrations with `/migrate` from the **same image / git SHA** as the
@@ -2787,7 +2813,7 @@ docker exec "$parser" sh -c 'test -w /tmp || echo read-only'                  # 
    migration has since dropped, so an older ops build still starts; do not roll
    ops back past a release that dropped a column it names.
 
-   Ops validates the eight `plan_limits` column grants before it loads the
+   Ops validates the ten `plan_limits` column grants before it loads the
    startup catalog. A missing grant therefore fails as a role-contract error,
    rather than as a later plan-catalog query error.
 
@@ -2865,7 +2891,7 @@ docker exec "$parser" sh -c 'test -w /tmp || echo read-only'                  # 
 ## 9. Changing models in the registry
 
 Most slots are safe to retarget from the ops dashboard: chat,
-editor, ingest and captioning all resolve a pin per request or per job, so a new
+editor, ingest, extraction and captioning all resolve a pin per request or per job, so a new
 default applies to the next one and everything in flight keeps what it had.
 
 The dashboard deliberately disallows aliases: each grid row is the natural
@@ -4074,7 +4100,9 @@ Steps:
 changes seeds deploys without the window (decision of 2026-10-18): its
 migration is the template's reset with no guard, for the formats whose seeds
 changed (DOCX in
-[`0103_docx_engine_round_reset.sql`](../server/migrations/0103_docx_engine_round_reset.sql)),
+[`0103_docx_engine_round_reset.sql`](../server/migrations/0103_docx_engine_round_reset.sql);
+all three formats in
+[`0150_office_051_reset.sql`](../server/migrations/0150_office_051_reset.sql)),
 and it drops their unpublished edits. The old collaboration server must be
 stopped before that migration runs and must not outlive it. Otherwise an open
 room's next save fails on the new epoch, the browser reopens the room at that

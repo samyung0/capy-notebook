@@ -22,7 +22,7 @@ import (
 // standalone file of createdBy (an account chat's, Epo 2026-10-27).
 // A file the chat agent made carries the library provenance it was written
 // from; the quota gate counts that record with the bytes, as for a material.
-func (s *Store) createSourceWithJobTx(ctx context.Context, tx pgx.Tx, wsID, createdBy, name, kind string, chapterID *string, chapterName string, sizeBytes int64, blobPath, parser, parseMode string, provenance *Provenance) (File, string, error) {
+func (s *Store) createSourceWithJobTx(ctx context.Context, tx pgx.Tx, wsID, createdBy, name, kind string, topicID *string, topicName string, sizeBytes int64, blobPath, parser, parseMode string, provenance *Provenance) (File, string, error) {
 	processingPlan, err := sourceupload.BuildProcessingPlan(name, kind, parseMode)
 	if err != nil || processingPlan.Route == sourceupload.RouteStoreOnly {
 		if err == nil {
@@ -43,11 +43,11 @@ func (s *Store) createSourceWithJobTx(ctx context.Context, tx pgx.Tx, wsID, crea
 	if err != nil {
 		return File{}, "", err
 	}
-	if wsID == "" && (chapterID != nil || chapterName != "") {
-		return File{}, "", fmt.Errorf("%w: a standalone file has no chapter", ErrNotFound)
+	if wsID == "" && (topicID != nil || topicName != "") {
+		return File{}, "", fmt.Errorf("%w: a standalone file has no topic", ErrNotFound)
 	}
 	if wsID != "" {
-		if chapterID, err = resolveUploadChapterID(ctx, tx, wsID, chapterID, chapterName); err != nil {
+		if topicID, err = s.resolveUploadTopicID(ctx, tx, wsID, topicID, topicName); err != nil {
 			return File{}, "", err
 		}
 	}
@@ -67,9 +67,9 @@ func (s *Store) createSourceWithJobTx(ctx context.Context, tx pgx.Tx, wsID, crea
 	fileID := uid("f")
 	now := time.Now().UTC()
 	if _, err := tx.Exec(ctx, `INSERT INTO files
-		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, parser, blob_path, parse_mode, provenance)
+		(id, workspace_id, user_id, created_by, topic_id, name, kind, size_bytes, added_at, status, parser, blob_path, parse_mode, provenance)
 		VALUES ($1,NULLIF($2,''),$3,$4,$5,$6,$7,$8,$9,'pending',$10,$11,$12,$13)`,
-		fileID, wsID, ownerID, nullStr(createdBy), chapterID, name, kind, sizeBytes, now, parser, blobPath, parseMode, provenanceJSON); err != nil {
+		fileID, wsID, ownerID, nullStr(createdBy), topicID, name, kind, sizeBytes, now, parser, blobPath, parseMode, provenanceJSON); err != nil {
 		return File{}, "", err
 	}
 	if err := markCreatedTx(ctx, tx, createdBy, OpenFile, fileID); err != nil {
@@ -92,7 +92,7 @@ func (s *Store) createSourceWithJobTx(ctx context.Context, tx pgx.Tx, wsID, crea
 		return File{}, "", err
 	}
 
-	f := File{ID: fileID, WorkspaceID: wsID, ChapterID: chapterID, Name: name, Kind: FileKind(kind), SizeBytes: sizeBytes, AddedAt: now, Status: "pending", Indexed: false, HasBytes: blobPath != "", Revision: 1, Provenance: provenance}
+	f := File{ID: fileID, WorkspaceID: wsID, TopicID: topicID, Name: name, Kind: FileKind(kind), SizeBytes: sizeBytes, AddedAt: now, Status: "pending", Indexed: false, HasBytes: blobPath != "", Revision: 1, Provenance: provenance}
 	return f, jobID, nil
 }
 
@@ -100,7 +100,7 @@ func (s *Store) createSourceWithJobTx(ctx context.Context, tx pgx.Tx, wsID, crea
 // blob store at BlobPath.
 type AgentFileDraft struct {
 	WorkspaceID, ActorUserID, Name, Kind string
-	ChapterID                            *string
+	TopicID                              *string
 	SizeBytes                            int64
 	BlobPath, Parser, ParseMode          string
 	Provenance                           *Provenance
@@ -126,7 +126,7 @@ func (s *Store) CreateAgentFileOperation(ctx context.Context, draft AgentFileDra
 		return *existing, false, nil
 	}
 	f, _, err := s.createSourceWithJobTx(ctx, tx, draft.WorkspaceID, draft.ActorUserID, draft.Name, draft.Kind,
-		draft.ChapterID, "", draft.SizeBytes, draft.BlobPath, draft.Parser, draft.ParseMode, draft.Provenance)
+		draft.TopicID, "", draft.SizeBytes, draft.BlobPath, draft.Parser, draft.ParseMode, draft.Provenance)
 	if err != nil {
 		return AgentOperation{}, false, err
 	}

@@ -9,7 +9,7 @@ export async function openEditorNote(
   readyText: string
 ): Promise<Locator> {
   await page.goto(
-    `/workspaces/${EDITOR_WORKSPACE_ID}?material=${encodeURIComponent(materialId)}&mode=edit`
+    `/workspaces/${EDITOR_WORKSPACE_ID}?material=${encodeURIComponent(materialId)}`
   );
   const editor = page.locator('[contenteditable="true"]').first();
   await expect(editor).toBeVisible({ timeout: 30_000 });
@@ -21,15 +21,19 @@ export async function openEditorNote(
 }
 
 /**
- * Put the caret after the last character of a text element. Clicking the text
- * often lands mid-word, and End only moves the native caret, which Slate reads
- * through a throttled selectionchange listener: a re-render in between (TOC,
- * mention menu) restores the click's caret and typing lands mid-word.
+ * Takes the mock scenario panel off the page. It floats at the bottom right,
+ * over the centre since the right panel went (Epo 2026-11-04), and covers what a
+ * test may click there.
  */
-export async function clickTextEnd(text: Locator) {
-  const box = (await text.boundingBox())!;
-  await text.click({ position: { x: box.width - 1, y: box.height / 2 } });
+export async function hideScenarioPanel(page: Page) {
+  await page
+    .getByTestId('mock-scenario-panel')
+    .evaluate((panel: HTMLElement) => {
+      panel.hidden = true;
+    });
 }
+
+export { clickTextEnd } from '../helpers/editor';
 
 /** Select one rendered text line and wait for Slate's range to update. */
 export async function selectEditorLine(page: Page, line: Locator) {

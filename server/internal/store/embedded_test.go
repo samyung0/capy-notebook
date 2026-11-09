@@ -77,7 +77,7 @@ func TestEmbeddedMaterialFollowsItsNote(t *testing.T) {
 		t.Fatalf("embedding under a non-note should fail, got %v", err)
 	}
 
-	refs, err := s.ListMaterialRefs(ctx, ws.ID)
+	refs, err := s.ListMaterialRefs(ctx, "", ws.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +270,7 @@ func TestEmbeddedMaterialAccessAndCloneFollowTheNote(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cloneRefs, err := s.ListMaterialRefs(ctx, wsClone.ID)
+	cloneRefs, err := s.ListMaterialRefs(ctx, "", wsClone.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

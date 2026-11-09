@@ -16,16 +16,34 @@ export type NotificationStreamEvent =
   | {
       ids?: string[];
       notification?: AppNotification;
-      /** `billing` and `customization` carry nothing: they ask the tab to
-       * refetch billing, or /api/me and adopt the look another device synced. */
-      type: 'billing' | 'created' | 'customization' | 'read' | 'removed';
+      /** `billing`, `customization` and `todo` carry nothing: they ask the tab
+       * to refetch billing, /api/me to adopt the look another device synced, or
+       * the To do lists. */
+      type:
+        | 'billing'
+        | 'created'
+        | 'customization'
+        | 'read'
+        | 'removed'
+        | 'todo';
     }
   /** A standalone file's ingest progress: it has no workspace channel, so it
    * rides the owner's notifications. */
   | (IngestEvent & { type: 'ingest' })
   /** A conversation's turn started (`streaming`) or saved its ending, for
    * the running mark in the conversation lists (Epo 2026-10-27, T19). */
-  | { conversationId: string; status: ChatStatus; type: 'chat_turn' };
+  | { conversationId: string; status: ChatStatus; type: 'chat_turn' }
+  /** A Make a quiz run its reader started ended. */
+  | { extractionId: string; status: string; type: 'extraction' }
+  /** Staff closed an assignment this user has an attempt running on, gave it
+   * new questions, or edited it. */
+  | {
+      assignmentId: string;
+      type:
+        | 'assignment_closed'
+        | 'assignment_republished'
+        | 'assignment_updated';
+    };
 
 export type StreamEvent =
   | { data: NotificationStreamEvent; name: 'notification' }
@@ -66,6 +84,15 @@ function parseEvent(chunk: string): StreamEvent | null {
         value.type === 'chat_turn' &&
         (typeof value.conversationId !== 'string' ||
           typeof value.status !== 'string')
+      )
+        return null;
+      if (value.type === 'extraction' && typeof value.extractionId !== 'string')
+        return null;
+      if (
+        (value.type === 'assignment_closed' ||
+          value.type === 'assignment_republished' ||
+          value.type === 'assignment_updated') &&
+        typeof value.assignmentId !== 'string'
       )
         return null;
       return {

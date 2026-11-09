@@ -798,6 +798,7 @@ export const EMBED_CATALOG = {
       ],
       "assets": [
         "question.stem[].image.assetId",
+        "question.groups[].blocks[].image.assetId",
         "question.parts[].blocks[].image.assetId",
         "question.parts[].solution[].image.assetId"
       ],
@@ -1307,6 +1308,9 @@ export const EMBED_CATALOG = {
     "BLOCK_CAPTION_MAX": 300,
     "CARD_BACK_MAX": 1000,
     "CARD_FRONT_MAX": 200,
+    "DRAWING_BOARD_MAX": 256000,
+    "DRAWING_IMAGE_MAX": 307200,
+    "DRAWING_IMAGE_SIDE_MAX": 1568,
     "HTML_EMBED_MAX_BYTES": 65536,
     "HTML_EMBED_MAX_COUNT": 10,
     "LIST_INDENT_MAX": 8,
@@ -1350,8 +1354,8 @@ export const EMBED_CATALOG = {
     "QUESTION_UNIT_MAX": 100,
     "QUIZ_MARKSCHEME_MAX": 5,
     "QUIZ_OPEN_ANSWER_MAX": 5000,
-    "QUIZ_OPEN_PARTS_MAX": 20,
-    "QUIZ_PARTS_MAX": 100,
+    "QUIZ_OPEN_PARTS_MAX": 100,
+    "QUIZ_PARTS_MAX": 150,
     "QUIZ_QUESTION_PARTS_MAX": 7
   }
 } as const;

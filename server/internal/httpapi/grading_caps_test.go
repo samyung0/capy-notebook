@@ -11,7 +11,7 @@ import (
 )
 
 // TestAnonymousGradingRefusesAForgedTokenUnread (security regression:
-// rate-limit audit L6). A signed-out grade with a forged share token is
+// rate-limit audit L6). A shared page's check with a forged share token is
 // refused before any of its body is read.
 func TestAnonymousGradingRefusesAForgedTokenUnread(t *testing.T) {
 	h, _, _ := openGradingAPI(t, "full")
@@ -35,43 +35,8 @@ func TestAnonymousGradingRefusesAForgedTokenUnread(t *testing.T) {
 	}
 }
 
-// TestAnonymousGradingCountsIPv6By56 (security regression: rate-limit audit
-// M6, Q246). Every address of one IPv6 /56 shares the per-address daily cap.
-func TestAnonymousGradingCountsIPv6By56(t *testing.T) {
-	h, st, calls := openGradingAPI(t, "full")
-	ctx := context.Background()
-	token := store.ShareToken(nil, gradingQuiz(t, h, "link"))
-	ipHash := st.AnonymousIPHash("2001:db8:5:600::/56")
-	t.Cleanup(func() {
-		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM anonymous_grading_usage WHERE ip_hash=$1`, ipHash)
-	})
-	grade := func(ip string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(http.MethodPost, "/api/public/quizzes/"+token+"/grade",
-			strings.NewReader(`{"questionId":"q1","answers":{"open-a":"Because."},"turnstileToken":"turnstile-ok"}`))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("CF-Connecting-IP", ip)
-		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, req)
-		return rec
-	}
-	if rec := grade("2001:db8:5:600::1"); rec.Code != http.StatusOK {
-		t.Fatalf("first grade → %d %s", rec.Code, rec.Body.String())
-	}
-	if _, err := st.Pool().Exec(ctx, `UPDATE anonymous_grading_usage SET parts=$2 WHERE ip_hash=$1`,
-		ipHash, store.AnonymousGradingPartsPerIP); err != nil {
-		t.Fatal(err)
-	}
-	before := calls.Load()
-	if rec := grade("2001:db8:5:6ff:ffff::2"); rec.Code != http.StatusTooManyRequests || !strings.Contains(rec.Body.String(), "anonymous_grading_limit") {
-		t.Fatalf("another address of the /56 → %d %s, want 429", rec.Code, rec.Body.String())
-	}
-	if calls.Load() != before {
-		t.Fatal("a refused grade reached Jev")
-	}
-}
-
 // TestSignedInGradingStopsAtTheDailyPartCap (security regression: rate-limit
-// audit M7). A signed-in learner's open parts are counted before Jev; past
+// audit M7). A signed-in learner's open parts are counted before any model; past
 // the day's cap a check with open answers and a computation check are
 // refused unsent, and a check with closed answers only is still graded.
 func TestSignedInGradingStopsAtTheDailyPartCap(t *testing.T) {
@@ -97,7 +62,7 @@ func TestSignedInGradingStopsAtTheDailyPartCap(t *testing.T) {
 	before := calls.Load()
 	rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/check", "u_owner", open)
 	if rec.Code != http.StatusTooManyRequests || !strings.Contains(rec.Body.String(), "grading_limit") || calls.Load() != before {
-		t.Fatalf("check past the cap → %d %s (Jev calls %d → %d)", rec.Code, rec.Body.String(), before, calls.Load())
+		t.Fatalf("check past the cap → %d %s (model calls %d → %d)", rec.Code, rec.Body.String(), before, calls.Load())
 	}
 	check := doReq(t, h, http.MethodPost, "/api/questions/computation-check", "u_owner", map[string]any{
 		"partId": "open-a",

@@ -4,6 +4,7 @@ import type {
   Question,
   QuestionPart,
 } from '@/features/questions/types';
+import { isDrawingValue } from '@/features/quizzes/drawing/drawingValue';
 import {
   type Answer,
   type Answers,
@@ -30,7 +31,11 @@ export function learnerView(question: Question): LearnerQuestion {
       let learner: LearnerAnswer;
       switch (answer.type) {
         case 'mcq':
-          learner = { options: answer.options, type: answer.type };
+          learner = {
+            options: answer.options,
+            type: answer.type,
+            ...(answer.correct.length > 1 ? { multiple: true as const } : {}),
+          };
           break;
         case 'short':
           learner = answer.unit
@@ -54,12 +59,16 @@ export function learnerView(question: Question): LearnerQuestion {
         case 'open':
           learner = { type: answer.type };
           break;
+        case 'drawing':
+          learner = { type: 'drawing' };
+          break;
       }
       return {
         answer: learner,
         blocks: part.blocks,
         id: part.id,
         marks: part.marks,
+        ...(part.group ? { group: part.group } : {}),
       };
     }),
   };
@@ -80,6 +89,15 @@ function mockJev(part: QuestionPart, answer: Answer | undefined): number[] {
   );
 }
 
+/** Stands in for the vision model: a drawing earns every item but the last,
+ * so a result shows a part partly right; no drawing earns nothing. */
+function mockDrawing(part: QuestionPart, answer: Answer | undefined) {
+  const scheme = part.markscheme ?? [];
+  return scheme.map((item, i) =>
+    isDrawingValue(answer ?? null) && i < scheme.length - 1 ? item.marks : 0
+  );
+}
+
 /** Mirrors the server's grading: each part's `awarded`, an open part's
  * `itemAwards` and a matching or gaps part's `itemResults`, on the full
  * questions, which carry the key back. */
@@ -92,6 +110,8 @@ export function gradeQuestions(
     parts: question.parts.map((part): QuestionPart => {
       if (part.answer.type === 'open')
         return applyItemAwards(part, mockJev(part, answers[part.id]));
+      if (part.answer.type === 'drawing')
+        return applyItemAwards(part, mockDrawing(part, answers[part.id]));
       const { awarded, items } = scorePart(part, answers[part.id]);
       return part.answer.type === 'matching' || part.answer.type === 'gaps'
         ? { ...part, awarded, itemResults: items }

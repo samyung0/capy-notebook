@@ -8,21 +8,19 @@
 export interface MoveFilesReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** A chapter of the workspace; exclusive with chapterName */
-  chapterId?: string;
-  /**
-     * A chapter of this name (any case), created when missing
-     * @maxLength 60
-     */
-  chapterName?: string;
-  /** Drop the left workspaces' study progress and plan steps for these files */
-  confirmProgressLoss?: boolean;
   /**
      * @minItems 1
      * @maxItems 20
      * @nullable
      */
   fileIds: string[] | null;
+  /** A topic of the workspace; exclusive with topicName */
+  topicId?: string;
+  /**
+     * A topic of this name (any case), created when missing
+     * @maxLength 60
+     */
+  topicName?: string;
   /** @minLength 1 */
   workspaceId: string;
 }

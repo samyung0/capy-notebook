@@ -13,6 +13,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
+	"github.com/samyung0/capy-notebook/server/internal/review"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -135,7 +136,7 @@ func (a *api) createQuiz(ctx context.Context, in *createQuizInput) (*quizOutput,
 		wsName = ws.Name
 	}
 	res, err := a.s.CreateQuiz(ctx, store.Quiz{
-		UserID: userID(ctx), Name: name, WorkspaceID: wsID, WorkspaceName: wsName, Chapters: b.Chapters,
+		UserID: userID(ctx), Name: name, WorkspaceID: wsID, WorkspaceName: wsName, Topics: b.Topics,
 		Questions: apimodel.EncodeQuestions(b.Questions), Privacy: privacy, TimeLimitMin: nil,
 	})
 	if errors.Is(err, materialdoc.ErrInvalid) {
@@ -155,7 +156,7 @@ func (a *api) updateQuizMetadata(ctx context.Context, in *updateQuizMetadataInpu
 		return nil, hErr(err)
 	}
 	res, err := a.s.UpdateQuizMetadata(ctx, in.ID, store.QuizMetadataPatch{
-		Name: apimodel.Str(in.Body.Name), Chapters: in.Body.Chapters, UpdatedBy: userID(ctx),
+		Name: apimodel.Str(in.Body.Name), Topics: in.Body.Topics, UpdatedBy: userID(ctx),
 	})
 	if err != nil {
 		return nil, hErr(err)
@@ -256,36 +257,143 @@ func (a *api) checkQuizQuestion(ctx context.Context, in *checkQuizQuestionInput)
 	}
 	q, order, marks := quizQuestion(qs, in.Body.QuestionID)
 	if q == nil {
-		return nil, huma.Error404NotFound("the question is not in this quiz")
+		return nil, noAnswersConfiguredError()
 	}
 	// A repeated check (a lost response, a second tab) is refused before it
-	// costs a grading call.
+	// costs a grading call, unless a part of it is still Not marked.
 	if in.Body.AttemptID != "" {
-		checked, err := a.s.QuizQuestionChecked(ctx, userID(ctx), in.ID, in.Body.AttemptID, in.Body.QuestionID)
+		held, answers, err := a.s.QuizCheckedQuestion(ctx, userID(ctx), in.ID, in.Body.AttemptID, in.Body.QuestionID)
 		if err != nil {
 			return nil, hErr(err)
 		}
-		if checked {
-			return nil, huma.Error409Conflict(store.ErrQuestionChecked.Error())
+		if held != nil {
+			if _, scored := review.QuestionScore(held); scored {
+				return nil, huma.Error409Conflict(store.ErrQuestionChecked.Error())
+			}
+			return a.recheckQuizQuestion(ctx, in, quiz.WorkspaceID, held, answers, order, marks)
 		}
 	}
 	answers := projectedAnswers([]map[string]any{q}, in.Body.Answers)
-	plan, err := planGrading([]map[string]any{q}, answers)
+	plan, err := planGrading([]map[string]any{q}, answers, sampleOwner{materialID: in.ID})
 	if err != nil {
 		return nil, gradeRequestError(err)
 	}
-	graded, _, _, err := a.gradeSignedIn(ctx, plan, quiz.WorkspaceID, map[string]any{"quizId": quiz.ID})
+	// A quick check in a note keeps nothing, drawings included.
+	keep := quiz.ParentMaterialID == ""
+	var packed map[string][]byte
+	if keep && len(plan.drawings) > 0 {
+		var size int64
+		if packed, size, err = packedCheckDrawings(plan); err != nil {
+			return nil, hErr(err)
+		}
+		// Keeping them must fit the learner's storage before marking is paid
+		// for (Q694); CheckQuizQuestion's own gate still decides.
+		if err := a.s.AssertStorageRoom(ctx, userID(ctx), size); err != nil {
+			return nil, hErr(err)
+		}
+	}
+	graded, _, _, err := a.gradeSignedIn(ctx, plan, quiz.WorkspaceID)
 	if err != nil {
 		return nil, err
+	}
+	var drawings map[string]store.QuizDrawing
+	if keep {
+		if drawings, err = a.keepCheckDrawings(ctx, plan, packed, graded[0]); err != nil {
+			return nil, hErr(err)
+		}
 	}
 	res, err := a.s.CheckQuizQuestion(ctx, userID(ctx), in.ID, store.QuizCheck{
 		AttemptID: in.Body.AttemptID, StartedAt: in.Body.StartedAt,
 		Answers: answers, Question: graded[0], Order: order, Marks: marks,
+		Drawings: drawings,
 	}, time.Now())
 	if errors.Is(err, store.ErrQuestionChecked) {
 		return nil, huma.Error409Conflict(err.Error())
 	}
 	if err != nil {
+		return nil, hErr(err)
+	}
+	return &attemptDetailOutput{Body: apimodel.FromAttemptDetail(res)}, nil
+}
+
+// recheckQuizQuestion marks what a check left Not marked, once credits are back or
+// a failure has passed (Epo 2026-11-05). Only those parts are marked and paid for,
+// from the answers first given: the check already showed its key, so a new answer
+// is ignored.
+func (a *api) recheckQuizQuestion(ctx context.Context, in *checkQuizQuestionInput, workspaceID string, held, answers map[string]any, order []string, marks map[string]float64) (*attemptDetailOutput, error) {
+	open := map[string]openPart{}
+	drawn := map[string]bool{}
+	parts, _ := held["parts"].([]any)
+	for i, raw := range parts {
+		p, _ := raw.(map[string]any)
+		if pending, _ := p["pending"].(bool); !pending {
+			continue
+		}
+		id, _ := p["id"].(string)
+		text, _ := answers[id].(string)
+		items, itemMarks := questions.MarkItems(p)
+		open[id] = openPart{question: questions.GradingText(held, i), markscheme: items, itemMarks: itemMarks, answer: text,
+			sample: sampleOwner{assetID: questions.DrawnSampleImage(p), materialID: in.ID}}
+		if given, _ := answers[id].(map[string]any); given["drawing"] != nil {
+			drawn[id] = true
+		}
+	}
+	// A drawing left Not marked keeps its image for this one marking; one whose
+	// image is gone or unreadable stays Not marked.
+	if len(drawn) > 0 {
+		ids := make([]string, 0, len(drawn))
+		for id := range drawn {
+			ids = append(ids, id)
+		}
+		images, err := a.keptDrawingImages(ctx, in.Body.AttemptID, ids)
+		if err != nil {
+			return nil, hErr(err)
+		}
+		for _, id := range ids {
+			image, kept := images[id]
+			if !kept {
+				delete(open, id)
+				delete(drawn, id)
+				continue
+			}
+			part := open[id]
+			part.image, part.imageType = image.data, image.contentType
+			open[id] = part
+		}
+	}
+	if err := a.reserveGrading(ctx, len(open)); err != nil {
+		return nil, err
+	}
+	marking, cancel := context.WithTimeout(ctx, gradingCheckTimeout)
+	defer cancel()
+	grades, _ := a.gradeWithModel(marking, userID(ctx), workspaceID, open)
+	remarked := make(map[string]bool, len(grades))
+	for _, raw := range parts {
+		p, _ := raw.(map[string]any)
+		id, _ := p["id"].(string)
+		if grade, marked := grades[id]; marked {
+			applyPartGrade(p, grade)
+			remarked[id] = true
+		}
+	}
+	res, err := a.s.CheckQuizQuestion(ctx, userID(ctx), in.ID, store.QuizCheck{
+		AttemptID: in.Body.AttemptID, StartedAt: in.Body.StartedAt,
+		Answers: answers, Question: held, Order: order, Marks: marks, Remarked: remarked,
+	}, time.Now())
+	if errors.Is(err, store.ErrQuestionChecked) {
+		return nil, huma.Error409Conflict(err.Error())
+	}
+	if err != nil {
+		return nil, hErr(err)
+	}
+	// A drawing marked now has had its one marking: its image goes.
+	var marked []string
+	for id := range remarked {
+		if drawn[id] {
+			marked = append(marked, id)
+		}
+	}
+	if err := a.s.DropDrawingImages(ctx, in.Body.AttemptID, marked); err != nil {
 		return nil, hErr(err)
 	}
 	return &attemptDetailOutput{Body: apimodel.FromAttemptDetail(res)}, nil

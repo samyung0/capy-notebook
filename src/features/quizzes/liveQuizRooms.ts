@@ -2,6 +2,11 @@ import { useCallback, useMemo, useRef, useSyncExternalStore } from 'react';
 import type * as Y from 'yjs';
 import { useMe } from '@/api/hooks';
 import {
+  type RoomCopy,
+  type RoomSeed,
+  useRoomSeed,
+} from '@/features/collaboration/deviceCopy';
+import {
   type ItemRecovery,
   type ItemRoom,
   type ItemRoomSnapshot,
@@ -19,7 +24,7 @@ function combined(a: ItemRoomStatus, b: ItemRoomStatus): ItemRoomStatus {
   const rank: ItemRoomStatus[] = [
     'unavailable',
     'offline',
-    'connecting',
+    'opening',
     'syncing',
     'saved',
   ];
@@ -31,6 +36,8 @@ export interface QuizRooms {
   content: ItemRoom | null;
   /** The keys document, in Edit for editors who can write. */
   keys: ItemRoom | null;
+  /** The device's copy of the keys: undefined while it reads, null with none. */
+  keysSeed: RoomSeed | null | undefined;
   /** The offline banner (the worse of the two rooms'). */
   offline: ItemRoomSnapshot['offline'];
   /** The content room's other editors, for the header. */
@@ -72,26 +79,42 @@ const OFFLINE: ItemRoomSnapshot['offline'][] = [
 export function useQuizRooms(
   quizId: string | null,
   {
+    copy,
     edit,
     enabled = true,
     inside,
     wake,
-  }: { edit: boolean; enabled?: boolean } & InNote
+  }: {
+    /** The page's device copy of the content room; it reads the keys' itself. */
+    copy?: RoomCopy;
+    edit: boolean;
+    enabled?: boolean;
+  } & InNote
 ): QuizRooms {
   const { data: me } = useMe();
   const actorId = edit ? (me?.id ?? null) : null;
-  const contentEnabled = enabled && (!edit || !!actorId);
+  const keysSeed = useRoomSeed(copy ? (quizId ?? '') : '', actorId, 'keys');
+  // A page's rooms wait for its copy's read, a few milliseconds.
+  const contentEnabled =
+    enabled && (!edit || !!actorId) && (!copy || copy.seed !== undefined);
   const content = useItemRoom(quizId, contentEnabled, {
     actorId,
     inside,
+    keep: copy?.keep,
+    seed: copy?.seed,
     wake,
   });
   const wantKeys =
-    contentEnabled && edit && content.snapshot.access === 'write';
+    contentEnabled &&
+    edit &&
+    content.snapshot.access === 'write' &&
+    (!copy || keysSeed !== undefined);
   const keys = useItemRoom(quizId, wantKeys, {
     actorId,
     document: 'keys',
     inside,
+    keep: copy?.keep,
+    seed: copy ? keysSeed : undefined,
     wake,
   });
   const contentUndo = content.room?.undo;
@@ -131,6 +154,7 @@ export function useQuizRooms(
     access: content.snapshot.access,
     content: content.room,
     keys: wantKeys ? keys.room : null,
+    keysSeed,
     offline: offline ?? null,
     presence: content.snapshot.presence,
     readOnlyCode: content.snapshot.readOnlyCode,

@@ -1,5 +1,6 @@
 import * as Y from 'yjs';
 import { applyTextChange, LOCAL_EDIT } from '@/features/collaboration/yText';
+import { repairGroups } from '@/features/questions/groups';
 import {
   gapNumbers,
   type LearnerAnswer,
@@ -8,6 +9,7 @@ import {
   type Question,
   type QuestionAnswer,
   type QuestionBlock,
+  type QuestionGroup,
   type QuestionPart,
 } from '@/features/questions/types';
 import { m } from '@/i18n';
@@ -16,9 +18,12 @@ import { keyBetween } from '@/lib/orderKey';
 
 /* A quiz's two live documents (live-items DESIGN.md 1.2, 1.3; Epo
  * 2026-10-10). The content document, which readers join too, holds
- * `questions`: question id -> {order, layout, labels, level?, stem, parts},
- * part id -> {order, marks, blocks, answer}. The answer map holds the type and
- * what a learner may see: mcq options, a short answer's unit and
+ * `questions`: question id -> {order, layout, labels, level?, stem, groups?,
+ * parts}, group id -> {blocks}, part id -> {order, marks, blocks, answer,
+ * group?}. A group has no order of its own: it sits where its first part sits,
+ * and what a merge leaves reads repaired (`repairGroups`, Epo 2026-11-04). The
+ * answer map holds the type and what a learner may see: mcq options and
+ * `multiple` (true while several are correct), a short answer's unit and
  * matching left items. The keys document, which only editors with write
  * access join, holds `keys`: part id -> {type, solution, correct | accepted |
  * hints | markscheme | gaps | options | pairs | items}. Editors type ordering
@@ -171,6 +176,12 @@ function partKeys(keys: Y.Doc | null, partId: string, type: string) {
   return key && plain<string>(key, 'type') === type ? key : undefined;
 }
 
+const readMarkscheme = (key: YMap | undefined): MarkItem[] =>
+  ordered(mapAt(key, 'markscheme')).map(({ entry }) => ({
+    marks: plain<number>(entry, 'marks') ?? 1,
+    text: text(entry, 'text'),
+  }));
+
 function readAnswer(
   answer: YMap | undefined,
   key: YMap | undefined
@@ -210,11 +221,17 @@ function readAnswer(
           hints: texts(mapAt(key, 'hints')),
           type,
         },
-        markscheme: ordered(mapAt(key, 'markscheme')).map(({ entry }) => ({
-          marks: plain<number>(entry, 'marks') ?? 1,
-          text: text(entry, 'text'),
-        })),
+        markscheme: readMarkscheme(key),
       };
+    case 'drawing': {
+      // A drawn sample answer is a key: its board and image asset ids.
+      const board = plain<string>(key, 'sampleBoard');
+      const image = plain<string>(key, 'sampleImage');
+      return {
+        answer: board && image ? { sample: { board, image }, type } : { type },
+        markscheme: readMarkscheme(key),
+      };
+    }
     case 'gaps': {
       const gaps = mapAt(key, 'gaps');
       const numbers: number[] = [];
@@ -250,11 +267,29 @@ function readAnswer(
   }
 }
 
+/** A question's groups as they are held; `repairGroups` takes them from here. */
+function readGroups(entry: YMap) {
+  const groups = ordered(mapAt(entry, 'groups')).map(
+    ({ entry: group, id }) => ({
+      blocks: readBlocks(mapAt(group, 'blocks')),
+      id,
+    })
+  );
+  return groups.length > 0 ? { groups } : {};
+}
+
+/** The group a part names, as a field. */
+function groupOf(part: YMap) {
+  const group = plain<string>(part, 'group');
+  return typeof group === 'string' ? { group } : {};
+}
+
 /** Every question as editors see it, keys included (`keys` null: none). */
 export function readQuestions(content: Y.Doc, keys: Y.Doc | null): Question[] {
   return ordered(questionsScope(content) as YMap).map(({ entry, id }) => {
     const level = plain<Question['level']>(entry, 'level');
-    return {
+    return repairGroups({
+      ...readGroups(entry),
       id,
       labels: plain<Question['labels']>(entry, 'labels') ?? 'letters',
       layout: plain<Question['layout']>(entry, 'layout') ?? 'paper',
@@ -270,13 +305,14 @@ export function readQuestions(content: Y.Doc, keys: Y.Doc | null): Question[] {
             id: partId,
             marks: plain<number>(part, 'marks') ?? 1,
             solution: readBlocks(mapAt(key, 'solution')),
+            ...groupOf(part),
             ...(markscheme ? { markscheme } : {}),
           };
         }
       ),
       stem: readBlocks(mapAt(entry, 'stem')),
       ...(level ? { level } : {}),
-    };
+    });
   });
 }
 
@@ -314,7 +350,8 @@ export function readLearnerQuestions(
   };
   return ordered(questionsScope(content) as YMap).map(({ entry, id }) => {
     const level = plain<Question['level']>(entry, 'level');
-    return {
+    return repairGroups({
+      ...readGroups(entry),
       id,
       labels: plain<Question['labels']>(entry, 'labels') ?? 'letters',
       layout: plain<Question['layout']>(entry, 'layout') ?? 'paper',
@@ -326,7 +363,13 @@ export function readLearnerQuestions(
           let learner: LearnerAnswer;
           switch (type) {
             case 'mcq':
-              learner = { options: texts(mapAt(answer, 'options')), type };
+              learner = {
+                options: texts(mapAt(answer, 'options')),
+                type,
+                ...(plain<boolean>(answer, 'multiple') === true
+                  ? { multiple: true as const }
+                  : {}),
+              };
               break;
             case 'short': {
               const unit = plain<string>(answer, 'unit');
@@ -346,6 +389,9 @@ export function readLearnerQuestions(
             case 'gaps':
               learner = { gaps: gapNumbers(blocks).length, type };
               break;
+            case 'drawing':
+              learner = { type };
+              break;
             default:
               learner = { type: type === 'boolean' ? 'boolean' : 'open' };
           }
@@ -354,12 +400,13 @@ export function readLearnerQuestions(
             blocks,
             id: partId,
             marks: plain<number>(part, 'marks') ?? 1,
+            ...groupOf(part),
           };
         }
       ),
       stem: readBlocks(mapAt(entry, 'stem')),
       ...(level ? { level } : {}),
-    };
+    });
   });
 }
 
@@ -750,6 +797,7 @@ function writeContentAnswer(part: YMap, answer: QuestionAnswer): PartIds {
         answer.options.map((value) => ({ text: value })),
         'opt'
       );
+      setPlain(map, 'multiple', answer.correct.length > 1 ? true : undefined);
       break;
     case 'short':
       setPlain(map, 'unit', answer.unit);
@@ -791,8 +839,14 @@ function writeKeys(key: YMap, part: QuestionPart, ids: PartIds) {
       list('accepted', answer.accepted, 'acc');
       break;
     case 'open':
-      list('accepted', answer.accepted, 'acc');
-      list('hints', answer.hints, 'hint');
+    case 'drawing':
+      if (answer.type === 'open') {
+        list('accepted', answer.accepted, 'acc');
+        list('hints', answer.hints, 'hint');
+      } else {
+        setPlain(key, 'sampleBoard', answer.sample?.board);
+        setPlain(key, 'sampleImage', answer.sample?.image);
+      }
       writeList(
         child(key, 'markscheme'),
         (part.markscheme ?? []).map((item) => ({
@@ -836,6 +890,17 @@ function writeKeys(key: YMap, part: QuestionPart, ids: PartIds) {
   }
 }
 
+/** A question's groups, written as what differs; one that has none and never
+ * had gets no map. */
+function writeGroups(entry: YMap, next: QuestionGroup[]) {
+  if (next.length === 0 && !mapAt(entry, 'groups')) return;
+  const groups = child(entry, 'groups');
+  const wanted = new Set(next.map((group) => group.id));
+  for (const id of [...groups.keys()]) if (!wanted.has(id)) groups.delete(id);
+  for (const group of next)
+    writeBlocks(child(child(groups, group.id), 'blocks'), group.blocks);
+}
+
 function newQuestionMap(order: string): YMap {
   const entry = new Y.Map<unknown>();
   entry.set('order', order);
@@ -866,6 +931,7 @@ export function writeQuestion(
     setPlain(entry, 'labels', next.labels);
     setPlain(entry, 'level', next.level);
     writeBlocks(child(entry, 'stem'), next.stem);
+    writeGroups(entry, next.groups ?? []);
     const parts = child(entry, 'parts');
     const wanted = new Set(next.parts.map((part) => part.id));
     for (const id of [...parts.keys()]) if (!wanted.has(id)) parts.delete(id);
@@ -884,6 +950,7 @@ export function writeQuestion(
       }
       last = plain<string>(map, 'order') ?? last;
       setPlain(map, 'marks', part.marks);
+      setPlain(map, 'group', part.group);
       writeBlocks(child(map, 'blocks'), part.blocks);
       ids.set(part.id, writeContentAnswer(map, part.answer));
     }
@@ -919,6 +986,22 @@ export function removeQuestion(
   keys.transact(() => {
     for (const part of parts) keysScope(keys).delete(part);
   }, origin);
+}
+
+/** A question as its documents hold it, to tell later if anyone wrote in it. */
+export function questionState(content: Y.Doc, keys: Y.Doc, id: string) {
+  return JSON.stringify(readQuestions(content, keys).find((q) => q.id === id));
+}
+
+/** Removes a question added and left blank, only while it holds what it did
+ * then (`questionState`): what a co-editor has written in it since stays. */
+export function removeUnchangedQuestion(
+  content: Y.Doc,
+  keys: Y.Doc,
+  { id, state }: { id: string; state: string }
+) {
+  if (questionState(content, keys, id) === state)
+    removeQuestion(content, keys, id);
 }
 
 /** Moves a question to `index` in the quiz's order. */
@@ -968,4 +1051,46 @@ export function itemParts(keys: Y.Doc) {
 export function seedQuiz(content: Y.Doc, keys: Y.Doc, questions: Question[]) {
   for (const question of questions)
     writeQuestion(content, keys, question, 'seed');
+}
+
+/** A learner's question in the editor's shape, with its keys still to come. */
+export function withEmptyKeys(question: LearnerQuestion): Question {
+  return {
+    ...question,
+    parts: question.parts.map((part): QuestionPart => {
+      const { answer } = part;
+      const full = (a: QuestionAnswer): QuestionPart => ({
+        ...part,
+        answer: a,
+        solution: [],
+      });
+      switch (answer.type) {
+        case 'mcq':
+          return full({ ...answer, correct: [] });
+        case 'boolean':
+          return full({ correct: false, type: answer.type });
+        case 'short':
+          return full({ ...answer, accepted: [] });
+        case 'matching':
+          return full({
+            options: answer.options,
+            pairs: answer.left.map((left) => ({ left, right: 0 })),
+            type: answer.type,
+          });
+        case 'ordering':
+          return full(answer);
+        case 'open':
+          return full({ accepted: [], hints: [], type: answer.type });
+        case 'drawing':
+          return full(answer);
+        case 'gaps':
+          return full({
+            accepted: Array.from({ length: answer.gaps }, () => []),
+            type: answer.type,
+          });
+        default:
+          throw new Error('Unknown answer type');
+      }
+    }),
+  };
 }

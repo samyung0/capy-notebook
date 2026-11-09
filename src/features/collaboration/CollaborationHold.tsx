@@ -1,4 +1,5 @@
 import { createContext, type ReactNode, useContext } from 'react';
+import { EditorPreviewing } from '@/features/notes/notePreviewContext';
 import { cn } from '@/lib/cn';
 import { useCollaborationHeld } from './held';
 
@@ -17,7 +18,8 @@ export function EditorHoldScope({ children }: { children: ReactNode }) {
 export function useEditorHeld() {
   const scoped = useContext(EditorScope);
   const held = useCollaborationHeld();
-  return scoped && held;
+  const previewing = useContext(EditorPreviewing);
+  return scoped && (held || previewing);
 }
 
 /**

@@ -6,6 +6,8 @@ export interface BlockSuiteFlags {
   enable_database_full_width: boolean;
   enable_block_query: boolean;
   enable_edgeless_text: boolean;
+  // Capy (local change 12): the note menu's image, link and file buttons.
+  enable_note_menu_media: boolean;
   enable_ai_onboarding: boolean;
   enable_ai_chat_block: boolean;
   enable_color_picker: boolean;
@@ -31,6 +33,7 @@ export class FeatureFlagService extends StoreExtension {
     enable_database_full_width: false,
     enable_block_query: false,
     enable_edgeless_text: true,
+    enable_note_menu_media: true,
     enable_ai_onboarding: true,
     enable_ai_chat_block: true,
     enable_color_picker: true,

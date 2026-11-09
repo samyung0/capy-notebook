@@ -225,25 +225,10 @@ export function DraftFields({
           {capacityErrors.concurrencyTotal?.message}
         </p>
       </div>
-      <div className="space-y-2">
-        <Label htmlFor={`${idPrefix}-reserve`}>Interactive reserve</Label>
-        <Input
-          aria-invalid={Boolean(capacityErrors.interactiveReserve)}
-          id={`${idPrefix}-reserve`}
-          min="0"
-          required
-          step="1"
-          type="number"
-          {...registerCapacity('interactiveReserve', { valueAsNumber: true })}
-        />
-        <p className="text-destructive text-sm" role="alert">
-          {capacityErrors.interactiveReserve?.message}
-        </p>
-      </div>
       <p className="text-muted-foreground text-xs sm:col-span-2">
-        Shared across this model's versions in this environment. Ingest uses
-        total minus reserve; interactive calls can use the full total. Saving
-        applies to new calls immediately.
+        Shared across this model's versions in this environment and by every
+        use: calls past it wait their turn, round-robin by user or ingest job.
+        Saving applies to new calls immediately.
       </p>
       <div className="space-y-2 sm:col-span-2">
         <span className="font-medium text-sm">Capabilities</span>

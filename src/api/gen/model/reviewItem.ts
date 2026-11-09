@@ -7,6 +7,7 @@
 import type { CardImage } from './cardImage.ts';
 import type { ReviewItemKind } from './reviewItemKind.ts';
 import type { ReviewItemQuestion } from './reviewItemQuestion.ts';
+import type { ReviewItemReason } from './reviewItemReason.ts';
 
 export interface ReviewItem {
   back?: string;
@@ -17,4 +18,5 @@ export interface ReviewItem {
   materialId: string;
   materialTitle: string;
   question?: ReviewItemQuestion;
+  reason?: ReviewItemReason;
 }

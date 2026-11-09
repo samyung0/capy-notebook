@@ -13,6 +13,9 @@ pub const MEDIA_WIDTH_MAX: usize = 100;
 pub const LIST_INDENT_MAX: usize = 8;
 pub const CARD_FRONT_MAX: usize = 200;
 pub const CARD_BACK_MAX: usize = 1000;
+pub const DRAWING_BOARD_MAX: usize = 256000;
+pub const DRAWING_IMAGE_MAX: usize = 307200;
+pub const DRAWING_IMAGE_SIDE_MAX: usize = 1568;
 pub const QUESTION_ANSWERS_MAX: usize = 100;
 pub const QUESTION_ASSET_URL_MAX: usize = 4096;
 pub const QUESTION_BLOCKS_MAX: usize = 40;
@@ -50,8 +53,8 @@ pub const QUESTION_TEXT_MAX: usize = 12000;
 pub const QUESTION_UNIT_MAX: usize = 100;
 pub const QUIZ_MARKSCHEME_MAX: usize = 5;
 pub const QUIZ_OPEN_ANSWER_MAX: usize = 5000;
-pub const QUIZ_OPEN_PARTS_MAX: usize = 20;
-pub const QUIZ_PARTS_MAX: usize = 100;
+pub const QUIZ_OPEN_PARTS_MAX: usize = 100;
+pub const QUIZ_PARTS_MAX: usize = 150;
 pub const QUIZ_QUESTION_PARTS_MAX: usize = 7;
 
 /// What an element gives its document's index text (`index_text`).
@@ -764,7 +767,7 @@ pub const ELEMENTS: &[Element] = &[
         shared_text: &[],
         shared_map: &[],
         shared_lists: &[],
-        assets: &["question.stem[].image.assetId", "question.parts[].blocks[].image.assetId", "question.parts[].solution[].image.assetId"],
+        assets: &["question.stem[].image.assetId", "question.groups[].blocks[].image.assetId", "question.parts[].blocks[].image.assetId", "question.parts[].solution[].image.assetId"],
         resizable: false,
         children: &[],
         materials: &["quiz"],

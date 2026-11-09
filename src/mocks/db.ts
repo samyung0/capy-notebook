@@ -10,7 +10,6 @@ import type {
   Attempt,
   AttemptCard,
   CalendarEvent,
-  Chapter,
   Conversation,
   EditableQuiz,
   FileChange,
@@ -31,6 +30,7 @@ import type {
   ReportEditIncidentReq,
   SourceFile,
   Task,
+  Topic,
   TrashItem,
   User,
   WireMessage,
@@ -72,9 +72,11 @@ import {
 import { dialogFiles, dialogSourceFile } from './dialogFiles';
 import {
   buildEditorNoteValue,
+  buildTableEndNoteValue,
   EDITOR_NOTE,
   EDITOR_WORKSPACE_ID,
   RUNNING_CHAT,
+  TABLE_END_NOTE,
 } from './editorSeed';
 import { errorMaterials } from './errorMaterials';
 import { markdownSamples } from './markdownSamples';
@@ -213,7 +215,6 @@ export const workspaces: Workspace[] = [
       canManageMembers: true,
       canView: true,
     },
-    chapterCount: 0,
     cover: { color: '#1b9e6f', kind: 'math', style: 'doodles' },
     createdAt: days(40),
     description:
@@ -223,12 +224,14 @@ export const workspaces: Workspace[] = [
     iconId: 'waves-01',
     id: 'ws_bio',
     isOwner: true,
+    kind: 'class',
     name: 'Biology 101',
     privacy: 'link',
     role: 'owner',
     sharePath: '/w/ws_bio.WsDtCIGPdoZOSZL0',
     shareRole: 'viewer',
     tags: ct('tag_1', 'tag_2'),
+    topicCount: 0,
   },
   {
     autoProcess: true,
@@ -239,7 +242,6 @@ export const workspaces: Workspace[] = [
       canManageMembers: true,
       canView: true,
     },
-    chapterCount: 0,
     cover: { color: '#2a78d6', kind: 'math', style: 'symbols' },
     createdAt: days(30),
     description: '',
@@ -248,12 +250,14 @@ export const workspaces: Workspace[] = [
     iconId: 'waves-02',
     id: 'ws_calc',
     isOwner: true,
+    kind: 'personal',
     name: 'Calculus II',
     privacy: 'private',
     role: 'owner',
     sharePath: '/w/ws_calc.UZ6Qw4jRVADIzzI1',
     shareRole: 'viewer',
     tags: ct('tag_3', 'tag_4'),
+    topicCount: 0,
   },
   {
     autoProcess: true,
@@ -264,21 +268,22 @@ export const workspaces: Workspace[] = [
       canManageMembers: true,
       canView: true,
     },
-    chapterCount: 0,
     createdAt: days(22),
     description:
-      'Explore the ideas, conflicts and everyday lives that shaped the modern world. Chapter readings and discussion notes for our history study group.',
+      'Explore the ideas, conflicts and everyday lives that shaped the modern world. Topic readings and discussion notes for our history study group.',
     fileCount: 0,
     filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
     iconId: 'waves-03',
     id: 'ws_hist',
     isOwner: true,
+    kind: 'personal',
     name: 'World History',
     privacy: 'link',
     role: 'owner',
     sharePath: '/w/ws_hist.bVGQ2CHqnMetPMgB',
     shareRole: 'viewer',
     tags: ct('tag_5', 'tag_6', 'tag_war'),
+    topicCount: 0,
   },
   {
     autoProcess: true,
@@ -289,7 +294,6 @@ export const workspaces: Workspace[] = [
       canManageMembers: true,
       canView: true,
     },
-    chapterCount: 0,
     cover: { color: '#eb6834', pattern: 'hexagons', style: 'geo' },
     createdAt: days(12),
     description: '',
@@ -298,12 +302,14 @@ export const workspaces: Workspace[] = [
     iconId: 'waves-04',
     id: 'ws_chem',
     isOwner: true,
+    kind: 'personal',
     name: 'Organic Chemistry',
     privacy: 'private',
     role: 'owner',
     sharePath: '/w/ws_chem.c5KOZGPxH2RwP08Z',
     shareRole: 'viewer',
     tags: ct('tag_7'),
+    topicCount: 0,
   },
   {
     autoProcess: true,
@@ -314,7 +320,6 @@ export const workspaces: Workspace[] = [
       canManageMembers: true,
       canView: true,
     },
-    chapterCount: 0,
     cover: { color: '#f8efc9', kind: 'latin', style: 'paper' },
     createdAt: days(8),
     description: '',
@@ -323,17 +328,20 @@ export const workspaces: Workspace[] = [
     iconId: 'waves-05',
     id: 'ws_eng',
     isOwner: true,
+    kind: 'personal',
     name: 'English Literature',
     privacy: 'public',
     role: 'owner',
     sharePath: '/w/ws_eng.-sR-YQ2vLCQXEe2Q',
     shareRole: 'viewer',
     tags: ct('tag_8', 'tag_9'),
+    topicCount: 0,
   },
 ];
 
-export const chapters: Chapter[] = [
+export const topics: Topic[] = [
   {
+    description: '',
     fileIds: ['f_1', 'f_2'],
     id: 'ch_1',
     name: 'Cell structure',
@@ -341,6 +349,7 @@ export const chapters: Chapter[] = [
     workspaceId: 'ws_bio',
   },
   {
+    description: '',
     fileIds: ['f_3'],
     id: 'ch_2',
     name: 'Membranes & transport',
@@ -348,6 +357,7 @@ export const chapters: Chapter[] = [
     workspaceId: 'ws_bio',
   },
   {
+    description: '',
     fileIds: ['f_4', 'f_5'],
     id: 'ch_3',
     name: 'Genetics',
@@ -355,6 +365,7 @@ export const chapters: Chapter[] = [
     workspaceId: 'ws_bio',
   },
   {
+    description: '',
     fileIds: ['f_6'],
     id: 'ch_c1',
     name: 'Techniques of integration',
@@ -362,6 +373,7 @@ export const chapters: Chapter[] = [
     workspaceId: 'ws_calc',
   },
   {
+    description: '',
     fileIds: ['f_7'],
     id: 'ch_c2',
     name: 'Sequences & series',
@@ -698,8 +710,9 @@ export const files: SourceFile[] = [
   ...biologyOfficeFixtures.map(
     (file, position): SourceFile => ({
       addedAt: hours(1),
-      chapterId: null,
       hasBytes: true,
+      // Hidden from members, so its eye shows on Files and Activity.
+      hidden: file.name === 'course-guide.xlsx' || undefined,
       id: file.id,
       indexed: false,
       isPayer: true,
@@ -709,6 +722,7 @@ export const files: SourceFile[] = [
       revision: 1,
       sizeBytes: file.sizeBytes,
       status: 'ready',
+      topicId: null,
       workspaceId: 'ws_bio',
     })
   ),
@@ -719,7 +733,6 @@ export const files: SourceFile[] = [
   ...(['pending', 'processing', 'failed', 'ready'] as const).map(
     (status, position): SourceFile => ({
       addedAt: hours(1),
-      chapterId: null,
       hasBytes: true,
       id: `bio-state-${status}`,
       indexed: false,
@@ -730,6 +743,7 @@ export const files: SourceFile[] = [
       revision: 1,
       sizeBytes: 2048,
       status,
+      topicId: null,
       workspaceId: 'ws_bio',
       ...(status === 'processing' ? { ingestPct: 45 } : {}),
       ...(status === 'failed'
@@ -739,7 +753,6 @@ export const files: SourceFile[] = [
   ),
   {
     addedAt: hours(1),
-    chapterId: null,
     hasBytes: true,
     id: 'bio-state-too-large',
     indexed: false,
@@ -751,11 +764,11 @@ export const files: SourceFile[] = [
     revision: 1,
     sizeBytes: 100_048,
     status: 'ready',
+    topicId: null,
     workspaceId: 'ws_bio',
   },
   {
     addedAt: days(20),
-    chapterId: 'ch_1',
     hasBytes: true,
     id: 'f_1',
     indexed: true,
@@ -766,11 +779,11 @@ export const files: SourceFile[] = [
     revision: 1,
     sizeBytes: 2480 * 1024,
     status: 'ready',
+    topicId: 'ch_1',
     workspaceId: 'ws_bio',
   },
   {
     addedAt: days(19),
-    chapterId: 'ch_1',
     hasBytes: true,
     id: 'f_2',
     indexed: true,
@@ -781,11 +794,11 @@ export const files: SourceFile[] = [
     revision: 1,
     sizeBytes: 14 * 1024,
     status: 'ready',
+    topicId: 'ch_1',
     workspaceId: 'ws_bio',
   },
   {
     addedAt: days(18),
-    chapterId: 'ch_2',
     hasBytes: true,
     id: 'f_3',
     indexed: true,
@@ -796,16 +809,17 @@ export const files: SourceFile[] = [
     revision: 1,
     sizeBytes: 6 * 1024,
     status: 'ready',
+    topicId: 'ch_2',
     workspaceId: 'ws_bio',
   },
   {
     addedAt: days(15),
-    chapterId: 'ch_3',
     hasBytes: true,
+    hidden: true,
     id: 'f_4',
     indexed: true,
     // A member uploaded it: as a non-owner editor (the workspace-owner-*
-    // scenarios) the viewer gets only the chapter Move on it.
+    // scenarios) the viewer gets only the topic Move on it.
     isPayer: false,
     kind: 'pdf',
     name: 'Mendelian genetics.pdf',
@@ -813,11 +827,11 @@ export const files: SourceFile[] = [
     revision: 1,
     sizeBytes: 1890 * 1024,
     status: 'ready',
+    topicId: 'ch_3',
     workspaceId: 'ws_bio',
   },
   {
     addedAt: days(14),
-    chapterId: null,
     hasBytes: true,
     id: 'f_5',
     indexed: true,
@@ -828,11 +842,11 @@ export const files: SourceFile[] = [
     revision: 1,
     sizeBytes: 420 * 1024,
     status: 'ready',
+    topicId: null,
     workspaceId: 'ws_bio',
   },
   {
     addedAt: days(10),
-    chapterId: 'ch_c1',
     hasBytes: true,
     id: 'f_6',
     indexed: true,
@@ -843,11 +857,11 @@ export const files: SourceFile[] = [
     revision: 1,
     sizeBytes: 980 * 1024,
     status: 'ready',
+    topicId: 'ch_c1',
     workspaceId: 'ws_calc',
   },
   {
     addedAt: days(9),
-    chapterId: 'ch_c2',
     hasBytes: true,
     id: 'f_7',
     indexed: true,
@@ -858,11 +872,11 @@ export const files: SourceFile[] = [
     revision: 1,
     sizeBytes: 11 * 1024,
     status: 'ready',
+    topicId: 'ch_c2',
     workspaceId: 'ws_calc',
   },
   {
     addedAt: days(14),
-    chapterId: null,
     hasBytes: true,
     id: 'f_8',
     indexed: false,
@@ -873,13 +887,13 @@ export const files: SourceFile[] = [
     revision: 1,
     sizeBytes: 10_000 * 1024,
     status: 'ready',
+    topicId: null,
     workspaceId: 'ws_bio',
   },
   // After the chat fixtures' cited files, which take the first indexed rows.
   ...biologyTextSources.map(
     (file, position): SourceFile => ({
       addedAt: hours(2),
-      chapterId: null,
       hasBytes: true,
       id: file.id,
       indexed: true,
@@ -892,6 +906,7 @@ export const files: SourceFile[] = [
       revision: 1,
       sizeBytes: new TextEncoder().encode(file.body).byteLength,
       status: 'ready',
+      topicId: null,
       workspaceId: 'ws_bio',
     })
   ),
@@ -899,7 +914,6 @@ export const files: SourceFile[] = [
   ...(['ready', 'failed'] as const).map(
     (status, position): SourceFile => ({
       addedAt: hours(3 + position),
-      chapterId: null,
       hasBytes: true,
       id: `f_standalone_${status}`,
       indexed: status === 'ready',
@@ -910,6 +924,7 @@ export const files: SourceFile[] = [
       revision: 1,
       sizeBytes: 1830 * 1024,
       status,
+      topicId: null,
       workspaceId: '',
       ...(status === 'failed'
         ? { errorId: 'b5c7d1e3f9a24b6c8d0e2f4a6b8c0d1e' }
@@ -921,7 +936,6 @@ export const files: SourceFile[] = [
 // it as lost access, delete only.
 files.push({
   addedAt: hours(30),
-  chapterId: null,
   hasBytes: true,
   id: 'f_lost_access',
   indexed: true,
@@ -933,6 +947,7 @@ files.push({
   revision: 1,
   sizeBytes: 920 * 1024,
   status: 'ready',
+  topicId: null,
   workspaceId: 'ws_left_group',
   workspaceName: 'Study group',
 });
@@ -982,7 +997,6 @@ standaloneSeeds.forEach((seed, index) => {
   fileLinks[seed.id] = { url: seed.url ?? textUrl(seed.body ?? '') };
   files.push({
     addedAt: hours(seed.hoursAgo),
-    chapterId: null,
     hasBytes: true,
     id: seed.id,
     indexed: seed.kind !== 'audio',
@@ -990,6 +1004,7 @@ standaloneSeeds.forEach((seed, index) => {
     kind: seed.kind,
     name: seed.name,
     position: 2 + index,
+    topicId: null,
     ...(seed.body ? { preview: { text: seed.body.slice(0, 600) } } : {}),
     revision: 1,
     sizeBytes: seed.body
@@ -1003,7 +1018,6 @@ for (const fixture of standaloneOfficeFixtures) {
   fileLinks[fixture.id] = { url: fixture.sourceURL };
   files.push({
     addedAt: hours(2),
-    chapterId: null,
     hasBytes: true,
     id: fixture.id,
     indexed: false,
@@ -1014,12 +1028,13 @@ for (const fixture of standaloneOfficeFixtures) {
     revision: 1,
     sizeBytes: fixture.sizeBytes,
     status: 'ready',
+    topicId: null,
     workspaceId: '',
   });
 }
 
 // A populated shared workspace for local summary and sharing previews.
-for (const [index, chapter] of [
+for (const [index, topic] of [
   {
     name: 'Revolutions and reform',
     titles: ['The Enlightenment', 'The French Revolution', 'Reform movements'],
@@ -1045,13 +1060,12 @@ for (const [index, chapter] of [
     titles: ['Decolonisation', 'The Cold War', 'Global connections'],
   },
 ].entries()) {
-  const chapterId = `ch_hist_${index}`;
-  const fileIds = chapter.titles.map((title, position) => {
+  const topicId = `ch_hist_${index}`;
+  const fileIds = topic.titles.map((title, position) => {
     const id = `f_hist_${index}_${position}`;
-    const body = `# ${title}\n\nReading notes for ${chapter.name}.\n\nCompare the causes, the people involved, and the consequences. Bring one primary source to our next discussion.\n`;
+    const body = `# ${title}\n\nReading notes for ${topic.name}.\n\nCompare the causes, the people involved, and the consequences. Bring one primary source to our next discussion.\n`;
     files.push({
       addedAt: days(12 - index),
-      chapterId,
       hasBytes: true,
       id,
       indexed: true,
@@ -1064,15 +1078,17 @@ for (const [index, chapter] of [
       revision: 1,
       sizeBytes: new TextEncoder().encode(body).byteLength,
       status: 'ready',
+      topicId,
       workspaceId: 'ws_hist',
     });
     fileLinks[id] = { url: textUrl(body) };
     return id;
   });
-  chapters.push({
+  topics.push({
+    description: '',
     fileIds,
-    id: chapterId,
-    name: chapter.name,
+    id: topicId,
+    name: topic.name,
     order: index,
     workspaceId: 'ws_hist',
   });
@@ -1084,8 +1100,8 @@ for (const file of files) {
 }
 
 for (const workspace of workspaces) {
-  workspace.chapterCount = chapters.filter(
-    (chapter) => chapter.workspaceId === workspace.id
+  workspace.topicCount = topics.filter(
+    (topic) => topic.workspaceId === workspace.id
   ).length;
   workspace.fileCount = files.filter(
     (file) => file.workspaceId === workspace.id
@@ -1096,7 +1112,6 @@ const seedQuizzes: EditableQuiz[] = [
   {
     canEdit: true,
     canEditContent: true,
-    chapters: ['Cell structure', 'Membranes & transport'],
     createdAt: days(4),
     id: 'qz_1',
     isOwner: true,
@@ -1104,13 +1119,13 @@ const seedQuizzes: EditableQuiz[] = [
     privacy: 'private',
     questions: structuredClone(biologyQuizQuestions),
     revision: 1,
+    topics: ['Cell structure', 'Membranes & transport'],
     workspaceId: 'ws_bio',
     workspaceName: 'Biology 101',
   },
   {
     canEdit: true,
     canEditContent: true,
-    chapters: ['Genetics'],
     createdAt: days(2),
     id: 'qz_2',
     isOwner: true,
@@ -1350,15 +1365,43 @@ const seedQuizzes: EditableQuiz[] = [
         ],
         stem: [],
       },
+      // A drawing part (Epo 2026-11-03), answered on the drawing board.
+      {
+        id: 'q_draw',
+        labels: 'letters',
+        layout: 'paper',
+        parts: [
+          {
+            answer: { type: 'drawing' },
+            blocks: [
+              {
+                text: 'Draw a Punnett square for Aa × Aa and label each offspring genotype.',
+                type: 'text',
+              },
+            ],
+            id: 'q_draw:part',
+            marks: 2,
+            markscheme: [
+              {
+                marks: 1,
+                text: 'A two by two grid with A and a on each side.',
+              },
+              { marks: 1, text: 'Each box labelled AA, Aa, Aa or aa.' },
+            ],
+            solution: [],
+          },
+        ],
+        stem: [],
+      },
     ],
     revision: 1,
+    topics: ['Genetics'],
     workspaceId: 'ws_bio',
     workspaceName: 'Biology 101',
   },
   {
     canEdit: true,
     canEditContent: true,
-    chapters: ['Techniques of integration'],
     createdAt: days(6),
     id: 'qz_3',
     isOwner: true,
@@ -1581,6 +1624,7 @@ const seedQuizzes: EditableQuiz[] = [
       },
     ],
     revision: 1,
+    topics: ['Techniques of integration'],
     workspaceId: 'ws_calc',
     workspaceName: 'Calculus II',
   },
@@ -1682,14 +1726,19 @@ export const attempts: SeedAttempt[] = [
         q14: 'The rate stays at 6 because extra light no longer increases photosynthesis.',
         q15: ['mitochondria', 'glucose', ''],
       }),
+      'q_blood:a': 'Plasma',
+      'q_blood:b1': 'Platelets', // Wrong: correct answer is Fibrin.
+      'q_blood:b2': 'Stops blood loss',
+      'q_blood:c':
+        'Platelets stick at the cut, fibrin threads form a mesh, and trapped cells seal the wound.',
       'q14:control': null,
       'q14:increase': '4',
     },
     {
-      chapters: ['Cell structure'],
       id: 'at_1',
       quizName: 'Cell biology basics',
       takenAt: days(2),
+      topics: ['Cell structure'],
       workspaceName: 'Biology 101',
     },
     // Full, half and none of the open part's first three items' marks.
@@ -1731,10 +1780,10 @@ export const attempts: SeedAttempt[] = [
       q30: '', // Blank: wrong.
     }),
     {
-      chapters: ['Techniques of integration'],
       id: 'at_2',
       quizName: 'Integration techniques',
       takenAt: days(3),
+      topics: ['Techniques of integration'],
       workspaceName: 'Calculus II',
     }
   ),
@@ -1753,10 +1802,10 @@ export const attempts: SeedAttempt[] = [
       q22: '', // Blank: wrong.
     }),
     {
-      chapters: ['Genetics'],
       id: 'at_3',
       quizName: 'Genetics check-in',
       takenAt: days(5),
+      topics: ['Genetics'],
       workspaceName: 'Biology 101',
     }
   ),
@@ -2046,14 +2095,14 @@ export type MaterialDraft = Omit<Material, MaterialMetrics | MaterialDefaults> &
   Partial<Pick<Material, MaterialDefaults>>;
 
 /** Next free slot in the bucket an item is filed under. Files and materials
- * share one ordering per (workspace, chapter). */
+ * share one ordering per (workspace, topic). */
 export function nextContentPosition(
   workspaceId: string,
-  chapterId: string | null
+  topicId: string | null
 ): number {
   const taken = [...files, ...materials]
     .filter(
-      (item) => item.workspaceId === workspaceId && item.chapterId === chapterId
+      (item) => item.workspaceId === workspaceId && item.topicId === topicId
     )
     .map((item) => item.position);
   return taken.length ? Math.max(...taken) + 1 : 0;
@@ -2069,7 +2118,7 @@ export function makeMaterial(draft: MaterialDraft): Material {
     audioMaxBytes: PLAN_LIMITS.free.sourceFileMaxBytes,
     imageMaxBytes: PLAN_LIMITS.free.imageMaxBytes,
     isOwner: true,
-    position: nextContentPosition(draft.workspaceId, draft.chapterId),
+    position: nextContentPosition(draft.workspaceId, draft.topicId),
     revision: 1,
     updatedAt: draft.createdAt,
     ...draft,
@@ -2084,7 +2133,11 @@ export const materials: Material[] = [];
 /** The note's own copy of another note's quiz or flashcard set, as the
  * collaboration service's children pass makes it (fresh card ids, numbered
  * title); "" when the source is not an embedded quiz or set. */
-export function copyEmbeddedInto(note: Material, sourceId: string): string {
+export function copyEmbeddedInto(
+  note: Material,
+  sourceId: string,
+  id = uid('mat')
+): string {
   const source = materials.find((x) => x.id === sourceId);
   if (
     !source?.parentMaterialId ||
@@ -2103,7 +2156,7 @@ export function copyEmbeddedInto(note: Material, sourceId: string): string {
     ...source,
     content: rekey(source.content) as typeof source.content,
     createdAt: new Date().toISOString(),
-    id: uid('mat'),
+    id,
     parentMaterialId: note.id,
     // Embedded items carry a random, never displayed name.
     title: crypto.randomUUID(),
@@ -2186,7 +2239,6 @@ export const noteChanges = new Map<string, MockChange>([
 const seedMaterials: MaterialDraft[] = [
   {
     capabilities: ownerCapabilities,
-    chapterId: 'ch_1',
     content: createMaterialDocument([
       mermaidNode(
         'mindmap\n  root((Cell))\n    Membrane\n      Phospholipid bilayer\n      Transport\n        Diffusion\n        Osmosis\n    Organelles\n      Nucleus\n      Mitochondria\n      Ribosome\n    Energy\n      ATP\n      Respiration'
@@ -2197,15 +2249,15 @@ const seedMaterials: MaterialDraft[] = [
     kind: 'mindmap',
     privacy: 'private',
     role: 'owner',
-    scopeChapters: ['Cell structure', 'Membranes & transport'],
     scopeFileNames: [],
+    scopeTopics: ['Cell structure', 'Membranes & transport'],
     title: 'Cell biology mindmap',
+    topicId: 'ch_1',
     workspaceId: 'ws_bio',
     workspaceName: 'Biology 101',
   },
   {
     capabilities: ownerCapabilities,
-    chapterId: null,
     content: createMaterialDocument([
       mermaidNode(
         'flowchart LR\n  Ribosome --> RoughER\n  RoughER --> Golgi\n  Golgi --> Vesicle\n  Vesicle --> Membrane[Cell membrane]'
@@ -2216,9 +2268,10 @@ const seedMaterials: MaterialDraft[] = [
     kind: 'diagram',
     privacy: 'private',
     role: 'owner',
-    scopeChapters: [],
     scopeFileNames: ['Cell structure.pdf'],
+    scopeTopics: [],
     title: 'Protein secretion pathway',
+    topicId: null,
     workspaceId: 'ws_bio',
     workspaceName: 'Biology 101',
   },
@@ -2229,7 +2282,6 @@ for (const fixture of errorMaterials) {
   materials.push(
     makeMaterial({
       capabilities: ownerCapabilities,
-      chapterId: null,
       content: createMaterialDocument(
         fixture.kind === 'diagram'
           ? [mermaidNode('flowchart LR\n  A[Unclosed node')]
@@ -2240,9 +2292,10 @@ for (const fixture of errorMaterials) {
       kind: fixture.kind,
       privacy: 'private',
       role: 'owner',
-      scopeChapters: [],
       scopeFileNames: [],
+      scopeTopics: [],
       title: fixture.title,
+      topicId: null,
       workspaceId: 'ws_bio',
       workspaceName: 'Biology 101',
     })
@@ -2254,16 +2307,16 @@ for (const note of seedNotes) {
   materials.push(
     makeMaterial({
       capabilities: ownerCapabilities,
-      chapterId: note.chapterId,
       content: createMaterialDocument(note.value),
       createdAt: days(note.daysAgo),
       id: note.id,
       kind: 'note',
       privacy: 'private',
       role: 'owner',
-      scopeChapters: [],
       scopeFileNames: [],
+      scopeTopics: [],
       title: note.title,
+      topicId: note.topicId,
       workspaceId: note.workspaceId,
       workspaceName: note.workspaceName,
     })
@@ -2276,7 +2329,6 @@ for (let index = 1; index <= 85; index++) {
   materials.push(
     makeMaterial({
       capabilities: ownerCapabilities,
-      chapterId: null,
       content: createMaterialDocument([
         {
           children: [
@@ -2292,9 +2344,10 @@ for (let index = 1; index <= 85; index++) {
       kind: 'note',
       privacy: 'private',
       role: 'owner',
-      scopeChapters: [],
       scopeFileNames: [],
+      scopeTopics: [],
       title,
+      topicId: null,
       workspaceId: '',
       workspaceName: '',
     })
@@ -2306,16 +2359,16 @@ for (let index = 1; index <= 85; index++) {
 const galleryMaterials = GALLERY.map((item, index) => ({
   material: makeMaterial({
     capabilities: ownerCapabilities,
-    chapterId: null,
     content: createMaterialDocument(item.value),
     createdAt: days(2 + index / 4),
     id: item.id,
     kind: item.kind,
     privacy: 'private',
     role: 'owner',
-    scopeChapters: [],
     scopeFileNames: [],
+    scopeTopics: [],
     title: item.title,
+    topicId: null,
     workspaceId: '',
     workspaceName: '',
   }),
@@ -2410,10 +2463,10 @@ files
   .forEach((source, index) => {
     const file: SourceFile = {
       ...source,
-      chapterId: null,
       id: `trash_seed_${source.id}_${index}`,
       name: `Archived ${String(index + 1).padStart(3, '0')} ${source.name}`,
       position: nextContentPosition(source.workspaceId, null) + index,
+      topicId: null,
     };
     fileLinks[file.id] = { ...fileLinks[source.id] };
     trash.push({
@@ -2442,7 +2495,6 @@ files
 {
   const file: SourceFile = {
     addedAt: days(4),
-    chapterId: null,
     hasBytes: true,
     id: 'trash_standalone_notes',
     indexed: true,
@@ -2453,6 +2505,7 @@ files
     revision: 1,
     sizeBytes: 640 * 1024,
     status: 'ready',
+    topicId: null,
     workspaceId: '',
   };
   fileLinks[file.id] = { ...fileLinks.f_6 };
@@ -2814,22 +2867,26 @@ export const editIncidents: ReportEditIncidentReq[] = [];
 export const flashcardCards: Record<string, { materialId: string }> = {};
 for (const c of seedCards) flashcardCards[c.id] = { materialId: c.materialId };
 
+// Biology's quizzes sit in its topics, so Practice can filter and practise
+// by topic.
+const QUIZ_TOPICS: Record<string, string> = { qz_1: 'ch_2', qz_2: 'ch_3' };
 seedQuizzes.forEach((q) => {
   materials.push(
     makeMaterial({
       capabilities: ownerCapabilities,
-      chapterId: null,
       content: createMaterialDocument([
         quizNode({ questions: q.questions }, q.id),
       ]),
       createdAt: q.createdAt,
+      hidden: q.id === 'qz_2' || undefined,
       id: q.id,
       kind: 'quiz',
       privacy: q.privacy,
       role: 'owner',
-      scopeChapters: q.chapters,
       scopeFileNames: [],
+      scopeTopics: q.topics,
       title: q.name,
+      topicId: QUIZ_TOPICS[q.id] ?? null,
       workspaceId: q.workspaceId,
       workspaceName: q.workspaceName,
     })
@@ -2840,7 +2897,6 @@ seedFlashcardSets.forEach((d, i) => {
   materials.push(
     makeMaterial({
       capabilities: ownerCapabilities,
-      chapterId: null,
       color: d.color,
       content: createMaterialDocument([
         flashcardsNode(
@@ -2858,20 +2914,19 @@ seedFlashcardSets.forEach((d, i) => {
       kind: 'flashcards',
       privacy: 'private',
       role: 'owner',
-      scopeChapters: [],
       scopeFileNames: [],
+      scopeTopics: [],
       title: d.name,
+      topicId: null,
       workspaceId: d.workspaceId,
       workspaceName: d.workspaceName,
     })
   );
 });
-// Standalone link-shared materials for the share pages; add `?anonymous` to
-// open them as a signed-out visitor.
+// Standalone link-shared materials for the share pages.
 materials.push(
   makeMaterial({
     capabilities: ownerCapabilities,
-    chapterId: null,
     content: createMaterialDocument([
       quizNode({ questions: seedQuizzes[0].questions }, 'qz_shared'),
     ]),
@@ -2880,15 +2935,15 @@ materials.push(
     kind: 'quiz',
     privacy: 'link',
     role: 'owner',
-    scopeChapters: [],
     scopeFileNames: [],
+    scopeTopics: [],
     title: 'Shared cell biology quiz',
+    topicId: null,
     workspaceId: '',
     workspaceName: '',
   }),
   makeMaterial({
     capabilities: ownerCapabilities,
-    chapterId: null,
     color: 'green',
     content: createMaterialDocument([
       flashcardsNode(
@@ -2903,15 +2958,15 @@ materials.push(
     kind: 'flashcards',
     privacy: 'link',
     role: 'owner',
-    scopeChapters: [],
     scopeFileNames: [],
+    scopeTopics: [],
     title: 'Shared cell biology cards',
+    topicId: null,
     workspaceId: '',
     workspaceName: '',
   }),
   makeMaterial({
     capabilities: ownerCapabilities,
-    chapterId: null,
     content: createMaterialDocument([
       ...structuredClone(
         seedNotes.find((note) => note.id === 'mat_note_1')?.value ?? []
@@ -2932,9 +2987,10 @@ materials.push(
     kind: 'note',
     privacy: 'link',
     role: 'owner',
-    scopeChapters: [],
     scopeFileNames: [],
+    scopeTopics: [],
     title: 'Lecture notes — the cell',
+    topicId: null,
     workspaceId: '',
     workspaceName: '',
   })
@@ -2972,16 +3028,33 @@ if (import.meta.env.VITE_E2E_EDITOR_SEED === 'true') {
   materials.push(
     makeMaterial({
       capabilities: ownerCapabilities,
-      chapterId: null,
       content: createMaterialDocument(buildEditorNoteValue() as MaterialValue),
       createdAt: days(1),
       id: EDITOR_NOTE.id,
       kind: 'note',
       privacy: 'private',
       role: 'owner',
-      scopeChapters: [],
       scopeFileNames: [],
+      scopeTopics: [],
       title: EDITOR_NOTE.title,
+      topicId: null,
+      workspaceId: EDITOR_WORKSPACE_ID,
+      workspaceName: 'Biology 101',
+    }),
+    makeMaterial({
+      capabilities: ownerCapabilities,
+      content: createMaterialDocument(
+        buildTableEndNoteValue() as MaterialValue
+      ),
+      createdAt: days(1),
+      id: TABLE_END_NOTE.id,
+      kind: 'note',
+      privacy: 'private',
+      role: 'owner',
+      scopeFileNames: [],
+      scopeTopics: [],
+      title: TABLE_END_NOTE.title,
+      topicId: null,
       workspaceId: EDITOR_WORKSPACE_ID,
       workspaceName: 'Biology 101',
     })
@@ -2993,22 +3066,21 @@ if (import.meta.env.VITE_LOAD_TEST_SEED === 'true') {
   materials.push(
     makeMaterial({
       capabilities: ownerCapabilities,
-      chapterId: null,
       content: createMaterialDocument(buildBiologyLoadTestValue()),
       createdAt: days(0),
       id: PERF_LARGE_NOTE.id,
       kind: 'note',
       privacy: 'private',
       role: 'owner',
-      scopeChapters: [],
       scopeFileNames: [],
+      scopeTopics: [],
       title: PERF_LARGE_NOTE.title,
+      topicId: null,
       workspaceId: PERF_WORKSPACE_ID,
       workspaceName: 'Biology 101',
     }),
     makeMaterial({
       capabilities: ownerCapabilities,
-      chapterId: null,
       content: createMaterialDocument(
         buildSmallPerfDocument().value as MaterialValue
       ),
@@ -3017,9 +3089,10 @@ if (import.meta.env.VITE_LOAD_TEST_SEED === 'true') {
       kind: 'note',
       privacy: 'private',
       role: 'owner',
-      scopeChapters: [],
       scopeFileNames: [],
+      scopeTopics: [],
       title: PERF_SMALL_NOTE.title,
+      topicId: null,
       workspaceId: PERF_WORKSPACE_ID,
       workspaceName: 'Biology 101',
     })
@@ -3037,7 +3110,6 @@ if (import.meta.env.VITE_LOAD_TEST_SEED === 'true') {
     materials.push(
       makeMaterial({
         capabilities: ownerCapabilities,
-        chapterId: null,
         content: createMaterialDocument(
           buildCommonSubsetValue(
             PERF_COMMON_NOTE.id,
@@ -3053,9 +3125,10 @@ if (import.meta.env.VITE_LOAD_TEST_SEED === 'true') {
         kind: 'note',
         privacy: 'private',
         role: 'owner',
-        scopeChapters: [],
         scopeFileNames: [],
+        scopeTopics: [],
         title: PERF_COMMON_NOTE.title,
+        topicId: null,
         workspaceId: PERF_WORKSPACE_ID,
         workspaceName: 'Biology 101',
       })
@@ -3101,16 +3174,16 @@ for (const [id, kind, title, value] of [
   materials.push(
     makeMaterial({
       capabilities: ownerCapabilities,
-      chapterId: null,
       content: createMaterialDocument(value as MaterialValue),
       createdAt: days(30),
       id,
       kind,
       privacy: 'private',
       role: 'owner',
-      scopeChapters: [],
       scopeFileNames: [],
+      scopeTopics: [],
       title,
+      topicId: null,
       workspaceId: 'ws_bio',
       workspaceName: 'Biology 101',
     })
@@ -3123,7 +3196,6 @@ for (const seed of embeddedSeeds) {
   materials.push(
     makeMaterial({
       capabilities: ownerCapabilities,
-      chapterId: null,
       content: createMaterialDocument([seed.block]),
       createdAt: note.createdAt,
       id: seed.id,
@@ -3131,9 +3203,10 @@ for (const seed of embeddedSeeds) {
       parentMaterialId: note.id,
       privacy: 'private',
       role: 'owner',
-      scopeChapters: [],
       scopeFileNames: [],
+      scopeTopics: [],
       title: crypto.randomUUID(),
+      topicId: null,
       workspaceId: note.workspaceId,
       workspaceName: note.workspaceName,
     })
@@ -3147,7 +3220,16 @@ if (sharedNote)
     ...sharedNote.content,
     value: sharedNote.content.value.map((node) =>
       node.type === 'material_ref' && typeof node.materialId === 'string'
-        ? { ...node, materialId: copyEmbeddedInto(sharedNote, node.materialId) }
+        ? {
+            ...node,
+            // A stable id: the dev server renders this page from its own copy
+            // of the mocks, and the browser's checks it through this one.
+            materialId: copyEmbeddedInto(
+              sharedNote,
+              node.materialId,
+              `${node.materialId}_shared`
+            ),
+          }
         : node
     ),
   };
@@ -3177,11 +3259,11 @@ export function quizFromMaterial(mt: Material): EditableQuiz {
   return {
     canEdit: true,
     canEditContent: true,
-    chapters: mt.scopeChapters,
     createdAt: mt.createdAt,
     id: mt.id,
     isOwner: true,
     name: mt.title,
+    topics: mt.scopeTopics,
     ...(mt.parentMaterialId ? { parentMaterialId: mt.parentMaterialId } : {}),
     privacy: mt.privacy,
     questions,
@@ -3270,8 +3352,6 @@ export function materialListItem(mt: Material): MaterialListItem {
   const set =
     mt.kind === 'flashcards' ? flashcardSetFromMaterial(mt) : undefined;
   return {
-    chapterId: mt.chapterId,
-    chapterName: chapters.find((c) => c.id === mt.chapterId)?.name ?? '',
     createdAt: mt.createdAt,
     id: mt.id,
     kind: mt.kind,
@@ -3280,6 +3360,8 @@ export function materialListItem(mt: Material): MaterialListItem {
     sharePath: mockSharePath(mt),
     sizeBytes: mt.contentBytes,
     title: mt.title,
+    topicId: mt.topicId,
+    topicName: topics.find((c) => c.id === mt.topicId)?.name ?? '',
     updatedAt: mt.updatedAt,
     workspaceId: mt.workspaceId,
     workspaceName: mt.workspaceName,
@@ -3394,13 +3476,14 @@ export function listWorkspaces(url: URL): Workspace[] {
       return list.sort(
         (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)
       );
-    case 'chapters':
-      return list.sort((a, b) => b.chapterCount - a.chapterCount);
+    case 'topics':
+      return list.sort((a, b) => b.topicCount - a.topicCount);
     case 'files':
       return list.sort((a, b) => b.fileCount - a.fileCount);
     default: {
-      // Never opened last, newest first, as the server.
-      const opened = (w: Workspace) => +new Date(visits.get(w.id) ?? 0);
+      // Creating counts as opening, as on the server.
+      const opened = (w: Workspace) =>
+        +new Date(visits.get(w.id) ?? w.createdAt);
       return list.sort(
         (a, b) =>
           opened(b) - opened(a) ||

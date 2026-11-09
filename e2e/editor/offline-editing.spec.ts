@@ -1,11 +1,11 @@
 import { expect, type Page, test } from '@playwright/test';
-import { officeEditMenu } from '../helpers/office';
+import { officeEditMenu, officeFrame } from '../helpers/office';
 import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 
 // The scenario note keeps its room and drafts across reloads (MSW stores
 // mock-scenario fixtures for the tab).
-const note = '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit';
+const note = '/workspaces/ws_scenarios?material=mock-scenario-note';
 const seed = 'A note for trying application errors.';
 // Set to a folder to keep a screenshot of each banner state.
 const shots = process.env.OFFLINE_SCREENSHOTS;
@@ -185,7 +185,7 @@ test('offline edits outlive a reload and save once the room is back', async ({
   await shot(page, 'offline');
   // The workspace's offline toast goes after its 12 s; the banner stays.
   const toast = page
-    .locator('[data-sonner-toast]')
+    .locator('[data-toast]')
     .filter({ hasText: m.connection_offline_body() });
   await expect(toast).toBeVisible();
   await expect(toast).toHaveCount(0, { timeout: 14_000 });
@@ -197,11 +197,11 @@ test('offline edits outlive a reload and save once the room is back', async ({
   await setOnline(page, true);
   await expect(
     page
-      .locator('[data-sonner-toast]')
+      .locator('[data-toast]')
       .filter({ hasText: m.connection_online_title() })
   ).toBeVisible();
   await page.reload();
-  await expect(page.getByText(m.editor_connecting()).first()).toBeVisible({
+  await expect(page.getByTestId('material-preview')).toBeVisible({
     timeout: 30_000,
   });
   await setReachable(page, true);
@@ -372,7 +372,7 @@ test("a note's tab close asks only while storage fails with an edit unacknowledg
   await type(page, ' Last.');
   await expect.poll(blocksUnload).toBe(true);
   await leaveNote();
-  expect(await blocksUnload()).toBe(false);
+  await expect.poll(blocksUnload).toBe(false);
   expect(dialogs).toEqual([]);
 });
 
@@ -400,7 +400,7 @@ test('a copy edited before the join merges into the room at the next first sync'
   // The copy alone: nothing reached the Yjs document.
   await expect.poll(() => draftKinds(page)).toEqual(['copy']);
   await page.reload();
-  await expect(page.getByText(m.editor_connecting()).first()).toBeVisible({
+  await expect(page.getByTestId('material-preview')).toBeVisible({
     timeout: 30_000,
   });
   await setReachable(page, true);
@@ -433,13 +433,17 @@ test('a block both the copy and the room changed waits in the merge view while t
   // MSW rebuilds the projection on each load: the next one is behind the
   // room, as a projection a co-editor's edit has not reached yet.
   await setReachable(page, false);
+  // Without its device copy, which holds the room's edit.
+  await page.evaluate(() => caches.delete('capy-source-bytes'));
   await page.reload();
-  await expect(page.getByText(m.editor_connecting()).first()).toBeVisible({
+  // Its editor mounts (its token answered) before the browser goes offline,
+  // which would pause the read and the token.
+  await expect(page.locator('[data-note-mount]')).toBeAttached({
     timeout: 30_000,
   });
   await setOnline(page, false);
   const editor = page.locator('[contenteditable="true"]').first();
-  await expect(editor).toContainText(seed, { timeout: 30_000 });
+  await expect(editor).toContainText(seed, { timeout: 40_000 });
   await expect(editor).not.toContainText('Room edit.');
   await type(page, ' Mine.');
   await page.keyboard.press('Enter');
@@ -636,7 +640,12 @@ test('a note takes the stored steps its draft send has not delivered 30 s on, an
   const content = page.locator('[data-slate-editor]').first();
   const saveState = page.getByTestId('editor-save-state');
   await expect(content).toContainText(seed, { timeout: 30_000 });
-  await expect(saveState).toHaveAttribute('data-save-state', 'syncing');
+  await expect(saveState).toHaveAttribute('data-save-state', 'syncing-draft');
+  if (shots)
+    for (const width of [1440, 360]) {
+      await page.setViewportSize({ height: 780, width });
+      await page.screenshot({ path: `${shots}/draft-syncing-${width}.png` });
+    }
   await expect(content).toHaveAttribute('contenteditable', 'false');
   await expect(content).not.toContainText('Held steps.');
   // Another editor in the note's room, once the note joined it.
@@ -818,7 +827,7 @@ async function docxRows(page: Page) {
  * instead of MSW, whose 404 drops the rows as lost. */
 async function closeDocxOffline(page: Page, text: string) {
   await page.goto(docx);
-  await expect(officeEditMenu(page, 'docx')).toBeVisible({ timeout: 120_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 120_000 });
   await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
     'data-save-state',
     'saved',
@@ -898,11 +907,9 @@ test('a DOCX edited offline in a closed tab opens copy-only after its room moved
     advanceScenarioSource(id);
   }, DOCX);
   await reopenDocx(reopened);
-  await expect(reopened.getByTestId('save-banner')).toHaveAttribute(
-    'data-kind',
-    'changed',
-    { timeout: 60_000 }
-  );
+  await expect(
+    officeFrame(reopened).getByTestId('save-banner')
+  ).toHaveAttribute('data-kind', 'changed', { timeout: 60_000 });
   expect(await copiedDocx(reopened)).toContain('Typed before the move.');
 });
 
@@ -924,7 +931,7 @@ test('a DOCX draft past the 7-day expiry shows once copy-only, then goes', async
     await putDrafts(rows.map((row) => ({ ...row, savedAt: old })));
   }, DOCX);
   await reopenDocx(reopened);
-  const banner = reopened.getByTestId('save-banner');
+  const banner = officeFrame(reopened).getByTestId('save-banner');
   await expect(banner).toHaveAttribute('data-kind', 'expired', {
     timeout: 60_000,
   });
@@ -932,7 +939,7 @@ test('a DOCX draft past the 7-day expiry shows once copy-only, then goes', async
   await expect.poll(() => docxRows(reopened)).toBe(0);
   // Shown once: the next open is the live document.
   await reopened.reload();
-  await expect(officeEditMenu(reopened, 'docx')).toBeVisible({
+  await expect(officeEditMenu(reopened)).toBeVisible({
     timeout: 120_000,
   });
   await expect(reopened.getByTestId('editor-save-state')).toHaveAttribute(

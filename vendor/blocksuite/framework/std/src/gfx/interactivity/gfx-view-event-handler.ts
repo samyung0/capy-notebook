@@ -32,6 +32,9 @@ export class GfxViewEventManager {
         evt
       );
     } else {
+      // Capy (local change 18): a finger doesn't hover, so nothing has found what's
+      // under it yet.
+      if (evt.raw.pointerType === 'touch') this._handlePointerMove(evt);
       return last(this._hoveredElementsStack)?.dispatch(eventName, evt);
     }
   }

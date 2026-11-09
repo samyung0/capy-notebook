@@ -70,7 +70,7 @@ export const editorAssetHandlers = [
     const body = JSON.parse(String(form.get('metadata'))) as {
       contentType: string;
       name: string;
-      purpose: 'image' | 'audio';
+      purpose: 'image' | 'audio' | 'board';
     };
     const bytes = form.get('file');
     if (!(bytes instanceof Blob))

@@ -6,6 +6,7 @@ import {
   ImageTooLargeError,
   ImageTooManyPixelsError,
   ImageUnreadableError,
+  imageLimit,
   isAnimatedGif,
   isSvgImage,
   pixelTraits,
@@ -116,6 +117,30 @@ describe('fitImage', () => {
       'image/jpeg 2000x1500 0.8',
       'image/jpeg 2000x1500 0.7',
     ]);
+  });
+
+  it('starts lossy encodes at the quality asked for', async () => {
+    const board = picked(
+      'drawing.png',
+      'image/png',
+      8 * MB,
+      1568,
+      900,
+      'photo'
+    );
+    codec.encoded = (_type, _width, quality = 1) =>
+      quality > 0.6 ? 3 * MB : MB;
+    await fitImage(board, 2 * MB, { quality: 0.75 });
+    expect(encodes).toEqual([
+      'image/webp 1568x900 0.75',
+      'image/webp 1568x900 0.7',
+      'image/webp 1568x900 0.6',
+    ]);
+  });
+
+  it('names a cap under one MB in KB', () => {
+    expect(imageLimit(300 * 1024)).toBe('300 KB');
+    expect(imageLimit(4 * MB)).toBe('4 MB');
   });
 
   it('draws a transparent PNG over the cap at 2000, 1400 and 1000 px, then refuses it', async () => {

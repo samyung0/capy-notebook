@@ -57,6 +57,19 @@ func (Privacy) Schema(r huma.Registry) *huma.Schema {
 	return enumRef(r, "Privacy", "private", "public", "link")
 }
 
+// WorkspaceKind is what a workspace is used for (Epo 2026-11-04, board U3): it
+// decides who sees what in Study, not who may do what elsewhere.
+type WorkspaceKind string
+
+const (
+	WorkspaceClass    WorkspaceKind = "class"
+	WorkspacePersonal WorkspaceKind = "personal"
+)
+
+func (WorkspaceKind) Schema(r huma.Registry) *huma.Schema {
+	return enumRef(r, "WorkspaceKind", "class", "personal")
+}
+
 // WorkspaceRole controls collaborative access. Persisted workspace membership
 // and effective link/public material access both use these capability levels.
 type WorkspaceRole string
@@ -124,22 +137,6 @@ func (MaterialKind) Schema(r huma.Registry) *huma.Schema {
 	return enumRef(r, "MaterialKind", "mindmap", "diagram", "quiz", "flashcards", "note")
 }
 
-// GenerateKind is the subset of MaterialKind that POST /generate accepts.
-type GenerateKind string
-
-const (
-	GenerateFlashcards GenerateKind = "flashcards"
-	GenerateQuiz       GenerateKind = "quiz"
-	GenerateMindmap    GenerateKind = "mindmap"
-	GenerateDiagram    GenerateKind = "diagram"
-)
-
-func (GenerateKind) Schema(r huma.Registry) *huma.Schema {
-	return enumRef(r, "GenerateKind", "flashcards", "quiz", "mindmap", "diagram")
-}
-
-func (k GenerateKind) MaterialKind() MaterialKind { return MaterialKind(k) }
-
 // CognitiveLevel is the Depth-of-Knowledge tag on generated quiz questions.
 type CognitiveLevel string
 
@@ -167,35 +164,6 @@ const (
 
 func (GenerateQuestionType) Schema(r huma.Registry) *huma.Schema {
 	return enumRef(r, "GenerateQuestionType", "mcq", "boolean", "short", "open", "ordering", "matching")
-}
-
-// GenerateDetail is the mindmap density knob.
-type GenerateDetail string
-
-const (
-	DetailBrief    GenerateDetail = "brief"
-	DetailStandard GenerateDetail = "standard"
-	DetailDetailed GenerateDetail = "detailed"
-)
-
-func (GenerateDetail) Schema(r huma.Registry) *huma.Schema {
-	return enumRef(r, "GenerateDetail", "brief", "standard", "detailed")
-}
-
-// GenerateDiagramType picks a Mermaid diagram family. auto lets the model choose.
-type GenerateDiagramType string
-
-const (
-	DiagramAuto      GenerateDiagramType = "auto"
-	DiagramFlowchart GenerateDiagramType = "flowchart"
-	DiagramSequence  GenerateDiagramType = "sequence"
-	DiagramClass     GenerateDiagramType = "class"
-	DiagramState     GenerateDiagramType = "state"
-	DiagramER        GenerateDiagramType = "er"
-)
-
-func (GenerateDiagramType) Schema(r huma.Registry) *huma.Schema {
-	return enumRef(r, "GenerateDiagramType", "auto", "flowchart", "sequence", "class", "state", "er")
 }
 
 // MaterialRefType is the kind exposed by the unified materials list.

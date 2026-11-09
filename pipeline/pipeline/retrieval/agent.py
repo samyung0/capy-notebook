@@ -78,7 +78,7 @@ WRITE_TOOLS = frozenset(
     {
         "create_material",
         "create_workspace",
-        "create_chapter",
+        "create_topic",
         "add_questions",
         "add_question_media",
         "edit_document",
@@ -190,8 +190,8 @@ def _describe(name: str, args: dict[str, Any], ctx: ToolContext | None = None) -
         detail = "listing workspaces"
     elif name == "create_workspace":
         detail = str(args.get("name") or "") or "New Workspace"
-    elif name == "create_chapter":
-        detail = str(args.get("name") or "") or "New chapter"
+    elif name == "create_topic":
+        detail = str(args.get("name") or "") or "New topic"
     elif name in ("create_material", "create_deck"):
         detail = str(args.get("title") or "")
     elif name in ("add_questions", "add_question_media"):
@@ -493,14 +493,14 @@ async def _run_turn(
     except Exception:  # any failure to reach the library
         log.warning("knowledge library unavailable for this turn", exc_info=True)
     profile = profiles.of(ctx)
-    # An account turn has no workspace chapters, open item or pending
+    # An account turn has no workspace topics, open item or pending
     # sources (Go forwards those for workspace turns only).
     if not ctx.account:
-        ctx.chapters, open_chapter = await store.workspace_chapters(
+        ctx.topics, open_topic = await store.workspace_topics(
             ctx.workspace_id, ctx.open_resource.get("id")
         )
-        if open_chapter:
-            ctx.open_resource["chapter_id"] = open_chapter
+        if open_topic:
+            ctx.open_resource["topic_id"] = open_topic
 
     if ctx.file_ids is not None and not ctx.account:
         active_scope = await tools.resolve_current_scope(ctx)
@@ -1781,7 +1781,7 @@ def _limit_for(
             f"Not run: you called {call.name} with these same arguments "
             f"{repeats - 1} times in a row this turn, so it did nothing new. Call "
             "it again only with different arguments (pass any argument it needs, "
-            "for example a create_chapter name), use the result you already have, "
+            "for example a create_topic name), use the result you already have, "
             "or answer the learner."
         )
     # Before the first write lands the response ceiling bounds the turn.

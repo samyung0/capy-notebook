@@ -17,47 +17,26 @@ import { m } from '@/i18n';
 /* One question of a review session: answered the quiz page's way, then shown
    checked, read only. */
 
-/** A checked question: its result with the key, read only. `title` names
- * its quiz where nothing else on screen does (Quick review). */
+/** A checked question: its result with the key, read only. */
 export function CheckedQuestion({
-  title,
   answers,
   question,
-  headerMarks,
 }: {
-  title?: string;
   answers: Answers;
   question?: Question;
-  /** False hides the marks beside the question (Quick review). */
-  headerMarks?: boolean;
 }) {
-  return (
-    <>
-      {question && (
-        <QuestionRunner
-          answers={answers}
-          disabled
-          headerMarks={headerMarks}
-          question={question}
-          review
-        />
-      )}
-      {title && (
-        <span className="t-meta text-fg-muted">{m.review_from({ title })}</span>
-      )}
-    </>
-  );
+  return question ? (
+    <QuestionRunner answers={answers} disabled question={question} review />
+  ) : null;
 }
 
-/** Check sends the answers; the server grades them, records the rating (in
- * the session, when there is one; Quick review has none) and returns the
- * question's key. */
+/** Check sends the answers; the server grades them, records the rating in
+ * the session and returns the question's key. */
 export function QuestionItem({
   item,
   onChecked,
   session,
   source = true,
-  headerMarks,
   onCheck,
 }: {
   item: ReviewItem;
@@ -65,8 +44,6 @@ export function QuestionItem({
   session?: ReviewSessionRef;
   /** Names its quiz beside Check; off where the page header already does. */
   source?: boolean;
-  /** False hides the marks beside the question (Quick review). */
-  headerMarks?: boolean;
   /** Check was sent: the server records it whatever happens to the page. */
   onCheck?: () => void;
 }) {
@@ -99,7 +76,6 @@ export function QuestionItem({
       <QuestionRunner
         answers={answers}
         disabled={grading}
-        headerMarks={headerMarks}
         onChange={(partId, value) =>
           setAnswers((a) => ({ ...a, [partId]: value }))
         }

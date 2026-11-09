@@ -2,20 +2,25 @@ package httpapi
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
+	"runtime/debug"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/jev"
+	"github.com/samyung0/capy-notebook/server/internal/models"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -24,13 +29,15 @@ import (
 // Grading happens here, never in the browser: readers who are not editing get
 // answer-free questions (questions.LearnerView), and checking an answer or
 // submitting an attempt sends the learner's answers by part id. Closed parts
-// are scored by questions.ScorePart; open parts go to Jev, one request per
-// answered part and one award per marking item. The response carries the key
-// for what was just checked.
+// are scored by questions.ScorePart; open parts go to the grading slot's model,
+// one request per answered part and one award per marking item, except on a
+// shared page, where they stay Not marked. The response carries the key for what
+// was just checked.
 
-// answersMaxBytes bounds a request of answers: twenty 5,000-character open
-// answers plus every closed answer of a 100-part quiz.
-const answersMaxBytes = 2 << 20
+// answersMaxBytes bounds a request of answers: 150 5,000-character open
+// answers at up to four bytes a character plus every closed answer of a
+// 150-part quiz.
+const answersMaxBytes = 4 << 20
 
 var errGradeRequest = errors.New("answers must name parts of these questions, give every ordering part an order, and keep an open answer to text of at most 5,000 characters")
 
@@ -39,22 +46,36 @@ type openPart struct {
 	markscheme []string
 	itemMarks  []float64
 	answer     string
+	// A drawing part: its marking image and type, in place of answer, and
+	// its drawn sample answer's image, sent before it when it has one.
+	image     []byte
+	imageType string
+	sample    sampleOwner
+}
+
+// sampleOwner is a drawing part's drawn sample answer image (assetID) and what
+// it must belong to: the quiz checked (materialID) or the assignment's frozen
+// copy (assignmentID). A bank question names neither, so it takes none.
+type sampleOwner struct {
+	assetID, materialID, assignmentID string
 }
 
 // gradePlan is a grading request checked against the stored questions; open
-// holds the answered open parts, the ones Jev grades.
+// holds the answered open and drawing parts, the ones a model may grade, and
+// drawings the boards (and images) a check sent, which a signed-in check keeps.
 type gradePlan struct {
 	questions []map[string]any
 	answers   map[string]any
 	open      map[string]openPart
+	drawings  map[string]drawingUpload
 }
 
 // planGrading refuses answers to parts the questions do not have, ordering
 // parts with no order (the shown order is always an answer, so a client sends
 // it), and open answers that are not text or are too long. Blank open answers
-// earn 0 without a Jev call.
-func planGrading(qs []map[string]any, answers map[string]any) (gradePlan, error) {
-	plan := gradePlan{questions: qs, answers: answers, open: map[string]openPart{}}
+// earn 0 without a model call.
+func planGrading(qs []map[string]any, answers map[string]any, owner sampleOwner) (gradePlan, error) {
+	plan := gradePlan{questions: qs, answers: answers, open: map[string]openPart{}, drawings: map[string]drawingUpload{}}
 	known := map[string]bool{}
 	for _, q := range qs {
 		parts, _ := q["parts"].([]any)
@@ -65,6 +86,24 @@ func planGrading(qs []map[string]any, answers map[string]any) (gradePlan, error)
 			a, _ := p["answer"].(map[string]any)
 			if a["type"] == "ordering" && answers[id] == nil {
 				return gradePlan{}, errGradeRequest
+			}
+			if a["type"] == "drawing" && answers[id] != nil {
+				drawing, imageType, err := sentDrawing(answers[id])
+				if err != nil {
+					return gradePlan{}, err
+				}
+				plan.drawings[id] = drawing
+				// Stored as the drawing's id once kept (store.withDrawingAnswers).
+				answers[id] = map[string]any{"drawing": ""}
+				if imageType != "" {
+					items, marks := questions.MarkItems(p)
+					plan.open[id] = openPart{
+						question: questions.GradingText(q, i), markscheme: items, itemMarks: marks,
+						image: drawing.Image, imageType: imageType,
+						sample: sampleOwner{assetID: questions.DrawnSampleImage(p), materialID: owner.materialID, assignmentID: owner.assignmentID},
+					}
+				}
+				continue
 			}
 			if a["type"] != "open" || answers[id] == nil {
 				continue
@@ -88,6 +127,31 @@ func planGrading(qs []map[string]any, answers map[string]any) (gradePlan, error)
 	return plan, nil
 }
 
+// sentDrawing reads a drawing part's answer as a check sends it, {board,
+// image} in base64, and checks both before anything is stored or marked.
+func sentDrawing(value any) (drawingUpload, string, error) {
+	m, ok := value.(map[string]any)
+	if !ok {
+		return drawingUpload{}, "", errGradeRequest
+	}
+	decode := func(key string) ([]byte, bool) {
+		text, isText := m[key].(string)
+		if !isText {
+			return nil, m[key] == nil
+		}
+		b, err := base64.StdEncoding.DecodeString(text)
+		return b, err == nil
+	}
+	board, okBoard := decode("board")
+	image, okImage := decode("image")
+	if !okBoard || !okImage || len(board) == 0 {
+		return drawingUpload{}, "", errGradeRequest
+	}
+	upload := drawingUpload{Board: board, Image: image}
+	imageType, err := checkedDrawing(upload)
+	return upload, imageType, err
+}
+
 // gradeRequestError answers a refused plan with 422 and passes others on.
 func gradeRequestError(err error) error {
 	if errors.Is(err, errGradeRequest) {
@@ -96,64 +160,13 @@ func gradeRequestError(err error) error {
 	return hErr(err)
 }
 
-// gradeOpenParts sends each part to Jev with bounded concurrency. Any failure
-// fails the whole request; the learner retries. It returns each part's marks
-// per marking item.
-func (a *api) gradeOpenParts(ctx context.Context, parts map[string]openPart) (map[string][]float64, jev.Usage, error) {
-	out := map[string][]float64{}
-	var usage jev.Usage
-	var mu sync.Mutex
-	group, ctx := errgroup.WithContext(ctx)
-	group.SetLimit(5)
-	for id, part := range parts {
-		group.Go(func() error {
-			awards, used, err := a.jev.GradePart(ctx, part.question, part.markscheme, part.answer)
-			if err != nil {
-				return err
-			}
-			// Jev judges each item as none, half or all of it; items carry their own marks.
-			for i := range awards {
-				awards[i] *= part.itemMarks[i]
-			}
-			mu.Lock()
-			defer mu.Unlock()
-			out[id] = awards
-			usage.Model = used.Model
-			usage.InputTokens += used.InputTokens
-			return nil
-		})
-	}
-	return out, usage, group.Wait()
-}
-
-// grade grades every part of the plan and returns the questions with keys and
-// awards (questions.Graded) and the awarded marks over the total.
-func (a *api) grade(ctx context.Context, plan gradePlan) ([]map[string]any, float64, float64, jev.Usage, error) {
-	var open map[string][]float64
-	var usage jev.Usage
-	if len(plan.open) > 0 {
-		var err error
-		if open, usage, err = a.gradeOpenParts(ctx, plan.open); err != nil {
-			return nil, 0, 0, usage, err
-		}
-	}
-	graded := make([]map[string]any, len(plan.questions))
-	var correct, total float64
-	for i, q := range plan.questions {
-		var awarded, marks float64
-		graded[i], awarded, marks = questions.Graded(q, plan.answers, open)
-		correct, total = correct+awarded, total+marks
-	}
-	return graded, correct, total, usage, nil
-}
-
 // gradingLimitError is the refusal past the signed-in daily part cap.
 func gradingLimitError() error {
 	return limitError("grading_limit", "today's grading limit is reached; it resets at midnight UTC")
 }
 
 // reserveGrading counts parts against the signed-in user's daily cap before
-// any Jev call.
+// any model call.
 func (a *api) reserveGrading(ctx context.Context, parts int) error {
 	if err := a.s.ReserveGrading(ctx, userID(ctx), parts); errors.Is(err, store.ErrGradingLimit) {
 		return gradingLimitError()
@@ -163,33 +176,233 @@ func (a *api) reserveGrading(ctx context.Context, parts int) error {
 	return nil
 }
 
-// gradeSignedIn grades for a signed-in learner under the daily part cap and
-// records Jev's usage, uncharged. A failed usage write must not discard
-// grades the learner waited for.
-func (a *api) gradeSignedIn(ctx context.Context, plan gradePlan, workspaceID string, metadata map[string]any) ([]map[string]any, float64, float64, error) {
+const (
+	// gradingPartTimeout bounds one part just past the pipeline's own bound: its
+	// turn in the model's line (up to 60 s), then a part with working's 120 s.
+	gradingPartTimeout = 3*time.Minute + 15*time.Second
+	// gradingCheckTimeout bounds a check someone waits on, inside the 100 s the
+	// proxy in front allows: a part still running then stays Not marked, and the
+	// parts done are kept.
+	gradingCheckTimeout = 90 * time.Second
+)
+
+// gradingLLM is the grading slot's pin. A part with working thinks at low; the
+// pipeline turns thinking off for the rest.
+func (a *api) gradingLLM(ctx context.Context, userID string) (resolvedLLM, error) {
+	var out resolvedLLM
+	if a.modelReg == nil || a.pipe == nil {
+		return out, fmt.Errorf("%w: registry or pipeline not configured", store.ErrModelUnavailable)
+	}
+	cfg, err := a.modelReg.Default(ctx, models.SlotGrading)
+	if err != nil {
+		return out, fmt.Errorf("%w: %v", store.ErrModelUnavailable, err)
+	}
+	out.Cfg, out.Rates, out.UserID, out.Thinking = cfg, store.RatesFromConfig(cfg), userID, models.ThinkingLow
+	return out, nil
+}
+
+// partGrade is a part's marks per marking item, and the AI's comment on it; Flag
+// names what code told apart ("copied", "instructions"), which shows as an error.
+type partGrade struct {
+	Items   []float64
+	Comment string
+	Flag    string
+}
+
+// gradeWithModel marks open parts on the payer's credits, ten at once (Epo
+// 2026-11-04). It keeps each part's result: one that fails, or all of them when
+// there is nothing to pay with, is absent from grades and stays "Not marked", with
+// why in failed (store.AIErrorCredits or store.AIErrorGrade). Nothing retries it.
+func (a *api) gradeWithModel(ctx context.Context, payerID, workspaceID string, parts map[string]openPart) (grades map[string]partGrade, failed map[string]string) {
+	out := make(map[string]partGrade, len(parts))
+	failed = map[string]string{}
+	if len(parts) == 0 {
+		return out, failed
+	}
+	failAll := func(reason string) (map[string]partGrade, map[string]string) {
+		for id := range parts {
+			failed[id] = reason
+		}
+		return out, failed
+	}
+	llm, err := a.gradingLLM(ctx, payerID)
+	if err != nil {
+		obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz})
+		return failAll(store.AIErrorGrade)
+	}
+	charge, err := a.beginProviderSession(ctx, payerID, workspaceID, store.SurfaceQuiz, llm.Rates, store.TokenRates{}, llm.Thinking)
+	if err != nil {
+		if errors.Is(err, store.ErrCreditsExhausted) {
+			return failAll(store.AIErrorCredits)
+		}
+		obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz})
+		return failAll(store.AIErrorGrade)
+	}
+	defer charge.settle(ctx)
+	var mu sync.Mutex
+	var group errgroup.Group
+	group.SetLimit(10)
+	// One report a run: a line of failures has one cause, such as credits running
+	// out partway.
+	var report sync.Once
+	for id, part := range parts {
+		group.Go(func() error {
+			grade, err := a.gradePartSafely(ctx, llm, charge.id, part)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				failed[id] = store.AIErrorGrade
+				if errors.Is(err, store.ErrCreditsExhausted) {
+					failed[id] = store.AIErrorCredits
+					return nil
+				}
+				report.Do(func() {
+					obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz, "stage": "grade_part"})
+				})
+				return nil
+			}
+			out[id] = grade
+			return nil
+		})
+	}
+	_ = group.Wait()
+	return out, failed
+}
+
+// gradePartSafely makes gradePart's panic that part's failure. It runs on a
+// goroutine of its own, where nothing above it catches one, so a panic would stop
+// the whole server for everyone.
+func (a *api) gradePartSafely(ctx context.Context, llm resolvedLLM, sessionID string, part openPart) (grade partGrade, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = panicError("grading a part", r)
+		}
+	}()
+	return a.gradePart(ctx, llm, sessionID, part)
+}
+
+// panicError turns a recovered panic into an error that keeps where it happened.
+func panicError(what string, recovered any) error {
+	return fmt.Errorf("%s panicked: %v\n%s", what, recovered, debug.Stack())
+}
+
+func (a *api) gradePart(ctx context.Context, llm resolvedLLM, sessionID string, part openPart) (partGrade, error) {
+	ctx, cancel := context.WithTimeout(ctx, gradingPartTimeout)
+	defer cancel()
+	items := make([]map[string]any, len(part.markscheme))
+	for i, text := range part.markscheme {
+		items[i] = map[string]any{"text": text, "marks": part.itemMarks[i]}
+	}
+	body := map[string]any{"question": part.question, "items": items, "spendSessionId": sessionID}
+	// A drawing goes as its marking image in place of the answer (M1, Epo
+	// 2026-11-07), after its drawn sample answer's image when it has one (Q3).
+	if len(part.image) > 0 {
+		body["image"] = "data:" + part.imageType + ";base64," + base64.StdEncoding.EncodeToString(part.image)
+		if part.sample.assetID != "" {
+			sample, err := a.sampleImage(ctx, part.sample)
+			if err != nil {
+				return partGrade{}, err
+			}
+			body["sampleImage"] = sample
+		}
+	} else {
+		body["answer"] = part.answer
+	}
+	llm.attach(body)
+	raw, err := a.pipe.PostRawUntil(ctx, "/grade", body)
+	if err != nil {
+		return partGrade{}, err
+	}
+	var reply struct {
+		Shares  []float64 `json:"shares"`
+		Comment string    `json:"comment"`
+		Flag    string    `json:"flag"`
+	}
+	if err := json.Unmarshal(raw, &reply); err != nil {
+		return partGrade{}, err
+	}
+	if len(reply.Shares) != len(part.itemMarks) {
+		return partGrade{}, fmt.Errorf("grading answered %d items of %d", len(reply.Shares), len(part.itemMarks))
+	}
+	// The model judges none, half or all of an item; items carry their own marks.
+	marks := make([]float64, len(reply.Shares))
+	for i, share := range reply.Shares {
+		marks[i] = share * part.itemMarks[i]
+	}
+	return partGrade{Items: marks, Comment: reply.Comment, Flag: reply.Flag}, nil
+}
+
+// applyPartGrade writes a late mark into a part left Not marked.
+func applyPartGrade(p map[string]any, grade partGrade) {
+	delete(p, "pending")
+	p["itemAwards"] = grade.Items
+	var awarded float64
+	for _, item := range grade.Items {
+		awarded += item
+	}
+	if marks, ok := p["marks"].(float64); ok && awarded > marks {
+		awarded = marks
+	}
+	p["awarded"] = awarded
+	if grade.Comment != "" {
+		p["aiComment"] = grade.Comment
+		if grade.Flag != "" {
+			p["aiFlag"] = grade.Flag
+		}
+	}
+}
+
+// gradedWithModel applies the model's marks to the plan's questions. An answered
+// open part it has no mark for is "Not marked", counted in the total and not as
+// wrong: nothing logs it, and it joins no review.
+func gradedWithModel(plan gradePlan, grades map[string]partGrade) ([]map[string]any, float64, float64) {
+	open := make(map[string][]float64, len(grades))
+	for id, grade := range grades {
+		open[id] = grade.Items
+	}
+	graded := make([]map[string]any, len(plan.questions))
+	var correct, total float64
+	for i, q := range plan.questions {
+		out, awarded, marks := questions.Graded(q, plan.answers, open)
+		parts, _ := out["parts"].([]any)
+		for _, raw := range parts {
+			p, _ := raw.(map[string]any)
+			id, _ := p["id"].(string)
+			if _, answered := plan.open[id]; !answered {
+				continue
+			}
+			grade, marked := grades[id]
+			if !marked {
+				p["pending"] = true
+				delete(p, "itemAwards")
+			} else if grade.Comment != "" {
+				p["aiComment"] = grade.Comment
+				if grade.Flag != "" {
+					p["aiFlag"] = grade.Flag
+				}
+			}
+		}
+		graded[i] = out
+		correct, total = correct+awarded, total+marks
+	}
+	return graded, correct, total
+}
+
+// gradeSignedIn grades for a signed-in learner under the daily part cap, on
+// their own credits (Epo 2026-11-03): whoever starts a job pays. Out of credits,
+// or on a failure, the closed parts still mark and the open ones stay unmarked.
+func (a *api) gradeSignedIn(ctx context.Context, plan gradePlan, workspaceID string) ([]map[string]any, float64, float64, error) {
 	if len(plan.open) > 0 {
 		if err := a.reserveGrading(ctx, len(plan.open)); err != nil {
 			return nil, 0, 0, err
 		}
 	}
-	graded, correct, total, usage, err := a.grade(ctx, plan)
-	if err != nil {
-		obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz})
-		return nil, 0, 0, huma.Error503ServiceUnavailable("grading is unavailable, try again")
-	}
+	marking, cancel := context.WithTimeout(ctx, gradingCheckTimeout)
+	defer cancel()
+	grades, _ := a.gradeWithModel(marking, userID(ctx), workspaceID, plan.open)
+	graded, correct, total := gradedWithModel(plan, grades)
 	if total <= 0 {
 		return nil, 0, 0, huma.Error422UnprocessableEntity("there are no questions to grade")
-	}
-	if len(plan.open) == 0 {
-		return graded, correct, total, nil
-	}
-	metadata["costMicroUsd"] = jev.CostMicroUSD(usage.InputTokens)
-	if err := a.s.RecordUsage(ctx, store.UsageEvent{
-		ActorUserID: userID(ctx), WorkspaceID: workspaceID,
-		Kind: store.KindLLM, Surface: store.SurfaceQuiz, Provider: "typesafe", Model: usage.Model,
-		InputTokens: usage.InputTokens, Units: int64(len(plan.open)), Unit: "parts", Metadata: metadata,
-	}); err != nil {
-		obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz})
 	}
 	return graded, correct, total, nil
 }
@@ -202,9 +415,7 @@ func decodeStoredQuestions(raw json.RawMessage) ([]map[string]any, error) {
 	return qs, json.Unmarshal(raw, &qs)
 }
 
-/* ------------------------------------------------------- signed-out grading */
-
-type clientIPKey struct{}
+/* ----------------------------------------------------- a shared page's check */
 
 type gradeAnonymousQuizInput struct {
 	Token string `path:"token"`
@@ -218,31 +429,30 @@ type gradeAnonymousNoteQuizInput struct {
 
 // registerAnonymousGrading serves POST /api/public/quizzes/{token}/grade and,
 // for a quiz embedded in a shared note, POST
-// /api/public/notes/{token}/quizzes/{quizId}/grade, reached directly, not
-// through the site Worker. Nothing is stored; the daily caps key on the client
-// address (an IPv6 /56), and count only the open parts Jev
-// grades. A forged token is refused before the body is read.
+// /api/public/notes/{token}/quizzes/{quizId}/grade: a shared page's check, for
+// every visitor, signed in or out (Epo 2026-11-05, Q640 B). The browser calls
+// them directly, not through the site Worker, so the /api/public/ limit keys on
+// the visitor's address. A forged token is refused before the body is read.
 func (a *api) registerAnonymousGrading(api huma.API) {
-	clientIP := huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
+	verified := huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
 		if _, ok := a.s.VerifyShareToken(ctx.Param("token")); !ok {
 			_ = huma.WriteErr(api, ctx, http.StatusNotFound, "not found")
 			return
 		}
-		r, _ := humachi.Unwrap(ctx)
-		next(huma.WithValue(ctx, clientIPKey{}, obs.ClientAddress(r)))
+		next(ctx)
 	}}
 	huma.Register(api, huma.Operation{
 		OperationID: "gradeAnonymousQuiz", Method: http.MethodPost, Path: "/api/public/quizzes/{token}/grade",
-		Summary: "Grade one question of a signed-out attempt at a shared quiz", Tags: []string{"Sharing"},
-		DefaultStatus: http.StatusOK, MaxBodyBytes: answersMaxBytes, Middlewares: clientIP,
+		Summary: "Check one question of a shared quiz; an answered open part stays Not marked", Tags: []string{"Sharing"},
+		DefaultStatus: http.StatusOK, MaxBodyBytes: answersMaxBytes, Middlewares: verified,
 	}, func(ctx context.Context, in *gradeAnonymousQuizInput) (*gradedQuestionOutput, error) {
 		out, err := a.gradeAnonymousQuiz(ctx, in)
 		return out, reportHandlerError(ctx, err)
 	})
 	huma.Register(api, huma.Operation{
 		OperationID: "gradeAnonymousNoteQuiz", Method: http.MethodPost, Path: "/api/public/notes/{token}/quizzes/{quizId}/grade",
-		Summary: "Grade one question of a quiz embedded in a shared note", Tags: []string{"Sharing"},
-		DefaultStatus: http.StatusOK, MaxBodyBytes: answersMaxBytes, Middlewares: clientIP,
+		Summary: "Check one question of a quiz embedded in a shared note; an answered open part stays Not marked", Tags: []string{"Sharing"},
+		DefaultStatus: http.StatusOK, MaxBodyBytes: answersMaxBytes, Middlewares: verified,
 	}, func(ctx context.Context, in *gradeAnonymousNoteQuizInput) (*gradedQuestionOutput, error) {
 		out, err := a.gradeAnonymousNoteQuiz(ctx, in)
 		return out, reportHandlerError(ctx, err)
@@ -258,7 +468,7 @@ func (a *api) gradeAnonymousQuiz(ctx context.Context, in *gradeAnonymousQuizInpu
 	if err != nil {
 		return nil, storedContentError(ctx, id, err)
 	}
-	return a.gradeAnonymous(ctx, quiz.Questions, in.Body)
+	return gradeAnonymous(quiz.Questions, in.Body)
 }
 
 // gradeAnonymousNoteQuiz grades a quiz the shared note embeds and references;
@@ -272,121 +482,29 @@ func (a *api) gradeAnonymousNoteQuiz(ctx context.Context, in *gradeAnonymousNote
 	if err != nil {
 		return nil, storedContentError(ctx, id, err)
 	}
-	return a.gradeAnonymous(ctx, stored, in.Body)
+	return gradeAnonymous(stored, in.Body)
 }
 
-// gradeAnonymous grades one question of a signed-out attempt against the
-// stored questions under the anonymous daily caps.
-func (a *api) gradeAnonymous(ctx context.Context, stored json.RawMessage, body apimodel.GradeAnonymousQuizReq) (*gradedQuestionOutput, error) {
+// gradeAnonymous checks one question against the stored questions. Closed parts
+// mark here; no model reads an open answer, so an answered open part comes back
+// Not marked, with the marking points and solution any check reveals. Nothing is
+// stored.
+func gradeAnonymous(stored json.RawMessage, body apimodel.GradeAnonymousQuizReq) (*gradedQuestionOutput, error) {
 	qs, err := decodeStoredQuestions(stored)
 	if err != nil {
 		return nil, hErr(err)
 	}
 	q, _, _ := quizQuestion(qs, body.QuestionID)
 	if q == nil {
-		return nil, huma.Error404NotFound("the question is not in this quiz")
+		return nil, noAnswersConfiguredError()
 	}
-	plan, err := planGrading([]map[string]any{q}, body.Answers)
+	plan, err := planGrading([]map[string]any{q}, body.Answers, sampleOwner{})
 	if err != nil {
 		return nil, gradeRequestError(err)
 	}
-	// After the share-token check (the route's middleware) and before any
-	// grading; a forged link never reaches siteverify.
-	if err := a.checkCaptcha(ctx, body.TurnstileToken); err != nil {
-		return nil, err
-	}
-	var ipHash string
-	if len(plan.open) > 0 {
-		if a.jev == nil {
-			return nil, huma.Error503ServiceUnavailable("grading is unavailable, try again")
-		}
-		ip, _ := ctx.Value(clientIPKey{}).(string)
-		ipHash = a.s.AnonymousIPHash(ip)
-		if err := a.s.ReserveAnonymousGrading(ctx, ipHash, body.LocalID, len(plan.open)); errors.Is(err, store.ErrAnonymousGradingLimit) {
-			return nil, &huma.ErrorModel{
-				Status: http.StatusTooManyRequests, Title: http.StatusText(http.StatusTooManyRequests),
-				Detail: "sign in to keep grading open answers today", Errors: []*huma.ErrorDetail{{Message: "anonymous_grading_limit"}},
-			}
-		} else if err != nil {
-			return nil, hErr(err)
-		}
-	}
-	graded, correct, total, usage, err := a.grade(ctx, plan)
-	if err != nil {
-		obs.CaptureErr(ctx, err, map[string]string{"surface": "anonymous_quiz"})
-		return nil, huma.Error503ServiceUnavailable("grading is unavailable, try again")
-	}
+	graded, correct, total := gradedWithModel(plan, nil)
 	if total <= 0 {
 		return nil, huma.Error422UnprocessableEntity("there are no questions to grade")
-	}
-	if len(plan.open) > 0 {
-		if err := a.s.RecordAnonymousGradingUsage(ctx, ipHash, body.LocalID, usage.InputTokens, jev.CostMicroUSD(usage.InputTokens)); err != nil {
-			obs.CaptureErr(ctx, err, map[string]string{"surface": "anonymous_quiz"})
-		}
-	}
-	return &gradedQuestionOutput{Body: apimodel.GradedQuestion{Correct: correct, Total: total, Question: graded[0]}}, nil
-}
-
-/* ------------------------------------ signed-in check of a shared note quiz */
-
-type checkSharedNoteQuizInput struct {
-	Token  string `path:"token"`
-	QuizID string `path:"quizId"`
-	Body   apimodel.CheckSharedNoteQuizReq
-}
-
-// registerSharedNoteQuizCheck serves POST
-// /api/shared/notes/{token}/quizzes/{quizId}/check: a signed-in visitor's
-// check of one question of a quiz embedded in a shared note, graded under the user's daily
-// grading parts with no captcha and recording nothing (Epo 2026-10-24,
-// Q311). It keeps the anonymous route's share-token checks: a forged token
-// is refused before the body is read, and only a quiz the shared note embeds
-// is graded.
-func (a *api) registerSharedNoteQuizCheck(api huma.API) {
-	verified := huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
-		if _, ok := a.s.VerifyShareToken(ctx.Param("token")); !ok {
-			_ = huma.WriteErr(api, ctx, http.StatusNotFound, "not found")
-			return
-		}
-		next(ctx)
-	}}
-	huma.Register(api, huma.Operation{
-		OperationID: "checkSharedNoteQuiz", Method: http.MethodPost, Path: "/api/shared/notes/{token}/quizzes/{quizId}/check",
-		Summary: "Grade a signed-in check of one question of a quiz embedded in a shared note", Tags: []string{"Sharing"},
-		DefaultStatus: http.StatusOK, MaxBodyBytes: answersMaxBytes, Middlewares: verified,
-	}, func(ctx context.Context, in *checkSharedNoteQuizInput) (*gradedQuestionOutput, error) {
-		out, err := a.checkSharedNoteQuiz(ctx, in)
-		return out, reportHandlerError(ctx, err)
-	})
-}
-
-func (a *api) checkSharedNoteQuiz(ctx context.Context, in *checkSharedNoteQuizInput) (*gradedQuestionOutput, error) {
-	if err := a.requireAccountMutate(ctx); err != nil {
-		return nil, err
-	}
-	id, err := a.sharedMaterialID(in.Token)
-	if err != nil {
-		return nil, err
-	}
-	stored, err := a.s.AnonymousNoteQuiz(ctx, id, in.QuizID)
-	if err != nil {
-		return nil, storedContentError(ctx, id, err)
-	}
-	qs, err := decodeStoredQuestions(stored)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	q, _, _ := quizQuestion(qs, in.Body.QuestionID)
-	if q == nil {
-		return nil, huma.Error404NotFound("the question is not in this quiz")
-	}
-	plan, err := planGrading([]map[string]any{q}, in.Body.Answers)
-	if err != nil {
-		return nil, gradeRequestError(err)
-	}
-	graded, correct, total, err := a.gradeSignedIn(ctx, plan, "", map[string]any{"quizId": in.QuizID, "sharedNoteId": id})
-	if err != nil {
-		return nil, err
 	}
 	return &gradedQuestionOutput{Body: apimodel.GradedQuestion{Correct: correct, Total: total, Question: graded[0]}}, nil
 }
@@ -450,4 +568,35 @@ func (a *api) checkQuestionComputation(ctx context.Context, in *computationCheck
 		}}, nil
 	}
 	return nil, huma.Error422UnprocessableEntity("partId must name an open part of the question")
+}
+
+// sampleImage reads a drawn sample answer's image asset as a data URL. It must be
+// a ready, untrashed image of the quiz checked or of the assignment's frozen
+// copy, so an author can't have the model read someone else's image (Q693). One
+// that isn't, or can't be read, fails the part, which stays Not marked: marking
+// without the sample would judge it on less than its author gave.
+func (a *api) sampleImage(ctx context.Context, owner sampleOwner) (string, error) {
+	assetID := owner.assetID
+	asset, err := a.s.GetEditorAsset(ctx, assetID)
+	if err != nil {
+		return "", err
+	}
+	belongs := (owner.materialID != "" && asset.MaterialID == owner.materialID) ||
+		(owner.assignmentID != "" && asset.AssignmentID == owner.assignmentID)
+	if !belongs || asset.Purpose != "image" || asset.Status != "ready" || asset.Trashed || a.blob == nil {
+		return "", fmt.Errorf("drawn sample answer %s is not this quiz's stored image", assetID)
+	}
+	r, err := a.blob.Open(ctx, asset.ObjectPath)
+	if err != nil {
+		return "", err
+	}
+	defer r.Close()
+	data, err := io.ReadAll(io.LimitReader(r, fieldlimits.DrawingImageBytes+1))
+	if err != nil {
+		return "", err
+	}
+	if len(data) > fieldlimits.DrawingImageBytes {
+		return "", fmt.Errorf("drawn sample answer %s is over the image cap", assetID)
+	}
+	return "data:" + asset.ContentType + ";base64," + base64.StdEncoding.EncodeToString(data), nil
 }

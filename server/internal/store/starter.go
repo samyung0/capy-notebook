@@ -8,10 +8,10 @@ import (
 )
 
 // StarterCopy is the starter workspace's sample content in one locale: a
-// chapter holding a blank Word file and a welcome note with two embedded quiz
+// topic holding a blank Word file and a welcome note with two embedded quiz
 // questions and two flashcards (Epo 2026-10-29).
 type StarterCopy struct {
-	Chapter  string
+	Topic    string
 	Document string
 	note     starterNote
 }
@@ -33,7 +33,7 @@ func marked(text, mark string) map[string]any { return map[string]any{"text": te
 
 var starterCopies = map[string]StarterCopy{
 	"en": {
-		Chapter:  "Getting started",
+		Topic:    "Getting started",
 		Document: "My first document",
 		note: starterNote{
 			title:        "Welcome to Capy Notebook",
@@ -61,7 +61,7 @@ var starterCopies = map[string]StarterCopy{
 		},
 	},
 	"zh": {
-		Chapter:  "入门",
+		Topic:    "入门",
 		Document: "我的第一份文档",
 		note: starterNote{
 			title:        "欢迎使用 Capy Notebook",
@@ -100,8 +100,8 @@ func StarterCopyFor(locale string) StarterCopy {
 }
 
 // CreateStarterNote adds the welcome note, with its quiz and flashcards, to
-// the starter workspace's chapter. The account pays for it, as for any note.
-func (s *Store) CreateStarterNote(ctx context.Context, userID string, ws StarterWorkspace, chapterID string) (Material, error) {
+// the starter workspace's topic. The account pays for it, as for any note.
+func (s *Store) CreateStarterNote(ctx context.Context, userID string, ws StarterWorkspace, topicID string) (Material, error) {
 	c := StarterCopyFor(ws.Locale).note
 	quizID, cardsID := uid("mat"), uid("mat")
 	block := func(kind string, children []map[string]any, extra map[string]any) map[string]any {
@@ -155,7 +155,7 @@ func (s *Store) CreateStarterNote(ctx context.Context, userID string, ws Starter
 	}
 	return s.CreateMaterialDraft(ctx, MaterialDraft{
 		ActorUserID: userID, WorkspaceID: ws.ID, WorkspaceName: starterWorkspaceName,
-		Kind: "note", Title: c.title, Content: string(content), ChapterID: &chapterID,
+		Kind: "note", Title: c.title, Content: string(content), TopicID: &topicID,
 		Color: "blue",
 		Embedded: []EmbeddedDraft{
 			{ID: quizID, Kind: "quiz", Questions: questions},

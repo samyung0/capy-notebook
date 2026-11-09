@@ -32,8 +32,9 @@ export function ToolbarHistory() {
     () => manager.redoStack.length > 0
   );
 
+  // Phones go without them everywhere (Epo 2026-11-04); shortcuts stay.
   return (
-    <ToolbarGroup>
+    <ToolbarGroup className="hidden sm:flex">
       <ToolbarButton
         disabled={!canUndo}
         label={m.editor_undo()}

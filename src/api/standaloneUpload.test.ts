@@ -27,7 +27,7 @@ vi.mock('./uploadTurn', () => ({
   },
 }));
 
-// No workspace: the upload goes to the unscoped route with no chapter, and
+// No workspace: the upload goes to the unscoped route with no topic, and
 // the new file's own query holds the status its ingest events patch.
 it('uploads a standalone file to the unscoped route', async () => {
   const qc = new QueryClient();
@@ -42,14 +42,14 @@ it('uploads a standalone file to the unscoped route', async () => {
   await upload?.({
     batchId: 'batch_1',
     batchTotal: 1,
-    chapterId: null,
     file: new File(['x'], 'notes.pdf'),
     kind: 'pdf',
     parseMode: 'fast',
+    topicId: null,
   });
   expect(sent.path).toBe('/sources/uploads');
-  expect(sent.metadata).not.toHaveProperty('chapterId');
-  expect(sent.metadata).not.toHaveProperty('chapterName');
+  expect(sent.metadata).not.toHaveProperty('topicId');
+  expect(sent.metadata).not.toHaveProperty('topicName');
   expect(qc.getQueryData(qk.file('f_alone'))).toMatchObject({
     ingestPct: 0,
     status: 'pending',

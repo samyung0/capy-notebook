@@ -1,17 +1,14 @@
+import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import { showPanelView } from '../helpers/panelView';
+import { openWorkspaceSettings } from '../helpers/workspace';
 import { m } from '../i18n';
 
 test('Indexing tab lists file changes, cancels queued work and processes waiting files', async ({
   page,
 }) => {
   await page.goto('/workspaces/ws_bio');
-  // The rail's gear (its aria-label); the empty viewer's quick action shares
-  // the name as text and appears once the recent files load.
-  await page
-    .getByLabel(m.workspace_settings(), { exact: true })
-    .first()
-    .click();
+  await openWorkspaceSettings(page);
   const settings = page.getByRole('dialog', { name: m.workspace_settings() });
   await settings
     .getByRole('tab', { exact: true, name: m.workspace_indexing() })
@@ -69,10 +66,7 @@ test('Indexing tab lists note changes and indexes a waiting note now', async ({
   page,
 }) => {
   await page.goto('/workspaces/ws_bio');
-  await page
-    .getByLabel(m.workspace_settings(), { exact: true })
-    .first()
-    .click();
+  await openWorkspaceSettings(page);
   const settings = page.getByRole('dialog', { name: m.workspace_settings() });
   await settings
     .getByRole('tab', { exact: true, name: m.workspace_indexing() })
@@ -120,10 +114,7 @@ test('a failed file is retried from its row menu and listed in the Indexing tab'
   await expect(page.getByText(name, { exact: true })).toBeVisible();
 
   // Listed with the other failed files; automatic processing skips them.
-  await page
-    .getByLabel(m.workspace_settings(), { exact: true })
-    .first()
-    .click();
+  await openWorkspaceSettings(page);
   const settings = page.getByRole('dialog', { name: m.workspace_settings() });
   await settings
     .getByRole('tab', { exact: true, name: m.workspace_indexing() })
@@ -153,14 +144,54 @@ test('a failed file is retried from its row menu and listed in the Indexing tab'
     page.getByText(m.files_process_started_title(), { exact: true })
   ).toBeVisible();
   // No longer failed: gone from the Indexing tab's list.
-  await page
-    .getByLabel(m.workspace_settings(), { exact: true })
-    .first()
-    .click();
+  await openWorkspaceSettings(page);
   await settings
     .getByRole('tab', { exact: true, name: m.workspace_indexing() })
     .click();
   await expect(
     settings.getByRole('listitem').filter({ hasText: name })
   ).toHaveCount(0);
+});
+
+// A real file's link is a presigned bucket URL, on another origin from the app, which the
+// mock's are not, and the analysis worker refuses those: a retried file is read here.
+test('a failed PDF on a bucket is analyzed when retried', async ({ page }) => {
+  const name = 'Annotation load error.pdf';
+  const pdf = readFileSync(
+    new URL('../fixtures/files/basic/three-pages.pdf', import.meta.url)
+  ).toString('base64');
+  // In the page's fetch, as the dev server's connect-src has no such bucket.
+  await page.addInitScript((bytes) => {
+    const real = window.fetch;
+    const bucket = 'https://bucket.example.test/three-pages.pdf';
+    window.fetch = async (input, init) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url === bucket)
+        return new Response(
+          Uint8Array.from(atob(bytes), (char) => char.charCodeAt(0))
+        );
+      const response = await real(input, init);
+      if (!/\/api\/files\/[^/]+\/links$/.test(url)) return response;
+      return Response.json({ ...(await response.json()), url: bucket });
+    };
+  }, pdf);
+  await page.goto('/workspaces/ws_bio');
+  await showPanelView(page, m.workspace_tab_files());
+  const fileRow = page
+    .locator('.group')
+    .filter({ has: page.getByText(name, { exact: true }) });
+  await fileRow.hover();
+  await fileRow.getByRole('button', { name: m.a11y_open_menu() }).click();
+  await page
+    .getByRole('menuitem', { exact: true, name: m.files_retry_processing() })
+    .click();
+
+  const dialog = page.getByRole('dialog', { name: m.files_retry_processing() });
+  await expect(dialog.getByText(name, { exact: true })).toBeVisible();
+  // The estimate shows only once the file has been read.
+  const estimate = m
+    .source_analysis_summary({ cost: '0', ocr: 0, text: 2 })
+    .split(' · ')[0];
+  await expect(dialog.getByText(estimate)).toBeVisible({ timeout: 30_000 });
+  await expect(dialog.getByText(m.source_analysis_failed())).toHaveCount(0);
 });

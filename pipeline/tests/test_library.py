@@ -17,6 +17,7 @@ from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 import psycopg
+import pymupdf
 import pytest
 
 from pipeline.config import cfg
@@ -525,6 +526,31 @@ async def test_capture_target_covers_the_excerpt_and_its_figure_pages(library_db
         await library.capture_target("e_missing")
 
 
+def _excluded_figure(library_db: str, figure_id: str, bbox: str) -> None:
+    with psycopg.connect(library_db, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO library_figures VALUES(%s,%s,'ahss',7,%s,NULL,'page-1000-topleft','parser_image',0,'[]','[]','Ch 8',true,'[]',NULL,NULL)",
+            (CURRENT, figure_id, bbox),
+        )
+
+
+async def test_capture_target_lists_excluded_boxes_to_paint_white(library_db):
+    """Epo 2026-11-04 (Q10): a capture blanks the excluded figures' boxes on
+    its page."""
+    _excluded_figure(library_db, "fig_x", "{0,0,500,500}")
+    target = await library.capture_target("e_intro")
+    assert target.excluded == {7: [[0.0, 0.0, 500.0, 500.0]]}
+    assert target.pages == [1, 7]
+
+
+async def test_a_page_with_a_whole_page_excluded_figure_is_withheld(library_db):
+    """Epo 2026-11-04, option 1: a whole-page excluded record has no box to
+    blank, so its page is refused for captures as a withheld page is."""
+    _excluded_figure(library_db, "fig_p", "{0,0,1000,1000}")
+    target = await library.capture_target("e_intro")
+    assert target.pages == [1] and target.withheld_pages == [7]
+
+
 async def test_capture_target_drops_the_book_withheld_pages(library_db):
     with psycopg.connect(library_db, autocommit=True) as conn:
         conn.execute(
@@ -609,6 +635,46 @@ def test_loader_retire_current_drops_content_and_keeps_the_receipts(loader, libr
     assert statuses == {1: "retired", 2: "retired"}
     assert older == 1, "only the current version is retired"
     assert dropped == 1 and topics == ["linear-regression"]
+
+
+def test_loader_crops_backfill_and_verify_go_by_the_live_rows(
+    loader, monkeypatch, tmp_path
+):
+    """Epo 2026-11-04: `crops` stores the current version's missing crops
+    from the published object; `--verify` reports missing crops and the stale
+    ones it leaves in place."""
+    from pipeline.store import blobstore
+
+    stored = {"figures/sha/9_0_0_5_5.jpg"}  # a box an earlier version had
+
+    class Writer:
+        def put_object(self, Bucket, Key, Body, ContentType):
+            stored.add(Key)
+
+    def download(key, path, max_bytes):
+        assert (key, max_bytes) == ("books/sha.pdf", 1024)
+        with pymupdf.open() as doc:
+            for _ in range(7):
+                doc.new_page()
+            doc.save(path)
+        return 1, "sha"
+
+    monkeypatch.setattr(
+        loader,
+        "stored_crops",
+        lambda prefix: {k for k in stored if k.startswith(prefix)},
+    )
+    monkeypatch.setattr(loader, "writer_client", Writer)
+    monkeypatch.setattr(blobstore, "library_download_file", download)
+
+    assert loader.crops([], verify=True) == {
+        "crops": 1,
+        "missing": ["figures/sha/7_0_0_10_10.jpg"],
+        "stale": ["figures/sha/9_0_0_5_5.jpg"],
+        "unrenderable": 0,
+    }
+    assert loader.crops(["ahss"], verify=False) == {"books": 1, "uploaded": 1}
+    assert loader.crops(["ahss"], verify=True)["missing"] == []
 
 
 def test_loader_remove_deletes_every_row_of_the_book(loader, library_db):

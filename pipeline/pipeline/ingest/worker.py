@@ -1767,8 +1767,9 @@ async def _read_vlm_pages(
     if not renders:
         return content_list, []
     rate = int(_rate(_RESOURCE_VLM_PAGE)["creditMicrosPerUnit"])
-    # One job reads CAPY_VLM_PAGES_PER_JOB pages at once, below the gate every
-    # worker shares (CAPY_VLM_PAGE_CAPACITY), so jobs take turns at it.
+    # One job reads CAPY_VLM_PAGES_PER_JOB pages at once; past the captioning
+    # model's total they wait in its line, round-robin with every other job
+    # and user (Epo 2026-11-04).
     limit = asyncio.Semaphore(cfg.vlm_pages_per_job)
     # UAT only (ingest/uat.py): a marked file's reads fail or are scripted,
     # under a cache key of their own, so no real read is served from them or

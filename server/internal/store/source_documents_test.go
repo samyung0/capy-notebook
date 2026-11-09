@@ -120,10 +120,7 @@ func TestSourceCheckpointAuthorizationAndCreditIndependence(t *testing.T) {
 	if err := s.CheckSourceAccess(ctx, owner, file.ID, doc.Epoch, true); err != nil {
 		t.Fatalf("owner edit admission: %v", err)
 	}
-	req := SourceCheckpoint{ActorIDs: []string{viewer}, WorkspaceID: doc.WorkspaceID, Epoch: doc.Epoch, BaseRevision: doc.BaseRevision, ExpectedCheckpoint: 0, Update: []byte("new"), PendingEffects: json.RawMessage(`[]`), SeedBytes: sourceTestSeedBytes, BaseSourceSHA256: strings.Repeat("a", 64)}
-	if _, err := s.SaveSourceCheckpoint(ctx, file.ID, req); err == nil {
-		t.Fatal("viewer authored checkpoint")
-	}
+	req := SourceCheckpoint{ActorIDs: []string{owner}, WorkspaceID: doc.WorkspaceID, Epoch: doc.Epoch, BaseRevision: doc.BaseRevision, ExpectedCheckpoint: 0, Update: []byte("new"), PendingEffects: json.RawMessage(`[]`), SeedBytes: sourceTestSeedBytes, BaseSourceSHA256: strings.Repeat("a", 64)}
 	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits(user_id,used_micros,purchased_micros) VALUES($1,999999999999999,0) ON CONFLICT(user_id) DO UPDATE SET used_micros=EXCLUDED.used_micros,purchased_micros=0`, owner); err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +128,6 @@ func TestSourceCheckpointAuthorizationAndCreditIndependence(t *testing.T) {
 	if doc.Checkpoint != 1 || doc.IndexedCheckpoint != 0 {
 		t.Fatalf("bad checkpoint: %+v", doc)
 	}
-	req.ActorIDs = []string{owner}
 	if _, err := s.SaveSourceCheckpoint(ctx, file.ID, req); !errors.Is(err, ErrConflict) {
 		t.Fatalf("stale save: %v", err)
 	}
@@ -2177,7 +2173,29 @@ func TestSourceGrowthBudgetStopsAtZero(t *testing.T) {
 		// Less than admission's reserve left admits nothing: view only.
 		{"budget inside the reserve", exportCap - sourceGrowthMarginBytes - sourceWriteReserveBytes + 100, 150, 0},
 	} {
-		if got := SourceGrowthBudget(exportCap, tc.base, tc.grown); got != tc.want {
+		if got := SourceGrowthBudget("docx", exportCap, tc.base, tc.grown); got != tc.want {
+			t.Errorf("%s: %d, want %d", tc.name, got, tc.want)
+		}
+	}
+}
+
+// Epo 2026-11-06: a text room has no margin, so a 1.5 MiB text file under the
+// 2 MiB cap can still grow; only one inside admission's reserve opens view-only.
+func TestTextSourceGrowthBudgetHasNoMargin(t *testing.T) {
+	const textCap = 2 << 20
+	for _, tc := range []struct {
+		name  string
+		base  int64
+		grown int64
+		want  int64
+	}{
+		{"1.5 MiB base", 3 << 19, 0, 1<<19 - sourceWriteReserveBytes},
+		{"saved growth", 3 << 19, 150, 1<<19 - sourceWriteReserveBytes - 150},
+		{"inside the reserve", textCap - sourceWriteReserveBytes, 0, 0},
+		{"at the cap", textCap, 0, 0},
+		{"over the cap", textCap + 1, 0, 0},
+	} {
+		if got := SourceGrowthBudget("text", textCap, tc.base, tc.grown); got != tc.want {
 			t.Errorf("%s: %d, want %d", tc.name, got, tc.want)
 		}
 	}

@@ -9,6 +9,20 @@ test('an interactive block fits its frame with nothing to scroll', async ({
   page,
 }) => {
   await page.goto('/materials/mat_note_bio_feature_matrix');
+  // The painted note draws the block too until the editor takes over (since
+  // Q680 the editor no longer waits for comments, so the hand-over can land
+  // while the frame is read): measure the editor's once the paint has gone.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          () =>
+            !document.querySelector('[data-note-paint]') &&
+            !!document.querySelector('[data-slate-editor="true"]')
+        ),
+      { timeout: 30_000 }
+    )
+    .toBe(true);
   const frame = page.locator('iframe[sandbox="allow-scripts"]');
   await expect(frame).toHaveCount(1, { timeout: 30_000 });
   const snippet = await (await frame.elementHandle())?.contentFrame();

@@ -9,11 +9,11 @@ import type { MaterialListItemPreview } from './materialListItemPreview.ts';
 import type { Privacy } from './privacy.ts';
 
 export interface MaterialListItem {
+  assigned?: boolean;
+  assignmentId?: string;
   cardCount?: number;
-  /** @nullable */
-  chapterId: string | null;
-  chapterName: string;
   createdAt: string;
+  hidden?: boolean;
   id: string;
   kind: MaterialKind;
   /** The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it */
@@ -25,6 +25,9 @@ export interface MaterialListItem {
   sharePath?: string;
   sizeBytes: number;
   title: string;
+  /** @nullable */
+  topicId: string | null;
+  topicName: string;
   updatedAt: string;
   workspaceId: string;
   workspaceName: string;

@@ -8,7 +8,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import { toast } from 'sonner';
 import { fileLinksQuery, useFileLinks, useMe, useWorkspace } from '@/api/hooks';
 import type {
   Region,
@@ -20,7 +19,7 @@ import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { Button } from '@/components/ui/Button';
 import { OfficeInsetContext } from '@/components/ui/floatingBarContext';
 import { Icon } from '@/components/ui/Icon';
-import { userToast } from '@/components/ui/userToast';
+import { dismissToast, userToast } from '@/components/ui/userToast';
 import { ImageViewer } from '@/features/files/ImageViewer';
 import { onPhone, tabHidden } from '@/features/notes/roomSwap';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
@@ -224,7 +223,7 @@ function FileViewerContent({
       variant: 'error',
     });
     return () => {
-      toast.dismiss(id);
+      dismissToast(id);
     };
   }, [annotationsErrorUpdatedAt, annotationsFailed, file?.id, isPdf]);
   if (!file) {
@@ -336,6 +335,9 @@ function OfficeSwap({ format, ...props }: OfficeFileProps) {
     format === 'xlsx' ? SheetView : format === 'docx' ? DocxView : PptxView;
   const generations =
     building === null ? [views.shown] : [views.shown, building];
+  // The tab goes with the swap; a tab picked while the next view builds stays
+  // behind (a paused view, a few seconds).
+  const ribbonTab = useRef<string | null>(null);
   return (
     <div className="relative h-full">
       {generations.map((generation) => {
@@ -359,6 +361,7 @@ function OfficeSwap({ format, ...props }: OfficeFileProps) {
                 onReplaced: () =>
                   void places.replaced(generation, tabHidden() || onPhone()),
                 onSettled: () => void places.settled(generation),
+                ribbonTab,
               }}
             />
           </OfficeSlot>

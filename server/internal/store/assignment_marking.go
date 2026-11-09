@@ -1,0 +1,489 @@
+package store
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/samyung0/capy-notebook/server/internal/questions"
+)
+
+// MarkedByAI is markedBy on a part the AI's mark decided: an assignment with
+// approval off takes it at once.
+const MarkedByAI = "ai"
+
+// AnswerToMark is one submitted open answer waiting, with no AI mark yet.
+type AnswerToMark struct {
+	AttemptID string
+	// PayerID is who made the attempt, who pays for its marking (Epo 2026-11-08).
+	PayerID    string
+	QuestionID string
+	PartID     string
+	Question   string
+	Items      []string
+	ItemMarks  []float64
+	Answer     string
+	// A drawing part: its marking image is the attempt's stored one for PartID;
+	// SampleImage is its drawn sample answer's image asset, or "".
+	Drawing     bool
+	SampleImage string
+	// Pages: a paper's open or drawn part, graded on these pages of its paper.
+	Pages []int
+}
+
+// AnswersToMark lists what the AI has yet to mark in an assignment, or in one of
+// its attempts (attemptID). Each answer's PayerID is who attempted it: all AI
+// marking of an assignment is theirs (Epo 2026-11-08, superseding the owner's).
+func (s *Store) AnswersToMark(ctx context.Context, assignmentID, attemptID string) (workspaceID string, answers []AnswerToMark, err error) {
+	var marking string
+	if err = s.pool.QueryRow(ctx, `SELECT workspace_id, marking FROM assignments WHERE id=$1`, assignmentID).Scan(&workspaceID, &marking); err != nil {
+		if isNoRows(err) {
+			err = ErrNotFound
+		}
+		return "", nil, err
+	}
+	// Marked by hand: nothing goes to the AI (Epo 2026-11-06).
+	if marking == MarkingManual {
+		return workspaceID, nil, nil
+	}
+	rows, err := s.pool.Query(ctx, `SELECT t.id, t.user_id, t.answers, t.questions FROM attempts t
+		WHERE t.assignment_id=$1 AND ($2='' OR t.id=$2) AND t.submitted_at IS NOT NULL AND t.waiting_answers > 0
+		ORDER BY t.submitted_at`, assignmentID, attemptID)
+	if err != nil {
+		return "", nil, err
+	}
+	defer rows.Close()
+	var listed []AnswerToMark
+	var drawnIn []string
+	for rows.Next() {
+		var id, payer string
+		var rawAnswers, rawGraded []byte
+		if err := rows.Scan(&id, &payer, &rawAnswers, &rawGraded); err != nil {
+			return "", nil, err
+		}
+		found, err := attemptAnswersToMark(id, rawAnswers, rawGraded)
+		for i := range found {
+			found[i].PayerID = payer
+		}
+		if err != nil {
+			return "", nil, err
+		}
+		for _, answer := range found {
+			if answer.Drawing {
+				drawnIn = append(drawnIn, id)
+				break
+			}
+		}
+		listed = append(listed, found...)
+	}
+	if err := rows.Err(); err != nil {
+		return "", nil, err
+	}
+	rows.Close()
+	// A drawing with no marking image (saved under manual grading) is staff's to
+	// mark by hand (Q695): the report says so, and the AI is not asked.
+	kept, err := keptDrawingImageParts(ctx, s.pool, drawnIn)
+	if err != nil {
+		return "", nil, err
+	}
+	for _, answer := range listed {
+		if !answer.Drawing || kept[answer.AttemptID+"/"+answer.PartID] {
+			answers = append(answers, answer)
+		}
+	}
+	return workspaceID, answers, nil
+}
+
+// keptDrawingImageParts are the attempts' drawings that keep a marking image,
+// as attempt/part.
+func keptDrawingImageParts(ctx context.Context, q rowsQueryer, attemptIDs []string) (map[string]bool, error) {
+	kept := map[string]bool{}
+	if len(attemptIDs) == 0 {
+		return kept, nil
+	}
+	rows, err := q.Query(ctx, `SELECT attempt_id, part_id FROM drawings
+		WHERE attempt_id = ANY($1) AND image_key IS NOT NULL`, attemptIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var attemptID, partID string
+		if err := rows.Scan(&attemptID, &partID); err != nil {
+			return nil, err
+		}
+		kept[attemptID+"/"+partID] = true
+	}
+	return kept, rows.Err()
+}
+
+// needsHandMarking: a waiting drawing the AI has not marked and has no marking
+// image for (saved under manual grading), which only staff can mark (Q695).
+func needsHandMarking(q, answers map[string]any, attemptID string, kept map[string]bool) bool {
+	parts, _ := q["parts"].([]any)
+	for _, raw := range parts {
+		p, _ := raw.(map[string]any)
+		pending, _ := p["pending"].(bool)
+		_, aiMarked := p["aiAwards"]
+		id, _ := p["id"].(string)
+		if pending && !aiMarked && isDrawingAnswer(answers[id]) && !kept[attemptID+"/"+id] {
+			return true
+		}
+	}
+	return false
+}
+
+func attemptAnswersToMark(attemptID string, rawAnswers, rawGraded []byte) ([]AnswerToMark, error) {
+	given := map[string]any{}
+	if err := json.Unmarshal(rawAnswers, &given); err != nil {
+		return nil, err
+	}
+	graded, err := decodeFrozen(rawGraded)
+	if err != nil {
+		return nil, err
+	}
+	var out []AnswerToMark
+	for _, q := range graded {
+		questionID, _ := q["id"].(string)
+		parts, _ := q["parts"].([]any)
+		for i, raw := range parts {
+			p, _ := raw.(map[string]any)
+			partID, _ := p["id"].(string)
+			text, _ := given[partID].(string)
+			drawn := isDrawingAnswer(given[partID])
+			pages := paperPages(given[partID])
+			pending, _ := p["pending"].(bool)
+			if _, marked := p["aiAwards"]; !pending || marked || (strings.TrimSpace(text) == "" && !drawn && len(pages) == 0) {
+				continue
+			}
+			items, marks := questions.MarkItems(p)
+			out = append(out, AnswerToMark{
+				AttemptID: attemptID, QuestionID: questionID, PartID: partID,
+				Question: questions.GradingText(q, i), Items: items, ItemMarks: marks, Answer: text,
+				Drawing: drawn, SampleImage: questions.DrawnSampleImage(p), Pages: pages,
+			})
+		}
+	}
+	return out, nil
+}
+
+// AIMark is the AI's mark on one open part, in marks per marking point.
+type AIMark struct {
+	QuestionID string
+	PartID     string
+	Items      []float64
+	Comment    string
+	Flag       string
+}
+
+// Why the AI left an open part unmarked, shown on the owner's row (mock T3):
+// no credits, a grading failure, or a file of its paper that can't be read
+// (Q730).
+const (
+	AIErrorCredits = "credits"
+	AIErrorGrade   = "error"
+	AIErrorFile    = "file"
+)
+
+// AIFailure is an open part the AI could not mark, and why.
+type AIFailure struct {
+	QuestionID string
+	PartID     string
+	Reason     string
+}
+
+// SaveAIFailures notes on each part still waiting with no AI mark why it has none.
+// A mark that lands later takes the note off.
+func (s *Store) SaveAIFailures(ctx context.Context, attemptID string, failures []AIFailure) error {
+	if len(failures) == 0 {
+		return nil
+	}
+	reasons := make(map[string]string, len(failures))
+	for _, f := range failures {
+		reasons[f.QuestionID+"/"+f.PartID] = f.Reason
+	}
+	return s.inTx(ctx, func(tx pgx.Tx) error {
+		if err := lockAttemptWorkspaceTx(ctx, tx, attemptID); err != nil {
+			return err
+		}
+		var raw []byte
+		if err := tx.QueryRow(ctx, `SELECT questions FROM attempts WHERE id=$1 FOR UPDATE`, attemptID).Scan(&raw); err != nil {
+			return err
+		}
+		graded, err := decodeFrozen(raw)
+		if err != nil {
+			return err
+		}
+		for _, q := range graded {
+			qid, _ := q["id"].(string)
+			parts, _ := q["parts"].([]any)
+			for _, rawPart := range parts {
+				p, _ := rawPart.(map[string]any)
+				pid, _ := p["id"].(string)
+				pending, _ := p["pending"].(bool)
+				_, marked := p["aiAwards"]
+				if reason, ok := reasons[qid+"/"+pid]; ok && pending && !marked {
+					p["aiError"] = reason
+				}
+			}
+		}
+		out, err := json.Marshal(graded)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `UPDATE attempts SET questions=$2 WHERE id=$1`, attemptID, out)
+		return err
+	})
+}
+
+// questionAIError is why the AI left a waiting part of q unmarked, or "".
+func questionAIError(q map[string]any) string {
+	parts, _ := q["parts"].([]any)
+	for _, raw := range parts {
+		p, _ := raw.(map[string]any)
+		pending, _ := p["pending"].(bool)
+		_, marked := p["aiAwards"]
+		if reason, _ := p["aiError"].(string); pending && !marked && reason != "" {
+			return reason
+		}
+	}
+	return ""
+}
+
+// SaveAIMarks stores marks the AI gave an attempt. With approval on they wait
+// beside the answer for the owner, and a member sees none of it; with it off
+// they are the marks at once. A part someone marked meanwhile keeps that mark.
+func (s *Store) SaveAIMarks(ctx context.Context, attemptID string, marks []AIMark, now time.Time) error {
+	if len(marks) == 0 {
+		return nil
+	}
+	return s.inTx(ctx, func(tx pgx.Tx) error {
+		if err := lockAttemptWorkspaceTx(ctx, tx, attemptID); err != nil {
+			return err
+		}
+		r, err := scanAttemptRow(tx.QueryRow(ctx, `SELECT `+attemptRowCols+`
+			FROM attempts t JOIN assignments a ON a.id=t.assignment_id WHERE t.id=$1 FOR UPDATE OF t`, attemptID))
+		if err != nil {
+			return err
+		}
+		var marking string
+		if err := tx.QueryRow(ctx, `SELECT marking FROM assignments WHERE id=$1`, r.assignmentID).Scan(&marking); err != nil {
+			return err
+		}
+		approval := marking == MarkingAIApprove
+		graded, err := decodeFrozen(r.graded)
+		if err != nil {
+			return err
+		}
+		given := map[string]any{}
+		if err := json.Unmarshal(r.answers, &given); err != nil {
+			return err
+		}
+		byQuestion := map[string][]AIMark{}
+		for _, mark := range marks {
+			byQuestion[mark.QuestionID] = append(byQuestion[mark.QuestionID], mark)
+		}
+		for _, question := range graded {
+			id, _ := question["id"].(string)
+			if len(byQuestion[id]) == 0 {
+				continue
+			}
+			if err := s.takeAIMarksTx(ctx, tx, r, graded, question, given, byQuestion[id], approval, now); err != nil {
+				return err
+			}
+		}
+		// Waiting marks change no total; stored here, they outlive the transaction.
+		raw, err := json.Marshal(graded)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `UPDATE attempts SET questions=$2 WHERE id=$1`, attemptID, raw)
+		return err
+	})
+}
+
+func (s *Store) takeAIMarksTx(ctx context.Context, tx pgx.Tx, r attemptRow, graded []map[string]any, question, given map[string]any, marks []AIMark, approval bool, now time.Time) error {
+	parts, _ := question["parts"].([]any)
+	waited := questionWaiting(question)
+	var apply []AssignmentPartMark
+	for _, mark := range marks {
+		for _, raw := range parts {
+			p, _ := raw.(map[string]any)
+			pending, _ := p["pending"].(bool)
+			if p["id"] != mark.PartID || !pending {
+				continue
+			}
+			p["aiAwards"] = mark.Items
+			delete(p, "aiError")
+			if mark.Comment != "" {
+				p["aiComment"] = mark.Comment
+				if mark.Flag != "" {
+					p["aiFlag"] = mark.Flag
+				}
+			}
+			apply = append(apply, AssignmentPartMark{PartID: mark.PartID, Items: mark.Items})
+		}
+	}
+	if approval || len(apply) == 0 {
+		return nil
+	}
+	changed, err := applyPartMarks(question, apply, MarkedByAI, now)
+	if err != nil {
+		return fmt.Errorf("apply AI marks: %w", err)
+	}
+	return s.storeQuestionMarksTx(ctx, tx, r, graded, question, given, changed, waited, now)
+}
+
+// ApproveAIMarks approves every waiting answer to a question that the AI marked,
+// as the owner approving each one would. Answers it has not marked keep waiting.
+// It returns how many it approved.
+func (s *Store) ApproveAIMarks(ctx context.Context, actorID, assignmentID, questionID string, now time.Time) (int, error) {
+	var workspaceID string
+	if err := s.pool.QueryRow(ctx, `SELECT workspace_id FROM assignments WHERE id=$1`, assignmentID).Scan(&workspaceID); err != nil {
+		if isNoRows(err) {
+			return 0, ErrNotFound
+		}
+		return 0, err
+	}
+	approved := 0
+	err := s.inTx(ctx, func(tx pgx.Tx) error {
+		if err := s.lockAssignmentStaffTx(ctx, tx, workspaceID, actorID); err != nil {
+			return err
+		}
+		rows, err := tx.Query(ctx, `SELECT `+attemptRowCols+`
+			FROM attempts t JOIN assignments a ON a.id=t.assignment_id
+			WHERE t.assignment_id=$1 AND t.submitted_at IS NOT NULL AND t.waiting_answers > 0 FOR UPDATE OF t`, assignmentID)
+		if err != nil {
+			return err
+		}
+		var attempts []attemptRow
+		for rows.Next() {
+			r, err := scanAttemptRow(rows)
+			if err != nil {
+				rows.Close()
+				return err
+			}
+			attempts = append(attempts, r)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		for _, r := range attempts {
+			done, err := s.approveAttemptQuestionTx(ctx, tx, r, questionID, actorID, now)
+			if err != nil {
+				return err
+			}
+			if done {
+				approved++
+			}
+		}
+		return nil
+	})
+	return approved, err
+}
+
+func (s *Store) approveAttemptQuestionTx(ctx context.Context, tx pgx.Tx, r attemptRow, questionID, actorID string, now time.Time) (bool, error) {
+	graded, err := decodeFrozen(r.graded)
+	if err != nil {
+		return false, err
+	}
+	given := map[string]any{}
+	if err := json.Unmarshal(r.answers, &given); err != nil {
+		return false, err
+	}
+	for _, question := range graded {
+		if question["id"] != questionID {
+			continue
+		}
+		waited := questionWaiting(question)
+		parts, _ := question["parts"].([]any)
+		var apply []AssignmentPartMark
+		for _, raw := range parts {
+			p, _ := raw.(map[string]any)
+			pending, _ := p["pending"].(bool)
+			if !pending {
+				continue
+			}
+			items, marked := aiAwards(p)
+			if !marked {
+				return false, nil
+			}
+			id, _ := p["id"].(string)
+			apply = append(apply, AssignmentPartMark{PartID: id, Items: items})
+		}
+		if len(apply) == 0 {
+			return false, nil
+		}
+		changed, err := applyPartMarks(question, apply, actorID, now)
+		if err != nil {
+			return false, err
+		}
+		return true, s.storeQuestionMarksTx(ctx, tx, r, graded, question, given, changed, waited, now)
+	}
+	return false, nil
+}
+
+func aiAwards(p map[string]any) ([]float64, bool) {
+	raw, ok := p["aiAwards"].([]any)
+	if !ok {
+		return nil, false
+	}
+	items := make([]float64, len(raw))
+	for i, value := range raw {
+		number, ok := value.(float64)
+		if !ok {
+			return nil, false
+		}
+		items[i] = number
+	}
+	return items, true
+}
+
+// withoutAIMarks takes out of what a member reads the AI's marks, and its warning
+// while its mark waits for the owner. With Show answers off gradedWithoutKeys
+// also holds the warning back until the assignment has closed.
+func withoutAIMarks(graded []map[string]any) {
+	for _, q := range graded {
+		parts, _ := q["parts"].([]any)
+		for _, raw := range parts {
+			p, _ := raw.(map[string]any)
+			delete(p, "aiAwards")
+			delete(p, "aiError")
+			if pending, _ := p["pending"].(bool); pending {
+				delete(p, "aiComment")
+				delete(p, "aiFlag")
+			}
+		}
+	}
+}
+
+// clearAIWarning takes the AI's warning off a question's parts (Epo 2026-11-05).
+func clearAIWarning(q map[string]any) {
+	parts, _ := q["parts"].([]any)
+	for _, raw := range parts {
+		p, _ := raw.(map[string]any)
+		delete(p, "aiComment")
+		delete(p, "aiFlag")
+	}
+}
+
+// questionAIWarning is the report row's warning: "error" where code told what
+// happened (copying, instructions to the marker), "warning" for any other.
+func questionAIWarning(q map[string]any) string {
+	warning := ""
+	parts, _ := q["parts"].([]any)
+	for _, raw := range parts {
+		p, _ := raw.(map[string]any)
+		if _, flagged := p["aiFlag"]; flagged {
+			return "error"
+		}
+		if _, commented := p["aiComment"]; commented {
+			warning = "warning"
+		}
+	}
+	return warning
+}

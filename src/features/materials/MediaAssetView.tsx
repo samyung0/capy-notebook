@@ -8,6 +8,7 @@ import {
   useEffect,
   useEffectEvent,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import { Skeleton } from '@/components/ui/feedback';
@@ -17,6 +18,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { mediaWidth } from './document';
 import { MediaFrame } from './MediaFrame';
+import { assetLink, heldAssetLink } from './resolvedAssetLinks';
 
 // Loaded when used: the authenticated resolve (with the app's query client
 // behind it) only where no AssetUrlContext answers, which is never on a shared
@@ -87,8 +89,20 @@ export function useRemovedAssets(
   );
 }
 
+const assetReady = (asset: Awaited<ReturnType<typeof assetLink>>) =>
+  ({
+    contentType: asset.contentType,
+    materialId: asset.materialId,
+    name: asset.name,
+    status: 'ready',
+    url: asset.url,
+  }) as const;
+
 export function useResolvedAsset(assetId: string | undefined) {
-  const [state, setState] = useState<AssetState>({ status: 'loading' });
+  const [state, setState] = useState<AssetState>(() => {
+    const held = assetId && heldAssetLink(assetId);
+    return held ? assetReady(held) : { status: 'loading' };
+  });
   const [generation, setGeneration] = useState(0);
   const resolveUrl = useContext(AssetUrlContext);
   const override = assetId ? resolveUrl?.(assetId) : undefined;
@@ -103,17 +117,11 @@ export function useResolvedAsset(assetId: string | undefined) {
       setState({ kind: 'missing', status: 'error' });
       return () => controller.abort();
     }
-    setState({ status: 'loading' });
-    void resolveEditorAsset(assetId, controller.signal)
-      .then((asset) => {
-        setState({
-          contentType: asset.contentType,
-          materialId: asset.materialId,
-          name: asset.name,
-          status: 'ready',
-          url: asset.url,
-        });
-      })
+    const again = generation > 0;
+    const held = again ? undefined : heldAssetLink(assetId);
+    setState(held ? assetReady(held) : { status: 'loading' });
+    void assetLink(assetId, controller.signal, again)
+      .then((asset) => setState(assetReady(asset)))
       .catch(() => {
         if (!controller.signal.aborted) {
           setState({
@@ -127,12 +135,33 @@ export function useResolvedAsset(assetId: string | undefined) {
   }, [assetId, generation, override, removed]);
 
   const reload = useCallback(() => setGeneration((value) => value + 1), []);
+  // An image its link can't load asks once for another, then shows as failed, and
+  // tries again when the connection comes back.
+  const retried = useRef(false);
+  const failed = state.status === 'error' && state.kind === 'failed';
+  const onImageError = useCallback(() => {
+    if (retried.current) {
+      setState({ kind: 'failed', status: 'error' });
+      return;
+    }
+    retried.current = true;
+    reload();
+  }, [reload]);
+  useEffect(() => {
+    if (!failed) return;
+    const again = () => {
+      retried.current = false;
+      reload();
+    };
+    window.addEventListener('online', again);
+    return () => window.removeEventListener('online', again);
+  }, [failed, reload]);
   const known: AssetState | undefined = removed
     ? { kind: 'removed', status: 'error' }
     : override
       ? { contentType: '', name: '', status: 'ready', url: override }
       : undefined;
-  return [known ?? state, reload] as const;
+  return [known ?? state, reload, onImageError] as const;
 }
 
 /** An image or audio clip its uploader deleted (M16), in the look of an empty
@@ -196,7 +225,7 @@ export function MediaAssetView({
   ownerId?: string;
   toolbar?: ReactNode;
 }) {
-  const [asset, reload] = useResolvedAsset(element.assetId);
+  const [asset, reload, onImageError] = useResolvedAsset(element.assetId);
   const { assetId } = element;
   useEffect(() => {
     if (!(ownerId && assetId)) return;
@@ -261,6 +290,7 @@ export function MediaAssetView({
               mediaWidth(element.width) || fill ? 'w-full' : 'max-w-full'
             )}
             decoding="async"
+            onError={onImageError}
             onLoad={(event) => {
               const image = event.currentTarget;
               if (!image.offsetWidth) setFill(true);

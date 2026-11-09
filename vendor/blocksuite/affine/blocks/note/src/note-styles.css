@@ -1,0 +1,78 @@
+/* Capy (local change 24): the canvas note's styles, as plain CSS in place of
+   vanilla-extract, so the app's build needs no plugin for them. */
+.affine-note-container {
+  height: 100%;
+  padding: 24px; /* EDGELESS_BLOCK_CHILD_PADDING */
+  box-sizing: border-box;
+  pointer-events: all;
+  transform-origin: 0 0;
+  font-weight: 400;
+  line-height: var(--affine-line-height);
+}
+
+.affine-note-collapse-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  z-index: 2;
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  opacity: 0.2;
+  transition: opacity 0.3s;
+}
+.affine-note-collapse-button:hover {
+  opacity: 1;
+}
+.affine-note-collapse-button.flip {
+  transform: translateX(-50%) rotate(180deg);
+}
+
+.affine-note-clip {
+  width: 100%;
+  height: 100%;
+}
+
+.affine-note-collapsed {
+  position: absolute;
+  background: var(--affine-white);
+  opacity: 0.5;
+  pointer-events: none;
+  border: 2px var(--affine-blue) solid;
+  border-top: unset;
+  border-radius: 0 0 8px 8px;
+}
+
+.affine-note-background {
+  position: absolute;
+  border-color: var(--affine-black-10);
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+}
+/* 20px: ACTIVE_NOTE_EXTRA_PADDING */
+.affine-note-container[data-editing='true'] .affine-note-background {
+  left: -20px;
+  top: -20px;
+  width: calc(100% + 40px);
+  height: calc(100% + 40px);
+  transition:
+    left 0.3s,
+    top 0.3s,
+    width 0.3s,
+    height 0.3s;
+  box-shadow: var(--affine-active-shadow);
+}
+
+.affine-note-page-title {
+  position: relative;
+}
+.affine-note-page-title .doc-title-container {
+  padding: 26px 0px;
+  margin-left: unset;
+  margin-right: unset;
+}

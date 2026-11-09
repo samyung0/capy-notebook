@@ -453,15 +453,13 @@ func withinUndoLimit(ev pipeChatEvent) pipeChatEvent {
 
 // chatTurn is the trusted per-turn context the pipeline receives beside the
 // query: the Workspace only switch, the open item as stored (never the browser's
-// title), whether study progress is on for the requester here, and their
-// study preferences. An account turn has no open item, role or study
-// progress, and carries the workspaces it searches instead.
+// title) and the requester's study preferences. An account turn has no open
+// item or role, and carries the workspaces it searches instead.
 type chatTurn struct {
 	workspaceOnly bool
 	// The requester's workspace role, said on the turn context's open line.
 	role             string
 	openResource     map[string]string
-	studyProgress    bool
 	studyPreferences store.StudyPreferences
 	// scopeWorkspaces is an account turn's workspace set (D2) with names and
 	// edit rights, fixed for the turn: search labels its hits from it, and Go
@@ -480,7 +478,7 @@ func (a *api) chatTurnContext(ctx context.Context, userID, wsID string, req chat
 		return turn, err
 	}
 	if o := req.OpenResource; o != nil && o.ID != "" {
-		title, found, err := a.s.ChatOpenResource(ctx, wsID, o.Kind, o.ID)
+		title, found, err := a.s.ChatOpenResource(ctx, userID, wsID, o.Kind, o.ID)
 		if err != nil {
 			return turn, err
 		}
@@ -488,11 +486,7 @@ func (a *api) chatTurnContext(ctx context.Context, userID, wsID string, req chat
 			turn.openResource = map[string]string{"id": o.ID, "kind": o.Kind, "title": title}
 		}
 	}
-	on, err := a.s.StudyEnabled(ctx, userID, wsID)
-	if err != nil {
-		return turn, err
-	}
-	turn.studyProgress = on
+	var err error
 	turn.studyPreferences, err = a.s.StudyPreferencesOf(ctx, userID)
 	return turn, err
 }
@@ -580,7 +574,6 @@ func (a *api) relayChat(
 		body["workspaceId"] = conv.WorkspaceID
 		body["openResource"] = turn.openResource
 		body["role"] = turn.role
-		body["studyProgress"] = turn.studyProgress
 	}
 	if prompt.Checkpoint != nil {
 		body["checkpoint"] = prompt.Checkpoint

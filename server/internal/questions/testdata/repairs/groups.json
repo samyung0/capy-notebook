@@ -1,0 +1,316 @@
+[
+  {
+    "name": "a question with no group stays as it is",
+    "question": {
+      "parts": [
+        {
+          "id": "a"
+        },
+        {
+          "id": "b"
+        }
+      ]
+    },
+    "repaired": {
+      "parts": [
+        {
+          "id": "a"
+        },
+        {
+          "id": "b"
+        }
+      ]
+    }
+  },
+  {
+    "name": "a valid group stays as it is",
+    "question": {
+      "groups": [
+        {
+          "id": "g",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Shared."
+            }
+          ]
+        }
+      ],
+      "parts": [
+        {
+          "id": "a"
+        },
+        {
+          "id": "b",
+          "group": "g"
+        },
+        {
+          "id": "c",
+          "group": "g"
+        },
+        {
+          "id": "d"
+        }
+      ]
+    },
+    "repaired": {
+      "groups": [
+        {
+          "id": "g",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Shared."
+            }
+          ]
+        }
+      ],
+      "parts": [
+        {
+          "id": "a"
+        },
+        {
+          "id": "b",
+          "group": "g"
+        },
+        {
+          "id": "c",
+          "group": "g"
+        },
+        {
+          "id": "d"
+        }
+      ]
+    }
+  },
+  {
+    "name": "a part naming a group that is gone has no group",
+    "question": {
+      "parts": [
+        {
+          "id": "a"
+        },
+        {
+          "id": "b",
+          "group": "gone"
+        }
+      ]
+    },
+    "repaired": {
+      "parts": [
+        {
+          "id": "a"
+        },
+        {
+          "id": "b"
+        }
+      ]
+    }
+  },
+  {
+    "name": "a group with no parts goes",
+    "question": {
+      "groups": [
+        {
+          "id": "shell",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Shared."
+            }
+          ]
+        },
+        {
+          "id": "g",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Shared."
+            }
+          ]
+        }
+      ],
+      "parts": [
+        {
+          "id": "a",
+          "group": "g"
+        }
+      ]
+    },
+    "repaired": {
+      "groups": [
+        {
+          "id": "g",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Shared."
+            }
+          ]
+        }
+      ],
+      "parts": [
+        {
+          "id": "a",
+          "group": "g"
+        }
+      ]
+    }
+  },
+  {
+    "name": "the last group gone leaves no groups",
+    "question": {
+      "groups": [
+        {
+          "id": "shell",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Shared."
+            }
+          ]
+        }
+      ],
+      "parts": [
+        {
+          "id": "a"
+        }
+      ]
+    },
+    "repaired": {
+      "parts": [
+        {
+          "id": "a"
+        }
+      ]
+    }
+  },
+  {
+    "name": "separated parts come together at the first one's place, in their order",
+    "question": {
+      "groups": [
+        {
+          "id": "g",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Shared."
+            }
+          ]
+        }
+      ],
+      "parts": [
+        {
+          "id": "a",
+          "group": "g"
+        },
+        {
+          "id": "b"
+        },
+        {
+          "id": "c",
+          "group": "g"
+        },
+        {
+          "id": "d"
+        }
+      ]
+    },
+    "repaired": {
+      "groups": [
+        {
+          "id": "g",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Shared."
+            }
+          ]
+        }
+      ],
+      "parts": [
+        {
+          "id": "a",
+          "group": "g"
+        },
+        {
+          "id": "c",
+          "group": "g"
+        },
+        {
+          "id": "b"
+        },
+        {
+          "id": "d"
+        }
+      ]
+    }
+  },
+  {
+    "name": "groups are listed in the order their parts first appear",
+    "question": {
+      "groups": [
+        {
+          "id": "second",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Shared."
+            }
+          ]
+        },
+        {
+          "id": "first",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Shared."
+            }
+          ]
+        }
+      ],
+      "parts": [
+        {
+          "id": "a",
+          "group": "first"
+        },
+        {
+          "id": "b",
+          "group": "second"
+        }
+      ]
+    },
+    "repaired": {
+      "groups": [
+        {
+          "id": "first",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Shared."
+            }
+          ]
+        },
+        {
+          "id": "second",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Shared."
+            }
+          ]
+        }
+      ],
+      "parts": [
+        {
+          "id": "a",
+          "group": "first"
+        },
+        {
+          "id": "b",
+          "group": "second"
+        }
+      ]
+    }
+  }
+]

@@ -4,11 +4,13 @@ import { authHeaders } from '@/api/auth';
 import type { SourceFile, SourceSession } from '@/api/types';
 import { OfficeInsetContext } from '@/components/ui/floatingBarContext';
 import { userToast } from '@/components/ui/userToast';
-import { useCollaborationHeld } from '@/features/collaboration/held';
+import { isHeld, useCollaborationHeld } from '@/features/collaboration/held';
 import { frameInput } from '@/features/collaboration/idle';
+import { RoomProvider } from '@/features/collaboration/roomProvider';
 import { getLocale, m } from '@/i18n';
 import { errorCopy, unexpectedErrorId } from '@/lib/errors';
 import { imageLimit } from '@/lib/fitImage';
+import { PREF_KEYS, readPref, writePref } from '@/lib/localPrefs';
 import { officeMark } from '@/lib/officeMarks';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { useFrosted, useTheme } from '@/theme/theme';
@@ -16,8 +18,10 @@ import { useFileMode } from './FileModeControl';
 import { fileExt } from './fileUtils';
 import {
   fitOfficeMenus,
+  type OfficeBanner,
   type OfficeHeaderAction,
   type OfficeMenu,
+  type OfficeRibbon,
   officeCommandNeeds,
   officeHostCommand,
 } from './officeMenus';
@@ -52,6 +56,7 @@ import {
   uploadThumbnail,
 } from './thumbnailCapture';
 import {
+  type RoomFrames,
   SOURCE_IFRAME_ORIGIN,
   sessionReported,
   useSizeLimitView,
@@ -70,6 +75,8 @@ export interface OfficeSwap {
   onPosition: (position: OfficeViewPosition | null) => void;
   onReplaced: () => void;
   onSettled: () => void;
+  /** The tab the view on screen has open: the next view opens on it. */
+  ribbonTab: { current: string | null };
 }
 
 /** Both answer where the reader is once the frame says (null: no answer). */
@@ -118,6 +125,22 @@ export function isCurrentOfficeRuntimeMessage(
   return messageRevision === currentRevision;
 }
 
+/**
+ * A strip's click from the frame. It counts only with the user's gesture: a
+ * compromised frame could otherwise raise a strip and fire Download draft or
+ * Reload by itself (a click in the frame activates this page too).
+ */
+export function frameBannerAction(
+  action: number | 'close',
+  run: ((action: number | 'close') => void) | null,
+  activation: { isActive: boolean } | undefined = navigator.userActivation
+) {
+  if (activation?.isActive) run?.(action);
+}
+
+const isBoolean = (value: unknown): value is boolean =>
+  typeof value === 'boolean';
+
 export function useOfficeRuntime({
   canEdit,
   citation,
@@ -127,6 +150,8 @@ export function useOfficeRuntime({
   revision,
   swap,
 }: OfficeRuntimeOptions) {
+  const swapRef = useRef(swap);
+  swapRef.current = swap;
   const citationRef = useRef(citation);
   citationRef.current = citation;
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -137,6 +162,11 @@ export function useOfficeRuntime({
   const narrow = !useMediaQuery('(min-width: 1024px)');
   const compact = !useMediaQuery('(min-width: 768px)');
   const [mode, setMode] = useFileMode(canEdit, initialMode);
+  // Entering Edit opens on Home (Q665); only a swap within Edit keeps the tab.
+  useEffect(() => {
+    if (mode === 'view' && swapRef.current)
+      swapRef.current.ribbonTab.current = null;
+  }, [mode]);
   const [joined, setJoined] = useState(mode === 'edit');
   const [frameGeneration, setFrameGeneration] = useState(0);
   const [frameLoaded, setFrameLoaded] = useState(false);
@@ -153,11 +183,17 @@ export function useOfficeRuntime({
   const [outdated, setOutdated] = useState(false);
   // The runtime's menu bar and header actions; each frame sends its own.
   const [menus, setMenus] = useState<{
+    ribbon?: OfficeRibbon;
     menus: OfficeMenu[];
     actions: OfficeHeaderAction[];
   } | null>(null);
   const menusRef = useRef(menus);
   menusRef.current = menus;
+  // The strip drawn under the ribbon: its clicks come back to the host's.
+  const bannerSent = useRef('');
+  const bannerActionRef = useRef<((action: number | 'close') => void) | null>(
+    null
+  );
   // A PPTX show is on: the frame covers the page.
   const [presenting, setPresenting] = useState(false);
   const [replicaReady, setReplicaReady] = useState(false);
@@ -210,6 +246,8 @@ export function useOfficeRuntime({
   );
   const publishedRevision = useRef(revision);
   const initializedFrame = useRef(-1);
+  // The frame whose editor failed to render (Q687): its strip offers Reload.
+  const [crashedFrame, setCrashedFrame] = useState<number | null>(null);
   // The source document the frame was loaded with: a frame still showing an
   // earlier one (an in-place restart swaps it on the next render) is never
   // made editable.
@@ -297,17 +335,17 @@ export function useOfficeRuntime({
     (kind: 'flush' | 'export') =>
       new Promise<ArrayBuffer>((resolve, reject) => {
         const id = crypto.randomUUID();
-        const timeout = setTimeout(() => {
+        const clear = frameRequestLimit(() => {
           frameRequests.current.delete(id);
           reject(new Error(m.source_edit_save_failed()));
-        }, 30_000);
+        });
         frameRequests.current.set(id, {
           reject: (error) => {
-            clearTimeout(timeout);
+            clear();
             reject(error);
           },
           resolve: (bytes) => {
-            clearTimeout(timeout);
+            clear();
             resolve(bytes);
           },
         });
@@ -376,6 +414,16 @@ export function useOfficeRuntime({
     setError(config.error);
     setErrorId(null);
   }, [revision, mode, config.error]);
+
+  // Reload after the editor failed to render: a new frame opens the editor
+  // again on the same session, so nothing synced is lost.
+  const reopenEditor = () => {
+    initializedFrame.current = -1;
+    setFrameLoaded(false);
+    setFrameGeneration((value) => value + 1);
+    setError(null);
+    setErrorId(null);
+  };
 
   const retryView = () => {
     if (mode !== 'view') return;
@@ -496,6 +544,17 @@ export function useOfficeRuntime({
         imageMaxBytes,
         mode,
         revision: revisionRef.current,
+        ribbon:
+          mode === 'edit'
+            ? {
+                collapsed: readPref(
+                  PREF_KEYS.officeRibbonCollapsed,
+                  false,
+                  isBoolean
+                ),
+                tab: swapRef.current?.ribbonTab.current ?? null,
+              }
+            : undefined,
         type: 'load',
         version: OFFICE_PROTOCOL_VERSION,
         zoom: zoomRef.current,
@@ -564,6 +623,7 @@ export function useOfficeRuntime({
     source.doc,
   ]);
 
+  const frames = source.frames;
   // The co-editors' cursors (Epo 2026-10-20), and this editor's gone when it
   // leaves Edit.
   const cursors = source.cursors;
@@ -591,8 +651,7 @@ export function useOfficeRuntime({
     const doc = source.doc;
     if (!doc || mode !== 'edit' || !source.session) return;
     const epoch = source.session.epoch;
-    const send = (update: Uint8Array, origin: unknown) => {
-      if (origin === SOURCE_IFRAME_ORIGIN) return;
+    const deliver = (update: Uint8Array) => {
       // Not this editor's own edit: a capture drawn before it is stale.
       captureRef.current?.remote();
       const bytes = update.slice().buffer;
@@ -600,9 +659,8 @@ export function useOfficeRuntime({
         bytes,
       ]);
     };
-    doc.on('update', send);
-    return () => doc.off('update', send);
-  }, [source.doc, source.session, mode, post]);
+    return deliverToEngine(doc, format, frames, deliver);
+  }, [format, frames, source.doc, source.session, mode, post]);
 
   /**
    * A `popup: 'presenter'` command: opens the presenter window from the
@@ -644,6 +702,7 @@ export function useOfficeRuntime({
         notices.frame();
         setReplicaReady(false);
         setMenus(null);
+        bannerSent.current = '';
         setPresenting(false);
         initializedFrame.current = -1;
         setFrameLoaded(true);
@@ -687,7 +746,36 @@ export function useOfficeRuntime({
         setMenus({
           actions: message.actions,
           menus: fitOfficeMenus(message.menus),
+          ribbon: message.ribbon,
         });
+        // The view on screen's: one building hidden hasn't been seen yet.
+        if (message.ribbon && !swapRef.current?.building) {
+          if (swapRef.current && message.ribbon.tab)
+            swapRef.current.ribbonTab.current = message.ribbon.tab;
+          // Q674: one choice per device, in Capy because the frame is sandboxed.
+          if (
+            readPref(PREF_KEYS.officeRibbonCollapsed, false, isBoolean) !==
+            message.ribbon.collapsed
+          )
+            writePref(
+              PREF_KEYS.officeRibbonCollapsed,
+              message.ribbon.collapsed
+            );
+        }
+        return;
+      }
+      if (message.type === 'banner-action') {
+        frameBannerAction(message.action, bannerActionRef.current);
+        return;
+      }
+      if (message.type === 'ribbon-focus') {
+        // Only from a frame the user is in: it can't take the focus otherwise.
+        if (document.activeElement === iframeRef.current)
+          document
+            .querySelector<HTMLElement>(
+              '[role="tablist"] [data-testid^="office-tab-"][tabindex="0"]'
+            )
+            ?.focus();
         return;
       }
       if (message.type === 'position') {
@@ -726,7 +814,13 @@ export function useOfficeRuntime({
       }
       if (message.type === 'error') {
         // The runtime's own text is English engine detail; the host owns copy.
-        setError(m.error_file_body());
+        if (message.crashed) {
+          // The ribbon went with the editor, which sends no more menus: the
+          // host draws its strips again.
+          setMenus((current) => current && { ...current, ribbon: undefined });
+          setCrashedFrame(initializedFrame.current);
+          setError(m.files_office_crashed());
+        } else setError(m.error_file_body());
         for (const waiters of [frameRequests, renderRequests]) {
           for (const waiter of waiters.current.values())
             waiter.reject(new Error(message.message));
@@ -737,10 +831,13 @@ export function useOfficeRuntime({
       if (message.type === 'collaboration-ready') {
         officeMark('collaboration-ready');
         setReplicaReady(true);
-        // A newly opened DOCX editor takes the focus (it waits for its frame
-        // to get it) unless Capy's focus is somewhere it keeps (the chat box,
-        // an open dialog or menu).
-        if (format === 'docx' && !keepsFocus(document.activeElement))
+        // A newly opened DOCX or XLSX editor takes the focus (it waits for
+        // its frame to get it) unless Capy's focus is somewhere it keeps (the
+        // chat box, an open dialog or menu; Q690).
+        if (
+          (format === 'docx' || format === 'xlsx') &&
+          !keepsFocus(document.activeElement)
+        )
           iframeRef.current?.focus({ preventScroll: true });
       }
       if (
@@ -957,22 +1054,18 @@ export function useOfficeRuntime({
     ]
   );
 
-  /** A `pick` item's file, from Capy's picker. */
-  const sendMenuFile = useCallback(
-    (id: string, file: File) => {
-      void file.arrayBuffer().then((bytes) =>
-        post(
-          {
-            bytes,
-            id,
-            mimeType: file.type,
-            name: file.name,
-            type: 'menu-file',
-            version: OFFICE_PROTOCOL_VERSION,
-          },
-          [bytes]
-        )
-      );
+  /** Draws the strip under the frame's ribbon (null: none). */
+  const showFrameBanner = useCallback(
+    (
+      banner: OfficeBanner | null,
+      onAction: ((action: number | 'close') => void) | null
+    ) => {
+      bannerActionRef.current = onAction;
+      // FileBanner reports on every render; the frame hears of a change.
+      const text = JSON.stringify(banner);
+      if (text === bannerSent.current) return;
+      bannerSent.current = text;
+      post({ banner, type: 'set-banner', version: OFFICE_PROTOCOL_VERSION });
     },
     [post]
   );
@@ -1026,8 +1119,6 @@ export function useOfficeRuntime({
     !!source.unavailable ||
     outdated ||
     source.status === 'recovery';
-  const swapRef = useRef(swap);
-  swapRef.current = swap;
   useEffect(() => {
     if (swapping) swapRef.current?.onReplaced();
   }, [swapping]);
@@ -1085,6 +1176,7 @@ export function useOfficeRuntime({
   return {
     analysis,
     banner: source.banner,
+    crashed: crashedFrame === frameGeneration,
     discardDraft: source.discardDraft,
     discarding: source.discarding,
     downloadDraft,
@@ -1103,13 +1195,15 @@ export function useOfficeRuntime({
     presenting,
     readOnly: source.readOnly,
     ready,
+    render,
+    reopenEditor,
     replaced: source.replaced,
     retryView,
     runMenuCommand,
     saving: leaving || source.status === 'saving',
-    sendMenuFile,
     setFrameLoaded,
     setRuntimeMode,
+    showFrameBanner,
     sizeLimited,
     slowed: mode === 'edit' && source.slowed,
     // The header says Reconnecting until the new view takes over.
@@ -1166,6 +1260,46 @@ const OFFICE_NOTICE_TOASTS: Record<
   },
   'image-type': { once: false, title: () => m.image_unreadable() },
 };
+
+/**
+ * Hands an editor's engine what it did not write. A DOCX or PPTX engine takes
+ * the room's updates as they arrived: this document's update event comes after
+ * its collection, and the engine's Undo keeps what lands in what it deleted
+ * (Q549). XLSX has no such step.
+ */
+export function deliverToEngine(
+  doc: Y.Doc,
+  format: string,
+  frames: RoomFrames,
+  deliver: (update: Uint8Array) => void
+) {
+  const asArrived = format !== 'xlsx';
+  const send = (update: Uint8Array, origin: unknown) => {
+    if (origin === SOURCE_IFRAME_ORIGIN) return;
+    if (asArrived && origin instanceof RoomProvider) return;
+    deliver(update);
+  };
+  doc.on('update', send);
+  const stopFrames = asArrived ? frames.subscribe(deliver) : undefined;
+  return () => {
+    doc.off('update', send);
+    stopFrames?.();
+  };
+}
+
+/**
+ * A frame request's limit (30 s), for a frame that never answers; it starts
+ * over while the tab holds back its messages, since the XLSX runtime saves
+ * only once the hold ends (Q688). Returns what clears it.
+ */
+export function frameRequestLimit(expire: () => void) {
+  let timer: ReturnType<typeof setTimeout>;
+  const arm = () => {
+    timer = setTimeout(() => (isHeld() ? arm() : expire()), 30_000);
+  };
+  arm();
+  return () => clearTimeout(timer);
+}
 
 /**
  * The `set-capabilities` canEdit: an editable frame showing the room's

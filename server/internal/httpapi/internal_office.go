@@ -277,7 +277,7 @@ type internalOfficeCreateReq struct {
 	ToolCallID         string `json:"toolCallId"`
 	Format             string `json:"format"`
 	Title              string `json:"title"`
-	ChapterID          string `json:"chapterId"`
+	TopicID            string `json:"topicId"`
 	// Commands are the call's commands after its create, applied to the new
 	// file before it is stored.
 	Commands []json.RawMessage `json:"commands"`
@@ -328,12 +328,12 @@ func (a *api) internalCreateOfficeDocument(w http.ResponseWriter, r *http.Reques
 	}
 	defer unlock()
 	op, ok := a.agentFileOperation(w, r, req.Scope, req.UserID, req.WorkspaceID, req.AssistantMessageID, req.ToolCallID, map[string]any{
-		"format": req.Format, "title": req.Title, "chapterId": req.ChapterID, "commands": req.Commands,
+		"format": req.Format, "title": req.Title, "topicId": req.TopicID, "commands": req.Commands,
 	})
 	if !ok {
 		return
 	}
-	chapterID, ok := a.agentChapter(w, r.Context(), req.ChapterID, req.WorkspaceID)
+	topicID, ok := a.agentTopic(w, r.Context(), req.TopicID, req.WorkspaceID)
 	if !ok {
 		return
 	}
@@ -351,7 +351,7 @@ func (a *api) internalCreateOfficeDocument(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	receipt, ok := a.storeAgentFile(w, ctx, agentFile{
-		name: name, chapterID: chapterID, content: created.Content, op: op,
+		name: name, topicID: topicID, content: created.Content, op: op,
 	})
 	if ok {
 		writeJSON(w, http.StatusOK, store.DocumentEdit{AgentOperation: receipt, Notice: created.Notice})

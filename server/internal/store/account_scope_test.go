@@ -330,7 +330,7 @@ func TestAccountAccessRefusesTrashedItems(t *testing.T) {
 		return m.ID
 	}
 	trashed, parent, child := note("Trashed"), note("Parent"), note("Child")
-	if _, err := s.pool.Exec(ctx, `UPDATE materials SET kind='quiz', privacy='private', chapter_id=NULL, parent_material_id=$1 WHERE id=$2`, parent, child); err != nil {
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET kind='quiz', privacy='private', topic_id=NULL, parent_material_id=$1 WHERE id=$2`, parent, child); err != nil {
 		t.Fatal(err)
 	}
 	items := []agenttools.ResourceRef{

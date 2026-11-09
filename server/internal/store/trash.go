@@ -160,7 +160,8 @@ func (s *Store) trashFileTx(ctx context.Context, tx pgx.Tx, actorID, fileID stri
 		var purgeAfter time.Time
 		err := tx.QueryRow(ctx, `UPDATE files SET trashed_at=now(), trashed_by=$3, trash_episode_id=$4,
 			purge_after=now() + interval '30 days'
-			WHERE id=$1 AND workspace_id IS NOT DISTINCT FROM NULLIF($2, '') AND trashed_at IS NULL RETURNING purge_after`,
+			WHERE id=$1 AND workspace_id IS NOT DISTINCT FROM NULLIF($2, '') AND trashed_at IS NULL
+				AND submission_position IS NULL RETURNING purge_after`,
 			fileID, wsID, actorID, episode).Scan(&purgeAfter)
 		if isNoRows(err) {
 			return nil, ErrNotFound
@@ -290,11 +291,11 @@ func (s *Store) PaysFor(ctx context.Context, kind agenttools.ResourceKind, id, u
 	return pays, err
 }
 
-func encodeTrashCursor(at time.Time, id string) string {
+func encodeTimeCursor(at time.Time, id string) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(at.UTC().Format(time.RFC3339Nano) + "|" + id))
 }
 
-func decodeTrashCursor(cursor string) (*time.Time, string, error) {
+func decodeTimeCursor(cursor string) (*time.Time, string, error) {
 	if cursor == "" {
 		return nil, "", nil
 	}
@@ -324,7 +325,7 @@ func (s *Store) ListTrash(ctx context.Context, ownerID, workspaceID string, limi
 	if limit <= 0 || limit > trashPageMax {
 		limit = trashPageMax
 	}
-	cursorAt, cursorID, err := decodeTrashCursor(cursor)
+	cursorAt, cursorID, err := decodeTimeCursor(cursor)
 	if err != nil {
 		return TrashPage{}, err
 	}
@@ -376,7 +377,7 @@ func (s *Store) ListTrash(ctx context.Context, ownerID, workspaceID string, limi
 	if len(page.Items) > limit {
 		last := page.Items[limit-1]
 		page.Items = page.Items[:limit]
-		page.NextCursor = encodeTrashCursor(last.TrashedAt, last.ID)
+		page.NextCursor = encodeTimeCursor(last.TrashedAt, last.ID)
 	}
 	return page, nil
 }

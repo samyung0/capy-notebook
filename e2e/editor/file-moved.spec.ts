@@ -12,7 +12,7 @@ const MOVED_TO = 'ws_bio';
 const MOVED_TO_NAME = 'Biology 101';
 
 function toast(page: Page, title: string) {
-  return page.locator('[data-sonner-toast]').filter({ hasText: title });
+  return page.locator('[data-toast]').filter({ hasText: title });
 }
 
 /** The mock file row moves to `workspaceId` (no room message). */
@@ -23,7 +23,7 @@ async function moveRow(page: Page, workspaceId: string) {
       const db = await import(path);
       const file = db.files.find((row: { id: string }) => row.id === id);
       file.workspaceId = to;
-      file.chapterId = null;
+      file.topicId = null;
     },
     { id: FILE, to: workspaceId }
   );
@@ -121,7 +121,7 @@ test('a Move heard while typing follows the file at once, with no dialog and no 
     toast(page, m.file_moved_to_workspace({ workspace: MOVED_TO_NAME }))
   ).toBeVisible();
   await expect(page).toHaveURL(
-    new RegExp(`/workspaces/${MOVED_TO}\\?file=${FILE}$`)
+    new RegExp(`/workspaces/${MOVED_TO}\\?file=${FILE}(&panel=\\w+)?$`)
   );
   await expect(
     page.getByText(MOVED_TO_NAME, { exact: true }).first()
@@ -165,15 +165,18 @@ test('a bookmark naming the old workspace opens the file in its own, replacing h
     page,
     `/workspaces/ws_scenarios?file=${FILE}&page=2&mode=edit&fullscreen=true`
   );
+  // The file's read, then the held workspace read (1.5 s): first in a shard,
+  // on a cold server, that took 5.4 s.
   await expect(page).toHaveURL(
-    new RegExp(`/workspaces/${MOVED_TO}\\?file=${FILE}$`)
+    new RegExp(`/workspaces/${MOVED_TO}\\?file=${FILE}(&panel=\\w+)?$`),
+    { timeout: 15_000 }
   );
   await expect(
     page.getByText(MOVED_TO_NAME, { exact: true }).first()
   ).toBeVisible();
   // The redirect replaced the bookmark's entry: Back leaves it behind.
   await page.goBack();
-  await expect(page).toHaveURL(/\/workspaces\/ws_scenarios$/);
+  await expect(page).toHaveURL(/\/workspaces\/ws_scenarios(\?panel=\w+)?$/);
 });
 
 test('a bookmark to a file that is standalone now opens its own page, where its owner edits it', async ({
@@ -204,7 +207,7 @@ test('a Move heard into a workspace this user cannot read closes the file where 
   );
   await announceMove(page, 'ws_unreadable');
   await expect(toast(page, m.file_moved_elsewhere())).toBeVisible();
-  await expect(page).toHaveURL(/\/workspaces\/ws_scenarios$/);
+  await expect(page).toHaveURL(/\/workspaces\/ws_scenarios(\?panel=\w+)?$/);
 });
 
 test('nothing remembers a heard Move: the file unreadable later shows the file error', async ({
@@ -214,7 +217,7 @@ test('nothing remembers a heard Move: the file unreadable later shows the file e
   await openFile(page, `/workspaces/ws_scenarios?file=${FILE}&mode=edit`);
   await announceMove(page, MOVED_TO);
   await expect(page).toHaveURL(
-    new RegExp(`/workspaces/${MOVED_TO}\\?file=${FILE}$`)
+    new RegExp(`/workspaces/${MOVED_TO}\\?file=${FILE}(&panel=\\w+)?$`)
   );
   await dropRow(page);
   // Later (its read gone stale), an old link to the file, from a chat
@@ -222,9 +225,9 @@ test('nothing remembers a heard Move: the file unreadable later shows the file e
   await visit(page, '/workspaces/ws_scenarios');
   await page.waitForTimeout(5500);
   await visit(page, `/workspaces/ws_scenarios?file=${FILE}`);
-  await expect(page.getByText(m.error_file_body())).toBeVisible();
+  await expect(page.getByText(m.error_not_found_body())).toBeVisible();
   await expect(page).toHaveURL(
-    new RegExp(`/workspaces/ws_scenarios\\?file=${FILE}$`)
+    new RegExp(`/workspaces/ws_scenarios\\?file=${FILE}(&panel=\\w+)?$`)
   );
   await expect(toast(page, m.file_moved_elsewhere())).toHaveCount(0);
 });

@@ -156,7 +156,7 @@ async def test_generation_fits_full_provider_request_without_trimming_pending(
 
     async def outline(_workspace_id):
         return {
-            "chapters": [],
+            "topics": [],
             "files": [{"id": "f_1", "name": "Source", "chunks": 100}],
         }
 

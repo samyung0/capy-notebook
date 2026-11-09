@@ -10,7 +10,10 @@ import {
   createFromBaseCellRenderer,
   createIcon,
 } from '@blocksuite/data-view';
-import { EditIcon } from '@blocksuite/icons/lit';
+import {
+  EditIcon,
+  LinkIcon,
+} from '@blocksuite/icons/lit';
 import { computed } from '@preact/signals-core';
 import { html, nothing, type PropertyValues } from 'lit';
 import { createRef, ref } from 'lit/directives/ref.js';
@@ -183,7 +186,7 @@ export class LinkCell extends BaseCellRenderer<string, string> {
 }
 
 export const linkColumnConfig = linkPropertyModelConfig.createPropertyMeta({
-  icon: createIcon('LinkIcon'),
+  icon: createIcon(LinkIcon),
   cellRenderer: {
     view: createFromBaseCellRenderer(LinkCell),
   },

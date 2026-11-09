@@ -1,0 +1,527 @@
+/* BlockSuite's default canvas font has no face on this board (its font loader has no
+   config), so a label measures and draws in a fallback: use the app's own font. */
+@font-face {
+  font-family: "blocksuite:surface:Inter";
+  font-weight: 200 800;
+  src: url("@fontsource-variable/fustat/files/fustat-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+/* The board fills the screen; AFFiNE's zoom rule reads this container. */
+.capy-board {
+  --capy-navy: #173654;
+  --capy-shape-button-roundedRect: var(--capy-navy);
+  --capy-shape-button-stroke-roundedRect: var(--capy-navy);
+  --capy-shape-button-ellipse: #1e96eb;
+  --capy-shape-button-stroke-ellipse: #1e96eb;
+  --capy-shape-button-triangle: #fff;
+  --capy-shape-button-stroke-triangle: #d9dde3;
+  --capy-note-edge: #e6e6e6;
+  /* BlockSuite's selection layer and the ☰ menu are placed against the board, not
+     against a page box that starts higher (a tablet's header row above it). */
+  position: relative;
+  container: viewport / inline-size;
+}
+
+/* The toolbar's navy pieces, lighter so they read on the dark bar. */
+html.dark:not([data-board-light]) .capy-board {
+  --capy-navy: #5683b3;
+  --capy-note-edge: var(--affine-border-color);
+}
+
+/* Note cards are tight (N2, Epo 2026-11-08): 8 by 10 px padding, a hairline and a
+   6 px corner, no shadow, the same size while typing, the fill half see-through.
+   Every card on the board takes it, over the note's stored style. */
+.capy-board .affine-note-container {
+  padding: 8px 10px;
+  border-radius: 6px !important;
+  box-shadow: 0 0 0 1px var(--capy-note-edge);
+}
+.capy-board .affine-note-background,
+.capy-board
+  .affine-note-container[data-editing="true"]
+  .affine-note-background {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0 !important;
+  border-radius: 6px !important;
+  box-shadow: none !important;
+  /* Half see-through, so the panel's frost shows as on the plane and chart cards. */
+  opacity: 0.5;
+}
+
+/* No ground of its own: the dots sit on the panel's colour, or on its frost over
+   the page frame. */
+.capy-board .edgeless-background {
+  background-color: transparent;
+  background-image: radial-gradient(
+    var(--affine-edgeless-grid-color) 1px,
+    transparent 1px
+  );
+}
+
+/* The ☰ menu (boardMenu.ts) top right of the board, left of any Done the page around
+   it places and sizes through --capy-board-done-width, level with it through
+   --capy-board-menu-top; an open card has its own. */
+.capy-board > .capy-board-menu {
+  position: absolute;
+  top: var(--capy-board-menu-top, 8px);
+  right: calc(8px + var(--capy-board-done-width, 0px));
+  z-index: 2;
+}
+
+.capy-board[data-editor-open] .capy-board-menu {
+  display: none;
+}
+
+/* The formula card, in the middle of the board. */
+.capy-formula {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 3;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(420px, calc(100% - 16px));
+  padding: 10px;
+  color: var(--affine-text-primary-color);
+  background: var(--affine-background-overlay-panel-color);
+  border: 1px solid var(--affine-border-color);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 10%);
+  transform: translate(-50%, -50%);
+}
+
+.capy-formula-field math-field {
+  display: block;
+  width: 100%;
+  font-size: 22px;
+  outline: none;
+  border: 0;
+  border-bottom: 1px solid var(--affine-text-primary-color);
+  border-radius: 0;
+}
+
+/* The formula and its buttons sit in the middle of the field's height. */
+.capy-formula-field math-field::part(container) {
+  align-items: center;
+  min-height: 56px;
+}
+
+.capy-formula-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.capy-formula-actions button {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 7px;
+}
+
+.capy-formula-actions .ghost {
+  color: var(--affine-text-primary-color);
+}
+
+.capy-formula-actions .ghost:hover {
+  background: var(--affine-hover-color);
+}
+
+.capy-formula-actions .primary {
+  color: var(--affine-background-primary-color);
+  background: var(--affine-text-primary-color);
+}
+
+/* The maths symbols under a canvas label being typed. */
+.capy-symbols {
+  position: absolute;
+  z-index: 3;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  max-width: calc(100% - 16px);
+  padding: 3px;
+  background: var(--affine-background-overlay-panel-color);
+  border: 1px solid var(--affine-border-color);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
+}
+
+.capy-symbols[hidden] {
+  display: none;
+}
+
+.capy-symbols button {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  font-size: 15px;
+  color: var(--affine-text-primary-color);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.capy-symbols button:hover {
+  background: var(--affine-hover-color);
+}
+
+.capy-formula-error {
+  margin: 0;
+  font-size: 13px;
+  color: #b3362f;
+}
+
+.capy-formula-error[hidden] {
+  display: none;
+}
+
+/* The plane open for editing, over the whole board. */
+.capy-plane-editor {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+  touch-action: none;
+}
+
+/* The open editor's paper is see-through like a card's, so the board under it goes.
+   Opacity, as AFFiNE's note cards set their own visibility and would stay. */
+.capy-board[data-editor-open] > editor-host {
+  pointer-events: none;
+  opacity: 0;
+}
+
+.capy-plane-editor canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Select boxes on empty paper, as on the board; a mark under it shows grab. */
+.capy-plane-editor[data-tool="select"] canvas {
+  cursor: default;
+}
+
+.capy-plane-editor:not([data-tool="select"]) canvas {
+  cursor: crosshair;
+}
+
+/* The eraser's reach as a ring, on the board and in an open card (Epo 2026-11-09):
+   dark on a light halo, so it shows on either paper. */
+.capy-board {
+  --capy-eraser-cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20'%3E%3Ccircle cx='10' cy='10' r='8' fill='none' stroke='%23fff' stroke-width='3'/%3E%3Ccircle cx='10' cy='10' r='8' fill='none' stroke='%23444' stroke-width='1.2'/%3E%3C/svg%3E")
+    10 10,
+    crosshair;
+}
+
+.capy-board[data-tool="eraser"] affine-edgeless-root,
+.capy-board[data-tool="eraser"] affine-edgeless-root gfx-viewport * {
+  cursor: var(--capy-eraser-cursor) !important;
+}
+
+.capy-plane-editor[data-tool="erase"] canvas {
+  cursor: var(--capy-eraser-cursor);
+}
+
+.capy-plane-editor button {
+  all: unset;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 36px;
+  color: var(--affine-icon-color);
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.capy-plane-editor button:hover {
+  background: var(--affine-hover-color);
+}
+
+.capy-plane-editor button:focus-visible {
+  outline: 2px solid var(--affine-primary-color);
+}
+
+.capy-plane-editor button[aria-pressed="true"] {
+  color: var(--affine-primary-color);
+  background: var(--affine-hover-color);
+}
+
+.capy-plane-tools {
+  position: absolute;
+  background: var(--affine-background-overlay-panel-color);
+  border: 1px solid var(--affine-border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
+}
+
+/* Top right of an open card: the ☰ menu and Done, each on its own (Epo 2026-11-08).
+   The board's menu hides meanwhile. */
+.capy-editor-top {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.capy-plane-editor .capy-editor-done,
+.capy-plane-editor .capy-editor-done:hover {
+  height: 40px;
+  padding: 0 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--affine-background-primary-color);
+  background: var(--affine-text-primary-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 14%);
+}
+
+.capy-plane-editor .capy-plane-finish {
+  position: absolute;
+  bottom: 64px;
+  left: 50%;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--affine-background-primary-color);
+  white-space: nowrap;
+  background: var(--affine-text-primary-color);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 14%);
+  transform: translateX(-50%);
+}
+
+.capy-plane-editor .capy-plane-finish:hover {
+  background: var(--affine-text-primary-color);
+}
+
+.capy-plane-tools {
+  bottom: 12px;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  max-width: calc(100% - 16px);
+  padding: 4px;
+  transform: translateX(-50%);
+}
+
+.capy-plane-row {
+  display: flex;
+  gap: 2px;
+  justify-content: center;
+}
+
+/* The plane's nine tools fit a 360 px phone at 32 px each, 36 px from 380 px up. */
+.capy-plane-row button {
+  min-width: 32px;
+}
+
+@container viewport (width >= 380px) {
+  .capy-plane-row button {
+    min-width: 36px;
+  }
+}
+
+.capy-plane-tools .fills {
+  display: flex;
+  gap: 2px;
+  justify-content: center;
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--affine-border-color);
+}
+
+.capy-plane-tools .fills button {
+  min-width: 30px;
+  height: 30px;
+  border-radius: 50%;
+}
+
+.capy-plane-tools .fills i {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 14%);
+}
+
+.capy-plane-tools .fills .none {
+  background: linear-gradient(
+    to top right,
+    #fff calc(50% - 1px),
+    #d9483b calc(50% - 1px),
+    #d9483b calc(50% + 1px),
+    #fff calc(50% + 1px)
+  );
+}
+
+.capy-plane-tools .fills button[aria-pressed="true"] {
+  background: none;
+  box-shadow: 0 0 0 2px var(--affine-primary-color) inset;
+}
+
+.capy-chart-editor:not([data-tool="select"], [data-tool="erase"]) canvas {
+  cursor: crosshair;
+}
+
+.capy-chart-axis {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--affine-text-secondary-color);
+  background: var(--affine-background-overlay-panel-color);
+  border: 1px solid var(--affine-border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
+}
+
+.capy-chart-axis label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.capy-chart-axis input {
+  all: unset;
+  width: 34px;
+  color: var(--affine-text-primary-color);
+  text-align: center;
+  border-bottom: 1px solid var(--affine-text-primary-color);
+}
+
+.capy-chart-label {
+  all: unset;
+  position: absolute;
+  width: 110px;
+  padding: 2px 4px;
+  font:
+    500 13px Arial,
+    sans-serif;
+  color: var(--affine-text-primary-color);
+  text-align: center;
+  background: var(--affine-background-overlay-panel-color);
+  border-bottom: 1px solid #1e96eb;
+  transform: translate(-50%, -50%);
+}
+
+@container viewport (width < 768px) {
+  .capy-chart-axis {
+    top: 60px;
+  }
+}
+
+/* The ☰ menu, on the board and on an open card. Its button keeps its panel under the
+   hover tint, and the editor's own button rules are out-ranked here. */
+.capy-menu {
+  position: relative;
+}
+
+.capy-board .capy-menu button {
+  all: unset;
+  box-sizing: border-box;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  color: var(--affine-icon-color);
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.capy-board .capy-menu button:hover {
+  background: var(--affine-hover-color);
+}
+
+.capy-board .capy-menu button:focus-visible {
+  outline: 2px solid var(--affine-primary-color);
+}
+
+.capy-board .capy-menu .capy-menu-button {
+  width: 40px;
+  height: 40px;
+  background: var(--affine-background-overlay-panel-color);
+  border: 1px solid var(--affine-border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
+}
+
+.capy-board .capy-menu .capy-menu-button:hover {
+  background: linear-gradient(
+      var(--affine-hover-color),
+      var(--affine-hover-color)
+    )
+    var(--affine-background-overlay-panel-color);
+}
+
+.capy-menu-list {
+  position: absolute;
+  top: 46px;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--affine-background-overlay-panel-color);
+  border: 1px solid var(--affine-border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
+}
+
+.capy-board .capy-menu-list > button {
+  justify-content: flex-start;
+  padding: 0 10px;
+  font-size: 14px;
+  color: var(--affine-text-primary-color);
+}
+
+.capy-board .capy-menu-list button:disabled {
+  cursor: default;
+  background: none;
+  opacity: 0.4;
+}
+
+/* − 100% +, under the entries. */
+.capy-menu-zoom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 4px;
+  margin-top: 4px;
+  border-top: 1px solid var(--affine-border-color);
+}
+
+.capy-board .capy-menu-zoom button {
+  width: 36px;
+}
+
+.capy-board .capy-menu-zoom .capy-menu-percent {
+  flex: 1;
+  font-size: 14px;
+  color: var(--affine-text-primary-color);
+}

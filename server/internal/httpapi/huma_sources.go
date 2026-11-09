@@ -25,6 +25,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/integrations"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/planlimits"
 	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
@@ -139,6 +140,7 @@ func (a *api) getSourceUploadPolicy(
 			Accept:                       "",
 			MaxBytes:                     maxBytes,
 			ImageMaxBytes:                limits.ImageBytes,
+			TextMaxBytes:                 limits.TextFileBytes,
 			AllowNoExtension:             true,
 			DigitalParsePageCreditMicros: rates[store.ResourceDigitalParsePage].CreditMicrosPerUnit,
 			VLMIngestPageCreditMicros:    rates[store.ResourceVLMIngestPage].CreditMicrosPerUnit,
@@ -186,7 +188,7 @@ func (a *api) sourceUploadTicket(w http.ResponseWriter, r *http.Request) {
 func (a *api) takeSourceTicket(w http.ResponseWriter, r *http.Request, batch *string) (uploadTurn, error) {
 	ctx := r.Context()
 	wsID := id(r)
-	maxBytes, err := a.sourceMaxBytes(ctx, uid(r))
+	limits, err := a.s.PayerPlanLimits(ctx, uid(r))
 	if err != nil {
 		return uploadTurn{}, err
 	}
@@ -197,10 +199,19 @@ func (a *api) takeSourceTicket(w http.ResponseWriter, r *http.Request, batch *st
 	if err := readTicketMetadata(w, r, &body); err != nil {
 		return uploadTurn{}, err
 	}
-	if _, _, err := a.checkSourceUpload(ctx, wsID, maxBytes, &body, batch); err != nil {
+	_, topicName, err := a.checkSourceUpload(ctx, wsID, limits, &body, batch)
+	if err != nil {
 		return uploadTurn{}, err
 	}
-	if err := a.s.AssertSourceUploadRoom(ctx, wsID, uid(r), body.SizeBytes); err != nil {
+	if body.AttemptID != "" {
+		if err := a.s.AssertPaperUpload(ctx, body.AttemptID, uid(r), body.SizeBytes, limits.SourceFileBytes, time.Now()); err != nil {
+			return uploadTurn{}, err
+		}
+	} else if body.HandInID != "" {
+		if err := a.s.AssertHandInUpload(ctx, body.HandInID, uid(r), body.SizeBytes, limits.SourceFileBytes); err != nil {
+			return uploadTurn{}, err
+		}
+	} else if err := a.s.AssertSourceUploadRoom(ctx, wsID, uid(r), topicName, body.SizeBytes); err != nil {
 		return uploadTurn{}, err
 	}
 	return a.uploads.take(uid(r), sourceUploadTarget(wsID), sourceClaim(&body))
@@ -339,8 +350,8 @@ func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *strin
 	if err != nil {
 		return store.File{}, err
 	}
-	maxBytes := limits.SourceFileBytes
-	r.Body = http.MaxBytesReader(w, r.Body, maxBytes+uploadMetadataMaxBytes)
+	// The name comes with the metadata, which then holds a text file to its cap.
+	r.Body = http.MaxBytesReader(w, r.Body, limits.SourceFileBytes+uploadMetadataMaxBytes)
 	if a.blob == nil {
 		return store.File{}, errors.New("blob store not configured")
 	}
@@ -355,7 +366,7 @@ func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *strin
 	if err := claim.matches(sourceClaim(&body)); err != nil {
 		return store.File{}, err
 	}
-	name, chapterName, err := a.checkSourceUpload(ctx, wsID, maxBytes, &body, batch)
+	name, topicName, err := a.checkSourceUpload(ctx, wsID, limits, &body, batch)
 	if err != nil {
 		return store.File{}, err
 	}
@@ -364,11 +375,12 @@ func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *strin
 	_, key := sourceObjectKeys(uploadID, name)
 	if _, err := a.s.CreateUploadSession(ctx, store.NewUploadSession{
 		ID: uploadID, WorkspaceID: wsID, CreatedBy: uid(r),
-		ChapterID: body.ChapterID, ChapterName: chapterName,
+		TopicID: body.TopicID, TopicName: topicName, Hidden: body.Hidden,
 		ObjectPath: key, FinalPath: key, Name: name, Kind: body.Kind,
 		ContentType: body.ContentType, DeclaredSize: body.SizeBytes,
 		ParseMode: body.ParseMode,
 		ExpiresAt: time.Now().UTC().Add(uploadSessionTTL), BatchID: body.BatchID,
+		AttemptID: body.AttemptID, HandInID: body.HandInID, PaperMaxBytes: limits.SourceFileBytes,
 	}); err != nil {
 		return store.File{}, err
 	}
@@ -390,18 +402,24 @@ func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *strin
 	return file, nil
 }
 
+// standaloneHidden refuses "Hidden from members" on a file outside a
+// workspace, which has no members to hide it from.
+func standaloneHidden() error {
+	return huma.Error400BadRequest("a file outside a workspace has no members to hide it from")
+}
+
 // checkSourceUpload checks a source upload's metadata for its ticket and
 // again for its upload, filling in the inferred kind and parse mode and the
-// default content type, and returns the trimmed file and chapter names.
+// default content type, and returns the trimmed file and topic names.
 // batch names the upload's batch once it is open.
 func (a *api) checkSourceUpload(
-	ctx context.Context, wsID string, maxBytes int64, body *apimodel.CreateSourceUploadReq, batch *string,
-) (name, chapterName string, err error) {
+	ctx context.Context, wsID string, limits planlimits.Limits, body *apimodel.CreateSourceUploadReq, batch *string,
+) (name, topicName string, err error) {
 	// The bounds the JSON schema applied when the metadata was its own request.
 	if !batchIDPattern.MatchString(body.BatchID) || body.BatchTotal < 1 || body.BatchTotal > 10000 ||
 		body.EstimatedCreditMicros < 0 || body.DurationSeconds < 0 ||
 		utf8.RuneCountInString(string(body.Name)) > fieldlimits.FileName ||
-		utf8.RuneCountInString(string(body.ChapterName)) > fieldlimits.ChapterName {
+		utf8.RuneCountInString(string(body.TopicName)) > fieldlimits.TopicName {
 		return "", "", huma.Error422UnprocessableEntity("validation failed")
 	}
 	if !fieldlimits.ValidFileName(string(body.Name)) {
@@ -411,21 +429,34 @@ func (a *api) checkSourceUpload(
 		return "", "", err
 	}
 	*batch = body.BatchID
+	submission := body.AttemptID != "" || body.HandInID != ""
+	if submission {
+		if err := a.s.MarkPaperBatch(ctx, body.BatchID, userID(ctx)); err != nil {
+			return "", "", err
+		}
+	}
 	name = strings.TrimSpace(string(body.Name))
-	chapterName = strings.TrimSpace(string(body.ChapterName))
+	topicName = strings.TrimSpace(string(body.TopicName))
 	if name == "" {
 		return "", "", huma.Error400BadRequest("file name is required")
 	}
-	if body.ChapterID != nil && chapterName != "" {
-		return "", "", huma.Error400BadRequest("chapterId and chapterName cannot both be set")
+	if body.TopicID != nil && topicName != "" {
+		return "", "", huma.Error400BadRequest("topicId and topicName cannot both be set")
+	}
+	if body.Hidden && wsID == "" {
+		return "", "", standaloneHidden()
 	}
 	if body.Kind == "" {
 		body.Kind = kindFromName(name)
 	}
+	// Nothing reads a hand-in's files.
+	if body.HandInID != "" {
+		body.ParseMode = sourceupload.ParseModeNone
+	}
 	if body.ParseMode == "" {
 		body.ParseMode = sourceupload.DefaultParseMode(name, body.Kind)
 	}
-	if err := sourceupload.Validate(name, body.Kind, body.ParseMode, body.SizeBytes, maxBytes); err != nil {
+	if err := sourceupload.Validate(name, body.Kind, body.ParseMode, body.SizeBytes, limits.FileBytes(name)); err != nil {
 		return "", "", huma.Error400BadRequest(err.Error())
 	}
 	if err := a.checkParsePages(body.ParseMode, body.PageCount); err != nil {
@@ -439,18 +470,26 @@ func (a *api) checkSourceUpload(
 	if body.DurationSeconds > sourceupload.AudioMaxDurationSeconds {
 		return "", "", huma.Error400BadRequest(fmt.Sprintf("audio uploads are at most %d hours", sourceupload.AudioMaxDurationSeconds/3600))
 	}
-	if sourceupload.NeedsIngestJob(name, body.Kind, body.ParseMode) {
+	if submission && wsID != "" {
+		return "", "", huma.Error400BadRequest("a paper's or hand-in's file goes in no workspace")
+	}
+	if body.AttemptID != "" && body.HandInID != "" {
+		return "", "", huma.Error400BadRequest("a file goes in a paper or a hand-in, not both")
+	}
+	// Credits never block handing in a paper (Epo 2026-11-08): its parse may then
+	// fail, and its answers wait as No credits.
+	if sourceupload.NeedsIngestJob(name, body.Kind, body.ParseMode) && !submission {
 		if err := a.s.AssertCreditsForEstimate(ctx, userID(ctx), body.EstimatedCreditMicros); err != nil {
 			return "", "", err
 		}
 	}
-	if wsID == "" && (body.ChapterID != nil || chapterName != "") {
-		return "", "", huma.Error400BadRequest("a file outside a workspace has no chapter")
+	if wsID == "" && (body.TopicID != nil || topicName != "") {
+		return "", "", huma.Error400BadRequest("a file outside a workspace has no topic")
 	}
-	if body.ChapterID != nil {
-		chapterWorkspace, err := a.s.ChapterWorkspaceID(ctx, *body.ChapterID)
-		if err != nil || chapterWorkspace != wsID {
-			return "", "", huma.Error400BadRequest("chapter does not belong to this workspace")
+	if body.TopicID != nil {
+		topicWorkspace, err := a.s.TopicWorkspaceID(ctx, *body.TopicID)
+		if err != nil || topicWorkspace != wsID {
+			return "", "", huma.Error400BadRequest("topic does not belong to this workspace")
 		}
 	}
 	if body.ContentType == "" {
@@ -459,7 +498,7 @@ func (a *api) checkSourceUpload(
 	if _, _, err := mime.ParseMediaType(body.ContentType); err != nil || strings.ContainsAny(body.ContentType, "\r\n") {
 		return "", "", huma.Error400BadRequest("invalid content type")
 	}
-	return name, chapterName, nil
+	return name, topicName, nil
 }
 
 // storeSourceBytes spools the file part, runs check on it, writes it in one
@@ -585,10 +624,13 @@ func (a *api) queueSourceImports(ctx context.Context, in *importSourcesInput) (*
 	if len(in.Body.FileIds) == 0 {
 		return nil, huma.Error400BadRequest("provider and fileIds required")
 	}
-	chapterName := strings.TrimSpace(string(in.Body.ChapterName))
+	topicName := strings.TrimSpace(string(in.Body.TopicName))
 	in.Body.ParseMode = strings.ToLower(strings.TrimSpace(in.Body.ParseMode))
-	if in.Body.ChapterID != nil && chapterName != "" {
-		return nil, huma.Error400BadRequest("chapterId and chapterName cannot both be set")
+	if in.Body.TopicID != nil && topicName != "" {
+		return nil, huma.Error400BadRequest("topicId and topicName cannot both be set")
+	}
+	if in.Body.Hidden && wsID == "" {
+		return nil, standaloneHidden()
 	}
 	requestID := strings.TrimSpace(in.Body.RequestID)
 	if requestID == "" {
@@ -607,21 +649,23 @@ func (a *api) queueSourceImports(ctx context.Context, in *importSourcesInput) (*
 			return nil, huma.Error400BadRequest("fileIds cannot contain empty ids")
 		}
 	}
-	if in.Body.ChapterID != nil && strings.TrimSpace(*in.Body.ChapterID) == "" {
-		return nil, huma.Error400BadRequest("chapterId cannot be empty")
+	if in.Body.TopicID != nil && strings.TrimSpace(*in.Body.TopicID) == "" {
+		return nil, huma.Error400BadRequest("topicId cannot be empty")
 	}
 	fingerprintBody, err := json.Marshal(struct {
-		ChapterID   *string
-		ChapterName string
-		ParseMode   string
-		Provider    string
-		Refs        []integrations.ImportRef
+		TopicID   *string
+		TopicName string
+		Hidden    bool
+		ParseMode string
+		Provider  string
+		Refs      []integrations.ImportRef
 	}{
-		ChapterID:   in.Body.ChapterID,
-		ChapterName: chapterName,
-		ParseMode:   in.Body.ParseMode,
-		Provider:    in.Body.Provider,
-		Refs:        refs,
+		TopicID:   in.Body.TopicID,
+		TopicName: topicName,
+		Hidden:    in.Body.Hidden,
+		ParseMode: in.Body.ParseMode,
+		Provider:  in.Body.Provider,
+		Refs:      refs,
 	})
 	if err != nil {
 		return nil, hErr(err)
@@ -646,18 +690,18 @@ func (a *api) queueSourceImports(ctx context.Context, in *importSourcesInput) (*
 	if a.cfg.PipelineSecret == "" {
 		return nil, huma.Error503ServiceUnavailable("source import worker is not configured")
 	}
-	if wsID == "" && (in.Body.ChapterID != nil || chapterName != "") {
-		return nil, huma.Error400BadRequest("a file outside a workspace has no chapter")
+	if wsID == "" && (in.Body.TopicID != nil || topicName != "") {
+		return nil, huma.Error400BadRequest("a file outside a workspace has no topic")
 	}
 	if wsID != "" {
 		if err := a.s.AssertWorkspaceFileRoom(ctx, wsID, len(refs)); err != nil {
 			return nil, hErr(err)
 		}
 	}
-	if in.Body.ChapterID != nil {
-		chapterWorkspace, err := a.s.ChapterWorkspaceID(ctx, *in.Body.ChapterID)
-		if err != nil || chapterWorkspace != wsID {
-			return nil, huma.Error400BadRequest("chapter does not belong to this workspace")
+	if in.Body.TopicID != nil {
+		topicWorkspace, err := a.s.TopicWorkspaceID(ctx, *in.Body.TopicID)
+		if err != nil || topicWorkspace != wsID {
+			return nil, huma.Error400BadRequest("topic does not belong to this workspace")
 		}
 	}
 	tok, err := integrations.ClerkAccessToken(ctx, actor, in.Body.Provider)
@@ -667,7 +711,7 @@ func (a *api) queueSourceImports(ctx context.Context, in *importSourcesInput) (*
 	if err != nil {
 		return nil, hErr(err)
 	}
-	maxBytes, err := a.sourceMaxBytes(ctx, userID(ctx))
+	limits, err := a.s.PayerPlanLimits(ctx, userID(ctx))
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -734,6 +778,7 @@ func (a *api) queueSourceImports(ctx context.Context, in *importSourcesInput) (*
 			continue
 		}
 		meta.Name = strings.TrimSpace(meta.Name)
+		maxBytes := limits.FileBytes(meta.Name)
 		code, reservedSize, kind, mode := admitImport(meta, in.Body.ParseMode, maxBytes)
 		if code != "" {
 			rejected = append(rejected, apimodel.SourceImportRejected{
@@ -761,7 +806,7 @@ func (a *api) queueSourceImports(ctx context.Context, in *importSourcesInput) (*
 			JobID: jobID,
 			Upload: store.NewUploadSession{
 				ID: uploadID, WorkspaceID: wsID, CreatedBy: actor,
-				ChapterID: in.Body.ChapterID, ChapterName: chapterName,
+				TopicID: in.Body.TopicID, TopicName: topicName, Hidden: in.Body.Hidden,
 				ObjectPath: incoming,
 				FinalPath:  finalPath,
 				Name:       meta.Name, Kind: kind, ContentType: contentType,

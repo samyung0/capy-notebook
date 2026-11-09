@@ -209,10 +209,12 @@ describe('frontend error normalization', () => {
     );
   });
 
-  it('recognizes dynamic import failures', () => {
-    const error = new TypeError(
-      'Failed to fetch dynamically imported module: /assets/page.js'
-    );
+  // Chromium's, then Firefox's (JSMSG_DYNAMIC_IMPORT_FAILED).
+  it.each([
+    'Failed to fetch dynamically imported module: /assets/page.js',
+    'error loading dynamically imported module: /assets/page.js',
+  ])('recognizes dynamic import failures: %s', (message) => {
+    const error = new TypeError(message);
 
     expect(isChunkLoadError(error)).toBe(true);
     expect(errorKind(error)).toBe('chunkLoad');

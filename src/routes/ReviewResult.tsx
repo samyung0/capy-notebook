@@ -24,6 +24,7 @@ import {
 import { groupName } from '@/features/study/reviewText';
 import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
+import { features } from '@/lib/features';
 import { waitsForConnection } from '@/lib/online';
 
 /** A review session's result, under Learning / Review. The tour's sample
@@ -42,8 +43,6 @@ export default function ReviewResult() {
   } = useReviewResult(sessionId, { enabled: !sample, errorBoundary: false });
   const tour = useRunningTour();
   const data = sample && tour ? sampleResult(tour.workspaceId) : fetched;
-  const toReview = () =>
-    void navigate({ search: { tab: 'review' }, to: '/learning' });
 
   if (waitsForConnection(fetchStatus, data))
     return (
@@ -65,9 +64,15 @@ export default function ReviewResult() {
         <ErrorState
           action={
             <ErrorAction asChild back>
-              <Link preload="intent" search={{ tab: 'review' }} to="/learning">
-                {m.quiz_back()}
-              </Link>
+              {features.learning ? (
+                <Link preload="intent" search={{ tab: 'past' }} to="/learning">
+                  {m.quiz_back()}
+                </Link>
+              ) : (
+                <Link preload="intent" to="/">
+                  {m.quiz_back()}
+                </Link>
+              )}
             </ErrorAction>
           }
           errorId={unexpectedErrorId(error)}
@@ -78,21 +83,41 @@ export default function ReviewResult() {
     );
 
   const s = data.session;
+  // Learning is hidden: a result goes back to its workspace's Practice.
+  const practice = linkOptions({
+    params: { workspaceId: s.workspaceId },
+    search: { study: 'practice' as const },
+    to: '/workspaces/$workspaceId',
+  });
   return (
     <PagePanel
       header={
         <QuizPageHeader
           meta={sample ? m.tour_example() : reviewResultMeta(s)}
           metaClassName="text-fg-secondary text-sm"
-          onBack={toReview}
-          title={groupName(s.group, s.chapterName) || s.workspaceName}
-          trail={[
-            { label: m.nav_learning(), link: linkOptions({ to: '/learning' }) },
-            {
-              label: m.learning_tab_review(),
-              link: linkOptions({ search: { tab: 'review' }, to: '/learning' }),
-            },
-          ]}
+          onBack={() =>
+            features.learning
+              ? void navigate({ search: { tab: 'past' }, to: '/learning' })
+              : void navigate(practice)
+          }
+          title={groupName(s.group, s.topicName) || s.workspaceName}
+          trail={
+            features.learning
+              ? [
+                  {
+                    label: m.nav_learning(),
+                    link: linkOptions({ to: '/learning' }),
+                  },
+                  {
+                    label: m.learning_tab_past(),
+                    link: linkOptions({
+                      search: { tab: 'past' },
+                      to: '/learning',
+                    }),
+                  },
+                ]
+              : [{ label: s.workspaceName, link: practice }]
+          }
         />
       }
     >
@@ -103,10 +128,10 @@ export default function ReviewResult() {
               navigate({
                 params: { workspaceId: s.workspaceId },
                 search: {
-                  chapterId: s.chapterId,
-                  from: 'review',
+                  from: features.learning ? 'review' : 'workspace',
                   group: s.group,
                   reviewMode: s.mode,
+                  topicId: s.topicId,
                 },
                 to: '/learning/review/$workspaceId',
               })

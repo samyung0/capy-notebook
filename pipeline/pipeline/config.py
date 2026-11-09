@@ -101,9 +101,8 @@ class Config:
     parse_coordinator_concurrency: int = int(
         _env("CAPY_PARSE_COORDINATOR_CONCURRENCY", "8")
     )
-    # VLM page reads in flight across every ingest worker, and within one job.
-    # UAT and local run 20/10; production sets 64/40 (decision 2026-10-21).
-    vlm_page_capacity: int = int(_env("CAPY_VLM_PAGE_CAPACITY", "20"))
+    # VLM page reads one job sends at once; across jobs they wait in the
+    # captioning model's line (Epo 2026-11-04). UAT and local 10, production 40.
     vlm_pages_per_job: int = int(_env("CAPY_VLM_PAGES_PER_JOB", "10"))
     db_sync_pool_max_size: int = int(_env("CAPY_DB_SYNC_POOL_MAX_SIZE", "4"))
     db_async_pool_max_size: int = int(_env("CAPY_DB_ASYNC_POOL_MAX_SIZE", "8"))
@@ -167,6 +166,12 @@ class Config:
         ).split(",")
         if host.strip()
     )
+
+    # ---- layout service (layout/app.py) ----------------------------------
+    # One pool on the ingest host, over WireGuard, for Make a quiz's figure
+    # boxes (Epo 2026-11-04). Unset: every figure takes the box call.
+    layout_url: str = _env("CAPY_LAYOUT_URL", "")
+    layout_token: str = secret("CAPY_LAYOUT_TOKEN")
 
     # ---- persistent parse service ----------------------------------------
     # In production the ingest worker and parser both run on the Netcup ingest host.
@@ -420,16 +425,17 @@ if not cfg.import_download_hosts:
 if not 1 <= cfg.parse_coordinator_concurrency <= 8:
     raise ValueError("CAPY_PARSE_COORDINATOR_CONCURRENCY must be between 1 and 8")
 
-if not 1 <= cfg.vlm_pages_per_job <= cfg.vlm_page_capacity:
-    raise ValueError(
-        "CAPY_VLM_PAGES_PER_JOB must be between 1 and CAPY_VLM_PAGE_CAPACITY"
-    )
+if cfg.vlm_pages_per_job < 1:
+    raise ValueError("CAPY_VLM_PAGES_PER_JOB must be at least 1")
 
 if cfg.db_sync_pool_max_size <= 0 or cfg.db_async_pool_max_size <= 0:
     raise ValueError("pipeline database pool limits must be positive")
 
 if cfg.turn_slots <= 0:
     raise ValueError("CAPY_TURN_SLOTS must be positive")
+
+if cfg.layout_url and not cfg.layout_token:
+    raise ValueError("CAPY_LAYOUT_URL needs CAPY_LAYOUT_TOKEN")
 
 
 def require_parse_timeouts() -> None:

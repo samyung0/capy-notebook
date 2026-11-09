@@ -1,9 +1,10 @@
 import { Link, useRouterState } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
 import { useMediaQuery } from 'usehooks-ts';
-import { useUnreadNotificationCount } from '@/api/hooks';
+import { useTodo, useUnreadNotificationCount } from '@/api/hooks';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { GettingStartedRow } from '@/features/guide/GettingStartedRow';
+import { todoCount } from '@/features/study/assignments/todoRows';
 import { VoiceCard } from '@/features/voice/VoiceCard';
 import { setAccountVoiceOpen } from '@/features/voice/voiceAsk';
 import { recordingType } from '@/features/workspace/chat/voiceRecording';
@@ -40,23 +41,37 @@ function items(): {
     sections: [
       { items: general(), label: m.nav_section_general() },
       { items: tools(), label: m.nav_section_tools() },
-      {
-        items: [
-          { icon: 'quiz', label: m.question_ui_question_bank(), to: '/qb' },
-        ],
-        label: m.nav_section_explore(),
-      },
+      ...(features.questionBank
+        ? [
+            {
+              items: [
+                {
+                  icon: 'quiz' as IconName,
+                  label: m.question_ui_question_bank(),
+                  to: '/qb',
+                },
+              ],
+              label: m.nav_section_explore(),
+            },
+          ]
+        : []),
     ],
   };
 }
 
 function general(): NavItem[] {
   return [
-    { exact: true, icon: 'dashboard', label: m.nav_dashboard(), to: '/' },
-    // Chat across all the user's files (Epo 2026-10-27).
-    { icon: 'message', label: m.nav_chat(), to: '/chat' },
-    { icon: 'workspaces', label: m.nav_workspaces(), to: '/workspaces' },
-    { icon: 'knowledge', label: m.nav_learning(), to: '/learning' },
+    { exact: true, icon: 'workspaces', label: m.nav_workspaces(), to: '/' },
+    { icon: 'todo', label: m.nav_todo(), to: '/todo' },
+    ...(features.learning
+      ? [
+          {
+            icon: 'knowledge' as IconName,
+            label: m.nav_learning(),
+            to: '/learning',
+          },
+        ]
+      : []),
     ...(features.schedule
       ? [
           {
@@ -80,6 +95,8 @@ function general(): NavItem[] {
 
 function tools(): NavItem[] {
   return [
+    // Chat across all the user's files (Epo 2026-10-27).
+    { icon: 'ai', label: m.nav_chat(), to: '/chat' },
     { icon: 'filesNav', label: m.nav_files(), to: '/files' },
     ...(features.tasks
       ? [{ icon: 'todo' as IconName, label: m.nav_tasks(), to: '/tasks' }]
@@ -92,9 +109,10 @@ function isActive(pathname: string, item: NavItem): boolean {
   return pathname === item.to || pathname.startsWith(item.to + '/');
 }
 
-// Rows clip their own label so the 70px rail shows only the icon.
+// Rows clip their own label so the 70px rail shows only the icon. The phone
+// drawer keeps the taller row for touch.
 const ROW_CLASS =
-  'flex h-fit w-full justify-start gap-3 overflow-hidden whitespace-nowrap px-3 py-2 leading-(--body-line-height) active:-rotate-1';
+  'flex h-9 w-full justify-start gap-3 overflow-hidden whitespace-nowrap px-3 leading-(--body-line-height) active:-rotate-1 sm:h-8';
 
 /* The rail fades every `data-label` (row labels, the profile's name) in as it
    widens and out as it narrows. */
@@ -107,20 +125,19 @@ function Row({
   active,
   onNavigate,
   unreadCount,
+  dotLabel,
 }: {
   item: NavItem;
   active: boolean;
   onNavigate?: () => void;
-  /** Notifications only: the dot, and the count for tests and screen readers. */
+  /** Notifications' unread and To do's open count: the dot, and the count for
+   * tests and screen readers. */
   unreadCount?: number;
+  dotLabel?: (count: string) => string;
 }) {
   return (
     <Link
-      aria-label={
-        unreadCount
-          ? m.notifications_unread_count({ count: String(unreadCount) })
-          : undefined
-      }
+      aria-label={unreadCount ? dotLabel?.(String(unreadCount)) : undefined}
       className={cn(
         BASE_BUTTON_STYLE,
         ROW_CLASS,
@@ -197,6 +214,16 @@ export function Sidebar({
   const { data: unread } = useUnreadNotificationCount({
     errorBoundary: false,
   });
+  // The To do row carries the same dot while anything is open (Epo 2026-11-08).
+  const { data: todo } = useTodo({ errorBoundary: false });
+  const open = todoCount(todo?.workspaces ?? []);
+  const dot = (i: NavItem) =>
+    i.to === '/todo'
+      ? {
+          dotLabel: (count: string) => m.todo_nav_count({ count }),
+          unreadCount: open,
+        }
+      : {};
   const nav = items();
   const withAccount = rail || account;
   const frosted = useFrosted('left');
@@ -207,7 +234,7 @@ export function Sidebar({
         // The logo smokes out as the rail widens and the app name fades in
         // in line with the row icons, as on the full sidebar; narrowing drops
         // the name at once and the logo fades back.
-        <div className="relative flex items-center px-0.75 pb-5">
+        <div className="relative flex items-center px-0.75 pb-1">
           <span className="motion-smoke rail-open:motion-smoked shrink-0 group-hover/rail:delay-100">
             <LogoMark size={36} />
           </span>
@@ -237,10 +264,16 @@ export function Sidebar({
       )}
 
       {withAccount && (
-        <div className="mb-4 flex flex-col gap-1">
+        <div
+          className={cn(
+            'flex flex-col gap-1 sm:gap-0.5',
+            rail ? 'mb-0.5' : 'mb-4'
+          )}
+        >
           <SearchRow />
           <Row
             active={pathname === NOTIFICATIONS}
+            dotLabel={(count) => m.notifications_unread_count({ count })}
             item={{
               icon: 'bell',
               label: m.notifications_title(),
@@ -253,10 +286,15 @@ export function Sidebar({
       )}
 
       {rail ? (
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1 sm:gap-0.5">
           {nav.sections.flatMap((section) =>
             section.items.map((i) => (
-              <Row active={isActive(pathname, i)} item={i} key={i.to} />
+              <Row
+                active={isActive(pathname, i)}
+                item={i}
+                key={i.to}
+                {...dot(i)}
+              />
             ))
           )}
         </div>
@@ -271,13 +309,14 @@ export function Sidebar({
             >
               {section.label}
             </div>
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-1 sm:gap-0.5">
               {section.items.map((i) => (
                 <Row
                   active={isActive(pathname, i)}
                   item={i}
                   key={i.to}
                   onNavigate={onNavigate}
+                  {...dot(i)}
                 />
               ))}
             </div>
@@ -287,7 +326,7 @@ export function Sidebar({
 
       <div className="mt-auto" />
       {withAccount && <VoiceCard onOpen={onNavigate} />}
-      <div className="mt-3 flex flex-col gap-1 border-divider border-t pt-2">
+      <div className="mt-3 flex flex-col gap-1 border-divider border-t pt-2 sm:gap-0.5">
         {withAccount && (
           <GettingStartedRow
             className={cn(BASE_BUTTON_STYLE, ROW_CLASS, ROW_IDLE)}

@@ -45,9 +45,11 @@ const (
 var aiSuffixes = []string{
 	"/chat/stream",
 	"/generate",
-	// Server grading, which sends open answers to Jev: a quiz, review or bank
-	// check, one question each (the signed-out grade is under /api/public/),
-	// and the author's computation check.
+	// Make a quiz: one start reads up to 40 pages with a vision model.
+	"/extractions",
+	// Server grading, which sends open answers to a model: a quiz, review or bank
+	// check, one question each, and the author's computation check. A shared
+	// page's check, under /api/public/, calls no model.
 	"/check",
 	"/computation-check",
 }
@@ -97,9 +99,8 @@ func classify(method, path string) class {
 			return classExempt
 		}
 	}
-	// Signed-out share routes key on the client address, which a whole
-	// classroom shares; anonymous grading is bounded by its daily caps instead
-	// of the AI burst guard.
+	// Share routes key on the client address, which a whole classroom shares;
+	// a shared page's check calls no model, so it takes no AI burst guard.
 	if strings.HasPrefix(path, "/api/public/") {
 		return classDefault
 	}
@@ -108,6 +109,10 @@ func classify(method, path string) class {
 	}
 	if strings.HasPrefix(path, "/api/files/") && strings.HasSuffix(path, "/thumbnail") {
 		return classThumbnail
+	}
+	// A drawing answer's board and image, up to 550 KB a request (Done).
+	if strings.HasPrefix(path, "/api/assignment-attempts/") && strings.Contains(path, "/drawings/") {
+		return classUpload
 	}
 	// Clerk Backend API callers: the connected providers, picker tokens and
 	// disconnects, and a profile save (which reads the Clerk photo).
@@ -121,8 +126,9 @@ func classify(method, path string) class {
 		return classVoice
 	}
 	// A new review session reads the whole review pool, every quiz and set
-	// parsed; continuing one reads only its own items.
-	if strings.HasPrefix(path, "/api/workspaces/") && strings.HasSuffix(path, "/review") {
+	// parsed, and so does its start dialog's question count; continuing one
+	// reads only its own items.
+	if strings.HasPrefix(path, "/api/workspaces/") && (strings.HasSuffix(path, "/review") || strings.HasSuffix(path, "/study/question-count")) {
 		return classReview
 	}
 	if method == http.MethodPost && strings.HasPrefix(path, "/api/bank/questions/") && strings.HasSuffix(path, "/comments") {

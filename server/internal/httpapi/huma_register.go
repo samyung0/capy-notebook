@@ -77,6 +77,19 @@ func conflictError(code, detail string) error {
 	}
 }
 
+// noAnswersConfiguredError is a check of a question that is not projected: a
+// reader shows every question a room holds, and only complete ones are projected
+// (D4), so the page says it has no answers rather than showing an error (Epo
+// 2026-11-05).
+func noAnswersConfiguredError() error {
+	return &huma.ErrorModel{
+		Status: http.StatusNotFound,
+		Title:  http.StatusText(http.StatusNotFound),
+		Detail: "the question is not in this quiz",
+		Errors: []*huma.ErrorDetail{{Message: "question_no_answers"}},
+	}
+}
+
 // limitError is a 429 carrying a machine code the browser maps to copy.
 func limitError(code, detail string) error {
 	return &huma.ErrorModel{
@@ -145,6 +158,14 @@ func mapHTTPError(err error) error {
 	if errors.Is(err, store.ErrPaymentMethodNotInstant) {
 		return conflictError("payment_method_not_instant", err.Error())
 	}
+	if errors.Is(err, store.ErrSourceRoleLost) {
+		return &huma.ErrorModel{
+			Status: http.StatusNotFound,
+			Title:  http.StatusText(http.StatusNotFound),
+			Detail: "not found",
+			Errors: []*huma.ErrorDetail{{Message: "role_lost"}},
+		}
+	}
 	if errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrForbidden) {
 		return huma.Error404NotFound("not found")
 	}
@@ -200,8 +221,8 @@ func mapHTTPError(err error) error {
 	if errors.Is(err, store.ErrTitleTaken) {
 		return conflictError("title_taken", "a material with this name already exists in this workspace")
 	}
-	if errors.Is(err, store.ErrTooManyChapters) {
-		return conflictError("too_many_chapters", "this workspace already has the maximum number of chapters")
+	if errors.Is(err, store.ErrTooManyTopics) {
+		return conflictError("too_many_topics", "this workspace already has the maximum number of topics")
 	}
 	// The specific conflicts wrap ErrConflict, so they come first.
 	if errors.Is(err, store.ErrAccountDeletionBusy) {
@@ -342,7 +363,7 @@ func mapHTTPError(err error) error {
 			Detail: fmt.Sprintf("uploads support files up to %d MB", tooLarge.LimitBytes>>20),
 			Errors: []*huma.ErrorDetail{{
 				Message: "file_too_large",
-				Value:   map[string]any{"maxBytes": tooLarge.LimitBytes},
+				Value:   map[string]any{"maxBytes": tooLarge.LimitBytes, "text": tooLarge.Text},
 			}},
 		}
 	}
@@ -417,7 +438,7 @@ func newUnexpectedError(status int, traceID string) *unexpectedError {
 // typedServerCodes are the 5xx codes the browser gives their own copy; a 5xx
 // carrying anything else in errors[] (an error's text, even one word) is
 // unexpected. src/lib/errors.ts keeps the same list.
-var typedServerCodes = []string{"provider_busy", "ai_unavailable", "generate_empty", "bank_unavailable", "upload_queue_full", "rate_limit_unavailable", "captcha_unavailable", "transcription_failed", "voice_unavailable"}
+var typedServerCodes = []string{"provider_busy", "ai_unavailable", "generate_empty", "bank_unavailable", "upload_queue_full", "rate_limit_unavailable", "transcription_failed", "voice_unavailable"}
 
 func typedServerError(details []*huma.ErrorDetail) bool {
 	return len(details) > 0 && !slices.ContainsFunc(details, func(detail *huma.ErrorDetail) bool {
@@ -587,11 +608,18 @@ func registerRoutes(api huma.API, a *api) {
 	a.registerThumbnails(api)
 	a.registerSourceUploads(api)
 	a.registerGenerate(api)
+	a.registerExtractions(api)
+	a.registerHidden(api)
 	a.registerMaterials(api)
 	a.registerOpens(api)
 	a.registerQuizzes(api)
 	a.registerFlashcards(api)
 	a.registerStudy(api)
+	a.registerAssignments(api)
+	a.registerMembersProgress(api)
+	a.registerDrawings(api)
+	a.registerPapers(api)
+	a.registerTodo(api)
 	a.registerSchedule(api)
 	a.registerExplore(api)
 	a.registerShare(api)

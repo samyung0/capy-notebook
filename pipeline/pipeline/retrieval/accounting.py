@@ -8,15 +8,15 @@ pending row, then settle measured usage, before the next call is chosen.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import contextvars
 import functools
 import json
 import logging
 import math
-import random
 import secrets
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -25,6 +25,7 @@ import requests
 from .. import elitellm, obs, registry
 from ..config import cfg
 from ..registry import ModelConfig
+from . import limits
 from .lang import CJK_RUN_RE
 from .usage_extract import NormalizedUsage
 
@@ -267,33 +268,58 @@ def new_call_id() -> str:
     return "pc_" + secrets.token_hex(10)
 
 
-def model_capacity(
-    cur, provider: str, model: str, settlement_mode: str
-) -> tuple[str, int]:
-    """Read live limits; hold the row stable until admission commits."""
+def model_capacity(cur, provider: str, model: str) -> int:
+    """Read the live limit; hold the row stable until admission commits."""
     cur.execute(
-        "SELECT concurrency_total, interactive_reserve FROM model_capacities "
+        "SELECT concurrency_total FROM model_capacities "
         "WHERE provider=%s AND model=%s FOR SHARE",
         (provider, model),
     )
-    limits = cur.fetchone()
-    if limits is None:
+    row = cur.fetchone()
+    if row is None:
         raise AccountingError(
             f"model capacity is not configured for {provider}:{model}"
         )
-    total, reserve = limits
-    capacity = total - reserve if settlement_mode == "ingest" else total
-    return f"{provider}:{model}", capacity
+    return int(row[0])
 
 
 class GateFull(elitellm.ProviderBusy):
-    """The model's capacity gate stayed full until the call's deadline."""
+    """A wait of ours for capacity ran out: the model's line until the call's
+    deadline, or the process call slot a call in line gave back. Final for an
+    interactive call (Epo 2026-11-04)."""
 
 
-def _gate_poll_s(settlement_mode: str) -> float:
-    if settlement_mode == "ingest":
-        return random.uniform(1.0, 2.0)
-    return random.uniform(0.1, 0.3)
+@dataclass(frozen=True)
+class _Gate:
+    """A call's capacity gate: a catalog model's row (``limit`` None, read
+    live), or a gate of its own with a fixed limit such as the VLM page read."""
+
+    key: str
+    provider: str = ""
+    model: str = ""
+    limit: int | None = None
+
+    def capacity(self, cur) -> int:
+        if self.limit is not None:
+            return self.limit
+        return model_capacity(cur, self.provider, self.model)
+
+
+def _gate(
+    spec: ModelConfig | None, provider: str, model: str, capacity
+) -> _Gate | None:
+    if capacity is not None:
+        return _Gate(key=capacity[0], limit=capacity[1])
+    if spec is None:
+        return None
+    return _Gate(key=f"{provider}:{model}", provider=provider, model=model)
+
+
+def gate_key(spec: ModelConfig | None, capacity: tuple[str, int] | None) -> str:
+    """The key of the gate a call on ``spec`` (or ``capacity``) waits at."""
+    if capacity is not None:
+        return capacity[0]
+    return f"{spec.provider_slug}:{spec.model_slug}" if spec is not None else ""
 
 
 async def open_call(
@@ -309,19 +335,22 @@ async def open_call(
     deadline: float | None = None,
     capacity: tuple[str, int] | None = None,
     provider_timeout_s: float | None = None,
-    pause: Callable[[float], Awaitable[None]] | None = None,
+    left: asyncio.Event | None = None,
+    waiting: Callable[[], contextlib.AbstractAsyncContextManager[None]] | None = None,
 ) -> None:
     """Insert the pending row before the provider HTTP call.
 
     Unbound requests (offline tests) are a no-op. A bound request without a
     database cannot prove the stub exists, so it must not call the provider.
-    A gated model takes its capacity lease in the same transaction as the row;
-    while the gate is full this polls until ``deadline`` (a monotonic instant)
-    and then raises GateFull without inserting anything; ``pause`` replaces
-    the sleep between tries (a chat queue's head, woken early). A call with no
-    catalog model is gated only by its own ``capacity``. ``provider_timeout_s``
-    replaces the mode's provider timeout for a call that runs longer (an
-    audio transcription task); the receipt window and lease follow it.
+    A gated call takes its capacity lease in the same transaction as the row
+    when nobody waits in the gate's line and the gate has room. Otherwise it
+    waits its turn in the line (Epo 2026-11-04) inside ``waiting`` (a chat's
+    status and its process call slot) until ``deadline`` (a monotonic instant)
+    or until ``left`` is set, and then raises GateFull; with no deadline it
+    raises at once. A call with no catalog model is gated only by its own
+    ``capacity``. ``provider_timeout_s`` replaces the mode's provider timeout
+    for a call that runs longer (an audio transcription task); the receipt
+    window and lease follow it.
     """
     state = current()
     if state is None:
@@ -344,70 +373,153 @@ async def open_call(
     receipt_timeout_s = (
         max(1, math.ceil(provider_timeout_s)) + _RECEIPT_SETTLEMENT_GRACE_S
     )
-    gated = spec is not None or capacity is not None
-    admission_mode = state.settlement_mode if gated else None
-    while True:
-        admission = asyncio.ensure_future(
-            asyncio.to_thread(
-                _open_call_sync,
-                state.session_id,
-                call_id,
-                kind,
-                purpose,
-                thinking,
-                call_context,
-                receipt_timeout_s,
-                provider,
-                model,
-                admission_mode,
-                state.job_attempt_id,
-                state.job_stage,
-                capacity,
-            )
+    gate = _gate(spec, provider, model, capacity)
+    admit = (
+        state.session_id,
+        call_id,
+        kind,
+        purpose,
+        thinking,
+        call_context,
+        receipt_timeout_s,
+        provider,
+        model,
+        state.job_attempt_id,
+        state.job_stage,
+    )
+    if gate is None:
+        await _admit(admit, call_id, gate=None, leased=False)
+        _opened(state, call_id, receipt_timeout_s, gate)
+        return
+    line = _line(gate)
+    if not line.waiting and await _admit(admit, call_id, gate=gate, leased=False):
+        _opened(state, call_id, receipt_timeout_s, gate)
+        return
+    if deadline is None:
+        raise GateFull(
+            f"{provider}/{model} is at its concurrency cap",
+            retry_after=BUSY_RETRY_AFTER_S,
         )
-        try:
-            admitted = await asyncio.shield(admission)
-        except asyncio.CancelledError:
-            # The thread cannot be cancelled and may still commit the lease and
-            # the row. Undo whatever it commits once it finishes, without
-            # holding the cancellation up; the receipt window is the backstop.
-            admission.add_done_callback(functools.partial(_undo_admission, call_id))
-            raise
-        if admitted:
-            break
-        wait = _gate_poll_s(state.settlement_mode)
-        if deadline is None or time.monotonic() + wait > deadline:
-            raise GateFull(
-                f"{provider}/{model} is at its concurrency cap",
-                retry_after=BUSY_RETRY_AFTER_S,
-            )
-        await (pause or asyncio.sleep)(wait)
-    if admission_mode is not None:
+    waiter = limits.LineWaiter(call_id, state.session_id, receipt_timeout_s)
+    granted = False
+    try:
+        async with waiting() if waiting is not None else contextlib.nullcontext():
+            granted = await line.wait(waiter, deadline - time.monotonic(), left)
+            if not granted:
+                raise GateFull(
+                    f"{provider}/{model} is at its concurrency cap",
+                    retry_after=BUSY_RETRY_AFTER_S,
+                )
+    except BaseException:
+        if granted:
+            _undo_later(call_id)
+        raise
+    await _admit(admit, call_id, gate=None, leased=True)
+    _opened(state, call_id, receipt_timeout_s, gate)
+
+
+def _opened(
+    state: RequestAccounting, call_id: str, receipt_timeout_s: int, gate: _Gate | None
+) -> None:
+    if gate is not None:
         state.leased_calls.add(call_id)
     state.receipt_deadlines[call_id] = time.monotonic() + receipt_timeout_s
+
+
+async def _admit(
+    admit: tuple[Any, ...], call_id: str, *, gate: _Gate | None, leased: bool
+) -> bool:
+    """Run one admission transaction (``_open_call_sync`` on ``admit``) off
+    the loop. A ``leased`` call holds a lease its line granted and only opens
+    its row; whatever happens to it then, the lease is freed unless the row
+    opened."""
+    admission = asyncio.ensure_future(asyncio.to_thread(_open_call_sync, *admit, gate))
+    try:
+        return await asyncio.shield(admission)
+    except asyncio.CancelledError:
+        # The thread cannot be cancelled and may still commit the lease and
+        # the row. Undo whatever it commits once it finishes, without
+        # holding the cancellation up; the receipt window is the backstop.
+        admission.add_done_callback(functools.partial(_undo_admission, call_id, leased))
+        raise
+    except BaseException:
+        if leased:
+            _undo_later(call_id)
+        raise
+
+
+def _line(gate: _Gate) -> limits.ModelLine:
+    return limits.model_line(gate.key, functools.partial(_line_round, gate))
+
+
+async def _line_round(
+    gate: _Gate,
+    store: list[limits.LineWaiter],
+    waiting: list[limits.LineWaiter],
+    gone: list[str],
+) -> set[str]:
+    return await asyncio.to_thread(
+        _line_round_sync,
+        gate,
+        [(w.id, w.session, w.lease_s) for w in store],
+        [w.id for w in waiting],
+        gone,
+    )
+
+
+def _line_round_sync(
+    gate: _Gate,
+    store: list[tuple[str, str, int]],
+    waiting: list[str],
+    gone: list[str],
+) -> set[str]:
+    from ..store import db
+
+    with db.connect() as conn:
+        with conn.cursor() as cur:
+            granted = db.admit_line(
+                cur,
+                provider=gate.key,
+                capacity=gate.capacity(cur) if waiting else 0,
+                store=store,
+                waiting=waiting,
+                gone=gone,
+                ttl_s=limits.LINE_TTL_S,
+            )
+        conn.commit()
+    return granted
 
 
 # Detached cleanup tasks, referenced so the loop cannot collect them early.
 _background: set[asyncio.Task[Any]] = set()
 
 
-def _undo_admission(call_id: str, admission: asyncio.Future[bool]) -> None:
-    """Done-callback for an admission whose request was cancelled.
-
-    Best effort: if the loop is already tearing down and the undo cannot be
-    scheduled, the lease expires with the receipt window and the row is
-    swept as ``receipt_timeout``.
-    """
+def _undo_admission(
+    call_id: str, leased: bool, admission: asyncio.Future[bool]
+) -> None:
+    """Done-callback for an admission whose request was cancelled: undo what
+    it committed, and a lease the call held before it."""
     try:
-        if (
+        if not leased and (
             admission.cancelled()
             or admission.exception() is not None
             or not admission.result()
         ):
             return
-        task = asyncio.ensure_future(asyncio.to_thread(_undo_admission_sync, call_id))
     except Exception:
         log.warning("could not undo cancelled admission %s", call_id, exc_info=True)
+        return
+    _undo_later(call_id)
+
+
+def _undo_later(call_id: str) -> None:
+    """Abandon a never-sent call row and free its lease, off the caller's
+    path. Best effort: if the loop is already tearing down, the lease expires
+    with the receipt window and the row is swept as ``receipt_timeout``."""
+    try:
+        task = asyncio.ensure_future(asyncio.to_thread(_undo_admission_sync, call_id))
+    except Exception:
+        log.warning("could not undo admission %s", call_id, exc_info=True)
         return
     _background.add(task)
     task.add_done_callback(_finish_background)
@@ -499,32 +611,24 @@ def _open_call_sync(
     thinking: str,
     context: ContextComposition,
     receipt_timeout_s: int,
-    provider: str = "",
-    model: str = "",
-    admission_mode: str | None = None,
-    job_attempt_id: int | None = None,
-    job_stage: str = "",
-    capacity: tuple[str, int] | None = None,
+    provider: str,
+    model: str,
+    job_attempt_id: int | None,
+    job_stage: str,
+    gate: _Gate | None,
 ) -> bool:
-    """Take the capacity lease and insert the row atomically. False when full.
-
-    ``capacity`` (lease key, limit) replaces the model's own row for a call
-    with a gate of its own, such as the VLM page read."""
+    """Insert the call row, taking ``gate``'s lease in the same transaction:
+    False when the gate is full or anyone waits in its line."""
     from ..store import db
 
     with db.connect() as conn:
         with conn.cursor() as cur:
-            if admission_mode is None:
-                lease = None
-            elif capacity is not None:
-                lease = capacity
-            else:
-                lease = model_capacity(cur, provider, model, admission_mode)
-            if lease is not None:
+            capacity = 0
+            if gate is not None:
                 # Unlocked look first: a full gate returns without touching
                 # the session or call rows, and without the model-wide lock.
-                key, capacity = lease
-                if db.provider_capacity_used(cur, key) >= capacity:
+                capacity = gate.capacity(cur)
+                if not db.provider_capacity_open(cur, gate.key, capacity):
                     conn.rollback()
                     return False
             db.open_provider_call(
@@ -547,21 +651,19 @@ def _open_call_sync(
                 context_counting_version=context.counting_version,
                 receipt_timeout_seconds=receipt_timeout_s,
             )
-            if lease is not None:
-                # Last, so the model-wide advisory lock covers only the
-                # lease insert, never the row locks above.
-                key, capacity = lease
-                admitted = db.acquire_provider_capacity(
-                    cur,
-                    lease_id=call_id,
-                    provider=key,
-                    units=1,
-                    capacity=capacity,
-                    lease_seconds=receipt_timeout_s,
-                )
-                if not admitted:
-                    conn.rollback()
-                    return False
+            # Last, so the model-wide advisory lock covers only the lease
+            # insert, never the row locks above.
+            if gate is not None and not db.acquire_provider_capacity(
+                cur,
+                lease_id=call_id,
+                provider=gate.key,
+                units=1,
+                capacity=capacity,
+                lease_seconds=receipt_timeout_s,
+                session_id=session_id,
+            ):
+                conn.rollback()
+                return False
         conn.commit()
     return True
 

@@ -184,12 +184,10 @@ export function xlsxEditMenus(
       items: [
         command('undo', t('toolbar.undo'), {
           disabled: !state.canUndo,
-          icon: 'undo',
           shortcut: shortcut('Mod+Z'),
         }),
         command('redo', t('toolbar.redo'), {
           disabled: !state.canRedo,
-          icon: 'redo',
           shortcut: shortcut('Shift+Mod+Z'),
         }),
         separator,
@@ -272,7 +270,7 @@ export function xlsxEditMenus(
             : t('hostMenus.columnRight')
         ),
         separator,
-        command('insertSheet', t('hostMenus.sheet'), { icon: 'table' }),
+        command('insertSheet', t('hostMenus.sheet')),
       ],
       label: t('hostMenus.insert'),
     },
@@ -367,9 +365,7 @@ export function xlsxEditMenus(
           'combine'
         ),
         separator,
-        run('clearFormatting', t('hostMenus.clearFormatting'), {
-          icon: 'eraser',
-        }),
+        run('clearFormatting', t('hostMenus.clearFormatting')),
       ],
       label: t('hostMenus.format'),
     },

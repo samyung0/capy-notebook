@@ -4,6 +4,7 @@ package questions
 import (
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"math"
 	"math/rand/v2"
 	"net/url"
@@ -213,7 +214,7 @@ func tuple(v any, count int) ([]float64, bool) {
 
 // Validate accepts decoded JSON maps; it never repairs or fills authored fields.
 func Validate(q map[string]any, policy Policy) error {
-	if err := keys(q, "id stem parts layout labels", "level"); err != nil {
+	if err := keys(q, "id stem parts layout labels", "level groups"); err != nil {
 		return err
 	}
 	if !str(q["id"], fieldlimits.QuestionID, true) || !enum(q["layout"], "paper split") || !enum(q["labels"], "letters numbers") {
@@ -239,16 +240,17 @@ func Validate(q map[string]any, policy Policy) error {
 		if err != nil {
 			return err
 		}
-		// Only open parts carry a marking scheme: Jev grades against it. A
-		// closed part's answer is its own key and its solution explains it.
+		// Only model-marked parts (open and drawing) carry a marking scheme: the
+		// model marks against it. A closed part's answer is its own key and its
+		// solution explains it.
 		a, _ := p["answer"].(map[string]any)
-		open := a["type"] == "open"
-		required, optional := "id blocks answer marks solution", ""
+		open := ModelMarked(a["type"])
+		required, optional := "id blocks answer marks solution", "group"
 		if open {
 			required += " markscheme"
 		}
 		if policy.Snapshot {
-			optional = "awarded"
+			optional += " awarded"
 			if open {
 				optional += " itemAwards"
 			}
@@ -308,6 +310,78 @@ func Validate(q map[string]any, policy Policy) error {
 			if !ok || n < 0 || n > marks || n*2 != math.Trunc(n*2) {
 				return fail("invalid awarded marks")
 			}
+		}
+	}
+	return checkGroups(q, parts, maxParts, policy)
+}
+
+// checkGroups holds grouped parts (Epo 2026-11-04): a group is text and
+// figures with no answer or marks, listed in `groups`; a part names its group
+// in `group`, and a group's parts sit next to each other in the flat list. A
+// group has at least one part and never holds another group.
+func checkGroups(q map[string]any, parts []any, maxParts int, policy Policy) error {
+	held := map[string]bool{}
+	if value, exists := q["groups"]; exists {
+		groups, ok := array(value, 0, maxParts)
+		if !ok {
+			return fail(fmt.Sprintf("groups must contain at most %d groups", maxParts))
+		}
+		for _, raw := range groups {
+			g, err := obj(raw)
+			if err != nil {
+				return err
+			}
+			if err := keys(g, "id blocks", ""); err != nil {
+				return err
+			}
+			if !str(g["id"], fieldlimits.QuestionID, true) {
+				return fail("invalid group id")
+			}
+			id := g["id"].(string)
+			if held[id] {
+				return fail("duplicate group id")
+			}
+			held[id] = true
+			if err := blocks(g["blocks"], policy); err != nil {
+				return err
+			}
+		}
+	}
+	seen := map[string]bool{}
+	previous := ""
+	for _, raw := range parts {
+		p, _ := raw.(map[string]any)
+		value, grouped := p["group"]
+		if !grouped {
+			previous = ""
+			continue
+		}
+		id, ok := value.(string)
+		if !ok || !held[id] {
+			return fail("a part names a group the question does not have")
+		}
+		if seen[id] && previous != id {
+			return fail("a group's parts must sit next to each other")
+		}
+		seen[id], previous = true, id
+	}
+	if len(seen) != len(held) {
+		return fail("a group needs at least one part")
+	}
+	return nil
+}
+
+// GroupBlocks is the blocks of the group a part names, or nil when it has none.
+func GroupBlocks(q map[string]any, part map[string]any) []any {
+	id, ok := part["group"].(string)
+	if !ok {
+		return nil
+	}
+	groups, _ := q["groups"].([]any)
+	for _, raw := range groups {
+		if g, _ := raw.(map[string]any); g["id"] == id {
+			blocks, _ := g["blocks"].([]any)
+			return blocks
 		}
 	}
 	return nil
@@ -943,7 +1017,7 @@ func QuizBounds(qs []map[string]any) error {
 		parts += len(list)
 		for _, raw := range list {
 			p, _ := raw.(map[string]any)
-			if a, _ := p["answer"].(map[string]any); a["type"] == "open" {
+			if a, _ := p["answer"].(map[string]any); ModelMarked(a["type"]) {
 				open++
 			}
 		}
@@ -952,7 +1026,7 @@ func QuizBounds(qs []map[string]any) error {
 		return fail(fmt.Sprintf("a quiz has at most %d parts", fieldlimits.QuizParts))
 	}
 	if open > fieldlimits.QuizOpenParts {
-		return fail(fmt.Sprintf("a quiz has at most %d open parts", fieldlimits.QuizOpenParts))
+		return fail(fmt.Sprintf("a quiz has at most %d AI-marked parts", fieldlimits.QuizOpenParts))
 	}
 	return nil
 }
@@ -977,6 +1051,10 @@ func answer(value any, policy Policy) error {
 		required += " items"
 	case "open":
 		required += " accepted hints"
+	case "drawing":
+		// Answered on the drawing board, which every drawing part opens plain
+		// (Epo 2026-11-06); an optional drawn sample answer (Q3).
+		optional = "sample"
 	case "gaps":
 		// One accepted list per numbered gap in the part's text.
 		required += " accepted"
@@ -1082,9 +1160,37 @@ func answer(value any, policy Policy) error {
 		if !stringsArray(a["items"], 2, fieldlimits.QuestionAnswers, fieldlimits.QuestionText) {
 			return fail("invalid ordering items")
 		}
+	case "drawing":
+		raw, exists := a["sample"]
+		if !exists {
+			break
+		}
+		// The board (to edit again) and its image (shown after a check and sent
+		// to marking), both the quiz's own editor assets, as its images are; the
+		// bank has no private assets.
+		if policy.Bank {
+			return fail("a bank drawing part has no drawn sample answer")
+		}
+		sample, err := obj(raw)
+		if err != nil {
+			return err
+		}
+		if err := keys(sample, "board image", ""); err != nil {
+			return err
+		}
+		if !str(sample["board"], fieldlimits.QuestionID, true) || !str(sample["image"], fieldlimits.QuestionID, true) {
+			return fail("invalid drawn sample answer")
+		}
 	}
 	return nil
 }
+
+// ModelMarked says whether an answer type is marked by a model against the
+// part's marking items: written (open) and drawn answers.
+func ModelMarked(answerType any) bool {
+	return answerType == "open" || answerType == "drawing"
+}
+
 func index(v any, size int) bool {
 	n, ok := num(v)
 	return ok && n >= 0 && n < float64(size) && n == math.Trunc(n)
@@ -1130,12 +1236,32 @@ func Authored(q map[string]any) map[string]any {
 
 // LearnerView is a question as readers who are not editing see it: no answer
 // keys, accepted answers, marking schemes or worked solutions, with matching
-// options and ordering items shuffled. An allowlist keeps new author-only
+// options and ordering items shuffled; an mcq with several correct options
+// says only `multiple: true`. An allowlist keeps new author-only
 // fields out. Stored content is read with checked assertions, so a malformed
 // question loses fields instead of panicking.
 func LearnerView(q map[string]any) map[string]any {
+	return learnerView(q, func(values []any, _ string) []any { return shuffled(values, rand.Shuffle) })
+}
+
+// LearnerViewsSeeded is LearnerViews with each part's matching options and
+// ordering items in an order fixed by seed and the part: an attempt answered on
+// paper reads the same letters on every load as the read call gets.
+func LearnerViewsSeeded(qs []map[string]any, seed string) []map[string]any {
+	out := make([]map[string]any, len(qs))
+	for i, q := range qs {
+		out[i] = learnerView(q, func(values []any, partID string) []any {
+			h := fnv.New64a()
+			_, _ = h.Write([]byte(seed + "/" + partID))
+			return shuffled(values, rand.New(rand.NewPCG(h.Sum64(), 0)).Shuffle)
+		})
+	}
+	return out
+}
+
+func learnerView(q map[string]any, shuffle func(values []any, partID string) []any) map[string]any {
 	out := map[string]any{}
-	for _, key := range []string{"id", "stem", "layout", "labels", "level"} {
+	for _, key := range []string{"id", "stem", "groups", "layout", "labels", "level"} {
 		if v, ok := q[key]; ok {
 			out[key] = v
 		}
@@ -1146,16 +1272,22 @@ func LearnerView(q map[string]any) map[string]any {
 		p, _ := raw.(map[string]any)
 		a, _ := p["answer"].(map[string]any)
 		learner := map[string]any{"type": a["type"]}
+		partID, _ := p["id"].(string)
 		switch a["type"] {
 		case "mcq":
 			learner["options"] = a["options"]
+			// Only whether several options are correct, so a learner knows to
+			// pick more than one (Epo 2026-11-08); the key itself stays out.
+			if correct, _ := a["correct"].([]any); len(correct) > 1 {
+				learner["multiple"] = true
+			}
 		case "short":
 			if unit, ok := a["unit"]; ok {
 				learner["unit"] = unit
 			}
 		case "matching":
 			options, _ := a["options"].([]any)
-			learner["options"] = shuffled(options)
+			learner["options"] = shuffle(options, partID)
 			left := []any{}
 			pairs, _ := a["pairs"].([]any)
 			for _, raw := range pairs {
@@ -1168,9 +1300,13 @@ func LearnerView(q map[string]any) map[string]any {
 			learner["gaps"] = len(accepted)
 		case "ordering":
 			items, _ := a["items"].([]any)
-			learner["items"] = shuffled(items)
+			learner["items"] = shuffle(items, partID)
 		}
-		parts = append(parts, map[string]any{"id": p["id"], "blocks": p["blocks"], "answer": learner, "marks": partMarks(p)})
+		part := map[string]any{"id": p["id"], "blocks": p["blocks"], "answer": learner, "marks": partMarks(p)}
+		if group, ok := p["group"]; ok {
+			part["group"] = group
+		}
+		parts = append(parts, part)
 	}
 	out["parts"] = parts
 	return out
@@ -1185,13 +1321,14 @@ func LearnerViews(qs []map[string]any) []map[string]any {
 	return out
 }
 
-func shuffled(values []any) []any {
+func shuffled(values []any, shuffle func(n int, swap func(i, j int))) []any {
 	out := append([]any{}, values...)
-	rand.Shuffle(len(out), func(i, j int) { out[i], out[j] = out[j], out[i] })
+	shuffle(len(out), func(i, j int) { out[i], out[j] = out[j], out[i] })
 	return out
 }
 
-// AssetIDs returns the editor assets referenced by a quiz question's images.
+// AssetIDs returns the editor assets referenced by a quiz question's images
+// and its drawn sample answers' boards and images.
 func AssetIDs(q map[string]any) []string {
 	var ids []string
 	for _, blocks := range blockLists(q) {
@@ -1201,7 +1338,35 @@ func AssetIDs(q map[string]any) []string {
 			}
 		}
 	}
+	parts, _ := q["parts"].([]any)
+	for _, raw := range parts {
+		if sample := drawnSample(raw); sample != nil {
+			ids = append(ids, sample["board"].(string), sample["image"].(string))
+		}
+	}
 	return ids
+}
+
+// DrawnSampleImage is the editor asset of a part's drawn sample answer image,
+// which marking sends before the student's drawing (Q3), or "".
+func DrawnSampleImage(part map[string]any) string {
+	if sample := drawnSample(part); sample != nil {
+		return sample["image"].(string)
+	}
+	return ""
+}
+
+// drawnSample is a part's drawn sample answer, {board, image}, or nil.
+func drawnSample(raw any) map[string]any {
+	p, _ := raw.(map[string]any)
+	a, _ := p["answer"].(map[string]any)
+	sample, _ := a["sample"].(map[string]any)
+	board, okBoard := sample["board"].(string)
+	image, okImage := sample["image"].(string)
+	if a["type"] != "drawing" || !okBoard || !okImage || board == "" || image == "" {
+		return nil
+	}
+	return sample
 }
 
 // RewriteAssetIDs maps image assets through idMap and removes images whose
@@ -1223,6 +1388,12 @@ func RewriteAssetIDs(q map[string]any, idMap map[string]string) bool {
 		return kept
 	}
 	q["stem"] = rewrite(q["stem"])
+	groups, _ := q["groups"].([]any)
+	for _, raw := range groups {
+		if g, ok := raw.(map[string]any); ok {
+			g["blocks"] = rewrite(g["blocks"])
+		}
+	}
 	parts, _ := q["parts"].([]any)
 	for _, raw := range parts {
 		p, ok := raw.(map[string]any)
@@ -1234,6 +1405,16 @@ func RewriteAssetIDs(q map[string]any, idMap map[string]string) bool {
 		if len(p["blocks"].([]any)) == 0 {
 			return false
 		}
+		// A drawn sample answer goes whole when either asset has no replacement;
+		// the part stands without it.
+		if sample := drawnSample(p); sample != nil {
+			board, image := idMap[sample["board"].(string)], idMap[sample["image"].(string)]
+			if board == "" || image == "" {
+				delete(p["answer"].(map[string]any), "sample")
+			} else {
+				sample["board"], sample["image"] = board, image
+			}
+		}
 	}
 	return true
 }
@@ -1241,6 +1422,13 @@ func RewriteAssetIDs(q map[string]any, idMap map[string]string) bool {
 func blockLists(q map[string]any) [][]any {
 	stem, _ := q["stem"].([]any)
 	lists := [][]any{stem}
+	groups, _ := q["groups"].([]any)
+	for _, raw := range groups {
+		if g, ok := raw.(map[string]any); ok {
+			blocks, _ := g["blocks"].([]any)
+			lists = append(lists, blocks)
+		}
+	}
 	parts, _ := q["parts"].([]any)
 	for _, raw := range parts {
 		if p, ok := raw.(map[string]any); ok {
@@ -1263,19 +1451,66 @@ func imageAssetID(raw any) (string, bool) {
 }
 
 // GradingText is the question text a grader sees for one part: the stem, the
-// earlier parts and the part itself, with figures as their descriptions.
+// earlier parts and the part itself, with figures as their descriptions. A
+// group's text and figures come once, before the group's first part, so a part
+// inside a group is graded with its context; a question with no group reads
+// exactly as it did before groups.
 func GradingText(q map[string]any, partIndex int) string {
 	stem, _ := q["stem"].([]any)
 	sections := []string{blocksText(stem)}
 	parts, _ := q["parts"].([]any)
+	shared := map[string]bool{}
+	context := func(p map[string]any) {
+		if group, grouped := p["group"].(string); grouped && !shared[group] {
+			shared[group] = true
+			if text := blocksText(GroupBlocks(q, p)); text != "" {
+				sections = append(sections, "Shared context: "+text)
+			}
+		}
+	}
 	for i, raw := range parts[:partIndex] {
 		p, _ := raw.(map[string]any)
+		context(p)
 		blocks, _ := p["blocks"].([]any)
 		sections = append(sections, fmt.Sprintf("Earlier part %d: %s", i+1, blocksText(blocks)))
 	}
 	p, _ := parts[partIndex].(map[string]any)
+	context(p)
 	blocks, _ := p["blocks"].([]any)
 	sections = append(sections, "Part to grade: "+blocksText(blocks))
+	nonEmpty := sections[:0]
+	for _, section := range sections {
+		if section != "" {
+			nonEmpty = append(nonEmpty, section)
+		}
+	}
+	return strings.Join(nonEmpty, "\n\n")
+}
+
+// PartText is a part's own text as a paper shows it: the question's stem and
+// any shared context before its first part, then the part's blocks.
+func PartText(q map[string]any, partIndex int) string {
+	parts, _ := q["parts"].([]any)
+	p, _ := parts[partIndex].(map[string]any)
+	var sections []string
+	if partIndex == 0 {
+		stem, _ := q["stem"].([]any)
+		sections = append(sections, blocksText(stem))
+	}
+	if group, grouped := p["group"].(string); grouped {
+		first := true
+		for _, raw := range parts[:partIndex] {
+			earlier, _ := raw.(map[string]any)
+			if earlier["group"] == group {
+				first = false
+			}
+		}
+		if first {
+			sections = append(sections, blocksText(GroupBlocks(q, p)))
+		}
+	}
+	blocks, _ := p["blocks"].([]any)
+	sections = append(sections, blocksText(blocks))
 	nonEmpty := sections[:0]
 	for _, section := range sections {
 		if section != "" {
@@ -1477,4 +1712,20 @@ func RepairFigure(block map[string]any) map[string]any {
 	}
 	out[list] = kept
 	return out
+}
+
+// PromptText is a question's words for a one-line listing: its stem, or its
+// first part's text when the stem is empty, figures as their descriptions.
+func PromptText(q map[string]any) string {
+	stem, _ := q["stem"].([]any)
+	if text := strings.TrimSpace(blocksText(stem)); text != "" {
+		return text
+	}
+	parts, _ := q["parts"].([]any)
+	if len(parts) == 0 {
+		return ""
+	}
+	p, _ := parts[0].(map[string]any)
+	blocks, _ := p["blocks"].([]any)
+	return strings.TrimSpace(blocksText(blocks))
 }

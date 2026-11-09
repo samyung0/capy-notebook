@@ -31,7 +31,7 @@ import { nothing } from 'lit';
 import { property } from 'lit/decorators.js';
 
 import { NoteConfigExtension } from '../config';
-import * as styles from './edgeless-note-background.css';
+import { noteBackground } from '../note-styles';
 
 @requiredProperties({
   note: PropTypes.instanceOf(NoteBlockModel),
@@ -151,7 +151,7 @@ export class EdgelessNoteBackground extends SignalWatcher(
 
   override connectedCallback() {
     super.connectedCallback();
-    this.classList.add(styles.background);
+    this.classList.add(noteBackground);
     this.disposables.add(
       effect(() => {
         Object.assign(this.style, this.backgroundStyle$.value);

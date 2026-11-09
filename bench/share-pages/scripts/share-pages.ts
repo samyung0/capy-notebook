@@ -2,7 +2,7 @@
  * Shared page performance on the deployed UAT site.
  *
  * Signs in the fixed UAT owner, creates a link-shared workspace (store-only
- * files, two chapters), quiz, flashcard set and note from ../fixtures, waits
+ * files, two topics), quiz, flashcard set and note from ../fixtures, waits
  * until the public API serves them, then measures each page:
  *
  * - Caching (fails the run): a 200 render is `SHARED_CACHE` with no
@@ -202,10 +202,10 @@ async function cleanUp(page: Page) {
 }
 
 const UPLOADS = [
-  { chapter: undefined, name: 'digital.pdf' },
-  { chapter: 'Week 1 · Cells', name: 'lesson.docx' },
-  { chapter: 'Week 1 · Cells', name: 'lesson.pptx' },
-  { chapter: 'Week 2 · Data', name: 'grades.xlsx' },
+  { topic: undefined, name: 'digital.pdf' },
+  { topic: 'Week 1 · Cells', name: 'lesson.docx' },
+  { topic: 'Week 1 · Cells', name: 'lesson.pptx' },
+  { topic: 'Week 2 · Data', name: 'grades.xlsx' },
 ];
 
 async function provision(page: Page, run: string): Promise<Shared[]> {
@@ -225,7 +225,7 @@ async function provision(page: Page, run: string): Promise<Shared[]> {
     const metadata = {
       batchId,
       batchTotal: UPLOADS.length,
-      chapterName: upload.chapter,
+      topicName: upload.topic,
       contentType: 'application/octet-stream',
       name: upload.name,
       parseMode: 'none',

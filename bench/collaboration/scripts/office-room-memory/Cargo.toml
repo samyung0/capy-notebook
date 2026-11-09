@@ -1,0 +1,25 @@
+# Office room memory after scripted edit histories (bench/README.md, collaboration).
+# Standalone: not a member of collaboration-rs, so the bench never ships.
+[package]
+name = "office-room-memory"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+betteroffice-xlsx = { path = "../../../../vendor/betteroffice/crates/betteroffice-xlsx" }
+docx-edit = { package = "betteroffice-docx-edit", path = "../../../../vendor/betteroffice/crates/docx-edit" }
+office-service = { package = "betteroffice-office-service", path = "../../../../vendor/betteroffice/crates/office-service" }
+pptx-edit = { package = "betteroffice-pptx-edit", path = "../../../../vendor/betteroffice/crates/pptx-edit" }
+serde_json = "1"
+ydoc = { path = "../../../../collaboration-rs/crates/ydoc" }
+yrs = { path = "../../../../vendor/betteroffice/third_party/yrs" }
+
+# The engines ask for crates.io yrs; one patched copy, as in collaboration-rs.
+[patch.crates-io]
+yrs = { path = "../../../../vendor/betteroffice/third_party/yrs" }
+
+[profile.release]
+debug = "line-tables-only"

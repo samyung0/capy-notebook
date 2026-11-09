@@ -207,8 +207,8 @@ def _hint(key: str, kind: str | None, *, fence: bool) -> str:
         )
     if key == "type":
         return "the fields say the kind; drop type"
-    if key in ("title", "chapter_id"):
-        return "title and chapter_id go on the call, not on a question"
+    if key in ("title", "topic_id"):
+        return "title and topic_id go on the call, not on a question"
     if key == "replaces":
         return (
             "a quiz fence writes new questions; rewrite one with add_questions"
@@ -582,10 +582,10 @@ def expand(kind: str, item: dict[str, Any], qid: str) -> dict[str, Any]:
 
 def authored(question: dict[str, Any]) -> dict[str, Any] | None:
     """A stored question as the add_questions item a quiz fence takes (expand's
-    inverse), or None when it holds more than that form writes: a stem, more
-    parts, media or a non-text solution, another answer type."""
+    inverse), or None when it holds more than that form writes: a stem, a group,
+    more parts, media or a non-text solution, another answer type."""
     parts = question.get("parts") or []
-    if question.get("stem") or len(parts) != 1:
+    if question.get("stem") or question.get("groups") or len(parts) != 1:
         return None
     part = parts[0]
     blocks = part.get("blocks") or []
@@ -755,9 +755,9 @@ def _target_problems(args: dict[str, Any]) -> list[str]:
         problems.append(
             "after_question_id: places questions in an existing quiz; it goes with quiz_id"
         )
-    if "chapter_id" in args and not title and not quiz_id:
+    if "topic_id" in args and not title and not quiz_id:
         problems.append(
-            "chapter_id: files a new quiz, so it goes with title; adding to a quiz "
+            "topic_id: files a new quiz, so it goes with title; adding to a quiz "
             "takes quiz_id alone"
         )
     return problems
@@ -786,8 +786,8 @@ def check(args: dict[str, Any]) -> Check:
             result.notes += item.dropped
     result.call += _target_problems(args)
     quiz_id = args.get("quiz_id")
-    if quiz_id and "chapter_id" in args and not args.get("title"):
-        result.notes.append(f"chapter_id ignored: quiz {quiz_id} keeps its chapter.")
+    if quiz_id and "topic_id" in args and not args.get("title"):
+        result.notes.append(f"topic_id ignored: quiz {quiz_id} keeps its topic.")
     return result
 
 

@@ -221,12 +221,21 @@ def _object_info_from_head(out: dict) -> dict:
     }
 
 
-def read_bytes(blob_path: str, max_bytes: int | None = None) -> bytes | None:
-    """Read a small object, optionally refusing a body over ``max_bytes``."""
+def read_bytes(
+    blob_path: str,
+    max_bytes: int | None = None,
+    *,
+    bucket: str = "",
+    client=None,
+) -> bytes | None:
+    """Read a small object, optionally refusing a body over ``max_bytes``.
+    ``bucket`` and ``client`` default to the app bucket, as in ``download_file``."""
     from botocore.exceptions import ClientError
 
     try:
-        out = _s3_client().get_object(Bucket=cfg.b2_bucket, Key=blob_path)
+        out = (client or _s3_client()).get_object(
+            Bucket=bucket or cfg.b2_bucket, Key=blob_path
+        )
     except ClientError as exc:
         code = str(exc.response.get("Error", {}).get("Code", ""))
         if code in {"404", "NoSuchKey", "NotFound"}:
@@ -329,6 +338,14 @@ def library_download_file(
         max_bytes,
         bucket=cfg.knowledge_base_b2_bucket,
         client=library_client(),
+    )
+
+
+def library_read_bytes(object_key: str) -> bytes | None:
+    """Read one knowledge-base object (a stored figure crop); None when it is
+    not there."""
+    return read_bytes(
+        object_key, bucket=cfg.knowledge_base_b2_bucket, client=library_client()
     )
 
 

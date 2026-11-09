@@ -10,6 +10,7 @@
 // the summary, an unpaid parse that reads only the unread pages for pages.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { openWorkspaceSettings } from '../../helpers/workspace';
 import { m } from '../../i18n';
 import { scriptedSearch } from './chat';
 import {
@@ -217,10 +218,7 @@ test('partial files: a failed summary or unread page leaves the file searchable 
   }
   const page = run.owner.page;
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
-  await page
-    .getByRole('button', { exact: true, name: m.workspace_settings() })
-    .first()
-    .click();
+  await openWorkspaceSettings(page);
   const settings = page.getByRole('dialog', { name: m.workspace_settings() });
   await settings
     .getByRole('tab', { exact: true, name: m.workspace_indexing() })

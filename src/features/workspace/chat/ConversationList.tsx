@@ -16,6 +16,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { PanelNewRow } from '../PanelNewRow';
 import { matchesSearch, PanelSearch } from '../PanelSearch';
+import { preloadProse } from './blocks/text';
 
 /**
  * A workspace's chats (or with a null `workspaceId` the account chat's) for
@@ -80,6 +81,9 @@ export function ConversationList({
             active && 'font-bold'
           )}
           onClick={() => onOpen(c.id)}
+          // The thread is about to draw its Markdown.
+          onFocus={preloadProse}
+          onPointerEnter={preloadProse}
           type="button"
         >
           <span className="line-clamp-1 flex-1 translate-y-px">
@@ -139,9 +143,7 @@ export function ConversationList({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <PanelSearch label={m.chat_search()} onChange={setQuery} value={query} />
-      {onNew && (
-        <PanelNewRow icon="newChat" label={m.chat_new()} onClick={onNew} />
-      )}
+      {onNew && <PanelNewRow icon="ai" label={m.chat_new()} onClick={onNew} />}
       <div
         className={cn(
           'scroll-fade-y min-h-0 flex-1 overflow-auto px-2.5 pt-2 pb-4 [--scroll-fade-bottom-padding:--spacing(4)]',

@@ -402,6 +402,7 @@ export function MarkschemeList({
 }
 export const answerLabels: Record<QuestionType, () => string> = {
   boolean: m.question_ui_true_false,
+  drawing: m.question_ui_drawing,
   gaps: m.question_ui_fill_in_the_gaps,
   matching: m.question_ui_matching,
   mcq: m.question_ui_multiple_choice,
@@ -425,6 +426,8 @@ export function emptyAnswer(type: QuestionType): QuestionAnswer {
       return { items: ['', ''], type };
     case 'gaps':
       return { accepted: [['']], type };
+    case 'drawing':
+      return { type };
   }
 }
 
@@ -433,6 +436,7 @@ export function AnswerEditor({
   bank,
   onChange,
   gapsText,
+  typeField = true,
 }: {
   answer: QuestionAnswer;
   /** A bank question: open answers take the bank's longer text bound. */
@@ -440,24 +444,34 @@ export function AnswerEditor({
   onChange: (answer: QuestionAnswer) => void;
   /** A gaps part's text holding its blanks, shown above their answers. */
   gapsText?: ReactNode;
+  /** False where the answer type is chosen beside this editor (board X2). */
+  typeField?: boolean;
 }) {
   return (
     <div className="space-y-4">
-      <SelectField
-        className="w-44"
-        label={m.question_ui_answer_type()}
-        onChange={(value) => onChange(emptyAnswer(value as QuestionType))}
-        options={QUESTION_TYPES.map((value) => ({
-          label: answerLabels[value](),
-          value,
-        }))}
-        value={answer.type}
-      />
+      {typeField && (
+        <SelectField
+          className="w-44"
+          label={m.question_ui_answer_type()}
+          onChange={(value) => onChange(emptyAnswer(value as QuestionType))}
+          options={QUESTION_TYPES.map((value) => ({
+            label: answerLabels[value](),
+            value,
+          }))}
+          value={answer.type}
+        />
+      )}
       {answer.type === 'mcq' && (
         <div className="space-y-2">
           <p className="t-label">
             {m.question_ui_options_and_correct_answers()}
           </p>
+          {/* Learners see the same hint, so they know to pick more than one. */}
+          {answer.correct.length > 1 && (
+            <p className="text-fg-muted text-sm">
+              {m.question_ui_multiple_answers()}
+            </p>
+          )}
           {answer.options.map((option, i) => (
             <div className="flex items-center gap-2" key={i}>
               <OptionLetter index={i} />

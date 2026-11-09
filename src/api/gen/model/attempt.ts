@@ -7,7 +7,6 @@
 import type { AttemptKind } from './attemptKind.ts';
 
 export interface Attempt {
-  chapters: string[];
   correct: number;
   iconId?: string;
   id: string;
@@ -19,6 +18,7 @@ export interface Attempt {
   /** @nullable */
   startedAt: string | null;
   takenAt: string;
+  topics: string[];
   total: number;
   /** @nullable */
   workspaceId: string | null;

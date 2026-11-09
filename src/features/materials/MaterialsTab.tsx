@@ -124,7 +124,7 @@ export function MaterialsTab({
       value: 'title',
     },
     {
-      icon: 'chapter',
+      icon: 'topic',
       label: m.create_sort_kind(),
       value: 'kind',
     },
@@ -231,7 +231,6 @@ export function MaterialsTab({
             onSuccess: (material) =>
               navigate({
                 params: { materialId: material.id },
-                search: { mode: 'edit' },
                 to: '/materials/$materialId',
               }),
           }
@@ -247,7 +246,6 @@ export function MaterialsTab({
             onSuccess: (quiz) =>
               navigate({
                 params: { materialId: quiz.id },
-                search: { mode: 'edit' },
                 to: '/materials/$materialId',
               }),
           }
@@ -410,11 +408,10 @@ export function MaterialsTab({
         }
         sortMenu={{ ...sorting, hiddenFromMd: view === 'list', sorts }}
         view={view}
-        wide
       />
       {/* Mouse only: the selection bar's clear button is the keyboard way. */}
       <div
-        className="page-px-wide w-full shrink-0 grow pt-2 pb-6"
+        className="page-px w-full shrink-0 grow pt-2 pb-6"
         onClick={clearOnBlank(selection.clear)}
       >
         {waitsForConnection(fetchStatus, data) ? (

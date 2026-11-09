@@ -15,7 +15,6 @@ export interface AttemptDetail {
   readonly $schema?: string;
   answers: AttemptDetailAnswers;
   cards: AttemptCard[];
-  chapters: string[];
   correct: number;
   iconId?: string;
   id: string;
@@ -29,6 +28,7 @@ export interface AttemptDetail {
   /** @nullable */
   startedAt: string | null;
   takenAt: string;
+  topics: string[];
   total: number;
   /** @nullable */
   workspaceId: string | null;

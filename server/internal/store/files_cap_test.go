@@ -45,6 +45,55 @@ func TestWorkspaceFileCapRejectsThe101stFile(t *testing.T) {
 	}
 }
 
+// A full workspace refuses a new topic's upload before its bytes are sent, and
+// still takes an upload into a topic it already has, whatever the name's case.
+func TestUploadSessionRefusesANewTopicPastTheCap(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_topic_upload")
+	ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Topics", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for n := range mustPlanLimits(t, s, PlanFree).TopicsPerWorkspace {
+		if _, err := s.AddTopic(ctx, ws.ID, owner, fmt.Sprintf("Topic %d", n+1), ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	session := func(topic string) error {
+		_, err := s.CreateUploadSession(ctx, NewUploadSession{
+			ID: uid("up"), WorkspaceID: ws.ID, CreatedBy: owner, TopicName: topic,
+			ObjectPath: "incoming/" + uid("blob"), FinalPath: "sources/" + uid("blob"),
+			Name: "held.pdf", Kind: "pdf", ContentType: "application/pdf",
+			DeclaredSize: 1, ParseMode: "none",
+			ExpiresAt: time.Now().UTC().Add(time.Hour),
+		})
+		return err
+	}
+	if err := session("One too many"); !errors.Is(err, ErrTooManyTopics) {
+		t.Fatalf("new topic past the cap: err = %v, want ErrTooManyTopics", err)
+	}
+	if err := session("topic 1"); err != nil {
+		t.Fatalf("existing topic: %v", err)
+	}
+	uploadID := uid("up")
+	_, err = s.CreateSourceImports(ctx, []NewSourceImport{{
+		JobID: uid("imp"),
+		Upload: NewUploadSession{
+			ID: uploadID, WorkspaceID: ws.ID, CreatedBy: owner, TopicName: "One too many",
+			ObjectPath: "incoming/" + uploadID + "/file.pdf", FinalPath: "sources/" + uid("blob") + ".pdf",
+			Name: "file.pdf", Kind: "pdf", ContentType: "application/pdf",
+			DeclaredSize: 1, ParseMode: "none",
+			ExpiresAt: time.Now().UTC().Add(time.Hour),
+		},
+		Provider: "google", ProviderFileID: "drive-file",
+		MaxBytes: 2, IdempotencyKey: uid("ireq"), TraceID: "trace",
+	}})
+	if !errors.Is(err, ErrTooManyTopics) {
+		t.Fatalf("drive import past the cap: err = %v, want ErrTooManyTopics", err)
+	}
+}
+
 func TestPendingUploadSessionsOccupyFileSlots(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()

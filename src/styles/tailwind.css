@@ -268,12 +268,8 @@
   }
 }
 
-/* Page gutters. Normal: list and overview pages (Dashboard, Workspaces,
- * Question bank). Wide: the body under a page's tabs (Settings, Billing,
- * Files, Learning) and Notifications.
- * wide-inset takes a section inside a normal page out to the wide gutter
- * (Question bank's topic lists). The bleeds pull edge-to-edge content (the
- * trail maps) back out to the panel's edges. */
+/* The page gutter (Epo 2026-11-06: one for every page, tab bodies too). The bleed
+ * pulls edge-to-edge content (the trail maps) back out to the panel's edges. */
 /* The chat send icon: the accent, made more vivid over frost (a frosted panel
    or the dock's glass), where the plain accent fades into the glass. */
 @utility text-send {
@@ -290,20 +286,8 @@
   @apply px-4 sm:px-6;
 }
 
-@utility page-px-wide {
-  @apply px-4 sm:px-6 lg:px-10 xl:px-16;
-}
-
-@utility wide-inset {
-  @apply lg:px-4 xl:px-10;
-}
-
 @utility page-bleed {
   @apply -mx-4 sm:-mx-6;
-}
-
-@utility page-bleed-wide {
-  @apply -mx-4 sm:-mx-6 lg:-mx-10 xl:-mx-16;
 }
 
 /* A page's tab strip: each tab's own 12px padding makes up the rest, so the
@@ -420,6 +404,21 @@
     var(--color-line) calc(var(--ruled-line) - 1px),
     var(--color-line) var(--ruled-line)
   );
+}
+
+/* A drawing answer's area before drawing (E1, Epo 2026-11-06): one generic
+   squared grid, major lines every four minor squares. */
+@utility drawing-grid {
+  background-image:
+    linear-gradient(var(--color-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-line) 1px, transparent 1px),
+    linear-gradient(var(--color-divider) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-divider) 1px, transparent 1px);
+  background-size:
+    52px 52px,
+    52px 52px,
+    13px 13px,
+    13px 13px;
 }
 
 /* A wavy divider in currentColor: marks content learners don't see yet. */
@@ -574,6 +573,15 @@ math-field {
     --note-p-py: var(--spacing);
     --note-li-py: var(--spacing);
     --note-leading: 1.5;
+  }
+
+  /* Taking an assignment on a phone: no workspace header or chat button
+     (Epo 2026-11-06); the page has its own way out, clock and Submit. */
+  @media (width < 768px) {
+    [data-viewer]:has([data-assignment-take]) [data-center-header],
+    [data-viewer]:has([data-assignment-take]) [data-chat-dock] {
+      display: none !important;
+    }
   }
 
   /* Paint-contained chunks must include the drag-handle gutter on the left and

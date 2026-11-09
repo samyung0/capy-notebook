@@ -6,10 +6,10 @@ import (
 	"testing"
 )
 
-// TestStarterNoteFilesItsQuizAndCardsInTheChapter: the starter workspace's
-// welcome note lands in the chapter it is given with two quiz questions and
+// TestStarterNoteFilesItsQuizAndCardsInTheTopic: the starter workspace's
+// welcome note lands in the topic it is given with two quiz questions and
 // two flashcards embedded, in the account's locale.
-func TestStarterNoteFilesItsQuizAndCardsInTheChapter(t *testing.T) {
+func TestStarterNoteFilesItsQuizAndCardsInTheTopic(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	userID := newBlobTestUser(t, s, "u_starter_note")
@@ -24,16 +24,16 @@ func TestStarterNoteFilesItsQuizAndCardsInTheChapter(t *testing.T) {
 		t.Fatalf("starter workspace = %+v, err %v", ws, err)
 	}
 	sample := StarterCopyFor(ws.Locale)
-	chapter, err := s.AddChapter(ctx, ws.ID, userID, sample.Chapter)
+	topic, err := s.AddTopic(ctx, ws.ID, userID, sample.Topic, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	note, err := s.CreateStarterNote(ctx, userID, ws, chapter.ID)
+	note, err := s.CreateStarterNote(ctx, userID, ws, topic.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if note.ChapterID == nil || *note.ChapterID != chapter.ID || note.Title != sample.note.title {
-		t.Fatalf("note chapter %v title %q", note.ChapterID, note.Title)
+	if note.TopicID == nil || *note.TopicID != topic.ID || note.Title != sample.note.title {
+		t.Fatalf("note topic %v title %q", note.TopicID, note.Title)
 	}
 
 	rows, err := s.pool.Query(ctx, `SELECT kind, content FROM materials

@@ -151,7 +151,7 @@ func assertInteractiveCreditsForbidden(t *testing.T, fx billingFixture) {
 	}
 
 	gen := doReq(t, fx.handler, http.MethodPost, "/api/workspaces/"+ws+"/generate", fx.actorID,
-		generateBody("quiz", "Credits quiz"))
+		generateBody("Credits quiz"))
 	if gen.Code != http.StatusForbidden || errorCode(t, gen) != "llm_credits_exhausted" {
 		t.Fatalf("generate: %d %s", gen.Code, gen.Body.String())
 	}
@@ -384,6 +384,31 @@ func TestUploadRefusedAfterItsTicketCountsInItsBatchAtOnce(t *testing.T) {
 	}
 	if failed != 1 || notified {
 		t.Fatalf("batch after the refusal: failed=%d notified=%v, want 1 and waiting", failed, notified)
+	}
+}
+
+// A new topic past the cap is refused at the ticket, before any waiting or bytes,
+// with the code the browser has copy for; an existing topic still takes a ticket.
+func TestUploadTicketRefusesANewTopicPastTheCap(t *testing.T) {
+	fx := openBilling(t)
+	ctx := context.Background()
+	if _, err := fx.pool.Exec(ctx, `INSERT INTO topics (id, workspace_id, name, position)
+		SELECT 'tp_full_' || n, $1, 'Topic ' || n, n FROM generate_series(1, 30) n`, fx.workspaceID); err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/workspaces/" + fx.workspaceID + "/sources/uploads"
+	ticket := func(topic string) *httptest.ResponseRecorder {
+		rec, _ := takeTicket(t, fx.handler, path, fx.actorID, map[string]any{
+			"name": "notes.pdf", "parseMode": "none", "sizeBytes": 8, "contentType": "application/pdf",
+			"batchId": fmt.Sprintf("sb_topic_%d", time.Now().UnixNano()), "batchTotal": 1, "topicName": topic,
+		})
+		return rec
+	}
+	if rec := ticket("One too many"); rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "too_many_topics") {
+		t.Fatalf("new topic past the cap: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := ticket("topic 1"); rec.Code != http.StatusCreated {
+		t.Fatalf("existing topic: %d %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -735,6 +760,44 @@ func TestEditorDeletesItsImageInANoteItStillEdits(t *testing.T) {
 	}
 	if !slices.Equal(read.RemovedAssetIDs, []string{assetID}) || !strings.Contains(rec.Body.String(), `"assetId":"`+assetID+`"`) {
 		t.Fatalf("owner's read = %s; want the node kept and named as removed", rec.Body.String())
+	}
+}
+
+// Q629, Q630: a text file over the flat cap is refused before anything is sent,
+// on Pro too and saying why, where an Excel file of its size passes. The upload
+// checks the same metadata again. The upload policy carries the cap for the
+// dialog.
+func TestATextSourceOverTheTextCapIsRefused(t *testing.T) {
+	fx := openBilling(t)
+	if _, err := fx.pool.Exec(context.Background(), `UPDATE users SET plan_tier='pro' WHERE id=$1`, fx.actorID); err != nil {
+		t.Fatal(err)
+	}
+	limit := mustPlanLimits(t, fx.store, store.PlanPro).TextFileBytes
+	if limit != 2<<20 {
+		t.Fatalf("text cap = %d, want 2 MiB", limit)
+	}
+	policy := doReq(t, fx.handler, http.MethodGet, "/api/source-upload-policy", fx.actorID, nil)
+	if !strings.Contains(policy.Body.String(), fmt.Sprintf(`"textMaxBytes":%d`, limit)) {
+		t.Fatalf("policy = %s", policy.Body.String())
+	}
+	sources := "/api/workspaces/" + fx.workspaceID + "/sources/uploads"
+	meta := func(name string, size int64) map[string]any {
+		return map[string]any{
+			"name": name, "parseMode": "none", "sizeBytes": size, "contentType": "application/octet-stream",
+			"batchId": fmt.Sprintf("sb_%d", time.Now().UnixNano()), "batchTotal": 1,
+		}
+	}
+	for _, name := range []string{"big.md", "big.txt", "big.json", "big.py", "big.csv", "big.tsv"} {
+		rec, _ := takeTicket(t, fx.handler, sources, fx.actorID, meta(name, limit+1))
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "text files can be at most 2 MB") {
+			t.Fatalf("%s at its ticket: %d %s", name, rec.Code, rec.Body.String())
+		}
+	}
+	if rec, _ := takeTicket(t, fx.handler, sources, fx.actorID, meta("full.md", limit)); rec.Code != http.StatusCreated {
+		t.Fatalf("a text file at the cap: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec, _ := takeTicket(t, fx.handler, sources, fx.actorID, meta("big.xlsx", limit+1)); rec.Code != http.StatusCreated {
+		t.Fatalf("an Excel file past the text cap: %d %s", rec.Code, rec.Body.String())
 	}
 }
 

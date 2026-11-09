@@ -1,20 +1,21 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { gradeAnonymousQuiz, isAnonymousGradingLimit } from './anonymous';
+import { gradeAnonymousQuiz } from './anonymous';
+import { isNoAnswersError } from './client';
 
 afterEach(() => vi.unstubAllGlobals());
 
-it('reads the daily grading cap from the error body', async () => {
+it("reads a refused check's machine code from the error body", async () => {
   vi.stubGlobal(
     'fetch',
     vi.fn(
       async () =>
         new Response(
           JSON.stringify({
-            detail: 'sign in to keep grading open answers today',
-            errors: [{ message: 'anonymous_grading_limit' }],
-            status: 429,
+            detail: 'the question is not in this quiz',
+            errors: [{ message: 'question_no_answers' }],
+            status: 404,
           }),
-          { status: 429 }
+          { status: 404 }
         )
     )
   );
@@ -22,5 +23,5 @@ it('reads the daily grading cap from the error body', async () => {
     answers: {},
     questionId: 'q1',
   }).catch((err: unknown) => err);
-  expect(isAnonymousGradingLimit(error)).toBe(true);
+  expect(isNoAnswersError(error)).toBe(true);
 });

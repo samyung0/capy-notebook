@@ -103,16 +103,16 @@ func TestUserDeleteCascadeTakesEverythingItPaysFor(t *testing.T) {
 
 }
 
-// TestChapterReferencesCannotCrossWorkspaces pins the composite chapter foreign
-// key. Without it a file can be filed under a chapter belonging to a different
+// TestTopicReferencesCannotCrossWorkspaces pins the composite topic foreign
+// key. Without it a file can be filed under a topic belonging to a different
 // workspace, which renders as a tree that silently loses the file.
-func TestChapterReferencesCannotCrossWorkspaces(t *testing.T) {
+func TestTopicReferencesCannotCrossWorkspaces(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 
-	ownerID := uid("u_chapter")
+	ownerID := uid("u_topic")
 	if _, err := s.pool.Exec(ctx, `INSERT INTO users (id, name, email)
-		VALUES ($1, 'Chapter Test', $2)`, ownerID, fmt.Sprintf("%s@example.test", ownerID)); err != nil {
+		VALUES ($1, 'Topic Test', $2)`, ownerID, fmt.Sprintf("%s@example.test", ownerID)); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
@@ -127,26 +127,27 @@ func TestChapterReferencesCannotCrossWorkspaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	foreignChapter, err := s.AddChapter(ctx, second.ID, ownerID, "Elsewhere")
+	foreignTopic, err := s.AddTopic(ctx, second.ID, ownerID, "Elsewhere", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = s.pool.Exec(ctx, `INSERT INTO files (id, workspace_id, user_id, chapter_id, name, kind)
+	_, err = s.pool.Exec(ctx, `INSERT INTO files (id, workspace_id, user_id, topic_id, name, kind)
 		VALUES ($1,$2,$3,$4,'cross.md','md')`,
-		uid("f"), first.ID, ownerID, foreignChapter.ID)
+		uid("f"), first.ID, ownerID, foreignTopic.ID)
 	if err == nil {
-		t.Fatal("a file was filed under a chapter from another workspace")
+		t.Fatal("a file was filed under a topic from another workspace")
 	}
 }
 
-func TestAddChapterStopsAtTheWorkspaceLimit(t *testing.T) {
+// A Free owner's workspace takes the Free plan's topics (10, Epo 2026-11-03).
+func TestAddTopicStopsAtThePlanLimit(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 
-	ownerID := uid("u_chapter")
+	ownerID := uid("u_topic")
 	if _, err := s.pool.Exec(ctx, `INSERT INTO users (id, name, email)
-		VALUES ($1, 'Chapter Test', $2)`, ownerID, fmt.Sprintf("%s@example.test", ownerID)); err != nil {
+		VALUES ($1, 'Topic Test', $2)`, ownerID, fmt.Sprintf("%s@example.test", ownerID)); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
@@ -156,12 +157,12 @@ func TestAddChapterStopsAtTheWorkspaceLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for n := range MaxChaptersPerWorkspace {
-		if _, err := s.AddChapter(ctx, ws.ID, ownerID, fmt.Sprintf("Chapter %d", n+1)); err != nil {
+	for n := range mustPlanLimits(t, s, PlanFree).TopicsPerWorkspace {
+		if _, err := s.AddTopic(ctx, ws.ID, ownerID, fmt.Sprintf("Topic %d", n+1), ""); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := s.AddChapter(ctx, ws.ID, ownerID, "One too many"); !errors.Is(err, ErrTooManyChapters) {
-		t.Fatalf("chapter past the limit: err = %v, want ErrTooManyChapters", err)
+	if _, err := s.AddTopic(ctx, ws.ID, ownerID, "One too many", ""); !errors.Is(err, ErrTooManyTopics) {
+		t.Fatalf("topic past the limit: err = %v, want ErrTooManyTopics", err)
 	}
 }

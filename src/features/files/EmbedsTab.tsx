@@ -91,9 +91,8 @@ export function EmbedsTab({
         onResetFilters={() => onAccessChange(undefined)}
         onViewChange={onViewChange}
         view={view}
-        wide
       />
-      <PageBody belowToolbar wide>
+      <PageBody belowToolbar>
         {access === 'lost' && (
           <p className="t-meta mb-3 text-fg-muted" role="note">
             {m.files_lost_media_notice()}

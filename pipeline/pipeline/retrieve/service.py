@@ -9,8 +9,10 @@ Run: ``uvicorn pipeline.retrieve.service:app --host 0.0.0.0 --port 8001``
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
+import re
 import secrets
 import threading
 from contextlib import asynccontextmanager
@@ -29,9 +31,12 @@ from ..retrieval import (
     accounting,
     compact,
     contract,
+    extraction,
+    grading,
     library,
     limits,
     models,
+    paper,
     pending,
     scripted,
     store,
@@ -182,6 +187,13 @@ async def generate_no_content_handler(
     )
 
 
+@app.exception_handler(extraction.ExtractionRefused)
+async def extraction_refused_handler(
+    _request: Request, exc: extraction.ExtractionRefused
+):
+    return JSONResponse({"code": exc.code, "message": str(exc)}, status_code=400)
+
+
 @app.exception_handler(elitellm.ProviderBusy)
 async def provider_busy_handler(_request: Request, exc: elitellm.ProviderBusy):
     """The call's busy budget is spent: tell the gateway how long to wait."""
@@ -215,10 +227,6 @@ async def request_context(request: Request, call_next):
 
 
 app.include_router(plate_ai_router)
-
-
-def _uid(prefix: str) -> str:
-    return f"{prefix}_{secrets.token_hex(5)}"
 
 
 ThinkingLevel = Literal["instant", "low", "mid", "high", "max"]
@@ -282,8 +290,6 @@ class ChatStreamReq(LLMPin):
     openResource: dict | None = None
     # The requester's saved study preferences; missing fields take defaults.
     studyPreferences: dict | None = None
-    # Study progress is on for the requester in this workspace.
-    studyProgress: bool = False
     # An earlier turn of the conversation was offered the Office tools.
     officeTools: bool = False
     # An earlier turn was offered the writes the editing skill covers.
@@ -329,15 +335,12 @@ def _reset_accounting(token) -> None:
 
 class GenerateReq(LLMPin):
     workspaceId: str
-    kind: str  # flashcards | quiz | mindmap | diagram
-    # The panel's More or Less; required for a quiz or flashcard set (Go
-    # refuses one without it), never taken from the study preferences.
-    count: int | None = Field(default=None, ge=1, le=50)
+    readsHidden: bool = False
+    # The dialog's Questions, required (the gateway refuses a request without it).
+    count: int = Field(ge=1, le=50)
     levels: list[str] | None = None
     types: list[str] = Field(min_length=1)
-    detail: str
-    diagramType: str
-    chapters: list[str] | None = None
+    topics: list[str] | None = None
     fileIds: list[str] | None = None
     # The names of fileIds, for the prompt's scope line.
     fileNames: list[str] | None = None
@@ -346,13 +349,6 @@ class GenerateReq(LLMPin):
 
 
 _VALID_LEVELS = {"recall", "application", "analysis"}
-
-
-def _count(req: GenerateReq) -> int:
-    """The panel's count for a quiz or flashcard set."""
-    if not req.count:
-        raise ValueError(f"a {req.kind} needs a count")
-    return req.count
 
 
 def _cognitive_levels(req: GenerateReq) -> list[str]:
@@ -484,7 +480,6 @@ async def _chat_events(req: ChatStreamReq):
         workspace_only=req.workspaceOnly,
         open_resource=dict(req.openResource or {}),
         study_preferences=dict(req.studyPreferences or {}),
-        study_progress=req.studyProgress,
         office_tools=req.officeTools,
         edit_tools=req.editTools,
         **({"role": req.role} if req.role else {}),
@@ -492,6 +487,16 @@ async def _chat_events(req: ChatStreamReq):
     turn_id = req.assistantMessageId or ""
     if turn_id:
         _running[turn_id] = client
+    # Hidden from members (Epo 2026-11-03): the turn reads hidden items only
+    # in the workspaces its user edits.
+    readers = (
+        [w.id for w in req.scope.workspaces if w.canEdit]
+        if req.account
+        else [req.workspaceId]
+        if req.role in ("owner", "editor")
+        else []
+    )
+    hidden_token = store.bind_hidden_readers(readers)
     try:
         accounting_token = accounting.bind(req.spendSessionId)
         if req.account:
@@ -519,6 +524,7 @@ async def _chat_events(req: ChatStreamReq):
                 yield _sse(frame)
             yield _sse(with_turn_state(event, ctx))
     finally:
+        store.reset_hidden_readers(hidden_token)
         if _running.get(turn_id) is client:
             del _running[turn_id]
         if accounting_token is not None:
@@ -622,14 +628,14 @@ async def library_figure(req: LibraryFigureReq):
 
 @app.post("/generate")
 async def generate(req: GenerateReq) -> dict[str, Any]:
-    """Produce a material and report what it cost.
-
-    The usage envelope is attached here rather than inside each workflow so
-    every generate kind reports it the same way.
-    """
+    """Write a quiz's questions and report what it cost."""
     _take_turn_slot()
     # Its one model call answers provider_busy at once past the call slots too.
     slots_token = limits.bind_call_slots(limits.CallSlotPolicy(wait_s=0))
+    # Go says whether the caller may read hidden items: an editor, not a member.
+    hidden_token = store.bind_hidden_readers(
+        [req.workspaceId] if req.readsHidden else []
+    )
     try:
         accounting_token = _bind_accounting(req.spendSessionId)
         try:
@@ -641,6 +647,7 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
         finally:
             _reset_accounting(accounting_token)
     finally:
+        store.reset_hidden_readers(hidden_token)
         limits.reset_call_slots(slots_token)
         limits.TURN_SLOTS.release()
 
@@ -653,21 +660,12 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
         req.configVersion,
         slot=registry.Slot.CHAT,
     )
-    chapters = req.chapters or []
+    topics = req.topics or []
     file_ids = req.fileIds or []
-    if req.kind == "flashcards":
-        instruction = generate_prompts.flashcards_instruction(_count(req))
-    elif req.kind == "mindmap":
-        instruction = generate_prompts.mindmap_instruction(req.detail)
-    elif req.kind == "diagram":
-        instruction = generate_prompts.diagram_instruction(req.diagramType)
-    elif req.kind == "quiz":
-        instruction = generate_prompts.quiz_instruction(
-            count=_count(req), types=req.types, levels=_cognitive_levels(req)
-        )
-    else:
-        raise ValueError(f"unsupported generate kind {req.kind!r}")
-    scope = workflows.scope_label(chapters, req.fileNames or [])
+    instruction = generate_prompts.quiz_instruction(
+        count=req.count, types=req.types, levels=_cognitive_levels(req)
+    )
+    scope = workflows.scope_label(topics, req.fileNames or [])
     context, _passages, changes = await workflows.generation_context(
         workspace_id=req.workspaceId,
         file_ids=file_ids or None,
@@ -685,45 +683,261 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
         pending_sources=changes,
     )
 
-    if req.kind == "flashcards":
-        data = workflows.require_json_list(raw, "flashcards")
-        cards = [
-            {
-                "id": _uid("c"),
-                "front": str(item.get("front", "")),
-                "back": str(item.get("back", "")),
-            }
-            for item in data
-            if isinstance(item, dict)
-        ]
-        if not cards:
-            raise workflows.GenerateEmpty("flashcards")
-        return {"kind": "flashcards", "cards": cards}
-
-    if req.kind == "mindmap":
-        code = workflows.require_mermaid(raw, "mindmap")
-        return {
-            "kind": "mindmap",
-            "title": "Mindmap",
-            "content": f"# Mindmap\n\n```mermaid\n{code}\n```",
-        }
-
-    if req.kind == "diagram":
-        code = workflows.require_mermaid(raw, "diagram")
-        return {
-            "kind": "diagram",
-            "title": "Diagram",
-            "content": f"# Diagram\n\n```mermaid\n{code}\n```",
-        }
-
-    if req.kind != "quiz":
-        raise ValueError(f"unsupported generate kind {req.kind!r}")
     questions = workflows.normalize_questions(workflows.require_json_list(raw, "quiz"))
     if not questions:
         raise workflows.GenerateEmpty("quiz")
-    return {
-        "kind": "quiz",
-        "name": "Workspace quiz",
-        "chapters": chapters,
-        "questions": questions,
-    }
+    return {"questions": questions}
+
+
+# ----------------------------------------------------------------- extraction
+
+
+class ExtractFile(BaseModel):
+    fileId: str = Field(min_length=1)
+    name: str
+    # A question paper's selected pages, counted from 1; empty for an answer file.
+    pages: list[int] = Field(default_factory=list)
+    # A Word or PowerPoint paper's pages as the browser drew them, base64 JPEGs in
+    # pages' order.
+    images: list[str] = Field(default_factory=list)
+
+
+# A drawing's marking image as Go sends it (drawings.go takes these three).
+_DRAWING_IMAGE = re.compile(r"^data:image/(webp|jpeg|png);base64,[A-Za-z0-9+/]+=*$")
+
+
+class GradeItem(BaseModel):
+    text: str
+    marks: float
+
+
+class GradeReq(LLMPin):
+    question: str
+    items: list[GradeItem] = Field(min_length=1)
+    # A text answer, or a drawing's marking image as a data URL (M1, Epo
+    # 2026-11-07); exactly one of the two.
+    answer: str = ""
+    image: str = Field(default="", max_length=600_000)
+    # A drawing part's drawn sample answer image (Q3), sent before the drawing.
+    sampleImage: str = Field(default="", max_length=600_000)
+    spendSessionId: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _one_answer(self) -> GradeReq:
+        if bool(self.answer) == bool(self.image):
+            raise ValueError("send an answer or an image, not both")
+        for name, value in (("image", self.image), ("sampleImage", self.sampleImage)):
+            if value and not _DRAWING_IMAGE.match(value):
+                raise ValueError(f"{name} must be a WebP, JPEG or PNG data URL")
+        if self.sampleImage and not self.image:
+            raise ValueError("a sample image goes only with a drawing")
+        return self
+
+
+@app.post("/grade")
+async def grade(req: GradeReq) -> dict[str, Any]:
+    """Mark one open answer (todo-study-tracking.md §9): each item's share, a
+    comment and a flag. Go computes the marks. Its call waits in the model's line
+    as a chat's do; a failure leaves the part unmarked, and nothing retries it."""
+    _bind_llm(req)
+    slots_token = limits.bind_call_slots(
+        limits.CallSlotPolicy(wait_s=limits.CHAT_SLOT_WAIT_S)
+    )
+    accounting_token = None
+    try:
+        accounting_token = _bind_accounting(req.spendSessionId)
+        return await grading.grade_part(
+            req.question,
+            [item.model_dump() for item in req.items],
+            req.answer,
+            image=req.image,
+            sample=req.sampleImage,
+            model=models.resolve_query_model(
+                req.providerSlug,
+                req.modelSlug,
+                req.configVersion,
+                slot=registry.Slot.GRADING,
+            ),
+        )
+    finally:
+        _reset_accounting(accounting_token)
+        limits.reset_call_slots(slots_token)
+
+
+class PaperFile(BaseModel):
+    fileId: str = Field(min_length=1)
+    name: str
+
+
+class PaperPart(BaseModel):
+    id: str = Field(min_length=1)
+    type: Literal[
+        "choice",
+        "true/false",
+        "short",
+        "gaps",
+        "matching",
+        "ordering",
+        "open",
+        "drawing",
+    ]
+    # The part as the read call lists it, formatted by Go.
+    label: str
+    # Grading text and marking items, for open and drawing parts.
+    question: str = ""
+    items: list[GradeItem] = Field(default_factory=list)
+
+
+class PaperReq(LLMPin):
+    spendSessionId: str = Field(min_length=1)
+    # In the paper's order.
+    files: list[PaperFile] = Field(min_length=1)
+    parts: list[PaperPart] = Field(min_length=1)
+    # Given: no read, only these open and drawing parts graded on these pages.
+    pages: dict[str, list[int]] | None = None
+    # False under manual marking: the read alone, open parts left to staff.
+    grade: bool = True
+
+
+@app.post("/paper")
+async def mark_paper(req: PaperReq) -> dict[str, Any]:
+    """Mark an uploaded answer paper (todo-file-submissions.md 5a): each part's
+    pages, closed answers as read, and open and drawing grades. A failed read
+    fails the request; a failed grading batch leaves only its parts unmarked.
+    Calls wait in the model's line as /grade's do, and nothing retries them."""
+    _bind_llm(req)
+    slots_token = limits.bind_call_slots(
+        limits.CallSlotPolicy(wait_s=limits.CHAT_SLOT_WAIT_S)
+    )
+    accounting_token = None
+    try:
+        accounting_token = _bind_accounting(req.spendSessionId)
+        return await paper.mark(
+            [f.model_dump() for f in req.files],
+            [
+                paper.Part(
+                    p.id,
+                    p.type,
+                    p.label,
+                    p.question,
+                    [item.model_dump() for item in p.items],
+                )
+                for p in req.parts
+            ],
+            req.pages,
+            grade=req.grade,
+            model=models.resolve_query_model(
+                req.providerSlug,
+                req.modelSlug,
+                req.configVersion,
+                slot=registry.Slot.GRADING,
+            ),
+        )
+    except paper.TooManyPages as exc:
+        raise HTTPException(
+            422, detail={"code": "too_many_pages", "message": str(exc)}
+        ) from exc
+    finally:
+        _reset_accounting(accounting_token)
+        limits.reset_call_slots(slots_token)
+
+
+class ExtractReq(LLMPin):
+    workspaceId: str = Field(min_length=1)
+    # The run's row in Go's store, which holds the starter's answer after the map.
+    runId: str = Field(min_length=1)
+    paper: list[ExtractFile] = Field(min_length=1)
+    answerFiles: list[ExtractFile]
+    spendSessionId: str = Field(min_length=1)
+
+
+@app.post("/extract")
+async def extract(req: ExtractReq):
+    """Make a quiz (todo-study-tracking.md §8): read the selected pages into
+    questions, with the answer files in the first message, as events: ``questions``
+    after each copy batch, then ``done`` with the quiz and its report, or
+    ``error``. The request is checked first, so a page past its file's end
+    is a 400 before the stream starts. The run holds a turn slot from then on
+    (provider_busy at once when there is none, as for /generate); its model
+    calls wait for a call slot as a chat's do."""
+    # Only the workspace's editors make a quiz from files (Go), so the files,
+    # hidden from members as they are, are theirs to read.
+    hidden_token = store.bind_hidden_readers([req.workspaceId])
+    try:
+        pages, answers = await extraction.prepare(
+            req.workspaceId,
+            [f.model_dump() for f in req.paper],
+            [f.model_dump() for f in req.answerFiles],
+        )
+    finally:
+        store.reset_hidden_readers(hidden_token)
+    _take_turn_slot()
+    slot = _ChatSlot()
+    slot.held = True
+    return _SlotStream(
+        _extract_events(req, pages, answers),
+        slot,
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+async def _extract_events(
+    req: ExtractReq,
+    pages: list[extraction.Page],
+    answers: list[extraction.AnswerFile],
+):
+    _bind_llm(req)
+    slots_token = limits.bind_call_slots(
+        limits.CallSlotPolicy(wait_s=limits.CHAT_SLOT_WAIT_S)
+    )
+    hidden_token = store.bind_hidden_readers([req.workspaceId])
+    # The run's OpenRouter calls take the extraction slot's route.
+    route_token = elitellm.bind_route_slot(registry.Slot.EXTRACTION.value)
+    accounting_token = None
+    try:
+        accounting_token = _bind_accounting(req.spendSessionId)
+        model = models.resolve_query_model(
+            req.providerSlug,
+            req.modelSlug,
+            req.configVersion,
+            slot=registry.Slot.EXTRACTION,
+        )
+        async for event in extraction.run(
+            pages,
+            answers,
+            model=model,
+            validate=extraction.gateway_validate,
+            confirm=functools.partial(extraction.starter_confirm, req.runId),
+        ):
+            yield _sse(event)
+    except extraction.ConfirmExpired:
+        yield _sse(
+            {
+                "type": "error",
+                "code": "confirm_expired",
+                "message": "Nobody confirmed the questions in time.",
+            }
+        )
+    except elitellm.ProviderBusy:
+        yield _sse(
+            {
+                "type": "error",
+                "code": models.BUSY_ERROR_CODE,
+                "message": models.BUSY_ERROR,
+            }
+        )
+    except Exception:
+        log.exception("extraction failed")
+        yield _sse(
+            {
+                "type": "error",
+                "code": "extraction_failed",
+                "message": "Reading the questions failed.",
+            }
+        )
+    finally:
+        elitellm.reset_route_slot(route_token)
+        store.reset_hidden_readers(hidden_token)
+        _reset_accounting(accounting_token)
+        limits.reset_call_slots(slots_token)

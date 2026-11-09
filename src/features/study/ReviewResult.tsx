@@ -73,12 +73,14 @@ const blockText = (blocks: QuestionBlock[] = []) =>
   blocks.find((b): b is TextBlock => b.type === 'text' && b.text.trim() !== '')
     ?.text;
 
-/** A question's first line of text, from its stem or else its first part. */
+/** A question's first line of text, from its stem, its groups or else its
+ * first part. */
 function questionText(a: ReviewAnswer) {
   const q = a.question;
   if (!q) return '';
   return (
     blockText(q.stem) ??
+    q.groups?.map((g) => blockText(g.blocks)).find(Boolean) ??
     q.parts.map((p) => blockText(p.blocks)).find(Boolean) ??
     ''
   );

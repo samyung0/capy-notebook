@@ -193,7 +193,7 @@ const CONNECTING: ItemRoomSnapshot = {
   recovery: null,
   sending: false,
   slowed: false,
-  status: 'connecting',
+  status: 'opening',
   synced: false,
 };
 const connecting = () => CONNECTING;

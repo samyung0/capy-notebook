@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test';
+import { expect, type Locator, type Page, test } from '@playwright/test';
 import { m } from '../i18n';
 
 // The late path (in-place GC): a tab away past the room's collection window
@@ -7,9 +7,16 @@ import { m } from '../i18n';
 // places the tab's unsent edits onto it, and the new editor swaps in with
 // every word once. The scenario note keeps its room and drafts (MSW).
 const MATERIAL = 'mock-scenario-note';
-const note = `/workspaces/ws_scenarios?material=${MATERIAL}&mode=edit`;
+const note = `/workspaces/ws_scenarios?material=${MATERIAL}`;
 const seed = 'A note for trying application errors.';
 const OFFLINE = ' Written while away.';
+
+/** An editor's text once it took over from the painted note: behind it, the
+ * text is laid out invisible and reads as empty. */
+async function shownText(editor: Locator) {
+  await expect(editor).toBeVisible({ timeout: 30_000 });
+  return editor.innerText();
+}
 const PEER = 'A block from another tab.';
 const AGAIN = ' Typed after the merge.';
 
@@ -250,7 +257,7 @@ test('a late tab merges its unsent edits into the current note and swaps without
   const download = await holdDownload(page);
   await lateSessions(page, MATERIAL);
   await setReachable(page, true);
-  await expect(saveState).toHaveAttribute('data-save-state', 'preparing', {
+  await expect(saveState).toHaveAttribute('data-save-state', 'opening', {
     timeout: 30_000,
   });
   await page.waitForTimeout(1000);
@@ -275,7 +282,7 @@ test('a late tab merges its unsent edits into the current note and swaps without
   await expect(editor).toContainText(OFFLINE.trim());
   await expect(page.locator('[data-note-mount]')).toHaveCount(1);
   expect(workers.some((url) => url.includes('lateMerge.worker'))).toBe(true);
-  const text = await editor.innerText();
+  const text = await shownText(editor);
   expect(text.split(OFFLINE.trim()).length - 1).toBe(1);
   expect(text.split(PEER).length - 1).toBe(1);
   expect(text.split(seed).length - 1).toBe(1);
@@ -299,7 +306,7 @@ test('a late tab merges its unsent edits into the current note and swaps without
     timeout: 30_000,
   });
   await expect(reviewStrip(page)).toHaveCount(0);
-  const again = await editor.innerText();
+  const again = await shownText(editor);
   expect(again.split(AGAIN.trim()).length - 1).toBe(1);
   expect(again.split(OFFLINE.trim()).length - 1).toBe(1);
   await expect(saveState).toHaveAttribute('data-save-state', 'saved', {
@@ -312,14 +319,14 @@ test('a late tab merges its unsent edits into the current note and swaps without
   await page.reload();
   const reloaded = page.locator('[contenteditable="true"]').first();
   await expect(reloaded).toContainText(PEER, { timeout: 30_000 });
-  const after = await reloaded.innerText();
+  const after = await shownText(reloaded);
   expect(after.split(OFFLINE.trim()).length - 1).toBe(1);
   expect(after.split(AGAIN.trim()).length - 1).toBe(1);
 });
 
 // Q295, Q398: while the merge's code downloads (no time limit) the note
 // shows the tab's own copy read-only (the paused note beside the late mount)
-// and the header reads Getting ready; a failed download shows the own copy
+// and the header shows its spinner; a failed download shows the own copy
 // in the late mount with a strip offering Retry, everything kept, and a
 // reconnecting browser tries again too.
 test('a late tab shows its own copy while the merge code downloads; a failed download retries on Retry and on reconnect', async ({
@@ -342,7 +349,7 @@ test('a late tab shows its own copy while the merge code downloads; a failed dow
   await lateSessions(page, MATERIAL);
   await setReachable(page, true);
   const paused = page.locator('[data-note-mount="paused"]');
-  await expect(saveState).toHaveAttribute('data-save-state', 'preparing', {
+  await expect(saveState).toHaveAttribute('data-save-state', 'opening', {
     timeout: 30_000,
   });
   await expect(paused).toContainText(OFFLINE.trim());
@@ -368,7 +375,7 @@ test('a late tab shows its own copy while the merge code downloads; a failed dow
     'inert',
     ''
   );
-  await expect(saveState).toHaveAttribute('data-save-state', 'preparing');
+  await expect(saveState).toHaveAttribute('data-save-state', 'opening');
   await expect(reviewStrip(page)).toHaveCount(0);
 
   // One strip at a time: offline ranks above the failed download, whose
@@ -395,7 +402,7 @@ test('a late tab shows its own copy while the merge code downloads; a failed dow
   const editor = live.locator('[contenteditable="true"]');
   await expect(editor).toContainText(OFFLINE.trim(), { timeout: 30_000 });
   await expect(banner).toHaveCount(0);
-  const text = await editor.innerText();
+  const text = await shownText(editor);
   expect(text.split(OFFLINE.trim()).length - 1).toBe(1);
   expect(text.split(seed).length - 1).toBe(1);
   await expect(saveState).toHaveAttribute('data-save-state', 'saved', {
@@ -499,7 +506,7 @@ test('a reload during the merge keeps the edits: the reloaded editor merges its 
   );
   await expect(editor).toContainText(OFFLINE.trim(), { timeout: 30_000 });
   await expect(editor).toContainText(PEER);
-  const text = await editor.innerText();
+  const text = await shownText(editor);
   expect(text.split(OFFLINE.trim()).length - 1).toBe(1);
   expect(text.split(seed).length - 1).toBe(1);
 });
@@ -735,7 +742,7 @@ async function openOverHeldSteps(page: Page) {
   await expect(content).toContainText(seed, { timeout: 30_000 });
   await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
     'data-save-state',
-    'syncing'
+    'syncing-draft'
   );
   await expect(content).not.toContainText(HELD.trim());
   await expect.poll(() => draftSends(page)).toBeGreaterThan(0);
@@ -761,7 +768,7 @@ test('a late tab merges the pending steps of another session with its own, in on
   // service is down here), then sends none while the merge's code downloads.
   await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
     'data-save-state',
-    'preparing',
+    'opening',
     { timeout: 30_000 }
   );
   await page.waitForTimeout(3000);
@@ -771,7 +778,7 @@ test('a late tab merges the pending steps of another session with its own, in on
     '[data-note-mount="live"] [contenteditable="true"]'
   );
   await expect(editor).toContainText(HELD.trim(), { timeout: 20_000 });
-  const text = await editor.innerText();
+  const text = await shownText(editor);
   expect(text.split(HELD.trim()).length - 1).toBe(1);
   expect(text.split(seed).length - 1).toBe(1);
   expect(await draftSends(page)).toBe(sent + 1);
@@ -815,7 +822,7 @@ test('a draft send answered late merges its steps in the same session', async ({
     '[data-note-mount="live"] [contenteditable="true"]'
   );
   await expect(editor).toContainText(HELD.trim(), { timeout: 25_000 });
-  const text = await editor.innerText();
+  const text = await shownText(editor);
   expect(text.split(HELD.trim()).length - 1).toBe(1);
   await expect(reviewStrip(page)).toHaveCount(0);
 });
@@ -858,7 +865,7 @@ test('a late merge runs again when its mark no longer holds the session at its b
   );
   const editor = live.locator('[contenteditable="true"]');
   await expect(editor).toContainText(OFFLINE.trim(), { timeout: 30_000 });
-  const text = await editor.innerText();
+  const text = await shownText(editor);
   expect(text.split(OFFLINE.trim()).length - 1).toBe(1);
   await lateSessions(page, null);
 });
@@ -918,7 +925,7 @@ test('an eviction while the late merge waits keeps every draft for the reopened 
   const download = await holdDownload(page);
   await lateSessions(page, MATERIAL);
   await setReachable(page, true);
-  await expect(saveState).toHaveAttribute('data-save-state', 'preparing', {
+  await expect(saveState).toHaveAttribute('data-save-state', 'opening', {
     timeout: 30_000,
   });
   await expect
@@ -936,7 +943,7 @@ test('an eviction while the late merge waits keeps every draft for the reopened 
       timeout: 30_000,
     })
     .toBeGreaterThan(joins);
-  await expect(saveState).toHaveAttribute('data-save-state', 'preparing', {
+  await expect(saveState).toHaveAttribute('data-save-state', 'opening', {
     timeout: 30_000,
   });
   expect(await storedRows(page)).toEqual(before);
@@ -946,7 +953,7 @@ test('an eviction while the late merge waits keeps every draft for the reopened 
     '[data-note-mount="live"] [contenteditable="true"]'
   );
   await expect(editor).toContainText(OFFLINE.trim(), { timeout: 30_000 });
-  const text = await editor.innerText();
+  const text = await shownText(editor);
   expect(text.split(OFFLINE.trim()).length - 1).toBe(1);
   await expect(reviewStrip(page)).toHaveCount(0);
   await lateSessions(page, null);
@@ -1032,7 +1039,7 @@ test('a room turned read-only while the late merge waits keeps every draft for t
   const download = await holdDownload(page);
   await lateSessions(page, MATERIAL);
   await setReachable(page, true);
-  await expect(saveState).toHaveAttribute('data-save-state', 'preparing', {
+  await expect(saveState).toHaveAttribute('data-save-state', 'opening', {
     timeout: 30_000,
   });
   await expect
@@ -1055,7 +1062,7 @@ test('a room turned read-only while the late merge waits keeps every draft for t
     '[data-note-mount="live"] [contenteditable="true"]'
   );
   await expect(editor).toContainText(OFFLINE.trim(), { timeout: 30_000 });
-  const text = await editor.innerText();
+  const text = await shownText(editor);
   expect(text.split(OFFLINE.trim()).length - 1).toBe(1);
   await expect(reviewStrip(page)).toHaveCount(0);
 });
@@ -1100,7 +1107,7 @@ test('a late tab whose drafts the service admits clean opens afresh with no merg
   await expect(page.locator('[data-note-mount="paused"]')).toHaveCount(0, {
     timeout: 30_000,
   });
-  const text = await editor.innerText();
+  const text = await shownText(editor);
   expect(text.split(OFFLINE.trim()).length - 1).toBe(1);
   expect(text.split(seed).length - 1).toBe(1);
   expect(await draftSends(page)).toBe(1);
@@ -1129,7 +1136,7 @@ test('a late tab whose drafts the service answers late runs the merge', async ({
   await expect(page.locator('[data-note-mount="paused"]')).toHaveCount(0, {
     timeout: 30_000,
   });
-  expect((await editor.innerText()).split(OFFLINE.trim()).length - 1).toBe(1);
+  expect((await shownText(editor)).split(OFFLINE.trim()).length - 1).toBe(1);
   expect(await draftSends(page)).toBe(1);
   expect(workers.some((url) => url.includes('lateMerge.worker'))).toBe(true);
   await expect(reviewStrip(page)).toHaveCount(0);
@@ -1171,7 +1178,7 @@ test("a late merge refused for an unrecorded id is re-authored under the tab's o
     timeout: 30_000,
   });
   await expect(editor).toContainText(OFFLINE.trim(), { timeout: 30_000 });
-  const text = await editor.innerText();
+  const text = await shownText(editor);
   expect(text.split(OFFLINE.trim()).length - 1).toBe(1);
   expect(text.split(seed).length - 1).toBe(1);
   await expect(saveState).toHaveAttribute('data-save-state', 'saved', {
@@ -1281,7 +1288,7 @@ test('a saved copy waits for the late merge and merges once it applied', async (
   );
   await expect(editor).toContainText(OFFLINE.trim(), { timeout: 30_000 });
   await expect(editor).toContainText(COPY);
-  expect((await editor.innerText()).split(COPY).length - 1).toBe(1);
+  expect((await shownText(editor)).split(COPY).length - 1).toBe(1);
   await expect.poll(() => roomText(page)).toContain(COPY);
   await expect.poll(() => storedKinds(page)).not.toContain('copy');
   await lateSessions(page, null);
@@ -1366,7 +1373,7 @@ test('a saved copy outlives a late mount left while its merge is stored', async 
     '[data-note-mount="live"] [contenteditable="true"]'
   );
   await expect(editor).toContainText(COPY, { timeout: 60_000 });
-  expect((await editor.innerText()).split(COPY).length - 1).toBe(1);
+  expect((await shownText(editor)).split(COPY).length - 1).toBe(1);
   await expect.poll(() => roomText(page)).toContain(COPY);
 });
 
@@ -1399,7 +1406,7 @@ test('a reconnect during the clean try waits for its answer instead of merging',
   await expect(page.locator('[data-note-mount="paused"]')).toHaveCount(0, {
     timeout: 30_000,
   });
-  expect((await editor.innerText()).split(OFFLINE.trim()).length - 1).toBe(1);
+  expect((await shownText(editor)).split(OFFLINE.trim()).length - 1).toBe(1);
   expect(await draftSends(page)).toBe(1);
   expect(workers.some((url) => url.includes('lateMerge.worker'))).toBe(false);
 });
@@ -1482,7 +1489,7 @@ for (const how of ['answered late again', 'refused'] as const) {
       '[data-note-mount="live"] [contenteditable="true"]'
     );
     await expect(editor).toContainText(COPY, { timeout: 60_000 });
-    expect((await editor.innerText()).split(COPY).length - 1).toBe(1);
+    expect((await shownText(editor)).split(COPY).length - 1).toBe(1);
     await expect.poll(() => roomText(page)).toContain(COPY);
   });
 }

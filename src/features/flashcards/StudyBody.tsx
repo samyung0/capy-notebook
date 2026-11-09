@@ -80,7 +80,7 @@ export function StudyBody({
   actions,
   byline,
   cards,
-  chapter,
+  topic,
   embedded,
   footer,
   frame,
@@ -98,8 +98,8 @@ export function StudyBody({
   /** Public pages: the owner under the title. */
   byline?: ReactNode;
   cards: FlashcardContent[];
-  /** The set's chapter, the cards' label. */
-  chapter?: string;
+  /** The set's topic, the cards' label. */
+  topic?: string;
   /** Inside a note: no header, frame or page padding. */
   embedded?: boolean;
   footer?: ReactNode;
@@ -268,9 +268,7 @@ export function StudyBody({
 
   return (
     <Shell header={header}>
-      <div
-        className={cn(!embedded && 'px-4 pt-8 pb-8 sm:px-6 lg:px-10 xl:px-16')}
-      >
+      <div className={cn(!embedded && 'px-4 pt-8 pb-8 sm:px-6')}>
         <div className="mx-auto flex max-w-160 flex-col gap-6">
           {card ? (
             <>
@@ -288,7 +286,7 @@ export function StudyBody({
                 )}
                 <CardStack
                   card={card}
-                  label={chapter}
+                  label={topic}
                   onRate={rate}
                   rated={shown.record}
                   stack={stack}

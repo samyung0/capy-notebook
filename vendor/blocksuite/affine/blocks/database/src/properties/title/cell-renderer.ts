@@ -1,3 +1,4 @@
+import { TitleIcon } from '@blocksuite/icons/lit';
 import {
   type CellRenderProps,
   createFromBaseCellRenderer,
@@ -10,7 +11,7 @@ import { titlePropertyModelConfig } from './define.js';
 import { HeaderAreaTextCell } from './text.js';
 
 export const titleColumnConfig = titlePropertyModelConfig.createPropertyMeta({
-  icon: createIcon('TitleIcon'),
+  icon: createIcon(TitleIcon),
   cellRenderer: {
     view: uniMap(
       createFromBaseCellRenderer(HeaderAreaTextCell),

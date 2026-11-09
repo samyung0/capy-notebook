@@ -138,8 +138,11 @@ pub enum RoomCmd {
         notification: Option<String>,
         reply: oneshot::Sender<Result<(), String>>,
     },
-    /// Close every channel of a user (account access changed).
+    /// Close every channel of a user (their access changed), with no notice.
     CloseUser(String, u16, String),
+    /// Who is connected, each user with whether a channel of theirs needs an
+    /// editing role (`pubsub::revoke_local`).
+    Holders(oneshot::Sender<HashMap<String, bool>>),
     /// A fold of the log finished: rows and bytes it removed, the new base
     /// size; with a collection, its window and held set
     /// (`note_store::Folded`).
@@ -441,7 +444,7 @@ struct Member {
     channel_id: u64,
     read_only: bool,
     /// A viewer's channel: no awareness either way (kept across refreshes;
-    /// a role change evicts the channel).
+    /// a lowered role closes the channel, a raised one waits for a reload).
     viewer: bool,
     /// The source handoff made this channel read-only until RestoreAccess;
     /// a token refresh keeps it so.
@@ -755,6 +758,8 @@ pub struct Room {
     rows_running: bool,
     /// An update is going into the document (see `update_panicked`).
     applying: bool,
+    /// The update on hand came as a sync step 2 (Q549).
+    in_step2: bool,
     /// The room reloads from the stored document (`reload`).
     reloading: bool,
     /// When waiting opens look at their users' budgets again, and the next
@@ -1207,6 +1212,7 @@ async fn run(
         rows: VecDeque::new(),
         rows_running: false,
         applying: false,
+        in_step2: false,
         reloading: false,
         open_at: None,
         openings: 0,
@@ -1491,6 +1497,18 @@ impl Room {
                 for key in keys {
                     self.close_channel(key, None, code, &reason);
                 }
+            }
+            RoomCmd::Holders(reply) => {
+                let mut holders: HashMap<String, bool> = HashMap::new();
+                for member in self.members.values() {
+                    // A writer needs the role; so does a material room's
+                    // reading tab of an editor, which is in the presence
+                    // (a source room's read channels never are).
+                    let editor = member.context.access == Access::Write
+                        || (matches!(self.kind, Kindly::Note(_)) && !member.viewer);
+                    *holders.entry(member.context.user_id.clone()).or_default() |= editor;
+                }
+                let _ = reply.send(holders);
             }
             RoomCmd::Folded(folded, collected) => {
                 let (folding, log_rows, log_bytes, base_bytes) = match &mut self.kind {
@@ -3164,7 +3182,10 @@ impl Room {
             return;
         };
         let (context, read_only) = (member.context.clone(), member.read_only);
-        match self.admit_update(Some(key), &context, read_only, bytes, None, &[]) {
+        self.in_step2 = step2;
+        let outcome = self.admit_update(Some(key), &context, read_only, bytes, None, &[]);
+        self.in_step2 = false;
+        match outcome {
             Outcome::Admitted => {}
             Outcome::Unheld => self.resync(key, step2, &context),
             // Q443: the tab goes late, as for a late JOIN, and merges its
@@ -3452,6 +3473,17 @@ impl Room {
         }
         self.placed(writer, context);
         if !changes {
+            // A writer's delete inside content the room already deleted tells
+            // the room nothing and an editor holding that content for its
+            // Undo that the writer deleted it (Q549). A resync's step 2
+            // resends its whole delete set: not that.
+            if matches!(self.kind, Kindly::Source(_))
+                && !self.in_step2
+                && !update.delete_set().is_empty()
+                && let Ok(told) = yrs::merge_updates_v1([bytes])
+            {
+                self.broadcast_update(writer, told);
+            }
             self.ack(writer);
             return Err(Outcome::Admitted);
         }
@@ -3490,10 +3522,11 @@ impl Room {
         let sessioned = self.sessions.is_some();
         let apply = || match seed {
             Some(seed) => ydoc::apply_freeing(&self.doc, update, seed)
-                .map(|(content, freed)| (content, freed, yrs::IdSet::new())),
+                .map(|(content, freed, lost)| (content, freed, yrs::IdSet::new(), lost)),
             None if sessioned => ydoc::apply_deleting(&self.doc, update)
-                .map(|(content, deleted)| (content, 0, deleted)),
-            None => ydoc::apply(&self.doc, update).map(|content| (content, 0, yrs::IdSet::new())),
+                .map(|(content, deleted)| (content, 0, deleted, ydoc::Lost::default())),
+            None => ydoc::apply(&self.doc, update)
+                .map(|content| (content, 0, yrs::IdSet::new(), ydoc::Lost::default())),
         };
         let content = if heavy {
             tokio::task::block_in_place(apply)
@@ -3501,7 +3534,7 @@ impl Room {
             apply()
         };
         self.applying = false;
-        let (content, freed, deleted) = match content {
+        let (content, freed, deleted, lost) = match content {
             Ok(content) => content,
             Err(error) => {
                 return Outcome::refused(
@@ -3550,7 +3583,15 @@ impl Room {
         self.ack(writer);
         if !content.is_empty() {
             self.content_changed();
-            self.broadcast_update(writer, content);
+            // What the room's collection took out still reaches an editor
+            // whose Undo can bring it back (Q549); stored state and joiners
+            // never hold it. A resync's step 2 names its whole delete set,
+            // so only what landed counts there. In yrs's own encoding, as
+            // everything peers hear from a room.
+            let told = (lost.landed || (lost.deletions && !self.in_step2))
+                .then(|| yrs::merge_updates_v1([bytes]).ok())
+                .flatten();
+            self.broadcast_update(writer, told.unwrap_or(content));
             self.repair_on_entry(bytes, heavy);
             // A paste, undo or replayed draft that wrote child ids gets a
             // children pass; typing writes none and costs a decode.

@@ -69,14 +69,6 @@ type Config struct {
 	// RateLimit governs per-user and per-IP request limits. The zero value
 	// disables limiting entirely.
 	RateLimit ratelimit.Config
-	// TurnstileSecret verifies signed-out answer checks' Turnstile tokens
-	// (TURNSTILE_SECRET_KEY); CaptchaVerifier replaces siteverify in tests.
-	TurnstileSecret string
-	// TurnstileHosts are the hosts a Turnstile token must have been solved
-	// on, the environment's app hosts; empty skips the check (development
-	// and e2e, whose test keys name no app host).
-	TurnstileHosts  []string
-	CaptchaVerifier CaptchaVerifier
 	// ModelRegistry is the process-wide model config cache. Nil disables
 	// per-model pricing and pinning (tests).
 	ModelRegistry *models.Registry
@@ -110,12 +102,12 @@ type api struct {
 	wh                 webhookStore
 	blob               blob.Store
 	pipe               *pipeline.Client
+	marking            assignmentMarking
 	rdb                *redis.Client
 	parser             string
 	cfg                Config
 	mailRecorder       mail.Recorder
 	limiter            *ratelimit.Limiter
-	captcha            CaptchaVerifier
 	modelReg           *models.Registry
 	jev                *jev.Client
 	stripeSubscription func(string) (*stripe.Subscription, error)
@@ -180,7 +172,6 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		assetThumbs:        make(chan struct{}, assetThumbnailSlots),
 		mailRecorder:       cfg.MailRecorder,
 		limiter:            ratelimit.New(rdb, cfg.RateLimit),
-		captcha:            cfg.CaptchaVerifier,
 		jev:                cfg.Jev,
 		modelReg:           cfg.ModelRegistry,
 		stripeSubscription: billing.RetrieveSubscription,
@@ -202,13 +193,15 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		stripePortal:         billing.CreatePortalSession,
 		streamByUser:         make(map[string]int),
 	}
+	// A paper the server submits for its member (the sweep, an attempt past
+	// its time read or restarted) starts its read as a submit does (finding 2).
+	if s != nil {
+		s.OnPaperHandedIn(a.markAnswersSoon)
+	}
 	// Provisioning, from the first request or the Clerk webhook, also adds the
 	// starter workspace's sample content.
 	provisioner := starterProvisioner{Store: s, a: a}
 	a.wh = provisioner
-	if a.captcha == nil {
-		a.captcha = newTurnstileVerifier(cfg.TurnstileSecret, cfg.TurnstileHosts)
-	}
 	a.uploads = newUploadQueue(func(batch string, removed bool) {
 		if removed {
 			a.removeSourceBatchFile(context.Background(), batch)
@@ -327,8 +320,8 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	r.Post("/api/workspaces/{id}/ai/copilot", a.aiCopilot)
 	if cfg.PipelineSecret != "" {
 		r.Post("/api/internal/materials", a.internalCreateMaterial)
+		r.Post("/api/internal/questions/check", a.internalCheckQuestion)
 		r.Post("/api/internal/files", a.internalCreateFile)
-		r.Post("/api/internal/study-progress", a.internalStudyProgress)
 		r.Post("/api/internal/source-changes", a.internalSourceAuthority)
 		r.Post("/api/internal/source-changes/resolve", a.internalSourceAuthority)
 		r.Post("/api/internal/source-refresh/publish", a.internalSourceAuthority)
@@ -342,7 +335,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		r.Post("/api/internal/documents/list", a.internalListDocuments)
 		r.Post("/api/internal/documents/access", a.internalDocumentAccess)
 		r.Post("/api/internal/workspaces", a.internalCreateWorkspace)
-		r.Post("/api/internal/chapters", a.internalCreateChapter)
+		r.Post("/api/internal/topics", a.internalCreateTopic)
 		r.Post("/api/internal/changes", a.internalChanges)
 		r.Post("/api/internal/changes/resolve", a.internalResolveChange)
 		r.Post("/api/internal/documents/inspect", a.internalInspectDocument)
@@ -520,10 +513,10 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 		})
 		return
 	}
-	if errors.Is(err, store.ErrTooManyChapters) {
+	if errors.Is(err, store.ErrTooManyTopics) {
 		writeJSON(w, http.StatusConflict, map[string]string{
-			"code":    "too_many_chapters",
-			"message": "this workspace already has the maximum number of chapters",
+			"code":    "too_many_topics",
+			"message": "this workspace already has the maximum number of topics",
 		})
 		return
 	}

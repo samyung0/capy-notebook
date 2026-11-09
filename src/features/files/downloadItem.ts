@@ -1,6 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query';
 import * as Y from 'yjs';
-import { fileLinksQuery, materialQuery } from '@/api/hooks';
+import { fileLinksQuery, materialWithBodyQuery } from '@/api/hooks';
 import type { SourceFile } from '@/api/types';
 import { parseMaterialDocument } from '@/features/materials/document';
 import {
@@ -85,7 +85,9 @@ export function downloadNote(
       workspaceId: note.workspaceId,
     },
     async () => {
-      const material = await queryClient.fetchQuery(materialQuery(note.id));
+      const material = await queryClient.fetchQuery(
+        materialWithBodyQuery(note.id)
+      );
       const value =
         parseMaterialDocument(material.content)?.value ??
         material.content.value;

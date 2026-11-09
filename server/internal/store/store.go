@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -74,6 +75,10 @@ var (
 	ErrCheckpointMoved = fmt.Errorf("%w: the source checkpoint moved", ErrConflict)
 	// A source checkpoint for an editing epoch that ended (a handoff).
 	ErrSourceEpochChanged = fmt.Errorf("%w: the source editing epoch changed", ErrConflict)
+	// An access check refused by the actor's role alone: the file and its owner
+	// stand, so the collaboration service closes that person as a revoke does
+	// (Q634). A caller reads it as not found.
+	ErrSourceRoleLost = fmt.Errorf("%w: the role no longer covers it", ErrNotFound)
 	// A source checkpoint request that can never be stored (malformed state,
 	// effects or seed binding); retrying it would fail the same way.
 	ErrInvalidCheckpoint = errors.New("invalid source checkpoint")
@@ -98,13 +103,9 @@ var ErrForbidden = errors.New("forbidden")
 // title (case-insensitive, trimmed). Standalone materials are not in this set.
 var ErrTitleTaken = errors.New("material title already used in this workspace")
 
-// MaxChaptersPerWorkspace bounds a workspace's chapters; the chat agent's turn
-// context lists every chapter on each model call.
-const MaxChaptersPerWorkspace = 20
-
-// ErrTooManyChapters means the workspace already has MaxChaptersPerWorkspace
-// chapters.
-var ErrTooManyChapters = errors.New("workspace already has the maximum number of chapters")
+// ErrTooManyTopics means the workspace already has its owner's plan's
+// topics per workspace (planlimits.Limits.TopicsPerWorkspace).
+var ErrTooManyTopics = errors.New("workspace already has the maximum number of topics")
 
 // ErrMaterialIDTaken means INSERT hit materials_pkey. The caller looks up
 // the row and either returns the original or reports ErrMaterialConflict.
@@ -130,6 +131,25 @@ type Store struct {
 	shareLinkSecret             []byte
 	planLimits                  planlimits.Catalog
 	planLimitsMu                sync.Mutex
+	// paperHandedIn starts a paper's read (OnPaperHandedIn).
+	paperHandedIn atomic.Pointer[func(assignmentID, attemptID string)]
+}
+
+// OnPaperHandedIn sets what starts the read of a paper the server submits for
+// its member: the sweep, or an attempt past its time read or restarted. A
+// submit the member makes starts its own (AssignmentAttempt.NeedsMarking).
+func (s *Store) OnPaperHandedIn(read func(assignmentID, attemptID string)) {
+	if read == nil {
+		s.paperHandedIn.Store(nil)
+		return
+	}
+	s.paperHandedIn.Store(&read)
+}
+
+func (s *Store) paperSubmitted(assignmentID, attemptID string) {
+	if read := s.paperHandedIn.Load(); read != nil {
+		(*read)(assignmentID, attemptID)
+	}
 }
 
 // Pool exposes the connection pool so the model registry can share it.
@@ -218,6 +238,12 @@ func (s *Store) ImageMaxBytes(ctx context.Context, payerID string) (int64, error
 
 func (s *Store) MaxSourceFileBytes() (int64, error) {
 	return s.planLimits.MaxSourceFileBytes()
+}
+
+// SourceExportCap is what a source room's edits keep its file under
+// (planlimits.Catalog.SourceExportCap).
+func (s *Store) SourceExportCap(format string) (int64, error) {
+	return s.planLimits.SourceExportCap(format)
 }
 
 func (s *Store) Close() { s.pool.Close() }

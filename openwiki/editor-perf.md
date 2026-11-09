@@ -27,6 +27,13 @@ Four budget specs always run. Two V8 profile specs run only with
 `PERF_PROFILE=1`. Default CPU throttle is `PERF_CPU=4` via CDP after load. Open
 cost is measured unthrottled because that path is already tens of seconds.
 
+The dev server's module requests pass through MSW ahead of its handlers
+(`devModules` in `src/mocks/browser.ts`, Q617). On a busy PC on 2026-11-06 (three
+alternating runs, medians) that took the read-only open from 6.2 s to 3.9 s, the
+interactive open from 19.4 s to 15.0 s and the scroll from 11 to 24 FPS. `/api` keeps
+its mock latency. The budgets did not change (Q560), so they are looser in effect,
+and earlier numbers aren't comparable.
+
 Numbers from a Windows laptop are not comparable to Linux CI. Different OS,
 different Chromium raster path, different CPU. Keep local runs for debugging
 (`typingProfile.perf.ts` / `saveCycleProfile.perf.ts`). Use Actions for
@@ -67,6 +74,36 @@ A run with `blocks-*` cases adds a Plate/BlockSuite table to the job summary.
 The Performance workflow's `blocks` input (on by default on dispatch) runs
 both, plus the bundle sizes from a `vite build --manifest`. The server side of
 the comparison is `bench/collaboration/scripts/run-layout-cost.sh`.
+
+## Drawing board in dev
+
+The dev server pre-bundles the board's BlockSuite and runs no vanilla-extract plugin
+(Q683; how, and why a vendored edit then needs `vite --force`:
+[frontend/plate-editor.md](frontend/plate-editor.md#blocksuite-on-main)). Measured on the
+PC on 2026-11-06 against the config before it, MSW's module pass-through in both,
+alternating, medians of 3, at 3-25% CPU load from other sessions. Usable means the plane
+is painted and the pen button is there.
+
+| Workspace Canvas tab, blank board | Before | After |
+| --- | --- | --- |
+| Cold start (empty cache): click to usable | 10.5 s | 1.4 s |
+| Restart (cache kept): click to usable | 11.2 s | 1.3 s |
+| Warm (same server, new tab): click to usable | 3.4 s | 0.85 s |
+| Reload with the canvas in the URL: reload to usable | 5.7 s | 2.9 s |
+| Requests after the click, warm | 2,212 (27.9 MB) | 192 (12.9 MB) |
+
+Nothing else got slower. A plain workspace load after a cold start took 17.5 s against
+18.3 s (the dep scan 4.8 s against 7.2 s, the bundling 8.9 s against 7.2 s, esbuild's
+memory 2.6 GB against 2.3 GB while it runs), after a restart 9.1 s against 9.2 s. A DOCX
+opened in 6.2 s after a restart and 4.1 s warm, both ways. `drawing-board.spec.ts` at
+one worker takes 2.0 min from an empty cache and 1.8 min warm, against 8.6 min on the
+dev setup before both MSW's pass-through and this.
+
+`axisNumber` (`src/features/questions/graph.ts`) keeps one `Intl.NumberFormat` per
+decimals and notation. On a large board (8 answers: 25 plane cards, 64 formulas, 32 note
+cards) at 4x CPU in dev, zooming went from 23.5 to 28.5 FPS and from 1.66 s to 0.81 s of
+blocking, and typing a label from 28.7 to 15.9 ms of blocking per key; the label's input
+p95 stays near 470-500 ms, held by other work.
 
 ## Office runtime (`pnpm bench:office`)
 
@@ -224,6 +261,21 @@ grid canvas is cleared for a frame, `window.__xlsxPaints`), the long tasks up
 to that paint, and `longestTask`, since the editor's workbook worker paints
 after the frame the apply returned in.
 
+PPTX first applies one edit on its own and reports the main thread's busy
+time after it (`busyAfterOneEdit`, report-only, Q692), which `toFrame`
+misses: after that frame the editor decodes and recolours the slides'
+pictures again (~800 ms on `jp_llm2.pptx` at the 0.5.1 pin against ~290 on
+the old one, harness `2026-11-06-office-track/office-baseline/REPORT.md`). A
+Chrome trace (`disabled-by-default-devtools.timeline` and
+`blink.user_timing`) runs for 8 s from the edit; a listener added after the
+runtime's marks the receiving task. `busyMs` sums the renderer main thread's
+tasks (DevTools' `RunTask`, all sizes: on that baseline trace the long tasks
+alone were about 340 of its ~810 ms) from that task until the thread is idle,
+no task of 1 ms or more for 500 ms (an untouched open editor runs only
+sub-millisecond timers); `settleMs` is the wall time to that point,
+`longestTaskMs` and `tasks` describe the stretch, and `idle: false` means the
+trace ended first. The ten edits follow it.
+
 XLSX has three more report-only cases. `large paste and row insert` posts a
 peer's 8,000-cell paste (1,000 rows by 8 columns from the fixture's cell) and
 row insert (a whole recalculation) straight to the runtime as host updates;
@@ -241,33 +293,41 @@ in its cell, and reports the typing span and the long tasks meanwhile.
 (`gen_large_xlsx.py 1 50000 values`, seeded with the load-test files) in Edit
 and scrolls it 60 and 600 px a frame for 3 s: grid paints and animation
 frames per second, the longest gap between paints, the long tasks, and the
-heap with the workers. The typing cases report the keystroke p95 and, for
+heap with the workers. Its scrolling is gated by a fixed ceiling
+(`SCROLL_BUDGET`, Q692) instead of 1.3x a median, whose spread was too wide
+(the slow run's longest gap 31 to 60 ms over three PC runs on 2026-11-07):
+both runs fail on a paint gap
+over 100 ms (six frames) or fewer than 50 paints per second. Its open and View
+to Edit stay report-only. The typing cases report the keystroke p95 and, for
 XLSX, Enter to the painted grid (`enterToPaintP50Ms`, `enterToPaintP95Ms`).
 
 It runs unthrottled: CDP's CPU throttle reaches neither the runtime frame nor
 the engine workers. Every file fails on unpainted keys, typing that sends no
 edit to the room, a viewer `ready` without timings, a worker fallback, or a
-missed budget (open, View to Edit, key p50 and p90 per fixture). The spec
+missed budget (open, View to Edit, key p50 and p90 per fixture); the
+50,000-row sheet fails on its scroll ceiling. The spec
 keeps the medians (`MEDIANS`) and derives each budget (`budgetOf`): 1.3x the
 median, rounded up to 5 ms below a second and 50 ms above, and no keystroke
 budget below `KEY_BUDGET_FLOOR_MS` (30 ms), since a one-frame wobble fails
-anything smaller. The medians come from three runs of the `office` job below,
-all on 2026-10-04:
+anything smaller. The medians come from three runs of the `office` job below
+on 97e63a68a, 2026-11-07 (Q692, refreshed after the 0.5.1 pin and the ribbon):
+42323528888, 42325355691 and 42325364585, one each on AMD EPYC 7763, AMD EPYC
+9V45 and Intel Xeon 8370C runners. The EPYC 9V45 run was 30-40% faster on
+every figure, so the medians are mostly the other two runs'. Per fixture, the
+three runs and their median (ms):
 
-- DOCX: runs 37174928433, 37174944257 and 37174959817 (every metric within
-  3% of its median).
-- XLSX and PPTX View to Edit and keys: runs 37197306625, 37197311546 and
-  37197316994 on 15136468, all three on AMD EPYC 7763 runners. Their spread
-  was within 8% of the median except the key timings of a few milliseconds
-  (p50 11 to 14 ms, up to 18% apart), which the floor covers.
-- XLSX and PPTX open: runs 37200395852, 37200390235 and 37200383976 on
-  253762ea (one EPYC 9V45, two EPYC 7763), the first runs since their
-  viewers' `ready` moved to after the first paint. Against the earlier
-  medians, open moved +2% for course-guide.xlsx, -2% for
-  large-gradebook.xlsx, +5% for lecture.pptx and +26% for jp_llm2.pptx, whose
-  first slide's pictures now count (5,728 against 4,530 ms). The other XLSX
-  and PPTX metrics of those runs stayed within 80% of their budgets, so their
-  medians are unchanged.
+| Fixture | Open | View to Edit | Key p50 | Key p90 |
+|---|---|---|---|---|
+| exchange-plan.docx | 4211/3093/4213 -> 4211 | 3525/2207/3460 -> 3460 | 35/23/35 -> 35 | 44/32/43 -> 43 |
+| long-handbook.docx | 5754/3935/5282 -> 5282 | 5085/3143/4924 -> 4924 | 165/104/163 -> 163 | 184/122/187 -> 184 |
+| lecture.pptx | 2266/2015/1925 -> 2015 | 996/702/982 -> 982 | 14/8/16 -> 14 | 17/10/17 -> 17 |
+| jp_llm2.pptx | 4455/3011/4184 -> 4184 | 3093/1898/2909 -> 2909 | 65/38/62 -> 62 | 69/40/69 -> 69 |
+| course-guide.xlsx | 2015/1832/1856 -> 1856 | 1057/763/1044 -> 1044 | 5/3/6 -> 5 | 10/6/11 -> 10 |
+| large-gradebook.xlsx | 2850/2567/2753 -> 2753 | 3237/2077/3058 -> 3058 | 6/3/6 -> 6 | 10/8/12 -> 10 |
+
+The bench's earlier medians (2026-10-04, before the 0.5.1 pin) are in its
+history; the PC baseline the second BetterOffice sync is compared against is
+harness 2026-11-06-office-track/office-baseline/REPORT.md.
 
 Heap figures stay report-only: they go to the results JSON (`budget.heap`,
 and `budget: "report-only"` in the heap and co-editor cases), the job summary
@@ -279,6 +339,88 @@ file), then gate it from three CI runs.
 
 A laptop run is faster than the runner on typing and slower under load, so a
 local miss is not a regression by itself.
+
+## Drawing board (`pnpm bench:canvas`)
+
+[`bench/editor/scripts/board.canvas.ts`](../bench/editor/scripts/board.canvas.ts)
+measures the drawing board (BlockSuite's edgeless editor on `/dev/drawing`) in a
+production build without MSW ([`playwright.canvas.config.ts`](../bench/editor/scripts/playwright.canvas.config.ts)).
+The route is in that build only because the bench sets `VITE_BENCH_ROUTES=true`
+(`src/router.ts`, and `vite.config.ts` keeps the route for it); `scripts/env/config.py` pins it to `false` for every deploy, and
+`scripts/env/test_config.py` checks that. The build takes a few minutes.
+
+Its boards are made in the page through BlockSuite's API and saved, so they
+always match the board's current format (Q686 A):
+
+- **Blank:** the plane card alone, as a new answer opens.
+- **Typical:** a drawn answer on the plane card: 40 pen strokes of 30 points,
+  3 shapes, 2 formulas and 2 note cards of two paragraphs below it.
+- **Large:** far past an answer: 200 strokes, 30 shapes, 10 formulas and 30
+  note cards of three paragraphs over a 2400 by 1600 area.
+
+What it measures:
+
+- **Opens:** three fresh contexts per board, each a cold open and then a warm
+  one on the same page (the build's files cached); navigation to the first
+  task after the frame that holds every element, the median of the three. The
+  blank board opens at 1x, the others at `CPU_RATE` (4x by default). It also
+  reports the mount's synchronous cost, when the main thread settles (the last
+  long animation frame within 5 s) and the blocking time in that window.
+- **Inputs, on the typical and the large board at `CPU_RATE`:** typing 30 keys
+  in a note card (100 ms apart), a pen stroke of 40 moves (32 ms apart), 20
+  wheel pans and 20 Ctrl+wheel zooms (100 ms apart). Each input is timed from
+  its first event to the first task after its next frame, as Office times
+  keys; the p50, p90 and maximum are reported.
+- **Draw, as a drawing question runs it (fix 4), on the typical board at
+  `CPU_RATE`:** three fresh contexts load the module without mounting
+  (`/dev/drawing?unmounted`), mount the board with its answer area out of sight
+  (opacity 0 and `inert`, as `DrawingBoardScreen`'s `hidden`), mount it again,
+  then show it and fit it as Draw does. Reported: each hidden mount's longest
+  animation frame (the page's first, cold, and the second, warm) and showing to
+  the first task after the next frame.
+- **Bytes:** the JS and CSS each cold open requested, raw and gzipped from the
+  build, with the five largest chunks.
+
+Gated: the blank and typical cold opens, the typical board's four input
+p90s, the cold hidden mount's longest frame and Draw's first frame. Reported
+only: warm opens and mounts, the large board and the bytes. It fails on a
+page error, an input with no painted frame, typing that doesn't reach the
+card, a stroke that draws no brush, or a missed budget. The budgets are 1.3x
+the medians in `MEDIANS`, Office's rule (`budgetOf`, rounded up to 5 ms below
+a second and 50 ms above, inputs no lower than 30 ms). `MEDIANS` holds three
+runs on 630705a96 (2026-11-07): blank open 805/821/807 ms, typical open
+2784/2921/3036, pan p90 43/38/43, pen 33/33/33, typing 25/22/21, zoom 61/76/77,
+so the budgets are 1050, 3800, 60, 45, 30 and 100 ms. The hidden mount and
+Draw (Epo 2026-11-07, "just put this into a perf gate", in place of splitting
+the cold mount) are the medians of three later runs on 3249ce018: longest frame
+539/728/738 ms, Draw 43/62/61 ms (warm mount 230/303/316,
+report-only), so the budgets are 950 and 80 ms. A Mac run on 805e3c1f1 measured
+381 and 23 ms. With `MEDIANS` null the
+bench reports `budget: "uncalibrated"` and gates nothing. The first calibration (7d470b2e5,
+three runs on 4cf06a4b6, 2026-11-06) measured the large board and the blank
+open at 4x, so it doesn't carry over; it also showed one runner 40-60% slower
+on every figure, so rerun before reading a miss as a regression.
+
+The boards both benches open are made by
+[`canvasBoards.ts`](../bench/editor/scripts/canvasBoards.ts).
+[`board-stages.canvas.ts`](../bench/editor/scripts/board-stages.canvas.ts)
+(`pnpm bench:canvas board-stages`, report only) answers how long the board takes
+to show (Epo 2026-11-07): the blank and typical boards' cold opens split into the
+app's start, the board chunk's download, its parse and evaluate (chunk done to
+`board:mount-start`), the mount and the first full frame, at 1x and 4x CPU, local
+and over a 10 Mbps, 50 ms link; and `drawBoardPreview` on the typical and large
+boards at 180 by 120 and 600 by 400: the SVG string, the image's decode and its
+paint. On main 33ae38a79 on a Mac (about 2-3x faster than the runner), a typical
+board's preview took 3.4 ms plus a 3.4 ms decode at 4x, while its full open took
+1,252 ms at 4x locally (parse and evaluate 443 ms) and 2,754 ms over the link
+(download 927 ms). Fixes 4, 6 and 7 of the canvas-open report (Epo 2026-11-07)
+then cut the board chunk from 884 to 648 KB gzipped (data-view and the full icon
+set left it, vendored local changes 26 and 27): the typical open at 4x went from
+1,237 to 1,105 ms, parse and evaluate from 443 to 308 ms, and the download over
+the link from 927 to 740 ms. The probe also times Draw with the module already
+evaluated (`/dev/drawing?unmounted`): the first mount on the page, a second one,
+and showing a board mounted ahead out of sight, with the JS heap and DOM nodes a
+board adds.
 
 ## Formula parity audit (`pnpm bench:formula`)
 
@@ -477,7 +619,9 @@ calling `perf.yml` or the file stops being dispatchable and callable. `office`
 runs `pnpm bench:office` on dispatch only (input `office`, default true; a
 `workflow_call` defaults it to false, so promotion skips it); its CI-calibrated
 budgets fail the job and the run. Its results go to the job summary and the
-`office-perf-results` artifact.
+`office-perf-results` artifact. `canvas` runs `pnpm bench:canvas` the same way
+(input `canvas`, default true on dispatch, false on `workflow_call`), with its
+results in the job summary and the `canvas-perf-results` artifact.
 `stress` runs `pnpm bench:stress` (below) on dispatch only (input `stress`,
 false on `workflow_call`) against the `e2e_stack` images, built from the same
 GitHub Actions layer cache. A failed check (exit 1) or a missed latency

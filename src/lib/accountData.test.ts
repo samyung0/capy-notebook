@@ -1,12 +1,16 @@
 import 'fake-indexeddb/auto';
 import { get, set } from 'idb-keyval';
 import { expect, it, vi } from 'vitest';
-import { localUndoPayload } from './localDb';
+import {
+  localDrawingDraft,
+  localUndoPayload,
+  saveLocalDrawingDraft,
+} from './localDb';
 
 const deleteAccountDrafts = vi.hoisted(() => vi.fn(async () => undefined));
 vi.mock('./editDrafts', () => ({ deleteAccountDrafts }));
 
-import { clearAccountData } from './accountData';
+import { claimAccountData, clearAccountData } from './accountData';
 import { claimUndoPayloads, keepUndoPayloads } from './undoPayloads';
 
 // Q315 (Epo 2026-10-24; privacy): the browser where an account's deletion is
@@ -34,4 +38,19 @@ it("clears the account's drafts and caches when its deletion is confirmed", asyn
   expect(deleteAccountDrafts).toHaveBeenCalledWith('u_a');
   expect(await get('capy-query-cache')).toBeUndefined();
   expect(await localUndoPayload('op_kept')).toBeUndefined();
+});
+
+// A drawing answer still being drawn stays with its account: the same account
+// signing in again keeps it, another account or a sign-out deletes it.
+it('keeps a drawing draft for its account only', async () => {
+  await claimAccountData('u_a');
+  await saveLocalDrawingDraft({
+    doc: 'Ym9hcmQ=',
+    key: 'quiz:qz_1:p1',
+    savedAt: new Date().toISOString(),
+  });
+  await claimAccountData('u_a');
+  expect(await localDrawingDraft('quiz:qz_1:p1')).toBeDefined();
+  await claimAccountData('u_b');
+  expect(await localDrawingDraft('quiz:qz_1:p1')).toBeUndefined();
 });

@@ -6,6 +6,7 @@
  */
 import type { CreditSettings } from './creditSettings.ts';
 import type { PlanTier } from './planTier.ts';
+import type { StorageBreakdown } from './storageBreakdown.ts';
 import type { SubscriptionStatus } from './subscriptionStatus.ts';
 
 export interface BillingInfo {
@@ -21,6 +22,7 @@ export interface BillingInfo {
   creditsUsedMicros: number;
   planTier: PlanTier;
   renewalAt?: string;
+  storageBreakdown: StorageBreakdown;
   storageLimitBytes: number;
   storageReservedBytes: number;
   storageUsedBytes: number;

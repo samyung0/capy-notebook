@@ -37,7 +37,7 @@ FROM workspaces
 WHERE id IN ('ws_bio', 'ws_calc', 'ws_hist', 'ws_chem', 'ws_eng')
 ON CONFLICT (workspace_id, user_id) DO UPDATE SET role='owner';
 
-INSERT INTO chapters (id, workspace_id, name, position) VALUES
+INSERT INTO topics (id, workspace_id, name, position) VALUES
   ('ch_1',  'ws_bio',  'Cell structure',           0),
   ('ch_2',  'ws_bio',  'Membranes & transport',    1),
   ('ch_3',  'ws_bio',  'Genetics',                 2),
@@ -79,7 +79,7 @@ INSERT INTO entity_tags (workspace_id, tag_id)
   WHERE EXISTS (SELECT 1 FROM workspaces w WHERE w.id = v.entity_id)
   ON CONFLICT DO NOTHING;
 
-INSERT INTO materials (id, created_by, workspace_id, workspace_name, kind, title, content, scope_chapters, scope_file_names, privacy, color, created_at) VALUES
+INSERT INTO materials (id, created_by, workspace_id, workspace_name, kind, title, content, scope_topics, scope_file_names, privacy, color, created_at) VALUES
   ('qz_1', 'u_1', 'ws_bio', 'Biology 101', 'quiz', 'Cell biology basics',
    $json${"value":[{"id":"qz_1:quiz","type":"quiz","children":[{"type":"quiz_question","id":"q1","question":{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"Which organelle is the powerhouse of the cell?"}],"answer":{"type":"mcq","options":["Nucleus","Mitochondria","Ribosome","Golgi apparatus"],"correct":[1]},"marks":1,"solution":[{"type":"text","text":"Mitochondria produce ATP through cellular respiration."}]}],"layout":"paper","labels":"letters"},"children":[{"text":""}]},{"type":"quiz_question","id":"q2","question":{"id":"q2","stem":[],"parts":[{"id":"q2:part:1","blocks":[{"type":"text","text":"The cell membrane is a phospholipid bilayer."}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[{"type":"text","text":"The membrane is two layers of phospholipids with hydrophilic heads out and hydrophobic tails in."}]}],"layout":"paper","labels":"letters"},"children":[{"text":""}]},{"type":"quiz_question","id":"q3","question":{"id":"q3","stem":[],"parts":[{"id":"q3:part:1","blocks":[{"type":"text","text":"Select all that are membrane-bound organelles."}],"answer":{"type":"mcq","options":["Ribosome","Nucleus","Mitochondria","Cytosol"],"correct":[1,2]},"marks":1,"solution":[{"type":"text","text":"Ribosomes are ribonucleoprotein particles, not membrane-bound.\n\nCorrect — enclosed by a double-membrane nuclear envelope.\n\nCorrect — bounded by an outer and inner membrane.\n\nThe cytosol is the fluid itself, not a membrane-bound compartment."}]}],"layout":"paper","labels":"letters"},"children":[{"text":""}]},{"type":"quiz_question","id":"q4","question":{"id":"q4","stem":[],"parts":[{"id":"q4:part:1","blocks":[{"type":"text","text":"The diffusion of water across a membrane is called ____."}],"answer":{"type":"short","accepted":["osmosis"]},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"},"children":[{"text":""}]},{"type":"quiz_question","id":"q5","question":{"id":"q5","stem":[],"parts":[{"id":"q5:part:1","blocks":[{"type":"text","text":"Order the path of protein secretion."}],"answer":{"type":"ordering","items":["Ribosome","Rough ER","Golgi apparatus","Vesicle","Cell membrane"]},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"},"children":[{"text":""}]},{"type":"quiz_question","id":"q6","question":{"id":"q6","stem":[],"parts":[{"id":"q6:part:1","blocks":[{"type":"text","text":"Match the organelle to its function."}],"answer":{"type":"matching","options":["Stores DNA","Makes ATP","Builds proteins"],"pairs":[{"left":"Nucleus","right":0},{"left":"Mitochondria","right":1},{"left":"Ribosome","right":2}]},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"},"children":[{"text":""}]}]}],"schemaVersion":1}$json$::jsonb,
    '{"Cell structure","Membranes & transport"}', '{}', 'private', 'green', now()-interval '4 day'),
@@ -106,10 +106,10 @@ INSERT INTO flashcard_cards (card_id, material_id) VALUES
   ('c_5', 'dk_2'), ('c_6', 'dk_2'), ('dk_3:card:1', 'dk_3')
 ON CONFLICT (card_id) DO NOTHING;
 
-INSERT INTO attempts (id, user_id, material_id, quiz_name, workspace_name, chapters, correct, total, pct, taken_at) VALUES
-  ('at_1', 'u_1', 'qz_1', 'Cell biology basics',   'Biology 101', '{"Cell structure"}',            8, 10, 80, now()-interval '2 day'),
-  ('at_2', 'u_1', 'qz_3', 'Integration techniques','Calculus II', '{"Techniques of integration"}', 6, 10, 60, now()-interval '3 day'),
-  ('at_3', 'u_1', 'qz_2', 'Genetics check-in',     'Biology 101', '{"Genetics"}',                  4, 10, 40, now()-interval '5 day')
+INSERT INTO attempts (id, user_id, material_id, workspace_id, quiz_name, workspace_name, topics, correct, total, pct, taken_at) VALUES
+  ('at_1', 'u_1', 'qz_1', 'ws_bio',  'Cell biology basics',   'Biology 101', '{"Cell structure"}',            8, 10, 80, now()-interval '2 day'),
+  ('at_2', 'u_1', 'qz_3', 'ws_calc', 'Integration techniques','Calculus II', '{"Techniques of integration"}', 6, 10, 60, now()-interval '3 day'),
+  ('at_3', 'u_1', 'qz_2', 'ws_bio',  'Genetics check-in',     'Biology 101', '{"Genetics"}',                  4, 10, 40, now()-interval '5 day')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO labels (id, user_id, name, color) VALUES

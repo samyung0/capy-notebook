@@ -906,7 +906,7 @@ func TestCloneCarriesProvenanceThroughBothPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	refs, err := s.ListMaterialRefs(ctx, workspaceClone.ID)
+	refs, err := s.ListMaterialRefs(ctx, "", workspaceClone.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

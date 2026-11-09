@@ -158,7 +158,7 @@ func (a *api) listMaterials(ctx context.Context, in *workspaceIDInput) (*materia
 	if _, err := a.workspaceRead(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	res, err := a.s.ListMaterialRefs(ctx, in.ID)
+	res, err := a.s.ListMaterialRefs(ctx, userID(ctx), in.ID)
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -263,7 +263,7 @@ func (a *api) createMaterial(ctx context.Context, in *createMaterialInput) (*mat
 		Kind:           kind,
 		Title:          title,
 		Content:        raw,
-		ScopeChapters:  in.Body.ScopeChapters,
+		ScopeTopics:    in.Body.ScopeTopics,
 		ScopeFileNames: in.Body.ScopeFileNames,
 		Privacy:        "private",
 	})
@@ -277,7 +277,15 @@ func (a *api) createMaterial(ctx context.Context, in *createMaterialInput) (*mat
 	return a.materialResponse(ctx, res, role, false, false)
 }
 
-func (a *api) getMaterial(ctx context.Context, in *materialIDInput) (*materialOutput, error) {
+// getMaterialInput can leave the body out: a device that keeps a copy of the
+// note paints from it and joins the room by difference (Epo 2026-11-04), so
+// only the rest of the read travels.
+type getMaterialInput struct {
+	ID        string `path:"id"`
+	NoContent bool   `query:"noContent" doc:"Leave the document out (an empty value), for a device holding its own copy"`
+}
+
+func (a *api) getMaterial(ctx context.Context, in *getMaterialInput) (*materialOutput, error) {
 	if _, err := a.materialRead(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
@@ -293,7 +301,7 @@ func (a *api) getMaterial(ctx context.Context, in *materialIDInput) (*materialOu
 	// mindmap, Q453) while its room may hold edits the idle projection has
 	// not written yet: the room projects them now. A failed projection serves
 	// the stored one and is reported.
-	if a.projectLive(ctx, in.ID) {
+	if !in.NoContent && a.projectLive(ctx, in.ID) {
 		if res, err = a.s.GetMaterial(ctx, in.ID); err != nil {
 			return nil, hErr(err)
 		}
@@ -311,6 +319,9 @@ func (a *api) getMaterial(ctx context.Context, in *materialIDInput) (*materialOu
 	// quiz's live rooms; only note export reads GET /api/quizzes/{id}/edit.
 	if err == nil && res.Kind == "quiz" {
 		materialdoc.LearnerQuiz(out.Body.Content)
+	}
+	if err == nil && in.NoContent {
+		out.Body.Content.Value = []map[string]any{}
 	}
 	return out, err
 }
@@ -330,19 +341,19 @@ func (a *api) updateMaterial(
 	}
 	patch := store.MaterialPatch{
 		Title:          apimodel.Str(in.Body.Title),
-		ScopeChapters:  in.Body.ScopeChapters,
+		ScopeTopics:    in.Body.ScopeTopics,
 		ScopeFileNames: in.Body.ScopeFileNames,
 		UpdatedBy:      userID(ctx),
 	}
-	// chapterId: "" unfiles (NULL), a real id files it, omitted leaves it.
-	if in.Body.ChapterID != nil {
-		if *in.Body.ChapterID == "" {
+	// topicId: "" unfiles (NULL), a real id files it, omitted leaves it.
+	if in.Body.TopicID != nil {
+		if *in.Body.TopicID == "" {
 			var none *string
-			patch.ChapterID = &none
+			patch.TopicID = &none
 		} else {
-			cid := *in.Body.ChapterID
+			cid := *in.Body.TopicID
 			p := &cid
-			patch.ChapterID = &p
+			patch.TopicID = &p
 		}
 	}
 	res, err := a.s.UpdateMaterial(ctx, in.ID, patch)

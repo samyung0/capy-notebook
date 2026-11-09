@@ -1,7 +1,7 @@
 import { useCallback, useRef, useSyncExternalStore } from 'react';
 import * as Y from 'yjs';
 import { EMBED_CATALOG } from '@/api/embeds.generated';
-import type { MaterialDocument, MermaidElement } from './document';
+import type { MermaidElement } from './document';
 import type { MermaidTheme } from './mermaidThemes';
 
 /* A standalone mindmap's or diagram's room read without Plate (live-items
@@ -58,6 +58,28 @@ export function readMermaid(doc: Y.Doc): LiveMermaid | null {
     };
   }
   return null;
+}
+
+/** A stored `mermaid` block as a live one nothing is joined to, for painting
+ * the editor before its room synced. */
+export function storedMermaid(node: MermaidElement): LiveMermaid {
+  const doc = new Y.Doc();
+  const block = new Y.XmlText();
+  const caption = new Y.XmlText();
+  contentRoot(doc).insertEmbed(0, block);
+  block.setAttribute('type', SHARED_TEXT_ELEMENT);
+  block.insertEmbed(0, caption);
+  caption.insert(0, node.children[0].children.map(({ text }) => text).join(''));
+  const source = new Y.Text(node.source);
+  block.setAttribute(SHARED_TEXT_KEY, source as never);
+  return {
+    block,
+    caption,
+    id: node.id,
+    source,
+    theme: node.theme,
+    width: node.width,
+  };
 }
 
 /** The block, read again when the room adds, removes or re-attributes it;
@@ -125,17 +147,4 @@ export function mermaidNode(live: LiveMermaid): MermaidElement {
     ...(live.theme && { theme: live.theme }),
     ...(live.width && { width: live.width }),
   } as MermaidElement;
-}
-
-/** `content` with its mermaid block replaced by the live one. */
-export function withMermaid(
-  content: MaterialDocument,
-  live: LiveMermaid
-): MaterialDocument {
-  return {
-    ...content,
-    value: content.value.map((node) =>
-      node.type === 'mermaid' ? mermaidNode(live) : node
-    ),
-  };
 }

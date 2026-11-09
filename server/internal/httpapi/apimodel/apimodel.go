@@ -70,7 +70,7 @@ type User struct {
    avoiding pointless copy structs. */
 
 type (
-	Chapter            = store.Chapter
+	Topic              = store.Topic
 	File               = store.File
 	FilePage           = store.FilePage
 	MaterialListItem   = store.MaterialListItem
@@ -157,6 +157,7 @@ type SourceUploadPolicy struct {
 	Accept                       string                        `json:"accept"`
 	MaxBytes                     int64                         `json:"maxBytes"`
 	ImageMaxBytes                int64                         `json:"imageMaxBytes" doc:"The caller's plan image cap, which each picture inside an Office upload must fit"`
+	TextMaxBytes                 int64                         `json:"textMaxBytes" doc:"The flat cap on one text file (txt, md, json, source code, CSV, TSV), on every plan"`
 	AllowNoExtension             bool                          `json:"allowNoExtension"`
 	DigitalParsePageCreditMicros int64                         `json:"digitalParsePageCreditMicros"`
 	VLMIngestPageCreditMicros    int64                         `json:"vlmIngestPageCreditMicros"`
@@ -174,9 +175,9 @@ type Material struct {
 	ContentBytes   int                      `json:"contentBytes" doc:"UTF-8 byte length of persisted content JSON"`
 	NodeCount      int                      `json:"nodeCount"`
 	MaxDepth       int                      `json:"maxDepth"`
-	ChapterID      *string                  `json:"chapterId"`
+	TopicID        *string                  `json:"topicId"`
 	Position       int64                    `json:"position"`
-	ScopeChapters  []string                 `json:"scopeChapters" nullable:"false"`
+	ScopeTopics    []string                 `json:"scopeTopics" nullable:"false"`
 	ScopeFileNames []string                 `json:"scopeFileNames" nullable:"false"`
 	Privacy        store.Privacy            `json:"privacy"`
 	Color          store.UserColor          `json:"color,omitempty"`
@@ -191,6 +192,9 @@ type Material struct {
 	Provenance *store.Provenance `json:"provenance,omitempty"`
 	// ParentMaterialID names the note a quiz or flashcard set is embedded in.
 	ParentMaterialID string `json:"parentMaterialId,omitempty"`
+	// Hidden from members: only the workspace's owners and editors list,
+	// open or search it (Epo 2026-11-03).
+	Hidden bool `json:"hidden,omitempty"`
 	// SharePath is a standalone material's signed share link, for its Share
 	// dialog; absent in a workspace or embedded in a note.
 	SharePath string `json:"sharePath,omitempty"`
@@ -239,13 +243,13 @@ func FromMaterial(m store.Material) (Material, error) {
 	return Material{
 		ID: m.ID, WorkspaceID: m.WorkspaceID, WorkspaceName: m.WorkspaceName,
 		Kind: m.Kind, Title: m.Title, Content: content, ContentBytes: len(m.Content),
-		NodeCount: m.NodeCount, MaxDepth: m.MaxDepth, ChapterID: m.ChapterID,
-		Position:      m.Position,
-		ScopeChapters: m.ScopeChapters, ScopeFileNames: m.ScopeFileNames,
+		NodeCount: m.NodeCount, MaxDepth: m.MaxDepth, TopicID: m.TopicID,
+		Position:    m.Position,
+		ScopeTopics: m.ScopeTopics, ScopeFileNames: m.ScopeFileNames,
 		Privacy: m.Privacy, Color: m.Color, CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
 		Revision: m.Revision,
 		IsOwner:  m.IsOwner, Role: m.Role, Capabilities: m.Capabilities,
-		Provenance: m.Provenance, ParentMaterialID: m.ParentMaterialID,
+		Provenance: m.Provenance, ParentMaterialID: m.ParentMaterialID, Hidden: m.Hidden,
 	}, nil
 }
 
@@ -266,12 +270,13 @@ type Workspace struct {
 	ID           string                   `json:"id"`
 	Name         string                   `json:"name"`
 	IconID       string                   `json:"iconId"`
+	Kind         store.WorkspaceKind      `json:"kind" doc:"What it is used for: decides who sees what in Study and how an editor is named"`
 	Cover        *cover.Cover             `json:"cover,omitempty" doc:"The card's cover art; absent means none"`
 	Privacy      store.Privacy            `json:"privacy"`
 	ShareRole    store.ShareRole          `json:"shareRole"`
 	SharePath    string                   `json:"sharePath"`
 	Tags         []Tag                    `json:"tags" nullable:"false"`
-	ChapterCount int                      `json:"chapterCount"`
+	TopicCount   int                      `json:"topicCount"`
 	FileCount    int                      `json:"fileCount"`
 	FilesLimit   int                      `json:"filesLimit"`
 	CreatedAt    time.Time                `json:"createdAt"`
@@ -279,7 +284,7 @@ type Workspace struct {
 	Role         *store.WorkspaceRole     `json:"role,omitempty"`
 	Capabilities store.AccessCapabilities `json:"capabilities"`
 	// CanClone: members of any role and effective editors may copy the
-	// workspace; a link/public viewer may not.
+	// workspace, of a class effective editors alone; a link/public viewer may not.
 	CanClone bool `json:"canClone"`
 }
 
@@ -291,9 +296,10 @@ func FromWorkspace(w store.Workspace) Workspace {
 	role := store.RoleOwner
 	out := Workspace{
 		AutoProcess: w.AutoProcess,
+		Kind:        w.Kind,
 		ID:          w.ID, Name: w.Name, Description: w.Description, IconID: w.IconID, Cover: w.Cover, Privacy: w.Privacy, ShareRole: w.ShareRole,
 		SharePath: w.SharePath,
-		Tags:      WrapTags(w.Tags), ChapterCount: w.ChapterCount, FileCount: w.FileCount,
+		Tags:      WrapTags(w.Tags), TopicCount: w.TopicCount, FileCount: w.FileCount,
 		FilesLimit: w.FilesLimit,
 		CreatedAt:  w.CreatedAt, IsOwner: true,
 		Role: &role, Capabilities: store.CapabilitiesForRole(role, true), CanClone: true,
@@ -316,7 +322,7 @@ func FromWorkspaceAccess(
 	out.Capabilities = store.CapabilitiesForRole(effective, true)
 	out.Capabilities.CanEdit = out.Capabilities.CanEdit && !actorReadOnly
 	out.Capabilities.CanEditContent = out.Capabilities.CanEdit
-	out.CanClone = store.CanCloneFrom(member, effective) && !actorReadOnly
+	out.CanClone = store.CanCloneFrom(w.Kind, member, effective) && !actorReadOnly
 	if member == "" {
 		out.Role = nil
 	} else {
@@ -380,7 +386,7 @@ type Quiz struct {
 	Name          string           `json:"name"`
 	WorkspaceID   string           `json:"workspaceId"`
 	WorkspaceName string           `json:"workspaceName"`
-	Chapters      []string         `json:"chapters" nullable:"false"`
+	Topics        []string         `json:"topics" nullable:"false"`
 	Questions     []map[string]any `json:"questions" nullable:"false"`
 	CreatedAt     time.Time        `json:"createdAt"`
 	Privacy       store.Privacy    `json:"privacy"`
@@ -405,12 +411,12 @@ func FromQuiz(q store.Quiz) Quiz {
 	out := Quiz{
 		Revision: q.Revision,
 		ID:       q.ID, Name: q.Name, WorkspaceID: q.WorkspaceID, WorkspaceName: q.WorkspaceName,
-		Chapters: q.Chapters, Questions: decodeQuestions(q.Questions), CreatedAt: q.CreatedAt,
+		Topics: q.Topics, Questions: decodeQuestions(q.Questions), CreatedAt: q.CreatedAt,
 		Privacy: q.Privacy, SharePath: q.SharePath, ParentMaterialID: q.ParentMaterialID, Provenance: q.Provenance,
 		IsOwner: q.IsOwner, CanEdit: q.CanEdit, CanEditContent: q.CanEditContent,
 	}
-	if out.Chapters == nil {
-		out.Chapters = []string{}
+	if out.Topics == nil {
+		out.Topics = []string{}
 	}
 	return out
 }
@@ -452,6 +458,37 @@ func FromAttemptDetail(d store.AttemptDetail) AttemptDetail {
 // insert where the user edits and sends it; nothing is sent or stored.
 type VoiceTranscription struct {
 	Text string `json:"text"`
+}
+
+// AssignmentFormReq is the New assignment dialog (boards A1, A1d). Kind, QuizID
+// and Draft are read on creation only.
+type AssignmentFormReq struct {
+	Kind         string     `json:"kind" enum:"marked,unmarked"`
+	Title        string     `json:"title" minLength:"1" maxLength:"120"`
+	QuizID       string     `json:"quizId,omitempty"`
+	DueAt        *time.Time `json:"dueAt,omitempty"`
+	TimeLimitMin *int       `json:"timeLimitMin,omitempty" minimum:"1" maximum:"1440"`
+	Attempts     int        `json:"attempts" minimum:"1" maximum:"10"`
+	// NoLate closes it at its due date; off, LatePenaltyPct (0, 20 or 50) comes
+	// off late work's mark. Both need a due date, and a marked assignment.
+	NoLate         bool `json:"noLate"`
+	LatePenaltyPct int  `json:"latePenaltyPct" minimum:"0" maximum:"50"`
+	// AssignAll gives it to every viewer member, those who join later included;
+	// Assignees names anyone else, or everyone when it is off.
+	AssignAll bool     `json:"assignAll"`
+	Assignees []string `json:"assignees" nullable:"false" maxItems:"500"`
+	Draft     bool     `json:"draft"`
+	// Marking of AI-marked parts: ai_approve, ai or manual (Epo 2026-11-06).
+	Marking string `json:"marking" enum:"ai_approve,ai,manual"`
+	// ShowAnswers is when members read the keys on their results: after it
+	// closes, right after submitting, or never (Epo 2026-11-08, mock C3).
+	ShowAnswers string `json:"showAnswers" enum:"closed,submitted,never"`
+	// ShowGrades: automatic, or manual until staff release them (mock C4).
+	ShowGrades string `json:"showGrades" enum:"automatic,manual"`
+	Shuffle    bool   `json:"shuffle"`
+	// AllowUploads lets members hand in a paper instead (Epo 2026-11-08).
+	AllowUploads bool                      `json:"allowUploads,omitempty"`
+	Files        []store.AssignmentFileRef `json:"files" nullable:"false" maxItems:"20"`
 }
 
 // GradedQuestion is one checked question with its key and, on each part, the

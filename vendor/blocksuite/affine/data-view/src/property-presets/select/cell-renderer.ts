@@ -1,3 +1,4 @@
+import { SingleSelectIcon } from '@blocksuite/icons/lit';
 import { popupTargetFromElement } from '@blocksuite/affine-components/context-menu';
 import { computed } from '@preact/signals-core';
 import { html } from 'lit/static-html.js';
@@ -86,7 +87,7 @@ export class SelectCell extends BaseCellRenderer<
 
 export const selectPropertyConfig =
   selectPropertyModelConfig.createPropertyMeta({
-    icon: createIcon('SingleSelectIcon'),
+    icon: createIcon(SingleSelectIcon),
     cellRenderer: {
       view: createFromBaseCellRenderer(SelectCell),
     },

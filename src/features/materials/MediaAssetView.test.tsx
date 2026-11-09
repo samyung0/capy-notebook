@@ -89,3 +89,19 @@ it('checks the list again when an image fails to load', async () => {
   expect(text()).toContain(m.media_image_removed());
   await act(async () => root.unmount());
 });
+
+it('asks once for a link it still holds, and again once it failed', async () => {
+  const { assetLink, forgetAssetLinks } = await import('./resolvedAssetLinks');
+  forgetAssetLinks();
+  resolveEditorAsset.mockReset();
+  resolveEditorAsset.mockResolvedValue({
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    url: 'https://bucket/a',
+  });
+  const { signal } = new AbortController();
+  await assetLink('asset_a', signal, false);
+  await assetLink('asset_a', signal, false);
+  expect(resolveEditorAsset).toHaveBeenCalledTimes(1);
+  await assetLink('asset_a', signal, true);
+  expect(resolveEditorAsset).toHaveBeenCalledTimes(2);
+});

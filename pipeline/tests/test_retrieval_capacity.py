@@ -36,10 +36,8 @@ CHAT = {
 GENERATE = {
     "thinking": "low",
     "workspaceId": "ws_1",
-    "kind": "mindmap",
+    "count": 5,
     "types": ["recall"],
-    "detail": "brief",
-    "diagramType": "flowchart",
 }
 
 
@@ -58,7 +56,7 @@ def test_generate_answers_busy_past_the_turn_ceiling(monkeypatch):
 
     async def generate(_req):
         runs.append("generate")
-        return {"kind": "mindmap"}
+        return {"questions": []}
 
     monkeypatch.setattr(service, "_chat_events", events)
     monkeypatch.setattr(service, "_generate", generate)
@@ -338,7 +336,7 @@ def _turns(monkeypatch, replies: dict[str, list[AssembledResponse]]):
     async def nothing(*_args, **_kwargs):
         return pending.PendingSources()
 
-    async def no_chapters(*_args, **_kwargs):
+    async def no_topics(*_args, **_kwargs):
         return [], None
 
     async def no_titles(*_args, **_kwargs):
@@ -346,7 +344,7 @@ def _turns(monkeypatch, replies: dict[str, list[AssembledResponse]]):
 
     monkeypatch.setattr(agent.tools, "run", run)
     monkeypatch.setattr(pending, "load", nothing)
-    monkeypatch.setattr(agent.store, "workspace_chapters", no_chapters)
+    monkeypatch.setattr(agent.store, "workspace_topics", no_topics)
     monkeypatch.setattr(agent.store, "resource_titles", no_titles)
     return provider, tools_ran, gates
 
@@ -493,7 +491,7 @@ def test_a_generate_call_answers_busy_past_the_call_slots(monkeypatch):
     async def generate(_req):
         USER.set("G")
         await models.complete_text([{"role": "user", "content": "q"}], model=_model())
-        return {"kind": "mindmap"}
+        return {"questions": []}
 
     monkeypatch.setattr(service, "_generate", generate)
     http = TestClient(service.app)  # no lifespan: no database

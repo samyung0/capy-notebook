@@ -9,6 +9,7 @@ export const QUESTION_TYPES = [
   'ordering',
   'open',
   'gaps',
+  'drawing',
 ] as const;
 
 export type QuestionType = (typeof QUESTION_TYPES)[number];
@@ -173,7 +174,8 @@ export type QuestionBlock =
   | ImageBlock;
 
 export type QuestionAnswer =
-  /** One or more correct options, answered with checkboxes (Epo 2026-10-15). */
+  /** One or more correct options (Epo 2026-10-15): one is answered as a single
+   * choice, several as checkboxes under a hint (Epo 2026-11-08). */
   | { type: 'mcq'; options: string[]; correct: number[] }
   | { type: 'boolean'; correct: boolean }
   | { type: 'short'; accepted: string[]; unit?: string }
@@ -185,29 +187,57 @@ export type QuestionAnswer =
   | { type: 'ordering'; items: string[] }
   | { type: 'open'; accepted: string[]; hints: string[] }
   /** One accepted list per numbered gap written in the part's text. */
-  | { type: 'gaps'; accepted: string[][] };
+  | { type: 'gaps'; accepted: string[][] }
+  /** Answered on the drawing board, which every drawing part opens plain
+   * (Epo 2026-11-06), and marked like an open part against its marking items.
+   * A quiz's part may hold a drawn sample answer (Q3). */
+  | { type: 'drawing'; sample?: DrawnSample };
+
+/** A drawn sample answer: its board (to edit again) and its image (shown after
+ * a check and sent to marking), both the quiz's editor assets. */
+export type DrawnSample = { board: string; image: string };
+
+/** Answer types a model marks against the part's marking items. */
+export const modelMarked = (type: QuestionType) =>
+  type === 'open' || type === 'drawing';
 
 /** An open part's marking item; harder steps can carry more whole marks. */
 export type MarkItem = { text: string; marks: number };
 
+/** Text and figures over the parts that name it (Epo 2026-11-04): a stem's
+ * block kinds and caps, no answer or marks. One level: a group holds parts,
+ * never another group, and a part names its group in `group`. */
+export type QuestionGroup = { id: string; blocks: QuestionBlock[] };
+
 export type QuestionPart = {
   id: string;
+  /** The group it sits in; a group's parts are next to each other in `parts`. */
+  group?: string;
   blocks: QuestionBlock[];
   answer: QuestionAnswer;
   marks: number;
-  /** Open parts only, adding up to `marks`; closed answers are their own key. */
+  /** Open and drawing parts only, adding up to `marks`; closed answers are
+   * their own key. */
   markscheme?: MarkItem[];
   solution: QuestionBlock[];
   /** Attempt snapshots only; authored content rejects these fields. */
   awarded?: number;
   /** Open parts: none, half or all of each item's marks, summing to `awarded`. */
   itemAwards?: number[];
+  /** Open parts no one has marked yet ("Not marked"). */
+  pending?: boolean;
+  /** Open parts: a rule the answer broke, in the AI's plain words, and what code
+   * told apart (`copied`, `instructions`), which shows as an error. */
+  aiComment?: string;
+  aiFlag?: string;
   /** Matching and gaps parts: whether each pair or gap was right. */
   itemResults?: boolean[];
 };
 export type Question = {
   id: string;
   stem: QuestionBlock[];
+  /** Absent when it has none. Labels and places come from `parts`. */
+  groups?: QuestionGroup[];
   parts: QuestionPart[];
   layout: 'paper' | 'split';
   labels: 'letters' | 'numbers';
@@ -215,14 +245,17 @@ export type Question = {
 };
 
 export type LearnerAnswer =
-  | { type: 'mcq'; options: string[] }
+  /** `multiple` only when several options are correct (Epo 2026-11-08). */
+  | { type: 'mcq'; options: string[]; multiple?: true }
   | { type: 'boolean' | 'open' }
   | { type: 'short'; unit?: string }
   | { type: 'matching'; options: string[]; left: string[] }
   | { type: 'ordering'; items: string[] }
-  | { type: 'gaps'; gaps: number };
+  | { type: 'gaps'; gaps: number }
+  | { type: 'drawing' };
 export type LearnerPart = {
   id: string;
+  group?: string;
   blocks: QuestionBlock[];
   answer: LearnerAnswer;
   marks: number;
@@ -310,6 +343,16 @@ export function withoutGapsBlock(
     },
     blocks,
   };
+}
+
+/** Whether an mcq has several correct options, read from its key or, for a
+ * learner, the `multiple` flag: one is a single choice, several are checkboxes
+ * under a hint (Epo 2026-11-08). */
+export function multipleAnswers(answer: QuestionAnswer | LearnerAnswer) {
+  if (answer.type !== 'mcq') return false;
+  return 'correct' in answer
+    ? answer.correct.length > 1
+    : answer.multiple === true;
 }
 
 /** Authored parts carry a worked solution; learner parts never do. */
@@ -429,6 +472,12 @@ export function withoutBlanks(question: Question): Question {
   };
   return {
     ...question,
+    ...(question.groups && {
+      groups: question.groups.map((group) => ({
+        ...group,
+        blocks: keep(group.blocks),
+      })),
+    }),
     parts: question.parts.map((part) => ({
       ...part,
       answer: answer(part.answer),
@@ -450,10 +499,29 @@ export function replaceAssetIds(
     const assetId = ids.get(block.image.assetId);
     return assetId ? { ...block, image: { assetId } } : block;
   };
+  const answer = (part: Question['parts'][number]): QuestionAnswer =>
+    part.answer.type === 'drawing' && part.answer.sample
+      ? {
+          sample: {
+            board:
+              ids.get(part.answer.sample.board) ?? part.answer.sample.board,
+            image:
+              ids.get(part.answer.sample.image) ?? part.answer.sample.image,
+          },
+          type: 'drawing',
+        }
+      : part.answer;
   return {
     ...question,
+    ...(question.groups && {
+      groups: question.groups.map((group) => ({
+        ...group,
+        blocks: group.blocks.map(swap),
+      })),
+    }),
     parts: question.parts.map((part) => ({
       ...part,
+      answer: answer(part),
       blocks: part.blocks.map(swap),
       solution: part.solution.map(swap),
     })),
@@ -461,14 +529,23 @@ export function replaceAssetIds(
   };
 }
 
-/** Editor assets referenced by a quiz question's images. */
+/** Editor assets referenced by a quiz question's images and its drawn sample
+ * answers. */
 export function questionAssetIds(question: Question): string[] {
   return [
-    ...question.stem,
-    ...question.parts.flatMap((part) => [...part.blocks, ...part.solution]),
-  ].flatMap((block) =>
-    block.type === 'image' && 'assetId' in block.image
-      ? [block.image.assetId]
-      : []
-  );
+    ...[
+      ...question.stem,
+      ...(question.groups ?? []).flatMap((group) => group.blocks),
+      ...question.parts.flatMap((part) => [...part.blocks, ...part.solution]),
+    ].flatMap((block) =>
+      block.type === 'image' && 'assetId' in block.image
+        ? [block.image.assetId]
+        : []
+    ),
+    ...question.parts.flatMap((part) =>
+      part.answer.type === 'drawing' && part.answer.sample
+        ? [part.answer.sample.board, part.answer.sample.image]
+        : []
+    ),
+  ];
 }

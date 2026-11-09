@@ -90,16 +90,16 @@ export function FileUnavailable({
         title={m.error_chunk_title()}
       />
     );
-  return kind === 'notFound' ? (
+  return <UnavailableItem />;
+}
+
+/** A refused read's page: it never says blocked rather than gone (Epo
+ * 2026-11-05, Q644). */
+export function UnavailableItem() {
+  return (
     <FileError
-      message={m.files_missing_body()}
-      title={m.files_missing_title()}
-    />
-  ) : (
-    <FileError
-      icon="securityWarning"
-      message={m.editor_access_lost_body()}
-      title={m.editor_access_lost()}
+      message={m.error_not_found_body()}
+      title={m.error_not_found_title()}
     />
   );
 }

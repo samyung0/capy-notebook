@@ -11,11 +11,12 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
 
-// AgentAsset is an image the chat agent put in a note: a library figure the
-// retrieval service rendered, already stored at ObjectPath. It becomes a ready
-// editor asset of the note, charged to the chatting actor like an upload
-// (M16), and from then on follows every editor-asset rule (pruning, trash,
-// clone).
+// AgentAsset is an image the retrieval service rendered, already stored at
+// ObjectPath: a library figure the chat agent put in a note or quiz, or a
+// figure a Make a quiz run cropped from the paper. It becomes a ready editor
+// asset of the material, charged to the actor (the chatting user, the run's
+// starter) like an upload (M16), and from then on follows every editor-asset
+// rule (pruning, trash, clone).
 type AgentAsset struct {
 	ID          string
 	Name        string
@@ -25,7 +26,8 @@ type AgentAsset struct {
 }
 
 // ChatAssetID is the deterministic editor asset id of one thing a chat tool
-// call stores (a figure it placed), so a retried call finds its asset.
+// call stores (a figure it placed), so a retried call finds its asset; a Make
+// a quiz run's figures take the run id in place of the message's.
 func ChatAssetID(assistantMessageID, key string) string {
 	sum := sha256.Sum256([]byte(assistantMessageID + "\n" + key))
 	return "asset_" + hex.EncodeToString(sum[:])[:16]

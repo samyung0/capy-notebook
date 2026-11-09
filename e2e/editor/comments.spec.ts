@@ -1,6 +1,7 @@
 import { expect, type Page, test } from '@playwright/test';
 import type { MaterialDiscussion } from '../../src/api/types';
 import { EDITOR_NOTE } from '../../src/mocks/editorSeed';
+import { clickTextEnd } from '../helpers/editor';
 import { m } from '../i18n';
 import {
   editorApi,
@@ -243,4 +244,93 @@ test.describe('at 360 px', () => {
     await expect(threads.getByText('Whole note remark')).toBeVisible();
     await expect(threads).toBeInViewport({ ratio: 1 });
   });
+});
+
+/** The workspace's own navigation, keeping the page (and its mock room). */
+const goInApp = (page: Page, url: string) =>
+  page.evaluate((to) => {
+    history.pushState({}, '', to);
+    dispatchEvent(new PopStateEvent('popstate'));
+  }, url);
+
+// Q680: the editor mounts without waiting for the note's comments, and their
+// anchors land on their text when the comments answer, the caret left where it was.
+test('comments that answer after the editor mounted anchor on their text', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const editor = await openEditorNote(
+    page,
+    EDITOR_NOTE.id,
+    EDITOR_NOTE.firstParagraph
+  );
+  const paragraph = editor.getByText(EDITOR_NOTE.firstParagraph, {
+    exact: true,
+  });
+  await selectEditorLine(page, paragraph);
+  await page
+    .getByRole('toolbar', { name: m.editor_doc_formatting() })
+    .getByRole('button', { exact: true, name: m.editor_comment() })
+    .click();
+  const dialog = page.getByRole('dialog', { name: m.editor_add_comment() });
+  await dialog.getByRole('textbox').fill('Anchored before the reopen');
+  await dialog
+    .getByRole('button', { exact: true, name: m.editor_add_comment() })
+    .click();
+  const decoration = editor.locator('[data-comment-decoration]');
+  await expect(decoration).toHaveText(EDITOR_NOTE.firstParagraph);
+
+  // Leave the note, forget its comments and hold their next read.
+  await goInApp(page, '/workspaces/ws_bio');
+  await expect(editor).toHaveCount(0, { timeout: 30_000 });
+  await page.evaluate(async (id) => {
+    const paths = ['/src/api/queryClient.ts', '/src/mocks/browser.ts'];
+    const [{ queryClient }, { http, worker }] = await Promise.all(
+      paths.map((path) => import(path))
+    );
+    queryClient.removeQueries({ queryKey: ['material', id, 'discussions'] });
+    const held = new Promise((releaseHeld) => {
+      Object.assign(window, { releaseHeld });
+    });
+    worker.use(
+      http.get(`/api/materials/${id}/discussions`, async () => {
+        await held;
+      })
+    );
+  }, EDITOR_NOTE.id);
+
+  await goInApp(page, `/workspaces/ws_bio?material=${EDITOR_NOTE.id}`);
+  const reopened = page.locator('[contenteditable="true"]').first();
+  const first = reopened.getByText(EDITOR_NOTE.firstParagraph, {
+    exact: true,
+  });
+  await expect(first).toBeVisible({ timeout: 30_000 });
+  await expect(reopened.locator('[data-comment-decoration]')).toHaveCount(0);
+  // The caret at the end of the commented text.
+  await clickTextEnd(first);
+  const caret = () =>
+    page.evaluate(() => {
+      const selection = window.getSelection();
+      return {
+        collapsed: selection?.isCollapsed,
+        offset: selection?.focusOffset,
+        text: selection?.focusNode?.textContent,
+      };
+    });
+  const before = await caret();
+  expect(before.collapsed).toBe(true);
+
+  await page.evaluate(() =>
+    (window as unknown as { releaseHeld: () => void }).releaseHeld()
+  );
+  await expect(reopened.locator('[data-comment-decoration]')).toHaveText(
+    EDITOR_NOTE.firstParagraph,
+    { timeout: 30_000 }
+  );
+  expect(await caret()).toEqual(before);
+  await expect(
+    reopened.getByRole('button', {
+      name: m.editor_show_threads({ count: '1' }),
+    })
+  ).toBeVisible();
 });

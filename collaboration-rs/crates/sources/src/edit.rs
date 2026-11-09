@@ -27,6 +27,9 @@ use crate::{BoxFuture, SourceError, SourceRoom, Sources};
 
 const ATTEMPTS: usize = 3;
 
+/// The refusal of an actor who may not edit the source. A model reads it.
+pub const NOT_EDITABLE: &str = "Source is not editable by this actor";
+
 /// What the gateway asked.
 #[derive(Clone, Debug)]
 pub struct EditInput {
@@ -204,11 +207,7 @@ impl Sources {
             .session(&input.file_id, &input.actor_user_id)
             .await?;
         if session.access != "write" {
-            return Err(SourceError::request(
-                403,
-                "Source is not editable by this actor",
-                None,
-            ));
+            return Err(SourceError::request(403, NOT_EDITABLE, None));
         }
         if let Some(undo) = &input.undo
             && ydoc::undo::refused_across_compaction(undo.epoch, session.epoch as i64)
@@ -306,6 +305,7 @@ impl Sources {
             .transact()
             .encode_state_as_update_v1(&StateVector::default());
         let admission = crate::admission_cap(crate::state_cap(
+            session.format,
             seed.state.len() as u64,
             base.len() as u64,
             stored.export_cap,
@@ -552,11 +552,7 @@ impl Sources {
         live: Vec<u8>,
     ) -> Result<LiveEdit, SourceError> {
         if session.access != "write" {
-            return Err(SourceError::request(
-                403,
-                "Source is not editable by this actor",
-                None,
-            ));
+            return Err(SourceError::request(403, NOT_EDITABLE, None));
         }
         if let Some(undo) = &input.undo
             && ydoc::undo::refused_across_compaction(undo.epoch, session.epoch as i64)

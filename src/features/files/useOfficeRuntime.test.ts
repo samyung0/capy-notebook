@@ -1,13 +1,24 @@
 import { describe, expect, it, vi } from 'vitest';
+import * as Y from 'yjs';
+import { setHeld } from '@/features/collaboration/held';
+import { RoomProvider } from '@/features/collaboration/roomProvider';
 import { m } from '@/i18n';
 import {
+  deliverToEngine,
+  frameBannerAction,
   frameCanEdit,
+  frameRequestLimit,
   keepsFocus,
   officeNotices,
   openRequestedPresenter,
   viewCheckpoint,
 } from './useOfficeRuntime';
-import { opensAtSizeLimit } from './useSourceSession';
+
+import {
+  createRoomFrames,
+  opensAtSizeLimit,
+  SOURCE_IFRAME_ORIGIN,
+} from './useSourceSession';
 
 // Capy's vitest has no DOM, so these elements are outside any dialog or menu
 // (`closest` finds nothing); the e2e checks an open menu.
@@ -42,6 +53,20 @@ describe('the focus a newly opened DOCX leaves alone', () => {
     ).toBe(false);
     expect(keepsFocus(element('BODY'))).toBe(false);
     expect(keepsFocus(null)).toBe(false);
+  });
+});
+
+// Security regression (ribbon review: banner-action gesture): a compromised
+// frame could raise a strip and fire Download draft or Reload with no click.
+describe('a strip click the frame reports', () => {
+  it("runs only with the user's gesture, and not where the browser can't say", () => {
+    const run = vi.fn();
+    frameBannerAction(0, run, { isActive: false });
+    expect(run).not.toHaveBeenCalled();
+    frameBannerAction('close', run, undefined);
+    expect(run).not.toHaveBeenCalled();
+    frameBannerAction(1, run, { isActive: true });
+    expect(run).toHaveBeenCalledExactlyOnceWith(1);
   });
 });
 
@@ -146,6 +171,25 @@ describe('the frame editing while the tab holds back', () => {
   it('leaves the XLSX editor to its own sending state', () => {
     expect(frameCanEdit({ ...frame, format: 'xlsx' })).toBe(true);
   });
+
+  // Q688: an XLSX save waits for the hold to end before the frame answers.
+  it("waits for the hold before a frame request's limit runs out", () => {
+    vi.useFakeTimers();
+    const expire = vi.fn();
+    const holder = {};
+    try {
+      setHeld(holder, true);
+      frameRequestLimit(expire);
+      vi.advanceTimersByTime(90_000);
+      expect(expire).not.toHaveBeenCalled();
+      setHeld(holder, false);
+      vi.advanceTimersByTime(30_000);
+      expect(expire).toHaveBeenCalledTimes(1);
+    } finally {
+      setHeld(holder, false);
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('an edit open at the size limit', () => {
@@ -181,5 +225,85 @@ describe('what view mode exports over the base', () => {
 
   it('is nothing when the session carries no saved edits', () => {
     expect(viewCheckpoint({ state: null, stateSeedSHA256: null })).toEqual({});
+  });
+});
+
+// Q549: an update landing in what the host document holds deleted reaches the
+// host's update event collected, so a DOCX or PPTX engine, whose Undo can bring
+// it back, takes the room's frame.
+describe('what an editor engine takes from the room', () => {
+  // The room's updates carry the provider as their origin.
+  const room = Object.create(RoomProvider.prototype) as RoomProvider;
+
+  /** A host holding a deleted story, and a peer's typing landing in it. */
+  function landing() {
+    const peer = new Y.Doc();
+    const story = new Y.Text();
+    peer.getMap('stories').set('story', story);
+    story.insert(0, 'hello');
+    const host = new Y.Doc();
+    Y.applyUpdate(host, Y.encodeStateAsUpdate(peer), room);
+    host.getMap('stories').delete('story');
+    story.insert(5, ' PEER');
+    const frame = Y.encodeStateAsUpdate(peer, Y.encodeStateVector(host));
+    return { frame, host };
+  }
+
+  /** The host hearing `frame`, as `RoomProvider` applies a room update. */
+  function arrive(
+    host: Y.Doc,
+    frames: ReturnType<typeof createRoomFrames>,
+    frame: Uint8Array
+  ) {
+    frames.emit(frame);
+    Y.applyUpdate(host, frame, room);
+  }
+
+  it.each(['docx', 'pptx'])(
+    'hands %s the frame as it arrived, once',
+    (format) => {
+      const { frame, host } = landing();
+      const frames = createRoomFrames();
+      const delivered: Uint8Array[] = [];
+      const stop = deliverToEngine(host, format, frames, (update) =>
+        delivered.push(update)
+      );
+      arrive(host, frames, frame);
+      expect(delivered).toEqual([frame]);
+      stop();
+      arrive(host, frames, frame);
+      expect(delivered).toHaveLength(1);
+    }
+  );
+
+  it.each(['docx', 'pptx'])(
+    'hands %s what reaches the host another way, and nothing of its own',
+    (format) => {
+      const { frame, host } = landing();
+      const delivered: Uint8Array[] = [];
+      deliverToEngine(host, format, createRoomFrames(), (update) =>
+        delivered.push(update)
+      );
+      const own = new Y.Doc();
+      own.getText('own').insert(0, 'own');
+      Y.applyUpdate(host, Y.encodeStateAsUpdate(own), SOURCE_IFRAME_ORIGIN);
+      expect(delivered).toEqual([]);
+      Y.applyUpdate(host, frame);
+      expect(delivered).toHaveLength(1);
+    }
+  );
+
+  it('leaves XLSX on the host document, frames unused', () => {
+    const peer = new Y.Doc();
+    peer.getText('cells').insert(0, 'a');
+    const frame = Y.encodeStateAsUpdate(peer);
+    const host = new Y.Doc();
+    const frames = createRoomFrames();
+    const delivered: Uint8Array[] = [];
+    deliverToEngine(host, 'xlsx', frames, (update) => delivered.push(update));
+    frames.emit(new Uint8Array([1, 2, 3]));
+    expect(delivered).toEqual([]);
+    Y.applyUpdate(host, frame, room);
+    expect(delivered).toHaveLength(1);
   });
 });

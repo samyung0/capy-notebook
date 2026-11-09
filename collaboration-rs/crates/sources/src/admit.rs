@@ -1185,7 +1185,7 @@ mod tests {
         if fits_room(room, update, estimate, cap) != Ok(true) {
             return None;
         }
-        let (content, freed) =
+        let (content, freed, _) =
             ydoc::apply_freeing(room, Update::decode_v1(update).unwrap(), seed).unwrap();
         estimate.applied(content.len() as u64, freed);
         let state = encode(room, &StateVector::default()).len() as u64;
@@ -1296,7 +1296,7 @@ mod tests {
                 .get_or_insert_text("source")
                 .remove_range(&mut client.transact_mut(), 0, 4)
         });
-        let (_, freed) =
+        let (_, freed, _) =
             ydoc::apply_freeing(&room, Update::decode_v1(&deleted).unwrap(), None).unwrap();
         assert_eq!(freed, 0);
     }

@@ -695,6 +695,53 @@ fn plot_text_stops_at_the_charts_bounds() {
     );
 }
 
+/// Grouped parts (Epo 2026-11-04): the shared group fixtures validate as Go
+/// and the browser validate them, under each fixture's policy.
+#[test]
+fn group_fixtures_validate_as_go_and_the_browser() {
+    let dir = format!(
+        "{}/../../../server/internal/questions/testdata",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let mut seen = 0;
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        if !name.starts_with("group-") {
+            continue;
+        }
+        seen += 1;
+        let fixture: Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let ours = questions::validate_question(
+            &fixture["question"],
+            &policy(&fixture["policy"], &Value::Null),
+        )
+        .map(|_| ());
+        assert_eq!(
+            ours.is_ok(),
+            fixture["valid"] == json!(true),
+            "{name}: {ours:?}"
+        );
+    }
+    assert!(seen >= 16, "{seen} group fixtures");
+}
+
+/// What a merge leaves reads repaired, on the fixtures the browser reads too.
+#[test]
+fn group_repairs_follow_the_shared_fixtures() {
+    let path = format!(
+        "{}/../../../server/internal/questions/testdata/repairs/groups.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let cases: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    for case in cases.as_array().unwrap() {
+        let mut question = case["question"].clone();
+        questions::repair_groups(&mut question);
+        assert_eq!(question, case["repaired"], "{}", case["name"]);
+    }
+}
+
 /// An image's or graph's description holds QUESTION_DESCRIPTION_MAX in a
 /// quiz and a note, the bank's QUESTION_TEXT_MAX in the bank (Epo 2026-10-14).
 #[test]

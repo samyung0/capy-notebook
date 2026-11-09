@@ -72,10 +72,10 @@ class Passage:
     # workspace; None in workspace chat, whose passages all live in its one.
     workspace_id: str | None = None
     workspace_name: str = ""
-    # Account chat's chapter and edit right of the source (Epo 2026-10-28);
+    # Account chat's topic and edit right of the source (Epo 2026-10-28);
     # can_edit is None in workspace chat.
-    chapter_id: str = ""
-    chapter_name: str = ""
+    topic_id: str = ""
+    topic_name: str = ""
     can_edit: bool | None = None
 
     @classmethod
@@ -118,7 +118,7 @@ class Passage:
         parts = [self.file_name]
         if self.workspace_id is not None:
             parts[:0] = [self.workspace_name or "Outside workspaces"] + (
-                [self.chapter_name] if self.chapter_name else []
+                [self.topic_name] if self.topic_name else []
             )
         if self.section_path:
             parts.append(self.section_path)

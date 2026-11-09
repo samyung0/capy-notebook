@@ -372,20 +372,20 @@ func TestListingScopesOutsideAWorkspace(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = s.DeleteWorkspace(context.Background(), owner, ws.ID) })
 	addWorkspaceEditor(t, s, ws.ID, member)
-	chapter, err := s.AddChapter(ctx, ws.ID, owner, "Week one")
+	topic, err := s.AddTopic(ctx, ws.ID, owner, "Week one", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	ownerFile, err := s.createReadyFile(ctx, ws.ID, owner, "owner-scope.pdf", "pdf", &chapter.ID, "", 10, "sources/"+uid("blob"))
+	ownerFile, err := s.createReadyFile(ctx, ws.ID, owner, "owner-scope.pdf", "pdf", &topic.ID, "", 10, "sources/"+uid("blob"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	memberFile, err := s.createReadyFile(ctx, ws.ID, member, "member-scope.pdf", "pdf", &chapter.ID, "", 20, "sources/"+uid("blob"))
+	memberFile, err := s.createReadyFile(ctx, ws.ID, member, "member-scope.pdf", "pdf", &topic.ID, "", 20, "sources/"+uid("blob"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	memberNote, err := s.CreateMaterial(ctx, Material{
-		CreatedBy: member, WorkspaceID: ws.ID, WorkspaceName: ws.Name, ChapterID: &chapter.ID, Kind: "note", Content: materialTestContent(t, ""), Title: "Member scope note",
+		CreatedBy: member, WorkspaceID: ws.ID, WorkspaceName: ws.Name, TopicID: &topic.ID, Kind: "note", Content: materialTestContent(t, ""), Title: "Member scope note",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -451,8 +451,8 @@ func TestListingScopesOutsideAWorkspace(t *testing.T) {
 
 	// A review the member finished there, and the notice of its removal.
 	if _, err := s.pool.Exec(ctx, `INSERT INTO review_sessions
-		(id, user_id, workspace_id, chapter_id, group_kind, items, started_at, last_answer_at, finished_at)
-		VALUES (gen_random_uuid(), $1, $2, $3, 'chapter', '[]', now(), now(), now())`, member, ws.ID, chapter.ID); err != nil {
+		(id, user_id, workspace_id, topic_id, group_kind, items, started_at, last_answer_at, finished_at)
+		VALUES (gen_random_uuid(), $1, $2, $3, 'topic', '[]', now(), now(), now())`, member, ws.ID, topic.ID); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.RemoveWorkspaceMember(ctx, owner, ws.ID, member); err != nil {
@@ -472,7 +472,7 @@ func TestListingScopesOutsideAWorkspace(t *testing.T) {
 		t.Fatalf("removed member's Files = %+v, %v", files.Items, err)
 	}
 	if got := files.Items[0]; !got.LostAccess || got.Name != "member-scope.pdf" || got.SizeBytes != 20 ||
-		got.ChapterID != nil || got.Status != "" || got.Revision != 0 || got.PreviewURL != nil || got.WorkspaceName != ws.Name {
+		got.TopicID != nil || got.Status != "" || got.Revision != 0 || got.PreviewURL != nil || got.WorkspaceName != ws.Name {
 		t.Fatalf("lost file = %+v, want name, size and workspace only", got)
 	}
 	blocks, err := s.ListOwnedMaterials(ctx, member, MaterialListFilter{})
@@ -480,11 +480,11 @@ func TestListingScopesOutsideAWorkspace(t *testing.T) {
 		t.Fatalf("removed member's Blocks = %+v, %v", blocks.Items, err)
 	}
 	if got := blocks.Items[0]; !got.LostAccess || got.ID != memberNote.ID || got.Title != memberNote.Title ||
-		got.ChapterID != nil || got.ChapterName != "" || got.UpdatedAt != got.CreatedAt || got.Preview != nil {
+		got.TopicID != nil || got.TopicName != "" || got.UpdatedAt != got.CreatedAt || got.Preview != nil {
 		t.Fatalf("lost block = %+v, want name and size only", got)
 	}
 	reviews, _, err := s.PastReviews(ctx, member, PastReviewParams{Limit: 10})
-	if err != nil || len(reviews) != 1 || reviews[0].WorkspaceName != "" || reviews[0].ChapterName != "" || reviews[0].IconID != "" {
+	if err != nil || len(reviews) != 1 || reviews[0].WorkspaceName != "" || reviews[0].TopicName != "" || reviews[0].IconID != "" {
 		t.Fatalf("removed member's past review = %+v, %v; want the names blank", reviews, err)
 	}
 	notices, err := s.ListNotifications(ctx, member, 10, "")

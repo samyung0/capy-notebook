@@ -1,4 +1,5 @@
-import type * as Y from 'yjs';
+import * as Y from 'yjs';
+import { LOCAL_EDIT } from './yText';
 
 /** What Undo and Redo act on: one live item document's own edits, or a
  * quiz's two documents together. */
@@ -8,6 +9,22 @@ export interface UndoTarget {
   redo(): void;
   subscribe(notify: () => void): () => void;
   undo(): void;
+}
+
+/**
+ * Undo for one live item document, covering this user's own edits to it,
+ * never others' or the server's. A step is a transaction that changed
+ * something: a document-scoped manager would otherwise record empty ones,
+ * and a quiz writes both its documents on every edit, so Undo would fall
+ * through an empty step into the other document's earlier one.
+ */
+export function itemUndo(doc: Y.Doc) {
+  return new Y.UndoManager(doc, {
+    captureTimeout: 500,
+    captureTransaction: (transaction) =>
+      transaction.changed.size > 0 || transaction.deleteSet.clients.size > 0,
+    trackedOrigins: new Set([LOCAL_EDIT]),
+  });
 }
 
 const EVENTS = [

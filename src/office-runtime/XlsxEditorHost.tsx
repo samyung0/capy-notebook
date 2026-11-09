@@ -7,6 +7,7 @@ import {
 import { SheetGoneError } from '@betteroffice/xlsx/editor';
 import { analyzeOpenWorkbook } from '@betteroffice/xlsx/viewer';
 import {
+  type RibbonControls,
   type XlsxCommandState,
   XlsxEditor,
   type XlsxEditorApi,
@@ -25,6 +26,7 @@ import type {
   OfficeNotice,
   OfficeRenderedPage,
 } from '@/features/files/officeProtocol';
+import { OfficeRibbon, type OfficeRibbonHost } from './OfficeRibbon';
 import type {
   OfficeCollaboration,
   OfficeExporter,
@@ -38,6 +40,7 @@ import type {
   OfficeRenderer,
   OfficeThumbnailer,
 } from './runtimeMenus';
+import { takeKeyboard } from './takeKeyboard';
 import { xlsxIcons } from './xlsxIcons';
 import { runXlsxMenuItem, xlsxEditMenus, xlsxStrings } from './xlsxMenus';
 import {
@@ -46,6 +49,7 @@ import {
   THUMBNAIL_AREA,
   viewportPage,
 } from './xlsxRender';
+import { XLSX_RIBBON } from './xlsxRibbon';
 import './xlsx-runtime.css';
 
 /** The XLSX editor's presence over the frame's cursor channel: co-editors'
@@ -86,6 +90,7 @@ function xlsxAwareness(
 export function XlsxEditorHost({
   bytes,
   collaboration,
+  compact,
   locale,
   onAnalysis,
   onExporter,
@@ -94,7 +99,6 @@ export function XlsxEditorHost({
   onNotice,
   onPositioner,
   onRenderer,
-  narrow,
   onPendingChange,
   fileName,
   initialZoom,
@@ -102,15 +106,17 @@ export function XlsxEditorHost({
   onThumbnailer,
   onZoomChange,
   readOnly,
+  ribbon,
   sending,
 }: {
   bytes: Uint8Array;
   collaboration: OfficeCollaboration;
+  /** Below md: the ribbon is one row, with no zoom (as the PDF toolbar), font
+   * picker or size box. */
+  compact: boolean;
   /** 1 = 100%, the level the file was last shown at. */
   initialZoom?: number;
   locale: OfficeLocale;
-  /** Below lg: no zoom (as the PDF toolbar), font picker or size box. */
-  narrow: boolean;
   /** Once the first grid is painted. */
   onAnalysis: (analysis: OfficeAnalysis) => void;
   onExporter: (exporter: OfficeExporter | null) => void;
@@ -130,6 +136,7 @@ export function XlsxEditorHost({
   onZoomChange: (zoom: number) => void;
   /** Recovery: selection and copy only. */
   readOnly: boolean;
+  ribbon: OfficeRibbonHost;
   /**
    * The tab holds back its collaboration messages (pacing, an update's
    * pieces, a timeout): the grid refuses edits with a loading cursor.
@@ -172,6 +179,7 @@ export function XlsxEditorHost({
   useEffect(() => {
     if (!commandState) return;
     onMenus({
+      focus: () => apiRef.current?.focus(),
       menus: xlsxEditMenus(commandState, locale),
       run: (id) => runXlsxMenuItem(id, apiRef.current),
     });
@@ -252,6 +260,18 @@ export function XlsxEditorHost({
     );
     return () => onThumbnailer(null);
   }, [drawFirstSheet, onThumbnailer]);
+  const renderRibbon = useCallback(
+    (controls: RibbonControls) => (
+      <OfficeRibbon
+        controls={controls}
+        layout={XLSX_RIBBON}
+        onBannerAction={ribbon.onBannerAction}
+        onLeave={ribbon.onLeave}
+        store={ribbon.store}
+      />
+    ),
+    [ribbon]
+  );
   const leavingFirstSheet = (event: PointerEvent<HTMLDivElement>) => {
     if (
       !undrawnRef.current ||
@@ -288,19 +308,22 @@ export function XlsxEditorHost({
         onPendingChange={onPendingChange}
         onReady={(api) => {
           apiRef.current = api;
+          const stopTaking = takeKeyboard(api.focus);
           return () => {
             apiRef.current = null;
+            stopTaking();
           };
         }}
         onSave={onSave}
         readOnly={readOnly}
+        ribbon={renderRibbon}
         sending={sending}
         showCustomNumberFormat={false}
-        showFontPicker={!narrow}
-        showFontSizePicker={!narrow}
+        showFontPicker={!compact}
+        showFontSizePicker={!compact}
         showProposals={false}
         showSearchMenus={false}
-        showZoomControl={!narrow}
+        showZoomControl={!compact}
         singleRowToolbar
       />
     </div>

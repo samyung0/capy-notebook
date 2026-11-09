@@ -24,6 +24,8 @@ import { router } from './router';
 import { ThemeProvider } from './theme/ThemeProvider';
 import 'streamdown/styles.css';
 import { TooltipProvider } from './components/ui/Tooltip';
+import { listenForExtractionEnds } from './features/makeQuiz/extractionEnd';
+import { nextQuizDialog } from './features/makeQuiz/quizRuns';
 import { CrumbLinkContext } from './features/quizzes/QuizPageHeader';
 import { SourceTransferPanel } from './features/workspace/SourceTransferPanel';
 
@@ -60,6 +62,35 @@ enableMocks().finally(() => {
   // index.html replaced the boot spinner with its reload message: a stylesheet
   // failed to load, and the app would boot unstyled over it.
   if (document.querySelector('#root > .boot-loader[role="alert"]')) return;
+  listenForExtractionEnds(
+    () => (router.state.location.search as { run?: string }).run,
+    {
+      openQuiz: (workspaceId, quizId) =>
+        void router.navigate({
+          params: { workspaceId },
+          search: { material: quizId },
+          to: '/workspaces/$workspaceId',
+        }),
+      pickAgain: ({ answers, paper, step, workspaceId }) =>
+        void router
+          .navigate({
+            params: { workspaceId },
+            search: {
+              answers: answers.join(',') || undefined,
+              make: step ?? (paper.length > 0 ? 'pages' : 'files'),
+              paper: paper.join(',') || undefined,
+            },
+            to: '/workspaces/$workspaceId',
+          })
+          .then(nextQuizDialog),
+      review: (workspaceId, run) =>
+        void router.navigate({
+          params: { workspaceId },
+          search: { make: 'run', run },
+          to: '/workspaces/$workspaceId',
+        }),
+    }
+  );
   createRoot(document.getElementById('root')!, {
     onCaughtError: reportReactError,
     onUncaughtError: reportReactError,

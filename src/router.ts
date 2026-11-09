@@ -11,7 +11,6 @@ import {
   attemptsQuery,
   billingQuery,
   cardsQuery,
-  chaptersQuery,
   conversationsQuery,
   eventsQuery,
   exploreFlashcardSetsQuery,
@@ -21,7 +20,7 @@ import {
   filesQuery,
   flashcardSetQuery,
   labelsQuery,
-  learningProgressQuery,
+  learningOverviewQuery,
   materialQuery,
   materialsQuery,
   meQuery,
@@ -30,9 +29,9 @@ import {
   ownedFilesQuery,
   ownedMaterialsQuery,
   quizQuery,
-  recentQuery,
-  reviewOverviewQuery,
   tasksQuery,
+  todoQuery,
+  topicsQuery,
   usageQuery,
   workspaceQuery,
   workspacesQuery,
@@ -47,6 +46,7 @@ import { parseThemeSearch } from '@/components/app/themeDrawerSearch';
 import { prefetchOfficeFile } from '@/features/files/prefetchOfficeFile';
 import {
   parseDocumentModeSearch,
+  parseMaterialPageSearch,
   parseWorkspaceOpenSearch,
 } from '@/features/materials/openItem';
 import {
@@ -69,10 +69,12 @@ import {
   MATERIAL_SORTS,
   materialListParams,
   parseFilesSearch,
+  parseTodoSearch,
   parseWorkspacesSearch,
   savedSort,
   WORKSPACE_SORT_DEFAULT,
   WORKSPACE_SORTS,
+  type WorkspacesSearch,
   workspaceListParams,
 } from '@/lib/listSearch';
 import {
@@ -151,9 +153,10 @@ const page = <const T extends string>(
   });
 
 const publicRoutes = [
-  // BlockSuite spike (todo-blocksuite-spike.md): dev builds only, so
-  // production builds drop the chunk.
-  ...(import.meta.env.DEV
+  // Dev builds only, so production builds drop BlockSuite's chunk until a page
+  // that ships opens the board. The canvas bench's production build turns it on
+  // (VITE_BENCH_ROUTES, bench:canvas); a deploy pins it off (scripts/env/config.py).
+  ...(import.meta.env.DEV || import.meta.env.VITE_BENCH_ROUTES === 'true'
     ? [
         createRoute({
           component: lazyPage(() => import('@/routes/DevBlockSuite')),
@@ -236,15 +239,6 @@ const blocksRedirect = <const T extends string>(path: T) =>
   });
 
 const appRoutes = [
-  createRoute({
-    component: lazyPage(() => import('@/routes/Dashboard')),
-    getParentRoute: () => authShellRoute,
-    loader: ({ context: { queryClient: qc } }) => {
-      qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
-      qc.prefetchQuery(recentQuery());
-    },
-    path: '/',
-  }),
   // biome-ignore assist/source/useSortedKeys: TanStack types `deps` in the loader from `loaderDeps`, which must come first.
   createRoute({
     // A list opened without a sort in the URL shows the viewer's last pick.
@@ -259,7 +253,7 @@ const appRoutes = [
         throw redirect({
           replace: true,
           search: { ...search, ...saved },
-          to: '/workspaces',
+          to: '/',
         });
     },
     component: lazyPage(() => import('@/routes/Workspaces')),
@@ -268,8 +262,32 @@ const appRoutes = [
     loader: ({ context: { queryClient: qc }, deps }) => {
       qc.prefetchQuery(workspacesQuery(workspaceListParams(deps)));
     },
+    path: '/',
+    // `clone` is the public pages' Clone link, which CloneLinkDialog reads.
+    validateSearch: (
+      search: Record<string, unknown>
+    ): WorkspacesSearch & { clone?: unknown } => ({
+      ...parseWorkspacesSearch(search),
+      clone: search.clone,
+    }),
+  }),
+  createRoute({
+    beforeLoad: ({ search }) => {
+      throw redirect({ replace: true, search, to: '/' });
+    },
+    component: () => null,
+    getParentRoute: () => authShellRoute,
     path: '/workspaces',
     validateSearch: parseWorkspacesSearch,
+  }),
+  createRoute({
+    component: lazyPage(() => import('@/routes/Todo')),
+    getParentRoute: () => authShellRoute,
+    loader: ({ context: { queryClient: qc } }) => {
+      qc.prefetchQuery(todoQuery());
+    },
+    path: '/todo',
+    validateSearch: parseTodoSearch,
   }),
   // biome-ignore assist/source/useSortedKeys: TanStack types `deps` in the loader from `loaderDeps`, which must come first.
   createRoute({
@@ -287,7 +305,7 @@ const appRoutes = [
       const id = params.workspaceId;
       qc.prefetchQuery(workspaceQuery(id));
       qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
-      qc.prefetchQuery(chaptersQuery(id));
+      qc.prefetchQuery(topicsQuery(id));
       qc.prefetchQuery(filesQuery(id));
       qc.prefetchQuery(materialsQuery(id));
       qc.prefetchQuery(conversationsQuery(id));
@@ -308,6 +326,24 @@ const appRoutes = [
     staticData: { hideSidebar: true },
     validateSearch: parseWorkspaceOpenSearch,
   }),
+  // The report's links (todo-study-tracking.md §9): the page itself lives in
+  // the workspace's own URL, whose rail and panels stay mounted.
+  createRoute({
+    beforeLoad: ({ params, search }) => {
+      throw redirect({
+        params: { workspaceId: params.workspaceId },
+        replace: true,
+        search: {
+          ...(search as Record<string, unknown>),
+          assignment: params.assignmentId,
+          study: 'assignments',
+        },
+        to: '/workspaces/$workspaceId',
+      });
+    },
+    getParentRoute: () => authShellRoute,
+    path: '/workspaces/$workspaceId/study/assignments/$assignmentId',
+  }),
   // Chat across all the user's files; the optional id keeps the page mounted
   // (and its streams running) while the shown conversation changes.
   createRoute({
@@ -319,7 +355,6 @@ const appRoutes = [
       qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
     },
     path: '/chat/{-$conversationId}',
-    staticData: { hideSidebar: true },
   }),
   createRoute({
     component: lazyPage(() => import('@/routes/OpenShareLink')),
@@ -331,17 +366,18 @@ const appRoutes = [
   blocksRedirect('/flashcards'),
   createRoute({
     beforeLoad: ({ search }) => {
+      if (!features.learning) throw redirect({ replace: true, to: '/' });
       const saved =
         search.tab === 'results'
           ? savedSort('results', RESULT_SORTS, RESULT_SORT_DEFAULT, search)
-          : search.tab === 'review'
+          : search.tab === 'past'
             ? savedSort(
                 'pastReviews',
                 PAST_REVIEW_SORTS,
                 PAST_REVIEW_SORT_DEFAULT,
                 search
               )
-            : undefined;
+            : null;
       if (saved)
         throw redirect({
           replace: true,
@@ -353,8 +389,7 @@ const appRoutes = [
     getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
       void qc.prefetchInfiniteQuery(attemptsQuery());
-      void qc.prefetchQuery(learningProgressQuery());
-      void qc.prefetchQuery(reviewOverviewQuery());
+      void qc.prefetchQuery(learningOverviewQuery());
     },
     path: '/learning',
     validateSearch: (search: Record<string, unknown>) => {
@@ -363,11 +398,9 @@ const appRoutes = [
         ...tab,
         ...(tab.tab === 'results'
           ? parseResultsSearch(search)
-          : parsePastReviewsSearch(search)),
-        // The workspace a finish toast's Go check leads Progress's map with.
-        ...(typeof search.finished === 'string' && search.finished
-          ? { finished: search.finished }
-          : {}),
+          : tab.tab === 'past'
+            ? parsePastReviewsSearch(search)
+            : {}),
       };
     },
   }),
@@ -389,7 +422,7 @@ const appRoutes = [
       void queryClient.prefetchQuery(materialQuery(params.materialId));
     },
     path: '/materials/$materialId',
-    validateSearch: parseDocumentModeSearch,
+    validateSearch: parseMaterialPageSearch,
   }),
   createRoute({
     component: lazyPage(() => import('@/routes/MaterialOpen')),

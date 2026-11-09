@@ -11,13 +11,9 @@ export interface GradeAnonymousQuizReq {
   readonly $schema?: string;
   /** The learner's answers to the question's parts, by part id */
   answers: GradeAnonymousQuizReqAnswers;
-  /** @maxLength 64 */
-  localId?: string;
   /**
      * @minLength 1
      * @maxLength 128
      */
   questionId: string;
-  /** @maxLength 2048 */
-  turnstileToken?: string;
 }

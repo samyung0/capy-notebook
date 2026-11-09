@@ -1,7 +1,7 @@
 ---
 type: Frontend
 title: "Frontend: Plate.js and Yjs Editor"
-description: "Plate v53, the Rust collaboration server as Yjs authority, comment anchors, projections, and local AI previews."
+description: "Plate v53, the Rust collaboration server as Yjs authority, comment anchors, projections, opening an item, and device copies."
 tags: [frontend, plate, slate, yjs, collaboration, ai]
 ---
 
@@ -13,9 +13,12 @@ durable authority for material content after a room is initialized.
 - Yjs owns live material content.
 - Go/PostgreSQL own metadata, permissions, comments, and content projections.
 - `materials.content` is an eventually consistent Plate JSON read projection.
-- Note View and signed-out or public pages render that projection without
-  joining Yjs.
-- Editors edit and comment in Edit mode; View is a static preview without comments.
+- A note opens one way (see [opening a note](#opening-a-note)): it paints static
+  from its device copy or that projection, then a signed-in reader follows its
+  room on a read channel and an editor's Plate takes over. Signed-out and public
+  pages render the projection and join nothing.
+- Everyone gets the highest mode they may have, with no Edit/View switch
+  (materials; Office and text files keep theirs until the ribbon lands).
 - Flashcard sets and quizzes are live everywhere (live-items, Epo 2026-10-10):
   their editors, View, study and attempt pages and note embeds join the item's
   own rooms; signed-in viewers join read-only, with no presence and no comment
@@ -52,12 +55,16 @@ PostgreSQL advisory/row lock in the collaboration server.
 
 ## Material surfaces and permissions
 
-`materialModePolicy` exposes two modes:
-
-- `view`: static `MaterialPreview`; no token, WebSocket, awareness, or editor;
-- `edit`: live editable Plate with a `write` room token.
-
-Files and materials remember their last View/Edit mode separately in localStorage, keyed by item kind and ID. Explicit URL modes take precedence; otherwise the saved mode is used, with View as the default for an uncached item. Viewers only get `view`. The header toggles View/Edit showing the mode it switches to (the Edit icon and label while viewing, View while editing; pressed still means editing) with identical styling in both states, for materials and uploaded files at every viewport size. Workspace and standalone document URLs accept `mode=view|edit`; a successful toggle replaces that query parameter, so reload and shared links retain the mode. File transitions retain their save/export gates, and a failed transition keeps the editor and URL in their previous mode.
+A material has no mode to choose (Epo 2026-11-04): `canEditContent` decides. An
+editor gets the live Plate with a `write` room token, a viewer the static renderer
+following the room on a read token. `view` remains only as what an editor drops
+to when the room turns read-only (frozen, full, an unsupported block), under its
+strip. `?mode=` on a material's link is dropped and the saved per-item mode is
+gone, so old links open as any link does; the question bank keeps its own Edit
+button. Office and text files keep theirs: they remember their last View/Edit in
+localStorage, keyed by item kind and ID, take `mode=view|edit` from the URL, and
+the header toggle shows the mode it switches to; a successful toggle replaces
+that query parameter and a failed transition keeps the editor and URL as they were.
 
 The permission boundary is layered:
 
@@ -75,7 +82,7 @@ The permission boundary is layered:
    (its creator, uploader pays) is at its storage limit) read-only: a step 2 or update holding
    anything new closes the channel, so a modified browser cannot send Yjs
    document updates.
-5. View mounts only the static preview, without editor plugins or comment controls.
+5. A viewer mounts only the static preview, without editor plugins or comment controls.
 6. Comment REST endpoints independently enforce the editor ACL.
 
 `MaterialEffectiveRole` is the union of the caller's membership and the
@@ -84,15 +91,14 @@ mints a `write` token. See [authorization](../authorization-permissions-lifecycl
 for the full matrix.
 
 ACL changes, sharing changes, and deletions publish room eviction events through
-Redis. Revocation, deletion, ownership/placement changes, and account locks use
-discard mode so rejected in-memory state cannot return. Provably monotonic
-ACL changes use drain mode: member insertion/promotion and privacy/share-role
-widening persist accepted pending edits before unload. Account and plan
+Redis. A widening of access publishes nothing, and a narrowing a `revoke` that
+closes only the people it took something from (Q634, see
+[authorization](../authorization-permissions-lifecycles.md)). Deletion, placement
+changes and account locks use discard mode so rejected in-memory state cannot
+return. A moved file and a hidden item use drain mode, persisting accepted
+pending edits before unload. Account and plan
 restoration instead flushes pending stores without closing connections or
 unloading the room; later edits continue through the normal save cycle.
-Workspace classification uses the effective nonmember grant: while privacy is
-`private`, a dormant share-role change cannot turn a later privacy widening
-into discard mode. A
 The restoration user event also acknowledges without closing that user's
 connections; account lock events still close them. The server checks token expiry
 on inbound messages and persistence rechecks actor/owner lifecycle in the
@@ -127,9 +133,8 @@ contexts live in `fileModeContext.ts`, separate from the hot-reloaded control
 component, so the header and lazy file viewers retain the same context identity.
 
 Materials opened from Create use the same `CenterContent` frame as workspace
-materials, using the same per-item mode preference. The `/materials/:id` route retains the app
-sidebar, uses only the navigation back icon before the title, and hides
-workspace actions. A newly created standalone note requests `?mode=edit`.
+materials. The `/materials/:id` route retains the app sidebar, uses only the
+navigation back icon before the title, and hides workspace actions.
 
 The interactive path is:
 
@@ -199,7 +204,6 @@ exit lifetime. Their controls become inert on close. The workspace overrides
 padding to 6px and buttons/icons to 40px/20px through className; other floating
 actions use 32px/16px.
 
-`NoteEditor` requests the room token only for Edit mode.
 `NoteEditorCore` owns one garbage-collected `Y.Doc`, sends its caret in the
 compact [presence](#presence-payloads) shape, and calls Yjs `init` with the
 canonical room and `value: null`.
@@ -245,6 +249,28 @@ data. After sync, Slate-Yjs replaces editor children from the shared root.
 Yjs-aware history is installed by `YjsPlugin`; ordinary Slate history must not
 be layered on top. Normalizers must be deterministic and idempotent because
 they run for remote operations too.
+
+**Opening writes nothing** (Epo 2026-11-04, `roomBinding.ts`). Binding
+force-normalizes the whole tree, and each remote change normalizes the blocks
+it touched, as local operations slate-yjs sends to the room. Measured in the
+browser: a note ending in a table got a trailing paragraph from whoever opened
+it (two people opening together left two), and an ordered list without its
+`listStart`s got them. So until the person's first real edit in this mount
+(`edited`: a local operation outside a normalization that is not a selection)
+only Slate's own normalizer runs, and only with operations Yjs holds nothing of
+(an empty leaf beside an inline, two leaves of equal marks merging); any other
+is dropped. The plugins' normalizers wait for that edit and then see only what
+it dirtied. The trailing paragraph comes with the first edit, written straight
+into the document under its own origin so it is no part of that edit's Undo
+(as an ordinary edit, the Undo would bring it back as a new edit and empty
+Redo). Later, `trailingBlockPlugin` adds one only behind a real edit in the same
+batch, never for a co-editor's or an agent's change. A click below the last
+block, where a note not ending in a paragraph has nothing to click on, adds the
+paragraph and puts the caret in it (`openTrailingParagraph`), which counts as
+the first edit; from the keyboard Mod+Enter leaves the last block as before. The
+checkpoint debounce starts only for a real edit (this person's or an Undo's,
+`takeLocalEdit`): a co-editor's change no longer reads Syncing or asks for a
+receipt here.
 The toolbar subscribes directly to Yjs UndoManager stack events, including
 undo/redo and clear, so availability updates without editor focus or selection.
 Its actions use the same Yjs history as note editing.
@@ -1061,6 +1087,9 @@ and reads them in one place (`plate::map_value`); room admission takes a block a
 refuses a crafted update that puts an unknown key, a wrong type, an oversize
 value or another shape into one (`figure_map.rs`; where the relaxed check for
 a merge's kept states runs: [embeds](../embeds.md#live-figures)).
+The write is no person's edit (`writeNoEdit`): it starts no checkpoint and brings
+no trailing paragraph, so a co-editor's graph edit adds none from everyone with
+the note open.
 
 Standalone mindmaps and diagrams render without Plate. View
 (`MermaidMaterialView`) draws the block's `MermaidView` straight from the
@@ -1252,9 +1281,14 @@ not mean PostgreSQL durably stored the state.
 
 The editor reports:
 
-- `Connecting…`: the first handshake (the note body waits for it);
-- `Reconnecting…`: a later drop while the browser is online; the editor stays
-  mounted and editable;
+- a spinner with no words (`opening`): the first handshake, behind the painted
+  note. Only Office and text files still read `Connecting…` and `Reconnecting…`,
+  until the ribbon lands;
+- nothing new for a later drop while the browser is online (Epo 2026-11-04): the
+  last state stays for 30 s and the editor stays mounted and editable, and
+  unsent work reads `Syncing…`;
+- `Syncing your draft…` with the spinner (`syncing-draft`): a stored draft's send
+  while it opens, view-only, with no strip;
 - `Syncing…`: edits waiting for the checkpoint debounce or durable acknowledgment;
 - `Saved`: the server confirmed that a state containing this client's work was
   committed, or the room synced with nothing of this client's to store (Epo
@@ -1264,14 +1298,14 @@ The editor reports:
   reconnecting kept failing for 30 s); an editor that synced once keeps
   editing on this device (see [Offline editing](#offline-editing-and-drafts));
 - `Not saved. Retrying…`: a store failed and the server is retrying it;
-- `Collaboration unavailable`: the first connection never synced, or the
+- `Cloud unavailable`: the first connection never synced, or the
   provider could not start.
 
 The header shows these as Hugeicons cloud icons beside the title, on its
 top row at every width, phones included (Epo 2026-10-20): CloudUpload
-for Connecting, Reconnecting and Syncing, the plain Cloud for Saved (and the
+for Syncing (and a source's Connecting and Reconnecting), the plain Cloud for Saved (and the
 PDF's Synced), CloudOff for Offline, and a red CloudAlert for Not saved and
-Collaboration unavailable; a live item's footer status uses the same icons.
+Cloud unavailable; a live item's footer status uses the same icons.
 Office and text sources report the same states into the same slot
 (`EditorStatusContext`, `sourceHeaderStatus`). Localized labels remain in
 keyboard-accessible tooltips and the live status text for screen readers.
@@ -1279,7 +1313,7 @@ Every file's header (notes, quizzes, flashcards, diagrams, text, Office and
 other files) also shows the label beside the icon from md up (Epo
 2026-10-22; `EditorSaveStatus` `labelFromMd`: one span, screen-reader text
 below md and visible from md).
-Pending work preserves Connecting, Offline and error indicators. An older
+Pending work preserves Offline and error indicators. An older
 checkpoint acknowledgment cannot report Saved while newer edits are debouncing.
 
 Saved means stored in the database (Epo 2026-10-19): the debounced store's
@@ -1301,15 +1335,18 @@ channel for a fresh token in band (`TOKEN_REQUEST`); the provider answers
 through its `token` function (`TOKEN`), and the server verifies it, rechecks
 access and re-arms both timers. A channel that cannot answer is closed at
 expiry with code 4401. A room closed on an open
-socket (expiry, eviction, an access recheck) only emits the provider's `close`,
+socket (expiry, eviction, an access recheck, one person's access change) only emits the provider's `close`,
 never `disconnect`, so `roomReconnector` (`src/features/notes/roomConnection.ts`)
 reconnects at once with a fresh token and backs off while refusals repeat.
 Authentication refusals carry reasons: `collaboration-read-only` drops to view
 under the read-only strip (it names no reason: a demoted viewer, a frozen
 account and a full owner all see it, and the account banner explains the
 account cases), `collaboration-not-found` (trashed or deleted) and
-`collaboration-forbidden` (lost access) replace the editor with the
-file-missing or no-access panel, `collaboration-outdated` stops the editor
+`collaboration-forbidden` (lost access) keep the page, a reader's as it was and
+an editor's read-only under the "You no longer have access" strip; with no 4403
+close before it the page asks for its read, and a refused read shows "This item
+is unavailable" (see [authorization](../authorization-permissions-lifecycles.md)),
+`collaboration-outdated` stops the editor
 for the page load (see [Client protocol](#client-protocol-and-the-release-nudge)),
 `collaboration-unassigned-id` is not retried (see [client ids](#client-ids)),
 and anything else (an expired token,
@@ -1319,10 +1356,11 @@ sync it turns the status red). A join, first or after a reload, has the same
 30 s from its start, which is its collaboration-token request (or the new
 mount, for a new mount of the same room; Epo 2026-10-23): `NoteEditor` keeps
 that start and the editor's `roomReconnector` counts from it (`started(at)`).
-A first open whose token has not answered by then shows the collaboration
-unavailable panel with Retry instead of loading for ever; an editor not
+A first open whose token has not answered by then shows a strip with Retry over
+the painted note instead of loading for ever (Epo 2026-11-04); an editor not
 synced by then, a JOIN never answered on the open socket included, turns the
-status red, and after a reload that failing editor replaces the paused one.
+status red under the same strip, and after a reload that failing editor replaces
+the paused one.
 The editor binds to the room's document (`YjsEditor.connect`) only at the
 room's first sync (`roomBinding.ts`, CAPY-WEB-7). Plate's init binds after
 waiting at most 5 s; bound to a document the room had not filled, the editor
@@ -1343,8 +1381,8 @@ answered, so a reload whose token hangs keeps the old editor on screen,
 unpaused and editable. A discard evicts the old room, so its own reconnect
 (whose token request hangs too) goes Offline at about 30 s like any lost
 room, its edits kept on the device, and the swap runs once a token answers;
-no e2e waits for the Offline part. A failed first token request shows the panel for its status (not found,
-no access, or unavailable with Retry). A member removed from the workspace gets
+no e2e waits for the Offline part. A failed first token request shows the panel for its status (not found or no
+access), or the strip with Retry. A member removed from the workspace gets
 the server's hidden `404`, so their editor shows the file-missing panel, not
 no access: by decision (Epo, 2026-10-14) the app never tells a user whether
 something they can't reach is blocked or gone.
@@ -1412,14 +1450,11 @@ A step 1 that begins to wait tells its channel once (a stateless
 `{"type": "open-slowed"}`, `OPEN_SLOWED_TYPE`, with no numbers), also when it
 joins the wait of its JOIN's awareness (rate-limit review r7 S-1). The editor
 keeps its normal loading state, and after 5 s it adds the line "Opening is
-slowed because many large files were opened recently." (`SlowedOpenLine`,
-`useSlowedLine`): under a note's or a live Mermaid diagram's Connecting
-(`FileLoading`), under a quiz's, a set's or an embed's skeleton, and for an Office or text
-source in the header's sync indicator tooltip on the top row
-(`useReportEditorStatus`, Epo 2026-10-20). A note already on screen
-whose reconnect is slowed keeps its editor and holds its header's sync
-indicator tooltip open with the line (`NoteEditorStatus.slowed`,
-`EditorSaveStatus`; Epo 2026-10-20). The room is reachable, so the
+slowed because many large files were opened recently." in the header's sync
+indicator tooltip, held open (`NoteEditorStatus.slowed`, `EditorSaveStatus`,
+`useSlowedLine`; Epo 2026-10-20, 2026-11-04): a note, a quiz, a set or a diagram
+opening or reconnecting, and an Office or text source. Under an embed's skeleton
+it stays a line of its own (`SlowedOpenLine`). The room is reachable, so the
 reconnector never counts the wait as stuck (`roomReconnector().slowed`), and
 an editor that went offline before (a socket drop) leaves offline mode when
 the notice arrives instead of when the answer does: notes, items and sources
@@ -1479,7 +1514,8 @@ popovers, dropdown and context menus, selects, floating toolbars and popups
 (it stays open and takes input again once sent; its overlay and Escape still
 close it, dropping only the dialog's own form state, never document edits); the Ctrl+K palette neither
 opens nor runs a command (its listener is on `window`); the quiz and flashcard Undo and Redo buttons in the page header are
-disabled. A DOCX or PPTX editor pauses as for any other pause
+disabled (no Undo or Redo button shows on phones, in any editor or dialog but
+Office's; Epo 2026-11-04, and their keyboard shortcuts stay). A DOCX or PPTX editor pauses as for any other pause
 (`set-capabilities` with `canEdit: false`: read-only, selectable), and the
 XLSX editor takes the runtime's `sending` message instead: the runtime keeps
 it in state and passes it to `XlsxEditorHost` and the fork's `XlsxEditor`,
@@ -1906,8 +1942,8 @@ keep no sessions and their full history.
 - **A session is one Y.Doc**, named by its client id (see [client
   ids](#client-ids)): one editor in one tab, whose Undo stack lives as long.
   A viewer, who never edits, has none; one whose token turns writable (a
-  role change evicts the channel first, so only if that eviction is late)
-  gets one at its first write, at the version it last named.
+  raised role closes nothing, so a token refresh after it) gets one at its
+  first write, at the version it last named.
 - **Versions.** Every JOIN names the stored version its document holds after
   the client id (0: a new document that holds nothing; one that took stored
   drafts before its first JOIN names theirs, `unsentFrom`). A note room tells
@@ -2065,7 +2101,7 @@ design, option d), and the nudge's release file on 2026-10-17.
   reload.", with Reload in the close button's place. When this device could
   not store the unsent edits (`outdated-unstored`), it says so instead: "This
   device couldn't store your unsent edits, so reloading loses them." The
-  header status is Collaboration unavailable, as in recovery. An item room or
+  header status is Cloud unavailable, as in recovery. An item room or
   source session
   refused before it synced shows the strip alone (a source shows its base
   and this device's drafts, read-only).
@@ -2226,6 +2262,19 @@ design, option d), and the nudge's release file on 2026-10-17.
   `CLIENT_PROTOCOL` to 24 and `MIN_SOURCE` to 24, so every source tab on the
   older pin (protocols 20 to 23) reloads; `MIN_MATERIAL` stays 22. Its deploy
   request names "client protocol 23 -> 24, source 20 -> 24".
+  The BetterOffice 0.5.1 pin raised `CLIENT_PROTOCOL` to 25 and `MIN_SOURCE` to
+  25, so source tabs on the older pin (protocol 24) reload; `MIN_MATERIAL` stays
+  22. `OFFICE_PROTOCOL_VERSION` stays. Its deploy request names "client protocol
+  24 -> 25, source 24 -> 25".
+  The zip 9.0.5 pin raised `CLIENT_PROTOCOL` to 26 and `MIN_SOURCE` to 26, so
+  source tabs on the older pin (protocol 25) reload; `MIN_MATERIAL` stays 22.
+  `OFFICE_PROTOCOL_VERSION` stays. Its deploy request names "client protocol
+  25 -> 26, source 25 -> 26".
+  The Office ribbon (`OFFICE_PROTOCOL_VERSION` 13 -> 14: `set-banner`,
+  `banner-action`, `ribbon-focus`, `load`'s `ribbon`, `menu-file` gone) raised
+  `CLIENT_PROTOCOL` to 27 and `MIN_SOURCE` to 27, so source tabs drawing the old
+  header reload; `MIN_MATERIAL` stays 22. Its deploy request names "client
+  protocol 26 -> 27, source 26 -> 27".
 
 #### When to bump
 
@@ -2371,6 +2420,182 @@ save-delay warning and each offline episode (after the reconnect) are
 reported as editing incidents; the service records its discards, refusals and
 lineage moves itself (see
 [observability](../observability-metering.md#editing-incidents)).
+
+### Device copies
+
+Epo decided on 2026-11-04 (C1, ahead of the offline round's order) that a device
+keeps the Yjs state of what it opened, so an item paints at once and only the
+difference downloads. "Copy" alone means Q229's rows below; this one is a device
+copy (`src/features/collaboration/deviceCopy.ts`, stored by
+`src/lib/sourceCache.ts`).
+
+- **Who** (C2): members, viewers included (`keepsCopyOf`: `isOwner` or a `role`,
+  which a link visitor's read does not carry). Not someone who came through a
+  link. Under MSW only `mock-scenario-` fixtures keep one, since only their rooms
+  survive a reload, and the load-test notes, whose rooms reseed the same state; a
+  copy of a reset room would merge back into it.
+- **Which** (C8): a note's room; a set's and a diagram's room; a quiz's content
+  and keys rooms for whoever may read keys, since they already have them. Every
+  item also keeps its last material read (`document: 'read'`, `useMaterialCopy`),
+  the answer-free one, which paints it before its read answers. That read is a
+  viewer's whole copy of a quiz, a set or a diagram: a quiz's ordering and matching
+  lists reach a reader outside Yjs (`quiz-items`), and a diagram's reader joins no
+  room. Someone gone from editing to viewing loses the keys copy when the quiz
+  next opens for them (`QuizPreview`).
+- **Limits** (C6): the source cache's. One budget of 200 MiB with the source
+  bytes, least recently opened out first, a store that would leave under 100 MB
+  free is skipped, and a draft write the quota refuses deletes entries here. No
+  count, per-note cap or age limit.
+- **Owner** (C1, C7): every row names its account and a read for anyone else
+  deletes it. Signing out wipes the store with the source bytes
+  (`claimSourceCache`, `claimAccountData`). No separate account-switch rule.
+- **Lost access** (C3): a brief stale glimpse is accepted and there is no remote
+  wipe. A person refused on connecting loses the copy (`dropDeviceCopies`), and
+  at each page load `POST /api/materials/readable` answers which kept ids the
+  account can still read, in one query, and the rest go (`sweepDeviceCopies`). A
+  material read answered 403 or 404 removes them at once, the last read included.
+
+- **What a copy is.** The room's state as one row per document, written whole:
+  never per key, and only when nothing of this device's is unsent
+  (`keepDeviceCopy`), so a discarded or refused edit cannot come back. A note
+  writes on hide, on `pagehide` and as its mount goes, one encode (30-80 ms on a
+  near-limit note), only if the document changed since it was seeded or last
+  written (a document that did not start from a copy writes once even if nothing
+  changed, as its room may have filled it first). Its row travels with its bytes in one response, so a write as the page
+  goes lands whole: Chromium drops a `Cache.put` after an `await` in `pagehide`
+  and keeps one issued in the event's own task (measured on reload, navigation
+  and close), which is why the open store and its quota are kept ready
+  (`prepareDeviceCopies`). The index learns of such a copy at the next store.
+- **Joining from one.** The document is seeded before the room joins and takes
+  the token's fresh client id as any new one does (the seed is no write of this
+  session). The JOIN names the copy's stored version (`storedFrom`), and the room
+  answers what lies past its state. A token naming another room drops the copy
+  and starts empty (the lineage moved). A refusal (unassigned or a store's
+  rejection, not-found, forbidden, a read channel closed for what it holds, or a
+  late answer to a clean copy) drops the copy and remounts or rejoins with none,
+  so it can never fail twice; a server crash that lost a co-editor's update ends
+  this way.
+- **The read without its body.** A note this account's store holds reads
+  `GET /api/materials/{id}?noContent=true`: everything but its document, and the
+  room is not asked for a fresh projection. So a reopen downloads the copy's
+  difference and no body. The store's note ids are read when it is claimed, before
+  any route loads (`holdsNoteCopy`); a read in another tab that does not know of a
+  copy just reads the body. A body a read already holds stays. When the copy cannot
+  paint after all (evicted, bytes that no longer read, a moved room, a refusal, a
+  heavy note opened read-only), the mount waits for one full read
+  (`forgetNoteCopy`). An export always reads the body (`materialWithBodyQuery`).
+  Items read in full: their reads are small, and a viewer's copy is that read.
+
+### Opening a note
+
+Epo decided on 2026-11-04 that a note opens one way (`NoteBody`). It paints at
+once, static and read-only: from the device copy when there is one, before its
+material read answers and while that read cannot answer (the browser offline, the
+server down, a timeout or rate limit; a refusal shows its panel), else the stored projection, else a
+wordless skeleton (`NoteSkeleton`). Offline with nothing to paint it reads "Waiting
+for connection" (C9).
+
+- **Its token** is asked for as the note opens, beside its read rather than a
+  round trip behind it (Q618, `MaterialContentBody`): everyone opening a note
+  needs one but a heavy note opened read-only, which joins no room. It needs the
+  kind known at the open, from the list or the copy's row; otherwise the frame asks
+  once the read answers. It's one request: `materialTokenQuery`'s, which the
+  editor reads, and which a viewer's first read channel takes from the cache (a
+  viewer's token says read either way, `readToken` in `liveNoteRead.ts`). An
+  editor's View holds a write token and asks for its own read channel. A read token
+  nothing took goes when the note closes, so someone raised meanwhile doesn't start
+  an editor from it. Someone refused gets that one extra refused request, which
+  nothing shows or retries: the read decides the page (Q644), and opening it again
+  once let in asks afresh.
+- **A viewer** stays on the paint, which follows its room on a read channel
+  (`LiveNote`, `readNoteLive`, Q158), from its copy when it has one. No cue says
+  it is read-only (D9). A reopen loads no editor: a copy's row keeps its reader's
+  last `canEditContent` (`copyLabel`), which decides until the read answers.
+- **An editor** builds Plate behind the paint: `NoteEditor` mounts `invisible
+  absolute inset-0` and `inert`, and asks for its discussions and drafts
+  meanwhile. The mount doesn't wait for the discussions (Q680): their anchors land
+  on their text when they answer, the caret left where it was. With the token at
+  open (Q618) that took a note to editable about 0.8 to 1.3 s sooner under the
+  mock on 2026-11-06 (production build with MSW, the paint unchanged); MSW adds
+  about 1.1 s to each API call, so the real saving is unmeasured. Edits are held until there is an editor (C4, no spare client ids):
+  keys are dropped and a phone shows no keyboard. Plate stays static until the
+  first sync (C5): no early bind. Once `NoteEditorCore` painted (`onShown`) the
+  paint goes and the editor shows in the same commit, at the block under the top
+  edge (the paint's blocks by value order, `paintedPosition`) and with a caret
+  placed in the paint moved onto it. Embeds in that paint hold their place
+  (`HeldEmbed`): the editor's own join theirs, and a study view would flash.
+- **So it is no slower than before** (near-limit and small notes,
+  `bench/editor/reports/2026-11-04-open-paint.md`): one frame holds the paint
+  before the read answers and for an editor, so it is never painted twice
+  (`PaintedFrame`); the token and the editor's chunk start next to the paint, not
+  behind one another (`materialTokenQuery`); the frame paints the first 100 blocks
+  until the reader nears their end (`PAINT_BLOCKS`, a citation paints them all);
+  the editor shows as it finishes, with no wait on a paint behind the note; and the
+  paint's DOM goes when the page is idle, hidden meanwhile.
+- **The status** beside the title is a spinner with no words while it opens
+  (`opening`) and, with the draft's words, during a draft send (`syncing-draft`,
+  D10, no strip). A slowed open says so in its tooltip.
+- **At 30 s** a strip with Retry shows over whichever is on screen (`unreachable`,
+  D5). A token that never answered or failed leaves the paint and a red status;
+  a token that answered with a join that never did paints the editable saved copy
+  (Q229), its base the copy's value where it started from one. A refused token
+  (403, 404) shows the panel, as before.
+
+### Opening an item
+
+A quiz, a set or a diagram opens like a note (Epo 2026-11-04): painted at once from
+its device copy or its read, as the editor lays it out and taking no input, its
+status the same spinner, until its room synced. A quiz is its questions in one
+column; at the sync the editor's page (the question list and the open question)
+replaces them, opening at a link's question. A set is the editor's
+turned tiles. A diagram is the split, source left and preview right, read-only.
+An item room has no saved-copy path: it stays read-only until it joined, and at
+its 30 s goes offline under its banner, still showing what it painted. Only a note,
+or an open whose kind the list does not know, loads the static renderer ahead
+(`loadPreview`, about 1.2 MB minified that no other kind draws).
+
+**Hidden tabs** (D11). The server model is unchanged. A tab hidden for 5 minutes
+with nothing unsent in any note or item room, and no Office or text room on its
+socket, sleeps through `CollabSocket.sleep` (`watchIdle`'s `mayHide`), never
+`disconnect()`: a clean Leave would expire the session's ids. It wakes when it
+shows, and the room rejoins from its in-memory document with the previous token's
+id, by its step 1. The status does not move; its 30 s start as the tab shows.
+A tab holding unsent edits asks again every 30 s. A reader's rooms keep their own
+5 minutes (`whileVisible`), rejoining from the copy they wrote as they left.
+
+**Citations and deep links** work in the one mode: a chat citation scrolls and
+flashes its passage in the paint, and again in the editor once it shows; a
+question or card from a review summary scrolls into view in the quiz's list or
+the set's grid. The header's Preview shows the whole note as its readers read it,
+with embeds answerable and cards to study; the button turns into Edit, which goes back.
+The editor stays mounted, joined and undoable behind it (its mounts hidden and `inert`).
+`NotePreview` portals into a host under the editor's save strips, so the strips and their
+actions stay reachable (Review leaves Preview first), and it reads none of the editor's
+contexts. It draws `PaintedNote` from the editor's own value, so it reads no note body,
+opens offline and shows text not yet saved; images use the links the editor already holds
+(`resolvedAssetLinks.ts`). It
+redraws at most every 250 ms from the editor's value changes (`subscribeNoteValue`), which
+a collaborator's typing runs through too, and only changed blocks draw again. A room swap
+hands it the next editor without moving the reader.
+
+Its embeds join inside the editor's `NoteSeat`, whose `writer` makes a reader under it take
+the editor's room of the embed rather than a read channel (the server closes the earlier of
+a read and an edit channel to one document). So an embed the editor had open costs no token
+or channel and answers offline from its held document; one never opened joins once, on the
+key the editor then shares, and only its keys room is new at Edit. A try in Preview's embed
+stays in memory and records nothing, as in any note's embed; nothing is written to the room.
+
+While it's open `EditorPreviewing` makes `useEditorHeld` true: overlays go inert and the
+command palette stays shut. The selection is cleared, which closes selection-driven toolbars
+and removes this tab's caret for peers; a range ref carries it through other people's edits.
+Media pauses and a YouTube player goes back to its poster.
+
+Opening runs in a transition, with `aria-busy` on the button. Closing first settles the
+place behind Preview (`settleNotePlace`, up to about 300 ms: blocks off screen have no size
+until they come near), then shows the editor; Preview's DOM leaves when idle. Both directions
+keep the same block at the same height, inside the block if it's shorter on this side. A tall
+embed still loading in the editor can't land exactly until it has its height. When the note
+can't be edited at all the button reads Close preview.
 
 ### The editable saved copy
 
@@ -2907,8 +3132,10 @@ either applied, the later one measured exactly without the earlier), the server
 broadcasts `document-rejected` to the room and evicts it; leaving the room
 loaded would mean it never persists again. A structurally invalid snapshot no
 repair fixes is discarded the same way (`document-rejected` with code
-`invalid_document`), and an `authorization-revoked` eviction makes every editor
-drop its copy too. `NoteEditor` responds to a `document-rejected` (its writer's
+`invalid_document`), and an `authorization-revoked` eviction (a discard: deletion,
+trash, a move, an account lock) makes every editor drop its copy too; an access
+change sends none, it closes only those who lost access, with 4403 and no notice
+([authorization](../authorization-permissions-lifecycles.md)). `NoteEditor` responds to a `document-rejected` (its writer's
 or the room's) by swapping in a new `NoteEditorCore` under a new generation key
 ([room swap](#room-swap)), which reconnects onto the room's state (after a
 discard, the last durable state). Unsaved edits are kept as one refused draft
@@ -3215,14 +3442,15 @@ rejected; the check reads the decoded update against the room rather than
 applying it to a copy, and also rejects an update that writes under the room's
 client, names it as an origin, or deletes past its held clock; otherwise one
 crafted update could erase or forge every later marker. A debounced store
-claims every live marker and rechecks every distinct contributor they name,
-not only the last editor. Its row holds the live markers deleted (no stored
+claims every live marker and rechecks the account of every distinct contributor
+they name, not only the last editor. Its row holds the live markers deleted (no stored
 row carries one), and after commit it clears only the claimed ones, so an update arriving during the
 store belongs to the next batch; a failed store unclaims them, so its retry
-keeps the same contributor set. If an authorization change races an already-applied in-memory Yjs update,
+keeps the same contributor set. If an account lock races an already-applied in-memory Yjs update,
 persistence rejects the whole snapshot and evicts the room; authorized clients
 then reload the last durable state rather than inheriting or later retrying the
-revoked user's update.
+locked user's update. A lost role does not reject it: what the room admitted saves
+(Q635), so up to about 5 s of a removed person's last edits can survive.
 
 None of this gates **opening** a document. Limits protect the collaboration
 service and the database on write; a document that already exists always opens.
@@ -3316,13 +3544,14 @@ already durable and remains eligible for the normal lag retry.
 The final durable store takes the material advisory lock, then follows the same
 SQL row-lock order as Go mutations: workspace row (when present), contributor
 and owner accounts in ID order, then the material row. It revalidates placement
-and every contributor only after those locks are held. It also validates the
+and every contributor's account only after those locks are held. It also validates the
 complete Plate structure and the custom block required by the material kind
 before committing Yjs state. Member removal, role
 demotion, lifecycle changes, standalone privacy changes, and clones therefore
-cannot form an account/material deadlock or slip a save across the revocation
-boundary: the save either commits first or observes the revoked access and is
-rejected without advancing Yjs state or the SQL projection.
+cannot form an account/material deadlock. A lifecycle change cannot slip a save
+across its boundary: the save either commits first or observes the lock and is
+rejected without advancing Yjs state or the SQL projection. A lost role is
+enforced at admission instead, so what the room admitted saves (Q634).
 
 Quiz `timeLimitMin` uses the same integer range in REST, collaboration, and Go
 projection validation: 1 through 180 minutes. Values outside that range never
@@ -3393,7 +3622,9 @@ imports) joins the note room on the tab's socket on a read channel, whoever
 the reader is: View asks for one with `{access: 'read'}` on the token request,
 as every reader room does (embeds in View, the quiz attempt and set study
 pages), so the server refuses anything such a channel sends (it closes a read
-channel that writes and sends a viewer no presence). Once the room syncs, its
+channel that writes and sends a viewer no presence). A viewer's first join takes
+the read token its note's open already asked for instead ([opening a
+note](#opening-a-note)), once. Once the room syncs, its
 value is handed over block by block (`notes/liveNoteBlocks.ts`): a block equal
 to what the View shows keeps its object (element ids below the block are left
 out of the comparison, since normalization gives id-less children random ids),
@@ -3430,10 +3661,19 @@ the keys document (`keys:<id>:schema:<n>`), which only editors who can write
 join (`POST /api/materials/{id}/collaboration-token` with `{document: 'keys'}`;
 a viewer or a read-only editor gets 403, and the collaboration server refuses a
 read token for a keys room at JOIN and at refresh). The content document holds
-`questions`: question id to `{order, layout, labels, level?, stem, parts}`,
-part id to `{order, marks, blocks, answer}`, the answer map holding the type
-and what a learner may see (mcq options, a short answer's unit,
-matching left items). The keys document holds `keys`: part id to `{type,
+`questions`: question id to `{order, layout, labels, level?, stem, groups?,
+parts}`, group id to `{blocks}`, part id to `{order, marks, blocks, answer,
+group?}`, the answer map holding the type and what a learner may see (mcq
+options, a short answer's unit, matching left items). A group has no order of
+its own and no keys, so its text and figures merge entry by entry as a stem's do.
+What a merge leaves reads repaired (Epo 2026-11-04; `repairGroups` in the
+browser, `questions::repair_groups` in Rust, both on
+`testdata/repairs/groups.json`): a part naming a group that is gone has no group,
+a group with no parts goes, and a group's parts come together at the first one's
+place, in their order. Admission holds structure and caps only, as for the rest
+of the document, and the next write settles the order keys and takes a group no
+part names. The limits still measure such a group and its images stay in use
+(`held_question_json`) until then. The keys document holds `keys`: part id to `{type,
 solution, correct | accepted | hints | markscheme | gaps | options | pairs |
 items}`; an mcq's `correct` is a map of ticks by option id (one or more,
 Epo 2026-10-15), a boolean's a plain true or false, and an open part's
@@ -3473,7 +3713,8 @@ caps and counts only (`collaboration-rs/crates/items/src/quiz.rs`): texts,
 units, labels and attributions (`QUESTION_METADATA_MAX`), image and graph
 descriptions (`QUESTION_DESCRIPTION_MAX`, 500 in quizzes and notes; the bank
 keeps `QUESTION_TEXT_MAX`, Epo 2026-10-14), image sizes and ids, whole marks, list and table counts, questions, parts per question and per
-quiz, open parts, marking items, ticks and matching pairs, and each chart,
+quiz, a question's groups (no more than its parts may be), open parts, marking
+items, ticks and matching pairs, and each chart,
 plot and graph value against its kind's caps (`notes::questions::figure_caps`,
 sizes only: an unfinished figure is admitted; the block's type and value are
 read from the update or the held block, whichever writes them). Nothing past a
@@ -3501,10 +3742,12 @@ Esc. Undo spans both documents (`pairedUndo` in
 `src/features/collaboration/undo.ts`: the latest step of either, and steps of
 both made together, such as an answer type change, as one). Inputs stop at
 their caps (`maxLength`; a text editor takes back an edit past its cap). A
-quiz edits on its material page (`QuizEditor` in the center pane's Edit) with
+quiz edits on its material page (`QuizEditor`, for whoever may edit) with
 no Save or Reset: the cloud status follows the title in the header, Undo and
-Redo sit beside the View switch, renaming goes through the item's Rename,
-Edit (ghost-hover) and Remove (danger-light) sit on a row under each question
+Redo sit there with Study, renaming goes through the item's Rename, the page
+holds the question list and the open question (see
+[question-bank.md](../question-bank.md#editing-and-assets)), a note's embed has
+Edit (ghost-hover) and Remove (danger-light) on a row under each question
 at the right, and an
 incomplete question shows a line under it saying what it lacks
 (`incomplete.ts`); empty text blocks, a blank short-answer unit and blank
@@ -3512,7 +3755,15 @@ open-answer hints never count against it, but a part needs one block with
 content. The bank dialog's Save drops them too (`withoutBlanks`). Readers
 (the attempt page, the workspace quiz View, note embeds in View) paint the stored questions and then follow the content room
 (`liveQuizReads.ts`); a learner's answer that no longer points at what a part
-holds (a removed option, a changed set of ordering items) is dropped (D9).
+holds (a removed option, a changed set of ordering items) is dropped (D9). A
+check of a question the room holds but grading doesn't (404
+`question_no_answers`) shows "No answers configured" in place of its Check,
+with no toast and nothing recorded (Epo 2026-11-05). From then the try leaves it
+out: the header's counts, "{checked} of {total} checked", the result opening once
+the rest are checked, and the score, which matches the attempt the server keeps
+(it never counts a question that isn't projected). Until its Check is pressed it
+counts in those on the page, and the result waits for it. Shared pages and review
+sessions read stored questions, so they never show one.
 Live rooms are the only writers of quiz content (Epo 2026-10-16: the REST
 content write is gone). Agent question commands write what differs in the
 questions that differ, texts as the fewest changes and lists by position, so
@@ -3552,7 +3803,7 @@ text in a face or an image that is not `{assetId}` closes the writer), caps a
 front at 200 and a back at 1,000 characters, measures the limits on every
 card, blank ones included, and projects the set to its Plate envelope with blank
 cards left out (a set keeps one card). `FlashcardsEditor` edits it in the
-workspace file's edit mode (a standalone set at `/materials/$id?mode=edit`; the
+workspace file's editor (a standalone set at `/materials/$id`; the
 old `/flashcards/$id/edit` page is gone) and inside a note. The card dialog
 (front, back on ruled lines like a quiz's written answer, one optional image
 under the front; the study card as a preview, at the study size, beside them
@@ -3800,7 +4051,7 @@ Plate's chunk rendering. Width changes do not recreate the editor.
 
 `editorCommands.ts` is the shared command catalog. Editors can open commands by
 typing `/`, through toolbar menus, or with `mod+k`. Commands, document mutations
-and commenting are available only in Edit mode.
+and commenting are for those who may edit.
 
 `mod+shift+m` opens the comment workflow for an active selection.
 
@@ -3898,8 +4149,8 @@ validation and are not rendered.
 
 ## Operational boundaries
 
-- Signed-out visitors and note View never connect; signed-in viewers of a set
-  hold read channels (no stores, projections or markers of their own).
+- Signed-out visitors never connect; signed-in viewers of a note or a set hold
+  read channels (no stores, projections or markers of their own).
 - Run one collaboration server per environment, with Redis available.
 - Persistence uses bounded debounce/max-debounce (notes 2 s / 10 s, sources
   5 s / 30 s) and runs one store at a time per room; a failed store retries
@@ -4121,3 +4372,321 @@ Unmodified horizontal arrows skip the redundant first/last child positions of
 `\overline` groups using MathLive's public element-info and movement commands,
 matching its accent navigation. Internal characters remain editable; modified
 arrows and other structures retain native navigation.
+
+## BlockSuite on main
+
+`vendor/blocksuite` (plain files; its README lists the local changes) is on `main`
+for the drawing answer's board only (Epo 2026-11-06). Notes stay on Plate until the
+cut. `src/features/blocksuite/drawingBoard.ts` imports just the editor parts the board
+needs, so it's a lazy chunk of about 650 KB gzipped, and the app reaches it through
+`drawingBoard.boundary.d.ts`, so the app's type check skips the vendored sources.
+data-view (database and table views) stays out of it: its elements are defined by the
+database and data-view blocks, and Convert to database loads them on use (local change
+26); `createIcon` takes icons by reference, so only icons the code names ship (local
+change 27). The board takes a stroke as soon as Draw is clicked (fix 4 of the
+canvas-open report, Epo 2026-11-07): once a drawing part (`DrawingAnswer`) or a sample
+answer field (`DrawnSampleField`) shows, `useBoardAhead` in
+`quizzes/drawing/boardPrefetch.tsx` fetches and evaluates the module in idle time
+(within a second, `whenIdle`), then renders that part's `DrawingBoardScreen` with
+`hidden`, which mounts the board in idle time too, or at once if Draw comes first: a
+mount is one long task. Hidden is `opacity: 0` with `inert` and `aria-hidden`, not
+`visibility: hidden`, since BlockSuite gives every card in view (notes, images) an
+inline `visibility: visible` that beats a hidden parent; `inert` keeps pointers off
+everything in it, and the board keeps its size, so it mounts and fits as if shown. A
+hidden board keeps no device draft (a note's height settling as it mounts isn't the
+student's) and takes no time-limit Done. Draw only shows it and fits it again at the
+window's width then; Done puts it away: `putAway()` closes an open card, clears the
+selection and turns off BlockSuite's event dispatcher (local change 28), whose key and
+clipboard handlers sit on the document. A Done that changes the answer mounts the board
+again, hidden and in idle time, for a fresh undo history. One board is mounted ahead
+per page, held by the first drawing part that shows until it leaves; other parts mount
+theirs on Draw, with the module already there. A hidden mount that fails says nothing
+and Draw tries again; a mount that fails when shown says so and closes, and the next
+Draw tries again. A first mount took 240-430 ms at 4x CPU on a Mac (about 1 s on the
+CI runner) and showing one mounted ahead about 12 ms; a mounted board holds about 3-9
+MB of JS heap and 3,500-5,700 DOM nodes.
+Nothing in production opens it yet: `/dev/drawing` is a dev-only route. A production
+build swaps that route for an empty module (`MSW_ENTRIES` in `vite.config.ts`), so it
+doesn't ship the vendored sources; the answer flow reverses that. No vanilla-extract plugin
+runs: the board's only `.css.ts` styles, the canvas note's, are plain CSS (local change 24). `pnpm audit` covers these packages' dependencies but not the copied
+source, so an AFFiNE security fix stays unseen until someone re-copies.
+
+The dev server pre-bundles the board's BlockSuite (Q683): at start `vite.config.ts` reads
+every `@blocksuite/affine/*` subpath that `src/features/blocksuite` names and adds them to
+`optimizeDeps.include`, so esbuild bundles them once into Vite's dep cache instead of the
+server sending about 2,000 vendored source files a request each. An esbuild plugin there
+gives each `.css.ts` file vanilla-extract's file scope, and its styles register in the
+browser as the module runs, so the dev server runs no vanilla-extract plugin (a build with
+MSW on still does). Two consequences:
+
+- An edit to `vendor/blocksuite` shows only after the bundle is rebuilt: start the server
+  with `vite --force`. `src/features/blocksuite` stays app source and hot reloads as before.
+- A BlockSuite subpath newly imported there needs a server restart. Until then it loads as
+  source beside a second copy of what the bundle holds.
+
+Numbers in [editor-perf.md](../editor-perf.md#drawing-board-in-dev).
+
+### The board's tools
+
+The board adds to BlockSuite through its own extensions (`boardTools.ts`, `boardPlane.ts`,
+`boardPlaneEditor.ts`, `boardChart.ts`, `boardChartEditor.ts`, `boardEditorShell.ts`,
+`boardFormula.ts`, pure geometry in `boardGeometry.ts`), with a few
+vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
+
+- **Toolbar:** AFFiNE's shape pieces in the eraser's fixed colours (CSS variables on
+  `.capy-board`), then three slots of pieces drawn like AFFiNE's shapes (Epo 2026-11-08,
+  canvas NsamYcLR4imjm5Xi2fWFj2 "Picked"): Graphs (a polar disc behind a coordinate plane),
+  Charts (a pie behind bars) and Formulas (d/dx, ∫, Σ, √x). `CapyPieceSlot` runs on
+  BlockSuite's `EdgelessDraggableElementController` as the shape slot does: a piece lifts
+  under the pointer, a click or a drag picks it up, it lands where it's dropped and a new
+  one rises into the slot once it leaves the toolbar; Escape or the toolbar puts it back.
+  A finger has nothing to carry it with, so a tap puts the card in the middle of the view
+  and a drag brings it out (a second controller without click-to-carry).
+  Pieces sit round the slot's middle, so a phone's narrower slot keeps them. A formula
+  piece puts down its starter card (`placeFormula`) and opens the editor on it. There is no
+  label tool. The toolbar and its pen touch the canvas only, never into a card. New shapes have no fill
+  and a black outline.
+- **Pen strokes** keep the moves inside BlockSuite's 2 px drag threshold, and a stroke
+  ending back near its start (a closed circle) is no click, so it leaves no dot (local
+  change 25, in the pointer controller, so every tool's drags and clicks behave this way).
+- **Slot keys and tooltips** (Epo 2026-11-08): each piece's tooltip names it with its
+  key, the slot's between pieces. G puts a coordinate plane in the view's middle, ⇧G a
+  polar one, B a bar chart, ⇧B a pie chart, and M opens an empty formula card (a
+  formula piece starts filled in, so has no key); none of these is one of AFFiNE's,
+  and they're off while typing, while a card is open and with the board out of sight.
+- **The ☰ menu** (`boardMenu.ts`, Epo 2026-11-08) sits top right, left of any Done the
+  page around the board places (its width through `--capy-board-done-width`, its top through
+  `--capy-board-menu-top`; a drawing answer measures whichever Done shows, the phone's or the
+  wider screen's), so the
+  bottom row holds only the toolbar: Undo, Redo, Fit to screen, then a row of −, the
+  zoom (which resets to 100%) and +. Fit to screen closes it; Undo, Redo and the zoom
+  row keep it open, so a few presses step back or zoom; a press anywhere else and
+  Escape close it. A teacher's board has Fit to screen and zoom only.
+  AFFiNE's zoom toolbar isn't loaded. Below 768 px the toolbar spans the screen less an
+  8 px gutter, which needs `.capy-board` to be the `viewport` container.
+- **Selecting** shows AFFiNE's own toolbar. It reads the editor's mode, so the board
+  reports edgeless (`boardToolbar` in `boardTools.ts`) and hides what makes no sense on an
+  answer: Frame, Comment, a note's page mode entries, a group's or frame's Insert into
+  Page (the board has one mode, Epo 2026-11-09) and the linked doc entries. Connect shows its name. A plane card
+  adds a pen that opens it and a Fit to size / Custom size toggle; a chart card adds the pen.
+  The board (`.capy-board`) is positioned, so this selection layer and the ☰ menu sit
+  against it even with a header row above it (a tablet's). BlockSuite's own toasts go to
+  the app's `userToast` (`setToastHandler`, vendored local change 33); its fixed
+  container was cut off by the page.
+- **Shapes panel:** replaces AFFiNE's one-row menu through a DI override of the `shape`
+  senior tool. BlockSuite has four shape types, so the rest are presets of straight
+  connectors and ellipses in a group (a pen stroke smears at corners).
+- **Plane cards** (`boardPlane.ts`) are a `plane` canvas element holding a view (top left
+  corner in plane units, board pixels per unit) and its marks as plain data, drawn by one
+  renderer with a clip, so a card stacks with strokes and reaches the marking image with
+  no special case. A card is a picture on the canvas: Select moves it, its corners resize
+  it, between 120 by 80 and 4000 px, showing more or less of the plane at the same scale,
+  scrolling over it moves the canvas, and the eraser leaves it alone (`erasable` false,
+  which the vendored eraser reads: local change 30), while a connector meets its edge
+  at four anchors as on a shape. A fresh board starts
+  with one. Double click, double tap or the pen opens it. **Fit to size**, on by default:
+  each time the plane is left, a card with marks takes their size at the plane's scale plus
+  40 px, its top left staying put; past 1600 px it zooms out instead. Dragging a corner
+  makes it Custom size, as resizing a note does. Neither is in the undo history. Pen
+  strokes over a card stay where they are, so they can stop lining up. A **polar** card
+  (`polar: true`, its origin in the middle) draws rings at the grid's steps, numbered along
+  0°, and spokes every 15° (darker every 30°, the axes every 90°) labelled where they
+  leave the card; its marks are stored as on any plane, and its editor snaps them to where
+  a ring crosses a spoke.
+- **Editing a plane** (`boardPlaneEditor.ts`, on the shell in `boardEditorShell.ts`): it
+  opens over the whole board. At its top right sit the same ☰ menu (Fit to screen where the card
+  has one, Undo, Redo, and − and + where it zooms; the board's menu hides meanwhile)
+  and Done on its own (Epo 2026-11-08). Done leaves, as does Escape when no mark is open (Escape closes
+  an open menu first, then a selection). Inside, the wheel or two fingers pan, Ctrl or
+  pinch zooms, a middle-button drag pans, and Select drags, as on the board.
+  A point's dot picks up with any tool but Erase (Epo 2026-11-08, option C): it rings
+  blue under the mouse, a drag moves it to the grid with the coordinate chip, and a tap
+  still does the tool's job at that point (Line starts from it). Select also drags a
+  whole line, curve or label (snapped by grid steps), and a single point or any point
+  of a selected mark takes the whole mark, so dragging one of several selected marks
+  (dots too) moves them all. The moved copies are only drawn until the pointer lifts, so a
+  drag is one undo step. Select works as the board's does (Epo 2026-11-09): a click
+  selects a mark (blue, its points showing), Shift-click adds or takes one away, and a
+  drag on empty paper draws a selection box that picks every mark it touches (Shift
+  adds them); a click on empty paper, Escape or another tool lets go, and Delete or
+  Backspace removes all that's selected.
+  Where points coincide, the last drawn moves.
+  Label (Epo 2026-11-08) types text centred where it's clicked, a `label` mark at that
+  coordinate that moves and zooms with the plane (a click near one edits it; up to 24
+  characters; previews leave labels out, as numbers); after one, the tool goes back to
+  Select. Formula (Epo 2026-11-08) opens the board's formula card (`openFormulaCard`) for
+  a `formula` mark centred where it's clicked (a click on one opens it again, emptied it
+  goes); KaTeX's layout (`boardFormulaDraw.ts`, loaded only once a formula is on the
+  board or a plane) is replayed at 18 px, inverted on dark paper, keeping its size as
+  the plane zooms. Select drags it whole; Erase takes it. Previews leave formulas out, as
+  they can't lay them out (Epo: none rather than broken); the marking image has them.
+  Vector (Epo 2026-11-08) is a line of two clicks with an arrowhead (12 px, kept as
+  the plane zooms) at its second point, a `vector` mark of two points. Each tool's
+  button shows AFFiNE's tooltip with its key, and the open card takes those keys: V
+  Select, P Point, L Line, A Vector, C Curve, O Ellipse, T Label, F Formula, E Erase (a
+  chart: V Select, D its bars or slices, F Fill, T Label, E Erase); the row fits a 360 px
+  phone, its buttons 32 px wide on a board under 380 px and 36 px from there. Erase (Epo
+  2026-11-09) works as the board's eraser does: the pointer is a ring as wide as its
+  reach (16 px, `--capy-eraser-cursor`, also on the board's own eraser), it takes what
+  is within the ring's radius (`ERASER_SIZE / 2`, in planes and charts alike), a press leaves
+  BlockSuite's fading grey trail (`EraserTrail` in `boardEraser.ts`), everything it
+  passes over hides, and lifting removes them in one undo step. Ellipse (Epo 2026-11-08, square
+  planes only): a press and drag sizes a circle from its middle (the chip shows `r`), a
+  click places one a grid step round. It's an `ellipse` mark of four handles (right,
+  top, left, bottom); pulling one sets the width or height about the middle, so it
+  stays upright and on the grid, and Shift scales it evenly. Select drags it whole, its
+  middle (any other mark's first point) landing on the grid, where a ring crosses a
+  spoke on a polar plane (`snapPlane`), as points do. Curves draw as cubic Bézier pieces of their
+  Catmull-Rom curve (`curvePieces`) and ellipses as canvas ellipses, smooth at any zoom;
+  the sampled path (`smoothThrough`, `pathOf`) is for hit tests and previews. A line's,
+  curve's or ellipse's points show only in the editor, on the mark under the pointer,
+  held or still open (Epo 2026-11-08); a single point always shows, on cards, previews
+  and the marking image too. A curve clicked back onto its first point closes, smooth there,
+  and ends. Point, Line and Curve snap to the
+  fine squares for the current zoom, so the
+  plane has no edge and no fixed scale (the numbers are the question editor's, `tickStep`
+  and `axisNumber` in `graph.ts`, with no JSXGraph). Numbers leave with their axis and
+  marks keep their thickness. The view stops 1e9 units from the origin, and a grid too
+  fine to draw goes blank. Each click is written at once, one undo step, and undo
+  shortens a line or curve still taking clicks. While a plane or chart is open, undo and
+  redo reach only what was done in it, since the canvas is out of sight: the stacks are
+  set aside on opening and put back on leaving. A press lands where it lifts, so a finger
+  can line it up against the coordinate chip. The view is written on leaving and isn't in
+  the undo history.
+- **Ending a mark:** Finish (shown while a line or curve is open), Escape, or clicking
+  a curve's last point again. The tool then goes back to Select, as AFFiNE's shape and
+  connector tools go back to Select; Point stays on. Leaving keeps a curve with two points
+  or more and removes a mark that has only its first. Canvas drawings over a card aren't in it: they stay in place
+  if the view moves.
+- **Chart cards** (`boardChart.ts`, `boardChartEditor.ts`) are a `chart` canvas element of
+  kind `bar` or `pie`, holding plain data, since a coordinate means nothing on either. They
+  move and resize like a plane card, the eraser leaves them alone, and their editor fills
+  the board on the same shell. Bar chart: numbers on the value axis only, up to a top and
+  step the student types (Fit, in the menu, takes the top to the first line above the
+  tallest bar). The wheel or a pinch zooms the value axis: its top moves, the step
+  following in 1, 2, 2.5 or 5 for about five lines, bars staying on 0; the zoom is
+  written as one undo step once it rests 300 ms. Hovering shows where a press would set the bar, a dashed line with its
+  value, as the plane shows where a point would go. Dragging in a place sets its bar, in half steps, with the value in the chip; a free place
+  after the last bar starts the next, up to 24, in the current fill. Labels are typed under
+  the bars. Pie chart: no grid or axes, starting with a line at 12 o'clock. A click adds a
+  line, whose chip shows the sector it closes, from the line before it clockwise;
+  Finish slicing (shown once there's a line) moves to Fill, where a click gives the slice
+  under it the picked fill (`fills`, keyed by the line the slice starts at; erasing that
+  line drops it, No fill clears it). Labels sit at an angle inside the circle. Select
+  (Epo 2026-11-09) selects bars, pie lines and pie labels as the plane does (a click,
+  Shift-click, a selection box; Delete removes them all, Escape lets go) and drags the
+  one pressed: a bar up or down to its value, a line round to a new
+  angle (off the other lines, its fill going with it), a label round the circle. One of
+  several chosen items takes the others of its kind along: bars up or down by as much
+  (none below 0, one taken to 0 goes), lines and labels round by as far. After
+  one label the tool goes back to Select, as on the plane.
+- **See-through cards:** plane and chart paper (`PAPER`) and note fills are half
+  see-through so the panel's frost over the page frame shows. An open editor uses the
+  same paper with no ground of its own and hides the board's `editor-host` under it
+  (`data-editor-open`). The marking image draws plane and chart paper opaque, as
+  previews do (`cardPaper`, opaque while `asImage` draws), so a stroke under a card
+  stays covered; note fills stay half see-through on its white.
+- **Marking image (`toImage()`):** everything on the canvas as it stands, including each
+  card with the view it was left at, so a plotted mark panned out of view isn't in it. It's
+  drawn layer by layer at a scale capped to 1,568 px on its longest side (the size the
+  marking model reads, Epo 2026-11-06; 42-47% smaller than drawing at 2,400 px and
+  shrinking later), so it stacks as the screen does and
+  fits a phone's canvas limit; AFFiNE's own export draws every note under every stroke at
+  the device's scale. A note scrolled out of view is shown for the capture: BlockSuite
+  hides it with no size, which html2canvas drew as nothing and the capture threw on. On a board wider or taller than 1,568 px, groups of elements more than
+  400 px apart are drawn 400 px apart, so one dragged far away doesn't squash the rest;
+  the board itself stays as it is. The PNG goes through `fitImageOffThread` (WebP, 300 KB cap, Epo 2026-11-06), whose
+  encode runs in a worker while the drawing stays on the page, and
+  comes back as a `File`. `stats().span` is that image's longest side in board units
+  (after the far groups are drawn nearer, with the margin), for the answer flow's wide-board
+  warning on Done.
+- **What the answer flow mounts:** `mountDrawingBoard(host, { readOnly, saved,
+  onChange })`. Every answer starts on the same plain board (Epo 2026-11-06 dropped
+  per-question backgrounds); the dev pages pass `plane: true` for a plane card to play
+  with.
+  - `answerArea: { label }` draws a dashed 1,920 × 1,200 box at the board's origin with
+    the label in a black chip on its top left corner (Epo 2026-11-07, W3/W4), on the
+    layer under the strokes, the same size on screen at every zoom, and fits the first
+    view to it and what's drawn. It's only on screen: the image, `save()`, `stats().span`
+    and previews leave it out, and a read-only board draws none. Drawing inside it keeps
+    `span` at most 1,936.
+  - `fitPadding` ([top, right, bottom, left] pixels) is the room the first fit leaves
+    for what the page lays over the board, such as a pinned question card or a top bar;
+    without it the fit leaves room for the board's own toolbar and undo.
+  - `readOnly` is a teacher's view: BlockSuite's read-only store (pan tool), no toolbars,
+    undo, symbol row or selection, and nothing opens for editing, so MathLive never
+    loads.
+  - `save()` returns `{ doc, bytes }`: the board copied into a fresh Yjs document, so no
+    undo history (200 undo steps on a card were 606 KB live and a few KB saved). Stroke
+    points are rounded to whole pixels and every place (`xywh`) to a tenth, which leaves
+    60% of the bytes with no visible change (pressure stays: perfect-freehand draws the
+    line from it); highlighter strokes from the pen menu are rounded the same way. The
+    answer flow refuses past Epo's 250 KB on Done.
+  - `saved` is checked before anything mounts (`boardLoad.ts`), as BlockSuite's store
+    skips a block it doesn't know and takes any tree on load: one page and one canvas,
+    only the blocks and elements the board's tools make (the pen menu's highlighter
+    included, which the preview draws as a see-through stroke), each block under a parent it
+    may have in one tree, and each card's fields within
+    the limits its editor keeps (marks, bars, labels, spokes, axis values, formula
+    length), with a place (`[x,y,w,h]`) on everything but a connector and a group, whose
+    places BlockSuite works out (from the ends, each an element id or a finite point; from
+    the children) and never stores. Anything else throws a `BoardLoadError` with a
+    `reason`.
+- **Preview (`boardPreview.ts`):** `drawBoardPreview(saved, { width, height })` draws a
+  saved board as an SVG string from its data, for lists, results and marking views
+  (Epo 2026-11-06: what's on it, not every detail). It never loads the editor: it imports
+  yjs and the small modules the check uses (`boardData.ts` holds the cards' stored shape,
+  limits and chart geometry, `boardGeometry.ts` the framing, `graphTicks.ts` the grid
+  step), 12.7 KB minified on its own. Framed as the marking image is (everything, far
+  groups drawn nearer, 8 px round, on white), stacked by index with a note over a stroke
+  at the same index. Strokes are plain lines thinned to one point per preview pixel and
+  never thinner than a pixel; shapes their outline, fill and text; connectors straight
+  from end to end with their arrowheads; text and shape labels a line per line break;
+  plane cards their grid (while lines are 6 px apart), axes and marks; charts their bars
+  or circle and spokes; formulas their LaTeX as text; notes their box and a line per
+  paragraph; pasted images a grey box. No numbers or labels on cards. It checks the board
+  first and throws the same `BoardLoadError`. `fromBase64` uses `Uint8Array.fromBase64`
+  where the browser has it. A plane card with 5 strokes takes 0.4 ms
+  in Node, a 300 KB board (50 strokes of 300 points, 500 marks) 5 ms. Show it as an
+  `<img src="data:image/svg+xml,…">` in a list, so rows don't add SVG nodes to the page.
+- **Note cards:** every note on the board is a tight card (8×10 px padding, a 1 px
+  hairline, a 6 px corner, no shadow, the same size while typing), set in
+  `drawingBoard.css` over the note's stored style, since AFFiNE's corner field only takes
+  0/8/16/24/32; the preview draws it the same. AFFiNE's slash menu is registered, offering
+  text styles, lists, alignment, inline styles, Image, dates and the move/copy/delete
+  actions; Image stores its file in the board's blob store, as a pasted image does.
+- **Theme:** the board follows the app's light or dark. The app's dark themes set
+  `data-theme` to a Catppuccin flavour, which AFFiNE's `[data-theme=dark]` never matches,
+  so `drawingBoard.ts` puts AFFiNE's dark variables under `html.dark` (on `<html>`, for
+  its popovers too) and sets BlockSuite's theme signal from the `dark` class. The board
+  paints no ground: its dots sit on the panel's colour, or its frost over the page frame.
+  Plane and chart cards take a light or dark `PAPER` (dark paper is a dark note's), and a
+  formula's black ink is inverted (hue kept) on a dark board. The marking image is
+  always light: `toImage` lifts the dark variables (`data-board-light`) and switches the
+  signal to light while it draws, so the board shows light for that moment. AFFiNE's
+  own dark placeholder and border greys (rgb(62, 62, 63) and rgb(46, 46, 46) on
+  rgb(30, 30, 30) panels) are lifted to readable ones, and the toolbar pieces' navy
+  (`--capy-navy`) lightens to #5683b3 on a dark board.
+- **Formulas:** a `formula` canvas element holding LaTeX, typed in MathLive (loaded on
+  first open) with the question editor's field styles (`mathField.css`: app selection
+  colours, caret on the line), the caret after the formula and nothing selected. Its
+  card opens in the middle of the board and closes like a popup on a
+  press anywhere else, another formula piece too (MathLive's keyboard and menus aside),
+  discarding what was typed, as Cancel does. AFFiNE keeps LaTeX as HTML in note cards, and its export (html2canvas)
+  garbles that, so typing `$$` in a note here stays text; AFFiNE's inline spec stays
+  registered because paragraphs read it as they render (the specs only: its LaTeX node and
+  editor menu, which load KaTeX and shiki, are left out). KaTeX and its stylesheet load
+  once the board holds a formula or the formula editor opens (84 KB gzipped most boards
+  never need). It lays the formula out in a
+  hidden host and where its glyphs, rules and stretched SVGs sit (clipped as KaTeX clips
+  them) is kept as drawing steps, which the canvas renderer replays at the card's size
+  each frame, so a formula stays sharp at any size and zoom. Resizing keeps its shape
+  (`lockRatio`, as AFFiNE's images). Tested in Chromium only. Size and expansion limits
+  are set on KaTeX, and a saved answer holding more than 2,000 characters draws
+  nothing. Laid-out formulas stay until the board closes. Saving answers still needs
+  limits on the server.
+- **Labels** come from the Maths menu's Label, which can place one on top of a card (a
+  double click there opens the plane), or a double click on empty canvas. They have a
+  maths symbol row while typing. BlockSuite's default canvas font has no
+  face on this board because its font loader has no config, so `drawingBoard.css` aliases
+  it to the app's Fustat, or a label measures in one fallback and draws in another.

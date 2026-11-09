@@ -110,7 +110,7 @@ export function PublicPage({ children }: { children: ReactNode }) {
           </a>
           <PublicNav />
         </header>
-        <main className="mx-auto flex w-full max-w-[760px] flex-1 flex-col px-4 pb-6 sm:px-0">
+        <main className="mx-auto flex w-full max-w-[760px] flex-1 flex-col pb-6">
           {children}
         </main>
       </div>

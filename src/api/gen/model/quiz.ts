@@ -15,7 +15,6 @@ export interface Quiz {
   author?: MaterialAuthor;
   canEdit: boolean;
   canEditContent: boolean;
-  chapters: string[];
   createdAt: string;
   id: string;
   isOwner: boolean;
@@ -28,6 +27,7 @@ export interface Quiz {
   removedAssetIds?: string[] | null;
   revision: number;
   sharePath?: string;
+  topics: string[];
   workspaceId: string;
   workspaceName: string;
 }

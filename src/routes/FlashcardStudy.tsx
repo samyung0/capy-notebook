@@ -29,7 +29,7 @@ import {
   useRemovedAssets,
 } from '@/features/materials/MediaAssetView';
 import { blockHomeCrumb } from '@/features/quizzes/crumbs';
-import { useChapterNames } from '@/features/study/useChapterNames';
+import { useTopicNames } from '@/features/study/useTopicNames';
 import { CloneItemDialog } from '@/features/workspace/CloneItemDialog';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
@@ -73,7 +73,7 @@ function Study({ setId }: { setId: string }) {
   const { data: workspace } = useWorkspace(set?.workspaceId ?? '', {
     errorBoundary: false,
   });
-  const chapter = useChapterNames(set?.workspaceId)(setId);
+  const topic = useTopicNames(set?.workspaceId)(setId);
   const frozen = useAccountFrozen();
   const navigate = useNavigate();
   const router = useRouter();
@@ -135,7 +135,6 @@ function Study({ setId }: { setId: string }) {
           )
         }
         cards={liveCards}
-        chapter={chapter}
         frame={PagePanel}
         name={set.name}
         onBack={() =>
@@ -172,6 +171,7 @@ function Study({ setId }: { setId: string }) {
         onRestart={kept.forget}
         provenance={set.provenance}
         resume={set.parentMaterialId ? undefined : kept.resume}
+        topic={topic}
         trail={[blockHomeCrumb(set)]}
         usePrevious={
           set.workspaceId && !set.parentMaterialId

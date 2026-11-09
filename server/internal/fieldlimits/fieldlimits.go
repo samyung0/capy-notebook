@@ -20,10 +20,12 @@ const (
 	// WorkspaceTags is a workspace's tag count (CreateWorkspaceReq's
 	// maxItems), a count rather than characters.
 	WorkspaceTags = 5
-	ChapterName   = 60
-	StudyPlanName = 60
-	FileName      = 120
-	MaterialTitle = FileName
+	TopicName     = 60
+	// TopicDescription is a topic's optional one line on what it covers.
+	TopicDescription = 200
+	FileName         = 120
+	MaterialTitle    = FileName
+	AssignmentTitle  = 120
 	// An agent-made material's or file's made-from line: at most
 	// MaterialSources entries of at most MaterialSource characters.
 	MaterialSources   = 20
@@ -92,16 +94,29 @@ const (
 	QuestionSVGBytes       = 256 << 10
 	QuestionImageDimension = 10_000
 	QuestionAssetURL       = 4_096
-	// User quizzes (not the question bank) are bounded tighter, so one
-	// attempt's open parts fit a single grading request: at most 20 open parts
-	// of at most 5 marking items each.
-	QuizParts         = 100
+	// User quizzes (not the question bank) are bounded tighter: 150 parts,
+	// so a whole past paper fits one quiz, 120 multiple-choice questions
+	// included (Epo 2026-11-08; 100 from 2026-11-03, 20 before), each with at
+	// most 5 marking items.
+	QuizParts         = 150
 	QuizQuestionParts = 7
-	QuizOpenParts     = 20
+	QuizOpenParts     = 100
 	QuizMarkscheme    = 5
 	QuizOpenAnswer    = 5_000
-	// AnonymousLocalID bounds the reporting id a signed-out browser sends.
-	AnonymousLocalID = 64
+	// A Make a quiz run reads at most ExtractionPaperFiles question files and
+	// ExtractionAnswerFiles answer files, and at most ExtractionPages picked pages across
+	// them (Epo 2026-11-05). Each saved question costs ExtractionQuestionCredits.
+	ExtractionPages           = 40
+	ExtractionPaperFiles      = 5
+	ExtractionAnswerFiles     = 3
+	ExtractionQuestionCredits = 4
+	// A drawing answer's saved board (undo history stripped) and its marking
+	// image, each at most this many bytes (Epo 2026-11-06: 250 KB and 300 KB),
+	// the image at most DrawingImageSide px on its longer side, as the browser
+	// makes it (Epo 2026-11-06, "go with 1568px").
+	DrawingBoardBytes = 250 << 10
+	DrawingImageBytes = 300 << 10
+	DrawingImageSide  = 1_568
 	// A flashcard's front and back (human/frontend/plate-editor.md for the
 	// back); the collaboration server reads them from the embed catalog.
 	CardFront = 200
@@ -112,6 +127,9 @@ const (
 // collaboration server reads them from the embed catalog (internal/embeds).
 var QuestionBounds = map[string]int{
 	"QUESTION_COUNT_MAX":             QuestionCount,
+	"DRAWING_BOARD_MAX":              DrawingBoardBytes,
+	"DRAWING_IMAGE_MAX":              DrawingImageBytes,
+	"DRAWING_IMAGE_SIDE_MAX":         DrawingImageSide,
 	"QUESTION_ID_MAX":                QuestionID,
 	"QUESTION_PARTS_MAX":             QuestionParts,
 	"QUESTION_BLOCKS_MAX":            QuestionBlocks,
@@ -170,12 +188,14 @@ var Columns = map[string]int{
 	"users.email":                      Email,
 	"workspaces.name":                  WorkspaceName,
 	"workspaces.description":           WorkspaceDescription,
-	"chapters.name":                    ChapterName,
-	"study_plans.name":                 StudyPlanName,
+	"topics.name":                      TopicName,
+	"topics.description":               TopicDescription,
 	"files.name":                       FileName,
 	"materials.workspace_name":         WorkspaceName,
 	"materials.title":                  MaterialTitle,
+	"assignments.title":                AssignmentTitle,
 	"attempts.quiz_name":               MaterialTitle,
+	"question_extractions.title":       MaterialTitle,
 	"attempts.workspace_name":          WorkspaceName,
 	"tags.name":                        TagValue,
 	"labels.name":                      LabelName,
@@ -185,9 +205,8 @@ var Columns = map[string]int{
 	"workspace_invites.email":          Email,
 	"conversations.title":              ConversationTitle,
 	"editor_assets.name":               FileName,
-	"upload_sessions.chapter_name":     ChapterName,
+	"upload_sessions.topic_name":       TopicName,
 	"upload_sessions.name":             FileName,
-	"anonymous_grading_usage.local_id": AnonymousLocalID,
 	"reconcile_runs.requested_by_name": UserName,
 	"pdf_annotations.text":             PDFAnnotationText,
 	"material_comments.text":           Comment,

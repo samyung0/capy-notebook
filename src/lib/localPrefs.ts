@@ -2,7 +2,7 @@ import { useState } from 'react';
 
 /**
  * Display preferences one viewer keeps in this browser: list or grid views,
- * list sorts, the workspace's side panels, which chapters are open. localStorage rather than
+ * list sorts, the workspace's side panels, which topics are open. localStorage rather than
  * IndexedDB because the first render reads them synchronously, so nothing
  * flashes from the default. Values are JSON. Storage can be blocked (private
  * windows); reads then give the fallback and writes are dropped.
@@ -10,6 +10,10 @@ import { useState } from 'react';
  * Every key lives here so the stored set stays in one place.
  */
 export const PREF_KEYS = {
+  /** Agent's panel shows a chat rather than the history: kept while it is on
+   * screen, so coming back to the workspace finds it (Epo 2026-10-27, T19),
+   * and gone when Agent moves off it. */
+  chatShown: (workspaceId: string) => `capy.workspace.chatShown.${workspaceId}`,
   filesView: 'capy.files.view',
   /** The flashcard run this browser continues: its attempt and each card's
    * ratings (flashcardRun.ts), per signed-in user on the app page (another
@@ -19,33 +23,31 @@ export const PREF_KEYS = {
   /** The Get started list, written only by the browser that ran onboarding
    * (gettingStarted.ts). */
   gettingStarted: 'capy.gettingStarted',
-  /** The opened workspace's left panel (chats and files) is open. */
-  leftPanel: 'capy.workspace.leftPanel',
-  /** The view the left panel shows: Chats, Files or Study. */
-  leftView: 'capy.workspace.leftView',
   /** Progress maps whose finish animation has played: `topic:<id>:<count>`, `workspace:<id>:<count>`. */
   mapFinishPlayed: 'capy.map.finishPlayed',
   /** A note's toolbar is shown in Edit (Q461; no key: hidden). */
   noteToolbar: 'capy.note.toolbar',
-  openChapters: (workspaceId: string) =>
-    `capy.workspace.openChapters.${workspaceId}`,
+  /** The Office ribbon is collapsed on this device (Q674; no key: expanded). */
+  officeRibbonCollapsed: 'capy.office.ribbonCollapsed',
   /** The conversation a mounted chat panel shows, per workspace or for the
    * account chat (null), so a reload or a reopened tab comes back to it (Epo
    * 2026-10-27, T19). */
   openChat: (workspaceId: string | null) =>
     `capy.chat.open.${workspaceId ?? 'account'}`,
-  /** A Quick review batch: its items, when it began, which are done; per
-   * workspace, or `plan-<id>` per plan. */
-  quickReview: (scope: string) => `capy.quickReview.${scope}`,
+  openTopics: (workspaceId: string) =>
+    `capy.workspace.openTopics.${workspaceId}`,
+  /** The panel last open in a workspace, which opens again on the next visit
+   * (Epo 2026-11-05). */
   /** The quiz attempt this browser continues, by its id: the account's
    * (`account`) or, signed out on a shared quiz, this browser's (`local`). */
   quizAttempt: (owner: 'account' | 'local', quizId: string) =>
     `capy.quizAttempt.${owner}.${quizId}`,
-  recentsView: 'capy.recents.view',
-  /** The opened workspace's right panel (Files, Chat, Study) is open. */
-  rightPanel: 'capy.workspace.rightPanel',
-  /** The view the right panel shows: Files, Chat or Study. */
-  rightView: 'capy.workspace.rightView',
+  /** The Make a quiz runs the upload panel follows, by id (quizRuns.ts), with the account
+   * they belong to. */
+  quizRuns: 'capy.quiz.runs',
+  /** Make a quiz files still reading: their ids and names (quizWaitStore.ts), with the
+   * account they belong to. */
+  quizWaits: 'capy.quiz.waits',
   /** When each workspace, file and material open was last sent (sentOpens.ts). */
   sentOpens: 'capy.opens.sent',
   sort: (list: SortedList) => `capy.sort.${list}`,

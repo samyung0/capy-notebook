@@ -6,6 +6,36 @@ Add an entry when another one is vendored.
 
 ---
 
+## BlockSuite (vendored copy)
+
+`vendor/blocksuite` holds BlockSuite's packages as plain files, from AFFiNE
+(https://github.com/toeverything/AFFiNE), `canary`, commit
+`5f1925499760f6954c1e656711d9fb6ed3168179`, directory `blocksuite/`. License: MIT,
+`vendor/blocksuite/LICENSE`. Code it bundles keeps its own license file next to it:
+`framework/global/src/gfx/perfect-freehand` and
+`affine/blocks/surface/src/utils/{rough,points-on-path,points-on-curve,path-data-parser}`.
+Capy's changes are listed in `vendor/blocksuite/README.md`.
+
+---
+
+## @toeverything/theme (Mozilla Public License 2.0)
+
+BlockSuite's CSS variables, from npm at 1.1.23, unmodified
+(https://github.com/toeverything/design). License: MPL-2.0, in the package's `LICENSE`;
+its registry entry has no license field. It loads with the drawing board.
+
+---
+
+## PP-DocLayout_plus-L (model, added at image build)
+
+`layout/Dockerfile` adds PaddlePaddle's ONNX export of PP-DocLayout_plus-L from
+Hugging Face (`PaddlePaddle/PP-DocLayout_plus-L_onnx`, pinned revision and
+SHA-256). The weights are not in this repository.
+
+License: Apache License, Version 2.0.
+
+---
+
 ## tungstenite (vendored copy)
 
 `collaboration-rs/third_party/tungstenite` is the `tungstenite` 0.29.0 crate
@@ -93,3 +123,13 @@ Copyright 2024 Mozilla Foundation (pdf.js); the OpenJPEG authors and
 Université catholique de Louvain (OpenJPEG).
 
 License: Apache License, Version 2.0 (pdf.js); BSD 2-Clause (OpenJPEG).
+
+---
+
+## Tabler Icons (copied glyphs)
+
+`src/office-runtime/tablerGlyphs.ts` holds the path data of the outline glyphs
+the Office editors draw, copied from `@tabler/icons` 3.50.0
+(https://github.com/tabler/tabler-icons).
+
+License: MIT, Copyright (c) 2020-2024 Paweł Kuna.

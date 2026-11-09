@@ -118,7 +118,6 @@ function DraftDialog({
   } = useForm<CapacityFields>({
     defaultValues: {
       concurrencyTotal: draft.concurrencyTotal ?? undefined,
-      interactiveReserve: draft.interactiveReserve ?? undefined,
     },
     resolver: zodResolver(capacitySchema),
   });
@@ -209,7 +208,6 @@ function AddModelDialog({
   } = useForm<CapacityFields>({
     defaultValues: {
       concurrencyTotal: draft.concurrencyTotal ?? undefined,
-      interactiveReserve: draft.interactiveReserve ?? undefined,
     },
     resolver: zodResolver(capacitySchema),
   });
@@ -236,7 +234,7 @@ function AddModelDialog({
           setDraft(emptyDraft(crypto.randomUUID()));
           setParamsText('{}');
           setError('');
-          reset({ concurrencyTotal: undefined, interactiveReserve: undefined });
+          reset({ concurrencyTotal: undefined });
         }
         onOpenChange(next);
       }}

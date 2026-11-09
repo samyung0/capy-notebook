@@ -5,13 +5,6 @@ import (
 	"time"
 )
 
-// SetTurnstileVerifyURL points siteverify at a local fake for one test.
-func SetTurnstileVerifyURL(t *testing.T, url string) {
-	previous := turnstileVerifyURL
-	turnstileVerifyURL = url
-	t.Cleanup(func() { turnstileVerifyURL = previous })
-}
-
 // SetUploadPutBound shortens the bound on an upload's B2 PUT for one test.
 func SetUploadPutBound(t *testing.T, bound time.Duration) {
 	previous := uploadPutBound
@@ -51,3 +44,10 @@ const (
 	OfficeIDsPerCall = officeIDsPerCall
 	OfficeIDBytes    = officeIDBytes
 )
+
+// SetMarkingAttemptTimeout shortens the AI's time on one attempt for one test.
+func SetMarkingAttemptTimeout(t *testing.T, d time.Duration) {
+	previous := markingAttemptTimeout
+	markingAttemptTimeout = d
+	t.Cleanup(func() { markingAttemptTimeout = previous })
+}

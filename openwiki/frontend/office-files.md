@@ -22,7 +22,7 @@ formats may be uploaded within the plan byte limit, but remain store-only.
 Create cards open `/materials/:id` and Files cards open `/files/:id` through SPA router Links, as do dashboard recent rows and workspace file/material rows. Each item remembers its own View/Edit mode in localStorage (`capy.document.mode.<kind>.<id>`); an explicit URL mode wins, followed by the saved mode, then View.
 Both routes use the workspace's `CenterContent` header and renderers, with
 the app sidebar and a back icon. They omit workspace navigation and Move to
-chapter; a file's payer still gets Move to…. `FileModeControl` portals the file View/Edit toggle (the note's
+topic; a file's payer still gets Move to…. `FileModeControl` portals the file View/Edit toggle (the note's
 `MaterialModeToggle`, labelled from lg) into that shared header while each
 runtime retains its save and collaboration lifecycle. Text files have no Save
 button: the room saves edits after a second idle, and Ctrl+S or leaving Edit
@@ -49,7 +49,7 @@ git submodule update --init vendor/betteroffice
 `scripts/prepare-betteroffice.mjs`; `pnpm dev` and Playwright's Vite servers do
 not, so run `pnpm office:prepare` first (browser E2E CI does). It installs the fork's locked Bun workspace
 and builds the scoped DOCX stylesheet plus DOCX/XLSX/PPTX viewer/editor WASM artifacts and the headless checkpoint bundle. The fork builder verifies source/output fingerprints before reusing WASM. A cold build
-requires Bun, Rust, `wasm-pack` 0.15.0, and `wasm-opt` from Binaryen. Existing,
+requires Bun 1.4.3 (CI's), Rust, `wasm-pack` 0.15.0, and `wasm-opt` from Binaryen. Existing,
 intact generated artifacts are reused.
 
 Frontend CI, browser E2E CI, and SPA deployment restore
@@ -76,6 +76,13 @@ seeds and `shared/office-checkpoint.test.ts`, then the XLSX golden seeds in
 CI runs it inside `vendor/betteroffice` after the office build. A golden seed
 hash that differs between the old and the new pin means the seed output
 changed, so the bump ships in a [maintenance window](#maintenance-window).
+`collaboration-rs/crates/sources/tests/seed_parity.rs` holds the server's build
+to the same golden hashes for all three formats: this workspace enables
+serde_json's `preserve_order` and the browser's WASM does not, so docx-parse
+writes text-box and SmartArt paragraph JSON with sorted keys and every build
+seeds the same bytes (Epo 2026-10-17). A seed change also regenerates the mock
+checkpoints in `src/mocks/fixtures/` (`pnpm exec tsx
+scripts/dev/seed-scenario-office.ts`).
 Golden seeds cover a few fixtures; stored Office changes depend on every stored
 base seeding the same bytes. Before deploying a pin to an environment, run the
 seed check there: `office-maintenance seed-manifest` in the gateway container
@@ -103,6 +110,32 @@ carrying its run's marks, a drawn SmartArt shape carries its source XML, and
 a SmartArt frame the parser cannot draw becomes a raw unit. The goldens hold
 neither, so the seed check on each environment decides whether DOCX joins the
 reset.
+
+**The zip 9.0.5 pin.** `ooxml-opc`, the fork's only zip user, moves to zip 9.0.5
+with its `unreserved` feature, so a member holding an Info-ZIP extra field saves.
+A member holding a Unicode Path field (0x7075) is re-deflated on save instead of
+raw-copied, since the copied field could rename the part on the next read
+(upstream #2138, ported ahead of the second sync, Q650). Seeds do not change.
+
+**The 0.5.1 pin.** The fork carries upstream's 0.5.1 (4e982c3ae) on Capy's
+engines, with deck schema 6.0 (every PPTX seed changes, so every PPTX room
+resets at deploy) and XLSX and DOCX seed changes the seed check lists. What
+changes for a reader of this page is in the sections below; what deliberately
+stays Capy's:
+
+- DOCX: upstream's style rebase (#1606) is out, since a mark keeps its own font
+  size (2026-10-06); legacy comment reply threading (#1706) and the three speed
+  ports wait; a peer's typing in a table another peer deleted is lost on Undo
+  until Capy's own room fix (#1530, Q549).
+- XLSX: the auto filter stays in place on a row or column edit, in both the
+  standalone engine and rooms (Q554, #1653 reverted); a room keeps one hyperlink
+  per cell, as Excel does (Q555); Capy's reader index stays (upstream's #1623 is
+  20 to 200 times slower per typed edit); recalculation is 4-5% slower than
+  before, from 0.5.1's own take layers (Q556).
+- PPTX: slide backgrounds wait for their own deck format change (Q505); a joined
+  paragraph's lost hyperlink on save (#1508) waits for the save-fidelity work;
+  a peer's edits to a deleted shape are lost on Undo until the room fix (#1506,
+  Q549).
 
 ## Browser loading model
 
@@ -472,6 +505,8 @@ Cursors cross the same way: the editor's own goes to the room's awareness and
 the co-editors' come back under the names the room's presence gives them
 ([plate-editor](plate-editor.md#office-cursors)). Input in the frame reaches
 Capy's idle close as an `activity` message ([plate-editor](plate-editor.md#idle-close)).
+A DOCX or PPTX replica takes the room's updates as they arrived, not the
+parent's Y.Doc events ([Undo of what a co-editor changed](#undo-of-what-a-co-editor-changed)).
 
 The parent's Y.Doc runs no formatting cleanup, matching yrs in the DOCX and
 PPTX editors (`docx-edit`, `pptx-edit`) and the room. Stock Yjs, after every remote update to a text with formatting,
@@ -774,8 +809,14 @@ the two (`merge_paragraphs` in `crates/docx-edit`):
   so the section break stays.
 
 Delete or Backspace right next to a table or block content control never
-deletes it: the user selects it to delete it. A break next to the caret goes
-like any character. Backspace and Delete beside a field that shows nothing (a
+deletes it: the user selects it to delete it. Backspace at the start of a slot
+that opens with a table moves the caret to the end of the table's last cell and
+edits nothing (`delete_adjacent`; Q543, upstream #1680), so before a table the
+empty-paragraph rule above is Delete's alone. Offset 0 (Home, Left from the
+text's start, Right from the paragraph above, Ctrl+Home in a table-led document)
+and offset 1 (a click) draw at the same place and act the same; a click reaches
+the engine through the resident path's refusal and `deleteAt`. A break next to
+the caret goes like any character. Backspace and Delete beside a field that shows nothing (a
 table of contents' own marker, a REF over links only, the first half of a
 split field, a comment reference) step over it and delete the visible
 character past it, or join at the paragraph mark there; Delete before one that
@@ -794,7 +835,15 @@ the new paragraph restores the document; the editor's Enter then gives the
 next style to neither paragraph. Every split keeps the paragraph's borders on
 both halves, as Word copies the paragraph mark (mid-paragraph, at its start or
 end and before a block), and leaves a section with the mark that ends it (the
-new mark never takes `sectPr` or `sectionBreakType`). Enter at a paragraph's
+new mark never takes `sectPr` or `sectionBreakType`). Enter at the end of a
+paragraph gives the new empty paragraph the formatting of the run before the
+caret, whichever host or paste asks (`split_at`, `mark_run_formatting` in
+`seed.rs`; Q605, upstream #1453), and typing with inherited formatting into a
+paragraph without content takes its mark's run formatting, so that text saves
+with direct formatting. Reopened before anything is typed in it, such a
+paragraph's mark has the source mark's `rPr` (known gap, as upstream). Shift+Enter
+and `insertLineBreak` input put one line break inside the paragraph (#1488).
+Enter at a paragraph's
 end inserts the new mark after the existing one (`split_paragraph` in
 `ops/paragraph.rs`): the text keeps its mark and id, so a peer's concurrent
 paragraph change stays on the text and two peers' Enters at one end give each
@@ -821,7 +870,8 @@ renames once after the load (`seedYrsSession`), so a state stored before both
 splitting peers exchanged does not keep the duplicate for a later session. If
 the peer whose split kept the id undoes it after the rename, the survivor
 keeps the other half's renamed id and no paragraph carries the source id any
-more. Exports
+more. An Undo or Redo that re-inserts marks duplicating an id renames them right
+after the step by the same rule (Q550, upstream #1456). Exports
 from a stored state that still holds the duplicate (office-checkpoint loads
 without renaming) take the save's backstop: a source `w14:paraId` stays on
 the first paragraph and each repeat gets a hex id, as for editor ids, in
@@ -1020,12 +1070,12 @@ switch. The top row holds back, the sidebar toggle, the workspace picker (a
 24px pill with 6px padding, slimmer than elsewhere), the file name and its
 save status beside it at every width, phones included (the icon, its label
 in the tooltip; a slowed open's line holds that tooltip open, Epo
-2026-10-20); the row under it holds Google-style menus from the left edge
-(File, Edit, View, Insert, Format…, 24px triggers). The avatar group (see
+2026-10-20). The row under it is the ribbon's tab line in edit mode (below),
+and File and the view controls in view mode. The avatar group (see
 [plate-editor](plate-editor.md#room-presence)), the mode toggle, header actions
 (PPTX Present) and ⋮ sit right, centred on both rows, or on the top row below
-sm at the row's 24px, where the menus take the full width and scroll sideways
-with edge fades. There is no Save button: autosave, Ctrl/Cmd+S,
+sm at the row's 24px, where the tab line takes the full width and scrolls
+sideways with edge fades. There is no Save button: autosave, Ctrl/Cmd+S,
 File › Save and leaving Edit save. Rename, Move, Properties and Delete stay in
 ⋮. The Office views render `OfficeHeader` (`OfficeMenuBar.tsx`), which portals
 the runtime's menus and actions into the header and draws the menus as a Radix
@@ -1040,17 +1090,117 @@ document already has it, so a menu opened during load stays open. Without a
 file header (no portal target) a row of its own carries the label and the
 toggle. Notes, PDFs and other files keep the one-row header.
 
-The menus come from the runtime as data (protocol v8, `officeMenus.ts`): a
-`menus` message carries the whole bar (items with labels already in Capy's
-locale, shortcuts, ticks, Capy icon names, submenus, Capy's table-size grid)
-and the header actions, and is re-sent when either changes; in edit mode it
-waits for the editor's replica, as the old Save button did. A click sends
-`menu-command` {id, value?}; an item's parameter rides in its id after a colon
-("zoom:125"), `value` carries only the grid's "<rows>x<cols>". Items marked
-`pick: 'image'` open Capy's own file picker, because a click in the host gives
-the frame no user activation, and the file goes over as `menu-file`. Every
-inserted image (that file, one picked from the editor's own toolbar button, or
-a DOCX picture watermark) passes the editor's `prepareImage` first: the runtime
+### The ribbon
+
+Edit mode is a classic ribbon, as desktop Excel and PowerPoint (Q562, Q596-Q603,
+Q564, Q566, Q567, Q673-Q675, Q677; flat buttons are a signed exception to
+AGENTS.md's bordered actions). A view-only reader, or anyone in View, sees no ribbon and no tabs:
+File and the view controls in the menu bar, as Google Sheets and Slides' viewer
+(Q666).
+
+- **The tab line** (`RibbonTabs`, `HistoryButtons`) is in Capy's header: Undo and
+  Redo, the File menu, Home, then the other menus as tabs (`office-tab-<id>`).
+  Undo and Redo stay on every tab and at every width: the line has no width
+  rule of its own, so it can't disagree with the frame. The tab's state is the
+  frame's (`ribbonStore.ts`, one store per frame, so **Edit always opens on
+  Home**, Q665): a click sends `menu-command` `ribbon.tab:<id>`, and the next
+  `menus` message's `ribbon` field (`tabs`, `tab`, `collapsed`, `undo`, `redo`)
+  redraws the line. Moving tabs rerenders no editor. The field is there only
+  while the ribbon is on screen (`setMounted`). `isOfficeRibbon` holds what the
+  frame may put on Capy's page: Undo and Redo only as the editors' own ids, never
+  one of Capy's commands, tab ids of lower-case letters, labels of 40 characters.
+- **The ribbon** (`OfficeRibbon.tsx`) is in the frame, about 78 px high, under the
+  tab line: groups with names, two lines of 28 px controls or tall labelled
+  buttons, scrolling sideways under a vertical wheel with edge fades. Each format
+  has a layout table (`docxRibbon.ts`, `xlsxRibbon.ts`, `pptxRibbon.ts`) whose
+  cells name either a control of the editor's toolbar or a menu entry by id. The
+  fork's three `Toolbar`s take a `ribbon` render prop (`RibbonControls`) that
+  receives their controls by name and keep their root (role, test ids), so
+  pickers, selection state and commands are the ones they always had; an item
+  becomes a button (`data-command=<id>`), a submenu a dropdown, and
+  `src/office-runtime/ribbonLayout.test.ts` checks every menu command is in a
+  tab. The fork's `singleRow` toolbar remains for its own callers; Capy always
+  passes `ribbon`. Each fork `Toolbar` exports `RIBBON_CONTROL_NAMES`, so a renamed
+  control fails to compile; `ribbonLayout.test.ts` reads the real `HostMenus`
+  model and asserts every cell resolves, and the fork's `singleRowToolbar.test.tsx`
+  fails on a new upstream control until it is named. Layout stays in Capy, one
+  renderer and three tables (Q673).
+- **What doesn't fit** (Q675): from 768 px of frame up the row doesn't scroll.
+  Groups that don't fit move, from the tab's end, into one More button at the end
+  of the row; earlier groups stay put, and their controls and commands keep their
+  states there. `useRowFit` measures once before paint when the tab or its set of
+  groups changes; after that a ResizeObserver reports sizes, so typing and
+  selection read no layout. The collapse chevron is outside the row, and Undo and
+  Redo are in Capy's header, so neither moves.
+- **An open list owns the keyboard** (`useListKeys`). Opened by mouse, the focus
+  stays in the document, because leaving would commit an XLSX cell being typed;
+  a capture listener at the window takes every key, and the held text field is
+  read-only so an IME can't start: Escape closes the list, arrows and Home and End
+  walk a marked row (`data-active`), Enter runs it. Opened by keyboard, the list
+  has real focus. A MutationObserver on `aria-expanded` installs all this, so
+  nothing listens while no list is open.
+- **A command settles input first.** The old menu's click took the focus away
+  (`focus-left`, a flush); a press on the ribbon keeps it, so `runCommand` in
+  `main.tsx` ends an open composition, flushes, runs the command in order under
+  the pause, then hands the keys to the document (`returnKeys`) unless the command
+  took them or a list stays open. A flush ends a held DOCX press rather than wait
+  on it, and the wait has the host's own flush limit.
+- **The keyboard's route**: Enter, Space, Down or Tab on a tab goes to the tab's
+  first command (`ribbon.enter`); Left and Right walk the row; Escape, or Shift+Tab
+  at the first command, goes back (`ribbon-focus`). A row or a button hands the
+  keys to the document, as Office. No KeyTips.
+- **Contextual tabs**: DOCX's Table and Picture come with the selection
+  (`RIBBON_CONTEXTS`, on when their control draws) and fall back to Home when it
+  leaves, as Office's. PowerPoint's big New slide split has its layout list.
+- **Collapsing**: the chevron at the ribbon's right, or a double click on a tab,
+  collapses it to the tab line, with no current tab. A click on a tab then opens
+  that tab's ribbon over the page (`data-over`, absolutely placed) until a click
+  elsewhere, Escape, a command or that tab again; its pin button keeps it. It
+  is expanded on first use (Q564) and remembered on each device (Q674): Capy holds
+  `officeRibbonCollapsed` in local storage, as the frame is sandboxed, and sends it
+  on `load`, with no account setting. A room swap's new frame also gets the tab on
+  screen (`load`'s `ribbon`, `OfficeSwap.ribbonTab`); entering Edit clears it, so
+  Edit still opens on Home.
+- **One row** (Q597, Q677): under 768 px of the frame's own width, whatever the
+  window (`matchMedia` in the frame, so a crossing renders the ribbon and sends no
+  message): a scrolling row under the tabs (`phoneHome` on Home, a tab's groups
+  flattened elsewhere) and no collapse chevron. Page fit, pinch zoom, comments
+  opening and hiding the font and size boxes stay on `compact`, Capy's window
+  under 768 px.
+- **Banners** draw under the ribbon, as Office's message bar (Q566). While the
+  frame reports its ribbon on screen, `OfficeHeader` registers a `BannerOutlet` on `BannerStack`
+  (`useBannerOutlet`): the strip that would draw is sent as `set-banner`, the frame
+  draws it (`RibbonBanner`), and its clicks come back as `banner-action`
+  {action, revision}, which run the strip's own handlers, only with the user's
+  gesture (`navigator.userActivation` on the host: a click in the frame activates
+  its parent, a frame's own timer doesn't). Until then, in view mode, and once a
+  render error takes the ribbon, Capy draws it as before. Download draft survives
+  that error in DOCX: the session is outside the fork's boundary, so `handleSave`
+  exports from it when the view is gone, and `export` doesn't stop at a failed
+  flush. XLSX and PPTX have no such boundary in the fork, so the runtime's
+  `EditorCrash` catches their render errors (Q687): the editor goes, `error`
+  carries `crashed`, and the strip says so with Reload (no Download draft, whose
+  exporter left with the editor). Reload (`reopenEditor`) opens a new frame on
+  the same session, so every edit the host already holds comes back.
+- **Icons**: Tabler at the even 1.5 px line (Q603, stroke 36/size) in
+  `tablerGlyphs.ts`, one export per glyph, so the build holds only the glyphs used
+  (one chunk for the frame's editors; Capy's header takes its few from
+  `tablerHeaderGlyphs.ts`). `TablerIcon` draws them; Capy's drawn merge and decimal
+  icons and the colour swatches are in `capyGlyphs.ts`.
+  `docxIcons.tsx`, `xlsxIcons.tsx` and `pptxIcons.tsx` map the editors' icon names
+  to them, for the ribbon, right-click menus, link popups and overlays.
+
+The menus come from the runtime as data (protocol v14, `officeMenus.ts`): a
+`menus` message carries the header's menus (items with labels already in Capy's
+locale, shortcuts, ticks, Capy icon names, submenus) and the header actions, and
+is re-sent when either changes; in edit mode it waits for the editor's replica,
+as the old Save button did, and carries only File, the rest of the tree staying
+in the frame for the ribbon. A click in the header sends `menu-command` {id,
+value?}; an item's parameter rides in its id after a colon ("zoom:125"), `value`
+carries only the table grid's "<rows>x<cols>". Items marked `pick: 'image'` open
+the file picker from the ribbon's click in the frame, and run with that file.
+Every inserted image (that file, or a DOCX picture watermark) passes the editor's
+`prepareImage` first: the runtime
 compresses it within 2,400 px and the payer's plan image cap, which the edit
 `load` carries as `imageMaxBytes` (protocol v10; an edit session without one
 fails with the file error instead of loading), as JPEG or PNG
@@ -1062,7 +1212,7 @@ only a client that skipped this meets it.
 It also shrinks one
 into the room's growth budget: the edit read's `growthBudgetBytes` (Go's
 `SourceGrowthBudget`: the export cap (the largest plan source file) less the
-base file, the 1 MiB margin, admission's 64 KiB reserve and the durable change
+base file, the 1 MiB margin (Office only), admission's 64 KiB reserve and the durable change
 over the seed, its state and rows, so 0 means nothing would be admitted) less
 what the
 replica's state grew since it held the room's document, a DOCX picture
@@ -1081,12 +1231,11 @@ as it does `EquationTextError`: no error box of its own). While it
 prepares, DOCX reports pending input and ignores another pick, as PPTX reports
 its pending insert; when the picture lands, an editor takes the focus back only
 if its frame still has it, so a slow shrink leaves a Capy menu, the chat box or
-a dialog the user moved to alone. For the
-same reason items marked `fullscreen` (and a header action marked so) go over
-with the click's full-screen permission, and items marked `popup: 'presenter'`
-have Capy open the PPTX presenter window first (`officeCommandNeeds`, see PPTX
-Present below). A header action with `items` is a split button: its main part
-runs the action, its arrow lists the items. Capy
+a dialog the user moved to alone. Items marked `fullscreen` (and a header action
+marked so) go over with the click's full-screen permission, and items marked
+`popup: 'presenter'` have Capy open the PPTX presenter window first
+(`officeCommandNeeds`, see PPTX Present below). A header action with `items` is a
+split button: its main part runs the action, its arrow lists the items. Capy
 performs its own commands without a round trip to the runtime's code:
 `capy.save` takes the checkpoint, `capy.download` saves the bytes `export`
 returns (in view mode the saved state the viewer opened), `capy.print` prints
@@ -1106,8 +1255,7 @@ as export does. Pages are drawn, encoded and released one at a time (DOCX
 settle: drawn when the frame is idle, without flushing pending input
 (DOCX ends that print loop after page 1;
 [thumbnails.md](../thumbnails.md#browser-captures)). The host drops a submenu longer than 80 entries
-rather than the whole bar; DOCX Format › Paragraph styles lists the first 40
-styles (the toolbar's style picker keeps all).
+rather than the whole bar; DOCX's style list in the ribbon keeps every style.
 
 While editing is paused (handoff, replaced, recovery, connecting before the
 first sync, discarding: the host's narrowed `canEdit` in `set-capabilities`;
@@ -1121,13 +1269,18 @@ itself. Until then its gates hold keys, pointer and text input, a composition
 begun after the pause never counts, and Ctrl/Cmd+S saves nothing. When the
 pause ends nothing moves the focus: it stays in Capy's field, Find, the
 document input (read-only never blurs it) or wherever it was. A newly opened
-DOCX editor focuses the document only through its frame: when the replica is
-ready (`collaboration-ready`) Capy focuses the frame unless its own focus is
-in a field taking typing (the chat box, say, also one behind a shadow root such
-as MathLive's) or anywhere in an open dialog, alert dialog or menu
-(`keepsFocus`), and the editor takes the focus
-once the frame has it. Closing or removing a header or footer from its Options
-menu, or Escape out of it, gives the document input the focus back. Each menu
+DOCX or XLSX editor focuses the document only through its frame: when the
+replica is ready (`collaboration-ready`) Capy focuses the frame unless its own
+focus is in a field taking typing (the chat box, say, also one behind a shadow
+root such as MathLive's) or anywhere in an open dialog, alert dialog or menu
+(`keepsFocus`), and the editor takes the focus once the frame has it: the DOCX
+document input, or the XLSX grid once its workbook opened and only while
+nothing else in the frame (the name box, the formula bar) has it
+(`takeKeyboard.ts`, Q690), so typing right after Edit reaches the active cell.
+Keys and clicks on the blank XLSX grid before its workbook opens are still
+dropped (Q689 holds them, which waits for a fork change). Closing or
+removing a header or footer from its Options menu, or Escape out of it, gives
+the document input the focus back. Each menu
 item says whether it edits (`edits`), declared where it is defined: DOCX's in
 docx-react's `hostMenus.tsx`, XLSX's and PPTX's from xlsx-react's
 `xlsxCommandEdits` and pptx-react's `PPTX_COMMAND_EDITS` (XLSX freezing panes
@@ -1135,9 +1288,9 @@ edits; Capy's own Save edits, Download, PNG and Print do not). The runtime
 re-sends its menus with every editing item disabled and a submenu with nothing
 left to run disabled too, the table grid counting as an edit (`pausedMenus`),
 keeps the read-only items (Select all, Find and replace, View, Download,
-Print) and the header actions usable, and drops any other `menu-command` or
-`menu-file` (`runsWhilePaused`). The read-only editors refuse edits themselves
-too: DOCX keeps its toolbar row, disabled, because its menus come from it,
+Print) and the header actions usable, and drops any other `menu-command`
+(`runsWhilePaused`); the ribbon's cells run under the same gate. The read-only editors refuse edits themselves
+too: DOCX keeps its ribbon, disabled,
 opens Find and replace with Find working and Replace and Replace all disabled,
 offers only Copy and Select all on right-click, ignores Ctrl/Cmd+K, Delete on
 a selected table, a header or footer double-click, Tab out of a table's last
@@ -1147,10 +1300,10 @@ is hidden, not dropped, and comes back with its draft when editing resumes,
 and so is a new comment being written; neither takes the focus back); XLSX's
 `run` refuses editing commands and its Select all hands the grid the keys, so
 Ctrl/Cmd+C copies the sheet (in the grid Tab moves between cells, as when
-editing). All three keep their toolbar row visible and disabled, and XLSX its
+editing). All three keep their ribbon visible and disabled, and XLSX its
 formula bar visible and read-only (its text still selects and copies), so
 nothing moves when a pause starts or ends. The toolbar's zoom control and the
-XLSX name box are the exceptions and stay usable, as View › Zoom does: zooming
+XLSX name box are the exceptions and stay usable, as the View tab's zoom does: zooming
 and going to a cell edit nothing. Only an editor pauses: in view mode
 a `canEdit` of false (a view-only user's) changes nothing, and the viewer
 still selects and copies. The DOCX menu model refuses a disabled item's id
@@ -1237,23 +1390,18 @@ is not scrolled to. A rotation loads faces for the wider toolbar, and before
 this that relayout counted as a local edit, so Edit jumped back to the caret's
 page on every resize at any zoom.
 
-In edit mode the DOCX editor shows one toolbar row under the header, in Google
-Docs' order (`singleRowToolbar` with the menus in the host, `DocxEditor`'s
-`onMenus`): undo/redo, zoom, style, font, size box (no −/+ steps), bold,
-italic, underline, text colour and highlight (each picker ticks the
-selection's colour when the whole selection shares one and it is one of the
-palette's colours; the highlight is read from the editor as the text colour
-is, however the document stores it, so a highlight picked in Capy ticks while
-a file's Word highlight such as yellow, which the palette lacks, does not),
-then link, comment and image,
-alignment with line spacing, lists and indent, and clear formatting, with the
-comments toggle pinned right; image or table controls follow the lists when an
-image or a cell is selected. Strikethrough, superscript and subscript live in
-Format › Text. Below lg (the viewport, as the PDF toolbar) the zoom dropdown,
-the font picker and the size box are hidden. The row scrolls sideways: a
-vertical mouse wheel scrolls it, and an edge with more to scroll fades
-(`data-scroll-start`/`-end`, so it needs no scroll-driven animations). The DOCX
-menus (`hostMenus.tsx` in the fork, Capy's icons and File › Download and Print
+In edit mode the DOCX editor shows the ribbon (above). Home holds Font (font
+box, size box, bold, italic, underline, strikethrough, text colour, highlight,
+clear formatting; each colour picker ticks the selection's colour when the whole
+selection shares one and it is one of the palette's colours; the highlight is
+read from the editor as the text colour is, however the document stores it, so a
+highlight picked in Capy ticks while a file's Word highlight such as yellow,
+which the palette lacks, does not), Paragraph (lists and indent, alignment, line
+spacing), Styles (Word's gallery: Normal, Title, Heading 1 and the selection's,
+with every style behind its arrow) and Insert (image, table, link, comment).
+The Table and Picture tabs come with the selection. Below md the font picker, the
+size box and the zoom control are hidden. The DOCX
+menus (`hostMenus.tsx` in the fork, Capy's File icons and File › Download and Print
 added in `docxMenus.ts`) are File (Save, Download ▸ Word document, Print),
 Edit (Undo, Redo, Select all, Delete, Find and replace), View (Show
 ruler ✓, Show document outline ✓, Show comments ✓, Zoom ▸), Insert (Image, Table ▸, Link,
@@ -1387,12 +1535,11 @@ file, kept in the runtime origin's `localStorage` under `capy.docx.ruler`
 View menu holds only what the viewer does (Zoom); the next edit opens with the
 remembered choice.
 
-The XLSX editor's toolbar row follows Google Sheets (xlsx-react's
-`singleRowToolbar`, no menu button): undo, redo and paint format, zoom (a
-boxless combobox), number formats, the font picker, the size box (no −/+
-steps), bold, italic, strikethrough and text colour, fill, borders and merge,
-then alignment and wrapping, scrolling sideways like the DOCX row; below lg the
-font picker, size box and zoom are hidden. Capy hides the fork's Search menus
+The XLSX editor's ribbon follows desktop Excel (`xlsxRibbon.ts`): Home holds
+Clipboard (big Format Painter), Font (font box, size box, bold, italic,
+strikethrough, text colour, fill, borders), Alignment with merge and wrap text,
+Number (formats and decimals) and Cells; below md the font picker, size box and
+zoom are hidden. Capy hides the fork's Search menus
 button (it does nothing), its agent proposals button (Capy stages no proposals)
 and the custom number format item (it only reapplies the current pattern)
 through `showSearchMenus`, `showProposals` and `showCustomNumberFormat`. Its
@@ -1402,11 +1549,11 @@ section labels and swatches; see the shared menu style below), the alignment
 popovers stack one icon button per alignment, and the text, fill and border
 colours open the same palette as the note editor's (Default clears the colour,
 Custom color takes any). The formula bar is its own row under the toolbar,
-as tall as the toolbar row (40px, 36px in a frame under 640px), and the sheet
+40px high (36px in a frame under 640px), and the sheet
 tabs sit under the grid. The viewer draws the same formula
 bar, read-only, in the same place: a click selects a cell (widened to its merged
 range, outlined in the editor's Excel green) and shows its address and full
-text, so the two modes differ only by the toolbar row. xlsx-react reads its
+text, so the two modes differ only by the ribbon. xlsx-react reads its
 other chrome colours, font and control sizes from `--xlsx-*` variables too; the
 grid stays white in dark themes, as pages do. Its icons come through
 `XlsxEditor`'s `icons` prop: `src/office-runtime/xlsxIcons.tsx` maps every
@@ -1422,7 +1569,16 @@ of the sheet, as in Excel (Tab and Shift+Tab stop at columns A and XFD), and a
 click, drag or Shift+click selects the cells under the pointer anywhere, while
 Ctrl/Cmd+arrow, End, Ctrl/Cmd+End and Select all stop at the used range, which
 the engine reports with the sheet info (Ctrl/Cmd+End lands on the last used
-cell). Clear and cut act on the selection's part inside the used range
+cell). Moves step over hidden rows and columns (#1511), End goes to the row's
+last data cell (#1580), a merged range counts as one cell: a move leaves it from
+its far edge and lands on its top-left cell (#1665). A jump past the drawn window
+asks the engine, and keys pressed meanwhile queue and act where it lands (#1539).
+A value typed as a date, time, percentage or accounting negative is stored as a
+number, and a General cell takes the implied format in the same undo step
+(#1491). A formula copied in the editor and pasted shifts its relative references
+from the cell it came from, in one undo step, and text from elsewhere pastes as
+typed (#1520); a cut pastes its formulas as they were, since a cut clears at cut
+time. Clear and cut act on the selection's part inside the used range
 (inputs committed but not drawn yet count) and resolve in the engine
 (`clearContents`) to edits for only the cells that hold a value or a formula,
 so their cost is bounded by the cells that hold content. Any edit (a clear,
@@ -1443,7 +1599,12 @@ open), while an armed paint brush, a chart drag or an arrow burst is dropped;
 selection, scrolling and copy still work. A gesture that resumes after a wait
 (a cut's read, a row/column op or host clear waiting on a commit, an unmerge's
 merged-range read) does not edit if the pause began meanwhile: the cut ends as
-a copy.
+a copy. Enter in an open edit stays refused, the value left in its cell, but
+File › Save or Ctrl/Cmd+S waits for the hold to end (Q688): the runtime's
+`flush` waits until the editor has drawn without `sending`, then commits the
+open cell and the save goes on, and the host's 30 s limit on a frame request
+starts over while the tab is held (`frameRequestLimit`). Other flushes (a
+ribbon command, focus moving into Capy, a pause, Download, print) do not wait.
 Copy keeps the selection's own top-left corner, leading blanks included as in
 Excel, and trims only past the used range's last row and column; it reads that
 area in pieces of at most 100,000 cells (the engine's read cap) without
@@ -1629,7 +1790,7 @@ sets it from `set-appearance` and Capy's own page from its locale at startup
 Microsoft YaHei on Windows) at the chrome's weights instead of a mix of a
 Japanese face and Hiragino Sans GB's W3/W6 under `lang="en"`.
 
-The three toolbar rows take the note toolbar's scale (`--toolbar-button`,
+The toolbars' popovers and what is left of their rows take the note toolbar's scale (`--toolbar-button`,
 `--toolbar-icon`, `Toolbar` and `ToolbarGroup`; see plate-editor.md "Toolbar
 icons"). `office-runtime.css` defines it once as `--toolbar-height`,
 `--toolbar-padding`, `--toolbar-button`, `--toolbar-icon`,
@@ -1716,26 +1877,20 @@ fork's own colours); slides keep their own colours. The viewer's thumbnails
 take the width their button leaves (126px, less beside the strip's
 scrollbar), so a thumbnail never covers its selection border. View mode has
 no count row, so the strip and the notes start right under the file header;
-edit mode adds the editor's flat toolbar row (`singleRowToolbar`, 40px, 36px
-in a frame under 640px) above the same layout. Below desktop (Capy's window
+edit mode adds the ribbon above the same layout. Below desktop (Capy's window
 under 1024px, the `narrow` flag in the frame's style message, so tablets and
 phones) or in a frame under 640px, the strip is a row of 96px thumbnails
 under the slide in both modes. Neither mode has a pager (Epo 2026-10-30): the
 strip and the row are the slide navigation. The editor takes the flag as
 pptx-react's `stripBelow` prop; the viewer as its `pptx-viewer-narrow` class.
 
-The PPTX toolbar row follows Google Slides and Capy's DOCX row: new slide
-with a layout dropdown, undo and redo, a zoom dropdown, then select, text box,
-image and shape. A selected text box or text adds font, size box (no steps),
-bold, italic, underline, text colour and highlight colour; an alignment
-dropdown (left, centre, right, justify, then the box's top, middle and bottom)
-and a line and paragraph spacing dropdown (single, 1.15, 1.5, double, add or
-remove 10 pt before or after the paragraph); bulleted and numbered list
-buttons, each with a style menu, then decrease and increase indent; and clear
-formatting. A selected shape then adds fill, border colour, border weight and
-its adjustment. Strikethrough, superscript, subscript and the font size steps
-are in Format › Text, as in DOCX. Below lg zoom, font and size are hidden. The
-row scrolls sideways under a vertical wheel, with edge fades.
+The PPTX ribbon follows desktop PowerPoint (`pptxRibbon.ts`): Home holds Slides
+(the big New slide split with its layout list, Delete), Font, Paragraph (lists,
+indent, alignment with the box's top, middle and bottom, line and paragraph
+spacing, clear formatting), Drawing (text box, image, shape, fill, border colour,
+border weight and its adjustment) and Arrange. Select is on the Insert tab, zoom on
+View. Below md zoom, font and size are hidden. Collaborators' chips float at the
+ribbon's right end (`ribbonPresence`).
 `src/office-runtime/pptxIcons.tsx` maps every toolbar icon name and the
 show's and presenter window's controls (exit, previous, next, Full screen, ⋮,
 pause, resume, reset, notes size) to Capy's Hugeicons
@@ -1748,7 +1903,16 @@ slide, move slide, delete object) are host menu commands that
 `PptxEditorApi.runCommand` runs by id (`PPTX_COMMAND_IDS`), with
 `onCommandState` reporting what each can do and `PPTX_COMMAND_EDITS` saying
 which edit. Delete or Backspace deletes a selected object unless its text is
-being edited.
+being edited. A corner drag on a picture whose source locks its aspect
+(`a:picLocks@noChangeAspect`) scales continuously along the frame's diagonal
+(#1510, #1537), and a click in a second text column finds its line (#1533).
+
+A deck's run `kern` is read from the source, kept through edits and written on
+save (0-4000 pt; clear formatting removes it). It made deck schema 6.0, the one
+version the engine reads (2026-10-17). An added text box saves as `txBox="1"`
+(#1507). A save from the browser's renderer refits normal autofit for typed text
+and leaves out a refit equal to what the layout or master gives (#1526, #1701);
+server and checkpoint exports keep the stored scale, as upstream's do (Q558).
 
 PPTX lists, levels and paragraph spacing are written as PowerPoint writes them
 (`crates/pptx-edit/src/story.rs`): a bulleted item gets `a:buChar` with
@@ -1875,8 +2039,8 @@ object to the slide and several to the box around them, distributing three or
 more) (`pptxEditorMenus.ts`, labels from `pptx-i18n` for the locale and Capy
 messages for the rest). A menu id carries
 its command's value after a colon (`view.zoom:1.5`, `insert.shape:ellipse`,
-`slide.newWithLayout:<layout part>`). Insert › Image is a `pick` item: Capy's
-picker hands the file to `PptxEditorApi.insertImage`. View mode offers File ›
+`slide.newWithLayout:<layout part>`). Insert › Image is a `pick` item: the
+ribbon's picker hands the file to `PptxEditorApi.insertImage`. View mode offers File ›
 Download and Print and View › Present ▸, Zoom ▸ (the same Fit and levels as
 edit mode, `zoomMenu`) and Show speaker notes (`pptxMenus.ts`); a level above
 the fit scrolls the slide from its edges in an inner scroller
@@ -2131,6 +2295,20 @@ citation scrolling.
 
 ## Upload and import analysis
 
+**The Upload tab is board T4** (Epo 2026-11-03): under the drop area, a Files
+list with one row per file (icon, name, size, remove), then one Topic dropdown
+for the whole upload (the open item's topic, else Other files; topics in order
+with Other files last and no New topic), then Cancel and Upload. There is no
+parse-mode choice, File Details heading or cost summary: each file goes with
+`defaultParseMode`, or with no parsing when the browser's analysis below
+refuses fast parsing (the row says it is added without processing) or the
+uploader is out of AI credits (`outOfCredits` in `features/billing/credits.ts`:
+nothing available and auto-reload off), when one line says files won't be
+processed and every file goes store-only. A row still shows what stops it (a
+name over the limit, an audio length past the cap, analysis still running)
+and Upload waits for it. The Import tab keeps the per-row topic and parse-mode
+pickers and the cost summary described below.
+
 Local selection and Google Drive/OneDrive selection both lead to the same
 details dialog. Files above the uploader's 10 MiB/30 MiB cap are
 rejected before they enter the list, except DOCX, PPTX, XLSX and raster
@@ -2215,7 +2393,7 @@ reason in the row and is final. A warning toast after the upload names how many 
 were removed. Cloud imports get the same treatment in the import worker before
 the file is stored, and the import status carries the same count.
 
-The same dialog submits each cloud row with its own chapter and parse mode;
+The same dialog submits each cloud row with its own topic and parse mode;
 there is no caption toggle, because embedded figure captioning was retired.
 Browser analysis is advisory and does not replace ingest or decide whether a
 source is searchable.
@@ -2290,8 +2468,11 @@ rechecks current source access, epoch and account state through a small
 access-only endpoint for incoming edits, at most every 5 s per connection. That
 check is a lock-free read (no file advisory lock, workspace or account row
 lock) on one snapshot; the checkpoint that saves the edits rechecks every
-contributor's role and locked account under `sourceLockTx`, while frozen and the
-storage limit stay admission-only (the 5 s recheck window). Checkpoint writes do not
+contributor's locked account under `sourceLockTx`, while the role, frozen and the
+storage limit stay admission-only (the 5 s recheck window, Q634; an agent edit
+with no room to admit it has its actor's role checked by its own checkpoint, and
+one in an open room has it checked again after the engine's call, just before the
+room admits it). Checkpoint writes do not
 check storage: a save only updates the ledger (see [storage quota](../backend-storage-quota.md)). The checkpoint answers with the new
 checkpoint and an agent edit's receipt only. The browser's editing session read
 carries neither the baseline nor pending effects, and a text state only: an
@@ -2322,10 +2503,22 @@ callers arriving while one is queued for the same document share it and
 receive its outcome, and a reloaded room's new document queues its own save.
 Credits gate parsing and AI work, independently of durable saving.
 
-DOCX blocks text input after a canvas click whose caret cannot yet be placed.
-Previously accepted input finishes at its old caret. A fresh click after that
-input drains and with available geometry must set a valid selection before typing
-resumes; the input exposes placement state and selection for browser checks.
+DOCX typing is never dropped around a press, as in Google Docs. A press that cannot
+be placed yet, before the page geometry is ready (right after opening) or while
+earlier input is landing, is held (`usePagesPointer`, `InputOperationQueue.hold`):
+what was accepted before it, a composition included, lands at the old caret in
+order, the caret goes where the press was on its page once both are done, and what
+is typed meanwhile waits behind it and lands there, in the story the press opened.
+The press keeps its place as fractions of its page, so scrolling, zoom or a sidebar
+do not move it. The last press wins and starts no drag, it leaves focus where the
+reader has it by then, and a double click in that time opens no band and selects no
+word. A wait for the geometry ends after 10 s (its engine can fail to load) or on a
+flush, a pause or a click outside the frame included: the press is dropped and what
+was typed lands at the old caret and saves. Destroying the session lands it first
+too. A closing or reloading frame loses it, as any input still in the frame.
+A press that places no caret (a band on a single click, a note area no note claims,
+a position that resolves to nothing) leaves typing where the caret was. The input
+exposes placement state and selection for browser checks.
 Run language metadata survives the native seed, Yjs projection and OOXML export,
 and so does a run's font hint (`w:rFonts w:hint`), held in its own `fontHint`
 mark so typing in the run and picking a font keep it. Picking a font sets each
@@ -2512,14 +2705,18 @@ existed before the update, that the commit collected, and (Office) newer than
 the seed, whose content a delete only marks in the stored change. Overwrites,
 deletes and replaced pictures no longer drift the estimate toward refusals,
 and it stays an upper bound of the state. The writer's access is revalidated at most every
-5 s per connection. Membership, role and share changes, and a user's own
-account change, close that user's connections through the collaboration
-eviction outbox; anything else (such as the owner's account state for a
-collaborator) takes effect within those 5 s, and every checkpoint rechecks each
-writer. Each room has its own state cap (`sources::state_cap`, Epo
+5 s per connection. A narrowing membership, role or share change closes the
+connections of those it took the file from, through the collaboration eviction
+outbox's `revoke`, and a user's own account lock closes theirs. The recheck closes
+a lost role the same way if it comes first (4403, no notice, the access check's
+code `role_lost`); anything else (such as the owner's account state for a
+collaborator, which the read-only strip answers) takes effect within those 5 s,
+and every checkpoint rechecks each writer's account. Each room has its own state cap (`sources::state_cap`, Epo
 2026-10-17): its seed plus the export cap (the largest plan source file,
-`max(plan_limits.source_file_max_bytes)`, read with the room's stored rows)
-less the base file and a 1 MiB margin, within the 100 MiB ceiling every room
+`max(plan_limits.source_file_max_bytes)`, or in a text room the flat
+`text_file_max_bytes`, Q629, Q630; read with the room's stored rows)
+less the base file and, for Office, a 1 MiB margin (a text file's export is the
+text its state holds, so it has none, Epo 2026-11-06), within the 100 MiB ceiling every room
 shares (WebSocket frames, downloads, offline drafts).
 Pictures that came with the file are references in the seed but bytes in the
 export, and an inserted image is in the state at least as large as in the
@@ -2548,7 +2745,9 @@ durable state's over seed(base) as the room's estimate counts it
 (`sourceGrowthSQL`): an Office state and its rows are the change, and a text
 state, the whole text with its history, less its seed (`seed_bytes`). A base
 within the margin and the reserve of the export cap leaves no growth, so a
-Pro upload between about 28.94 and 30 MiB opens view-only from the start. An
+Pro upload between about 28.94 and 30 MiB opens view-only from the start,
+and so does a text file within the 64 KiB reserve of 2 MiB, about 1.94 MiB and
+up. An
 image picked once the replica exists waits for its first measure; one picked
 before is refused with the budget notice. A
 save's whole state and an agent edit's are held to the same cap. Only when
@@ -2653,7 +2852,7 @@ never count) the editor stops
 taking edits (`offlineLimit`: Office `canEdit: false`, a paused textarea)
 until it reconnects. When the collaboration service discards a source room
 that held unsaved state (a save refused for good, the 5-minute slow-save
-limit, a read-only or access refusal, an outbox access discard), it asks the
+limit, a read-only refusal, an outbox discard), it asks the
 gateway to move the file to its next editing epoch before the room opens
 again (`POST /internal/collaboration/files/{id}/epoch-reset`, an epoch that
 already moved on is left alone). A client that missed the discard then sees
@@ -2828,7 +3027,7 @@ SHA-256; a file that fails is deleted and downloaded again (a base) or rebuilt
 (a seed or baseline). The folder is capped (`COLLABORATION_SOURCE_DISK_BYTES`:
 production 10 GiB, UAT 5 GiB): a write first deletes idle files, oldest
 first, and a room load is refused only when the files loaded rooms hold leave
-no room. Edit then shows collaboration unavailable and retries; View needs no
+no room. Edit then shows Cloud unavailable and retries; View needs no
 room. The refusal is logged at warn (`source room refused: disk store full`),
 not captured, and counted in `capy_collaboration_source_disk_refusals_total`.
 A loaded room's save that misses a file (its first DOCX or PPTX baseline, say)
@@ -3022,6 +3221,70 @@ returns; it now stays near the opened workbook (338 MiB). Measurements:
 [2026-10-05 replica report](../bench/collaboration/reports/2026-10-05-office-engine-replicas.md),
 [2026-10-05 effects reader report](../bench/collaboration/reports/2026-10-05-office-engine-effects.md).
 
+### Undo of what a co-editor changed
+
+One person deletes a DOCX table or a PPTX slide or shape, another types or moves
+something inside it, and the first presses Undo: the content comes back with the
+other's edit, for both of them and for whoever joins after (Epo 2026-11-04, Q549 A;
+landed 2026-11-05, Q623). Room state, seeds, joiner payloads and readers are
+unchanged: before the Undo the room holds nothing of the kept text, and the Undo's
+update is ordinary growth under the room's cap.
+
+- **Engine.** `UndoManager::adopt_concurrent_edits` in the vendored yrs, opt-in, on
+  for the DOCX and PPTX engines only. What a peer's update lands in content a step
+  deleted joins the step and is kept; a map value replaces the key's earlier value
+  in the step; what the update names as deleted inside that content, without naming
+  the content and with no later value for the key, leaves the step as the peer's
+  deliberate delete. While restoring, a value its writer's collection emptied does
+  not block the one before it (Q625). `forward_concurrent_edits` copies what lands
+  after an Undo into the restored copy, as a system edit outside Undo. The server's
+  own `ydoc::undo` (agent edits) does not opt in.
+- **Room.** Yrs collects an item landing in deleted content in the commit that
+  brought it, so the room's own update would not carry it. `ydoc::apply_freeing`
+  reports it (`Lost`), and `Room::apply_update` then relays the writer's bytes in
+  yrs's own encoding (`yrs::merge_updates_v1`), as it does for a delete of what the
+  room already holds deleted; a reconnect's step 2 names its whole delete set, so
+  there only what landed counts. Frames the commit lost nothing of keep the room's
+  encoding.
+- **Host.** `RoomProvider.onFrame` hands the frame over before the parent's Y.Doc
+  applies it, since Yjs reports an update after collecting it; `deliverToEngine`
+  (`useOfficeRuntime.ts`) gives DOCX and PPTX engines those frames and keeps XLSX on
+  the document's update event. Host documents keep garbage collection (Q431).
+
+The other person's caret in a deleted DOCX table no longer resolves, so the
+session's `selection()` reads null and the editor places it again at the start of
+the body's first paragraph (`ensureSelection`); it stays there after the Undo.
+
+Limits the developer accepted (Q623, Q626):
+
+- The undoer's socket is down while the typing passes: the Undo restores without
+  it, and everyone reads alike.
+- The undoer's tab closed or reloaded: its Undo stack is gone anyway.
+- The other person's own Undo after the restore does nothing; the text stays.
+- An agent's delete undone from its payload does not carry a person's edit made
+  meanwhile.
+- The other person heard the delete before their typing left the browser: their
+  own collection took the text.
+- Another person's slide reorder or z-order move of deleted content is not kept.
+- A co-editor's delete arriving after the Undo is not forwarded to the restored copy.
+- Undoing further back, past the restore, overrides the other person's value.
+- Restored text is written under the undoer's client id.
+
+**A cell with no stored content (Epo 2026-11-05, Q624).** A table's `rows` value can
+name a story nobody holds: two people insert rows and the first undoes, or a kept
+`rows` value names a story a third person deleted. The cell reads as empty and the
+document keeps working, with no error, as Sheets and Excel treat a cell with no
+content. `lower_table` gives it one empty paragraph with no positions, so the row
+keeps a line's height and no caret lands in it; the position projection, the
+sidebar's index, Find and `yrsCellStory` pass over it; the save writes the `<w:p/>`
+every `w:tc` needs. A click in the cell lands on the nearest paragraph someone
+holds, and Tab stops before it. Merging a selection that holds such a cell is refused
+as an operation error.
+
+Older and queued apart (Q626): Undo of concurrent row operations can lose a table's
+`grid`, and when both people delete a DOCX table and both undo, the body holds it
+twice.
+
 ## Maintenance window
 
 An engine upgrade that changes seed output runs in a maintenance window; the
@@ -3128,7 +3391,8 @@ The DOCX engine round (export memory fixes, bookmarks anchored in one walk,
 yrs compacting its block list once per commit) also starts each seeded story
 without a placeholder paragraph mark, which changes every DOCX seed and the
 DOCX golden hashes. While Capy has no users such a pin deploys without the
-window (2026-10-18), so migration `0103_docx_engine_round_reset.sql` is the
+window (2026-10-18), so migration `0103_docx_engine_round_reset.sql` (and for
+BetterOffice 0.5.1, all three formats, `0150_office_051_reset.sql`) is the
 template's reset for `'docx'` without its guard: unpublished DOCX edits are
 dropped and the files end published, a DOCX refresh in flight is superseded as
 an epoch reset supersedes it, and a deferred publication's pending rebuild ends

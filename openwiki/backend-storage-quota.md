@@ -14,7 +14,7 @@ This page is the accounting contract.
 
 ## Product plan limits
 
-`plan_limits` (`server/migrations/0001_init.sql`, image cap added in `0069`, 2 MiB on every plan since `0114`) is the canonical backend
+`plan_limits` (`server/migrations/0001_init.sql`, image cap added in `0069`, 2 MiB on every plan since `0114`, topics per workspace in `0136`, text file cap in `0154`) is the canonical backend
 catalog for every numeric limit that may vary by subscription plan:
 
 | Limit                           |                       Free |                        Pro |
@@ -27,6 +27,8 @@ catalog for every numeric limit that may vary by subscription plan:
 | Files per workspace             |                        100 |                        100 |
 | Files per upload/import request |                         20 |                         20 |
 | One uploaded image              |                      2 MiB |                      2 MiB |
+| One text file                   |                      2 MiB |                      2 MiB |
+| Topics per workspace            |                         10 |                         20 |
 
 Files per workspace counts nothing outside a workspace: a standalone file
 (no workspace, its uploader's alone) takes no count cap for now, only the
@@ -80,6 +82,8 @@ Storage is charged once per logical row owned by a user:
 | Source files  | `files.size_bytes`         | row exists                    |
 | Editor assets | `editor_assets.size_bytes` | `status = 'ready'` only       |
 | Materials     | `materials.size_bytes`     | always; set from content JSON |
+| An assignment's frozen questions | `assignments.frozen_bytes` | once published, to `frozen_by` |
+| Drawing answers | `drawings.board_bytes + image_bytes` | row exists, to the person attempting |
 | Trashed rows  | same as above              | until the 30-day purge        |
 | Chat Undo     | none                       | never: the browser keeps its payload, the server stores only the receipt (Epo 2026-10-21) |
 
@@ -157,6 +161,22 @@ included, which then read as removed. For a workspace material, `owner_user_id` 
 access, the owner role and the owner's lifecycle (deleted, suspended) follow
 the workspace (`materialEffectiveAccess`, `live_access`).
 
+An assignment's frozen copy (Epo 2026-11-05) is charged to whoever published it,
+not whoever drafted it. Its images are new `editor_assets` rows of the workspace
+with no material and an `assignment_id`, checked by `gateStorageTx` as a clone's
+are. Its question JSON is `assignments.frozen_bytes`, measured as a material's
+content is and checked by the same gate, so publishing past the limit is refused
+as any creation is, images or not; a trigger moves the charge through the deltas
+(migration `0149_assignment_storage.sql`). Nothing edits a published copy, and the
+trigger moves any change to `frozen_bytes` or `frozen_by` anyway. Deleting the
+assignment or the workspace releases both, and a workspace clone leaves them out.
+Purging the publisher deletes the images, as it deletes everything it pays for, but
+keeps the questions, so the class keeps the paper and its members' work, charged to
+nobody. The Embeds tab joins through a material and doesn't list any of this, so
+such a payer's meter runs ahead of that tab by its size
+([study-progress.md](study-progress.md#assignments)). An attempt's snapshot isn't
+charged.
+
 A curated material's `provenance` record is **never charged** — `size_bytes` is
 the content JSON alone — and its marshalled bytes are counted by `gateStorageTx`
 at material creation only, never on an `edit_document` merge and never on a
@@ -187,6 +207,40 @@ its own checks. Uploads stream through the API host, which Cloudflare
 proxies with a 100 MB request body limit; the 30 MiB largest per-file cap stays
 well under it.
 
+**Text files** take a flat cap instead of the per-file cap (Epo 2026-11-05, Q629,
+Q630; `plan_limits.text_file_max_bytes`, `planlimits.Limits.FileBytes`): 2 MiB on
+every plan for txt, md, json, source code, CSV and TSV
+(`sourceupload.IsTextFile`), since 30 MiB of text is too much to send to a model.
+Excel files and names Capy does not recognize keep the per-file cap. It holds at:
+
+- uploads: the policy carries it as `textMaxBytes`, and the add-source and Make a
+  quiz dialogs refuse a larger pick with "Text files must be 2 MB or smaller"
+  (`toastRejectedSources`). The ticket and the upload refuse it again, 400 "text
+  files can be at most 2 MB". Make a quiz keeps its own 200,000-character limit.
+- imports: `file_too_large` at the inspection and the request, and a provider file
+  that names no size stops at the same cap as it downloads (`source_import_jobs`).
+- agent-created files: `storeAgentFile` takes the same cap, though no agent tool
+  creates a text file today (`create_deck` makes PPTX, `edit_office_document`'s
+  create XLSX and DOCX).
+- clones: a single file clone answers `file_too_large` with `maxBytes` and `text`
+  (the dialog shows the same message), and a workspace clone leaves it out and
+  counts it in `skippedMaterials`.
+- saved edits: a text room's export cap is this cap, not the largest plan's source
+  cap (`Stored.export_cap`, `Catalog.SourceExportCap`), with no margin under it
+  (Epo 2026-11-06): the margin covers an Office export's overhead, and a text
+  file's export is the text its state already holds. So a room's state cap is its
+  seed plus the cap less the base file, and editing runs to about 1.94 MiB of
+  state, which counts edit history too (the cap less admission's 64 KiB reserve).
+  A 1.5 MiB file opens editable and takes typing. An update past it gets
+  the unrecoverable `source-checkpoint-failed` and closes for size; the editor
+  shows the unsaved text read-only to copy ("These changes couldn't be saved."),
+  and Reload returns to the last saved version. An agent edit past it answers 413.
+
+A text file already over the cap, or within the 64 KiB reserve of it, keeps its
+bytes and stays readable: it opens view-only with the size-limit notice and
+its mode control disabled (`atSizeLimit`, `growthBudgetBytes` 0), as any source
+at its size limit does.
+
 Office parsing keeps its structured handoff temporarily on the ingest host, with
 no durable B2 parse cache or preview PDF. Temporary parse output is a platform
 cost and does not increase `files.size_bytes` or user storage usage. Migration
@@ -211,6 +265,54 @@ those slots. The per-upload limit is 20 and is enforced server-side per request
 check the recipient plan's workspace-file cap. The workspace payload reports `fileCount` and
 `filesLimit`. Overflow is `files_limit_exceeded`; a too-large batch is
 `files_batch_exceeded`.
+
+### Drawing answers
+
+A drawing part's answer (migration 0156) is its saved board, gzipped, and a
+marking image kept only while its part waits on the AI. The person attempting
+pays, in practice and in assignments (Epo 2026-11-06), through the
+`drawings_storage_after` deltas; the board and image are counted blob
+references, so a replaced board, a dropped image and every cascade queue their
+objects for the reaper.
+
+- **Gate before the bucket.** An assignment's Done passes
+  `CheckAssignmentDrawing` (the attempt, the part and the account's state)
+  before any object is written, and the save checks again. Storage never
+  blocks an assignment (Epo 2026-11-08, superseding Q693's refusal): both use
+  `admitAccountTx`, the account half of `gateStorageTx` with no quota check
+  that admits a frozen account too (O4), so a member at the limit saves the
+  drawing, is charged for it and goes over, into the usual over-quota states.
+  A paper's files (an assignment answered on paper, `files.attempt_id`) reserve
+  the same way (`reservePaperStorageTx`), within 15 files and the member's
+  source file cap across them; Upload file can only start while storage is not
+  full, and Files › Submissions deletes them once marked and closed. A hand-in's
+  files (`files.hand_in_assignment_id`, an unmarked assignment that takes files)
+  reserve the same way within the same bounds, are stored with no parse or
+  credits, and Files › Submissions deletes them once the assignment closes.
+  Like Upload file, a hand-in takes a new file only while the member's storage
+  is not full (`storageFullErr` in `checkHandInUploadTx`, at the ticket and the
+  upload session; Epo 2026-11-09, Q728 A): a file added while there was room
+  still saves past the limit, files already added stay, and Hand in and Undo
+  hand in still work. Before you start warns such a member when
+  the paper has drawing parts (`drawingParts`); an assignment's pages show the
+  owner nothing about it. A practice Check of a
+  drawing asks `AssertStorageRoom` for its boards and images before the model
+  is paid for (Q694): over the limit it is refused with
+  `storage_quota_exceeded`, no credits spent. Objects written before a refusal
+  that raced past the check are left to the report-only sweep, which covers
+  `drawings/`.
+- **The marking image.** Kept only until its part is marked: the AI's marking
+  landing (practice Check again, Mark with AI), a part marked by hand, or the
+  assignment switched to manual grading drops it. Under manual grading none is
+  made or written; a drawing saved so has no image, and Mark with AI leaves it
+  to staff (it reads as Mark by hand in Approve, Q695).
+- **Caps.** A board is at most `DrawingBoardBytes` (250 KiB) before gzip, an
+  image at most `DrawingImageBytes` (300 KiB) and 1,568 px on its longer side.
+  A drawn sample answer's board is a quiz `board` editor asset under the same
+  board cap (`editor_assets_size_check`, migration 0158).
+- **Seen and deleted.** Billing's breakdown shows them as Canvas; Files ›
+  Canvas lists the payer's marked drawings to delete, an assignment's once it
+  has closed with its grades released.
 
 ## Counter model
 
@@ -551,8 +653,8 @@ Edits a publication captured are charged once, in the file:
   change in the file's size: the published text is in the file's bytes now,
   and Yjs stores text as its UTF-8 bytes. What stays charged is Yjs history
   (deleted structs and item metadata; source states are never compacted, and
-  a room's state cap bounds them: its seed plus the 30 MiB export cap less
-  the base file and a 1 MiB margin) and edits after the capture. Migration
+  a room's state cap bounds them: its seed plus the 2 MiB text cap less the
+  base file) and edits after the capture. Migration
   0054 gave every existing text state the seed size of its file (seed(text) is
   the text plus 15–18 bytes). `seed_bytes` is recorded for text only (a CHECK
   keeps it 0 for Office rows).
@@ -669,7 +771,15 @@ transaction, or one before an edit's blocks are sent). The bytes are known
 before the transaction, so there is no reservation; an object whose row was
 never inserted is deleted by the handler, and a refused edit's unreferenced
 figures are trashed at once. From then on the 60-second rule, pruning, trash
-and clones treat it like an upload.
+and clones treat it like an upload. A Make a quiz run's figures, crops of the
+paper's pages, are stored the same way: the done event carries the JPEGs, Go
+checks each against the starter's plan image cap, writes it to
+`editor-assets/{id}/…` (ids from the run id, `store.ChatAssetID`) and inserts
+it with the quiz in the quiz's creating transaction (`CreateMaterialDraft`
+with `Assets`), charged to the starter (M16). A quiz whose figures go over the
+starter's quota is saved as the quiz alone, its figures named in the
+report's `figuresLeftOut` (Epo 2026-11-04); only a quiz that does not fit by
+itself fails the run as `storage_full`.
 
 An image another note's or quiz's id brings into a material (a paste, undo,
 cut and paste, replayed draft, AI edit) is made the material's own by the
@@ -696,7 +806,7 @@ clone of its material, and a trashed material's assets are left out), and reuse 
 paths under reference counting. `ready` source files are copied, and partial
 ones (`failed` with a served index, parts design Q2) under the same gates;
 pending, processing, and other failed files are omitted. A file past the cloner's per-file
-plan cap (`plan_limits.source_file_max_bytes`, the upload cap) is left out of
+cap (`Limits.FileBytes`, the upload cap: the plan's, or a text file's flat cap) is left out of
 the copy and counted in the answer's `skippedMaterials`, as is a material
 whose stored content the current rules refuse or that is over the material
 size caps (Epo 2026-10-20); the clone's other limits still refuse it whole. Material nodes (and quiz image blocks; a card keeps its text and loses only its image) referring to a pending,
@@ -716,9 +826,9 @@ copy lands (`files.user_id`, `source_documents.user_id`,
 `materials.owner_user_id` and `editor_assets.user_id`); the quota gate runs on the payer
 with the copy's bytes (a file's size plus its saved edit state; a material's
 content, its embedded rows and its copied assets), and a file copy also passes
-the destination's file-count gate and the payer's per-file plan cap, as an
+the destination's file-count gate and the payer's per-file cap, as an
 upload into that workspace does (`FileTooLargeError`, 400 `file_too_large`
-with `maxBytes`; the dialog shows the upload's size message). A copy queued
+with `maxBytes` and `text`; the dialog shows the upload's size message). A copy queued
 for ingest on an embedding-pin mismatch stays `pending` and charged: file
 bytes are charged whatever the file's status. A material clone copies only ready editor
 assets referenced by the current SQL projection, gives each asset a fresh
@@ -1145,12 +1255,13 @@ keeping the state (see
 [plate-editor.md](frontend/plate-editor.md#document-limits-and-rejection)).
 
 Ordinary persistence embeds server-owned actor provenance in the same Yjs
-transaction as each edit and rechecks every contributor in the exact debounced
-snapshot, along with current membership/share role, workspace owner, and live
-subscription/storage state. Claimed markers are removed from the committed
-state; newer generations remain for the next save. A token minted before role
-removal, suspension, deletion, or plan expiry cannot bypass the database
-boundary. A rejected authorization-race save evicts the room so the uncommitted
+transaction as each edit and rechecks the account of every contributor in the
+exact debounced snapshot, along with the workspace owner. Claimed markers are
+removed from the committed state; newer generations remain for the next save.
+A token minted before suspension or deletion cannot bypass that boundary, and
+one minted before a role removal or plan expiry is refused at admission (the
+join and the 5 s writer recheck), so up to about 5 s of what such a writer sent
+saves (Q634). A save refused for a lock evicts the room so the uncommitted
 update is not retained in memory. Before writing authoritative Yjs state, the
 collaboration server applies the same structural and material-kind contract as Go. Invalid
 Plate content cannot become a durable state that projection will reject. The
@@ -1192,7 +1303,8 @@ direction.
 | Field | Runes |
 | --- | ---: |
 | Workspace name / description | 80 / 500 |
-| Chapter name (add, update, upload, import) | 60 |
+| Topic name (add, update, upload, import) | 60 |
+| Topic description (add, update, chat's `create_topic`) | 200 |
 | File name (upload, import, rename, editor asset) | 120 |
 | Material, quiz, flashcard set, generate title | 120 |
 | Conversation title | 60 |
@@ -1213,8 +1325,16 @@ LLM-authored material titles and editor asset names (both
 extension-preserving), workspace clone names (suffix-preserving), and
 auto-derived conversation titles.
 
-A workspace holds at most 20 chapters (`MaxChaptersPerWorkspace` in
-`store/store.go`), checked when a chapter is added and when an upload creates
-one by name; the 21st is refused as 409 `too_many_chapters`. The chat agent
-lists every chapter on each model call, which is what the cap bounds. A clone
-copies its source's chapters as they are.
+A workspace holds at most its owner's plan's topics per workspace (10 on
+Free, 20 on Pro; `plan_limits.topics_per_workspace`, Epo 2026-11-03), checked
+under the workspace row's lock when a topic is added (the Files panel, chat's
+`create_topic`) and when an upload, move, clone into a workspace or bank copy
+creates one by name (`nextTopicPositionTx` in `store/upload_topics.go`); one
+past it is refused as 409 `too_many_topics`. An upload naming a new topic is refused
+at its ticket, before it waits in line or sends anything, and a Drive import when it
+is requested; both are checked again when the file arrives. A workspace past the cap after a
+downgrade keeps its topics and adds no more. A workspace clone copies its
+source's topics with their descriptions and is refused with
+`too_many_topics` when they are more than the cloner's plan allows, as it is
+for files. The chat agent lists every topic on each model call, which the cap
+also bounds.

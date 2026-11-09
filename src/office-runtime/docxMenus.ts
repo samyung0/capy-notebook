@@ -68,27 +68,11 @@ export function docxT(locale: OfficeLocale) {
   return createT(deepMerge(en, docxStrings(locale)) as LocaleStrings);
 }
 
-/** Capy's icons beside the DOCX menu items, as Google Docs draws them. */
+/** Capy's icons beside the DOCX File menu's items. */
 const ICONS: Record<string, IconName> = {
   [OFFICE_HOST_COMMANDS.print]: 'print',
   download: 'download',
-  'find-replace': 'search',
-  'format-align': 'alignLeft',
-  'format-lists': 'list',
-  'format-table': 'table',
-  'format-text': 'bold',
-  'image-options': 'image',
-  'insert-comment': 'commentAdd',
-  'insert-image': 'image',
-  'insert-link': 'link',
-  'insert-table': 'table',
-  'insert-toc': 'tableOfContents',
-  redo: 'redo',
   save: 'cloudSync',
-  'table-properties': 'table',
-  undo: 'undo',
-  'update-toc': 'refresh',
-  zoom: 'zoomIn',
 };
 
 /**
@@ -104,8 +88,7 @@ function withIcons(entries: HostMenuEntry[]): OfficeMenuEntry[] {
     const icon = ICONS[entry.id];
     if (entry.kind === 'submenu')
       return { ...entry, icon, items: withIcons(entry.items) };
-    // Capy opens the picker: a click in its menu gives the frame no user
-    // activation to open one.
+    // The ribbon opens the picker, and runs the item with its file.
     const pick = entry.id === 'insert-image' ? ('image' as const) : undefined;
     return icon && entry.checked === undefined
       ? { ...entry, icon, pick }

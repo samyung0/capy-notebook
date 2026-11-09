@@ -1,7 +1,8 @@
 # BlockSuite (vendored)
 
-BlockSuite's packages copied in as plain files, for the note editor spike
-(`todo-blocksuite-spike.md`). Not a submodule: an upstream sync is a re-copy
+BlockSuite's packages copied in as plain files, for the drawing answer's board
+(`src/features/blocksuite/drawingBoard.ts`) and the note editor spike
+(`todo-blocksuite-spike.md`, on the `blocksuite-notes` branch). Not a submodule: an upstream sync is a re-copy
 from a newer commit with the local changes below reapplied.
 
 - **Source:** AFFiNE `canary`, commit `5f1925499760f6954c1e656711d9fb6ed3168179`,
@@ -23,7 +24,9 @@ import it.
 
 - One `yjs`: the root `overrides` pins `yjs` to the app's patched 13.6.31.
 - One `zod`: the packages use the app's zod 4 range (local change 5).
-- `.css.ts` (vanilla-extract): `@vanilla-extract/vite-plugin` in `vite.config.ts`.
+- `.css.ts` (vanilla-extract): none that the board loads, and no plugin. The note's
+  three are plain CSS (local change 24); the outline fragment's seven need the same before
+  anything imports it.
 - Decorators: Lit's standard decorators with `accessor` fields. `vite.config.ts`
   sets `esbuild.target: 'es2022'` so esbuild lowers them (Rollup cannot parse
   `accessor`); this directory's `tsconfig.json` keeps upstream's
@@ -202,10 +205,127 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
    - `framework/store` `model/store/crud.ts`: `_findRoot` takes the root's
      id from its key; `addBlock` writes neither key.
 
-10. Subpath exports for the drawing board (2026-11-06, `todo-queue.md`), so it can
+10. Subpath exports for the drawing board (2026-11-06), so it can
     import only the editor parts it needs: `./widgets/edgeless-selected-rect`,
     `./widgets/edgeless-zoom-toolbar` and their `/view`, and `./inlines/comment/view`
     (`affine/all/package.json`, `affine/all/src/inlines/comment/view.ts`).
+
+11. `makeDeepOptional` (`affine/shared` `zod-schema.ts`, marked `Capy (local change
+    11)`): a union goes optional through `.optional()`. Zod 4 kept `.or(z.undefined())`
+    a required key, so every partial edit on the canvas threw in `recordLastProps`.
+
+12. `enable_note_menu_media` flag (`affine/shared` `feature-flag-service.ts`,
+    `affine/gfx/note` `note-menu.ts`, marked `Capy (local change 12)`): the board turns
+    off the note menu's image, link and file buttons, which upload or need a doc search.
+
+13. `minimatch` 10.2.5 → 11.0.1 (`framework/store`) for GHSA-g3hv-75wg-m249 (Epo
+    2026-11-06). `schema.ts` uses both arguments of `_matchFlavour` as patterns: check
+    whether a saved answer's flavours reach it before saving is built.
+
+14. Shape button colours (`affine/gfx/shape` `shape-draggable.ts`, marked `Capy (local
+    change 14)`): `--capy-shape-button-<name>` and `--capy-shape-button-stroke-<name>`
+    fix the toolbar pieces' colours; without them the pieces show the shape's last colour.
+
+15. Phone toolbar (`affine/widgets/edgeless-toolbar` `edgeless-toolbar.ts`, marked
+    `Capy (local change 15)`): below 768 px the toolbar takes the full width less an
+    8 px gutter, in place of AFFiNE's 64 px safe area each side, its illustrated tools
+    are 78 px wide and spread with `space-around`, so two show between the arrows. The
+    change is the `FULL_WIDTH_*` constants, the media rule, `_availableWidth` and
+    `scrollSeniorToolSize`.
+
+16. `elementsCtorMap` exported from `affine/blocks/surface` (marked `Capy (local change
+    16)`), so the board can register its formula element before a saved answer loads.
+
+17. Text tool (`affine/gfx/text` `tool.ts`, marked `Capy (local change 17)`): a click on
+    a `plane` or `chart` card adds a label on top of it. The board's Label button uses this,
+    since a double click on a card opens its editor. It applies only when the card is the topmost
+    thing under the click.
+18. Double tap (`framework/std` `event/control/pointer.ts` and
+    `gfx/interactivity/gfx-view-event-handler.ts`, marked `Capy (local change 18)`): two
+    touches within 500 ms and 24 px are a double click, though each has its own pointer id,
+    and a touch finds the element under it before the event goes to that element's view.
+    Upstream, a phone never opens anything a double click opens.
+19. Marking image (`affine/blocks/surface` `canvas-renderer.ts` and `export-manager.ts`,
+    marked `Capy (local change 19)`): `getCanvasByBound` takes the scale to draw at, and
+    `_html2canvas` is public. The board draws its image layer by layer, so it stacks as
+    the screen does and stays within a phone's canvas limit.
+20. Tooltips (`affine/components` `tooltip.ts`, marked `Capy (local change 20)`): a tooltip
+    takes no pointer events. A tap shows it first and the click then lands on it, so a
+    phone couldn't use the toolbar's arrows or reach the tools past them.
+21. Blank lines (`framework/std` `inline/components/v-line.ts`, marked `Capy (local change
+    21)`): the empty line's template has no space around it. A canvas label keeps white
+    space, so a blank line in one was five lines tall and took no clicks.
+22. Leaking class (`affine/blocks` `attachment/src/styles.ts` and
+    `image/src/components/image-block-fallback.ts`, marked `Capy (local change 22)`): a
+    bare `.truncate` rule, in sheets that go into the document, applied `align-self:
+    stretch` to every Tailwind `truncate` in the app once the board had loaded; it's
+    scoped to the attachment and image fallback cards. A check of every rule the board
+    loads against the app's Tailwind classes found no other bare selector.
+23. Note height (`affine/blocks` `note/src/note-edgeless-block.ts`, marked `Capy (local
+    change 23)`): a canvas note reads its content's height once a frame instead of on
+    every mutation batch. Each read forced a layout; a large board's first render spent
+    874 ms on them at 4x CPU slowdown (Windows' canvas-open report, 2026-11-06).
+24. Note styles (`affine/blocks` `note/src/note-styles.css` and `note-styles.ts`, marked
+    `Capy (local change 24)`): the canvas note's three vanilla-extract `.css.ts` files are
+    one plain stylesheet with fixed `affine-note-*` class names, so the app's build runs no
+    vanilla-extract plugin (Windows' canvas-open report, 2026-11-06).
+25. Pointer clicks and drags (`framework/std` `event/control/pointer.ts`, marked `Capy
+    (local change 25)`): a press that went past the 2 px drag threshold never clicks, so
+    a pen stroke ending back near its start no longer adds a dot stroke; and the moves
+    inside the threshold (the latest 64) reach the drag as `dragMove`s right after
+    `dragStart`, so a stroke keeps its first points (Epo 2026-11-07).
+26. data-view out of the board (`affine/foundation` `src/effects.ts`, `affine/data-view`
+    `src/effects.ts`, `affine/blocks` `database/src/effects.ts`, `data-view/src/effects.ts`
+    and `root/src/configs/toolbar.ts`, marked `Capy (local change 26)`): data-view's
+    elements are defined by the database and data-view blocks (once, whichever comes
+    first) instead of by foundation, and the page toolbar's Convert to database loads
+    the database block and table view on use, so a board without those blocks loads
+    none of data-view (about 155 KB gzipped; Epo 2026-11-07, fix 6 of the canvas-open
+    report). The callout block draws its icon with data-view's `<uni-lit>`, which only
+    data-view's effects define now, so an editor with callouts and no database or
+    data-view block shows callouts without icons (it matters once notes move to
+    BlockSuite).
+27. Icons by reference (`affine/data-view` `src/core/utils/uni-icon.ts`, marked `Capy
+    (local change 27)`, and its 15 `createIcon` callers in data-view and the database
+    block, which aren't marked: each passes the imported icon where it passed its name,
+    and `rg "createIcon\("` finds them): `createIcon` takes the icon itself instead of
+    its name. A lookup by name kept every icon of `@blocksuite/icons/lit` in the build
+    wherever the icons load, which was the board's chunk (about 90 KB gzipped more; Epo
+    2026-11-07, fix 7).
+28. Dispatcher off on demand (`framework/std` `event/dispatcher.ts`, marked `Capy (local
+    change 28)`): a public `deactivate()`. A board kept mounted out of sight
+    (`putAway()` in `drawingBoard.ts`) calls it, since none of the events that turn the
+    dispatcher off fire when the board is hidden, and its document-level key and
+    clipboard handlers would otherwise still run.
+29. Narrower toolbar slots (`widgets/edgeless-toolbar` `edgeless-toolbar.ts`, marked
+    `Capy (local change 29)`): a slot whose element carries `data-own-width` takes that
+    element's width instead of AFFiNE's 96 px. The board's Charts slot is 60 px (Epo
+    2026-11-08). The toolbar's paging still counts every slot as 96 px, so it pages a
+    little early on a narrow screen.
+30. Elements the eraser skips (`gfx/brush` `src/eraser-tool.ts`, marked `Capy (local change
+    30)`): an element whose `erasable` is `false` is left out of the eraser's reach. The
+    board's plane and chart cards set it (their marks are erased inside them), so they can
+    answer `getLineIntersections` truthfully, which connectors need for their anchors.
+31. Auto-complete for shapes and notes only (`widgets/edgeless-selected-rect`
+    `src/edgeless-auto-complete.ts`, marked `Capy (local change 31)`): the next-shape
+    arrows and next-note plus buttons render only for a single selected shape or note.
+    Upstream hid them for other elements only while the pointer was over them, so a
+    selected connector (or plane, chart) showed note buttons once the pointer moved
+    away, and pressing one read a `background` the element doesn't have. The hover
+    check's hit test and `render()`'s `isShape`, unused after it, are gone.
+32. Wheel over the floating toolbar (`affine/components` `src/toolbar/toolbar.ts`,
+    marked `Capy (local change 32)`): a pinch or swipe over the buttons goes on to the
+    canvas, which zooms or pans; only an open menu keeps it, so its list scrolls.
+    Upstream stopped every wheel without preventing it, so a pinch zoomed the page.
+33. Toasts through the app (`affine/components` `src/toast/toast.ts`, marked `Capy
+    (local change 33)`): `setToastHandler` hands every `toast()` message to the app's
+    own toast. BlockSuite's fixed container sat inside the board's page and was cut off.
+
+The specs named in local changes 6 to 9 are on the `blocksuite-notes` branch, with the
+note editor they pin.
+
+`pnpm audit` sees these packages' dependencies, not this source: Dependabot and `cargo
+deny` don't cover it, so an AFFiNE security fix stays unseen until someone re-copies.
 
 Outside this directory, for BlockSuite:
 

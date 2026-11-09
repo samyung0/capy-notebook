@@ -70,26 +70,13 @@ function imageSources(env: Env): string {
 }
 
 /**
- * Where the pages the site Worker renders run scripts from: the app itself,
- * Clerk's packages on its frontend API (named by the publishable key; shared
- * quizzes and flashcard sets load clerk-js from it to learn who is signed in)
- * and this PostHog project's script assets (its remote config and lazy
- * extensions). The paths keep the rest of those hosts out.
+ * Where the pages the site Worker renders run scripts from: the app itself and
+ * this PostHog project's script assets (its remote config and lazy extensions).
+ * The paths keep the rest of that host out. None of these pages loads Clerk (Epo
+ * 2026-11-06, Q668).
  */
 function scriptSources(env: Env): string[] {
   const sources = ["'self'"];
-  const clerkKey = env.VITE_CLERK_PUBLISHABLE_KEY;
-  if (clerkKey) {
-    // `pk_{test|live}_` and the base64 of `{frontend API host}$`.
-    const host = Buffer.from(clerkKey.split('_')[2] ?? '', 'base64')
-      .toString()
-      .replace(KEY_END, '');
-    if (!CLERK_HOST.test(host))
-      throw new Error(
-        'VITE_CLERK_PUBLISHABLE_KEY does not name a Clerk frontend API host.'
-      );
-    sources.push(`https://${host}/npm/@clerk/`);
-  }
   if (env.VITE_POSTHOG_KEY) {
     const assets = posthogScriptHost(posthogApiHost(env.VITE_POSTHOG_HOST));
     // An empty host loads from the page's own origin, which 'self' covers.
@@ -102,13 +89,29 @@ function scriptSources(env: Env): string[] {
   return sources;
 }
 
+/** Clerk's packages on its frontend API, named by the publishable key; only the
+ * SPA loads them. */
+function clerkScriptSources(env: Env): string[] {
+  const clerkKey = env.VITE_CLERK_PUBLISHABLE_KEY;
+  if (!clerkKey) return [];
+  // `pk_{test|live}_` and the base64 of `{frontend API host}$`.
+  const host = Buffer.from(clerkKey.split('_')[2] ?? '', 'base64')
+    .toString()
+    .replace(KEY_END, '');
+  if (!CLERK_HOST.test(host))
+    throw new Error(
+      'VITE_CLERK_PUBLISHABLE_KEY does not name a Clerk frontend API host.'
+    );
+  return [`https://${host}/npm/@clerk/`];
+}
+
 /**
  * The policy the site Worker enforces on the share, summary and error pages
  * it renders, next to the report-only image policy: scripts only from
  * `scriptSources` and never inline or from an event-handler attribute (the
  * Worker adds the hash of each inline script its own template carries,
- * workers/site/handler.ts), workers also from `blob:` (clerk-js's timers),
- * frames only for interactive blocks and YouTube, forms posting only to the
+ * workers/site/handler.ts), workers also from `blob:` (only clerk-js's timers
+ * were known to need it; kept for PostHog's lazy extensions, unchecked), frames only for interactive blocks and YouTube, forms posting only to the
  * app, framed only by the app, no plugins and no `<base>`. Styles stay open
  * to inline: the Worker inlines the page's CSS, and MathLive and Mermaid
  * write style attributes.
@@ -133,8 +136,8 @@ export function pagePolicy(env: Env): string {
 
 /**
  * The SPA's report-only policy: the image sources, and the share pages'
- * script sources plus what only the app loads (Clerk's Turnstile on sign-up,
- * Google's file picker), so reports show what else the app would need before
+ * script sources plus what only the app loads (Clerk's packages and its
+ * Turnstile on sign-up, Google's file picker), so reports show what else the app would need before
  * its scripts are enforced.
  */
 export function appPolicy(env: Env): string {
@@ -142,6 +145,7 @@ export function appPolicy(env: Env): string {
     imageSources(env),
     `script-src ${[
       ...scriptSources(env),
+      ...clerkScriptSources(env),
       'https://challenges.cloudflare.com',
       'https://apis.google.com',
     ].join(' ')}`,

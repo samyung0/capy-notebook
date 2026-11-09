@@ -6,6 +6,8 @@ class Slot(str, Enum):
     CHAT = "chat"
     EDITOR = "editor"
     INGEST = "ingest"
+    EXTRACTION = "extraction"
+    GRADING = "grading"
     RETRIEVAL = "retrieval"
     CAPTIONING = "captioning"
     RERANK = "rerank"

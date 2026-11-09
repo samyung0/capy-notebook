@@ -30,14 +30,16 @@ import transcribe
 sys.path.insert(0, str(store.REPO / "lab/playground/scripts"))
 from common import KNOWLEDGE_B2_KEYS, LIBRARY_PORT, ensure_tunnel
 
+# The loader owns the bucket's writer client; the figure crops it stores at
+# publish use it too.
+sys.path.insert(0, str(store.REPO / "bench/rag/scripts"))
+from knowledge_base_library import WRITER_KEYS, writer_client
+
 ROOT = Path(__file__).resolve().parent
 PILOT = store.REPO / "bench/rag/scripts/knowledge_base_pilot.py"
 LOADER = store.REPO / "bench/rag/scripts/knowledge_base_library.py"
 SECRETS = store.REPO / ".env.local"
 STAGES = ("parse", "figures", "topics", "transcribe", "tag", "index", "publish")
-# The only key that may write the shared book bucket; retrieval and the head
-# check below use the read key in KNOWLEDGE_BASE_B2_KEY_ID/APP_KEY.
-WRITER_KEYS = ("KNOWLEDGE_BASE_B2_WRITER_KEY_ID", "KNOWLEDGE_BASE_B2_WRITER_APP_KEY")
 CONTAINERS = {
     "postgres": "capy-kb-postgres-v4-pilot",
     "parser": "capy-kb-parser-v4-pilot",
@@ -305,27 +307,6 @@ def run_model_stage(stage: str):
 
 def run_index(book: dict, run_dir: Path, log: Path) -> int:
     return run_command(pilot("index", run_dir), log)
-
-
-def writer_client():
-    """The bucket client for uploads: the writer key with the read key's
-    endpoint and region. Missing writer values refuse; the read key never
-    stands in."""
-    import boto3
-    from pipeline.config import cfg
-
-    key_id, app_key = (os.environ.get(name) for name in WRITER_KEYS)
-    if not (key_id and app_key):
-        raise RuntimeError(
-            f"{' and '.join(WRITER_KEYS)} are needed in .env.local to upload a source"
-        )
-    return boto3.client(
-        "s3",
-        endpoint_url=cfg.knowledge_base_b2_endpoint,
-        region_name=cfg.knowledge_base_b2_region,
-        aws_access_key_id=key_id,
-        aws_secret_access_key=app_key,
-    )
 
 
 def upload_source(book: dict, log: Path) -> None:

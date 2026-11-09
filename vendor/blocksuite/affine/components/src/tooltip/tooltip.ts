@@ -148,6 +148,8 @@ export class Tooltip extends LitElement {
         let arrowStyles: StyleInfo = {};
         let tooltipStyles: StyleInfo = {};
         return {
+          // Capy (local change 20): on touch it shows under the finger and took the tap.
+          portalStyles: { pointerEvents: 'none' },
           template: ({ positionSlot, updatePortal }) => {
             positionSlot.subscribe(data => {
               // The tooltip placement may change,

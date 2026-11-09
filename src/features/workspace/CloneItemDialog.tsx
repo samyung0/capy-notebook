@@ -55,15 +55,17 @@ export function cloneErrorMessage(error: unknown) {
     trackQuotaBlocked(error, 'clone');
     return m.clone_quota_body();
   }
-  // Past the payer's per-file plan cap, as an upload is refused.
+  // Past the payer's per-file plan cap, or the flat text cap, as an upload is
+  // refused.
   if (
     isApiError(error) &&
     error.code === 'file_too_large' &&
     typeof error.body?.maxBytes === 'number'
   ) {
-    return m.source_files_too_large({
-      mb: Math.round(error.body.maxBytes / 1024 / 1024),
-    });
+    const mb = Math.round(error.body.maxBytes / 1024 / 1024);
+    return error.body.text
+      ? m.source_text_files_too_large({ mb })
+      : m.source_files_too_large({ mb });
   }
   // The source's stored content the current rules refuse: another name or
   // destination cannot help (Epo 2026-10-20).
@@ -87,7 +89,7 @@ function cloneTitle(item: CloneItem) {
 
 /**
  * Clone a file or material: a destination workspace the user edits or No
- * workspace, a chapter in the workspace, and the copy's name,
+ * workspace, a topic in the workspace, and the copy's name,
  * `Name (copy)` while it sits next to its source. Clone spins and the dialog
  * stays open until the copy opens; a taken name shows under the field and any
  * other refusal under the form.
@@ -149,11 +151,11 @@ export function CloneItemDialog({
 
   const submit = handleSubmit(async ({ name }) => {
     setFormError(null);
-    // A chapter name still being typed counts, so Clone never drops it.
-    const { chapterId, chapterName } = dest.resolve();
+    // A topic name still being typed counts, so Clone never drops it.
+    const { topicId, topicName } = dest.resolve();
     const where = {
-      chapterId: chapterId ?? undefined,
-      chapterName: chapterName ?? undefined,
+      topicId: topicId ?? undefined,
+      topicName: topicName ?? undefined,
       workspaceId,
     };
     try {

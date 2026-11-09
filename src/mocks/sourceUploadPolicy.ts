@@ -117,5 +117,6 @@ export const sourceUploadPolicy: SourceUploadPolicy = {
       mode: 'none',
     },
   ],
+  textMaxBytes: PLAN_LIMITS.free.textFileMaxBytes,
   vlmIngestPageCreditMicros: 1_000_000,
 };

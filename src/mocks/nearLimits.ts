@@ -297,7 +297,7 @@ function nearLimitPart(id: string, index: number): QuestionPart {
 }
 
 /** QUIZ_PARTS_MAX parts, QUIZ_QUESTION_PARTS_MAX to a question, and every
- * fifth part open: QUIZ_OPEN_PARTS_MAX open parts in all. */
+ * fifth part open (AI-marked), each open part at its own caps. */
 export function nearLimitQuestions(prefix: string): Question[] {
   const questions: Question[] = [];
   for (let part = 0; part < limits.QUIZ_PARTS_MAX; ) {

@@ -14,7 +14,6 @@ describe('files list reconciliation', () => {
       const client = new QueryClient();
       const pending: SourceFile = {
         addedAt: '2026-09-10T00:00:00Z',
-        chapterId: null,
         hasBytes: true,
         id: 'f_poll',
         indexed: false,
@@ -25,6 +24,7 @@ describe('files list reconciliation', () => {
         revision: 0,
         sizeBytes: 20,
         status: 'processing',
+        topicId: null,
         workspaceId: 'ws_poll',
       };
       const completed = { ...pending, indexed: status === 'ready', status };
@@ -65,7 +65,6 @@ describe('files list reconciliation', () => {
     const client = new QueryClient();
     const processing: SourceFile = {
       addedAt: '2026-09-10T00:00:00Z',
-      chapterId: null,
       hasBytes: true,
       id: 'f_pct',
       indexed: false,
@@ -76,6 +75,7 @@ describe('files list reconciliation', () => {
       revision: 0,
       sizeBytes: 20,
       status: 'processing',
+      topicId: null,
       workspaceId: 'ws_pct',
     };
     const get = vi

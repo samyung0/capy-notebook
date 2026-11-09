@@ -22,7 +22,11 @@ retrieval also uses) and `KNOWLEDGE_BASE_B2_WRITER_KEY_ID` with
 `KNOWLEDGE_BASE_B2_WRITER_APP_KEY`. The writer key is the only one that may
 write the shared book bucket: publish uploads a missing source PDF with it (same
 endpoint, region and bucket) and fails the upload when either value is missing;
-the read key never stands in. The ordinary dashboard runner uses two models
+the read key never stands in. The loader's publish also stores each shown
+figure's crop with it before writing the version, and refuses when one is
+missing (`figures/<sha256>/`, Epo 2026-11-04; `knowledge_base_library.py crops`
+backfills the current books and `crops --verify` lists missing and stale
+crops). The ordinary dashboard runner uses two models
 (`llm.py`): GLM-5.3-Flash on the local
 Ollama cloud model (`glm-5.3-flash:cloud`, 127.0.0.1:11434) serves topics and
 scraping; Qwen3.8-Flash on Alibaba Model Studio serves the transcribe and tag
@@ -112,7 +116,9 @@ private, loopback, link-local, shared, multicast, reserved, unspecified and
 IPv4-mapped forms of those are refused, and the page or download fails without
 a retry. The check and the connection look the name up separately, so a name
 whose answer changes between the two is not covered. The local builder parser container
-uses `CAPY_MAX_SOURCE_BYTES=209715200` to match; preserve this override when
+uses `CAPY_MAX_SOURCE_BYTES=314572800` and `CAPY_PARSE_ARTIFACT_MAX_ENTRY_BYTES=314572800`
+so hand-supplied PDFs up to 300 MiB and their repaired copies fit (the second also goes in
+`parser_limits` in config.json); preserve these overrides when
 recreating it, and set `CAPY_PARSE_WORKERS=1` and `CAPY_PARSE_MAX_PAGES=100000`,
 which the parser requires; book ingestion takes books of any length and the
 application's own limits stay unchanged (decisions 2026-09-29). PDFs download two at a time with

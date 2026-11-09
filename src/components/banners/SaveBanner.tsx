@@ -23,11 +23,16 @@ import { FileBanner } from './FileBanner';
  *   so the reload loses them.
  * - `late-unloaded`: a late note's merge code did not load; its edits stay
  *   read-only on this device until Retry or a reconnect loads it (Q398).
+ * - `unreachable`: a note's join ran past its 30 s (Epo 2026-11-04): over the
+ *   note on screen, with Retry.
+ * - `access-lost`: an Office or text file's room refused this editor, whose
+ *   page stays read-only (Epo 2026-11-05).
  * - `review`: a note has edits that could not sync waiting in the merge view
  *   (Q252): Review opens it and Discard drops them all; it cannot be closed
  *   and has the lowest priority.
  */
 export type SaveBannerState =
+  | 'access-lost'
   | 'delayed'
   | 'late-unloaded'
   | 'offline'
@@ -38,7 +43,8 @@ export type SaveBannerState =
   | 'expired'
   | 'outdated'
   | 'outdated-unstored'
-  | 'review';
+  | 'review'
+  | 'unreachable';
 
 export function isOutdatedBanner(state: SaveBannerState | null | undefined) {
   return state === 'outdated' || state === 'outdated-unstored';
@@ -61,6 +67,7 @@ const MESSAGES: Record<
   Exclude<SaveBannerState, 'outdated' | 'outdated-unstored'>,
   () => string
 > = {
+  'access-lost': () => m.editor_access_lost(),
   changed: () => m.editor_recovery_changed(),
   delayed: () => m.editor_save_delayed(),
   expired: () => m.editor_recovery_expired(),
@@ -70,6 +77,7 @@ const MESSAGES: Record<
   'offline-unstored': () => m.editor_offline_unstored(),
   refused: () => m.source_edit_recovery(),
   review: () => m.merge_strip(),
+  unreachable: () => m.editor_collab_unavailable(),
 };
 
 /**
@@ -91,14 +99,15 @@ export function SaveBanner({
   onReload?: () => void;
   /** `review`: open the merge view. */
   onReview?: () => void;
-  /** `late-unloaded`'s Retry. */
+  /** The Retry of `late-unloaded` and `unreachable`. */
   onRetry?: () => void;
   reloading?: boolean;
 }) {
   if (isOutdatedBanner(state))
     return <OutdatedBanner stored={state === 'outdated'} />;
   const review = state === 'review' && onReview && onDiscard;
-  const retry = state === 'late-unloaded' && onRetry;
+  const retry =
+    (state === 'late-unloaded' || state === 'unreachable') && onRetry;
   return (
     <FileBanner
       actions={
@@ -123,7 +132,8 @@ export function SaveBanner({
         !(
           isRecoveryBanner(state) ||
           state === 'review' ||
-          state === 'late-unloaded'
+          state === 'late-unloaded' ||
+          state === 'unreachable'
         )
       }
       inline
@@ -131,6 +141,7 @@ export function SaveBanner({
       message={MESSAGES[state]()}
       testId="save-banner"
       tone={
+        state === 'access-lost' ||
         state === 'offline' ||
         state === 'offline-limit' ||
         state === 'late-unloaded' ||

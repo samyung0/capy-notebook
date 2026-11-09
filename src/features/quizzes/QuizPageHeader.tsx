@@ -40,12 +40,8 @@ export function QuizPageHeader({
   metaClassName = 't-meta text-fg-muted',
   byline,
   actions,
-  gutter = 'wide',
 }: {
   className?: string;
-  /** The page's gutter: wide on quiz and study pages, normal on the
-   * Question bank's topic page. */
-  gutter?: 'normal' | 'wide';
   onBack?: () => void;
   trail: Crumb[];
   /** The back arrow and breadcrumb row's classes, e.g. hidden on phones. */
@@ -67,7 +63,7 @@ export function QuizPageHeader({
       <div
         className={cn(
           'flex min-w-0 flex-1 flex-col gap-2 pt-4 sm:pt-6',
-          gutter === 'wide' ? 'page-px-wide' : 'page-px',
+          'page-px',
           className
         )}
       >

@@ -190,7 +190,7 @@ describe('offline', () => {
     first.destroy();
 
     const second = open(id);
-    await eventually(async () => second.getSnapshot().status === 'connecting');
+    await eventually(async () => second.getSnapshot().status === 'opening');
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(second.getSnapshot().synced).toBe(false);
     setCollaborationReachable(true);

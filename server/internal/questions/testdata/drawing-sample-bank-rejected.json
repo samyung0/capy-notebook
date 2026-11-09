@@ -1,0 +1,48 @@
+{
+  "name": "drawing-sample-bank-rejected",
+  "valid": false,
+  "policy": {
+    "bank": true
+  },
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Drawn answers."
+      }
+    ],
+    "parts": [
+      {
+        "id": "p1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Draw it."
+          }
+        ],
+        "answer": {
+          "type": "drawing",
+          "sample": {
+            "board": "asset_board_1",
+            "image": "asset_image_1"
+          }
+        },
+        "marks": 2,
+        "markscheme": [
+          {
+            "text": "Shape right",
+            "marks": 1
+          },
+          {
+            "text": "Labelled",
+            "marks": 1
+          }
+        ],
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

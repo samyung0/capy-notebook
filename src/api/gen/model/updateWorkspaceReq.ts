@@ -6,6 +6,7 @@
  */
 import type { Cover } from './cover.ts';
 import type { TagInput } from './tagInput.ts';
+import type { WorkspaceKind } from './workspaceKind.ts';
 
 export interface UpdateWorkspaceReq {
   /** A URL to the JSON Schema for this object. */
@@ -25,6 +26,8 @@ export interface UpdateWorkspaceReq {
      * @pattern ^$|^((sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$
      */
   iconId?: string;
+  /** The owner's alone; nothing is deleted when it changes */
+  kind?: WorkspaceKind;
   /**
      * @minLength 1
      * @maxLength 80

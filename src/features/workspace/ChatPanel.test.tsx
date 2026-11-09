@@ -47,6 +47,20 @@ vi.mock('./useChatStream', async (original) => {
     }),
   };
 });
+// The real voice input; `shown` says whether a recording may run.
+const voice = vi.hoisted(() => ({ shown: undefined as boolean | undefined }));
+vi.mock('./chat/VoiceInput', async (original) => {
+  const actual = await original<typeof import('./chat/VoiceInput')>();
+  return {
+    ...actual,
+    useVoiceInput: (
+      ...[workspaceId, onText, shown]: Parameters<typeof actual.useVoiceInput>
+    ) => {
+      voice.shown = shown;
+      return actual.useVoiceInput(workspaceId, onText, shown);
+    },
+  };
+});
 // The scope menu's items render in place.
 vi.mock('@/components/ui/Menu', () => ({
   Menu: ({
@@ -322,6 +336,118 @@ it('holds a send until the kept chat has opened', async () => {
   });
   expect(stream.send).not.toHaveBeenCalled();
   act(() => root.unmount());
+  vi.unstubAllGlobals();
+});
+
+it('keeps its draft and mounted thread while a page hides the dock, and drops a recording', async () => {
+  // The dock's tooltips look their anchors up by the DOM's classes.
+  const { Element, HTMLElement, Node } = window as unknown as Record<
+    string,
+    unknown
+  >;
+  vi.stubGlobal('Element', Element);
+  vi.stubGlobal('HTMLElement', HTMLElement);
+  vi.stubGlobal('Node', Node);
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      disconnect() {}
+      observe() {}
+    }
+  );
+  const client = new QueryClient();
+  const panel = (hidden: boolean) => (
+    <QueryClientProvider client={client}>
+      <ChatPanel
+        dock={{
+          menuItems: [],
+          office: false,
+          onPageOpen: () => {},
+          pageOpen: false,
+        }}
+        hidden={hidden}
+        workspaceId="ws_bio"
+      />
+    </QueryClientProvider>
+  );
+  const root = createRoot(document.getElementById('root') as never);
+  await act(async () => root.render(panel(false)));
+  const dock = () => document.querySelector('[data-workspace-chat-dock]');
+  const field = dock()?.querySelector('textarea') as HTMLTextAreaElement;
+  const proto = (
+    window as unknown as { HTMLTextAreaElement: { prototype: object } }
+  ).HTMLTextAreaElement.prototype;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(proto, 'value')?.set?.call(
+      field,
+      'And ATP?'
+    );
+    field.dispatchEvent(new window.Event('input', { bubbles: true }));
+  });
+  expect(voice.shown).toBe(true);
+
+  await act(async () => root.render(panel(true)));
+  expect(dock()).toBeNull();
+  expect(voice.shown).toBe(false);
+
+  await act(async () => root.render(panel(false)));
+  expect(dock()?.querySelector('textarea')?.value).toBe('And ATP?');
+  expect(voice.shown).toBe(true);
+  act(() => root.unmount());
+  vi.unstubAllGlobals();
+});
+
+it('drops a recording when the panel leaves the Agent tab, and carries one between the dock and its page', async () => {
+  const { Element, HTMLElement, Node } = window as unknown as Record<
+    string,
+    unknown
+  >;
+  vi.stubGlobal('Element', Element);
+  vi.stubGlobal('HTMLElement', HTMLElement);
+  vi.stubGlobal('Node', Node);
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      disconnect() {}
+      observe() {}
+    }
+  );
+  const client = new QueryClient();
+  const root = createRoot(document.getElementById('root') as never);
+  // From lg: the panel, hidden off the Agent tab.
+  const panel = (hidden: boolean) => (
+    <QueryClientProvider client={client}>
+      <ChatPanel hidden={hidden} workspaceId="ws_bio" />
+    </QueryClientProvider>
+  );
+  await act(async () => root.render(panel(false)));
+  expect(voice.shown).toBe(true);
+  await act(async () => root.render(panel(true)));
+  expect(voice.shown).toBe(false);
+  await act(async () => root.render(panel(false)));
+  expect(voice.shown).toBe(true);
+  act(() => root.unmount());
+
+  // Below lg: the dock grows into its chat page with the recording running.
+  const phone = createRoot(document.getElementById('root') as never);
+  const docked = (pageOpen: boolean) => (
+    <QueryClientProvider client={client}>
+      <ChatPanel
+        dock={{
+          menuItems: [],
+          office: false,
+          onPageOpen: () => {},
+          pageOpen,
+        }}
+        workspaceId="ws_bio"
+      />
+    </QueryClientProvider>
+  );
+  await act(async () => phone.render(docked(false)));
+  expect(voice.shown).toBe(true);
+  await act(async () => phone.render(docked(true)));
+  expect(voice.shown).toBe(true);
+  act(() => phone.unmount());
   vi.unstubAllGlobals();
 });
 

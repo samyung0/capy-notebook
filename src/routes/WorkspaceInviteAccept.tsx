@@ -70,9 +70,7 @@ function InviteContent() {
     !token ||
     (acceptIsError && isUnavailableWorkspaceInviteError(acceptError))
   ) {
-    return (
-      <WorkspaceError backLabel={m.workspace_back_to()} backTo="/workspaces" />
-    );
+    return <WorkspaceError backLabel={m.workspace_back_to()} backTo="/" />;
   }
 
   if (acceptIsError) {
@@ -81,10 +79,7 @@ function InviteContent() {
         {...describeError(acceptError)}
         action={
           <div className="flex gap-2">
-            <Button
-              onClick={() => navigate({ to: '/workspaces' })}
-              variant="ghost-hover"
-            >
+            <Button onClick={() => navigate({ to: '/' })} variant="ghost-hover">
               {m.action_cancel()}
             </Button>
             <ErrorAction
@@ -125,10 +120,7 @@ function InviteContent() {
           </Button>
         ) : (
           <div className="mt-6 flex gap-2">
-            <Button
-              onClick={() => navigate({ to: '/workspaces' })}
-              variant="ghost-hover"
-            >
+            <Button onClick={() => navigate({ to: '/' })} variant="ghost-hover">
               {m.action_cancel()}
             </Button>
             <Button

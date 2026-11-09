@@ -42,13 +42,13 @@ const QUIZ = {
 };
 const WORKSPACE = {
   author: 'Mia',
-  chapters: [],
   description: '',
   files: [],
   iconId: 'waves-03',
   name: 'Biology',
   privacy: 'public',
   tags: [],
+  topics: [],
 };
 const directives = (policy: string) =>
   Object.fromEntries(

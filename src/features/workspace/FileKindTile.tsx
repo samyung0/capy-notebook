@@ -3,7 +3,7 @@ import { FileIcon, type FileIconName } from '@/components/ui/FileIcon';
 import { Tile } from '@/components/ui/Tile';
 import { cn } from '@/lib/cn';
 
-/** A file kind toggle in the Add file dialog's Create and AI generate tabs. */
+/** A file kind toggle in the Add file dialog's Create tab. */
 export function FileKindTile({
   icon,
   ...rest

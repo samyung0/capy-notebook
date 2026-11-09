@@ -47,8 +47,8 @@ type internalMaterialReq struct {
 	ToolCallID         string `json:"toolCallId"`
 	Kind               string `json:"kind"`
 	Title              string `json:"title"`
-	// ChapterID is where the material is filed; empty leaves it unfiled.
-	ChapterID string `json:"chapterId"`
+	// TopicID is where the material is filed; empty leaves it unfiled.
+	TopicID string `json:"topicId"`
 	// Sources is the model's made-from line (resolveSources).
 	Sources []string `json:"sources"`
 
@@ -72,7 +72,7 @@ func (r internalMaterialReq) hashPayload() map[string]any {
 		"kind": r.Kind, "title": strings.TrimSpace(r.Title), "questions": r.Questions,
 		"cards": r.Cards, "content": r.Content,
 		"sources": r.Sources, "provenance": r.Provenance,
-		"chapterId": r.ChapterID,
+		"topicId": r.TopicID,
 	}, r.Figures)
 }
 
@@ -173,7 +173,7 @@ func validSources(sources []string) bool {
 
 // resolveSources turns an agent's sources, its made-from line in plain strings
 // (Epo 2026-10-21), into the names stored with what it made: the id of a
-// workspace file, top-level material of any kind or chapter becomes that
+// workspace file, top-level material of any kind or topic becomes that
 // item's current name, and anything else (an exact name, which already is the
 // current one, a lecture, a web address) stays as written, trimmed. Duplicates
 // are kept once and a blank source is dropped (Epo 2026-10-21); no sources
@@ -187,12 +187,12 @@ func (a *api) resolveSources(ctx context.Context, wsID string, sources []string)
 	if err != nil {
 		return nil, err
 	}
-	chapters, err := a.s.ListChapters(ctx, wsID)
+	topics, err := a.s.ListTopics(ctx, wsID)
 	if err != nil {
 		return nil, err
 	}
-	nameByID := make(map[string]string, len(items)+len(chapters))
-	for _, ch := range chapters {
+	nameByID := make(map[string]string, len(items)+len(topics))
+	for _, ch := range topics {
 		nameByID[ch.ID] = ch.Name
 	}
 	for _, item := range items {
@@ -346,20 +346,20 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 		a.fail(w, err)
 		return
 	}
-	var chapterID *string
-	if req.ChapterID != "" {
-		ok, err := a.s.ChapterInWorkspace(ctx, req.ChapterID, req.WorkspaceID)
+	var topicID *string
+	if req.TopicID != "" {
+		ok, err := a.s.TopicInWorkspace(ctx, req.TopicID, req.WorkspaceID)
 		if err != nil {
 			a.fail(w, err)
 			return
 		}
 		if !ok {
 			writeJSON(w, http.StatusBadRequest, map[string]string{
-				"code": "unknown_chapter", "message": "chapter_id is not a chapter of the workspace the item is created in",
+				"code": "unknown_topic", "message": "topic_id is not a topic of the workspace the item is created in",
 			})
 			return
 		}
-		chapterID = &req.ChapterID
+		topicID = &req.TopicID
 	}
 	cards := make([][2]string, 0, len(req.Cards))
 	for i, c := range req.Cards {
@@ -412,7 +412,7 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 		ID: store.ChatMaterialID(req.AssistantMessageID, req.ToolCallID), ActorUserID: req.UserID,
 		WorkspaceID: req.WorkspaceID, WorkspaceName: ws.Name, Kind: store.MaterialKind(req.Kind), Title: title,
 		Questions: req.Questions, Cards: cards, Content: content, Blank: blank, Embedded: embedded, Assets: assets,
-		ChapterID: chapterID, ScopeFileNames: sourceNames, Provenance: req.Provenance,
+		TopicID: topicID, ScopeFileNames: sourceNames, Provenance: req.Provenance,
 	}, store.AgentOperation{
 		ID: opID, ToolVersion: 1, RequestHash: hash, ActorUserID: req.UserID,
 		WorkspaceID: req.WorkspaceID, ConversationID: convID,

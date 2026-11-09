@@ -93,17 +93,6 @@ export function CardDialog({
   if (!card) return null;
   return (
     <SimpleDialog
-      // Live-saved: phones show the status by the title and Undo where Save
-      // would be.
-      action={
-        phone && (
-          // Back up the 2px the header drops its action, level with the title
-          // and the cloud.
-          <span className="-translate-y-0.5">
-            <UndoButtons manager={undo} />
-          </span>
-        )
-      }
       footer={
         <>
           {!phone && (

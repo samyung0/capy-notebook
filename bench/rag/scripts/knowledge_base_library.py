@@ -16,6 +16,16 @@ of a book (all versions' content rows, version rows, receipts and the book
 row). `remove` leaves the source PDF in the knowledge-base bucket, so a
 republish from the book's saved run restores it.
 
+Figure crops (Epo 2026-11-04): before a publish writes anything it stores each
+shown figure's crop as a JPEG at `figures/<pdf sha256>/<page>_<box>.jpg` in
+the knowledge-base bucket (listed with the read key, written with the writer
+key), and refuses when one is missing after the upload; retrieval serves
+figures only from these. `crops` stores the missing crops of every current
+book (the backfill, resumable), and `crops --verify` lists the missing ones and
+the stale ones (a box or its blanked exclusions changed at a republish, or a
+figure hidden later), which stay in the bucket unreachable, and counts the
+records hidden for a box with no area.
+
 Taxonomy: subjects come from the committed fixture `lab/knowledge/subjects.json`,
 loaded by `schema` and refreshed by every `publish`; each manifest book names
 its `subject_id`. Topics come from the run (`<run>/topics.json`, written by the
@@ -39,10 +49,13 @@ check` from the repository root. A bare interpreter fails on the imports.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
+import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import psycopg
@@ -62,7 +75,13 @@ for _key, _value in LOCAL_ENV.items():
         os.environ.setdefault(_key, _value)
 
 from pipeline.retrieval.library import LIBRARY_SCHEMA as SCHEMA
-from pipeline.retrieval.library import WORKSPACE
+from pipeline.retrieval.library import (
+    WHOLE_PAGE,
+    WORKSPACE,
+    blanked,
+    figure_key,
+    shown,
+)
 
 SUBJECTS = ROOT / "lab/knowledge/subjects.json"
 MANIFEST = ROOT / "lab/knowledge/books.json"
@@ -99,6 +118,136 @@ def verify_object(sha256: str) -> str:
             f"{key} is not in the knowledge-base bucket; upload the book before publishing"
         )
     return key
+
+
+# The only key that may write the shared bucket; heads, lists and reads use the
+# read key in KNOWLEDGE_BASE_B2_KEY_ID/APP_KEY.
+WRITER_KEYS = ("KNOWLEDGE_BASE_B2_WRITER_KEY_ID", "KNOWLEDGE_BASE_B2_WRITER_APP_KEY")
+# Stored figure crops (Epo 2026-11-04) are today's render of each shown
+# figure: capture.render at a 1,568 px long edge, JPEG q80.
+CROP_EDGE = 1568
+CROP_UPLOADS = 16  # PUTs in flight
+
+
+def writer_client():
+    """The bucket client for uploads: the writer key with the read key's
+    endpoint and region. Missing writer values refuse; the read key never
+    stands in."""
+    import boto3
+    from pipeline.config import cfg
+
+    key_id, app_key = (os.environ.get(name) for name in WRITER_KEYS)
+    if not (key_id and app_key):
+        raise RuntimeError(
+            f"{' and '.join(WRITER_KEYS)} are needed in .env.local to write the bucket"
+        )
+    return boto3.client(
+        "s3",
+        endpoint_url=cfg.knowledge_base_b2_endpoint,
+        region_name=cfg.knowledge_base_b2_region,
+        aws_access_key_id=key_id,
+        aws_secret_access_key=app_key,
+    )
+
+
+def crop_jobs(
+    book_key: str, figures: list[dict], withheld_pages: list[int]
+) -> dict[str, tuple[int, list[int], list[list[int]]]]:
+    """The crops a book version shows, by bucket key: each shown figure's page
+    and box, and the overlapping excluded boxes painted white inside it (Epo
+    2026-11-04; a whole-page record has no box of its own). Boxes are rounded
+    as the library's int[] column stores them, so the key is the one
+    render_figure computes from the stored rows (``library.figures``)."""
+    boxes = [(f, [round(v) for v in f["bbox"]]) for f in figures]
+    excluded: dict[int, list[list[int]]] = {}
+    for f, box in boxes:
+        if f["excluded"] and box != WHOLE_PAGE:
+            excluded.setdefault(f["page"], []).append(box)
+    jobs = {}
+    for f, box in boxes:
+        blank = blanked(box, excluded.get(f["page"], []))
+        withheld = f["page"] in withheld_pages
+        if shown(f["decorative"], f["excluded"], withheld, box, blank):
+            key = figure_key(book_key, f["page"], box, blank)
+            jobs[key] = (f["page"], box, blank)
+    return jobs
+
+
+def unrenderable(figures: list[dict], withheld_pages: list[int]) -> int:
+    """Records the library would show but for a box that rounds to no width
+    or height (``library.shown`` hides them), for ``crops --verify``."""
+    count = 0
+    for f in figures:
+        x0, y0, x1, y1 = (round(v) for v in f["bbox"])
+        hidden = f["decorative"] or f["excluded"] or f["page"] in withheld_pages
+        count += not hidden and (x0 >= x1 or y0 >= y1)
+    return count
+
+
+def stored_crops(prefix: str) -> set[str]:
+    """The keys under ``prefix`` in the knowledge-base bucket (read key)."""
+    from pipeline.config import cfg
+    from pipeline.store import blobstore
+
+    pages = (
+        blobstore.library_client()
+        .get_paginator("list_objects_v2")
+        .paginate(Bucket=cfg.knowledge_base_b2_bucket, Prefix=prefix)
+    )
+    return {item["Key"] for page in pages for item in page.get("Contents", [])}
+
+
+def ensure_crops(book_key: str, jobs: dict, pdf: Path | None, max_bytes: int) -> dict:
+    """Store the crops the bucket lacks, then list again: a crop still missing
+    refuses, so a version never goes live without its crops. A republish that
+    keeps its boxes finds them all and uploads nothing. ``book_key`` is the
+    verified object the version names (a capture copy's, not its source's).
+    Renders from ``pdf`` when its SHA-256 is that object's, else from the
+    object, downloaded with the read key, so a redacted copy stays redacted."""
+    from pipeline.config import cfg
+    from pipeline.retrieval import capture
+    from pipeline.store import blobstore
+
+    sha256 = book_key.removeprefix("books/").removesuffix(".pdf")
+    prefix = f"figures/{sha256}/"
+    missing = sorted(set(jobs) - stored_crops(prefix))
+    if missing:
+        with tempfile.TemporaryDirectory() as tmp:
+            if not (pdf and pdf.is_file() and file_sha256(pdf) == sha256):
+                pdf = Path(tmp) / "book.pdf"
+                if blobstore.library_download_file(book_key, str(pdf), max_bytes) is None:
+                    raise PilotError(f"{book_key} is not in the knowledge-base bucket")
+            client = writer_client()
+
+            def crop(key: str) -> bytes:
+                page, box, blank = jobs[key]
+                return capture.render(pdf, page, box, CROP_EDGE, blank)[0]
+
+            with ThreadPoolExecutor(CROP_UPLOADS) as uploads:
+                puts = [
+                    uploads.submit(
+                        client.put_object,
+                        Bucket=cfg.knowledge_base_b2_bucket,
+                        Key=key,
+                        Body=crop(key),
+                        ContentType="image/jpeg",
+                    )
+                    for key in missing
+                ]
+                for put in puts:
+                    put.result()
+        absent = sorted(set(jobs) - stored_crops(prefix))
+        if absent:
+            raise PilotError(
+                f"{len(absent)} figure crops are not in the bucket after the "
+                f"upload, e.g. {absent[0]}"
+            )
+    return {"crops": len(jobs), "uploaded": len(missing)}
+
+
+def file_sha256(path: Path) -> str:
+    with path.open("rb") as handle:
+        return hashlib.file_digest(handle, "sha256").hexdigest()
 
 
 def versioned(identifier: str, version: int) -> str:
@@ -510,6 +659,7 @@ def publish_book(
     the book's top-level section titles (decision 2026-09-19: no summary
     stage). Topics are upserted under the book's subject before the excerpts,
     and topics no tagged excerpt in the library references are dropped after.
+    The shown figures' crops are stored before anything is written.
     """
     book_id = book["id"]
     if not book.get("authors") and (
@@ -554,6 +704,13 @@ def publish_book(
         raise PilotError(
             f"Index is stale for {book_id}; run index after changing reviewed metadata"
         )
+    figures = figure_rows(book_corpus, captures)
+    crops = ensure_crops(
+        key,
+        crop_jobs(key, figures, book.get("withheld_pages", [])),
+        ROOT / book["pdf_path"] if book.get("pdf_path") else None,
+        book["bytes"],
+    )
     with target.transaction():
         target.execute(
             "INSERT INTO files(id,name) VALUES(%s,%s) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name",
@@ -624,7 +781,6 @@ def publish_book(
                 for e in excerpts
             ],
         )
-        figures = figure_rows(book_corpus, captures)
         insert_figures(target, content_id, version, figures)
         for topic in topic_upserts(topics, topic_subjects(target, topics)):
             # The WHERE also holds against a concurrent publish that claimed the id
@@ -735,6 +891,7 @@ def publish_book(
         "object_key": key,
         "corpus_identity": identity,
         "retired": retired,
+        "crops": crops,
         "counts": {
             "chunks": len(chunk_params),
             "searchable_chunks": searchable,
@@ -829,6 +986,66 @@ def publish(
         "published": receipts,
         "seconds": round(time.time() - started, 1),
     }
+
+
+def crops(book_ids: list[str], verify: bool) -> dict:
+    """The current books' figure crops from their live rows: store the missing
+    ones (the backfill; idempotent, so a rerun resumes), or with ``verify``
+    only list the bucket and report missing and stale keys, and the records
+    hidden for a box with no area. Run it while publishing is paused."""
+    manifest = {b["id"]: b for b in read_json(MANIFEST)["books"]}
+    with connect() as conn:
+        books = conn.execute(
+            "SELECT b.id, v.object_key, b.withheld_pages, b.bytes, b.content_id "
+            "FROM library_books b JOIN library_book_versions v "
+            "ON v.book_id = b.id AND v.version = b.version "
+            "WHERE cardinality(%s::text[]) = 0 OR b.id = ANY(%s) ORDER BY b.id",
+            (book_ids, book_ids),
+        ).fetchall()
+        unknown = sorted(set(book_ids) - {b[0] for b in books})
+        if unknown:
+            raise PilotError(f"The library holds no book {unknown}")
+        figures = {
+            book_id: [
+                dict(zip(("page", "bbox", "decorative", "excluded"), row))
+                for row in conn.execute(
+                    "SELECT page, bbox, decorative, excluded FROM library_figures "
+                    "WHERE content_id = %s",
+                    (content_id,),
+                )
+            ]
+            for book_id, _, _, _, content_id in books
+        }
+    jobs = {
+        book_id: crop_jobs(book_key, figures[book_id], withheld)
+        for book_id, book_key, withheld, _, _ in books
+    }
+    if verify:
+        wanted = {key for book in jobs.values() for key in book}
+        prefixes = [
+            f"figures/{book_key.removeprefix('books/').removesuffix('.pdf')}/"
+            for book_id, book_key, *_ in books
+            if book_id in book_ids
+        ] or ["figures/"]
+        stored = {key for prefix in prefixes for key in stored_crops(prefix)}
+        return {
+            "crops": len(wanted),
+            "missing": sorted(wanted - stored),
+            "stale": sorted(stored - wanted),
+            "unrenderable": sum(
+                unrenderable(figures[book_id], withheld)
+                for book_id, _, withheld, _, _ in books
+            ),
+        }
+    uploaded = 0
+    for book_id, book_key, _, size, _ in books:
+        pdf = manifest.get(book_id, {}).get("pdf_path")
+        receipt = ensure_crops(
+            book_key, jobs[book_id], ROOT / pdf if pdf else None, size
+        )
+        print(json.dumps({book_id: receipt}), flush=True)
+        uploaded += receipt["uploaded"]
+    return {"books": len(books), "uploaded": uploaded}
 
 
 def retire_current(conn, book_id: str) -> dict:
@@ -1268,6 +1485,22 @@ def main() -> None:
         "from the book's saved run restores it.",
     )
     p.add_argument("--book", required=True)
+    p = sub.add_parser(
+        "crops",
+        help="store the current books' missing figure crops (the backfill)",
+    )
+    p.add_argument(
+        "--book",
+        action="append",
+        default=[],
+        help="repeatable; every current book by default",
+    )
+    p.add_argument(
+        "--verify",
+        action="store_true",
+        help="only list the bucket: missing crops, stale ones left in place, "
+        "and records hidden for a box with no area",
+    )
     sub.add_parser("status")
     sub.add_parser("check")
     args = parser.parse_args()
@@ -1289,6 +1522,8 @@ def main() -> None:
         )
     elif args.command == "remove":
         print(json.dumps(remove(args.book), indent=1))
+    elif args.command == "crops":
+        print(json.dumps(crops(args.book, args.verify), indent=1))
     else:
         print(json.dumps(status(), indent=1))
 

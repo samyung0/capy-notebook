@@ -293,6 +293,14 @@
       "kind": "variable",
       "targets": ["ingest-production", "ingest-shared"]
     },
+    "CAPY_LAYOUT_TOKEN": {
+      "kind": "secret",
+      "targets": ["app", "local"]
+    },
+    "CAPY_LAYOUT_URL": {
+      "kind": "variable",
+      "targets": ["app", "local"]
+    },
     "CAPY_PARSER": {
       "kind": "variable",
       "targets": ["app"]
@@ -391,10 +399,6 @@
       "kind": "variable",
       "targets": ["ingest-queue"],
       "environments": ["uat"]
-    },
-    "CAPY_VLM_PAGE_CAPACITY": {
-      "kind": "variable",
-      "targets": ["ingest-production"]
     },
     "CAPY_VLM_PAGES_PER_JOB": {
       "kind": "variable",
@@ -810,11 +814,6 @@
       "kind": "variable",
       "targets": ["local"]
     },
-    "TURNSTILE_SECRET_KEY": {
-      "kind": "secret",
-      "targets": ["app", "workflow"],
-      "required_for": ["app"]
-    },
     "UAT_ACTOR_EMAIL_DOMAIN": {
       "kind": "variable",
       "targets": ["quality"],
@@ -996,6 +995,10 @@
       "kind": "variable",
       "targets": ["local"]
     },
+    "VITE_BENCH_ROUTES": {
+      "kind": "variable",
+      "targets": ["local"]
+    },
     "VITE_CLERK_PUBLISHABLE_KEY": {
       "kind": "variable",
       "targets": ["local"]
@@ -1068,11 +1071,6 @@
     "VITE_SENTRY_DSN_OPS": {
       "kind": "variable",
       "targets": ["workflow"]
-    },
-    "VITE_TURNSTILE_SITE_KEY": {
-      "kind": "variable",
-      "targets": ["workflow", "build"],
-      "required_for": ["build"]
     },
     "VITE_USE_MSW": {
       "kind": "variable",

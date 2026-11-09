@@ -66,6 +66,7 @@ func TestValidate(t *testing.T) {
 		{name: "notes.pdf", kind: "pdf", mode: ParseModeFast, size: testFreeSourceBytes + 1, wantError: "10 MB"},
 		{name: "notes.pdf", kind: "pdf", mode: ParseModeFast, size: testProSourceBytes + 1, maxBytes: testProSourceBytes, wantError: "30 MB"},
 		{name: "notes.pdf", kind: "pdf", mode: ParseModeFast, size: testProSourceBytes, maxBytes: testProSourceBytes},
+		{name: "notes.md", kind: "md", mode: ParseModeNone, size: 2<<20 + 1, maxBytes: 2 << 20, wantError: "text files can be at most 2 MB"},
 		{name: "song.mp3", kind: "audio", mode: ParseModeFast, size: 1, wantError: "does not support"},
 		{name: "notes.pdf", kind: "txt", mode: ParseModeFast, size: 1, wantError: "does not match"},
 		{name: "archive.zip", kind: "unknown", mode: ParseModeNone, size: 1},

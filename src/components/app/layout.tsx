@@ -22,11 +22,14 @@ export const PanelScrollRoot = createContext<
  */
 export function PagePanel({
   children,
+  fill,
   header,
   className,
   sectionClassName,
 }: {
   children: ReactNode;
+  /** The page scrolls inside itself: the panel holds it at its height. */
+  fill?: boolean;
   header?: ReactNode;
   sectionClassName?: string;
   /** Placement in the parent layout, e.g. flex-1 in a row. */
@@ -46,12 +49,22 @@ export function PagePanel({
           {/* The scroller keeps the scrollbar's gutter, so content that grows
               past the panel does not narrow it (and reflow grids). */}
           <div
-            className="flex h-full min-h-0 flex-col gap-2 overflow-auto [scrollbar-gutter:stable]"
+            className={cn(
+              'flex h-full min-h-0 flex-col',
+              fill
+                ? 'overflow-hidden'
+                : 'gap-2 overflow-auto [scrollbar-gutter:stable]'
+            )}
             ref={scrollRef}
           >
             <PhoneTopRow className="shrink-0 px-4 pt-3 pb-2" />
             {header && <div className="shrink-0">{header}</div>}
-            <div className="flex flex-1 flex-col items-stretch gap-2 p-0 pb-10">
+            <div
+              className={cn(
+                'flex flex-col items-stretch',
+                fill ? 'min-h-0 flex-1' : 'flex-1 gap-2 p-0 pb-10'
+              )}
+            >
               <PanelScrollRoot.Provider value={scrollRef}>
                 <FrostedSurface value={frosted}>{children}</FrostedSurface>
               </PanelScrollRoot.Provider>
@@ -66,21 +79,17 @@ export function PagePanel({
  * Body of a list or overview page (Dashboard, Workspaces, Question bank):
  * the normal gutter (`page-px`), 20/24px under the header. A list page's
  * ListToolbar already spaces the list from the header, so `belowToolbar`
- * keeps only a small gap. `wide` takes the tab body's gutter
- * (`page-px-wide`), for a list under a page's tabs (Files, Learning's All
- * results); other tab bodies use TabContent.
+ * keeps only a small gap.
  */
 export function PageBody({
   belowToolbar,
-  wide,
   className,
   ...props
-}: ComponentProps<'div'> & { belowToolbar?: boolean; wide?: boolean }) {
+}: ComponentProps<'div'> & { belowToolbar?: boolean }) {
   return (
     <div
       className={cn(
-        'w-full shrink-0 grow pb-6',
-        wide ? 'page-px-wide' : 'page-px',
+        'page-px w-full shrink-0 grow pb-6',
         belowToolbar ? 'pt-2' : 'pt-5 sm:pt-6',
         className
       )}

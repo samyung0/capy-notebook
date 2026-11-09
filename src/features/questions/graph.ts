@@ -8,6 +8,7 @@ import * as limits from '@/api/limits.generated';
 import { m } from '@/i18n';
 import { CopyError } from '@/lib/copyError';
 import { runtimeTerm } from './graphSyntax';
+import { tickStep } from './graphTicks';
 import type { GraphBlock, GraphElement } from './types';
 import { validGraphTerm } from './validation';
 
@@ -21,6 +22,10 @@ const LABEL_WIDTH = 200;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const AFTER_SPACE = /(?<=\s)/;
 const LEADING_MINUS = /^-/;
+/** axisNumber's formatters by decimals and notation (at most 26; the locale is
+ * fixed): building one costs far more than formatting, and a plane on the drawing
+ * board formats every tick on every frame. */
+const AXIS_FORMATS = new Map<string, Intl.NumberFormat>();
 let measureContext: CanvasRenderingContext2D | null = null;
 
 /** Greedy lines of at most LABEL_WIDTH in JSXGraph's 12px text; a word wider
@@ -171,27 +176,24 @@ function frameFor([left, top, right, bottom]: Bbox): Frame {
   };
 }
 
-/** GeoGebra's tick step: 100px worth of units rounded down to 1, 2 or 5 × 10ⁿ. */
-export function tickStep(pixelsPerUnit: number) {
-  const units = 100 / pixelsPerUnit;
-  const power = 10 ** Math.floor(Math.log10(units));
-  const n = units / power;
-  return (n > 5 ? 5 : n > 2 ? 2 : 1) * power;
-}
-
 /** A tick number as GeoGebra writes it: plain with enough decimals for the
  * step, scientific (`5E8`) when the step is under 10⁻⁵ or over 10⁷, an en
  * dash for minus; empty at 0, where the axes cross. */
 export function axisNumber(value: number, step: number) {
   if (Math.abs(value) < step * 1e-9) return '';
   const digits = Math.min(14, Math.max(-Math.floor(Math.log10(step)), 2));
-  return new Intl.NumberFormat('en-US', {
-    maximumFractionDigits: digits,
-    useGrouping: false,
-    ...((step < 1e-5 || step > 1e7) && { notation: 'scientific' }),
-  })
-    .format(value)
-    .replace(LEADING_MINUS, '\u2013');
+  const scientific = step < 1e-5 || step > 1e7;
+  const key = `${digits}${scientific ? 'e' : ''}`;
+  let format = AXIS_FORMATS.get(key);
+  if (!format) {
+    format = new Intl.NumberFormat('en-US', {
+      maximumFractionDigits: digits,
+      useGrouping: false,
+      ...(scientific && { notation: 'scientific' }),
+    });
+    AXIS_FORMATS.set(key, format);
+  }
+  return format.format(value).replace(LEADING_MINUS, '\u2013');
 }
 
 /** GeoGebra's zoom range, in pixels per unit. */

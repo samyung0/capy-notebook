@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import math
 from pathlib import Path
@@ -553,7 +554,6 @@ async def test_open_call_forwards_numeric_context_before_provider_call(monkeypat
                 "",
                 "",
                 None,
-                None,
                 "",
                 None,
             ),
@@ -575,11 +575,11 @@ async def test_open_call_takes_capacity(monkeypatch):
     monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
 
     monkeypatch.setattr(accounting.cfg, "dsn", "postgres://unused")
-    admissions = []
+    gates = []
 
     async def to_thread(function, *args):
         assert function is accounting._open_call_sync
-        admissions.append(args[9])
+        gates.append(args[-1])
         return True
 
     monkeypatch.setattr(accounting.asyncio, "to_thread", to_thread)
@@ -591,90 +591,58 @@ async def test_open_call_takes_capacity(monkeypatch):
             purpose=accounting.KIND_EMBEDDING,
             spec=_gated_spec(),
         )
-        assert admissions == ["gateway"]
+        # The model's own row, read live in the admission transaction.
+        assert gates == [
+            accounting._Gate(
+                key="deepinfra:Qwen/Qwen3-Embedding-4B",
+                provider="deepinfra",
+                model="Qwen/Qwen3-Embedding-4B",
+            )
+        ]
         assert accounting.current().leased_calls
     finally:
         accounting.reset(token)
 
 
-async def test_open_call_polls_the_full_gate_until_its_deadline(monkeypatch):
+@pytest.fixture
+def lines():
+    from pipeline.retrieval import limits
+
+    limits.MODEL_LINES.clear()
+    yield limits
+    limits.MODEL_LINES.clear()
+
+
+async def test_a_full_gate_puts_the_call_in_its_models_line(monkeypatch, lines):
+    """Epo 2026-11-04: refused, a call waits in its model's line inside
+    ``waiting`` and opens its row with the lease its turn granted; past its
+    deadline it is busy; with no deadline it is busy at once."""
     monkeypatch.setattr(accounting.cfg, "gateway_url", "http://gateway")
     monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
     monkeypatch.setattr(accounting.cfg, "dsn", "postgres://unused")
-    answers = [False, False, True]
-    leases = []
+    rounds: list[tuple] = []
+    opened: list = []
+    turns = [set(), {"pc_1"}]
 
     async def to_thread(function, *args):
-        assert function is accounting._open_call_sync
-        leases.append(args[9])
-        return answers.pop(0)
-
-    sleeps = []
-
-    async def no_sleep(seconds):
-        sleeps.append(seconds)
-
-    monkeypatch.setattr(accounting.asyncio, "to_thread", to_thread)
-    monkeypatch.setattr(accounting.asyncio, "sleep", no_sleep)
-    token = accounting.bind("cr_1")
-    try:
-        await accounting.open_call(
-            "pc_1",
-            kind=accounting.KIND_EMBEDDING,
-            purpose=accounting.KIND_EMBEDDING,
-            spec=_gated_spec(),
-            deadline=accounting.time.monotonic() + 60,
-        )
-        state = accounting.current()
-        assert state is not None and state.leased_calls == {"pc_1"}
-        # Each poll passes the admission mode so the transaction reads live limits.
-        assert leases == ["gateway"] * 3
-        assert len(sleeps) == 2
-
-        answers.append(False)
-        with pytest.raises(accounting.elitellm.ProviderBusy) as caught:
-            await accounting.open_call(
-                "pc_2",
-                kind=accounting.KIND_EMBEDDING,
-                purpose=accounting.KIND_EMBEDDING,
-                spec=_gated_spec(),
-                deadline=accounting.time.monotonic(),
-            )
-        assert caught.value.retry_after == accounting.BUSY_RETRY_AFTER_S
-        assert state.leased_calls == {"pc_1"}
-
-        released = []
-
-        async def release_thread(function, *args):
-            released.append((function, args))
-
-        monkeypatch.setattr(accounting.asyncio, "to_thread", release_thread)
-        await accounting.release_call("pc_1")
-        await accounting.release_call("pc_never_leased")
-        assert released == [(accounting._release_lease_sync, ("pc_1",))]
-        assert state.leased_calls == set()
-    finally:
-        accounting.reset(token)
-
-
-async def test_a_queued_chat_head_waits_through_its_pause_hook(monkeypatch):
-    """A chat queue's head waits between gate tries through ``pause``, which a
-    call ending wakes early (Epo 2026-10-29); with no deadline a full gate
-    answers GateFull at once."""
-    monkeypatch.setattr(accounting.cfg, "gateway_url", "http://gateway")
-    monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
-    monkeypatch.setattr(accounting.cfg, "dsn", "postgres://unused")
-    answers = [False, True]
-
-    async def to_thread(_function, *_args):
-        return answers.pop(0)
-
-    paused = []
-
-    async def pause(seconds):
-        paused.append(seconds)
+        if function is accounting._open_call_sync:
+            opened.append((args[1], args[-1]))
+            return args[-1] is None  # the gate refuses; a leased row opens
+        assert function is accounting._line_round_sync
+        _gate, store, waiting, gone = args
+        rounds.append((store, waiting, gone))
+        return turns.pop(0) if turns else set()
 
     monkeypatch.setattr(accounting.asyncio, "to_thread", to_thread)
+    monkeypatch.setattr(lines, "LINE_POLL_S", (0.001, 0.001))
+    entered: list[str] = []
+
+    @contextlib.asynccontextmanager
+    async def waiting():
+        entered.append("in line")
+        yield
+        entered.append("granted")
+
     token = accounting.bind("cr_1")
     try:
         await accounting.open_call(
@@ -683,27 +651,115 @@ async def test_a_queued_chat_head_waits_through_its_pause_hook(monkeypatch):
             purpose=accounting.PURPOSE_AGENT,
             spec=_gated_spec(),
             deadline=accounting.time.monotonic() + 60,
-            pause=pause,
+            waiting=waiting,
         )
-        assert len(paused) == 1
-        answers.append(False)
-        with pytest.raises(accounting.GateFull):
+        state = accounting.current()
+        assert state is not None and state.leased_calls == {"pc_1"}
+        assert entered == ["in line", "granted"]
+        # Refused at the gate, then the row alone once the line granted it.
+        assert [gate is None for _id, gate in opened] == [False, True]
+        receipt = max(1, math.ceil(accounting.cfg.interactive_stream_max_s)) + 300
+        assert rounds[0] == ([("pc_1", "cr_1", receipt)], ["pc_1"], [])
+
+        opened.clear()
+        with pytest.raises(accounting.GateFull) as caught:
             await accounting.open_call(
                 "pc_2",
                 kind=accounting.KIND_LLM,
                 purpose=accounting.PURPOSE_AGENT,
                 spec=_gated_spec(),
-                deadline=None,
+                deadline=accounting.time.monotonic() + 0.05,
             )
-        assert len(paused) == 1
+        assert caught.value.retry_after == accounting.BUSY_RETRY_AFTER_S
+        assert state.leased_calls == {"pc_1"}
+
+        opened.clear()
+        with pytest.raises(accounting.GateFull):
+            await accounting.open_call(
+                "pc_3",
+                kind=accounting.KIND_LLM,
+                purpose=accounting.PURPOSE_AGENT,
+                spec=_gated_spec(),
+            )
+        assert [call_id for call_id, _gate in opened] == ["pc_3"]
+    finally:
+        accounting.reset(token)
+
+
+async def test_a_call_whose_turn_comes_as_it_fails_frees_the_lease(monkeypatch, lines):
+    """A failure after the line granted the lease (the call's process slot
+    did not come back in time, say) undoes the lease instead of leaking it."""
+    monkeypatch.setattr(accounting.cfg, "gateway_url", "http://gateway")
+    monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
+    monkeypatch.setattr(accounting.cfg, "dsn", "postgres://unused")
+    undone: list[str] = []
+
+    async def to_thread(function, *args):
+        if function is accounting._open_call_sync:
+            return False
+        if function is accounting._undo_admission_sync:
+            undone.append(args[0])
+            return None
+        return {"pc_1"}
+
+    monkeypatch.setattr(accounting.asyncio, "to_thread", to_thread)
+
+    @contextlib.asynccontextmanager
+    async def waiting():
+        yield
+        raise accounting.elitellm.ProviderBusy("no call slot")
+
+    token = accounting.bind("cr_1")
+    try:
+        with pytest.raises(accounting.elitellm.ProviderBusy):
+            await accounting.open_call(
+                "pc_1",
+                kind=accounting.KIND_LLM,
+                purpose=accounting.PURPOSE_AGENT,
+                spec=_gated_spec(),
+                deadline=accounting.time.monotonic() + 60,
+                waiting=waiting,
+            )
+        for _ in range(5):
+            await asyncio.sleep(0)
+        assert undone == ["pc_1"]
+        assert accounting.current().leased_calls == set()
+    finally:
+        accounting.reset(token)
+
+
+async def test_release_call_frees_only_leased_calls(monkeypatch):
+    monkeypatch.setattr(accounting.cfg, "gateway_url", "http://gateway")
+    monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
+    monkeypatch.setattr(accounting.cfg, "dsn", "postgres://unused")
+    released = []
+
+    async def to_thread(function, *args):
+        if function is accounting._open_call_sync:
+            return True
+        released.append((function, args))
+
+    monkeypatch.setattr(accounting.asyncio, "to_thread", to_thread)
+    token = accounting.bind("cr_1")
+    try:
+        await accounting.open_call(
+            "pc_1",
+            kind=accounting.KIND_EMBEDDING,
+            purpose=accounting.KIND_EMBEDDING,
+            spec=_gated_spec(),
+        )
+        await accounting.release_call("pc_1")
+        await accounting.release_call("pc_never_leased")
+        assert released == [(accounting._release_lease_sync, ("pc_1",))]
+        assert accounting.current().leased_calls == set()
     finally:
         accounting.reset(token)
 
 
 def test_admission_holds_the_model_wide_lock_for_one_statement():
     """(security regression: rate-limit audit M13, Q298) Admission sweeps
-    expired leases before it takes the model-wide lock, then holds the lock
-    for one conditional insert."""
+    expired leases and waiting calls before it takes the model-wide lock,
+    then holds the lock for one conditional insert."""
 
     class Cursor:
         rowcount = 1
@@ -720,7 +776,7 @@ def test_admission_holds_the_model_wide_lock_for_one_statement():
     assert db.acquire_provider_capacity(
         cur, lease_id="pc_1", provider="m", units=1, capacity=4, lease_seconds=60
     )
-    assert cur.statements == ["DELETE", "LOCK", "INSERT"]
+    assert cur.statements == ["DELETE", "DELETE", "LOCK", "INSERT"]
 
 
 @pytest.mark.parametrize("ingest", [False, True], ids=["chat", "ingest"])

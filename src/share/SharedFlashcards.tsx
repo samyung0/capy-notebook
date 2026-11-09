@@ -1,6 +1,5 @@
 import { type ReactNode, useEffect, useRef } from 'react';
 import { anonymousFlashcardAssetUrl } from '@/api/anonymous';
-import { api } from '@/api/client';
 import type { AnonymousFlashcards } from '@/api/types';
 import { PublicActionMenu } from '@/components/app/PublicActionMenu';
 import { PublicByline, PublicPage } from '@/components/app/PublicHeader';
@@ -11,15 +10,12 @@ import { AssetUrlContext } from '@/features/materials/MediaAssetView';
 import { m } from '@/i18n';
 import { cardCountBucket, track } from '@/lib/analytics';
 import { localCardStates, recordLocalCardReview } from '@/lib/localDb';
-import { redeemShareToken } from '@/lib/shareRedeem';
 import {
   newSrsState,
   reviewSrs,
-  SRS_RATINGS,
   type SrsRating,
   type SrsState,
 } from '@/lib/srs';
-import { signedIn, useSignedIn } from './session';
 
 function Frame({
   children,
@@ -37,9 +33,9 @@ function Frame({
 }
 
 /** `/share/flashcards/{token}`: the Worker renders it from the same
- * edge-cached cards for every visitor and the browser hydrates it. Each rating
- * asks the session: signed in, it goes to the account's review state; signed
- * out, ts-fsrs runs here and IndexedDB keeps it. */
+ * edge-cached cards for every visitor and the browser hydrates it. Nothing here
+ * counts, signed in or out (Epo 2026-11-06, Q663 A): ts-fsrs runs here and only
+ * this browser keeps each rating. */
 export function SharedFlashcards({
   set,
   token,
@@ -47,7 +43,6 @@ export function SharedFlashcards({
   set: AnonymousFlashcards;
   token: string;
 }) {
-  const session = useSignedIn();
   const states = useRef(new Map<string, SrsState>());
   // One notice per page however many saves fail.
   const saveFailed = useRef(false);
@@ -66,26 +61,7 @@ export function SharedFlashcards({
       .catch(() => {});
   }, [setId]);
 
-  const failed = (title: string) => {
-    if (saveFailed.current) return;
-    saveFailed.current = true;
-    userToast({ title, variant: 'error' });
-  };
-
   async function save(cardId: string, rating: SrsRating) {
-    if (await signedIn()) {
-      // A signed-in visitor presents the link once, then rates by id.
-      await redeemShareToken(token)
-        .then(() =>
-          api.post<void>('/review/ratings', {
-            itemId: cardId,
-            materialId: set.id,
-            rating: SRS_RATINGS.indexOf(rating) + 1,
-          })
-        )
-        .catch(() => failed(m.flashcards_review_failed()));
-      return;
-    }
     const srs = reviewSrs(states.current.get(cardId) ?? newSrsState(), rating);
     states.current.set(cardId, srs);
     await recordLocalCardReview(
@@ -96,7 +72,14 @@ export function SharedFlashcards({
         setId: set.id,
       },
       srs
-    ).catch(() => failed(m.flashcards_browser_save_failed()));
+    ).catch(() => {
+      if (saveFailed.current) return;
+      saveFailed.current = true;
+      userToast({
+        title: m.flashcards_browser_save_failed(),
+        variant: 'error',
+      });
+    });
   }
 
   return (
@@ -108,11 +91,9 @@ export function SharedFlashcards({
         byline={<PublicByline author={set.author} updatedAt={set.updatedAt} />}
         cards={set.cards}
         footer={
-          session === false && (
-            <p className="t-meta text-center text-fg-muted">
-              {m.flashcards_saved_in_browser()}
-            </p>
-          )
+          <p className="t-meta text-center text-fg-muted">
+            {m.flashcards_saved_in_browser()}
+          </p>
         }
         frame={Frame}
         key={kept.ready && kept.resume ? 'kept' : 'server'}

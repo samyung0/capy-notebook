@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BillingInfo } from '@/api/types';
-import { creditView } from './credits';
+import { creditView, outOfCredits } from './credits';
 
 const C = 1_000_000;
 
@@ -61,5 +61,18 @@ describe('creditView', () => {
     expect(view.purchasedUsed).toBe(0);
     expect(view.barTotal).toBe(10_000 * C);
     expect(view.available).toBe(6660 * C);
+  });
+});
+
+describe('outOfCredits', () => {
+  const spent = (autoReload: boolean) =>
+    billing({
+      creditSettings: { autoReload } as BillingInfo['creditSettings'],
+      creditsUsedMicros: 10_000 * C,
+    });
+
+  it('is out once credits are spent and no auto-reload can start', () => {
+    expect(outOfCredits(spent(false))).toBe(true);
+    expect(outOfCredits(spent(true))).toBe(false);
   });
 });

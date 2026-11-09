@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
-import { ApiError } from '@/api/client';
-import { COLLABORATION_LATE_REASON } from '@/features/notes/collaborationEvents';
+import { ApiError, qk } from '@/api/client';
+import {
+  COLLABORATION_LATE_REASON,
+  COLLABORATION_NOT_FOUND_REASON,
+} from '@/features/notes/collaborationEvents';
+import { m } from '@/i18n';
 import type { RoomProviderConfig } from './roomProvider';
 
 // The room's provider, token and draft storage, recorded instead of real.
@@ -160,6 +164,8 @@ vi.mock('@/lib/editDrafts', () => ({
   }),
 }));
 vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
+const invalidateQueries = vi.hoisted(() => vi.fn());
+vi.mock('@/api/queryClient', () => ({ queryClient: { invalidateQueries } }));
 vi.mock('@/lib/appRelease', () => ({ markUpdateAvailable: vi.fn() }));
 
 const { ItemRoom, openItemRoom } = await import('./itemRoom');
@@ -383,6 +389,57 @@ it('rejoins after a close the server gives everyone', async () => {
   room.destroy();
 });
 
+// Epo 2026-11-05: a close for one person's access change comes with no notice,
+// so it joins again and the token says what they have: a demotion reads on, a
+// removal stops there.
+it('joins again after a close for this person, and the token decides', async () => {
+  const { onReplace, room } = await started();
+  const [provider] = providers;
+  await provider.config.token();
+  provider.config.onSynced?.({ state: true });
+  const targeted = { code: 4403, reason: 'collaboration access changed' };
+
+  provider.config.onClose?.(targeted);
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(provider.connects).toBe(2);
+  tokens.push({ access: 'read', room: 'material:q:schema:1' });
+  await provider.config.token();
+  expect(room.getSnapshot()).toMatchObject({ access: 'read' });
+  expect(room.getSnapshot().status).not.toBe('unavailable');
+
+  provider.config.onClose?.(targeted);
+  await vi.advanceTimersByTimeAsync(2000);
+  tokens.push(new ApiError(404, 'Not Found'));
+  await provider.config.token().catch((thrown: Error) =>
+    provider.config.onAuthenticationFailed?.({
+      reason: `Failed to get token: ${thrown.message}`,
+    })
+  );
+  expect(room.getSnapshot().status).toBe('unavailable');
+  expect(onReplace).not.toHaveBeenCalled();
+  // Told its access changed, the page stays: no read asked for.
+  expect(invalidateQueries).not.toHaveBeenCalled();
+  room.destroy();
+});
+
+// Epo 2026-11-05 (Q644): a refusal with no such close may mean the item is gone,
+// so the page's read says.
+it('asks for the read when refused with no access change first', async () => {
+  const { room } = await started();
+  const [provider] = providers;
+  await provider.config.token();
+  provider.config.onSynced?.({ state: true });
+  provider.config.onAuthenticationFailed?.({
+    reason: COLLABORATION_NOT_FOUND_REASON,
+  });
+  expect(room.getSnapshot().status).toBe('unavailable');
+  expect(invalidateQueries).toHaveBeenCalledWith({
+    queryKey: qk.material('q'),
+  });
+  invalidateQueries.mockClear();
+  room.destroy();
+});
+
 // Q425: a note View's read channel answered late (its version behind the
 // collection window) ends, so a fresh document joins naming no version,
 // instead of rejoining with the same version, late again, forever.
@@ -440,17 +497,19 @@ it('opens stored late edits in recovery, never applying them raw', async () => {
   room.destroy();
 });
 
-// Late merge M5 (review r1 L6): stored edits past the 7-day expiry open
-// once, copy-only and marked expired, and are dropped as they open.
-it('opens expired stored edits once in recovery and drops them', async () => {
+// D14 (Epo 2026-11-04): stored edits past the 7-day expiry leave the room to
+// open as usual, a toast offers them, and they go as it closes.
+it('opens past expired stored edits, offered in a toast until it closes', async () => {
   const row = { expired: true, lineage: 'material:q:schema:1' };
   drafts.rows = [row];
+  vi.mocked(userToast).mockClear();
   const { room } = await started();
-  expect(providers).toHaveLength(0);
-  expect(room.getSnapshot().recovery).toMatchObject({
-    expired: true,
-    refused: false,
-  });
+  expect(providers).toHaveLength(1);
+  expect(room.getSnapshot().recovery).toBeNull();
+  const toast = vi.mocked(userToast).mock.calls.at(-1)?.[0];
+  expect(toast?.button?.label).toBe(m.editor_old_edits_download());
+  expect(dropExpiredGroup).not.toHaveBeenCalled();
+  toast?.onClose?.();
   expect(dropExpiredGroup).toHaveBeenCalledWith([row], expect.any(Function));
   room.destroy();
 });
@@ -651,7 +710,7 @@ const evicted = (mode: 'drain' | 'discard') =>
     { code: 0, reason: 'collaboration room evicted' },
   ] as const;
 
-// REVIEW2 M1: a drain eviction (access widened) stored the room first, so the
+// REVIEW2 M1: a drain eviction (a Move, a hide) stored the room first, so the
 // room rejoins with its document, edits in flight included, and nothing goes
 // to copy-only recovery.
 it('rejoins after a drain eviction, keeping its edits', async () => {
@@ -665,6 +724,7 @@ it('rejoins after a drain eviction, keeping its edits', async () => {
   expect(provider.connects).toBe(2);
   expect(onReplace).not.toHaveBeenCalled();
   expect(drafts.refused).toBe(0);
+  expect(invalidateQueries).not.toHaveBeenCalled();
   room.destroy();
 });
 
@@ -682,6 +742,10 @@ it('ends after a discard eviction, keeping its edits stored', async () => {
   expect(provider.connects).toBe(1);
   expect(drafts.disposed).toBe(1);
   expect(drafts.refused).toBe(0);
+  // It may be gone: the page's read says (Epo 2026-11-05).
+  expect(invalidateQueries).toHaveBeenCalledWith({
+    queryKey: qk.material('q'),
+  });
   room.destroy();
 });
 
@@ -754,6 +818,44 @@ it('stops on a refused token and backs off on a failing one', async () => {
   room.destroy();
 });
 
+// Epo 2026-11-05 ("never reconnect ... show stale ones if necessary"): a quiz
+// assigned to a viewer since refuses their next join, at a token's expiry or a
+// lost connection. The reader's document stays, with nothing to show for it: no
+// toast, no fresh room, no retries.
+it('a reader refused on its next join keeps its document, quietly', async () => {
+  vi.mocked(userToast).mockClear();
+  tokens.push({ access: 'read', room: 'material:q:schema:1' });
+  const onReplace = vi.fn();
+  const room = new ItemRoom('q', { onReplace, read: true });
+  await room.start();
+  const [provider] = providers;
+  await provider.config.token();
+  provider.config.onSynced?.({ state: true });
+  room.doc.getMap('questions').set('q1', 'Name a cell part.');
+  provider.config.onClose?.({
+    code: 4401,
+    reason: 'collaboration token expired',
+  });
+  tokens.push(new ApiError(404, 'Not Found'));
+  await provider.config.token().catch((thrown: Error) =>
+    provider.config.onAuthenticationFailed?.({
+      reason: `Failed to get token: ${thrown.message}`,
+    })
+  );
+  const connects = provider.connects;
+  await vi.advanceTimersByTimeAsync(120_000);
+  expect(provider.connects).toBe(connects);
+  expect(room.getSnapshot()).toMatchObject({
+    offline: null,
+    status: 'unavailable',
+    synced: true,
+  });
+  expect(room.doc.getMap('questions').get('q1')).toBe('Name a cell part.');
+  expect(onReplace).not.toHaveBeenCalled();
+  expect(userToast).not.toHaveBeenCalled();
+  room.destroy();
+});
+
 // The version gate (Epo 2026-10-16): a room that refuses this build stops
 // for the page load. A writer turns read-only under the outdated strip and
 // keeps its unsent edits stored for the reloaded page; a reader keeps what
@@ -807,17 +909,16 @@ it('says the reload loses edits this device could not store', async () => {
 it('loads while its open is slowed, never offline, until it syncs', async () => {
   const { room } = await started();
   const [provider] = providers;
-  provider.config.onSynced?.({ state: true });
   provider.config.onClose?.({ code: 0, reason: 'socket closed' });
   expect(room.getSnapshot().status).toBe('offline');
   provider.config.onSlowed?.(true);
   expect(room.getSnapshot()).toMatchObject({
     offline: null,
     slowed: true,
-    status: 'connecting',
+    status: 'opening',
   });
   await vi.advanceTimersByTimeAsync(60_000);
-  expect(room.getSnapshot().status).toBe('connecting');
+  expect(room.getSnapshot().status).toBe('opening');
   provider.config.onSynced?.({ state: true });
   expect(room.getSnapshot().slowed).toBe(false);
   // A slowed open whose channel parked (closed as the user's oldest) shows
@@ -828,13 +929,36 @@ it('loads while its open is slowed, never offline, until it syncs', async () => 
   room.destroy();
 });
 
+// Epo 2026-11-04: a rejoin changes nothing until its 30 s passed.
+it('keeps its status through a drop until its 30 s passed', async () => {
+  vi.stubGlobal('navigator', { onLine: true });
+  const { room } = await started();
+  const [provider] = providers;
+  provider.config.onSynced?.({ state: true });
+  const { status } = room.getSnapshot();
+  expect(status).not.toBe('opening');
+  provider.config.onSynced?.({ state: false });
+  provider.config.onClose?.({ code: 0, reason: 'socket closed' });
+  expect(room.getSnapshot().status).toBe(status);
+  vi.advanceTimersByTime(29_999);
+  expect(room.getSnapshot().status).toBe(status);
+  provider.config.onSynced?.({ state: true });
+  vi.advanceTimersByTime(60_000);
+  expect(room.getSnapshot().status).toBe(status);
+  provider.config.onClose?.({ code: 0, reason: 'socket closed' });
+  vi.advanceTimersByTime(30_000);
+  expect(room.getSnapshot().status).toBe('offline');
+  room.destroy();
+  vi.unstubAllGlobals();
+});
+
 // Epo 2026-10-23: an item room's join has 30 s from its token request; one
 // never answered then shows the room's connection error (offline).
 it('goes offline when its join has not finished 30 s after its token request', async () => {
   vi.stubGlobal('navigator', { onLine: true });
   const { room } = await started();
   vi.advanceTimersByTime(29_999);
-  expect(room.getSnapshot().status).toBe('connecting');
+  expect(room.getSnapshot().status).toBe('opening');
   vi.advanceTimersByTime(1);
   expect(room.getSnapshot().status).toBe('offline');
   vi.unstubAllGlobals();

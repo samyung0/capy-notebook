@@ -95,7 +95,7 @@ func TestTrashLifecycleAuthorityAndVisibility(t *testing.T) {
 	if err != nil || len(files) != 0 {
 		t.Fatalf("ListFiles = %v, %v", files, err)
 	}
-	refs, err := s.ListMaterialRefs(ctx, ws.ID)
+	refs, err := s.ListMaterialRefs(ctx, "", ws.ID)
 	if err != nil || len(refs) != 0 {
 		t.Fatalf("ListMaterialRefs = %v, %v", refs, err)
 	}

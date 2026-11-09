@@ -17,11 +17,8 @@ import {
 import type { Actor, UatRun } from './runtime';
 
 /** The Office file header's menu bar and one menu's label: Capy's in PPTX, BetterOffice's in DOCX and XLSX. */
-export function officeMenuLabels(format: OfficeFormat, name: 'File' | 'Edit') {
-  const pptx =
-    name === 'File'
-      ? m.files_office_pptx_menu_file()
-      : m.files_office_pptx_menu_edit();
+function officeMenuLabels(format: OfficeFormat, name: 'File') {
+  const pptx = m.files_office_pptx_menu_file();
   return {
     bar: m.files_office_menu_bar(),
     item: format === 'pptx' ? pptx : name,
@@ -29,15 +26,16 @@ export function officeMenuLabels(format: OfficeFormat, name: 'File' | 'Edit') {
 }
 
 /** A menu of the Office file header. */
-export function officeMenu(
-  page: Page,
-  format: OfficeFormat,
-  name: 'File' | 'Edit'
-) {
+export function officeMenu(page: Page, format: OfficeFormat, name: 'File') {
   const { bar, item } = officeMenuLabels(format, name);
   return page
     .getByRole('menubar', { name: bar })
     .getByRole('menuitem', { exact: true, name: item });
+}
+
+/** The ribbon's Edit tab: the tab line comes with the editor's replica. */
+export function officeEditTab(page: Page) {
+  return page.getByTestId('office-tab-edit');
 }
 
 /** File › Save in the Office file header (the Save button is gone). */
@@ -294,6 +292,8 @@ export async function publishWhileEditing(
   assert.equal(row.epoch, before.epoch);
   // A reload banner would follow the publication at once; none comes.
   await page.waitForTimeout(5000);
+  // In the frame under the ribbon (Q566), or Capy's while it has no ribbon.
+  await expect(runtime.getByText(m.source_edit_replaced())).toHaveCount(0);
   await expect(page.getByText(m.source_edit_replaced())).toHaveCount(0);
   await saved(page);
   assert(await mounted.evaluate((node) => node.isConnected));
@@ -355,9 +355,9 @@ export async function openEditor(
   // The URL's mode, not the Material mode toggle: the browser remembers the
   // last mode per file, so a second open would toggle back to View.
   await openFile(run, actor, workspaceId, fileId, 'edit');
-  // The editor's Edit menu arrives once the replica is ready; large workbooks
-  // take longer than the action timeout to open.
-  const edit = officeMenu(actor.page, format, 'Edit');
+  // The ribbon's tabs arrive once the replica is ready; large workbooks take
+  // longer than the action timeout to open.
+  const edit = officeEditTab(actor.page);
   await whenReady(run, actor, 'office-editor', () =>
     expect(edit).toBeVisible({ timeout: 120_000 })
   );

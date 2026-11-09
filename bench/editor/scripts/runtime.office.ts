@@ -57,7 +57,11 @@ import { cdpSession, percentile, reportMetrics } from './metrics';
  * and row insert, the last a whole recalculation; the same done locally),
  * each to the next painted grid with the frame's main-thread long tasks, and
  * scrolling a 50,000-row sheet (rows-50k.xlsx: gen_large_xlsx.py 1 50000
- * values) with the grid's paints per second.
+ * values) with the grid's paints per second, gated by a fixed ceiling
+ * (SCROLL_BUDGET).
+ *
+ * PPTX only, report-only: the main thread's busy time after one co-editor
+ * edit, from a Chrome trace (busyAfterRemoteEdit).
  */
 
 interface Timings {
@@ -68,61 +72,62 @@ interface Timings {
 }
 
 /**
- * Medians of three runs of the Performance workflow on ubuntu-24.04, all
- * 2026-10-04:
- * - DOCX: runs 37174928433, 37174944257, 37174959817 (every metric within 3%
- *   of its median);
- * - XLSX/PPTX View to Edit and keys: runs 37197306625, 37197311546,
- *   37197316994 on 15136468, all three on AMD EPYC 7763 runners;
- * - XLSX/PPTX open: runs 37200395852, 37200390235, 37200383976 on 253762ea
- *   (one EPYC 9V45, two EPYC 7763), the first runs with `ready` after the
- *   first paint. Those runs kept the other XLSX/PPTX metrics within 80% of
- *   their budgets.
- * For XLSX/PPTX `editReadyMs` ends at `collaboration-ready` (see above). Heap
- * figures are report-only (openwiki/editor-perf.md).
+ * Medians of three runs of the Performance workflow's `office` job on
+ * ubuntu-24.04, 2026-11-07 (Q692): 42323528888, 42325355691 and 42325364585 on
+ * 97e63a68a, one each on AMD EPYC 7763, AMD EPYC 9V45 (30-40% faster on every
+ * figure) and Intel Xeon 8370C runners. For XLSX/PPTX `editReadyMs` ends at
+ * `collaboration-ready` (see above). Heap figures are report-only
+ * (openwiki/editor-perf.md).
  */
 const MEDIANS: Record<Fixture['id'], Timings> = {
   // MSW adds ~1.1 s per call to every open.
   'bio-office-docx': {
-    editReadyMs: 3259,
-    keyToFrameP50Ms: 138,
-    keyToFrameP90Ms: 150,
-    openFirstPaintMs: 5289,
+    editReadyMs: 3460,
+    keyToFrameP50Ms: 35,
+    keyToFrameP90Ms: 43,
+    openFirstPaintMs: 4211,
   },
   'bio-office-docx-long': {
-    editReadyMs: 6230,
-    keyToFrameP50Ms: 436,
-    keyToFrameP90Ms: 1031,
-    openFirstPaintMs: 7954,
+    editReadyMs: 4924,
+    keyToFrameP50Ms: 163,
+    keyToFrameP90Ms: 184,
+    openFirstPaintMs: 5282,
   },
   'bio-office-pptx': {
-    editReadyMs: 790,
-    keyToFrameP50Ms: 11,
-    keyToFrameP90Ms: 18,
-    openFirstPaintMs: 3183,
+    editReadyMs: 982,
+    keyToFrameP50Ms: 14,
+    keyToFrameP90Ms: 17,
+    openFirstPaintMs: 2015,
   },
   'bio-office-pptx-long': {
-    editReadyMs: 2442,
-    keyToFrameP50Ms: 69,
-    keyToFrameP90Ms: 75,
-    openFirstPaintMs: 5728,
+    editReadyMs: 2909,
+    keyToFrameP50Ms: 62,
+    keyToFrameP90Ms: 69,
+    openFirstPaintMs: 4184,
   },
   'bio-office-xlsx': {
-    editReadyMs: 1244,
-    keyToFrameP50Ms: 14,
-    keyToFrameP90Ms: 47,
-    openFirstPaintMs: 3148,
+    editReadyMs: 1044,
+    keyToFrameP50Ms: 5,
+    keyToFrameP90Ms: 10,
+    openFirstPaintMs: 1856,
   },
   'bio-office-xlsx-long': {
-    editReadyMs: 5188,
-    keyToFrameP50Ms: 12,
-    keyToFrameP90Ms: 313,
-    openFirstPaintMs: 3732,
+    editReadyMs: 3058,
+    keyToFrameP50Ms: 6,
+    keyToFrameP90Ms: 10,
+    openFirstPaintMs: 2753,
   },
 };
 
 /** No keystroke budget goes below this: a one-frame wobble fails anything smaller. */
 const KEY_BUDGET_FLOOR_MS = 30;
+
+/**
+ * Scrolling's fixed ceiling, on every scroll run (Q692; its spread is too
+ * wide for 1.3x a median): no gap between grid paints over 100 ms (six
+ * frames) and at least 50 paints a second.
+ */
+const SCROLL_BUDGET = { longestPaintGapMs: 100, paintsPerSecond: 50 };
 
 /**
  * 1.3x the median, the same rule as the editor budgets, rounded up to 5 ms
@@ -1146,6 +1151,89 @@ async function timeRemoteEdits(page: Page, fixture: Fixture) {
   };
 }
 
+/** The trace after the one edit, and the quiet that ends its busy stretch. */
+const BUSY_TRACE_MS = 8000;
+const IDLE_MS = 500;
+/** An open editor left alone runs only timers under this. */
+const WORK_TASK_MS = 1;
+
+interface TraceEvent {
+  dur?: number;
+  name: string;
+  ph: string;
+  pid: number;
+  tid: number;
+  ts: number;
+}
+
+/**
+ * PPTX, report-only (Q692): the main thread's busy time after one remote
+ * edit, which `toFrame` misses: after that frame the editor decodes and
+ * recolours the slides' pictures again. From a Chrome trace, as the
+ * 2026-11-07 baseline measured it: the renderer main thread's tasks
+ * (DevTools' `RunTask`, all sizes; long tasks alone miss over half of it)
+ * from the task that received the update until the thread is idle, no task of
+ * WORK_TASK_MS or more for IDLE_MS. `idle: false` when the trace ended first.
+ */
+async function busyAfterRemoteEdit(page: Page, fixture: Fixture) {
+  const browser = page.context().browser();
+  if (!browser) throw new Error('No browser to trace');
+  // After the runtime's listener, so the mark is in the receiving task.
+  await runtimeFrame(page).evaluate(() => {
+    const mark = (event: MessageEvent) => {
+      if ((event.data as { type?: unknown })?.type !== 'update') return;
+      performance.mark('office-bench-received');
+      window.removeEventListener('message', mark);
+    };
+    window.addEventListener('message', mark);
+  });
+  await browser.startTracing(page, {
+    categories: ['disabled-by-default-devtools.timeline', 'blink.user_timing'],
+  });
+  await remoteEdit(page, fixture, 0);
+  await page.waitForTimeout(BUSY_TRACE_MS);
+  const { traceEvents } = JSON.parse(
+    (await browser.stopTracing()).toString()
+  ) as { traceEvents: TraceEvent[] };
+  const received = traceEvents.find(
+    (event) => event.name === 'office-bench-received'
+  );
+  if (!received) throw new Error('The remote edit never reached the runtime');
+  const tasks = traceEvents
+    .filter(
+      (event): event is TraceEvent & { dur: number } =>
+        event.name === 'RunTask' &&
+        event.ph === 'X' &&
+        event.dur !== undefined &&
+        event.pid === received.pid &&
+        event.tid === received.tid &&
+        event.ts + event.dur >= received.ts
+    )
+    .sort((a, b) => a.ts - b.ts);
+  const [first] = tasks;
+  if (!first) throw new Error('No main-thread tasks in the trace');
+  let end = first.ts + first.dur;
+  for (const task of tasks) {
+    if (task.dur < WORK_TASK_MS * 1000) continue;
+    if (task.ts - end >= IDLE_MS * 1000) break;
+    end = Math.max(end, task.ts + task.dur);
+  }
+  const busy = tasks.filter((task) => task.ts < end);
+  const traceEnd = Math.max(...tasks.map((task) => task.ts + task.dur));
+  return {
+    busyMs: Math.round(
+      busy.reduce((total, task) => total + task.dur, 0) / 1000
+    ),
+    idle: traceEnd - end >= IDLE_MS * 1000,
+    longestTaskMs: Math.round(
+      Math.max(...busy.map((task) => task.dur)) / 1000
+    ),
+    // The receiving task's start to the end of the busy stretch.
+    settleMs: Math.round((end - first.ts) / 1000),
+    tasks: busy.length,
+  };
+}
+
 /**
  * One full pass of the view: every page, every sheet's rows and columns, or
  * every slide, then back to the start.
@@ -1580,6 +1668,11 @@ for (const fixture of FIXTURES) {
     // where no budget follows.
     const editHeap = await heap(page);
     await page.waitForTimeout(2000);
+    // PPTX: one edit on its own first, the editor otherwise untouched.
+    const busyAfterOneEdit =
+      fixture.format === 'pptx'
+        ? await busyAfterRemoteEdit(page, fixture)
+        : undefined;
     const remote = await timeRemoteEdits(page, fixture);
     await page.waitForTimeout(2000);
     const errors = await page.evaluate(() =>
@@ -1592,6 +1685,7 @@ for (const fixture of FIXTURES) {
       `office-${fixture.format}-${fixture.id}-co-editor`,
       {
         budget: 'report-only',
+        busyAfterOneEdit,
         errors,
         fixture: fixture.name,
         heap: { afterEdit: editHeap, afterRemoteEdits: await heap(page) },
@@ -1929,7 +2023,12 @@ test(`xlsx ${ROWS_FIXTURE.name}: open to Edit and scrolling`, async ({
     testInfo,
     `office-xlsx-${ROWS_FIXTURE.id}-scroll`,
     {
-      budget: 'report-only',
+      budget: {
+        edit: 'report-only',
+        heap: 'report-only',
+        open: 'report-only',
+        scroll: SCROLL_BUDGET,
+      },
       edit: { firstPaintMs: painted.ms, readyMs: replica.ms },
       fixture: ROWS_FIXTURE.name,
       heap: { afterEdit: editHeap, afterScroll: await heap(page) },
@@ -1939,7 +2038,14 @@ test(`xlsx ${ROWS_FIXTURE.name}: open to Edit and scrolling`, async ({
     },
     'unthrottled'
   );
-  expect(scroll.slow.paintsPerSecond).toBeGreaterThan(0);
+  for (const run of [scroll.slow, scroll.fast]) {
+    expect
+      .soft(run.longestPaintGapMs)
+      .toBeLessThanOrEqual(SCROLL_BUDGET.longestPaintGapMs);
+    expect
+      .soft(run.paintsPerSecond)
+      .toBeGreaterThanOrEqual(SCROLL_BUDGET.paintsPerSecond);
+  }
 });
 
 // A plain text file to switch to: opening it closes the Office file, as the

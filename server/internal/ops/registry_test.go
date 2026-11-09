@@ -595,8 +595,8 @@ func TestActiveDraftRejectsEmbeddingHopChange(t *testing.T) {
 	request := RegistrySaveRequest{
 		Revision: 7,
 		Active: []DraftConfig{{
-			ConcurrencyTotal: intPointer(10), InteractiveReserve: intPointer(2),
-			ProviderSlug: current.ProviderSlug, ProviderName: current.ProviderName,
+			ConcurrencyTotal: intPointer(10),
+			ProviderSlug:     current.ProviderSlug, ProviderName: current.ProviderName,
 			ModelName:           current.ModelName,
 			ModelSlug:           "deepseek-v4-flash",
 			ContextWindowTokens: current.ContextWindowTokens, Params: current.Params,
@@ -924,7 +924,6 @@ func TestCapacitySaveIsLiveAndIndependentOfCatalogVersion(t *testing.T) {
 	request := registryRequestFromSnapshot(before)
 	for i := range request.Active {
 		request.Active[i].ConcurrencyTotal = intPointer(200)
-		request.Active[i].InteractiveReserve = intPointer(80)
 	}
 	grid, err := activeToGrid(request, before)
 	if err != nil {
@@ -945,8 +944,7 @@ func TestCapacitySaveIsLiveAndIndependentOfCatalogVersion(t *testing.T) {
 		if !config.Enabled {
 			continue
 		}
-		if config.ConcurrencyTotal == nil || *config.ConcurrencyTotal != 200 ||
-			config.InteractiveReserve == nil || *config.InteractiveReserve != 80 {
+		if config.ConcurrencyTotal == nil || *config.ConcurrencyTotal != 200 {
 			t.Fatalf("capacity missing on %s: %+v", config.Ref(), config)
 		}
 	}
@@ -957,7 +955,6 @@ func TestCapacitySaveIsLiveAndIndependentOfCatalogVersion(t *testing.T) {
 	request = registryRequestFromSnapshot(after)
 	for i := range request.Active {
 		request.Active[i].ConcurrencyTotal = intPointer(4)
-		request.Active[i].InteractiveReserve = intPointer(1)
 	}
 	grid, err = activeToGrid(request, after)
 	if err != nil {
@@ -970,14 +967,10 @@ func TestCapacitySaveIsLiveAndIndependentOfCatalogVersion(t *testing.T) {
 	if err := tx.QueryRow(ctx, "SELECT concurrency_total FROM model_capacities WHERE provider='zai' AND model='glm-5.3-flash'").Scan(&total); err != nil || total != 4 {
 		t.Fatalf("updated capacity: %d, %v", total, err)
 	}
-	for _, invalid := range []struct{ total, reserve *int }{
-		{nil, intPointer(0)}, {intPointer(1), nil}, {intPointer(0), intPointer(0)},
-		{intPointer(2), intPointer(-1)}, {intPointer(2), intPointer(2)},
-	} {
-		request.Active[0].ConcurrencyTotal = invalid.total
-		request.Active[0].InteractiveReserve = invalid.reserve
+	for _, invalid := range []*int{nil, intPointer(0), intPointer(-1)} {
+		request.Active[0].ConcurrencyTotal = invalid
 		if _, err := activeToGrid(request, after); !IsValidation(err) {
-			t.Fatalf("invalid capacity accepted: %+v, %v", invalid, err)
+			t.Fatalf("invalid capacity accepted: %v, %v", invalid, err)
 		}
 	}
 }

@@ -54,9 +54,7 @@ export function journeyGroup(id: string) {
   )
     return 'Account and settings';
   if (
-    /^(workspace|chapter|member|sharing|invite|ownership|material|tags)/.test(
-      id
-    )
+    /^(workspace|topic|member|sharing|invite|ownership|material|tags)/.test(id)
   )
     return 'Workspaces and materials';
   return 'Application';

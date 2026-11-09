@@ -1,3 +1,4 @@
+import { TextIcon } from '@blocksuite/icons/lit';
 import { html } from 'lit';
 import { query } from 'lit/decorators.js';
 
@@ -57,7 +58,7 @@ export class TextCell extends BaseCellRenderer<string, string> {
 }
 
 export const textPropertyConfig = textPropertyModelConfig.createPropertyMeta({
-  icon: createIcon('TextIcon'),
+  icon: createIcon(TextIcon),
 
   cellRenderer: {
     view: createFromBaseCellRenderer(TextCell),

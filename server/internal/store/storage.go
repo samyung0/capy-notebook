@@ -70,10 +70,12 @@ func (e *FileLimitExceededError) Code() string {
 	return "files_limit_exceeded"
 }
 
-// FileTooLargeError refuses a file past the per-file cap (plan
-// SourceFileBytes) of the account that pays for it, as an upload is refused.
+// FileTooLargeError refuses a file past the per-file cap (plan FileBytes) of
+// the account that pays for it, as an upload is refused. Text: the cap was the
+// flat text cap.
 type FileTooLargeError struct {
 	LimitBytes int64
+	Text       bool
 }
 
 func (e *FileTooLargeError) Error() string {
@@ -151,6 +153,20 @@ func (s *Store) storageOwnerTx(ctx context.Context, tx pgx.Tx, workspaceID strin
 		return "", ErrNotFound
 	}
 	return ownerID, err
+}
+
+// lockWorkspaceKeyShareTx holds a workspace against its writers and teardown,
+// which take its row FOR UPDATE and then accounts and rows, for a write that is
+// not a workspace write but whose foreign keys key-share that row anyway. It goes
+// first: taken later, by a foreign key, it waits on a writer that may be waiting
+// for the account or row already held. KEY SHARE conflicts with FOR UPDATE alone,
+// so these writes never wait on each other.
+func lockWorkspaceKeyShareTx(ctx context.Context, tx pgx.Tx, workspaceID string) error {
+	if workspaceID == "" {
+		return nil
+	}
+	_, err := tx.Exec(ctx, `SELECT 1 FROM workspaces WHERE id=$1 FOR KEY SHARE`, workspaceID)
+	return err
 }
 
 // lockWorkspaceMutationTx is the common final-admission boundary for an
@@ -433,6 +449,22 @@ func (s *Store) gateStorageTx(ctx context.Context, tx pgx.Tx, userID string, req
 	return nil
 }
 
+// admitAccountTx admits an assignment answer's bytes (a drawing, a paper's
+// file) with no quota check: storage never blocks attempting or submitting,
+// and a frozen account still attempts and submits, an answer being no material
+// it edits (Epo 2026-11-08, O4). Its bytes still count, putting the account over
+// quota as any other overshoot does; only a locked account is refused.
+func (s *Store) admitAccountTx(ctx context.Context, tx pgx.Tx, userID string) error {
+	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
+		return err
+	}
+	status, err := s.accountAccess(ctx, tx, userID)
+	if err != nil {
+		return err
+	}
+	return status.MutateErr()
+}
+
 func (s *Store) reserveStorageTx(ctx context.Context, tx pgx.Tx, userID string, requested int64) error {
 	if err := s.gateStorageTx(ctx, tx, userID, requested); err != nil {
 		return err
@@ -528,16 +560,19 @@ func (s *Store) AssertWorkspaceFileRoom(ctx context.Context, workspaceID string,
 }
 
 // AssertSourceUploadRoom runs a source upload's reservation gates (the
-// uploader's editor access and storage, the workspace's file cap) and rolls
-// back, so an upload's ticket refuses what its upload would be refused
-// before the browser waits in line. The reservation still gates.
-func (s *Store) AssertSourceUploadRoom(ctx context.Context, workspaceID, userID string, size int64) error {
+// uploader's editor access and storage, the workspace's file cap, a new topic's
+// place) and rolls back, so an upload's ticket refuses what its upload would be
+// refused before the browser waits in line. The reservation still gates.
+func (s *Store) AssertSourceUploadRoom(ctx context.Context, workspaceID, userID, topicName string, size int64) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
 	if _, err := s.lockFileEditorMutationTx(ctx, tx, workspaceID, userID, userID); err != nil {
+		return err
+	}
+	if err := s.assertUploadTopicFitsTx(ctx, tx, workspaceID, topicName); err != nil {
 		return err
 	}
 	if err := s.gateStorageTx(ctx, tx, userID, size); err != nil {
@@ -643,7 +678,11 @@ const storageRecountSQL = `SELECT
 	+ COALESCE((SELECT sum(size_bytes) FROM editor_assets
 		WHERE user_id=$1 AND status='ready'), 0)
 	+ COALESCE((SELECT sum(size_bytes) FROM materials
-		WHERE owner_user_id=$1), 0),
+		WHERE owner_user_id=$1), 0)
+	+ COALESCE((SELECT sum(frozen_bytes) FROM assignments
+		WHERE frozen_by=$1), 0)
+	+ COALESCE((SELECT sum(board_bytes + image_bytes) FROM drawings
+		WHERE user_id=$1), 0),
 	COALESCE((SELECT sum(COALESCE(reserved_size, declared_size)) FROM upload_sessions
 		WHERE user_id=$1 AND status='pending' AND expires_at > now()), 0)`
 
@@ -670,6 +709,8 @@ func (s *Store) reconcileStorageUserTx(
 		`SELECT id FROM files WHERE user_id=$1 FOR UPDATE`,
 		`SELECT id FROM editor_assets WHERE user_id=$1 FOR UPDATE`,
 		`SELECT id FROM materials WHERE owner_user_id=$1 FOR UPDATE`,
+		`SELECT id FROM assignments WHERE frozen_by=$1 FOR UPDATE`,
+		`SELECT id FROM drawings WHERE user_id=$1 FOR UPDATE`,
 		`SELECT id FROM upload_sessions
 			WHERE user_id=$1 AND status='pending' AND expires_at > now() FOR UPDATE`,
 	} {
@@ -728,4 +769,27 @@ func (s *Store) reconcileStorageUserTx(
 	_, err := tx.Exec(ctx, `DELETE FROM user_storage_deltas
 		WHERE user_id=$1 AND id <= $2`, userID, maxDeltaID)
 	return changed, err
+}
+
+// StorageBreakdown is what a payer's storage holds, by kind, recounted from the
+// rows the meter counts: files (uploads and their saved documents), canvas
+// (drawn answers' boards and the images kept while their parts wait), and other
+// (notes, quizzes, sets, their images and audio, assignment copies).
+type StorageBreakdown struct {
+	FilesBytes  int64 `json:"filesBytes"`
+	CanvasBytes int64 `json:"canvasBytes"`
+	OtherBytes  int64 `json:"otherBytes"`
+}
+
+func (s *Store) storageBreakdown(ctx context.Context, userID string) (StorageBreakdown, error) {
+	var b StorageBreakdown
+	err := s.pool.QueryRow(ctx, `SELECT
+		COALESCE((SELECT sum(size_bytes) FROM files WHERE user_id=$1), 0)
+		+ COALESCE((SELECT sum(storage_bytes) FROM source_documents WHERE user_id=$1), 0),
+		COALESCE((SELECT sum(board_bytes + image_bytes) FROM drawings WHERE user_id=$1), 0),
+		COALESCE((SELECT sum(size_bytes) FROM editor_assets WHERE user_id=$1 AND status='ready'), 0)
+		+ COALESCE((SELECT sum(size_bytes) FROM materials WHERE owner_user_id=$1), 0)
+		+ COALESCE((SELECT sum(frozen_bytes) FROM assignments WHERE frozen_by=$1), 0)`, userID).
+		Scan(&b.FilesBytes, &b.CanvasBytes, &b.OtherBytes)
+	return b, err
 }

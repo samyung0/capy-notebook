@@ -5,7 +5,7 @@ import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { cn } from '@/lib/cn';
 
 /** A panel's leading action under its search (New chat, New file or
- * chapter): a nav row like the app sidebar's, icon and label with a hover
+ * topic): a nav row like the app sidebar's, icon and label with a hover
  * fill only. With `menu` it opens that dropdown instead of acting. */
 export function PanelNewRow({
   icon,

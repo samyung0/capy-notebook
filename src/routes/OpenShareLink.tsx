@@ -26,9 +26,7 @@ export default function OpenShareLink() {
     staleTime: Number.POSITIVE_INFINITY,
   });
   if (isError || !token)
-    return (
-      <WorkspaceError backLabel={m.workspace_back_to()} backTo="/workspaces" />
-    );
+    return <WorkspaceError backLabel={m.workspace_back_to()} backTo="/" />;
   if (!data) return <PaneLoading message={m.common_loading()} />;
   return data.kind === 'workspace' ? (
     <Navigate

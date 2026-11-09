@@ -87,13 +87,13 @@ export function dialogSourceFile(id: string): SourceFile {
   return {
     ...fixture,
     addedAt: '2026-09-15T00:00:00Z',
-    chapterId: null,
     indexed: false,
     isPayer: true,
     position: 0,
     revision: 1,
     sizeBytes: 2048,
     status: 'failed',
+    topicId: null,
     workspaceId: 'ws_bio',
   };
 }

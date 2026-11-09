@@ -24,13 +24,14 @@ place (Epo 2026-10-10).
 | Family                     | Measures                                                                                        | Run with                                    |
 | -------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------- |
 | [`collaboration/`](collaboration/) | Collaboration stress: many peers typing with reconnects in one Office and one Plate room, then in a near-limit note and a text source; convergence, lost updates, latency. Update rates one user's editing sends, scored against the server's allowance. Plate vs blocks layout room CPU and memory per editing state, locally or on the prod box ([`layout-box/`](collaboration/scripts/layout-box/README.md)) | `pnpm bench:stress` (Docker), `pnpm bench:rates`, `scripts/run-layout-cost.sh` |
-| [`editor/`](editor/)       | Plate editor open cost, typing latency, save cycle, scroll FPS under CPU throttle, and the BlockSuite note beside it (`PERF_EDITOR`, report-only); DOCX, XLSX and PPTX open, View to Edit, typing at both ends, co-editor update timings and heap (workers from the typing on) in the Office runtime; Office size-ladder fixtures; formula View/Edit parity | `pnpm bench:editor`, `pnpm bench:office`, `pnpm bench:formula` |
+| [`editor/`](editor/)       | Plate editor open cost, typing latency, save cycle, scroll FPS under CPU throttle, and the BlockSuite note beside it (`PERF_EDITOR`, report-only); DOCX, XLSX and PPTX open, View to Edit, typing at both ends, co-editor update timings and heap (workers from the typing on) in the Office runtime; Office size-ladder fixtures; formula View/Edit parity; the drawing board's cold open, pan, zoom, pen and typing | `pnpm bench:editor`, `pnpm bench:office`, `pnpm bench:formula`, `pnpm bench:canvas` |
 | [`share-pages/`](share-pages/) | Shared workspace, quiz, flashcard and note pages on the deployed UAT site: Lighthouse FCP, LCP, CLS, TBT and bytes, cold and warm at the edge; Workers Cache hits | `pnpm bench:share-pages` (UAT) |
 | [`gateway/`](gateway/)     | Go gateway capacity: signed-in browser sessions replayed against the API with their event streams, uploads and paged lists, per-route and per-page latency and errors, gateway and Postgres CPU, waits for a pooled connection | `bench/gateway/scripts/step.sh <users>` (bench host) |
 | [`clone/`](clone/)         | A single file clone's two parts on a disposable pgvector database: the file row with its saved edits (as update rows and folded), and the index copy into the target's HNSW index | `bench/clone/scripts/run.sh` (Docker) |
 | [`parity/`](parity/)       | Office feature parity per format against Google Docs, Sheets and Slides: hand-assigned view, edit, save and collab statuses, each Y backed by a test on the pin; ranked remaining work | `python3 bench/parity/scripts/parity.py` (CI: `--check`) |
 | [`parsers/`](parsers/)     | Ingest-host parser accuracy and capacity: OCR modes, concurrency, worker memory, OOM behavior    | `python bench/parsers/scripts/…` (needs VM) |
 | [`grading/`](grading/)     | Small local models against the production quiz-grading rubric, native and in-browser             | `python bench/grading/scripts/benchmark.py` |
+| [`extraction/`](extraction/) | Make a quiz: questions read from HKDSE past papers' pages with keys worked out where none is printed, paired with their mark schemes, against hand-built gold; labels, parts, marks, printed option order, worked-out key accuracy, pairing, cost, time per model | `python bench/extraction/scripts/run.py --paper … --model …` |
 | [`rag/`](rag/scripts/)     | Retrieval and chat-agent quality: live diagnostic plus six frozen experiments                    | see below                                   |
 
 ### editor
@@ -41,6 +42,25 @@ production promotion. Budgets are regression tripwires, not UX targets; snapshot
 deltas stay warn-only. Details: [editor-perf.md](../openwiki/editor-perf.md).
 Results land in the gitignored `editor/.results/`, so this family has no
 committed reports.
+
+`pnpm bench:canvas` is the drawing board's spec (`editor/scripts/board.canvas.ts`):
+a production build without MSW whose `/dev/drawing` route is kept by
+`VITE_BENCH_ROUTES=true` (deploys pin it off). It gates a blank board's cold open
+at 1x and a typical board's (a drawn answer) cold open, typing, pen stroke, pans
+and zooms at 4x CPU, each input to its painted frame, and Draw as a drawing
+question runs it at 4x: the typical board's hidden mount (its longest frame) and
+showing it (to its first frame); warm opens and mounts, a large board and the bytes each open
+downloads are report-only. `editor/scripts/board-stages.canvas.ts`,
+report only, splits the cold open into stages and times the list preview and Draw with
+the module already evaluated (`pnpm bench:canvas board-stages`). It runs as the `canvas` job of the `Performance` workflow, on dispatch
+only. Details: [editor-perf.md](../openwiki/editor-perf.md#drawing-board-pnpm-benchcanvas).
+
+`bench/editor/scripts/open-paint.mjs` measures a note's one way of opening on a
+production build with MSW, by hand (its header has the build): click or navigation
+to the note's text on screen, to an editable editor, its token's answer to that
+and the long tasks' blocking, first open and reopen from the device copy. MSW adds
+about 1.1 s to every `/api` call, so compare builds, not absolutes. Findings:
+[`editor/reports/2026-11-04-open-paint.md`](editor/reports/2026-11-04-open-paint.md).
 
 `pnpm bench:office` is the Office runtime's spec (`editor/scripts/runtime.office.ts`):
 a production build with MSW, the runtime on a second port of `localhost` (another
@@ -59,14 +79,19 @@ Edit steps skip the workers, whose read forces a GC). A co-editor case
 applies ten remote edits from a second peer in the open editor and reports,
 per edit, the wait before the frame handles it, the frame's synchronous apply
 (DOCX: only the hand-off to its engine worker) and the time to the next
-frame (a painted DOCX page; the next animation frame for XLSX and PPTX). It
-also reports the heap over two full
+frame (a painted DOCX page; the next animation frame for XLSX and PPTX). For
+PPTX it first applies one edit alone and reports the main thread's busy time
+until it is idle again (`busyAfterOneEdit`, from a Chrome trace), which the
+next frame misses. It also reports the heap over two full
 view-mode passes and over five view-mode opens and closes, and records the
 runner's CPU model in every result. It
 fails on unpainted keys, typing that reaches no edit, a remote edit that never
-reaches its frame or errors, a fallback to the main-thread engine, or a missed budget
-(from three CI runs per format); the end-of-file keys, the co-editor timings
-and the heap figures are report-only until a ceiling is defined. It runs as
+reaches its frame or errors, a fallback to the main-thread engine, a missed budget
+(from three CI runs per format), or scrolling a generated 50,000-row sheet
+(`rows-50k.xlsx`) over a fixed ceiling (a paint gap over 100 ms or under 50
+paints/s, slow or fast); the
+end-of-file keys, the co-editor timings, the PPTX busy time and the heap
+figures are report-only. It runs as
 the `office` job of the same `Performance` workflow, on dispatch only.
 
 The Office size ladder (`editor/scripts/gen_office_ladder.py`) generates
@@ -124,7 +149,13 @@ measures the Office engine worker keeping each XLSX room's workbook open. The
 repeats the ladder for the Rust collaboration server against Node. The
 [2026-10-17 allocator run](collaboration/reports/2026-10-17-collaboration-allocator.md)
 measures the memory the server keeps after its peers leave, per glibc setting
-and with mimalloc.
+and with mimalloc. The
+[2026-10-17 Office room run](collaboration/reports/2026-10-17-office-room-memory.md)
+measures one Office room in process (`collaboration/scripts/office-room-memory/`,
+a standalone cargo crate; `run.sh <out-dir>`): memory held by the room's yrs
+document, encoded state, whole-state encode time, folds and the XLSX replica,
+after 1,000 and 10,000 edits made through docx-edit, pptx-edit and the XLSX
+workbook.
 
 `bench/collaboration/scripts/update-rates.rates.ts` (`pnpm bench:rates`,
 `playwright.rates.config.ts`) measures what one user's editing sends: the
@@ -294,6 +325,71 @@ The [production contract report](grading/reports/2026-10-02-jev-production-contr
 runs [`jev_contract.py`](grading/scripts/jev_contract.py) on new held-out fixtures
 to choose the Jev request for open quiz parts (question type, batching, state
 fields) and the author-side computation warning, with a small LaTeX check.
+The [DeepSeek grading report](grading/reports/2026-11-03-deepseek-grading.md) runs
+[`deepseek_grading.py`](grading/scripts/deepseek_grading.py) (DeepSeek Flash and the
+0731 descriptor model, quote-checked JSON per marking item) against Jev on the contract
+fixtures, held-out, injection and Traditional Chinese answers, HKDSE maths with
+working, IELTS reading and HKDSE Chinese reading.
+
+### extraction
+
+`extraction/scripts/run.py` runs the production Make a quiz pipeline
+(`pipeline/retrieval/extraction.py`, see
+[agentic-retrieval.md](../openwiki/agentic-retrieval.md), Make a quiz) over one
+past paper from the ignored `data/question-bank/references/hkdse-math-compulsory/`
+(`--refs`), with the model calls going to the providers (`--env-file` names a
+file with `DEEPSEEK_API_KEY` and `OPENROUTER_API_KEY`; nothing is printed) and
+every recorded question through Go's `quizcheck`. Pages are rendered by the
+capture renderer; each page's indexed text is its PDF text layer, or the
+production VLM page read on the captioning pin for a scanned page, cached in the
+gitignored `extraction/.results/text/` and not counted in the run's cost. The
+answers come from the paper's marking-scheme PDF read the same way, or from an
+answer list built from the gold keys. `fixtures/gold/` holds the hand-built gold
+per paper: labels, parts, per-part marks, answer types, and for multiple choice
+the key and the keyed option's signature (its numbers, signs, relations, roman
+numerals and trig names, hand-read from the page), so the score checks that the
+stored key points at the printed correct option. The model's own keys,
+before the scheme replaces them, are scored too: multiple-choice keys it
+worked out against the official ones, and its part marks against the gold.
+Figures are located and cropped as production does it, the crops written
+under `extraction/.results/crops/` and scored against hand-read gold boxes
+(`figure_boxes`). A fidelity check compares each saved question's text and
+each parsed scheme entry with the page's own text: the PDF text layer, else
+both the refs folder's Tesseract OCR and the cached VLM read, since the HKDSE
+scans have none. It counts numbers and units that neither reading has, or that
+both have and the extraction lacks, KaTeX parse failures and stray `$`, and
+scores 2022 Paper 1's gold tables cell by cell.
+Results land in `extraction/.results/<paper>-<model>-<n>.json`;
+[the first cut](extraction/reports/2026-11-03-first-cut.md) compares DeepSeek
+Flash with GLM-5.3-Flash,
+[keys in one prompt](extraction/reports/2026-11-03-keys-in-one-prompt.md)
+measures the round-2 prompt that works keys out, and
+[figures and fidelity](extraction/reports/2026-11-04-figures-and-fidelity.md)
+measures figure crops and the content against the page, and
+[window size](extraction/reports/2026-11-04-window-size.md) how many questions
+one call records (run on the windows the route has since replaced; tables from
+`scripts/window_table.py` and `scripts/window_crossing.py`), and
+[answer files](extraction/reports/2026-11-05-answer-files.md) sends the mark scheme to
+the model as page images or text in place of the parse; [layout first](extraction/reports/2026-11-04-layout-first-trial.md) runs the layout
+service over HTTP through the real code (`scripts/layout_trial.py`; the service's
+venv and model file are in that report).
+`extraction/scripts/layout_detect.py` runs a document layout model
+(PP-DocLayout under onnxruntime or PaddleOCR, Docling's Heron under
+onnxruntime or transformers) over the gold pages in a container
+(`layout_host.sh`, run on the ingest host), recording each region with its
+CPU time and memory. `layout_score.py` scores its figure boxes against the
+gold boxes as the box call's crops are scored, and `layout_match.py` has 1017
+pick the boxes by number for each figure a window described;
+[layout models](extraction/reports/2026-11-04-layout-models.md) compares them
+with the box call. `layout_capacity.py` runs the chosen model beside a
+production-shaped parser on the ingest host (`layout_burst.py`, one instance in
+a stream of 40-page bursts; the passes are in `fixtures/layout-capacity/` on
+`claude/bench-layout-figures`, since fixtures stay local), sampling
+every container each second. `layout_crash.py` runs a throwaway service
+(`layout_service.py`, `layout_health.py`) under simulated callers
+(`layout_callers.py`) and injects faults;
+[layout capacity](extraction/reports/2026-11-04-layout-capacity.md) has both
+results.
 
 ### rag
 

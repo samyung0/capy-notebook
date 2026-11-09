@@ -13,7 +13,7 @@ import {
   whenReady,
   workspace,
 } from './files';
-import { type OfficeFormat, officeMenu, officeMenuLabels } from './office';
+import { type OfficeFormat, officeEditTab } from './office';
 import { type Actor, expect, test, type UatRun } from './runtime';
 
 /**
@@ -34,7 +34,7 @@ const FILES: [OfficeFormat, 'small' | 'large', string][] = [
   ['pptx', 'large', 'e2e/fixtures/files/rich-content/lecture.pptx'],
 ];
 
-/** Per open, from navigation to the Edit menu. */
+/** Per open, from navigation to the ribbon's tab line. */
 const OPEN_TIMEOUT = 240_000;
 /** Then, for the first page painted. */
 const PAINT_GRACE = 30_000;
@@ -85,7 +85,7 @@ type Probe = {
   }[];
   /** The header's `data-save-state` values, in order. */
   saveStates: { state: string; at: number }[];
-  /** When the Office header's Edit menu appeared. */
+  /** When the Office header's tab line appeared. */
   editable?: number;
   /** Runtime frame: when each host message type first arrived. */
   host: Record<string, number>;
@@ -105,10 +105,10 @@ type Probe = {
 /**
  * Runs in every frame before its own scripts (context.addInitScript). The app
  * page records runtime messages, its collaboration sockets, the header's save
- * states and when the Edit menu appeared; the runtime frame records host
+ * states and when the Edit tab appeared; the runtime frame records host
  * messages, WASM compiles and the fonts it adds. Instrumentation only.
  */
-function installProbe(labels: { bar: string; item: string }) {
+function installProbe() {
   const now = () => performance.now();
   const probe: Probe = {
     capabilities: [],
@@ -168,18 +168,10 @@ function installProbe(labels: { bar: string; item: string }) {
         ?.getAttribute('data-save-state');
       if (state && state !== probe.saveStates.at(-1)?.state)
         probe.saveStates.push({ at: now(), state });
-      // The menu bar comes from the runtime's `menus` message.
+      // The tab line comes from the runtime's `menus` message.
       if (probe.editable !== undefined || probe.runtime.menus === undefined)
         return;
-      const bar = Array.from(
-        document.querySelectorAll('[role="menubar"]')
-      ).find((element) => element.getAttribute('aria-label') === labels.bar);
-      if (
-        bar &&
-        Array.from(bar.querySelectorAll('[role="menuitem"]')).some(
-          (item) => item.textContent?.trim() === labels.item
-        )
-      )
+      if (document.querySelector('[data-testid="office-tab-edit"]'))
         probe.editable = now();
     }).observe(document, {
       attributeFilter: ['data-save-state'],
@@ -443,7 +435,7 @@ function summarize(
   const editable = at(app, probe?.editable);
   const painted = at(app, probe?.runtime.ready);
   // The open is done once editable and painted (DOCX paints after its fonts,
-  // which can follow the Edit menu); later fetches are not the open's.
+  // which can follow the tab line); later fetches are not the open's.
   const done =
     editable === null || painted === null
       ? editable
@@ -593,12 +585,12 @@ async function measure(
       actor,
       `office-load-${file.format}-${file.size}-${open}`,
       () =>
-        expect(officeMenu(actor.page, file.format, 'Edit')).toBeVisible({
+        expect(officeEditTab(actor.page)).toBeVisible({
           timeout: OPEN_TIMEOUT,
         })
     );
     // DOCX posts `ready` (first page painted) after its fonts, which can come
-    // after the Edit menu; without it by then the milestone stays unavailable.
+    // after the Edit tab; without it by then the milestone stays unavailable.
     await actor.page
       .waitForFunction(
         () =>
@@ -633,7 +625,7 @@ function writeSummary(run: UatRun, directory: string, results: OpenResult[]) {
     '',
     `Run \`${run.id}\` on ${run.env.expectedRevision}. Milliseconds after the tab's navigation start; – is not reached or not observable. Cold: a new browser context, signed in, its HTTP cache cleared. Warm: a new tab in that context after the cold tab closed. Detail per open in \`office-load-*.json\`, traces in \`office-load-*.zip\` (\`npx playwright show-trace\`).`,
     '',
-    'HTTP cache live: the opens run without the Clerk testing-token route, which turned the cache off in the first run (uat-quality 38934968702: nothing cached, even warm). The first page painted is waited for up to 30 s after the Edit menu (DOCX paints after its fonts).',
+    'HTTP cache live: the opens run without the Clerk testing-token route, which turned the cache off in the first run (uat-quality 38934968702: nothing cached, even warm). The first page painted is waited for up to 30 s after the tab line (DOCX paints after its fonts).',
     '',
     '| File | Open | SPA ready | Frame initialized | Grant | Source bytes | Synced | WASM fetched | Fonts fetched | First page | Replica | Editable | Stuck at |',
     '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |',
@@ -766,10 +758,7 @@ test('Office open times: DOCX, XLSX and PPTX, small and large, cold and warm', a
     await cdp.send('Network.clearBrowserCache');
     await cdp.detach();
     await actor.page.close();
-    await context.addInitScript(
-      installProbe,
-      officeMenuLabels(file.format, 'Edit')
-    );
+    await context.addInitScript(installProbe);
     await context.tracing.start({ screenshots: true, snapshots: true });
     // Warm: a new tab in the same context once the cold tab closed.
     for (const open of ['cold', 'warm'] as const) {

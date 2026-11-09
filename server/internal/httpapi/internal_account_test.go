@@ -83,7 +83,7 @@ func TestAccountChatStreamSendsItsScope(t *testing.T) {
 	if _, ok := named["ws_e2e_edit"]; ok {
 		t.Fatalf("account scope holds a link-reached workspace: %+v", scope)
 	}
-	for _, key := range []string{"workspaceId", "role", "openResource", "studyProgress"} {
+	for _, key := range []string{"workspaceId", "role", "openResource"} {
 		if _, ok := account[key]; ok {
 			t.Errorf("account turn carries %s", key)
 		}

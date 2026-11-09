@@ -30,6 +30,8 @@ var editorAssetRules = map[string]map[string][]string{
 		".png": {"image/png"}, ".jpg": {"image/jpeg"}, ".jpeg": {"image/jpeg"},
 		".gif": {"image/gif"}, ".webp": {"image/webp"}, ".avif": {"image/avif"},
 	},
+	// A drawn sample answer's board, gzipped (Q3): the quiz's own asset.
+	"board": {".gz": {"application/gzip"}},
 	"audio": {
 		".mp3": {"audio/mpeg"}, ".wav": {"audio/wav", "audio/x-wav"},
 		".ogg": {"audio/ogg"}, ".flac": {"audio/flac"}, ".m4a": {"audio/mp4", "audio/x-m4a"},
@@ -68,7 +70,7 @@ func validateEditorAssetMetadata(
 	}
 	rule, ok := editorAssetRules[in.Purpose]
 	if !ok {
-		return "", "", "", errors.New("purpose must be image or audio")
+		return "", "", "", errors.New("purpose must be image, audio or board")
 	}
 	// The uploader's plan cap (the browser shrinks larger images first), never
 	// above the storage ceiling.
@@ -280,17 +282,12 @@ func (a *api) resolveEditorAsset(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, store.ErrNotFound)
 		return
 	}
-	if asset.WorkspaceID != "" {
-		if _, err := a.s.WorkspaceAccess(r.Context(), uid(r), asset.WorkspaceID); err != nil {
-			a.fail(w, err)
-			return
-		}
-	} else if asset.MaterialID != "" {
-		if _, err := a.s.MaterialEffectiveRole(r.Context(), uid(r), asset.MaterialID); err != nil {
-			a.fail(w, err)
-			return
-		}
-	} else {
+	readable, err := a.s.EditorAssetReadable(r.Context(), uid(r), asset)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	if !readable {
 		a.fail(w, store.ErrNotFound)
 		return
 	}
@@ -342,6 +339,8 @@ func editorAssetSignatureAllowed(purpose, ext string, data []byte) bool {
 	case ".avif":
 		return isISOBaseMedia && (bytes.Contains(data[8:min(len(data), 32)], []byte("avif")) ||
 			bytes.Contains(data[8:min(len(data), 32)], []byte("avis")))
+	case ".gz":
+		return has([]byte{0x1f, 0x8b})
 	case ".mp3":
 		return has([]byte("ID3")) || (len(data) >= 2 && data[0] == 0xff && data[1]&0xe0 == 0xe0)
 	case ".wav":

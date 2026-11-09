@@ -55,8 +55,9 @@ try:
     require((current / 'nonprod.env').is_file() and (current / 'uat.queue.env').is_file(), 'missing current configuration')
     require(command('git', '-C', '/opt/capy-ingest/app-nonprod', 'rev-parse', 'HEAD') == revision, 'ingest checkout revision mismatch')
     containers = []
+    # A container run straight from a compose-built image inherits its project and service labels; only compose's own count.
     for service in ('parser', 'parse-coordinator-uat', 'worker-uat', 'import-worker-uat', 'host-sampler-uat'):
-        ids = command('docker', 'ps', '-aq', '--filter', f'label=com.docker.compose.project={project}', '--filter', f'label=com.docker.compose.service={service}').splitlines()
+        ids = command('docker', 'ps', '-aq', '--filter', f'label=com.docker.compose.project={project}', '--filter', f'label=com.docker.compose.service={service}', '--filter', 'label=com.docker.compose.oneoff=False').splitlines()
         require(len(ids) == 1, f'{service} must have exactly one container')
         identity = json.loads(command('docker', 'inspect', '--format', '{{json .Id}}', ids[0]))
         image = json.loads(command('docker', 'inspect', '--format', '{{json .Image}}', ids[0]))

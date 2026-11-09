@@ -51,11 +51,11 @@ func openDeckFiles(t *testing.T) deckFileFixture {
 			t.Fatal(err)
 		}
 	}
-	chapter, err := st.AddChapter(ctx, fx.ws, fx.owner, "Circles")
+	topic, err := st.AddTopic(ctx, fx.ws, fx.owner, "Circles", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	fx.ch = chapter.ID
+	fx.ch = topic.ID
 	t.Cleanup(func() {
 		ctx := context.Background()
 		_, _ = st.Pool().Exec(ctx, `DELETE FROM jobs WHERE payload->>'workspaceId'=$1`, fx.ws)
@@ -69,7 +69,7 @@ func openDeckFiles(t *testing.T) deckFileFixture {
 func (fx deckFileFixture) body(msgID, userID string) map[string]any {
 	return map[string]any{
 		"workspaceId": fx.ws, "userId": userID, "assistantMessageId": msgID, "toolCallId": "call_last_slide",
-		"name": "Tangents.pptx", "chapterId": fx.ch, "content": deckPackage(pngSized(800, 600)),
+		"name": "Tangents.pptx", "topicId": fx.ch, "content": deckPackage(pngSized(800, 600)),
 		"sources": []string{fx.ch, "Lecture 3, 14 Oct"},
 		"provenance": map[string]any{"books": []map[string]any{{
 			"id": "b_circles", "title": "Circles", "authors": []string{"A. Author"},
@@ -141,7 +141,7 @@ func (fx deckFileFixture) blobs(t *testing.T) int {
 	return len(listing.Keys)
 }
 
-// The deck lands like an upload: charged to the owner, filed in its chapter,
+// The deck lands like an upload: charged to the owner, filed in its topic,
 // with its provenance, its sources as names and a parse job, and a replay
 // returns the same file.
 func TestInternalFileStoresTheDeckLikeAnUpload(t *testing.T) {
@@ -165,7 +165,7 @@ func TestInternalFileStoresTheDeckLikeAnUpload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if file.Kind != "slides" || file.ChapterID == nil || *file.ChapterID != fx.ch || file.SizeBytes != int64(len(deckPackage(pngSized(800, 600)))) {
+	if file.Kind != "slides" || file.TopicID == nil || *file.TopicID != fx.ch || file.SizeBytes != int64(len(deckPackage(pngSized(800, 600)))) {
 		t.Fatalf("file = %+v", file)
 	}
 	if file.Provenance == nil || len(file.Provenance.Books) != 1 || file.Provenance.License != "CC BY-SA 4.0" {

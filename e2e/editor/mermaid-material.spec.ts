@@ -1,17 +1,10 @@
 import { expect, test } from '@playwright/test';
 import { m } from '../i18n';
 
-test('a broken diagram marks its line in Edit, and typing fixes it live for View', async ({
+test('a broken diagram marks its line in the editor, and typing fixes it live', async ({
   page,
 }) => {
-  // Nothing drew, so nothing opens full screen.
-  await page.goto('/materials/mock-material-diagram?mode=view');
-  await expect(page.getByText(m.mermaid_syntax_error({ line: 2 }))).toBeVisible(
-    { timeout: 30_000 }
-  );
-  await expect(page.locator('[data-media-preview]')).toHaveCount(0);
-
-  await page.goto('/materials/mock-material-diagram?mode=edit');
+  await page.goto('/materials/mock-material-diagram');
   const source = page.getByRole('textbox', {
     name: m.editor_mermaid_source(),
   });
@@ -42,12 +35,6 @@ test('a broken diagram marks its line in Edit, and typing fixes it live for View
     .click();
   await expect(page.locator('.cm-error-line')).toHaveCount(0);
 
-  await page.getByRole('button', { name: m.material_mode() }).click();
-  await expect(page).toHaveURL(/mode=view/);
-  await expect(page.locator('.mermaid-render')).toContainText('Unclosed node');
-  await expect(page.getByText(m.mermaid_syntax_error({ line: 2 }))).toHaveCount(
-    0
-  );
   await page.locator('[data-media-preview]').dblclick();
   await expect(page.getByRole('dialog')).toBeVisible();
 });

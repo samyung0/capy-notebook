@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { EMBED_CATALOG } from '@/api/embeds.generated';
-import { pairedUndo } from '@/features/collaboration/undo';
+import { itemUndo, pairedUndo } from '@/features/collaboration/undo';
 import { LOCAL_EDIT } from '@/features/collaboration/yText';
 import { exampleQuestions } from '@/features/questions/questionFixtures';
 import type { Question, QuestionBlock } from '@/features/questions/types';
@@ -210,6 +210,33 @@ it('undoes an answer type change in both documents as one step', () => {
   expect(readQuestions(content, keys)[0]).toEqual(next);
 });
 
+it('undoes only the latest edit when another document changed earlier', () => {
+  // Rooms' managers, a second apart: the answer, then the stem twice. Yjs
+  // reads the real clock, so each pause also ends its capture.
+  vi.useFakeTimers();
+  const { content, keys } = quiz();
+  const managers = [itemUndo(content), itemUndo(keys)] as const;
+  const undo = pairedUndo(...managers);
+  const answered = structuredClone(questions[0]);
+  const part = answered.parts[0];
+  if (part.answer.type !== 'mcq') throw new Error('fixture is mcq');
+  part.answer.correct = [part.answer.correct[0] === 0 ? 1 : 0];
+  writeQuestion(content, keys, answered);
+  const stem = (text: string) => {
+    vi.advanceTimersByTime(1000);
+    for (const manager of managers) manager.stopCapturing();
+    const next = structuredClone(readQuestions(content, keys)[0]);
+    next.stem = [{ text, type: 'text' }];
+    writeQuestion(content, keys, next);
+    return next;
+  };
+  const once = stem('First stem');
+  stem('Second stem');
+  undo.undo();
+  expect(readQuestions(content, keys)[0]).toEqual(once);
+  vi.useRealTimers();
+});
+
 it('applies pushed lists: a full one replaces, a partial one changes named parts', () => {
   const ordering = { items: ['b', 'a'], kind: 'ordering' as const };
   const matching = { items: ['x'], kind: 'matching' as const };
@@ -290,4 +317,184 @@ it('shows a block type it has no reader for as the notice and never writes over 
     writeQuestion(content, keys, { ...edited, stem: edited.stem.slice(1) })
   ).toThrow('cannot edit');
   expect(stem?.get('b_future')?.get('type')).toBe('timeline');
+});
+
+/* Grouped parts (Epo 2026-11-04): the group and its figures merge entry by
+   entry; what a merge leaves reads repaired. */
+function groupedQuiz() {
+  const fixture = JSON.parse(
+    readFileSync(
+      new URL(
+        '../../../server/internal/questions/testdata/group-valid.json',
+        import.meta.url
+      ),
+      'utf8'
+    )
+  ).question as Question;
+  const content = new Y.Doc();
+  const keys = new Y.Doc();
+  seedQuiz(content, keys, [fixture]);
+  return { content, fixture, keys };
+}
+
+/** A second editor's copy of the document. */
+function copy(doc: Y.Doc) {
+  const other = new Y.Doc();
+  Y.applyUpdate(other, Y.encodeStateAsUpdate(doc));
+  return other;
+}
+
+const merge = (into: Y.Doc, from: Y.Doc) => {
+  Y.applyUpdate(into, Y.encodeStateAsUpdate(from));
+};
+
+it('reads a grouped question back as written, for editors and learners', () => {
+  const { content, fixture, keys } = groupedQuiz();
+  expect(readQuestions(content, keys)[0]).toEqual(fixture);
+  const learner = readLearnerQuestions(content)[0];
+  expect(learner.groups).toEqual(fixture.groups);
+  expect(learner.parts.map((part) => part.group)).toEqual(
+    fixture.parts.map((part) => part.group)
+  );
+});
+
+it('writes no groups map for a question with no group', () => {
+  const { content, keys } = quiz();
+  expect(questionsScope(content).get(questions[0].id)?.has('groups')).toBe(
+    false
+  );
+  expect(readQuestions(content, keys)[0]).not.toHaveProperty('groups');
+});
+
+it('merges a group edit with a new sub-part, and writes only what differs', () => {
+  const { content, fixture, keys } = groupedQuiz();
+  const other = copy(content);
+  const otherKeys = copy(keys);
+  const [group] = fixture.groups ?? [];
+  const added = { ...fixture.parts[1], id: 'part-b3' };
+  writeQuestion(content, keys, {
+    ...fixture,
+    groups: [
+      {
+        ...group,
+        blocks: [
+          { text: 'Edited text.', type: 'text' },
+          ...group.blocks.slice(1),
+        ],
+      },
+    ],
+  });
+  writeQuestion(other, otherKeys, {
+    ...fixture,
+    parts: [
+      fixture.parts[0],
+      fixture.parts[1],
+      fixture.parts[2],
+      added,
+      fixture.parts[3],
+    ],
+  });
+  merge(content, other);
+  merge(keys, otherKeys);
+  const merged = readQuestions(content, keys)[0];
+  expect(merged.groups?.[0].blocks[0]).toEqual({
+    text: 'Edited text.',
+    type: 'text',
+  });
+  expect(merged.groups?.[0].blocks.slice(1)).toEqual(group.blocks.slice(1));
+  expect(merged.parts.map((part) => part.id)).toEqual([
+    'part-a',
+    'part-b1',
+    'part-b2',
+    'part-b3',
+    'part-c',
+  ]);
+  expect(merged.parts[3].group).toBe('g1');
+});
+
+it('reads a sub-part whose group went as ungrouped', () => {
+  const { content, fixture, keys } = groupedQuiz();
+  const other = copy(content);
+  const otherKeys = copy(keys);
+  writeQuestion(content, keys, {
+    ...fixture,
+    parts: [
+      fixture.parts[0],
+      fixture.parts[1],
+      fixture.parts[2],
+      { ...fixture.parts[1], id: 'part-b3' },
+      fixture.parts[3],
+    ],
+  });
+  const { groups: _groups, ...withoutGroups } = fixture;
+  writeQuestion(other, otherKeys, {
+    ...withoutGroups,
+    parts: [fixture.parts[0], fixture.parts[3]],
+  });
+  merge(content, other);
+  merge(keys, otherKeys);
+  const merged = readQuestions(content, keys)[0];
+  expect(merged).not.toHaveProperty('groups');
+  expect(merged.parts.map((part) => [part.id, part.group])).toEqual([
+    ['part-a', undefined],
+    ['part-b3', undefined],
+    ['part-c', undefined],
+  ]);
+});
+
+it("keeps a group's parts together when a merge separates them", () => {
+  const { content, fixture, keys } = groupedQuiz();
+  // One editor moves the group down while another reorders inside it: each
+  // part's order merges by itself, which here splits the group.
+  const parts = questionsScope(content)
+    .get(fixture.id)
+    ?.get('parts') as unknown as Y.Map<Y.Map<unknown>>;
+  parts.get('part-b2')?.set('order', 'z9');
+  const read = readQuestions(content, keys)[0];
+  expect(read.parts.map((part) => part.id)).toEqual([
+    'part-a',
+    'part-b1',
+    'part-b2',
+    'part-c',
+  ]);
+  // Learners read it the same way, and the next write settles the keys.
+  expect(readLearnerQuestions(content)[0].parts.map((part) => part.id)).toEqual(
+    ['part-a', 'part-b1', 'part-b2', 'part-c']
+  );
+  writeQuestion(content, keys, read);
+  const orders = read.parts.map((part) => parts.get(part.id)?.get('order'));
+  expect([...orders].sort()).toEqual(orders);
+});
+
+it('reads a group with no parts as gone, and the next write takes it', () => {
+  const { content, fixture, keys } = groupedQuiz();
+  const parts = questionsScope(content)
+    .get(fixture.id)
+    ?.get('parts') as unknown as Y.Map<Y.Map<unknown>>;
+  parts.delete('part-b1');
+  parts.delete('part-b2');
+  const read = readQuestions(content, keys)[0];
+  expect(read).not.toHaveProperty('groups');
+  expect(read.parts.map((part) => part.id)).toEqual(['part-a', 'part-c']);
+  writeQuestion(content, keys, read);
+  const held = questionsScope(content)
+    .get(fixture.id)
+    ?.get('groups') as Y.Map<unknown>;
+  expect(held.size).toBe(0);
+});
+
+it("undoes a group's removal whole", () => {
+  const { content, fixture, keys } = groupedQuiz();
+  const undo = pairedUndo(
+    new Y.UndoManager(content, { trackedOrigins: new Set([LOCAL_EDIT]) }),
+    new Y.UndoManager(keys, { trackedOrigins: new Set([LOCAL_EDIT]) })
+  );
+  const { groups: _groups, ...withoutGroups } = fixture;
+  writeQuestion(content, keys, {
+    ...withoutGroups,
+    parts: [fixture.parts[0], fixture.parts[3]],
+  });
+  expect(readQuestions(content, keys)[0]).not.toHaveProperty('groups');
+  undo.undo();
+  expect(readQuestions(content, keys)[0]).toEqual(fixture);
 });

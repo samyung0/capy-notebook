@@ -170,3 +170,28 @@ def test_the_ingest_host_lets_a_process_trace_only_its_descendants() -> None:
     }
     assert settings["kernel.yama.ptrace_scope"]["value"] == "1"
     assert settings["kernel.yama.ptrace_scope"]["state"] == "present"
+
+
+def test_the_layout_service_runs_unprivileged_outside_the_release_stacks() -> None:
+    """It decodes JPEGs sent over the network: no capabilities, no privilege
+    gain, a read-only root and a process limit, on the WireGuard address, and
+    its model comes in at build from a pinned revision and SHA-256."""
+    compose = yaml.safe_load((DEPLOY / "docker-compose.layout.yml").read_text())
+    layout = compose["services"]["layout"]
+    assert list(compose["services"]) == ["layout"]
+    assert layout["cap_drop"] == ["ALL"]
+    assert "cap_add" not in layout and not layout.get("privileged")
+    assert layout["security_opt"] == ["no-new-privileges:true"]
+    assert layout["read_only"] is True
+    assert layout["pids_limit"] == 128
+    assert layout["mem_limit"] == layout["memswap_limit"]
+    assert layout["network_mode"] == "host"
+    bind = layout["command"][layout["command"].index("--host") + 1]
+    assert bind.startswith("${LAYOUT_BIND_ADDRESS:?")
+    assert "--no-access-log" in layout["command"]
+    dockerfile = (ROOT / "layout/Dockerfile").read_text()
+    assert re.search(r"--checksum=sha256:[0-9a-f]{64}", dockerfile)
+    assert re.search(r"/resolve/[0-9a-f]{40}/inference\.onnx", dockerfile)
+    assert "USER layout" in dockerfile
+    for name in ("docker-compose.ingest-host.yml", "docker-compose.prod.yml"):
+        assert "capy-layout" not in (DEPLOY / name).read_text()

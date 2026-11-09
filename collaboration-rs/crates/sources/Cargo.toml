@@ -52,6 +52,8 @@ betteroffice-xlsx = { path = "../../../vendor/betteroffice/crates/betteroffice-x
 # Inserts an image into a DOCX room as an editor does (tests/store_db.rs);
 # office-service builds it already.
 docx-edit = { package = "betteroffice-docx-edit", path = "../../../vendor/betteroffice/crates/docx-edit" }
+# Runs a PPTX editor's engine (tests/q549_room.rs); office-service builds it already.
+pptx-edit = { package = "betteroffice-pptx-edit", path = "../../../vendor/betteroffice/crates/pptx-edit" }
 # Builds a DOCX fixture variant (tests/live_undo_office.rs); office-service
 # builds it already.
 ooxml-opc = { package = "betteroffice-opc", path = "../../../vendor/betteroffice/crates/ooxml-opc" }

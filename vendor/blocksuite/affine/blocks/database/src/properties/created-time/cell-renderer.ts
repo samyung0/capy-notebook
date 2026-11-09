@@ -1,3 +1,4 @@
+import { DateTimeIcon } from '@blocksuite/icons/lit';
 import {
   BaseCellRenderer,
   createFromBaseCellRenderer,
@@ -47,7 +48,7 @@ export class CreatedTimeCell extends BaseCellRenderer<number, number> {
 
 export const createdTimeColumnConfig =
   createdTimePropertyModelConfig.createPropertyMeta({
-    icon: createIcon('DateTimeIcon'),
+    icon: createIcon(DateTimeIcon),
     cellRenderer: {
       view: createFromBaseCellRenderer(CreatedTimeCell),
     },

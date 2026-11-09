@@ -8,6 +8,7 @@ import { collaborationLink } from '../helpers/collaboration';
 import { expectEditorLive } from '../helpers/editor';
 import { type OfficeFormat, officeEditMenu } from '../helpers/office';
 import { openWorkspaceMaterial } from '../helpers/workspace';
+import { m } from '../i18n';
 
 /*
  * The chat agent's writes, end to end on the stack: each test replays a tool
@@ -407,12 +408,20 @@ const RICH_TYPES = [
 /** What the editor shows of the rich blocks in `value` once they are live.
  * Embeds join their rooms only near the screen, so each is scrolled to. */
 async function expectRichBlocksShown(page: Page, tag: string, value: Node[]) {
+  // The hidden paint stays in the DOM a moment after the editor shows (Epo
+  // 2026-11-04), holding the same text and block ids.
   const block = (type: string, n = 0) =>
-    page.locator(
-      `[data-block-id="${value.filter((node) => node.type === type)[n].id}"]`
-    );
-  await expect(page.getByText(`${tag} field notes`)).toBeVisible();
-  await expect(page.getByText(`${tag} low marsh`)).toBeVisible();
+    page
+      .locator(
+        `[data-block-id="${value.filter((node) => node.type === type)[n].id}"]`
+      )
+      .locator('visible=true');
+  await expect(
+    page.getByText(`${tag} field notes`).locator('visible=true')
+  ).toBeVisible();
+  await expect(
+    page.getByText(`${tag} low marsh`).locator('visible=true')
+  ).toBeVisible();
   await block('material_ref', 0).scrollIntoViewIfNeeded();
   await expect(
     page.getByText(`${tag}: which zone floods daily?`).first()
@@ -1224,11 +1233,16 @@ async function uploadOffice(api: APIRequestContext, format: OfficeFormat) {
   return id;
 }
 
-async function openOffice(page: Page, fileId: string, format: OfficeFormat) {
+async function openOffice(page: Page, fileId: string) {
   await page.goto(
     `/workspaces/${workspaceId}?file=${encodeURIComponent(fileId)}&mode=edit`
   );
-  await expect(officeEditMenu(page, format)).toBeVisible({ timeout: 120_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 120_000 });
+  // The open file shows the rail's Files panel; pressing Files closes it.
+  await page
+    .getByRole('navigation', { name: m.workspace_rail_label() })
+    .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+    .click();
   return page.frameLocator('iframe[src*="office-runtime"]');
 }
 
@@ -1310,23 +1324,8 @@ async function readShows(
 test.describe('agent writes to Office sources', () => {
   test.describe.configure({ timeout: 300_000 });
   // The XLSX check finds the typed cell in the first editor's grid, which
-  // renders only the columns in view: the viewer at 1280px with the left
-  // panel closed, as before the workspace opened it by default.
-  test.use({
-    storageState: async ({ baseURL }, use) =>
-      use({
-        cookies: [],
-        origins: [
-          {
-            localStorage: [
-              { name: 'capy.workspace.rightPanel', value: 'true' },
-              { name: 'capy.workspace.leftPanel', value: 'false' },
-            ],
-            origin: baseURL!,
-          },
-        ],
-      }),
-  });
+  // renders only the columns in view: the viewer at 1280px with the rail's
+  // Files panel closed (openOffice).
 
   for (const format of ['docx', 'pptx', 'xlsx'] as const) {
     test(`${format === 'xlsx' ? 'set_range' : 'replace_text'} on a ${format.toUpperCase()} source lands on its targets, live for two editors, and one Undo restores both`, async ({
@@ -1337,8 +1336,8 @@ test.describe('agent writes to Office sources', () => {
     }) => {
       const fileId = await uploadOffice(ownerApi, format);
       const frames = [
-        await openOffice(ownerPage, fileId, format),
-        await openOffice(editorPage, fileId, format),
+        await openOffice(ownerPage, fileId),
+        await openOffice(editorPage, fileId),
       ];
       const before = await entries(anonymousApi, fileId, format);
       // Text, not formulas: the agent's value is the text with a suffix.
@@ -1477,7 +1476,7 @@ test.describe('agent writes to Office sources', () => {
       // took at its load.
       const link = await collaborationLink(ownerPage.context());
       const fileId = await uploadOffice(ownerApi, format);
-      const frame = await openOffice(ownerPage, fileId, format);
+      const frame = await openOffice(ownerPage, fileId);
       // The editor's own element: a reload would replace it.
       const editor = {
         docx: frame.getByRole('textbox', { name: 'Document input' }),

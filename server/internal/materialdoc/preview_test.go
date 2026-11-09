@@ -307,6 +307,27 @@ func TestPreview(t *testing.T) {
 	}
 }
 
+// A question opening with a group previews its first part's text, and the
+// group's figure counts as the question's.
+func TestPreviewOfAGroupedQuestion(t *testing.T) {
+	raw, err := Preview("quiz", quizDoc(t, "group-valid"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "State the function of red blood cells.") {
+		t.Fatalf("preview = %s", raw)
+	}
+	q := map[string]any{
+		"stem":   []any{},
+		"groups": []any{map[string]any{"id": "g", "blocks": []any{map[string]any{"type": "text", "text": "Shared."}, map[string]any{"type": "chart"}}}},
+		"parts":  []any{map[string]any{"group": "g", "blocks": []any{map[string]any{"type": "image"}}, "answer": map[string]any{"type": "short"}}},
+	}
+	preview := questionPreviewOf(q)
+	if preview.Stem != "Shared." || !preview.HasChart {
+		t.Fatalf("preview = %+v", preview)
+	}
+}
+
 // No right-hand value of a matching question and no item of an ordering
 // question ever reaches a preview: readers of a list never get quiz keys, and
 // any order of the items could be the answer (security regression: review 1

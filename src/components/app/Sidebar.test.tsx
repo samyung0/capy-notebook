@@ -7,15 +7,17 @@ const route = vi.hoisted(() => ({ pathname: '/' }));
 const recording = vi.hoisted(() => ({ type: null as string | null }));
 vi.mock('@tanstack/react-router', () => ({
   Link: ({
+    'aria-label': label,
     children,
     className,
     to,
   }: {
+    'aria-label'?: string;
     children: ReactNode;
     className?: string;
     to: string;
   }) => (
-    <a className={className} href={to}>
+    <a aria-label={label} className={className} href={to}>
       {children}
     </a>
   ),
@@ -25,7 +27,9 @@ vi.mock('@tanstack/react-router', () => ({
     select: (state: { location: { pathname: string } }) => unknown;
   }) => select({ location: { pathname: route.pathname } }),
 }));
+const todo = vi.hoisted(() => ({ workspaces: [] as object[] }));
 vi.mock('@/api/hooks', () => ({
+  useTodo: () => ({ data: todo }),
   useUnreadNotificationCount: () => ({ data: { count: 0 } }),
 }));
 vi.mock('@/features/guide/GettingStartedRow', () => ({
@@ -63,4 +67,20 @@ it('puts the mic in the phone top row where the browser can record', () => {
 
   recording.type = 'audio/webm';
   expect(renderToStaticMarkup(<PhoneTopRow />)).toContain(mic);
+});
+
+it('puts a dot on the To do row while anything is open', () => {
+  expect(row(renderToStaticMarkup(<Sidebar />), '/todo')).not.toContain(
+    'animate-pulse'
+  );
+  todo.workspaces = [
+    {
+      items: [{ draft: false, id: 'a', mine: { done: false } }],
+      manages: false,
+      workspaceId: 'w',
+    },
+  ];
+  const todoRow = row(renderToStaticMarkup(<Sidebar />), '/todo');
+  expect(todoRow).toContain('animate-pulse');
+  expect(todoRow).toContain(m.todo_nav_count({ count: '1' }));
 });

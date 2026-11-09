@@ -23,7 +23,7 @@ from . import contract, deck
 class Skill:
     when: str
     text: Callable[[], str]
-    # The output-files preference (mainFormat) whose chapter explainers it writes.
+    # The output-files preference (mainFormat) whose topic explainers it writes.
     builds: str | None = None
     # Account chat's wording, where the text names the workspace.
     account: Callable[[], str] | None = None
@@ -91,7 +91,7 @@ def text(name: str, *, account: bool = False) -> str:
 def catalog(main_format: str, names: Iterable[str] = SKILLS) -> str:
     """Appended to the read_skill description: the skills this turn offers,
     the building skill of the output-files preference as the one for the
-    chapters and the other for a request that asks for its format."""
+    topics and the other for a request that asks for its format."""
     return "\n\nSkills:\n" + "\n".join(
         catalog_line(name, when(name, main_format)) for name in names
     )
@@ -102,7 +102,7 @@ def when(name: str, main_format: str) -> str:
     if skill.builds is None:
         return skill.when
     if skill.builds == main_format:
-        return f"{skill.when}; the chapters' main explainers are {skill.builds}s"
+        return f"{skill.when}; the topics' main explainers are {skill.builds}s"
     return f"{skill.when}, only when the request asks for a {skill.builds}"
 
 

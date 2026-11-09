@@ -1,5 +1,5 @@
 import '@toeverything/theme/style.css';
-import './pageEditor.css';
+import './drawingBoard.css';
 import { ImageStoreExtension } from '@blocksuite/affine/blocks/image/store';
 import { ImageViewExtension } from '@blocksuite/affine/blocks/image/view';
 import { ListStoreExtension } from '@blocksuite/affine/blocks/list/store';
@@ -12,13 +12,19 @@ import { RootStoreExtension } from '@blocksuite/affine/blocks/root/store';
 import { RootViewExtension } from '@blocksuite/affine/blocks/root/view';
 import {
   CanvasRenderer,
+  DefaultTool,
   ExportManager,
+  Overlay,
+  type SurfaceBlockComponent,
 } from '@blocksuite/affine/blocks/surface';
 import { SurfaceStoreExtension } from '@blocksuite/affine/blocks/surface/store';
 import { SurfaceViewExtension } from '@blocksuite/affine/blocks/surface/view';
+import { setToastHandler } from '@blocksuite/affine/components/toast';
 import {
   StoreExtensionManager,
+  type ViewExtensionContext,
   ViewExtensionManager,
+  ViewExtensionProvider,
 } from '@blocksuite/affine/ext-loader';
 import { FoundationStoreExtension } from '@blocksuite/affine/foundation/store';
 import { FoundationViewExtension } from '@blocksuite/affine/foundation/view';
@@ -34,12 +40,15 @@ import { ShapeStoreExtension } from '@blocksuite/affine/gfx/shape/store';
 import { ShapeViewExtension } from '@blocksuite/affine/gfx/shape/view';
 import { TextStoreExtension } from '@blocksuite/affine/gfx/text/store';
 import { TextViewExtension } from '@blocksuite/affine/gfx/text/view';
-import { Bound } from '@blocksuite/affine/global/gfx';
+import { Bound, getCommonBound } from '@blocksuite/affine/global/gfx';
 import { InlineCommentViewExtension } from '@blocksuite/affine/inlines/comment/view';
 import { FootnoteStoreExtension } from '@blocksuite/affine/inlines/footnote/store';
 import { FootnoteViewExtension } from '@blocksuite/affine/inlines/footnote/view';
+import {
+  LatexEditorUnitSpecExtension,
+  LatexInlineSpecExtension,
+} from '@blocksuite/affine/inlines/latex';
 import { LatexStoreExtension as InlineLatexStoreExtension } from '@blocksuite/affine/inlines/latex/store';
-import { LatexViewExtension as InlineLatexViewExtension } from '@blocksuite/affine/inlines/latex/view';
 import { LinkStoreExtension } from '@blocksuite/affine/inlines/link/store';
 import { LinkViewExtension } from '@blocksuite/affine/inlines/link/view';
 import { MentionViewExtension } from '@blocksuite/affine/inlines/mention/view';
@@ -47,20 +56,66 @@ import { InlinePresetStoreExtension } from '@blocksuite/affine/inlines/preset/st
 import { InlinePresetViewExtension } from '@blocksuite/affine/inlines/preset/view';
 import { ReferenceStoreExtension } from '@blocksuite/affine/inlines/reference/store';
 import { ReferenceViewExtension } from '@blocksuite/affine/inlines/reference/view';
-import { FeatureFlagService } from '@blocksuite/affine/shared/services';
-import { BlockStdScope } from '@blocksuite/affine/std';
-import { GfxControllerIdentifier } from '@blocksuite/affine/std/gfx';
-import { Text } from '@blocksuite/affine/store';
+import { ColorScheme, ImageBlockModel } from '@blocksuite/affine/model';
+import {
+  FeatureFlagService,
+  ThemeProvider,
+} from '@blocksuite/affine/shared/services';
+import { BlockStdScope, isGfxBlockComponent } from '@blocksuite/affine/std';
+import {
+  type GfxBlockElementModel,
+  type GfxController,
+  GfxControllerIdentifier,
+  ZOOM_MAX,
+  ZOOM_MIN,
+  ZOOM_STEP,
+} from '@blocksuite/affine/std/gfx';
+import { HistoryExtension, Text } from '@blocksuite/affine/store';
 import { TestWorkspace } from '@blocksuite/affine/store/test';
 import { EdgelessAutoConnectViewExtension } from '@blocksuite/affine/widgets/edgeless-auto-connect/view';
 import { EdgelessDraggingAreaViewExtension } from '@blocksuite/affine/widgets/edgeless-dragging-area/view';
 import { EdgelessSelectedRectViewExtension } from '@blocksuite/affine/widgets/edgeless-selected-rect/view';
 import { EdgelessToolbarViewExtension } from '@blocksuite/affine/widgets/edgeless-toolbar/view';
-import { EdgelessZoomToolbarViewExtension } from '@blocksuite/affine/widgets/edgeless-zoom-toolbar/view';
+import { SlashMenuViewExtension } from '@blocksuite/affine/widgets/slash-menu/view';
 import { ToolbarViewExtension } from '@blocksuite/affine/widgets/toolbar/view';
 import { ViewportOverlayViewExtension } from '@blocksuite/affine/widgets/viewport-overlay/view';
+import { Redo03Icon, Undo03Icon } from '@hugeicons/core-free-icons';
+import { combinedDarkCssVariables } from '@toeverything/theme';
 import { html, render } from 'lit';
 import * as Y from 'yjs';
+import { userToast } from '@/components/ui/userToast';
+import { m } from '@/i18n';
+import { fitImageOffThread } from '@/lib/fitImageOffThread';
+import { fromBase64, toBase64 } from './base64';
+import { chartExtensions } from './boardChart';
+import { asImage } from './boardData';
+import {
+  formulaExtensions,
+  formulasDrawn,
+  mountSymbolRow,
+  openBlankFormula,
+} from './boardFormula';
+import { forgetFormulas } from './boardFormulaDraw';
+import { closeUp, IMAGE_SIDE_MAX, type Vec } from './boardGeometry';
+import { addPlane, planeExtensions, planeMarks } from './boardPlane';
+import './boardChartEditor';
+import { closeBoardEditor } from './boardEditorShell';
+import { checkSavedBoard } from './boardLoad';
+import { BoardMenu } from './boardMenu';
+import './boardPlaneEditor';
+import {
+  boardToolbar,
+  noLatexMarkdown,
+  outlineNewShapes,
+  placePiece,
+  StampTool,
+  setBoardPreview,
+  shapeButtonTool,
+  sheetTools,
+} from './boardTools';
+
+// BlockSuite's notices (a copy, a lock) show in the app's own toast (local change 33).
+setToastHandler((message) => userToast({ title: message }));
 
 const stores = new StoreExtensionManager([
   ImageStoreExtension,
@@ -81,7 +136,19 @@ const stores = new StoreExtensionManager([
   LinkStoreExtension,
   InlinePresetStoreExtension,
 ]);
-const views = new ViewExtensionManager([
+/** AFFiNE's inline LaTeX specs, which note paragraphs need to render, without its
+ * LaTeX node and editor menu: the board keeps `$$` as text, and those two load KaTeX
+ * and shiki with the board. KaTeX loads with the first formula card instead. */
+class InlineLatexViewExtension extends ViewExtensionProvider {
+  override name = 'affine-latex-inline';
+
+  override setup(context: ViewExtensionContext) {
+    super.setup(context);
+    context.register([LatexInlineSpecExtension, LatexEditorUnitSpecExtension]);
+  }
+}
+
+const VIEWS = [
   FoundationViewExtension,
   PointerViewExtension,
   GfxNoteViewExtension,
@@ -107,41 +174,182 @@ const views = new ViewExtensionManager([
   EdgelessDraggingAreaViewExtension,
   EdgelessSelectedRectViewExtension,
   EdgelessToolbarViewExtension,
-  EdgelessZoomToolbarViewExtension,
+  SlashMenuViewExtension,
   ToolbarViewExtension,
   ViewportOverlayViewExtension,
+];
+const views = new ViewExtensionManager(VIEWS);
+/** A teacher's view: pan and zoom, with no tools or selection toolbar. */
+const READ_ONLY_TOOLS = new Set<unknown>([
+  EdgelessAutoConnectViewExtension,
+  EdgelessDraggingAreaViewExtension,
+  EdgelessSelectedRectViewExtension,
+  EdgelessToolbarViewExtension,
+  SlashMenuViewExtension,
+  ToolbarViewExtension,
 ]);
+const readOnlyViews = new ViewExtensionManager(
+  VIEWS.filter((view) => !READ_ONLY_TOOLS.has(view))
+);
 
-/** The sheet an answer is drawn on, in the board's own coordinates. */
-const SHEET = { h: 520, w: 820, x: 0, y: 0 };
+const PHONE_WIDTH = 768;
 
-/** Squared paper with x and y axes: the part's background, never in the answer. */
-function axesSheet({ h, w }: typeof SHEET) {
-  const lines: string[] = [];
-  for (let x = 0; x <= w; x += 41)
-    lines.push(`<path d="M${x} 0V${h}" stroke="#ececea"/>`);
-  for (let y = 0; y <= h; y += 40)
-    lines.push(`<path d="M0 ${y}H${w}" stroke="#ececea"/>`);
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}"><rect width="${w}" height="${h}" fill="#fff"/>${lines.join('')}<path d="M41 0V${h}M0 360H${w}" stroke="#8b8b88" stroke-width="1.5"/></svg>`;
+// AFFiNE's dark palette under the app's dark themes: they set data-theme to a
+// Catppuccin flavour, which AFFiNE's own [data-theme=dark] never matches. On
+// <html>, so its popovers outside the board take it too; data-board-light lifts
+// it while the marking image is drawn.
+// AFFiNE's own dark placeholders and hairlines nearly vanish on its panels
+// (rgb(62, 62, 63) on rgb(30, 30, 30)): lifted to readable greys.
+const darkPalette = document.createElement('style');
+darkPalette.textContent = `html.dark:not([data-board-light]){${Object.entries({
+  ...combinedDarkCssVariables,
+  '--affine-border-color': 'rgb(64, 64, 68)',
+  '--affine-placeholder-color': 'rgb(138, 138, 145)',
+})
+  .map(([name, value]) => `${name}:${value}`)
+  .join(';')}}`;
+document.head.append(darkPalette);
+
+/** The board has no frames, but resizing a selection clears their highlight. */
+class NoFrameOverlay extends Overlay {
+  static override overlayName = 'frame';
+  override clear() {}
+  override render() {}
 }
 
-function fromBase64(saved: string) {
-  return Uint8Array.from(atob(saved), (c) => c.charCodeAt(0));
+const surfaceOf = (gfx: GfxController) =>
+  gfx.surfaceComponent as SurfaceBlockComponent | null;
+
+/** The plane card the dev pages start with. */
+const FIRST_PLANE = { h: 520, ppu: 41, w: 820 };
+/** The marking image's bytes after the shared compressor. */
+const IMAGE_BYTES_MAX = 300 * 1024;
+
+export type DrawingBoardOptions = {
+  /** A dashed box with this label marks where to answer, and the first view fits it
+   * (Epo 2026-11-07, W3/W4). Only on screen: the image, save, span and previews leave
+   * it out, and a read-only board draws none. */
+  answerArea?: { label: string };
+  /** Room the first fit leaves around the drawing, [top, right, bottom, left] in
+   * pixels, for what the page lays over the board (a pinned question, a top bar).
+   * Without it, room for the board's own toolbar and undo. */
+  fitPadding?: [number, number, number, number];
+  onChange?: () => void;
+  /** A fresh board starts with a plane card: the dev pages. Every answer starts on the
+   * same plain board (Epo 2026-11-06). */
+  plane?: boolean;
+  /** Pan and zoom only: no tools, nothing opens for editing. */
+  readOnly?: boolean;
+  /** `save()`'s `doc`. A board that doesn't check out throws a BoardLoadError. */
+  saved?: string;
+};
+
+export { BoardLoadError } from './boardLoad';
+
+/** The answer area in board units; drawing inside it keeps span under the wide-board
+ * warning's 2,000. */
+const AREA = new Bound(0, 0, 1920, 1200);
+
+/** The answer area's dashed box and label for the moving layer, kept the same size
+ * on screen at every zoom by `zoom`. */
+function answerArea(label: string) {
+  const svg = 'http://www.w3.org/2000/svg';
+  const box = document.createElementNS(svg, 'svg');
+  box.style.cssText =
+    'position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible';
+  const rect = document.createElementNS(svg, 'rect');
+  rect.setAttribute('width', String(AREA.w));
+  rect.setAttribute('height', String(AREA.h));
+  rect.setAttribute('fill', 'none');
+  rect.setAttribute('stroke', '#9aa0a6');
+  box.append(rect);
+  const chip = document.createElement('div');
+  chip.className = 'capy-answer-area';
+  chip.textContent = label;
+  chip.style.cssText =
+    'position:absolute;left:0;top:0;transform-origin:0 0;white-space:nowrap;height:20px;padding:0 7px;border-radius:4px 4px 4px 0;background:#222;color:#fff;font:600 12px/20px var(--affine-font-family)';
+  return {
+    box,
+    chip,
+    zoom: (zoom: number) => {
+      rect.setAttribute('stroke-width', String(1.5 / zoom));
+      rect.setAttribute('stroke-dasharray', `${8 / zoom} ${6 / zoom}`);
+      // Its bottom left on the box's top left corner.
+      chip.style.transform = `scale(${1 / zoom}) translateY(-100%)`;
+    },
+  };
 }
 
-/** BlockSuite's edgeless editor on an in-memory board over a fixed sheet, opened
- * from a saved answer when there is one. */
+const roundPlace = (xywh: string) =>
+  JSON.stringify(
+    (JSON.parse(xywh) as number[]).map((value) => Math.round(value * 10) / 10)
+  );
+
+/** The saved copy keeps strokes to whole pixels and places to a tenth: 60% of the
+ * size with no change to see (drawing answers' measure, 2026-11-06, for Epo's "every
+ * stored byte cut"). Pressure stays, as perfect-freehand draws the line from it. */
+function roundPlaces(doc: Y.Doc) {
+  const place = (map: Y.Map<unknown>, key: string) => {
+    const xywh = map.get(key);
+    if (typeof xywh !== 'string') return;
+    const rounded = roundPlace(xywh);
+    if (rounded !== xywh) map.set(key, rounded);
+  };
+  doc.transact(() => {
+    for (const block of doc.getMap<Y.Map<unknown>>('blocks').values()) {
+      place(block, 'prop:xywh');
+      const native = block.get('prop:elements') as Y.Map<unknown> | undefined;
+      const elements = native?.get('value') as
+        | Y.Map<Y.Map<unknown>>
+        | undefined;
+      for (const element of elements?.values() ?? []) {
+        place(element, 'xywh');
+        const type = element.get('type');
+        if (type !== 'brush' && type !== 'highlighter') continue;
+        const points = element.get('points') as number[][];
+        element.set(
+          'points',
+          points.map(([x, y, ...pressure]) => [
+            Math.round(x),
+            Math.round(y),
+            ...pressure,
+          ])
+        );
+      }
+    }
+  });
+}
+
+/** A pasted image drawn as the page draws it: an SVG too, which createImageBitmap
+ * can't decode from a file. */
+async function decodeImage(file: Blob) {
+  const url = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    return image;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/** BlockSuite's edgeless editor on an in-memory board, opened from a saved answer when
+ * there is one. */
 export function mountDrawingBoard(
   container: HTMLElement,
-  options: { saved?: string } = {}
+  options: DrawingBoardOptions = {}
 ) {
+  const saved = options.saved ? fromBase64(options.saved) : null;
+  if (saved) checkSavedBoard(saved);
+  const { readOnly = false } = options;
   const workspace = new TestWorkspace();
   workspace.storeExtensions = stores.get('store');
   workspace.meta.initialize();
   const doc = workspace.createDoc('board');
   const store = doc.getStore();
-  if (options.saved) {
-    Y.applyUpdate(store.spaceDoc, fromBase64(options.saved));
+  if (saved) {
+    Y.applyUpdate(store.spaceDoc, saved);
     store.load();
   } else {
     store.load(() => {
@@ -150,93 +358,390 @@ export function mountDrawingBoard(
     });
   }
   store.resetHistory();
-  const std = new BlockStdScope({ extensions: views.get('edgeless'), store });
+  store.readonly = readOnly;
+  const { onChange } = options;
+  if (onChange) store.spaceDoc.on('update', onChange);
+  const drawn = [
+    ...formulaExtensions,
+    ...planeExtensions,
+    ...chartExtensions,
+    NoFrameOverlay,
+  ];
+  const std = new BlockStdScope({
+    extensions: readOnly
+      ? [...readOnlyViews.get('edgeless'), ...drawn]
+      : [
+          ...views.get('edgeless'),
+          shapeButtonTool,
+          ...sheetTools,
+          StampTool,
+          ...drawn,
+          noLatexMarkdown,
+          ...boardToolbar,
+        ],
+    store,
+  });
   render(
-    html`<div class="affine-edgeless-viewport">${std.render()}</div>`,
+    html`<div class="affine-edgeless-viewport capy-board">${std.render()}</div>`,
     container
   );
+  const board = container.querySelector('.capy-board');
+  const gfx = std.get(GfxControllerIdentifier);
+  // Top right, left of any Done the page puts there: undo, redo and zoom, so the
+  // bottom row holds only the toolbar (Epo 2026-11-08). A teacher's has zoom only.
+  const zoomTo = (zoom: number) =>
+    gfx.viewport.smoothZoom(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom)));
+  const menu = new BoardMenu(() => ({
+    entries: [
+      ...(readOnly
+        ? []
+        : [
+            {
+              disabled: !store.canUndo,
+              icon: Undo03Icon,
+              keepsOpen: true,
+              label: m.drawing_board_undo(),
+              run: () => store.undo(),
+            },
+            {
+              disabled: !store.canRedo,
+              icon: Redo03Icon,
+              keepsOpen: true,
+              label: m.drawing_board_redo(),
+              run: () => store.redo(),
+            },
+          ]),
+      { label: m.drawing_board_fit_to_screen(), run: () => gfx.fitToScreen() },
+    ],
+    zoom: {
+      in: () => zoomTo(gfx.viewport.zoom + ZOOM_STEP),
+      out: () => zoomTo(gfx.viewport.zoom - ZOOM_STEP),
+      percent: { reset: () => zoomTo(1), value: () => gfx.viewport.zoom },
+    },
+  }));
+  // The stylesheet shows the eraser's ring while it's the tool.
+  const unwatchTool = gfx.tool.currentToolName$.subscribe((name) => {
+    if (board instanceof HTMLElement) board.dataset.tool = name;
+  });
+  menu.element.classList.add('capy-board-menu');
+  board?.append(menu.element);
+  const historyUpdates = store
+    .get(HistoryExtension)
+    .onUpdated.subscribe(() => menu.open && menu.draw());
+  const zoomUpdates = gfx.viewport.viewportUpdated.subscribe(
+    () => menu.open && menu.draw()
+  );
+  // The slots' keys (their tooltips show them): a card in the view's middle. Off while
+  // typing anywhere, while a card is open (it takes the keys), and out of sight.
+  const slotKeys = (event: KeyboardEvent) => {
+    if (readOnly || event.metaKey || event.ctrlKey || event.altKey) return;
+    if (!board?.checkVisibility() || board.hasAttribute('data-editor-open'))
+      return;
+    const [target] = event.composedPath();
+    if (
+      target instanceof Element &&
+      target.closest('input, textarea, [contenteditable="true"], math-field')
+    )
+      return;
+    const centre: Vec = [gfx.viewport.centerX, gfx.viewport.centerY];
+    const piece = {
+      KeyB: event.shiftKey ? 'pie' : 'bar',
+      KeyG: event.shiftKey ? 'polar' : 'cart',
+    }[event.code] as 'pie' | 'bar' | 'polar' | 'cart' | undefined;
+    if (piece) placePiece(gfx, piece, centre);
+    else if (event.code === 'KeyM' && !event.shiftKey) openBlankFormula(gfx);
+    else return;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  document.addEventListener('keydown', slotKeys);
   // A double click types on the canvas, so the label is in the exported image.
   store.get(FeatureFlagService).setFlag('enable_edgeless_text', false);
-  const gfx = std.get(GfxControllerIdentifier);
-
-  // The sheet sits under the strokes and moves with the board, outside the
-  // document, so no tool can select or erase it.
-  const svg = axesSheet(SHEET);
-  const sheet = document.createElement('div');
-  sheet.style.cssText =
-    'position:absolute;pointer-events:none;box-shadow:0 0 0 1px #d9d9d6;border-radius:6px;overflow:hidden';
-  sheet.innerHTML = svg;
-  const place = () => {
-    const [left, top] = gfx.viewport.toViewCoord(SHEET.x, SHEET.y);
-    const { zoom } = gfx.viewport;
-    sheet.style.left = `${left}px`;
-    sheet.style.top = `${top}px`;
-    sheet.style.width = `${SHEET.w}px`;
-    sheet.style.height = `${SHEET.h}px`;
-    sheet.style.transform = `scale(${zoom})`;
-    sheet.style.transformOrigin = '0 0';
+  store.get(FeatureFlagService).setFlag('enable_note_menu_media', false);
+  outlineNewShapes(gfx);
+  // The canvas draws in the app's light or dark (the dark class ThemeProvider sets).
+  const root = document.documentElement;
+  const theme$ = std.get(ThemeProvider).app$;
+  const followTheme = () => {
+    theme$.value = root.classList.contains('dark')
+      ? ColorScheme.Dark
+      : ColorScheme.Light;
   };
+  followTheme();
+  const themeWatch = new MutationObserver(followTheme);
+  themeWatch.observe(root, { attributeFilter: ['class'] });
+  // Canvas labels measure and draw in this font (the stylesheet's @font-face).
+  void document.fonts
+    .load('24px "blocksuite:surface:Inter"')
+    .then(() => surfaceOf(gfx)?.refresh());
+  const symbols = readOnly ? null : mountSymbolRow(gfx);
+  if (symbols) board?.append(symbols.element);
+
+  // A preset being sized shows on this layer, under the strokes and outside the
+  // document. It moves with the board.
+  const layer = document.createElement('div');
+  layer.style.cssText =
+    'position:absolute;pointer-events:none;width:1px;height:1px;transform-origin:0 0';
+  const preview = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  preview.style.cssText =
+    'position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible';
+  layer.append(preview);
+  setBoardPreview(gfx, preview);
+  const place = () => {
+    const [left, top] = gfx.viewport.toViewCoord(0, 0);
+    layer.style.left = `${left}px`;
+    layer.style.top = `${top}px`;
+    layer.style.transform = `scale(${gfx.viewport.zoom})`;
+    area?.zoom(gfx.viewport.zoom);
+  };
+  const area = readOnly
+    ? null
+    : options.answerArea && answerArea(options.answerArea.label);
+  if (area) {
+    preview.before(area.box);
+    layer.append(area.chip);
+  }
   const subscription = gfx.viewport.viewportUpdated.subscribe(place);
-  let frame = requestAnimationFrame(function mountSheet() {
-    const background = container.querySelector('.edgeless-background');
-    if (!background || !gfx.viewport.width) {
-      frame = requestAnimationFrame(mountSheet);
-      return;
-    }
-    background.prepend(sheet);
+  const everything = () => {
+    const elements = gfx.layer.canvasElements;
+    const blocks = gfx.layer.blocks;
+    return (
+      getCommonBound([...elements, ...blocks]) ?? new Bound(0, 0, 820, 520)
+    );
+  };
+  /** What the image draws: everything, far groups drawn nearer (FAR_GAP), with an
+   * 8-unit margin. `bound` is in board units. */
+  const framing = () => {
+    const items = [...gfx.layer.canvasElements, ...gfx.layer.blocks];
+    const bounds = items.map((item) => Bound.deserialize(item.xywh));
+    const whole = everything();
+    const far = Math.max(whole.w, whole.h) > IMAGE_SIDE_MAX;
+    const shifts = far ? closeUp(bounds) : bounds.map(() => ({ dx: 0, dy: 0 }));
+    const placed = bounds.map(
+      (box, i) =>
+        new Bound(box.x - shifts[i].dx, box.y - shifts[i].dy, box.w, box.h)
+    );
+    const all = getCommonBound(placed) ?? whole;
+    return {
+      bound: new Bound(all.x - 8, all.y - 8, all.w + 16, all.h + 16),
+      shiftOf: new Map(items.map((item, i) => [item.id, shifts[i]])),
+    };
+  };
+  let room = options.fitPadding;
+  let fitted = false;
+  /** The first view: the answer area and what's drawn, or everything. */
+  const fitView = () => {
+    const drawn = getCommonBound([
+      ...gfx.layer.canvasElements,
+      ...gfx.layer.blocks,
+    ]);
     gfx.viewport.setViewportByBound(
-      new Bound(SHEET.x, SHEET.y, SHEET.w, SHEET.h),
-      [90, 40, 130, 40]
+      area
+        ? (getCommonBound([AREA, ...(drawn ? [drawn] : [])]) ?? AREA)
+        : everything(),
+      room ??
+        (gfx.viewport.width < PHONE_WIDTH
+          ? [64, 12, 96, 12]
+          : [90, 40, 130, 40])
     );
     place();
+    fitted = true;
+  };
+  let frame = requestAnimationFrame(function mountLayer() {
+    const background = container.querySelector('.edgeless-background');
+    if (!background || !gfx.viewport.width) {
+      frame = requestAnimationFrame(mountLayer);
+      return;
+    }
+    background.prepend(layer);
+    if (options.plane && !saved) {
+      addPlane(
+        gfx,
+        new Bound(0, 0, FIRST_PLANE.w, FIRST_PLANE.h),
+        FIRST_PLANE.ppu,
+        false
+      );
+      store.resetHistory();
+    }
+    fitView();
   });
 
-  return {
-    save: () =>
-      btoa(String.fromCharCode(...Y.encodeStateAsUpdate(store.spaceDoc))),
-    stats: () => ({
-      blocks: gfx.layer.blocks.map((block) => block.flavour),
-      bytes: Y.encodeStateAsUpdate(store.spaceDoc).byteLength,
-      canvas: gfx.layer.canvasElements.map((element) => element.type),
-    }),
-    /** The sheet and what's on it, for marking. */
-    toImage: async () => {
-      const renderer = gfx.surfaceComponent?.renderer;
-      if (!(renderer instanceof CanvasRenderer)) return null;
-      const bound = new Bound(SHEET.x, SHEET.y, SHEET.w, SHEET.h);
-      const output = document.createElement('canvas');
-      output.width = SHEET.w * 2;
-      output.height = SHEET.h * 2;
-      const ctx = output.getContext('2d');
-      if (!ctx) return null;
-      ctx.scale(2, 2);
-      const image = new Image();
-      image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-      await image.decode();
-      ctx.drawImage(image, 0, 0);
-      const blocks = gfx.getElementsByBound(bound, { type: 'block' });
-      const elements = gfx.getElementsByBound(bound, { type: 'canvas' });
-      if (blocks.length) {
-        const drawn = await std
-          .get(ExportManager)
-          .edgelessToCanvas(renderer, bound, gfx, blocks, elements);
-        return {
-          blocksDrawn: !!drawn,
-          png: drawn?.toDataURL('image/png') ?? null,
-        };
+  /** A pasted image from its file; a note card by html2canvas, as it's DOM. */
+  const blockImage = async (block: GfxBlockElementModel) => {
+    if (block instanceof ImageBlockModel) {
+      const { sourceId } = block.props;
+      const blob = sourceId && (await store.blobSync.get(sourceId));
+      return blob ? decodeImage(blob) : null;
+    }
+    const view = std.view.getBlock(block.id);
+    if (!view) return null;
+    // Drawn in the palette toImage just switched to.
+    await view.updateComplete;
+    // A note out of view is BlockSuite's idle block: hidden with no size, which
+    // html2canvas draws as nothing at all. It's shown for the capture only.
+    const idle =
+      isGfxBlockComponent(view) && view.transformState$.value === 'idle';
+    if (idle) view.transformState$.value = 'active';
+    try {
+      return await std.get(ExportManager)._html2canvas(view);
+    } finally {
+      if (idle) view.transformState$.value = 'idle';
+    }
+  };
+
+  // An open plane writes its view on closing, and nothing else is in progress.
+  const finishPlot = () => {
+    closeBoardEditor(gfx);
+    gfx.tool.setTool(DefaultTool);
+  };
+
+  /** The marking image: see toImage. */
+  const drawImage = async () => {
+    await formulasDrawn(gfx);
+    const renderer = surfaceOf(gfx)?.renderer;
+    if (!(renderer instanceof CanvasRenderer))
+      throw new Error('drawing board: no canvas renderer');
+    const { bound, shiftOf } = framing();
+    const scale = Math.min(2, IMAGE_SIDE_MAX / Math.max(bound.w, bound.h));
+    const output = document.createElement('canvas');
+    output.width = Math.round(bound.w * scale);
+    output.height = Math.round(bound.h * scale);
+    const ctx = output.getContext('2d');
+    if (!ctx) throw new Error('drawing board: no 2d canvas');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, output.width, output.height);
+    // Layer by layer, so what's covered on the screen is covered here. BlockSuite's
+    // export draws every note under every stroke, at the device's scale. Each group
+    // drawn nearer is drawn on its own.
+    for (const layer of gfx.layer.layers) {
+      if (layer.type === 'canvas') {
+        const byShift = new Map<string, typeof layer.elements>();
+        for (const element of layer.elements) {
+          const { dx, dy } = shiftOf.get(element.id) ?? { dx: 0, dy: 0 };
+          const key = `${dx},${dy}`;
+          byShift.set(key, [...(byShift.get(key) ?? []), element]);
+        }
+        for (const [key, elements] of byShift) {
+          const [dx, dy] = key.split(',').map(Number);
+          const from = new Bound(bound.x + dx, bound.y + dy, bound.w, bound.h);
+          ctx.drawImage(
+            // Card paper opaque, as previews draw it (cardPaper).
+            asImage(() =>
+              renderer.getCanvasByBound(
+                from,
+                elements,
+                undefined,
+                false,
+                false,
+                scale
+              )
+            ),
+            0,
+            0,
+            output.width,
+            output.height
+          );
+        }
+        continue;
       }
-      ctx.drawImage(
-        renderer.getCanvasByBound(bound, elements),
-        0,
-        0,
-        SHEET.w,
-        SHEET.h
+      for (const block of layer.elements) {
+        const { h, w, x, y } = Bound.deserialize(block.xywh);
+        const { dx, dy } = shiftOf.get(block.id) ?? { dx: 0, dy: 0 };
+        const place = [
+          (x - dx - bound.x) * scale,
+          (y - dy - bound.y) * scale,
+          w * scale,
+          h * scale,
+        ] as const;
+        const image = await blockImage(block);
+        if (image) ctx.drawImage(image, ...place);
+      }
+    }
+    const png = await new Promise<Blob | null>((resolve) =>
+      output.toBlob(resolve, 'image/png')
+    );
+    if (!png) throw new Error('drawing board: no image');
+    return png;
+  };
+
+  return {
+    /** The first view again, with this room around it: a board mounted ahead, shown
+     * at the screen's width then (a tablet turned since). Before the first view, it
+     * only sets that view's room. */
+    fit: (padding: [number, number, number, number]) => {
+      room = padding;
+      if (fitted) fitView();
+    },
+    /** Out of sight but kept mounted: an open card closes, nothing stays selected,
+     * and the page's keys and pastes no longer reach it. */
+    putAway: () => {
+      finishPlot();
+      gfx.selection.clear();
+      std.selection.clear();
+      std.event.deactivate();
+    },
+    /** The board to store, with no undo history: a fresh document keeps only what's
+     * on the board (200 plane clicks were 606 KB live, 7.5 KB this way), rounded
+     * (roundPlaces). */
+    save: () => {
+      finishPlot();
+      const fresh = new Y.Doc();
+      Y.applyUpdate(fresh, Y.encodeStateAsUpdate(store.spaceDoc));
+      roundPlaces(fresh);
+      const update = Y.encodeStateAsUpdate(fresh);
+      fresh.destroy();
+      return { bytes: update.byteLength, doc: toBase64(update) };
+    },
+    /** The board as it is, leaving a tool in use alone. */
+    snapshot: () => toBase64(Y.encodeStateAsUpdate(store.spaceDoc)),
+    stats: () => {
+      const { bound } = framing();
+      return {
+        blocks: gfx.layer.blocks.map((block) => block.flavour),
+        bytes: Y.encodeStateAsUpdate(store.spaceDoc).byteLength,
+        canvas: gfx.layer.canvasElements.map((element) => element.type),
+        marks: planeMarks(gfx),
+        /** The image's longest side in board units, for the wide-board warning on Done. */
+        span: Math.max(bound.w, bound.h),
+      };
+    },
+    /** The canvas as it stands, for marking, through the shared image compressor:
+     * every card with the view it was left at, and what's drawn over and around them.
+     * Something dragged far away is drawn nearer (FAR_GAP). */
+    toImage: async () => {
+      if (!readOnly) finishPlot();
+      // Marked on white in the light palette, whatever the app's theme.
+      root.dataset.boardLight = '';
+      theme$.value = ColorScheme.Light;
+      let png: Blob;
+      try {
+        png = await drawImage();
+      } finally {
+        delete root.dataset.boardLight;
+        followTheme();
+      }
+      // The encode runs in the compressor's worker; drawing needs the page.
+      // Line art keeps its ink at 0.75: 10-20% smaller than the shared 0.85
+      // (Epo 2026-11-06: minimise drawing storage).
+      return fitImageOffThread(
+        new File([png], 'drawing.png', { type: 'image/png' }),
+        IMAGE_BYTES_MAX,
+        { quality: 0.75 }
       );
-      return { blocksDrawn: null, png: output.toDataURL('image/png') };
     },
     unmount: () => {
       cancelAnimationFrame(frame);
       subscription.unsubscribe();
+      historyUpdates.unsubscribe();
+      zoomUpdates.unsubscribe();
+      unwatchTool();
+      document.removeEventListener('keydown', slotKeys);
+      menu.dispose();
+      if (onChange) store.spaceDoc.off('update', onChange);
+      symbols?.unmount();
+      themeWatch.disconnect();
+      closeBoardEditor(gfx);
+      forgetFormulas();
       render(null, container);
     },
   };

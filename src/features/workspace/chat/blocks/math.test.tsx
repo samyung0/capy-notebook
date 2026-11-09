@@ -1,7 +1,9 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { loadKatex, prepareMath } from './math';
-import { Prose } from './text';
+import { loadProse, Prose } from './text';
+
+beforeAll(loadProse);
 
 describe('prepareMath', () => {
   it.each([

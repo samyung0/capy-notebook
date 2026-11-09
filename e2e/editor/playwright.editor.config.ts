@@ -51,17 +51,6 @@ export default defineConfig({
   use: {
     baseURL,
     screenshot: 'only-on-failure',
-    // The workspace's right panel starts closed; specs written against the
-    // three-column layout get it open. Specs about the default start empty.
-    storageState: {
-      cookies: [],
-      origins: [
-        {
-          localStorage: [{ name: 'capy.workspace.rightPanel', value: 'true' }],
-          origin: baseURL,
-        },
-      ],
-    },
     trace: 'retain-on-failure',
     video: 'off',
   },

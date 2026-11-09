@@ -74,7 +74,9 @@ export type SourceSaveState =
   /** A save failed and the server is retrying; edits stay in the editor. */
   | 'unsaved'
   | 'error'
-  | 'recovery';
+  | 'recovery'
+  /** Its room refused this editor: the page stays, read-only under a strip. */
+  | 'access-lost';
 export const SOURCE_IFRAME_ORIGIN = Symbol('source-iframe');
 const RESTORE_ORIGIN = Symbol('restore');
 const LINEAGE_EPOCH = /:epoch:(\d+)@/;
@@ -113,6 +115,23 @@ export function sourceChangesCovered(
 ): boolean {
   return Math.max(state.acknowledged, handedOff) >= state.sequence;
 }
+
+/** The room's updates as they arrived (Q549). */
+export function createRoomFrames() {
+  const listeners = new Set<(update: Uint8Array) => void>();
+  return {
+    emit: (update: Uint8Array) => {
+      for (const listener of listeners) listener(update);
+    },
+    subscribe: (listener: (update: Uint8Array) => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+}
+export type RoomFrames = ReturnType<typeof createRoomFrames>;
 
 /**
  * Whether a refusal is the Office maintenance pause: the gateway's
@@ -157,6 +176,8 @@ export function sourceHeaderStatus(
       return 'syncing';
     case 'recovery':
       return 'error';
+    case 'access-lost':
+      return null;
   }
 }
 
@@ -235,6 +256,8 @@ export function useSourceSession(
   reportPresence.current = presence;
   // Office co-editors' cursors, under the presence's names (Epo 2026-10-20).
   const [cursors] = useState(createOfficeCursors);
+  // The room's updates as they arrived, for the Office editor's engine (Q549).
+  const [frames] = useState(createRoomFrames);
   const actorId = me?.id;
   const [loaded, setLoaded] = useState<{
     session: SourceSession;
@@ -356,6 +379,9 @@ export function useSourceSession(
     let disposed = false;
     const controller = new AbortController();
     let provider: SourceProvider | null = null;
+    // A discard's notice came: a refused rejoin may mean the file is gone.
+    // Closed for this person's access change (4403), until it syncs again.
+    let accessChanged = false;
     let doc: Y.Doc | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let goOffline = () => {};
@@ -874,10 +900,27 @@ export function useSourceSession(
               );
               void recorder?.discard();
             }
-            setUnavailable(refusal);
+            // Not told as an access change, it may be gone: the file's read
+            // says, and a refused one ends what shows (Epo 2026-11-05, Q644).
+            if (!accessChanged)
+              void qc.invalidateQueries({ queryKey: qk.file(fileId) });
+            // The page stays until then: a reader as it was, an editor
+            // read-only under a strip saying so.
+            if (session.access === 'write') {
+              // Typing under the strip goes nowhere, so it never reads Saving.
+              discarded = true;
+              clearTimeout(timer);
+              rejectWaiters(new SourceSessionError(m.editor_access_lost()));
+              setDirty(false);
+              setHandoff(false);
+              setStatus('access-lost');
+              setBanner('access-lost');
+              setOutdated(true);
+            }
           }
         },
-        onClose: () => {
+        onClose: ({ code }) => {
+          if (code === 4403) accessChanged = true;
           active.synced = false;
           if (!cancelled) setSlowed(false);
           reconnect.closed(socketOpen(provider));
@@ -898,6 +941,7 @@ export function useSourceSession(
               setStatus(everSynced ? 'reconnecting' : 'connecting');
           }
         },
+        onFrame: frames.emit,
         onPresence: (connections) => {
           if (cancelled) return;
           reportPresence.current?.(connections);
@@ -934,6 +978,7 @@ export function useSourceSession(
             room?: string;
             workspaceId?: string;
             evictionId?: string;
+            mode?: string;
           };
           try {
             event = JSON.parse(payload);
@@ -1051,6 +1096,7 @@ export function useSourceSession(
           });
         },
         onSynced: ({ state }) => {
+          if (state) accessChanged = false;
           if (state && !cancelled && !active.recovery) {
             active.synced = true;
             setSlowed(false);
@@ -1246,7 +1292,7 @@ export function useSourceSession(
       for (const waiter of flushWaiters.current.splice(0))
         waiter.reject(new SourceSessionError(m.source_edit_save_failed()));
     };
-  }, [fileId, actorId, enabled, generation, pendingInput, cursors]);
+  }, [fileId, actorId, enabled, generation, pendingInput, cursors, frames]);
 
   // Closing or reloading the tab loses edits only while this device's
   // storage fails and the room has not acknowledged one of them: only then
@@ -1273,6 +1319,7 @@ export function useSourceSession(
     draftsSending,
     error,
     flushHandler,
+    frames,
     handoff,
     offlineLimit,
     outdated,

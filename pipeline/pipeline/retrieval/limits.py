@@ -11,13 +11,18 @@ import asyncio
 import contextvars
 import functools
 import json
+import logging
+import random
+import time
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import TypeVar
 
 from ..config import cfg
+
+log = logging.getLogger("capy.limits")
 
 T = TypeVar("T")
 
@@ -139,70 +144,143 @@ def call_slot_policy() -> CallSlotPolicy | None:
     return _call_slot_policy.get()
 
 
-class ModelQueue:
-    """Chat model calls waiting at one model's capacity gate, in arrival order
-    (Epo 2026-10-29). The gate itself is the shared Postgres lease count; in
-    this process only the head of the line tries it, polling, and a call on
-    the model ending here wakes the head at once."""
+@dataclass(eq=False)
+class LineWaiter:
+    """One call waiting in a gate's line: its call id, its spend session
+    (which names its requester), and the seconds of the lease it is granted."""
 
-    def __init__(self) -> None:
-        self.waiting = 0
-        self._turn = asyncio.Lock()
-        self._freed = asyncio.Event()
+    id: str
+    session: str
+    lease_s: int
+    turn: asyncio.Future[None] = field(
+        default_factory=lambda: asyncio.get_running_loop().create_future()
+    )
+    # Its row is in the shared line (``Admit``).
+    stored: bool = False
 
-    async def head(self, budget_s: float, left: asyncio.Event | None) -> bool:
-        """Wait to be the head: True holding the turn (pair with ``leave``),
-        False once ``budget_s`` runs out or ``left`` is set."""
-        acquire = asyncio.ensure_future(self._turn.acquire())
+
+# One round of a line's pump: store ``store`` (its new waiters, or all of them
+# to keep their rows alive), drop ``gone`` (waiters that left, with any lease
+# granted to them as they left) and grant leases to the waiters among
+# ``waiting`` whose turn it is, answering their ids.
+Admit = Callable[[list[LineWaiter], list[LineWaiter], list[str]], Awaitable[set[str]]]
+
+# A waiting call's row lives this long unless its process renews it, which it
+# does every LINE_REFRESH_S, so a dead process's calls leave the line on
+# their own; the pump asks for turns every LINE_POLL_S, or at once when a
+# call on the gate ends in this process.
+LINE_TTL_S = 6
+LINE_REFRESH_S = 2.0
+LINE_POLL_S = (0.1, 0.3)
+
+
+class ModelLine:
+    """The calls in this process waiting at one capacity gate (Epo
+    2026-11-04): every caller of the model, interactive or ingest. The line
+    itself is shared across processes in Postgres, which ranks every waiting
+    call round-robin by requester (the user, or the ingest job) and hands the
+    free leases to the first ones. One pump per line asks for the turns of all
+    of this process's calls at once."""
+
+    def __init__(self, admit: Admit) -> None:
+        self._admit = admit
+        self.waiters: dict[str, LineWaiter] = {}
+        self._gone: set[str] = set()
+        self._wake = asyncio.Event()
+        self._pump: asyncio.Task[None] | None = None
+        self._refreshed = 0.0
+
+    @property
+    def waiting(self) -> int:
+        return len(self.waiters)
+
+    async def wait(
+        self, waiter: LineWaiter, budget_s: float, left: asyncio.Event | None
+    ) -> bool:
+        """Wait for ``waiter``'s turn: True holding its lease (id ``waiter.id``),
+        False once ``budget_s`` runs out or ``left`` is set (the client is gone).
+        A turn granted just as the budget ran out still counts."""
+        self.waiters[waiter.id] = waiter
+        self._run()
         gone = asyncio.ensure_future(left.wait()) if left is not None else None
         try:
             await asyncio.wait(
-                {acquire} if gone is None else {acquire, gone},
+                {waiter.turn} if gone is None else {waiter.turn, gone},
                 timeout=max(budget_s, 0),
                 return_when=asyncio.FIRST_COMPLETED,
             )
         except BaseException:
-            self._drop(acquire)
+            self._leave(waiter)
             raise
         finally:
             if gone is not None:
                 gone.cancel()
-        if not acquire.done() or (left is not None and left.is_set()):
-            self._drop(acquire)
-            return False
-        return True
+        if waiter.turn.done() and not (left is not None and left.is_set()):
+            return True
+        self._leave(waiter)
+        return False
 
-    def _drop(self, acquire: asyncio.Future[bool]) -> None:
-        """Give up a turn being waited for, or handed over: a cancelled
-        acquire passes a turn it was just handed on to the next waiter."""
-        if not acquire.done():
-            acquire.cancel()
-        elif not acquire.cancelled() and acquire.exception() is None:
-            self._turn.release()
-
-    def leave(self) -> None:
-        self._turn.release()
+    def _leave(self, waiter: LineWaiter) -> None:
+        """Out of the line. Its row, and a lease granted to it as it left, go
+        in the pump's next round."""
+        self.waiters.pop(waiter.id, None)
+        self._gone.add(waiter.id)
+        self._run()
 
     def freed(self) -> None:
-        self._freed.set()
+        """A call on the gate ended here: ask for turns now."""
+        self._wake.set()
 
-    async def pause(self, seconds: float) -> None:
-        """The head's wait between gate tries: ``seconds``, or less once a
-        call on the model ends here."""
-        self._freed.clear()
-        try:
-            async with asyncio.timeout(seconds):
-                await self._freed.wait()
-        except TimeoutError:
-            pass
+    def _run(self) -> None:
+        self._wake.set()
+        if self._pump is None or self._pump.done():
+            self._pump = asyncio.ensure_future(self._rounds())
+
+    async def _rounds(self) -> None:
+        while self.waiters or self._gone:
+            self._wake.clear()
+            waiting = list(self.waiters.values())
+            refresh = time.monotonic() - self._refreshed >= LINE_REFRESH_S
+            store = waiting if refresh else [w for w in waiting if not w.stored]
+            gone = list(self._gone)
+            self._gone.clear()
+            try:
+                granted = await self._admit(store, waiting, gone)
+            except Exception:
+                log.warning("model line round failed", exc_info=True)
+                self._gone.update(gone)
+                granted = set()
+            else:
+                for waiter in store:
+                    waiter.stored = True
+                if refresh:
+                    self._refreshed = time.monotonic()
+            for call_id in granted:
+                waiter = self.waiters.pop(call_id, None)
+                if waiter is None:
+                    self._gone.add(call_id)  # it left as its lease was granted
+                else:
+                    waiter.turn.set_result(None)
+            if not self.waiters and not self._gone:
+                break
+            try:
+                async with asyncio.timeout(random.uniform(*LINE_POLL_S)):
+                    await self._wake.wait()
+            except TimeoutError:
+                pass
 
 
-MODEL_QUEUES: dict[str, ModelQueue] = {}
+MODEL_LINES: dict[str, ModelLine] = {}
 
 
-def model_queue(key: str) -> ModelQueue:
-    """The line for one model's gate (``provider:model``)."""
-    return MODEL_QUEUES.setdefault(key, ModelQueue())
+def model_line(key: str, admit: Admit) -> ModelLine:
+    """The line at one gate (``provider:model``, or a gate of its own such as
+    the audio transcription tasks'); ``admit`` serves it from its first caller
+    on."""
+    line = MODEL_LINES.get(key)
+    if line is None:
+        line = MODEL_LINES[key] = ModelLine(admit)
+    return line
 
 
 # The retrieval service is one uvicorn process (Epo 2026-10-24, rate-limit
@@ -216,7 +294,9 @@ CALL_SLOTS = Slots(64)
 # CAPY_TURN_SLOTS);
 TURN_SLOTS = Slots(cfg.turn_slots)
 # past either a chat waits up to this long in arrival order, with the waiting
-# status (Q268, Q293), and anything else answers provider_busy at once;
+# status (Q268, Q293), and anything else answers provider_busy at once. Every
+# interactive call also waits up to this long in its model's line (Epo
+# 2026-11-04);
 CHAT_SLOT_WAIT_S = 60.0
 # and threads for deck scripts, page renders, capture downloads and Office
 # picture decodes, so they never hold the default executor every model call's

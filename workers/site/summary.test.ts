@@ -15,13 +15,13 @@ const file = (name: string) => ({
 });
 const summary = {
   author: 'Mia',
-  chapters: [{ files: [file('Cells.pdf')], name: 'Cells' }],
   description: 'Lecture files',
   files: [file('Reading.pdf')],
   iconId: 'waves-03',
   name: 'Biology',
   privacy: 'public',
   tags: ['Term 1'],
+  topics: [{ files: [file('Cells.pdf')], name: 'Cells' }],
 };
 const env = {
   API_ORIGIN: 'https://api.example.test',

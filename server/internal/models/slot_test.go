@@ -10,6 +10,8 @@ func TestAllSlotsAndParsingStayInSync(t *testing.T) {
 		SlotChat,
 		SlotEditor,
 		SlotIngest,
+		SlotExtraction,
+		SlotGrading,
 		SlotRetrieval,
 		SlotCaptioning,
 		SlotRerank,
@@ -45,6 +47,9 @@ func TestSlotRequirements(t *testing.T) {
 		{SlotRerank, []string{CapabilityRerank}, false, ""},
 		{SlotRerank, []string{CapabilityEmbedding}, false, CapabilityRerank},
 		{SlotIngest, nil, false, ""},
+		{SlotExtraction, []string{CapabilityVision}, false, ""},
+		{SlotGrading, []string{CapabilityVision}, false, ""},
+		{SlotGrading, nil, false, CapabilityVision},
 	}
 	for _, tc := range cases {
 		missing, ok := MissingCapability(tc.slot, tc.capabilities, tc.certified)

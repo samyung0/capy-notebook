@@ -24,18 +24,26 @@ export function registerNoteBlocks(note: Element, ids: readonly unknown[]) {
   rendered.set(note, ids);
 }
 
+/** A note's top-level blocks in order: an editor marks them (they sit in its
+ * chunks), a painted note's are its children. */
+function topBlocks(note: Element): HTMLElement[] {
+  const marked = note.querySelectorAll<HTMLElement>(
+    '[data-block-id]:not([data-block-id] *)'
+  );
+  return marked.length ? [...marked] : ([...note.children] as HTMLElement[]);
+}
+
 /** The blocks from the first cited id to the last that still exist (Q594):
  * an edited block stays cited, whatever it says now. */
 export function blocksWithIds(note: Element, ids: string[]): HTMLElement[] {
-  const order = rendered.get(note) ?? [];
+  const blocks = topBlocks(note);
+  const order =
+    rendered.get(note) ?? blocks.map((block) => block.dataset.blockId);
   const found = ids
     .map((id) => order.indexOf(id))
     .filter((index) => index !== -1);
   if (!found.length) return [];
-  return [...note.children].slice(
-    Math.min(...found),
-    Math.max(...found) + 1
-  ) as HTMLElement[];
+  return blocks.slice(Math.min(...found), Math.max(...found) + 1);
 }
 
 /**
@@ -46,7 +54,7 @@ export function blocksWithIds(note: Element, ids: string[]): HTMLElement[] {
  * does.
  */
 export function citedBlocks(note: Element, quote: string): HTMLElement[] {
-  const blocks = [...note.children] as HTMLElement[];
+  const blocks = topBlocks(note);
   const texts = blocks.map((block) => plain(block.textContent ?? ''));
   const lines = [
     ...new Set(

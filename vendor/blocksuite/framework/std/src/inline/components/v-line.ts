@@ -89,9 +89,9 @@ export class VLine extends LitElement {
   renderVElements() {
     if (this.elements.length === 0) {
       // don't use v-element because it not correspond to the actual delta
-      return html`
-        <div><v-text .str=${ZERO_WIDTH_FOR_EMPTY_LINE}></v-text></div>
-      `;
+      // Capy (local change 21): no space around it. A canvas label keeps white space, so
+      // the template's own newlines made a blank line five lines tall.
+      return html`<div><v-text .str=${ZERO_WIDTH_FOR_EMPTY_LINE}></v-text></div>`;
     }
 
     const inlineEditor = this.inlineEditor;

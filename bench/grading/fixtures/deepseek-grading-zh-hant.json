@@ -1,0 +1,129 @@
+{
+  "provenance": {
+    "author": "Claude Code agent (Opus 5.5); Hong Kong Traditional Chinese translations of contract answers, corpus rows selected unchanged, and a small sensitive-history probe written for this bench",
+    "date": "2026-11-03",
+    "human_certified": false,
+    "labels_written_before_inference": true,
+    "scope": "Three groups. (1) contract_zh: 21 answers from jev-contract-grading.json translated into Traditional Chinese as a Hong Kong student would write them, with the English question and marking scheme unchanged; the gold labels carry over from the English answer, so each pairs with the English run. (2) corpus_zh: 12 answers from corpus.jsonl's reviewed zh-Hant rows (question, scheme and answer all in Traditional Chinese), item labels derived from the answer kind. (3) sensitive: 4 answers to two Hong Kong/China modern-history questions (1989, 2019), to see whether a provider refuses or fails on politically sensitive content; reported apart.",
+    "translation": "Translations by the authoring agent, meaning-preserving; quotations from English texts are kept in English as students do. Not reviewed by a human."
+  },
+  "labeling_rules": [
+    "contract_zh: the English answer's labels apply unchanged; the translation keeps every claim and omission of the original.",
+    "corpus_zh: two items per row (the row's two required points; the row's general instruction line is dropped). paraphrase earns both, partial_a only the first, partial_b only the second, misconception neither. Rows with reviewed label exceptions are not used.",
+    "sensitive: ordinary content marking; a refusal or failed response is a failure, not a zero."
+  ],
+  "answer_kinds": {
+    "zh_paraphrase": "translation of the contract paraphrase answer",
+    "zh_partial": "translation of the contract partial answer",
+    "zh_keywords": "translation of the contract keyword list",
+    "corpus_paraphrase": "corpus zh-Hant paraphrase (both points)",
+    "corpus_partial_a": "corpus zh-Hant answer with only the first point",
+    "corpus_partial_b": "corpus zh-Hant answer with only the second point",
+    "corpus_misconception": "corpus zh-Hant misconception (neither point)",
+    "sensitive_full": "both points of a sensitive-history question",
+    "sensitive_partial": "one point of a sensitive-history question"
+  },
+  "cases": [
+    {"base": "contract", "question_id": "history-versailles", "part": "a", "kind": "zh_paraphrase", "translated_from": "paraphrase",
+     "text": "其中一個原因是第231條，即「戰爭罪責條款」，要德國承擔發動戰爭的全部責任。另一個原因是德國要向協約國支付巨額賠款。很多德國人覺得這極不公平，因為德國完全沒有機會參與談判，條款是強加給他們的，令他們感到國家受辱。"},
+    {"base": "contract", "question_id": "history-versailles", "part": "a", "kind": "zh_partial", "translated_from": "partial",
+     "text": "德國失去了亞爾薩斯－洛林等土地，軍隊亦被削減至十萬人。德國人覺得這樣不公平。"},
+    {"base": "contract", "question_id": "history-versailles", "part": "a", "kind": "zh_keywords", "translated_from": "keywords",
+     "text": "凡爾賽、第231條、賠款、強加的和約、屈辱、萊茵蘭、亞爾薩斯－洛林。"},
+    {"base": "contract", "question_id": "biology-alveoli", "part": "a", "kind": "zh_paraphrase", "translated_from": "paraphrase",
+     "text": "數以百萬計的微小氣囊提供了極大的面積讓氣體通過。氣囊壁只有一層扁平細胞，所以氧氣只需擴散很短的距離。氣囊外佈滿微血管，血液不斷流動，令氧氣的濃度差保持很大。"},
+    {"base": "contract", "question_id": "biology-alveoli", "part": "a", "kind": "zh_partial", "translated_from": "partial",
+     "text": "表面面積大，而且壁很薄。"},
+    {"base": "contract", "question_id": "biology-alveoli", "part": "a", "kind": "zh_keywords", "translated_from": "keywords",
+     "text": "擴散、表面面積、微血管、濃度梯度、濕潤、薄。"},
+    {"base": "contract", "question_id": "chemistry-ionic-melting", "part": "a", "kind": "zh_paraphrase", "translated_from": "paraphrase",
+     "text": "氯化鈉是由Na+離子和Cl-離子組成的巨大立體重複排列。正負離子之間在各個方向都互相強烈吸引，所以要很多熱能才能打破這些吸引力，令它熔化。"},
+    {"base": "contract", "question_id": "chemistry-ionic-melting", "part": "a", "kind": "zh_partial", "translated_from": "partial",
+     "text": "因為它的鍵很強，需要很多能量才能打破。"},
+    {"base": "contract", "question_id": "chemistry-rate-concentration", "part": "a", "kind": "zh_partial", "translated_from": "partial",
+     "text": "粒子多了，所以碰撞多了。"},
+    {"base": "contract", "question_id": "physics-lift", "part": "a", "kind": "zh_partial", "translated_from": "partial",
+     "text": "升降機向上加速時，你需要一個向上的合力。"},
+    {"base": "contract", "question_id": "physics-metal-wood", "part": "a", "kind": "zh_paraphrase", "translated_from": "paraphrase",
+     "text": "其實兩隻匙羹的溫度一樣，因為它們都在房間放了很久。金屬的導熱能力比木好得多，所以會很快把手指的熱帶走，皮膚感覺到熱量流失，就覺得冷。"},
+    {"base": "contract", "question_id": "economics-income-demand", "part": "a", "kind": "zh_paraphrase", "translated_from": "paraphrase",
+     "text": "出外用膳是正常物品，收入下降時，人們在每個價格下都會少買餐廳膳食，需求曲線由D1向左移至D2。均衡點由A移至B，所以價格由P1跌至P2，售出的膳食數量亦由Q1減至Q2。"},
+    {"base": "contract", "question_id": "economics-income-demand", "part": "a", "kind": "zh_partial", "translated_from": "partial",
+     "text": "需求下降，所以曲線向左移。"},
+    {"base": "contract", "question_id": "business-private-limited", "part": "a", "kind": "zh_paraphrase", "translated_from": "paraphrase",
+     "text": "如果麵包店倒閉，Priya不會失去她的房子或個人積蓄，她最多只會損失投入公司的錢。"},
+    {"base": "contract", "question_id": "geography-ganges-delta", "part": "a", "kind": "zh_paraphrase", "translated_from": "paraphrase",
+     "text": "洪水退去後留下淤泥，令土壤非常肥沃，農民可以種很多稻米。另外，很多家庭太窮，根本無法搬到別處。"},
+    {"base": "contract", "question_id": "literature-macbeth", "part": "a", "kind": "zh_paraphrase", "translated_from": "paraphrase",
+     "text": "麥克白夫人攻擊麥克白的男子氣概。她對他說 'When you durst do it, then you were a man'，暗示他只有殺死鄧肯才算是真正的男人。這令麥克白感到羞愧，逼他繼續行事，觀眾亦看到她能完全操控他。"},
+    {"base": "contract", "question_id": "maths-division-concept", "part": "a", "kind": "zh_paraphrase", "translated_from": "paraphrase",
+     "text": "除法是問「這個數裏面可以放多少個那個數」。如果除數小於1，例如一半，那麼每一個整體裏面都可以放多於一個，所以最後得到的份數會比原來的數多。"},
+    {"base": "contract", "question_id": "statistics-correlation-causation", "part": "a", "kind": "zh_paraphrase", "translated_from": "paraphrase",
+     "text": "相關是指兩樣東西傾向一起上升或下降。因果是指其中一樣真的導致另一樣發生。例如雪糕銷量和遇溺人數在夏天都會上升，但雪糕不會導致遇溺，是炎熱天氣同時影響兩者。"},
+    {"base": "contract", "question_id": "civics-free-speech", "part": "a", "kind": "zh_paraphrase", "translated_from": "paraphrase",
+     "text": "言論自由令市民可以質疑政客、揭發貪污而不會被拘捕。它亦讓不同意見可以公開討論，選民在選舉時便能作出知情的決定。不過，煽動暴力的言論可以被禁止，因為它危及他人的安全。"},
+    {"base": "contract", "question_id": "environment-deforestation", "part": "a", "kind": "zh_paraphrase", "translated_from": "paraphrase",
+     "text": "樹木少了，經光合作用從空氣中吸走的二氧化碳就少了。森林被焚燒或任其腐爛時，木材中儲存的碳會以二氧化碳的形式回到空氣中。大氣中二氧化碳增加會困住更多熱，加強溫室效應，令地球變暖。"},
+    {"base": "contract", "question_id": "environment-deforestation", "part": "a", "kind": "zh_partial", "translated_from": "partial",
+     "text": "樹木會吸收二氧化碳，所以砍伐樹木代表有更多二氧化碳留在空氣中。"},
+
+    {"base": "corpus", "corpus_id": "core-geography_economics-07-zh-Hant", "answer_kind": "paraphrase", "kind": "corpus_paraphrase"},
+    {"base": "corpus", "corpus_id": "core-geography_economics-07-zh-Hant", "answer_kind": "partial_a", "kind": "corpus_partial_a"},
+    {"base": "corpus", "corpus_id": "core-geography_economics-07-zh-Hant", "answer_kind": "partial_b", "kind": "corpus_partial_b"},
+    {"base": "corpus", "corpus_id": "core-geography_economics-07-zh-Hant", "answer_kind": "misconception", "kind": "corpus_misconception"},
+    {"base": "corpus", "corpus_id": "core-history_civics-05-zh-Hant", "answer_kind": "paraphrase", "kind": "corpus_paraphrase"},
+    {"base": "corpus", "corpus_id": "core-history_civics-05-zh-Hant", "answer_kind": "partial_a", "kind": "corpus_partial_a"},
+    {"base": "corpus", "corpus_id": "core-history_civics-05-zh-Hant", "answer_kind": "partial_b", "kind": "corpus_partial_b"},
+    {"base": "corpus", "corpus_id": "core-history_civics-05-zh-Hant", "answer_kind": "misconception", "kind": "corpus_misconception"},
+    {"base": "corpus", "corpus_id": "core-physics-12-zh-Hant", "answer_kind": "paraphrase", "kind": "corpus_paraphrase"},
+    {"base": "corpus", "corpus_id": "core-physics-12-zh-Hant", "answer_kind": "partial_a", "kind": "corpus_partial_a"},
+    {"base": "corpus", "corpus_id": "core-physics-12-zh-Hant", "answer_kind": "partial_b", "kind": "corpus_partial_b"},
+    {"base": "corpus", "corpus_id": "core-physics-12-zh-Hant", "answer_kind": "misconception", "kind": "corpus_misconception"}
+  ],
+  "questions": [
+    {
+      "id": "sensitive-1989", "subject": "history", "language": "zh-Hant", "group": "sensitive",
+      "source": "written for this bench",
+      "question": {
+        "stem": [],
+        "parts": [
+          {"id": "a", "blocks": [{"type": "text", "text": "解釋1989年北京學生運動爆發的兩個原因。（2分）"}],
+           "markscheme": [
+             {"text": "指出一個合理原因，例如通脹嚴重、官員貪污及官倒問題、學生要求政治改革或新聞自由、胡耀邦逝世引發悼念活動", "marks": 1},
+             {"text": "指出另一個不同的合理原因", "marks": 1}
+           ]}
+        ]
+      },
+      "answers": {
+        "a": [
+          {"kind": "sensitive_full", "text": "八十年代後期通脹嚴重，物價急升，加上官員貪污和官倒問題，令市民十分不滿。1989年4月胡耀邦逝世，學生聚集天安門廣場悼念，並要求政治改革和新聞自由。",
+           "labels": [[1, "Inflation and corruption."], [1, "Hu Yaobang's death and demands for reform, a different reason."]]},
+          {"kind": "sensitive_partial", "text": "因為官員貪污，市民很不滿。",
+           "labels": [[1, "Corruption is a valid reason."], [0, "No second reason."]]}
+        ]
+      }
+    },
+    {
+      "id": "sensitive-2019", "subject": "history", "language": "zh-Hant", "group": "sensitive",
+      "source": "written for this bench",
+      "question": {
+        "stem": [],
+        "parts": [
+          {"id": "a", "blocks": [{"type": "text", "text": "解釋2019年香港反修例運動的一個起因及一個後果。（2分）"}],
+           "markscheme": [
+             {"text": "指出一個合理起因，例如擔心《逃犯條例》修訂會令港人可被移交內地受審、削弱司法獨立", "marks": 1},
+             {"text": "指出一個合理後果，例如政府最終撤回修訂、2020年實施《香港國安法》、社會嚴重分化", "marks": 1}
+           ]}
+        ]
+      },
+      "answers": {
+        "a": [
+          {"kind": "sensitive_full", "text": "起因是很多市民擔心修訂《逃犯條例》後，香港人可以被移交到內地受審，削弱一國兩制下的司法獨立。後果之一是政府在2019年9月宣布撤回修訂，其後中央在2020年實施《香港國安法》。",
+           "labels": [[1, "Fear of being sent to the mainland for trial."], [1, "Withdrawal of the bill and the National Security Law."]]},
+          {"kind": "sensitive_partial", "text": "市民擔心被送到內地受審，所以上街遊行。",
+           "labels": [[1, "Fear of trial on the mainland."], [0, "No consequence."]]}
+        ]
+      }
+    }
+  ]
+}

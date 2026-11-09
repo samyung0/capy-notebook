@@ -223,7 +223,8 @@ export function PdfAnnotationToolbar({
         </Popover>
         {toolButton('eraser', 'eraser', m.pdf_eraser())}
       </ToolbarGroup>
-      <ToolbarGroup>
+      {/* Phones go without them everywhere (Epo 2026-11-04). */}
+      <ToolbarGroup className="hidden sm:flex">
         <ToolbarButton
           disabled={disabled || !canUndo}
           label={m.editor_undo()}

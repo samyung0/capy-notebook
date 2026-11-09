@@ -217,13 +217,13 @@ func (a *api) internalDocumentAccess(w http.ResponseWriter, r *http.Request) {
 }
 
 // accountDocumentItem is a documents/list row of an account chat: the
-// workspace row plus where the item lives ("" for No workspace), its chapter's
+// workspace row plus where the item lives ("" for No workspace), its topic's
 // name and its descriptor.
 type accountDocumentItem struct {
 	documentListItem
 	WorkspaceID   string `json:"workspaceId"`
 	WorkspaceName string `json:"workspaceName"`
-	ChapterName   string `json:"chapterName,omitempty"`
+	TopicName     string `json:"topicName,omitempty"`
 	Descriptor    string `json:"descriptor,omitempty"`
 }
 
@@ -254,7 +254,7 @@ func (a *api) listAccountDocuments(w http.ResponseWriter, r *http.Request, req i
 	}
 	items := make([]accountDocumentItem, 0, len(docs))
 	for _, d := range docs {
-		item := documentListItem{Kind: d.Kind, ID: d.ID, Title: d.Title, ChapterID: d.ChapterID}
+		item := documentListItem{Kind: d.Kind, ID: d.ID, Title: d.Title, TopicID: d.TopicID}
 		if d.Kind == agenttools.KindMaterial {
 			item.Format, item.MaterialKind, item.Editable = "plate", d.MaterialKind, true
 		} else {
@@ -265,7 +265,7 @@ func (a *api) listAccountDocuments(w http.ResponseWriter, r *http.Request, req i
 		}
 		items = append(items, accountDocumentItem{
 			documentListItem: item, WorkspaceID: d.WorkspaceID, WorkspaceName: d.WorkspaceName,
-			ChapterName: d.ChapterName, Descriptor: d.Descriptor,
+			TopicName: d.TopicName, Descriptor: d.Descriptor,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items, "more": more})

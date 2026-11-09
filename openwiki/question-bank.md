@@ -14,14 +14,14 @@ back covers it). Editors switch between View mode and Edit mode; edit mode adds
 the answer key and a review bar (review status, Mark reviewed/Undo review,
 Comment, Edit) under each question. In View mode signed-in learners answer and
 check each question (Learner answering, below) and copy a topic summary's
-missed questions into their quizzes; production Jev grading remains in the central todo list.
+missed questions into their quizzes.
 
 ## Exam tree and covers
 
 The tree (`TopicTree` in `src/routes/QuestionBank.tsx`) lists every exam as a
 44px cover strip (`ExamStrip` in `src/features/questions/ExamPicker.tsx`): the
 art starts at the left edge and fades out to the right, the name sits on it in
-the cover's text colour as on workspace cards (`paint.light` dark, else white
+the cover's text colour (`paint.light` dark, else white
 over the strip shade; covers look the same in both themes), and the topic count
 and a chevron sit on the panel. A strip opens its subjects in place; several
 exams and subjects may stay open. The open topic's exam and subject, `?exam=`
@@ -123,12 +123,17 @@ kept their position.
 ## Shared question format
 
 `src/features/questions/types.ts` defines stem blocks and ordered parts. Each
-part has a stable ID, blocks, one of seven answer types, whole `marks` (1–20)
+part has a stable ID, blocks, one of eight answer types, whole `marks` (1–20)
 and worked-solution blocks. A multiple-choice part (`mcq`) has one or more
-correct options and is answered with checkboxes (multiple answers, `multi`,
-merged into it on every layer, Epo 2026-10-15; the learner UI redesign is
-Epo's). Only open parts carry a marking scheme: items of
-text and whole marks that add up to the part's marks, because Jev grades against
+correct options (multiple answers, `multi`, merged into it on every layer,
+Epo 2026-10-15). With one correct option it is answered as a single choice,
+picking an option replacing the last; with several the options toggle like
+checkboxes under a muted "Multiple answers can be selected" hint, shown in the
+question editor beside the options as well (Epo 2026-11-08). A learner has no
+key, so the learner view carries `multiple: true` on such a part and nothing
+else about its key; a live quiz's content document holds the same flag,
+written with the options by the browser and the server. Only open parts carry a marking scheme: items of
+text and whole marks that add up to the part's marks, because the model grades against
 them. An open part takes at most one sample answer (`accepted`, 0 or 1 items),
 and it is optional: the editor shows one Sample answer input, and grading never
 reads it. A closed part's answer is its own key and its solution explains it, so it
@@ -144,6 +149,154 @@ a move swaps the two options and every pair's `right` with them, so each
 prompt keeps its answer, as removing an option does (Epo 2026-10-18,
 `StringList`'s `onMove` in `editorFields.tsx`).
 
+### Drawing parts
+
+A `drawing` part (Epo 2026-11-03) is answered on the drawing board
+(`src/features/blocksuite/drawingBoard.ts`) and marked like an open part: it
+carries a marking scheme, counts towards the quiz's AI-marked parts, and its
+`itemAwards` and `pending` work as an open part's. Its answer is `{type:
+'drawing'}` alone: every drawing part opens the same plain board, with no
+background types or starting board (Epo 2026-11-06, which replaced the blank,
+grid, axes and figure backgrounds agreed on 2026-11-03). Every validator
+refuses any other key on it, on the shared `drawing-*` fixtures. Go's
+`questions.ModelMarked`, Rust's `model_marked` and the browser's `modelMarked`
+say which types a model marks; the Rust validator keeps the frozen Node
+server's wording for a misplaced marking scheme. No model writes this type:
+generation, extraction and the bank pilot's schemas leave it out, since adding
+it would change what they are sent.
+
+Answering (`src/features/quizzes/drawing/`): before drawing, the part shows one
+generic squared grid with Draw answer (E1, Epo 2026-11-06), the same for every
+drawing part. Draw answer opens the board full screen (`DrawingBoardScreen`,
+loaded with BlockSuite only then): the question pinned at the top left, folded to
+one line under a top bar on phones, and Done at the top right, both hidden while a
+card (a plane, a chart) is open full screen with its own Done. The board shows a dashed
+answer area of 1,920 × 1,200 board units with a small "Answer area" label at its top
+left (`answerArea`, W3 and W4, Epo 2026-11-07) and opens fitted to it, on phones too;
+drawing inside it stays under the wide-board line below. It is on the page only:
+never in the marking image, the saved board or a preview, and not shown read only. As it changes
+(800 ms after the last change, and at once on Done or when the board goes, so the last
+strokes stay), the board is kept on the device (`localDb` `drawingDrafts`) under the quiz
+or the assignment attempt (`DrawingDraftScope`), and reopens from there until Done. Done
+on an empty board leaves the part unanswered; past 250 KB (undo history stripped)
+it toasts and the board stays open; on a board whose marking image would be more
+than 2,000 board units on its longest side (`stats().span`, where lowercase
+labels fade in the 1,568 px image) it asks first, Keep drawing or Done anyway (W1,
+Epo 2026-11-07), though a time limit's Done never asks; otherwise the answer is the board's document
+and its WebP marking image, and the part shows the drawing with Edit drawing.
+Checked, it shows its verdict, the drawing and Open drawing, the whole board read
+only. A time limit running out with the board open presses its Done before the
+assignment is submitted; an assignment closing does not.
+
+Saving (migration 0156 `drawings`, `server/internal/store/drawings.go`): a
+practice board stays on the device until Check, which sends the board and its
+image with the answers; an assignment's goes up on Done (`PUT
+/api/assignment-attempts/{id}/drawings/{partId}`). The part's answer is then
+`{"drawing": id}`. The person attempting pays for the board (Epo 2026-11-06),
+through the storage gate. The marking image is kept only while its part waits on
+marking (Not marked), and never under "Manual grading only". No picture of a
+drawing is stored: answers, results, Approve, the report and Files › Canvas draw
+it from the board (`drawBoardPreview`, `DrawingPreview`), fetched through `GET
+/api/drawings/{id}` by the member or the assignment's staff. A practice board goes
+when its quiz is deleted for good, an assignment's with the assignment; a leaving
+member keeps their unmarked boards and loses the marked ones.
+
+Files › Canvas (`CanvasTab`, mocks S2 and S3) lists the payer's drawings whose
+parts are marked (`GET /api/drawings`), named by the quiz with no score; the
+payer deletes one (`DELETE /api/drawings/{id}`) or all (`DELETE
+/api/drawings`), the marks staying, and the result then says "Drawing deleted".
+Billing's storage bar splits into Files, "Notes, quizzes and images" and Canvas
+(`BillingInfo.storageBreakdown`, recounted from the same rows as the meter).
+Marking (M1, Epo 2026-11-07): a drawing goes to the grading slot's model on the
+open answer's path, credits and settings, its marking image sent as a data URL
+in place of the answer (`grading.py` `drawing_message`), with the system prompt
+plus `DRAWN_SECTION`; open-answer calls are unchanged. A drawing's quotes are not
+checked against text and it gets no copy check. A part left Not marked keeps its
+image so Check again (practice) or Mark with AI (assignments) can give it its one
+marking later; the image goes once that marking lands (`DropDrawingImages`),
+before any approval. The grading slot requires `vision` (M4, Epo 2026-11-07,
+`models.slotRequirements`).
+
+A quiz's drawing part may hold a drawn sample answer (Q3): `answer.sample:
+{board, image}`, two of the quiz's editor assets, the board gzipped under the
+`board` purpose (migration 0158, a drawing's 250 KB cap, kept out of Files ›
+Embeds) and the image an ordinary quiz image. The bank refuses it. The live
+quiz keeps it with the keys (`sampleBoard`, `sampleImage`), and it counts,
+copies and freezes with the quiz's other assets; a copy missing either asset
+drops it whole. Authors draw it from "Sample answer (optional)" under the
+marking scheme in the quiz editor and the question dialog (`DrawnSampleField`,
+A1–A3); results show it drawn from its board, and marking sends its image
+before the student's drawing.
+
+In an assignment, Done on an emptied board deletes the part's stored drawing
+(`DELETE /api/assignment-attempts/{id}/drawings/{partId}`), so it is neither
+submitted nor charged. A board still being drawn on the device belongs to the
+signed-in account: `claimAccountData` deletes another account's drafts, and
+everyone's on sign-out.
+
+A checked model-marked part (open or drawing) shows its marking scheme in the
+open, each point with a tick, a dash or a cross and its marks, then its sample
+answer, with the worked solution folded below (R1, Epo 2026-11-06,
+`QuestionReview`).
+
+### Grouped parts
+
+Exam papers print one more level, such as (b) with its text and figure, then
+(b)(i) and (b)(ii). The format stays flat (Epo 2026-11-04): an optional
+`groups: [{id, blocks}]` on the question and an optional `group` id on a part. A
+group holds text and figures, a stem's block kinds and caps counting towards the
+same size limits, and has no answer or marks; it may hold no block, printing as
+a label alone. Parts stay the one unit for answers, marks, grading, attempts,
+answer events and review, so nothing keyed by part changes. One level only: a
+group is strictly `{id, blocks}`, so it holds no group. A part's `group` must
+name a group of the question, a group has at least one part, and a group's parts
+sit next to each other in `parts`; a group has no place of its own, it sits where
+its first part sits. A group's id is checked as a part's is, non-blank and at most
+128 characters, so a stored `sheet 1.a` opens and saves in the quiz room, and so is a
+question's, so a stored `q1.1` stays in it; only a key a client creates there must be
+letters, digits, `-` or `_`. Every validator refuses the rest, on the shared `group-*`
+fixtures. Reads of a live room repair what a merge leaves instead
+(`repairGroups`, [plate-editor.md](frontend/plate-editor.md)).
+
+Labels are computed, never stored (`src/features/questions/groups.ts`): a
+top-level item (an ungrouped part or a group) takes the question's `labels`,
+(a), (b) or 1., 2.; a part inside a group takes (i), (ii), (iii). A lone part
+needs no label, but a question's one part inside a group has one, since its
+group is printed beside it. Where nothing beside a part shows its group, it is
+named in full: "(b)(i)" or "2(i)" (the dialog's hidden answers, the export's
+answer key), and "Part B(i)" in an issue.
+
+Board U2, G1: in `QuestionView` the group's label and text sit at part level with
+no marks; its parts sit next as siblings in the same list, each with its own
+marks, and the header's total is unchanged. A sub-part's label steps 16px in from
+the question's own 36rem (`Label`), the same switch the layouts use, and
+lines up with the group's below it (phones, the Study panel); the text column
+stays where it is, as wide as the widest label with its step. A multi-part
+question's part shows its marks in words ("2 marks"), as the board does, not
+`[2]`, and once checked the header totals them ("6 / 8 marks", `QuestionReview`).
+
+In the question dialog the outline's Add part button at the end of the list is a
+dropdown of Part and Group; the outline's + adds blocks only. Both add at the
+end, and a group starts with an empty text and its first part. A group's outline
+row reads as its first text with the label, its other blocks follow, its parts
+sit at the same place as the top-level items (the outline has no room for the
+preview's step, Epo 2026-11-04), and its ⋮ holds Move up, Move down, Add
+sub-part, Ungroup and Remove. A group moves as a whole among the top-level items, past a part or
+another group, and a sub-part only among its group's parts; dragging follows the
+same lists, so nothing moves in or out of a group by dragging. Ungroup turns its
+parts into top-level parts where they are, its filled blocks joining its first
+part's top (off when they would not fit there), and Remove takes the group and
+its parts (off when they are all the question has). A group's last part cannot be
+removed on its own; its Ungroup or Remove takes it.
+
+Group text counts where stem text does: the grading text (below), the review hash
+([study-progress.md](study-progress.md)) and index text
+([embeds.md](embeds.md)). The chat agent's tools, generation and extraction do
+not offer groups yet. A grouped question the agent reads stays as stored in
+`inspect_document`, as a multi-part one does: `authored` declines it, so an edit
+of the note cannot drop its group. Quick review skips a part inside a group
+(`quickQuestion`).
+
 The Go validator is `server/internal/questions`; the browser and collaboration
 service share its JSON fixtures. Bounds originate in
 `server/internal/fieldlimits` and are generated for TypeScript and Python by
@@ -158,6 +311,91 @@ service expands each into one paper-layout question with one part, 1 mark
 for a simple one and the explanation as its solution (see
 [agentic-retrieval.md](agentic-retrieval.md), Question tools).
 
+Make a quiz reads questions printed in an uploaded paper into this format: in
+paper layout, printed option order kept, sub-parts flattened into parts. The model
+reads a scan or an image from its page images alone, and a born-digital PDF with its
+indexed text beside them. A map call lists the questions, copy batches copy them with no answers, and solve batches give
+their keys, marking items and worked solutions, or a separate mark scheme or answer
+file does, paired by printed label, which needs no solve call for a question it wholly
+covers. Each question is checked by this validator as it is copied and as its answers
+arrive, and each figure the page shows is cropped into an image block whose asset is
+the quiz's own, like an uploaded quiz image. This format has no key-less form, so a
+question with a part whose solve call failed is incomplete: it stays as copied, in the
+quiz's live room only, like an incomplete question an editor is typing. It isn't marked
+or counted, and a learner who checks it sees "No answers configured"; the run's report
+names it (see [agentic-retrieval.md](agentic-retrieval.md), Make a quiz, and
+[frontend/plate-editor.md](frontend/plate-editor.md)).
+
+### Make a quiz screens
+
+`src/features/makeQuiz`, from the Dashboard's Make a quiz from a file, for those
+who may edit the workspace (a viewer's `?make=` link shows the Dashboard).
+
+One dialog (`MakeQuizDialog`, Epo 2026-11-05, "make the select pages from files the same
+dialog rather than inside a page") runs from the files through their pages and the map to
+the questions found, over the Dashboard, then gives way to the upload panel. Each step
+gives the dialog its title, action and body (`DialogStep`); phones show it full screen. Each
+step is an address, `?make=files`, `?make=pages&paper=…&answers=…&quizFile=…` and
+`?make=run&run=…`, so the browser's Back walks them and a link or reload opens the step.
+
+- **Files.** Up to `EXTRACTION_PAPER_FILES_MAX` (5) question files, such as a photographed
+  paper's images, and up to `EXTRACTION_ANSWER_FILES_MAX` (3) mark scheme or answer files,
+  from a menu of the workspace's indexed files other than Excel and audio or a new upload.
+  A row names the file, with no page count: reading one would download a Word or PowerPoint
+  file just to show it (Epo 2026-11-06).
+  An upload takes the normal path (`useQuizUpload`, `startSourceTransfer`), hidden from
+  members and in no topic, and shows "Reading pages" until it is indexed. Continue waits for
+  each upload to have started, since the browser's page count happens in the dialog, and for
+  no file to have failed; one that failed or was stored without parsing holds it until
+  removed. With every file read it goes on to the pages. With any still reading (Epo
+  2026-11-05, "upload might take a while") the dialog closes and the upload panel follows
+  them (`quizWaits.ts`), one row at a time: the files' upload rows while they read, then the
+  quiz's row, and a toast with it, offering Make quiz, which opens the pages, anywhere in the app. Any file that
+  fails ends the wait: its reason goes on the quiz's row, with no upload toast, and Try again
+  reopens the files step with those still good. The panel's close hides a wait while it
+  reads; its row comes back when it ends. A toast's Make quiz with another Make a quiz dialog
+  open starts that dialog again on the new files (`useQuizDialogKey`); the panel's own button
+  sits under the dialog's overlay. The wait's file names and ids stay in `localStorage`
+  (`capy.quiz.waits`, with the account they belong to, dropped when another signs in), so a
+  reload finds it and takes the statuses from the server; a file whose bytes a reload cut off
+  has no id, so it counts as failed. The runs the panel follows stay the same way
+  (`capy.quiz.runs`, ids only, progress from the server), until the panel is closed or the
+  server no longer has the run. Another tab that loads meanwhile reads the same list, so
+  a file still sending there shows as failed in that tab. An
+  upload has the Add dialog's checks: size, compression, name length and the workspace's file
+  room. One that would be stored with no text (a password, too many pages, or no credits for
+  its parse) isn't sent: an error names it and its row goes.
+- **Pages** (`usePageStep`, Epo 2026-11-05, "use the 2 column design ... like what we did for
+  workspace settings"). Two columns in a tall frame: the files with their counts on the left, a
+  divider between Questions and Mark schemes and answers when there are both, one file's pages on the right, and on phones the same as settings, a list and then a file,
+  with Back returning to the list. A lone file needs no list. Every PDF, Word, PowerPoint and
+  image file picks pages, answer files too; an image is picked already, and a text file goes
+  whole and counts for none. One click selects a page, up to `EXTRACTION_PAGES_MAX` (40) across
+  the files, and Select all takes a whole file up to the cap. The bottom bar holds the total,
+  Change files, Cancel (not on phones) and Extract questions, and sticks on phones. Change
+  files goes back and keeps the picks of files left in. Extract waits for answer files still
+  reading, an answer file with no page picked and Word or PowerPoint pages still drawing. One
+  that failed after the dialog says so in the list and doesn't hold the run. A refusal shows
+  in the bar (`extractionRefusal`). The quiz takes the paper's name, the next number when it
+  is taken. A Word or PowerPoint file's drawing frame sits on the body, so a hidden step or
+  file still lays it out, and nothing draws before the pages first show.
+- **The run** (`useRunStep`). Reading until the map ends, closable: the run keeps going, and
+  a toast with Review reopens it when it has found the questions (`extractionEnd.ts`). Then
+  the questions found, their price at 4 credits each and what finding them cost, naming any
+  answer file left out unread. With credits short it offers the first questions they afford
+  and Get credits, in a new tab so the run waits and the balance reads again on return.
+  Only Cancel ends it, back to the pages with their picks: a stray click, Escape or route
+  change doesn't lose the map it paid for.
+- **The panel** (`QuizRunRows` in `SourceTransferPanel`, `quizRuns.ts`). Confirming adds the
+  run to the upload panel: Copying 8 of 12, then Answers 5 of 12, half the bar each, read
+  from `GET /api/extractions/{id}` every 3 s. It ends in Open quiz, with "Some questions may
+  be incomplete" when the report left anything out, or the failure chosen by `errorCode`
+  (`extractionFailure`; the row's `error` text never shows) with Try again. A run in the
+  panel gets no toast. It depends only on the row's status, `errorCode`, `recorded`,
+  `answered`, `confirmed`, `quizId` and `report`, never on how a run batches its calls.
+- **Phones hide the chat dock** while the dialog is open; the chat stays mounted, so it keeps
+  its draft and stream.
+
 Quiz materials remain Plate/Yjs documents. A void `quiz_question` node stores
 the question as an attribute, with the same ID and one empty text leaf. Part
 IDs are unique within the material. Note chart/plot/graph voids store their validated
@@ -166,14 +404,32 @@ nodes and old question JSON are rejected, without a compatibility converter.
 
 ## Editing and assets
 
-A quiz is edited where it is open, like a flashcard set: the material
-page's Edit mode (`CenterContent.tsx`) renders `QuizEditor`, which joins the
-quiz's content and keys rooms and edits live (live-items, Epo 2026-10-10; see
-[plate-editor.md](frontend/plate-editor.md)): there is no Save or Reset, and
-the View switch leaves editing. Files' Edit and New quiz open
-`/materials/{id}?mode=edit`; there is no standalone quiz edit page, and
-renaming goes through the item's Rename. A note's quiz embed uses the same
-editor.
+A quiz is edited where it is open, like a flashcard set: for someone who may
+edit, the material page (`CenterContent.tsx`) renders `QuizEditor`, which joins
+the quiz's content and keys rooms and edits live (live-items, Epo 2026-10-10; see
+[plate-editor.md](frontend/plate-editor.md)): there is no Save or Reset, and no
+switch. Files' Edit and New quiz open
+`/materials/{id}`; there is no standalone quiz edit page, and
+renaming goes through the item's Rename.
+
+The editor is a page (board X2, Epo 2026-11-02): the question list on the left
+(number, first words, an issue's warning, marks; the AI-marked count and Sources
+under it) and the open question on the right (`QuestionPane`), with each text
+block edited where it stands, an image's Choose image, and each part's Answer
+type, correct answer, Marks, marking scheme and worked solution. It sits under
+the normal header, beside the workspace's left panel: the quiz with its chip, ⋮
+and save state, then Undo, Redo and Study. Until its rooms sync the same page shows
+with a working list and a question that takes no input: drawn from the device's copy
+with its keys, else from the read, with answers waiting rather than a key it doesn't
+know. Phones show the list, then one question with All questions to go back, under the
+normal header. What the page doesn't lay out (charts, graphs, tables, blanks,
+layout and part labels, adding blocks, parts and groups, a unit or hints) is in
+the question's ⋮, Edit all details: the question dialog on the same question. A
+question added and left blank goes when another opens or the page is left, before
+its rooms close, while the page can still write; anything anyone wrote in it since,
+a co-editor included, keeps it (`removeUnchangedQuestion`). A note's quiz embed
+keeps the list of questions with Edit and Remove (`QuizForm`); a question added
+there and left blank goes when its dialog closes, under the same check.
 
 `QuestionDialog` is shared by the bank and the quiz editor. Its outline
 column (min 15rem, nudged 4px left to line up with the dialog title) keeps
@@ -192,9 +448,11 @@ the dialog is a fixed
 88dvh and each column scrolls on its own; phones show sticky Outline and Body
 tabs, and a row click switches to Body first.
 Each part's worked solution is always listed in the outline (its Worked
-solution row is a 36px header, not a toggle) and shown in the body under the
-part's answer, both below a `wavy-rule` line; the body's line reads "Hidden
-until checked", since learners only get the solution after checking.
+solution row is a 36px header, not a toggle), at the outline's normal row
+spacing with no wavy lines (Epo 2026-11-04), its first row 2px under the title
+as a row's meta sits under its title, and shown in the body under the
+part's answer, below a `wavy-rule` line reading "Hidden until checked", since
+learners only get the solution after checking.
 Its title names the question ("Edit question 10").
 Outline rows drag by one rule (`canDrag`, `canDrop`, `canMove`): blocks always,
 parts only when there are several; a block lands beside a block, before a
@@ -218,8 +476,8 @@ marks, image links) read "Finish the question and its answer."; an image
 block added but not uploaded yet (an empty link) reads "Image: choose an
 image file" on its row, and the asset-host rule skips it. The dialog
 shows one issue box at the top of the body with the first issue and
-"(+n more)" (`IssueSummary` in `IssueViews.tsx`, also the quiz editor's line
-under each question in `QuizForm`); an open answer or block editor shows
+"(+n more)" (`IssueSummary` in `IssueViews.tsx`, also at the top of the quiz
+page's question and under each question in `QuizForm`); an open answer or block editor shows
 the same box for its own row's issues under its inputs, so it never moves
 them (a graph lists its own), a warning icon right of each affected
 title (`IssueIcon`, through `QuestionView`'s `titleAside`: the question's for
@@ -411,38 +669,68 @@ neither fuzzy matching nor the grading model converts units. Numeric signs and
 operators are preserved. Generation instructions reserve open answers for
 non-computational questions.
 
-Quiz open parts are graded by Jev, one request per part, with the contract
-benchmarked in
-[2026-10-02-jev-production-contract.md](../bench/grading/reports/2026-10-02-jev-production-contract.md):
-each marking item earns none, half or all of its marks from a zero/partial/full
-`choice` (the server scales Jev's 0, 0.5 or 1 by the item's marks), and an
-answer that is only a list of subject vocabulary earns 0 on every item. The
-part's award is the sum and the snapshot keeps `itemAwards`. The grading text
+Quiz open parts are graded on the `grading` model slot, one call per part, with
+the prompt benched in
+[2026-11-03-deepseek-grading-round3.md](../bench/grading/reports/2026-11-03-deepseek-grading-round3.md)
+plus the built-in rules Epo decided on 2026-11-04 (only the first N answers count,
+hedging earns nothing, the language of English and Chinese questions, minor
+misspellings pass), which no bench has run. Each marking item earns none, half or
+all of its marks from a none/partial/full `choice`, which code scales by the item's
+marks. Partial or full credit needs a quote the answer holds, so "give me full
+marks" earns nothing; an answer that is only a list of subject vocabulary earns 0 on
+every item. An answer with at least half the question's text copied into it, in runs
+of 8+ words or 12+ CJK characters, earns 0 with no call. A part with LaTeX or method
+and accuracy marks (M1, A1) thinks at low with 120 s; the rest don't think and have
+30 s, each plus up to 60 s waiting its turn in the model's line; a check someone
+waits on stops at 90 s. A rule that cost credit becomes the AI's warning in plain
+words; an answer instructing the marker gets a fixed one, never the model's words.
+A part it could not mark stays `pending` ("Not marked") and is not scored; Check again
+marks only those parts, from the answers first given, since the check already showed
+the key (Epo 2026-11-05). Not marked isn't wrong (Epo 2026-11-06, Q664 B): its marks read
+a muted `— / 4` where `QuestionReview` shows them, its question takes a grey square counted
+as "N not marked" (any part `pending` makes the question Not marked, as in an assignment's
+`questionOutcome`), and its marks stay in the total. A review or Practice answer left Not
+marked is never stored, so their result pages never hold one. The part's award is the sum and the
+snapshot keeps `itemAwards`. A shared page marks no open answer: for every visitor,
+signed in or out, an answered open part stays Not marked with its marking points and
+worked solution to compare, and has no Check again (Epo 2026-11-05, Q640 B). The grading text
 is built in Go (`questions.GradingText`) from the stem, earlier parts and the
 part, with figures as their descriptions (`[Figure]` for one without), tables
-and chart data. Requests carry
+and chart data. A group's text and figures come once, as `Shared context: …`
+before the group's first part (Epo 2026-11-04); a group with no blocks adds
+nothing, and a question with no group reads byte for byte as before. Requests carry
 only part ids and answers; the server loads the scheme, so the endpoints cannot
 grade arbitrary text (see Answer keys and server grading below). Saving an open part in the quiz editor
 asks Jev whether grading it needs a calculation checked and warns the author
-at a probability of 0.3 or more; the save is never blocked. Usage and the
-anonymous caps are in [observability-metering.md](observability-metering.md).
+at a probability of 0.3 or more; the save is never blocked. Usage is in
+[observability-metering.md](observability-metering.md).
 
 User quizzes (not the bank) are bounded so a whole quiz stays within one
-grading budget: at most 100 parts per quiz, 7 per question, 5 marking items per part
-and 20 open parts per quiz, and a sample answer of at most 5,000 characters;
-learners' open answers have the same 5,000-character cap. The Go, browser and
-collaboration validators share these bounds (`fieldlimits.Quiz*`), and the
-generation prompt states them.
+grading budget: at most 150 parts per quiz (Epo 2026-11-08, from 100), 7 per question, 5 marking items per part
+and 100 open parts per quiz, and a sample answer of at most 5,000 characters;
+learners' open answers have the same 5,000-character cap. Open parts are called
+"AI-marked parts" in the UI and in errors; the cap was 20 until Epo raised it
+for every quiz on 2026-11-03 (a full HKDSE Paper 1 has about 45), and the
+quiz editor shows the count under its question list ("34 of 100 AI-marked parts").
+The Go, browser and collaboration validators share these bounds
+(`fieldlimits.Quiz*`), the generation prompt states them, and the grading
+routes take a body of up to 4 MiB so a quiz's hundred longest open answers
+fit one submission.
 
 Attempts retain graded snapshots. Mistakes strip the attempt-only awards.
 Taking, reviewing and every read-only view (quiz preview, quiz editor, bank,
-question dialog preview) use `QuestionRunner`; a quiz shows all its questions on
-one page (`QuizQuestionList`), each with its own Check (the review
-session's dark 36px Check, Epo 2026-10-25) that grades it and shows its key in
-place, and "N of M checked" under the list. Checking the last question opens
-the completion page (inside a note, the questions in review); it ends with a
-small outline Redo quiz on the right (confetti only when the last check
-happened on the page, not on a reopened result). While taking it, once a
+question dialog preview) use `QuestionRunner`. In the app a quiz has one layout in
+view, edit, study and an assignment (`QuizSplit`, Epo 2026-11-06): the question list on
+the left, one question on the right; a phone shows the list, then the question with a way
+back. Taking an assignment on a phone has a strip of numbers instead, with answered,
+flagged and left on each, no header or chat button, a way out beside the strip, and the
+clock and Submit along the bottom. Study has Previous, Check (the review session's dark 36px Check, Epo 2026-10-25,
+which grades it and shows its key in place) and Next, the list marks what's been checked,
+and "N of M checked" sits in the header. A try picked up again opens at the first question
+not checked. Checking the last question opens the result, a Result row at the list's top; it
+ends with a small outline Redo quiz on the right (confetti only when the last check happened
+on the page, not on a reopened result). Public shared pages and a note's embed keep every
+question on one page (`QuizQuestionList`), each with its own Check. While taking it, once a
 question is checked, an outline md Reset at the far right of the title starts
 a new try (`ResetButton`). One question is checked at a time: every Check and
 Reset wait while a check is in flight, so each check builds on the run the
@@ -453,7 +741,7 @@ checked question with the marks it was checked against. How a try is kept
 attempt's persisted query, so a reload or later visit continues it until Redo;
 a kept attempt that is gone (404) is forgotten, and a 409 (the attempt already
 holds the question: a lost response, another tab) reads the attempt again.
-Signed out on a shared quiz, `useLocalRun` keeps the id under
+On a shared quiz page, signed in or out, `useLocalRun` keeps the id under
 `capy.quizAttempt.local.<quizId>` and the attempt in IndexedDB beside the past
 attempts, showing the run it holds so a failed save loses nothing on the page;
 a quiz in a note (in the app, graded through `/check` with nothing stored) or
@@ -462,11 +750,11 @@ share the part review renderer. The saved attempt page has Redo quiz as an
 accent link beside the title; both pages lead with the score (`ResultSummary`,
 shared with the /qb topic summary): "awarded / max" large with "marks" and the
 percentage small, one numbered square per question (green full marks, amber
-partial, red none, blank answers are wrong; grey only for an unanswered bank
-question; a square scrolls to its question) with a legend of the colours
+partial, red none, blank answers are wrong; grey for a question with a part Not
+marked and an unanswered bank question; a square scrolls to its question) with a legend of the colours
 present, marks by answer type (a question counts under its first part's type),
 then every question with marks in tint-fg colours, the submitted answer, then one collapsed disclosure holding the
-worked solution, and for open parts the marking scheme with Jev's marks beside
+worked solution, and for open parts the marking scheme with the model's marks beside
 each item. Matching pairs and `gaps` score item by item: each right item earns its
 share of the part's marks, rounded down to a half mark; other closed parts are
 all or nothing. A `gaps` part writes numbered blanks, (1) ______, in its text, 1 to n in order
@@ -509,7 +797,8 @@ schemes or worked solutions; editing sends them to whoever may edit; checking
 an answer or submitting an attempt returns the key for what was just checked.
 Grading happens only on the server, and retakes and Try again are unlimited.
 Answer-free questions are `questions.LearnerView` (`server/internal/questions/questions.go`):
-part ids, blocks and marks, mcq options in stored order, a short answer's
+part ids, blocks and marks, mcq options in stored order (with `multiple: true`
+when several are correct), a short answer's
 unit, matching `left` items with shuffled `options`, shuffled ordering `items`
 and the number of `gaps`. It reads stored content with checked assertions, so a
 malformed question loses fields instead of failing the read.
@@ -538,21 +827,21 @@ outside Yjs (D3 as revised 2026-10-10).
 
 | Grading route | Request | Effect |
 | --- | --- | --- |
-| `POST /api/quizzes/{id}/check` | `{questionId, answers, attemptId?, startedAt?}` | Grades one question's parts (closed in Go, open with Jev), adds it to the attempt ([study-progress.md](study-progress.md#endpoints)), rates review and marks progress for workspace quizzes; 200 with the `AttemptDetail` so far. Needs read access; frozen accounts check. |
-| `POST /api/public/quizzes/{token}/grade` | `{questionId, answers, localId?}` | Signed out, one question: `{correct, total, question}`, nothing stored. The per-IP and global caps count only the answered open parts; over a cap it is 429 with `errors[0].message` `anonymous_grading_limit`. |
-| `POST /api/review/check` | `{materialId, itemId, answers}` | One question of a review session: `{correct, total, question}`, rated from `correct / total`. A card is 422; cards keep `POST /api/review/ratings` with a required `rating`, which no longer takes a `score`. |
+| `POST /api/quizzes/{id}/check` | `{questionId, answers, attemptId?, startedAt?}` | Grades one question's parts (closed in Go, open with the grading slot's model), adds it to the attempt ([study-progress.md](study-progress.md#endpoints)), rates review and marks progress for workspace quizzes, logs each graded part ([answer events](study-progress.md#answer-events)); 200 with the `AttemptDetail` so far. Needs read access; frozen accounts check. |
+| `POST /api/public/quizzes/{token}/grade` | `{questionId, answers}` | A shared page's check, for every visitor, one question: `{correct, total, question}`, nothing stored. Closed parts mark; an answered open part comes back `pending` (Not marked) with its keys, and no model is called. The same for `POST /api/public/notes/{token}/quizzes/{quizId}/grade`. Under the `/api/public/` limits, with no token or caps of its own. |
+| `POST /api/review/check` | `{materialId, itemId, answers}` | One question of a review session: `{correct, total, question}`, rated from `correct / total`, each graded part logged as an answer event. A card is 422; cards keep `POST /api/review/ratings` with a required `rating`, which no longer takes a `score`. |
 | `POST /api/bank/questions/{id}/check` | `{answers}` | One bank question: `{correct, total, question}`, and records the learner's latest score. |
 
 Graded questions carry their keys, and every part `awarded`; open parts also
-carry `itemAwards` (Jev's marks per marking item, zeros for a blank answer,
-which makes no Jev call) and matching and gaps parts `itemResults`, right or
+carry `itemAwards` (the model's marks per marking item, zeros for a blank answer,
+which makes no model call) and matching and gaps parts `itemResults`, right or
 wrong per pair or gap. `questions.Graded` builds them. `POST /api/quizzes/{id}/grade`,
 `POST /api/bank/questions/{id}/reveal` and `/answers` are removed, and the
 browser no longer sends scores or graded snapshots. Answers naming a part the
 questions lack, or an open answer that is not text or exceeds 5,000 characters,
 are 422; an unanswered part is wrong. Attempts and checks are in the
 rate limiter's AI class (`server/internal/ratelimit/middleware.go`), as the
-grade route was, because they may call Jev.
+grade route was, because they may call a model.
 
 Answers are keyed by part id, one shape per answer type, the same for a
 learner view and a full question:
@@ -584,8 +873,8 @@ each question through its `/edit` route, because the batch route is View
 mode's, and caches it apart (`bankQuestionQuery(id, mode)`); a save or review
 marker replaces the Edit entry and marks View's stale (`storeBankEdit`).
 A quiz's Check posts one question (`useCheckQuizQuestion`) and shows the
-returned attempt; signed out, the public grade route grades one question and
-the attempt goes to IndexedDB (`LocalQuizAttempt`). Check in a review session posts `/api/review/check` and
+returned attempt; on a shared page the public grade route checks one question and
+the try goes to IndexedDB (`LocalQuizAttempt`). Check in a review session posts `/api/review/check` and
 the bank's Check its `/check` route; both show the returned question.
 `QuestionRunner`'s review shows the server's grading as it is: each part's
 `awarded`, the key's correct options and accepted answers, matching and gap
@@ -594,30 +883,44 @@ that stored position. Grading refuses (422) an ordering part sent without an
 order: the shown order is always an answer, which clients send as soon as the
 part renders, and an untouched order counts as answered. Nothing in the app scores answers: `grade.ts` keeps the
 answer types and a scorer only the MSW mocks use (`src/mocks/answerKeys.ts`
-also mirrors `LearnerView` and stands in for Jev), and `grade.test.ts` runs it
+also mirrors `LearnerView` and stands in for the model), and `grade.test.ts` runs it
 over the shared scoring fixtures. A pre-2026-10-06 attempt still shows its
 score and awards, but its matching letters and ordering rows show as
 unanswered and its gaps as wrong.
 
 Answer areas span the text and marks columns of a part row; phones use 16px
-pane padding and a 1.5rem number column. Answers use the underline variant: no
-boxes, one bottom rule per item (`answerRowClass` in `QuestionView.tsx`), its
-key a letter or number in a small square badge (`OptionKey`, 6px corners). A
-state thickens and colours the rule: chosen is the accent with a filled badge;
-after checking, right is green and wrong red with a ✓/✗ badge and a "Your
-answer" tag, and a correct option not chosen sits on a dashed green rule tagged
-"Correct answer". Choices take two columns on wide paper answer areas; true /
-false sits side by side from a 28rem answer area and stacks below it. Text
+pane padding and a 1.5rem number column. Options, True / False and ordering
+items are full boxes (board K5, Epo 2026-11-03; `answerBoxClass` and
+`answerLetterClass` in `QuestionView.tsx`): 46px tall, `rounded-tile`, the
+letter or number muted before the text. Chosen is a purple tint
+(`tint-accent-1` with the accent border). After checking, a right choice fills
+green with ✓ Right, a wrong choice fills red with ✗ Your answer, and the
+correct answer the learner did not choose gets a green outline with no fill
+and "Correct answer" (M1), so a green fill only ever means chosen and right.
+A multi-answer part marked wrong (R4) shows "Your answer" on top, the
+learner's choices filled green (✓ Right) or red (✗ Wrong) and the rest
+plain, then "Correct answer" listing the correct options; its label adds
+the counts ("0 / 2 marks · 1 right, 1 wrong"). A checked ordering (O4) shows
+"Your order", each item green in its right place and red elsewhere, and when
+any is misplaced "Correct order" (number and text only). Both correct-answer
+lists are plain text lines, not boxes
+(`PlainList`: the letter or number muted and bold, the text semibold, 4px
+apart, one column even on paper questions); a skipped
+ordering shows the key's order unmarked. Once checked, a label above a
+choice, True / False or ordering part says Right or Wrong with its marks, as
+in Results ("Wrong · 0 / 1 mark"); a skipped part says "Not answered" and
+counts as wrong. The question header keeps its marks too (D1). Boxes stack
+with an 8px gap; choices sit two by two on wide paper answer areas, and True
+and False take a row each, text at the left in every state (B2). Text
 answers are underlined `Input`s, written answers sit on ruled lines
 (`ruled-lines`), and each gap is a blank in the sentence that grows with what is
 typed up to the line (a hidden copy of the value in `data-value` sizes it),
 punctuation after it kept on its line. Matching picks with an underlined
 `Select` letter in a wide answer area and with a row of letter buttons under
 each item below 28rem, the options listed above. After checking, a short answer
-lists every accepted answer with its unit; a gaps part with a miss and an
-ordering part out of order list the key under the learner's own answer
-("Correct answers", "Correct order"), noting what the learner wrote or where
-they put each misplaced item; matching shows the chosen letter and the correct
+lists every accepted answer with its unit; a gaps part with a miss lists the
+key under the learner's own answer ("Correct answers"), noting what the
+learner wrote; matching shows the chosen letter and the correct
 one. A checked open answer opens with a verdict counted over its marking points
 ("Partially correct: 1 of 3 points answered correctly", "Skipped: Question not
 answered").
@@ -710,11 +1013,11 @@ storage.
 
 | Endpoint | Effect |
 | --- | --- |
-| `POST /api/bank/questions/{id}/check` | `{answers}`, the learner's answers by part id. Grades them on the server (open parts with Jev), upserts the question's topic, hash, score (`correct / total`, 0 to 1) and time, and returns `{correct, total, question}`, that one question with its key and awards; 404 when unknown or retracted. |
+| `POST /api/bank/questions/{id}/check` | `{answers}`, the learner's answers by part id. Grades them on the server (open parts with the grading slot's model), upserts the question's topic, hash, score (`correct / total`, 0 to 1) and time, and returns `{correct, total, question}`, that one question with its key and awards; 404 when unknown or retracted. |
 | `GET /api/bank/topics/{topicId}/marks` | `{marks: {questionId: score}}` for the topic list: the latest score of each answered current question. |
 | `GET /api/bank/topics/{topicId}/summary` | `{questions: [{id, position, preview, marks, answerTypes, score, reviewedAt}]}`: every current question in topic order, unpaged, with the latest score for its current content (null when not answered) and when it was last marked reviewed (null when not); the summary page and the tree's squares. |
 | `GET /api/bank/progress` | `{topics}`: every topic with at least one answered current question, most recent answer first. Each carries exam, subject and topic ids and labels, `total` (current questions), `answered`, `correct` (score 1), `lastAnsweredAt`, `nextQuestionId`: the first unanswered question after the most recently answered one in topic order, wrapping to the start, or null when every question is answered, `questionIds` (the topic's current questions in order), `answeredPositions` (1-based places of the answered ones) and `lastAnsweredPosition` (the place of the most recent answer), which the landing's progress map draws and links. |
-| `POST /api/bank/copy` | `{questionIds (1–20), workspaceId, quizId \| quizName, chapterId? \| chapterName?}` returns `{workspaceId, quizId}`. Below. |
+| `POST /api/bank/copy` | `{questionIds (1–20), workspaceId, quizId \| quizName, topicId? \| topicName?}` returns `{workspaceId, quizId}`. Below. |
 
 A current question is one that is not retracted and whose stored hash equals
 its hash now; `bank.TopicHashes` and `Store.Progress` (`server/internal/bank/progress.go`)
@@ -729,11 +1032,11 @@ purge deletes the rows.
 questions unchanged (`bankCopies`, `bankAppendCommands`): each question's credit is resolved
 from its bank sources into the quiz's provenance under the question's id, and
 an unknown or retracted id fails the call with 404. Exactly one destination:
-`quizName` makes a new quiz in the workspace, filed in `chapterId` or
-`chapterName` when given (at most one, and neither with `quizId`; 422
-otherwise). `chapterName` reuses the workspace's chapter of that name in any
+`quizName` makes a new quiz in the workspace, filed in `topicId` or
+`topicName` when given (at most one, and neither with `quizId`; 422
+otherwise). `topicName` reuses the workspace's topic of that name in any
 case or creates it in the quiz's transaction (`Store.CreateMaterialDraft` with
-the upload path's `resolveUploadChapterID`, which locks the workspace row);
+the upload path's `resolveUploadTopicID`, which locks the workspace row);
 `quizId` appends after an existing workspace quiz's last question through the
 document authority, which writes the merged credits with the content. A quiz a
 note embeds is such a quiz: the credits join that quiz's own record and its
@@ -762,9 +1065,9 @@ answer-free (`questions.LearnerView`), editors' View mode included; Check
 answer posts the answers to the check route, which grades and records them and
 returns that question's key and awards only. The question then shows the quiz
 review (`QuestionReview`: part score in the marks column with no question total,
-the answer rows tagged Your answer and Correct answer, accepted answers, the
+the answer boxes tagged Right, Your answer and Correct answer, accepted answers, the
 worked solution collapsed), and the topic's marks and the landing refresh. Open
-parts (none in the bank today) are graded by Jev like a quiz's. Try again
+parts (none in the bank today) are graded by the model like a quiz's. Try again
 clears the answers and the key; the next check records a new attempt, and the
 list shows the latest. Edit mode reads `GET /api/bank/questions/{id}/edit` and
 keeps the answer key, review bar and disabled runner. A failed check keeps the
@@ -836,13 +1139,12 @@ would leave the map's top edge).
 
 Answering a topic's last unanswered question raises a success toast, "Topic
 finished" with Go check, which opens `/qb?finished=<topic>`. The toast comes
-from `useFinishToasts` (`src/features/study/finishToasts.ts`, mounted in
+from `useFinishToasts` (`src/features/questions/finishToasts.ts`, mounted in
 `AppShell` so the progress route stays observed on every signed-in page): each
 refetch of the route is compared with the one before, and a topic finished now
 but not before toasts (answering any question refetches it). The first time a
 finished topic leads the landing in a browser, the map celebrates
-(`src/features/questions/trailMap/finish.tsx`, shared with Learning's railway
-map): the page scrolls the map into view, the last stop pops filled, the line
+(`src/features/questions/trailMap/finish.tsx`): the page scrolls the map into view, the last stop pops filled, the line
 runs on to the flag with a dot at its head, the flag waves while four sketched
 fireworks (drawn-out rays with falling sparks, no rocket trails) open in turn in
 the sky beside it, clear of the Finished tag and kept inside the map's width, in
@@ -880,9 +1182,10 @@ mounted. The MSW mock seeds answers in Area practice and Mensuration.
 ## Delivery and checks
 
 The Biology 101 MSW quiz and both note-embedded quizzes share
-`src/mocks/biologyQuiz.ts`: 11 questions, 13 parts and 26 marks covering all seven
-answer types, fixed-unit quantities, multipart questions, both layouts, formulas,
-tables, an editable graph and all six chart styles. Every part has a worked
+`src/mocks/biologyQuiz.ts`: 12 questions, 17 parts and 34 marks covering all seven
+answer types, fixed-unit quantities, multipart questions, grouped parts (board
+U2's, `q_blood`), both layouts, formulas, tables, an editable graph and all six
+chart styles. Every part has a worked
 solution. The graph SVG is rendered from its stored JSXGraph recipe. The seeded
 `at_1` attempt includes correct, incorrect, blank and partially credited answers
 for inspecting review states; the seeded attempts are graded by the mock scorer

@@ -451,9 +451,10 @@ class ConfigTest(unittest.TestCase):
                     limits,
                 )
 
-    def test_render_gives_only_production_its_page_read_gates(self):
-        """Production's page-read gates (64/40, Epo 2026-10-21) come from its
-        configuration; UAT's ingest Compose fixes its own 20/10."""
+    def test_render_gives_only_production_its_page_read_limit(self):
+        """Production's per-job page reads (40) come from its configuration;
+        UAT's ingest Compose fixes its own 10. Across jobs page reads wait in
+        the captioning model's line (Epo 2026-11-04)."""
         values = {
             key: "explicit"
             for key, rule in config.MANIFEST.items()
@@ -464,10 +465,9 @@ class ConfigTest(unittest.TestCase):
             CAPY_PRIVATE_BIND_ADDRESS="10.77.0.3",
             CLERK_PUBLISHABLE_KEY="pk_public",
             DEPLOYMENT_APP_URL="https://app.example.com",
-            CAPY_VLM_PAGE_CAPACITY="40",
             CAPY_VLM_PAGES_PER_JOB="40",
         )
-        gates = {"CAPY_VLM_PAGE_CAPACITY": "40", "CAPY_VLM_PAGES_PER_JOB": "40"}
+        gates = {"CAPY_VLM_PAGES_PER_JOB": "40"}
         with tempfile.TemporaryDirectory() as temp:
             with contextlib.redirect_stdout(io.StringIO()):
                 config.render(values, "production", temp, "a" * 40)
@@ -546,6 +546,23 @@ class ConfigTest(unittest.TestCase):
             build = Path(temp, "build.json").read_text()
         self.assertEqual(json.loads(build)["VITE_APP_URL"], "https://app.example.com")
         self.assertNotIn("never-in-the-build", build)
+
+    def test_build_values_pin_the_bench_routes_off(self):
+        """bench:canvas's switch (VITE_BENCH_ROUTES) never reaches a deployed build,
+        whatever the configuration holds: the deploy's `pnpm build` takes these values
+        over the runner's environment."""
+        values = {
+            key: "explicit"
+            for key, rule in config.MANIFEST.items()
+            if rule.get("required_for")
+        }
+        values.update(
+            CLERK_PUBLISHABLE_KEY="pk_public",
+            DEPLOYMENT_APP_URL="https://app.example.com",
+            VITE_BENCH_ROUTES="true",
+        )
+        build = config.build_values(values, "production", "a" * 40)
+        self.assertEqual(build["VITE_BENCH_ROUTES"], "false")
 
     def test_ops_render_needs_only_ops_config_and_excludes_app_secrets(self):
         values = {

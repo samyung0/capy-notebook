@@ -320,13 +320,15 @@ async fn checked_and_stored(
             ),
         ));
     }
-    let (name, context) =
+    let authenticated = || async {
         crate::socket::authenticate(app.clone(), room.to_owned(), token.to_owned(), protocol)
             .await
             .map_err(|refusal| Refused {
                 remaining: refusal.remaining,
                 ..Refused::new(refusal.class, refusal.message)
-            })?;
+            })
+    };
+    let (name, context) = authenticated().await?;
     if context.access != Access::Write {
         return Err(Refused::new(Class::Permission, "the token is read-only"));
     }
@@ -349,10 +351,18 @@ async fn checked_and_stored(
         }
     }
     let user = &context.user_id;
+    // A body is held no longer than its token lives.
+    let left = u64::try_from(context.expires_at - crate::auth::now_seconds()).unwrap_or(0);
+    let read = tokio::time::timeout(
+        Duration::from_secs(left),
+        read_within(body, ydoc::MAX_UPDATE_BYTES),
+    )
+    .await
+    .map_err(|_| Refused::new(Class::Permission, "collaboration token expired"))?;
     // Never sendable as it is: too large, which the page leaves for the
     // editor to send in pieces, and the user is timed out as for any update
     // over the cap.
-    let Some(update) = read_within(body, ydoc::MAX_UPDATE_BYTES).await? else {
+    let Some(update) = read? else {
         if let Verdict::TimedOut { started: true, .. } =
             app.allowances.time_out(user, Instant::now())
         {
@@ -363,19 +373,11 @@ async fn checked_and_stored(
     if matches!(name, RoomName::Material { .. }) && update.len() > NOTE_MAX_SYNC_BYTES {
         return Err(Refused::new(Class::TooLarge, "past the writer's sync cap"));
     }
-    // A source room's publication lease and a local reset may have begun
-    // while the body arrived: a JOIN joins at once after its checks, a send
-    // only now (REVIEW1 S2).
-    let evicting = matches!(name, RoomName::Source { .. })
-        && crate::socket::room_evicting(app, room)
-            .await
-            .map_err(|error| Refused::new(Class::Unavailable, error))?;
-    if evicting || app.evictions.blocks(room, false) {
-        return Err(Refused::new(
-            Class::Unavailable,
-            "the room is being reset or published",
-        ));
-    }
+    // The role may have gone, and a source room's publication lease or a local
+    // reset begun, while the body arrived: a JOIN joins at once after its
+    // checks, a send only now (REVIEW1 S2, Q634). Only the room admits it, and
+    // the store no longer asks about the role.
+    authenticated().await?;
     let base = header_text(headers, BASE_HEADER).map(str::to_owned);
     // Ids the drafts' own tokens offered: the room checks each under the
     // JOIN's rule (Q288). A token that grants nothing is ignored.

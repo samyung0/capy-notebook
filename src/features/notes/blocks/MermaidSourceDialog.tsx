@@ -47,9 +47,7 @@ export default function MermaidSourceDialog({
   const phone = useIsPhone();
   return (
     <SimpleDialog
-      // Autosaved: phones show the save status by the title and Undo where Save
-      // would be.
-      action={phone && <UndoButtons manager={history.target} />}
+      // Autosaved: phones show the save status by the title.
       footer={
         !phone && (
           <div className="mr-auto flex items-center gap-2">

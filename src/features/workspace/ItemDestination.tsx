@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useChapters, useWorkspaces } from '@/api/hooks';
+import { useTopics, useWorkspaces } from '@/api/hooks';
 import { SettingRow } from '@/components/app/tabPanel';
 import {
   Select,
@@ -12,29 +12,29 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/icon-catalog';
 import {
-  ChapterSelect,
-  chapterByName,
   FIELD_WIDTH,
-  NewChapterInput,
-} from './ChapterSelect';
+  NewTopicInput,
+  TopicSelect,
+  topicByName,
+} from './TopicSelect';
 
 const STANDALONE = '__standalone__';
 
-type ChapterPick = { chapterId: string | null; chapterName: string | null };
+type TopicPick = { topicId: string | null; topicName: string | null };
 
 /**
  * Where Clone to… and Move to… put an item: a workspace the user edits (or,
- * with `standalone`, No workspace) and a chapter there. The item's own
- * workspace is picked when the user edits it, and in it the item's chapter;
+ * with `standalone`, No workspace) and a topic there. The item's own
+ * workspace is picked when the user edits it, and in it the item's topic;
  * else the first workspace they edit (a standalone clone stays standalone).
  */
 export function useItemDestination({
-  chapterId,
+  topicId,
   standalone,
   workspaceId: source,
 }: {
-  /** The item's chapter, preselected while its workspace is picked. */
-  chapterId?: string | null;
+  /** The item's topic, preselected while its workspace is picked. */
+  topicId?: string | null;
   /** Offers No workspace (Clone to…). */
   standalone: boolean;
   /** The item's workspace; empty for a standalone item. */
@@ -50,50 +50,50 @@ export function useItemDestination({
       ? source
       : fallback || (standalone ? STANDALONE : ''));
   const workspaceId = destination === STANDALONE ? '' : destination;
-  const { data: chapters } = useChapters(workspaceId);
-  // A chapter the user chose, for the workspace it belongs to.
+  const { data: topics } = useTopics(workspaceId);
+  // A topic the user chose, for the workspace it belongs to.
   const [chosen, setChosen] = useState<
-    (ChapterPick & { workspaceId: string }) | null
+    (TopicPick & { workspaceId: string }) | null
   >(null);
-  const [newChapter, setNewChapter] = useState<string | null>(null);
-  const chapter: ChapterPick =
+  const [newTopic, setNewTopic] = useState<string | null>(null);
+  const topic: TopicPick =
     chosen?.workspaceId === workspaceId
       ? chosen
       : {
-          chapterId: workspaceId === source ? (chapterId ?? null) : null,
-          chapterName: null,
+          topicId: workspaceId === source ? (topicId ?? null) : null,
+          topicName: null,
         };
 
   return {
-    chapter,
-    chapters,
     destination,
     editable,
-    newChapter,
+    newTopic,
     pending: isPending,
-    /** Picks a workspace (or STANDALONE): its chapter starts over. */
+    /** Picks a workspace (or STANDALONE): its topic starts over. */
     pick(id: string) {
       setPicked(id);
-      setNewChapter(null);
+      setNewTopic(null);
     },
-    /** The chosen chapter, a name still being typed included. */
-    resolve(): ChapterPick {
-      const typed = newChapter?.trim();
-      return typed ? chapterByName(chapters, typed) : chapter;
+    /** The chosen topic, a name still being typed included. */
+    resolve(): TopicPick {
+      const typed = newTopic?.trim();
+      return typed ? topicByName(topics, typed) : topic;
     },
-    setChapter: (next: ChapterPick) => setChosen({ ...next, workspaceId }),
-    setNewChapter,
+    setNewTopic,
+    setTopic: (next: TopicPick) => setChosen({ ...next, workspaceId }),
     source,
-    sourceChapterId: chapterId ?? null,
+    sourceTopicId: topicId ?? null,
     standalone,
+    topic,
+    topics,
     workspaceId,
   };
 }
 
 export type ItemDestination = ReturnType<typeof useItemDestination>;
 
-/** The workspace and chapter dropdowns. `markCurrent` (Move to…) tags the
- * item's own workspace and chapter "Current". */
+/** The workspace and topic dropdowns. `markCurrent` (Move to…) tags the
+ * item's own workspace and topic "Current". */
 export function DestinationFields({
   dest,
   disabled,
@@ -159,36 +159,36 @@ export function DestinationFields({
         aria-hidden={!workspaceId}
         className={cn(!workspaceId && 'invisible')}
       >
-        <SettingRow title={m.question_ui_chapter()}>
-          {dest.newChapter === null ? (
-            <ChapterSelect
-              chapterName={dest.chapter.chapterName}
-              chapters={dest.chapters ?? []}
+        <SettingRow title={m.question_ui_topic()}>
+          {dest.newTopic === null ? (
+            <TopicSelect
               current={
                 markCurrent && workspaceId === dest.source
-                  ? dest.sourceChapterId
+                  ? dest.sourceTopicId
                   : undefined
               }
               disabled={!workspaceId || disabled}
               field
-              onChange={(chapterId) =>
-                dest.setChapter({ chapterId, chapterName: null })
+              onChange={(topicId) =>
+                dest.setTopic({ topicId, topicName: null })
               }
-              onCreateRequest={() => dest.setNewChapter('')}
-              value={dest.chapter.chapterId}
+              onCreateRequest={() => dest.setNewTopic('')}
+              topicName={dest.topic.topicName}
+              topics={dest.topics ?? []}
+              value={dest.topic.topicId}
             />
           ) : (
-            <NewChapterInput
+            <NewTopicInput
               field
-              onCancel={() => dest.setNewChapter(null)}
-              onChange={dest.setNewChapter}
+              onCancel={() => dest.setNewTopic(null)}
+              onChange={dest.setNewTopic}
               onConfirm={() => {
-                const name = dest.newChapter?.trim();
+                const name = dest.newTopic?.trim();
                 if (!name) return;
-                dest.setChapter(chapterByName(dest.chapters, name));
-                dest.setNewChapter(null);
+                dest.setTopic(topicByName(dest.topics, name));
+                dest.setNewTopic(null);
               }}
-              value={dest.newChapter}
+              value={dest.newTopic}
             />
           )}
         </SettingRow>

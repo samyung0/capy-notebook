@@ -26,6 +26,16 @@ export interface CreditView {
   purchasedUsed: number;
 }
 
+/** Whether the server refuses new AI work for want of credits: nothing left
+ * and no auto-reload to start (store.admit in server/internal/store/credits.go). */
+export function outOfCredits(billing: BillingInfo): boolean {
+  const available =
+    Math.max(billing.creditsLimitMicros - billing.creditsUsedMicros, 0) +
+    billing.creditsPurchasedMicros -
+    billing.creditsReservedMicros;
+  return available <= 0 && !billing.creditSettings.autoReload;
+}
+
 export function creditView(
   billing: BillingInfo,
   spentThisMonthMicros: number

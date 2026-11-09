@@ -47,6 +47,16 @@ const photosynthesis: ChartBlock = {
   yTitle: 'Oxygen production (µmol/min)',
 };
 
+const clottingStages: ChartBlock = {
+  kind: 'bar',
+  labels: ['Platelets stick', 'Clot forms', 'Clot hardens'],
+  series: [{ name: 'Minutes after the cut', values: [1, 4, 9] }],
+  title: 'Fig. 3.2 The stages of clotting',
+  type: 'chart',
+  xTitle: 'Stage',
+  yTitle: 'Minutes after the cut',
+};
+
 /** Shared by the workspace quiz and both Biology note embeds. All data are illustrative. */
 export const biologyQuizQuestions: Question[] = [
   {
@@ -620,5 +630,70 @@ export const biologyQuizQuestions: Question[] = [
       },
     ],
     stem: [],
+  },
+  // Grouped parts, as a paper prints them (board U2): (b) holds text and a
+  // figure, its (i) and (ii) the answers and marks.
+  {
+    groups: [
+      {
+        blocks: [
+          { text: 'Fig. 3.2 shows the stages of clotting.', type: 'text' },
+          clottingStages,
+        ],
+        id: 'q_blood:b',
+      },
+    ],
+    id: 'q_blood',
+    labels: 'letters',
+    layout: 'paper',
+    parts: [
+      {
+        answer: { accepted: ['Plasma'], type: 'short' },
+        blocks: [
+          { text: 'State the function of red blood cells.', type: 'text' },
+        ],
+        id: 'q_blood:a',
+        marks: 1,
+        solution: [{ text: 'They carry oxygen in plasma.', type: 'text' }],
+      },
+      {
+        answer: { accepted: ['Fibrin'], type: 'short' },
+        blocks: [{ text: 'Fill in the two empty boxes.', type: 'text' }],
+        group: 'q_blood:b',
+        id: 'q_blood:b1',
+        marks: 2,
+        solution: [
+          { text: 'Fibrin threads trap the blood cells.', type: 'text' },
+        ],
+      },
+      {
+        answer: { accepted: ['Stops blood loss'], type: 'short' },
+        blocks: [{ text: 'State two roles of clotting.', type: 'text' }],
+        group: 'q_blood:b',
+        id: 'q_blood:b2',
+        marks: 2,
+        solution: [
+          {
+            text: 'A clot stops blood loss and keeps microbes out.',
+            type: 'text',
+          },
+        ],
+      },
+      {
+        answer: { accepted: [], hints: [], type: 'open' },
+        blocks: [
+          { text: 'Explain why the wound stops bleeding.', type: 'text' },
+        ],
+        id: 'q_blood:c',
+        marks: 3,
+        markscheme: [
+          { marks: 1, text: 'Platelets stick at the cut.' },
+          { marks: 1, text: 'Fibrin threads form a mesh.' },
+          { marks: 1, text: 'Trapped cells seal the wound.' },
+        ],
+        solution: [],
+      },
+    ],
+    stem: [{ text: 'Blood contains several types of cell.', type: 'text' }],
   },
 ];

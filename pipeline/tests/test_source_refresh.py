@@ -37,7 +37,7 @@ def candidate(workspace, *, format="docx", standalone=False):
         )
         if standalone:
             conn.execute(
-                "UPDATE files SET workspace_id=NULL,chapter_id=NULL WHERE id=%s",
+                "UPDATE files SET workspace_id=NULL,topic_id=NULL WHERE id=%s",
                 (file_id,),
             )
         conn.execute(

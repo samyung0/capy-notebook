@@ -56,7 +56,7 @@ const centrePanel = () => find('#viewer [data-slot="card"]');
 const leftPanel = () =>
   find('[data-workspace-left-panel]')?.closest('[data-slot="card"]');
 const questionDialog = () =>
-  find('[role="dialog"] [data-undo-buttons]')?.closest('[role="dialog"]');
+  find('[role="dialog"] [data-save-state]')?.closest('[role="dialog"]');
 
 const box = (element: Element): Box => {
   const r = element.getBoundingClientRect();
@@ -120,33 +120,29 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
       title: m.tour_welcome_title,
     },
     {
-      absent: () => !!tourPanels() && !find('#rail'),
+      absent: () => !!tourPanels() && !find('#left'),
       at: inWorkspacePage,
       body: m.tour_files_body,
+      // The rail's Files section shows its tree beside it.
       prepare: () => {
         const panels = tourPanels();
-        if (panels && once('files')) panels.showFiles();
-        return !!panels;
+        if (!panels) return false;
+        if (once('files')) panels.showFiles();
+        return !!find('[data-workspace-file-tree]');
       },
-      spot: () => find('#rail [data-slot="card"]'),
+      spot: leftPanel,
       title: m.tour_files_title,
     },
     {
-      absent: () => !!tourPanels() && !find('#files'),
+      absent: () => !!tourPanels() && !find('#left'),
       at: inWorkspacePage,
       body: m.tour_chats_body,
-      // The left panel's view menu opens as a press on its title would.
+      // The rail's Agent section shows its chats beside it.
       prepare: () => {
         const panels = tourPanels();
         if (!panels) return false;
         if (once('chats')) panels.showChats();
-        const title = find('[data-workspace-left-panel] [data-panel-title]');
-        if (!title) return false;
-        if (once('menu'))
-          title.dispatchEvent(
-            new PointerEvent('pointerdown', { bubbles: true, button: 0 })
-          );
-        return title.getAttribute('data-state') === 'open';
+        return !find('[data-workspace-file-tree]');
       },
       spot: leftPanel,
       title: m.tour_chats_title,
@@ -154,7 +150,7 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
     {
       at: inWorkspacePage,
       body: m.tour_editor_body,
-      go: () => inWorkspace({ material: note, mode: 'edit' }),
+      go: () => inWorkspace({ material: note }),
       loading: !materials,
       missing: !!materials && !note,
       // Back from the note's own quiz: its question dialog closes first.
@@ -175,7 +171,7 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
       body: m.tour_quiz_body,
       // A quiz of its own, else the welcome note's embedded one: both edit a
       // question in the same dialog.
-      go: () => inWorkspace({ material: quiz ?? note, mode: 'edit' }),
+      go: () => inWorkspace({ material: quiz ?? note }),
       loading: !materials,
       missing: !!materials && !quiz && !note,
       // The quiz loads under the card, lit in the centre panel, then its first
@@ -200,7 +196,7 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
     {
       at: inWorkspacePage,
       body: m.tour_study_body,
-      go: () => inWorkspace({ study: true }),
+      go: () => inWorkspace({ study: 'practice' }),
       spot: centrePanel,
       title: m.tour_study_title,
     },

@@ -1,3 +1,4 @@
+import { effects as dataViewEffects } from '@blocksuite/data-view/effects';
 import { CenterPeek } from './components/layout';
 import { DatabaseTitle } from './components/title';
 import { DatabaseBlockComponent } from './database-block';
@@ -11,6 +12,8 @@ import { IconCell } from './properties/title/icon';
 import { HeaderAreaTextCell } from './properties/title/text';
 
 export function effects() {
+  // Capy (local change 26): data-view's elements, no longer defined by foundation.
+  dataViewEffects();
   customElements.define('affine-database-title', DatabaseTitle);
   customElements.define('data-view-header-area-icon', IconCell);
   customElements.define('affine-database-link-cell', LinkCell);

@@ -18,6 +18,11 @@ import (
 
 const SecretHeader = "X-Pipeline-Secret"
 
+// syncTimeout bounds a PostRaw call: a model call's 60 s wait in its model's
+// line (Epo 2026-11-04), so that its provider_busy answer arrives, plus the
+// 30 s this budget was before.
+const syncTimeout = 90 * time.Second
+
 type Client struct {
 	base   string
 	secret string
@@ -28,7 +33,7 @@ func New(base, secret string) *Client {
 	return &Client{
 		base:   strings.TrimRight(base, "/"),
 		secret: secret,
-		hc:     &http.Client{Timeout: 30 * time.Second},
+		hc:     &http.Client{Timeout: syncTimeout},
 	}
 }
 
@@ -144,6 +149,16 @@ func (c *Client) streamHC() *http.Client { return &http.Client{} }
 
 // PostRaw posts body as JSON and returns the raw JSON response.
 func (c *Client) PostRaw(ctx context.Context, path string, body any) (json.RawMessage, error) {
+	return c.postRaw(ctx, c.hc, path, body)
+}
+
+// PostRawUntil is PostRaw for a call that outlasts the client's timeout: ctx's
+// deadline alone bounds it.
+func (c *Client) PostRawUntil(ctx context.Context, path string, body any) (json.RawMessage, error) {
+	return c.postRaw(ctx, c.streamHC(), path, body)
+}
+
+func (c *Client) postRaw(ctx context.Context, hc *http.Client, path string, body any) (json.RawMessage, error) {
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
@@ -154,7 +169,7 @@ func (c *Client) PostRaw(ctx context.Context, path string, body any) (json.RawMe
 	}
 	c.applyHeaders(req)
 	obs.Inject(ctx, req)
-	res, err := c.hc.Do(req)
+	res, err := hc.Do(req)
 	if err != nil {
 		return nil, err
 	}

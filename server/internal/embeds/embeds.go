@@ -96,7 +96,7 @@ const (
 	IndexFigure Index = "figure"
 	// IndexMermaid gives the caption, then the source in a ```mermaid fence.
 	IndexMermaid Index = "mermaid"
-	// IndexQuestion renders a quiz question: stem, parts, options, solutions.
+	// IndexQuestion renders a quiz question: stem, groups, parts, options, solutions.
 	IndexQuestion Index = "question"
 	// IndexItem gives the referenced item's text at the reference's place.
 	IndexItem Index = "item"
@@ -284,6 +284,7 @@ func elementTypes() []Element {
 		"correctOptionIds", "correctBoolean")
 	question.Assets = []string{
 		"question.stem[].image.assetId",
+		"question.groups[].blocks[].image.assetId",
 		"question.parts[].blocks[].image.assetId",
 		"question.parts[].solution[].image.assetId",
 	}

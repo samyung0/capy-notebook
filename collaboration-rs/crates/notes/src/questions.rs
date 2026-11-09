@@ -8,7 +8,7 @@
 //! Where the TS raises a zod error, this returns its own message: callers only
 //! show it. The checks after the schema keep the TS messages.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
 use regex::Regex;
@@ -161,7 +161,7 @@ fn text(value: &Value, what: &str) -> Result<String, String> {
 }
 
 /// `identifier`.
-fn identifier(value: &Value, what: &str) -> Result<String, String> {
+pub fn identifier(value: &Value, what: &str) -> Result<String, String> {
     let Some(raw) = value.as_str() else {
         return fail(format!("{what}: expected a string"));
     };
@@ -1194,9 +1194,11 @@ pub fn figure_entries(block: &Value) -> Check {
 /// One part as the schema leaves it.
 struct Part {
     id: String,
+    group: Option<String>,
     answer: String,
     gaps: usize,
     open_accepted: Vec<String>,
+    drawn_sample: bool,
     awarded: Option<f64>,
     item_awards: Option<Vec<f64>>,
     marks: f64,
@@ -1205,9 +1207,29 @@ struct Part {
     solution: Vec<Block>,
 }
 
-/// `answerSchema`; returns the answer type, the gaps count and an open
-/// answer's accepted texts.
-fn answer(value: &Value) -> Result<(String, usize, Vec<String>), String> {
+/// What `answer` leaves for the part's own checks.
+struct Answer {
+    kind: String,
+    gaps: usize,
+    /// An open answer's accepted texts.
+    open_accepted: Vec<String>,
+    /// A drawing part holds a drawn sample answer.
+    drawn_sample: bool,
+}
+
+impl Answer {
+    fn of(kind: &str) -> Self {
+        Self {
+            kind: kind.into(),
+            gaps: 0,
+            open_accepted: vec![],
+            drawn_sample: false,
+        }
+    }
+}
+
+/// `answerSchema`.
+fn answer(value: &Value) -> Result<Answer, String> {
     let what = "answer";
     let map = object(value, what)?;
     let kind = map.get("type").and_then(Value::as_str).unwrap_or("");
@@ -1225,12 +1247,12 @@ fn answer(value: &Value) -> Result<(String, usize, Vec<String>), String> {
             {
                 return fail("Choose valid, distinct correct options.");
             }
-            Ok((kind.into(), 0, vec![]))
+            Ok(Answer::of(kind))
         }
         "boolean" => {
             strict(map, what, &["correct", "type"], &[])?;
             boolean(&map["correct"], what)?;
-            Ok((kind.into(), 0, vec![]))
+            Ok(Answer::of(kind))
         }
         "short" => {
             strict(map, what, &["accepted", "type"], &["unit"])?;
@@ -1251,7 +1273,7 @@ fn answer(value: &Value) -> Result<(String, usize, Vec<String>), String> {
             if unit && !accepted.iter().all(|a| valid_quantity_value(a)) {
                 return fail("Accepted answers must contain values only, in the required unit.");
             }
-            Ok((kind.into(), 0, vec![]))
+            Ok(Answer::of(kind))
         }
         "matching" => {
             strict(map, what, &["options", "pairs", "type"], &[])?;
@@ -1267,12 +1289,12 @@ fn answer(value: &Value) -> Result<(String, usize, Vec<String>), String> {
             if rights.iter().any(|r| *r >= options.len() as f64) {
                 return fail("Every pair needs a choice from the pool.");
             }
-            Ok((kind.into(), 0, vec![]))
+            Ok(Answer::of(kind))
         }
         "ordering" => {
             strict(map, what, &["items", "type"], &[])?;
             list(&map["items"], what, 2)?;
-            Ok((kind.into(), 0, vec![]))
+            Ok(Answer::of(kind))
         }
         "gaps" => {
             strict(map, what, &["accepted", "type"], &[])?;
@@ -1280,7 +1302,10 @@ fn answer(value: &Value) -> Result<(String, usize, Vec<String>), String> {
             for item in lists {
                 list(item, what, 1)?;
             }
-            Ok((kind.into(), lists.len(), vec![]))
+            Ok(Answer {
+                gaps: lists.len(),
+                ..Answer::of(kind)
+            })
         }
         "open" => {
             strict(map, what, &["accepted", "hints", "type"], &[])?;
@@ -1292,7 +1317,30 @@ fn answer(value: &Value) -> Result<(String, usize, Vec<String>), String> {
             for hint in array(&map["hints"], what, 0, QUESTION_ANSWERS_MAX)? {
                 text(hint, what)?;
             }
-            Ok((kind.into(), 0, accepted))
+            Ok(Answer {
+                open_accepted: accepted,
+                ..Answer::of(kind)
+            })
+        }
+        "drawing" => {
+            // Answered on the drawing board, opened plain (Epo 2026-11-06), with
+            // an optional drawn sample answer: its board and image, both the
+            // quiz's editor assets (Q3).
+            strict(map, what, &["type"], &["sample"])?;
+            let drawn_sample = match present(map, "sample") {
+                Some(sample) => {
+                    let sample = object(sample, "sample")?;
+                    strict(sample, "sample", &["board", "image"], &[])?;
+                    identifier(&sample["board"], "sample")?;
+                    identifier(&sample["image"], "sample")?;
+                    true
+                }
+                None => false,
+            };
+            Ok(Answer {
+                drawn_sample,
+                ..Answer::of(kind)
+            })
         }
         _ => fail(format!("{what}: invalid type")),
     }
@@ -1312,9 +1360,18 @@ fn part(value: &Value) -> Result<Part, String> {
         map,
         what,
         &["answer", "blocks", "id", "marks", "solution"],
-        &["awarded", "itemAwards", "markscheme"],
+        &["awarded", "group", "itemAwards", "markscheme"],
     )?;
-    let (answer, gaps, open_accepted) = answer(&map["answer"])?;
+    let group = match present(map, "group") {
+        Some(group) => Some(identifier(group, what)?),
+        None => None,
+    };
+    let Answer {
+        kind: answer,
+        gaps,
+        open_accepted,
+        drawn_sample,
+    } = answer(&map["answer"])?;
     let awarded = match present(map, "awarded") {
         Some(v) => {
             let n = number(v, what)?;
@@ -1366,9 +1423,11 @@ fn part(value: &Value) -> Result<Part, String> {
     let solution = block_list(&map["solution"], 0)?;
     Ok(Part {
         id,
+        group,
         answer,
         gaps,
         open_accepted,
+        drawn_sample,
         awarded,
         item_awards,
         marks,
@@ -1376,6 +1435,112 @@ fn part(value: &Value) -> Result<Part, String> {
         blocks,
         solution,
     })
+}
+
+/// A group of parts (Epo 2026-11-04): text and figures, the stem's block kinds
+/// and caps, with no answer or marks. Strict, so it holds no group of its own.
+struct Group {
+    id: String,
+    blocks: Vec<Block>,
+}
+
+fn group(value: &Value) -> Result<Group, String> {
+    let what = "group";
+    let map = object(value, what)?;
+    strict(map, what, &["blocks", "id"], &[])?;
+    Ok(Group {
+        id: identifier(&map["id"], what)?,
+        blocks: block_list(&map["blocks"], 0)?,
+    })
+}
+
+/// A part names a group the question holds, a group's parts sit next to each
+/// other in the flat list, and a group has at least one part.
+fn check_groups(groups: &[Group], parts: &[Part]) -> Check {
+    let mut held = HashSet::new();
+    for group in groups {
+        if !held.insert(group.id.as_str()) {
+            return fail("Group IDs must be unique.");
+        }
+    }
+    let mut seen = HashSet::new();
+    let mut previous = None;
+    for part in parts {
+        let Some(id) = part.group.as_deref() else {
+            previous = None;
+            continue;
+        };
+        if !held.contains(id) {
+            return fail("A part names a group the question does not have.");
+        }
+        if seen.contains(id) && previous != Some(id) {
+            return fail("A group's parts must sit next to each other.");
+        }
+        seen.insert(id);
+        previous = Some(id);
+    }
+    if seen.len() != held.len() {
+        return fail("A group needs at least one part.");
+    }
+    Ok(())
+}
+
+/// What a merge of two editors' changes can leave, as readers take it (Epo
+/// 2026-11-04): a part naming a group that is gone has no group, a group with
+/// no parts goes, and a group's parts come together at the first one's place,
+/// in their order; `groups` lists what is left in reading order. The
+/// browser's `repairGroups` is the same; both run
+/// testdata/repairs/groups.json.
+pub fn repair_groups(question: &mut Value) {
+    let held: HashMap<String, Value> = question
+        .get("groups")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|group| {
+            let id = group.get("id")?.as_str()?;
+            Some((id.to_owned(), group.clone()))
+        })
+        .collect();
+    let Some(parts) = question.get_mut("parts").and_then(Value::as_array_mut) else {
+        return;
+    };
+    let mut gathered: Vec<Value> = Vec::with_capacity(parts.len());
+    let mut groups: Vec<Value> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    let of = |part: &Value| part.get("group").and_then(Value::as_str).map(str::to_owned);
+    for at in 0..parts.len() {
+        let Some(id) = of(&parts[at]) else {
+            gathered.push(parts[at].clone());
+            continue;
+        };
+        let Some(group) = held.get(&id) else {
+            let mut part = parts[at].clone();
+            if let Some(part) = part.as_object_mut() {
+                part.remove("group");
+            }
+            gathered.push(part);
+            continue;
+        };
+        if seen.insert(id.clone()) {
+            groups.push(group.clone());
+            gathered.extend(
+                parts
+                    .iter()
+                    .filter(|part| of(part).as_deref() == Some(&id))
+                    .cloned(),
+            );
+        }
+    }
+    *parts = gathered;
+    let Some(question) = question.as_object_mut() else {
+        return;
+    };
+    if groups.is_empty() {
+        question.remove("groups");
+    } else {
+        question.insert("groups".into(), Value::Array(groups));
+    }
 }
 
 /// A question as the schema leaves it.
@@ -1414,7 +1579,7 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
         map,
         what,
         &["id", "labels", "layout", "parts", "stem"],
-        &["level"],
+        &["groups", "level"],
     )?;
     let id = identifier(&map["id"], what)?;
     one_of(&map["labels"], what, &["letters", "numbers"])?;
@@ -1427,6 +1592,14 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
         .map(part)
         .collect::<Result<_, _>>()?;
     let stem = block_list(&map["stem"], 0)?;
+    let groups = match present(map, "groups") {
+        Some(groups) => array(groups, what, 0, QUESTION_PARTS_MAX)?
+            .iter()
+            .map(group)
+            .collect::<Result<Vec<_>, _>>()?,
+        None => Vec::new(),
+    };
+    check_groups(&groups, &parts)?;
 
     let mut ids = HashSet::new();
     for part in &parts {
@@ -1455,7 +1628,8 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
                 );
             }
         }
-        if (part.answer == "open") != part.markscheme.is_some() {
+        if model_marked(&part.answer) != part.markscheme.is_some() {
+            // The frozen Node corpus pins this wording (tests/validation.rs).
             return fail("Open answers need a marking scheme, and only open answers have one.");
         }
         let marks = part.markscheme.clone().unwrap_or_default();
@@ -1480,6 +1654,9 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
                     "Item awards must give none, half or all of each marking item's marks.",
                 );
             }
+        }
+        if policy.bank && part.drawn_sample {
+            return fail("A bank drawing part has no drawn sample answer.");
         }
         if policy.bank && part.solution.is_empty() {
             return fail("Bank questions need a worked solution for every part.");
@@ -1506,11 +1683,15 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
             "A question has at most {QUIZ_QUESTION_PARTS_MAX} parts."
         ));
     }
-    for block in stem.iter().chain(
-        parts
-            .iter()
-            .flat_map(|p| p.blocks.iter().chain(&p.solution)),
-    ) {
+    for block in stem
+        .iter()
+        .chain(groups.iter().flat_map(|g| g.blocks.iter()))
+        .chain(
+            parts
+                .iter()
+                .flat_map(|p| p.blocks.iter().chain(&p.solution)),
+        )
+    {
         block.description_fits(policy.bank)?;
         if block.kind != "image" && block.kind != "graph" {
             continue;
@@ -1529,9 +1710,15 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
     }
     Ok(Question {
         id,
-        open_parts: parts.iter().filter(|p| p.answer == "open").count(),
+        open_parts: parts.iter().filter(|p| model_marked(&p.answer)).count(),
         part_ids: parts.into_iter().map(|p| p.id).collect(),
     })
+}
+
+/// Answer types a model marks against the part's marking items: written
+/// (open) and drawn answers.
+pub fn model_marked(answer: &str) -> bool {
+    answer == "open" || answer == "drawing"
 }
 
 /// `Number(digits)` as JS prints it (leading zeros dropped).
@@ -1553,7 +1740,7 @@ pub fn assert_quiz_bounds(parts: usize, open_parts: usize) -> Check {
     }
     if open_parts > QUIZ_OPEN_PARTS_MAX {
         return fail(format!(
-            "A quiz has at most {QUIZ_OPEN_PARTS_MAX} open parts."
+            "A quiz has at most {QUIZ_OPEN_PARTS_MAX} AI-marked parts."
         ));
     }
     Ok(())

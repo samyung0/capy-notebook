@@ -122,18 +122,11 @@ func TestWorkspaceOnlyKeepsTheOperationsAndReplaysWithItsMessage(t *testing.T) {
 }
 
 // The open item reaches the model with its stored title, and only when it is a
-// live item of this workspace; the browser never supplies the title. Study
-// progress and the saved study preferences ride along.
-func TestStreamSendsTheOpenResourceAndStudySwitch(t *testing.T) {
+// live item of this workspace; the browser never supplies the title. The saved
+// study preferences ride along.
+func TestStreamSendsTheOpenResourceAndStudyPreferences(t *testing.T) {
 	h, st, bodies := streamCapture(t)
-	if _, err := st.Pool().Exec(t.Context(),
-		`INSERT INTO workspace_study (user_id, workspace_id, enabled) VALUES ('u_editor','ws_e2e_private',true)
-		 ON CONFLICT (user_id, workspace_id) DO UPDATE SET enabled=true`); err != nil {
-		t.Fatal(err)
-	}
 	t.Cleanup(func() {
-		_, _ = st.Pool().Exec(context.Background(),
-			`DELETE FROM workspace_study WHERE user_id='u_editor' AND workspace_id='ws_e2e_private'`)
 		_, _ = st.Pool().Exec(context.Background(), `UPDATE users SET study_preferences='{}' WHERE id='u_editor'`)
 	})
 	// Preferences are saved through the account route, then reach every turn.
@@ -172,37 +165,8 @@ func TestStreamSendsTheOpenResourceAndStudySwitch(t *testing.T) {
 		if got := string(body["role"]); got != `"editor"` {
 			t.Fatalf("turn %d role = %s", i, got)
 		}
-		if string(body["studyProgress"]) != "true" {
-			t.Fatalf("turn %d studyProgress = %s", i, body["studyProgress"])
-		}
 		if got := string(body["studyPreferences"]); got != `{"writingStyle":"brief","quiz":"less"}` {
 			t.Fatalf("turn %d studyPreferences = %s", i, got)
 		}
-	}
-}
-
-// read_study_progress reads the requester's own progress, and only while it is
-// on for them in that workspace.
-func TestInternalStudyProgressNeedsProgressOn(t *testing.T) {
-	h, st := openInternalHTTP(t)
-	body := map[string]any{"workspaceId": "ws_e2e_private", "userId": "u_editor"}
-	if _, err := st.Pool().Exec(t.Context(),
-		`INSERT INTO workspace_study (user_id, workspace_id, enabled) VALUES ('u_editor','ws_e2e_private',false)
-		 ON CONFLICT (user_id, workspace_id) DO UPDATE SET enabled=false`); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_, _ = st.Pool().Exec(context.Background(),
-			`DELETE FROM workspace_study WHERE user_id='u_editor' AND workspace_id='ws_e2e_private'`)
-	})
-	if rec := doInternal(t, h, http.MethodPost, "/api/internal/study-progress", pipeSecret, body); rec.Code != http.StatusForbidden {
-		t.Fatalf("progress off: status = %d body=%s", rec.Code, rec.Body.String())
-	}
-	if _, err := st.Pool().Exec(t.Context(),
-		`UPDATE workspace_study SET enabled=true WHERE user_id='u_editor' AND workspace_id='ws_e2e_private'`); err != nil {
-		t.Fatal(err)
-	}
-	if rec := doInternal(t, h, http.MethodPost, "/api/internal/study-progress", pipeSecret, body); rec.Code != http.StatusOK {
-		t.Fatalf("progress on: status = %d body=%s", rec.Code, rec.Body.String())
 	}
 }

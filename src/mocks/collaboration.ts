@@ -49,6 +49,7 @@ import {
 } from '@/features/notes/blocksuite/layout';
 import {
   COLLABORATION_LATE_REASON,
+  COLLABORATION_NOT_FOUND_REASON,
   COLLABORATION_OUTDATED_REASON,
 } from '@/features/notes/collaborationEvents';
 import { withoutBlanks } from '@/features/questions/types';
@@ -61,6 +62,7 @@ import {
 } from '@/features/quizzes/liveQuiz';
 import { bytesToBase64 } from '@/lib/base64';
 import * as db from './db';
+import { draftQuizQuestions } from './extraction';
 
 /** In-page stand-in for the collaboration sidecar. A room is one Y.Doc that
  * every participant (the app's editor, the source editor, chaos peers) merges
@@ -329,6 +331,13 @@ function materialRoom(name: string, initialValue: MaterialValue): Room {
   )
     room.layout = 'blocks';
   if (!checkpoints.has(name)) {
+    // A device copy of a load-test or scenario note merges with its reseeded
+    // room: the same items, not a second copy of the note.
+    if (
+      import.meta.env.VITE_LOAD_TEST_SEED === 'true' ||
+      materialId.startsWith('mock-scenario-')
+    )
+      room.document.clientID = 7;
     if (room.layout === 'blocks') applyValue(room.document, initialValue);
     else
       room.document
@@ -760,10 +769,11 @@ export function setCollaborationSlowed(value: boolean) {
   window.dispatchEvent(new Event(REACHABILITY));
 }
 
-// A note whose collaboration-token requests hang, or answer after `delayMs`
-// (the join's 30 s, Epo 2026-10-23); kept across page loads, so a first open
-// starts held.
+// A note whose collaboration-token requests hang until let go, or answer after
+// `delayMs` (the join's 30 s, Epo 2026-10-23); kept across page loads, so a first
+// open starts held.
 const TOKENS_HELD = 'capy.mock.collaboration.tokensHeld';
+const TOKENS_LET_GO = 'capy:mock-collaboration-tokens-let-go';
 
 export function holdNoteTokens(materialId: string | null, delayMs?: number) {
   if (materialId)
@@ -771,18 +781,25 @@ export function holdNoteTokens(materialId: string | null, delayMs?: number) {
       TOKENS_HELD,
       JSON.stringify({ delayMs: delayMs ?? null, materialId })
     );
-  else sessionStorage.removeItem(TOKENS_HELD);
+  else {
+    sessionStorage.removeItem(TOKENS_HELD);
+    window.dispatchEvent(new Event(TOKENS_LET_GO));
+  }
 }
 
-/** How long a note's token request waits: null at once, Infinity for ever. */
-export function noteTokenDelay(materialId: string): number | null {
-  if (!browser) return null;
+/** Waits as long as a note's token request is held: at once when it isn't. */
+export async function noteTokenHold(materialId: string) {
+  if (!browser) return;
   const held = JSON.parse(sessionStorage.getItem(TOKENS_HELD) ?? 'null') as {
     delayMs: number | null;
     materialId: string;
   } | null;
-  if (held?.materialId !== materialId) return null;
-  return held.delayMs ?? Number.POSITIVE_INFINITY;
+  if (held?.materialId !== materialId) return;
+  await new Promise<void>((resolve) => {
+    if (held.delayMs === null)
+      window.addEventListener(TOKENS_LET_GO, () => resolve(), { once: true });
+    else setTimeout(resolve, held.delayMs);
+  });
 }
 
 // A note's current room schema, as the service's material_yjs_documents
@@ -870,6 +887,7 @@ export function setMockReportedVersion(materialId: string, version: number) {
 }
 
 const outdated = { reason: COLLABORATION_OUTDATED_REASON };
+const refused = { reason: COLLABORATION_NOT_FOUND_REASON };
 // Set by refuseThisBuild(): a note room refuses every join until the page
 // reloads (the reloaded page is the new build).
 let buildRefused = false;
@@ -1045,6 +1063,11 @@ class MockCollaborationProvider implements UnifiedProvider {
   announceOutdated() {
     this.disconnect();
     this.options.onAuthenticationFailed?.(outdated);
+  }
+
+  announceRefused() {
+    this.disconnect();
+    this.options.onAuthenticationFailed?.(refused);
   }
 
   /** The service closed this note's channel (an eviction): the editor
@@ -1254,6 +1277,11 @@ class MockSourceProvider implements SourceProvider {
     this.config.onAuthenticationFailed?.(outdated);
   }
 
+  announceRefused() {
+    this.disconnect();
+    this.config.onAuthenticationFailed?.(refused);
+  }
+
   announceReadOnly() {
     // As for a note: the refused update never reaches the durable room.
     this.room.retired = true;
@@ -1288,7 +1316,7 @@ class MockSourceProvider implements SourceProvider {
     });
     this.drained = true;
     this.socketStatus = 'connected';
-    this.config.onClose?.();
+    this.config.onClose?.({ code: 0, reason: 'socket closed' });
   }
 
   announceEpoch(fileId: string, newEpoch: number) {
@@ -1342,6 +1370,21 @@ export function mockNoteRoomText(materialId: string): string | null {
  * from now on each answers its next join `collaboration-late`, and a new
  * session joins as usual (`every`: a new one is late too, which the late path
  * takes for a failure); null ends it. */
+/** A note room as a spec checks it: its top-level block types, whether a
+ * participant wrote since it loaded, and its whole state. */
+export function mockNoteRoomState(materialId: string) {
+  const room = rooms.get(mockMaterialRoom(materialId));
+  if (!room) return null;
+  const root = room.document.get('content', Y.XmlText);
+  return {
+    blocks: (root.toDelta() as { insert: unknown }[]).map(({ insert }) =>
+      insert instanceof Y.XmlText ? String(insert.getAttribute('type')) : ''
+    ),
+    dirty: room.dirty,
+    state: Array.from(Y.encodeStateAsUpdate(room.document)),
+  };
+}
+
 export function lateSessions(materialId: string | null, every = false) {
   if (materialId) lateMaterials.set(materialId, every ? 'every' : 'joined');
   else lateMaterials.clear();
@@ -1376,11 +1419,20 @@ export function admitMockNoteDrafts(materialId: string, update: Uint8Array) {
   if (!room) throw new Error(`Mock room for ${materialId} is not open`);
   Y.applyUpdate(room.document, update);
 }
-/** The collaboration service's refusal once the account freezes: every open
- * room turns read-only for its writer. */
+/** Every open room refuses this reader when it rejoins: it was hidden from
+ * them, or they lost their access. Returns how many there were. */
+export function refuseOpenRooms() {
+  const open = [...materialProviders, ...sourceProviders, ...itemProviders];
+  for (const provider of open) provider.announceRefused();
+  return open.length;
+}
+/** The collaboration service's refusal once the account freezes, or a writer
+ * lowered to a reader: every open room turns read-only for its writer. Returns
+ * how many there were. */
 export function announceReadOnly() {
-  for (const provider of [...materialProviders, ...sourceProviders])
-    provider.announceReadOnly();
+  const open = [...materialProviders, ...sourceProviders, ...itemProviders];
+  for (const provider of open) provider.announceReadOnly();
+  return open.length;
 }
 const failedSourceSaves = new Set<string>();
 export function failNextSourceSave(fileId: string) {
@@ -1421,7 +1473,7 @@ export function announceSourceMoved(fileId: string, workspaceId: string) {
   const file = db.files.find((row) => row.id === fileId);
   if (file) {
     file.workspaceId = workspaceId;
-    file.chapterId = null;
+    file.topicId = null;
   }
   for (const provider of [...sourceProviders])
     provider.announceMoved(fileId, workspaceId);
@@ -1580,7 +1632,12 @@ function itemRoom(name: string): Room {
   if (!checkpoints.has(name) && material?.kind === 'quiz') {
     const content = new Y.Doc();
     const keys = new Y.Doc();
-    seedQuiz(content, keys, db.quizFromMaterial(material).questions);
+    seedQuiz(
+      content,
+      keys,
+      draftQuizQuestions.get(material.id) ??
+        db.quizFromMaterial(material).questions
+    );
     const own = name.startsWith('keys:') ? keys : content;
     Y.applyUpdate(room.document, Y.encodeStateAsUpdate(own));
     const other = name.startsWith('keys:') ? content : keys;
@@ -1700,6 +1757,20 @@ class MockItemProvider implements ItemProvider {
   announceOutdated() {
     this.disconnect();
     this.config.onAuthenticationFailed?.(outdated);
+  }
+
+  announceRefused() {
+    this.disconnect();
+    this.config.onAuthenticationFailed?.(refused);
+  }
+
+  announceReadOnly() {
+    this.config.onStateless?.({
+      payload: JSON.stringify({
+        room: this.config.name,
+        type: 'room-read-only',
+      }),
+    });
   }
 
   disconnect() {

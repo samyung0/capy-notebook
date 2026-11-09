@@ -13,7 +13,13 @@ import { issueMessages, questionIssues } from '@/features/questions/issues';
 import { blankQuestion } from '@/features/questions/types';
 import { validateQuestion } from '@/features/questions/validation';
 import { m } from '@/i18n';
-import { removeQuestion, writeQuestion } from './liveQuiz';
+import { quizSampleUpload } from './drawing/DrawnSample';
+import {
+  questionState,
+  removeQuestion,
+  removeUnchangedQuestion,
+  writeQuestion,
+} from './liveQuiz';
 import { type QuizRooms, useQuizQuestions } from './liveQuizRooms';
 import { QuizQuestionList } from './QuizPage';
 
@@ -72,8 +78,8 @@ export function QuizForm({
   onEmpty?: () => void;
 }) {
   const [editing, setEditing] = useState<{
-    /** Added by this Add question and not written to since. */
-    blank: boolean;
+    /** Added by this Add question and not written to since: what it held then. */
+    blank: string | null;
     id: string;
   } | null>(null);
   const question = editing && questions.find((q) => q.id === editing.id);
@@ -92,7 +98,7 @@ export function QuizForm({
         // The tour opens the first question's dialog through it.
         data-question-edit
         iconLeft="pencil"
-        onClick={() => setEditing({ blank: false, id: item.id })}
+        onClick={() => setEditing({ blank: null, id: item.id })}
         rounded="large"
         size="sm"
         type="button"
@@ -114,7 +120,11 @@ export function QuizForm({
     </div>
   );
   const close = () => {
-    if (editing?.blank) removeQuestion(content, keys, editing.id);
+    if (editing?.blank)
+      removeUnchangedQuestion(content, keys, {
+        id: editing.id,
+        state: editing.blank,
+      });
     setEditing(null);
   };
   return (
@@ -137,7 +147,10 @@ export function QuizForm({
         onClick={() => {
           const added = blankQuestion();
           writeQuestion(content, keys, added);
-          setEditing({ blank: true, id: added.id });
+          setEditing({
+            blank: questionState(content, keys, added.id),
+            id: added.id,
+          });
         }}
         rounded="large"
         type="button"
@@ -163,9 +176,7 @@ export function QuizForm({
               status,
               undo,
               write: (next) => {
-                setEditing(
-                  (current) => current && { ...current, blank: false }
-                );
+                setEditing((current) => current && { ...current, blank: null });
                 writeQuestion(content, keys, next);
               },
             }}
@@ -176,6 +187,7 @@ export function QuizForm({
               questions.findIndex((q) => q.id === question.id) + 1
             }
             uploadAsset={quizImageUpload(quizId)}
+            uploadSample={quizSampleUpload(quizId)}
           />
         </Suspense>
       )}
@@ -198,7 +210,6 @@ export function QuizRecovery({
     recovery.keys?.doc ?? rooms.keys?.doc
   );
   const state = recoveryBanner({
-    expired: !!(recovery.content?.expired || recovery.keys?.expired),
     refused: !!(recovery.content?.refused || recovery.keys?.refused),
   });
   return (

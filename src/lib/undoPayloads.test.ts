@@ -75,9 +75,10 @@ describe('agent Undo payloads in the browser (Epo 2026-10-21)', () => {
   // from memory and IndexedDB, and other documents' payloads stay.
   it("drops a document's payloads once it shows a newer lineage", async () => {
     const store = await reloaded();
+    const other = payload('op_other', 'mat_other', 1);
     store.keepUndoPayloads([
       payload('op_old', 'mat_compacted', 1),
-      payload('op_other', 'mat_other', 1),
+      other,
       payload('op_file', 'f_published', 2),
     ]);
     await vi.waitFor(async () =>
@@ -92,7 +93,7 @@ describe('agent Undo payloads in the browser (Epo 2026-10-21)', () => {
       expect(await localUndoPayload('op_file')).toBeUndefined();
     });
     expect(await (await reloaded()).undoPayload('op_other')).toMatchObject(
-      payload('op_other', 'mat_other', 1)
+      other
     );
   });
 

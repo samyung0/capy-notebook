@@ -31,6 +31,12 @@ type notificationEvent struct {
 	// chat_turn
 	ConversationID string `json:"conversationId,omitempty"`
 	Status         string `json:"status,omitempty"`
+	// extraction: a Make a quiz run ended (Status done or failed).
+	ExtractionID string `json:"extractionId,omitempty"`
+	// assignment_closed, assignment_republished, assignment_updated: staff
+	// closed, gave new questions to or edited an assignment the user is taking.
+	AssignmentID string `json:"assignmentId,omitempty"`
+	// todo: something on the user's To do changed; the event carries no rows.
 }
 
 func (a *api) publishNotificationEvent(ctx context.Context, userID string, event notificationEvent) {
@@ -48,6 +54,72 @@ func (a *api) publishNotificationEvent(ctx context.Context, userID string, event
 // Stripe or the reload worker changed it; the event carries no billing data.
 func (a *api) publishBillingChanged(ctx context.Context, userID string) {
 	a.publishNotificationEvent(ctx, userID, notificationEvent{Type: "billing"})
+}
+
+// publishAssignmentClosed tells whoever has an attempt running on the assignment
+// it closed, once that committed, so a page taking it submits what it holds (Epo
+// 2026-11-05). Best effort: a tab that misses it learns at its next save, and the
+// sweep submits what was saved.
+func (a *api) publishAssignmentClosed(ctx context.Context, id string) {
+	a.tellRunningAttempts(ctx, id, "assignment_closed")
+}
+
+// publishAssignmentRepublished tells them it has new questions, once that
+// committed, so a page taking it reads them (Epo 2026-11-05). Best effort: a tab
+// that misses it shows the old ones until its next load, and its submit is graded
+// on the new.
+func (a *api) publishAssignmentRepublished(ctx context.Context, id string) {
+	a.tellRunningAttempts(ctx, id, "assignment_republished")
+}
+
+// publishAssignmentUpdated tells whoever is taking it that its settings
+// changed, so the page rereads the attempt (Epo 2026-11-08). Best effort.
+func (a *api) publishAssignmentUpdated(ctx context.Context, id string) {
+	a.tellRunningAttempts(ctx, id, "assignment_updated")
+}
+
+// todoAudience is whom publishTodo tells about an assignment: everyone it is
+// given to and the class's staff, or with staffOnly its staff alone. A failed
+// read is logged and tells no one: best effort, as the lists refetch on load.
+func (a *api) todoAudience(ctx context.Context, id string, staffOnly bool) []string {
+	if a.rdb == nil {
+		return nil
+	}
+	members, staff, err := a.s.TodoAudience(ctx, id)
+	if err != nil {
+		obs.Log(ctx).Warn("to do audience not read", "assignment_id", id, "error", err)
+		return nil
+	}
+	if staffOnly {
+		return staff
+	}
+	return append(members, staff...)
+}
+
+// publishTodo tells each user's open tabs to refetch To do (Epo 2026-11-08),
+// once the change committed.
+func (a *api) publishTodo(ctx context.Context, users ...string) {
+	seen := map[string]bool{}
+	for _, user := range users {
+		if !seen[user] {
+			seen[user] = true
+			a.publishNotificationEvent(ctx, user, notificationEvent{Type: "todo"})
+		}
+	}
+}
+
+func (a *api) tellRunningAttempts(ctx context.Context, id, event string) {
+	if a.rdb == nil {
+		return
+	}
+	users, err := a.s.RunningAttemptUsers(ctx, id)
+	if err != nil {
+		obs.Log(ctx).Warn("assignment event not announced", "assignment_id", id, "event", event, "error", err)
+		return
+	}
+	for _, user := range users {
+		a.publishNotificationEvent(ctx, user, notificationEvent{Type: event, AssignmentID: id})
+	}
 }
 
 func (a *api) publishNotificationRemovals(ctx context.Context, removals []store.NotificationRemoval) {

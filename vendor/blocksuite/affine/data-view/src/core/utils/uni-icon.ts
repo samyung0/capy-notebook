@@ -1,4 +1,3 @@
-import * as icons from '@blocksuite/icons/lit';
 import { ShadowlessElement } from '@blocksuite/std';
 import { css, html, type TemplateResult } from 'lit';
 import { property } from 'lit/decorators.js';
@@ -20,17 +19,18 @@ export class AffineLitIcon extends ShadowlessElement {
   `;
 
   protected override render(): unknown {
-    const createIcon = icons[this.name] as () => TemplateResult;
-    return html`${createIcon?.()}`;
+    return html`${this.icon?.()}`;
   }
 
   @property({ attribute: false })
-  accessor name!: keyof typeof icons;
+  accessor icon!: () => TemplateResult;
 }
 
-const litIcon = createUniComponentFromWebComponent<{ name: string }>(
-  AffineLitIcon
-);
-export const createIcon = (name: keyof typeof icons) => {
-  return uniMap(litIcon, () => ({ name }));
+const litIcon = createUniComponentFromWebComponent<{
+  icon: () => TemplateResult;
+}>(AffineLitIcon);
+// Capy (local change 27): takes the icon itself, not its name. A lookup by name kept
+// every icon in the build (about 137 KB gzipped), wherever the icons are loaded.
+export const createIcon = (icon: () => TemplateResult) => {
+  return uniMap(litIcon, () => ({ icon }));
 };

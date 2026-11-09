@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
-import { axisNumber, tickStep, validateGraphTerm, wrapLabel } from './graph';
+import { axisNumber, validateGraphTerm, wrapLabel } from './graph';
+import { tickStep } from './graphTicks';
 
 it('accepts arithmetic functions but not property access or statements', () => {
   expect(() => validateGraphTerm('sin(x) + 2.5*x^2')).not.toThrow();

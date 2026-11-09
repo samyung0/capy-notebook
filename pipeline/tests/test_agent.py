@@ -41,14 +41,14 @@ def no_pending_sources(monkeypatch):
     async def load(*_args, **_kwargs):
         return pending.PendingSources()
 
-    async def chapters(*_args, **_kwargs):
+    async def topics(*_args, **_kwargs):
         return [], None
 
     async def titles(*_args, **_kwargs):
         return {}
 
     monkeypatch.setattr(pending, "load", load)
-    monkeypatch.setattr(agent.store, "workspace_chapters", chapters)
+    monkeypatch.setattr(agent.store, "workspace_topics", topics)
     monkeypatch.setattr(agent.store, "resource_titles", titles)
 
 
@@ -228,8 +228,8 @@ async def test_search_embedding_count_is_telemetry_not_a_cap(monkeypatch):
     budget = agent.TurnBudget(embedding_calls=8)
     ctx = ToolContext(workspace_id="ws_1", budget=budget)
     ctx._scope_outline = {
-        "chapters": [],
-        "files": [{"id": "f_1", "name": "bio.pdf", "chapter_id": None, "chunks": 1}],
+        "topics": [],
+        "files": [{"id": "f_1", "name": "bio.pdf", "topic_id": None, "chunks": 1}],
     }
     result = await tools._search_workspace({"query": "chlorophyll"}, ctx)
 
@@ -252,8 +252,8 @@ async def test_a_repeat_search_is_told_it_found_nothing_new(monkeypatch):
     monkeypatch.setattr(tools, "search", _search)
     ctx = ToolContext(workspace_id="ws_1", budget=agent.TurnBudget())
     ctx._scope_outline = {
-        "chapters": [],
-        "files": [{"id": "f_1", "name": "bio.pdf", "chapter_id": None, "chunks": 1}],
+        "topics": [],
+        "files": [{"id": "f_1", "name": "bio.pdf", "topic_id": None, "chunks": 1}],
     }
 
     first = await tools._search_workspace({"query": "Hardy-Weinberg"}, ctx)
@@ -296,9 +296,9 @@ async def test_search_hit_location_can_be_used_for_a_document_read(monkeypatch):
     monkeypatch.setattr(tools.store, "read_file_range", _read_range)
     ctx = ToolContext(workspace_id="ws_1", budget=agent.TurnBudget())
     ctx._scope_outline = {
-        "chapters": [],
+        "topics": [],
         "files": [
-            {"id": "f_opaque", "name": "notes.md", "chapter_id": None, "chunks": 12}
+            {"id": "f_opaque", "name": "notes.md", "topic_id": None, "chunks": 12}
         ],
     }
     tools.assign_citations(ctx, [_passage(chunk_id="prior", file_id="f_opaque")])
@@ -384,8 +384,8 @@ async def test_search_rejects_one_invalid_file_without_running_search(monkeypatc
     budget = agent.TurnBudget()
     ctx = ToolContext(workspace_id="ws_1", budget=budget)
     ctx._scope_outline = {
-        "chapters": [],
-        "files": [{"id": "f_1", "name": "one.pdf", "chapter_id": None, "chunks": 1}],
+        "topics": [],
+        "files": [{"id": "f_1", "name": "one.pdf", "topic_id": None, "chunks": 1}],
     }
     result = await tools._search_workspace(
         {"query": "q", "file_ids": ["f_1", "f_missing"]}, ctx
@@ -400,10 +400,10 @@ async def test_search_rejects_one_invalid_file_without_running_search(monkeypatc
 async def test_read_rejects_a_file_outside_the_scope(monkeypatch):
     ctx = ToolContext(workspace_id="ws_1", file_ids=["f_1"])
     ctx._scope_outline = {
-        "chapters": [],
+        "topics": [],
         "files": [
-            {"id": "f_1", "name": "one.pdf", "chapter_id": None, "chunks": 1},
-            {"id": "f_2", "name": "two.pdf", "chapter_id": None, "chunks": 1},
+            {"id": "f_1", "name": "one.pdf", "topic_id": None, "chunks": 1},
+            {"id": "f_2", "name": "two.pdf", "topic_id": None, "chunks": 1},
         ],
     }
     read = await tools._read_document({"file_id": "f_2"}, ctx)
@@ -421,12 +421,12 @@ async def test_read_document_refuses_a_quiz_in_words(monkeypatch):
     monkeypatch.setattr(tools.store, "read_file_range", no_rows)
     ctx = ToolContext(workspace_id="ws_1")
     ctx._scope_outline = {
-        "chapters": [],
+        "topics": [],
         "files": [
             {
                 "id": "mat_quiz",
                 "name": "Cells quiz",
-                "chapter_id": None,
+                "topic_id": None,
                 "chunks": 0,
                 "kind": "material",
                 "material_kind": "quiz",
@@ -450,8 +450,8 @@ async def test_create_material_sends_its_sources_as_written(monkeypatch):
         assistant_message_id="m_1",
     )
     ctx._scope_outline = {
-        "chapters": [],
-        "files": [{"id": "f_1", "name": "one.pdf", "chapter_id": None, "chunks": 0}],
+        "topics": [],
+        "files": [{"id": "f_1", "name": "one.pdf", "topic_id": None, "chunks": 0}],
     }
     monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
     monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
@@ -494,7 +494,7 @@ async def test_create_material_sends_its_sources_as_written(monkeypatch):
 
     assert not result.refused
     assert seen["sources"] == sources
-    assert "fileIds" not in seen and "chapterIds" not in seen
+    assert "fileIds" not in seen and "topicIds" not in seen
     assert seen["assistantMessageId"] == "m_1"
     assert seen["toolCallId"] == "call_1"
 
@@ -508,7 +508,7 @@ async def test_the_loop_drops_underscore_args_the_model_sends(monkeypatch):
         operations=frozenset(contract.OPERATIONS),
         assistant_message_id="m_1",
     )
-    ctx._scope_outline = {"chapters": [], "files": []}
+    ctx._scope_outline = {"topics": [], "files": []}
     monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
     monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
     sent: list[dict] = []
@@ -592,8 +592,8 @@ async def test_create_material_clamps_model_title(monkeypatch):
         assistant_message_id="m_1",
     )
     ctx._scope_outline = {
-        "chapters": [],
-        "files": [{"id": "f_1", "name": "one.pdf", "chapter_id": None, "chunks": 1}],
+        "topics": [],
+        "files": [{"id": "f_1", "name": "one.pdf", "topic_id": None, "chunks": 1}],
     }
     monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
     monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
@@ -668,10 +668,10 @@ async def test_a_same_turn_read_finds_what_the_turn_created(
         "name": "New",
         "kind": "material",
         "material_kind": kind,
-        "chapter_id": None,
+        "topic_id": None,
         "chunks": 0,
     }
-    outline = {"chapters": [], "files": [*ctx._scope_outline["files"], created]}
+    outline = {"topics": [], "files": [*ctx._scope_outline["files"], created]}
 
     async def workspace_outline(*_args):
         return outline
@@ -692,26 +692,26 @@ async def test_a_same_turn_read_finds_what_the_turn_created(
         assert read.text().startswith("mat_new is a quiz, which has no passages")
 
 
-async def test_create_material_refuses_an_unknown_chapter_before_sending(monkeypatch):
+async def test_create_material_refuses_an_unknown_topic_before_sending(monkeypatch):
     ctx = ToolContext(
         workspace_id="ws_1",
         user_id="u1",
         operations=frozenset(contract.OPERATIONS),
         assistant_message_id="m_1",
     )
-    ctx.chapters = [{"id": "ch_1", "name": "Cells"}]
+    ctx.topics = [{"id": "ch_1", "name": "Cells"}]
     monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
     monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
 
     def _post(*_args, **_kwargs):
-        raise AssertionError("an unknown chapter reached the gateway")
+        raise AssertionError("an unknown topic reached the gateway")
 
     monkeypatch.setattr(tools.requests, "post", _post)
     result = await tools._create_material(
-        {"kind": "note", "content": "body", "chapter_id": "ch_9", "_tool_call_id": "c"},
+        {"kind": "note", "content": "body", "topic_id": "ch_9", "_tool_call_id": "c"},
         ctx,
     )
-    assert result.refused and "not a chapter of this workspace" in result.text()
+    assert result.refused and "not a topic of this workspace" in result.text()
 
 
 def _library_ctx(monkeypatch) -> ToolContext:
@@ -723,8 +723,8 @@ def _library_ctx(monkeypatch) -> ToolContext:
         assistant_message_id="m_1",
     )
     ctx._scope_outline = {
-        "chapters": [],
-        "files": [{"id": "f_1", "name": "one.pdf", "chapter_id": None, "chunks": 0}],
+        "topics": [],
+        "files": [{"id": "f_1", "name": "one.pdf", "topic_id": None, "chunks": 0}],
     }
     monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
     monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
@@ -1653,7 +1653,7 @@ def test_operation_id_matches_the_go_fixture():
     # server/internal/store/agent_operations_test.go pins the same literal.
     assert tools.operation_id("m_1", "call_1") == "op_4bf000a1f98d2dcd046acbf1"
     assert (
-        tools.chapter_id("op_4bf000a1f98d2dcd046acbf1") == "ch_4bf000a1f98d2dcd046acbf1"
+        tools.topic_id("op_4bf000a1f98d2dcd046acbf1") == "tp_4bf000a1f98d2dcd046acbf1"
     )
     assert tools.operation_id("m_1", "call_1") != tools.operation_id("m_1", "call_2")
 
@@ -1666,8 +1666,8 @@ async def test_material_confirmed_404_is_a_tool_failure(monkeypatch):
         assistant_message_id="m_1",
     )
     ctx._scope_outline = {
-        "chapters": [],
-        "files": [{"id": "f_1", "name": "source.pdf", "chapter_id": None, "chunks": 1}],
+        "topics": [],
+        "files": [{"id": "f_1", "name": "source.pdf", "topic_id": None, "chunks": 1}],
     }
     monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
     monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
@@ -1724,8 +1724,8 @@ async def test_material_uncertain_get_fails_the_turn(monkeypatch):
         assistant_message_id="m_1",
     )
     ctx._scope_outline = {
-        "chapters": [],
-        "files": [{"id": "f_1", "name": "source.pdf", "chapter_id": None, "chunks": 1}],
+        "topics": [],
+        "files": [{"id": "f_1", "name": "source.pdf", "topic_id": None, "chunks": 1}],
     }
     monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
     monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
@@ -1755,8 +1755,8 @@ async def test_repeated_material_post_returns_original(monkeypatch):
         assistant_message_id="m_1",
     )
     ctx._scope_outline = {
-        "chapters": [],
-        "files": [{"id": "f_1", "name": "source.pdf", "chapter_id": None, "chunks": 1}],
+        "topics": [],
+        "files": [{"id": "f_1", "name": "source.pdf", "topic_id": None, "chunks": 1}],
     }
     monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
     monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
@@ -2729,6 +2729,58 @@ async def test_a_chat_stream_is_stoppable_until_it_ends(monkeypatch):
     assert registered == [True] and "m_turn" not in service._running
 
 
+@pytest.mark.parametrize(
+    ("turn", "readers"),
+    [
+        ({"workspaceId": "ws_1", "role": "owner"}, ["ws_1"]),
+        ({"workspaceId": "ws_1", "role": "editor"}, ["ws_1"]),
+        ({"workspaceId": "ws_1", "role": "viewer"}, []),
+        (
+            {
+                "scope": {
+                    "kind": "account",
+                    "userId": "u_1",
+                    "workspaces": [
+                        {"id": "ws_edits", "name": "Edits", "canEdit": True},
+                        {"id": "ws_views", "name": "Views", "canEdit": False},
+                    ],
+                }
+            },
+            ["ws_edits"],
+        ),
+    ],
+)
+async def test_a_chat_turn_reads_hidden_items_only_where_its_user_edits(
+    monkeypatch, turn, readers
+):
+    """(security regression) Every hidden check in retrieval reads the readers this
+    binds for the turn's role: a viewer gets none, an account turn its edited
+    workspaces."""
+    from pipeline.retrieve import service
+
+    bound = []
+
+    async def _agent(**_kwargs):
+        bound.append(agent.store.hidden_readers())
+        yield {"type": "done"}
+
+    monkeypatch.setattr(service, "run_agent", _agent)
+    monkeypatch.setattr(service.accounting, "bind", lambda _session: None)
+    monkeypatch.setattr(service.models, "resolve_query_model", lambda *_a: _model())
+    req = service.ChatStreamReq(
+        userId="u_1",
+        thinking="high",
+        query="q",
+        contractVersion=contract.VERSION,
+        operations=[],
+        spendSessionId="cr_1",
+        **turn,
+    )
+    _chunks = [chunk async for chunk in service._chat_events(req)]
+
+    assert bound == [readers]
+
+
 # ------------------------------------------------------------- trash tools
 
 
@@ -2740,10 +2792,10 @@ def _owner_ctx() -> ToolContext:
         assistant_message_id="m_1",
     )
     ctx._scope_outline = {
-        "chapters": [],
+        "topics": [],
         "files": [
-            {"id": "f_1", "name": "one.pdf", "chapter_id": None, "chunks": 1},
-            {"id": "f_2", "name": "two.pdf", "chapter_id": None, "chunks": 1},
+            {"id": "f_1", "name": "one.pdf", "topic_id": None, "chunks": 1},
+            {"id": "f_2", "name": "two.pdf", "topic_id": None, "chunks": 1},
         ],
     }
     return ctx
@@ -2885,10 +2937,8 @@ async def test_restricted_scope_emptied_by_trash_stays_empty(monkeypatch):
 
     async def _outline(_workspace_id):
         return {
-            "chapters": [],
-            "files": [
-                {"id": "f_2", "name": "two.pdf", "chapter_id": None, "chunks": 1}
-            ],
+            "topics": [],
+            "files": [{"id": "f_2", "name": "two.pdf", "topic_id": None, "chunks": 1}],
         }
 
     monkeypatch.setattr(tools.store, "workspace_outline", _outline)
@@ -3024,7 +3074,7 @@ async def test_list_sources_includes_materials_and_scoped_file_editability(
                         "title": "Cells quiz",
                         "format": "plate",
                         "materialKind": "quiz",
-                        "chapterId": "ch_1",
+                        "topicId": "ch_1",
                         "editable": True,
                     },
                 ]
@@ -3035,12 +3085,12 @@ async def test_list_sources_includes_materials_and_scoped_file_editability(
 
     async def _outline(_workspace_id):
         return {
-            "chapters": [{"id": "ch_1", "name": "Biology"}],
+            "topics": [{"id": "ch_1", "name": "Biology"}],
             "files": [
                 {
                     "id": "f_1",
                     "name": "one.pdf",
-                    "chapter_id": "ch_1",
+                    "topic_id": "ch_1",
                     "chunks": 4,
                     "status": "ready",
                     "descriptor": "Cell structure",
@@ -3048,14 +3098,14 @@ async def test_list_sources_includes_materials_and_scoped_file_editability(
                 {
                     "id": "f_2",
                     "name": "two.txt",
-                    "chapter_id": None,
+                    "topic_id": None,
                     "chunks": 0,
                     "status": "pending",
                 },
                 {
                     "id": "mat_1",
                     "name": "Notes",
-                    "chapter_id": None,
+                    "topic_id": None,
                     "chunks": 2,
                     "status": "ready",
                     "kind": "material",
@@ -3084,10 +3134,10 @@ async def test_list_sources_includes_materials_and_scoped_file_editability(
         "Notes (id=mat_1, kind=material, material_kind=note, editable=true)"
         "\n  Mitosis phases"
     ) in text
-    # A material sits under the chapter it is in; the rest are in no chapter.
-    biology = text.split("## Biology (chapter_id=ch_1)")[1].split("\n## ")[0]
+    # A material sits under the topic it is in; the rest are in no topic.
+    biology = text.split("## Biology (topic_id=ch_1)")[1].split("\n## ")[0]
     assert "Cells quiz (id=mat_2" in biology
-    assert "Notes (id=mat_1" in text.split("## Study materials not in a chapter")[1]
+    assert "Notes (id=mat_1" in text.split("## Study materials not in a topic")[1]
     # Only notes are outlined and indexed; the other kinds name their tools.
     assert (
         "Cells quiz (id=mat_2, kind=material, material_kind=quiz, editable=true); "
@@ -4005,8 +4055,8 @@ def _image_turn(monkeypatch, steps: list[list[str]]):
     monkeypatch.setattr(agent.compact, "compact_messages", _compact)
     ctx = ToolContext(workspace_id="ws_1", file_ids=["f_1"])
     ctx._scope_outline = {
-        "chapters": [],
-        "files": [{"id": "f_1", "name": "bio.pdf", "chapter_id": None, "chunks": 1}],
+        "topics": [],
+        "files": [{"id": "f_1", "name": "bio.pdf", "topic_id": None, "chunks": 1}],
     }
     agent.tools.assign_citations(
         ctx,
@@ -4979,9 +5029,9 @@ async def test_a_search_passage_names_its_documents_unindexed_edits(monkeypatch)
     )
     ctx.pending_sources.read_ids = set()
     ctx._scope_outline = {
-        "chapters": [],
+        "topics": [],
         "files": [
-            {"id": f, "name": "bio.pdf", "chapter_id": None, "chunks": 1}
+            {"id": f, "name": "bio.pdf", "topic_id": None, "chunks": 1}
             for f in ("f_1", "f_2")
         ],
     }
@@ -5001,7 +5051,7 @@ async def test_askuser_called_as_a_tool_ends_the_turn_on_that_question(monkeypat
     stream, seen = _script_stream(
         [
             _assembled(
-                "One quick question before I build your chapter:",
+                "One quick question before I build your topic:",
                 [
                     _call(
                         "AskUser",
@@ -5028,7 +5078,7 @@ async def test_askuser_called_as_a_tool_ends_the_turn_on_that_question(monkeypat
     done = events[-1]
     assert done["type"] == "done" and not ran and len(seen) == 1
     assert done["answer"] == (
-        "One quick question before I build your chapter:\n\n"
+        "One quick question before I build your topic:\n\n"
         '```ask\n{"question": "Where should we start?", '
         '"choices": ["Beginner", "I code already"]}\n```'
     )
@@ -5310,10 +5360,10 @@ async def test_pending_changes_reach_the_agent_only_for_documents_it_reads(
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     ctx = ToolContext(workspace_id="ws_1", operations=frozenset({"source.read"}))
     ctx._scope_outline = {
-        "chapters": [],
+        "topics": [],
         "files": [
-            {"id": "f_1", "name": "bio.pdf", "chapter_id": None, "chunks": 3},
-            {"id": "f_2", "name": "chem.pdf", "chapter_id": None, "chunks": 3},
+            {"id": "f_1", "name": "bio.pdf", "topic_id": None, "chunks": 3},
+            {"id": "f_2", "name": "chem.pdf", "topic_id": None, "chunks": 3},
         ],
     }
     await _collect("What changed?", ctx)
@@ -5500,8 +5550,8 @@ async def test_a_reads_changes_too_large_to_pass_on_are_omitted(monkeypatch):
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     ctx = ToolContext(workspace_id="ws_1", operations=frozenset({"source.read"}))
     ctx._scope_outline = {
-        "chapters": [],
-        "files": [{"id": "f_1", "name": "bio.pdf", "chapter_id": None, "chunks": 3}],
+        "topics": [],
+        "files": [{"id": "f_1", "name": "bio.pdf", "topic_id": None, "chunks": 3}],
     }
     events = await _collect("What changed?", ctx)
     [result] = [m for m in seen[1]["messages"] if m.get("role") == "tool"]
@@ -5578,9 +5628,9 @@ async def test_a_reload_keeps_what_the_turn_read_passed_on_and_omitted(monkeypat
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     ctx = ToolContext(workspace_id="ws_1", operations=frozenset({"source.read"}))
     ctx._scope_outline = {
-        "chapters": [],
+        "topics": [],
         "files": [
-            {"id": f, "name": f"{f}.pdf", "chapter_id": None, "chunks": 3}
+            {"id": f, "name": f"{f}.pdf", "topic_id": None, "chunks": 3}
             for f in ("f_1", "f_2", "f_3")
         ],
     }
@@ -5632,8 +5682,8 @@ async def test_a_search_without_passages_lists_its_edits_as_a_hint_tail(monkeypa
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     ctx = ToolContext(workspace_id="ws_1", operations=frozenset({"source.read"}))
     ctx._scope_outline = {
-        "chapters": [],
-        "files": [{"id": "f_1", "name": "f_1.pdf", "chapter_id": None, "chunks": 3}],
+        "topics": [],
+        "files": [{"id": "f_1", "name": "f_1.pdf", "topic_id": None, "chunks": 3}],
     }
     await _collect("Tell me about it", ctx)
     [message] = [m for m in seen[1]["messages"] if m.get("role") == "tool"]
@@ -7008,7 +7058,7 @@ async def test_a_repeated_call_is_refused_from_its_third_time(monkeypatch):
     told = (
         "Not run: you called list_sources with these same arguments 2 times in a "
         "row this turn, so it did nothing new. Call it again only with different "
-        "arguments (pass any argument it needs, for example a create_chapter "
+        "arguments (pass any argument it needs, for example a create_topic "
         "name), use the result you already have, or answer the learner."
     )
     assert all(r.startswith(told) for r in refused), refused

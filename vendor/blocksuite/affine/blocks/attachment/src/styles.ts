@@ -34,7 +34,9 @@ export const styles = css`
     min-width: 0;
   }
 
-  .truncate {
+  /* Capy (local change 22): scoped, as this sheet goes into the document and Tailwind's
+     truncate is the app's own class. */
+  .affine-attachment-card .truncate {
     align-self: stretch;
     text-overflow: ellipsis;
     white-space: nowrap;

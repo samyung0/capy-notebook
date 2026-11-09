@@ -36,7 +36,7 @@ type documentListItem struct {
 	Title        string                  `json:"title"`
 	Format       string                  `json:"format"`
 	MaterialKind string                  `json:"materialKind"`
-	ChapterID    *string                 `json:"chapterId,omitempty"`
+	TopicID      *string                 `json:"topicId,omitempty"`
 	Editable     bool                    `json:"editable"`
 	Reason       string                  `json:"reason,omitempty"`
 }
@@ -108,7 +108,9 @@ func (a *api) internalListDocuments(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	items := []documentListItem{}
-	files, err := a.s.ListFiles(ctx, "", req.WorkspaceID)
+	// The agent lists what its user may see: hidden items only for the
+	// workspace's owners and editors.
+	files, err := a.s.ListFiles(ctx, req.UserID, req.WorkspaceID)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -116,7 +118,7 @@ func (a *api) internalListDocuments(w http.ResponseWriter, r *http.Request) {
 	for _, f := range files {
 		items = append(items, fileListItem(documentListItem{Kind: agenttools.KindSourceFile, ID: f.ID}, f.Name, string(f.Kind)))
 	}
-	refs, err := a.s.ListMaterialRefs(ctx, req.WorkspaceID)
+	refs, err := a.s.ListMaterialRefs(ctx, req.UserID, req.WorkspaceID)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -124,7 +126,7 @@ func (a *api) internalListDocuments(w http.ResponseWriter, r *http.Request) {
 	for _, m := range refs {
 		items = append(items, documentListItem{
 			Kind: agenttools.KindMaterial, ID: m.ID, Title: m.Title, Format: "plate",
-			MaterialKind: string(m.Type), ChapterID: m.ChapterID, Editable: true,
+			MaterialKind: string(m.Type), TopicID: m.TopicID, Editable: true,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
@@ -246,9 +248,19 @@ const officeToolsMessage = `Office files are read and edited with inspect_office
 // workspace's chat edited answers `moved_out` (Q468), so the model learns it
 // was moved out; anything else is a plain not found, which never confirms a
 // document exists elsewhere.
-func (a *api) documentInWorkspace(w http.ResponseWriter, r *http.Request, target agenttools.ResourceRef, workspaceID string) bool {
+func (a *api) documentInWorkspace(w http.ResponseWriter, r *http.Request, userID string, target agenttools.ResourceRef, workspaceID string) bool {
 	wsID, err := a.s.ResourceWorkspaceID(r.Context(), target.Kind, target.ID, true)
 	if err == nil && wsID == workspaceID {
+		// An item hidden from members is not found for a viewer's turn.
+		if target.Kind == agenttools.KindMaterial {
+			_, err = a.s.MaterialEffectiveRole(r.Context(), userID, target.ID)
+		} else {
+			_, err = a.s.FileEffectiveRole(r.Context(), userID, target.ID)
+		}
+		if err != nil {
+			a.fail(w, err)
+			return false
+		}
 		return true
 	}
 	if err == nil && target.Kind == agenttools.KindSourceFile {
@@ -295,7 +307,7 @@ func (a *api) internalInspectDocument(w http.ResponseWriter, r *http.Request) {
 		if !a.internalDocumentsActor(w, r, req.UserID, req.WorkspaceID, false) {
 			return
 		}
-		if !a.documentInWorkspace(w, r, req.Target, req.WorkspaceID) {
+		if !a.documentInWorkspace(w, r, req.UserID, req.Target, req.WorkspaceID) {
 			return
 		}
 	}
@@ -634,7 +646,7 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 		if _, ok := a.accountTarget(w, r, req.UserID, req.Target, true); !ok {
 			return
 		}
-	} else if !a.documentInWorkspace(w, r, req.Target, req.WorkspaceID) {
+	} else if !a.documentInWorkspace(w, r, req.UserID, req.Target, req.WorkspaceID) {
 		return
 	}
 	var normalized []json.RawMessage

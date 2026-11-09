@@ -5,7 +5,7 @@ import {
   useParams,
   useRouter,
 } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuiz, useWorkspace } from '@/api/hooks';
 import { isMissing } from '@/api/queryClient';
 import { PagePanel } from '@/components/app/layout';
@@ -20,6 +20,10 @@ import {
 import type { LearnerQuestion } from '@/features/questions/types';
 import { AttemptBody } from '@/features/quizzes/AttemptBody';
 import { blockHomeCrumb } from '@/features/quizzes/crumbs';
+import {
+  DrawingDraftScope,
+  quizDraftScope,
+} from '@/features/quizzes/drawing/drawingValue';
 import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
 import { useQuizRun } from '@/features/quizzes/quizRun';
 import { CloneItemDialog } from '@/features/workspace/CloneItemDialog';
@@ -27,6 +31,10 @@ import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 
 const NO_QUESTIONS: LearnerQuestion[] = [];
+
+import type { Frame } from '@/features/quizzes/QuizPageHeader';
+
+const StudyPanel: Frame = (props) => <PagePanel fill {...props} />;
 
 /** `/quizzes/$quizId/attempt`, inside the app. Shared links open the public
  * page instead (src/share/SharedQuiz.tsx). */
@@ -67,6 +75,10 @@ function Attempt({ quizId }: { quizId: string }) {
   const router = useRouter();
   const canGoBack = useCanGoBack();
   const removed = useRemovedAssets(quiz?.removedAssetIds, refetch);
+  // Only the opening read refuses the page. A later one refused (the quiz
+  // assigned to them since, say) leaves what shows (Epo 2026-11-05).
+  const opened = useRef(false);
+  if (quiz && isFetchedAfterMount && !isError) opened.current = true;
 
   if (fetchStatus === 'paused') {
     return (
@@ -84,67 +96,69 @@ function Attempt({ quizId }: { quizId: string }) {
       </PagePanel>
     );
   // Other failures without data go to the error boundary.
-  if (isMissing(error) || !quiz)
+  if ((isMissing(error) && !opened.current) || !quiz)
     return <WorkspaceError backLabel={m.quiz_back()} backTo="/quizzes" />;
 
   return (
     <RemovedAssetsContext.Provider value={removed}>
-      <AttemptBody
-        actions={
-          !quiz.canEdit &&
-          !quiz.parentMaterialId &&
-          (!quiz.workspaceId || workspace?.canClone) && (
-            <>
-              <Button
-                disabled={frozen}
-                iconLeft="plus"
-                onClick={() => setCloning(true)}
-                rounded="large"
-                size="sm"
-                variant="outline"
-              >
-                {m.action_clone_quiz()}
+      <DrawingDraftScope.Provider value={quizDraftScope(quiz.id)}>
+        <AttemptBody
+          actions={
+            !quiz.canEdit &&
+            !quiz.parentMaterialId &&
+            (!quiz.workspaceId || workspace?.canClone) && (
+              <>
+                <Button
+                  disabled={frozen}
+                  iconLeft="plus"
+                  onClick={() => setCloning(true)}
+                  rounded="large"
+                  size="sm"
+                  variant="outline"
+                >
+                  {m.action_clone_quiz()}
+                </Button>
+                {cloning && (
+                  <CloneItemDialog
+                    item={{
+                      id: quiz.id,
+                      kind: 'quiz',
+                      name: quiz.name,
+                      type: 'material',
+                      workspaceId: quiz.workspaceId,
+                    }}
+                    onClose={() => setCloning(false)}
+                  />
+                )}
+              </>
+            )
+          }
+          control={control}
+          emptyAction={
+            <Link
+              className="mt-6 inline-flex"
+              preload="intent"
+              search={{ tab: 'blocks' }}
+              to="/files"
+            >
+              <Button iconLeft="navigationBack" rounded="large">
+                {m.quiz_back()}
               </Button>
-              {cloning && (
-                <CloneItemDialog
-                  item={{
-                    id: quiz.id,
-                    kind: 'quiz',
-                    name: quiz.name,
-                    type: 'material',
-                    workspaceId: quiz.workspaceId,
-                  }}
-                  onClose={() => setCloning(false)}
-                />
-              )}
-            </>
-          )
-        }
-        control={control}
-        emptyAction={
-          <Link
-            className="mt-6 inline-flex"
-            preload="intent"
-            search={{ tab: 'blocks' }}
-            to="/files"
-          >
-            <Button iconLeft="navigationBack" rounded="large">
-              {m.quiz_back()}
-            </Button>
-          </Link>
-        }
-        frame={PagePanel}
-        inApp
-        name={quiz.name}
-        onBack={() =>
-          canGoBack
-            ? router.history.back()
-            : void navigate({ search: { tab: 'blocks' }, to: '/files' })
-        }
-        provenance={quiz.provenance}
-        questions={questions}
-        trail={[blockHomeCrumb(quiz)]}
-      />
+            </Link>
+          }
+          frame={StudyPanel}
+          inApp
+          name={quiz.name}
+          onBack={() =>
+            canGoBack
+              ? router.history.back()
+              : void navigate({ search: { tab: 'blocks' }, to: '/files' })
+          }
+          provenance={quiz.provenance}
+          questions={questions}
+          trail={[blockHomeCrumb(quiz)]}
+        />
+      </DrawingDraftScope.Provider>
     </RemovedAssetsContext.Provider>
   );
 }

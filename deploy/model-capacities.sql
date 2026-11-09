@@ -4,6 +4,11 @@
 -- If environments share a provider account, divide that account's capacity
 -- between their databases before applying. Separate keys do not add capacity.
 --
+-- A row is the model's whole capacity, shared by every use with no reserve:
+-- every call waits its turn in the model's one line, round-robin by requester
+-- (the user, or the ingest job), so one use with more requests gets more
+-- (Epo 2026-11-04).
+--
 -- Official limits checked 2026-09-13:
 -- DeepInfra: 200 concurrent requests per account/model.
 -- https://docs.deepinfra.com/account/rate-limits
@@ -11,53 +16,50 @@
 -- served through OpenRouter on DigitalOcean, then Z.AI (2026-10-21). DigitalOcean
 -- held 150 calls in flight for 66 s with no error (first token p95 2.2 s) and
 -- answered 250 at once, but half of those waited past the 15 s first-event
--- bound, so the gate is 150 in flight with 125 kept for interactive calls
--- (decision 2026-10-21). The OpenRouter account is shared and sized for
--- production; local development keeps 8 total / 4 interactive.
+-- bound, so the gate is 150 in flight (decision 2026-10-21). The OpenRouter
+-- account is shared and sized for production; local development keeps 8.
 -- OpenRouter DeepSeek V4 Flash 0731 (Reka, then DigitalOcean, then StreamLake
--- since 2026-10-20) serves only the ingest descriptor, so it has no interactive
--- reserve. Measured on Relace 2026-10-15: no 429 at up to 96 calls in flight;
--- 32 in flight held ~600 requests/min (p95 5.5 s), while 96 queued (p95 25 s),
--- so the gate stops at 32. Each current provider held 32 in flight without a
--- 429 on 2026-10-20.
--- OpenRouter DeepSeek V4.1 Flash 1017 (InferenceNet, then Cloudflare, since
--- 2026-10-21) captions standalone images and, from 2026-10-28, writes note
--- ghost text: 40 in flight with 20 kept for interactive calls (ghost text up
--- to 40, ingest captions up to 20; Epo 2026-10-29); UAT and local 8/4.
--- InferenceNet answered 128 page reads at once (p95 8.6 s) and Cloudflare 64
--- (p95 10.1 s); a 2026-10-28 ghost-text probe from the ingest host (about 400
--- tokens in, 20 out) held 64 in flight at about 5,000 calls a minute with no
--- 429 (first token p50 0.39 s, total p95 1.0 s). Page reads lease the vlm_page
--- gate instead of this row (CAPY_VLM_PAGE_CAPACITY: 40 in production since
--- 2026-10-29, 20 in UAT and local), so the gates add up: production can hold
--- 80 calls in flight on this route, and Cloudflare, the fallback, was measured only at 64, so an
--- InferenceNet outage during a burst may leave calls slow or busy there.
+-- since 2026-10-20) serves the ingest descriptor. Measured on Relace
+-- 2026-10-15: no 429 at up to 96 calls in flight; 32 in flight held ~600
+-- requests/min (p95 5.5 s), while 96 queued (p95 25 s), so the gate stops at
+-- 32. Each current provider held 32 in flight without a 429 on 2026-10-20.
+-- OpenRouter DeepSeek V4.1 Flash 1017 (Wafer's US endpoint, then InferenceNet,
+-- then Cloudflare since 2026-11-04; InferenceNet, then Cloudflare from
+-- 2026-10-21) captions standalone images, reads text-less pages and, from
+-- 2026-10-28, writes note ghost text, all in its one line (page reads have
+-- no gate of their own since 2026-11-04). From 2026-11-03 Make a quiz's calls
+-- (the extraction slot) wait in that line too. The shared OpenRouter account
+-- takes 100 in flight on it (Epo 2026-11-04, raised from 40 with 20 kept for
+-- interactive calls): Wafer took 100 grading calls at once with no error on
+-- 2026-11-04 (its latency doubles from about 60 in flight, and InferenceNet
+-- takes the overflow past about 100); InferenceNet answered 128 page reads at
+-- once (p95 8.6 s) and Cloudflare 64 (p95 10.1 s); a 2026-10-28 ghost-text
+-- probe from the ingest host held 64 in flight at about 5,000 calls a minute
+-- with no 429. Epo's split (2026-11-04): production 84, the value below, and
+-- UAT 16, set in Ops at deploy; local development is not counted.
 -- OpenRouter MiniMax 3.1 Flash (Together, then DigitalOcean since 2026-10-30; a
--- chat choice since 2026-10-24) serves chat alone, so all but one call is kept
--- for interactive use (the reserve must stay below the total). Together held 16
--- calls at once in the 2026-10-23 probe (total p95 3.0 s) and both held 16 in
--- the 2026-10-30 probe (slowest 1.7 s and 2.7 s), so the gate is 16.
+-- chat choice since 2026-10-24) serves chat alone. Together held 16 calls at
+-- once in the 2026-10-23 probe (total p95 3.0 s) and both held 16 in the
+-- 2026-10-30 probe (slowest 1.7 s and 2.7 s), so the gate is 16.
 -- DeepSeek Flash (chat's default) runs on DeepSeek's own API (2500 concurrent
 -- requests per account, https://api-docs.deepseek.com/quick_start/rate_limit/)
--- at Epo's 40 in flight with no reserve: chat and Generate take all 40 and
--- ingest never runs on it (Epo 2026-10-29).
--- Interactive reserves: 83% GLM / 0% DeepSeek Flash (chat only) / 50% DeepSeek 1017 / 40% embedding.
+-- at Epo's 40 in flight: chat and Generate take all 40 and ingest never runs
+-- on it (Epo 2026-10-29).
 -- The reranker is Alibaba qwen3-rerank (Singapore): 64 in flight answered
--- without an error in bench/rag/providers' ramp (2026-10-30). Only interactive
--- search calls it, so its reserve never binds.
+-- without an error in bench/rag/providers' ramp (2026-10-30).
 
-WITH capacities(provider, model, concurrency_total, interactive_reserve) AS (
+WITH capacities(provider, model, concurrency_total) AS (
   VALUES
-    ('deepseek', 'deepseek-flash', 40, 0),
-    ('zai', 'glm-5.3-flash', 150, 125),
-    ('openrouter', 'deepseek/deepseek-v4-flash-0731', 32, 0),
-    ('openrouter', 'deepseek/deepseek-v4.1-flash-1017', 40, 20),
-    ('openrouter', 'minimax/minimax-m3.1-flash', 16, 15),
-    ('deepinfra', 'Qwen/Qwen3-Embedding-4B', 200, 80),
-    ('alibaba', 'qwen3-rerank', 64, 32)
+    ('deepseek', 'deepseek-flash', 40),
+    ('zai', 'glm-5.3-flash', 150),
+    ('openrouter', 'deepseek/deepseek-v4-flash-0731', 32),
+    ('openrouter', 'deepseek/deepseek-v4.1-flash-1017', 84),
+    ('openrouter', 'minimax/minimax-m3.1-flash', 16),
+    ('deepinfra', 'Qwen/Qwen3-Embedding-4B', 200),
+    ('alibaba', 'qwen3-rerank', 64)
 )
-INSERT INTO model_capacities (provider, model, concurrency_total, interactive_reserve)
-SELECT provider, model, concurrency_total, interactive_reserve FROM capacities c
+INSERT INTO model_capacities (provider, model, concurrency_total)
+SELECT provider, model, concurrency_total FROM capacities c
 WHERE EXISTS (
   SELECT 1 FROM model_configs m WHERE m.enabled
     AND m.model_slug = c.model
@@ -65,6 +67,5 @@ WHERE EXISTS (
 )
 ON CONFLICT (provider, model) DO NOTHING;
 
-SELECT provider, model, concurrency_total, interactive_reserve,
-  concurrency_total - interactive_reserve AS ingest_limit
+SELECT provider, model, concurrency_total
 FROM model_capacities ORDER BY provider, model;

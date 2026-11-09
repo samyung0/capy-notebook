@@ -480,7 +480,18 @@ func questionIndexPieces(q map[string]any) []string {
 		add(strings.Join(lines, "\n"))
 	}
 	blocks(q["stem"])
+	groups := map[string]any{}
+	for _, group := range maps(q["groups"]) {
+		if id, ok := group["id"].(string); ok {
+			groups[id] = group["blocks"]
+		}
+	}
 	for _, part := range maps(q["parts"]) {
+		// A group's text and figures, once, before its first part.
+		if group, ok := part["group"].(string); ok {
+			blocks(groups[group])
+			delete(groups, group)
+		}
 		blocks(part["blocks"])
 		answer, _ := part["answer"].(map[string]any)
 		switch answer["type"] {

@@ -1,8 +1,8 @@
-import type { Region } from '@/api/types';
+import type { Region, ReviewMode } from '@/api/types';
 import type { OfficeCitation } from '@/features/files/officeProtocol';
 import {
-  isSettingsTab,
-  type SettingsTab,
+  isSettingsView,
+  type SettingsView,
 } from '@/features/workspace/settingsTabs';
 import type { MaterialMode } from './modePolicy';
 
@@ -13,7 +13,8 @@ import type { MaterialMode } from './modePolicy';
  * clicked. It lives in the URL rather than in component state so a cited page
  * survives a reload and can be linked to. `regions` is deliberately transient:
  * regular file navigation and reloads clear the citation highlight. `mode` is
- * an optional document mode, overriding the locally saved mode. */
+ * an Office or text file's optional mode, overriding the locally saved one; a
+ * material has none (Epo 2026-11-04), and an old link's is ignored. */
 export type OpenItem =
   | {
       kind: 'file';
@@ -34,6 +35,20 @@ export type OpenItem =
 /** A note citation: the blocks it came from, and its text for one without. */
 export type NoteCitationTarget = OfficeCitation & { blockIds?: string[] };
 
+/** The panel beside the rail, or `none` for no panel. `canvas` is the dev builds'
+ * board, which has no panel and fills the centre at every width. */
+export type WorkspacePanel = 'files' | 'agent' | 'study' | 'canvas' | 'none';
+
+export function isWorkspacePanel(value: unknown): value is WorkspacePanel {
+  return (
+    value === 'files' ||
+    value === 'agent' ||
+    value === 'study' ||
+    (import.meta.env.DEV && value === 'canvas') ||
+    value === 'none'
+  );
+}
+
 /** URL search params for the open item — mutually exclusive `file` | `material`. */
 export type WorkspaceOpenSearch = {
   file?: string;
@@ -41,28 +56,70 @@ export type WorkspaceOpenSearch = {
   /** A question or card in the open material, e.g. from a review summary. */
   item?: string;
   page?: number;
+  /** A file's: an old material link's is dropped. */
   mode?: MaterialMode;
   /** The open item fills the page, header and side panels hidden. In the URL
    * so the back gesture leaves it. */
   fullscreen?: true;
-  /** The workspace's Study page, shown while nothing is open. */
-  study?: true;
-  /** The Study page's picked plan, kept in this workspace (the Study page
-   * shows while nothing is open). */
-  plan?: string;
+  /** Which panel shows, in the URL so the back gesture steps through them (Epo
+   * 2026-11-05). Below the panels, `agent` is the chat page over the viewer. */
+  panel?: WorkspacePanel;
+  /** A Study page in the centre while nothing is open. */
+  study?: 'practice' | 'summary' | 'assignments' | 'members';
+  /** Assignments' open assignment, and a try at it: running, or results. */
+  assignment?: string;
+  attempt?: string;
+  /** An assignment given to its own owner or teaching assistant: their page,
+   * not its report. */
+  own?: true;
+  /** An assignment's report: its tab, and on Approve AI marks a question or
+   * member to open at. On Members, `member` is the profile open. */
+  tab?: 'questions' | 'members' | 'approve' | 'settings';
+  question?: string;
+  member?: string;
+  /** Members' By topic view (board G4), kept while a profile is open. */
+  show?: 'topics';
+  /** Assignments' New assignment, opened with this quiz (board A1). */
+  newFromQuiz?: string;
+  /** Practice's topic session to start: its group, topic and, from a
+   * suggestion, its mode. */
+  group?: 'topic' | 'others' | 'workspace';
+  topicId?: string;
+  reviewMode?: ReviewMode;
+  /** Practice's result of a finished topic session. */
+  review?: string;
+  /** Make a quiz's dialog while nothing is open: its files, pages or run. */
+  make?: 'files' | 'pages' | 'run';
+  /** The page Make a quiz opened from, which cancelling returns to; the Dashboard
+   * when there's none. */
+  makeFrom?: 'assignments';
+  /** The file whose pages it shows. */
+  quizFile?: string;
+  /** The question paper's files and the mark scheme or answer files, comma
+   * separated, kept so a reload or Back returns to the same choice. */
+  paper?: string;
+  answers?: string;
+  /** The run its page follows. */
+  run?: string;
   /** Workspace settings open at this tab, over whatever the page shows. */
-  settings?: SettingsTab;
+  settings?: SettingsView;
+  /** What its search holds. */
+  settingsQuery?: string;
   /** One-shot actions from the Get started list, dropped once taken: open the
    * Add file dialog, or a new chat. */
-  add?: 'upload';
+  add?: 'create' | 'upload';
   chat?: 'new';
 };
 
-function documentModeKey(item: OpenItem): string {
+/** A file's last mode here: a material has none, it opens at the highest its
+ * reader may have. */
+type FileItem = Extract<OpenItem, { kind: 'file' }>;
+
+function documentModeKey(item: FileItem): string {
   return `capy.document.mode.${item.kind}.${item.id}`;
 }
 
-export function readDocumentMode(item: OpenItem): MaterialMode {
+export function readDocumentMode(item: FileItem): MaterialMode {
   try {
     return localStorage.getItem(documentModeKey(item)) === 'edit'
       ? 'edit'
@@ -72,7 +129,7 @@ export function readDocumentMode(item: OpenItem): MaterialMode {
   }
 }
 
-export function saveDocumentMode(item: OpenItem, mode: MaterialMode): void {
+export function saveDocumentMode(item: FileItem, mode: MaterialMode): void {
   try {
     localStorage.setItem(documentModeKey(item), mode);
   } catch {
@@ -82,6 +139,15 @@ export function saveDocumentMode(item: OpenItem, mode: MaterialMode): void {
 
 function parseDocumentMode(value: unknown): MaterialMode | undefined {
   return value === 'view' || value === 'edit' ? value : undefined;
+}
+
+/** A standalone material's page: full screen only (an old link's `mode` goes). */
+export function parseMaterialPageSearch(search: Record<string, unknown>): {
+  fullscreen?: true;
+  mode?: undefined;
+} {
+  const { fullscreen } = parseDocumentModeSearch(search);
+  return { mode: undefined, ...(fullscreen ? { fullscreen } : {}) };
 }
 
 export function parseDocumentModeSearch(search: Record<string, unknown>): {
@@ -99,12 +165,37 @@ export function parseWorkspaceOpenSearch(
   // Invalid values are cleared explicitly: the router keeps raw keys the
   // parser leaves out.
   return {
-    plan: undefined,
+    answers: undefined,
+    assignment: undefined,
+    attempt: undefined,
+    file: undefined,
+    group: undefined,
+    make: undefined,
+    makeFrom: undefined,
+    member: undefined,
+    newFromQuiz: undefined,
+    own: undefined,
+    paper: undefined,
+    question: undefined,
+    quizFile: undefined,
+    review: undefined,
+    reviewMode: undefined,
+    run: undefined,
+    show: undefined,
     study: undefined,
+    tab: undefined,
+    topicId: undefined,
     ...parseOpenPage(search),
-    add: search.add === 'upload' ? 'upload' : undefined,
+    add:
+      search.add === 'upload' || search.add === 'create'
+        ? search.add
+        : undefined,
     chat: search.chat === 'new' ? 'new' : undefined,
-    settings: isSettingsTab(search.settings) ? search.settings : undefined,
+    panel: isWorkspacePanel(search.panel) ? search.panel : undefined,
+    settings: isSettingsView(search.settings) ? search.settings : undefined,
+    settingsQuery: isSettingsView(search.settings)
+      ? text(search.settingsQuery)
+      : undefined,
   };
 }
 
@@ -124,17 +215,104 @@ function parseOpenPage(search: Record<string, unknown>): WorkspaceOpenSearch {
   if (material) {
     const item =
       typeof search.item === 'string' && search.item ? search.item : undefined;
+    const { fullscreen } = parseDocumentModeSearch(search);
     return {
       material,
-      ...parseDocumentModeSearch(search),
+      mode: undefined,
+      ...(fullscreen ? { fullscreen } : {}),
       ...(item ? { item } : {}),
     };
   }
-  if (typeof search.plan === 'string' && search.plan)
-    return { plan: search.plan };
-  return search.study === true || search.study === 'true'
-    ? { study: true }
-    : {};
+  if (search.study === 'assignments') return parseAssignments(search);
+  if (search.study === 'summary') return { study: 'summary' };
+  if (search.study === 'members') return parseMembers(search);
+  if (search.study === 'practice') return parsePractice(search);
+  return parseMakeQuiz(search);
+}
+
+/** Make a quiz's page: pages need their paper, a run its id. */
+function parseMakeQuiz(search: Record<string, unknown>): WorkspaceOpenSearch {
+  const paper = text(search.paper);
+  const answers = text(search.answers);
+  const run = text(search.run);
+  const makeFrom =
+    search.makeFrom === 'assignments' ? ('assignments' as const) : undefined;
+  if (search.make === 'files')
+    return { answers, make: 'files', makeFrom, paper };
+  if (search.make === 'pages' && paper)
+    return {
+      answers,
+      make: 'pages',
+      makeFrom,
+      paper,
+      quizFile: text(search.quizFile),
+    };
+  if (search.make === 'run' && run)
+    return { answers, make: 'run', makeFrom, paper, run };
+  return {};
+}
+
+const text = (value: unknown) =>
+  typeof value === 'string' && value ? value : undefined;
+const GROUPS = ['topic', 'others', 'workspace'] as const;
+const MODES: readonly ReviewMode[] = ['tricky', 'fading', 'learned'];
+
+const TABS = ['questions', 'members', 'approve', 'settings'] as const;
+
+/** Assignments, one assignment (its report's view), or a try at one. Unknown
+ * tabs clear; ids are the page's to answer. */
+function parseAssignments(
+  search: Record<string, unknown>
+): WorkspaceOpenSearch {
+  const assignment = text(search.assignment);
+  if (!assignment) {
+    const newFromQuiz = text(search.newFromQuiz);
+    return {
+      study: 'assignments',
+      ...(newFromQuiz ? { newFromQuiz } : {}),
+    };
+  }
+  const attempt = text(search.attempt);
+  if (attempt) return { assignment, attempt, study: 'assignments' };
+  const tab = TABS.find((t) => t === search.tab);
+  const question = tab === 'approve' ? text(search.question) : undefined;
+  const member = tab === 'approve' ? text(search.member) : undefined;
+  return {
+    assignment,
+    study: 'assignments',
+    ...(search.own === true || search.own === 'true'
+      ? { own: true as const }
+      : {}),
+    ...(tab ? { tab } : {}),
+    ...(question ? { question } : {}),
+    ...(member ? { member } : {}),
+  };
+}
+
+/** Members, its By topic view, or a member's profile. */
+function parseMembers(search: Record<string, unknown>): WorkspaceOpenSearch {
+  const member = text(search.member);
+  return {
+    study: 'members',
+    ...(member ? { member } : {}),
+    ...(search.show === 'topics' ? { show: 'topics' as const } : {}),
+  };
+}
+
+/** Practice, a topic session to start on it, or a session's result. */
+function parsePractice(search: Record<string, unknown>): WorkspaceOpenSearch {
+  const review = text(search.review);
+  if (review) return { review, study: 'practice' };
+  const group = GROUPS.find((g) => g === search.group);
+  const topicId = text(search.topicId);
+  if (!group || (group === 'topic' && !topicId)) return { study: 'practice' };
+  const reviewMode = MODES.find((md) => md === search.reviewMode);
+  return {
+    group,
+    study: 'practice',
+    ...(group === 'topic' ? { topicId } : {}),
+    ...(reviewMode ? { reviewMode } : {}),
+  };
 }
 
 export function openItemFromSearch(

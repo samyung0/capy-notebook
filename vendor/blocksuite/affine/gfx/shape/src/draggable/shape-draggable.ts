@@ -300,8 +300,9 @@ export class EdgelessToolbarShapeDraggable extends EdgelessToolbarToolMixin(
           const baseStyle = {
             ...buildVariablesObject(shape.style),
             filter: `drop-shadow(${this.shapeShadow})`,
-            color,
-            stroke,
+            // Capy (local change 14): the board can fix the pieces' colours.
+            color: `var(--capy-shape-button-${shape.name}, ${color})`,
+            stroke: `var(--capy-shape-button-stroke-${shape.name}, ${stroke})`,
           };
           const currStyle = styleMap({
             ...baseStyle,

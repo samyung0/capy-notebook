@@ -233,7 +233,7 @@ func TestGraceOwnerIsHeldOnlyByTheQuota(t *testing.T) {
 	// Refused before the model is even resolved, so no credits move (these
 	// handlers carry no model registry at all).
 	rec = doReq(t, h, http.MethodPost, "/api/workspaces/"+f.workspaceID+"/generate", "",
-		generateBody("quiz", "Grace quiz"))
+		generateBody("Grace quiz"))
 	if rec.Code != http.StatusForbidden || errorCode(t, rec) != "storage_quota_exceeded" {
 		t.Fatalf("grace generate = %d body=%s", rec.Code, rec.Body.String())
 	}
@@ -342,12 +342,7 @@ func TestFrozenAccountsRecordStudyProgress(t *testing.T) {
 		h     http.Handler
 		actor string
 	}{{f.owner, ""}, {f.member, "u_editor"}} {
-		rec := doReq(t, side.h, http.MethodPut, "/api/workspaces/"+f.workspaceID+"/study/items", side.actor,
-			map[string]any{"materialId": f.material.ID, "state": "done"})
-		if rec.Code != http.StatusNoContent {
-			t.Fatalf("%q mark as read = %d body=%s", side.actor, rec.Code, rec.Body.String())
-		}
-		rec = doReq(t, side.h, http.MethodPost, "/api/workspaces/"+f.workspaceID+"/study/reset", side.actor, nil)
+		rec := doReq(t, side.h, http.MethodPost, "/api/workspaces/"+f.workspaceID+"/study/reset", side.actor, nil)
 		if rec.Code != http.StatusNoContent {
 			t.Fatalf("%q reset = %d body=%s", side.actor, rec.Code, rec.Body.String())
 		}
@@ -419,33 +414,76 @@ func TestGeneratedMaterialsRecordTheActorAsAuthor(t *testing.T) {
 	}
 	t.Cleanup(pool.Close)
 
-	for _, kind := range []string{"mindmap", "diagram", "flashcards", "quiz"} {
-		t.Run(kind, func(t *testing.T) {
-			rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
-				"u_editor", generateBody(kind, kind+" generated"))
-			if rec.Code != http.StatusOK {
-				t.Fatalf("editor generate %s = %d body=%s", kind, rec.Code, rec.Body.String())
-			}
-			id := generatedMaterialID(t, rec.Body.Bytes())
-			t.Cleanup(func() {
-				_ = doReq(t, h, http.MethodDelete, "/api/materials/"+id, "u_owner", nil)
-			})
+	rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
+		"u_editor", generateBody("Generated quiz"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("editor generate = %d body=%s", rec.Code, rec.Body.String())
+	}
+	id := generatedMaterialID(t, rec.Body.Bytes())
+	t.Cleanup(func() {
+		_ = doReq(t, h, http.MethodDelete, "/api/materials/"+id, "u_owner", nil)
+	})
 
-			var author string
-			if err := pool.QueryRow(ctx, `SELECT COALESCE(created_by,'<null>')
-				FROM materials WHERE id=$1`, id).Scan(&author); err != nil {
-				t.Fatal(err)
-			}
-			if author != "u_editor" {
-				t.Errorf("generated %s author = %s, want u_editor", kind, author)
-			}
-		})
+	var author string
+	if err := pool.QueryRow(ctx, `SELECT COALESCE(created_by,'<null>')
+		FROM materials WHERE id=$1`, id).Scan(&author); err != nil {
+		t.Fatal(err)
+	}
+	if author != "u_editor" {
+		t.Errorf("generated quiz author = %s, want u_editor", author)
 	}
 }
 
-func TestGenerateRequiresUniqueTitle(t *testing.T) {
+// A member cannot add to the workspace: their quiz is their own, linked back to
+// it, and the pipeline is told not to read what is hidden from them.
+func TestGenerateForAMemberIsTheirOwn(t *testing.T) {
+	seen := make(chan map[string]any, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var in map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		seen <- in
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"questions":[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"Q?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	h := openShareAPI(t, pipeline.New(srv.URL, ""))
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, testdb.URL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+
+	rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
+		"u_viewer", generateBody("My own practice"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("viewer generate = %d body=%s", rec.Code, rec.Body.String())
+	}
+	id := generatedMaterialID(t, rec.Body.Bytes())
+	t.Cleanup(func() {
+		_ = doReq(t, h, http.MethodDelete, "/api/materials/"+id, "u_viewer", nil)
+	})
+	if body := <-seen; body["readsHidden"] != false {
+		t.Errorf("readsHidden = %#v for a viewer", body["readsHidden"])
+	}
+	var workspace *string
+	var linked, owner string
+	if err := pool.QueryRow(ctx, `SELECT workspace_id, practice_workspace_id, owner_user_id
+		FROM materials WHERE id=$1`, id).Scan(&workspace, &linked, &owner); err != nil {
+		t.Fatal(err)
+	}
+	if workspace != nil || linked != "ws_e2e_private" || owner != "u_viewer" {
+		t.Errorf("workspace = %v, linked = %s, owner = %s", workspace, linked, owner)
+	}
+	if other := doReq(t, h, http.MethodGet, "/api/quizzes/"+id, "u_owner", nil); other.Code == http.StatusOK {
+		t.Errorf("the workspace owner read a member's own quiz")
+	}
+}
+
+// Nobody types the title, so a taken one takes the next number.
+func TestGenerateNumbersATakenTitle(t *testing.T) {
 	h := openShareAPI(t, stubRetrieval(t))
-	body := generateBody("quiz", "Shared generate name")
+	body := generateBody("Shared generate name")
 	first := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
 		"u_editor", body)
 	if first.Code != http.StatusOK {
@@ -458,42 +496,44 @@ func TestGenerateRequiresUniqueTitle(t *testing.T) {
 
 	dup := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
 		"u_editor", body)
-	if dup.Code != http.StatusConflict {
-		t.Fatalf("duplicate generate = %d body=%s", dup.Code, dup.Body.String())
+	if dup.Code != http.StatusOK {
+		t.Fatalf("second generate = %d body=%s", dup.Code, dup.Body.String())
+	}
+	var second struct {
+		Quiz struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"quiz"`
+	}
+	if err := json.Unmarshal(dup.Body.Bytes(), &second); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = doReq(t, h, http.MethodDelete, "/api/materials/"+second.Quiz.ID, "u_owner", nil)
+	})
+	if second.Quiz.Name != "Shared generate name 2" {
+		t.Fatalf("second title = %q", second.Quiz.Name)
 	}
 
 	blank := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
-		"u_editor", generateBody("quiz", "  "))
+		"u_editor", generateBody("  "))
 	if blank.Code != http.StatusBadRequest {
 		t.Fatalf("blank title = %d body=%s", blank.Code, blank.Body.String())
 	}
 }
 
-// generatedMaterialID pulls the material id out of the generate response, whose
-// envelope key depends on the kind.
+// generatedMaterialID pulls the quiz id out of the generate response.
 func generatedMaterialID(t *testing.T, body []byte) string {
 	t.Helper()
-	var payload map[string]json.RawMessage
-	if err := json.Unmarshal(body, &payload); err != nil {
-		t.Fatal(err)
-	}
-	for _, key := range []string{"material", "flashcardSet", "quiz"} {
-		raw, ok := payload[key]
-		if !ok {
-			continue
-		}
-		var entity struct {
+	var payload struct {
+		Quiz struct {
 			ID string `json:"id"`
-		}
-		if err := json.Unmarshal(raw, &entity); err != nil {
-			t.Fatal(err)
-		}
-		if entity.ID != "" {
-			return entity.ID
-		}
+		} `json:"quiz"`
 	}
-	t.Fatalf("generate response carried no material id: %s", body)
-	return ""
+	if err := json.Unmarshal(body, &payload); err != nil || payload.Quiz.ID == "" {
+		t.Fatalf("generate response carried no quiz id: %s", body)
+	}
+	return payload.Quiz.ID
 }
 
 // Chat stays open to a frozen or grace (at its storage limit) actor, but its

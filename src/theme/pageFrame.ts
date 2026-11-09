@@ -58,7 +58,7 @@ export const FRAME_PRESETS: Record<
     stops: ['#6f80d8', '#f2c9b4', '#4f9a5c'],
     strength: 0.59,
   },
-  // Neutral slate greys: the default frame.
+  // Neutral slate greys: a pattern picked from the default starts here.
   mist: {
     dots: [
       { x: 0.61, y: 1 },
@@ -115,13 +115,14 @@ export const STRENGTH_MAX = 0.92;
 export const MAX_FRAME_COLORS = 3;
 export const FROST_PANELS: FrostPanel[] = ['left', 'center', 'right'];
 
-/** A new device's frame: Arc in the neutral Mist with the left panel frosted,
- * so the app starts with some colour; None stays a choice. */
+/** The frame of anyone who has not chosen one: None (Epo 2026-11-03), so the
+ * page shows its own colour. Picking a pattern starts from the neutral Mist
+ * with the left panel frosted. */
 export const DEFAULT_PAGE_FRAME: PageFrame = {
   colours: 'mist',
   dots: FRAME_PRESETS.mist.dots,
   frosted: ['left'],
-  pattern: 'arc',
+  pattern: 'none',
   strength: FRAME_PRESETS.mist.strength,
 };
 const unit = (v: unknown): v is number =>

@@ -1,0 +1,81 @@
+{
+  "name": "group-two-numbers",
+  "valid": true,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "labels": "numbers",
+    "layout": "split",
+    "stem": [],
+    "groups": [
+      {
+        "id": "g1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Part one's shared text."
+          }
+        ]
+      },
+      {
+        "id": "g2",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Part two's shared text."
+          }
+        ]
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-a",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "First of one."
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["x"]
+        },
+        "marks": 1,
+        "solution": [],
+        "group": "g1"
+      },
+      {
+        "id": "part-b",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Second of one."
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["x"]
+        },
+        "marks": 1,
+        "solution": [],
+        "group": "g1"
+      },
+      {
+        "id": "part-c",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "First of two."
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["x"]
+        },
+        "marks": 1,
+        "solution": [],
+        "group": "g2"
+      }
+    ]
+  }
+}

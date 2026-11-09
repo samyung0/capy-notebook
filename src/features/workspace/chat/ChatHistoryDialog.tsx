@@ -41,7 +41,7 @@ export function ChatHistoryDialog({
           phone && (
             <Button
               className={NEW_CHAT_TINT}
-              iconLeft="newChat"
+              iconLeft="ai"
               onClick={startNew}
               type="button"
               variant="outline"

@@ -1,4 +1,4 @@
-import type { Question, QuestionAnswer } from './types';
+import { modelMarked, type Question, type QuestionAnswer } from './types';
 
 /** Authored examples shared by the local demo and format tests. */
 export const exampleAnswers: QuestionAnswer[] = [
@@ -43,8 +43,8 @@ export function exampleQuestion(
         blocks: [{ text: 'Which organelle produces ATP?', type: 'text' }],
         id: `${id}-part`,
         marks: 1,
-        // Only open parts carry a marking scheme.
-        ...(answer.type === 'open'
+        // Only model-marked parts carry a marking scheme.
+        ...(modelMarked(answer.type)
           ? {
               markscheme: [
                 {

@@ -23,7 +23,6 @@ const file = (id: string, workspaceId: string, extra?: Partial<SourceFile>) =>
   }) as SourceFile;
 vi.mock('@/api/hooks', async (original) => ({
   ...(await original<typeof import('@/api/hooks')>()),
-  useChapters: () => ({ data: [] }),
   useOwnedFiles: () => ({
     data: {
       pages: [
@@ -40,6 +39,7 @@ vi.mock('@/api/hooks', async (original) => ({
     hasNextPage: false,
     isPending: false,
   }),
+  useTopics: () => ({ data: [] }),
   useWorkspace: () => ({ data: { id: 'ws_a', name: 'Biology' } }),
   useWorkspaces: () => ({ data: [] }),
 }));
@@ -52,9 +52,9 @@ vi.mock('@/components/app/ListEnd', () => ({ ListEnd: () => null }));
 vi.mock('@/components/app/ThumbnailPanel', () => ({
   ThumbnailPanel: () => null,
 }));
-vi.mock('./ChapterSelect', async (original) => ({
-  ...(await original<typeof import('./ChapterSelect')>()),
-  ChapterSelect: () => null,
+vi.mock('./TopicSelect', async (original) => ({
+  ...(await original<typeof import('./TopicSelect')>()),
+  TopicSelect: () => null,
 }));
 
 const { act } = await import('react');

@@ -50,3 +50,33 @@ export function buildEditorNoteValue() {
     },
   ];
 }
+
+/** A note ending in a table, its rows and cells without ids, as the room holds
+ * a note an agent or an import wrote: opening it must write nothing (`mock-
+ * scenario-`: its room can start from a stored state, for two pages at once). */
+export const TABLE_END_NOTE = {
+  id: 'mock-scenario-table-end',
+  title: 'Note ending in a table',
+};
+
+export function buildTableEndNoteValue() {
+  const cell = (text: string) => ({
+    children: [{ children: [{ text }], type: 'p' }],
+    type: 'td',
+  });
+  return [
+    {
+      children: [{ text: 'Results before the table' }],
+      id: `${TABLE_END_NOTE.id}:intro`,
+      type: 'p',
+    },
+    {
+      children: [
+        { children: [cell('Trial'), cell('Score')], type: 'tr' },
+        { children: [cell('One'), cell('Four')], type: 'tr' },
+      ],
+      id: `${TABLE_END_NOTE.id}:table`,
+      type: 'table',
+    },
+  ];
+}

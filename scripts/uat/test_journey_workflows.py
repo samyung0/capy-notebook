@@ -104,7 +104,7 @@ assert(promotion.jobs.deploy_production.needs.includes('agent_visibility'));
 const job = quality.jobs.critical_paths;
 assert.equal(job.environment, 'uat');
 assert.equal(job.steps.find(s => s.uses?.startsWith('actions/checkout')).with.submodules, 'recursive');
-assert.equal(job.steps.find(s => s.uses?.startsWith('oven-sh/setup-bun')).with['bun-version'], '1.3.14');
+assert.equal(job.steps.find(s => s.uses?.startsWith('oven-sh/setup-bun')).with['bun-version'], '1.4.3');
 assert.equal(job.steps.find(s => s.uses?.startsWith('dtolnay/rust-toolchain')).with.targets, 'wasm32-unknown-unknown');
 assert(job.steps.some(s => s.uses === './vendor/betteroffice/.github/actions/wasm-toolchain'));
 assert.equal(job.steps.find(s => s.uses?.startsWith('taiki-e/install-action')).with.tool, 'wasm-pack@0.15.0');
@@ -354,7 +354,9 @@ try {
                     if args[0] == "git":
                         value = REVISION
                     elif args[1] == "ps":
-                        value = "b" * 64
+                        # A one-off `docker run` of the parser image carries the same project and service labels.
+                        oneoff = "label=com.docker.compose.oneoff=False" not in args
+                        value = "b" * 64 + ("\n" + "e" * 64 if oneoff else "")
                     elif args[1:3] == ("image", "inspect"):
                         value = image_revision
                     else:

@@ -9,13 +9,13 @@ import type { ReviewSuggestionGroup } from './reviewSuggestionGroup.ts';
 import type { ReviewSuggestionMode } from './reviewSuggestionMode.ts';
 
 export interface ReviewSuggestion {
-  chapterId?: string;
-  chapterName?: string;
   evidence: ReviewEvidence;
   group: ReviewSuggestionGroup;
   iconId: string;
   items: number;
   mode: ReviewSuggestionMode;
+  topicId?: string;
+  topicName?: string;
   workspaceId: string;
   workspaceName: string;
 }

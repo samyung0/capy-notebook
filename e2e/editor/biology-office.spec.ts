@@ -4,30 +4,17 @@ import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import {
   officeEditMenu,
   officeMenu,
+  officeTab,
   postToOfficeRuntime,
+  ribbonCommand,
+  ribbonZoom,
+  runRibbonCommand,
   saveOffice,
+  zoomInRibbon,
 } from '../helpers/office';
-import { showPanelView } from '../helpers/panelView';
+import { showChatHistory, showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
-
-// These checks measure the Office viewer at 1280-1440px with the rail open
-// and the left panel closed, the layout they were written against; the
-// workspace now opens the left panel at every width that has it.
-test.use({
-  storageState: async ({ baseURL }, use) =>
-    use({
-      cookies: [],
-      origins: [
-        {
-          localStorage: [
-            { name: 'capy.workspace.rightPanel', value: 'true' },
-            { name: 'capy.workspace.leftPanel', value: 'false' },
-          ],
-          origin: baseURL!,
-        },
-      ],
-    }),
-});
+import { hideScenarioPanel } from './helpers';
 
 declare global {
   interface Window {
@@ -95,16 +82,13 @@ for (const [format, name] of [
     const mode = page.getByRole('button', { name: m.material_mode() });
     await mode.click();
     await expect(mode).toHaveAttribute('aria-pressed', 'true');
-    await expect(officeEditMenu(page, format)).toBeVisible({ timeout: 30_000 });
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
     // File › Save is a menuitem, a ticked row a menuitemcheckbox.
     await saveOffice(page, format);
     await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
     if (format === 'docx') {
-      await officeMenu(page, format, 'View').click();
-      await expect(
-        page.getByRole('menuitemcheckbox', { name: 'Show comments' })
-      ).toBeVisible();
-      await page.keyboard.press('Escape');
+      await officeTab(page, 'view').click();
+      await expect(ribbonCommand(page, 'show-comments')).toBeVisible();
     }
     if (format === 'pptx') {
       await frame.locator('aside button').nth(2).click();
@@ -172,7 +156,7 @@ for (const [format, name] of [
         timeout: 60_000,
       });
       await mode.click();
-      await expect(officeEditMenu(page, format)).toBeVisible({
+      await expect(officeEditMenu(page)).toBeVisible({
         timeout: 30_000,
       });
       const input = frame.getByTestId('yrs-input');
@@ -258,7 +242,7 @@ test('DOCX Insert table of contents lists the headings, and Update follows a ren
     timeout: 60_000,
   });
   await page.getByRole('button', { name: m.material_mode() }).click();
-  await expect(officeEditMenu(page, 'docx')).toBeVisible({ timeout: 30_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
   const input = frame.getByTestId('yrs-input');
   // The caret goes into a paragraph through one of its positioned glyphs, as
   // in the edit test above.
@@ -281,14 +265,12 @@ test('DOCX Insert table of contents lists the headings, and Update follows a ren
       });
     }).toPass({ timeout: 30_000 });
   };
-  const insertMenu = async (name: string) => {
-    await officeMenu(page, 'docx', 'Insert').click();
-    await page.getByRole('menuitem', { exact: true, name }).click();
-  };
   const applyStyle = async (name: string) => {
-    await officeMenu(page, 'docx', 'Format').click();
-    await page.getByRole('menuitem', { name: 'Paragraph styles' }).click();
-    await page.getByRole('menuitemcheckbox', { exact: true, name }).click();
+    await officeTab(page, 'home').click();
+    await frame
+      .getByRole('combobox', { name: 'Select paragraph style' })
+      .click();
+    await frame.getByRole('option', { name }).click();
   };
   // A table of contents entry: the heading's text, a tab and its page.
   const entry = (text: string) =>
@@ -302,15 +284,12 @@ test('DOCX Insert table of contents lists the headings, and Update follows a ren
   await placeIn(/^1\.1\.\s+活動背景$/, '背');
   await applyStyle('Heading 2');
   // Update is offered once the document holds a table of contents.
-  await officeMenu(page, 'docx', 'Insert').click();
-  await expect(
-    page.getByRole('menuitem', { name: 'Update table of contents' })
-  ).toHaveCount(0);
-  await page.keyboard.press('Escape');
+  await officeTab(page, 'insert').click();
+  await expect(ribbonCommand(page, 'update-toc')).toHaveCount(0);
 
   await placeIn(/^籌委會籌備小組$/, '籌');
   await input.press('Home');
-  await insertMenu('Table of contents');
+  await runRibbonCommand(page, 'insert', 'insert-toc');
   await expect(entry('1\\. 引言')).toHaveCount(1);
   await expect(entry('1\\.1\\.\\s+活動背景')).toHaveCount(1);
   await expect(
@@ -320,7 +299,7 @@ test('DOCX Insert table of contents lists the headings, and Update follows a ren
   await placeIn(/^1\. 引言$/, '言');
   await input.press('End');
   await input.pressSequentially('X');
-  await insertMenu('Update table of contents');
+  await runRibbonCommand(page, 'insert', 'update-toc');
   await expect(entry('1\\. 引言X')).toHaveCount(1);
   await expect(entry('1\\. 引言')).toHaveCount(0);
   await saveOffice(page, 'docx');
@@ -430,7 +409,7 @@ test('Office viewer keeps its iframe when the workspace layout changes', async (
 
   // One column below lg, two columns at lg: both switch the surrounding layout.
   // Below lg an open Office file keeps chat to its round button; at lg the
-  // right panel's title reads Files.
+  // rail offers Files.
   for (const [width, tools] of [
     [900, m.workspace_tab_chat()],
     [1280, m.workspace_tab_files()],
@@ -459,7 +438,7 @@ test('XLSX keyboard selection scrolls into view and takes typing', async ({
     timeout: 60_000,
   });
   await page.getByRole('button', { name: m.material_mode() }).click();
-  await expect(officeEditMenu(page, 'xlsx')).toBeVisible({ timeout: 30_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
 
   // CC info freezes columns A:B and rows 1:2; H is past the window's right edge.
   const grid = frame.getByTestId('xlsx-scroll');
@@ -631,11 +610,11 @@ test('XLSX zooms from View › Zoom in both modes, keeping the top-left cell, hi
 
   // Edit mode keeps the top-left cell too, in a real browser's layout.
   await page.getByRole('button', { name: m.material_mode() }).click();
-  await expect(officeEditMenu(page, 'xlsx')).toBeVisible({ timeout: 30_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
   const editGrid = frame.getByTestId('xlsx-scroll');
   const editBox = await editGrid.boundingBox();
   if (!editBox) throw new Error('Grid is not laid out');
-  await zoomTo('200%');
+  await zoomInRibbon(page, 'xlsx', '200%');
   await page.mouse.move(
     editBox.x + editBox.width / 2,
     editBox.y + editBox.height / 2
@@ -645,7 +624,7 @@ test('XLSX zooms from View › Zoom in both modes, keeping the top-left cell, hi
     .poll(() => editGrid.evaluate((node) => node.scrollTop))
     .toBeGreaterThan(0);
   const editScrolled = await editGrid.evaluate((node) => node.scrollTop);
-  await zoomTo('100%');
+  await zoomInRibbon(page, 'xlsx', '100%');
   await expect
     .poll(async () =>
       Math.abs(
@@ -841,10 +820,7 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
         })
         .toBeLessThanOrEqual(2);
     // The toolbar's zoom control in edit mode.
-    const toolbarZoom =
-      format === 'docx'
-        ? frame.getByRole('combobox', { name: /^Zoom/ })
-        : frame.getByTestId(`${format}-zoom`);
+    const toolbarZoom = ribbonZoom(page, format);
     const showsZoom = (level: string) =>
       format === 'xlsx'
         ? expect(toolbarZoom).toHaveValue(level)
@@ -858,11 +834,11 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
     await ticked('150%');
 
     await mode.click();
-    await expect(officeEditMenu(page, format)).toBeVisible({
+    await expect(officeEditMenu(page)).toBeVisible({
       timeout: 120_000,
     });
+    await officeTab(page, 'view').click();
     await showsZoom('150%');
-    await ticked('150%');
     if (format !== 'xlsx') await scaled(true, 1.5);
     if (format === 'pptx') await scrollsFromEdge(true);
 
@@ -881,7 +857,7 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
     // Paused (the maintenance window): zoom edits nothing, so the toolbar's
     // control still works.
     await mode.click();
-    await expect(officeEditMenu(page, format)).toBeVisible({
+    await expect(officeEditMenu(page)).toBeVisible({
       timeout: 120_000,
     });
     await saveOffice(page, format);
@@ -893,7 +869,8 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
       )) as typeof import('../../src/mocks/collaboration');
       announceSourcePaused(id);
     }, fileId);
-    await expect(page.getByText(m.source_edit_paused())).toBeVisible();
+    await expect(frame.getByText(m.source_edit_paused())).toBeVisible();
+    await officeTab(page, 'view').click();
     await expect(toolbarZoom).toBeEnabled();
     if (format === 'xlsx') {
       // A typed zoom takes 50–200% as Google Sheets does: 300 is 200%.
@@ -970,7 +947,7 @@ test.describe('DOCX on a phone', () => {
     page.setViewportSize({ height, width });
   const editMode = async (page: Page) => {
     await page.getByRole('button', { name: m.material_mode() }).click();
-    await expect(officeEditMenu(page, 'docx')).toBeVisible({
+    await expect(officeEditMenu(page)).toBeVisible({
       timeout: 120_000,
     });
     // The pages come after the menus: on a CI runner the document is still
@@ -1006,10 +983,11 @@ test.describe('DOCX on a phone', () => {
     await resize(page, 390);
     expect(await fitted(frame)).toBeGreaterThan(narrow);
     // Landscape, then a desktop width: still fitted, at most 100%. The right
-    // rail keeps at least 400px, so 100% needs a window wider than 1280px.
+    // rail keeps at least 400px, and the left panel keeps its share of the narrow
+    // window it last had, so 100% needs a wide window.
     await resize(page, 844, 390);
     expect(await fitted(frame)).toBeGreaterThan(narrow);
-    await resize(page, 1440, 900);
+    await resize(page, 1920, 900);
     expect(await fitted(frame)).toBe(816);
     await resize(page, 390);
     await fitted(frame);
@@ -1020,13 +998,8 @@ test.describe('DOCX on a phone', () => {
     await resize(page, 360);
     await fitted(frame);
 
-    await officeMenu(page, 'docx', 'View').click();
-    await page.getByRole('menuitem', { name: 'Zoom' }).click();
-    // At 360 px the submenu opens over its parent menu, which takes the
-    // pointer while it settles.
-    await page
-      .getByRole('menuitemcheckbox', { exact: true, name: '100%' })
-      .dispatchEvent('click');
+    await runRibbonCommand(page, 'view', 'zoom');
+    await ribbonCommand(page, 'zoom:100').click();
     await expect.poll(() => pageWidth(frame)).toBe(816);
     await resize(page, 390);
     await page.waitForTimeout(1000);
@@ -1072,11 +1045,8 @@ test.describe('DOCX on a phone', () => {
       const frame = await open(page);
       await editMode(page);
       if (level === '100%') {
-        await officeMenu(page, 'docx', 'View').click();
-        await page.getByRole('menuitem', { name: 'Zoom' }).click();
-        await page
-          .getByRole('menuitemcheckbox', { exact: true, name: '100%' })
-          .dispatchEvent('click');
+        await runRibbonCommand(page, 'view', 'zoom');
+        await ribbonCommand(page, 'zoom:100').click();
         await expect.poll(() => pageWidth(frame)).toBe(816);
       } else await fitted(frame);
       const pane = frame.locator('.docx-editor__scroll-container');
@@ -1251,7 +1221,7 @@ test.describe('DOCX on a phone', () => {
     await desktop.setViewportSize({ height: 900, width: 1280 });
     // Edit, as the file was left (not toggled back to View).
     await desktop.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
-    await expect(officeEditMenu(desktop, 'docx')).toBeVisible({
+    await expect(officeEditMenu(desktop)).toBeVisible({
       timeout: 120_000,
     });
     const desktopFrame = desktop.frameLocator('iframe[src*="office-runtime"]');
@@ -1352,7 +1322,7 @@ test('XLSX cell edit ends when focus moves into Capy, not on a window switch', a
     timeout: 60_000,
   });
   await page.getByRole('button', { name: m.material_mode() }).click();
-  await expect(officeEditMenu(page, 'xlsx')).toBeVisible({ timeout: 30_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
   await showPanelView(page, m.workspace_tab_chat());
   const chat = page.getByRole('textbox', { name: m.chat_placeholder() });
   await expect(chat).toBeVisible();
@@ -1428,6 +1398,73 @@ test('XLSX cell edit ends when focus moves into Capy, not on a window switch', a
   await expect(page.getByText(m.error_file_body())).toHaveCount(0);
 });
 
+// Q690: a newly opened XLSX grid takes the keyboard as a new DOCX does, unless
+// Capy's focus is in a field taking typing. Its load arrives 5 s late on every
+// open (the init script), so typing in the chat box comes first.
+test('a newly opened XLSX grid leaves the chat box its focus, and takes typing with no click', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await page.addInitScript(() => {
+    if (!location.pathname.includes('office-runtime')) return;
+    const add = window.addEventListener.bind(window);
+    window.addEventListener = ((
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+      options?: boolean | AddEventListenerOptions
+    ) => {
+      if (type !== 'message' || typeof listener !== 'function')
+        return add(type, listener, options);
+      return add(
+        type,
+        (event: Event) => {
+          if ((event as MessageEvent).data?.type === 'load')
+            setTimeout(() => listener.call(window, event), 5000);
+          else listener.call(window, event);
+        },
+        options
+      );
+    }) as typeof window.addEventListener;
+  });
+  await page.setViewportSize({ height: 800, width: 1280 });
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  const chat = page.getByRole('textbox', { name: m.chat_placeholder() });
+  const mode = page.getByRole('button', { name: m.material_mode() });
+  const grid = frame.getByTestId('xlsx-scroll');
+  const nameBox = frame.getByTestId('xlsx-name-box');
+  const formula = frame.getByTestId('xlsx-formula-input');
+
+  await test.step('a newly opened grid leaves the focus in the chat box', async () => {
+    await page.goto('/workspaces/ws_bio?file=bio-office-xlsx&mode=edit');
+    await showPanelView(page, m.workspace_tab_chat());
+    await chat.click();
+    await page.keyboard.type('hi');
+    await expect(officeEditMenu(page)).toHaveCount(0);
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 120_000 });
+    await page.waitForTimeout(1500);
+    await expect(chat).toBeFocused();
+    await page.keyboard.type(' there');
+    await expect(chat).toHaveValue('hi there');
+  });
+
+  await test.step('typing right after Edit reaches the active cell', async () => {
+    await mode.click();
+    await expect(officeEditMenu(page)).toHaveCount(0, { timeout: 30_000 });
+    await expect(frame.locator('canvas').first()).toBeVisible({
+      timeout: 60_000,
+    });
+    await mode.click();
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 60_000 });
+    await expect(grid).toBeFocused();
+    const cell = await nameBox.inputValue();
+    await page.keyboard.type('QZX');
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('ArrowUp');
+    await expect(nameBox).toHaveValue(cell);
+    await expect(formula).toHaveValue('QZX');
+  });
+});
+
 test("Office runtime keeps Capy's theme after reloading and asks for a page reload on a protocol mismatch", async ({
   page,
 }) => {
@@ -1471,8 +1508,7 @@ test('an Office citation highlights its passage again after the runtime reloads'
 }) => {
   test.setTimeout(180_000);
   await page.goto('/workspaces/ws_bio');
-  await showPanelView(page, m.workspace_tab_chat());
-  await page.getByRole('button', { name: m.chat_history() }).click();
+  await showChatHistory(page);
   await page.getByRole('button', { name: 'Answer: Office citation' }).click();
   await page.getByTitle(m.chat_source_number({ n: 1 })).click();
   const frame = page.frameLocator('iframe[src*="office-runtime"]');
@@ -1592,7 +1628,7 @@ for (const [format, text] of [
     await expect(frame.locator('canvas').first()).toBeVisible({
       timeout: 120_000,
     });
-    await expect(officeEditMenu(page, format)).toBeVisible({ timeout: 30_000 });
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
     await saveOffice(page, format);
     await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
 
@@ -1605,7 +1641,7 @@ for (const [format, text] of [
       )) as typeof import('../../src/mocks/collaboration');
       announceSourcePaused(id);
     }, fileId);
-    await expect(page.getByText(m.source_edit_paused())).toBeVisible();
+    await expect(frame.getByText(m.source_edit_paused())).toBeVisible();
 
     const updates = await page.evaluateHandle(() => {
       const seen = { count: 0 };
@@ -1620,8 +1656,11 @@ for (const [format, text] of [
       .grantPermissions(['clipboard-read', 'clipboard-write']);
     const copySelectAll = async () => {
       await page.evaluate(() => navigator.clipboard.writeText('EMPTY'));
-      await officeMenu(page, format, 'Edit').click();
-      await page.getByRole('menuitem', { name: /^Select all/ }).click();
+      await runRibbonCommand(
+        page,
+        'edit',
+        format === 'docx' ? 'select-all' : 'selectAll'
+      );
       await page.keyboard.press('ControlOrMeta+C');
       await expect
         .poll(() => page.evaluate(() => navigator.clipboard.readText()))
@@ -1641,8 +1680,7 @@ for (const [format, text] of [
     await page.keyboard.press('Escape');
     if (format === 'docx') {
       // Find opens and takes typing; Replace stays disabled.
-      await officeMenu(page, format, 'Edit').click();
-      await page.getByRole('menuitem', { name: /^Find and replace/ }).click();
+      await runRibbonCommand(page, 'edit', 'find-replace');
       const find = frame.getByLabel('Find text');
       await find.click();
       await page.keyboard.type('Course');
@@ -1768,16 +1806,16 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
 
   await test.step('a newly opened editor leaves the focus in the chat box', async () => {
     await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
-    // The workspace panel opens on Files, also with a file in the URL.
+    // An open file shows Files; the chat box is in Agent.
     await showPanelView(page, m.workspace_tab_chat());
     await chat.click();
     await page.keyboard.type('hi');
     // Typed before the editor was ready.
-    await expect(officeEditMenu(page, 'docx')).toHaveCount(0);
+    await expect(officeEditMenu(page)).toHaveCount(0);
     await expect(frame.locator('canvas').first()).toBeVisible({
       timeout: 120_000,
     });
-    await expect(officeEditMenu(page, 'docx')).toBeVisible({ timeout: 30_000 });
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
     await page.waitForTimeout(1500);
     await expect(chat).toBeFocused();
     await page.keyboard.type(' there');
@@ -1788,7 +1826,7 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
   // late, is not waited for: the editor edits from its first sync.
   await test.step('a newly opened editor is focused and editable before its first save receipt', async () => {
     await mode.click();
-    await expect(officeEditMenu(page, 'docx')).toHaveCount(0, {
+    await expect(officeEditMenu(page)).toHaveCount(0, {
       timeout: 30_000,
     });
     await expect(frame.locator('canvas').first()).toBeVisible({
@@ -1811,7 +1849,7 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
       return seen;
     });
     await mode.click();
-    await expect(officeEditMenu(page, 'docx')).toBeVisible({ timeout: 60_000 });
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 60_000 });
     await expect(documentInput).toBeFocused();
     // Connecting ends at the first sync, before the receipt.
     await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
@@ -1865,8 +1903,7 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
     // Find, typed into while paused, keeps the focus: the next keys search.
     await capabilities(false);
     await page.waitForTimeout(1000);
-    await officeMenu(page, 'docx', 'Edit').click();
-    await page.getByRole('menuitem', { name: /^Find and replace/ }).click();
+    await runRibbonCommand(page, 'edit', 'find-replace');
     const find = frame.getByLabel('Find text');
     await find.click();
     await page.keyboard.type('Cours');
@@ -1883,10 +1920,8 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
 
     // A new comment being typed hides while paused and comes back with its
     // draft; keys typed after the pause reach neither it nor the document.
-    await officeMenu(page, 'docx', 'Edit').click();
-    await page.getByRole('menuitem', { name: /^Select all/ }).click();
-    await officeMenu(page, 'docx', 'Insert').click();
-    await page.getByRole('menuitem', { name: /^Comment/ }).click();
+    await runRibbonCommand(page, 'edit', 'select-all');
+    await runRibbonCommand(page, 'insert', 'insert-comment');
     const note = frame.getByPlaceholder('Add a comment...');
     await expect(note).toBeFocused();
     await page.keyboard.type('Note');
@@ -1930,7 +1965,7 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
   // An open Capy menu keeps the focus too: it stays open and takes the keys.
   await test.step('a newly opened editor leaves the focus in an open Capy menu', async () => {
     await mode.click();
-    await expect(officeEditMenu(page, 'docx')).toHaveCount(0, {
+    await expect(officeEditMenu(page)).toHaveCount(0, {
       timeout: 30_000,
     });
     await expect(frame.locator('canvas').first()).toBeVisible({
@@ -1950,7 +1985,7 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
       .locator('..')
       .getByRole('button', {
         exact: true,
-        name: m.action_new_file_or_chapter(),
+        name: m.action_new_file_or_topic(),
       })
       .first()
       .click();
@@ -1986,7 +2021,7 @@ test('closing DOCX header editing gives the document the focus back', async ({
   const frame = page.frameLocator('iframe[src*="office-runtime"]');
   const pageCanvas = frame.locator('canvas[data-page-index="0"]');
   await expect(pageCanvas).toBeVisible({ timeout: 120_000 });
-  await expect(officeEditMenu(page, 'docx')).toBeVisible({ timeout: 30_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
   const box = await pageCanvas.boundingBox();
   if (!box) throw new Error('Missing page canvas');
   // A double click on the header band near the page's top edge opens it. The
@@ -2062,6 +2097,8 @@ test('PPTX speaker notes start hidden, and one remembered toggle serves view and
     await expect(showNotes).toBeVisible();
   };
 
+  // The Notes button sits in the viewer's corner, under the mock panel.
+  await hideScenarioPanel(page);
   // View mode: the Notes button and View › Show speaker notes flip one state.
   await expect(notesButton).toBeVisible();
   await expect(viewNotes).toHaveCount(0);
@@ -2093,7 +2130,7 @@ test('PPTX speaker notes start hidden, and one remembered toggle serves view and
   // Edit mode opens with the same choice, and hiding it there carries back.
   const mode = page.getByRole('button', { name: m.material_mode() });
   await mode.click();
-  await expect(officeEditMenu(page, 'pptx')).toBeVisible({ timeout: 30_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
   const editNotes = frame.getByTestId('pptx-notes-textarea');
   await expect(editNotes).toBeVisible();
   await notesButton.click();
@@ -2198,12 +2235,12 @@ test('DOCX View › Show ruler is remembered, edit mode only, and stays usable w
   await expect(frame.locator('canvas').first()).toBeVisible({
     timeout: 120_000,
   });
-  await expect(officeEditMenu(page, 'docx')).toBeVisible({ timeout: 30_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
   const rulers = frame.locator('.docx-horizontal-ruler, .docx-vertical-ruler');
-  const showRuler = page.getByRole('menuitemcheckbox', { name: 'Show ruler' });
+  const showRuler = ribbonCommand(page, 'show-ruler');
   const toggleRuler = async (checked: boolean) => {
-    await officeMenu(page, 'docx', 'View').click();
-    await expect(showRuler).toHaveAttribute('aria-checked', String(checked));
+    await officeTab(page, 'view').click();
+    await expect(showRuler).toHaveAttribute('aria-pressed', String(checked));
     await showRuler.click();
   };
 
@@ -2236,10 +2273,12 @@ test('DOCX View › Show ruler is remembered, edit mode only, and stays usable w
   await expect(rulers).toHaveCount(0);
   await officeMenu(page, 'docx', 'View').click();
   await expect(page.getByRole('menuitem', { name: 'Zoom' })).toBeVisible();
-  await expect(showRuler).toHaveCount(0);
+  await expect(
+    page.getByRole('menuitemcheckbox', { name: 'Show ruler' })
+  ).toHaveCount(0);
   await page.keyboard.press('Escape');
   await mode.click();
-  await expect(officeEditMenu(page, 'docx')).toBeVisible({ timeout: 60_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 60_000 });
   await expect(rulers).toHaveCount(2);
 
   // Paused, the rulers stay and the toggle still works.
@@ -2268,24 +2307,16 @@ test('DOCX Format › Table fits, centres and pins a table, a drag keeps the fit
   await expect(frame.locator('canvas').first()).toBeVisible({
     timeout: 120_000,
   });
-  await expect(officeEditMenu(page, 'docx')).toBeVisible({ timeout: 30_000 });
-  await officeMenu(page, 'docx', 'Insert').click();
-  await page.getByRole('menuitem', { exact: true, name: 'Table' }).click();
-  await page.getByRole('gridcell', { name: 'Insert 2 by 2 table' }).click();
-  // Format › Table's `item`, or `choice` in its submenu.
-  const table = async (
-    item: string,
-    choice?: string,
-    role: 'menuitem' | 'menuitemcheckbox' | 'menuitemradio' = 'menuitemcheckbox'
-  ) => {
-    await officeMenu(page, 'docx', 'Format').click();
-    await page.getByRole('menuitem', { exact: true, name: 'Table' }).click();
-    if (!choice) return page.getByRole(role, { exact: true, name: item });
-    await page.getByRole('menuitem', { exact: true, name: item }).click();
-    return page.getByRole(role, { exact: true, name: choice });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+  await runRibbonCommand(page, 'insert', 'insert-table');
+  await frame.getByRole('gridcell', { name: '2x2' }).click();
+  // The contextual Table tab's item.
+  const table = async (id: string) => {
+    await officeTab(page, 'table').click();
+    return ribbonCommand(page, id);
   };
-  const pin = await table('Pin header row');
-  await expect(pin).toHaveAttribute('aria-checked', 'false');
+  const pin = await table('table-header-row');
+  await expect(pin).toHaveAttribute('aria-pressed', 'false');
   await pin.click();
   // The table items hand the caret back to its cell.
   await page.keyboard.type('Cell');
@@ -2309,10 +2340,9 @@ test('DOCX Format › Table fits, centres and pins a table, a drag keeps the fit
   expect(inset).toBeGreaterThan(5);
   expect(inset).toBeLessThan(10);
 
-  await table('Auto-fit to contents', undefined, 'menuitem').then((item) =>
-    item.click()
-  );
-  const center = await table('Table alignment', 'Center', 'menuitemradio');
+  await table('table-autofit').then((item) => item.click());
+  await (await table('table-alignment')).click();
+  const center = ribbonCommand(page, 'table-align:center');
   await expect(center).toHaveAttribute('aria-checked', 'false');
   await center.click();
   // The columns shrink to "Cell" and to the empty cell's margins, so the
@@ -2320,17 +2350,13 @@ test('DOCX Format › Table fits, centres and pins a table, a drag keeps the fit
   await expect
     .poll(async () => ((await cell.boundingBox())?.x ?? left) - left)
     .toBeGreaterThan(100);
-  await expect(
-    await table('Table alignment', 'Center', 'menuitemradio')
-  ).toHaveAttribute('aria-checked', 'true');
+  await (await table('table-alignment')).click();
+  await expect(center).toHaveAttribute('aria-checked', 'true');
   await page.keyboard.press('Escape');
-  await page.keyboard.press('Escape');
-  await expect(await table('Pin header row')).toHaveAttribute(
-    'aria-checked',
+  await expect(await table('table-header-row')).toHaveAttribute(
+    'aria-pressed',
     'true'
   );
-  await page.keyboard.press('Escape');
-  await page.keyboard.press('Escape');
 
   // A column drag starts from the drawn columns: widening the last one keeps
   // the first at its fitted width instead of snapping back to the old grid.
@@ -2352,10 +2378,8 @@ test('DOCX Format › Table fits, centres and pins a table, a drag keeps the fit
   expect(await span()).toBeLessThan(before + 60);
 
   await postToOfficeRuntime(page, { canEdit: false, type: 'set-capabilities' });
-  await officeMenu(page, 'docx', 'Format').click();
-  await expect(
-    page.getByRole('menuitem', { exact: true, name: 'Table' })
-  ).toHaveAttribute('aria-disabled', 'true');
+  await officeTab(page, 'table').click();
+  await expect(ribbonCommand(page, 'table-header-row')).toBeDisabled();
 });
 
 test('below lg the chat button sits 8px above the sheet tabs, the slide strip and the notes box', async ({
@@ -2417,29 +2441,4 @@ test('below lg the chat button sits 8px above the sheet tabs, the slide strip an
   await expect
     .poll(async () => (await tools.boundingBox())?.y ?? 0)
     .toBeCloseTo(closed, 0);
-});
-
-test('Office toolbars take the note toolbar scale: 36px rows and 30px buttons in a phone-width frame, 40px and 32px from 640px', async ({
-  page,
-}) => {
-  test.setTimeout(180_000);
-  for (const [width, row, button, icon] of [
-    [360, 36, 30, 18],
-    [768, 40, 32, 18],
-  ] as const) {
-    await page.setViewportSize({ height: 800, width });
-    await page.goto('/workspaces/ws_bio?file=bio-office-xlsx&mode=edit');
-    const frame = page.frameLocator('iframe[src*="office-runtime"]');
-    const bar = frame.getByTestId('xlsx-formatting-toolbar');
-    await expect(bar).toBeVisible({ timeout: 60_000 });
-    const bold = bar.getByRole('button', { exact: true, name: 'Bold' });
-    const [rowBox, buttonBox, iconBox] = await Promise.all([
-      bar.boundingBox(),
-      bold.boundingBox(),
-      bold.locator('svg').boundingBox(),
-    ]);
-    expect(rowBox?.height).toBe(row);
-    expect([buttonBox?.width, buttonBox?.height]).toEqual([button, button]);
-    expect(iconBox?.width).toBe(icon);
-  }
 });

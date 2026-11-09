@@ -897,3 +897,58 @@ fn a_step_2_adds_only_its_own_deletions() {
     let (_, again) = apply_deleting(&room, decode(&step2).unwrap()).unwrap();
     assert!(again.is_empty());
 }
+
+/// Q549: typing that lands in a story the room holds deleted, and a delete of
+/// text the room holds deleted: the room's own update does not carry them, and
+/// the flag says so; ordinary typing and deletes keep the room's encoding.
+#[test]
+fn apply_freeing_tells_when_its_update_says_less_than_the_writer() {
+    let writer = doc(2);
+    let room = doc(1);
+    let stories = writer.get_or_insert_map("stories");
+    {
+        let mut txn = writer.transact_mut();
+        let text = stories.insert(&mut txn, "story", yrs::TextPrelim::new("hello"));
+        text.insert(&mut txn, 5, " there");
+    }
+    sync(&writer, &room);
+    let text: yrs::TextRef = {
+        let txn = writer.transact();
+        stories.get(&txn, "story").unwrap().cast().unwrap()
+    };
+
+    let typing = delta(&writer, |txn| text.insert(txn, 0, "live "));
+    let (relayed, _, lost) = apply_freeing(&room, decode(&typing).unwrap(), None).unwrap();
+    assert_eq!(lost, Lost::default());
+    assert!(!relayed.is_empty());
+    let removal = delta(&writer, |txn| text.remove_range(txn, 0, 5));
+    let (_, _, lost) = apply_freeing(&room, decode(&removal).unwrap(), None).unwrap();
+    assert_eq!(lost, Lost::default());
+    // Told twice, as a reconnect's step 2 does with a whole delete set.
+    let (_, _, lost) = apply_freeing(&room, decode(&removal).unwrap(), None).unwrap();
+    assert!(lost.deletions && !lost.landed);
+
+    // Someone else's delete of the whole story reaches the room first.
+    {
+        let other = doc(3);
+        sync(&room, &other);
+        let before = other.transact().state_vector();
+        other
+            .get_or_insert_map("stories")
+            .remove(&mut other.transact_mut(), "story");
+        let delete = other.transact().encode_state_as_update_v1(&before);
+        apply_freeing(&room, decode(&delete).unwrap(), None).unwrap();
+    }
+
+    let landed = delta(&writer, |txn| text.insert(txn, 2, "PEER"));
+    let (relayed, _, lost) = apply_freeing(&room, decode(&landed).unwrap(), None).unwrap();
+    assert!(lost.landed);
+    assert!(!relayed.windows(4).any(|window| window == b"PEER"));
+    let told = yrs::merge_updates_v1([landed.as_slice()]).unwrap();
+    assert!(told.windows(4).any(|window| window == b"PEER"));
+    // Stored state holds none of it.
+    let state = room
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    assert!(!state.windows(4).any(|window| window == b"PEER"));
+}

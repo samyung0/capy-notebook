@@ -46,12 +46,6 @@ test.describe('block editing', () => {
     await expect
       .poll(() => columns.allTextContents())
       .toEqual(['Eukaryote animal', 'Prokaryote', 'Eukaryote plant']);
-    await page
-      .getByRole('button', { exact: true, name: m.material_mode() })
-      .click();
-    await expect(
-      page.getByRole('button', { name: m.editor_drag_column() })
-    ).toHaveCount(0);
   });
   test('callout and code style popovers switch the style and keep editor focus', async ({
     page,

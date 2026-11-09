@@ -2,7 +2,7 @@
 
 It carries what the model must see on every call but must not compact away:
 the file the learner has open, their study preferences, the library excerpts
-read this message and the budget left. Chapters come from list_sources
+read this message and the budget left. Topics come from list_sources
 (Epo 2026-10-25).
 The loop rebuilds it before each request and sends it last, leaving earlier
 copies where they were sent so each request extends the previous one; it never
@@ -67,21 +67,21 @@ OPEN_CAUTION = (
 
 
 def _open_line(
-    resource: dict[str, Any], chapters: list[dict[str, Any]], role: str
+    resource: dict[str, Any], topics: list[dict[str, Any]], role: str
 ) -> str:
-    line = f"{_open_item(resource, chapters)} {_ROLE_LINES[role]}"
+    line = f"{_open_item(resource, topics)} {_ROLE_LINES[role]}"
     return f"{line} {OPEN_CAUTION}" if resource.get("id") else line
 
 
-def _open_item(resource: dict[str, Any], chapters: list[dict[str, Any]]) -> str:
+def _open_item(resource: dict[str, Any], topics: list[dict[str, Any]]) -> str:
     if not resource.get("id"):
         return "Open: nothing."
     title = str(resource.get("title") or "").strip() or "untitled"
     where = next(
         (
-            f", in chapter {chapter['name']} [{chapter['id']}]"
-            for chapter in chapters
-            if chapter["id"] == resource.get("chapter_id")
+            f", in topic {topic['name']} [{topic['id']}]"
+            for topic in topics
+            if topic["id"] == resource.get("topic_id")
         ),
         "",
     )
@@ -98,7 +98,7 @@ def message(
         *(
             ()
             if isinstance(ctx.scope, AccountScope)
-            else (_open_line(ctx.open_resource, ctx.chapters, ctx.role),)
+            else (_open_line(ctx.open_resource, ctx.topics, ctx.role),)
         ),
         "\nStudy preferences (a request that names one material gets only that material):",
     ]

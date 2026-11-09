@@ -1,17 +1,14 @@
-import { m } from '@/i18n';
-import { ApiError, api, parseErrorBody } from './client';
-import type {
-  CheckSharedNoteQuizReq,
-  GradeAnonymousQuizReq,
-  GradedQuestion,
-} from './types';
+import { answersForCheck } from '@/features/quizzes/drawing/drawingValue';
+import type { Answers } from '@/features/quizzes/grade';
+import { ApiError, parseErrorBody } from './client';
+import type { GradeAnonymousQuizReq, GradedQuestion } from './types';
 
 /**
- * Signed-out images and grading of shared standalone quizzes, flashcard sets
- * and notes; `token` is the `{id}.{signature}` from the link. The site Worker
- * renders the pages themselves; images go through its `/p/` routes, which
- * verify the token and cache at the edge. Grading calls the API directly so it
- * sees the visitor's IP for its per-IP caps.
+ * Images and checks of shared standalone quizzes, flashcard sets and notes, the
+ * same for every visitor; `token` is the `{id}.{signature}` from the link. The
+ * site Worker renders the pages themselves; images go through its `/p/` routes,
+ * which verify the token and cache at the edge. A check calls the API directly
+ * so its rate limit sees the visitor's address.
  */
 async function publicJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -19,7 +16,7 @@ async function publicJson<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { Accept: 'application/json', ...init?.headers },
   });
   if (!response.ok) {
-    // Machine codes such as anonymous_grading_limit arrive in errors[].message.
+    // Machine codes such as question_no_answers arrive in errors[].message.
     const body = parseErrorBody(await response.json().catch(() => null));
     throw new ApiError(
       response.status,
@@ -43,44 +40,21 @@ export const anonymousFlashcardAssetUrl = (token: string, assetId: string) =>
 export const anonymousNoteAssetUrl = (token: string, assetId: string) =>
   `/p/notes/${token}/assets/${assetId}`;
 
-/** Grades one question of a signed-out attempt; the result carries its key,
- * so the page shows it and keeps it in this browser. */
+/** Checks one question of a shared quiz; the result carries its key, so the
+ * page shows it and keeps it in this browser. An answered open part comes back
+ * Not marked. */
 export const gradeAnonymousQuiz = (
   token: string,
   body: GradeAnonymousQuizReq
 ) =>
   publicJson<GradedQuestion>(`/api/public/quizzes/${token}/grade`, {
-    body: JSON.stringify(body),
+    body: JSON.stringify(withDrawingsSent(body)),
     headers: { 'Content-Type': 'application/json' },
     method: 'POST',
   });
 
-/** The daily anonymous grading cap; the visitor can sign in to keep going. */
-export const isAnonymousGradingLimit = (err: unknown) =>
-  err instanceof ApiError && err.code === 'anonymous_grading_limit';
-
-/** A signed-out check's Turnstile refusal, shown inline under its Check. */
-export function captchaCopy(err: unknown): string | undefined {
-  if (!(err instanceof ApiError)) return;
-  if (err.code === 'captcha_failed') return m.quiz_captcha_failed();
-  if (err.code === 'captcha_unavailable') return m.quiz_captcha_unavailable();
-}
-
-/** A signed-in visitor's check of one question of a quiz embedded in a
- * shared note, through the note's link: graded under the user's daily
- * grading parts with no captcha, storing nothing (Q311). */
-export const checkSharedNoteQuiz = (
-  token: string,
-  quizId: string,
-  body: CheckSharedNoteQuizReq
-) =>
-  api.post<GradedQuestion>(
-    `/shared/notes/${token}/quizzes/${quizId}/check`,
-    body
-  );
-
-/** Grades one question of a quiz embedded in a shared note, through the
- * note's link (the quiz has none of its own); it stores nothing. */
+/** The same for a quiz embedded in a shared note, through the note's link (the
+ * quiz has none of its own); it stores nothing. */
 export const gradeAnonymousNoteQuiz = (
   token: string,
   quizId: string,
@@ -89,8 +63,14 @@ export const gradeAnonymousNoteQuiz = (
   publicJson<GradedQuestion>(
     `/api/public/notes/${token}/quizzes/${quizId}/grade`,
     {
-      body: JSON.stringify(body),
+      body: JSON.stringify(withDrawingsSent(body)),
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
     }
   );
+
+/** A drawing goes as its board and image; a shared page never marks it. */
+const withDrawingsSent = (body: GradeAnonymousQuizReq) => ({
+  ...body,
+  answers: answersForCheck(body.answers as Answers),
+});

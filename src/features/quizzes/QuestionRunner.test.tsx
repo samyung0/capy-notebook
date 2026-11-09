@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it } from 'vitest';
 import { exampleQuestion } from '@/features/questions/questionFixtures';
+import { m } from '@/i18n';
 import { applyItemAwards } from './grade';
 import { QuestionRunner } from './QuestionRunner';
 
@@ -90,15 +91,14 @@ it('reviews an ordering answered by item text against the stored order', () => {
       review
     />
   );
-  // The learner's order first, then the correct order with where each
-  // misplaced item was put.
+  // Your order first, then the correct order.
+  expect(html.indexOf('Your order')).toBeLessThan(html.indexOf('Second event'));
   expect(html.indexOf('Second event')).toBeLessThan(
     html.indexOf('First event')
   );
-  expect(html).toContain('Correct order');
-  expect(html).toContain('you put it at 2');
-  expect(html).toContain('you put it at 1');
-  expect(html).not.toContain('you put it at 3');
+  expect(html.indexOf('First event')).toBeLessThan(
+    html.indexOf('Correct order')
+  );
 });
 
 it('shows an open part with its marks and a verdict over its marking points', () => {
@@ -128,4 +128,110 @@ it('shows an open part with its marks and a verdict over its marking points', ()
   expect(partial).toContain('1 of 2 points answered correctly');
   expect(graded([1, 1], 'Both')).toContain('All 2 points answered correctly');
   expect(graded([0, 0], ' ')).toContain('Question not answered');
+});
+
+it('shows a drawing part as a grid to draw on, its drawing after Done, and its verdict once checked', () => {
+  const question = exampleQuestion('draw', { type: 'drawing' });
+  const drawing = { board: 'AAA=', image: 'data:image/webp;base64,AAA=' };
+  const taking = (value?: typeof drawing) =>
+    renderToStaticMarkup(
+      <QuestionRunner
+        answers={value ? { 'draw-part': value } : {}}
+        question={question}
+      />
+    );
+  expect(taking()).toContain('drawing-grid');
+  expect(taking()).toContain(m.drawing_answer_draw());
+  // Drawn from its board (here not a real one, so it says it can't be shown).
+  expect(taking(drawing)).toContain(
+    m.drawing_answer_unreadable().replace("'", '&#x27;')
+  );
+  expect(taking(drawing)).toContain(m.drawing_answer_edit());
+  question.parts[0] = applyItemAwards(question.parts[0], [1]);
+  const checked = renderToStaticMarkup(
+    <QuestionRunner
+      answers={{ 'draw-part': drawing }}
+      question={question}
+      review
+    />
+  );
+  expect(checked).toContain('Correct:');
+  expect(checked).toContain(m.drawing_answer_open());
+  expect(checked).not.toContain(m.drawing_answer_edit());
+});
+
+it('marks a checked choice in its box and says Right or Wrong with the marks above', () => {
+  const reviewed = (choice: number[]) => {
+    const question = exampleQuestion('mcq');
+    question.parts[0].awarded = choice[0] === 1 ? 1 : 0;
+    return renderToStaticMarkup(
+      <QuestionRunner
+        answers={{ 'mcq-part': choice }}
+        question={question}
+        review
+      />
+    );
+  };
+  const right = reviewed([1]);
+  expect(right).toContain('Right<span class="t-meta');
+  expect(right).toContain('>1 / 1 mark</span>');
+  const wrong = reviewed([0]);
+  expect(wrong).toContain('Wrong<span class="t-meta');
+  expect(wrong).toContain('Your answer');
+  expect(wrong).toContain('Correct answer');
+  const skipped = reviewed([]);
+  expect(skipped).toContain('Not answered · 0 / 1 mark');
+  expect(skipped).toContain('Correct answer');
+});
+
+it('lists a wrong multi-answer part as your answer, then the correct answer apart', () => {
+  const question = exampleQuestion('multi', {
+    correct: [0, 2],
+    options: ['Nucleus', 'Ribosome', 'Mitochondria'],
+    type: 'mcq',
+  });
+  question.parts[0].marks = 2;
+  question.parts[0].awarded = 0;
+  const html = renderToStaticMarkup(
+    <QuestionRunner
+      answers={{ 'multi-part': [0, 1] }}
+      question={question}
+      review
+    />
+  );
+  expect(html).toContain('0 / 2 marks · 1 right, 1 wrong');
+  expect(html.indexOf('Your answer')).toBeLessThan(
+    html.indexOf('Correct answer')
+  );
+  // The chosen wrong option says Wrong; nothing in your answer is outlined.
+  expect(html).toContain('Wrong</span>');
+  expect(html.slice(html.indexOf('Correct answer'))).toContain('Mitochondria');
+  expect(html.slice(html.indexOf('Correct answer'))).not.toContain('Ribosome');
+});
+
+// The in-app review shared by a quiz, Practice and a review session.
+it('reads a part left Not marked as unmarked, with its marking points, not as 0', () => {
+  const question = exampleQuestion('open', {
+    accepted: [],
+    hints: [],
+    type: 'open',
+  });
+  question.parts[0].marks = 4;
+  question.parts[0].markscheme = [{ marks: 4, text: 'Names the factor.' }];
+  question.parts[0].awarded = 0;
+  question.parts[0].pending = true;
+  const html = renderToStaticMarkup(
+    <QuestionRunner
+      answers={{ 'open-part': 'CO2 limits it.' }}
+      headerMarks
+      question={question}
+      questionNumber={1}
+      review
+    />
+  );
+  expect(html).toContain(m.assignment_not_marked());
+  expect(html).toContain('— / 4');
+  expect(html).not.toContain('0 / 4');
+  expect(html).toContain('Names the factor.');
+  expect(html).toContain('[4]');
 });

@@ -92,17 +92,6 @@ export default defineConfig({
   use: {
     baseURL,
     screenshot: 'only-on-failure',
-    // The workspace's right panel starts closed; specs written against the
-    // three-column layout get it open. Specs about the default start empty.
-    storageState: {
-      cookies: [],
-      origins: [
-        {
-          localStorage: [{ name: 'capy.workspace.rightPanel', value: 'true' }],
-          origin: baseURL,
-        },
-      ],
-    },
     // on-first-retry leaves the first failure untraced, and a flake that the
     // retry does not reproduce then has no trace at all.
     trace: 'retain-on-failure',
@@ -123,8 +112,6 @@ export default defineConfig({
       VITE_POSTHOG_KEY: '',
       VITE_RELEASE_SHA: 'e2e',
       VITE_SENTRY_DSN: '',
-      // Cloudflare's published Turnstile test site key, which always passes.
-      VITE_TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
       VITE_USE_MSW: 'false',
     },
     reuseExistingServer: false,

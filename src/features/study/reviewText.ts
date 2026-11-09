@@ -35,11 +35,6 @@ export function reviewReason(s: ReviewSuggestion): string {
   const { evidence: ev } = s;
   if (s.mode === 'tricky') {
     if (ev.missed === 1) return m.review_reason_tricky_missed_one();
-    if (ev.missed > 0 && ev.repeated > 0)
-      return m.review_reason_tricky_both({
-        missed: ev.missed,
-        repeated: ev.repeated,
-      });
     if (ev.missed > 0)
       return m.review_reason_tricky_missed({ missed: ev.missed });
     return m.review_reason_tricky_before();
@@ -49,13 +44,10 @@ export function reviewReason(s: ReviewSuggestion): string {
   return m.review_reason_fading({ when });
 }
 
-/** The group a suggestion or session names: its chapter, Others, its plan,
- * or the workspace itself. */
-export function groupName(
-  group: ReviewSuggestion['group'] | 'plan',
-  chapter?: string
-) {
-  if (group === 'others') return m.study_others();
-  if (group === 'chapter' || group === 'plan') return chapter ?? '';
+/** The group a suggestion or session names: its topic, Other files, or the
+ * workspace itself. */
+export function groupName(group: ReviewSuggestion['group'], topic?: string) {
+  if (group === 'others') return m.topic_other_files();
+  if (group === 'topic') return topic ?? '';
   return '';
 }

@@ -19,10 +19,10 @@ import {
 /** Organic Chemistry — tables, equations, warnings, flashcards, mechanism sketch. */
 export const chemNotes: SeedNote[] = [
   {
-    chapterId: null,
     daysAgo: 5,
     id: 'mat_note_chem_sn',
     title: 'SN1 vs SN2 decision guide',
+    topicId: null,
     value: [
       heading(1, 'SN1 vs SN2'),
       toc(),

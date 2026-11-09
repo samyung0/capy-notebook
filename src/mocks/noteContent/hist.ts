@@ -20,10 +20,10 @@ import {
 /** World History — narrative layout: columns, quotes, callouts, timeline lists. */
 export const histNotes: SeedNote[] = [
   {
-    chapterId: null,
     daysAgo: 2,
     id: 'mat_note_hist_ww1',
     title: 'Causes of World War I',
+    topicId: null,
     value: [
       heading(1, 'Causes of World War I'),
       toc(),

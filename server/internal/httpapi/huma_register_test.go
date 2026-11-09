@@ -25,6 +25,7 @@ func TestMapHTTPErrorCodes(t *testing.T) {
 		{store.ErrTitleTaken, http.StatusConflict, "title_taken"},
 		{store.ErrAudioTranscribing, http.StatusConflict, "audio_transcribing"},
 		{store.ErrInvalidPDFAnnotation, http.StatusBadRequest, ""},
+		{store.ErrSourceRoleLost, http.StatusNotFound, "role_lost"},
 	} {
 		var model *huma.ErrorModel
 		if !errors.As(mapHTTPError(tc.err), &model) || model.Status != tc.status {

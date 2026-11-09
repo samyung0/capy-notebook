@@ -11,8 +11,6 @@ import type { SessionScore } from './sessionScore.ts';
 export interface PastReview {
   answered: number;
   cards?: SessionScore;
-  chapterId?: string;
-  chapterName?: string;
   /** Omitted on the result page of a session not finished yet */
   finishedAt?: string;
   group: PastReviewGroup;
@@ -22,6 +20,8 @@ export interface PastReview {
   mode?: PastReviewMode;
   quiz?: SessionScore;
   startedAt: string;
+  topicId?: string;
+  topicName?: string;
   total: number;
   workspaceId: string;
   workspaceName: string;

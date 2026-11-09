@@ -18,18 +18,18 @@ DEFAULTS: dict[str, Any] = {
     "knowledgeChecks": True,
 }
 
-# The output file that explains each chapter: Settings' Capy Note or
+# The output file that explains each topic: Settings' Capy Note or
 # Powerpoint (decks: openwiki/decks.md).
-# Other materials follow these preferences and what teaching the chapter
+# Other materials follow these preferences and what teaching the topic
 # needs (Epo 2026-10-14).
 MAIN_FORMAT = {
     "note": (
-        "Output files: a note explains each chapter; make other materials as these "
-        "preferences and what teaching the chapter needs say."
+        "Output files: a note explains each topic; make other materials as these "
+        "preferences and what teaching the topic needs say."
     ),
     "deck": (
-        "Output files: a PowerPoint explains each chapter; make other materials as these "
-        "preferences and what teaching the chapter needs say."
+        "Output files: a PowerPoint explains each topic; make other materials as these "
+        "preferences and what teaching the topic needs say."
     ),
 }
 
@@ -66,7 +66,7 @@ CHECKS = {
     "off": "Put no knowledge checks inside notes.",
 }
 
-# Questions or cards per chapter for each practice level; a quiz is smaller
+# Questions or cards per topic for each practice level; a quiz is smaller
 # than a card set (Epo 2026-10-25).
 COUNT = {
     "quiz": {"more": 5, "less": 2},
@@ -129,7 +129,7 @@ def lines(saved: dict[str, Any] | None, *, account: bool = False) -> list[str]:
             f"Output files: build no {standalone}quizzes or flashcards unless asked."
         )
     else:
-        practice = f"Output files: each chapter with {' and '.join(on)}"
+        practice = f"Output files: each topic with {' and '.join(on)}"
         practice += (
             f"; make no {standalone}{' or '.join(off)} unless asked." if off else "."
         )

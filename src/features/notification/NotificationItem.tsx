@@ -88,6 +88,14 @@ function systemCopy(notification: AppNotification) {
         title: m.notification_system_source_upload_title(),
       };
     }
+    // Staff released an assignment's grades (T, Epo 2026-11-08).
+    case 'grades_released':
+      return {
+        body: m.notification_system_grades_released_body({
+          title: dataString(data, 'title'),
+        }),
+        title: m.notification_system_grades_released_title(),
+      };
     case 'pending_edits_too_large':
       return {
         body: m.notification_system_pending_edits_body({
@@ -171,7 +179,10 @@ function notificationCopy(notification: AppNotification) {
     case 'workspace_role_changed':
       return {
         body: m.notification_workspace_role_changed_body({
-          role: roleLabel(dataString(notification.data, 'role')),
+          role: roleLabel(
+            dataString(notification.data, 'role'),
+            dataString(notification.data, 'workspaceKind')
+          ),
           workspaceName: name,
         }),
         title: m.notification_workspace_role_changed_title(),
@@ -186,12 +197,17 @@ function notificationCopy(notification: AppNotification) {
   }
 }
 
-function roleLabel(role: string) {
+/** The role's name as the workspace's kind had it when the role changed. */
+function roleLabel(role: string, workspaceKind: string) {
   switch (role) {
     case 'editor':
-      return m.notification_role_editor();
+      return workspaceKind === 'class'
+        ? m.role_teaching_assistant()
+        : m.notification_role_editor();
     case 'viewer':
-      return m.notification_role_viewer();
+      return workspaceKind === 'class'
+        ? m.role_member()
+        : m.notification_role_viewer();
     default:
       return role;
   }

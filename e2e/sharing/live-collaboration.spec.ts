@@ -1,7 +1,6 @@
 import { expect, test } from '../fixtures/actors';
 import { expectEditorLive } from '../helpers/editor';
 import { openWorkspaceMaterial } from '../helpers/workspace';
-import { m } from '../i18n';
 
 test.describe('live Yjs collaboration', () => {
   test('two editors converge, expose remote selections, and project to static view', async ({
@@ -81,13 +80,5 @@ test.describe('live Yjs collaboration', () => {
         return response.ok() ? await response.text() : '';
       })
       .toContain(`${body}${suffix}`);
-
-    const modes = ownerPage.getByRole('button', { name: m.material_mode() });
-    await modes.click();
-
-    await expect(
-      ownerPage.getByText(`${body}${suffix}`, { exact: true })
-    ).toBeVisible();
-    await expect(ownerPage.locator('[contenteditable="true"]')).toHaveCount(0);
   });
 });

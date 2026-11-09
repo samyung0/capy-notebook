@@ -12,7 +12,7 @@ import {
   recentLink,
   recentThumbnail,
   useRecentItems,
-} from '@/features/dashboard/RecentItemsCard';
+} from '@/features/home/RecentItemsCard';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
@@ -21,9 +21,9 @@ import { iconUrl } from '@/lib/icon-catalog';
 const QUICK_OPEN_LIMIT = 5;
 
 /** The phone's quick open: the five newest of Recent (the caller's opens,
- * from any device), sharing the dashboard's cached list. Links
- * carry no mode, so each opens in the mode last used on it in this browser
- * (`readDocumentMode`). */
+ * from any device), sharing the dashboard's cached list. Links carry no mode:
+ * a material opens at the highest its reader may have, an Office or text file
+ * in the mode last used on it in this browser (`readDocumentMode`). */
 export function RecentQuickOpen({ onClose }: { onClose: () => void }) {
   const { isLoading, items, missing, paused, workspaces } = useRecentItems();
   return (
@@ -45,7 +45,7 @@ export function RecentQuickOpen({ onClose }: { onClose: () => void }) {
                 .map(([, , , error]) => unexpectedErrorId(error))
                 .find(Boolean) ?? null
             }
-            message={m.dashboard_recent_error()}
+            message={m.home_recent_error()}
             onRetry={() => {
               for (const [, , refetch] of missing) void refetch();
             }}

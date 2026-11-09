@@ -44,6 +44,28 @@ export function UsageTab() {
 
   const storageLimit = billing?.storageLimitBytes ?? 0;
   const storageUsed = billing?.storageUsedBytes ?? 0;
+  // What the storage holds by kind (Epo 2026-11-06, mock S1).
+  const breakdown = billing?.storageBreakdown;
+  const storageParts: Segment[] = [
+    {
+      amount: breakdown?.filesBytes ?? 0,
+      color: purple,
+      key: 'files',
+      label: m.billing_storage_files(),
+    },
+    {
+      amount: breakdown?.otherBytes ?? 0,
+      color: userColorPair('green').bg,
+      key: 'other',
+      label: m.billing_storage_other(),
+    },
+    {
+      amount: breakdown?.canvasBytes ?? 0,
+      color: userColorPair('amber').bg,
+      key: 'canvas',
+      label: m.billing_storage_canvas(),
+    },
+  ];
 
   const byArea = new Map<string, number>();
   for (const bucket of usage?.bySurface ?? []) {
@@ -148,7 +170,7 @@ export function UsageTab() {
           <UsageBar
             limit={storageLimit}
             segments={[
-              { amount: storageUsed, color: purple, key: 'used', label: '' },
+              ...storageParts,
               {
                 amount: billing?.storageReservedBytes ?? 0,
                 color: purple,
@@ -158,9 +180,16 @@ export function UsageTab() {
               },
             ]}
           />
-          <p className="t-meta mt-2 text-fg-muted">
-            {m.billing_storage_hint()}
-          </p>
+          <div className="mt-4">
+            <UsageLegend
+              segments={storageParts.map((segment) => ({
+                ...segment,
+                value: billingPending
+                  ? loadingValue
+                  : formatBytes(segment.amount),
+              }))}
+            />
+          </div>
         </div>
         <div>
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">

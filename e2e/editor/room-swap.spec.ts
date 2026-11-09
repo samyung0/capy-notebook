@@ -1,6 +1,11 @@
 import { expect, type Page, test } from '@playwright/test';
 import { EDITOR_NOTE, EDITOR_WORKSPACE_ID } from '../../src/mocks/editorSeed';
-import { officeEditMenu, officeMenu, saveOffice } from '../helpers/office';
+import {
+  officeEditMenu,
+  officeFrame,
+  officeMenu,
+  saveOffice,
+} from '../helpers/office';
 import { m } from '../i18n';
 import { clickTextEnd, openEditorNote } from './helpers';
 
@@ -95,7 +100,7 @@ test('a discard keeps the note on screen read-only until the next editor paints,
   await holdRooms(page, true);
   await discard(page, MATRIX);
   // Paused: the old editor stays, read-only, beside the next one building
-  // hidden; the header says Reconnecting.
+  // hidden; the header's status stays as it was.
   const paused = page.locator('[data-note-mount="paused"]');
   await expect(paused).toBeVisible();
   await expect(paused).toContainText('Text marks & styles');
@@ -104,10 +109,7 @@ test('a discard keeps the note on screen read-only until the next editor paints,
     'false'
   );
   await expect(page.locator('[data-note-mount="standby"]')).toBeHidden();
-  await expect(saveState(page)).toHaveAttribute(
-    'data-save-state',
-    'reconnecting'
-  );
+  await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
   expect(await offsetIn(page, 'paused', block)).toBe(before);
   await shot(page, 'paused-desktop');
 
@@ -135,7 +137,7 @@ test('a hidden tab swaps at once, with no paused note', async ({ page }) => {
   await discard(page, EDITOR_NOTE.id);
   // The next editor is already in place, still waiting for its room.
   const live = page.locator('[data-note-mount="live"]');
-  await expect(live.getByText(m.editor_connecting())).toBeVisible();
+  await expect(live.locator('[contenteditable="true"]')).toHaveCount(0);
   await expect(page.locator('[data-note-mount="paused"]')).toHaveCount(0);
   await expect(page.locator('[data-note-mount]')).toHaveCount(1);
   await holdRooms(page, false);
@@ -161,10 +163,7 @@ test("a note reload whose JOIN is never answered ends at the join's 30 s", async
   await discard(page, EDITOR_NOTE.id);
   const paused = page.locator('[data-note-mount="paused"]');
   await expect(paused).toBeVisible();
-  await expect(saveState(page)).toHaveAttribute(
-    'data-save-state',
-    'reconnecting'
-  );
+  await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
   await page.waitForTimeout(15_000);
   await expect(paused).toBeVisible();
   await expect(paused).toHaveCount(0, { timeout: 60_000 });
@@ -194,7 +193,7 @@ test("a first open whose token request hangs ends at the join's 30 s", async ({
       requested = Date.now();
   });
   await page.goto(
-    `/workspaces/${EDITOR_WORKSPACE_ID}?material=${EDITOR_NOTE.id}&mode=edit`
+    `/workspaces/${EDITOR_WORKSPACE_ID}?material=${EDITOR_NOTE.id}`
   );
   const failed = page.getByText(m.editor_collab_unavailable());
   await expect(failed).toBeVisible({ timeout: 90_000 });
@@ -219,15 +218,17 @@ test('a note painted before its room synced binds at the sync and takes edits an
   await page.evaluate(async (id) => {
     const path = '/src/mocks/collaboration.ts';
     const { holdNoteTokens, setCollaborationSlowed } = await import(path);
-    holdNoteTokens(id, 31_000);
+    // Well past the join's 30 s: that counts from the editor's mount, and on a
+    // slow machine the token's request starts seconds earlier.
+    holdNoteTokens(id, 40_000);
     setCollaborationSlowed(true);
   }, EDITOR_NOTE.id);
   await page.goto(
-    `/workspaces/${EDITOR_WORKSPACE_ID}?material=${EDITOR_NOTE.id}&mode=edit`
+    `/workspaces/${EDITOR_WORKSPACE_ID}?material=${EDITOR_NOTE.id}`
   );
   const editor = page.locator('[contenteditable="true"]').first();
   const third = editor.getByText(EDITOR_NOTE.thirdParagraph, { exact: true });
-  // The token's 31 s, plus a reload if the dev server optimizes then.
+  // The token's 40 s, plus a reload if the dev server optimizes then.
   await expect(third).toBeVisible({ timeout: 90_000 });
   await expect(saveState(page)).toHaveAttribute('data-save-state', 'error');
   await clickTextEnd(third);
@@ -312,10 +313,7 @@ test.describe('on a phone', () => {
     await expect(copy.locator('[contenteditable="true"]')).toHaveCount(0);
     await expect(page.locator('[data-note-mount]')).toHaveCount(1);
     await expect(page.locator('[data-note-mount="standby"]')).toBeAttached();
-    await expect(saveState(page)).toHaveAttribute(
-      'data-save-state',
-      'reconnecting'
-    );
+    await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
     await shot(page, 'paused-360');
     await holdRooms(page, false);
     await expect(copy).toHaveCount(0, { timeout: 30_000 });
@@ -333,9 +331,7 @@ test("a refused update's edits come back as pieces after the swap", async ({
 }) => {
   test.setTimeout(120_000);
   // Drafts are stored for the scenario documents only under MSW.
-  await page.goto(
-    '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
-  );
+  await page.goto('/workspaces/ws_scenarios?material=mock-scenario-note');
   const editor = page.locator('[contenteditable="true"]').first();
   await expect(editor).toContainText(SCENARIO_SEED, { timeout: 30_000 });
   await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
@@ -625,12 +621,13 @@ test('leaving a note during its build opens the next one cleanly', async ({
     .getByRole('link', { exact: true, name: EDITOR_NOTE.title })
     .click();
   await holdRooms(page, false);
-  // The other note opens in View; the building editor went with the first.
-  await expect(page.getByTestId('material-preview')).toContainText(
+  // The other note opens live (its token is asked for as it opens, Q618); the
+  // building editor went with the first.
+  await expect(page.locator('[data-note-mount="live"]')).toContainText(
     EDITOR_NOTE.firstParagraph,
     { timeout: 30_000 }
   );
-  await expect(page.locator('[data-note-mount]')).toHaveCount(0);
+  await expect(page.locator('[data-note-mount]')).toHaveCount(1);
   expect(errors).toEqual([]);
 });
 
@@ -657,7 +654,7 @@ const pageInView = (page: Page, view: string, index: number) =>
  * `typing`, the document input holds the focus. */
 async function openDocxOnPage4(page: Page, typing = false) {
   await page.goto(`/workspaces/ws_bio?file=${DOCX}&mode=edit`);
-  await expect(officeEditMenu(page, 'docx')).toBeVisible({ timeout: 120_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 120_000 });
   await saveOffice(page, 'docx');
   await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
   if (typing) {
@@ -700,7 +697,9 @@ test('a DOCX maintenance pause keeps the reader where they are', async ({
     const { announceSourcePaused } = await import(path);
     announceSourcePaused(id);
   }, DOCX);
-  await expect(page.getByText(m.source_edit_paused())).toBeVisible();
+  await expect(
+    officeFrame(page).getByText(m.source_edit_paused())
+  ).toBeVisible();
   // The read-only switch lays the pages out again.
   await page.waitForTimeout(2000);
   expect(await docxPane(page, 'live').evaluate((node) => node.scrollTop)).toBe(
@@ -742,9 +741,10 @@ test('a newer DOCX epoch swaps the editor with no banner or Reload', async ({
   await expect(page.locator('iframe[src*="office-runtime"]')).toHaveCount(1);
   // At the same place: page 4 is on screen, by its first paragraph's id.
   await expect.poll(() => pageInView(page, 'live', 3)).toBe(true);
-  await expect(page.getByText(m.source_edit_replaced())).toHaveCount(0);
+  const strip = officeFrame(page);
+  await expect(strip.getByText(m.source_edit_replaced())).toHaveCount(0);
   await expect(
-    page.getByRole('button', { exact: true, name: m.error_action_reload() })
+    strip.getByRole('button', { exact: true, name: m.error_action_reload() })
   ).toHaveCount(0);
   // Editing goes on in the new epoch: File › Save is enabled again.
   await officeMenu(page, 'docx', 'File').click();
@@ -842,7 +842,7 @@ test('a newer XLSX epoch swaps the editor at the same sheet and cell', async ({
   test.setTimeout(300_000);
   const fileId = 'bio-office-xlsx';
   await page.goto(`/workspaces/ws_bio?file=${fileId}&mode=edit`);
-  await expect(officeEditMenu(page, 'xlsx')).toBeVisible({ timeout: 120_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 120_000 });
   await saveOffice(page, 'xlsx');
   await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
   const frame = page.frameLocator('[data-office-view="live"] iframe');
@@ -870,7 +870,7 @@ test('a newer PPTX epoch swaps the editor at the same slide', async ({
   test.setTimeout(300_000);
   const fileId = 'bio-office-pptx';
   await page.goto(`/workspaces/ws_bio?file=${fileId}&mode=edit`);
-  await expect(officeEditMenu(page, 'pptx')).toBeVisible({ timeout: 120_000 });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 120_000 });
   await saveOffice(page, 'pptx');
   await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
   const slide = (index: number) =>

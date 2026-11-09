@@ -119,14 +119,14 @@ export function isPickerConsentBlocked(err: unknown): boolean {
 export function toImportRequest(
   provider: 'google' | 'microsoft',
   refs: ImportSourceRef[],
-  chapterId?: string | null
+  topicId?: string | null
 ) {
   const fileIds = refs.map((ref) => ref.id);
   const driveIds = refs.map((ref) => ref.driveId ?? '');
   return {
-    chapterId,
     fileIds,
     provider,
+    topicId,
     ...(provider === 'microsoft' && driveIds.some(Boolean) ? { driveIds } : {}),
   };
 }

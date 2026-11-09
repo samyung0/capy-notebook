@@ -29,8 +29,8 @@ func TestWorkspaceMutationRechecksCurrentEditorRole(t *testing.T) {
 		WHERE workspace_id=$1 AND user_id=$2`, workspace.ID, editorID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.AddChapter(ctx, workspace.ID, editorID, "Forbidden"); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("viewer chapter mutation error = %v, want forbidden", err)
+	if _, err := s.AddTopic(ctx, workspace.ID, editorID, "Forbidden", ""); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("viewer topic mutation error = %v, want forbidden", err)
 	}
 	if _, err := s.CreateMaterial(ctx, Material{
 		CreatedBy: editorID, WorkspaceID: workspace.ID, WorkspaceName: workspace.Name,

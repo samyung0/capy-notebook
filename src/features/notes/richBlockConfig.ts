@@ -61,7 +61,7 @@ export const CALLOUT_ICON: Record<CalloutVariant, IconName> = {
   danger: 'error',
   info: 'info',
   success: 'circleCheck',
-  tip: 'sparkles',
+  tip: 'ai',
   warning: 'error',
 };
 

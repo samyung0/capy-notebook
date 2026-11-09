@@ -170,12 +170,14 @@ func (s *Store) RecentOpens(ctx context.Context, userID string, materialKinds []
 		LEFT JOIN files f ON f.id = o.file_id
 		LEFT JOIN materials m ON m.id = o.material_id
 		WHERE o.user_id = $1 AND (
-			(f.id IS NOT NULL AND f.trashed_at IS NULL AND (
+			(f.id IS NOT NULL AND f.trashed_at IS NULL AND f.submission_position IS NULL AND (
 				(f.workspace_id IS NULL AND f.user_id = $1)
-				OR f.workspace_id IN (`+visibleWorkspacesSQL("$1")+`)))
+				OR f.workspace_id IN (`+visibleWorkspacesSQL("$1")+`))
+				AND workspace_item_visible(f.hidden, f.workspace_id, $1))
 			OR (m.id IS NOT NULL AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND m.kind = ANY($3) AND (
 				(m.workspace_id IS NULL AND m.owner_user_id = $1)
-				OR m.workspace_id IN (`+visibleWorkspacesSQL("$1")+`))))
+				OR m.workspace_id IN (`+visibleWorkspacesSQL("$1")+`))
+				AND (workspace_item_visible(m.hidden, m.workspace_id, $1) OR `+quizAssignedToSQL("m.id", "$1")+` IS NOT NULL)))
 		ORDER BY o.opened_at DESC, o.file_id, o.material_id LIMIT $2`, userID, limit, materialKinds)
 	if err != nil {
 		return nil, err

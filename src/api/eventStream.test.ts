@@ -4,6 +4,7 @@ import { api, qk } from './client';
 import {
   filesQuery,
   materialsQuery,
+  onAssignmentEvent,
   useEventStream,
   workspacesQuery,
 } from './hooks';
@@ -41,7 +42,6 @@ afterEach(() => {
 
 const pending: SourceFile = {
   addedAt: '2026-09-10T00:00:00Z',
-  chapterId: null,
   hasBytes: true,
   id: 'f_stream',
   indexed: false,
@@ -52,6 +52,7 @@ const pending: SourceFile = {
   revision: 0,
   sizeBytes: 20,
   status: 'processing',
+  topicId: null,
   workspaceId: 'ws_stream',
 };
 
@@ -154,6 +155,21 @@ it('authenticates every connection, reconciles on connect, applies stream events
         serverFiles
       )
     );
+
+    // An assignment event reaches whoever listens; a malformed one doesn't.
+    const heard: unknown[] = [];
+    const stop = onAssignmentEvent((event) => heard.push(event));
+    send('notification', { assignmentId: 7, type: 'assignment_closed' });
+    send('notification', {
+      assignmentId: 'as1',
+      type: 'assignment_republished',
+    });
+    await vi.waitFor(() =>
+      expect(heard).toEqual([
+        { assignmentId: 'as1', type: 'assignment_republished' },
+      ])
+    );
+    stop();
 
     // A clean end is the server's bounded lifetime: reconnect with a fresh
     // token, without raising the banner.

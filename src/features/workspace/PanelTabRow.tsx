@@ -12,10 +12,9 @@ export interface TabAction {
 }
 
 /**
- * The row above a workspace panel: its title (a PanelTitleMenu where the
- * panel switches views) and, on the right, the view's own actions and the
- * settings gear. Below sm the actions and the gear fold into a
- * dots menu so only two icons stay in view.
+ * The row above a chats panel: its title and, on the right, its own actions
+ * and the settings gear. Below sm the actions and the gear fold into a dots
+ * menu so only two icons stay in view.
  */
 export function PanelTabRow({
   title,

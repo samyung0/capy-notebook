@@ -1,0 +1,225 @@
+package store
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/samyung0/capy-notebook/server/internal/questions"
+)
+
+const orderingQuestion = `{"id":"q4","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"p4","blocks":[{"type":"text","text":"Order them"}],"answer":{"type":"ordering","items":["first","second","third"]},"marks":1,"solution":[]}]}`
+
+// TestPaperIsHandedInReadAndDeleted: a member answering on paper uploads a file
+// into their attempt, which submits with every part waiting; the read's
+// letters, taken from the member's seeded view, mark the closed parts against
+// the key, the open part waits for the AI on its pages, and once marked and
+// closed the member may delete the file from Files › Submissions.
+func TestPaperIsHandedInReadAndDeleted(t *testing.T) {
+	f := newAssignmentFixture(t, "paper")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	form := f.form(t, now.Add(time.Hour))
+	var ordering map[string]any
+	if err := json.Unmarshal([]byte(orderingQuestion), &ordering); err != nil {
+		t.Fatal(err)
+	}
+	form.Questions = append(frozenFixture(t), ordering)
+	form.AllowUploads = true
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, true, now)
+	if err != nil || run.Paper != PaperUpload {
+		t.Fatalf("start = %+v, err %v", run.Paper, err)
+	}
+	upload, err := f.s.CreateUploadSession(ctx, NewUploadSession{
+		ID: uid("up"), CreatedBy: f.viewer, ObjectPath: "sources/" + uid("blob"), FinalPath: "sources/" + uid("blob"),
+		Name: "paper.pdf", Kind: "pdf", ContentType: "application/pdf", DeclaredSize: 4096, ParseMode: "none",
+		ExpiresAt: now.Add(time.Hour), AttemptID: run.ID, PaperMaxBytes: 10 << 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := f.s.FinalizeUploadSession(ctx, f.viewer, upload.ID, "etag", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	done, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.ID, map[string]any{}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done.Paper != PaperReading || done.WaitingAnswers != 4 || len(done.PaperFiles) != 1 || done.PaperFiles[0].ID != file.ID {
+		t.Fatalf("handed in = %s, waiting %d, files %+v", done.Paper, done.WaitingAnswers, done.PaperFiles)
+	}
+
+	paper, err := f.s.GetPaper(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if paper.Parts[0].Label != "1" || !strings.Contains(paper.Parts[0].Listing, "1 (choice): Pick\nA. a\nB. b") {
+		t.Fatalf("listing = %q", paper.Parts[0].Listing)
+	}
+	// The letters the member saw for the right order.
+	view := questions.LearnerViewsSeeded(form.Questions, run.ID)[3]["parts"].([]any)[0].(map[string]any)["answer"].(map[string]any)
+	shown := view["items"].([]any)
+	var order []any
+	for _, want := range []string{"first", "second", "third"} {
+		for i, item := range shown {
+			if item == want {
+				order = append(order, letter(i))
+			}
+		}
+	}
+	if err := f.s.SavePaperRead(ctx, run.ID, map[string]PaperFinding{
+		"p1": {Pages: []int{1}, Answer: []any{"B"}},
+		"p2": {Pages: []int{1}, Answer: "osmosis"},
+		"p3": {Pages: []int{2}},
+		"p4": {Pages: []int{2}, Answer: order},
+	}, now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	read, err := f.s.GetAssignmentAttempt(ctx, f.user, run.ID, now.Add(2*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if read.Paper != PaperRead || read.Correct != 4 || read.WaitingAnswers != 1 {
+		t.Fatalf("read = %s, correct %v, waiting %d", read.Paper, read.Correct, read.WaitingAnswers)
+	}
+	_, waiting, err := f.s.AnswersToMark(ctx, created.ID, run.ID)
+	if err != nil || len(waiting) != 1 || waiting[0].PartID != "p3" || len(waiting[0].Pages) != 1 || waiting[0].Pages[0] != 2 {
+		t.Fatalf("to mark = %+v, err %v", waiting, err)
+	}
+
+	if _, err := f.s.MarkAssignmentAnswer(ctx, f.user, run.ID, AssignmentMark{
+		QuestionID: "q3", Parts: []AssignmentPartMark{{PartID: "p3", Items: []float64{2, 1}}},
+	}, now.Add(3*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	// Marked but open: staff may still revise it.
+	if page, err := f.s.ListSubmittedPapers(ctx, f.viewer, "", 50); err != nil || page.Count != 0 {
+		t.Fatalf("open assignment listed %+v, err %v", page, err)
+	}
+	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now.Add(4*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	page, err := f.s.ListSubmittedPapers(ctx, f.viewer, "", 50)
+	if err != nil || page.Count != 1 || page.Items[0].ID != file.ID || page.TotalBytes != 4096 {
+		t.Fatalf("listed %+v, err %v", page, err)
+	}
+	if n, err := f.s.DeleteSubmittedPapers(ctx, f.viewer, nil); err != nil || n != 1 {
+		t.Fatalf("deleted %d, err %v", n, err)
+	}
+	after, err := f.s.GetAssignmentAttempt(ctx, f.user, run.ID, now.Add(5*time.Minute))
+	if err != nil || after.Correct != 7 || len(after.PaperFiles) != 0 {
+		t.Fatalf("after delete = %v, files %d, err %v", after.Correct, len(after.PaperFiles), err)
+	}
+}
+
+// TestHandInIsHandedInAndDeleted: on an unmarked assignment that takes files, a
+// member's upload joins their hand-in, stored with no parse; Hand in needs a
+// file and locks it; staff read the files on the member's row, and once the
+// assignment closes the member may delete them from Files › Submissions.
+func TestHandInIsHandedInAndDeleted(t *testing.T) {
+	f := newAssignmentFixture(t, "handin")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Lab write-up",
+		Attempts: 1, AssignAll: true, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic,
+		Files: []AssignmentFileRef{}, AllowUploads: true}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.SetAssignmentDone(ctx, f.viewer, created.ID, true, now); err == nil {
+		t.Fatal("handed in with no files")
+	}
+	upload, err := f.s.CreateUploadSession(ctx, NewUploadSession{
+		ID: uid("up"), CreatedBy: f.viewer, ObjectPath: "sources/" + uid("blob"), FinalPath: "sources/" + uid("blob"),
+		Name: "write-up.pdf", Kind: "pdf", ContentType: "application/pdf", DeclaredSize: 2048, ParseMode: "none",
+		ExpiresAt: now.Add(time.Hour), HandInID: created.ID, PaperMaxBytes: 10 << 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := f.s.FinalizeUploadSession(ctx, f.viewer, upload.ID, "etag", "", "")
+	if err != nil || file.Status != "ready" {
+		t.Fatalf("file %+v, err %v", file, err)
+	}
+	mine, err := f.s.GetAssignment(ctx, f.viewer, created.ID, now)
+	if err != nil || len(mine.Mine.HandIn) != 1 || mine.Mine.HandIn[0].ID != file.ID {
+		t.Fatalf("mine = %+v, err %v", mine.Mine, err)
+	}
+	if err := f.s.SetAssignmentDone(ctx, f.viewer, created.ID, true, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.RemoveHandInFile(ctx, f.viewer, created.ID, file.ID); !errors.Is(err, ErrHandInClosed) {
+		t.Fatalf("removed after hand in: %v", err)
+	}
+	report, err := f.s.GetAssignmentReport(ctx, f.user, created.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var handedIn []PaperFile
+	for _, row := range report.Members {
+		if row.UserID == f.viewer {
+			handedIn = row.Files
+		}
+	}
+	if len(handedIn) != 1 || handedIn[0].ID != file.ID {
+		t.Fatalf("member row files = %+v", handedIn)
+	}
+	if _, _, err := f.s.HandInFileBlob(ctx, f.user, created.ID, file.ID); err != nil {
+		t.Fatalf("staff link: %v", err)
+	}
+
+	if page, err := f.s.ListSubmittedPapers(ctx, f.viewer, "", 50); err != nil || page.Count != 0 {
+		t.Fatalf("open assignment listed %+v, err %v", page, err)
+	}
+	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	page, err := f.s.ListSubmittedPapers(ctx, f.viewer, "", 50)
+	if err != nil || page.Count != 1 || page.Items[0].ID != file.ID || page.Items[0].QuizName != "Lab write-up" || page.Items[0].AttemptID != "" {
+		t.Fatalf("listed %+v, err %v", page, err)
+	}
+	if n, err := f.s.DeleteSubmittedPapers(ctx, f.viewer, nil); err != nil || n != 1 {
+		t.Fatalf("deleted %d, err %v", n, err)
+	}
+}
+
+// TestUnmarkedFollowsTheLateRules: an unmarked assignment closes at its due
+// date only under No late submissions, as a marked one does (Epo 2026-11-09);
+// without it a tick after the due date stays open and reads Late.
+func TestUnmarkedFollowsTheLateRules(t *testing.T) {
+	f := newAssignmentFixture(t, "unmarked-late")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	due := now.Add(time.Hour)
+	after := now.Add(2 * time.Hour)
+	create := func(noLate bool) Assignment {
+		t.Helper()
+		created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it",
+			Attempts: 1, AssignAll: true, DueAt: &due, NoLate: noLate, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose,
+			ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{}}, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return created
+	}
+	open := create(false)
+	if err := f.s.SetAssignmentDone(ctx, f.viewer, open.ID, true, after); err != nil {
+		t.Fatal(err)
+	}
+	mine, err := f.s.GetAssignment(ctx, f.viewer, open.ID, after)
+	if err != nil || mine.Closed || !mine.Mine.Late {
+		t.Fatalf("late tick: closed %v, mine %+v, err %v", mine.Closed, mine.Mine, err)
+	}
+	closing := create(true)
+	if err := f.s.SetAssignmentDone(ctx, f.viewer, closing.ID, true, after); !errors.Is(err, ErrAssignmentClosed) {
+		t.Fatalf("ticked after a No late due date: %v", err)
+	}
+}

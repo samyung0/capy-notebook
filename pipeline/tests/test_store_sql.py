@@ -249,6 +249,230 @@ def test_two_admissions_racing_for_the_last_unit_admit_one(workspace):
     assert leases == [(f"{key}:first",), (f"{key}:held",)]
 
 
+def _line_sessions(conn, sessions: dict[str, tuple[str, str]]) -> dict[str, str]:
+    """Open a provider session per name: (actor, surface)."""
+    ids = {}
+    for name, (actor, surface) in sessions.items():
+        ids[name] = f"cr_{name}_{secrets.token_hex(4)}"
+        conn.execute(
+            """
+            INSERT INTO provider_sessions (id, actor_user_id, surface, expires_at)
+            VALUES (%s,%s,%s,now()+interval '1 hour')
+            """,
+            (ids[name], actor, surface),
+        )
+    return ids
+
+
+def _drop_line(conn, key: str, sessions: dict[str, str], user: str = "") -> None:
+    conn.execute("DELETE FROM provider_capacity_leases WHERE provider=%s", (key,))
+    conn.execute("DELETE FROM provider_capacity_waiters WHERE provider=%s", (key,))
+    conn.execute(
+        "DELETE FROM provider_sessions WHERE id = ANY(%s)", (list(sessions.values()),)
+    )
+    if user:
+        conn.execute("DELETE FROM users WHERE id=%s", (user,))
+
+
+def test_the_shared_line_turns_round_robin_by_requester(workspace):
+    """Epo 2026-11-04: a job holding the gate with calls waiting is passed by
+    the users' calls that arrived after them, two sessions of one user count
+    as one requester, and each process is granted only its own calls, a job's
+    in the order its process sent them."""
+    import psycopg
+
+    key = f"line:{secrets.token_hex(4)}"
+    other = f"u_line_{secrets.token_hex(4)}"
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO users (id, name, email) VALUES (%s,%s,%s)",
+            (other, "Other", f"{other}@example.com"),
+        )
+        sessions = _line_sessions(
+            conn,
+            {
+                "job": (workspace.user_id, "ingest"),
+                "chat": (workspace.user_id, "chat"),
+                "editor": (workspace.user_id, "editor"),
+                "other": (other, "chat"),
+            },
+        )
+    s = sessions
+    try:
+        with (
+            psycopg.connect(workspace.dsn) as worker,
+            psycopg.connect(workspace.dsn) as retrieval,
+        ):
+
+            def round_(conn, store, waiting, gone=()):
+                with conn.cursor() as cur:
+                    granted = db.admit_line(
+                        cur,
+                        provider=key,
+                        capacity=3,
+                        store=[(call, s[name], 60) for call, name in store],
+                        waiting=waiting,
+                        gone=list(gone),
+                        ttl_s=60,
+                    )
+                conn.commit()
+                return granted
+
+            with worker.cursor() as cur:
+                for held in ("held_1", "held_2", "held_3"):
+                    assert db.acquire_provider_capacity(
+                        cur,
+                        lease_id=f"{key}:{held}",
+                        provider=key,
+                        units=1,
+                        capacity=3,
+                        lease_seconds=60,
+                        session_id=s["job"],
+                    )
+            worker.commit()
+            jobs = [f"{key}:j{i}" for i in (1, 2, 3)]
+            assert round_(worker, [(call, "job") for call in jobs], jobs) == set()
+            users = [f"{key}:a1", f"{key}:a2", f"{key}:b1"]
+            store = list(zip(users, ("chat", "editor", "other"), strict=True))
+            assert round_(retrieval, store, users) == set()
+
+            retrieval.execute(
+                "DELETE FROM provider_capacity_leases WHERE id = ANY(%s)",
+                ([f"{key}:held_1", f"{key}:held_2"],),
+            )
+            retrieval.commit()
+            # The job still holds one: both users' first calls come first, the
+            # other user's before the first user's second call.
+            assert round_(worker, [], jobs) == set()
+            assert round_(retrieval, [], users) == {f"{key}:a1", f"{key}:b1"}
+
+            retrieval.execute(
+                "DELETE FROM provider_capacity_leases WHERE id=%s", (f"{key}:held_3",)
+            )
+            retrieval.commit()
+            # Holding none, the job's first call is next.
+            assert round_(retrieval, [], [f"{key}:a2"]) == set()
+            assert round_(worker, [], jobs) == {f"{key}:j1"}
+
+            requesters = dict(
+                retrieval.execute(
+                    "SELECT id, requester FROM provider_capacity_leases "
+                    "WHERE provider=%s AND id = ANY(%s)",
+                    (key, [f"{key}:a1", f"{key}:b1", f"{key}:j1"]),
+                ).fetchall()
+            )
+            assert requesters == {
+                f"{key}:a1": f"user:{workspace.user_id}",
+                f"{key}:b1": f"user:{other}",
+                f"{key}:j1": f"job:{s['job']}",
+            }
+            waiting = retrieval.execute(
+                "SELECT id FROM provider_capacity_waiters WHERE provider=%s ORDER BY id",
+                (key,),
+            ).fetchall()
+            assert waiting == [(f"{key}:a2",), (f"{key}:j2",), (f"{key}:j3",)]
+    finally:
+        with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+            _drop_line(conn, key, sessions, other)
+
+
+def test_a_grant_whose_answer_was_lost_is_granted_again(workspace):
+    """The commit of a grant landed and its answer was lost, so the call comes back
+    to the line holding its lease: the round answers it, one lease, instead of failing
+    on the lease's id and with it every round of the process's line."""
+    import psycopg
+
+    key = f"line:{secrets.token_hex(4)}"
+    call = f"{key}:call"
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        sessions = _line_sessions(conn, {"chat": (workspace.user_id, "chat")})
+        try:
+            with conn.cursor() as cur:
+                for _ in range(2):
+                    granted = db.admit_line(
+                        cur,
+                        provider=key,
+                        capacity=2,
+                        store=[(call, sessions["chat"], 60)],
+                        waiting=[call],
+                        gone=[],
+                        ttl_s=60,
+                    )
+                    assert granted == {call}
+                leases = cur.execute(
+                    "SELECT count(*) FROM provider_capacity_leases WHERE provider=%s",
+                    (key,),
+                ).fetchone()
+            assert leases == (1,)
+        finally:
+            _drop_line(conn, key, sessions)
+
+
+def test_a_call_goes_straight_through_only_while_nobody_waits(workspace):
+    """A live waiting call holds the gate's free units for the line; one past
+    its row's lifetime drops out, and a call that left takes its row and any
+    lease granted to it along."""
+    import psycopg
+
+    key = f"line:{secrets.token_hex(4)}"
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        sessions = _line_sessions(conn, {"chat": (workspace.user_id, "chat")})
+        try:
+            with conn.cursor() as cur:
+                assert db.provider_capacity_open(cur, key, 2)
+                db.admit_line(
+                    cur,
+                    provider=key,
+                    capacity=2,
+                    store=[(f"{key}:waiting", sessions["chat"], 60)],
+                    waiting=[],
+                    gone=[],
+                    ttl_s=60,
+                )
+                assert not db.provider_capacity_open(cur, key, 2)
+                assert not db.acquire_provider_capacity(
+                    cur,
+                    lease_id=f"{key}:direct",
+                    provider=key,
+                    units=1,
+                    capacity=2,
+                    lease_seconds=60,
+                    session_id=sessions["chat"],
+                )
+                cur.execute(
+                    "UPDATE provider_capacity_waiters "
+                    "SET expires_at = now() - interval '1 second' WHERE provider=%s",
+                    (key,),
+                )
+                assert db.provider_capacity_open(cur, key, 2)
+                assert db.acquire_provider_capacity(
+                    cur,
+                    lease_id=f"{key}:direct",
+                    provider=key,
+                    units=1,
+                    capacity=2,
+                    lease_seconds=60,
+                    session_id=sessions["chat"],
+                )
+                db.admit_line(
+                    cur,
+                    provider=key,
+                    capacity=2,
+                    store=[],
+                    waiting=[],
+                    gone=[f"{key}:direct"],
+                    ttl_s=60,
+                )
+                left = cur.execute(
+                    "SELECT (SELECT count(*) FROM provider_capacity_leases WHERE provider=%s),"
+                    " (SELECT count(*) FROM provider_capacity_waiters WHERE provider=%s)",
+                    (key, key),
+                ).fetchone()
+            assert left == (0, 0)
+        finally:
+            _drop_line(conn, key, sessions)
+
+
 def test_an_applied_ingest_receipt_frees_its_capacity_lease(workspace):
     """(security regression: rate-limit audit M13, Q298) The local settlement
     frees the call's lease in its own transaction; other leases stay."""
@@ -464,8 +688,9 @@ def test_model_capacity_changes_apply_to_each_admission(workspace):
             actor_user_id=workspace.user_id,
         )
     calls = ["pc_" + secrets.token_hex(6) for _ in range(4)]
+    gate = accounting._Gate(key=key, provider="deepinfra", model=model)
 
-    def admit(call_id, mode="ingest"):
+    def admit(call_id):
         return accounting._open_call_sync(
             session_id,
             call_id,
@@ -476,9 +701,9 @@ def test_model_capacity_changes_apply_to_each_admission(workspace):
             300,
             "deepinfra",
             model,
-            mode,
             attempt_id,
             "ingest_summary",
+            gate,
         )
 
     try:
@@ -494,18 +719,18 @@ def test_model_capacity_changes_apply_to_each_admission(workspace):
                 == 0
             )
             conn.execute(
-                "INSERT INTO model_capacities VALUES (%s,%s,3,1)", ("deepinfra", model)
+                "INSERT INTO model_capacities VALUES (%s,%s,3)", ("deepinfra", model)
             )
-            for total, reserve in [(0, 0), (2, -1), (2, 2)]:
-                with pytest.raises(psycopg.errors.CheckViolation):
-                    conn.execute(
-                        "UPDATE model_capacities SET concurrency_total=%s, interactive_reserve=%s WHERE provider=%s AND model=%s",
-                        (total, reserve, "deepinfra", model),
-                    )
+            with pytest.raises(psycopg.errors.CheckViolation):
+                conn.execute(
+                    "UPDATE model_capacities SET concurrency_total=0 WHERE provider=%s AND model=%s",
+                    ("deepinfra", model),
+                )
+        # Every use takes the whole total (Epo 2026-11-04: no reserve).
         assert admit(calls[0])
         assert admit(calls[1])
-        assert not admit(calls[2])  # Two ingest calls leave the interactive reserve.
-        assert admit(calls[2], "gateway")  # Interactive callers use the full total.
+        assert admit(calls[2])
+        assert not admit(calls[3])
         with psycopg.connect(workspace.dsn, autocommit=True) as conn:
             conn.execute(
                 "UPDATE model_capacities SET concurrency_total=2 WHERE provider=%s AND model=%s",
@@ -518,13 +743,11 @@ def test_model_capacity_changes_apply_to_each_admission(workspace):
                 ).fetchone()[0]
                 == 3
             )
-        assert not admit(calls[3], "gateway")
         with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
             db.release_provider_capacity(cur, calls[0])
-            db.release_provider_capacity(cur, calls[1])
-        assert not admit(calls[3])  # One remaining call fills the new ingest allowance.
+        assert not admit(calls[3])  # Two left in flight fill the lowered total.
         with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
-            db.release_provider_capacity(cur, calls[2])
+            db.release_provider_capacity(cur, calls[1])
         assert admit(calls[3])
     finally:
         with psycopg.connect(workspace.dsn) as conn:
@@ -614,7 +837,7 @@ async def test_a_failed_stream_leaves_no_open_call_or_lease(
             (session_id, workspace.user_id, workspace.id),
         )
         capacity_added = conn.execute(
-            "INSERT INTO model_capacities VALUES ('zai','glm-5.3-flash',4,0) "
+            "INSERT INTO model_capacities VALUES ('zai','glm-5.3-flash',4) "
             "ON CONFLICT DO NOTHING RETURNING 1"
         ).fetchone()
     token = accounting.bind(session_id)
@@ -2017,9 +2240,9 @@ async def test_reindexing_removes_the_tail_of_the_previous_run(workspace):
 # --------------------------------------------------------- structure & tree
 
 
-async def test_workspace_outline_groups_files_under_chapters(workspace):
-    chapter = workspace.add_chapter("Biology")
-    filed = workspace.add_file("filed.txt", chapter)
+async def test_workspace_outline_groups_files_under_topics(workspace):
+    topic = workspace.add_topic("Biology")
+    filed = workspace.add_file("filed.txt", topic)
     unfiled = workspace.add_file("unfiled.txt")
     await _write(workspace, filed, ["alpha"])
     content_id = workspace.scalar(
@@ -2034,11 +2257,11 @@ async def test_workspace_outline_groups_files_under_chapters(workspace):
 
     outline = await store.workspace_outline(workspace.id)
 
-    assert [c["name"] for c in outline["chapters"]] == ["Biology"]
+    assert [c["name"] for c in outline["topics"]] == ["Biology"]
     by_id = {f["id"]: f for f in outline["files"]}
-    assert by_id[filed]["chapter_id"] == chapter and by_id[filed]["chunks"] == 1
+    assert by_id[filed]["topic_id"] == topic and by_id[filed]["chunks"] == 1
     assert by_id[filed]["descriptor"] == "A short descriptor."
-    assert by_id[unfiled]["chapter_id"] is None and by_id[unfiled]["chunks"] == 0
+    assert by_id[unfiled]["topic_id"] is None and by_id[unfiled]["chunks"] == 0
 
 
 def _material(ws, kind: str, title: str) -> str:
@@ -2095,17 +2318,16 @@ async def test_any_top_level_material_is_a_scope_item(workspace):
     assert "Mitosis has four phases." in context
 
 
-async def test_deleting_a_chapter_does_not_break_its_files(workspace):
-    """The chapter FK is ON DELETE SET NULL, so deleting a chapter unfiles its
+async def test_deleting_a_topic_does_not_break_its_files(workspace):
+    """The topic FK is ON DELETE SET NULL, so deleting a topic unfiles its
     files rather than deleting them."""
-    chapter = workspace.add_chapter("Doomed")
-    file_id = workspace.add_file("a.txt", chapter)
+    topic = workspace.add_topic("Doomed")
+    file_id = workspace.add_file("a.txt", topic)
 
-    workspace.scalar("DELETE FROM chapters WHERE id = %s RETURNING id", (chapter,))
+    workspace.scalar("DELETE FROM topics WHERE id = %s RETURNING id", (topic,))
 
     assert (
-        workspace.scalar("SELECT chapter_id FROM files WHERE id = %s", (file_id,))
-        is None
+        workspace.scalar("SELECT topic_id FROM files WHERE id = %s", (file_id,)) is None
     )
 
 

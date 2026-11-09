@@ -163,6 +163,8 @@ def build_values(values, environment, revision):
         # Copied bank questions keep linking their figures here.
         VITE_BANK_ASSETS_URL=values.get("BANK_ASSETS_URL", ""),
         VITE_RELEASE_SHA=revision,
+        # bench:canvas's switch: a deployed build never has the board's dev route.
+        VITE_BENCH_ROUTES="false",
         VITE_E2E_EDITOR_SEED="false",
         VITE_LOAD_TEST_SEED="false",
         VITE_USE_MSW="false",

@@ -90,10 +90,10 @@ func TestFrozenIsReadOnlyBothWays(t *testing.T) {
 
 	pushFrozen(t, s, frozenUser, frozenWS.ID)
 
-	if _, err := s.AddChapter(ctx, healthyWS.ID, frozenUser, "Blocked"); err == nil {
-		t.Fatal("a frozen actor added a chapter")
+	if _, err := s.AddTopic(ctx, healthyWS.ID, frozenUser, "Blocked", ""); err == nil {
+		t.Fatal("a frozen actor added a topic")
 	}
-	if _, err := s.AddChapter(ctx, frozenWS.ID, healthyUser, "Open"); err != nil {
+	if _, err := s.AddTopic(ctx, frozenWS.ID, healthyUser, "Open", ""); err != nil {
 		t.Fatalf("a healthy member keeps organizing a frozen owner's workspace: %v", err)
 	}
 	for _, c := range []struct {
@@ -171,7 +171,7 @@ func TestGraceBlocksOnlyStorageGrowth(t *testing.T) {
 	if _, err := s.UpdateWorkspaceSharing(ctx, ownerID, ws.ID, &public, &editor); err != nil {
 		t.Fatalf("grace widening: %v", err)
 	}
-	if _, err := s.AddChapter(ctx, ws.ID, viewerID, "Size neutral"); err != nil {
+	if _, err := s.AddTopic(ctx, ws.ID, viewerID, "Size neutral", ""); err != nil {
 		t.Fatalf("grace edit: %v", err)
 	}
 }
@@ -179,7 +179,7 @@ func TestGraceBlocksOnlyStorageGrowth(t *testing.T) {
 // At or over its storage limit (full, and grace, which is over the Free limit)
 // everything an account pays for is view-only for owner and member alike:
 // content, comments, PDF marks and source edits are refused with the storage
-// code, while renaming, moving between chapters and trashing go on.
+// code, while renaming, moving between topics and trashing go on.
 func TestViewOnlyAtTheStorageLimit(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -204,7 +204,7 @@ func TestViewOnlyAtTheStorageLimit(t *testing.T) {
 				t.Fatal(err)
 			}
 			addWorkspaceEditor(t, s, ws.ID, member)
-			chapter, err := s.AddChapter(ctx, ws.ID, owner, "Chapter")
+			topic, err := s.AddTopic(ctx, ws.ID, owner, "Topic", "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -240,9 +240,9 @@ func TestViewOnlyAtTheStorageLimit(t *testing.T) {
 					t.Fatalf("rename by %s: %v", who, err)
 				}
 			}
-			into := &chapter.ID
-			if _, err := s.UpdateMaterial(ctx, note.ID, MaterialPatch{ChapterID: &into, UpdatedBy: member}); err != nil {
-				t.Fatalf("moving between chapters: %v", err)
+			into := &topic.ID
+			if _, err := s.UpdateMaterial(ctx, note.ID, MaterialPatch{TopicID: &into, UpdatedBy: member}); err != nil {
+				t.Fatalf("moving between topics: %v", err)
 			}
 			if _, err := s.TrashMaterial(ctx, member, note.ID, "", AgentOperation{}); err != nil {
 				t.Fatalf("trashing: %v", err)

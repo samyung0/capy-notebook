@@ -1,5 +1,5 @@
 import { useQueries } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { fileQuery, filesQuery } from '@/api/hooks';
 import type { SourceFile } from '@/api/types';
@@ -14,6 +14,14 @@ import { IconButton } from '@/components/ui/IconButton';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { userToast } from '@/components/ui/userToast';
 import { fileIsIngesting } from '@/features/files/fileUtils';
+import { QuizRunRows } from '@/features/makeQuiz/QuizRunRows';
+import { dismissQuizRuns, useQuizRuns } from '@/features/makeQuiz/quizRuns';
+import {
+  allQuizWaitKeys,
+  quizWaitKeys,
+  removeQuizWait,
+  useQuizWaitStates,
+} from '@/features/makeQuiz/quizWaits';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName } from '@/lib/fileIcons';
@@ -24,7 +32,7 @@ import {
   type SourceTransfer,
   useSourceTransfers,
 } from './sourceTransfers';
-import { transferStatus } from './transferStatus';
+import { type TransferStatus, transferStatus } from './transferStatus';
 
 const TERMINAL_ICON = {
   background: { className: 'text-fg-muted', name: 'clock' },
@@ -47,14 +55,16 @@ export function ProviderIcon({
   );
 }
 
+const isUnderway = ({ kind }: TransferStatus) =>
+  kind === 'progress' || kind === 'indeterminate' || kind === 'queued';
+
 function TransferRow({
-  file,
+  status,
   transfer,
 }: {
-  file: SourceFile | undefined;
+  status: TransferStatus;
   transfer: SourceTransfer;
 }) {
-  const status = transferStatus(transfer, file);
   return (
     <li
       className="flex flex-col gap-1 border-divider border-b px-4 py-2 last:border-0"
@@ -227,26 +237,51 @@ export function SourceTransferPanel() {
       ...standaloneFiles.flatMap(({ data }) => (data ? [data] : [])),
     ].map((file) => [file.id, file])
   );
-  const rows = transfers.map((transfer) => ({
-    file: transfer.fileId ? files.get(transfer.fileId) : undefined,
-    transfer,
-  }));
+  const rows = transfers.map((transfer) => {
+    const file = transfer.fileId ? files.get(transfer.fileId) : undefined;
+    return { file, status: transferStatus(transfer, file), transfer };
+  });
   useElementLimitToasts(rows);
-  const kinds = rows.map(
-    ({ file, transfer }) => transferStatus(transfer, file).kind
-  );
-  const allDone = kinds.length > 0 && kinds.every((kind) => kind === 'done');
+  const quizRuns = useQuizRuns((state) => state.runs);
+  const quizWaits = useQuizWaitStates();
+  // Waits the panel's close hid while they read: they come back when they end.
+  const [closedWaits, setClosedWaits] = useState<string[]>([]);
+  // One row at a time for a quiz's files (Epo 2026-11-05): their uploads while they
+  // read, then the quiz's. What still sends after a failure keeps its row.
+  const shownRows = rows.filter(({ status, transfer }) => {
+    const owner = quizWaits.find(({ wait }) =>
+      quizWaitKeys(wait).includes(transfer.key)
+    );
+    if (!owner) return true;
+    if (closedWaits.includes(owner.wait.id)) return false;
+    return (
+      owner.status === 'reading' ||
+      (owner.status === 'failed' && isUnderway(status))
+    );
+  });
+  const shownWaits = quizWaits.filter(({ status, wait }) => {
+    if (status !== 'reading') return true;
+    if (closedWaits.includes(wait.id)) return false;
+    const keys = quizWaitKeys(wait);
+    return !rows.some(
+      ({ status: row, transfer }) =>
+        keys.includes(transfer.key) && isUnderway(row)
+    );
+  });
+  const allDone =
+    shownRows.length > 0 &&
+    shownRows.every(({ status }) => status.kind === 'done');
   // Every file through: the panel closes itself after a moment.
   useEffect(() => {
     if (!allDone) return;
-    const timer = setTimeout(dismissSourceTransfers, 3000);
+    const timer = setTimeout(
+      () => dismissSourceTransfers(allQuizWaitKeys()),
+      3000
+    );
     return () => clearTimeout(timer);
   }, [allDone]);
-  if (transfers.length === 0) return null;
-  const finished = kinds.filter(
-    (kind) =>
-      kind !== 'progress' && kind !== 'indeterminate' && kind !== 'queued'
-  ).length;
+  if (shownRows.length + quizRuns.length + shownWaits.length === 0) return null;
+  const finished = shownRows.filter(({ status }) => !isUnderway(status)).length;
 
   return createPortal(
     <Card
@@ -260,23 +295,38 @@ export function SourceTransferPanel() {
         className="absolute -top-2.5 -left-2.5 size-6.5 rounded-full border border-divider bg-surface p-0 text-fg-secondary shadow-card hover:bg-surface-hover-bg"
         icon="x"
         label={m.action_close()}
-        onClick={dismissSourceTransfers}
+        onClick={() => {
+          for (const { status, wait } of quizWaits)
+            if (status !== 'reading') removeQuizWait(wait);
+          dismissSourceTransfers(allQuizWaitKeys());
+          dismissQuizRuns();
+          setClosedWaits(quizWaits.map(({ wait }) => wait.id));
+        }}
         size="xs"
         strokeWidth={2}
       />
-      <div className="flex h-9 items-center border-divider border-b px-4 py-2">
-        <span className="t-label text-fg-muted">
-          {m.source_transfers_heading({
-            count: transfers.length,
-            done: finished,
-          })}
-        </span>
-      </div>
-      <ul className="max-h-60 overflow-y-auto">
-        {rows.map(({ file, transfer }) => (
-          <TransferRow file={file} key={transfer.key} transfer={transfer} />
-        ))}
-      </ul>
+      {shownRows.length > 0 && (
+        <>
+          <div className="flex h-9 items-center border-divider border-b px-4 py-2">
+            <span className="t-label text-fg-muted">
+              {m.source_transfers_heading({
+                count: shownRows.length,
+                done: finished,
+              })}
+            </span>
+          </div>
+          <ul className="max-h-60 overflow-y-auto">
+            {shownRows.map(({ status, transfer }) => (
+              <TransferRow
+                key={transfer.key}
+                status={status}
+                transfer={transfer}
+              />
+            ))}
+          </ul>
+        </>
+      )}
+      <QuizRunRows waits={shownWaits} />
     </Card>,
     document.body
   );

@@ -52,6 +52,7 @@ import {
 } from '@/lib/localPrefs';
 import { textLength } from '@/lib/textLength';
 import { userColorPairDark } from '@/lib/userColor';
+import { preloadProse, useProseBody } from './chat/blocks/text';
 import {
   CHAT_DOCK_TRANSITION,
   ChatDock,
@@ -311,6 +312,9 @@ export interface ChatDockOptions {
   menuItems: MenuItem[];
   /** An Office file is open: the dock stays a button above its bottom chrome. */
   office: boolean;
+  /** The chat page's state lives in the URL, so the back gesture leaves it. */
+  onPageOpen: (open: boolean) => void;
+  pageOpen: boolean;
 }
 
 export interface ChatRequest {
@@ -354,7 +358,7 @@ export function ChatPanel({
   onOpenResource,
   renderTabRow,
   dock,
-  historyButton = true,
+  hidden = false,
   request,
   focusOnOpen = false,
   onActiveChange,
@@ -366,10 +370,11 @@ export function ChatPanel({
   /** The panel fills the page (the account chat): the thread and composer
    * keep a readable centred column. */
   fill?: boolean;
-  /** The history clock; off where the left panel lists the chats. */
-  historyButton?: boolean;
+  /** Mounted but off screen (another section shows, or a page takes the dock's
+   * corner): a thread that moves on meanwhile shows its end on return. */
+  hidden?: boolean;
   /** Opens a thread (or, with a null id, a new chat) whenever `seq` changes:
-   * the left panel's list drives the rail's chat through it. */
+   * the left panel's list drives its chat through it. */
   request?: ChatRequest;
   /** Each opened chat (a request, new or restored) puts the caret in the
    * composer: the account chat page. */
@@ -379,8 +384,9 @@ export function ChatPanel({
    * still has its message and error, so New chat stays available. */
   onActiveChange?: (id: string | null, shown: boolean) => void;
   color?: UserColor;
-  /** Draws the panel's tab row with this chat's own actions (history, new chat). */
-  renderTabRow?: (actions: TabAction[]) => ReactNode;
+  /** Draws the panel's title row with this chat's own actions (new chat) and
+   * its title. */
+  renderTabRow?: (actions: TabAction[], title: string) => ReactNode;
   dock?: ChatDockOptions;
   /** Owner-only: shows the process-changes button under the pending notice. */
   canReprocess?: boolean;
@@ -408,11 +414,29 @@ export function ChatPanel({
   const sendKey = me?.chatSendKey ?? 'enter';
   // Dock only: the chat page is open, or a chip leads back to it after a
   // citation or a created file took the learner to the file.
-  const [pageOpen, setPageOpen] = useState(false);
+  const urlPageOpen = !!dock?.pageOpen;
+  // Shown at once for the view transition; the URL follows and can close it.
+  const [pageOpen, setPageShown] = useState(urlPageOpen);
   const [backShown, setBackShown] = useState(false);
+  function setPageOpen(open: boolean) {
+    setPageShown(open);
+    dock?.onPageOpen(open);
+  }
+  // Back and forward move the URL: the page follows, leaving the chip when
+  // there is a conversation to return to.
+  const urlWasOpen = useRef(urlPageOpen);
+  const hasMessages = messages.length > 0;
+  useEffect(() => {
+    if (urlWasOpen.current === urlPageOpen) return;
+    urlWasOpen.current = urlPageOpen;
+    setPageShown(urlPageOpen);
+    if (urlPageOpen) setBackShown(false);
+    else setBackShown(hasMessages);
+  }, [hasMessages, urlPageOpen]);
   function toFile() {
     if (!dock) return;
-    setPageOpen(false);
+    // Opening the file drops the URL's flag.
+    setPageShown(false);
     setBackShown(true);
   }
   const openCitation =
@@ -505,11 +529,13 @@ export function ChatPanel({
     [last, streaming, dismissedId]
   );
   // The questions take the composer's place, and a recording stops with it;
-  // the dock on the file has no questions.
+  // the dock on the file has no questions. Nothing shows a hidden chat's
+  // recording, the panel's off the Agent tab or the dock's under a page, so it
+  // stops too. Between the dock and its chat page `hidden` stays, so it carries.
   const voice = useVoiceInput(
     workspaceId,
     insertVoice,
-    (!!dock && !pageOpen) || questions.length === 0
+    !hidden && ((!!dock && !pageOpen) || questions.length === 0)
   );
 
   // Seed local state when a saved conversation opens: cached history paints at
@@ -547,11 +573,26 @@ export function ChatPanel({
   // Keep the newest message in view as tokens stream in or a thread opens;
   // an Undo on an older receipt changes messages too and must not scroll.
   const shownCount = useRef(0);
+  const movedOnHidden = useRef(false);
   useEffect(() => {
     if (!streaming && messages.length === shownCount.current) return;
     shownCount.current = messages.length;
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    if (hidden) movedOnHidden.current = true;
+    else scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages, streaming]);
+  useEffect(() => {
+    if (hidden || !movedOnHidden.current) return;
+    movedOnHidden.current = false;
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+  }, [hidden]);
+  // A thread drawn ahead of its Markdown code changes height as that lands: a
+  // reader at its end stays there, one who scrolled up keeps their place.
+  const proseLanded = typeof useProseBody() === 'function';
+  const atEnd = useRef(true);
+  useEffect(() => {
+    if (proseLanded && !hidden && atEnd.current)
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+  }, [proseLanded]);
 
   function submit() {
     const trimmed = text.trim();
@@ -635,7 +676,7 @@ export function ChatPanel({
   };
   const newAction: TabAction = {
     disabled: !shown,
-    icon: 'newChat',
+    icon: 'message',
     label: m.chat_new(),
     onClick: openNew,
   };
@@ -669,6 +710,14 @@ export function ChatPanel({
           // Filling the page, the column stays 48rem wide in the middle.
           fill ? 'px-[max(--spacing(4),calc(50%_-_24rem))]' : 'px-4'
         )}
+        onScroll={
+          proseLanded
+            ? undefined
+            : ({ currentTarget: box }) => {
+                atEnd.current =
+                  box.scrollHeight - box.clientHeight - box.scrollTop < 8;
+              }
+        }
         ref={scrollRef}
       >
         {!messages.length && opening && (
@@ -676,10 +725,7 @@ export function ChatPanel({
         )}
         {!(messages.length || opening) && (
           <div className="m-auto max-w-[80%] text-center">
-            <Icon
-              className="non-scaling-svg mx-auto mb-2 size-6.5"
-              name="message"
-            />
+            <Icon className="non-scaling-svg mx-auto mb-2 size-6.5" name="ai" />
             {missingThread ? (
               <>
                 <p className="font-medium">{m.error_not_found_title()}</p>
@@ -771,6 +817,8 @@ export function ChatPanel({
                   voice.phase === 'recording' && 'hidden'
                 )}
                 onChange={(e) => setText(e.target.value)}
+                // An answer is coming: its Markdown code gets a head start.
+                onFocus={preloadProse}
                 onKeyDown={(e) => {
                   // The chosen send key sends; the other one adds a new line.
                   // An IME's Enter confirms its candidate and never sends.
@@ -905,7 +953,11 @@ export function ChatPanel({
     return (
       <div className="flex h-full flex-col" style={colorVars}>
         {renderTabRow?.(
-          historyButton ? [historyAction, newAction] : [newAction]
+          [newAction],
+          shownId
+            ? conversations?.find((c) => c.id === shownId)?.title ||
+                m.chat_untitled()
+            : m.chat_new()
         )}
         {thread}
       </div>
@@ -914,6 +966,7 @@ export function ChatPanel({
   return (
     <div
       className="pointer-events-none absolute inset-0 z-20"
+      hidden={hidden}
       style={colorVars}
     >
       <div
@@ -940,7 +993,7 @@ export function ChatPanel({
           </ToolbarButton>
           <Icon
             className="size-4 shrink-0 -translate-y-px text-solid-accent-1 md:size-5"
-            name="message"
+            name="ai"
           />
           <h2 className="t-body min-w-0 flex-1 truncate font-semibold">
             {title}
@@ -962,7 +1015,7 @@ export function ChatPanel({
         </div>
         {thread}
       </div>
-      {!pageOpen && (
+      {!(pageOpen || hidden) && (
         <ChatDock
           back={
             backShown

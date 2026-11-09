@@ -18,7 +18,7 @@ It needs `UAT_TARGET_AUTHORIZED=true`, `UAT_ALLOWED_HOSTS`, `UAT_APP_URL`,
 1. Signs in the fixed UAT owner with a Clerk sign-in ticket and deletes
    leftovers of earlier runs (everything named `Perf share page …`).
 2. Creates, through the API, a link-shared workspace with four store-only
-   files in two chapters (`e2e/fixtures/files/basic/`), a quiz
+   files in two topics (`e2e/fixtures/files/basic/`), a quiz
    (`fixtures/quiz.json`), a flashcard set (`fixtures/cards.json`, written
    through the set's live room as its editor does, since live rooms are the
    only writers of set content) and a

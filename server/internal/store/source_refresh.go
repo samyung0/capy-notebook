@@ -617,7 +617,7 @@ func (s *Store) workspaceIndexCounts(ctx context.Context, ws string, stats *Work
 // workspaceNoteChanges lists workspace notes whose index is behind their
 // content: dirty (waiting, or failed once parked with index_error) or with an
 // index job, queued until its first claim (Epo 2026-10-21). Embedded quizzes
-// and flashcard sets index inside their note, and chapter-level ones are not
+// and flashcard sets index inside their note, and topic-level ones are not
 // indexed, so only notes are listed. At most limit notes, work in flight
 // first (the tab polls while it shows any), then oldest edit; more counts
 // the rest.

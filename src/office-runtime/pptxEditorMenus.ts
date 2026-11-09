@@ -75,7 +75,7 @@ export function editorMenus(
     valued('slide.newWithLayout', layout.value, layout.label)
   );
   const newSlides = [
-    command('slide.new', t('toolbar.newSlide'), { icon: 'plus' }),
+    command('slide.new', t('toolbar.newSlide')),
     ...(layouts.length
       ? [submenu('new-slide-layout', t('toolbar.newSlideWithLayout'), layouts)]
       : []),
@@ -99,18 +99,16 @@ export function editorMenus(
       id: 'edit',
       items: [
         command('edit.undo', t('toolbar.undo'), {
-          icon: 'undo',
           shortcut: shortcut('Mod+Z'),
         }),
         command('edit.redo', t('toolbar.redo'), {
-          icon: 'redo',
           shortcut: shortcut('Shift+Mod+Z'),
         }),
         separator,
         command('edit.selectAll', m.files_office_pptx_select_all(), {
           shortcut: shortcut('Mod+A'),
         }),
-        command('edit.delete', m.files_office_pptx_delete(), { icon: 'trash' }),
+        command('edit.delete', m.files_office_pptx_delete()),
       ],
       label: m.files_office_pptx_menu_edit(),
     },
@@ -132,18 +130,19 @@ export function editorMenus(
     {
       id: 'insert',
       items: [
-        command('insert.textBox', t('toolbar.textBoxTool'), { icon: 'text' }),
-        // Capy opens the picker: a click in its menu gives the frame no user
-        // activation to open one.
-        command('insert.image', m.files_office_pptx_image(), {
-          icon: 'image',
-          pick: 'image',
-        }),
+        toggle('insert.textBox', t('toolbar.textBoxTool')),
+        // The ribbon opens the picker, and runs the item with its file.
+        command('insert.image', m.files_office_pptx_image(), { pick: 'image' }),
         submenu(
           'shape',
           t('toolbar.shapeTool'),
           SHAPE_PRESETS.map((preset) =>
-            valued('insert.shape', preset.geometry, t(preset.labelKey))
+            valued(
+              'insert.shape',
+              preset.geometry,
+              t(preset.labelKey),
+              state.activeShape ?? ''
+            )
           ),
           'shape'
         ),
@@ -203,11 +202,9 @@ export function editorMenus(
             toggle('format.alignBottom', t('toolbar.align.bottom')),
             separator,
             command('format.increaseIndent', t('toolbar.increaseIndent'), {
-              icon: 'indentIncrease',
               shortcut: shortcut('Mod+]'),
             }),
             command('format.decreaseIndent', t('toolbar.decreaseIndent'), {
-              icon: 'indentDecrease',
               shortcut: shortcut('Mod+['),
             }),
           ],
@@ -310,14 +307,10 @@ export function editorMenus(
       id: 'slide',
       items: [
         ...newSlides,
-        command('slide.delete', t('toolbar.deleteSlide'), { icon: 'trash' }),
+        command('slide.delete', t('toolbar.deleteSlide')),
         submenu('move-slide', m.files_office_pptx_move_slide(), [
-          command('slide.moveUp', m.files_office_pptx_move_up(), {
-            icon: 'arrowUp',
-          }),
-          command('slide.moveDown', m.files_office_pptx_move_down(), {
-            icon: 'arrowDown',
-          }),
+          command('slide.moveUp', m.files_office_pptx_move_up()),
+          command('slide.moveDown', m.files_office_pptx_move_down()),
           command('slide.moveToStart', m.files_office_pptx_move_start()),
           command('slide.moveToEnd', m.files_office_pptx_move_end()),
         ]),

@@ -1,0 +1,587 @@
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { gzipSync } from 'node:zlib';
+import { type Browser, expect, type Page, test } from '@playwright/test';
+import {
+  type Expected,
+  LARGE,
+  makeBoard,
+  openBoard,
+  type Root,
+  TYPICAL,
+} from './canvasBoards';
+import { CPU_RATE, percentile, reportMetrics, throttleCpu } from './metrics';
+
+/**
+ * The drawing board (BlockSuite's edgeless editor, `/dev/drawing`) in a production
+ * build (Q686 A): a blank board's cold open at 1x, then at CPU_RATE (4x by default)
+ * a typical board's and a large one's cold opens, and on each panning, zooming, a
+ * pen stroke and typing in a note card, each input's delay to its painted frame;
+ * and Draw as a drawing question runs it (fix 4): the typical board mounted hidden
+ * in a page that has the module, then shown. Gated: the blank and typical cold
+ * opens, the typical board's inputs, the hidden mount's longest frame and Draw's
+ * first frame. Reported only: warm opens and mounts, the large board and the bytes
+ * each open downloads.
+ *
+ * Both boards are made in the page through BlockSuite's own API and saved, so they
+ * always match the board's current format: strokes, shapes, formulas and note
+ * cards around the plane card.
+ */
+
+const OUT_DIR = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '.results',
+  'canvas-dist'
+);
+
+/** Cold opens per board; the median is the run's figure. */
+const OPENS = 3;
+const WHEELS = 20;
+const WHEEL_CADENCE_MS = 100;
+const PEN_MOVES = 40;
+const PEN_CADENCE_MS = 32;
+const KEYS = 30;
+const KEY_CADENCE_MS = 100;
+
+/** The typical board's gated figures. */
+type Timings = {
+  /** The blank board's cold open, at 1x. */
+  blankOpenMs: number;
+  /** The typical board's cold open, at CPU_RATE. */
+  openMs: number;
+  panP90Ms: number;
+  penP90Ms: number;
+  typingP90Ms: number;
+  zoomP90Ms: number;
+  /** The first hidden mount's longest frame, at CPU_RATE. */
+  hiddenMountLongestMs: number;
+  /** Draw on the board mounted ahead: showing it to its first frame, at CPU_RATE. */
+  drawShownMs: number;
+};
+
+/**
+ * Medians of three `canvas` job runs of the Performance workflow, as Office's are:
+ * 42252998330, 42253016137 and 42253034659 on 630705a96 (2026-11-07). The first
+ * calibration (7d470b2e5, on 4cf06a4b6) measured the large board and the blank open
+ * at 4x, so it doesn't carry over.
+ *
+ * `hiddenMountLongestMs` and `drawShownMs` are the medians of three later runs,
+ * 42375517156, 42375520111 and 42375523741 on 3249ce018 (2026-11-07): 539/728/738
+ * and 43/62/61 ms, so their budgets are 950 and 80 ms.
+ */
+const MEDIANS: Timings | null = {
+  blankOpenMs: 807,
+  drawShownMs: 61,
+  hiddenMountLongestMs: 728,
+  openMs: 2921,
+  panP90Ms: 43,
+  penP90Ms: 33,
+  typingP90Ms: 22,
+  zoomP90Ms: 76,
+};
+
+/** No input budget goes below this: a one-frame wobble fails anything smaller. */
+const INPUT_BUDGET_FLOOR_MS = 30;
+
+/** 1.3x the median, Office's rule: rounded up to 5 ms below a second, 50 ms above. */
+function budgetOf(median: Timings): Timings {
+  const limit = (ms: number) => {
+    const scaled = Math.round(ms * 130) / 100;
+    const step = scaled < 1000 ? 5 : 50;
+    return Math.ceil(scaled / step) * step;
+  };
+  const input = (ms: number) => Math.max(INPUT_BUDGET_FLOOR_MS, limit(ms));
+  return {
+    blankOpenMs: limit(median.blankOpenMs),
+    drawShownMs: input(median.drawShownMs),
+    hiddenMountLongestMs: limit(median.hiddenMountLongestMs),
+    openMs: limit(median.openMs),
+    panP90Ms: input(median.panP90Ms),
+    penP90Ms: input(median.penP90Ms),
+    typingP90Ms: input(median.typingP90Ms),
+    zoomP90Ms: input(median.zoomP90Ms),
+  };
+}
+
+
+/**
+ * A cold open in a fresh context at `rate`, then a warm one (the build's files
+ * cached) on the same page: each from navigation to the first frame after the
+ * board holds every element, and the long frames up to 5 s later.
+ */
+async function openTwice(
+  browser: Browser,
+  rate: number,
+  expected: Expected,
+  saved?: string
+) {
+  const context = await browser.newContext({
+    viewport: { height: 800, width: 1280 },
+  });
+  const page = await context.newPage();
+  await page.addInitScript(
+    ({ expected, saved }) => {
+      if (saved) window.__benchBoard = saved;
+      window.__benchExpected = expected;
+      const open: NonNullable<Window['__benchOpen']> = { loafs: [] };
+      window.__benchOpen = open;
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          const loaf = entry as PerformanceEntry & {
+            blockingDuration?: number;
+          };
+          open.loafs.push({
+            blocking: loaf.blockingDuration ?? 0,
+            end: loaf.startTime + loaf.duration,
+          });
+        }
+      }).observe({
+        buffered: true,
+        type: 'long-animation-frame',
+      } as PerformanceObserverInit);
+      const watch = () => {
+        const root = document.querySelector('affine-edgeless-root') as
+          | (HTMLElement & {
+              gfx?: { layer: { blocks: unknown[]; canvasElements: unknown[] } };
+            })
+          | null;
+        const layer = root?.gfx?.layer;
+        if (
+          layer &&
+          layer.canvasElements.length >= expected.canvas &&
+          layer.blocks.length >= expected.blocks
+        ) {
+          // The first task after the next frame: that frame drew the full board.
+          requestAnimationFrame(() => {
+            const channel = new MessageChannel();
+            channel.port1.onmessage = () => {
+              open.painted = performance.now();
+            };
+            channel.port2.postMessage(null);
+          });
+          return;
+        }
+        requestAnimationFrame(watch);
+      };
+      requestAnimationFrame(watch);
+    },
+    { expected, saved }
+  );
+  await throttleCpu(page, rate);
+  const cold = await measureOpen(page);
+  const warm = await measureOpen(page);
+  await context.close();
+  return { cold, warm };
+}
+
+async function measureOpen(page: Page) {
+  await page.goto('/dev/drawing');
+  await page.waitForFunction(
+    () => window.__benchOpen?.painted !== undefined,
+    null,
+    {
+      polling: 250,
+      timeout: 180_000,
+    }
+  );
+  await page.waitForTimeout(5000);
+  return page.evaluate(() => {
+    const open = window.__benchOpen;
+    if (!open?.painted) throw new Error('never painted');
+    const [mountStart] = performance.getEntriesByName('board:mount-start');
+    const [mountEnd] = performance.getEntriesByName('board:mount-end');
+    const later = open.loafs.filter(
+      (loaf) => loaf.end <= (open.painted as number) + 5000
+    );
+    const resources = performance
+      .getEntriesByType('resource')
+      .map((entry) => new URL(entry.name).pathname)
+      .filter((name) => /\.(js|css)$/.test(name));
+    return {
+      mountMs:
+        mountEnd && mountStart
+          ? mountEnd.startTime - mountStart.startTime
+          : null,
+      mountStartMs: mountStart?.startTime ?? null,
+      paintedMs: open.painted,
+      resources,
+      settledMs: Math.max(open.painted, ...later.map((loaf) => loaf.end)),
+      totalBlockingMs: later.reduce((sum, loaf) => sum + loaf.blocking, 0),
+    };
+  });
+}
+
+const median = (values: number[]) => percentile(values, 50);
+const round = (ms: number) => Math.round(ms);
+
+type Open = Awaited<ReturnType<typeof measureOpen>>;
+
+/** The median of each figure over the runs. */
+const summary = (runs: Open[]) => ({
+  mountMs: round(median(runs.map((run) => run.mountMs ?? 0))),
+  paintedMs: round(median(runs.map((run) => run.paintedMs))),
+  paintedRunsMs: runs.map((run) => round(run.paintedMs)),
+  settledMs: round(median(runs.map((run) => run.settledMs))),
+  totalBlockingMs: round(median(runs.map((run) => run.totalBlockingMs))),
+});
+
+/** OPENS cold opens, each followed by a warm one; the cold ones' files for bytes. */
+async function opens(
+  browser: Browser,
+  rate: number,
+  expected: Expected,
+  saved?: string
+) {
+  const runs = [];
+  for (let i = 0; i < OPENS; i++)
+    runs.push(await openTwice(browser, rate, expected, saved));
+  return {
+    cold: summary(runs.map((run) => run.cold)),
+    resources: runs[0].cold.resources,
+    warm: summary(runs.map((run) => run.warm)),
+  };
+}
+
+/** The JS and CSS an open requested, raw and gzipped, from the build. */
+async function bytesOf(resources: string[]) {
+  const files = await Promise.all(
+    [...new Set(resources)].map(async (name) => {
+      const body = await readFile(path.join(OUT_DIR, name));
+      return { gzip: gzipSync(body).byteLength, name, raw: body.byteLength };
+    })
+  );
+  const kb = (bytes: number) => Math.round(bytes / 102.4) / 10;
+  return {
+    files: files.length,
+    gzipKb: kb(files.reduce((sum, file) => sum + file.gzip, 0)),
+    largest: [...files]
+      .sort((a, b) => b.gzip - a.gzip)
+      .slice(0, 5)
+      .map((file) => ({ gzipKb: kb(file.gzip), name: file.name })),
+    rawKb: kb(files.reduce((sum, file) => sum + file.raw, 0)),
+  };
+}
+
+/**
+ * Times each input from its first event to the first task after the next frame,
+ * rescheduled by the input's later events (the latest wins), as Office times keys.
+ */
+async function installInputProbe(
+  page: Page,
+  starts: string[],
+  follows: string[]
+) {
+  await page.evaluate(
+    ({ follows, starts }) => {
+      const inputs = { at: [] as number[], presents: [] as number[] };
+      window.__benchInputs = inputs;
+      const afterFrame = () => {
+        const index = inputs.at.length - 1;
+        requestAnimationFrame(() => {
+          const channel = new MessageChannel();
+          channel.port1.onmessage = () => {
+            inputs.presents[index] = performance.now();
+          };
+          channel.port2.postMessage(null);
+        });
+      };
+      for (const type of starts)
+        window.addEventListener(
+          type,
+          () => {
+            inputs.at.push(performance.now());
+            afterFrame();
+          },
+          { capture: true, passive: true }
+        );
+      for (const type of follows)
+        window.addEventListener(type, afterFrame, {
+          capture: true,
+          passive: true,
+        });
+    },
+    { follows, starts }
+  );
+}
+
+/** Each input's delay to its frame, once the last one has one (30 s at most). */
+async function inputDelays(page: Page) {
+  await page.waitForFunction(
+    () => {
+      const inputs = window.__benchInputs;
+      return !!inputs && inputs.presents[inputs.at.length - 1] !== undefined;
+    },
+    null,
+    { polling: 100, timeout: 30_000 }
+  );
+  const delays = await page.evaluate(() => {
+    const inputs = window.__benchInputs;
+    if (!inputs) throw new Error('no probe');
+    return inputs.at.map((at, i) => (inputs.presents[i] ?? Number.NaN) - at);
+  });
+  const painted = delays.filter((delay) => Number.isFinite(delay));
+  return {
+    inputs: delays.length,
+    maxMs: round(Math.max(...painted)),
+    p50Ms: round(percentile(painted, 50)),
+    p90Ms: round(percentile(painted, 90)),
+    unpainted: delays.length - painted.length,
+  };
+}
+
+/** A point on the first note card's last line: its centre can fall between lines. */
+const noteLine = (page: Page) =>
+  page.evaluate(() => {
+    const root = document.querySelector('affine-edgeless-root') as Root;
+    const { id } = root.gfx.layer.blocks[0];
+    const lines = document.querySelectorAll(
+      `affine-edgeless-note[data-block-id="${id}"] affine-paragraph`
+    );
+    const line = lines[lines.length - 1]?.getBoundingClientRect();
+    if (!line) throw new Error('no note line');
+    return [line.left + 20, line.top + line.height / 2] as const;
+  });
+
+/** Typing, a pen stroke, pans and zooms on one page holding the saved board. */
+async function interactions(browser: Browser, saved: string, errors: string[]) {
+  const context = await browser.newContext({
+    viewport: { height: 800, width: 1280 },
+  });
+  const page = await context.newPage();
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.addInitScript((saved) => {
+    window.__benchBoard = saved;
+  }, saved);
+  await openBoard(page);
+  await page.waitForTimeout(2000);
+  await throttleCpu(page, CPU_RATE);
+
+  // Typing first, while the open's fit keeps the first card in view.
+  const [lineX, lineY] = await noteLine(page);
+  await page.mouse.dblclick(lineX, lineY);
+  await page.waitForFunction(
+    () => !!document.activeElement?.closest('affine-edgeless-note'),
+    null,
+    { timeout: 30_000 }
+  );
+  await page.keyboard.press('End');
+  await page.waitForTimeout(500);
+  await installInputProbe(page, ['keydown'], ['keypress', 'input']);
+  for (let i = 0; i < KEYS; i++) {
+    await page.keyboard.press(i % 6 === 5 ? 'Space' : 'a');
+    await page.waitForTimeout(KEY_CADENCE_MS);
+  }
+  const typing = await inputDelays(page);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await expect(
+    page.locator('affine-edgeless-note', { hasText: 'aaaaa a' })
+  ).toHaveCount(1);
+
+  // A pen stroke across the middle.
+  const brushes = async () =>
+    (await page.evaluate(() => window.__board?.stats().canvas ?? [])).filter(
+      (type) => type === 'brush'
+    ).length;
+  const brushesBefore = await brushes();
+  await page.locator('edgeless-pen-tool-button').first().click();
+  await page.mouse.move(400, 400);
+  await page.mouse.down();
+  await installInputProbe(page, ['pointermove'], []);
+  for (let i = 1; i <= PEN_MOVES; i++) {
+    await page.mouse.move(400 + i * 10, 400 + Math.sin(i / 4) * 80);
+    await page.waitForTimeout(PEN_CADENCE_MS);
+  }
+  const pen = await inputDelays(page);
+  await page.mouse.up();
+  await expect.poll(brushes).toBe(brushesBefore + 1);
+  await page.keyboard.press('v');
+
+  // Panning and zooming with the wheel over the canvas.
+  await page.mouse.move(640, 400);
+  await installInputProbe(page, ['wheel'], []);
+  for (let i = 0; i < WHEELS; i++) {
+    await page.mouse.wheel(0, i < WHEELS / 2 ? 120 : -120);
+    await page.waitForTimeout(WHEEL_CADENCE_MS);
+  }
+  const pan = await inputDelays(page);
+  await installInputProbe(page, ['wheel'], []);
+  await page.keyboard.down('Control');
+  for (let i = 0; i < WHEELS; i++) {
+    await page.mouse.wheel(0, i < WHEELS / 2 ? -60 : 60);
+    await page.waitForTimeout(WHEEL_CADENCE_MS);
+  }
+  await page.keyboard.up('Control');
+  const zoom = await inputDelays(page);
+  await context.close();
+
+  return { pan, pen, typing, zoom };
+}
+
+/** The longest long animation frame since the last call; 0 when none. */
+const longestFrame = (page: Page) =>
+  page.evaluate(() => {
+    const loafs = window.__benchLoafs ?? [];
+    const longest = Math.max(0, ...loafs);
+    loafs.length = 0;
+    return longest;
+  });
+
+/** The board's host goes out of sight as DrawingBoardScreen's `hidden` puts it. */
+const setHidden = (page: Page, hidden: boolean) =>
+  page.evaluate((hidden) => {
+    const host = document.querySelector('.h-dvh.w-full') as HTMLElement;
+    host.style.opacity = hidden ? '0' : '';
+    host.inert = hidden;
+  }, hidden);
+
+/** Mounts a board with the answer area, as a drawing part does, and resolves after
+ * the first frame that holds it, then 300 ms more for the frames that follow. */
+const mountBoard = (page: Page, saved: string) =>
+  page.evaluate(async (saved) => {
+    window.__mount?.({ answerArea: { label: 'Answer area' }, saved });
+    await new Promise<void>((resolve) => {
+      const watch = () => {
+        if (!document.querySelector('.edgeless-background rect[stroke]')) {
+          requestAnimationFrame(watch);
+          return;
+        }
+        requestAnimationFrame(() => {
+          const channel = new MessageChannel();
+          channel.port1.onmessage = () => resolve();
+          channel.port2.postMessage(null);
+        });
+      };
+      watch();
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }, saved);
+
+/**
+ * Draw as a drawing question runs it (fix 4): in a fresh context the dev route
+ * loads the module and mounts nothing (`?unmounted`), then at CPU_RATE the board
+ * mounts hidden (cold: the page's first board) and again (warm), each with its
+ * longest frame; then Draw shows the board mounted ahead, fitted as Draw fits it,
+ * timed to the first task after its next frame.
+ */
+async function drawAhead(browser: Browser, saved: string) {
+  const runs: { cold: number; shown: number; warm: number }[] = [];
+  for (let i = 0; i < OPENS; i++) {
+    const context = await browser.newContext({
+      viewport: { height: 800, width: 1280 },
+    });
+    const page = await context.newPage();
+    await page.addInitScript(() => {
+      const loafs: number[] = [];
+      window.__benchLoafs = loafs;
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) loafs.push(entry.duration);
+      }).observe({
+        type: 'long-animation-frame',
+      } as PerformanceObserverInit);
+    });
+    await page.goto('/dev/drawing?unmounted');
+    await page.waitForFunction(() => '__mount' in window, null, {
+      timeout: 120_000,
+    });
+    await page.waitForTimeout(1000);
+    await setHidden(page, true);
+    await throttleCpu(page, CPU_RATE);
+    await longestFrame(page);
+    await mountBoard(page, saved);
+    const cold = await longestFrame(page);
+    await mountBoard(page, saved);
+    const warm = await longestFrame(page);
+    const shown = await page.evaluate(
+      () =>
+        new Promise<number>((resolve) => {
+          const start = performance.now();
+          const host = document.querySelector('.h-dvh.w-full') as HTMLElement;
+          host.style.opacity = '';
+          host.inert = false;
+          window.__board?.fit([90, 40, 130, 40]);
+          requestAnimationFrame(() => {
+            const channel = new MessageChannel();
+            channel.port1.onmessage = () => resolve(performance.now() - start);
+            channel.port2.postMessage(null);
+          });
+        })
+    );
+    runs.push({ cold, shown, warm });
+    await context.close();
+  }
+  return {
+    hiddenMountLongestMs: round(median(runs.map((run) => run.cold))),
+    hiddenMountLongestRunsMs: runs.map((run) => round(run.cold)),
+    shownMs: round(median(runs.map((run) => run.shown))),
+    shownRunsMs: runs.map((run) => round(run.shown)),
+    warmMountLongestMs: round(median(runs.map((run) => run.warm))),
+  };
+}
+
+test('the drawing board opens and responds within its budgets', async ({
+  browser,
+}, testInfo) => {
+  const errors: string[] = [];
+  const typical = await makeBoard(browser, TYPICAL);
+  const large = await makeBoard(browser, LARGE);
+
+  // Blank: the plane card alone, as a new answer opens.
+  const blankOpen = await opens(browser, 1, { blocks: 0, canvas: 1 });
+  const typicalOpen = await opens(
+    browser,
+    CPU_RATE,
+    typical.expected,
+    typical.saved.doc
+  );
+  const largeOpen = await opens(
+    browser,
+    CPU_RATE,
+    large.expected,
+    large.saved.doc
+  );
+
+  const onTypical = await interactions(browser, typical.saved.doc, errors);
+  const onLarge = await interactions(browser, large.saved.doc, errors);
+  const draw = await drawAhead(browser, typical.saved.doc);
+
+  const timings: Timings = {
+    blankOpenMs: blankOpen.cold.paintedMs,
+    drawShownMs: draw.shownMs,
+    hiddenMountLongestMs: draw.hiddenMountLongestMs,
+    openMs: typicalOpen.cold.paintedMs,
+    panP90Ms: onTypical.pan.p90Ms,
+    penP90Ms: onTypical.pen.p90Ms,
+    typingP90Ms: onTypical.typing.p90Ms,
+    zoomP90Ms: onTypical.zoom.p90Ms,
+  };
+  const budget = MEDIANS ? budgetOf(MEDIANS) : 'uncalibrated';
+  const opened = ({ cold, warm }: typeof blankOpen) => ({ cold, warm });
+  // Gated: `timings`. Report-only: warm opens and mounts, the large board and
+  // the bytes.
+  await reportMetrics(testInfo, 'canvas-board', {
+    blank: { cpu: 1, open: opened(blankOpen) },
+    boards: {
+      large: { bytes: large.saved.bytes, ...large.expected },
+      typical: { bytes: typical.saved.bytes, ...typical.expected },
+    },
+    budget,
+    bytes: {
+      blank: await bytesOf(blankOpen.resources),
+      large: await bytesOf(largeOpen.resources),
+      typical: await bytesOf(typicalOpen.resources),
+    },
+    large: { open: opened(largeOpen), ...onLarge },
+    timings,
+    typical: { draw, open: opened(typicalOpen), ...onTypical },
+  });
+
+  expect(errors).toEqual([]);
+  for (const steps of [onTypical, onLarge])
+    for (const step of Object.values(steps)) expect(step.unpainted).toBe(0);
+  if (budget === 'uncalibrated') return;
+  for (const key of Object.keys(timings) as (keyof Timings)[])
+    expect.soft(timings[key], key).toBeLessThanOrEqual(budget[key]);
+});

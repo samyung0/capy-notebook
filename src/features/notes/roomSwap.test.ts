@@ -17,6 +17,7 @@ function box(scrollTop: number, ids = ['a', 'b', 'c', 'd', 'e']) {
     dataset: { blockId: id },
     getBoundingClientRect: () => ({
       bottom: 100 + index * 40 + 40 - area.scrollTop,
+      height: 40,
       top: 100 + index * 40 - area.scrollTop,
     }),
   }));

@@ -1,6 +1,6 @@
 """Generate-slot prompts: the fixed study-material workflows.
 
-Generation is not a conversation. Each kind states its output contract in the
+Generation is not a conversation. It states its output contract in the
 instruction because the gateway has to persist what comes back — a model that
 answers in prose instead of JSON fails the request, so the format rule is not
 advisory.
@@ -11,16 +11,6 @@ from __future__ import annotations
 from ..generated import limits
 from .locale import response_language_rule
 from .sources import SOURCE_RULE
-
-# Mermaid header per diagram type. The prompt names the exact header so the
-# reply parses; an unknown type lets the model pick the diagram that fits.
-_DIAGRAM_HEADER = {
-    "flowchart": "flowchart TD",
-    "sequence": "sequenceDiagram",
-    "class": "classDiagram",
-    "state": "stateDiagram-v2",
-    "er": "erDiagram",
-}
 
 # What each cognitive level asks the LLM to write, so questions have a purpose
 # instead of a vague difficulty knob.
@@ -55,37 +45,6 @@ def generate_messages(
         {"role": "system", "content": system},
         {"role": "user", "content": user},
     ]
-
-
-def flashcards_instruction(count: int) -> str:
-    return (
-        f"Create {count} study flashcards from these sources. Return ONLY a JSON "
-        'array of objects {"front": "...", "back": "..."}. Each front is a '
-        "single question or term; each back is a self-contained answer."
-    )
-
-
-def mindmap_instruction(detail: str) -> str:
-    return (
-        "Create a Mermaid `mindmap` organizing the key concepts of these "
-        f"sources and their relationships ({detail} level of detail). Return "
-        "ONLY the Mermaid code starting with the line `mindmap` — no code "
-        "fences, no prose."
-    )
-
-
-def diagram_instruction(diagram_type: str) -> str:
-    header = _DIAGRAM_HEADER.get(diagram_type.lower())
-    want = (
-        f"a Mermaid `{header}` diagram"
-        if header
-        else "the most appropriate Mermaid diagram"
-    )
-    return (
-        f"Create {want} that best illustrates the key ideas, processes or "
-        "relationships in these sources. Return ONLY the Mermaid code (a "
-        "valid diagram) — no code fences, no prose."
-    )
 
 
 QUESTION_CONTRACT = (

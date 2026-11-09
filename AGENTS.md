@@ -68,7 +68,7 @@ Mandatory to read when the task touches that domain. Prefer the listed file over
 | What to verify after a UAT deploy: stack health, Clerk/Stripe webhooks, the per-developer dev hostname, quota and bucket sanity, error reporting                       | `[uat-activation-checklist.md](openwiki/uat-activation-checklist.md)`                          |
 | Editor Playwright budgets, the manual `Performance` workflow, snapshot compare vs last successful run                                                                 | `[editor-perf.md](openwiki/editor-perf.md)`                                                   |
 | Shared question format, bank editing/assets/roles, quiz grading, local question generation and publication                                                            | `[question-bank.md](openwiki/question-bank.md)`                                              |
-| Per-user study progress, FSRS review state and item hashes, Study tab/Continue/Quick review, review sessions, Learning's Review tab, study lifecycle and access        | `[study-progress.md](openwiki/study-progress.md)`                                            |
+| Per-user study progress, FSRS review state and item hashes, Study tab/Continue/Quick review, review sessions, Learning's Overview and topic labels, study lifecycle and access        | `[study-progress.md](openwiki/study-progress.md)`                                            |
 | Inventory of Vitest / Go / Python / Playwright / Cloudflare tests with one-line descriptions                                                                          | `[test-catalog.md](openwiki/test-catalog.md)`                                                 |
 | Repository-wide adversarial review, source/UAT workflows, gates, artifacts, Strix, and the `$review-repository` skill                                                  | `[review-automation.md](openwiki/review-automation.md)`                                       |
 
@@ -97,7 +97,7 @@ changing any of them.
 | Family          | Measures                                                                         | Runs in CI |
 | --------------- | -------------------------------------------------------------------------------- | ---------- |
 | `bench/collaboration` | Many peers typing with reconnects in one Office and one Plate room: convergence, lost updates, latency (`pnpm bench:stress`); update rates one user's editing sends (`pnpm bench:rates`) | Yes, manual (stress) |
-| `bench/editor`  | Editor open cost, typing latency, save cycle, scroll FPS (`pnpm bench:editor`)    | Yes        |
+| `bench/editor`  | Editor open cost, typing latency, save cycle, scroll FPS (`pnpm bench:editor`); the drawing board's open, pan, zoom, pen and typing (`pnpm bench:canvas`) | Yes        |
 | `bench/share-pages` | Shared pages on deployed UAT: Lighthouse paint, shift, blocking and bytes; Workers Cache hits (`pnpm bench:share-pages`) | Yes, manual |
 | `bench/clone`   | A single file clone's row and saved-edit copy against its index copy (`bench/clone/scripts/run.sh`) | No, Docker |
 | `bench/gateway` | Go gateway capacity under replayed signed-in sessions with their event streams, uploads and paged lists: per-route and per-page latency, CPU, pooled-connection waits (`bench/gateway/scripts/step.sh`) | No, bench host |
@@ -144,7 +144,7 @@ paraglide is used for internationalization. use paraglide functions to support i
 - DO NOT use chevron icon for navigational links icon, use navigationback and navigationForward
 - Always let larger screens override smaller screen styles, phones are usually less powerful and need to run longer if it needs to pplay more styles
 - Never use `tabular-nums`
-- Use buttons with borders when its an action which stays on the same page, for links/spa links use buttons/links with underline and potentially a navigationForward icon
+- Use buttons with borders for actions on the same page and for links/spa links alike, potentially with a navigationForward icon on links; do not use underlined buttons
 - Smallest support device screen is `360px` in width
 
 ## Final Remarks

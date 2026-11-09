@@ -34,16 +34,18 @@ from .. import obs
 from ..config import cfg
 from ..generated import MATERIAL_TITLE_MAX
 from ..generated.limits import (
-    CHAPTER_NAME_MAX,
     QUESTION_DESCRIPTION_MAX,
     QUESTION_METADATA_MAX,
     TAG_VALUE_MAX,
+    TOPIC_DESCRIPTION_MAX,
+    TOPIC_NAME_MAX,
     WORKSPACE_DESCRIPTION_MAX,
     WORKSPACE_NAME_MAX,
     WORKSPACE_TAGS_MAX,
 )
 from ..prompts import preferences
 from ..prompts.sources import source_block
+from ..store import blobstore
 from . import (
     accounting,
     capture,
@@ -201,9 +203,9 @@ class ToolContext:
     # The learner's workspace role (owner, editor, viewer); the chat request
     # always sends it, in-process contexts (tests, playground) set their own.
     role: str = "owner"
-    # The workspace's chapters in order ({id, name}), loaded at turn start for
-    # the open file's chapter and chapter_id checks; at most 20 (the server's cap).
-    chapters: list[dict[str, Any]] = field(default_factory=list)
+    # The workspace's topics in order ({id, name}), loaded at turn start for
+    # the open file's topic and topic_id checks; at most 20 (the server's cap).
+    topics: list[dict[str, Any]] = field(default_factory=list)
     # Skills whose read_skill result is still in the request; the writes they
     # cover are refused until it is (skills.retained recomputes it per call).
     skills_read: set[str] = field(default_factory=set)
@@ -215,9 +217,6 @@ class ToolContext:
     # read editing, or an earlier turn was offered them (the gateway's
     # editTools).
     edit_tools: bool = False
-    # The requester's study progress is on in this workspace, so the agent may
-    # read it.
-    study_progress: bool = False
     library_evidence: LibraryEvidence = field(default_factory=LibraryEvidence)
     # The library's subjects that hold excerpts, fetched once per turn for
     # search_library's description; its subject argument takes their ids.
@@ -452,10 +451,10 @@ def operation_id(assistant_message_id: str, tool_call_id: str) -> str:
     return "op_" + digest[:24]
 
 
-def chapter_id(op_id: str) -> str:
-    """The chapter a create_chapter call made: its operation id under the
-    chapter prefix (Go's store.ChatChapterID), so a recovered receipt names it."""
-    return "ch_" + op_id.removeprefix("op_")
+def topic_id(op_id: str) -> str:
+    """The topic a create_topic call made: its operation id under the
+    topic prefix (Go's store.ChatTopicID), so a recovered receipt names it."""
+    return "tp_" + op_id.removeprefix("op_")
 
 
 def _result(text: str, *, passages: list[Passage] | None = None) -> ToolResult:
@@ -632,33 +631,35 @@ def _source_listing(
     }
     allowed = None if file_ids is None else set(file_ids)
     lines: list[str] = []
-    by_chapter: dict[str | None, list[dict[str, Any]]] = {}
+    by_topic: dict[str | None, list[dict[str, Any]]] = {}
     for file in outline["files"]:
         if file["id"] not in sources or (
             allowed is not None and file["id"] not in allowed
         ):
             continue
-        by_chapter.setdefault(file["chapter_id"], []).append(file)
-    # Materials sit under the chapter they are filed in, so the model sees
-    # which chapters already have their practice.
+        by_topic.setdefault(file["topic_id"], []).append(file)
+    # Materials sit under the topic they are filed in, so the model sees
+    # which topics already have their practice.
     materials: dict[str | None, list[dict[str, Any]]] = {}
     for item in documents:
         if item["kind"] == "material":
-            materials.setdefault(item.get("chapterId"), []).append(item)
-    # Empty chapters too, so a build reuses them (Epo 2026-10-29, review F2).
-    for chapter in outline["chapters"]:
-        files = by_chapter.pop(chapter["id"], [])
-        filed = materials.pop(chapter["id"], [])
-        lines.append(f"\n## {chapter['name']} (chapter_id={chapter['id']})")
+            materials.setdefault(item.get("topicId"), []).append(item)
+    # Empty topics too, so a build reuses them (Epo 2026-10-29, review F2).
+    for topic in outline["topics"]:
+        files = by_topic.pop(topic["id"], [])
+        filed = materials.pop(topic["id"], [])
+        lines.append(f"\n## {topic['name']} (topic_id={topic['id']})")
+        if topic.get("description"):
+            lines.append(topic["description"])
         lines.extend(_file_line(f, sources[f["id"]]["editable"]) for f in files)
         lines.extend(_material_line(item, summaries) for item in filed)
-    unfiled = [f for files in by_chapter.values() for f in files]
+    unfiled = [f for files in by_topic.values() for f in files]
     if unfiled:
-        lines.append("\n## Not in a chapter")
+        lines.append("\n## Not in a topic")
         lines.extend(_file_line(f, sources[f["id"]]["editable"]) for f in unfiled)
     loose = [item for items in materials.values() for item in items]
     if loose:
-        lines.append("\n## Study materials not in a chapter")
+        lines.append("\n## Study materials not in a topic")
         lines.extend(_material_line(item, summaries) for item in loose)
     return _result(
         "\n".join(lines)
@@ -847,7 +848,7 @@ def can_edit(ctx: ToolContext, workspace: ScopeWorkspace | None) -> bool:
 
 async def label_passages(ctx: ToolContext, passages: list[Passage]) -> list[Passage]:
     """The passages whose item is still in the turn's scope, each naming its
-    workspace, chapter and whether the user may edit it. The workspaces and
+    workspace, topic and whether the user may edit it. The workspaces and
     their rights are the turn's (Go sends them, Epo 2026-10-28); only where
     each item lives now is read here, so an item moved out of the scope
     drops out."""
@@ -873,8 +874,8 @@ async def label_passages(ctx: ToolContext, passages: list[Passage]) -> list[Pass
                 passage,
                 workspace_id=workspace.id if workspace else "",
                 workspace_name=workspace.name if workspace else "",
-                chapter_id=place["chapter_id"] or "",
-                chapter_name=place["chapter_name"] or "",
+                topic_id=place["topic_id"] or "",
+                topic_name=place["topic_name"] or "",
                 # A PDF cannot be edited, whatever the workspace allows.
                 can_edit=can_edit(ctx, workspace) and place.get("file_kind") != "pdf",
             )
@@ -996,7 +997,7 @@ NOT_A_SCOPE_WORKSPACE = (
 )
 # An account create naming a workspace outside the turn's list, refused before
 # anything is sent (Epo 2026-10-29, Q578); Go would answer as for a view-only
-# one. create_chapter has no outside-workspaces fallback.
+# one. create_topic has no outside-workspaces fallback.
 NOT_A_DESTINATION = (
     'workspace_id "{id}" is not one of the user\'s workspaces, so nothing was '
     "created. list_workspaces lists them, create_workspace makes a new one{rest}."
@@ -1012,7 +1013,7 @@ MORE_UNLISTED = (
 
 
 async def _list_account(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    """Account chat's list_sources (Q523): one scope workspace by chapter, as
+    """Account chat's list_sources (Q523): one scope workspace by topic, as
     workspace chat lists its own, or without workspace_id the newest items
     with no workspace (Epo 2026-10-28); the first line says which."""
     assert isinstance(ctx.scope, AccountScope)
@@ -1128,28 +1129,29 @@ async def _create_workspace(args: dict[str, Any], ctx: ToolContext) -> ToolResul
     return result
 
 
-CHAPTER_NEEDS_ITS_WORKSPACE = (
-    "create_chapter needs the workspace_id of a workspace the user can edit: "
-    "files outside workspaces have no chapters."
+TOPIC_NEEDS_ITS_WORKSPACE = (
+    "create_topic needs the workspace_id of a workspace the user can edit: "
+    "files outside workspaces have no topics."
 )
 
 
-async def _create_chapter(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    """A chapter at the end of the workspace's (Epo 2026-10-29): an optional
-    name, an over-limit one cut and said, the default Go's Chapter (n)."""
+async def _create_topic(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    """A topic at the end of the workspace's (Epo 2026-10-29): an optional
+    name and one-line description, an over-limit one cut and said, the default
+    name Go's Topic (n)."""
     if not _gateway_ready() or not ctx.user_id or not ctx.assistant_message_id:
         return _refused(
-            "Chapter creation is unavailable for this user.",
+            "Topic creation is unavailable for this user.",
             code="lifecycle_rejected",
         )
     call_id = str(args.get("_tool_call_id") or "")
     if not call_id:
-        return _refused("create_chapter is missing its tool-call id.")
+        return _refused("create_topic is missing its tool-call id.")
     workspace_id = (
         str(args.get("_workspace_id") or "") if ctx.account else ctx.workspace_id
     )
     if not workspace_id:
-        return _refused(CHAPTER_NEEDS_ITS_WORKSPACE)
+        return _refused(TOPIC_NEEDS_ITS_WORKSPACE)
     notes: list[str] = []
     payload = {
         "scope": "account" if ctx.account else "workspace",
@@ -1157,14 +1159,17 @@ async def _create_chapter(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         "workspaceId": workspace_id,
         "assistantMessageId": ctx.assistant_message_id,
         "toolCallId": call_id,
-        "name": _cut(args.get("name"), CHAPTER_NAME_MAX, "name", notes),
+        "name": _cut(args.get("name"), TOPIC_NAME_MAX, "name", notes),
+        "description": _cut(
+            args.get("description"), TOPIC_DESCRIPTION_MAX, "description", notes
+        ),
     }
     result = await _post_operation(
-        "/api/internal/chapters",
+        "/api/internal/topics",
         payload,
         operation_id(ctx.assistant_message_id, call_id),
         ctx,
-        failure="create the chapter",
+        failure="create the topic",
     )
     if not (result.refused or result.failed):
         result.text_parts.extend(notes)
@@ -1189,10 +1194,10 @@ def _summary_line(hit: dict[str, Any], row: dict[str, Any], ctx: ToolContext) ->
             f"workspace {json.dumps(row['workspaceName'], ensure_ascii=False)} "
             f"workspace_id={row['workspaceId']}"
         )
-        if hit.get("chapter_id"):
+        if hit.get("topic_id"):
             parts.append(
-                f"chapter {json.dumps(hit.get('chapter_name') or '', ensure_ascii=False)} "
-                f"chapter_id={hit['chapter_id']}"
+                f"topic {json.dumps(hit.get('topic_name') or '', ensure_ascii=False)} "
+                f"topic_id={hit['topic_id']}"
             )
     else:
         parts.append("outside workspaces")
@@ -1798,7 +1803,13 @@ async def _search_images(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
                 len(lines) == IMAGES_SHOWN
                 or figure is None
                 or ref in listed
-                or figure.withheld
+                or not library.shown(
+                    figure.decorative,
+                    figure.excluded,
+                    figure.withheld,
+                    figure.bbox,
+                    figure.blank,
+                )
                 or not (figure.label or figure.description)
             ):
                 continue
@@ -1851,7 +1862,12 @@ async def _capture_library_page(args: dict[str, Any], ctx: ToolContext) -> ToolR
     started = time.perf_counter()
     try:
         jpeg, box, size = await capture.render_knowledge(
-            target.object_key, target.bytes, page, bbox, cfg.capture_max_edge
+            target.object_key,
+            target.bytes,
+            page,
+            bbox,
+            cfg.capture_max_edge,
+            target.excluded.get(page, []),
         )
     except capture.CaptureUnavailable as exc:
         return _refused(f"capture_library_page: {exc}", code=exc.code)
@@ -2037,18 +2053,18 @@ def _receipt_result(body: dict[str, Any], ctx: ToolContext | None = None) -> Too
             f"Created the workspace{name} (workspace_id={body.get('workspaceId')}). "
             "Every tool that creates can create in it with this workspace_id."
         )
-    if body.get("kind") == "create_chapter" and body.get("outcome") == "succeeded":
+    if body.get("kind") == "create_topic" and body.get("outcome") == "succeeded":
         # No effect, so no Undo (Epo 2026-10-29); a recovered receipt has no name.
-        chapter = chapter_id(str(body.get("operationId") or ""))
+        topic = topic_id(str(body.get("operationId") or ""))
         name = str(body.get("name") or "")
         if ctx is not None and not ctx.account:
-            # The turn's chapter check and list_sources reach it at once.
-            ctx.chapters.append({"id": chapter, "name": name})
+            # The turn's topic check and list_sources reach it at once.
+            ctx.topics.append({"id": topic, "name": name})
             ctx._scope_outline = None
         named = f" '{name}'" if name else ""
         return _result(
-            f"Created the chapter{named} (chapter_id={chapter}) at the end of the "
-            "workspace's chapters. File items in it with this chapter_id."
+            f"Created the topic{named} (topic_id={topic}) at the end of the "
+            "workspace's topics. File items in it with this topic_id."
         )
     effect = body.get("effect")
     if not isinstance(effect, dict) or body.get("outcome") != "succeeded":
@@ -2163,31 +2179,31 @@ def _relocations(effect: dict[str, Any]) -> str:
     return out
 
 
-# Account chat's chapter refusals (Epo 2026-10-28, T3).
-CHAPTER_NEEDS_WORKSPACE = (
-    "chapter_id needs the workspace_id of its workspace: without one the item "
-    "is created outside workspaces, where there are no chapters. list_sources with that "
-    "workspace_id lists its chapters."
+# Account chat's topic refusals (Epo 2026-10-28, T3).
+TOPIC_NEEDS_WORKSPACE = (
+    "topic_id needs the workspace_id of its workspace: without one the item "
+    "is created outside workspaces, where there are no topics. list_sources with that "
+    "workspace_id lists its topics."
 )
-CHAPTERS_LISTED = {
-    False: "list_sources lists this workspace's chapters.",
-    True: "list_sources with that workspace_id lists its chapters.",
+TOPICS_LISTED = {
+    False: "list_sources lists this workspace's topics.",
+    True: "list_sources with that workspace_id lists its topics.",
 }
 
 
-def unknown_chapter(ctx: ToolContext, args: dict[str, Any]) -> ToolResult | None:
-    """A chapter_id that names no chapter of the workspace, refused before
+def unknown_topic(ctx: ToolContext, args: dict[str, Any]) -> ToolResult | None:
+    """A topic_id that names no topic of the workspace, refused before
     anything is sent (Go refuses it too, after the write is built). Shared
     with the playground's local writes."""
-    chapter = str(args.get("chapter_id") or "")
+    topic = str(args.get("topic_id") or "")
     if ctx.account:
-        # Go checks it against where the item lands (unknown_chapter).
-        if chapter and not args.get("_workspace_id"):
-            return _refused(CHAPTER_NEEDS_WORKSPACE)
+        # Go checks it against where the item lands (unknown_topic).
+        if topic and not args.get("_workspace_id"):
+            return _refused(TOPIC_NEEDS_WORKSPACE)
         return None
-    if chapter and chapter not in {c["id"] for c in ctx.chapters}:
+    if topic and topic not in {c["id"] for c in ctx.topics}:
         return _refused(
-            "chapter_id is not a chapter of this workspace; list_sources lists them."
+            "topic_id is not a topic of this workspace; list_sources lists them."
         )
     return None
 
@@ -2204,7 +2220,7 @@ async def _create_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult
     call_id = str(args.get("_tool_call_id") or "")
     if not call_id:
         return _refused("create_material is missing its tool-call id.")
-    if (unknown := unknown_chapter(ctx, args)) is not None:
+    if (unknown := unknown_topic(ctx, args)) is not None:
         return unknown
     content = str(args.get("content") or "")
     fences = questions.Check(questions.FENCE)
@@ -2251,7 +2267,7 @@ async def _post_material(
     images: dict[str, bytes] | None = None,
 ) -> ToolResult:
     """Create a material through the gateway: its kind and content, with the
-    call's title, chapter, sources and provenance. The sources are the model's
+    call's title, topic, sources and provenance. The sources are the model's
     made-from line, sent as written: Go stores them as names."""
     payload = {
         **_scope_fields(ctx),
@@ -2264,7 +2280,7 @@ async def _post_material(
         "title": str(args.get("title") or "").strip()[:MATERIAL_TITLE_MAX].strip(),
         **content,
         "sources": list(args.get("sources") or []),
-        "chapterId": str(args.get("chapter_id") or ""),
+        "topicId": str(args.get("topic_id") or ""),
     }
     if books:
         # Go validates the shape and computes the material's own licence.
@@ -2363,26 +2379,31 @@ class NoteFigures:
 async def render_figure(
     figure: library.Figure,
 ) -> tuple[bytes, tuple[int, int]] | ToolResult:
-    """A figure's box on its page as a JPEG with its size, as
-    capture_library_page renders it: deterministic, so a retried write sends
-    the same bytes."""
+    """A figure's stored crop (a JPEG the loader made at publish, Epo
+    2026-11-04) with its pixel size. A missing crop refuses as a missing book
+    did when figures were rendered here; nothing falls back to a render."""
     try:
-        image, _, size = await capture.render_knowledge(
-            figure.object_key,
-            figure.bytes,
-            figure.page,
-            figure.bbox,
-            cfg.capture_max_edge,
+        image = await asyncio.to_thread(
+            blobstore.library_read_bytes,
+            library.figure_key(
+                figure.object_key, figure.page, figure.bbox, figure.blank
+            ),
         )
-    except capture.CaptureUnavailable as exc:
-        return _refused(f"figure {figure.id}: {exc}", code=exc.code)
-    except ValueError as exc:
+    except ValueError as exc:  # the bucket is not configured
         return _refused(f"figure {figure.id}: {exc}")
-    return image, size
+    if image is None:
+        return _refused(
+            f"figure {figure.id}: the source object is missing",
+            code="unavailable_target",
+        )
+    from PIL import Image
+
+    with Image.open(io.BytesIO(image)) as opened:  # reads the header only
+        return image, opened.size
 
 
 class FigureUnavailable(Exception):
-    """The library shows the figure, but its page could not be rendered now."""
+    """The library shows the figure, but its stored crop could not be read."""
 
 
 async def answer_figure(ref: str) -> dict[str, Any] | None:
@@ -2390,12 +2411,8 @@ async def answer_figure(ref: str) -> dict[str, Any] | None:
     of its box with its label and printed credit, or None when the library
     does not show it (the rule placing it in a note follows)."""
     figure = (await library.figures([ref])).get(ref)
-    if (
-        figure is None
-        or figure.decorative
-        or figure.excluded
-        or figure.withheld
-        or figure.bbox == deck.WHOLE_PAGE
+    if figure is None or not library.shown(
+        figure.decorative, figure.excluded, figure.withheld, figure.bbox, figure.blank
     ):
         return None
     rendered = await render_figure(figure)
@@ -2487,7 +2504,8 @@ async def library_figures(
     show.
 
     A figure must be one the library shows (not decorative, excluded or on a
-    withheld page), boxed apart from its page, and listed by an excerpt. It
+    withheld page), boxed apart from its page (``library.shown``: with some
+    area, not inside an excluded figure's box), and listed by an excerpt. It
     need not have been read this turn (Epo 2026-10-30, R1, as named
     excerpt_ids since 2026-10-14: a PowerPoint finished in a later message
     places figures an earlier one listed); the credited excerpt is one this
@@ -2517,6 +2535,15 @@ async def library_figures(
                 f"{ref} has no box of its own (its record is all of page "
                 f"{figure.page}); place another figure or describe it in words"
             )
+        elif not library.shown(
+            figure.decorative,
+            figure.excluded,
+            figure.withheld,
+            figure.bbox,
+            figure.blank,
+        ):
+            # A box with no area, or inside an excluded figure's box.
+            problems.append(f"{ref} is not shown by the library")
         elif not figure.excerpt_ids:
             problems.append(f"{ref} is listed by no excerpt")
         else:
@@ -2951,10 +2978,8 @@ def _gateway_refused(
         detail = "\n\n".join(part for part in (detail, SAVES_FAILING) if part)
     if code == "workspace_limit_exceeded":
         detail = "\n\n".join(part for part in (detail, WORKSPACE_LIMIT) if part)
-    if code == "unknown_chapter":
-        detail = "\n\n".join(
-            part for part in (detail, CHAPTERS_LISTED[account]) if part
-        )
+    if code == "unknown_topic":
+        detail = "\n\n".join(part for part in (detail, TOPICS_LISTED[account]) if part)
     return _refused(text, code=_gateway_error_code(resp), detail=detail)
 
 
@@ -4135,8 +4160,8 @@ async def _edit_office_document(args: dict[str, Any], ctx: ToolContext) -> ToolR
     op_id = operation_id(ctx.assistant_message_id, call_id)
     if creating:
         create = commands[0]
-        # Its chapter_id, with the call's account workspace_id (Q580).
-        if (unknown := unknown_chapter(ctx, {**args, **create})) is not None:
+        # Its topic_id, with the call's account workspace_id (Q580).
+        if (unknown := unknown_topic(ctx, {**args, **create})) is not None:
             return unknown
         await ctx.pending_sources.validate()
         result = await _post_operation(
@@ -4146,7 +4171,7 @@ async def _edit_office_document(args: dict[str, Any], ctx: ToolContext) -> ToolR
                 **_destination(args),
                 "format": create["format"],
                 "title": create["title"],
-                "chapterId": str(create.get("chapter_id") or ""),
+                "topicId": str(create.get("topic_id") or ""),
                 "commands": commands[1:],
             },
             op_id,
@@ -4285,13 +4310,13 @@ async def write_questions(
         "add_questions", {k: v for k, v in args.items() if not k.startswith("_")}
     )
     found = questions.check(clean)
-    if clean.get("title") and unknown_chapter(ctx, {**args, **clean}) is not None:
+    if clean.get("title") and unknown_topic(ctx, {**args, **clean}) is not None:
         why = (
-            CHAPTER_NEEDS_WORKSPACE.rstrip(".")
+            TOPIC_NEEDS_WORKSPACE.rstrip(".")
             if ctx.account
-            else "chapter_id: not a chapter of this workspace; list_sources lists them"
+            else "topic_id: not a topic of this workspace; list_sources lists them"
         )
-        found.call.append(f"{why}; sent {json.dumps(clean.get('chapter_id'))}")
+        found.call.append(f"{why}; sent {json.dumps(clean.get('topic_id'))}")
     quiz_id = clean.get("quiz_id")
     quiz: list[dict[str, Any]] | None = None
     if isinstance(quiz_id, str) and quiz_id and not clean.get("title"):
@@ -4448,7 +4473,7 @@ async def _create_deck(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     call_id = str(args.get("_tool_call_id") or "")
     if not call_id or not ctx.assistant_message_id:
         return _refused("create_deck needs its tool-call and assistant message ids.")
-    if (unknown := unknown_chapter(ctx, args)) is not None:
+    if (unknown := unknown_topic(ctx, args)) is not None:
         return unknown
     prepared = await write_sources(ctx, "create_deck", args)
     if isinstance(prepared, ToolResult):
@@ -4533,7 +4558,7 @@ async def _write_slide(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         **_chat_context(ctx, call_id),
         **_destination({"_workspace_id": record.get("workspace_id")}),
         "name": deck.file_name(record),
-        "chapterId": record["chapter_id"],
+        "topicId": record["topic_id"],
         "sources": record["sources"],
         "content": base64.b64encode(pptx.read_bytes()).decode(),
     }
@@ -4565,56 +4590,6 @@ async def _write_slide(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     return result
 
 
-def render_progress(progress: dict[str, Any]) -> str:
-    """The learner's progress as the model reads it."""
-    lines: list[str] = []
-    for state in ("done", "started", "removed"):
-        items = [i for i in progress.get("items") or [] if i.get("state") == state]
-        if items:
-            lines.append(f"{state.capitalize()}:")
-            lines.extend(f"- {i['title']} ({i['kind']} {i['id']})" for i in items)
-    attempts = progress.get("recentAttempts") or []
-    if attempts:
-        lines.append("Recent quizzes:")
-        lines.extend(
-            f"- {a['quizName']}: {a['pct']}% on {str(a['takenAt'])[:10]}"
-            + (f" ({', '.join(a['chapters'])})" if a.get("chapters") else "")
-            for a in attempts
-        )
-    weak = progress.get("weakChapters") or []
-    if weak:
-        lines.append("Least retained chapters:")
-        lines.extend(
-            f"- {w['chapter'] or 'Not in a chapter'}: {round(100 * w['retention'])}% retained "
-            f"across {w['items']} rated questions and cards"
-            for w in weak
-        )
-    return "\n".join(lines) or "No study progress recorded in this workspace yet."
-
-
-async def _read_study_progress(_args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    if not _gateway_ready() or not ctx.user_id:
-        return _refused(
-            "Study progress is unavailable for this user.", code="lifecycle_rejected"
-        )
-
-    def _post() -> requests.Response:
-        return requests.post(
-            _material_url("/api/internal/study-progress"),
-            headers=_material_headers(),
-            data=json.dumps({"workspaceId": ctx.workspace_id, "userId": ctx.user_id}),
-            timeout=10,
-        )
-
-    resp = await asyncio.to_thread(_post)
-    if resp.status_code >= 300:
-        return _refused(
-            f"Study progress could not be read: {_response_detail(resp)}",
-            code="unavailable_target",
-        )
-    return _result(render_progress(resp.json()))
-
-
 REGISTRY: dict[str, ToolSpec] = {}
 
 
@@ -4631,14 +4606,13 @@ _register("read_library", _read_library)
 _register("search_images", _search_images)
 _register("search_web", _search_web)
 _register("read_skill", _read_skill)
-_register("read_study_progress", _read_study_progress)
 _register("capture_library_page", _capture_library_page)
 _register("list_sources", _list_sources)
 _register("search_files_summary", _search_files_summary)
 _register("search_files_content", _search_files_content)
 _register("list_workspaces", _list_workspaces)
 _register("create_workspace", _create_workspace)
-_register("create_chapter", _create_chapter)
+_register("create_topic", _create_topic)
 _register("read_document", _read_document)
 _register("capture_page", _capture_page)
 _register("create_material", _create_material)
@@ -4698,8 +4672,6 @@ def _available(spec: ToolSpec, ctx: ToolContext) -> bool:
         return False
     if definition["mutates"] and not (_gateway_ready() and ctx.user_id):
         return False
-    if spec.name == "read_study_progress":
-        return ctx.study_progress
     if spec.name == KNOWLEDGE_CAPTURE:
         # Without the knowledge-base bucket there is nothing to render.
         return _library_ready(ctx) and bool(cfg.knowledge_base_b2_bucket)
@@ -4750,13 +4722,13 @@ def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
         name = schema["function"]["name"]
         if name in extra:
             schema["function"]["description"] += extra[name]
-        elif name == "create_chapter":
-            # The chat models name every chapter (Epo 2026-10-29, Q582); calls
+        elif name == "create_topic":
+            # The chat models name every topic (Epo 2026-10-29, Q582); calls
             # are still checked against Go's definition, where a nameless one
-            # is Chapter (n). parameters is Go's dict, so it is copied.
+            # is Topic (n). parameters is Go's dict, so it is copied.
             function = schema["function"]
             function["description"] = function["description"].replace(
-                " Without a name it is Chapter (n).", ""
+                " Without a name it is Topic (n).", ""
             )
             function["parameters"] = {**function["parameters"], "required": ["name"]}
     # The switch never changes the list (cache rule); a library that is not
@@ -4776,7 +4748,7 @@ def _unlock_rank(name: str) -> int:
 # The order a tool's arguments are offered in. Some OpenRouter routes (Morph,
 # InferenceNet) generate arguments in the schema's property order, so a
 # property before the one the model writes first is left out: Go's
-# alphabetical order lost create_material's content and create_chapter's name
+# alphabetical order lost create_material's content and create_topic's name
 # (Epo 2026-10-30, T3a). Required properties come first; then these, what the
 # call is about before what it says before how; then any other in Go's order.
 ARGUMENT_ORDER = (
@@ -4801,7 +4773,7 @@ ARGUMENT_ORDER = (
     "question",
     "query",
     "workspace_id",
-    "chapter_id",
+    "topic_id",
     "slide",
     "page",
     "description",
@@ -4918,7 +4890,7 @@ def dispatch_args(
     the scope. Shared with the playground's dispatch."""
     if (
         ctx.account
-        and (name in DESTINATION_TOOLS or name in ("list_sources", "create_chapter"))
+        and (name in DESTINATION_TOOLS or name in ("list_sources", "create_topic"))
         and "workspace_id" in args
     ):
         # The account schema copy's own argument (profiles/account.py); Go's
@@ -4936,13 +4908,13 @@ def dispatch_args(
     if (
         named
         and isinstance(ctx.scope, AccountScope)
-        and (name in DESTINATION_TOOLS or name == "create_chapter")
+        and (name in DESTINATION_TOOLS or name == "create_topic")
         # An edit of an existing quiz or file ignores workspace_id.
         and contract.blank(args.get("quiz_id"))
         and contract.blank(args.get("file_id"))
         and ctx.scope.workspace(named) is None
     ):
-        rest = "" if name == "create_chapter" else NO_WORKSPACE_CHOICE
+        rest = "" if name == "create_topic" else NO_WORKSPACE_CHOICE
         return _refused(NOT_A_DESTINATION.format(id=named, rest=rest))
     return args
 
@@ -5020,14 +4992,14 @@ def assign_citations(
 
 def _read_location(number: int, passage: Passage) -> str:
     """Where read_document continues a passage; an account passage also names
-    its workspace, chapter and whether the user may edit it."""
+    its workspace, topic and whether the user may edit it."""
     line = f"[{number}] file_id={passage.file_id}, start={passage.chunk_idx}"
     if passage.can_edit is None:
         return line
     if passage.workspace_id:
         line += f", workspace_id={passage.workspace_id}"
-    if passage.chapter_id:
-        line += f", chapter_id={passage.chapter_id}"
+    if passage.topic_id:
+        line += f", topic_id={passage.topic_id}"
     return line + (", view and edit" if passage.can_edit else ", view only")
 
 

@@ -114,12 +114,15 @@ class ClickController extends PointerControllerBase {
     // disable for secondary pointer
     if (event.isPrimary === false) return;
 
-    if (
-      this._downPointerState &&
-      event.pointerId === this._downPointerState.raw.pointerId &&
-      event.timeStamp - this._downPointerState.raw.timeStamp < 500 &&
-      !isFarEnough(event, this._downPointerState.raw)
-    ) {
+    // Capy (local change 18): every touch gets its own pointer id, and a finger comes
+    // down a little apart from its last tap.
+    const last = this._downPointerState?.raw;
+    const sameSpot =
+      last &&
+      (event.pointerType === 'touch' && last.pointerType === 'touch'
+        ? Math.hypot(event.x - last.x, event.y - last.y) < 24
+        : event.pointerId === last.pointerId && !isFarEnough(event, last));
+    if (last && sameSpot && event.timeStamp - last.timeStamp < 500) {
       this._pointerDownCount++;
     } else {
       this._pointerDownCount = 1;
@@ -132,6 +135,17 @@ class ClickController extends PointerControllerBase {
       startY: -Infinity,
       last: null,
     });
+    this._dragged = false;
+  };
+
+  // Capy (local change 25): a press that went past the drag threshold is a drag, even
+  // when it ends back where it began (a pen closing a circle left a dot).
+  private _dragged = false;
+
+  private readonly _move = (event: PointerEvent) => {
+    const down = this._downPointerState?.raw;
+    if (down && event.pointerId === down.pointerId && isFarEnough(down, event))
+      this._dragged = true;
   };
 
   private _downPointerState: PointerEventState | null = null;
@@ -141,7 +155,7 @@ class ClickController extends PointerControllerBase {
   private readonly _up = (event: PointerEvent) => {
     if (!this._downPointerState) return;
 
-    if (isFarEnough(this._downPointerState.raw, event)) {
+    if (this._dragged || isFarEnough(this._downPointerState.raw, event)) {
       this._pointerDownCount = 0;
       this._downPointerState = null;
       return;
@@ -173,6 +187,7 @@ class ClickController extends PointerControllerBase {
     const { host, disposables } = this._dispatcher;
 
     disposables.addFromEvent(host, 'pointerdown', this._down);
+    disposables.addFromEvent(document, 'pointermove', this._move);
     disposables.addFromEvent(host, 'pointerup', this._up);
   }
 }
@@ -197,6 +212,7 @@ class DragController extends PointerControllerBase {
       last: null,
     });
     this._startPointerState = pointerState;
+    this._early = [];
 
     this._dispatcher.disposables.addFromEvent(
       document,
@@ -237,12 +253,22 @@ class DragController extends PointerControllerBase {
     ) {
       this._dragging = true;
       this._dispatcher.run('dragStart', createContext(event, start));
+      // Capy (local change 25): the moves inside the threshold, so a stroke keeps
+      // its first points.
+      for (const early of this._early)
+        this._dispatcher.run('dragMove', createContext(early.raw, early));
+      this._early = [];
     }
 
     if (this._dragging) {
       this._dispatcher.run('dragMove', createContext(event, state));
+    } else if (!this._nativeDragging) {
+      // A pen held still still sends moves as its pressure changes: the latest few.
+      this._early = [...this._early.slice(-63), state];
     }
   };
+
+  private _early: PointerEventState[] = [];
 
   private readonly _nativeDragEnd = (event: DragEvent) => {
     this._nativeDragging = false;
@@ -303,6 +329,7 @@ class DragController extends PointerControllerBase {
 
   private readonly _reset = () => {
     this._dragging = false;
+    this._early = [];
     this._startPointerState = null;
     this._lastPointerState = null;
 

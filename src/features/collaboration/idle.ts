@@ -6,8 +6,15 @@
  * Scroll events are not input: a page scrolls itself (a streaming chat).
  * Input inside an Office frame never reaches this page; the runtime reports
  * it (`frameInput`).
+ *
+ * A hidden page sleeps sooner, at 5 minutes, once nothing it holds forbids it
+ * (Epo 2026-11-04, `mayHide`: nothing unsent, no Office or text room), so a
+ * forgotten editor's tab holds no room; it wakes when it shows.
  */
 export const IDLE_MS = 60 * 60 * 1000;
+export const HIDDEN_SLEEP_MS = 5 * 60 * 1000;
+/** How often a hidden page holding unsent edits asks again. */
+const HIDDEN_RECHECK_MS = 30 * 1000;
 
 export const INPUTS = [
   'keydown',
@@ -25,11 +32,22 @@ export function frameInput(target: EventTarget = window) {
   target.dispatchEvent(new Event(FRAME_INPUT));
 }
 
-/** Calls `sleep` once the page has been idle for `IDLE_MS`, and `wake` on
- * the input or focus after. Returns the stop function. */
+/** Calls `sleep` once the page has been idle for `IDLE_MS`, or hidden for
+ * `HIDDEN_SLEEP_MS` while `mayHide` allows, and `wake` on the input, focus or
+ * showing after. Returns the stop function. */
 export function watchIdle(
-  { sleep, wake }: { sleep: () => void; wake: () => void },
-  target: EventTarget = window
+  {
+    mayHide = () => false,
+    sleep,
+    wake,
+  }: { mayHide?: () => boolean; sleep: () => void; wake: () => void },
+  target: EventTarget = window,
+  page:
+    | Pick<
+        Document,
+        'addEventListener' | 'removeEventListener' | 'visibilityState'
+      >
+    | undefined = typeof document === 'undefined' ? undefined : document
 ) {
   let last = Date.now();
   let asleep = false;
@@ -53,13 +71,37 @@ export function watchIdle(
     timer = setTimeout(check, IDLE_MS);
     wake();
   };
+  let hiding: ReturnType<typeof setTimeout> | undefined;
+  const hide = () => {
+    hiding = undefined;
+    if (asleep) return;
+    if (!mayHide()) {
+      hiding = setTimeout(hide, HIDDEN_RECHECK_MS);
+      return;
+    }
+    asleep = true;
+    clearTimeout(timer);
+    timer = undefined;
+    sleep();
+  };
+  const visibility = () => {
+    clearTimeout(hiding);
+    hiding = undefined;
+    if (page?.visibilityState === 'hidden')
+      hiding = setTimeout(hide, HIDDEN_SLEEP_MS);
+    else active();
+  };
   const options = { capture: true, passive: true };
   for (const type of INPUTS) target.addEventListener(type, active, options);
   target.addEventListener('focus', active);
   target.addEventListener(FRAME_INPUT, active);
+  page?.addEventListener('visibilitychange', visibility);
+  if (page?.visibilityState === 'hidden') visibility();
   timer = setTimeout(check, IDLE_MS);
   return () => {
     clearTimeout(timer);
+    clearTimeout(hiding);
+    page?.removeEventListener('visibilitychange', visibility);
     for (const type of INPUTS)
       target.removeEventListener(type, active, options);
     target.removeEventListener('focus', active);

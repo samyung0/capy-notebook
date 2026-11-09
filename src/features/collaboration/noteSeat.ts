@@ -19,6 +19,15 @@ export interface SeatedRoom {
  * goes (`attach`).
  */
 export class NoteSeat {
+  /** An editor's seat names the user: a reader under it (the note's Preview)
+   * shares the editor's room of an embed rather than a read channel, which the
+   * server would answer by closing the edit one (Epo Q676 A). */
+  readonly writer?: string;
+
+  constructor(writer?: string) {
+    this.writer = writer;
+  }
+
   private provider: RoomProvider | null = null;
   private readonly rooms = new Set<SeatedRoom>();
   /** Item rooms by material and document, each with its copies' replaces. */

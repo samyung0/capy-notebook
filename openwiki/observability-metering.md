@@ -599,7 +599,10 @@ named provider directly. These exact routing exceptions are allowed:
   certifications stay retired.
 - `openrouter` rows post their own slug to OpenRouter
   (`https://openrouter.ai/api/v1/chat/completions`, platform-only
-  `OPENROUTER_API_KEY`) with `reasoning: {enabled: false}`, except MiniMax 3.1
+  `OPENROUTER_API_KEY`) with `reasoning: {enabled: false}` at `instant` (every
+  caption, page read, summary and ghost-text call) and otherwise at the call's
+  effort (Make a quiz's page windows on 1017 at `mid`, sent as `medium`),
+  except MiniMax 3.1
   Flash (`minimax/minimax-m3.1-flash`, a chat choice since 2026-10-24, Q224,
   migration `0112_chat_sources.sql`), which sends the chat pin's effort
   (`low`, `mid` as `medium`, `high`; `MINIMAX_EFFORTS`) at temperature 0.2 and
@@ -614,11 +617,24 @@ named provider directly. These exact routing exceptions are allowed:
   (decision 2026-10-20, after Relace's endpoint answered 429 for every summary;
   each held 32 summary calls in flight without a 429 when probed that day);
   `deepseek/deepseek-v4.1-flash-1017`, the captioning pin for page reads and
-  image captions (decision 2026-10-19) and the editor slot's ghost-text pin
-  (decision 2026-10-28), goes to InferenceNet, then Cloudflare
-  (decision 2026-10-21: both read page text as well as DeepInfra did;
-  InferenceNet describes non-text visuals such as QR codes less often, which is
-  accepted). Default routing is
+  image captions (decision 2026-10-19), the editor slot's ghost-text pin
+  (decision 2026-10-28) and the extraction slot's pin (Epo 2026-11-03), goes
+  to Wafer's US endpoint, then InferenceNet, then Cloudflare (Epo
+  2026-11-04), except Make a quiz's calls, which take the extraction slot's
+  own route, InferenceNet, then Cloudflare, then `wafer/us`
+  (`OPENROUTER_SLOT_ROUTING`, bound for the run with `bind_route_slot`; on
+  Wafer two runs lost the open parts' model answers and one ran away). One
+  model has two routes, so the catalog row, rates and pins stay one
+  (InferenceNet and Cloudflare since decision 2026-10-21, when both
+  read page text as well as DeepInfra did and InferenceNet described non-text
+  visuals such as QR codes less often, which was accepted). `order` takes an
+  endpoint tag as well as a provider name: `wafer/us` ($0.038 / $0.010 /
+  $0.50 per million input / cached / output tokens) is named so OpenRouter
+  never picks Wafer's `wafer/mxfp4` ($0.16 input); by name alone it took
+  `wafer/us` in five calls of five, and a tag's case matters (`Wafer/us` finds
+  no endpoint; 2026-11-04 probe). DeepInfra is on no chat or vision route
+  (Epo 2026-11-04); it serves only the Qwen embedding pin, on its own API.
+  Default routing is
   never used: providers behind one slug differ on images (one drops them
   silently, others take none), so a slug with no pin fails when its request is
   built, naming the slug. The allowlist in
@@ -636,7 +652,10 @@ A **slot** is a named place the product calls a model. Every slot holds one
 default pin; chat and editor also hold a per-user preference. Generate
 workflows run on the chat slot (migration `0044` merged the former `generate`
 slot into it; usage `surface` still records `generate`).
-The slots are `chat`, `editor`, `ingest`, `retrieval`
+The slots are `chat`, `editor`, `ingest`, `extraction` (Make a quiz's page
+windows, outline and answer-file parse, migration `0141`: a vision text slot
+on OpenRouter's DeepSeek V4.1 Flash 1017, never direct DeepSeek, Epo
+2026-11-03), `retrieval`
 (the workspace embedding model, used by ingest indexing and by chat/generate
 query embedding), `captioning` (the vision model used for standalone image
 uploads; embedded figure captioning was retired) and `rerank` (the
@@ -653,8 +672,8 @@ set `capabilities` (`vision`, `pdf`, `embedding`, `rerank`) on the catalog row;
 (`agentic_loop_certs.json`) and can never be set by hand. The only place the
 slot-to-capability policy lives is the map in
 `server/internal/models/slot.go`: chat needs `agentic_loop` and `vision`,
-retrieval needs `embedding`, captioning needs `vision`, rerank needs `rerank`,
-the other slots need nothing. Chat needs `vision` because its tools attach
+retrieval needs `embedding`, captioning and extraction need `vision`, rerank
+needs `rerank`, the other slots need nothing. Chat needs `vision` because its tools attach
 images (`capture_page`, Office pictures from `inspect_office_document`,
 pending Office images); the assignment check is the
 only gate, with no runtime vision check, and both seeded chat rows
@@ -726,69 +745,53 @@ off (`instant`). It is the highest-call-volume path per user, about 0.08
 credits a suggestion and a few hundred suggestions an hour of steady writing
 (`todo-ghost-text.md`).
 
-Open quiz parts are graded by typesafe.ai's Jev (`server/internal/jev`, model
-pinned to `jev-1.13.0`, key `JEV_TYPESAFE_API_KEY`), which Go calls directly:
-it is not an EliteLLM provider and has no registry row (migration `0050`
-dropped the `quiz` slot). `POST /api/quizzes/{id}/grade` (signed in) and
-`POST /api/public/quizzes/{token}/grade` (anonymous, through the site Worker)
-take one question's part ids and answers only; the server loads the marking
-scheme from the stored quiz, so neither grades arbitrary text. One Jev request
-per answered open part, five at a time; any failure fails that check and the
-learner checks again. Jev costs $0.042 per million input tokens and nothing for
-output, so grading is **recorded, never charged**: signed-in requests write one
-`usage_events` row (surface `quiz`, provider `typesafe`, `credit_micros` 0,
-`units` = graded parts, `metadata.costMicroUsd`), and the author's
-`POST /api/questions/computation-check` writes one per check. Attempt points
-stay on the quiz snapshot for the taker and are not a trusted score.
+Open quiz parts signed in are graded on the `grading` slot's pin, OpenRouter's
+`deepseek/deepseek-v4.1-flash-1017` on its default route (migration `0153`; Epo
+2026-11-04), through the pipeline's `POST /grade`
+(`pipeline/pipeline/retrieval/grading.py`). The server loads the marking scheme
+from the stored quiz, so no endpoint grades arbitrary text. Drawn parts go the
+same way with their marking image, so the slot requires `vision` (M4, Epo
+2026-11-07; `models.slotRequirements`). One call per answered
+open or drawn part, ten at a time per submission, waiting in the model's line. Each is
+**charged** to whoever started the job (Epo 2026-11-03): the learner for a check
+of their own practice, and for an assignment's answers the member attempting
+(Epo 2026-11-08, superseding the workspace owner), about 32 credits a 40-part
+paper (surface `quiz`). A part that fails, or every part when there is nothing to
+pay with, stays "Not marked" and is not retried; closed parts still mark and a
+submission never fails for it. On an assignment the part keeps why (`aiError`:
+`credits` or `error`), which the owner's row shows as No credits or Grade Error.
+
+An uploaded answer paper goes through the pipeline's `POST /paper`
+(`pipeline/pipeline/retrieval/paper.py`, todo-file-submissions.md M and 5a) on
+the same slot and spend session. Its files' pages run on in order (a PDF's pages,
+an image as one page, a text or Office file as its indexed text on one page), at
+most `PAPER_MAX_PAGES` (15, Epo's figure held; more is a 422 `too_many_pages`).
+One read call (prompt R, reasoning off, every page at 1,024 px) gives each part's
+pages and each closed part's answer; an answer on no pages is dropped. Open and
+drawing parts with pages are then graded four to a call, concurrently, on the
+union of their pages at 1,568 px under `SYSTEM_PROMPT` + `DRAWN_SECTION` + P1 + B,
+thinking when a part has working. A failed read fails the request; a failed batch
+leaves only its parts with `error` `credits` (the session's credits ran out) or
+`error`. Given `pages`, there is no read and only those parts are graded. R, P1
+and B are Epo's word for word (2026-11-08).
+
+A shared page marks no open answer, so a visitor's check there calls no model and
+costs nothing, signed in or out (Epo 2026-11-05, Q640 B;
+[question-bank.md](question-bank.md)). The author's
+`POST /api/questions/computation-check` stays on typesafe.ai's Jev
+(`server/internal/jev`, model pinned to `jev-1.13.0`, key `JEV_TYPESAFE_API_KEY`),
+writing one `usage_events` row per check (surface `quiz`, provider `typesafe`,
+`credit_micros` 0). Attempt points stay on the quiz snapshot
+for the taker and are not a trusted score.
 
 A signed-in user's open parts are capped at 2,000 per UTC day
 (`grading_usage`, `store.SignedInGradingPartsPerDay`), shared by quiz
 attempts, review checks, bank checks and computation checks (one part each).
-Parts are reserved before any Jev call and stay counted when grading fails;
+Parts are reserved before any model call and stay counted when grading fails;
 past the cap the API answers 429 `grading_limit` and closed-only attempts are
 still graded.
 
-Anonymous grading has no actor, so it is kept in `anonymous_grading_usage` per
-UTC day, salted client-address hash (HMAC with `SHARE_LINK_SECRET`; an IPv6
-address by its /56) and the random id the browser keeps in IndexedDB. The
-share token is verified before the body is read. Parts are counted before any
-Jev call and stay counted when grading fails. Caps: 300 graded parts per
-address hash per day (generous because a classroom shares one IP) and 50,000
-per day overall; over either, the API answers 429 `anonymous_grading_limit`
-and the page asks the visitor to sign in. There is no per-shared-item cap:
-each signed-out answer check carries a Cloudflare Turnstile token instead (Epo
-2026-10-24, Q243, Q271), since an address-rotating client defeats any per-item
-or per-address count. A shared page runs at most one widget (managed mode, a
-challenge only when Cloudflare asks), rendered at the first signed-out check
-and solved again only when a check asks, never in the background (it renders
-with `refresh-expired: never`, Q350, and `refresh-timeout: manual`, so a
-timed-out interactive challenge waits for the visitor). Answers are checked
-one question at a time, and the widget sits under the Check button that asks,
-rendering again under another question's Check when that one asks; a captcha
-refusal shows under that Check too. Its slot shows while a solve runs (the invisible widget
-takes no room, and its solve needs a rendered container) and is hidden once
-the token settles or the interaction ends, which clears the widget's success
-box. While Cloudflare shows a challenge the hint "Complete the challenge below
-to check your answer." shows above it (Epo 2026-10-25, Q372; `src/share/TurnstileCheck.tsx`). A check stops waiting for its token after
-15 s, a clock that stops while an interactive challenge shows, so the check
-waits until the challenge is solved or errors; the API's refusal of an empty
-token shows the failed-check copy (Epo 2026-10-24, Q309;
-`src/share/turnstile.ts`, loaded only on a shared quiz or a shared note's
-quiz). The API verifies it with siteverify (5 s timeout) after the share
-token's check and before grading (`checkCaptcha`, `server/internal/httpapi/
-turnstile.go`): a missing or refused token, or one solved on a host other
-than the environment's app hosts (the hosts of `APP_URL`,
-`CORS_ALLOWED_ORIGINS` and `COLLABORATION_ALLOWED_ORIGINS`; not checked in
-development and e2e, whose test keys name no app host), answers 403
-`captcha_failed`, and a siteverify that cannot answer 503
-`captcha_unavailable`, refusing rather than skipping the check; the page shows
-both under the question's Check (Q308). A deployed gateway refuses Cloudflare's published
-test secrets at boot, and an empty app host list, which would check no host
-(Q350; `turnstileHosts`, `server/cmd/api/main.go`). Signed-in checks take no token, a signed-in
-visitor's check of a quiz embedded in a shared note included (Q311). Setup: [deployment-runbook.md](deployment-runbook.md) §2.5. The local id
-is reporting only, because the client chooses it. Rows older than 30 days are pruned by the API's
-maintenance loop. No browser fingerprinting is used.
-The visitor's grading post goes straight to `/api/public/.../grade`, so it
+A shared page's check goes straight to `/api/public/.../grade`, so it
 carries the visitor's own address and takes the anonymous class (60/minute
 per address) rather than the AI class, whose 15/minute burst would stop a
 classroom sharing one IP. The site Worker's own reads of `/api/public/`
@@ -821,8 +824,11 @@ peak price on its own API, $0.30 / $0.006 / $1.20 per million, Epo's rate
 InferenceNet, version 7 at this rate on DeepSeek's API and version 8 at
 300 / 8 / 1400 on the Morph-then-Cloudflare route), OpenRouter
 DeepSeek V4 Flash 0731 42 / 12 / 1056 (Reka's list price, its first route,
-decision 2026-10-20), V4.1 Flash 1017 160 / 16 / 1000 (InferenceNet's list
-price, its first route, decision 2026-10-21), MiniMax 3.1 Flash 300 / 30 /
+decision 2026-10-20), V4.1 Flash 1017 200 / 20 / 1200 for every use (Epo
+2026-11-04: the highest of its providers' list prices in each column,
+Cloudflare's $0.10 input and $0.60 output and Wafer's $0.010 cached input;
+160 / 16 / 1000, InferenceNet's list price, from decision 2026-10-21; migration
+0141 seeds a fresh database's row at it), MiniMax 3.1 Flash 300 / 30 /
 1200 (Together's list price, which DigitalOcean matches, 2026-10-24), embedding 40,
 reranker 200 (Alibaba qwen3-rerank's $0.10, migration 0134).
 While there is no production data these values are set directly in the UAT
@@ -1212,7 +1218,9 @@ back in line; a Stop ends that wait at once; a second busy answer shows the
 error (Epo 2026-10-29 and its review). One chat call can so wait about 180 s
 at worst: a call slot, the line, then the retry's line. Other interactive
 calls (generate, the editor AI routes, ghost text, and embeddings and reranks
-inside a chat's tools) get two attempts inside three seconds and then fail closed as
+inside a chat's tools) wait in their model's line as long as a chat call (60
+s; a rerank only its search's 5 s), but a busy provider answer gets two attempts
+inside three seconds and then fails closed as
 `provider_busy` (HTTP 503
 carrying `retryAfterSeconds`, with a `Retry-After` header on the ghost-text
 route; generate answers through Huma, which sets no header, so
@@ -1227,13 +1235,22 @@ minutes; past that the call raises `ProviderBusy` so the job re-pends without sp
 `Retry-After` else 30 s; the synthesized client hint never feeds the
 job backoff), after which the file fails as `provider_busy` (a busy summary
 instead leaves the descriptor a missing part; agentic-retrieval, "Parts").
-Waiting at a capped model's gate spends the same budget. Within those attempts
+Waiting in a capped model's line spends the same budget. Within those attempts
 the summary, standalone image caption and VLM page calls also retry a
 transient error (5xx, a connection reset) and an empty
 or cut-off answer (settled, so its tokens are billed), and end at once on a
 definitive client error (400, 401, 403, 404, 422; parts design Q7).
-Chat planning retries any pre-byte failure under that policy, each failed
-attempt closed at once as above. A failure after the first provider chunk —
+Chat planning retries any pre-byte failure but a timeout under that policy,
+each failed attempt closed at once as above. **No interactive call retries a
+timeout** (Epo 2026-11-04): for chat, generate, the editor AI routes, ghost
+text and search's embeddings and reranks, a provider call that times out (no
+first event, silence, the whole-call bound), a wait in a model's line or for a
+call slot that runs out, and the gateway's 90 s pipeline timeout each end the
+call, and neither Go nor the browser sends it again (`models.timed_out`,
+`accounting.GateFull`). Ingest keeps its retries (AGENTS.md): its summary,
+caption and page-read calls take a timeout, and a line wait that ran out, as
+another attempt within their budget, and a failed job runs again within its
+attempts. A failure after the first provider chunk —
 even if the browser has not received SSE yet — is final for that response and
 is not retried; its call settles the usage the stream sent, or is abandoned. Settlement retries retain the same call id and in-memory receipt
 across transient database or gateway failures until it applies or its stored
@@ -1673,7 +1690,7 @@ orders of magnitude. Listing workspaces touches one index. A chat turn gets
 12 responses before its first write, 4 tool calls per response and 160 per
 turn (`pipeline/pipeline/retrieval/limits.py`). Provider completion,
 compaction, embedding, and cumulative input counts are telemetry. AI routes
-(`/chat/stream`, `/generate`, question checks (`/check`: a
+(`/chat/stream`, `/generate`, Make a quiz's start (`/extractions`), question checks (`/check`: a
 quiz's, a review session's, the bank's, one question each; Epo 2026-10-25
 keeps them here, since a learner does not check 15 questions a minute) and
 `/computation-check`) are 200/hour with burst 15, plus
@@ -1693,8 +1710,9 @@ input (`/api/workspaces/{id}/voice-transcriptions`) has its own class, 60/hour
 with burst 6 (`ai_rate_limited` when spent): a few recordings a minute from a
 person talking, apart from the chat allowance the turns they send then use.
 Starting a review session (`GET /api/workspaces/{id}/review`, which reads and
-scores every quiz and set in scope) has its own class, 60/hour with burst 10;
-continuing one is not counted.
+scores every quiz and set in scope) and its start dialog's question count
+(`GET /api/workspaces/{id}/study/question-count`, the same reads) have their own
+class, 60/hour with burst 10; continuing one is not counted.
 Credits remain the money bound; these limits only stop abuse patterns.
 
 The rate-limit audit (Epo 2026-10-24) added these classes:
@@ -1734,8 +1752,8 @@ address, so the Worker signs it: `X-Capy-Share-Read: {unix}.{address}.
 when the header verifies for that path within a minute of its clock and the
 address parses as an IP (`ratelimit.signedVisitor`); an unsigned, forged,
 stale or other-path claim counts by the request's own address. A visitor's
-direct read and the Worker's read for them share the bucket. Signed-out
-grading posts keep the anonymous class and their daily caps. At the edge,
+direct read and the Worker's read for them share the bucket. A shared page's
+checks keep the anonymous class. At the edge,
 the shared pages (`/share/`, `/w/`) get a Managed Challenge past 600
 requests a minute per address (Epo 2026-10-24, Q324;
 [deployment-runbook.md](deployment-runbook.md) § rate limiting rules). Workers Cache entries are
@@ -1743,7 +1761,7 @@ unchanged (each query string keeps its own).
 
 Signed-out callers are keyed by `CF-Connecting-IP`, an IPv6 address by its
 /56 and IPv4 by the address (`obs.ClientAddress`; Epo 2026-10-24, Q246): the
-anonymous limiter, signed-out grading's allowance and signed-out share reads. `Retry-After` is rounded up, so a client that
+anonymous limiter and signed-out share reads. `Retry-After` is rounded up, so a client that
 waits exactly that long gets through.
 
 **Waiting instead of an immediate 429** (Epo 2026-10-24, Q268;
@@ -1759,7 +1777,7 @@ within 10 s:
   turn with an in-stream `ai_rate_limited` error. A stop ends the wait. The
   base bucket never waits.
 - An answer check (a quiz attempt, the review and bank checks, the
-  computation check, a signed-out grade) waits for every bucket it spends
+  computation check, a shared page's check) waits for every bucket it spends
   behind its normal spinner, then is graded or answers 429.
 
 Every other limited route answers 429 at once, and nothing retries a 429
@@ -1770,7 +1788,7 @@ AI process slot is the other half of the contract: it sends
 `{"type":"phase","phase":"waiting_capacity"}` while it waits (up to 60 s, Q293) and
 ends the stream with the in-stream `provider_busy` error when the wait runs
 out. The chat trace shows both phases as the same row, the thinking hourglass
-with "Waiting" (Epo 2026-10-24, Q300: limit and captcha copy says what the
+with "Waiting" (Epo 2026-10-24, Q300: limit copy says what the
 user sees and can do, not slots, limiters or vendors).
 
 **Never limited:** `/webhooks/*`. Stripe and Clerk deliver subscription and
@@ -1833,72 +1851,102 @@ picture decodes run on a pool of two threads of their own
 ([agentic-retrieval.md](agentic-retrieval.md#process-capacity)).
 
 **Per-model outbound concurrency** bounds what reaches a provider.
-`model_capacities` stores `concurrency_total` and `interactive_reserve` per
-provider/model, independently of versioned `model_configs`. Ops exposes
-both required fields in the model form, including for existing embedding models;
-capacity-only edits do not create a catalog version. A row's capacity is keyed
-on its catalog identity, shared across its versions: GLM uses
-`zai:glm-5.3-flash` (earlier `relace:`, `tencent:` and `deepinfra:` rows are
-history and unused). Each environment's database holds its own limits; no
-capacity values are seeded across environments, so the `zai` GLM capacity row
-must be created in Ops before GLM traffic.
+`model_capacities` stores `concurrency_total` per provider/model,
+independently of versioned `model_configs`. Ops exposes the required field in
+the model form, including for existing embedding models; capacity-only edits
+do not create a catalog version. A row's capacity is keyed on its catalog
+identity, shared across its versions: GLM uses `zai:glm-5.3-flash` (earlier
+`relace:`, `tencent:` and `deepinfra:` rows are history and unused). Each
+environment's database holds its own limits; no capacity values are seeded
+across environments, so the `zai` GLM capacity row must be created in Ops
+before GLM traffic.
 An enabled platform model missing capacity or a provider credential has a
 clickable warning icon in the registry. It opens a dialog listing the missing
 configuration for that model.
 
-Interactive callers may use the whole total, ingest callers total minus the
-reserve. Require total > 0 and 0 <= reserve < total. Every admission attempt reads
-the capacity row with `FOR SHARE` in the transaction that creates the pre-call
+**One line per model** (Epo 2026-11-04). The total is the model's whole
+capacity, shared by every use with no reserve: when one use has more requests
+it simply gets more. Require total > 0. Every admission attempt reads the
+capacity row with `FOR SHARE` in the transaction that creates the pre-call
 `provider_calls` row and takes its `provider_capacity_leases` lease. Capacity
-updates wait for an admission transaction to finish; subsequent attempts see the
-committed limits immediately, without a restart or the catalog's ten-minute poll.
-The app and ingest hosts share the lease table. Lowering a limit leaves existing
-calls running and blocks new admissions until usage falls below the new limit.
-Missing capacity raises an explicit configuration error before a call row or
-provider request is created. A full gate polls with jitter within the call budget,
-then fails as `provider_busy` (`accounting.GateFull`). A chat call instead
-waits in its model's line in the retrieval process (`limits.ModelQueue`, Epo
-2026-10-29): it goes straight through when nobody waits and the gate has room;
-otherwise it waits behind the calls already waiting, with the waiting status,
-and only the head of the line tries the gate, polling, woken at once when a
-call on that model ends in this process (`models._open_in_line`). A call in
-line gives back its process call slot, and the head takes one again before it
-tries the gate, so a full model never fills the 64 slots other models and
-routes need. Past the turn's 60 s it fails as `provider_busy`; a Stop or a
-dropped hop leaves the line and starts nothing. Leases use the call id and receipt deadline and are
-released when the call ends. The VLM read of text-less document pages has a
-gate of its own: its leases use the fixed key `vlm_page` with a limit of
-`CAPY_VLM_PAGE_CAPACITY` across every worker (40 in production since 2026-10-29, 20 in UAT and
-local) in place of the captioning row, so those
-reads need no `model_capacities` row and do not count against GLM's ingest
-share.
+updates wait for an admission transaction to finish; subsequent attempts see
+the committed limits immediately, without a restart or the catalog's
+ten-minute poll. Lowering a limit leaves existing calls running and blocks new
+admissions until usage falls below the new limit. Missing capacity raises an
+explicit configuration error before a call row or provider request is
+created.
 
-Before enabling traffic, configure the environment's limits in Ops. The approved
-production values are GLM 150/125 and Qwen embedding 200/80; local development
-keeps GLM at 8/4. The opt-in `deploy/model-capacities.sql` fills only missing
-rows: DeepSeek Flash 40/0 (on DeepSeek's API, whose account allows 2500; chat and Generate only, so no reserve, Epo 2026-10-29), GLM 150/125 (still keyed `zai/glm-5.3-flash`),
-OpenRouter DeepSeek V4 Flash 0731 32/0 (ingest-only, so no interactive
-reserve) and V4.1 Flash 1017 40/20 (ghost text up to 40, captions up to 20;
-page reads lease the `vlm_page` gate instead, Epo 2026-10-29; UAT and local
-8/4),
-MiniMax 3.1 Flash 16/15 (chat only, so all but one call reserved for it; Together and DigitalOcean each held 16
-calls at once in the 2026-10-30 probe), Qwen
-embedding 200/80 (total/interactive reserve). Existing settings remain, so an
-environment that already has rows changes them in Ops.
-DeepSeek and DeepInfra totals follow their published account/model concurrency
-limits; the reserves are application policy. GLM's 150 calls in flight with 125
-reserved for interactive use (decision 2026-10-21): DigitalOcean held 150 in
-flight for 66 s with no error and a first-token p95 of 2.2 s, and answered 250
-at once, but half of those waited past the 15 s first-event bound. Ingest uses
-no GLM. 1017's 76/56 (decision 2026-10-28, raised from 64/0 when chat and
-ghost text joined captions): InferenceNet answered 128 page reads at once and
-Cloudflare 64, and a ghost-text probe held 64 calls in flight at about 5,000
-a minute with no 429. Migration `0097` (2026-10-20) copied an existing
-`relace/glm-5.3-flash` row to `zai/glm-5.3-flash` capped at 48/40; the relace
-and `tencent` rows are history. GLM 429s appear under Health "Busy models". An interactive
-429 fails at once with the busy message when its `Retry-After` is past the 3 s
-interactive retry budget; ingest calls wait and retry within their 120 s budget. See the script for assumptions and
-official sources; split capacities when environments share a provider account.
+A call goes straight through, lease and row in one transaction, only when the
+gate has room and nobody waits in the model's line. Otherwise it waits its turn
+in that line, which every caller shares: chat, generate, the editor's AI and
+ghost text, embeddings and reranks, and the ingest calls on the ingest host.
+The line lives in Postgres (`provider_capacity_waiters`, migration `0144`), so
+the app and ingest hosts share it as they share the leases. Each waiting call
+has a row naming its requester, the user (`user:<id>`) or, for an ingest
+session, the job (`job:<session>`); every lease names its requester too.
+Turns go round-robin by requester: a call's turn is its requester's leases on
+the gate plus its place among that requester's waiting calls, ties in arrival
+order, and the free units go to the first calls (`db.admit_line`, under the
+model-wide lock). So a 40-part grading run or a big ingest job holding the gate
+cannot crowd out one ghost-text call: that call, its user's first, comes
+before the job's next one, and two sessions of one user count as one
+requester. Each call is one request, every chat turn after a tool call too.
+
+In each process one pump per model (`limits.ModelLine`) asks for the turns of
+all of that process's waiting calls at once: every 0.1-0.3 s, at once when a
+call on the model ends there, and when a call leaves. A turn's lease is
+granted under the call id in the same statement that removes its row, and the
+call then opens its `provider_calls` row; a call that fails before that frees
+the lease. The pump renews its rows every 2 s and a row lives 6 s, so the calls
+of a process that died stop holding turns within seconds. A call waiting in
+line gives back its process call slot (review M2) and takes one again, in the
+slots' own order, when its turn comes. A chat call shows the waiting status
+meanwhile and leaves the line on Stop or a dropped hop, starting nothing.
+
+The wait is bounded as chat's always was: an interactive call waits up to
+`CHAT_SLOT_WAIT_S` (60 s), past its three-second busy-retry budget; a rerank
+only its search's 5 s, after which the search keeps fused order; an ingest
+call its 120 s retry budget, after which the job re-pends as before. Past the
+bound the call fails as `provider_busy` (`accounting.GateFull`); an
+interactive call, chat included, is not tried again. Waiting in line is not a retry: the line
+holds the call before anything is sent. The Go
+gateway's pipeline client allows a synchronous call 90 s (`syncTimeout`: the
+line's 60 s plus the 30 s it had before), so a generate or ghost-text request
+that waited out the line answers `provider_busy` instead of a timeout. A call
+with no deadline (an audio transcription task) is busy at once when it cannot
+go straight through.
+
+Leases use the call id and receipt deadline and are released when the call
+ends. The VLM read of text-less document pages has no gate of its own (Epo
+2026-11-04, replacing the `vlm_page` gate and `CAPY_VLM_PAGE_CAPACITY`): it
+leases the captioning model's row and waits in that model's line, round-robin
+by job, with ghost text, captions and every other call on it. One job still
+sends at most `CAPY_VLM_PAGES_PER_JOB` reads at once.
+
+Before enabling traffic, configure the environment's limits in Ops. The opt-in
+`deploy/model-capacities.sql` fills only missing rows: DeepSeek Flash 40 (on
+DeepSeek's API, whose account allows 2500; chat and Generate only, Epo
+2026-10-29), GLM 150 (still keyed `zai/glm-5.3-flash`), OpenRouter DeepSeek V4
+Flash 0731 32 and V4.1 Flash 1017 84 (Epo 2026-11-04, raised from 40 with 20
+kept for interactive calls: Wafer took 100 grading calls at once with no error,
+its latency doubling from about 60 in flight, and InferenceNet takes the
+overflow past about 100; the shared OpenRouter account's 100 is split
+production 84, UAT 16, local development not counted; page reads count in it),
+MiniMax 3.1 Flash 16 (chat only; Together and DigitalOcean each held
+16 calls at once in the 2026-10-30 probe), Qwen embedding 200, Alibaba
+qwen3-rerank 64. Existing settings remain, so an environment that already has
+rows changes them in Ops. DeepSeek and DeepInfra totals follow their published
+account/model concurrency limits. GLM's 150 (decision 2026-10-21):
+DigitalOcean held 150 in flight for 66 s with no error and a first-token p95 of
+2.2 s, and answered 250 at once, but half of those waited past the 15 s
+first-event bound. Migration `0097` (2026-10-20) copied an existing
+`relace/glm-5.3-flash` row to `zai/glm-5.3-flash` capped at 48; the relace and
+`tencent` rows are history. GLM 429s appear under Health "Busy models". An
+interactive 429 fails at once with the busy message when its `Retry-After` is
+past the 3 s interactive retry budget; ingest calls wait and retry within
+their 120 s budget. See the script for assumptions and official sources; split
+capacities when environments share a provider account (the OpenRouter account
+is shared, and sized for production).
 Migration `0010` copies any configured Flash Vision capacity to its new identity.
 Health shows attempts abandoned on a provider 429, 503 or 529
 answer per provider and model over the last hour, and the usage explorer's

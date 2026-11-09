@@ -4,10 +4,12 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { SessionItemReason } from './sessionItemReason.ts';
 
 export interface SessionItem {
   /** @minLength 1 */
   itemId: string;
   /** @minLength 1 */
   materialId: string;
+  reason?: SessionItemReason;
 }

@@ -2,16 +2,34 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it, vi } from 'vitest';
 import { createPresenceStore } from '@/features/collaboration/presence';
+import { m } from '@/i18n';
 import { createEditorStatusStore, Header } from './CenterContentHeader';
 
 const HIDDEN = /\bhidden\b/;
+// The hidden chip as a button the keyboard reaches.
+const CHIP_BUTTON = /<button[^>]*data-testid="hidden-chip"[^>]*type="button"/;
 
 // The ⋮'s props, and where the header sends the reader.
 const header = vi.hoisted(() => ({
   actions: [] as Record<string, unknown>[],
+  hidden: false,
   isPayer: false,
   navigate: vi.fn(),
+  setHidden: vi.fn(),
 }));
+// The hidden chip's props, from the real chip.
+const chips = vi.hoisted(() => [] as { onShow?: () => void }[]);
+vi.mock('@/features/workspace/HiddenChip', async (original) => {
+  const real =
+    await original<typeof import('@/features/workspace/HiddenChip')>();
+  return {
+    ...real,
+    HiddenChip: (props: { onShow?: () => void }) => {
+      chips.push(props);
+      return real.HiddenChip(props);
+    },
+  };
+});
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => header.navigate,
 }));
@@ -23,6 +41,7 @@ vi.mock('@/api/hooks', () => ({
   }),
   useFile: () => ({
     data: {
+      hidden: header.hidden,
       id: 'f1',
       isPayer: header.isPayer,
       kind: 'office',
@@ -30,11 +49,8 @@ vi.mock('@/api/hooks', () => ({
     },
   }),
   useMaterials: () => ({ data: [], isPending: false }),
+  useSetHidden: () => ({ mutate: header.setHidden }),
   useWorkspace: () => ({ data: undefined }),
-}));
-vi.mock('@/features/study/studyItems', () => ({
-  useStudyActions: () => ({ menuItems: () => [], set: () => undefined }),
-  useStudyStates: () => ({ enabled: false, states: new Map() }),
 }));
 vi.mock('@/features/workspace/ContentActions', () => ({
   ContentActions: (props: Record<string, unknown>) => {
@@ -53,12 +69,10 @@ function render(menuShown: boolean, standalone = false) {
   return renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
       <Header
-        chapters={[]}
         editorStatus={editorStatus}
         imageZoom={1}
         isFullscreen={false}
         item={{ id: 'f1', kind: 'file' }}
-        materialMode={null}
         menuBar={<span data-testid="menu-slot" />}
         menuShown={menuShown}
         onDeleted={() => undefined}
@@ -71,11 +85,11 @@ function render(menuShown: boolean, standalone = false) {
           workspaceName: 'Biology',
         }}
         onImageZoomChange={() => undefined}
-        onMaterialModeChange={() => undefined}
         onToggleFullscreen={() => undefined}
         presence={createPresenceStore()}
         readOnly={false}
         standalone={standalone}
+        topics={[]}
         workspaceId="ws_1"
       />
     </QueryClientProvider>
@@ -120,7 +134,7 @@ it('offers the payer Move to… and opens the moved file in its new workspace', 
     search: { file: 'f1' },
     to: '/workspaces/$workspaceId',
   });
-  // Another editor keeps the chapter-only Move.
+  // Another editor keeps the topic-only Move.
   header.isPayer = false;
   header.actions.length = 0;
   render(true);
@@ -130,4 +144,40 @@ it('offers the payer Move to… and opens the moved file in its new workspace', 
   header.actions.length = 0;
   render(true, true);
   expect(header.actions[0]?.canMoveTo).toBe(true);
+});
+
+/** An item hidden from members says so after its name (X2, Epo 2026-11-03). */
+it('marks an item hidden from members beside its name', () => {
+  const label = m.content_hidden_from_members();
+  header.hidden = true;
+  const html = render(true);
+  header.hidden = false;
+  expect(html).toContain(label);
+  expect(html.indexOf('Deck.pptx')).toBeLessThan(html.indexOf(label));
+});
+
+/** A visible item has a Hide file button where the chip goes (Epo 2026-11-06). */
+it('hides a visible item from the button after its name', () => {
+  const html = render(true);
+  expect(html.indexOf('Deck.pptx')).toBeLessThan(
+    html.indexOf(m.content_hide_file())
+  );
+  expect(html).toContain('sm:inline-flex');
+});
+
+/** Its owners and editors show it to members from the chip, as from the ⋮
+ * menu's Unhide file (Epo 2026-11-03): a button, so the keyboard reaches
+ * it, that says what it does. */
+it('shows a hidden item to members from its chip', () => {
+  header.hidden = true;
+  chips.length = 0;
+  const html = render(true);
+  header.hidden = false;
+  expect(html).toMatch(CHIP_BUTTON);
+  expect(html).toContain(m.content_unhide_file());
+  chips[0]?.onShow?.();
+  expect(header.setHidden).toHaveBeenCalledWith(
+    { hidden: false, id: 'f1', type: 'file' },
+    { onError: expect.any(Function) }
+  );
 });

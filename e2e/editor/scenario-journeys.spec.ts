@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { expect, type Page, test } from '@playwright/test';
-import { officeEditMenu, saveOffice } from '../helpers/office';
+import { officeEditMenu, officeFrame, saveOffice } from '../helpers/office';
 import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 
@@ -27,6 +27,7 @@ test.beforeEach(async ({ page }) => {
 test('a ready file offers Clone and its copy opens in the workspace', async ({
   page,
 }) => {
+  await showPanelView(page, m.workspace_tab_files());
   const row = page.locator('[data-workspace-content-row="file:f_1"]');
   await row.hover({ timeout: 30_000 });
   await row.getByRole('button', { name: m.a11y_open_menu() }).click();
@@ -35,7 +36,9 @@ test('a ready file offers Clone and its copy opens in the workspace', async ({
     .getByRole('dialog', { name: m.action_clone_file() })
     .getByRole('button', { exact: true, name: m.action_clone() })
     .click();
-  await expect(page).toHaveURL(/\/workspaces\/ws_bio\?file=(?!f_1\b)\w+$/);
+  await expect(page).toHaveURL(
+    /\/workspaces\/ws_bio\?file=(?!f_1\b)\w+(&panel=\w+)?$/
+  );
 });
 
 test('a material cloned into a workspace opens there, not on the standalone page', async ({
@@ -51,9 +54,9 @@ test('a material cloned into a workspace opens there, not on the standalone page
     .getByRole('dialog', { name: m.action_clone_note() })
     .getByRole('button', { exact: true, name: m.action_clone() })
     .click();
-  // The copy lands in the source's workspace, with no chapter by default.
+  // The copy lands in the source's workspace, with no topic by default.
   await expect(page).toHaveURL(
-    /\/workspaces\/ws_bio\?material=(?!mat_note_1\b)\w+$/
+    /\/workspaces\/ws_bio\?material=(?!mat_note_1\b)\w+(&panel=\w+)?$/
   );
 });
 
@@ -86,7 +89,7 @@ test('one click fails a real source save and retry preserves the mounted editor'
   // editor keeps its edits.
   const banner = page.getByTestId('save-banner');
   await expect(banner.getByText(m.editor_save_delayed())).toBeVisible();
-  await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
+  await expect(page.locator('[data-toast]')).toHaveCount(0);
   await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
     'data-save-state',
     'unsaved'
@@ -198,15 +201,15 @@ test('a refused DOCX save keeps the edit copyable until Reload', async ({
     refuseNextSourceSave('mock-scenario-docx');
   });
   await saveOffice(page, 'docx');
-  const banner = page.getByTestId('save-banner');
+  const frame = officeFrame(page);
+  const banner = frame.getByTestId('save-banner');
   await expect(banner).toHaveAttribute('data-kind', 'refused');
   await expect(
-    page.getByRole('button', {
+    frame.getByRole('button', {
       exact: true,
       name: m.source_edit_download_draft(),
     })
   ).toHaveCount(0);
-  const frame = page.frameLocator('iframe[src*="office-runtime"]');
   await expect
     .poll(() =>
       frame
@@ -268,9 +271,9 @@ test('a refused PPTX save keeps the slide text copyable until Reload', async ({
     refuseNextSourceSave('mock-scenario-pptx');
   });
   await saveOffice(page, 'pptx');
-  const banner = page.getByTestId('save-banner');
+  const frame = officeFrame(page);
+  const banner = frame.getByTestId('save-banner');
   await expect(banner).toHaveAttribute('data-kind', 'refused');
-  const frame = page.frameLocator('iframe[src*="office-runtime"]');
   const input = frame.getByTestId('pptx-text-input');
   await expect(input).toHaveAttribute('readonly', '');
   const copied = frame
@@ -317,10 +320,8 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
     await launch(page, `office-${format}-save`);
     const frame = page.locator('iframe[src*="office-runtime"]');
     const mounted = await frame.elementHandle();
-    await expect(page.getByTestId('save-banner')).toHaveAttribute(
-      'data-kind',
-      'delayed'
-    );
+    const strip = officeFrame(page).getByTestId('save-banner');
+    await expect(strip).toHaveAttribute('data-kind', 'delayed');
     await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
       'data-save-state',
       'unsaved'
@@ -330,7 +331,7 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
       'data-save-state',
       'saved'
     );
-    await expect(page.getByTestId('save-banner')).toHaveCount(0);
+    await expect(strip).toHaveCount(0);
     expect(await mounted!.evaluate((node) => node.isConnected)).toBe(true);
     const mode = page.getByRole('button', { name: m.material_mode() });
     await expect(page).toHaveURL(/mode=edit/);
@@ -344,7 +345,7 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
     await expect(mode).toHaveAttribute('aria-pressed', 'true', {
       timeout: 30_000,
     });
-    await expect(officeEditMenu(page, format)).toBeVisible({ timeout: 30_000 });
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
 
     const panel = page.getByTestId('mock-scenario-panel');
     await panel.evaluate((node: HTMLDetailsElement) => {
@@ -402,7 +403,7 @@ test('page retry and form retry remain usable after the one-click fault retires'
   ).toBeVisible();
   await expect(
     page
-      .locator('[data-sonner-toast]')
+      .locator('[data-toast]')
       .getByText(m.source_import_failed(), { exact: true })
   ).toBeVisible();
 });
@@ -456,7 +457,7 @@ test('a new scenario cancels a pending auth request', async ({ page }) => {
       () => performance.getEntriesByName('scenario-auth-aborted').length
     )
   ).toBe(1);
-  await expect(page).toHaveURL(/\/workspaces\/ws_scenarios$/);
+  await expect(page).toHaveURL(/\/workspaces\/ws_scenarios(\?panel=\w+)?$/);
 });
 
 test('Office export failure keeps the editable iframe in Edit and draft download works', async ({
@@ -465,9 +466,11 @@ test('Office export failure keeps the editable iframe in Edit and draft download
   await launch(page, 'office-runtime-error');
   const frame = page.locator('iframe[src*="office-runtime"]');
   const mounted = await frame.elementHandle();
-  // The iframe's own error text never renders; the host shows its copy.
+  const inFrame = officeFrame(page);
+  // The iframe's own error text never renders; the host shows its copy, under
+  // the ribbon.
   await expect(
-    page.getByRole('alert').getByText(m.source_edit_save_failed())
+    inFrame.getByRole('alert').getByText(m.source_edit_save_failed())
   ).toBeVisible();
   await expect(page).toHaveURL(/mode=edit/);
   await expect(
@@ -479,7 +482,7 @@ test('Office export failure keeps the editable iframe in Edit and draft download
     )
   ).toBe('edit');
   const downloadReady = page.waitForEvent('download');
-  await page
+  await inFrame
     .getByRole('button', { exact: true, name: m.source_edit_download_draft() })
     .click();
   const download = await downloadReady;
@@ -533,8 +536,17 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
       page.getByRole('dialog', { name: m.workspace_storage_near_self_title() })
     ).toBeVisible();
     await page.keyboard.press('Escape');
+    // A workspace opens on its Dashboard, which shows the status as a small banner.
+    await page.goto('/workspaces/ws_scenarios');
+    const banner = page.getByTestId('account-status-banner');
+    await expect(banner).toHaveAttribute('data-kind', 'near', {
+      timeout: 30_000,
+    });
+    await expect(
+      banner.getByText(m.account_banner_near_title(), { exact: true })
+    ).toBeVisible();
     await page.goto('/');
-    await expect(page.getByTestId('storage-usage-meter')).toBeVisible({
+    await expect(page.getByTestId('account-status-banner')).toBeVisible({
       timeout: 30_000,
     });
     await expect(
@@ -543,9 +555,7 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
 
     // Full storage: the note is view-only while organizing stays in its menu.
     await launch(page, 'account-storage-full');
-    await page.goto(
-      '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
-    );
+    await page.goto('/workspaces/ws_scenarios?material=mock-scenario-note');
     await expect(
       page.getByText('A note for trying application errors.')
     ).toBeVisible({ timeout: 30_000 });
@@ -563,9 +573,7 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
     await page.keyboard.press('Escape');
 
     await launch(page, 'account-over-quota');
-    await page.goto(
-      '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
-    );
+    await page.goto('/workspaces/ws_scenarios?material=mock-scenario-note');
     await expect(
       page.locator('[data-storage-status="frozen-self"]')
     ).toBeVisible({ timeout: 30_000 });
@@ -610,10 +618,15 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
         page.getByRole('button', { exact: true, name })
       ).toHaveAttribute('data-storage-status', status);
     }
-    // A frozen viewer edits nowhere, a healthy owner's workspace included.
-    await page.goto(
-      '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
+    // The Dashboard's banner names the viewer's own frozen account there too.
+    await page.goto('/workspaces/ws_scenarios');
+    await expect(page.getByTestId('account-status-banner')).toHaveAttribute(
+      'data-kind',
+      'frozen',
+      { timeout: 30_000 }
     );
+    // A frozen viewer edits nowhere, a healthy owner's workspace included.
+    await page.goto('/workspaces/ws_scenarios?material=mock-scenario-note');
     await expect(
       page.getByText('A note for trying application errors.')
     ).toBeVisible({ timeout: 30_000 });
@@ -622,9 +635,7 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
     // The owner's full storage makes its note view-only for a member, under
     // the storage strip (uploader pays).
     await launch(page, 'workspace-owner-full');
-    await page.goto(
-      '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
-    );
+    await page.goto('/workspaces/ws_scenarios?material=mock-scenario-note');
     await expect(page.getByText(m.storage_payer_full_strip())).toBeVisible({
       timeout: 30_000,
     });
@@ -633,9 +644,7 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
     // A frozen owner's note is view-only for a member too, with no storage
     // strip (frozen is not full).
     await launch(page, 'workspace-owner-frozen');
-    await page.goto(
-      '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
-    );
+    await page.goto('/workspaces/ws_scenarios?material=mock-scenario-note');
     await expect(
       page.getByText('A note for trying application errors.')
     ).toBeVisible({ timeout: 30_000 });
@@ -712,7 +721,10 @@ test('a frozen account or full storage mid-edit drops open editors to view and d
   await expect(
     page.getByRole('textbox', { name: m.source_edit_raw() })
   ).toHaveCount(0);
-  await expect(page.getByRole('alert')).toHaveCount(0);
+  // Nothing beside the frozen account's entry toast, an error toast's alert.
+  await expect(
+    page.getByRole('alert').and(page.locator(':not([data-toast])'))
+  ).toHaveCount(0);
   await expect(page.getByText(savedMarker)).toBeVisible();
   await expect(page.getByText(marker)).toHaveCount(0);
   await expect(page.locator('[data-source-status]')).not.toHaveAttribute(

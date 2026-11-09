@@ -157,6 +157,21 @@ func TestDeepSeekDefaultReasoningHigh(t *testing.T) {
 	}
 }
 
+// TestExtractionDefaultsToTheOpenRouterVisionPin: Make a quiz runs on its own
+// slot, pinned to OpenRouter's DeepSeek V4.1 Flash 1017 with vision and mid
+// thinking, never direct DeepSeek (Epo 2026-11-03, migration 0141).
+func TestExtractionDefaultsToTheOpenRouterVisionPin(t *testing.T) {
+	_, reg := openRegistry(t)
+	cfg, err := reg.Default(context.Background(), SlotExtraction)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ProviderSlug != "openrouter" || cfg.ModelSlug != "deepseek/deepseek-v4.1-flash-1017" ||
+		!slices.Contains(cfg.Capabilities, CapabilityVision) || !slices.Contains(cfg.ThinkingLevels, ThinkingMid) {
+		t.Fatalf("extraction default = %+v", cfg)
+	}
+}
+
 func TestEmbeddingDimRequiresADeclaredWidth(t *testing.T) {
 	_, reg := openRegistry(t)
 	ctx := context.Background()

@@ -56,6 +56,8 @@ test('workspace creation and editing share icon and description fields', async (
   });
   await submit.click();
   await expect(create).toHaveCount(0);
+  // A phone opens settings on its tab list; General shows at once from here.
+  await page.setViewportSize({ height: 720, width: 1280 });
   const card = page
     .getByRole('link', { name: /Metadata workspace/ })
     .locator('..');
@@ -146,7 +148,7 @@ test('workspace cards open settings and statistics without entering the workspac
   await page.getByRole('menuitem', { name: m.workspace_settings() }).click();
   const settings = page.getByRole('dialog', { name: m.workspace_settings() });
   await expect(settings).toBeVisible();
-  await expect(page).toHaveURL(/\/workspaces$/);
+  await expect(page).toHaveURL(/\/$/);
   await settings
     .getByRole('tab', { exact: true, name: m.workspace_stats_title() })
     .click();
@@ -155,7 +157,7 @@ test('workspace cards open settings and statistics without entering the workspac
   ).toBeVisible();
   // The five statistics, each a label followed by its number.
   await expect(settings).toMatchAriaSnapshot(`
-    - paragraph: ${JSON.stringify(m.quiz_col_chapters())}
+    - paragraph: ${JSON.stringify(m.quiz_col_topics())}
     - paragraph: /^\\d+$/
     - paragraph: ${JSON.stringify(m.nav_files())}
     - paragraph: /^\\d+$/
@@ -232,7 +234,7 @@ test('a route chunk answered with HTML shows the update fallback inside the shel
   page,
 }) => {
   await context.route(
-    (url) => url.pathname === '/src/routes/Dashboard.tsx',
+    (url) => url.pathname === '/src/routes/Workspaces.tsx',
     (route) =>
       route.fulfill({
         body: '<div id="root">Loading...</div>',
@@ -254,7 +256,7 @@ test('workspace sorting picks an order and reverses it from the active option', 
 }) => {
   await page.goto('/workspaces');
   const trigger = page.locator('button[data-sort]');
-  await expect(trigger).toHaveAttribute('data-sort', 'created', {
+  await expect(trigger).toHaveAttribute('data-sort', 'accessed', {
     timeout: 30_000,
   });
   await expect(trigger).toHaveAttribute('data-order', 'descending');
@@ -276,14 +278,14 @@ test('workspace sorting picks an order and reverses it from the active option', 
     await menu.getByRole('menuitem', { exact: true, name: label }).click();
     await closed();
   };
-  // Created is the default (2026-09-21), so it needs no click first.
+  // Last accessed is the default (2026-11-05), so it needs no click first.
   for (const [sort, label] of [
-    ['created', m.workspaces_sort_created()],
     ['accessed', m.workspaces_sort_accessed()],
-    ['chapters', m.workspaces_sort_chapters()],
+    ['created', m.workspaces_sort_created()],
+    ['topics', m.workspaces_sort_topics()],
     ['files', m.workspaces_sort_files()],
   ] as const) {
-    if (sort !== 'created') await choose(label);
+    if (sort !== 'accessed') await choose(label);
     await expect(trigger).toHaveAttribute('data-sort', sort);
     await expect(trigger).toHaveAttribute('data-order', 'descending');
     await expect(cards.first()).toBeVisible();

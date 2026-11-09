@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test';
 import type { Material, SourceFile } from '../../src/api/types';
 import { expect, test } from '../fixtures/actors';
 import { apiEndsWith, waitForApi } from '../helpers/api';
+import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 
 // The clone dialog for one file or material. Who may clone and what a copy
@@ -9,6 +10,7 @@ import { m } from '../i18n';
 
 /** A row's ⋮ menu in the workspace Files panel. */
 async function openRowMenu(page: Page, name: string) {
+  await showPanelView(page, m.workspace_tab_files());
   const row = page
     .locator('[data-workspace-file-tree]')
     .getByRole('link', { name })
@@ -61,7 +63,9 @@ test('a file clones into another workspace under a new name', async ({
   const copy = (await response.json()) as SourceFile;
   expect(copy.workspaceId).toBe(target.id);
   expect(copy.name).toBe('copied-notes.md');
-  await expect(ownerPage).toHaveURL(`/workspaces/${target.id}?file=${copy.id}`);
+  await expect(ownerPage).toHaveURL(
+    new RegExp(`/workspaces/${target.id}\\?file=${copy.id}(&panel=\\w+)?$`)
+  );
 });
 
 test('a read-only member clones a note to No workspace from its row menu', async ({

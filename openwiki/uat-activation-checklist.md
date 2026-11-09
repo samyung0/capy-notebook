@@ -88,6 +88,12 @@ On the app host, as root (set up in
   `curl -sI https://uat-deploy.capynotebook.com` answers with the Access login
   redirect or a 403.
 
+In Ops, DeepSeek V4.1 Flash 1017 (`openrouter` /
+`deepseek/deepseek-v4.1-flash-1017`) is at 16 in flight, UAT's share of the
+OpenRouter account (production 84; Epo 2026-11-04), and the ingest host and
+Ops run the app's release SHA: from migration `0144` they deploy together
+([deployment runbook §0](deployment-runbook.md#0-release-flow-and-branch-policy)).
+
 If the gateway is unhealthy, check these before anything else:
 
 | Symptom | Cause |
@@ -96,7 +102,7 @@ If the gateway is unhealthy, check these before anything else:
 | Gateway exits with `unknown EMAIL_BACKEND "resend"` or `cloudflare email token is required` | GitHub `uat` still has the Resend settings. Set `EMAIL_BACKEND=cloudflare` and `CLOUDFLARE_EMAIL_TOKEN` in GitHub `uat` (deployment runbook §12.5) and redeploy. |
 | Gateway refuses to start with Clerk configured | `CLERK_SECRET_KEY` or `CLERK_WEBHOOK_SECRET` is blank, or `CLERK_WEBHOOK_SECRET` is not a Svix signing secret (`whsec_` followed by base64). Both are required unless `AUTH_DISABLED` or `E2E_AUTH` is on. |
 | Variables changed but the container behaves as before | The host runs the env file of the last deploy (`/opt/capy/app/current/stack.env`). Run Deploy UAT rather than restarting a container. |
-| A platform model call fails with `model capacity is not configured` | Apply the Ops grants, then enter UAT’s own total and interactive reserve for each active model in Ops. |
+| A platform model call fails with `model capacity is not configured` | Apply the Ops grants, then enter UAT’s own total for each active model in Ops. |
 
 ## 2. Clerk webhook
 
@@ -317,7 +323,7 @@ Clerk development instance. Point a local gateway at the UAT database only with
   the UAT bucket host, the bank asset base, `https://img.clerk.com`,
   `https://i.ytimg.com` and a `report-uri` on the Sentry security endpoint
   with `sentry_environment=uat`. On `/` and the deep link the same header
-  also carries `script-src 'self' https://clerk.uat.capynotebook.com/npm/@clerk/ …`. If
+  also carries a `script-src` naming `https://clerk.uat.capynotebook.com/npm/@clerk/`. If
   `/` and the deep link lack it while the summary has it, Workers Assets does
   not apply `_headers` to the SPA fallback: tell the Editor session (runbook
   §2.4 has the fallback plan). A `curl -sI` on an `/assets/…` chunk and on
@@ -335,8 +341,7 @@ Clerk development instance. Point a local gateway at the UAT database only with
 - The script policy on the Worker's pages (runbook §2.4): `curl -s -o
   /dev/null -D -` on a `/share/notes/…`, a `/share/quizzes/…`, a `/w/…`
   summary and a missing `/w/x` returns an enforced `Content-Security-Policy`
-  whose `script-src` is `'self'`,
-  `https://clerk.uat.capynotebook.com/npm/@clerk/` and, when UAT has a
+  whose `script-src` is `'self'` and, when UAT has a
   PostHog key, the `eu-assets.i.posthog.com` `/static/` and
   `/array/{key}/config.js` paths, with no `'unsafe-inline'`, no
   `'unsafe-eval'` and no `sha256-` hash, then `script-src-attr 'none'`,
@@ -348,8 +353,8 @@ Clerk development instance. Point a local gateway at the UAT database only with
   with a formula, a diagram, an embedded quiz, an interactive block and a
   YouTube block (play it), an audio block (play it: its
   `/p/notes/…/assets/…` request answers `302` to the bucket with
-  `Cache-Control: no-store`), a shared quiz and a shared flashcard set (Clerk
-  loads on those two), and a summary: each comes to life, and the console
+  `Cache-Control: no-store`), a shared quiz and a shared flashcard set, and a
+  summary: each comes to life, and the console
   shows no `Refused to` message. A `Refused to` message names what the
   policy blocked: send it, with the URL, to the Editor session.
 - `COLLABORATION_UAT_PUBLICATION_HOLD` is `true` in GitHub `uat` and

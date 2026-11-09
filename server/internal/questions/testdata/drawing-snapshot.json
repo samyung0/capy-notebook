@@ -1,0 +1,46 @@
+{
+  "name": "drawing-snapshot",
+  "valid": true,
+  "policy": {
+    "snapshot": true
+  },
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Drawn answers."
+      }
+    ],
+    "parts": [
+      {
+        "id": "p1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Draw it."
+          }
+        ],
+        "answer": {
+          "type": "drawing"
+        },
+        "marks": 2,
+        "markscheme": [
+          {
+            "text": "Shape right",
+            "marks": 1
+          },
+          {
+            "text": "Labelled",
+            "marks": 1
+          }
+        ],
+        "solution": [],
+        "awarded": 1,
+        "itemAwards": [1, 0]
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

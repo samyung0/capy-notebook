@@ -1161,6 +1161,37 @@ def active_local_spool_keys(cur) -> set[str]:
 # ------------------------------------------------ provider capacity leases
 
 
+# Whom a call waits for in its model's line (Epo 2026-11-04): the ingest job
+# its session was opened for, or else the user. ``s`` is the call's session.
+_REQUESTER = (
+    "CASE WHEN s.surface = 'ingest' THEN 'job:' || s.id "
+    "ELSE 'user:' || s.actor_user_id END"
+)
+
+
+def _sweep_expired_capacity(cur, provider: str) -> None:
+    """Expired leases and waiting calls go before the model-wide lock, each by
+    whichever admission locks it first."""
+    for table in ("provider_capacity_leases", "provider_capacity_waiters"):
+        cur.execute(
+            f"""
+            DELETE FROM {table} WHERE id IN (
+              SELECT id FROM {table}
+               WHERE provider=%s AND expires_at<=now()
+               FOR UPDATE SKIP LOCKED)
+            """,
+            (provider,),
+        )
+
+
+def _lock_capacity(cur, provider: str) -> None:
+    # A statement of its own: the next statement's snapshot is taken after it.
+    cur.execute(
+        "SELECT pg_advisory_xact_lock(hashtext(%s))",
+        (f"provider-capacity:{provider}",),
+    )
+
+
 def acquire_provider_capacity(
     cur,
     *,
@@ -1169,47 +1200,141 @@ def acquire_provider_capacity(
     units: int,
     capacity: int,
     lease_seconds: int,
+    session_id: str = "",
 ) -> bool:
-    """Atomically reserve weighted capacity across every process.
+    """Atomically reserve weighted capacity across every process, when nobody
+    waits in the gate's line (``admit_line``). ``session_id`` names the
+    requester the lease counts for.
 
     The model-wide lock covers one statement (Epo 2026-10-24, Q298): an insert
     that counts the unexpired leases it sees once the lock is held, so the
-    count stays exact. Expired leases are swept before the lock, each by
-    whichever admission locks it first."""
+    count stays exact."""
+    _sweep_expired_capacity(cur, provider)
+    _lock_capacity(cur, provider)
     cur.execute(
-        """
-        DELETE FROM provider_capacity_leases WHERE id IN (
-          SELECT id FROM provider_capacity_leases
-           WHERE provider=%s AND expires_at<=now()
-           FOR UPDATE SKIP LOCKED)
-        """,
-        (provider,),
-    )
-    # A statement of its own: the insert's snapshot is taken after the lock.
-    cur.execute(
-        "SELECT pg_advisory_xact_lock(hashtext(%s))",
-        (f"provider-capacity:{provider}",),
-    )
-    cur.execute(
-        """
-        INSERT INTO provider_capacity_leases (id,provider,units,expires_at)
-        SELECT %s,%s,%s,now()+make_interval(secs => %s)
+        f"""
+        INSERT INTO provider_capacity_leases (id,provider,units,expires_at,requester)
+        SELECT %s,%s,%s,now()+make_interval(secs => %s),
+               COALESCE((SELECT {_REQUESTER} FROM provider_sessions s
+                          WHERE s.id=%s), '')
          WHERE (SELECT COALESCE(SUM(units),0) FROM provider_capacity_leases
                  WHERE provider=%s AND expires_at>now()) + %s <= %s
+           AND NOT EXISTS (SELECT 1 FROM provider_capacity_waiters
+                            WHERE provider=%s AND expires_at>now())
         """,
-        (lease_id, provider, units, lease_seconds, provider, units, capacity),
+        (
+            lease_id,
+            provider,
+            units,
+            lease_seconds,
+            session_id,
+            provider,
+            units,
+            capacity,
+            provider,
+        ),
     )
     return cur.rowcount == 1
 
 
-def provider_capacity_used(cur, provider: str) -> int:
-    """Unexpired units for one key, read without the advisory lock."""
+def provider_capacity_open(cur, provider: str, capacity: int) -> bool:
+    """Room for one more call with nobody waiting, read without the lock."""
     cur.execute(
-        "SELECT COALESCE(SUM(units),0) FROM provider_capacity_leases "
-        "WHERE provider=%s AND expires_at>now()",
-        (provider,),
+        """
+        SELECT (SELECT COALESCE(SUM(units),0) FROM provider_capacity_leases
+                 WHERE provider=%s AND expires_at>now()) < %s
+           AND NOT EXISTS (SELECT 1 FROM provider_capacity_waiters
+                            WHERE provider=%s AND expires_at>now())
+        """,
+        (provider, capacity, provider),
     )
-    return int(cur.fetchone()[0])
+    return bool(cur.fetchone()[0])
+
+
+def admit_line(
+    cur,
+    *,
+    provider: str,
+    capacity: int,
+    store: list[tuple[str, str, int]],
+    waiting: list[str],
+    gone: list[str],
+    ttl_s: int,
+) -> set[str]:
+    """One round of a process's line at a gate (Epo 2026-11-04).
+
+    ``gone`` calls left the line: their rows go, with any lease granted to
+    them as they left. ``store`` (call id, session id, lease seconds) puts
+    calls in the line or keeps their rows alive for ``ttl_s``. Then, under the
+    model-wide lock, every live waiting call across processes is ranked
+    round-robin by requester: a call's round is its requester's leases on the
+    gate plus its place among that requester's waiting calls, ties in arrival
+    order. The free units go to the first calls; this answers those among
+    ``waiting`` (this process's), each now holding a one-unit lease under its
+    call id. A call whose earlier grant committed but whose answer was lost
+    comes back to the line holding that lease, and is granted it again."""
+    if gone:
+        cur.execute("DELETE FROM provider_capacity_waiters WHERE id = ANY(%s)", (gone,))
+        cur.execute("DELETE FROM provider_capacity_leases WHERE id = ANY(%s)", (gone,))
+    if store:
+        # A microsecond apart, a batch keeps the order it was sent in.
+        cur.execute(
+            f"""
+            INSERT INTO provider_capacity_waiters
+              (id, provider, requester, lease_seconds, enqueued_at, expires_at)
+            SELECT w.id, %s, {_REQUESTER}, w.lease_seconds,
+                   now() + w.n * interval '1 microsecond',
+                   now() + make_interval(secs => %s)
+              FROM unnest(%s::text[], %s::text[], %s::int[])
+                     WITH ORDINALITY AS w(id, session_id, lease_seconds, n),
+                   provider_sessions s
+             WHERE s.id = w.session_id
+            ON CONFLICT (id) DO UPDATE SET expires_at = EXCLUDED.expires_at
+            """,
+            (
+                provider,
+                ttl_s,
+                [row[0] for row in store],
+                [row[1] for row in store],
+                [row[2] for row in store],
+            ),
+        )
+    if not waiting:
+        return set()
+    _sweep_expired_capacity(cur, provider)
+    _lock_capacity(cur, provider)
+    cur.execute(
+        """
+        WITH held AS (
+          SELECT requester, SUM(units) AS units FROM provider_capacity_leases
+           WHERE provider = %(provider)s AND expires_at > now()
+           GROUP BY requester
+        ), queued AS (
+          SELECT w.id, w.enqueued_at,
+                 COALESCE(h.units, 0) + row_number() OVER (
+                   PARTITION BY w.requester ORDER BY w.enqueued_at, w.id) AS turn
+            FROM provider_capacity_waiters w
+            LEFT JOIN held h ON h.requester = w.requester
+           WHERE w.provider = %(provider)s AND w.expires_at > now()
+        ), placed AS (
+          SELECT id, row_number() OVER (ORDER BY turn, enqueued_at, id) AS place
+            FROM queued
+        ), granted AS (
+          DELETE FROM provider_capacity_waiters w
+           USING placed p
+           WHERE p.id = w.id AND w.id = ANY(%(waiting)s)
+             AND p.place <= %(capacity)s - (SELECT COALESCE(SUM(units), 0) FROM held)
+          RETURNING w.id, w.provider, w.requester, w.lease_seconds
+        )
+        INSERT INTO provider_capacity_leases (id, provider, units, expires_at, requester)
+        SELECT id, provider, 1, now() + make_interval(secs => lease_seconds), requester
+          FROM granted
+        ON CONFLICT (id) DO UPDATE SET expires_at=EXCLUDED.expires_at
+        RETURNING id
+        """,
+        {"provider": provider, "capacity": capacity, "waiting": waiting},
+    )
+    return {str(row[0]) for row in cur.fetchall()}
 
 
 def release_provider_capacity(cur, lease_id: str) -> None:

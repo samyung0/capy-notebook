@@ -299,10 +299,10 @@ async def test_search_lists_unshown_unindexed_edits_after_its_passages(monkeypat
     ctx.pending_sources.read_ids = set()
     ctx.hinted = {("f_1", "h")}
     ctx._scope_outline = {
-        "chapters": [],
+        "topics": [],
         "files": [
-            {"id": "f_1", "name": "bio.pdf", "chapter_id": None, "chunks": 3},
-            {"id": "f_2", "name": "chem.pdf", "chapter_id": None, "chunks": 3},
+            {"id": "f_1", "name": "bio.pdf", "topic_id": None, "chunks": 3},
+            {"id": "f_2", "name": "chem.pdf", "topic_id": None, "chunks": 3},
         ],
     }
     result = await tools._search_workspace({"query": "enzyme"}, ctx)

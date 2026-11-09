@@ -5,15 +5,14 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { Privacy } from './privacy.ts';
-import type { WorkspaceSummaryChapter } from './workspaceSummaryChapter.ts';
 import type { WorkspaceSummaryFile } from './workspaceSummaryFile.ts';
+import type { WorkspaceSummaryTopic } from './workspaceSummaryTopic.ts';
 
 export interface WorkspaceSummary {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   author: string;
   authorAvatarUrl?: string;
-  chapters: WorkspaceSummaryChapter[];
   description: string;
   /** Unfiled files */
   files: WorkspaceSummaryFile[];
@@ -21,4 +20,5 @@ export interface WorkspaceSummary {
   name: string;
   privacy: Privacy;
   tags: string[];
+  topics: WorkspaceSummaryTopic[];
 }

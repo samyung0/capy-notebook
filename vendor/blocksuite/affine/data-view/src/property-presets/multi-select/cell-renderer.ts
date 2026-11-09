@@ -1,3 +1,4 @@
+import { MultiSelectIcon } from '@blocksuite/icons/lit';
 import { popupTargetFromElement } from '@blocksuite/affine-components/context-menu';
 import { computed } from '@preact/signals-core';
 import { html } from 'lit/static-html.js';
@@ -87,7 +88,7 @@ export class MultiSelectCell extends BaseCellRenderer<
 
 export const multiSelectPropertyConfig =
   multiSelectPropertyModelConfig.createPropertyMeta({
-    icon: createIcon('MultiSelectIcon'),
+    icon: createIcon(MultiSelectIcon),
     cellRenderer: {
       view: createFromBaseCellRenderer(MultiSelectCell),
     },

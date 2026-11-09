@@ -52,13 +52,9 @@ export function initErrorReporting(): void {
 }
 
 // React 19 routes caught render errors here, including our own boundaries.
-export const reportReactError = Sentry.reactErrorHandler(
-  import.meta.env.DEV
-    ? (error, errorInfo) => {
-        console.error('React error', error, errorInfo.componentStack);
-      }
-    : undefined
-);
+export const reportReactError = Sentry.reactErrorHandler((error, errorInfo) => {
+  console.error('React error', error, errorInfo.componentStack);
+});
 
 let lastIdentityKey: string | undefined;
 

@@ -23,6 +23,7 @@ topic ids on 2026-10-14 (bench/rag/reports/2026-10-14-library-flow.md).
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -329,11 +330,27 @@ def _validate_roles(roles: list[str] | None) -> list[str]:
     return roles
 
 
+# The figures a model may be offered, ``f`` being the figure row: ``shown``
+# in SQL, the withheld page aside (library_figures refuses those by name).
+# A box needs some area and must not lie inside an excluded figure's box (a
+# whole-page record has none; '{0,0,1000,1000}' is WHOLE_PAGE). Shared by search hits and excerpt reads, so a
+# listed figure can be placed.
+_LISTED_FIGURE = """NOT f.excluded AND NOT f.decorative
+  AND f.bbox <> '{0,0,1000,1000}'::int[]
+  AND f.bbox[1] < f.bbox[3] AND f.bbox[2] < f.bbox[4]
+  AND NOT EXISTS (
+    SELECT 1 FROM library_figures x
+    WHERE x.content_id = f.content_id AND x.page = f.page AND x.excluded
+      AND x.bbox <> '{0,0,1000,1000}'::int[]
+      AND x.bbox[1] <= f.bbox[1] AND x.bbox[2] <= f.bbox[2]
+      AND f.bbox[3] <= x.bbox[3] AND f.bbox[4] <= x.bbox[4])"""
+
+
 async def _excerpts(conn: Any, ids: list[str]) -> dict[str, Excerpt]:
     """Excerpts of the books' current versions only, by id. Their figure ids
-    leave out decorative and excluded figures and those boxed as the whole
-    page, which a model never picks, and their context links come with
-    section paths and pages."""
+    leave out the figures the library does not offer (``_LISTED_FIGURE``),
+    which a model never picks, and their context links come with section paths
+    and pages."""
     if not ids:
         return {}
     cur = await conn.execute(
@@ -345,7 +362,9 @@ async def _excerpts(conn: Any, ids: list[str]) -> dict[str, Excerpt]:
                  WHERE NOT EXISTS (
                    SELECT 1 FROM library_figures f
                    WHERE f.content_id = e.content_id AND f.id = u.id
-                     AND (f.excluded OR f.decorative OR f.bbox = %s::int[]))
+                     AND NOT ("""
+        + _LISTED_FIGURE
+        + """))
                  ORDER BY u.n) AS figure_ids,
                (SELECT coalesce(jsonb_agg(jsonb_build_object(
                          'id', u.id, 'section_path', l.section_path, 'pages', l.pages)
@@ -360,7 +379,7 @@ async def _excerpts(conn: Any, ids: list[str]) -> dict[str, Excerpt]:
         JOIN library_books b ON b.id = e.book_id
         WHERE e.id = ANY(%s)
         """,
-        (WHOLE_PAGE, WORKSPACE, ids),
+        (WORKSPACE, ids),
     )
     out = {}
     for row in await cur.fetchall():
@@ -569,11 +588,12 @@ async def read_excerpt(
                 FROM rag_file_contents fc
                 JOIN library_figures f
                   ON f.content_id = fc.content_id AND f.id = ANY(%s)
-                WHERE fc.file_id = %s AND fc.workspace_id = %s
-                  AND NOT f.excluded AND NOT f.decorative AND f.bbox <> %s::int[]
+                WHERE fc.file_id = %s AND fc.workspace_id = %s AND """
+                + _LISTED_FIGURE
+                + """
                 ORDER BY f.page, f.block_index
                 """,
-                (excerpt.figure_ids, excerpt.book_id, WORKSPACE, WHOLE_PAGE),
+                (excerpt.figure_ids, excerpt.book_id, WORKSPACE),
             )
             figures = [dict(row) for row in await cur.fetchall()]
         more = len(rows) > count
@@ -621,7 +641,9 @@ async def read_excerpt(
 class CaptureTarget:
     """What ``capture_library_page`` may render for one excerpt: the book's
     stored object and the pages the excerpt itself (or one of its figures) covers,
-    less the book's withheld pages."""
+    less the withheld pages (the book's, and pages carrying a whole-page
+    excluded figure), and the boxes of excluded figures by page, which a
+    capture paints white (Epo 2026-11-04)."""
 
     excerpt_id: str
     book_id: str
@@ -630,6 +652,7 @@ class CaptureTarget:
     bytes: int
     pages: list[int]
     withheld_pages: list[int]
+    excluded: dict[int, list[list[float]]]
 
 
 async def capture_target(excerpt_id: str) -> CaptureTarget:
@@ -659,7 +682,21 @@ async def capture_target(excerpt_id: str) -> CaptureTarget:
                 (row["content_id"], list(row["figure_ids"])),
             )
             pages.update(int(figure["page"]) for figure in await cur.fetchall())
-    withheld = set(row["withheld_pages"])
+        cur = await conn.execute(
+            "SELECT page, bbox FROM library_figures WHERE content_id = %s AND excluded",
+            (row["content_id"],),
+        )
+        excluded: dict[int, list[list[float]]] = {}
+        withheld = set(row["withheld_pages"])
+        for figure in await cur.fetchall():
+            if list(figure["bbox"]) == WHOLE_PAGE:
+                # No box of its own to paint white: its page is not captured
+                # at all, refused as withheld (Epo 2026-11-04, option 1).
+                withheld.add(int(figure["page"]))
+            else:
+                excluded.setdefault(int(figure["page"]), []).append(
+                    [float(v) for v in figure["bbox"]]
+                )
     return CaptureTarget(
         excerpt_id=excerpt_id,
         book_id=row["book_id"],
@@ -668,6 +705,7 @@ async def capture_target(excerpt_id: str) -> CaptureTarget:
         bytes=int(row["bytes"] or 0),
         pages=sorted(pages - withheld),
         withheld_pages=sorted(withheld),
+        excluded=excluded,
     )
 
 
@@ -689,8 +727,9 @@ class Figure:
     # Its page holds a reprinted text the library withholds.
     withheld: bool
     object_key: str
-    bytes: int
     excerpt_ids: list[str]
+    # The excluded figures' boxes its crop paints white (``blanked``).
+    blank: list[list[float]]
 
 
 async def figures(figure_ids: list[str]) -> dict[str, Figure]:
@@ -702,10 +741,13 @@ async def figures(figure_ids: list[str]) -> dict[str, Figure]:
             SELECT f.id, b.title, f.page, f.bbox, f.label, f.description, f.credit,
                    f.decorative,
                    f.excluded, f.page = ANY(b.withheld_pages) AS withheld,
-                   v.object_key, b.bytes,
+                   v.object_key,
                    ARRAY(SELECT e.id FROM library_excerpts e
                          WHERE e.content_id = f.content_id AND f.id = ANY(e.figure_ids)
-                         ORDER BY e.id) AS excerpt_ids
+                         ORDER BY e.id) AS excerpt_ids,
+                   ARRAY(SELECT x.bbox FROM library_figures x
+                         WHERE x.content_id = f.content_id AND x.page = f.page
+                           AND x.excluded AND x.bbox <> %s::int[]) AS excluded_boxes
             FROM library_figures f
             JOIN rag_file_contents fc
               ON fc.content_id = f.content_id AND fc.workspace_id = %s
@@ -714,15 +756,18 @@ async def figures(figure_ids: list[str]) -> dict[str, Figure]:
               ON v.book_id = b.id AND v.version = b.version
             WHERE f.id = ANY(%s)
             """,
-            (WORKSPACE, list(figure_ids)),
+            (WHOLE_PAGE, WORKSPACE, list(figure_ids)),
         )
         rows = await cur.fetchall()
-    return {
-        row["id"]: Figure(
+    out = {}
+    for row in rows:
+        bbox = [float(v) for v in row["bbox"]]
+        excluded = [[float(v) for v in box] for box in row["excluded_boxes"]]
+        out[row["id"]] = Figure(
             id=row["id"],
             book_title=row["title"],
             page=int(row["page"]),
-            bbox=[float(v) for v in row["bbox"]],
+            bbox=bbox,
             label=row["label"],
             description=row["description"],
             credit=row["credit"],
@@ -730,11 +775,59 @@ async def figures(figure_ids: list[str]) -> dict[str, Figure]:
             excluded=row["excluded"],
             withheld=bool(row["withheld"]),
             object_key=row["object_key"] or "",
-            bytes=int(row["bytes"] or 0),
             excerpt_ids=list(row["excerpt_ids"]),
+            blank=blanked(bbox, excluded),
         )
-        for row in rows
-    }
+    return out
+
+
+def blanked(bbox: list[float], excluded: list[list[float]]) -> list[list[float]]:
+    """The boxes of excluded figures on a figure's page (whole-page records
+    aside) that overlap its box, which its crop paints white (Epo 2026-11-04).
+    Boxes that only touch do not overlap."""
+    x0, y0, x1, y1 = bbox
+    return [b for b in excluded if b[0] < x1 and x0 < b[2] and b[1] < y1 and y0 < b[3]]
+
+
+def shown(
+    decorative: bool,
+    excluded: bool,
+    withheld: bool,
+    bbox: list[float],
+    blank: list[list[float]],
+) -> bool:
+    """Whether the library shows a figure: not decorative or excluded, not on
+    a withheld page, boxed apart from its page with some area, and not inside
+    an excluded figure's box (``blank``), where it would show that image. The
+    loader stores a crop for exactly these."""
+    x0, y0, x1, y1 = bbox
+    return (
+        not (decorative or excluded or withheld)
+        and list(bbox) != WHOLE_PAGE
+        and x0 < x1
+        and y0 < y1
+        and not any(
+            b[0] <= x0 and b[1] <= y0 and x1 <= b[2] and y1 <= b[3] for b in blank
+        )
+    )
+
+
+def figure_key(
+    object_key: str, page: int, bbox: list[float], blank: list[list[float]]
+) -> str:
+    """A figure's stored crop in the knowledge-base bucket (Epo 2026-11-04):
+    ``figures/<pdf sha256>/<page>_<x0>_<y0>_<x1>_<y1>[_<blank digest>].jpg``
+    beside the book's ``books/<pdf sha256>.pdf``. Keyed by box, not id, so a
+    republish that keeps a box keeps its crop; a box is whole numbers and may
+    be negative. The digest of the boxes painted white is part of the key, so
+    a republish that excludes or restores an overlapping figure gets a fresh
+    crop."""
+    sha = object_key.removeprefix("books/").removesuffix(".pdf")
+    key = f"figures/{sha}/{page}_" + "_".join(str(int(v)) for v in bbox)
+    if blank:
+        boxes = sorted({tuple(int(v) for v in b) for b in blank})
+        key += "_" + hashlib.sha256(repr(boxes).encode()).hexdigest()[:12]
+    return key + ".jpg"
 
 
 def excerpt_label(book_title: str, section_path: str) -> str:
