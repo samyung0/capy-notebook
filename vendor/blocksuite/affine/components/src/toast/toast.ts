@@ -7,6 +7,13 @@ import { htmlToElement } from './html-to-element.js';
 
 let ToastContainer: HTMLDivElement | null = null;
 
+// Capy (local change 33): the app shows these in its own toast. BlockSuite's fixed
+// container sits inside the board's page and was cut off there.
+let handler: ((message: string) => void) | null = null;
+export const setToastHandler = (show: (message: string) => void) => {
+  handler = show;
+};
+
 /**
  * @example
  * ```ts
@@ -18,6 +25,10 @@ export const toast = (
   message: string,
   duration = 2500
 ) => {
+  if (handler) {
+    handler(message);
+    return null;
+  }
   if (!ToastContainer) {
     ToastContainer = createToastContainer(editorHost);
   }

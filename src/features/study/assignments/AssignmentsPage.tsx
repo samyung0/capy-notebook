@@ -386,7 +386,9 @@ function StaffList({
 }
 
 function StaffTitle({ row }: { row: Assignment }) {
-  const waiting = row.manage?.toApprove ?? 0;
+  // Waiting answers split into AI-marked (to approve) and not graded (T3).
+  const notGraded = row.manage?.notGraded ?? 0;
+  const waiting = (row.manage?.toApprove ?? 0) - notGraded;
   return (
     <div className="flex min-w-0 items-center gap-2">
       <span className="truncate font-semibold">{row.title}</span>
@@ -398,6 +400,11 @@ function StaffTitle({ row }: { row: Assignment }) {
       {waiting > 0 && (
         <span className="t-meta shrink-0 font-semibold text-tint-warning-fg">
           {m.assignment_to_approve({ count: waiting })}
+        </span>
+      )}
+      {notGraded > 0 && (
+        <span className="t-meta shrink-0 font-semibold text-tint-error-fg">
+          {m.assignment_not_graded({ count: notGraded })}
         </span>
       )}
     </div>
@@ -482,9 +489,13 @@ function MemberList({ workspaceId }: { workspaceId: string }) {
     if (row.kind === 'unmarked')
       return mine.done ? (
         <span className="t-meta font-semibold text-fg-muted">
-          {m.assignment_done()}
+          {row.allowUploads
+            ? m.assignment_col_handed_in()
+            : m.assignment_done()}
         </span>
-      ) : (
+      ) : // One that takes files is handed in from its page (S3); a closed one
+      // takes no tick.
+      row.allowUploads || row.closedAt ? null : (
         <Button
           disabled={ticking}
           onClick={(event) => {
@@ -496,6 +507,12 @@ function MemberList({ workspaceId }: { workspaceId: string }) {
         >
           {m.assignment_mark_done()}
         </Button>
+      );
+    if (mine.done && row.gradesHidden)
+      return (
+        <span className="t-meta inline-flex h-5.5 items-center rounded-md bg-page-hover px-1.75 font-semibold text-fg-secondary text-xs">
+          {m.assignment_submitted()}
+        </span>
       );
     if (mine.done)
       return (

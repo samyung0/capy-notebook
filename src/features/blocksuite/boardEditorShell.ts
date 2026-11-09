@@ -26,6 +26,8 @@ export function openBoardEditor(
     onLeave: () => void;
     /** Escape's own use, if it has one right now. */
     onEscape: () => boolean;
+    /** Delete or Backspace: removes what's selected, true when something was. */
+    onDelete?: () => boolean;
     /** A tool's letter key (`P`), true when it was one. */
     onShortcut?: (key: string) => boolean;
     onUpdate: () => void;
@@ -142,7 +144,9 @@ export function openBoardEditor(
     } else if (command && key === 'z') {
       event.preventDefault();
       gfx.doc.undo();
-    } else if (
+    } else if ((key === 'delete' || key === 'backspace') && hooks.onDelete?.())
+      event.preventDefault();
+    else if (
       !(command || event.altKey || event.shiftKey) &&
       event.code.startsWith('Key') &&
       hooks.onShortcut?.(event.code.slice(3))

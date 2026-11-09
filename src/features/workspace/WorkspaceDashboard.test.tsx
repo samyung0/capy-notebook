@@ -176,10 +176,13 @@ it("lists a class's To do: answers to approve for its owner, nothing when empty"
   expect(render()).not.toContain(m.dashboard_todo());
   page.assignments = [
     {
+      allowUploads: false,
       attempts: 1,
       closed: false,
       draft: false,
+      drawingParts: false,
       files: [],
+      gradesHidden: false,
       id: 'as_1',
       kind: 'marked',
       latePenaltyPct: 0,
@@ -189,7 +192,9 @@ it("lists a class's To do: answers to approve for its owner, nothing when empty"
         assignees: [],
         done: 5,
         marking: 'ai_approve',
-        showAnswers: true,
+        notGraded: 0,
+        showAnswers: 'submitted',
+        showGrades: 'automatic',
         shuffle: false,
         toApprove: 5,
       },

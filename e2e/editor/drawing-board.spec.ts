@@ -260,9 +260,10 @@ test('double click opens the plane: it plots, undoes each click, and Escape leav
   await expect(page.getByRole('button', { name: 'Finish curve' })).toHaveCount(
     0
   );
-  await expect(
-    page.getByRole('button', { name: 'Move the plane' })
-  ).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Select' })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
   await expect.poll(() => marks(page)).toBe(1);
 
   // A point, then the eraser takes it, and undo brings it back.

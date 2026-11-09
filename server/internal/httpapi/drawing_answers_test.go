@@ -66,7 +66,7 @@ func drawingAssignment(t *testing.T, h http.Handler, marking string) string {
 	rec := doReq(t, h, http.MethodPost, ws+"/assignments", "u_owner", map[string]any{
 		"kind": "marked", "title": "Drawn", "quizId": made.ID, "dueAt": time.Now().Add(time.Hour).Format(time.RFC3339),
 		"attempts": 1, "noLate": false, "latePenaltyPct": 0, "assignAll": true, "assignees": []string{}, "draft": false,
-		"marking": marking, "showAnswers": true, "shuffle": false, "files": []any{},
+		"marking": marking, "showAnswers": "submitted", "showGrades": "automatic", "shuffle": false, "files": []any{},
 	})
 	if rec.Code != http.StatusOK && rec.Code != http.StatusCreated {
 		t.Fatalf("create assignment: status = %d body=%s", rec.Code, rec.Body.String())
@@ -231,6 +231,37 @@ func TestDrawnSampleOfAnotherMaterialIsNeverSent(t *testing.T) {
 	}
 	if sent := gradedSamples.Load() - before; sent != 1 {
 		t.Fatalf("the quiz's own sample went %d times, want once", sent)
+	}
+}
+
+// TestAssignmentDrawingSavesPastStorage (Epo 2026-11-08, superseding Q693's
+// refusal): storage never blocks an assignment, so a member at their limit saves
+// a drawing all the same and goes over it, the bytes charged to them.
+func TestAssignmentDrawingSavesPastStorage(t *testing.T) {
+	h, st, _, _ := openGradingAPIWithBlob(t, "full")
+	ctx := context.Background()
+	id := drawingAssignment(t, h, "ai_approve")
+	attempt := startDrawingAttempt(t, h, id, "u_viewer")
+	usage, err := st.StorageUsage(ctx, "u_viewer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var held int64
+	_ = st.Pool().QueryRow(ctx, `SELECT used_bytes FROM user_storage WHERE user_id='u_viewer'`).Scan(&held)
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO user_storage (user_id, used_bytes) VALUES ('u_viewer',$1)
+		ON CONFLICT (user_id) DO UPDATE SET used_bytes=EXCLUDED.used_bytes`, usage.LimitBytes); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = st.Pool().Exec(context.Background(), `UPDATE user_storage SET used_bytes=$1 WHERE user_id='u_viewer'`, held)
+	})
+	expectStatus(t, doReq(t, h, http.MethodPut, "/api/assignment-attempts/"+attempt+"/drawings/draw-a", "u_viewer", drawingDone(t)), http.StatusOK, "Done at the limit")
+	after, err := st.StorageUsage(ctx, "u_viewer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.UsedBytes <= usage.LimitBytes {
+		t.Fatalf("used %d after saving at the limit %d, want over it", after.UsedBytes, usage.LimitBytes)
 	}
 }
 

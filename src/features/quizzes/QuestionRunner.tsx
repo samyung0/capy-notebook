@@ -35,6 +35,7 @@ import {
   isAuthoredPart,
   type LearnerPart,
   type LearnerQuestion,
+  multipleAnswers,
   type TextBlock,
 } from '@/features/questions/types';
 import { m } from '@/i18n';
@@ -548,8 +549,10 @@ function PartRunner({
     review && isAuthoredPart(part) ? (
       <PartResult answered={answered} detail={detail} part={part} />
     ) : null;
-  // Several options may be correct: options toggle like checkboxes.
+  // One correct option is a single choice: picking one replaces the other.
+  // Several toggle like checkboxes, under a hint saying so.
   if (answer.type === 'mcq') {
+    const multiple = multipleAnswers(answer);
     const correct = (i: number) =>
       key?.type === 'mcq' && key.correct.includes(i);
     const chosen = indices ?? [];
@@ -574,6 +577,11 @@ function PartRunner({
               })
             : undefined
         )}
+        {multiple && !review && (
+          <p className="mb-2 text-fg-muted text-sm">
+            {m.question_ui_multiple_answers()}
+          </p>
+        )}
         {apart && <h4 className={SUBHEAD}>{m.question_ui_your_answer()}</h4>}
         <div className={answerBoxesClass(twoColumns)}>
           {answer.options.map((option, i) => {
@@ -586,7 +594,11 @@ function PartRunner({
                 label={optionLetter(i)}
                 onClick={() =>
                   onChange(
-                    selected ? chosen.filter((n) => n !== i) : [...chosen, i]
+                    multiple
+                      ? selected
+                        ? chosen.filter((n) => n !== i)
+                        : [...chosen, i]
+                      : [i]
                   )
                 }
                 ownOnly={apart}

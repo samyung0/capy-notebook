@@ -81,6 +81,74 @@ export function AttemptResults({
   assignment: Assignment;
   attempt: AssignmentAttempt;
 }) {
+  if (attempt.gradesHidden)
+    return <HiddenResults attempt={attempt} postedBy={assignment.postedBy} />;
+  return <MarkedResults assignment={assignment} attempt={attempt} />;
+}
+
+/** Results while grades wait for release (S7): the questions with whether
+ * each was answered, and no marks, outcomes, comments or keys. */
+function HiddenResults({
+  attempt,
+  postedBy,
+}: {
+  attempt: AssignmentAttempt;
+  postedBy: string;
+}) {
+  const questions = attempt.questions as AssignmentGradedQuestion[];
+  const answered = (q: AssignmentGradedQuestion) =>
+    q.parts.some((part) => {
+      const value = attempt.answers[part.id];
+      return value !== undefined && value !== null && value !== '';
+    });
+  return (
+    <PracticeFrame>
+      <div className="flex w-full flex-col">
+        <BackToAssignments />
+        <h1 className="t-page-title mt-3">{attempt.title}</h1>
+        <p className="t-meta mt-0.5 text-fg-muted">
+          {m.assignment_submitted_on({
+            date: attempt.submittedAt ? dayLabel(attempt.submittedAt) : '',
+          })}
+        </p>
+        <p className="t-meta mt-4 rounded-lg bg-page-hover px-3 py-2.5 text-fg-secondary">
+          {postedBy
+            ? m.assignment_grades_hidden_note({ name: postedBy })
+            : m.assignment_grades_hidden_note_anon()}
+        </p>
+        <ol className="mt-4 border-divider border-t">
+          {questions.map((question, i) => (
+            <li
+              className="grid min-h-10 grid-cols-[34px_minmax(0,1fr)_auto] items-center gap-2.5 border-divider border-b"
+              key={question.id}
+            >
+              <span className="t-meta font-bold text-fg-muted">{`Q${i + 1}`}</span>
+              <span className="truncate">
+                <TextView
+                  className="whitespace-nowrap"
+                  text={questionLine(question as Question)}
+                />
+              </span>
+              <span className="t-meta text-fg-muted">
+                {answered(question)
+                  ? m.assignment_answered()
+                  : m.assignment_blank()}
+              </span>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </PracticeFrame>
+  );
+}
+
+function MarkedResults({
+  assignment,
+  attempt,
+}: {
+  assignment: Assignment;
+  attempt: AssignmentAttempt;
+}) {
   const staff = !!assignment.manage;
   const { dialog, start, starting } = useAssignmentStart(
     assignment.workspaceId

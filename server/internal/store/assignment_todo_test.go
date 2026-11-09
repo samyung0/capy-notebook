@@ -39,7 +39,7 @@ func TestListTodo(t *testing.T) {
 		t.Fatalf("audience = %v / %v, err %v", members, audience, err)
 	}
 
-	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -63,22 +63,33 @@ export function AssignmentSubmitted({
           </p>
         )
       )}
-      <p className="mt-4 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 font-medium">
-        <span>
-          {m.assignment_mark_so_far()}{' '}
-          <b className="font-bold">{markText(attempt.mark, decided)}</b>
-        </span>
-        {attempt.late && <LateBadge penaltyPct={attempt.latePenaltyPct} />}
-      </p>
-      {attempt.waitingAnswers > 0 && (
-        <p className="t-meta mt-2 text-fg-secondary">
-          {attempt.waitingAnswers === 1
-            ? m.assignment_waiting_one({ name: assignment.postedBy })
-            : m.assignment_waiting({
-                count: attempt.waitingAnswers,
-                name: assignment.postedBy,
-              })}
+      {attempt.gradesHidden ? (
+        // Show grades Manual (S7): no mark until staff release it.
+        <p className="mt-4 font-medium">
+          {assignment.postedBy
+            ? m.assignment_grade_waits({ name: assignment.postedBy })
+            : m.assignment_grade_waits_anon()}
         </p>
+      ) : (
+        <>
+          <p className="mt-4 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 font-medium">
+            <span>
+              {m.assignment_mark_so_far()}{' '}
+              <b className="font-bold">{markText(attempt.mark, decided)}</b>
+            </span>
+            {attempt.late && <LateBadge penaltyPct={attempt.latePenaltyPct} />}
+          </p>
+          {attempt.waitingAnswers > 0 && (
+            <p className="t-meta mt-2 text-fg-secondary">
+              {attempt.waitingAnswers === 1
+                ? m.assignment_waiting_one({ name: assignment.postedBy })
+                : m.assignment_waiting({
+                    count: attempt.waitingAnswers,
+                    name: assignment.postedBy,
+                  })}
+            </p>
+          )}
+        </>
       )}
       <div className="mt-5 flex items-center gap-6">
         <UnderlineLink

@@ -1313,9 +1313,35 @@ the person attempting (see [study-progress.md](study-progress.md) and
   assignment's frozen copy; otherwise the part stays Not marked.
 - **Deleting.** A payer deletes their marked drawings from Files › Canvas
   (`DELETE /api/drawings/{id}`, `DELETE /api/drawings`); one still waiting on
-  marking is not listed and not found. Drawings go with their assignment, with
+  marking is not listed and not found, and an assignment's waits until the
+  assignment has closed and, under Show grades Manual, its grades are released,
+  so staff can still revise marks (Epo 2026-11-08). Drawings go with their assignment, with
   a practice attempt's quiz when it is permanently deleted, and a leaver's
   marked ones go as they leave.
+
+A paper (an assignment answered on paper, migration 0161) is the member's own
+standalone uploads, linked to the attempt by `files.attempt_id`, so a viewer
+member hands one in and no other member sees it. Its member adds, removes and
+orders files while the attempt runs; `GET /api/assignment-attempts/{id}/paper/{fileId}/links`
+signs a file for its member and, once submitted, for the class's owners and
+editors (`PaperFileBlob`); nothing else reads it. The files go with the attempt
+and its assignment (cascade), never list in Files, search, Recent or the trash
+path, and their member deletes them from Files › Submissions under the drawings'
+rule. A frozen account still attempts and submits, drawings and papers included
+(Epo 2026-11-08, O4): an answer is no material it edits.
+
+A hand-in (an unmarked assignment that takes files, migration 0162, mocks S3
+and T2) is the same kind of file, linked by `files.hand_in_assignment_id` to
+the assignment and owned by its member. The member adds and removes files
+(`DELETE /api/assignments/{id}/hand-in/{fileId}`) while the hand-in is open:
+not handed in and the assignment not closed (by hand, or at its due date under
+No late submissions); without No late a due date that passed still takes work,
+which the Members tab shows Late. Hand in (`PUT /api/assignments/{id}/done`)
+needs a file and locks them; Undo hand in reopens them while it is open.
+`GET /api/assignments/{id}/hand-in/{fileId}/links` signs a file for its member
+and, once handed in, for the class's owners and editors (`HandInFileBlob`).
+The files go with the assignment (cascade) and list in Files › Submissions once
+it closes, for the member to delete.
 
 Sources: [drawing routes](../server/internal/httpapi/drawings.go) and
 [drawing store](../server/internal/store/drawings.go).

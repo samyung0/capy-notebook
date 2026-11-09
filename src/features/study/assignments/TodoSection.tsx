@@ -215,8 +215,9 @@ export function TodoRows({
             : null;
         return (
           <Row key={a.id}>
-            {/* Closed work takes no tick (Epo 2026-11-08). */}
-            {a.kind === 'unmarked' && !a.closedAt && (
+            {/* Closed work takes no tick (Epo 2026-11-08); one that takes
+                files is handed in from its page (S3). */}
+            {a.kind === 'unmarked' && !a.closedAt && !a.allowUploads && (
               <span className="grid w-7 shrink-0 justify-items-start pl-1.5">
                 <Checkbox
                   aria-label={a.title}

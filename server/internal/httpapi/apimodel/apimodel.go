@@ -479,10 +479,16 @@ type AssignmentFormReq struct {
 	Assignees []string `json:"assignees" nullable:"false" maxItems:"500"`
 	Draft     bool     `json:"draft"`
 	// Marking of AI-marked parts: ai_approve, ai or manual (Epo 2026-11-06).
-	Marking     string                    `json:"marking" enum:"ai_approve,ai,manual"`
-	ShowAnswers bool                      `json:"showAnswers"`
-	Shuffle     bool                      `json:"shuffle"`
-	Files       []store.AssignmentFileRef `json:"files" nullable:"false" maxItems:"20"`
+	Marking string `json:"marking" enum:"ai_approve,ai,manual"`
+	// ShowAnswers is when members read the keys on their results: after it
+	// closes, right after submitting, or never (Epo 2026-11-08, mock C3).
+	ShowAnswers string `json:"showAnswers" enum:"closed,submitted,never"`
+	// ShowGrades: automatic, or manual until staff release them (mock C4).
+	ShowGrades string `json:"showGrades" enum:"automatic,manual"`
+	Shuffle    bool   `json:"shuffle"`
+	// AllowUploads lets members hand in a paper instead (Epo 2026-11-08).
+	AllowUploads bool                      `json:"allowUploads,omitempty"`
+	Files        []store.AssignmentFileRef `json:"files" nullable:"false" maxItems:"20"`
 }
 
 // GradedQuestion is one checked question with its key and, on each part, the

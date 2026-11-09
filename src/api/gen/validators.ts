@@ -163,11 +163,20 @@ export const GetAssignmentAttemptResponse = zod.object({
   "correct": zod.number(),
   "deadlineAt": zod.iso.datetime({"offset":true}).optional(),
   "drawingImages": zod.boolean(),
+  "gradesHidden": zod.boolean(),
   "id": zod.string(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number(),
   "now": zod.iso.datetime({"offset":true}),
+  "paper": zod.enum(['upload', 'reading', 'read']).optional(),
+  "paperFiles": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "removedAssetIds": zod.array(zod.string()),
   "showAnswers": zod.boolean(),
@@ -285,11 +294,20 @@ export const MarkAssignmentAnswerResponse = zod.object({
   "correct": zod.number(),
   "deadlineAt": zod.iso.datetime({"offset":true}).optional(),
   "drawingImages": zod.boolean(),
+  "gradesHidden": zod.boolean(),
   "id": zod.string(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number(),
   "now": zod.iso.datetime({"offset":true}),
+  "paper": zod.enum(['upload', 'reading', 'read']).optional(),
+  "paperFiles": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "removedAssetIds": zod.array(zod.string()),
   "showAnswers": zod.boolean(),
@@ -303,6 +321,68 @@ export const MarkAssignmentAnswerResponse = zod.object({
   "userName": zod.string(),
   "waitingAnswers": zod.int(),
   "waitingMarks": zod.number()
+})
+
+
+/**
+ * @summary Put a running attempt's paper files in order
+ */
+export const orderPaperFilesPathIdMax = 64;
+
+
+
+export const OrderPaperFilesParams = zod.object({
+  "id": zod.string().max(orderPaperFilesPathIdMax)
+})
+
+export const orderPaperFilesBodyFileIdsMax = 15;
+
+
+
+export const OrderPaperFilesBody = zod.object({
+  "fileIds": zod.array(zod.string()).max(orderPaperFilesBodyFileIdsMax)
+})
+
+export const OrderPaperFilesResponse = zod.void()
+
+
+/**
+ * @summary Remove a file from a running attempt's paper
+ */
+export const removePaperFilePathIdMax = 64;
+
+export const removePaperFilePathFileIdMax = 64;
+
+
+
+export const RemovePaperFileParams = zod.object({
+  "id": zod.string().max(removePaperFilePathIdMax),
+  "fileId": zod.string().max(removePaperFilePathFileIdMax)
+})
+
+export const RemovePaperFileResponse = zod.void()
+
+
+/**
+ * @summary A paper file's presigned reads, for its member or the class's staff
+ */
+export const getPaperFileLinksPathIdMax = 64;
+
+export const getPaperFileLinksPathFileIdMax = 64;
+
+
+
+export const GetPaperFileLinksParams = zod.object({
+  "id": zod.string().max(getPaperFileLinksPathIdMax),
+  "fileId": zod.string().max(getPaperFileLinksPathFileIdMax)
+})
+
+export const GetPaperFileLinksResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "expiresAt": zod.iso.datetime({"offset":true}),
+  "previewUrl": zod.string().optional(),
+  "storageFull": zod.enum(['self', 'payer']).optional(),
+  "url": zod.string()
 })
 
 
@@ -326,11 +406,20 @@ export const SubmitAssignmentAttemptResponse = zod.object({
   "correct": zod.number(),
   "deadlineAt": zod.iso.datetime({"offset":true}).optional(),
   "drawingImages": zod.boolean(),
+  "gradesHidden": zod.boolean(),
   "id": zod.string(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number(),
   "now": zod.iso.datetime({"offset":true}),
+  "paper": zod.enum(['upload', 'reading', 'read']).optional(),
+  "paperFiles": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "removedAssetIds": zod.array(zod.string()),
   "showAnswers": zod.boolean(),
@@ -366,10 +455,12 @@ export const GetAssignmentParams = zod.object({
 
 export const GetAssignmentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean(),
   "attempts": zod.int(),
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),
   "draft": zod.boolean(),
+  "drawingParts": zod.boolean(),
   "dueAt": zod.iso.datetime({"offset":true}).optional(),
   "files": zod.array(zod.object({
   "fileId": zod.string().optional(),
@@ -377,6 +468,7 @@ export const GetAssignmentResponse = zod.object({
   "materialId": zod.string().optional(),
   "name": zod.string()
 })),
+  "gradesHidden": zod.boolean(),
   "id": zod.string(),
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
@@ -386,11 +478,14 @@ export const GetAssignmentResponse = zod.object({
   "assignees": zod.array(zod.string()),
   "average": zod.number().optional(),
   "done": zod.int(),
+  "gradesReleasedAt": zod.iso.datetime({"offset":true}).optional(),
   "marking": zod.enum(['ai_approve', 'ai', 'manual']),
+  "notGraded": zod.int(),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
-  "showAnswers": zod.boolean(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
 }).optional(),
@@ -401,6 +496,13 @@ export const GetAssignmentResponse = zod.object({
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "handIn": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})).nullish(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number().optional(),
@@ -445,6 +547,7 @@ export const updateAssignmentBodyTitleMax = 120;
 
 
 export const UpdateAssignmentBody = zod.object({
+  "allowUploads": zod.boolean().optional(),
   "assignAll": zod.boolean(),
   "assignees": zod.array(zod.string()).max(updateAssignmentBodyAssigneesMax),
   "attempts": zod.int().min(1).max(updateAssignmentBodyAttemptsMax),
@@ -459,7 +562,8 @@ export const UpdateAssignmentBody = zod.object({
   "marking": zod.enum(['ai_approve', 'ai', 'manual']),
   "noLate": zod.boolean(),
   "quizId": zod.string().optional(),
-  "showAnswers": zod.boolean(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "timeLimitMin": zod.int().min(1).max(updateAssignmentBodyTimeLimitMinMax).optional(),
   "title": zod.string().min(1).max(updateAssignmentBodyTitleMax)
@@ -467,10 +571,12 @@ export const UpdateAssignmentBody = zod.object({
 
 export const UpdateAssignmentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean(),
   "attempts": zod.int(),
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),
   "draft": zod.boolean(),
+  "drawingParts": zod.boolean(),
   "dueAt": zod.iso.datetime({"offset":true}).optional(),
   "files": zod.array(zod.object({
   "fileId": zod.string().optional(),
@@ -478,6 +584,7 @@ export const UpdateAssignmentResponse = zod.object({
   "materialId": zod.string().optional(),
   "name": zod.string()
 })),
+  "gradesHidden": zod.boolean(),
   "id": zod.string(),
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
@@ -487,11 +594,14 @@ export const UpdateAssignmentResponse = zod.object({
   "assignees": zod.array(zod.string()),
   "average": zod.number().optional(),
   "done": zod.int(),
+  "gradesReleasedAt": zod.iso.datetime({"offset":true}).optional(),
   "marking": zod.enum(['ai_approve', 'ai', 'manual']),
+  "notGraded": zod.int(),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
-  "showAnswers": zod.boolean(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
 }).optional(),
@@ -502,6 +612,13 @@ export const UpdateAssignmentResponse = zod.object({
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "handIn": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})).nullish(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number().optional(),
@@ -553,10 +670,12 @@ export const SetAssignmentClosedBody = zod.object({
 
 export const SetAssignmentClosedResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean(),
   "attempts": zod.int(),
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),
   "draft": zod.boolean(),
+  "drawingParts": zod.boolean(),
   "dueAt": zod.iso.datetime({"offset":true}).optional(),
   "files": zod.array(zod.object({
   "fileId": zod.string().optional(),
@@ -564,6 +683,7 @@ export const SetAssignmentClosedResponse = zod.object({
   "materialId": zod.string().optional(),
   "name": zod.string()
 })),
+  "gradesHidden": zod.boolean(),
   "id": zod.string(),
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
@@ -573,11 +693,14 @@ export const SetAssignmentClosedResponse = zod.object({
   "assignees": zod.array(zod.string()),
   "average": zod.number().optional(),
   "done": zod.int(),
+  "gradesReleasedAt": zod.iso.datetime({"offset":true}).optional(),
   "marking": zod.enum(['ai_approve', 'ai', 'manual']),
+  "notGraded": zod.int(),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
-  "showAnswers": zod.boolean(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
 }).optional(),
@@ -588,6 +711,13 @@ export const SetAssignmentClosedResponse = zod.object({
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "handIn": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})).nullish(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number().optional(),
@@ -624,6 +754,46 @@ export const SetAssignmentDoneResponse = zod.void()
 
 
 /**
+ * @summary Remove a file from the caller's open hand-in
+ */
+export const removeHandInFilePathIdMax = 64;
+
+export const removeHandInFilePathFileIdMax = 64;
+
+
+
+export const RemoveHandInFileParams = zod.object({
+  "id": zod.string().max(removeHandInFilePathIdMax),
+  "fileId": zod.string().max(removeHandInFilePathFileIdMax)
+})
+
+export const RemoveHandInFileResponse = zod.void()
+
+
+/**
+ * @summary A hand-in file's presigned reads, for its member or, once handed in, the class's staff
+ */
+export const getHandInFileLinksPathIdMax = 64;
+
+export const getHandInFileLinksPathFileIdMax = 64;
+
+
+
+export const GetHandInFileLinksParams = zod.object({
+  "id": zod.string().max(getHandInFileLinksPathIdMax),
+  "fileId": zod.string().max(getHandInFileLinksPathFileIdMax)
+})
+
+export const GetHandInFileLinksResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "expiresAt": zod.iso.datetime({"offset":true}),
+  "previewUrl": zod.string().optional(),
+  "storageFull": zod.enum(['self', 'payer']).optional(),
+  "url": zod.string()
+})
+
+
+/**
  * @summary Have the AI mark the answers still waiting, in the background
  */
 export const MarkAssignmentWithAIParams = zod.object({
@@ -645,10 +815,12 @@ export const PublishAssignmentParams = zod.object({
 
 export const PublishAssignmentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean(),
   "attempts": zod.int(),
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),
   "draft": zod.boolean(),
+  "drawingParts": zod.boolean(),
   "dueAt": zod.iso.datetime({"offset":true}).optional(),
   "files": zod.array(zod.object({
   "fileId": zod.string().optional(),
@@ -656,6 +828,7 @@ export const PublishAssignmentResponse = zod.object({
   "materialId": zod.string().optional(),
   "name": zod.string()
 })),
+  "gradesHidden": zod.boolean(),
   "id": zod.string(),
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
@@ -665,11 +838,14 @@ export const PublishAssignmentResponse = zod.object({
   "assignees": zod.array(zod.string()),
   "average": zod.number().optional(),
   "done": zod.int(),
+  "gradesReleasedAt": zod.iso.datetime({"offset":true}).optional(),
   "marking": zod.enum(['ai_approve', 'ai', 'manual']),
+  "notGraded": zod.int(),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
-  "showAnswers": zod.boolean(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
 }).optional(),
@@ -680,6 +856,91 @@ export const PublishAssignmentResponse = zod.object({
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "handIn": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})).nullish(),
+  "late": zod.boolean(),
+  "latePenaltyPct": zod.int(),
+  "mark": zod.number().optional(),
+  "missing": zod.boolean(),
+  "runningAttemptId": zod.string().optional(),
+  "total": zod.number().optional(),
+  "waitingAnswers": zod.int(),
+  "waitingMarks": zod.number()
+}).optional(),
+  "noLate": zod.boolean(),
+  "postedAt": zod.iso.datetime({"offset":true}),
+  "postedBy": zod.string(),
+  "practiceQuizId": zod.string().optional(),
+  "questions": zod.int(),
+  "timeLimitMin": zod.int().optional(),
+  "title": zod.string(),
+  "topicIds": zod.array(zod.string()),
+  "workspaceId": zod.string()
+})
+
+
+/**
+ * @summary Show members their grades on an assignment whose grades are released by hand
+ */
+export const ReleaseAssignmentGradesParams = zod.object({
+  "id": zod.string()
+})
+
+export const ReleaseAssignmentGradesResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean(),
+  "attempts": zod.int(),
+  "closed": zod.boolean(),
+  "closedAt": zod.iso.datetime({"offset":true}).optional(),
+  "draft": zod.boolean(),
+  "drawingParts": zod.boolean(),
+  "dueAt": zod.iso.datetime({"offset":true}).optional(),
+  "files": zod.array(zod.object({
+  "fileId": zod.string().optional(),
+  "kind": zod.string(),
+  "materialId": zod.string().optional(),
+  "name": zod.string()
+})),
+  "gradesHidden": zod.boolean(),
+  "id": zod.string(),
+  "kind": zod.enum(['marked', 'unmarked']),
+  "latePenaltyPct": zod.int(),
+  "manage": zod.object({
+  "assignAll": zod.boolean(),
+  "assigned": zod.int(),
+  "assignees": zod.array(zod.string()),
+  "average": zod.number().optional(),
+  "done": zod.int(),
+  "gradesReleasedAt": zod.iso.datetime({"offset":true}).optional(),
+  "marking": zod.enum(['ai_approve', 'ai', 'manual']),
+  "notGraded": zod.int(),
+  "quizId": zod.string().optional(),
+  "quizTitle": zod.string().optional(),
+  "quizTrashed": zod.boolean().optional(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
+  "shuffle": zod.boolean(),
+  "toApprove": zod.int()
+}).optional(),
+  "marks": zod.number(),
+  "mine": zod.object({
+  "attemptsUsed": zod.int(),
+  "correct": zod.number().optional(),
+  "countedAttemptId": zod.string().optional(),
+  "done": zod.boolean(),
+  "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "handIn": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})).nullish(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number().optional(),
@@ -712,6 +973,7 @@ export const GetAssignmentReportResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "answers": zod.array(zod.object({
   "aiAwarded": zod.number(),
+  "aiError": zod.enum(['credits', 'error']).optional(),
   "aiMarked": zod.boolean(),
   "aiWarning": zod.string(),
   "attemptId": zod.string(),
@@ -731,6 +993,13 @@ export const GetAssignmentReportResponse = zod.object({
   "attemptId": zod.string().optional(),
   "avatarUrl": zod.string().optional(),
   "correct": zod.number().optional(),
+  "files": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})).nullish(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number().optional(),
@@ -775,10 +1044,12 @@ export const RepublishAssignmentParams = zod.object({
 
 export const RepublishAssignmentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean(),
   "attempts": zod.int(),
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),
   "draft": zod.boolean(),
+  "drawingParts": zod.boolean(),
   "dueAt": zod.iso.datetime({"offset":true}).optional(),
   "files": zod.array(zod.object({
   "fileId": zod.string().optional(),
@@ -786,6 +1057,7 @@ export const RepublishAssignmentResponse = zod.object({
   "materialId": zod.string().optional(),
   "name": zod.string()
 })),
+  "gradesHidden": zod.boolean(),
   "id": zod.string(),
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
@@ -795,11 +1067,14 @@ export const RepublishAssignmentResponse = zod.object({
   "assignees": zod.array(zod.string()),
   "average": zod.number().optional(),
   "done": zod.int(),
+  "gradesReleasedAt": zod.iso.datetime({"offset":true}).optional(),
   "marking": zod.enum(['ai_approve', 'ai', 'manual']),
+  "notGraded": zod.int(),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
-  "showAnswers": zod.boolean(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
 }).optional(),
@@ -810,6 +1085,13 @@ export const RepublishAssignmentResponse = zod.object({
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "handIn": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})).nullish(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number().optional(),
@@ -838,6 +1120,10 @@ export const StartAssignmentParams = zod.object({
   "id": zod.string()
 })
 
+export const StartAssignmentBody = zod.object({
+  "upload": zod.boolean().optional()
+})
+
 export const StartAssignmentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "answers": zod.record(zod.string(), zod.unknown()),
@@ -847,11 +1133,20 @@ export const StartAssignmentResponse = zod.object({
   "correct": zod.number(),
   "deadlineAt": zod.iso.datetime({"offset":true}).optional(),
   "drawingImages": zod.boolean(),
+  "gradesHidden": zod.boolean(),
   "id": zod.string(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number(),
   "now": zod.iso.datetime({"offset":true}),
+  "paper": zod.enum(['upload', 'reading', 'read']).optional(),
+  "paperFiles": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "removedAssetIds": zod.array(zod.string()),
   "showAnswers": zod.boolean(),
@@ -5489,6 +5784,65 @@ export const ReadNotificationResponse = zod.void()
 
 
 /**
+ * @summary Delete every paper file the caller may delete; their marks stay
+ */
+export const DeleteAllPapersResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "deleted": zod.int()
+})
+
+
+/**
+ * @summary The caller's handed-in paper and hand-in files they may delete, newest first (Files › Submissions)
+ */
+export const listPapersQueryLimitDefault = 50;
+export const listPapersQueryLimitMax = 100;
+
+
+
+export const ListPapersQueryParams = zod.object({
+  "limit": zod.int().min(1).max(listPapersQueryLimitMax).default(listPapersQueryLimitDefault),
+  "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
+})
+
+export const ListPapersResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "count": zod.int(),
+  "items": zod.array(zod.object({
+  "assignmentId": zod.string(),
+  "attemptId": zod.string().optional(),
+  "bytes": zod.int(),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "quizName": zod.string(),
+  "workspaceId": zod.string().optional(),
+  "workspaceName": zod.string()
+})),
+  "nextCursor": zod.string().optional(),
+  "totalBytes": zod.int()
+})
+
+
+/**
+ * @summary Delete one of the caller's deletable paper files; its marks stay
+ */
+export const deletePaperPathIdMax = 64;
+
+
+
+export const DeletePaperParams = zod.object({
+  "id": zod.string().max(deletePaperPathIdMax)
+})
+
+export const DeletePaperResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "deleted": zod.int()
+})
+
+
+/**
  * @summary Get a shared flashcard set for signed-out visitors
  */
 export const GetAnonymousFlashcardsParams = zod.object({
@@ -7033,10 +7387,12 @@ export const GetTodoResponse = zod.object({
   "iconId": zod.string(),
   "items": zod.array(zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean(),
   "attempts": zod.int(),
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),
   "draft": zod.boolean(),
+  "drawingParts": zod.boolean(),
   "dueAt": zod.iso.datetime({"offset":true}).optional(),
   "files": zod.array(zod.object({
   "fileId": zod.string().optional(),
@@ -7044,6 +7400,7 @@ export const GetTodoResponse = zod.object({
   "materialId": zod.string().optional(),
   "name": zod.string()
 })),
+  "gradesHidden": zod.boolean(),
   "id": zod.string(),
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
@@ -7053,11 +7410,14 @@ export const GetTodoResponse = zod.object({
   "assignees": zod.array(zod.string()),
   "average": zod.number().optional(),
   "done": zod.int(),
+  "gradesReleasedAt": zod.iso.datetime({"offset":true}).optional(),
   "marking": zod.enum(['ai_approve', 'ai', 'manual']),
+  "notGraded": zod.int(),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
-  "showAnswers": zod.boolean(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
 }).optional(),
@@ -7068,6 +7428,13 @@ export const GetTodoResponse = zod.object({
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "handIn": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})).nullish(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number().optional(),
@@ -7115,10 +7482,12 @@ export const GetTodoDoneResponse = zod.object({
   "iconId": zod.string(),
   "items": zod.array(zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean(),
   "attempts": zod.int(),
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),
   "draft": zod.boolean(),
+  "drawingParts": zod.boolean(),
   "dueAt": zod.iso.datetime({"offset":true}).optional(),
   "files": zod.array(zod.object({
   "fileId": zod.string().optional(),
@@ -7126,6 +7495,7 @@ export const GetTodoDoneResponse = zod.object({
   "materialId": zod.string().optional(),
   "name": zod.string()
 })),
+  "gradesHidden": zod.boolean(),
   "id": zod.string(),
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
@@ -7135,11 +7505,14 @@ export const GetTodoDoneResponse = zod.object({
   "assignees": zod.array(zod.string()),
   "average": zod.number().optional(),
   "done": zod.int(),
+  "gradesReleasedAt": zod.iso.datetime({"offset":true}).optional(),
   "marking": zod.enum(['ai_approve', 'ai', 'manual']),
+  "notGraded": zod.int(),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
-  "showAnswers": zod.boolean(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
 }).optional(),
@@ -7150,6 +7523,13 @@ export const GetTodoDoneResponse = zod.object({
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "handIn": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})).nullish(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number().optional(),
@@ -7810,10 +8190,12 @@ export const ListAssignmentsResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "items": zod.array(zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean(),
   "attempts": zod.int(),
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),
   "draft": zod.boolean(),
+  "drawingParts": zod.boolean(),
   "dueAt": zod.iso.datetime({"offset":true}).optional(),
   "files": zod.array(zod.object({
   "fileId": zod.string().optional(),
@@ -7821,6 +8203,7 @@ export const ListAssignmentsResponse = zod.object({
   "materialId": zod.string().optional(),
   "name": zod.string()
 })),
+  "gradesHidden": zod.boolean(),
   "id": zod.string(),
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
@@ -7830,11 +8213,14 @@ export const ListAssignmentsResponse = zod.object({
   "assignees": zod.array(zod.string()),
   "average": zod.number().optional(),
   "done": zod.int(),
+  "gradesReleasedAt": zod.iso.datetime({"offset":true}).optional(),
   "marking": zod.enum(['ai_approve', 'ai', 'manual']),
+  "notGraded": zod.int(),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
-  "showAnswers": zod.boolean(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
 }).optional(),
@@ -7845,6 +8231,13 @@ export const ListAssignmentsResponse = zod.object({
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "handIn": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})).nullish(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number().optional(),
@@ -7891,6 +8284,7 @@ export const createAssignmentBodyTitleMax = 120;
 
 
 export const CreateAssignmentBody = zod.object({
+  "allowUploads": zod.boolean().optional(),
   "assignAll": zod.boolean(),
   "assignees": zod.array(zod.string()).max(createAssignmentBodyAssigneesMax),
   "attempts": zod.int().min(1).max(createAssignmentBodyAttemptsMax),
@@ -7905,7 +8299,8 @@ export const CreateAssignmentBody = zod.object({
   "marking": zod.enum(['ai_approve', 'ai', 'manual']),
   "noLate": zod.boolean(),
   "quizId": zod.string().optional(),
-  "showAnswers": zod.boolean(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "timeLimitMin": zod.int().min(1).max(createAssignmentBodyTimeLimitMinMax).optional(),
   "title": zod.string().min(1).max(createAssignmentBodyTitleMax)
@@ -7913,10 +8308,12 @@ export const CreateAssignmentBody = zod.object({
 
 export const CreateAssignmentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean(),
   "attempts": zod.int(),
   "closed": zod.boolean(),
   "closedAt": zod.iso.datetime({"offset":true}).optional(),
   "draft": zod.boolean(),
+  "drawingParts": zod.boolean(),
   "dueAt": zod.iso.datetime({"offset":true}).optional(),
   "files": zod.array(zod.object({
   "fileId": zod.string().optional(),
@@ -7924,6 +8321,7 @@ export const CreateAssignmentResponse = zod.object({
   "materialId": zod.string().optional(),
   "name": zod.string()
 })),
+  "gradesHidden": zod.boolean(),
   "id": zod.string(),
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
@@ -7933,11 +8331,14 @@ export const CreateAssignmentResponse = zod.object({
   "assignees": zod.array(zod.string()),
   "average": zod.number().optional(),
   "done": zod.int(),
+  "gradesReleasedAt": zod.iso.datetime({"offset":true}).optional(),
   "marking": zod.enum(['ai_approve', 'ai', 'manual']),
+  "notGraded": zod.int(),
   "quizId": zod.string().optional(),
   "quizTitle": zod.string().optional(),
   "quizTrashed": zod.boolean().optional(),
-  "showAnswers": zod.boolean(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "toApprove": zod.int()
 }).optional(),
@@ -7948,6 +8349,13 @@ export const CreateAssignmentResponse = zod.object({
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "handIn": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})).nullish(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number().optional(),

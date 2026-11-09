@@ -174,7 +174,8 @@ export type QuestionBlock =
   | ImageBlock;
 
 export type QuestionAnswer =
-  /** One or more correct options, answered with checkboxes (Epo 2026-10-15). */
+  /** One or more correct options (Epo 2026-10-15): one is answered as a single
+   * choice, several as checkboxes under a hint (Epo 2026-11-08). */
   | { type: 'mcq'; options: string[]; correct: number[] }
   | { type: 'boolean'; correct: boolean }
   | { type: 'short'; accepted: string[]; unit?: string }
@@ -244,7 +245,8 @@ export type Question = {
 };
 
 export type LearnerAnswer =
-  | { type: 'mcq'; options: string[] }
+  /** `multiple` only when several options are correct (Epo 2026-11-08). */
+  | { type: 'mcq'; options: string[]; multiple?: true }
   | { type: 'boolean' | 'open' }
   | { type: 'short'; unit?: string }
   | { type: 'matching'; options: string[]; left: string[] }
@@ -341,6 +343,16 @@ export function withoutGapsBlock(
     },
     blocks,
   };
+}
+
+/** Whether an mcq has several correct options, read from its key or, for a
+ * learner, the `multiple` flag: one is a single choice, several are checkboxes
+ * under a hint (Epo 2026-11-08). */
+export function multipleAnswers(answer: QuestionAnswer | LearnerAnswer) {
+  if (answer.type !== 'mcq') return false;
+  return 'correct' in answer
+    ? answer.correct.length > 1
+    : answer.multiple === true;
 }
 
 /** Authored parts carry a worked solution; learner parts never do. */

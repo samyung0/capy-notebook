@@ -88,6 +88,14 @@ function systemCopy(notification: AppNotification) {
         title: m.notification_system_source_upload_title(),
       };
     }
+    // Staff released an assignment's grades (T, Epo 2026-11-08).
+    case 'grades_released':
+      return {
+        body: m.notification_system_grades_released_body({
+          title: dataString(data, 'title'),
+        }),
+        title: m.notification_system_grades_released_title(),
+      };
     case 'pending_edits_too_large':
       return {
         body: m.notification_system_pending_edits_body({

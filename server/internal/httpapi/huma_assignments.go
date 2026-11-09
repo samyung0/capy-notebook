@@ -84,6 +84,7 @@ func (a *api) registerAssignments(api huma.API) {
 	reg(api, http.MethodPost, "/api/assignments/{id}/publish", "publishAssignment", tag, "Give a draft to its members", http.StatusOK, a.publishAssignment)
 	reg(api, http.MethodPost, "/api/assignments/{id}/republish", "republishAssignment", tag, "Replace an open assignment's questions with its quiz as it is now", http.StatusOK, a.republishAssignment)
 	reg(api, http.MethodPut, "/api/assignments/{id}/closed", "setAssignmentClosed", tag, "Close an assignment to late submissions, or reopen it", http.StatusOK, a.setAssignmentClosed)
+	reg(api, http.MethodPost, "/api/assignments/{id}/release-grades", "releaseAssignmentGrades", tag, "Show members their grades on an assignment whose grades are released by hand", http.StatusOK, a.releaseAssignmentGrades)
 	reg(api, http.MethodPut, "/api/assignments/{id}/done", "setAssignmentDone", tag, "A member's tick on an unmarked assignment", http.StatusNoContent, a.setAssignmentDone)
 	reg(api, http.MethodPost, "/api/assignments/{id}/start", "startAssignment", tag, "Start an attempt, starting its clock, or return the one running", http.StatusOK, a.startAssignment)
 	reg(api, http.MethodPost, "/api/assignments/{id}/mark-with-ai", "markAssignmentWithAI", tag, "Have the AI mark the answers still waiting, in the background", http.StatusOK, a.markAssignmentWithAI)
@@ -142,7 +143,7 @@ func assignmentForm(b apimodel.AssignmentFormReq) store.AssignmentForm {
 		Kind: b.Kind, Title: b.Title, QuizID: b.QuizID, DueAt: b.DueAt, TimeLimitMin: b.TimeLimitMin, Attempts: b.Attempts,
 		NoLate: b.NoLate, LatePenaltyPct: b.LatePenaltyPct,
 		AssignAll: b.AssignAll, Assignees: b.Assignees, Draft: b.Draft, Marking: b.Marking,
-		ShowAnswers: b.ShowAnswers, Shuffle: b.Shuffle, Files: b.Files,
+		ShowAnswers: b.ShowAnswers, ShowGrades: b.ShowGrades, Shuffle: b.Shuffle, AllowUploads: b.AllowUploads, Files: b.Files,
 	}
 }
 
@@ -271,23 +272,45 @@ func (a *api) setAssignmentClosed(ctx context.Context, in *assignmentClosedInput
 	return &assignmentOutput{Body: res}, nil
 }
 
+func (a *api) releaseAssignmentGrades(ctx context.Context, in *assignmentIDInput) (*assignmentOutput, error) {
+	if err := a.requireAccountEdit(ctx); err != nil {
+		return nil, err
+	}
+	res, sent, err := a.s.ReleaseAssignmentGrades(ctx, userID(ctx), in.ID, time.Now())
+	if err != nil {
+		return nil, assignmentError(err)
+	}
+	for i := range sent {
+		a.publishNotificationEvent(ctx, sent[i].UserID, notificationEvent{Type: "created", Notification: &sent[i]})
+	}
+	return &assignmentOutput{Body: res}, nil
+}
+
 func (a *api) setAssignmentDone(ctx context.Context, in *assignmentDoneInput) (*Empty, error) {
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
 	if err := a.s.SetAssignmentDone(ctx, userID(ctx), in.ID, in.Body.Done, time.Now()); err != nil {
-		return nil, assignmentError(err)
+		return nil, paperError(err)
 	}
 	// The member's other tabs and devices.
 	a.publishTodo(ctx, userID(ctx))
 	return &Empty{}, nil
 }
 
-func (a *api) startAssignment(ctx context.Context, in *assignmentIDInput) (*assignmentAttemptOutput, error) {
+type startAssignmentInput struct {
+	ID   string `path:"id"`
+	Body struct {
+		// Upload starts an attempt answered on paper (Upload file, mock S4).
+		Upload bool `json:"upload,omitempty"`
+	}
+}
+
+func (a *api) startAssignment(ctx context.Context, in *startAssignmentInput) (*assignmentAttemptOutput, error) {
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
-	res, err := a.s.StartAssignment(ctx, userID(ctx), in.ID, time.Now())
+	res, err := a.s.StartAssignment(ctx, userID(ctx), in.ID, in.Body.Upload, time.Now())
 	if err != nil {
 		return nil, assignmentError(err)
 	}
@@ -309,7 +332,7 @@ type markAssignmentWithAIOutput struct {
 }
 
 // markAssignmentWithAI runs the AI over what still waits, as credits come back or
-// after a failure (Epo 2026-11-03). Staff only: reading the report checks that.
+// after a failure (Epo 2026-11-03), each attempt on its member's credits. Staff only: reading the report checks that.
 func (a *api) markAssignmentWithAI(ctx context.Context, in *assignmentIDInput) (*markAssignmentWithAIOutput, error) {
 	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
@@ -317,7 +340,7 @@ func (a *api) markAssignmentWithAI(ctx context.Context, in *assignmentIDInput) (
 	if _, err := a.s.GetAssignmentReport(ctx, userID(ctx), in.ID, time.Now()); err != nil {
 		return nil, assignmentError(err)
 	}
-	payer, workspaceID, answers, err := a.s.AnswersToMark(ctx, in.ID, "")
+	_, answers, err := a.s.AnswersToMark(ctx, in.ID, "")
 	if err != nil {
 		return nil, assignmentError(err)
 	}
@@ -326,16 +349,11 @@ func (a *api) markAssignmentWithAI(ctx context.Context, in *assignmentIDInput) (
 	if len(answers) == 0 {
 		return out, nil
 	}
-	// Refused here while the page waits: no credits, or a suspended owner.
-	llm, err := a.gradingLLM(ctx, payer)
-	if err != nil {
+	// Refused here while the page waits only when grading is not set up: each
+	// member pays for their own, and one without credits shows No credits.
+	if _, err := a.gradingLLM(ctx, userID(ctx)); err != nil {
 		return nil, hErr(err)
 	}
-	charge, err := a.beginProviderSession(ctx, payer, workspaceID, store.SurfaceQuiz, llm.Rates, store.TokenRates{}, llm.Thinking)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	charge.release(ctx)
 	a.markAnswersSoon(in.ID, "")
 	return out, nil
 }

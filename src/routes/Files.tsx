@@ -55,6 +55,7 @@ import {
   SelectionAction,
   SelectionBar,
 } from '@/features/files/SelectionBar';
+import { SubmissionsTab } from '@/features/files/SubmissionsTab';
 import {
   collectSelectionPages,
   useFileSelection,
@@ -135,6 +136,7 @@ export default function Files() {
             { label: m.files_tab_blocks(), value: 'blocks' },
             { label: m.files_tab_embeds(), value: 'embeds' },
             { label: m.files_tab_canvas(), value: 'canvas' },
+            { label: m.files_tab_submissions(), value: 'submissions' },
             { label: m.files_tab_trash(), value: 'trash' },
           ]}
           value={tab}
@@ -146,6 +148,8 @@ export default function Files() {
           onViewChange={changeView}
           view={view}
         />
+      ) : tab === 'submissions' ? (
+        <SubmissionsTab onViewChange={changeView} view={view} />
       ) : tab === 'canvas' ? (
         <CanvasTab onViewChange={changeView} view={view} />
       ) : tab === 'embeds' ? (

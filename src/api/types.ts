@@ -134,6 +134,7 @@ export type {
   NotificationCountOutputBody as NotificationCount,
   NotificationPage,
   NotificationPrefs,
+  PaperFile,
   PaymentMethod,
   PendingWorkspaceInvite,
   PublicFlashcardSet,
@@ -156,6 +157,8 @@ export type {
   SourceUploadPolicy,
   SpendingLimitReq,
   StudyPreferences,
+  SubmittedPaper,
+  SubmittedPapers,
   SubscriptionBlocker,
   Tag,
   TagInput,
@@ -422,6 +425,10 @@ export type AssignmentGradedPart = QuestionPart & {
   markedBy?: string;
   /** Staff only: the AI's marks per marking point. */
   aiAwards?: number[];
+  /** Staff only: why the AI left it unmarked (mock T3). */
+  aiError?: 'credits' | 'error';
+  /** A paper's part: the pages of the paper its answer was read on. */
+  pages?: number[];
 };
 export type AssignmentGradedQuestion = Omit<Question, 'parts'> & {
   parts: AssignmentGradedPart[];

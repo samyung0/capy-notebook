@@ -12,12 +12,15 @@ import type { AssignmentMine } from './assignmentMine.ts';
 export interface Assignment {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  allowUploads: boolean;
   attempts: number;
   closed: boolean;
   closedAt?: string;
   draft: boolean;
+  drawingParts: boolean;
   dueAt?: string;
   files: AssignmentFile[];
+  gradesHidden: boolean;
   id: string;
   kind: AssignmentKind;
   latePenaltyPct: number;

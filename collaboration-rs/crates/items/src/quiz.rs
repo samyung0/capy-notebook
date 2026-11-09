@@ -6,7 +6,8 @@
 //! Content: `questions`, question id to `{order, layout, labels, level?,
 //! stem, groups?, parts}`; group id to `{blocks}`; part id to `{order, marks,
 //! blocks, answer, group?}`; the answer map holds the type and what a learner
-//! may see: mcq `options`, a short answer's `unit` and matching `left` items.
+//! may see: mcq `options` and `multiple` (true while several are correct),
+//! a short answer's `unit` and matching `left` items.
 //! A group has no order of its own: it sits where its first part sits, and a
 //! merge's leftovers read repaired (`q::repair_groups`, Epo 2026-11-04).
 //!
@@ -1118,6 +1119,8 @@ fn sync_answer(
         "mcq" => {
             let options = strings(&answer, "options");
             let ids = sync_entries(content, &answer_map, "options", "o", &options, text_fill);
+            let multiple = (indexes.len() > 1).then_some(Any::Bool(true));
+            sync_plain(content, &answer_map, "multiple", multiple);
             let ticks = child_map(keys, &key, "correct");
             let wanted: HashSet<&str> = indexes
                 .iter()
@@ -1859,6 +1862,10 @@ fn content_shape(
             if one_of(content, &["open", "drawing"]) {
                 tally.open += 1;
             }
+            tally.value(content);
+            Ok(())
+        }
+        ([R, _, "parts", _, "answer"], Some("multiple")) if a_bool(content) => {
             tally.value(content);
             Ok(())
         }

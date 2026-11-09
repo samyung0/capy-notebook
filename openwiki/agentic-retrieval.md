@@ -5984,7 +5984,7 @@ job. The screens (boards X0a, X0b, X1, X2) are in
   each 500 characters, up to 40. Findings in
   [`2026-11-05-remaining-selections.md`](../bench/extraction/reports/2026-11-05-remaining-selections.md).
 - **Stops.** A quiz that fills while copying stops the copying and still answers what it copied.
-  A run stops early when the quiz would pass `QUIZ_PARTS_MAX` (100)
+  A run stops early when the quiz would pass `QUIZ_PARTS_MAX` (150)
   or `QUIZ_OPEN_PARTS_MAX` (100 AI-marked parts, raised from 20 for every quiz,
   Epo 2026-11-03) (`stopped: quiz_full`), when the starter's credits run
   out (`credits`), or when its calls have written more than 8,000

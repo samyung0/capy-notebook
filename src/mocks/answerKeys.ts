@@ -31,7 +31,11 @@ export function learnerView(question: Question): LearnerQuestion {
       let learner: LearnerAnswer;
       switch (answer.type) {
         case 'mcq':
-          learner = { options: answer.options, type: answer.type };
+          learner = {
+            options: answer.options,
+            type: answer.type,
+            ...(answer.correct.length > 1 ? { multiple: true as const } : {}),
+          };
           break;
         case 'short':
           learner = answer.unit

@@ -1,0 +1,1082 @@
+<title>Assignment file submissions</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fustat:wght@400;500;600;700;800&family=Kalam:wght@400&display=swap">
+<style>
+/* Layout: one column of boards; each board = laptop frame (scrolls inside on narrow screens) + 360px phone frame. Copies Capy's latte look. */
+:root {
+  --page: #f6f6f6;          /* app ground behind panels */
+  --panel: #ffffff;         /* panels, dialogs */
+  --fg: #1f1f1f;
+  --fg2: #4a4a4a;
+  --muted: #6e6e6e;
+  --divider: rgb(0 0 0 / 0.08);
+  --border: rgb(0 0 0 / 0.12);
+  --hover: rgb(0 0 0 / 0.05);
+  --select: #e6e8e8;
+  --primary: #222222;       /* black buttons, active rail item */
+  --on-primary: #ffffff;
+  --accent: #8a7fd4;        /* switches, progress */
+  --chip: #e9e9e9;
+  --warn-bg: #fbeedd; --warn: #a8661a;
+  --ok-bg: #e2f4e9; --ok: #2f7a4f;
+  --bad-bg: #fbe4e8; --bad: #c23c55;
+  --paper: #f7f5ef; --paper-line: #c7d3e6; --ink: #24306b;
+  --scrim: rgb(0 0 0 / 0.28);
+  --accent-tint: #efecfb;
+  --sans: "Fustat", "Helvetica Neue", Arial, sans-serif;
+  --hand: "Kalam", "Bradley Hand", "Comic Sans MS", cursive;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --page: #181825; --panel: #1e1e2e; --fg: #e4e6f2; --fg2: #c3c7dc; --muted: #9399b2;
+  --divider: rgb(255 255 255 / 0.08); --border: rgb(255 255 255 / 0.14); --hover: rgb(255 255 255 / 0.06);
+  --select: #313244; --primary: #e4e6f2; --on-primary: #1e1e2e; --accent: #b4a6f5; --chip: #313244;
+  --warn-bg: #3d3122; --warn: #f2bd7b; --ok-bg: #213a2d; --ok: #8fd6aa; --bad-bg: #40232b; --bad: #f19aab;
+  --paper: #ebe7dc; --paper-line: #b6c3d8; --ink: #24306b; --scrim: rgb(0 0 0 / 0.5); --accent-tint: #2d2a45; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --page: #181825; --panel: #1e1e2e; --fg: #e4e6f2; --fg2: #c3c7dc; --muted: #9399b2;
+  --divider: rgb(255 255 255 / 0.08); --border: rgb(255 255 255 / 0.14); --hover: rgb(255 255 255 / 0.06);
+  --select: #313244; --primary: #e4e6f2; --on-primary: #1e1e2e; --accent: #b4a6f5; --chip: #313244;
+  --warn-bg: #3d3122; --warn: #f2bd7b; --ok-bg: #213a2d; --ok: #8fd6aa; --bad-bg: #40232b; --bad: #f19aab;
+  --paper: #ebe7dc; --paper-line: #b6c3d8; --ink: #24306b; --scrim: rgb(0 0 0 / 0.5); --accent-tint: #2d2a45; color-scheme: dark }
+
+* { box-sizing: border-box }
+body { background: var(--page); color: var(--fg); font-family: var(--sans); font-size: 14px; line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 32px 64px }
+.doc { max-width: 1440px; margin: 0 auto; display: grid; gap: 40px }
+.intro h1 { font-size: 28px; font-weight: 800; margin: 0 0 6px; text-wrap: balance }
+.intro p { margin: 0; color: var(--fg2); max-width: 70ch }
+.board { display: grid; gap: 12px }
+.board > header h2 { margin: 0; font-size: 18px; font-weight: 700 }
+.board > header h2 b { display: inline-block; min-width: 2.4em; color: var(--accent) }
+.board > header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; max-width: 80ch }
+.frames { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap }
+.lap-wrap { overflow-x: auto; max-width: 100%; flex: 0 1 1042px; min-width: 0 }
+.lap { width: 1040px; height: 640px; background: var(--page); border: 1px solid var(--border); border-radius: 12px; display: grid;
+  grid-template-columns: 60px 250px 1fr; gap: 8px; padding: 8px; position: relative; overflow: hidden; font-size: 13.5px }
+.lap.nostudy { grid-template-columns: 60px 1fr }
+.phone { width: 360px; max-width: 100%; flex: 0 0 auto; height: 720px; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 22px; overflow: hidden; position: relative; display: flex; flex-direction: column }
+.cap { font-size: 12px; color: var(--muted); margin-top: 6px }
+
+/* app chrome */
+.rail { display: flex; flex-direction: column; align-items: center; gap: 10px; padding-top: 6px; font-size: 10px; color: var(--fg2) }
+.rail .it { display: grid; justify-items: center; gap: 2px; width: 50px; padding: 6px 0; border-radius: 9px }
+.rail .it.on { background: var(--primary); color: var(--on-primary) }
+.rail svg { width: 18px; height: 18px }
+.ws { width: 32px; height: 32px; border-radius: 9px; background: linear-gradient(160deg, #e7a6e0, #9b4fd0 70%) }
+.side { background: var(--panel); border-radius: 12px; padding: 16px 10px }
+.side h3 { margin: 0 6px 12px; font-size: 15px; font-weight: 600 }
+.side .row { display: flex; align-items: center; gap: 9px; padding: 7px 8px; border-radius: 7px; color: var(--fg2) }
+.side .row.on { background: var(--select); color: var(--fg) }
+.side .row .n { margin-left: auto; font-size: 12px; color: var(--muted) }
+.side svg { width: 16px; height: 16px }
+.main { background: var(--panel); border-radius: 12px; padding: 22px 28px; min-width: 0; overflow: hidden; position: relative }
+.back { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; text-decoration: underline; text-underline-offset: 4px }
+.back svg { width: 14px; height: 14px }
+.title { font-size: 26px; font-weight: 800; letter-spacing: -0.01em; margin: 10px 0 0; line-height: 1.2 }
+.meta { font-size: 12.5px; color: var(--muted) }
+.chips { display: inline-flex; gap: 6px; flex-wrap: wrap; vertical-align: middle }
+.chip { background: var(--chip); color: var(--fg2); border-radius: 5px; font-size: 12px; padding: 2px 7px; white-space: nowrap }
+.chip.warn { background: var(--warn-bg); color: var(--warn) }
+.chip.ok { background: var(--ok-bg); color: var(--ok) }
+.chip.bad { background: var(--bad-bg); color: var(--bad) }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--divider); margin-top: 14px }
+.tabs span { padding: 8px 12px; color: var(--muted) }
+.tabs span.on { color: var(--fg); font-weight: 600; box-shadow: inset 0 -2px 0 var(--fg) }
+.btn { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px; border-radius: 7px; background: var(--primary);
+  color: var(--on-primary); font-weight: 500; font-size: 13.5px; white-space: nowrap; border: 1px solid var(--primary) }
+.btn.out { background: transparent; color: var(--fg); border-color: var(--border) }
+.btn.sm { height: 30px; padding: 0 10px; font-size: 13px }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--fg) }
+.btn svg { width: 15px; height: 15px }
+.link { text-decoration: underline; text-underline-offset: 4px; display: inline-flex; gap: 5px; align-items: center; white-space: nowrap }
+.link svg { width: 14px; height: 14px }
+h4.sub { font-size: 15px; font-weight: 600; margin: 0 }
+.secthead { display: flex; align-items: center; justify-content: space-between; gap: 10px }
+.list { list-style: none; margin: 8px 0 0; padding: 0 }
+.list li { display: flex; align-items: center; gap: 9px; min-height: 40px; border-bottom: 1px solid var(--divider) }
+.list li .nm { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ficon { width: 16px; height: 16px; flex: none }
+.av { width: 24px; height: 24px; border-radius: 50%; background: var(--select); color: var(--fg2); font-size: 9.5px; display: grid; place-items: center; font-weight: 600; flex: none }
+
+/* dialog */
+.scrim { position: absolute; inset: 0; background: var(--scrim); backdrop-filter: blur(3px); display: grid; place-items: center }
+.dialog { background: var(--panel); border-radius: 14px; width: 540px; padding: 22px 24px; box-shadow: 0 20px 50px rgb(0 0 0 / 0.2); display: grid; gap: 13px; font-size: 13.5px }
+.dialog h3 { font-size: 20px; font-weight: 800; margin: 0 0 2px }
+.field { display: grid; gap: 5px }
+.field label, .field .lb { font-size: 13px }
+.field .lb i { font-style: normal; color: var(--muted) }
+.input { height: 36px; border: 1px solid var(--border); border-radius: 7px; display: flex; align-items: center; padding: 0 11px; justify-content: space-between; color: var(--fg); background: var(--panel) }
+.input.ph { color: var(--muted) }
+.input svg { width: 14px; height: 14px; color: var(--muted) }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px }
+.sw { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 26px }
+.sw .t { width: 36px; height: 21px; border-radius: 11px; background: #b9b9b9; position: relative; flex: none }
+.sw .t::after { content: ""; position: absolute; top: 2.5px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff }
+.sw .t.on { background: var(--accent) } .sw .t.on::after { left: 17px }
+.sw.new .l { font-weight: 600 }
+.newmark { box-shadow: 0 0 0 2px var(--accent); border-radius: 6px; padding: 3px 6px; margin: -3px -6px }
+.timebox { display: flex; align-items: center; gap: 16px; background: var(--accent-tint); border-radius: 12px; padding: 16px 18px }
+.timebox .clk { width: 56px; height: 56px; border-radius: 50%; background: var(--panel); color: var(--accent); display: grid; place-items: center; flex: none }
+.timebox .clk svg { width: 28px; height: 28px }
+.timebox b { display: block; font-size: 28px; font-weight: 800; line-height: 1.15; letter-spacing: -0.02rem }
+.adv { display: flex; align-items: center; gap: 7px } .adv svg { width: 14px; height: 14px }
+.foot { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 6px }
+.foot .est { margin-right: auto; font-size: 12.5px; color: var(--muted) }
+
+/* phone chrome */
+.ph-top { display: flex; align-items: center; gap: 8px; height: 50px; padding: 0 14px; border-bottom: 1px solid var(--divider); flex: none }
+.ph-top .ws { width: 20px; height: 20px; border-radius: 5px }
+.ph-top b { font-weight: 600 }
+.ph-top svg { width: 16px; height: 16px }
+.ph-body { padding: 14px 16px; overflow: hidden; flex: 1; display: flex; flex-direction: column; gap: 12px; min-height: 0 }
+.ph-body .title { font-size: 22px; margin: 0 }
+.ph-sheet { position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: flex-end }
+.ph-sheet .dialog { width: 100%; border-radius: 14px 14px 0 0; padding: 18px 16px; gap: 11px }
+.ph-sheet .dialog .two { gap: 10px }
+.ph-bar { flex: none; border-top: 1px solid var(--divider); padding: 10px 16px; display: flex; align-items: center; gap: 10px }
+.strip { display: flex; gap: 6px; padding: 8px 16px; border-bottom: 1px solid var(--divider); overflow: hidden; flex: none; align-items: center }
+.strip .q { min-width: 30px; height: 30px; border-radius: 6px; border: 1px solid var(--border); display: grid; place-items: center; font-size: 12px; position: relative }
+.strip .q.done { background: var(--select) }
+.strip .q.on { border-color: var(--fg); font-weight: 700 }
+.strip .q.pg { padding: 0 8px; gap: 4px; display: inline-flex; align-items: center }
+.strip .q svg { width: 13px; height: 13px }
+
+/* quiz split */
+.split { display: grid; grid-template-columns: 230px 1fr; height: 100%; min-height: 0 }
+.qlist { border-right: 1px solid var(--divider); padding: 18px 10px 18px 18px; display: flex; flex-direction: column; gap: 2px; overflow: hidden }
+.qlist .qr { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 7px; font-size: 13px }
+.qlist .qr.on { background: var(--select) }
+.qlist .qr .ql { width: 22px; color: var(--muted); font-size: 12px }
+.qlist .qr .qt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.qlist .qr .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none }
+.qlist .qr .dot.off { background: transparent; border: 1.5px solid var(--border) }
+.qlist .qr .pg { font-size: 11.5px; color: var(--muted); display: inline-flex; gap: 3px; align-items: center }
+.qlist .qr .pg svg { width: 12px; height: 12px }
+.qlist .sep { height: 1px; background: var(--divider); margin: 8px 0 }
+.qpane { padding: 22px 28px; display: flex; flex-direction: column; gap: 14px; min-width: 0; overflow: hidden }
+.qbar { display: flex; align-items: center; gap: 12px; border-top: 1px solid var(--divider); margin: auto -28px -22px; padding: 12px 28px }
+.qbar .saved { color: var(--muted); font-size: 12.5px; margin-right: auto }
+.ruled { background: repeating-linear-gradient(to bottom, transparent 0 31px, var(--divider) 31px 32px); height: 128px }
+.stem { font-size: 15px; font-weight: 600; line-height: 1.4 }
+.stem .mk { color: var(--muted); font-weight: 400 }
+
+/* handwritten page thumbnails */
+.pages { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px }
+.pg-card { display: grid; gap: 6px }
+.sheet { aspect-ratio: 1 / 1.414; max-width: 100%; background: var(--paper); border: 1px solid var(--border); border-radius: 3px; position: relative; overflow: hidden;
+  background-image: repeating-linear-gradient(to bottom, transparent 0 13px, var(--paper-line) 13px 14px); background-position: 0 18px;
+  font-family: var(--hand); color: var(--ink); font-size: 8.5px; line-height: 14px; padding: 18px 10px 0 12px; white-space: pre; }
+.sheet.big { font-size: 13px; line-height: 22px; padding: 26px 18px 0 22px; background-image: repeating-linear-gradient(to bottom, transparent 0 21px, var(--paper-line) 21px 22px); background-position: 0 26px }
+.sheet.photo { transform: rotate(-1.2deg); background-color: #ece8de }
+.sheet .no { position: absolute; left: 6px; bottom: 5px; font-family: var(--sans); font-size: 10px; color: #555; background: rgb(255 255 255 / 0.8); padding: 0 4px; border-radius: 3px }
+.sheet .x { position: absolute; right: 5px; top: 5px; width: 20px; height: 20px; border-radius: 50%; background: rgb(0 0 0 / 0.55); color: #fff; display: grid; place-items: center; font-family: var(--sans); font-size: 12px }
+.pick { height: 30px; border: 1px solid var(--border); border-radius: 6px; display: flex; align-items: center; justify-content: space-between; padding: 0 8px; font-size: 12.5px; gap: 6px }
+.pick.need { border-color: var(--warn); color: var(--warn); background: var(--warn-bg) }
+.pick svg { width: 13px; height: 13px; flex: none }
+.drop { border: 1.5px dashed var(--border); border-radius: 8px; padding: 14px; display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 13px; flex-wrap: wrap }
+.menu { position: absolute; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 10px 30px rgb(0 0 0 / 0.14); padding: 5px; width: 190px; font-size: 13px; z-index: 2 }
+.menu .mi { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 5px }
+.menu .mi.on { background: var(--hover) }
+.menu .mi .tick { width: 16px; height: 16px; margin-left: auto; flex: none }
+.menu .cb { width: 14px; height: 14px; border: 1.5px solid var(--border); border-radius: 3px; flex: none; display: grid; place-items: center }
+.menu .cb.on { background: var(--primary); border-color: var(--primary); color: var(--on-primary) }
+.menu .cb svg { width: 10px; height: 10px }
+.menu .mi .qt { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0 }
+
+/* approve */
+.appr { display: grid; grid-template-columns: 250px 1fr; height: calc(100% - 118px); margin: 0 -28px -22px; border-top: 1px solid var(--divider) }
+.appr .l { border-right: 1px solid var(--divider); padding: 12px 14px; display: flex; flex-direction: column; gap: 7px }
+.appr .mrow { display: flex; align-items: center; gap: 9px; padding: 8px 9px; border-radius: 7px }
+.appr .mrow.on { background: var(--select) }
+.appr .mrow .nm { flex: 1 }
+.appr .r { padding: 14px 24px; overflow: hidden; display: flex; flex-direction: column; gap: 10px; min-width: 0 }
+.pts { width: 100%; border-collapse: collapse; font-size: 13px }
+.pts th { text-align: left; font-weight: 500; font-size: 11px; letter-spacing: 0.04em; color: var(--muted); padding: 4px 0 }
+.pts td { border-top: 1px solid var(--divider); padding: 7px 0; vertical-align: top }
+.pts td.ai { width: 70px; color: var(--fg2) }
+.pts td.mk { width: 96px }
+.pts .sel { height: 28px; border: 1px solid var(--border); border-radius: 6px; display: flex; align-items: center; justify-content: space-between; padding: 0 8px; font-size: 12.5px }
+.pts .sel svg { width: 12px; height: 12px }
+.pts .q { display: block; font-size: 11.5px; color: var(--muted) }
+.pageview { display: flex; gap: 12px; align-items: flex-start }
+.pageview .sheet { width: 300px; flex: none }
+.pageview .side-note { display: grid; gap: 6px; font-size: 12.5px; color: var(--fg2) }
+.table { width: 100%; border-collapse: collapse; font-size: 13px }
+.table th { text-align: left; font-weight: 400; color: var(--muted); padding: 10px 12px; border-bottom: 1px solid var(--divider) }
+.table td { padding: 0 12px; height: 44px; border-bottom: 1px solid var(--divider) }
+.table td .who { display: flex; align-items: center; gap: 9px; font-weight: 500 }
+.files-inline { display: flex; gap: 6px; flex-wrap: wrap; color: var(--fg2) }
+.files-inline span { display: inline-flex; gap: 4px; align-items: center }
+.files-inline svg { width: 14px; height: 14px }
+
+/* Files › Submissions (F1, F2) */
+.acct-rail .it { font-size: 10px }
+.ftabs { display: flex; gap: 4px; border-bottom: 1px solid var(--divider); margin: 10px -28px 0; padding: 0 16px }
+.ftabs span { padding: 8px 12px; color: var(--muted) }
+.ftabs span.on { color: var(--fg); font-weight: 600; box-shadow: inset 0 -2px 0 var(--fg) }
+.ftabs span.new { box-shadow: 0 0 0 2px var(--accent); border-radius: 6px }
+.ftabs span.on.new { box-shadow: inset 0 -2px 0 var(--fg), 0 0 0 2px var(--accent) }
+.fbar { display: flex; align-items: center; gap: 8px; margin-top: 10px }
+.fbar .meta { margin-right: auto }
+.btn.danger { background: transparent; border-color: transparent; color: var(--bad) }
+.iconbtn { width: 30px; height: 30px; display: grid; place-items: center; color: var(--fg2) }
+.iconbtn svg { width: 17px; height: 17px }
+.frow { display: grid; grid-template-columns: 72px minmax(0, 1fr) 120px 80px 30px; gap: 12px; align-items: center; min-height: 76px; border-bottom: 1px solid var(--divider); padding: 8px 0 }
+.frow .thumb { height: 60px; display: grid; place-items: center }
+.frow .thumb .sheet { height: 60px; width: auto; padding: 6px 4px 0 5px; font-size: 4px; line-height: 6px; background-position: 0 6px;
+  background-image: repeating-linear-gradient(to bottom, transparent 0 5px, var(--paper-line) 5px 6px) }
+.frow .nm { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.frow .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.frow .r { text-align: right }
+.ph-frow { grid-template-columns: 56px minmax(0, 1fr) 30px; gap: 10px; min-height: 70px }
+.ph-frow .thumb .sheet { height: 54px }
+.gone { border: 1px dashed var(--border); border-radius: 8px; padding: 18px; display: flex; gap: 12px; align-items: center; color: var(--fg2); font-size: 13px }
+.gone svg { width: 22px; height: 22px; color: var(--muted); flex: none }
+
+.picks { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px }
+.picks h2 { margin: 0 0 8px; font-size: 18px }
+.picks ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; max-width: 90ch }
+</style>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M9 7l-5 5 5 5M4 12h12M20 6v12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-fwd" viewBox="0 0 24 24"><path d="M15 7l5 5-5 5M20 12H8M4 6v12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-cal" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4 10h16M9 3v4M15 3v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-cam" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.5" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="i-page" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M14 3v4h4" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="i-pdf" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z" fill="#fde4e4" stroke="#d9534f" stroke-width="1.5" stroke-linejoin="round"/><text x="12" y="17" font-size="6" text-anchor="middle" fill="#d9534f" font-family="Arial" font-weight="700">PDF</text></symbol>
+    <symbol id="i-img" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2" fill="#e3effb" stroke="#4a8bd6" stroke-width="1.5"/><path d="M6 17l4-5 3 3 2-2 3 4" fill="none" stroke="#4a8bd6" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+    <symbol id="i-doc" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" fill="#e5ecfb" stroke="#3a6fd8" stroke-width="1.5"/><path d="M8 9h8M8 12h8M8 15h5" stroke="#3a6fd8" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 7.5V12l3 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-dots" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/></symbol>
+    <symbol id="i-dash" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="13" y="4" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="4" y="13" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="13" y="13" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10H3z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3c.6 4.5 2.5 6.4 7 7-4.5.6-6.4 2.5-7 7-.6-4.5-2.5-6.4-7-7 4.5-.6 6.4-2.5 7-7z" fill="currentColor"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M3 5h6a3 3 0 013 3v11a2 2 0 00-2-2H3zM21 5h-6a3 3 0 00-3 3v11a2 2 0 012-2h7z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+    <symbol id="i-canvas" viewBox="0 0 24 24"><circle cx="7" cy="7" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M14 4h6v6h-6zM4 15l6 6M10 15l-6 6" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="17" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 5a3 3 0 010 6M21 20c0-2.8-1.7-5-4-5.7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-clip" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9 4h6v3H9zM8.5 11h7M8.5 15h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3L5 14h6l-1 7 8-11h-6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+    <symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="13" y="4" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="4" y="13" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="13" y="13" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="i-todo" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 12l3 3 5-6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  </defs>
+</svg>
+
+<template id="rail-tpl">
+  <nav class="rail">
+    <div class="it"><svg><use href="#i-back"/></svg>Workspaces</div>
+    <div class="ws"></div>
+    <div class="it"><svg><use href="#i-dash"/></svg>Dashboard</div>
+    <div class="it"><svg><use href="#i-folder"/></svg>Files</div>
+    <div class="it"><svg><use href="#i-spark"/></svg>Agent</div>
+    <div class="it on"><svg><use href="#i-book"/></svg>Study</div>
+    <div class="it"><svg><use href="#i-canvas"/></svg>Canvas</div>
+  </nav>
+</template>
+<template id="side-owner">
+  <aside class="side"><h3>Study</h3>
+    <div class="row"><svg><use href="#i-users"/></svg>Members</div>
+    <div class="row on"><svg><use href="#i-clip"/></svg>Assignments<span class="n">1</span></div>
+    <div class="row"><svg><use href="#i-bolt"/></svg>Practice</div>
+  </aside>
+</template>
+<template id="side-member">
+  <aside class="side"><h3>Study</h3>
+    <div class="row"><svg><use href="#i-person"/></svg>Summary</div>
+    <div class="row on"><svg><use href="#i-clip"/></svg>Assignments<span class="n">3</span></div>
+    <div class="row"><svg><use href="#i-bolt"/></svg>Practice</div>
+  </aside>
+</template>
+<template id="ph-top">
+  <div class="ph-top"><svg><use href="#i-back"/></svg><span class="ws"></span><b>Biology 101</b><svg><use href="#i-down"/></svg><svg style="margin-left:auto"><use href="#i-dots"/></svg></div>
+</template>
+
+<main class="doc">
+  <section class="intro">
+    <h1>Assignment file submissions</h1>
+    <p>Mocks for Epo, 2026-11-08. Each board shows the laptop (1040 px wide here) and a 360 px phone. Ids match the lettered questions in <code>todo-file-submissions.md</code>. The accent ring marks what is new. Page images are drawn stand-ins for a member's handwritten scan.</p>
+  </section>
+
+  <!-- C1 -->
+  <section class="board" id="c1">
+    <header><h2><b>C1</b>New assignment, Marked: Allow file uploads</h2>
+      <p>Approved (Epo 2026-11-08, A): one new switch under Show answers; Shuffle questions moved into Advanced. C1a has nothing else; C1b adds the owner's credit estimate at the left of the footer, worked out from the quiz's open and drawn parts (question F).</p></header>
+    <div class="frames">
+      <div class="lap-wrap"><div class="lap" data-shell="owner" style="height:800px">
+        <div class="main"></div>
+        <div class="scrim"><div class="dialog">
+          <h3>New assignment</h3>
+          <div class="field"><span class="lb">Kind</span><div class="input">Marked<svg><use href="#i-down"/></svg></div></div>
+          <div class="field"><span class="lb">Quiz</span><div class="input">Past paper 2025 P1<svg><use href="#i-down"/></svg></div></div>
+          <div class="field"><span class="lb">Title</span><div class="input">Past paper 2025 P1</div></div>
+          <div class="two">
+            <div class="field"><span class="lb">Due</span><div class="input" style="justify-content:flex-start;gap:8px"><svg><use href="#i-cal"/></svg>Wed 11 Nov</div></div>
+            <div class="field"><span class="lb">Time limit</span><div class="input">No limit<svg><use href="#i-down"/></svg></div></div>
+          </div>
+          <div class="two">
+            <div class="field"><span class="lb">Attempts</span><div class="input">1<svg><use href="#i-down"/></svg></div></div>
+            <div class="field"><span class="lb">Assign to</span><div class="input">All members<svg><use href="#i-down"/></svg></div></div>
+          </div>
+          <div class="field" style="max-width:300px"><span class="lb">Marking</span><div class="input">AI grades, approval required<svg><use href="#i-down"/></svg></div></div>
+          <div class="sw"><span>Show answers after submitting</span><span class="t on"></span></div>
+          <div class="sw new newmark"><span class="l">Allow submission with uploads</span><span class="t on"></span></div>
+          <div class="adv"><svg><use href="#i-right"/></svg>Advanced</div>
+          <div class="foot"><span class="est newmark">C1b · AI marking about 25 credits a member</span><span class="btn ghost">Cancel</span><span class="btn">Create</span></div>
+        </div></div>
+      </div><div class="cap">C1a is the same dialog without the footer line.</div></div>
+      <div class="phone">
+        <div data-tpl="ph-top"></div>
+        <div class="ph-body" style="opacity:.35"><span class="title">Assignments</span></div>
+        <div class="ph-sheet"><div class="dialog">
+          <h3>New assignment</h3>
+          <div class="field"><span class="lb">Kind</span><div class="input">Marked<svg><use href="#i-down"/></svg></div></div>
+          <div class="field"><span class="lb">Quiz</span><div class="input">Past paper 2025 P1<svg><use href="#i-down"/></svg></div></div>
+          <div class="two">
+            <div class="field"><span class="lb">Due</span><div class="input" style="justify-content:flex-start;gap:6px"><svg><use href="#i-cal"/></svg>Wed 11 Nov</div></div>
+            <div class="field"><span class="lb">Time limit</span><div class="input">No limit<svg><use href="#i-down"/></svg></div></div>
+          </div>
+          <div class="field"><span class="lb">Marking</span><div class="input">AI grades, approval required<svg><use href="#i-down"/></svg></div></div>
+          <div class="sw"><span>Show answers after submitting</span><span class="t on"></span></div>
+          <div class="sw new newmark"><span class="l">Allow submission with uploads</span><span class="t on"></span></div>
+          <div class="adv"><svg><use href="#i-right"/></svg>Advanced</div>
+          <div class="foot" style="flex-wrap:wrap"><span class="est newmark" style="flex-basis:100%">C1b · AI marking about 25 credits a member</span><span class="btn ghost">Cancel</span><span class="btn">Create</span></div>
+        </div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- C3 -->
+  <section class="board" id="c3">
+    <header><h2><b>C3</b>Built (Epo 2026-11-08): when answers are shown, instead of the Show answers switch</h2>
+      <p>Today Show answers (on by default) gives a member the keys, marking points and solutions the moment they submit, while classmates are still answering. Proposed: a Show answers dropdown beside Marking, default After it closes (closed by hand, or at the due date with No late submissions). Marks still show on submit as today.</p></header>
+    <div class="frames">
+      <div class="lap-wrap"><div class="lap" data-shell="owner" style="height:700px">
+        <div class="main"></div>
+        <div class="scrim"><div class="dialog" style="position:relative">
+          <h3>New assignment</h3>
+          <div class="field"><span class="lb">Kind</span><div class="input">Marked<svg><use href="#i-down"/></svg></div></div>
+          <div class="field"><span class="lb">Quiz</span><div class="input">Past paper 2025 P1<svg><use href="#i-down"/></svg></div></div>
+          <div class="two">
+            <div class="field"><span class="lb">Due</span><div class="input" style="justify-content:flex-start;gap:8px"><svg><use href="#i-cal"/></svg>Wed 11 Nov</div></div>
+            <div class="field"><span class="lb">Time limit</span><div class="input">No limit<svg><use href="#i-down"/></svg></div></div>
+          </div>
+          <div class="two">
+            <div class="field"><span class="lb">Marking</span><div class="input">AI grades, approval required<svg><use href="#i-down"/></svg></div></div>
+            <div class="field newmark" style="margin:0"><span class="lb">Show answers</span><div class="input">After assignment close<svg><use href="#i-down"/></svg></div></div>
+          </div>
+          <div class="sw"><span class="l">Allow submission with uploads</span><span class="t on"></span></div>
+          <div class="adv"><svg><use href="#i-right"/></svg>Advanced</div>
+          <div class="foot"><span class="btn ghost">Cancel</span><span class="btn">Create</span></div>
+          <div class="menu" style="right:24px;top:286px;width:230px">
+            <div class="mi on">After assignment close<svg class="tick"><use href="#i-check"/></svg></div>
+            <div class="mi">After submission</div>
+            <div class="mi">Do not show</div>
+          </div>
+        </div></div>
+      </div></div>
+      <div class="phone">
+        <div data-tpl="ph-top"></div>
+        <div class="ph-body" style="opacity:.35"><span class="title">Assignments</span></div>
+        <div class="ph-sheet"><div class="dialog">
+          <h3>New assignment</h3>
+          <div class="field"><span class="lb">Quiz</span><div class="input">Past paper 2025 P1<svg><use href="#i-down"/></svg></div></div>
+          <div class="two">
+            <div class="field"><span class="lb">Due</span><div class="input" style="justify-content:flex-start;gap:6px"><svg><use href="#i-cal"/></svg>Wed 11 Nov</div></div>
+            <div class="field"><span class="lb">Time limit</span><div class="input">No limit<svg><use href="#i-down"/></svg></div></div>
+          </div>
+          <div class="field"><span class="lb">Marking</span><div class="input">AI grades, approval required<svg><use href="#i-down"/></svg></div></div>
+          <div class="field newmark" style="margin:0"><span class="lb">Show answers</span><div class="input">After assignment close<svg><use href="#i-down"/></svg></div></div>
+          <div class="sw"><span class="l">Allow submission with uploads</span><span class="t on"></span></div>
+          <div class="adv"><svg><use href="#i-right"/></svg>Advanced</div>
+          <div class="foot"><span class="btn ghost">Cancel</span><span class="btn">Create</span></div>
+        </div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- C4 -->
+  <section class="board" id="c4">
+    <header><h2><b>C4</b>Show grades: Automatic or Manual (question S)</h2>
+      <p>Epo 2026-11-08. Marking takes its own row; Show grades and Show answers share the next. Show grades: Automatic (today, the default) or Manual, released with Release grades (T5). Show answers: After assignment close (default), After submission or Do not show. Answers never come before grades, so with Manual they wait for the release too.</p></header>
+    <div class="frames">
+      <div class="lap-wrap"><div class="lap" data-shell="owner" style="height:700px">
+        <div class="main"></div>
+        <div class="scrim"><div class="dialog" style="position:relative">
+          <h3>New assignment</h3>
+          <div class="field"><span class="lb">Quiz</span><div class="input">Past paper 2025 P1<svg><use href="#i-down"/></svg></div></div>
+          <div class="two">
+            <div class="field"><span class="lb">Due</span><div class="input" style="justify-content:flex-start;gap:8px"><svg><use href="#i-cal"/></svg>Wed 11 Nov</div></div>
+            <div class="field"><span class="lb">Time limit</span><div class="input">No limit<svg><use href="#i-down"/></svg></div></div>
+          </div>
+          <div class="field"><span class="lb">Marking</span><div class="input">AI grades, approval required<svg><use href="#i-down"/></svg></div></div>
+          <div class="two">
+            <div class="field newmark" style="margin:0"><span class="lb">Show grades</span><div class="input">Manual<svg><use href="#i-down"/></svg></div></div>
+            <div class="field"><span class="lb">Show answers</span><div class="input">After assignment close<svg><use href="#i-down"/></svg></div></div>
+          </div>
+          <div class="sw"><span class="l">Allow submission with uploads</span><span class="t on"></span></div>
+          <div class="adv"><svg><use href="#i-right"/></svg>Advanced</div>
+          <div class="foot"><span class="btn ghost">Cancel</span><span class="btn">Create</span></div>
+          <div class="menu" style="left:24px;top:370px;width:236px">
+            <div class="mi">Automatic</div>
+            <div class="mi on">Manual<svg class="tick"><use href="#i-check"/></svg></div>
+          </div>
+        </div></div>
+      </div></div>
+      <div class="phone">
+        <div data-tpl="ph-top"></div>
+        <div class="ph-body" style="opacity:.35"><span class="title">Assignments</span></div>
+        <div class="ph-sheet"><div class="dialog">
+          <h3>New assignment</h3>
+          <div class="field"><span class="lb">Quiz</span><div class="input">Past paper 2025 P1<svg><use href="#i-down"/></svg></div></div>
+          <div class="two">
+            <div class="field"><span class="lb">Due</span><div class="input" style="justify-content:flex-start;gap:6px"><svg><use href="#i-cal"/></svg>Wed 11 Nov</div></div>
+            <div class="field"><span class="lb">Time limit</span><div class="input">No limit<svg><use href="#i-down"/></svg></div></div>
+          </div>
+          <div class="field"><span class="lb">Marking</span><div class="input">AI grades, approval required<svg><use href="#i-down"/></svg></div></div>
+          <div class="field newmark" style="margin:0"><span class="lb">Show grades</span><div class="input">Manual<svg><use href="#i-down"/></svg></div></div>
+          <div class="field"><span class="lb">Show answers</span><div class="input">After assignment close<svg><use href="#i-down"/></svg></div></div>
+          <div class="adv"><svg><use href="#i-right"/></svg>Advanced</div>
+          <div class="foot"><span class="btn ghost">Cancel</span><span class="btn">Create</span></div>
+        </div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- C2 -->
+  <section class="board" id="c2">
+    <header><h2><b>C2</b>New assignment, Unmarked: Allow file uploads</h2>
+      <p>Approved (Epo 2026-11-08, A): Files moved below Due and Assign to, then the switch. On: members hand in files and Mark as done becomes Hand in. Off: today's task, unchanged.</p></header>
+    <div class="frames">
+      <div class="lap-wrap"><div class="lap" data-shell="owner">
+        <div class="main"></div>
+        <div class="scrim"><div class="dialog">
+          <h3>New assignment</h3>
+          <div class="field"><span class="lb">Kind</span><div class="input">Unmarked<svg><use href="#i-down"/></svg></div></div>
+          <div class="field"><span class="lb">Title</span><div class="input">Osmosis lab write-up</div></div>
+          <div class="two">
+            <div class="field"><span class="lb">Due</span><div class="input" style="justify-content:flex-start;gap:8px"><svg><use href="#i-cal"/></svg>Fri 13 Nov</div></div>
+            <div class="field"><span class="lb">Assign to</span><div class="input">All members<svg><use href="#i-down"/></svg></div></div>
+          </div>
+          <div class="field"><span class="lb">Files <i>· optional</i></span><div><span class="btn out sm"><svg><use href="#i-plus"/></svg>Add a file</span></div></div>
+          <div class="sw new newmark"><span class="l">Allow submission with uploads</span><span class="t on"></span></div>
+          <div class="adv"><svg><use href="#i-right"/></svg>Advanced</div>
+          <div class="foot"><span class="btn ghost">Cancel</span><span class="btn">Create</span></div>
+        </div></div>
+      </div></div>
+      <div class="phone">
+        <div data-tpl="ph-top"></div>
+        <div class="ph-body" style="opacity:.35"><span class="title">Assignments</span></div>
+        <div class="ph-sheet"><div class="dialog">
+          <h3>New assignment</h3>
+          <div class="field"><span class="lb">Kind</span><div class="input">Unmarked<svg><use href="#i-down"/></svg></div></div>
+          <div class="field"><span class="lb">Title</span><div class="input">Osmosis lab write-up</div></div>
+          <div class="two">
+            <div class="field"><span class="lb">Due</span><div class="input" style="justify-content:flex-start;gap:6px"><svg><use href="#i-cal"/></svg>Fri 13 Nov</div></div>
+            <div class="field"><span class="lb">Assign to</span><div class="input">All members<svg><use href="#i-down"/></svg></div></div>
+          </div>
+          <div class="field"><span class="lb">Files <i>· optional</i></span><div><span class="btn out sm"><svg><use href="#i-plus"/></svg>Add a file</span></div></div>
+          <div class="sw new newmark"><span class="l">Allow submission with uploads</span><span class="t on"></span></div>
+          <div class="adv"><svg><use href="#i-right"/></svg>Advanced</div>
+          <div class="foot"><span class="btn ghost">Cancel</span><span class="btn">Create</span></div>
+        </div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- S4 -->
+  <section class="board" id="s4">
+    <header><h2><b>S4</b>Member opens a Marked assignment that allows uploads: Before you start</h2>
+      <p>Epo 2026-11-08: the same Before you start dialog as a timed assignment, with the time when there is a limit, and two buttons: Attempt online or Upload file. It shows for every assignment that allows uploads, timed or not (phone: no time limit). Attempt online starts today's attempt; Upload file opens S5. The choice can't be mixed in one submission.</p></header>
+    <div class="frames">
+      <div class="lap-wrap"><div class="lap" data-shell="member">
+        <div class="main"></div>
+        <div class="scrim"><div class="dialog" style="width:520px;gap:14px">
+          <h3>Past paper 2025 P1</h3>
+          <div class="timebox"><span class="clk"><svg><use href="#i-clock"/></svg></span><div><b>60 min</b><span class="meta" style="font-size:13px;color:var(--fg2)">The timer starts when you press Attempt online or Upload file</span></div></div>
+          <div class="meta" style="font-size:13px;color:var(--fg2)">12 questions · 40 marks</div>
+          <div class="foot"><span class="btn ghost">Not now</span><span class="btn out newmark" style="margin:0">Upload file</span><span class="btn newmark" style="margin:0">Attempt online</span></div>
+        </div></div>
+      </div></div>
+      <div class="phone">
+        <div data-tpl="ph-top"></div>
+        <div class="ph-body" style="opacity:.35"><span class="title">Assignments</span></div>
+        <div class="ph-sheet"><div class="dialog" style="gap:14px">
+          <h3>Genetics worksheet</h3>
+          <div class="meta" style="font-size:13px;color:var(--fg2)">8 questions · 20 marks · Due Tue 10 Nov</div>
+          <div class="foot" style="flex-wrap:wrap"><span class="btn ghost">Not now</span><span class="btn out newmark" style="margin:0">Upload file</span><span class="btn newmark" style="margin:0">Attempt online</span></div>
+        </div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- S5 -->
+  <section class="board" id="s5">
+    <header><h2><b>S5</b>Member, Upload file: the questions read only, then Your paper and Submit</h2>
+      <p>Redrawn for W (Epo 2026-11-08, "sure on all"). Upload file in Before you start opens the assignment's own layout with the clock running: the question list, each question shown read only with its marks and no answer field, and a last row, Your paper, after the questions. Your paper takes one PDF, or photos in order, which can be removed or dragged into order; nothing is labelled. Submit and the clock sit along the bottom as when attempting online; Submit with no pages yet asks first. Attempt online and upload never mix in one attempt (C).</p></header>
+    <div class="frames">
+      <div class="lap-wrap"><div class="lap" data-shell="member">
+        <div class="main" style="padding:0">
+          <div class="split">
+            <div class="qlist">
+              <div class="back" style="margin:0 0 6px 8px"><svg><use href="#i-back"/></svg>Assignments</div>
+              <div style="font-weight:700;font-size:15px;margin:0 0 6px 8px">Past paper 2025 P1</div>
+              <div class="qr"><span class="ql">1</span><span class="qt">Define osmosis and name the organelle…</span><span class="meta">3</span></div>
+              <div class="qr"><span class="ql">2</span><span class="qt">Solve 3x + 7 = 22. Show your working.</span><span class="meta">2</span></div>
+              <div class="qr"><span class="ql">3</span><span class="qt">Expand and factorise…</span><span class="meta">3</span></div>
+              <div class="qr"><span class="ql">4</span><span class="qt">A car accelerates uniformly from rest…</span><span class="meta">4</span></div>
+              <div class="qr"><span class="ql">5</span><span class="qt">Explain why the rate of photosynthesis…</span><span class="meta">3</span></div>
+              <div class="qr"><span class="ql">6</span><span class="qt">Describe the journey of blood…</span><span class="meta">4</span></div>
+              <div class="qr"><span class="ql">7</span><span class="qt">Sketch the graph of y = 2x + 1</span><span class="meta">2</span></div>
+              <div class="qr"><span class="ql">8</span><span class="qt">Mean and median</span><span class="meta">3</span></div>
+              <div class="qr"><span class="ql">9</span><span class="qt">Two differences between plant and…</span><span class="meta">2</span></div>
+              <div class="qr"><span class="ql">10</span><span class="qt">Calculate the lamp's resistance</span><span class="meta">2</span></div>
+              <div class="sep"></div>
+              <div class="qr on newmark" style="margin:0"><span class="ql"><svg class="ficon" style="width:14px"><use href="#i-page"/></svg></span><span class="qt" style="font-weight:600">Your paper</span><span class="pg">10 pages</span></div>
+            </div>
+            <div class="qpane">
+              <div class="secthead"><h4 class="sub" style="font-size:18px">Your paper</h4><span class="btn out sm"><svg><use href="#i-plus"/></svg>Add files</span></div>
+              <div class="meta">Past paper P1 answers.pdf · 10 pages · 3.4 MB. Marking finds each answer on its own; drag pages to reorder.</div>
+              <div class="pages" style="grid-template-columns:repeat(5, minmax(0, 1fr));gap:10px">
+                <div class="sheet">Name: Cara Moss
+1 (a) Osmosis is
+  the net movement<span class="no">1</span></div>
+                <div class="sheet">2  3x + 7 = 22
+   3x = 15
+   x = 5<span class="no">2</span></div>
+                <div class="sheet">3 (b) x^2 - 9
+4 (a) a = (v-u)/t<span class="no">3</span></div>
+                <div class="sheet">4 (b) s = 144 m
+5  Because CO2<span class="no">4</span></div>
+                <div class="sheet">6  The right
+   ventricle pumps<span class="no">5</span></div>
+                <div class="sheet">   oxygenated. It
+   then goes back<span class="no">6</span></div>
+                <div class="sheet">7
+  [graph]<span class="no">7</span></div>
+                <div class="sheet">8 (a) mean = 8
+9  cell wall<span class="no">8</span></div>
+                <div class="sheet">10  R = V / I
+      = 4 ohms<span class="no">9</span></div>
+                <div class="sheet">12
+   (rough working)<span class="no">10</span></div>
+              </div>
+              <div class="qbar"><span class="saved"><svg class="ficon" style="width:15px;vertical-align:-3px"><use href="#i-clock"/></svg> 42:10 left</span><span class="btn">Submit</span></div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="phone">
+        <div class="strip"><svg class="ficon" style="width:16px;margin-right:2px"><use href="#i-back"/></svg><span class="q">1</span><span class="q">2</span><span class="q">3</span><span class="q">4</span><span class="q">5</span><span class="q">6</span><span class="q">7</span><span class="q pg on newmark" style="margin:0"><svg><use href="#i-page"/></svg>Paper</span></div>
+        <div class="ph-body">
+          <div class="secthead"><h4 class="sub" style="font-size:17px">Your paper</h4></div>
+          <div style="display:flex;gap:8px"><span class="btn out sm"><svg><use href="#i-cam"/></svg>Take photo</span><span class="btn out sm"><svg><use href="#i-plus"/></svg>Add files</span></div>
+          <div class="meta">Past paper P1 answers.pdf · 10 pages</div>
+          <div class="pages" style="grid-template-columns:repeat(3, 1fr);gap:8px">
+              <div class="sheet" style="font-size:6px;line-height:10px;padding:12px 6px 0 8px">Name: Cara Moss<span class="no">1</span></div>
+              <div class="sheet" style="font-size:6px;line-height:10px;padding:12px 6px 0 8px">2  3x + 7 = 22<span class="no">2</span></div>
+              <div class="sheet" style="font-size:6px;line-height:10px;padding:12px 6px 0 8px">3 (b) x^2 - 9<span class="no">3</span></div>
+              <div class="sheet" style="font-size:6px;line-height:10px;padding:12px 6px 0 8px">4 (b) s = 144 m<span class="no">4</span></div>
+              <div class="sheet" style="font-size:6px;line-height:10px;padding:12px 6px 0 8px">6  The right<span class="no">5</span></div>
+              <div class="sheet" style="font-size:6px;line-height:10px;padding:12px 6px 0 8px">   oxygenated. It<span class="no">6</span></div>
+          </div>
+          <span class="meta">+ 4 more pages</span>
+        </div>
+        <div class="ph-bar"><span class="meta" style="margin-right:auto;display:inline-flex;gap:5px;align-items:center"><svg class="ficon" style="width:15px"><use href="#i-clock"/></svg>42:10 left</span><span class="btn">Submit</span></div>
+      </div>
+      <div class="phone">
+        <div class="strip"><svg class="ficon" style="width:16px;margin-right:2px"><use href="#i-back"/></svg><span class="q">1</span><span class="q on">2</span><span class="q">3</span><span class="q">4</span><span class="q">5</span><span class="q">6</span><span class="q">7</span><span class="q pg"><svg><use href="#i-page"/></svg>Paper</span></div>
+        <div class="ph-body">
+          <div class="meta">Question 2 · 2 marks</div>
+          <div class="stem">Solve 3x + 7 = 22. Show your working.</div>
+          <div class="meta newmark" style="margin:0;padding:8px 10px">Answer this on your paper, then add it under Your paper.</div>
+        </div>
+        <div class="ph-bar"><span class="meta" style="margin-right:auto;display:inline-flex;gap:5px;align-items:center"><svg class="ficon" style="width:15px"><use href="#i-clock"/></svg>42:10 left</span><span class="btn">Submit</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- S3 -->
+  <section class="board" id="s3">
+    <header><h2><b>S3</b>Member, Unmarked task with uploads</h2>
+      <p>Your work sits under the owner's Files, with Add files at the section's top right. Hand in replaces Mark as done; once handed in, the meta line says so and the button reads Undo hand in (laptop before, phone after).</p></header>
+    <div class="frames">
+      <div class="lap-wrap"><div class="lap" data-shell="member">
+        <div class="main">
+          <div class="back"><svg><use href="#i-back"/></svg>Assignments</div>
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-top:6px">
+            <div><div class="title" style="margin:0">Osmosis lab write-up</div><div class="meta">Unmarked · Posted Sun 8 Nov by Kate Malone · Due Fri 13 Nov</div></div>
+            <span class="btn newmark" style="margin:0">Hand in</span>
+          </div>
+          <div style="margin-top:22px;max-width:720px">
+            <h4 class="sub">Files</h4>
+            <ul class="list"><li><svg class="ficon"><use href="#i-doc"/></svg><span class="nm">Lab sheet — potato cylinders.docx</span><span class="link">Open<svg><use href="#i-fwd"/></svg></span></li></ul>
+          </div>
+          <div class="newmark" style="margin:22px 0 0;max-width:732px;display:block">
+            <div class="secthead"><h4 class="sub">Your work</h4><span class="btn out sm"><svg><use href="#i-plus"/></svg>Add files</span></div>
+            <ul class="list">
+              <li><svg class="ficon"><use href="#i-pdf"/></svg><span class="nm">Osmosis write-up.pdf</span><span class="meta">4 pages · 1.8 MB</span><svg class="ficon" style="color:var(--muted)"><use href="#i-dots"/></svg></li>
+              <li><svg class="ficon"><use href="#i-img"/></svg><span class="nm">results-table.jpg</span><span class="meta">0.9 MB</span><svg class="ficon" style="color:var(--muted)"><use href="#i-dots"/></svg></li>
+            </ul>
+          </div>
+        </div>
+      </div></div>
+      <div class="phone">
+        <div data-tpl="ph-top"></div>
+        <div class="ph-body">
+          <div class="back"><svg><use href="#i-back"/></svg>Assignments</div>
+          <div><div class="title">Osmosis lab write-up</div><div class="meta">Unmarked · Due Fri 13 Nov · <span class="newmark" style="margin:0;padding:0 3px">Handed in Thu 12 Nov</span></div></div>
+          <div><span class="btn out">Undo hand in</span></div>
+          <div><h4 class="sub">Files</h4>
+            <ul class="list"><li><svg class="ficon"><use href="#i-doc"/></svg><span class="nm">Lab sheet — potato cylinders.docx</span><span class="link">Open<svg><use href="#i-fwd"/></svg></span></li></ul></div>
+          <div><div class="secthead"><h4 class="sub">Your work</h4></div>
+            <ul class="list">
+              <li><svg class="ficon"><use href="#i-pdf"/></svg><span class="nm">Osmosis write-up.pdf</span><span class="meta">4 pages</span></li>
+              <li><svg class="ficon"><use href="#i-img"/></svg><span class="nm">results-table.jpg</span><span class="meta">0.9 MB</span></li>
+            </ul></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- T1 -->
+  <section class="board" id="t1">
+    <header><h2><b>T1</b>Owner, Marked: Approve AI marks on a page answer</h2>
+      <p>Today's Approve tab. Where the member typed, the answer quote shows as now; for an uploaded paper, the pages the map call found for this question show instead, full width of the column, with Open file to see the whole upload. The AI column keeps its marks; each point's quote names what on the page earned it. Ben is Not marked (no credits), as today.</p></header>
+    <div class="frames">
+      <div class="lap-wrap"><div class="lap" data-shell="owner">
+        <div class="main">
+          <div class="back"><svg><use href="#i-back"/></svg>Assignments</div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px"><span class="title" style="margin:0">Osmosis test</span><span class="chips"><span class="chip">Assignment</span><span class="chip">Due Wed 11 Nov</span><span class="chip">5 of 6 submitted</span></span></div>
+          <div class="tabs"><span>Questions</span><span>Members</span><span class="on">Approve AI marks</span><span>Settings</span></div>
+          <div class="appr">
+            <div class="l">
+              <div class="input" style="height:32px">Question 3 · 6 marks<svg><use href="#i-down"/></svg></div>
+              <div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px;color:var(--fg2)">3 to approve<span class="btn out sm">Approve all</span></div>
+              <div class="mrow on"><span class="av">CM</span><span class="nm">Cara Moss</span><span class="pg meta" style="display:inline-flex;gap:3px;align-items:center"><svg class="ficon" style="width:13px"><use href="#i-page"/></svg>p2</span><span>5 / 6</span></div>
+              <div class="mrow"><span class="av">FA</span><span class="nm">Farah Ali</span><span>4 / 6</span></div>
+              <div class="mrow"><span class="av">BL</span><span class="nm">Ben Lee</span><span class="chip warn">Not marked</span></div>
+              <div class="mrow"><span class="av">EP</span><span class="nm">Eve Park</span><span>6 / 6</span></div>
+            </div>
+            <div class="r">
+              <div class="stem">Explain how water enters a root hair cell from the soil. <span class="mk">(6 marks)</span></div>
+              <div style="display:flex;align-items:center;gap:8px"><span class="av">CM</span><b style="font-weight:600">Cara Moss</b><span class="meta">· Page 2 of Osmosis test scan.pdf</span><span class="link" style="margin-left:auto">Open file<svg><use href="#i-fwd"/></svg></span></div>
+              <div class="newmark" style="margin:0"><div class="sheet big" style="width:100%;aspect-ratio:auto;height:150px">3  Water goes in by osmosis through the partially permeable
+   membrane, because the soil water is more dilute than the
+   cell sap (higher water potential outside).
+
+4  change = 2.1 - 2.5 = -0.4 g</div></div>
+              <table class="pts">
+                <tr><th>MARKING POINTS</th><th>AI</th><th>MARK</th></tr>
+                <tr><td>Names the partially permeable membrane (2)<span class="q">"through the partially permeable membrane"</span></td><td class="ai">2</td><td class="mk"><div class="sel">2 / 2<svg><use href="#i-down"/></svg></div></td></tr>
+                <tr><td>Water moves from dilute to concentrated solution (2)<span class="q">"soil water is more dilute than the cell sap"</span></td><td class="ai">2</td><td class="mk"><div class="sel">2 / 2<svg><use href="#i-down"/></svg></div></td></tr>
+                <tr><td>Uses the term water potential (1)<span class="q">"higher water potential outside"</span></td><td class="ai">1</td><td class="mk"><div class="sel">1 / 1<svg><use href="#i-down"/></svg></div></td></tr>
+                <tr><td>Links to the cell's higher solute concentration (1)</td><td class="ai">0</td><td class="mk"><div class="sel">0 / 1<svg><use href="#i-down"/></svg></div></td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="phone">
+        <div data-tpl="ph-top"></div>
+        <div class="ph-body" style="gap:10px">
+          <div class="title" style="font-size:20px">Osmosis test</div>
+          <div class="tabs" style="margin:0;font-size:13px"><span>Questions</span><span>Members</span><span class="on">Approve AI marks</span></div>
+          <div class="input" style="height:32px">Question 3 · 6 marks<svg><use href="#i-down"/></svg></div>
+          <div class="mrow" style="display:flex;gap:9px;align-items:center;background:var(--select);padding:7px 9px;border-radius:7px"><span class="av">CM</span><span style="flex:1">Cara Moss</span><span>5 / 6</span></div>
+          <div style="display:flex;align-items:center;gap:8px"><span class="meta">Page 2 of Osmosis test scan.pdf</span><span class="link" style="margin-left:auto">Open file<svg><use href="#i-fwd"/></svg></span></div>
+          <div class="newmark" style="margin:0"><div class="sheet big" style="width:100%;aspect-ratio:auto;height:140px;font-size:11px;line-height:19px;background-image:repeating-linear-gradient(to bottom, transparent 0 18px, var(--paper-line) 18px 19px)">3  Water goes in by osmosis
+   through the partially
+   permeable membrane, because
+   the soil water is more dilute
+   than the cell sap.</div></div>
+          <table class="pts">
+            <tr><th>MARKING POINTS</th><th>AI</th><th>MARK</th></tr>
+            <tr><td>Names the partially permeable membrane (2)</td><td class="ai">2</td><td class="mk"><div class="sel">2 / 2<svg><use href="#i-down"/></svg></div></td></tr>
+            <tr><td>Water moves from dilute to concentrated (2)</td><td class="ai">2</td><td class="mk"><div class="sel">2 / 2<svg><use href="#i-down"/></svg></div></td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- T2 -->
+  <section class="board" id="t2">
+    <header><h2><b>T2</b>Owner, Unmarked task: who handed in what</h2>
+      <p>The task's Members tab gets the handed-in date and the files; a file opens in the viewer. No mark column, since the task is unmarked (question H asks whether the owner can leave a comment).</p></header>
+    <div class="frames">
+      <div class="lap-wrap"><div class="lap" data-shell="owner">
+        <div class="main">
+          <div class="back"><svg><use href="#i-back"/></svg>Assignments</div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px"><span class="title" style="margin:0">Osmosis lab write-up</span><span class="chips"><span class="chip">Unmarked</span><span class="chip">Due Fri 13 Nov</span><span class="chip">4 of 6 handed in</span></span></div>
+          <div class="tabs"><span class="on">Members</span><span>Settings</span></div>
+          <table class="table newmark" style="margin-top:6px">
+            <tr><th>Member</th><th>Handed in</th><th>Work</th></tr>
+            <tr><td><span class="who"><span class="av">BL</span>Ben Lee</span></td><td>Thu 12 Nov</td><td><span class="files-inline"><span><svg><use href="#i-pdf"/></svg>Lab write-up.pdf</span></span></td></tr>
+            <tr><td><span class="who"><span class="av">CM</span>Cara Moss</span></td><td>Thu 12 Nov</td><td><span class="files-inline"><span><svg><use href="#i-pdf"/></svg>Osmosis write-up.pdf</span><span><svg><use href="#i-img"/></svg>results-table.jpg</span></span></td></tr>
+            <tr><td><span class="who"><span class="av">DK</span>Dan Kim</span></td><td style="color:var(--fg2)">Not handed in</td><td></td></tr>
+            <tr><td><span class="who"><span class="av">EP</span>Eve Park</span></td><td>Fri 13 Nov <span class="chip warn">Late</span></td><td><span class="files-inline"><span><svg><use href="#i-img"/></svg>3 photos</span></span></td></tr>
+            <tr><td><span class="who"><span class="av">FA</span>Farah Ali</span></td><td>Wed 11 Nov</td><td><span class="files-inline"><span><svg><use href="#i-doc"/></svg>Osmosis lab.docx</span></span></td></tr>
+            <tr><td><span class="who"><span class="av">GI</span>Gus Ito</span></td><td style="color:var(--fg2)">Not handed in</td><td></td></tr>
+          </table>
+        </div>
+      </div></div>
+      <div class="phone">
+        <div data-tpl="ph-top"></div>
+        <div class="ph-body" style="gap:10px">
+          <div class="title" style="font-size:20px">Osmosis lab write-up</div>
+          <span class="chips"><span class="chip">Unmarked</span><span class="chip">Due Fri 13 Nov</span><span class="chip">4 of 6 handed in</span></span>
+          <div class="tabs" style="margin:0"><span class="on">Members</span><span>Settings</span></div>
+          <ul class="list newmark" style="margin:0">
+            <li style="min-height:56px"><span class="av">BL</span><span style="flex:1;min-width:0"><b style="font-weight:600">Ben Lee</b><br><span class="meta">Thu 12 Nov · Lab write-up.pdf</span></span></li>
+            <li style="min-height:56px"><span class="av">CM</span><span style="flex:1;min-width:0"><b style="font-weight:600">Cara Moss</b><br><span class="meta">Thu 12 Nov · 2 files</span></span></li>
+            <li style="min-height:56px"><span class="av">DK</span><span style="flex:1;min-width:0"><b style="font-weight:600">Dan Kim</b><br><span class="meta">Not handed in</span></span></li>
+            <li style="min-height:56px"><span class="av">EP</span><span style="flex:1;min-width:0"><b style="font-weight:600">Eve Park</b><br><span class="meta">Fri 13 Nov · 3 photos</span></span><span class="chip warn">Late</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- T3 -->
+  <section class="board" id="t3">
+    <header><h2><b>T3</b>Owner: waiting for approval vs waiting to be graded, with the reason</h2>
+      <p>Epo 2026-11-08. Marking is charged to the person attempting, and running out never blocks a submission. The list row and the report header split today's "N to approve" into "to approve" (AI marked, waiting for you) and "not graded" (no AI mark yet). No banner (Epo: the badge says enough): each ungraded row carries its reason, No credits or Grade Error, and the answer pane says it in one line. Mark with AI stays where it is; it charges each member's own credits.</p></header>
+    <div class="frames">
+      <div class="lap-wrap"><div class="lap" data-shell="owner">
+        <div class="main">
+          <div class="back"><svg><use href="#i-back"/></svg>Assignments</div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px"><span class="title" style="margin:0">Past paper 2025 P1</span><span class="chips"><span class="chip">Assignment · 60 min</span><span class="chip">Due Wed 11 Nov</span><span class="chip">5 of 6 submitted</span><span class="chip warn newmark" style="margin:0">3 to approve</span><span class="chip bad newmark" style="margin:0">4 not graded</span></span></div>
+          <div class="tabs"><span>Questions</span><span>Members</span><span class="on">Approve AI marks</span><span>Settings</span></div>
+          <div class="appr" style="height:calc(100% - 130px)">
+            <div class="l">
+              <div class="input" style="height:32px">Question 3 · 6 marks<svg><use href="#i-down"/></svg></div>
+              <div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px;color:var(--fg2)">1 to approve · 3 not graded<span class="btn out sm">Approve all</span></div>
+              <span class="btn out sm" style="justify-content:center">Mark with AI</span>
+              <div class="mrow on"><span class="av">FA</span><span class="nm">Farah Ali</span><span class="chip bad">No credits</span></div>
+              <div class="mrow"><span class="av">GI</span><span class="nm">Gus Ito</span><span class="chip bad">No credits</span></div>
+              <div class="mrow"><span class="av">BL</span><span class="nm">Ben Lee</span><span class="chip bad">Grade Error</span></div>
+              <div class="mrow"><span class="av">CM</span><span class="nm">Cara Moss</span><span class="chip warn">To approve</span></div>
+              <div class="mrow"><span class="av">EP</span><span class="nm">Eve Park</span><span>5 / 6</span></div>
+            </div>
+            <div class="r">
+              <div class="stem">Explain how water enters a root hair cell from the soil. <span class="mk">(6 marks)</span></div>
+              <div style="display:flex;align-items:center;gap:8px"><span class="av">FA</span><b style="font-weight:600">Farah Ali</b></div>
+              <div style="border-left:3px solid var(--divider);padding-left:12px;color:var(--fg2)">Water goes into the root hair cell by osmosis. It crosses the partially permeable membrane and then moves on towards the xylem.</div>
+              <div class="meta newmark" style="margin:0;padding:2px 6px">Not graded: no AI credits left.</div>
+              <table class="pts">
+                <tr><th>MARKING POINTS</th><th>AI</th><th>MARK</th></tr>
+                <tr><td>Names the partially permeable membrane (2)</td><td class="ai">–</td><td class="mk"><div class="sel">– / 2<svg><use href="#i-down"/></svg></div></td></tr>
+                <tr><td>Water moves from dilute to concentrated solution (2)</td><td class="ai">–</td><td class="mk"><div class="sel">– / 2<svg><use href="#i-down"/></svg></div></td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div><div class="cap">The Assignments list row reads the same: "Past paper 2025 P1 · 3 to approve · 4 not graded".</div></div>
+      <div class="phone">
+        <div data-tpl="ph-top"></div>
+        <div class="ph-body" style="gap:10px">
+          <div class="title" style="font-size:20px">Past paper 2025 P1</div>
+          <span class="chips"><span class="chip">5 of 6 submitted</span><span class="chip warn">3 to approve</span><span class="chip bad">4 not graded</span></span>
+          <div class="tabs" style="margin:0;font-size:13px"><span>Questions</span><span>Members</span><span class="on">Approve AI marks</span></div>
+          <div class="input" style="height:32px">Question 3 · 6 marks<svg><use href="#i-down"/></svg></div>
+          <span class="btn out sm" style="justify-content:center">Mark with AI</span>
+          <div style="display:grid;gap:2px">
+            <div style="display:flex;gap:9px;align-items:center;background:var(--select);padding:7px 9px;border-radius:7px"><span class="av">FA</span><span style="flex:1">Farah Ali</span><span class="chip bad">No credits</span></div>
+            <div style="display:flex;gap:9px;align-items:center;padding:7px 9px"><span class="av">GI</span><span style="flex:1">Gus Ito</span><span class="chip bad">No credits</span></div>
+            <div style="display:flex;gap:9px;align-items:center;padding:7px 9px"><span class="av">BL</span><span style="flex:1">Ben Lee</span><span class="chip bad">Grade Error</span></div>
+            <div style="display:flex;gap:9px;align-items:center;padding:7px 9px"><span class="av">CM</span><span style="flex:1">Cara Moss</span><span class="chip warn">To approve</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- T4 -->
+  <section class="board" id="t4">
+    <header><h2><b>T4</b>Owner, the assignment's Members tab: no storage chip</h2>
+      <p>Epo 2026-11-08: a member's full storage has nothing to do with the assignment, so its pages show nothing about it. Where the owner sees it is question U.</p></header>
+    <div class="frames">
+      <div class="lap-wrap"><div class="lap" data-shell="owner">
+        <div class="main">
+          <div class="back"><svg><use href="#i-back"/></svg>Assignments</div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px"><span class="title" style="margin:0">Past paper 2025 P1</span><span class="chips"><span class="chip">Assignment · 60 min</span><span class="chip">Due Wed 11 Nov</span><span class="chip">5 of 6 submitted</span></span></div>
+          <div class="tabs"><span>Questions</span><span class="on">Members</span><span>Approve AI marks</span><span>Settings</span></div>
+          <table class="table" style="margin-top:6px">
+            <tr><th>Member</th><th>Submitted</th><th>Time taken</th><th>Mark</th><th></th></tr>
+            <tr><td><span class="who"><span class="av">BL</span>Ben Lee</span></td><td>Sat 7 Nov</td><td>38 min</td><td><b>26</b> / 40</td><td><span class="chip bad">1 not graded</span></td></tr>
+            <tr><td><span class="who"><span class="av">CM</span>Cara Moss</span></td><td>Sun 8 Nov</td><td>47 min</td><td><b>24</b> / 40</td><td><span class="chip warn">1 to approve</span></td></tr>
+            <tr><td><span class="who"><span class="av">DK</span>Dan Kim</span></td><td style="color:var(--fg2)">Not submitted</td><td></td><td></td><td></td></tr>
+            <tr><td><span class="who"><span class="av">EP</span>Eve Park</span></td><td>Fri 6 Nov</td><td>52 min</td><td><b>31</b> / 40</td><td></td></tr>
+            <tr><td><span class="who"><span class="av">FA</span>Farah Ali</span></td><td>Sun 8 Nov</td><td>41 min</td><td><b>20</b> / 40</td><td><span class="chip bad">2 not graded</span></td></tr>
+            <tr><td><span class="who"><span class="av">GI</span>Gus Ito</span></td><td>Sat 7 Nov</td><td>55 min</td><td><b>19</b> / 40</td><td><span class="chip bad">1 not graded</span></td></tr>
+          </table>
+        </div>
+      </div></div>
+      <div class="phone">
+        <div data-tpl="ph-top"></div>
+        <div class="ph-body" style="gap:10px">
+          <div class="title" style="font-size:20px">Past paper 2025 P1</div>
+          <div class="tabs" style="margin:0;font-size:13px"><span>Questions</span><span class="on">Members</span><span>Approve AI marks</span></div>
+          <ul class="list" style="margin:0">
+            <li style="min-height:56px"><span class="av">BL</span><span style="flex:1;min-width:0"><b style="font-weight:600">Ben Lee</b><br><span class="meta">26 / 40 · 1 not graded</span></span></li>
+            <li style="min-height:56px"><span class="av">DK</span><span style="flex:1;min-width:0"><b style="font-weight:600">Dan Kim</b><br><span class="meta">Not submitted</span></span></li>
+            <li style="min-height:56px"><span class="av">EP</span><span style="flex:1;min-width:0"><b style="font-weight:600">Eve Park</b><br><span class="meta">31 / 40</span></span></li>
+            <li style="min-height:56px"><span class="av">FA</span><span style="flex:1;min-width:0"><b style="font-weight:600">Farah Ali</b><br><span class="meta">20 / 40 · 2 not graded</span></span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- S6 -->
+  <section class="board" id="s6">
+    <header><h2><b>S6</b>Member whose storage is full, starting an assignment</h2>
+      <p>Epo 2026-11-08. Laptop: Before you start (S4) with Upload file turned off and the reason above the buttons. Phone: Before you start (timed assignments) with drawing parts shows one warning line; Start still works, and drawings save past the limit.</p></header>
+    <div class="frames">
+      <div class="lap-wrap"><div class="lap" data-shell="member">
+        <div class="main"></div>
+        <div class="scrim"><div class="dialog" style="width:520px;gap:14px">
+          <h3>Past paper 2025 P1</h3>
+          <div class="timebox"><span class="clk"><svg><use href="#i-clock"/></svg></span><div><b>60 min</b><span class="meta" style="font-size:13px;color:var(--fg2)">The timer starts when you press Attempt online or Upload file</span></div></div>
+          <div class="meta" style="font-size:13px;color:var(--fg2)">12 questions · 40 marks</div>
+          <div class="newmark" style="margin:0;font-size:13px;color:var(--warn);background:var(--warn-bg);padding:9px 11px;border-radius:7px">Your storage is full, so you can't upload a file. You can still attempt online.</div>
+          <div class="foot"><span class="btn ghost">Not now</span><span class="btn out" style="opacity:.45">Upload file</span><span class="btn">Attempt online</span></div>
+        </div></div>
+      </div></div>
+      <div class="phone">
+        <div data-tpl="ph-top"></div>
+        <div class="ph-body" style="opacity:.35"><span class="title">Past paper 2025 P1</span></div>
+        <div class="ph-sheet"><div class="dialog" style="gap:14px">
+          <h3>Past paper 2025 P1</h3>
+          <div class="timebox" style="padding:14px"><span class="clk" style="width:48px;height:48px"><svg><use href="#i-clock"/></svg></span><div><b>60 min</b><span class="meta" style="font-size:12.5px;color:var(--fg2)">The timer starts when you press Start</span></div></div>
+          <div class="meta" style="font-size:13px;color:var(--fg2)">12 questions · 40 marks</div>
+          <div class="newmark" style="margin:0;font-size:13px;color:var(--warn);background:var(--warn-bg);padding:9px 11px;border-radius:7px">Your storage is full. You can still answer and submit; your drawings will go over your storage limit.</div>
+          <div class="foot"><span class="btn ghost">Not now</span><span class="btn">Start</span></div>
+        </div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- S7 -->
+  <section class="board" id="s7">
+    <header><h2><b>S7</b>Proposal: member, grades not released yet (Show grades Manual)</h2>
+      <p>Submitting says when grades come instead of "Your mark so far". On Assignments the row reads Submitted where the mark goes. Results opens to their own answers with no mark, no right or wrong and no comments, under a strip saying who releases them. Once released, everything reads as today.</p></header>
+    <div class="frames">
+      <div class="lap-wrap"><div class="lap" data-shell="member">
+        <div class="main">
+          <div class="title" style="margin:0">Assignments</div>
+          <ul class="list" style="margin-top:14px;max-width:760px">
+            <li style="min-height:62px"><span style="flex:1;min-width:0"><b style="font-weight:600">Past paper 2025 P1</b><br><span class="meta">Marked · Due Wed 11 Nov</span></span><span class="chip newmark" style="margin:0">Submitted</span></li>
+            <li style="min-height:62px"><span style="flex:1;min-width:0"><b style="font-weight:600">Genetics worksheet</b><br><span class="meta">Marked · Due Tue 10 Nov</span></span><b>18 / 20</b></li>
+            <li style="min-height:62px"><span style="flex:1;min-width:0"><b style="font-weight:600">Osmosis check</b><br><span class="meta">Marked · Due Fri 6 Nov</span></span><b>9 / 12</b></li>
+          </ul>
+          <div style="margin-top:34px;max-width:760px;border:1px solid var(--divider);border-radius:12px;padding:22px 24px;text-align:center">
+            <div style="font-size:20px;font-weight:800">Submitted</div>
+            <div class="meta" style="margin-top:4px">Past paper 2025 P1 · Sun 8 Nov, 14:32</div>
+            <p class="newmark" style="margin:14px auto 0;display:inline-block;font-weight:500">Your grade will show when Kate Malone releases it.</p>
+            <div style="margin-top:16px;display:flex;gap:8px;justify-content:center"><span class="btn out">See your answers<svg><use href="#i-fwd"/></svg></span><span class="btn out">Back to Assignments</span></div>
+          </div>
+          <div class="cap">The page after Submit (below the list here only to show both).</div>
+        </div>
+      </div></div>
+      <div class="phone">
+        <div data-tpl="ph-top"></div>
+        <div class="ph-body">
+          <div class="back"><svg><use href="#i-back"/></svg>Assignments</div>
+          <div><div class="title">Past paper 2025 P1</div><div class="meta">Submitted Sun 8 Nov · 12 questions</div></div>
+          <div class="newmark" style="margin:0;font-size:13px;background:var(--chip);padding:9px 11px;border-radius:7px">Grades not released yet. Kate Malone releases them; until then you can read your answers.</div>
+          <div style="display:grid;gap:2px">
+            <div class="qr" style="display:flex;gap:8px;padding:8px 4px;border-bottom:1px solid var(--divider)"><span class="meta" style="width:24px">Q1</span><span style="flex:1">Define osmosis.</span><span class="meta">Answered</span></div>
+            <div class="qr" style="display:flex;gap:8px;padding:8px 4px;border-bottom:1px solid var(--divider)"><span class="meta" style="width:24px">Q2</span><span style="flex:1">Which cell organelle…</span><span class="meta">Answered</span></div>
+            <div class="qr" style="display:flex;gap:8px;padding:8px 4px;border-bottom:1px solid var(--divider)"><span class="meta" style="width:24px">Q3</span><span style="flex:1">Explain how water enters…</span><span class="meta">Answered</span></div>
+            <div class="qr" style="display:flex;gap:8px;padding:8px 4px;border-bottom:1px solid var(--divider)"><span class="meta" style="width:24px">Q4</span><span style="flex:1">Calculate the percentage…</span><span class="meta">Blank</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- T5 -->
+  <section class="board" id="t5">
+    <header><h2><b>T5</b>Proposal: owner, Release grades</h2>
+      <p>With Show grades set to Manual, the report header carries "Grades not released" and a Release grades button. Its confirm counts who gets them and warns about answers still waiting; those show to the member once approved, as later mark changes do (Canvas's rule). Afterwards the chip reads "Released Mon 16 Nov". Answers set to After submission go out at the same moment; After assignment close ones wait for the close as well.</p></header>
+    <div class="frames">
+      <div class="lap-wrap"><div class="lap" data-shell="owner">
+        <div class="main">
+          <div class="back"><svg><use href="#i-back"/></svg>Assignments</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="title" style="margin:0">Past paper 2025 P1</span><span class="chips"><span class="chip">Closed Wed 11 Nov</span><span class="chip">6 of 6 submitted</span><span class="chip warn">2 to approve</span><span class="chip newmark" style="margin:0">Grades not released</span></span></div>
+            <span class="btn newmark" style="margin:0">Release grades</span>
+          </div>
+          <div class="tabs"><span>Questions</span><span class="on">Members</span><span>Approve AI marks</span><span>Settings</span></div>
+          <table class="table" style="margin-top:6px">
+            <tr><th>Member</th><th>Submitted</th><th>Time taken</th><th>Mark</th><th></th></tr>
+            <tr><td><span class="who"><span class="av">BL</span>Ben Lee</span></td><td>Sat 7 Nov</td><td>38 min</td><td><b>26</b> / 40</td><td></td></tr>
+            <tr><td><span class="who"><span class="av">CM</span>Cara Moss</span></td><td>Sun 8 Nov</td><td>47 min</td><td><b>24</b> / 40</td><td><span class="chip warn">1 to approve</span></td></tr>
+            <tr><td><span class="who"><span class="av">EP</span>Eve Park</span></td><td>Fri 6 Nov</td><td>52 min</td><td><b>31</b> / 40</td><td></td></tr>
+            <tr><td><span class="who"><span class="av">FA</span>Farah Ali</span></td><td>Sun 8 Nov</td><td>41 min</td><td><b>20</b> / 40</td><td><span class="chip warn">1 to approve</span></td></tr>
+          </table>
+          <div class="scrim" style="position:absolute;inset:0;display:grid;place-items:center"><div class="dialog" style="width:440px">
+            <h3>Release grades?</h3>
+            <p style="margin:0;color:var(--fg2)">6 members see their grades now. 2 answers still wait for your approval; each shows once you approve it.</p>
+            <div class="foot"><span class="btn ghost">Cancel</span><span class="btn">Release grades</span></div>
+          </div></div>
+        </div>
+      </div></div>
+      <div class="phone">
+        <div data-tpl="ph-top"></div>
+        <div class="ph-body" style="gap:10px">
+          <div class="title" style="font-size:20px">Past paper 2025 P1</div>
+          <span class="chips"><span class="chip">6 of 6 submitted</span><span class="chip warn">2 to approve</span><span class="chip newmark" style="margin:0">Grades not released</span></span>
+          <div><span class="btn newmark" style="margin:0">Release grades</span></div>
+          <div class="tabs" style="margin:0;font-size:13px"><span>Questions</span><span class="on">Members</span><span>Approve AI marks</span></div>
+          <ul class="list" style="margin:0">
+            <li style="min-height:56px"><span class="av">BL</span><span style="flex:1;min-width:0"><b style="font-weight:600">Ben Lee</b><br><span class="meta">26 / 40</span></span></li>
+            <li style="min-height:56px"><span class="av">CM</span><span style="flex:1;min-width:0"><b style="font-weight:600">Cara Moss</b><br><span class="meta">24 / 40 · 1 to approve</span></span></li>
+            <li style="min-height:56px"><span class="av">EP</span><span style="flex:1;min-width:0"><b style="font-weight:600">Eve Park</b><br><span class="meta">31 / 40</span></span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- F1 -->
+  <section class="board" id="f1">
+    <header><h2><b>F1</b>Member: Files › Submissions, uploaded papers they can delete once marked</h2>
+      <p>Epo 2026-11-08 (question I). A new tab after Canvas, built the same way: a paper lists once its assignment is closed, every part it answers is marked and, under Show grades Manual, grades are released (Epo 2026-11-08, "Yes, both tabs": Canvas waits the same way for assignment drawings, practice drawings don't), newest first, named by its file and then its assignment and workspace. The ⋮ menu has Open result and Delete file; Delete all clears the list. Deleting frees the storage and the marks stay. The papers never enter the workspace's files, so a viewer member can hand them in and other members never see them.</p></header>
+    <div class="frames">
+      <div class="lap-wrap"><div class="lap" style="grid-template-columns:60px 1fr">
+        <nav class="rail acct-rail">
+          <div class="it"><svg><use href="#i-grid"/></svg>Workspaces</div>
+          <div class="it"><svg><use href="#i-todo"/></svg>To do</div>
+          <div class="it on"><svg><use href="#i-folder"/></svg>Files</div>
+          <div class="it"><svg><use href="#i-book"/></svg>Learning</div>
+          <div class="it"><svg><use href="#i-spark"/></svg>Chat</div>
+        </nav>
+        <div class="main">
+          <div class="title" style="margin:0">Files</div>
+          <div class="ftabs"><span>Files</span><span>Blocks</span><span>Embeds</span><span>Canvas</span><span class="on new">Submissions</span><span>Trash</span></div>
+          <div class="fbar"><span class="meta">3 marked · 12.9 MB</span><span class="btn danger sm"><svg><use href="#i-trash"/></svg>Delete all</span><span class="iconbtn"><svg><use href="#i-dash"/></svg></span></div>
+          <div class="frow"><div class="thumb"><div class="sheet photo">1  osmosis is the net
+   movement of water
+
+2  3x + 7 = 22
+   x = 5</div></div><div style="display:grid;gap:2px;min-width:0"><span class="nm">Past paper 2025 P1 scan.pdf</span><span class="meta sub">Past paper 2025 P1 · Assignment · Biology 101</span></div><span class="meta">2 days ago</span><span class="meta r">4.8 MB</span><span class="iconbtn"><svg><use href="#i-dots"/></svg></span></div>
+          <div class="frow"><div class="thumb"><div class="sheet photo">3  Water goes in by
+   osmosis through the
+   membrane</div></div><div style="display:grid;gap:2px;min-width:0"><span class="nm">Osmosis test.jpg</span><span class="meta sub">Osmosis test · Assignment · Biology 101</span></div><span class="meta">5 days ago</span><span class="meta r">1.9 MB</span><span class="iconbtn"><svg><use href="#i-dots"/></svg></span></div>
+          <div class="frow"><div class="thumb"><div class="sheet photo">4  F = ma
+   = 1200 x 2
+   = 2400 N</div></div><div style="display:grid;gap:2px;min-width:0"><span class="nm">Forces quiz pages.pdf</span><span class="meta sub">Forces quiz · Assignment · Physics</span></div><span class="meta">Thu 29 Oct</span><span class="meta r">6.2 MB</span><span class="iconbtn"><svg><use href="#i-dots"/></svg></span></div>
+          <div class="menu" style="right:40px;top:200px;width:180px"><div class="mi on"><svg class="ficon"><use href="#i-fwd"/></svg>Open result</div><div class="mi" style="color:var(--bad)"><svg class="ficon"><use href="#i-trash"/></svg>Delete file</div></div>
+        </div>
+      </div></div>
+      <div class="phone">
+        <div class="ph-top"><b>Files</b><svg style="margin-left:auto"><use href="#i-dots"/></svg></div>
+        <div class="ph-body" style="gap:8px;padding-top:0">
+          <div class="ftabs" style="margin:0 -16px;padding:0 6px;font-size:13px;overflow:hidden"><span>Blocks</span><span>Embeds</span><span>Canvas</span><span class="on new">Submissions</span><span>Trash</span></div>
+          <div class="fbar" style="margin-top:2px"><span class="meta">3 marked · 12.9 MB</span><span class="btn danger sm" style="padding:0 6px"><svg><use href="#i-trash"/></svg>Delete all</span></div>
+          <div class="frow ph-frow"><div class="thumb"><div class="sheet photo">1  osmosis is the net
+   movement of water
+
+2  3x + 7 = 22
+   x = 5</div></div><div style="display:grid;gap:2px;min-width:0"><span class="nm">Past paper 2025 P1 scan.pdf</span><span class="meta sub">Past paper 2025 P1 · Assignment · Biology 101</span><span class="meta sub">2 days ago · 4.8 MB</span></div><span class="iconbtn"><svg><use href="#i-dots"/></svg></span></div>
+          <div class="frow ph-frow"><div class="thumb"><div class="sheet photo">3  Water goes in by
+   osmosis through the
+   membrane</div></div><div style="display:grid;gap:2px;min-width:0"><span class="nm">Osmosis test.jpg</span><span class="meta sub">Osmosis test · Assignment · Biology 101</span><span class="meta sub">5 days ago · 1.9 MB</span></div><span class="iconbtn"><svg><use href="#i-dots"/></svg></span></div>
+          <div class="frow ph-frow"><div class="thumb"><div class="sheet photo">4  F = ma
+   = 1200 x 2
+   = 2400 N</div></div><div style="display:grid;gap:2px;min-width:0"><span class="nm">Forces quiz pages.pdf</span><span class="meta sub">Forces quiz · Assignment · Physics</span><span class="meta sub">Thu 29 Oct · 6.2 MB</span></div><span class="iconbtn"><svg><use href="#i-dots"/></svg></span></div>
+        </div>
+        <div class="ph-sheet">
+          <div class="dialog">
+            <h3 style="font-size:17px">Delete this file?</h3>
+            <p style="margin:0;color:var(--fg2)">Past paper 2025 P1 scan.pdf goes for good. Its marks stay.</p>
+            <div class="foot" style="margin-top:2px"><span class="btn out">Cancel</span><span class="btn" style="background:var(--bad);border-color:var(--bad);color:#fff">Delete file</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- F2 -->
+  <section class="board" id="f2">
+    <header><h2><b>F2</b>Owner: a paper the member deleted</h2>
+      <p>Where T1 showed the mapped pages, Approve and the member's result say the file is gone; the marks and the AI's quotes stay, and the mark selects still work.</p></header>
+    <div class="frames">
+      <div class="lap-wrap"><div class="lap" data-shell="owner">
+        <div class="main">
+          <div class="back"><svg><use href="#i-back"/></svg>Assignments</div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px"><span class="title" style="margin:0">Osmosis test</span><span class="chips"><span class="chip">Assignment</span><span class="chip">Closed</span></span></div>
+          <div class="tabs"><span>Questions</span><span>Members</span><span class="on">Approve AI marks</span><span>Settings</span></div>
+          <div class="appr">
+            <div class="l">
+              <div class="input" style="height:32px">Question 3 · 6 marks<svg><use href="#i-down"/></svg></div>
+              <div class="mrow on"><span class="av">CM</span><span class="nm">Cara Moss</span><span>5 / 6</span></div>
+              <div class="mrow"><span class="av">FA</span><span class="nm">Farah Ali</span><span>4 / 6</span></div>
+              <div class="mrow"><span class="av">EP</span><span class="nm">Eve Park</span><span>6 / 6</span></div>
+            </div>
+            <div class="r">
+              <div class="stem">Explain how water enters a root hair cell from the soil. <span class="mk">(6 marks)</span></div>
+              <div style="display:flex;align-items:center;gap:8px"><span class="av">CM</span><b style="font-weight:600">Cara Moss</b></div>
+              <div class="gone newmark" style="margin:0"><svg><use href="#i-page"/></svg>Cara Moss deleted Osmosis test.jpg after it was marked.</div>
+              <table class="pts">
+                <tr><th>MARKING POINTS</th><th>AI</th><th>MARK</th></tr>
+                <tr><td>Names the partially permeable membrane (2)<span class="q">"through the partially permeable membrane"</span></td><td class="ai">2</td><td class="mk"><div class="sel">2 / 2<svg><use href="#i-down"/></svg></div></td></tr>
+                <tr><td>Water moves from dilute to concentrated solution (2)<span class="q">"soil water is more dilute than the cell sap"</span></td><td class="ai">2</td><td class="mk"><div class="sel">2 / 2<svg><use href="#i-down"/></svg></div></td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="phone">
+        <div data-tpl="ph-top"></div>
+        <div class="ph-body" style="gap:10px">
+          <div class="title" style="font-size:20px">Osmosis test</div>
+          <div class="tabs" style="margin:0;font-size:13px"><span>Questions</span><span>Members</span><span class="on">Approve AI marks</span></div>
+          <div class="input" style="height:32px">Question 3 · 6 marks<svg><use href="#i-down"/></svg></div>
+          <div class="mrow" style="display:flex;gap:9px;align-items:center;background:var(--select);padding:7px 9px;border-radius:7px"><span class="av">CM</span><span style="flex:1">Cara Moss</span><span>5 / 6</span></div>
+          <div class="gone newmark" style="margin:0;padding:14px"><svg><use href="#i-page"/></svg>Cara Moss deleted Osmosis test.jpg after it was marked.</div>
+          <table class="pts">
+            <tr><th>MARKING POINTS</th><th>AI</th><th>MARK</th></tr>
+            <tr><td>Names the partially permeable membrane (2)</td><td class="ai">2</td><td class="mk"><div class="sel">2 / 2<svg><use href="#i-down"/></svg></div></td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="picks">
+    <h2>What each pick settles</h2>
+    <ul>
+      <li><b>C1a or C1b</b>: whether New assignment shows the owner a credit estimate when AI marks uploads (question F).</li>
+      <li><b>S4 + S5 (Epo 2026-11-08)</b>: Before you start offers Attempt online or Upload file; the member uploads the whole paper and labels nothing.</li>
+      <li><b>S3 + T2</b>: Unmarked tasks collect files with Hand in; nothing is AI-marked there (question H).</li>
+      <li><b>T1</b>: page answers reuse Approve AI marks and its Marking dropdown unchanged.</li>
+      <li><b>F1 + F2</b>: a member deletes a marked paper from Files › Submissions; the owner then sees it is gone, marks kept (question I).</li>
+      <li><b>C4 + S7 + T5</b>: Show grades Automatic or Manual, what a member sees before release, and the owner's Release grades (question S).</li>
+    </ul>
+  </section>
+</main>
+
+<script>
+  // Fill the repeated chrome (rail, Study panel, phone top bar) from templates.
+  const clone = (id) => document.getElementById(id).content.cloneNode(true);
+  document.querySelectorAll('[data-shell]').forEach((lap) => {
+    const kind = lap.dataset.shell;
+    const first = lap.firstElementChild;
+    lap.insertBefore(clone('rail-tpl'), first);
+    if (kind === 'owner' || kind === 'member') lap.insertBefore(clone(kind === 'owner' ? 'side-owner' : 'side-member'), first);
+  });
+  document.querySelectorAll('.lap.nostudy:not([data-shell])').forEach((lap) => lap.insertBefore(clone('rail-tpl'), lap.firstElementChild));
+  document.querySelectorAll('[data-tpl]').forEach((el) => el.replaceWith(clone(el.dataset.tpl)));
+</script>

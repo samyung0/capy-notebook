@@ -1,6 +1,6 @@
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
-import { useAssignmentReport } from '@/api/hooks';
+import { useAssignmentReport, useReleaseAssignmentGrades } from '@/api/hooks';
 import type {
   Assignment,
   AssignmentMemberRow,
@@ -12,6 +12,7 @@ import type {
 import { ErrorState } from '@/components/app/ErrorState';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/Dialog';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
@@ -41,6 +42,7 @@ import {
   percentText,
   takesLateWork,
 } from './assignmentText';
+import { HandInMembers } from './HandIns';
 import { LateBadge } from './LateBadge';
 
 /** Questions the report opens with, as the board draws them. */
@@ -107,14 +109,37 @@ export function AssignmentReport({
             done: manage?.done ?? 0,
             total: manage?.assigned ?? 0,
           })
-        : m.assignment_done_of({
-            done: manage?.done ?? 0,
-            total: manage?.assigned ?? 0,
-          }),
+        : assignment.allowUploads
+          ? m.assignment_handed_in_of({
+              done: manage?.done ?? 0,
+              total: manage?.assigned ?? 0,
+            })
+          : m.assignment_done_of({
+              done: manage?.done ?? 0,
+              total: manage?.assigned ?? 0,
+            }),
     manage?.average === undefined
       ? null
       : m.assignment_chip_average({ percent: percentText(manage.average) }),
+    !marked || assignment.draft || manage?.showGrades !== 'manual'
+      ? null
+      : manage.gradesReleasedAt
+        ? m.assignment_grades_released_on({
+            date: dayLabel(manage.gradesReleasedAt),
+          })
+        : m.assignment_grades_not_released(),
   ].filter(Boolean) as string[];
+  const notGraded = marked ? (manage?.notGraded ?? 0) : 0;
+  const toApprove =
+    marked && manage?.marking !== 'manual'
+      ? (manage?.toApprove ?? 0) - notGraded
+      : 0;
+  // Show grades Manual (T5): the button stays until they are released.
+  const releasable =
+    marked &&
+    !assignment.draft &&
+    manage?.showGrades === 'manual' &&
+    !manage.gradesReleasedAt;
 
   return (
     <PracticeFrame>
@@ -127,7 +152,24 @@ export function AssignmentReport({
               {chip}
             </span>
           ))}
+          {/* Waiting answers: AI-marked to approve, and not graded (T3). */}
+          {toApprove > 0 && (
+            <span className={cn(CHIP, 'bg-tint-warning text-tint-warning-fg')}>
+              {m.assignment_to_approve({ count: toApprove })}
+            </span>
+          )}
+          {notGraded > 0 && (
+            <span className={cn(CHIP, 'bg-tint-error text-tint-error-fg')}>
+              {m.assignment_not_graded({ count: notGraded })}
+            </span>
+          )}
         </div>
+        {releasable && (
+          <ReleaseGrades
+            assignment={assignment}
+            className="max-sm:basis-full sm:ml-auto"
+          />
+        )}
       </div>
       {assignment.draft ? (
         <AssignmentSettingsTab assignment={assignment} className="mt-6" />
@@ -264,6 +306,8 @@ function UnmarkedBody({
         <h2 className="t-subtitle">{m.assignment_tab_members()}</h2>
         {loading ? (
           <SkeletonList className="mt-3" count={5} rowHeight={40} />
+        ) : assignment.allowUploads ? (
+          <HandInMembers assignmentId={assignment.id} members={members} />
         ) : (
           <ul className="mt-2">
             {members.map((member) => (
@@ -272,12 +316,13 @@ function UnmarkedBody({
                 key={member.userId}
               >
                 <MemberName member={member} />
-                <span className="t-meta ml-auto shrink-0 text-fg-muted">
+                <span className="t-meta ml-auto flex shrink-0 items-center gap-2 text-fg-muted">
                   {member.submittedAt
                     ? m.assignment_done_on({
                         date: dayLabel(member.submittedAt),
                       })
                     : m.assignment_not_done()}
+                  {member.late && <LateBadge penaltyPct={0} />}
                 </span>
               </li>
             ))}
@@ -730,5 +775,48 @@ function OptionBars({
         );
       })}
     </ul>
+  );
+}
+
+/** Release grades (T5), confirming first how many answers still wait. */
+function ReleaseGrades({
+  assignment,
+  className,
+}: {
+  assignment: Assignment;
+  className?: string;
+}) {
+  const [asking, setAsking] = useState(false);
+  const { mutate, isPending } = useReleaseAssignmentGrades(
+    assignment.workspaceId,
+    assignment.id
+  );
+  const waiting = assignment.manage?.toApprove ?? 0;
+  return (
+    <div className={className}>
+      <Button disabled={isPending} onClick={() => setAsking(true)}>
+        {m.assignment_release_grades()}
+      </Button>
+      {asking && (
+        <ConfirmDialog
+          body={[
+            m.assignment_release_grades_body(),
+            waiting === 1
+              ? m.assignment_release_waiting_one()
+              : waiting > 1
+                ? m.assignment_release_waiting({ count: waiting })
+                : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          confirmLabel={m.assignment_release_grades()}
+          danger={false}
+          onClose={() => setAsking(false)}
+          onConfirm={() => mutate()}
+          open
+          title={m.assignment_release_grades_title()}
+        />
+      )}
+    </div>
   );
 }

@@ -17,6 +17,9 @@
   --capy-shape-button-triangle: #fff;
   --capy-shape-button-stroke-triangle: #d9dde3;
   --capy-note-edge: #e6e6e6;
+  /* BlockSuite's selection layer and the ☰ menu are placed against the board, not
+     against a page box that starts higher (a tablet's header row above it). */
+  position: relative;
   container: viewport / inline-size;
 }
 
@@ -59,10 +62,11 @@ html.dark:not([data-board-light]) .capy-board {
 }
 
 /* The ☰ menu (boardMenu.ts) top right of the board, left of any Done the page around
-   it places and sizes through --capy-board-done-width; an open card has its own. */
+   it places and sizes through --capy-board-done-width, level with it through
+   --capy-board-menu-top; an open card has its own. */
 .capy-board > .capy-board-menu {
   position: absolute;
-  top: 8px;
+  top: var(--capy-board-menu-top, 8px);
   right: calc(8px + var(--capy-board-done-width, 0px));
   z-index: 2;
 }
@@ -208,12 +212,31 @@ html.dark:not([data-board-light]) .capy-board {
   height: 100%;
 }
 
-.capy-plane-editor[data-tool="move"] canvas {
-  cursor: grab;
+/* Select boxes on empty paper, as on the board; a mark under it shows grab. */
+.capy-plane-editor[data-tool="select"] canvas {
+  cursor: default;
 }
 
-.capy-plane-editor:not([data-tool="move"]) canvas {
+.capy-plane-editor:not([data-tool="select"]) canvas {
   cursor: crosshair;
+}
+
+/* The eraser's reach as a ring, on the board and in an open card (Epo 2026-11-09):
+   dark on a light halo, so it shows on either paper. */
+.capy-board {
+  --capy-eraser-cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20'%3E%3Ccircle cx='10' cy='10' r='8' fill='none' stroke='%23fff' stroke-width='3'/%3E%3Ccircle cx='10' cy='10' r='8' fill='none' stroke='%23444' stroke-width='1.2'/%3E%3C/svg%3E")
+    10 10,
+    crosshair;
+}
+
+.capy-board[data-tool="eraser"] affine-edgeless-root,
+.capy-board[data-tool="eraser"] affine-edgeless-root gfx-viewport * {
+  cursor: var(--capy-eraser-cursor) !important;
+}
+
+.capy-plane-editor[data-tool="erase"] canvas {
+  cursor: var(--capy-eraser-cursor);
 }
 
 .capy-plane-editor button {
@@ -345,8 +368,7 @@ html.dark:not([data-board-light]) .capy-board {
   box-shadow: 0 0 0 2px var(--affine-primary-color) inset;
 }
 
-.capy-chart-editor canvas,
-.capy-chart-editor:not([data-tool="move"]) canvas {
+.capy-chart-editor:not([data-tool="select"], [data-tool="erase"]) canvas {
   cursor: crosshair;
 }
 

@@ -190,6 +190,7 @@ func TestCheckLatePolicy(t *testing.T) {
 		func(f *AssignmentForm) { f.NoLate = true },
 		func(f *AssignmentForm) { f.LatePenaltyPct = 20 },
 		func(f *AssignmentForm) { f.LatePenaltyPct = 50 },
+		func(f *AssignmentForm) { f.NoLate, f.Kind = true, AssignmentUnmarked },
 	} {
 		f := marked
 		form(&f)
@@ -202,7 +203,7 @@ func TestCheckLatePolicy(t *testing.T) {
 		func(f *AssignmentForm) { f.NoLate, f.LatePenaltyPct = true, 20 },
 		func(f *AssignmentForm) { f.NoLate, f.DueAt = true, nil },
 		func(f *AssignmentForm) { f.LatePenaltyPct, f.DueAt = 20, nil },
-		func(f *AssignmentForm) { f.NoLate, f.Kind = true, AssignmentUnmarked },
+		func(f *AssignmentForm) { f.LatePenaltyPct, f.Kind = 20, AssignmentUnmarked },
 	} {
 		f := marked
 		form(&f)
@@ -284,7 +285,7 @@ func newAssignmentFixture(t *testing.T, label string) assignmentFixture {
 func (f assignmentFixture) form(t *testing.T, due time.Time) AssignmentForm {
 	t.Helper()
 	return AssignmentForm{Kind: AssignmentMarked, Title: "Paper", QuizID: f.quiz.ID, Questions: frozenFixture(t),
-		DueAt: &due, Attempts: 1, AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: true, Files: []AssignmentFileRef{}}
+		DueAt: &due, Attempts: 1, AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterSubmit, ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{}}
 }
 
 // TestAssignmentRun walks a marked assignment: created with its quiz refused to
@@ -313,7 +314,7 @@ func TestAssignmentRun(t *testing.T) {
 		t.Fatalf("a member's list = %+v, err %v", mine, err)
 	}
 
-	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,7 +327,7 @@ func TestAssignmentRun(t *testing.T) {
 			t.Fatalf("%s reached the running attempt: %s", leak, raw)
 		}
 	}
-	again, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now.Add(time.Minute))
+	again, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now.Add(time.Minute))
 	if err != nil || again.ID != run.ID {
 		t.Fatalf("a second start = %v, err %v", again.ID, err)
 	}
@@ -348,7 +349,7 @@ func TestAssignmentRun(t *testing.T) {
 	if done.Status != "submitted" || done.Correct != 3 || done.Total != 6 || done.WaitingMarks != 3 || done.WaitingAnswers != 1 || done.Late {
 		t.Fatalf("submitted = %+v", done)
 	}
-	if _, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now.Add(3*time.Minute)); !errors.Is(err, ErrAssignmentNoAttempts) {
+	if _, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now.Add(3*time.Minute)); !errors.Is(err, ErrAssignmentNoAttempts) {
 		t.Fatalf("a start past the attempts = %v", err)
 	}
 
@@ -438,10 +439,10 @@ func TestAssignmentAuthorization(t *testing.T) {
 	// Not given to them.
 	_, err = f.s.GetAssignment(ctx, f.other, created.ID, now)
 	notFound("other member reads", err)
-	_, err = f.s.StartAssignment(ctx, f.other, created.ID, now)
+	_, err = f.s.StartAssignment(ctx, f.other, created.ID, false, now)
 	notFound("other member starts", err)
 
-	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -511,7 +512,7 @@ func TestAssignmentAssignTo(t *testing.T) {
 		t.Fatalf("all members = %+v manage %+v, err %v", staff, staff.Manage, err)
 	}
 
-	form := AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1, AssignAll: false, Assignees: []string{f.viewer, f.user}, Marking: MarkingAIApprove, Files: []AssignmentFileRef{}}
+	form := AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1, AssignAll: false, Assignees: []string{f.viewer, f.user}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{}}
 	named, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
@@ -549,7 +550,7 @@ func TestAssignmentLateMissingAndTimeOut(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -581,7 +582,7 @@ func TestAssignmentLateMissingAndTimeOut(t *testing.T) {
 	if missing != 1 {
 		t.Fatalf("missing = %d in %+v", missing, report.Members)
 	}
-	second, err := f.s.StartAssignment(ctx, f.other, created.ID, pastDue)
+	second, err := f.s.StartAssignment(ctx, f.other, created.ID, false, pastDue)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -595,7 +596,7 @@ func TestAssignmentLateMissingAndTimeOut(t *testing.T) {
 	if _, err := f.s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'viewer')`, f.ws.ID, third); err != nil {
 		t.Fatal(err)
 	}
-	running, err := f.s.StartAssignment(ctx, third, created.ID, pastDue)
+	running, err := f.s.StartAssignment(ctx, third, created.ID, false, pastDue)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -615,7 +616,7 @@ func TestAssignmentLateMissingAndTimeOut(t *testing.T) {
 	if _, err := f.s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'viewer')`, f.ws.ID, fourth); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.s.StartAssignment(ctx, fourth, created.ID, pastDue); !errors.Is(err, ErrAssignmentClosed) {
+	if _, err := f.s.StartAssignment(ctx, fourth, created.ID, false, pastDue); !errors.Is(err, ErrAssignmentClosed) {
 		t.Fatalf("a start after closing = %v", err)
 	}
 }
@@ -637,7 +638,7 @@ func TestAssignmentBecomesPractice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := f.s.StartAssignment(ctx, f.viewer, first.ID, now)
+	run, err := f.s.StartAssignment(ctx, f.viewer, first.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -734,7 +735,7 @@ func TestAssignmentNoLateClosesAtDue(t *testing.T) {
 	if _, released, err := f.s.SweepAssignments(ctx, 50, now); err != nil || released != 0 {
 		t.Fatalf("released %d before the due date, err %v", released, err)
 	}
-	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -747,7 +748,7 @@ func TestAssignmentNoLateClosesAtDue(t *testing.T) {
 	if _, err := f.s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'viewer')`, f.ws.ID, third); err != nil {
 		t.Fatal(err)
 	}
-	almost, err := f.s.StartAssignment(ctx, third, created.ID, now)
+	almost, err := f.s.StartAssignment(ctx, third, created.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -761,7 +762,7 @@ func TestAssignmentNoLateClosesAtDue(t *testing.T) {
 	if err != nil || !got.Closed || got.ClosedAt == nil || !got.ClosedAt.Equal(due) {
 		t.Fatalf("past its due date = closed %v at %v, err %v", got.Closed, got.ClosedAt, err)
 	}
-	if _, err := f.s.StartAssignment(ctx, f.other, created.ID, past); !errors.Is(err, ErrAssignmentClosed) {
+	if _, err := f.s.StartAssignment(ctx, f.other, created.ID, false, past); !errors.Is(err, ErrAssignmentClosed) {
 		t.Fatalf("a start past the due date = %v", err)
 	}
 	if err := f.s.SaveAssignmentAnswers(ctx, f.viewer, run.ID, map[string]any{"p2": "changed"}, past); !errors.Is(err, ErrAttemptFinished) {
@@ -803,7 +804,7 @@ func TestAssignmentNoLateSweepSubmitsRunningAttempts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -840,7 +841,7 @@ func TestAssignmentLatePenalty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	onTime, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	onTime, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -853,7 +854,7 @@ func TestAssignmentLatePenalty(t *testing.T) {
 	if got, err := f.s.GetAssignment(ctx, f.other, created.ID, past); err != nil || got.Closed || got.Mine == nil || !got.Mine.Missing {
 		t.Fatalf("past due, open = %+v, err %v", got, err)
 	}
-	late, err := f.s.StartAssignment(ctx, f.other, created.ID, past)
+	late, err := f.s.StartAssignment(ctx, f.other, created.ID, false, past)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -902,7 +903,7 @@ func TestAssignmentLatePenalty(t *testing.T) {
 		if _, err := f.s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'viewer')`, f.ws.ID, user); err != nil {
 			t.Fatal(err)
 		}
-		run, err := f.s.StartAssignment(ctx, user, created.ID, now)
+		run, err := f.s.StartAssignment(ctx, user, created.ID, false, now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -948,7 +949,7 @@ func TestCountedAttemptIsTheHighest(t *testing.T) {
 	}
 	take := func(at time.Time, answers map[string]any) string {
 		t.Helper()
-		run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, at)
+		run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, at)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1071,7 +1072,7 @@ func TestAverageReadsTheCountedAttempts(t *testing.T) {
 			{"p1": []any{float64(1)}},
 		} {
 			at := now.Add(time.Duration(i) * time.Minute)
-			run, err := f.s.StartAssignment(ctx, user, created.ID, at)
+			run, err := f.s.StartAssignment(ctx, user, created.ID, false, at)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1104,7 +1105,7 @@ func TestReviewsRateTheLatestSubmission(t *testing.T) {
 	}
 	take := func(at time.Time, answers map[string]any) string {
 		t.Helper()
-		run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, at)
+		run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, at)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1168,7 +1169,7 @@ func TestAssignmentFrozenCopyAndDelete(t *testing.T) {
 	if published.Draft || published.Questions != 3 || !published.PostedAt.Equal(now.Add(time.Minute)) {
 		t.Fatalf("published = %+v", published)
 	}
-	run, err := f.s.StartAssignment(ctx, f.viewer, draft.ID, now.Add(time.Minute))
+	run, err := f.s.StartAssignment(ctx, f.viewer, draft.ID, false, now.Add(time.Minute))
 	if err != nil || len(run.Questions) != 3 {
 		t.Fatalf("run = %+v, err %v", run, err)
 	}
@@ -1226,7 +1227,7 @@ func TestAssignmentFrozenImages(t *testing.T) {
 	if copied == assetID {
 		t.Fatal("the copy names the quiz's own image")
 	}
-	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1606,7 +1607,7 @@ func TestAssignmentSweepReachesARowBehindABadOne(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+		run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1697,7 +1698,7 @@ func TestAssignmentSweepPassesOverABadRow(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+		run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1706,7 +1707,7 @@ func TestAssignmentSweepPassesOverABadRow(t *testing.T) {
 	bad, badRun := open()
 	good, goodRun := open()
 	t.Cleanup(func() { _, _ = f.s.pool.Exec(ctx, `DELETE FROM assignments WHERE id=$1`, bad.ID) })
-	submitted, err := f.s.StartAssignment(ctx, f.other, bad.ID, now)
+	submitted, err := f.s.StartAssignment(ctx, f.other, bad.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1791,7 +1792,7 @@ func TestPersonalWorkspaceStartsNoAssignment(t *testing.T) {
 		t.Fatal(err)
 	}
 	unmarked, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1,
-		AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, Files: []AssignmentFileRef{}}, now)
+		AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{}}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1802,7 +1803,7 @@ func TestPersonalWorkspaceStartsNoAssignment(t *testing.T) {
 		}
 	}
 	setKind(WorkspacePersonal)
-	if _, err := f.s.StartAssignment(ctx, f.viewer, marked.ID, now); !errors.Is(err, ErrNotFound) {
+	if _, err := f.s.StartAssignment(ctx, f.viewer, marked.ID, false, now); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("a start in a personal workspace = %v", err)
 	}
 	var attempts int
@@ -1816,7 +1817,7 @@ func TestPersonalWorkspaceStartsNoAssignment(t *testing.T) {
 		t.Fatalf("a tick in a personal workspace = %v", err)
 	}
 	setKind(WorkspaceClass)
-	if _, err := f.s.StartAssignment(ctx, f.viewer, marked.ID, now); err != nil {
+	if _, err := f.s.StartAssignment(ctx, f.viewer, marked.ID, false, now); err != nil {
 		t.Fatalf("a start back in a class: %v", err)
 	}
 	if err := f.s.SetAssignmentDone(ctx, f.viewer, unmarked.ID, true, now); err != nil {
@@ -1969,7 +1970,7 @@ func TestClosingGivesTheOpenPageTheGrace(t *testing.T) {
 	onPage := map[string]any{"p1": []any{float64(1)}, "p2": "osmosis"}
 	start := func(user string) string {
 		t.Helper()
-		run, err := f.s.StartAssignment(ctx, user, created.ID, now)
+		run, err := f.s.StartAssignment(ctx, user, created.ID, false, now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -2093,7 +2094,7 @@ func TestChangedMarkCountsOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2231,14 +2232,14 @@ func TestLockedOwnerStartsNoAssignment(t *testing.T) {
 		t.Fatal(err)
 	}
 	unmarked, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1,
-		AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, Files: []AssignmentFileRef{}}, now)
+		AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{}}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.s.pool.Exec(ctx, `UPDATE users SET suspended_at=now(), suspended_reason='test' WHERE id=$1`, f.user); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.s.StartAssignment(ctx, f.viewer, marked.ID, now); !errors.Is(err, ErrNotFound) {
+	if _, err := f.s.StartAssignment(ctx, f.viewer, marked.ID, false, now); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("a start under a locked owner = %v", err)
 	}
 	if err := f.s.SetAssignmentDone(ctx, f.viewer, unmarked.ID, true, now); !errors.Is(err, ErrNotFound) {
@@ -2327,7 +2328,7 @@ func TestMovingAFileLeavesItsAssignments(t *testing.T) {
 	now := time.Now().UTC()
 	file := uploadWorkspaceFile(t, f.s, f.user, f.ws.ID)
 	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1,
-		AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, Files: []AssignmentFileRef{{FileID: file.ID}}}, now)
+		AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{{FileID: file.ID}}}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2365,14 +2366,14 @@ func TestRepublishReplacesTheFrozenCopy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	done, err := f.s.StartAssignment(ctx, f.other, created.ID, now)
+	done, err := f.s.StartAssignment(ctx, f.other, created.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.s.SubmitAssignmentAttempt(ctx, f.other, done.ID, map[string]any{"p2": "osmosis", "p3": "A long answer"}, now); err != nil {
 		t.Fatal(err)
 	}
-	running, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	running, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2575,7 +2576,7 @@ func TestCountedAttemptComparesShares(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	first, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2586,7 +2587,7 @@ func TestCountedAttemptComparesShares(t *testing.T) {
 	if _, err := f.s.RepublishAssignment(ctx, f.user, created.ID, frozenFixture(t)[:1], now); err != nil {
 		t.Fatal(err)
 	}
-	second, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now.Add(time.Second))
+	second, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now.Add(time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2613,7 +2614,7 @@ func TestRepublishDropsAnswersThatNoLongerFit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2739,5 +2740,133 @@ func TestAssignmentSaysItsQuizIsTrashed(t *testing.T) {
 	}
 	if !got.Manage.QuizTrashed {
 		t.Fatal("a trashed quiz doesn't read as trashed")
+	}
+}
+
+// Answers shown after it closes (Epo 2026-11-08, mock C3): a member's results
+// carry their marks but no keys while classmates can still answer, and the keys
+// once it closes.
+func TestAnswersShownAfterClose(t *testing.T) {
+	f := newAssignmentFixture(t, "answers-after-close")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	form := f.form(t, now.Add(time.Hour))
+	form.ShowAnswers = AnswersAfterClose
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.ID, map[string]any{"p3": "The membrane is dilute."}, now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	open, err := f.s.GetAssignmentAttempt(ctx, f.viewer, run.ID, now.Add(2*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if open.ShowAnswers || openPart(t, open.Questions)["markscheme"] != nil {
+		t.Fatalf("keys while open: %+v", openPart(t, open.Questions))
+	}
+	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	closed, err := f.s.GetAssignmentAttempt(ctx, f.viewer, run.ID, now.Add(2*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !closed.ShowAnswers || openPart(t, closed.Questions)["markscheme"] == nil {
+		t.Fatalf("no keys after closing: %+v", openPart(t, closed.Questions))
+	}
+}
+
+// Grades shown by hand (Epo 2026-11-08, mocks C4, S7, T5): until staff release
+// them a member's results hold their answers alone, their row no mark, their
+// topic labels none of these answers, and closing makes no practice; release
+// shows them all, and the sweep then makes it practice.
+func TestManualGradesWaitForRelease(t *testing.T) {
+	f := newAssignmentFixture(t, "grades-manual")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	form := f.form(t, now.Add(time.Hour))
+	form.ShowGrades = GradesManual
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.ID, map[string]any{"p2": "osmosis"}, now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	at := now.Add(time.Minute)
+	asked := func() int {
+		t.Helper()
+		topics, err := f.s.WorkspaceStudyTopics(ctx, f.viewer, f.ws.ID, false, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n := 0
+		for _, topic := range topics.Topics {
+			n += topic.Asked
+		}
+		return n
+	}
+
+	hidden, err := f.s.GetAssignmentAttempt(ctx, f.viewer, run.ID, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(hidden)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hidden.GradesHidden || hidden.Correct != 0 || hidden.Total != 0 || strings.Contains(string(raw), `"awarded"`) || strings.Contains(string(raw), "markscheme") {
+		t.Fatalf("grades before release: %s", raw)
+	}
+	list, err := f.s.ListAssignments(ctx, f.viewer, f.ws.ID, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row := list.Items[0]; !row.GradesHidden || row.Mine == nil || !row.Mine.Done || row.Mine.Mark != nil {
+		t.Fatalf("row before release = %+v / %+v", row, row.Mine)
+	}
+	if n := asked(); n != 0 {
+		t.Fatalf("topic labels counted %d answers before release", n)
+	}
+	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, at); err != nil {
+		t.Fatal(err)
+	}
+	if _, released, err := f.s.SweepAssignments(ctx, 50, at.Add(time.Minute)); err != nil || released != 0 {
+		t.Fatalf("closing before release made practice: %d, %v", released, err)
+	}
+
+	if _, _, err := f.s.ReleaseAssignmentGrades(ctx, f.viewer, created.ID, at); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("a member's release = %v", err)
+	}
+	released, told, err := f.s.ReleaseAssignmentGrades(ctx, f.user, created.ID, at)
+	if err != nil || released.Manage.GradesReleasedAt == nil || released.GradesHidden {
+		t.Fatalf("release = %+v, %v", released.Manage, err)
+	}
+	// The bell tells the member who handed it in (T, Epo 2026-11-08).
+	if len(told) != 1 || told[0].UserID != f.viewer || !strings.Contains(string(told[0].Data), "grades_released") {
+		t.Fatalf("told = %+v", told)
+	}
+	shown, err := f.s.GetAssignmentAttempt(ctx, f.viewer, run.ID, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shown.GradesHidden || shown.Correct != 2 || !shown.ShowAnswers {
+		t.Fatalf("after release = %+v", shown)
+	}
+	if n := asked(); n == 0 {
+		t.Fatal("topic labels left the answers out after release")
+	}
+	if _, practice, err := f.s.SweepAssignments(ctx, 50, at.Add(time.Minute)); err != nil || practice != 1 {
+		t.Fatalf("sweep after release made practice %d, %v", practice, err)
 	}
 }

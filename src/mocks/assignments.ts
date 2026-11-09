@@ -13,7 +13,9 @@ import type {
   AssignmentReport,
   MarkedDrawing,
   MaterialRef,
+  PaperFile,
   SharingNotice,
+  SubmittedPaper,
   TodoDonePage,
   TodoList,
   TodoWorkspace,
@@ -58,8 +60,11 @@ type Row = {
   assignees: string[];
   draft: boolean;
   marking: AssignmentFormReq['marking'];
-  showAnswers: boolean;
+  showAnswers: AssignmentFormReq['showAnswers'];
+  showGrades: AssignmentFormReq['showGrades'];
+  gradesReleasedAt?: string;
   shuffle: boolean;
+  allowUploads: boolean;
   files: { fileId?: string; materialId?: string }[];
 };
 type Attempt = {
@@ -72,7 +77,97 @@ type Attempt = {
   autoSubmitted: boolean;
   answers: Answers;
   graded: AssignmentGradedQuestion[];
+  /** Answered on paper (S5): its state and files. */
+  paper?: 'upload' | 'reading' | 'read';
+  paperFiles?: PaperFile[];
 };
+
+/** A paper file's bytes, as links read them. */
+const paperUrls = new Map<string, string>();
+
+/** A handwritten page, drawn: a seeded paper's one image. */
+const SCAN = `data:image/svg+xml,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="620" height="877"><rect width="620" height="877" fill="#f7f5ef"/>' +
+    Array.from(
+      { length: 24 },
+      (_, i) =>
+        `<line x1="30" x2="590" y1="${80 + i * 32}" y2="${80 + i * 32}" stroke="#c7d3e6"/>`
+    ).join('') +
+    '<g font-family="Bradley Hand, cursive" font-size="22" fill="#24306b"><text x="40" y="70">Name: Ben Lee</text><text x="40" y="134">1  B</text><text x="40" y="198">3  Water goes in by osmosis through the</text><text x="70" y="230">partially permeable membrane.</text></g></svg>'
+)}`;
+
+/** Upload file's files (the source upload with attemptId): a running paper's. */
+export function addPaperFile(
+  attemptId: string,
+  name: string,
+  kind: string,
+  bytes: Blob
+) {
+  const attempt = attempts.get(attemptId);
+  if (attempt?.paper !== 'upload' || attempt.submittedAt) return null;
+  const file: PaperFile = {
+    id: newId('f'),
+    kind,
+    name,
+    sizeBytes: bytes.size,
+    status: 'ready',
+  };
+  paperUrls.set(file.id, URL.createObjectURL(bytes));
+  attempt.paperFiles = [...(attempt.paperFiles ?? []), file];
+  return file;
+}
+
+/** Hand-ins (S3, T2): each member's files on an unmarked assignment that
+ * takes them. */
+const handIns = new Map<string, Map<string, PaperFile[]>>();
+
+const handInOf = (assignmentId: string, userId: string) =>
+  handIns.get(assignmentId)?.get(userId) ?? [];
+
+const setHandIn = (
+  assignmentId: string,
+  userId: string,
+  files: PaperFile[]
+) => {
+  const byUser = handIns.get(assignmentId) ?? new Map<string, PaperFile[]>();
+  byUser.set(userId, files);
+  handIns.set(assignmentId, byUser);
+};
+
+/** Takes the viewer's changes: taking files, not handed in, not closed. */
+const handInOpen = (assignmentId: string) => {
+  const row = rows.get(assignmentId);
+  return (
+    !!row?.allowUploads &&
+    row.kind === 'unmarked' &&
+    !isClosed(row) &&
+    !done.get(assignmentId)?.has(db.user.id)
+  );
+};
+
+/** Add files's files (the source upload with handInId). */
+export function addHandInFile(
+  assignmentId: string,
+  name: string,
+  kind: string,
+  bytes: Blob
+) {
+  seed();
+  if (!handInOpen(assignmentId)) return null;
+  const file: PaperFile = {
+    id: newId('f'),
+    kind,
+    name,
+    sizeBytes: bytes.size,
+    status: 'ready',
+  };
+  paperUrls.set(file.id, URL.createObjectURL(bytes));
+  setHandIn(assignmentId, db.user.id, [
+    ...handInOf(assignmentId, db.user.id),
+    file,
+  ]);
+  return file;
+}
 
 /** Drawings an assignment's Done stored, by id: their boards. */
 const mockDrawings = new Map<string, string>();
@@ -405,6 +500,7 @@ function seed() {
   );
   const files = db.files.filter((f) => f.workspaceId === WS);
   const common = {
+    allowUploads: false,
     assignAll: true,
     assignees: [],
     attempts: 1,
@@ -413,7 +509,8 @@ function seed() {
     latePenaltyPct: 0,
     marking: 'ai_approve' as const,
     noLate: false,
-    showAnswers: true,
+    showAnswers: 'submitted' as const,
+    showGrades: 'automatic' as const,
     shuffle: false,
     workspaceId: WS,
   };
@@ -448,6 +545,19 @@ function seed() {
       timeLimitMin: 60,
       title: 'Past paper 2025 P1',
     },
+    // Members may hand in a paper (Epo 2026-11-08, S4/S5).
+    {
+      ...common,
+      allowUploads: true,
+      dueAt: at(4),
+      id: 'as_upload',
+      kind: 'marked',
+      postedAt: at(-1, 10),
+      questions: pastPaper(),
+      quizId: quizzes[0]?.id,
+      timeLimitMin: 60,
+      title: 'Mock exam on paper',
+    },
     {
       ...common,
       dueAt: at(6),
@@ -456,6 +566,17 @@ function seed() {
       postedAt: at(0, 9),
       questions: worksheet(9),
       title: 'Inheritance worksheet',
+    },
+    // Members hand in files with Hand in (Epo 2026-11-08, S3/T2).
+    {
+      ...common,
+      allowUploads: true,
+      dueAt: at(3, 23),
+      files: files[0] ? [{ fileId: files[0].id }] : [],
+      id: 'as_lab',
+      kind: 'unmarked',
+      postedAt: at(-1, 11),
+      title: 'Osmosis lab write-up',
     },
     {
       ...common,
@@ -511,6 +632,34 @@ function seed() {
   seedAttempt(paper, eve, 4, 0, 52, 2);
   seedAttempt(paper, 'u_mock_farah', 2, 2, 41, 0);
   seedAttempt(paper, 'u_mock_gus', 1, 2, 55, 1);
+  // T3: Ben's grade failed and Farah had no credits; the rest read Not marked.
+  for (const attempt of attempts.values()) {
+    if (attempt.assignmentId !== paper.id) continue;
+    for (const q of attempt.graded)
+      for (const part of q.parts) {
+        if (!part.pending) continue;
+        if (attempt.userId === ben) part.aiError = 'error';
+        if (attempt.userId === 'u_mock_farah') part.aiError = 'credits';
+      }
+  }
+  // T1: Ben handed in a paper, read and waiting on its open parts.
+  const upload = rows.get('as_upload')!;
+  seedAttempt(upload, ben, 4, 1, 40, 1);
+  for (const attempt of attempts.values()) {
+    if (attempt.assignmentId !== upload.id) continue;
+    attempt.paper = 'read';
+    attempt.paperFiles = [
+      {
+        id: 'f_scan',
+        kind: 'image',
+        name: 'Mock exam scan.jpg',
+        sizeBytes: 1_900_000,
+        status: 'ready',
+      },
+    ];
+    for (const q of attempt.graded)
+      for (const part of q.parts) part.pages = [1];
+  }
   const genetics = rows.get('as_genetics')!;
   for (const [i, id] of class6.entries())
     seedAttempt(genetics, id, 8 + (i % 3), 0, 20 + i, 1);
@@ -531,6 +680,33 @@ function seed() {
 
   done.set('as_read', new Map(class6.slice(0, 4).map((id) => [id, at(0, 9)])));
   done.set('as_notes', new Map(class6.slice(0, 2).map((id) => [id, at(0, 9)])));
+  // T2: four of the class handed in their write-ups.
+  const work = (id: string, name: string, kind: string, sizeBytes: number) => ({
+    id,
+    kind,
+    name,
+    sizeBytes,
+    status: 'ready',
+  });
+  const lab: [string, PaperFile[]][] = [
+    ['u_mock_tom', [work('f_lab_ben', 'Lab write-up.pdf', 'pdf', 1_800_000)]],
+    [
+      'u_mock_diego',
+      [
+        work('f_lab_cara', 'Osmosis write-up.pdf', 'pdf', 1_800_000),
+        work('f_lab_cara2', 'results-table.jpg', 'image', 900_000),
+      ],
+    ],
+    [
+      'u_mock_hana',
+      [1, 2, 3].map((n) =>
+        work(`f_lab_eve${n}`, `IMG_04${n}.jpg`, 'image', 1_200_000)
+      ),
+    ],
+    ['u_mock_farah', [work('f_lab_farah', 'Osmosis lab.docx', 'docx', 60_000)]],
+  ];
+  for (const [id, handed] of lab) setHandIn('as_lab', id, handed);
+  done.set('as_lab', new Map(lab.map(([id]) => [id, at(0, 10)])));
 }
 
 /** Who ticked an unmarked assignment, and when. */
@@ -550,8 +726,8 @@ const closedAtOf = (row: Row) => {
   return row.closedAt;
 };
 
-const isClosed = (row: Row) =>
-  !!closedAtOf(row) || (row.kind === 'unmarked' && pastDue(row));
+/** Either kind (Epo 2026-11-09, "same rules"). */
+const isClosed = (row: Row) => !!closedAtOf(row);
 
 const isLate = (row: Row, submittedAt?: string) =>
   !row.noLate &&
@@ -590,6 +766,7 @@ const aiRow = (q: AssignmentGradedQuestion) => ({
         : (p.awarded ?? 0)),
     0
   ),
+  aiError: q.parts.find((p) => p.pending && !p.aiAwards && p.aiError)?.aiError,
   aiMarked: q.parts.every((p) => !p.pending || p.aiAwards),
   aiWarning: q.parts.some((p) => p.aiFlag)
     ? 'error'
@@ -659,6 +836,20 @@ function finish(row: Row, attempt: Attempt, answers: Answers, auto: boolean) {
   attempt.autoSubmitted = auto;
   attempt.submittedAt = new Date().toISOString();
   attempt.graded = gradePaper(row.questions ?? [], answers);
+  // A paper: the mock reads it at once, every part on its first page, waiting.
+  if (attempt.paper === 'upload') {
+    attempt.paper = 'read';
+    attempt.answers = {};
+    attempt.graded = attempt.graded.map((q) => ({
+      ...q,
+      parts: q.parts.map((p) => ({
+        ...p,
+        awarded: 0,
+        pages: [1],
+        pending: true,
+      })),
+    }));
+  }
 }
 
 function toAssignment(row: Row, viewer: Viewer): Assignment {
@@ -701,11 +892,16 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
             })
           ),
         ];
+  const gradesHidden = row.showGrades === 'manual' && !row.gradesReleasedAt;
   return {
+    allowUploads: row.allowUploads,
     attempts: row.attempts,
     closed: isClosed(row),
     closedAt: closedAtOf(row),
     draft: row.draft,
+    drawingParts: (row.questions ?? []).some((q) =>
+      q.parts.some((p) => p.answer.type === 'drawing')
+    ),
     dueAt: row.dueAt,
     files: row.files.flatMap((f): Assignment['files'] => {
       const file = db.files.find((x) => x.id === f.fileId);
@@ -714,6 +910,7 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
       if (mt) return [{ kind: mt.kind, materialId: mt.id, name: mt.title }];
       return [];
     }),
+    gradesHidden,
     id: row.id,
     kind: row.kind,
     latePenaltyPct: row.latePenaltyPct,
@@ -721,7 +918,7 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
     noLate: row.noLate,
     postedAt: row.postedAt,
     postedBy: db.user.name,
-    practiceQuizId: row.releasedAt ? row.quizId : undefined,
+    practiceQuizId: row.releasedAt && !gradesHidden ? row.quizId : undefined,
     questions: questions.length,
     timeLimitMin: row.timeLimitMin,
     title: row.title,
@@ -741,10 +938,25 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
                   ) / decided.length
                 : undefined,
             done: row.kind === 'marked' ? countedRows.length : ticked.length,
+            gradesReleasedAt: row.gradesReleasedAt,
             marking: row.marking,
+            notGraded:
+              row.marking === 'manual'
+                ? 0
+                : assigned
+                    .flatMap((id) => submissions(row.id, id))
+                    .reduce(
+                      (sum, a) =>
+                        sum +
+                        a.graded.filter((q) =>
+                          q.parts.some((p) => p.pending && !p.aiAwards)
+                        ).length,
+                      0
+                    ),
             quizId: row.quizId,
             quizTitle: material?.title,
             showAnswers: row.showAnswers,
+            showGrades: row.showGrades,
             shuffle: row.shuffle,
             toApprove: assigned
               .flatMap((id) => submissions(row.id, id))
@@ -761,24 +973,29 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
                 a.userId === db.user.id &&
                 a.submittedAt
             ).length,
-            correct: myTotals?.correct,
+            correct: gradesHidden ? undefined : myTotals?.correct,
             countedAttemptId: mine?.id,
             done: !!mine || !!tick,
             doneAt: mine?.submittedAt ?? tick,
-            late: isLate(row, mine?.submittedAt),
+            handIn:
+              row.kind === 'unmarked' && row.allowUploads
+                ? handInOf(row.id, db.user.id)
+                : undefined,
+            late: isLate(row, mine?.submittedAt ?? tick),
             latePenaltyPct: penaltyOf(row, mine?.submittedAt),
             mark:
-              myTotals &&
-              penalised(myTotals.correct, penaltyOf(row, mine?.submittedAt)),
+              myTotals && !gradesHidden
+                ? penalised(myTotals.correct, penaltyOf(row, mine?.submittedAt))
+                : undefined,
             missing:
               row.kind === 'marked' &&
               !mine &&
               !!row.dueAt &&
               Date.parse(row.dueAt) <= Date.now(),
             runningAttemptId: running?.id,
-            total: myTotals?.total,
-            waitingAnswers: myTotals?.waitingAnswers ?? 0,
-            waitingMarks: myTotals?.waitingMarks ?? 0,
+            total: gradesHidden ? undefined : myTotals?.total,
+            waitingAnswers: gradesHidden ? 0 : (myTotals?.waitingAnswers ?? 0),
+            waitingMarks: gradesHidden ? 0 : (myTotals?.waitingMarks ?? 0),
           },
         }
       : {}),
@@ -801,6 +1018,8 @@ function attemptView(attempt: Attempt, row: Row, viewer: Viewer) {
     late: isLate(row, attempt.submittedAt),
     latePenaltyPct: penaltyOf(row, attempt.submittedAt),
     now: new Date().toISOString(),
+    paper: attempt.paper,
+    paperFiles: attempt.paperFiles ?? [],
     removedAssetIds: [],
     startedAt: attempt.startedAt,
     title: row.title,
@@ -813,6 +1032,7 @@ function attemptView(attempt: Attempt, row: Row, viewer: Viewer) {
       ...common,
       answers: attempt.answers,
       correct: 0,
+      gradesHidden: false,
       mark: 0,
       questions: (row.questions ?? []).map(learnerView),
       showAnswers: false,
@@ -821,11 +1041,35 @@ function attemptView(attempt: Attempt, row: Row, viewer: Viewer) {
       waitingAnswers: 0,
       waitingMarks: 0,
     } satisfies AssignmentAttempt;
-  const show = viewer === 'owner' || row.showAnswers;
+  // Show grades Manual: a member reads their answers alone until release.
+  if (
+    viewer !== 'owner' &&
+    row.showGrades === 'manual' &&
+    !row.gradesReleasedAt
+  )
+    return {
+      ...common,
+      answers: attempt.answers,
+      correct: 0,
+      gradesHidden: true,
+      mark: 0,
+      questions: attempt.graded.map((q) => learnerView(q as Question)),
+      showAnswers: false,
+      status: 'submitted' as const,
+      submittedAt: attempt.submittedAt,
+      total: 0,
+      waitingAnswers: 0,
+      waitingMarks: 0,
+    } satisfies AssignmentAttempt;
+  const show =
+    viewer === 'owner' ||
+    row.showAnswers === 'submitted' ||
+    (row.showAnswers === 'closed' && !!closedAtOf(row));
   return {
     ...common,
     ...totals(attempt.graded),
     answers: attempt.answers,
+    gradesHidden: false,
     mark: penalised(
       totals(attempt.graded).correct,
       penaltyOf(row, attempt.submittedAt)
@@ -919,7 +1163,7 @@ function report(row: Row, viewer: Viewer): AssignmentReport {
         attemptId: a?.id,
         avatarUrl: person.avatarUrl,
         correct: sum?.correct,
-        late: isLate(row, a?.submittedAt),
+        late: isLate(row, a?.submittedAt ?? tick),
         latePenaltyPct: penaltyOf(row, a?.submittedAt),
         mark: sum && penalised(sum.correct, penaltyOf(row, a?.submittedAt)),
         minutes: a
@@ -942,6 +1186,9 @@ function report(row: Row, viewer: Viewer): AssignmentReport {
         submittedAt: a?.submittedAt ?? tick,
         total: sum?.total,
         userId: id,
+        ...(row.kind === 'unmarked' && row.allowUploads && tick
+          ? { files: handInOf(row.id, id) }
+          : {}),
         waitingAnswers: submissions(row.id, id).reduce(
           (n, x) => n + totals(x.graded).waitingAnswers,
           0
@@ -1024,7 +1271,9 @@ function applyForm(row: Row, body: AssignmentFormReq) {
   row.assignees = body.assignees;
   row.marking = body.marking;
   row.showAnswers = body.showAnswers;
+  row.showGrades = body.showGrades;
   row.shuffle = body.shuffle;
+  row.allowUploads = !!body.allowUploads;
   row.files = body.files.map(({ fileId, materialId }) => ({
     fileId,
     materialId,
@@ -1244,6 +1493,7 @@ export const assignmentHandlers = (viewer: Viewer) => {
         seed();
         const body = (await request.json()) as AssignmentFormReq;
         const row: Row = {
+          allowUploads: false,
           assignAll: true,
           assignees: [],
           attempts: 1,
@@ -1256,7 +1506,8 @@ export const assignmentHandlers = (viewer: Viewer) => {
           noLate: false,
           postedAt: new Date().toISOString(),
           quizId: body.quizId,
-          showAnswers: true,
+          showAnswers: 'closed' as const,
+          showGrades: 'automatic' as const,
           shuffle: false,
           title: body.title,
           workspaceId: String(params.id),
@@ -1345,17 +1596,44 @@ export const assignmentHandlers = (viewer: Viewer) => {
         );
       return HttpResponse.json(toAssignment(row, viewer));
     }),
+    http.post('/api/assignments/:id/release-grades', ({ params }) => {
+      const row = rowOf(params.id);
+      if (!row) return gone();
+      if (row.showGrades === 'manual')
+        row.gradesReleasedAt ??= new Date().toISOString();
+      return HttpResponse.json(toAssignment(row, viewer));
+    }),
     http.put('/api/assignments/:id/done', async ({ params, request }) => {
       seed();
       const id = String(params.id);
       const body = (await request.json()) as { done: boolean };
+      const row = rowOf(id);
+      if (row && isClosed(row))
+        return HttpResponse.json(
+          { code: 'assignment_closed', message: 'this assignment is closed' },
+          { status: 409 }
+        );
+      if (row?.allowUploads && row.kind === 'unmarked') {
+        const open = body.done ? handInOpen(id) : done.get(id)?.has(db.user.id);
+        if (!open || (body.done && !handInOf(id, db.user.id).length))
+          return HttpResponse.json(
+            {
+              code: 'hand_in_closed',
+              message: 'this assignment no longer takes your files',
+            },
+            { status: 409 }
+          );
+      }
       const ticks = done.get(id) ?? new Map<string, string>();
       if (body.done) ticks.set(db.user.id, new Date().toISOString());
       else ticks.delete(db.user.id);
       done.set(id, ticks);
       return new HttpResponse(null, { status: 204 });
     }),
-    http.post('/api/assignments/:id/start', ({ params }) => {
+    http.post('/api/assignments/:id/start', async ({ params, request }) => {
+      const { upload } = (await request.json().catch(() => ({}))) as {
+        upload?: boolean;
+      };
       const row = rowOf(params.id);
       if (!row) return gone();
       sweep(row);
@@ -1380,6 +1658,9 @@ export const assignmentHandlers = (viewer: Viewer) => {
           : undefined,
         graded: [],
         id: newId('at'),
+        ...(upload && row.allowUploads
+          ? { paper: 'upload' as const, paperFiles: [] }
+          : {}),
         startedAt: new Date().toISOString(),
         userId: db.user.id,
       };
@@ -1398,6 +1679,7 @@ export const assignmentHandlers = (viewer: Viewer) => {
             part.aiAwards = (part.markscheme ?? []).map((item, i) =>
               i === 0 ? item.marks : 0
             );
+            delete part.aiError;
             part.aiComment = 'Offered two answers for one point.';
             total++;
           }
@@ -1517,6 +1799,124 @@ export const assignmentHandlers = (viewer: Viewer) => {
         id: params.id,
         partId: '',
       });
+    }),
+    http.delete('/api/assignment-attempts/:id/paper/:fileId', ({ params }) => {
+      const found = attemptOf(params.id);
+      if (found?.attempt.paper !== 'upload') return gone();
+      found.attempt.paperFiles = (found.attempt.paperFiles ?? []).filter(
+        (f) => f.id !== params.fileId
+      );
+      return new HttpResponse(null, { status: 204 });
+    }),
+    http.put(
+      '/api/assignment-attempts/:id/paper/order',
+      async ({ params, request }) => {
+        const found = attemptOf(params.id);
+        if (found?.attempt.paper !== 'upload') return gone();
+        const { fileIds } = (await request.json()) as { fileIds: string[] };
+        const files = found.attempt.paperFiles ?? [];
+        found.attempt.paperFiles = fileIds.flatMap((id) =>
+          files.filter((f) => f.id === id)
+        );
+        return new HttpResponse(null, { status: 204 });
+      }
+    ),
+    http.get(
+      '/api/assignment-attempts/:id/paper/:fileId/links',
+      ({ params }) => {
+        const url = paperUrls.get(String(params.fileId)) ?? SCAN;
+        return HttpResponse.json({
+          expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+          url,
+        });
+      }
+    ),
+    http.delete('/api/assignments/:id/hand-in/:fileId', ({ params }) => {
+      const id = String(params.id);
+      if (!handInOpen(id)) return gone();
+      setHandIn(
+        id,
+        db.user.id,
+        handInOf(id, db.user.id).filter((f) => f.id !== params.fileId)
+      );
+      return new HttpResponse(null, { status: 204 });
+    }),
+    http.get('/api/assignments/:id/hand-in/:fileId/links', ({ params }) =>
+      HttpResponse.json({
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+        url: paperUrls.get(String(params.fileId)) ?? SCAN,
+      })
+    ),
+    // Files › Submissions: papers of closed assignments, every part marked;
+    // hand-ins of closed ones.
+    http.get('/api/papers', () => {
+      const items: SubmittedPaper[] = [...attempts.values()].flatMap((a) => {
+        const row = rowOf(a.assignmentId);
+        const marked = a.graded.every((q) => q.parts.every((p) => !p.pending));
+        if (
+          !row ||
+          a.userId !== db.user.id ||
+          a.paper !== 'read' ||
+          !marked ||
+          !closedAtOf(row)
+        )
+          return [];
+        return (a.paperFiles ?? []).map((f) => ({
+          assignmentId: row.id,
+          attemptId: a.id,
+          bytes: f.sizeBytes,
+          createdAt: a.submittedAt ?? a.startedAt,
+          id: f.id,
+          kind: f.kind,
+          name: f.name,
+          quizName: row.title,
+          workspaceId: row.workspaceId,
+          workspaceName:
+            db.workspaces.find((w) => w.id === row.workspaceId)?.name ?? '',
+        }));
+      });
+      for (const [assignmentId, byUser] of handIns) {
+        const row = rowOf(assignmentId);
+        if (!row || !isClosed(row)) continue;
+        for (const f of byUser.get(db.user.id) ?? [])
+          items.push({
+            assignmentId,
+            bytes: f.sizeBytes,
+            createdAt: row.postedAt,
+            id: f.id,
+            kind: f.kind,
+            name: f.name,
+            quizName: row.title,
+            workspaceId: row.workspaceId,
+            workspaceName:
+              db.workspaces.find((w) => w.id === row.workspaceId)?.name ?? '',
+          });
+      }
+      return HttpResponse.json({
+        count: items.length,
+        items,
+        totalBytes: items.reduce((n, p) => n + p.bytes, 0),
+      });
+    }),
+    http.delete('/api/papers/:id', ({ params }) => {
+      for (const a of attempts.values())
+        a.paperFiles = a.paperFiles?.filter((f) => f.id !== params.id);
+      for (const [assignmentId] of handIns)
+        setHandIn(
+          assignmentId,
+          db.user.id,
+          handInOf(assignmentId, db.user.id).filter((f) => f.id !== params.id)
+        );
+      return HttpResponse.json({ deleted: 1 });
+    }),
+    http.delete('/api/papers', () => {
+      for (const a of attempts.values())
+        if (a.userId === db.user.id && a.paper === 'read') a.paperFiles = [];
+      for (const [assignmentId] of handIns) {
+        const row = rowOf(assignmentId);
+        if (row && isClosed(row)) setHandIn(assignmentId, db.user.id, []);
+      }
+      return HttpResponse.json({ deleted: 1 });
     }),
     http.post(
       '/api/assignment-attempts/:id/submit',

@@ -754,10 +754,26 @@ same way with their marking image, so the slot requires `vision` (M4, Epo
 2026-11-07; `models.slotRequirements`). One call per answered
 open or drawn part, ten at a time per submission, waiting in the model's line. Each is
 **charged** to whoever started the job (Epo 2026-11-03): the learner for a check
-of their own practice, the workspace owner for an assignment's answers, about 32
-credits a 40-part paper (surface `quiz`). A part that fails, or every part when
-there is nothing to pay with, stays "Not marked" and is not retried; closed parts
-still mark and a submission never fails for it.
+of their own practice, and for an assignment's answers the member attempting
+(Epo 2026-11-08, superseding the workspace owner), about 32 credits a 40-part
+paper (surface `quiz`). A part that fails, or every part when there is nothing to
+pay with, stays "Not marked" and is not retried; closed parts still mark and a
+submission never fails for it. On an assignment the part keeps why (`aiError`:
+`credits` or `error`), which the owner's row shows as No credits or Grade Error.
+
+An uploaded answer paper goes through the pipeline's `POST /paper`
+(`pipeline/pipeline/retrieval/paper.py`, todo-file-submissions.md M and 5a) on
+the same slot and spend session. Its files' pages run on in order (a PDF's pages,
+an image as one page, a text or Office file as its indexed text on one page), at
+most `PAPER_MAX_PAGES` (15, Epo's figure held; more is a 422 `too_many_pages`).
+One read call (prompt R, reasoning off, every page at 1,024 px) gives each part's
+pages and each closed part's answer; an answer on no pages is dropped. Open and
+drawing parts with pages are then graded four to a call, concurrently, on the
+union of their pages at 1,568 px under `SYSTEM_PROMPT` + `DRAWN_SECTION` + P1 + B,
+thinking when a part has working. A failed read fails the request; a failed batch
+leaves only its parts with `error` `credits` (the session's credits ran out) or
+`error`. Given `pages`, there is no read and only those parts are graded. R, P1
+and B are Epo's word for word (2026-11-08).
 
 A shared page marks no open answer, so a visitor's check there calls no model and
 costs nothing, signed in or out (Epo 2026-11-05, Q640 B;

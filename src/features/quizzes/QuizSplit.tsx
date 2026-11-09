@@ -82,6 +82,7 @@ export function RowMark({
 export function QuizSplit<Q extends Question | LearnerQuestion>({
   action,
   above,
+  below,
   children,
   current,
   foot,
@@ -97,6 +98,8 @@ export function QuizSplit<Q extends Question | LearnerQuestion>({
   action?: ReactNode;
   /** Above the rows, under the heading. */
   above?: ReactNode;
+  /** Under the rows, before the foot. */
+  below?: ReactNode;
   /** The open question's pane. */
   children: ReactNode;
   current: string | undefined;
@@ -172,6 +175,7 @@ export function QuizSplit<Q extends Question | LearnerQuestion>({
             </span>
           </button>
         ))}
+        {below}
         <div className="mt-auto flex flex-col gap-2 px-2 pt-3 pb-1 empty:hidden">
           {foot}
         </div>

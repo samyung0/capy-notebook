@@ -10,6 +10,7 @@ import type {
   AssignmentAnswerRow,
   AssignmentGradedQuestion,
   AssignmentReport,
+  PaperFile,
 } from '@/api/types';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
@@ -39,6 +40,7 @@ import { errorCopy } from '@/lib/errors';
 import { questionLine } from '../practice/practiceText';
 import type { AssignmentsSearch } from './AssignmentsPage';
 import { markSteps, markText } from './assignmentText';
+import { PaperPages } from './LazyPaper';
 
 type Selected = { attemptId: string; questionId: string };
 const same = (row: AssignmentAnswerRow, s: Selected | null) =>
@@ -116,7 +118,13 @@ export function ApproveTab({
       <p className="t-meta mt-6 text-fg-muted">{m.assignment_no_open()}</p>
     );
 
-  const toApprove = rows.filter((row) => row.waiting).length;
+  const toApprove = rows.filter(
+    (row) => row.waiting && (manual || row.aiMarked)
+  ).length;
+  // Under AI marking, answers the AI left unmarked count apart (T3).
+  const notGraded = manual
+    ? 0
+    : rows.filter((row) => row.waiting && !row.aiMarked).length;
   // Approve all clears a question: by member there is none to clear.
   const approvable = !member && rows.some((row) => row.waiting && row.aiMarked);
   const questionNumber = (id: string) =>
@@ -187,6 +195,8 @@ export function ApproveTab({
         <div className="mt-2 flex items-center justify-between px-2.5">
           <span className="t-meta text-fg-secondary">
             {m.assignment_to_approve({ count: toApprove })}
+            {notGraded > 0 &&
+              ` · ${m.assignment_not_graded({ count: notGraded })}`}
           </span>
           <span
             className={cn(manual && 'hidden')}
@@ -297,6 +307,13 @@ export function ApproveTab({
                         mark: markText(row.aiAwarded, row.marks),
                       })}
                     </span>
+                  ) : row.waiting && row.aiError && !row.handMarking ? (
+                    // Why the AI left it unmarked (T3).
+                    <span className="inline-flex h-5.5 shrink-0 items-center rounded-md bg-tint-error px-1.75 font-semibold text-tint-error-fg text-xs">
+                      {row.aiError === 'credits'
+                        ? m.assignment_no_credits()
+                        : m.assignment_grade_error()}
+                    </span>
                   ) : row.waiting ? (
                     <span className="inline-flex h-5.5 shrink-0 items-center rounded-md bg-tint-warning px-1.75 font-semibold text-tint-warning-fg text-xs">
                       {/* A drawing saved with no marking image (Q695). */}
@@ -376,6 +393,7 @@ function MarkPane({
       name={name}
       onApproved={onApproved}
       onPrevious={onPrevious}
+      paperFiles={attempt.paper ? attempt.paperFiles : undefined}
       question={question}
       waiting={row.waiting}
     />
@@ -392,11 +410,14 @@ function MarkForm({
   name,
   onApproved,
   onPrevious,
+  paperFiles,
   question,
   waiting,
 }: {
   answers: Record<string, unknown>;
   assignment: Assignment;
+  /** A paper's files: its parts show the pages they were read on (T1). */
+  paperFiles?: PaperFile[];
   attemptId: string;
   attemptNumber: number;
   avatar?: string;
@@ -496,7 +517,14 @@ function MarkForm({
         const text = answers[part.id];
         return (
           <div className="mt-3" key={part.id}>
-            {part.answer.type === 'drawing' && text ? (
+            {paperFiles ? (
+              <PaperAnswer
+                attemptId={attemptId}
+                files={paperFiles}
+                name={first}
+                pages={part.pages ?? []}
+              />
+            ) : part.answer.type === 'drawing' && text ? (
               // Drawn from its board, Open drawing for the whole board (R3).
               <ReviewedDrawing
                 blocks={part.blocks}
@@ -593,7 +621,11 @@ function MarkForm({
                 marks
               ),
             })
-          : m.assignment_ai_not_marked()}
+          : parts.some((p) => p.aiError === 'credits')
+            ? m.assignment_not_graded_credits()
+            : parts.some((p) => p.aiError === 'error')
+              ? m.assignment_not_graded_error()
+              : m.assignment_ai_not_marked()}
         {' · '}
         <b className="font-bold text-fg">
           {m.assignment_mark_of({
@@ -634,6 +666,59 @@ function MarkForm({
           {waiting ? m.assignment_approve() : m.action_save()}
         </Button>
       </div>
+    </div>
+  );
+}
+
+/** A paper's answer (T1): the pages it was read on, the whole paper a click
+ * away; once the member deleted the paper, that it is gone (F2). */
+function PaperAnswer({
+  attemptId,
+  files,
+  name,
+  pages,
+}: {
+  attemptId: string;
+  files: PaperFile[];
+  name: string;
+  pages: number[];
+}) {
+  const [whole, setWhole] = useState(false);
+  if (files.length === 0)
+    return (
+      <p className="flex items-center gap-3 rounded-lg border border-line border-dashed p-4 text-fg-secondary">
+        <Icon className="shrink-0 text-fg-muted" name="fileText" size={22} />
+        {m.assignment_paper_deleted({ name })}
+      </p>
+    );
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="t-meta text-fg-secondary">
+          {pages.length === 0
+            ? m.assignment_paper_no_pages()
+            : pages.length === 1
+              ? m.assignment_paper_page({ page: pages[0]! })
+              : m.assignment_paper_pages({ pages: pages.join(', ') })}
+        </span>
+        <Button
+          className="ml-auto"
+          onClick={() => setWhole(!whole)}
+          size="sm"
+          variant="outline"
+        >
+          {whole
+            ? m.assignment_paper_found_pages()
+            : m.assignment_paper_whole()}
+        </Button>
+      </div>
+      <PaperPages
+        className="grid-cols-1 sm:grid-cols-2"
+        files={files}
+        of={{ attemptId }}
+        only={whole ? undefined : pages}
+        width={480}
+      />
     </div>
   );
 }

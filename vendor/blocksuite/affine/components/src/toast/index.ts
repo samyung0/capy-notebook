@@ -1,1 +1,1 @@
-export { toast } from './toast.js';
+export { setToastHandler, toast } from './toast.js';

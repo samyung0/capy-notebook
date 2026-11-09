@@ -4,6 +4,7 @@ package questions
 import (
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"math"
 	"math/rand/v2"
 	"net/url"
@@ -1235,10 +1236,30 @@ func Authored(q map[string]any) map[string]any {
 
 // LearnerView is a question as readers who are not editing see it: no answer
 // keys, accepted answers, marking schemes or worked solutions, with matching
-// options and ordering items shuffled. An allowlist keeps new author-only
+// options and ordering items shuffled; an mcq with several correct options
+// says only `multiple: true`. An allowlist keeps new author-only
 // fields out. Stored content is read with checked assertions, so a malformed
 // question loses fields instead of panicking.
 func LearnerView(q map[string]any) map[string]any {
+	return learnerView(q, func(values []any, _ string) []any { return shuffled(values, rand.Shuffle) })
+}
+
+// LearnerViewsSeeded is LearnerViews with each part's matching options and
+// ordering items in an order fixed by seed and the part: an attempt answered on
+// paper reads the same letters on every load as the read call gets.
+func LearnerViewsSeeded(qs []map[string]any, seed string) []map[string]any {
+	out := make([]map[string]any, len(qs))
+	for i, q := range qs {
+		out[i] = learnerView(q, func(values []any, partID string) []any {
+			h := fnv.New64a()
+			_, _ = h.Write([]byte(seed + "/" + partID))
+			return shuffled(values, rand.New(rand.NewPCG(h.Sum64(), 0)).Shuffle)
+		})
+	}
+	return out
+}
+
+func learnerView(q map[string]any, shuffle func(values []any, partID string) []any) map[string]any {
 	out := map[string]any{}
 	for _, key := range []string{"id", "stem", "groups", "layout", "labels", "level"} {
 		if v, ok := q[key]; ok {
@@ -1251,16 +1272,22 @@ func LearnerView(q map[string]any) map[string]any {
 		p, _ := raw.(map[string]any)
 		a, _ := p["answer"].(map[string]any)
 		learner := map[string]any{"type": a["type"]}
+		partID, _ := p["id"].(string)
 		switch a["type"] {
 		case "mcq":
 			learner["options"] = a["options"]
+			// Only whether several options are correct, so a learner knows to
+			// pick more than one (Epo 2026-11-08); the key itself stays out.
+			if correct, _ := a["correct"].([]any); len(correct) > 1 {
+				learner["multiple"] = true
+			}
 		case "short":
 			if unit, ok := a["unit"]; ok {
 				learner["unit"] = unit
 			}
 		case "matching":
 			options, _ := a["options"].([]any)
-			learner["options"] = shuffled(options)
+			learner["options"] = shuffle(options, partID)
 			left := []any{}
 			pairs, _ := a["pairs"].([]any)
 			for _, raw := range pairs {
@@ -1273,7 +1300,7 @@ func LearnerView(q map[string]any) map[string]any {
 			learner["gaps"] = len(accepted)
 		case "ordering":
 			items, _ := a["items"].([]any)
-			learner["items"] = shuffled(items)
+			learner["items"] = shuffle(items, partID)
 		}
 		part := map[string]any{"id": p["id"], "blocks": p["blocks"], "answer": learner, "marks": partMarks(p)}
 		if group, ok := p["group"]; ok {
@@ -1294,9 +1321,9 @@ func LearnerViews(qs []map[string]any) []map[string]any {
 	return out
 }
 
-func shuffled(values []any) []any {
+func shuffled(values []any, shuffle func(n int, swap func(i, j int))) []any {
 	out := append([]any{}, values...)
-	rand.Shuffle(len(out), func(i, j int) { out[i], out[j] = out[j], out[i] })
+	shuffle(len(out), func(i, j int) { out[i], out[j] = out[j], out[i] })
 	return out
 }
 
@@ -1451,6 +1478,39 @@ func GradingText(q map[string]any, partIndex int) string {
 	context(p)
 	blocks, _ := p["blocks"].([]any)
 	sections = append(sections, "Part to grade: "+blocksText(blocks))
+	nonEmpty := sections[:0]
+	for _, section := range sections {
+		if section != "" {
+			nonEmpty = append(nonEmpty, section)
+		}
+	}
+	return strings.Join(nonEmpty, "\n\n")
+}
+
+// PartText is a part's own text as a paper shows it: the question's stem and
+// any shared context before its first part, then the part's blocks.
+func PartText(q map[string]any, partIndex int) string {
+	parts, _ := q["parts"].([]any)
+	p, _ := parts[partIndex].(map[string]any)
+	var sections []string
+	if partIndex == 0 {
+		stem, _ := q["stem"].([]any)
+		sections = append(sections, blocksText(stem))
+	}
+	if group, grouped := p["group"].(string); grouped {
+		first := true
+		for _, raw := range parts[:partIndex] {
+			earlier, _ := raw.(map[string]any)
+			if earlier["group"] == group {
+				first = false
+			}
+		}
+		if first {
+			sections = append(sections, blocksText(GroupBlocks(q, p)))
+		}
+	}
+	blocks, _ := p["blocks"].([]any)
+	sections = append(sections, blocksText(blocks))
 	nonEmpty := sections[:0]
 	for _, section := range sections {
 		if section != "" {

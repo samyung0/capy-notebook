@@ -466,6 +466,12 @@ export function AnswerEditor({
           <p className="t-label">
             {m.question_ui_options_and_correct_answers()}
           </p>
+          {/* Learners see the same hint, so they know to pick more than one. */}
+          {answer.correct.length > 1 && (
+            <p className="text-fg-muted text-sm">
+              {m.question_ui_multiple_answers()}
+            </p>
+          )}
           {answer.options.map((option, i) => (
             <div className="flex items-center gap-2" key={i}>
               <OptionLetter index={i} />

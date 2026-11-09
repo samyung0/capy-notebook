@@ -146,6 +146,7 @@ import type {
   StudyPreferences,
   StudySummary,
   StudyTopics,
+  SubmittedPapers,
   Tag,
   Task,
   TodoDonePage,
@@ -1998,6 +1999,8 @@ export function useUploadSource(wsId: string | null) {
       batchId,
       batchTotal,
       hidden,
+      attemptId,
+      handInId,
       onQueued,
       onUploadProgress,
       signal,
@@ -2013,6 +2016,12 @@ export function useUploadSource(wsId: string | null) {
       /** The file starts hidden from members (Who can see it); a workspace
        * upload only. */
       hidden?: boolean;
+      /** Hands the file in as part of the caller's running paper attempt
+       * (standalone uploads only, Epo 2026-11-08). */
+      attemptId?: string;
+      /** Adds the file to the caller's hand-in on this unmarked assignment
+       * (S3): stored, never parsed. */
+      handInId?: string;
       /** fast = OpenDataLoader, with OCR on text-less pages; none = store-only
        * for non-text kinds (no parse, not indexed). Text kinds (txt/md/json)
        * still index under none — there is no parse route to pick. */
@@ -2034,8 +2043,10 @@ export function useUploadSource(wsId: string | null) {
       signal?: AbortSignal;
     }) => {
       const metadata = {
+        attemptId,
         batchId,
         batchTotal,
+        handInId,
         // A standalone file has no topic or members: the fields stay out.
         ...(wsId
           ? {
@@ -2070,6 +2081,17 @@ export function useUploadSource(wsId: string | null) {
       );
     },
     onSuccess: (file, vars) => {
+      // A paper's file shows in its attempt, never in the Files lists.
+      if (vars.attemptId) {
+        qc.invalidateQueries({
+          queryKey: qk.assignmentAttempt(vars.attemptId),
+        });
+        return;
+      }
+      if (vars.handInId) {
+        qc.invalidateQueries({ queryKey: qk.assignment(vars.handInId) });
+        return;
+      }
       track('source_uploaded', {
         kind: vars.kind,
         parseMode: vars.parseMode ?? 'fast',
@@ -3229,6 +3251,16 @@ export function useSetAssignmentClosed(workspaceId: string, id: string) {
   });
 }
 
+/** Release grades on an assignment whose grades are shown by hand (T5). */
+export function useReleaseAssignmentGrades(workspaceId: string, id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api.post<Assignment>(`/assignments/${id}/release-grades`, {}),
+    onSuccess: () => refreshAssignment(qc, workspaceId, id),
+  });
+}
+
 export function useSetAssignmentDone(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -3244,8 +3276,12 @@ export function useStartAssignment(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({
     meta: { errorToast: false },
-    mutationFn: (id: string) =>
-      api.post<AssignmentAttempt>(`/assignments/${id}/start`, {}),
+    /** upload starts an attempt answered on paper (Upload file, mock S4). */
+    mutationFn: ({ id, upload }: { id: string; upload?: boolean }) =>
+      api.post<AssignmentAttempt>(
+        `/assignments/${id}/start`,
+        upload ? { upload } : {}
+      ),
     onSuccess: (attempt) => {
       qc.setQueryData(qk.assignmentAttempt(attempt.id), attempt);
       return refreshAssignment(qc, workspaceId, attempt.assignmentId);
@@ -3314,6 +3350,96 @@ export function useDeleteAllDrawings() {
   return useMutation({
     mutationFn: () => api.del<{ deleted: number }>('/drawings'),
     onSuccess: () => invalidateAfterDrawingDelete(qc, null),
+  });
+}
+
+/** Remove a file from the member's running paper. */
+export function useRemovePaperFile(attemptId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (fileId: string) =>
+      api.del(`/assignment-attempts/${attemptId}/paper/${fileId}`),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.assignmentAttempt(attemptId) }),
+  });
+}
+
+/** Put the running paper's files in this order. */
+export function useOrderPaperFiles(attemptId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (fileIds: string[]) =>
+      api.put(`/assignment-attempts/${attemptId}/paper/order`, { fileIds }),
+    onSettled: () =>
+      qc.invalidateQueries({ queryKey: qk.assignmentAttempt(attemptId) }),
+  });
+}
+
+/** Whose files: a paper's attempt, or the member's hand-in on an unmarked
+ * assignment (S3). */
+export type SubmissionOf = { attemptId: string } | { handInId: string };
+
+const submissionFilePath = (of: SubmissionOf, fileId: string) =>
+  'attemptId' in of
+    ? `/assignment-attempts/${of.attemptId}/paper/${fileId}`
+    : `/assignments/${of.handInId}/hand-in/${fileId}`;
+
+/** Remove a file from the member's open hand-in. */
+export function useRemoveHandInFile(assignmentId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (fileId: string) =>
+      api.del(submissionFilePath({ handInId: assignmentId }, fileId)),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.assignment(assignmentId) }),
+  });
+}
+
+/** A paper or hand-in file's links, for its member or the class's staff. */
+export const usePaperFileLinks = (of: SubmissionOf, fileId: string) =>
+  useQuery({
+    meta: { errorBoundary: false },
+    queryFn: () =>
+      api.get<FileLinks>(`${submissionFilePath(of, fileId)}/links`),
+    queryKey: ['paperFileLinks', of, fileId] as const,
+    // Presigned for the hour.
+    staleTime: 30 * 60_000,
+  });
+
+/** Files › Submissions: the caller's papers they may delete, newest first. */
+export const useSubmittedPapers = (enabled: boolean) =>
+  useInfiniteQuery({
+    enabled,
+    getNextPageParam: (last: SubmittedPapers) => last.nextCursor || undefined,
+    initialPageParam: '',
+    meta: { errorBoundary: false },
+    queryFn: ({ pageParam }: { pageParam: string }) =>
+      api.get<SubmittedPapers>(
+        `/papers${pageParam ? `?${new URLSearchParams({ cursor: pageParam })}` : ''}`
+      ),
+    queryKey: qk.papers,
+  });
+
+function invalidateAfterPaperDelete(qc: QueryClient) {
+  qc.invalidateQueries({ queryKey: qk.papers });
+  qc.invalidateQueries({ queryKey: qk.billing });
+}
+
+/** Delete one handed-in paper file; its marks stay. */
+export function useDeletePaper() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del<{ deleted: number }>(`/papers/${id}`),
+    onSuccess: () => invalidateAfterPaperDelete(qc),
+  });
+}
+
+/** Delete every handed-in paper file the caller may delete. */
+export function useDeleteAllPapers() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.del<{ deleted: number }>('/papers'),
+    onSuccess: () => invalidateAfterPaperDelete(qc),
   });
 }
 
