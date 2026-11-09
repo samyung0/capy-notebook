@@ -228,16 +228,11 @@ func (a *api) markPaper(ctx context.Context, assignmentID, attemptID string, aga
 	return nil
 }
 
-// readPapers reads, in the background, the papers an assignment (or one
-// attempt) has waiting, one at a time per payer as other marking runs.
-func (a *api) readPapers(ctx context.Context, assignmentID, attemptID string) {
+// readPapers reads, in the background, the papers ids (PapersToRead) one at a
+// time per payer as other marking runs, releasing each read's hold as it ends.
+func (a *api) readPapers(ctx context.Context, assignmentID string, ids []string, held map[string]func()) {
 	report := func(err error) {
 		obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz, "stage": "paper_marking"})
-	}
-	ids, err := a.s.PapersToRead(ctx, assignmentID, attemptID)
-	if err != nil {
-		report(err)
-		return
 	}
 	for _, id := range ids {
 		paper, err := a.s.GetPaper(ctx, id)
@@ -258,5 +253,6 @@ func (a *api) readPapers(ctx context.Context, assignmentID, attemptID string) {
 				report(err)
 			}
 		}()
+		held[id]()
 	}
 }

@@ -994,7 +994,20 @@ answer pane as one line, with no banner and no names (mock T3). Waiting
 answers count as `toApprove`, and `notGraded` how many of them have no AI mark,
 which the Assignments row, the report header and Approve AI marks show apart from
 those to approve. Mark with AI runs each attempt on its member's credits and is
-refused only when grading isn't set up. With Approve
+refused only when grading isn't set up. While a run holds answers they read
+Marking… with a spinner (Q729): the gateway notes, in memory beside the run's
+progress (one gateway process; a restart forgets it), each attempt it holds
+from queued until its call returns or fails, its parts by id, or every part
+while its paper is read; a re-grade of a paper holds exactly the parts it
+sends (four to a call in the pipeline, all of them at once). Submit and the
+sweep hold the attempt before the reply, and Mark with AI what it lists, so
+the next read already says so. The report's answer rows and members and the
+attempt (with `marking` on each part held) carry `marking`, which Approve
+shows in place of a row's badge or waiting text, the Members tab in place of
+"to approve", and the member's submitted page and results as Marking… (each
+waiting part too); the report and the attempt are read again every 3 s while
+anything says it, and under Show grades Manual the flag still shows, telling
+nothing of the marks. With Approve
 AI marks on, its mark waits beside the answer (`aiAwards`, `aiComment`, `aiFlag`)
 where only staff read it; off, it is the mark at once (`markedBy: "ai"`). A part left
 Not marked joins no review; a quiz check can check it again (below). At zero the

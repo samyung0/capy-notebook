@@ -518,6 +518,8 @@ components:
           type: number
         handMarking:
           type: boolean
+        marking:
+          type: boolean
         marks:
           format: double
           type: number
@@ -594,6 +596,8 @@ components:
         mark:
           format: double
           type: number
+        marking:
+          type: boolean
         now:
           format: date-time
           type: string
@@ -975,6 +979,8 @@ components:
         mark:
           format: double
           type: number
+        marking:
+          type: boolean
         minutes:
           format: int64
           type: integer

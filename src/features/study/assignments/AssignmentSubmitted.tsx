@@ -9,6 +9,7 @@ import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { m } from '@/i18n';
 import { dayLabel, markText, minutesText } from './assignmentText';
 import { LateBadge } from './LateBadge';
+import { MarkingNow } from './MarkingNow';
 
 /** Submitted (A4): the mark so far, what still waits for the owner, and the
  * links on. */
@@ -63,6 +64,8 @@ export function AssignmentSubmitted({
           </p>
         )
       )}
+      {/* A marking run holds it now, from right after Submit (Q729). */}
+      {attempt.marking && <MarkingNow className="mt-4" />}
       {attempt.gradesHidden ? (
         // Show grades Manual (S7): no mark until staff release it.
         <p className="mt-4 font-medium">

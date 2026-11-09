@@ -436,6 +436,8 @@ export type AssignmentGradedPart = QuestionPart & {
   aiError?: 'credits' | 'error' | 'file';
   /** A paper's part: the pages of the paper its answer was read on. */
   pages?: number[];
+  /** A marking run holds it now (Q729). */
+  marking?: boolean;
 };
 export type AssignmentGradedQuestion = Omit<Question, 'parts'> & {
   parts: AssignmentGradedPart[];

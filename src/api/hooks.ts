@@ -3147,8 +3147,14 @@ export const useAssignmentReport = (id: string, options?: QueryUiOptions) =>
     meta: queryMeta(options),
     queryFn: () => api.get<AssignmentReport>(`/assignments/${id}/report`),
     queryKey: qk.assignmentReport(id),
-    // The AI marks in the background: its progress shows while it does.
-    refetchInterval: (query) => (query.state.data?.marking ? 3000 : false),
+    // The AI marks in the background: its progress, and which answers and
+    // members it holds, show while it does (Q729).
+    refetchInterval: ({ state: { data } }) =>
+      data?.marking ||
+      data?.answers.some((row) => row.marking) ||
+      data?.members.some((row) => row.marking)
+        ? 3000
+        : false,
   });
 
 export const useAssignmentAttempt = (
@@ -3160,6 +3166,8 @@ export const useAssignmentAttempt = (
     meta: queryMeta(options),
     queryFn: () => api.get<AssignmentAttempt>(`/assignment-attempts/${id}`),
     queryKey: qk.assignmentAttempt(id),
+    // Read again while a marking run holds it, until Marking… ends (Q729).
+    refetchInterval: (query) => (query.state.data?.marking ? 3000 : false),
     // Every opening reads it afresh: a running attempt's answers and the clock
     // its timer counts from must not come from a cache. It holds typed answers,
     // so a refocus doesn't replace them.

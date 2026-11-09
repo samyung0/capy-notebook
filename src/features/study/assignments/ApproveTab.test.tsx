@@ -185,3 +185,35 @@ it("badges a row whose paper file can't be read", async () => {
   );
   act(() => root.unmount());
 });
+
+// Q729: a row whose answer a marking run holds shows Marking… in place of its
+// badge or waiting text; the others keep theirs.
+it('shows Marking… on the rows being marked only', async () => {
+  const root = createRoot(document.getElementById('root') as never);
+  await act(async () =>
+    root.render(
+      <ApproveTab
+        assignment={
+          { attempts: 3, id: 'as1', workspaceId: 'ws1' } as Assignment
+        }
+        report={
+          {
+            ...report,
+            answers: [
+              { ...answer('at_waiting', 1, true), marking: true },
+              answer('at_other', 2, true),
+            ],
+          } as unknown as AssignmentReport
+        }
+        search={{}}
+      />
+    )
+  );
+  const rows = [...document.querySelectorAll('li button')];
+  expect(rows.map((row) => !!row.querySelector('[data-marking]'))).toEqual([
+    true,
+    false,
+  ]);
+  expect(rows[1]?.textContent).toContain(m.assignment_not_marked());
+  act(() => root.unmount());
+});

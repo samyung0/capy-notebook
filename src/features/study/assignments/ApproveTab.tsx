@@ -41,6 +41,7 @@ import { questionLine } from '../practice/practiceText';
 import type { AssignmentsSearch } from './AssignmentsPage';
 import { markSteps, markText } from './assignmentText';
 import { PaperPages } from './LazyPaper';
+import { MarkingNow } from './MarkingNow';
 
 type Selected = { attemptId: string; questionId: string };
 const same = (row: AssignmentAnswerRow, s: Selected | null) =>
@@ -314,7 +315,10 @@ export function ApproveTab({
                       name="alert"
                     />
                   )}
-                  {row.waiting && row.aiMarked ? (
+                  {row.marking ? (
+                    // A marking run holds it now (Q729).
+                    <MarkingNow />
+                  ) : row.waiting && row.aiMarked ? (
                     <span className="shrink-0 font-semibold text-fg-secondary">
                       {m.assignment_ai_mark({
                         mark: markText(row.aiAwarded, row.marks),

@@ -15,6 +15,7 @@ export interface AssignmentAnswerRow {
   attemptNumber: number;
   awarded: number;
   handMarking: boolean;
+  marking?: boolean;
   marks: number;
   questionId: string;
   userId: string;

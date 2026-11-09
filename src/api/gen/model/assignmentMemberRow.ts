@@ -15,6 +15,7 @@ export interface AssignmentMemberRow {
   late: boolean;
   latePenaltyPct: number;
   mark?: number;
+  marking?: boolean;
   minutes?: number;
   missing: boolean;
   name: string;

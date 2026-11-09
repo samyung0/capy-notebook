@@ -168,6 +168,7 @@ export const GetAssignmentAttemptResponse = zod.object({
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number(),
+  "marking": zod.boolean().optional(),
   "now": zod.iso.datetime({"offset":true}),
   "paper": zod.enum(['upload', 'reading', 'read']).optional(),
   "paperFiles": zod.array(zod.object({
@@ -299,6 +300,7 @@ export const MarkAssignmentAnswerResponse = zod.object({
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number(),
+  "marking": zod.boolean().optional(),
   "now": zod.iso.datetime({"offset":true}),
   "paper": zod.enum(['upload', 'reading', 'read']).optional(),
   "paperFiles": zod.array(zod.object({
@@ -411,6 +413,7 @@ export const SubmitAssignmentAttemptResponse = zod.object({
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number(),
+  "marking": zod.boolean().optional(),
   "now": zod.iso.datetime({"offset":true}),
   "paper": zod.enum(['upload', 'reading', 'read']).optional(),
   "paperFiles": zod.array(zod.object({
@@ -980,6 +983,7 @@ export const GetAssignmentReportResponse = zod.object({
   "attemptNumber": zod.int(),
   "awarded": zod.number(),
   "handMarking": zod.boolean(),
+  "marking": zod.boolean().optional(),
   "marks": zod.number(),
   "questionId": zod.string(),
   "userId": zod.string(),
@@ -1003,6 +1007,7 @@ export const GetAssignmentReportResponse = zod.object({
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number().optional(),
+  "marking": zod.boolean().optional(),
   "minutes": zod.int().optional(),
   "missing": zod.boolean(),
   "name": zod.string(),
@@ -1139,6 +1144,7 @@ export const StartAssignmentResponse = zod.object({
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number(),
+  "marking": zod.boolean().optional(),
   "now": zod.iso.datetime({"offset":true}),
   "paper": zod.enum(['upload', 'reading', 'read']).optional(),
   "paperFiles": zod.array(zod.object({
