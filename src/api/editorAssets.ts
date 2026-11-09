@@ -43,6 +43,10 @@ const uploadsPath = (materialId: string) =>
   `/materials/${encodeURIComponent(materialId)}/editor-assets/uploads`;
 
 export interface EditorAssetUploadOptions {
+  /** The cap to check instead of the plan's: a workspace canvas's board takes
+   * CANVAS_BOARD_MAX, not a drawing answer's (the gateway checks by the
+   * material's kind). */
+  maxBytes?: number;
   onProgress?: (percent: number) => void;
   signal?: AbortSignal;
 }
@@ -72,7 +76,8 @@ export async function uploadEditorAsset(
   purpose: UploadPurpose,
   options: EditorAssetUploadOptions = {}
 ): Promise<EditorAsset> {
-  const maxBytes = await editorAssetMaxBytes(materialId, purpose);
+  const maxBytes =
+    options.maxBytes ?? (await editorAssetMaxBytes(materialId, purpose));
   const file =
     purpose === 'image' ? await fitImageOffThread(picked, maxBytes) : picked;
   if (file.size > maxBytes)

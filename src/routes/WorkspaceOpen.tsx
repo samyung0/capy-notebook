@@ -114,7 +114,7 @@ import {
 import { waitsForConnection } from '@/lib/online';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
-const WorkspaceCanvas = lazy(() => import('@/routes/DevWorkspaceCanvas'));
+const WorkspaceCanvas = lazy(() => import('@/routes/WorkspaceCanvas'));
 const SummaryPage = lazy(() =>
   import('@/features/study/practice/SummaryPage').then((mod) => ({
     default: mod.SummaryPage,

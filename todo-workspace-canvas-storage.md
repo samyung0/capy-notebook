@@ -1,6 +1,6 @@
 # The workspace canvas stored on the server
 
-Status: plan only (2026-11-09). Nothing built. Decided by Epo 2026-11-09 (human/frontend/
+Status: steps 1 and 2 built 2026-11-09 (server: migration 0163, kind, catalog block, routes; browser: `WorkspaceCanvas.tsx` opens, autosaves, keeps a device copy; the Canvas tab ships). Left: images (step 3, `todo-board-images.md`), Files and Trash rows and the Files preview (step 4). Decided by Epo 2026-11-09 (human/frontend/
 plate-editor.md): the canvas is **personal**: one per member per workspace, seen by its
 owner alone, no sharing, no view or preview mode, one BlockSuite editor over the whole
 canvas with no collaboration room, so BlockSuite's room data model is not needed

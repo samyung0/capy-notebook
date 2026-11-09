@@ -4648,7 +4648,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       address or YouTube link: a video shows its poster (`i.ytimg.com`) with a play
       mark, anything else its host and address; a double click opens it in a new tab.
     - **From the workspace:** **Quiz** and **Flashcards** list the workspace's own
-      (`DevWorkspaceCanvas` lends them through `workspace` in the mount options) and
+      (`WorkspaceCanvas` lends them through `workspace` in the mount options) and
       place a card with its title; a double click opens it in the workspace, and a
       card whose material the workspace no longer lists shows "can't be opened".
     Emoji and GIFs are `affine:embed-capy-picture` blocks (an `<img>` that plays by
@@ -4679,6 +4679,25 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     any page can write the clipboard. Their renderers check again what they use: a link
     opens only as http(s), an emoji shows only from the list, a GIF only from https
     `*.klipy.com` (`KLIPY_MEDIA_SOURCE`, which the image policy allows too), rotation as a number.
+  - **Stored (Epo 2026-11-09, `todo-workspace-canvas-storage.md`):** the workspace canvas
+    is personal: one per member per workspace, seen by its owner alone, one editor over
+    the whole canvas and no collaboration room (collaboration means resuming the held
+    canvas plan). It is a standalone material of kind `canvas` linked to its workspace
+    by `canvas_workspace_id`, owned and paid for by the member, listed in Files with the
+    drawing icon, never shared or cloned, and deleted with their membership when they
+    leave. `GET /api/workspaces/{id}/canvas` finds or makes it; its document is one
+    `canvas_board` block (embed catalog) naming the board asset, the save's version and
+    the canvas's images, so the asset pruner keeps them. `WorkspaceCanvas.tsx` opens
+    the board from the material's `board` editor asset (`boardAsset.ts`: gzip in the
+    browser, `assetLink` and `DecompressionStream` back), or from this device's unsaved
+    copy (IndexedDB `drawingDrafts`, key `canvas:<material>`, written 400 ms after each
+    change) when the last save didn't go up. It saves 2 s after the last change and on
+    leaving: the cleaned-up `save()` document, gzipped, uploaded as a new `board` asset
+    under `CANVAS_BOARD_MAX` (2 MiB before gzip, the board catalog; over it the board
+    says so and the last good save stands), then `PUT /api/workspaces/{id}/canvas` with
+    the asset, `version + 1` and the revision it read: 409 (the same person's other tab
+    saved first) says so and stops saving until a reload. Images on the canvas are the
+    next piece (`todo-board-images.md`); `imageAssetIds` is empty until then.
 - **Preview (`boardPreview.ts`):** `drawBoardPreview(saved, { width, height }, board)` draws a
   saved board as an SVG string from its data, for lists, results and marking views
   (Epo 2026-11-06: what's on it, not every detail). It never loads the editor: it imports
