@@ -16,12 +16,15 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => vi.fn(),
 }));
 
+// Loaded at collection, so the card's module graph does not count against the
+// test's timeout.
+const { act } = await import('react');
+const { createRoot } = await import('react-dom/client');
+const { ItemCard, ItemPick } = await import('./ItemCard');
+
 // A lost-access card has no link: opening it runs onOpen (the Files page's
 // toast) instead of doing nothing.
 it('opens a linkless pickable item through onOpen', async () => {
-  const { act } = await import('react');
-  const { createRoot } = await import('react-dom/client');
-  const { ItemCard, ItemPick } = await import('./ItemCard');
   const onOpen = vi.fn();
   const root = createRoot(document.getElementById('root') as never);
   await act(async () =>
