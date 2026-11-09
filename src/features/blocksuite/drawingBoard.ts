@@ -114,6 +114,7 @@ import {
   CardsStoreExtension,
   cardViews,
   lendWorkspace,
+  refreshMaterialCards,
   type WorkspaceLinks,
 } from './boardCards';
 import { closeBoardEditor } from './boardEditorShell';
@@ -232,6 +233,11 @@ const READ_ONLY_TOOLS = new Set<unknown>([
 const readOnlyViews = new ViewExtensionManager(
   VIEWS.filter((view) => !READ_ONLY_TOOLS.has(view))
 );
+/** A teacher's or a viewer's workspace canvas still draws what only it may hold. */
+const readOnlyWorkspaceViews = new ViewExtensionManager([
+  ...VIEWS.filter((view) => !READ_ONLY_TOOLS.has(view)),
+  MindmapWithoutTool,
+]);
 
 const PHONE_WIDTH = 768;
 
@@ -415,7 +421,16 @@ export function mountDrawingBoard(
   ];
   const std = new BlockStdScope({
     extensions: readOnly
-      ? [...readOnlyViews.get('edgeless'), ...drawn]
+      ? [
+          ...(options.board === 'workspace'
+            ? [
+                ...readOnlyWorkspaceViews.get('edgeless'),
+                ...pictureViews,
+                ...cardViews,
+              ]
+            : readOnlyViews.get('edgeless')),
+          ...drawn,
+        ]
       : [
           ...(options.board === 'workspace'
             ? [...workspaceViews.get('edgeless'), ...pictureViews, ...cardViews]
@@ -724,6 +739,8 @@ export function mountDrawingBoard(
       std.selection.clear();
       std.event.deactivate();
     },
+    /** Redraws the quiz and flashcard cards, after the workspace's list changes. */
+    refreshCards: refreshMaterialCards,
     /** The board to store, with no undo history: a fresh document keeps only what's
      * on the board (200 plane clicks were 606 KB live, 7.5 KB this way), rounded
      * (roundPlaces). */

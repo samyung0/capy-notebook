@@ -82,6 +82,11 @@ export type WorkspaceLinks = {
   open: (materialId: string) => void;
 };
 const lent = new WeakMap<BlockStdScope, WorkspaceLinks>();
+/** The material cards on screen, redrawn when the workspace's list changes. */
+const shown = new Set<MaterialBlockComponent>();
+export const refreshMaterialCards = () => {
+  for (const card of shown) card.requestUpdate();
+};
 export const lendWorkspace = (std: BlockStdScope, links: WorkspaceLinks) =>
   lent.set(std, links);
 export const workspaceOf = (std: BlockStdScope) => lent.get(std);
@@ -202,8 +207,14 @@ class MaterialBlockComponent extends GfxBlockComponent<MaterialBlockModel> {
       .find(({ id }) => id === materialId);
   }
 
+  override disconnectedCallback() {
+    super.disconnectedCallback();
+    shown.delete(this);
+  }
+
   override connectedCallback() {
     super.connectedCallback();
+    shown.add(this);
     this.addEventListener('dblclick', () => {
       if (this.listed())
         workspaceOf(this.std)?.open(this.model.props.materialId);

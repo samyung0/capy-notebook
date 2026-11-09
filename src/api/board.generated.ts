@@ -176,6 +176,7 @@ export const BOARD_CATALOG = {
     "LATEX_MAX": 2000,
     "LINK_URL_MAX": 2048,
     "MARKS_MAX": 500,
+    "MATERIAL_ID_MAX": 64,
     "PICTURE_LABEL_MAX": 120,
     "PICTURE_REF_MAX": 2048,
     "SPOKES_MAX": 60

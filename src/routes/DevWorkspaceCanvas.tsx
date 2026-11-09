@@ -20,7 +20,11 @@ export default function DevWorkspaceCanvas({
     errorBoundary: false,
   });
   const latest = useRef({ materials, onOpenMaterial });
-  latest.current = { materials, onOpenMaterial };
+  const mounted = useRef<{ refreshCards: () => void } | null>(null);
+  useEffect(() => {
+    latest.current = { materials, onOpenMaterial };
+    mounted.current?.refreshCards();
+  }, [materials, onOpenMaterial]);
   useEffect(() => {
     const host = container.current;
     if (!host) return;
@@ -51,12 +55,14 @@ export default function DevWorkspaceCanvas({
         open: (materialId) => latest.current.onOpenMaterial(materialId),
       },
     });
+    mounted.current = board;
     Object.assign(window, { __board: board });
     return () => {
       clearTimeout(timer);
       // Unchanged, what's stored stands: a board mounted and unmounted at once has
       // nothing on it yet.
       if (changed) writePref(key, board.save().doc);
+      mounted.current = null;
       board.unmount();
     };
   }, [workspaceId]);

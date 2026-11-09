@@ -741,9 +741,11 @@ function openPopper(
   button: PopperButton,
   tag: string,
   height: number,
-  style: Partial<CSSStyleDeclaration>
+  style: Partial<CSSStyleDeclaration>,
+  onDispose?: () => void
 ) {
   const popper = button.createPopper(tag as 'div', button, {
+    onDispose,
     setProps: (element: HTMLElement & { edgeless?: unknown }) => {
       element.edgeless = button.edgeless;
     },
@@ -2086,12 +2088,14 @@ class CapyMiscButton extends EdgelessToolbarToolMixin(
       this.requestUpdate();
       return;
     }
-    const panel = openPopper(this, 'capy-misc-panel', 300, {
-      marginLeft: 'auto',
-      marginRight: '0',
-      maxWidth: '100%',
-      width: 'auto',
-    });
+    // However it goes (the toolbar closes it for another panel), the button redraws.
+    const panel = openPopper(
+      this,
+      'capy-misc-panel',
+      300,
+      { marginLeft: 'auto', marginRight: '0', maxWidth: '100%', width: 'auto' },
+      () => this.requestUpdate()
+    );
     panel.addEventListener('placed', () => {
       closePopper(this);
       this.requestUpdate();

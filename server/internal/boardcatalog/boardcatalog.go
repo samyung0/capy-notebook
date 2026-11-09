@@ -92,8 +92,9 @@ func Get() Catalog {
 			"PICTURE_LABEL_MAX": 120,
 			"PICTURE_REF_MAX":   2048,
 			// A link card's address, and a material card's title (a material's own).
-			"LINK_URL_MAX":   2048,
-			"CARD_TITLE_MAX": fieldlimits.MaterialTitle,
+			"LINK_URL_MAX":    2048,
+			"CARD_TITLE_MAX":  fieldlimits.MaterialTitle,
+			"MATERIAL_ID_MAX": 64,
 		},
 	}
 }

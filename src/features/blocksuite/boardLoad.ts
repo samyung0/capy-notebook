@@ -216,7 +216,7 @@ function materialFits(block: Fields) {
     (kind === 'quiz' || kind === 'flashcards') &&
     typeof id === 'string' &&
     id.length > 0 &&
-    id.length <= 64 &&
+    id.length <= BOARD_CATALOG.limits.MATERIAL_ID_MAX &&
     typeof title === 'string' &&
     title.length <= BOARD_CATALOG.limits.CARD_TITLE_MAX &&
     finite(block['prop:rotate'])
