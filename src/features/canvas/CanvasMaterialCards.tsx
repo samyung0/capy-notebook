@@ -120,7 +120,7 @@ function CanvasMaterial({
         <Suspense fallback={<EmbedLoading />}>
           {/* The workspace's own quiz or set, not a note's copy: there is no owner
               to wait for, so no ownerId. */}
-          <AppEmbed materialId={materialId} refKind={kind} />
+          <AppEmbed live={false} materialId={materialId} refKind={kind} />
         </Suspense>
       ) : (
         <ThumbnailPanel icon={materialIconName(kind)} preview={preview} />

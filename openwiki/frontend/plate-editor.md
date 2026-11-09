@@ -4675,7 +4675,12 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     the note embed's `AppEmbedView` (`AppEmbed.tsx`), the same runner a note's embedded
     quiz or set uses, with no `ownerId` (a workspace's own material has no owning note
     to wait for), so a question is answered and Checked by direct clicks and a set is
-    studied in place; nothing is recorded, as in a note. The block is a BlockSuite block
+    studied in place; nothing is recorded, as in a note. The card renders from the
+    fetched snapshot and never joins the material's live room (`live` off on the embed,
+    Epo 2026-11-09: editing happens in the dialog, and many cards would mean many
+    connections against the 22-channel cap); it refetches the snapshot when the card
+    comes back into view (`useRefreshOnEnter`) and when the window regains focus, and
+    the dialog's save invalidates the quiz query. The block is a BlockSuite block
     like any other but hosts React: it adopts one `div` per card from the host registry
     (`src/features/canvas/materialCardHosts.ts` — kept out of `src/features/blocksuite`,
     which the app's tsconfig excludes), and `CanvasMaterialCards.tsx`, rendered by
