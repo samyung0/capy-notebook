@@ -7,8 +7,8 @@ import { m } from '../i18n';
 
 declare global {
   interface Window {
-    /** Families of the runtime's `font-failed` messages, as the host got them. */
-    fontFailures?: string[];
+    /** The tags of the events the host sent to Sentry (the test's client). */
+    sentryTags?: Record<string, unknown>[];
   }
 }
 
@@ -328,30 +328,48 @@ test.fixme('PDF annotation load toast shows before the PDF loads', async ({
 // browser's font and shows nothing; the family reaches the host, which reports
 // it to Sentry (reportOfficeFontFailure).
 for (const mode of ['view', 'edit'] as const) {
-  test(`an XLSX face that fails to load in ${mode} reaches the host's report`, async ({
+  test(`an XLSX face that fails to load in ${mode} reaches Sentry`, async ({
     page,
   }) => {
-    await page.context().route('**/*.ttf.zst', (route) => route.abort());
-    await page.addInitScript(() => {
-      window.fontFailures = [];
-      window.addEventListener('message', (event) => {
-        if (event.data?.type === 'font-failed')
-          window.fontFailures?.push(event.data.family);
-      });
+    // The faces fail once the test's Sentry client listens: e2e has no DSN.
+    let listen: () => void;
+    const listening = new Promise<void>((resolve) => {
+      listen = resolve;
+    });
+    await page.context().route('**/*.ttf.zst', async (route) => {
+      await listening;
+      await route.abort();
     });
     await page.goto(
       `/workspaces/ws_bio?file=bio-office-xlsx${mode === 'edit' ? '&mode=edit' : ''}`
     );
+    await page.evaluate(async () => {
+      const sentryPath = '/node_modules/@sentry/react/build/esm/index.js';
+      const Sentry = await import(sentryPath);
+      window.sentryTags = [];
+      // Sentry keeps its client on a global per SDK version, so the app's
+      // captureException reaches this one; it keeps the tags and sends nothing.
+      Sentry.init({
+        beforeSend: (event: { tags?: Record<string, unknown> }) => {
+          window.sentryTags?.push(event.tags ?? {});
+          return null;
+        },
+        defaultIntegrations: false,
+        dsn: 'https://e2e@sentry.invalid/1',
+        sendClientReports: false,
+      });
+    });
+    listen!();
     const frame = page.frameLocator('iframe[src*="office-runtime"]');
     await expect(frame.locator('canvas').first()).toBeVisible({
       timeout: 60_000,
     });
     // course-guide.xlsx is set in Arial.
     await expect
-      .poll(() => page.evaluate(() => window.fontFailures), {
+      .poll(() => page.evaluate(() => window.sentryTags), {
         timeout: 30_000,
       })
-      .toContain('Arial');
+      .toContainEqual({ component: 'office-font', family: 'Arial' });
     await expect(frame.locator('canvas').first()).toBeVisible();
   });
 }

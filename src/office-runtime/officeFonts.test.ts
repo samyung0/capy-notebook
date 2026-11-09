@@ -32,12 +32,16 @@ test('a packed face decodes with the engine decoder, which keeps no decoded copy
   expect(decoder).toHaveBeenCalledTimes(2);
 });
 
-test('the DOCX viewer worker decodes packed faces without an engine', async () => {
-  const load = officeViewerFonts
-    .createFontProvider()
+test("the DOCX viewer worker decodes packed faces without the engine's decoder", async () => {
+  // The engine hands every provider its decoder, the edit WASM's (13 MB).
+  const engineDecoder = vi.fn(decodeFontFaceOutsideEngine);
+  const viewerFonts: typeof officeFonts = officeViewerFonts;
+  const load = viewerFonts
+    .createFontProvider(undefined, { decoder: engineDecoder })
     .resolve('Calibri', true, false);
   const face = resolveMetricCompatFace('Calibri', true, false);
   expect((await load?.())?.byteLength).toBe(face?.byteLength);
+  expect(engineDecoder).not.toHaveBeenCalled();
 });
 
 test("DOCX's base-Latin backstop loads in the viewer worker and goes to the frame", async () => {
