@@ -25,7 +25,7 @@ use yrs::updates::decoder::Decode;
 use yrs::{Doc, GetString, ReadTxn, StateVector, Transact, Update};
 
 use crate::disk::{DiskStore, Hold, Key, PutError};
-use crate::effects::{TextCount, effect_tokens, trim_effect, utf16};
+use crate::effects::{TextCount, effect_tokens, trim_effect, utf16, xlsx_baseline_effects};
 use crate::engine::office::calls::On;
 use crate::engine::{EngineError, EnginePool, FailureKind, PoolConfig};
 use crate::gateway::{CheckpointBody, CheckpointSaved, Gateway, RefreshCandidate, SourceSession};
@@ -999,7 +999,7 @@ impl Sources {
                 .await?;
             let current = self.engines.baseline(on, state).await?;
             if format == Format::Xlsx {
-                office_service::compare_baselines(&indexed, &current)
+                xlsx_baseline_effects(&indexed, &current)
             } else {
                 office_service::unshifted_effects(&indexed, &current)
             }

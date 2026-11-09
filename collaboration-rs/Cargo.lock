@@ -3200,6 +3200,7 @@ dependencies = [
  "betteroffice-opc",
  "betteroffice-pptx-edit",
  "betteroffice-xlsx",
+ "betteroffice-xlsx-parse",
  "cpu-time",
  "deadpool-postgres",
  "futures",

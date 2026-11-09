@@ -3,10 +3,12 @@
 //! deleted (Q405's reindex count). Offsets, cuts and lengths are UTF-16 code
 //! units, as the TS measured them and as Go and the browser read them.
 
+use std::borrow::Cow;
 use std::ops::Range;
 
-use office_service::{EffectKind, NetEffect, Operation};
+use office_service::{BaselineEntry, EffectKind, NetEffect, Operation};
 use unicode_script::{Script, UnicodeScript};
+use xlsx_parse::{FormulaNames, display_formula};
 use yrs::block::{Item, ItemContent};
 use yrs::{Any, BranchID, ReadTxn, TransactionMut};
 
@@ -348,6 +350,30 @@ pub fn trim_effect(mut effect: NetEffect) -> NetEffect {
     effect.after = Some(cut(&after));
     effect.before = Some(cut(&before));
     effect
+}
+
+/// XLSX effects between two baselines, read while a rebuild is pending. The
+/// baselines hold each formula as stored, so every formula is shown as people
+/// see it, without the storage prefixes (`_xlfn.`, `_xlws.`), as office-service
+/// shows the pending effects it reads off the overrides (Q706).
+pub(crate) fn xlsx_baseline_effects(
+    from: &[BaselineEntry],
+    to: &[BaselineEntry],
+) -> Vec<NetEffect> {
+    let mut effects = office_service::compare_baselines(from, to);
+    for effect in &mut effects {
+        for text in [&mut effect.before, &mut effect.after]
+            .into_iter()
+            .flatten()
+        {
+            if let Some(formula) = text.strip_prefix('=')
+                && let Cow::Owned(shown) = display_formula(formula, FormulaNames::default())
+            {
+                *text = format!("={shown}");
+            }
+        }
+    }
+    effects
 }
 
 fn cjk(character: char) -> bool {
@@ -716,6 +742,29 @@ mod tests {
             )),
             "pending.py's READ_PENDING_TOKENS is not {READ_PENDING_TOKENS}"
         );
+    }
+
+    // Q706: while a rebuild is pending an XLSX read compares baselines, which
+    // hold the stored formula; its effect shows the formula people see.
+    #[test]
+    fn xlsx_baseline_effects_show_formulas_without_storage_prefixes() {
+        let cell = |value: &str| BaselineEntry {
+            id: "c1".into(),
+            kind: EffectKind::Text,
+            label: "Sheet1!A1".into(),
+            value: value.into(),
+            position: "sheet:0:A1".into(),
+            asset_ref: None,
+            image_sha256: None,
+        };
+        let [effect] = xlsx_baseline_effects(
+            &[cell("=_xlfn.XLOOKUP(B1,C1:C9,D1:D9)")],
+            &[cell("=_xlfn._xlws.FILTER(A2:A9,A2:A9>1)")],
+        )
+        .try_into()
+        .unwrap();
+        assert_eq!(effect.before.as_deref(), Some("=XLOOKUP(B1,C1:C9,D1:D9)"));
+        assert_eq!(effect.after.as_deref(), Some("=FILTER(A2:A9,A2:A9>1)"));
     }
 
     // Office text effects keep the changed span with 40 characters of context.
