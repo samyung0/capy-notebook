@@ -281,7 +281,7 @@ a{color:var(--accent)}
   <header class="top">
     <h1>Notes look: Notion style, one toolbar language with the canvas</h1>
     <nav>
-      <a href="#study">Study</a><a href="#note">The note</a><a href="#surface">S · Surface</a><a href="#tables">T · Tables</a><a href="#handle">H · Handle</a><a href="#slash">M · Slash</a><a href="#scope">N · Scope</a><a href="#canvas">Canvas</a><a href="#numbers">Numbers</a><a href="#step2">Step 2</a>
+      <a href="#study">Study</a><a href="#note">The note</a><a href="#surface">S · Surface</a><a href="#tables">T · Tables</a><a href="#handle">H · Handle</a><a href="#slash">M · Slash</a><a href="#scope">N · Scope</a><a href="#top">P · I · Title</a><a href="#tableview">V · Table view</a><a href="#canvas">Canvas</a><a href="#numbers">Numbers</a><a href="#step2">Step 2</a>
     </nav>
     <div class="seg" role="group" aria-label="Theme">
       <button type="button" id="th-light" aria-pressed="false">Light</button><button type="button" id="th-dark" aria-pressed="false">Dark</button><button type="button" id="th-sys" aria-pressed="true">System</button>
@@ -422,6 +422,71 @@ a{color:var(--accent)}
     </div>
   </section>
 
+  <section id="top">
+    <h2><span class="tag">P</span><span class="tag">I</span>The top of the page: title and metadata</h2>
+    <p class="muted"><b>Notion:</b> the big title at the top <i>is</i> the page's name, one field: typing there renames the page in the sidebar, breadcrumbs and links, and there is no separate heading block for it. Hovering above it shows "Add icon · Add cover · Add comment". Property rows under the title (Status, Tags, Dates, "+ Add a property") appear only for pages that live in a database; a plain page has none. The top bar shows "Edited 2h ago". <b>AFFiNE:</b> the same: the title is the doc's name (the page block's <code>title</code> text, mirrored into the doc meta), "Add icon" above it, and an "Info" row under it that opens the workspace properties (Tags, Created, Updated, 6 more). <b>Ours today:</b> the material's name sits in the header row with the save status; the note body starts at its first block; the page block's title is stored empty and unused (layout spec).</p>
+    <div class="options">
+      <div class="option">
+        <h3><span class="tag">P1</span>Title in the body = the file's name</h3>
+        <div class="stage" style="padding:0;overflow:hidden"><div id="top-p1"></div></div>
+        <ul class="pros"><li>Notion's and AFFiNE's way: a 40px title the student types into; renaming in the header, the tree or the title changes all three.</li><li>The header keeps the name for the dropdown and the save status, smaller.</li><li>Uses the stored page title; the layout spec and the name's save path learn one more source.</li></ul>
+      </div>
+      <div class="option">
+        <h3><span class="tag">P2</span>Name in the header only (today)</h3>
+        <div class="stage" style="padding:0;overflow:hidden"><div id="top-p2"></div></div>
+        <ul class="pros"><li>The body starts at its first block; the first heading is the student's own.</li><li>Nothing new to store or sync.</li></ul>
+      </div>
+      <div class="option">
+        <h3><span class="tag">I1</span>An Info row under the title</h3>
+        <div class="stage" style="padding:0;overflow:hidden"><div id="top-i1"></div></div>
+        <ul class="pros"><li>Collapsed "Info" line like AFFiNE's; open it shows what we know: Topic, Tags, Created, Updated, Words. Topic and Tags are editable here.</li><li>The header's status line could go, since Updated lives here.</li></ul>
+      </div>
+      <div class="option">
+        <h3><span class="tag">I2</span>No metadata in the body</h3>
+        <div class="stage" style="padding:0;overflow:hidden"><div id="top-i2"></div></div>
+        <ul class="pros"><li>Topic and tags stay in the file's ⋮ menu and the tree, as now.</li></ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="tableview">
+    <h2><span class="tag">V</span>AFFiNE's table view in place of the raw table</h2>
+    <p class="muted">AFFiNE has two different blocks: the plain <code>table</code> (text cells, the handles above) and the <code>database</code>, whose <code>data-view</code> draws it as a <b>Table</b>, <b>Kanban</b> or <b>Calendar</b> view with typed columns (text, number, select, multi-select, date, checkbox, progress, link, image), sorting, filtering, grouping and a search. Notion has the same split: simple table vs database. Below, a study note's table as the table view, with the view tabs and tools it comes with.</p>
+    <div class="frames">
+      <div>
+        <p class="frame-cap">Desktop, inside the note's column</p>
+        <div class="frame" id="f-dbview"></div>
+      </div>
+      <div class="phone-wrap">
+        <p class="frame-cap">Phone, 360px: the view scrolls sideways, the title column stays</p>
+        <div class="frame phone" id="f-dbview-phone"></div>
+      </div>
+    </div>
+    <div class="options">
+      <div class="option">
+        <h3><span class="tag">V1</span>Replace: every table is a table view</h3>
+        <ul class="pros"><li>Slash "Table" inserts a database in Table view; Kanban and Calendar are a tab away. The raw <code>table</code> block goes.</li><li>Every cell is typed: a column is text until changed. Sorting, filters and groups come with it.</li><li>Heavier per table (toolbar, view tabs, "+ New record") and a different model for the converters.</li></ul>
+      </div>
+      <div class="option">
+        <h3><span class="tag">V2</span>Both: simple table and a Table view block</h3>
+        <ul class="pros"><li>Slash "Table" stays the plain table; "Table view" (or "Database") adds the typed one with its views.</li><li>Two table kinds to explain, convert and render.</li></ul>
+      </div>
+      <div class="option">
+        <h3><span class="tag">V3</span>Plain table only (today's plan)</h3>
+        <ul class="pros"><li>The layout spec and converters stay as they are.</li></ul>
+      </div>
+    </div>
+    <div class="qs">
+      <b>What V1 or V2 costs</b>
+      <ol>
+        <li><b>Bytes:</b> <span id="dbBytes">the database and data-view views add 140 KB minified, 28 KB gzipped, on top of the editor's shared code (measured with a throwaway Vite build of the vendored views, with and without them).</span> The note's chunk already imports the database views (<code>getInternalViewExtensions</code> is static), so the build size barely moves; what changes is that their elements register and run.</li>
+        <li><b>Store and layout:</b> <code>roomStore.ts</code> refuses <code>affine:database</code> and <code>affine:data-view</code> today; the layout spec (todo-blocksuite-layout.md) needs rows for the database block's columns, cells (a Y.Map per cell per column type), views, filters and sorts, with limits for each.</li>
+        <li><b>Converters:</b> the TS and Rust <code>blocks</code> converters (Plate ↔ blocks while both editors exist), the Go <code>materialdoc</code> checks, markdown and the agent's note format (a database exports as a markdown table of its current view), share-page SSR (a static renderer for the table view, no kanban or calendar on the public page).</li>
+        <li><b>UI work:</b> the data-view's own toolbar, menus and cell editors take the same token mapping as the rest of the chrome; its date and select pickers are BlockSuite's.</li>
+      </ol>
+    </div>
+  </section>
+
   <section id="canvas">
     <h2>The canvas in the same language</h2>
     <p class="muted">The drawing board's ☰ button and menu, bottom toolbar and the selected card's bar restyled to the note's panel (S2 here; S1 is the frosted variant above). Tools and content are unchanged: the shape pieces, Graphs, Charts and Formulas slots, the pen and eraser stay as they are. The selected plane card shows its pen, Fit to size, Duplicate, Connect, Lock and ⋮.</p>
@@ -546,6 +611,34 @@ a{color:var(--accent)}
   var m2='<div class="note" style="padding:0;font-size:15px"><div class="blk p">Net gain: 2 ATP and 2 NADH.</div><div class="blk p" style="color:var(--muted)">/<span style="color:var(--fg)">tab</span><div class="menu aff" style="top:30px;left:0"><div class="grp">Basic</div><div class="row cur">'+box('table')+'<span class="tt">Table<small>Rows and columns of text.</small></span></div><div class="row">'+box('text')+'<span class="tt">Text<small>Start typing with plain text.</small></span></div><div class="row">'+box('h1')+'<span class="tt">Heading 1<small>Headings in the largest font.</small></span></div><div class="row">'+box('h2')+'<span class="tt">Heading 2<small>Headings in the 2nd font size.</small></span></div><div class="row">'+box('list')+'<span class="tt">Bulleted list<small>A simple bulleted list.</small></span></div><div class="grp">Media</div><div class="row">'+box('image')+'<span class="tt">Image<small>Insert an image.</small></span></div><div class="row">'+box('code')+'<span class="tt">Code block<small>Code snippet with formatting.</small></span></div></div></div></div>';
   document.getElementById('sl-m1').innerHTML=m1;
   document.getElementById('sl-m2').innerHTML=m2;
+
+  // Top of the page: a header strip, then the body's first lines
+  function topHtml(o){
+    var head='<div style="display:flex;align-items:center;gap:10px;height:44px;padding:0 14px;border-bottom:1px solid var(--line);font-size:13px"><span style="display:inline-flex;align-items:center;gap:6px;font-weight:600">'+I('text','s16')+'Cellular respiration '+I('chev','s14')+'</span><span class="muted" style="display:inline-flex;align-items:center;gap:4px">'+I('check','s14')+(o.info?'':'Saved')+'</span><span style="margin-left:auto;display:inline-flex;gap:8px;color:var(--fg2)">'+I('comment')+I('dotsv')+'</span></div>';
+    var title=o.title?'<div class="ttl" style="margin-top:0">Cellular respiration</div>':'';
+    var hover=o.title?'<div style="display:flex;gap:12px;font-size:13px;color:var(--muted);padding:0 2px 6px">'+'<span style="display:inline-flex;gap:4px;align-items:center">'+I('plus','s14')+'Add icon</span><span style="display:inline-flex;gap:4px;align-items:center">'+I('image','s14')+'Add cover</span></div>':'';
+    var info='';
+    if(o.info==='open') info='<div style="border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:6px 2px;margin:6px 0 10px;font-size:14px"><div style="display:flex;align-items:center;justify-content:space-between;color:var(--fg2);padding:4px 0">Info '+I('chev','s14')+'</div><div style="display:grid;grid-template-columns:140px 1fr;row-gap:6px;color:var(--fg2);padding:2px 0 6px">'+
+      '<span>Topic</span><span style="color:var(--fg)">Unit 3 · Respiration</span><span>Tags</span><span><span style="background:var(--dim);border-radius:4px;padding:1px 6px;color:var(--fg)">biology</span> <span style="background:var(--dim);border-radius:4px;padding:1px 6px;color:var(--fg)">test prep</span></span><span>Created</span><span style="color:var(--fg)">2 Nov 2026</span><span>Updated</span><span style="color:var(--fg)">today, 14:02 · you</span><span>Words</span><span style="color:var(--fg)">412</span></div></div>';
+    else if(o.info==='closed') info='<div style="border-top:1px solid var(--line);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;color:var(--fg2);padding:8px 2px;margin:6px 0 10px;font-size:14px">Info '+I('chev','s14')+'</div>';
+    var body='<div class="blk p" style="margin-top:'+(o.title?'4':'0')+'px">How cells turn glucose into ATP, in four stages, and where each one happens.</div><div class="blk h1" style="margin-top:20px">Overview</div><div class="blk p">Respiration is the controlled release of energy from glucose.</div>';
+    return head+'<div class="note" style="padding:28px 48px 24px;max-width:none;font-size:15px">'+hover+title+info+body+'</div>'}
+  document.getElementById('top-p1').innerHTML=topHtml({title:true});
+  document.getElementById('top-p2').innerHTML=topHtml({title:false});
+  document.getElementById('top-i1').innerHTML=topHtml({title:true,info:'open'});
+  document.getElementById('top-i2').innerHTML=topHtml({title:true,info:false});
+
+  // The database table view
+  function dbviewHtml(ph){
+    var chip=function(t,c){return '<span style="display:inline-block;padding:1px 8px;border-radius:4px;font-size:13px;background:'+c+'">'+t+'</span>'};
+    var tabs='<div style="display:flex;align-items:center;gap:6px;height:36px;font-size:14px;margin-top:8px"><span style="display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:5px;background:var(--hover);font-weight:500">'+I('table','s16')+'Table</span><span style="display:inline-flex;align-items:center;gap:6px;padding:3px 8px;color:var(--fg2)">'+I('list','s16')+'Kanban</span><span style="color:var(--fg2);padding:0 4px">'+I('plus','s16')+'</span><span style="margin-left:auto;display:inline-flex;gap:'+(ph?'6':'10')+'px;color:var(--fg2);align-items:center">'+I('select','s16')+I('undo','s16')+I('dotsh','s16')+'<span style="display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:6px;padding:3px 8px;color:var(--fg);font-size:13px">'+I('plus','s14')+(ph?'New':'New record')+'</span></span></div>';
+    var head='<tr>'+['Topic','Status','Mark','Review on'].map(function(h,i){return '<th style="color:var(--fg2);font-weight:500;border-left:'+(i?'1px solid var(--line)':'0')+'">'+I(['text','check','math','fit'][i],'s14')+' '+h+'</th>'}).join('')+'<th style="border-left:1px solid var(--line);color:var(--fg2)">'+I('plus','s14')+'</th></tr>';
+    var rows=[['Glycolysis',chip('Done','#dcebd8'),'9 / 10','12 Nov'],['Krebs cycle',chip('Revising','#fbf3db'),'6 / 10','10 Nov'],['Electron transport chain',chip('Not yet','var(--dim)'),'—','9 Nov'],['Anaerobic pathways',chip('Revising','#fbf3db'),'7 / 10','14 Nov']];
+    var body=rows.map(function(r){return '<tr>'+r.map(function(c,i){return '<td style="border-left:'+(i?'1px solid var(--line)':'0')+(i===0?';font-weight:500':'')+'">'+c+'</td>'}).join('')+'<td style="border-left:1px solid var(--line)"></td></tr>'}).join('');
+    var table='<div style="overflow-x:auto;margin:0 -2px"><table style="border-collapse:collapse;width:100%;min-width:'+(ph?'520':'0')+'px;font-size:14px"><thead>'+head+'</thead><tbody>'+body+'</tbody></table></div><div style="display:flex;align-items:center;gap:6px;color:var(--fg2);font-size:13px;padding:8px 2px;border-top:1px solid var(--line)">'+I('plus','s14')+' New record</div>';
+    return '<div class="note" style="padding:'+(ph?'24px 16px 28px':'40px 72px 40px')+';max-width:none;font-size:16px"><div class="blk h2" style="margin-top:0">Yield per glucose</div><div class="blk p">Which stages still need work before the Unit 3 test.</div><style>#f-dbview th,#f-dbview td,#f-dbview-phone th,#f-dbview-phone td{padding:7px 8px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}</style>'+tabs+table+'</div>'}
+  document.getElementById('f-dbview').innerHTML=dbviewHtml(false);
+  document.getElementById('f-dbview-phone').innerHTML=dbviewHtml(true);
 
   // Canvas
   function boardHtml(ph){
