@@ -128,6 +128,26 @@ export default function Credits() {
               </a>
             </div>
           </section>
+          <section className="mt-6 text-fg-muted text-sm">
+            <h2 className="t-subtitle text-fg">{m.credits_emoji_title()}</h2>
+            <p className="mt-1">{m.credits_noto_emoji()}</p>
+            <div className="mt-2 flex flex-wrap gap-4 text-link">
+              <a
+                href="https://googlefonts.github.io/noto-emoji-animation/"
+                rel="noreferrer"
+                target="_blank"
+              >
+                {m.credits_source()}
+              </a>
+              <a
+                href="https://creativecommons.org/licenses/by/4.0/"
+                rel="noreferrer"
+                target="_blank"
+              >
+                CC BY 4.0
+              </a>
+            </div>
+          </section>
         </div>
       </div>
     </PagePanel>

@@ -138,15 +138,46 @@ export const BOARD_CATALOG = {
         "question",
         "workspace"
       ]
+    },
+    {
+      "flavour": "affine:embed-capy-picture",
+      "parents": [
+        "affine:surface"
+      ],
+      "boards": [
+        "workspace"
+      ]
+    },
+    {
+      "flavour": "affine:embed-capy-link",
+      "parents": [
+        "affine:surface"
+      ],
+      "boards": [
+        "workspace"
+      ]
+    },
+    {
+      "flavour": "affine:embed-capy-material",
+      "parents": [
+        "affine:surface"
+      ],
+      "boards": [
+        "workspace"
+      ]
     }
   ],
   "limits": {
     "AXIS_MAX": 1000000000,
     "BARS_MAX": 24,
+    "CARD_TITLE_MAX": 120,
     "LABELS_MAX": 60,
     "LABEL_LENGTH_MAX": 24,
     "LATEX_MAX": 2000,
+    "LINK_URL_MAX": 2048,
     "MARKS_MAX": 500,
+    "PICTURE_LABEL_MAX": 120,
+    "PICTURE_REF_MAX": 2048,
     "SPOKES_MAX": 60
   }
 } as const;

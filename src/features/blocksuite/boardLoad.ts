@@ -9,6 +9,7 @@ import {
   MARKS_MAX,
   SPOKES_MAX,
 } from './boardData';
+import { isKlipyMedia } from './boardPictureData';
 
 /** Why a saved board doesn't open: it's handed to the page, never half mounted. */
 export class BoardLoadError extends Error {
@@ -169,6 +170,59 @@ function elementProblem(
   return null;
 }
 
+/** A picture: an emoji by its code points, or a GIF by its KLIPY link. */
+function pictureFits(block: Fields) {
+  const kind = block['prop:kind'];
+  const ref = block['prop:ref'];
+  const label = block['prop:label'];
+  return (
+    typeof ref === 'string' &&
+    ref.length <= BOARD_CATALOG.limits.PICTURE_REF_MAX &&
+    typeof label === 'string' &&
+    label.length <= BOARD_CATALOG.limits.PICTURE_LABEL_MAX &&
+    finite(block['prop:rotate']) &&
+    ((kind === 'emoji' && EMOJI_CODE.test(ref)) ||
+      (kind === 'klipy' && isKlipyMedia(ref)))
+  );
+}
+const EMOJI_CODE = /^[0-9a-f]{2,6}(_[0-9a-f]{2,6})*$/;
+const VIDEO_ID = /^([A-Za-z0-9_-]{11})?$/;
+
+/** A link card: a web address, and a YouTube video's id when it is one. */
+function linkFits(block: Fields) {
+  const url = block['prop:url'];
+  const videoId = block['prop:videoId'];
+  if (
+    typeof url !== 'string' ||
+    url.length > BOARD_CATALOG.limits.LINK_URL_MAX ||
+    typeof videoId !== 'string' ||
+    !VIDEO_ID.test(videoId) ||
+    !finite(block['prop:rotate'])
+  )
+    return false;
+  try {
+    return ['http:', 'https:'].includes(new URL(url).protocol);
+  } catch {
+    return false;
+  }
+}
+
+/** A material card: a workspace quiz or set by id, with its title. */
+function materialFits(block: Fields) {
+  const kind = block['prop:kind'];
+  const id = block['prop:materialId'];
+  const title = block['prop:title'];
+  return (
+    (kind === 'quiz' || kind === 'flashcards') &&
+    typeof id === 'string' &&
+    id.length > 0 &&
+    id.length <= 64 &&
+    typeof title === 'string' &&
+    title.length <= BOARD_CATALOG.limits.CARD_TITLE_MAX &&
+    finite(block['prop:rotate'])
+  );
+}
+
 /** A saved board's update, checked before anything mounts: one page with one canvas,
  * and only what the board's tools make, each within its limits. Its blocks and canvas
  * elements as plain data, for the preview. */
@@ -209,8 +263,16 @@ export function checkSavedBoard(update: Uint8Array, board: BoardKind) {
   for (const [id, block] of Object.entries(blocks)) {
     if ((block['sys:flavour'] === 'affine:page') === parentOf.has(id))
       throw new BoardLoadError('block tree');
+    const flavour = block['sys:flavour'] as string;
+    if (flavour === 'affine:embed-capy-picture' && !pictureFits(block))
+      throw new BoardLoadError('picture fields');
+    if (flavour === 'affine:embed-capy-link' && !linkFits(block))
+      throw new BoardLoadError('link fields');
+    if (flavour === 'affine:embed-capy-material' && !materialFits(block))
+      throw new BoardLoadError('material card fields');
     const onCanvas =
-      block['sys:flavour'] === 'affine:note' ||
+      flavour === 'affine:note' ||
+      flavour.startsWith('affine:embed-capy-') ||
       (block['sys:flavour'] === 'affine:image' &&
         blocks[parentOf.get(id) as string]['sys:flavour'] === 'affine:surface');
     if (onCanvas && !isPlace(block['prop:xywh']))

@@ -9,6 +9,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 )
 
 // TypeScriptPath is the generated browser file, relative to the repository root.
@@ -69,6 +71,11 @@ func Get() Catalog {
 			{Flavour: "affine:paragraph", Parents: []string{"affine:note", "affine:paragraph", "affine:list"}, Boards: both},
 			{Flavour: "affine:list", Parents: []string{"affine:note", "affine:paragraph", "affine:list"}, Boards: both},
 			{Flavour: "affine:image", Parents: []string{"affine:surface", "affine:note"}, Boards: both},
+			// A picture that plays by itself: an animated emoji, or a KLIPY GIF by link.
+			{Flavour: "affine:embed-capy-picture", Parents: []string{"affine:surface"}, Boards: []string{Workspace}},
+			// A link card (a YouTube video shows its poster) and a workspace quiz or set.
+			{Flavour: "affine:embed-capy-link", Parents: []string{"affine:surface"}, Boards: []string{Workspace}},
+			{Flavour: "affine:embed-capy-material", Parents: []string{"affine:surface"}, Boards: []string{Workspace}},
 		},
 		Limits: map[string]int64{
 			// A plane's marks, and a label's characters (plane labels, chart labels).
@@ -81,6 +88,12 @@ func Get() Catalog {
 			"AXIS_MAX":   1_000_000_000,
 			"SPOKES_MAX": 60,
 			"LABELS_MAX": 60,
+			// A picture's label (an emoji, a GIF's title) and its link.
+			"PICTURE_LABEL_MAX": 120,
+			"PICTURE_REF_MAX":   2048,
+			// A link card's address, and a material card's title (a material's own).
+			"LINK_URL_MAX":   2048,
+			"CARD_TITLE_MAX": fieldlimits.MaterialTitle,
 		},
 	}
 }

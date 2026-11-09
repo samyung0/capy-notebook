@@ -110,9 +110,16 @@ import { forgetFormulas } from './boardFormulaDraw';
 import { closeUp, IMAGE_SIDE_MAX, type Vec } from './boardGeometry';
 import { addPlane, planeExtensions, planeMarks } from './boardPlane';
 import './boardChartEditor';
+import {
+  CardsStoreExtension,
+  cardViews,
+  lendWorkspace,
+  type WorkspaceLinks,
+} from './boardCards';
 import { closeBoardEditor } from './boardEditorShell';
 import { type BoardKind, checkSavedBoard } from './boardLoad';
 import { BoardMenu } from './boardMenu';
+import { PictureStoreExtension, pictureViews } from './boardPicture';
 import './boardPlaneEditor';
 import {
   boardToolbar,
@@ -147,6 +154,8 @@ const stores = new StoreExtensionManager([
   LinkStoreExtension,
   InlinePresetStoreExtension,
   MindmapStoreExtension,
+  PictureStoreExtension,
+  CardsStoreExtension,
 ]);
 /** AFFiNE's inline LaTeX specs, which note paragraphs need to render, without its
  * LaTeX node and editor menu: the board keeps `$$` as text, and those two load KaTeX
@@ -275,6 +284,8 @@ export type DrawingBoardOptions = {
   /** A question's answer board or the workspace canvas: what it may hold and its
    * tools (the board catalog). */
   board: BoardKind;
+  /** The workspace canvas's quizzes and sets for its cards, and opening one. */
+  workspace?: WorkspaceLinks;
   /** `save()`'s `doc`. A board that doesn't check out throws a BoardLoadError. */
   saved?: string;
 };
@@ -406,9 +417,9 @@ export function mountDrawingBoard(
     extensions: readOnly
       ? [...readOnlyViews.get('edgeless'), ...drawn]
       : [
-          ...(options.board === 'workspace' ? workspaceViews : views).get(
-            'edgeless'
-          ),
+          ...(options.board === 'workspace'
+            ? [...workspaceViews.get('edgeless'), ...pictureViews, ...cardViews]
+            : views.get('edgeless')),
           shapeButtonTool,
           ...sheetTools(options.board),
           StampTool,
@@ -418,6 +429,7 @@ export function mountDrawingBoard(
         ],
     store,
   });
+  if (options.workspace) lendWorkspace(std, options.workspace);
   render(
     html`<div class="affine-edgeless-viewport capy-board">${std.render()}</div>`,
     container

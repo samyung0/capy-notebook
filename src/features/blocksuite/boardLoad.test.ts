@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import { fromBase64 } from './base64';
-import { SAVED, withElement } from './boardFixture';
+import { SAVED, withCanvasBlock, withElement } from './boardFixture';
 import { BoardLoadError, checkSavedBoard } from './boardLoad';
 
 const reason = (update: Uint8Array) => {
@@ -109,5 +109,51 @@ describe('checkSavedBoard', () => {
     });
     expect(() => checkSavedBoard(mindmap, 'workspace')).not.toThrow();
     expect(reason(mindmap)).toBe('element type mindmap');
+  });
+
+  it('opens the workspace canvas pictures and cards it can show', () => {
+    const opens = (flavour: string, props: Record<string, unknown>) => {
+      try {
+        checkSavedBoard(withCanvasBlock(flavour, props), 'workspace');
+        return null;
+      } catch (error) {
+        return error instanceof BoardLoadError ? error.reason : String(error);
+      }
+    };
+    const picture = 'affine:embed-capy-picture';
+    expect(
+      opens(picture, { kind: 'emoji', label: '🧠', ref: '1f9e0' })
+    ).toBeNull();
+    expect(
+      opens(picture, {
+        kind: 'klipy',
+        label: 'Hello',
+        ref: 'https://static.klipy.com/ii/a/b.webp',
+      })
+    ).toBeNull();
+    expect(
+      opens(picture, {
+        kind: 'klipy',
+        label: '',
+        ref: 'https://example.com/a.webp',
+      })
+    ).toBe('picture fields');
+    const link = 'affine:embed-capy-link';
+    expect(
+      opens(link, {
+        url: 'https://youtu.be/dQw4w9WgXcQ',
+        videoId: 'dQw4w9WgXcQ',
+      })
+    ).toBeNull();
+    expect(opens(link, { url: 'javascript:alert(1)', videoId: '' })).toBe(
+      'link fields'
+    );
+    expect(
+      opens('affine:embed-capy-material', {
+        kind: 'quiz',
+        materialId: 'qz_2',
+        title: 'Genetics check-in',
+      })
+    ).toBeNull();
   });
 });

@@ -2,6 +2,14 @@
 export type DrawingBoardOptions = {
   answerArea?: { label: string };
   board: 'question' | 'workspace';
+  workspace?: {
+    materials: () => {
+      id: string;
+      kind: 'quiz' | 'flashcards';
+      title: string;
+    }[];
+    open: (materialId: string) => void;
+  };
   fitPadding?: [number, number, number, number];
   onChange?: () => void;
   plane?: boolean;

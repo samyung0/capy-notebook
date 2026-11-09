@@ -45,7 +45,7 @@ import {
   EdgelessToolbarToolMixin,
   SeniorToolIdentifier,
 } from '@blocksuite/affine/widgets/edgeless-toolbar';
-import { Pen01Icon } from '@hugeicons/core-free-icons';
+import { ArrowLeft04Icon, Pen01Icon } from '@hugeicons/core-free-icons';
 import {
   css,
   html,
@@ -60,9 +60,29 @@ import { classMap } from 'lit/directives/class-map.js';
 import { styleMap } from 'lit/directives/style-map.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import * as Y from 'yjs';
+import { BOARD_CATALOG } from '@/api/board.generated';
+import {
+  youtubeVideoId,
+  youtubeWatchUrl,
+} from '@/features/materials/youtubeUrl';
 import { m } from '@/i18n';
+import {
+  addCard,
+  type CardMaterialKind,
+  LINK_FLAVOUR,
+  MATERIAL_FLAVOUR,
+  workspaceOf,
+} from './boardCards';
 import { addChart, type ChartElementModel, openChart } from './boardChart';
+import { type KlipyGif, klipyEnabled, klipyGifs } from './boardKlipy';
 import type { BoardKind } from './boardLoad';
+import { addPicture } from './boardPicture';
+import {
+  EMOJI,
+  emojiStillUrl,
+  emojiText,
+  type PictureKind,
+} from './boardPictureData';
 import {
   addPlane,
   fitCard,
@@ -1425,10 +1445,58 @@ class CapyFormulaSlot extends CapyPieceSlot {
 /** The workspace canvas's Misc panel (Epo 2026-11-09, A): tiles in groups, each a card
  * picked up and dropped like a slot's piece; a finger's tap puts it in the view's
  * middle. Groups join as their kinds land (board catalog). */
-const MISC_GROUPS: { label: () => string; tiles: Piece[] }[] = [
+type MiscView = 'emoji' | 'gif' | 'link' | 'quiz' | 'flashcards';
+/** A tile: a card picked up like a slot's piece, or a picker it opens. */
+type MiscTile =
+  | { piece: Piece }
+  | { art: TemplateResult; label: () => string; view: MiscView };
+const MISC_GROUPS: { label: () => string; tiles: MiscTile[] }[] = [
   {
     label: m.drawing_board_diagrams,
-    tiles: [...CHART_PIECES].reverse().concat(MINDMAP_PIECE),
+    tiles: [...CHART_PIECES]
+      .reverse()
+      .concat(MINDMAP_PIECE)
+      .map((piece) => ({ piece })),
+  },
+  {
+    label: m.drawing_board_media,
+    tiles: [
+      {
+        art: html`<img
+          alt=""
+          height="40"
+          src=${emojiStillUrl('1f600')}
+          width="40"
+        />`,
+        label: m.drawing_board_emoji,
+        view: 'emoji',
+      },
+      {
+        art: svg`<svg width="40" height="32" viewBox="0 0 40 32" aria-hidden="true"><rect x="2" y="2" width="36" height="28" rx="4" fill="#7f5fd6"/><text x="9" y="21" font-size="11" font-weight="700" font-family="monospace" fill="#fff">GIF</text></svg>`,
+        label: m.drawing_board_gif,
+        view: 'gif',
+      },
+      {
+        art: svg`<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#173654" stroke-width="1.6" stroke-linecap="round" aria-hidden="true" style="stroke:var(--capy-navy, #173654)"><path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/></svg>`,
+        label: m.drawing_board_link,
+        view: 'link',
+      },
+    ],
+  },
+  {
+    label: m.drawing_board_from_workspace,
+    tiles: [
+      {
+        art: svg`<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#1e96eb" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6L13 3Z"/></svg>`,
+        label: m.drawing_board_quiz,
+        view: 'quiz',
+      },
+      {
+        art: svg`<svg width="38" height="34" viewBox="0 0 32 30" aria-hidden="true"><rect x="9" y="3" width="20" height="14" rx="2" fill="#fff" stroke="#c9ccd2" transform="rotate(8 19 10)"/><rect x="4" y="9" width="20" height="14" rx="2" fill="#e8798f"/></svg>`,
+        label: m.drawing_board_flashcards,
+        view: 'flashcards',
+      },
+    ],
   },
 ];
 
@@ -1443,6 +1511,8 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         border-radius: 10px 10px 0 0;
         box-shadow: 0 -6px 20px rgb(0 0 0 / 6%);
         padding: 10px 10px 8px;
+        width: 336px;
+        box-sizing: border-box;
       }
       h3 {
         margin: 0 0 4px 4px;
@@ -1464,11 +1534,15 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         align-items: center;
         justify-content: center;
         gap: 6px;
+        width: 76px;
         height: 76px;
         border-radius: 8px;
         color: var(--affine-text-secondary-color);
         font-size: 11.5px;
         cursor: grab;
+      }
+      button.tile {
+        cursor: pointer;
       }
       .tile:hover {
         background: var(--affine-hover-color);
@@ -1481,23 +1555,165 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         height: 40px;
         filter: ${unsafeCSS(PIECE_SHADOW)};
       }
+      .head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 8px;
+      }
+      .head button {
+        width: 32px;
+        height: 32px;
+      }
+      .head h3 {
+        margin: 0;
+        font-size: 13px;
+        color: var(--affine-text-primary-color);
+      }
+      .head input {
+        flex: 1;
+        min-width: 0;
+        height: 32px;
+        padding: 0 10px;
+        border: 1px solid var(--affine-border-color);
+        border-radius: 6px;
+        background: transparent;
+        color: var(--affine-text-primary-color);
+        font: inherit;
+        font-size: 13px;
+        outline: none;
+      }
+      .head input:focus {
+        border-color: var(--affine-primary-color);
+      }
+      .emoji {
+        display: grid;
+        grid-template-columns: repeat(8, 1fr);
+        gap: 2px;
+        max-height: 196px;
+        overflow-y: auto;
+      }
+      .emoji button {
+        width: 38px;
+        height: 38px;
+      }
+      .emoji img {
+        width: 30px;
+        height: 30px;
+      }
+      .gifs {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 4px;
+        height: 196px;
+        overflow-y: auto;
+        align-content: start;
+      }
+      .gifs button {
+        width: 100%;
+        height: 96px;
+        padding: 0;
+        overflow: hidden;
+      }
+      .gifs img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .note {
+        grid-column: 1 / -1;
+        padding: 16px 4px;
+        color: var(--affine-text-secondary-color);
+        font-size: 12.5px;
+      }
+      .rows {
+        display: flex;
+        flex-direction: column;
+        max-height: 196px;
+        overflow-y: auto;
+      }
+      .rows button {
+        justify-content: flex-start;
+        width: 100%;
+        height: 36px;
+        padding: 0 10px;
+        overflow: hidden;
+        color: var(--affine-text-primary-color);
+        font-size: 13px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      form.link {
+        display: flex;
+        gap: 6px;
+      }
+      form.link input {
+        flex: 1;
+        min-width: 0;
+        height: 32px;
+        padding: 0 10px;
+        border: 1px solid var(--affine-border-color);
+        border-radius: 6px;
+        background: transparent;
+        color: var(--affine-text-primary-color);
+        font: inherit;
+        font-size: 13px;
+        outline: none;
+      }
+      form.link input:focus {
+        border-color: var(--affine-primary-color);
+      }
+      form.link button {
+        width: auto;
+        height: 32px;
+        padding: 0 12px;
+        border: 1px solid var(--affine-border-color);
+        color: var(--affine-text-primary-color);
+        font-size: 13px;
+      }
+      .error {
+        margin: 6px 2px 0;
+        color: var(--affine-error-color);
+        font-size: 12px;
+      }
+      .credit {
+        margin-top: 6px;
+        text-align: right;
+        color: var(--affine-text-secondary-color);
+        font-size: 11px;
+      }
     `,
   ];
 
   @property({ attribute: false })
   accessor edgeless!: BlockComponent;
 
+  @state()
+  private accessor view: MiscView | null = null;
+  @state()
+  private accessor gifs: KlipyGif[] | 'loading' | 'failed' = 'loading';
+  @state()
+  private accessor linkError = false;
+
   private drag: EdgelessDraggableElementController<Piece> | undefined;
   private touch: EdgelessDraggableElementController<Piece> | undefined;
+  private search: AbortController | undefined;
+  private searchTimer: ReturnType<typeof setTimeout> | undefined;
+
+  private get gfx() {
+    return this.edgeless.std.get(GfxControllerIdentifier);
+  }
+
+  /** Once something is down, the panel goes, as AFFiNE's template panel does. */
+  private placed() {
+    this.dispatchEvent(new Event('placed', { bubbles: true, composed: true }));
+  }
 
   override firstUpdated() {
-    const gfx = this.edgeless.std.get(GfxControllerIdentifier);
-    // Once something is down, the panel goes, as AFFiNE's template panel does.
+    const { gfx } = this;
     const place = (kind: PieceKind, at: Vec) => {
       placePiece(gfx, kind, at);
-      this.dispatchEvent(
-        new Event('placed', { bubbles: true, composed: true })
-      );
+      this.placed();
     };
     const options = (clickToDrag: boolean) => ({
       clickToDrag,
@@ -1523,36 +1739,311 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
     });
   }
 
+  override disconnectedCallback() {
+    super.disconnectedCallback();
+    this.search?.abort();
+    clearTimeout(this.searchTimer);
+  }
+
+  /** A picture in the view's middle, `side` screen pixels on its longer side. */
+  private placePicture(
+    picture: { kind: PictureKind; label: string; ref: string },
+    [w, h]: [number, number],
+    side: number
+  ) {
+    const { viewport } = this.gfx;
+    const scale = side / Math.max(w, h) / viewport.zoom;
+    addPicture(
+      this.gfx,
+      new Bound(
+        viewport.centerX - (w * scale) / 2,
+        viewport.centerY - (h * scale) / 2,
+        w * scale,
+        h * scale
+      ),
+      picture
+    );
+    this.placed();
+  }
+
+  private open(view: MiscView) {
+    this.view = view;
+    this.linkError = false;
+    if (view === 'gif') this.findGifs('');
+  }
+
+  private findGifs(query: string) {
+    clearTimeout(this.searchTimer);
+    this.searchTimer = setTimeout(
+      () => {
+        this.search?.abort();
+        const search = new AbortController();
+        this.search = search;
+        this.gifs = 'loading';
+        klipyGifs(query, search.signal).then(
+          (found) => {
+            if (!search.signal.aborted) this.gifs = found;
+          },
+          () => {
+            if (!search.signal.aborted) this.gifs = 'failed';
+          }
+        );
+      },
+      query ? 300 : 0
+    );
+  }
+
+  private renderTile(tile: MiscTile) {
+    if ('piece' in tile) {
+      const { piece } = tile;
+      return html`<div
+        class="tile"
+        data-kind=${piece.kind}
+        role="button"
+        @mousedown=${(event: MouseEvent) =>
+          this.drag?.onMouseDown(event, {
+            data: piece,
+            preview: html`${pieceArt(piece)}`,
+          })}
+        @touchstart=${(event: TouchEvent) => {
+          event.preventDefault();
+          this.touch?.onTouchStart(event, {
+            data: piece,
+            preview: html`${pieceArt(piece)}`,
+          });
+        }}
+      >
+        <span class="art">${pieceArt(piece)}</span>
+        ${PIECE_TIPS[piece.kind].tip()}
+      </div>`;
+    }
+    return html`<button
+      class="tile"
+      data-view=${tile.view}
+      type="button"
+      @click=${() => this.open(tile.view)}
+    >
+      <span class="art">${tile.art}</span>
+      ${tile.label()}
+    </button>`;
+  }
+
+  private head(title: () => string, search?: boolean) {
+    return html`<div class="head">
+      <button
+        aria-label=${m.drawing_board_back()}
+        title=${m.drawing_board_back()}
+        type="button"
+        @click=${() => {
+          this.view = null;
+        }}
+      >
+        ${hugeIcon(ArrowLeft04Icon)}
+      </button>
+      ${
+        search
+          ? html`<input
+              aria-label=${m.drawing_board_gif_search()}
+              placeholder=${m.drawing_board_gif_search()}
+              type="search"
+              @input=${(event: Event) =>
+                this.findGifs((event.target as HTMLInputElement).value)}
+            />`
+          : html`<h3>${title()}</h3>`
+      }
+    </div>`;
+  }
+
+  private renderGifs() {
+    if (!klipyEnabled())
+      return html`<div class="gifs">
+        <p class="note">${m.drawing_board_gif_off()}</p>
+      </div>`;
+    const gifs = this.gifs;
+    return html`<div class="gifs">
+        ${
+          gifs === 'loading'
+            ? nothing
+            : gifs === 'failed'
+              ? html`<p class="note">${m.drawing_board_gif_failed()}</p>`
+              : gifs.length
+                ? gifs.map(
+                    (gif) =>
+                      html`<button
+                        aria-label=${gif.title}
+                        title=${gif.title}
+                        type="button"
+                        @click=${() =>
+                          this.placePicture(
+                            {
+                              kind: 'klipy',
+                              label: gif.title.slice(
+                                0,
+                                BOARD_CATALOG.limits.PICTURE_LABEL_MAX
+                              ),
+                              ref: gif.media.url,
+                            },
+                            [gif.media.width, gif.media.height],
+                            240
+                          )}
+                      >
+                        <img
+                          alt=""
+                          loading="lazy"
+                          referrerpolicy="no-referrer"
+                          src=${gif.preview.url}
+                        />
+                      </button>`
+                  )
+                : html`<p class="note">${m.drawing_board_gif_none()}</p>`
+        }
+      </div>
+      <div class="credit">${m.drawing_board_gif_credit()}</div>`;
+  }
+
+  /** A link card: a YouTube video shows its poster; any other address its host. */
+  private addLink(value: string) {
+    const typed = value.trim();
+    const videoId = youtubeVideoId(typed);
+    if (videoId) {
+      addCard(
+        this.gfx,
+        LINK_FLAVOUR,
+        { url: youtubeWatchUrl(videoId), videoId },
+        [320, 180]
+      );
+      this.placed();
+      return;
+    }
+    let url: URL | null = null;
+    for (const candidate of [typed, `https://${typed}`])
+      try {
+        url = new URL(candidate);
+        break;
+      } catch {
+        // The next spelling.
+      }
+    if (
+      !(
+        url &&
+        ['http:', 'https:'].includes(url.protocol) &&
+        url.hostname.includes('.')
+      ) ||
+      url.href.length > BOARD_CATALOG.limits.LINK_URL_MAX
+    ) {
+      this.linkError = true;
+      return;
+    }
+    addCard(this.gfx, LINK_FLAVOUR, { url: url.href, videoId: '' }, [280, 76]);
+    this.placed();
+  }
+
+  private renderLink() {
+    return html`<form
+        class="link"
+        @submit=${(event: SubmitEvent) => {
+          event.preventDefault();
+          const input = (event.target as HTMLFormElement).querySelector(
+            'input'
+          );
+          if (input) this.addLink(input.value);
+        }}
+      >
+        <input
+          aria-label=${m.drawing_board_link_address()}
+          maxlength=${BOARD_CATALOG.limits.LINK_URL_MAX}
+          placeholder=${m.drawing_board_link_address()}
+          type="text"
+          @input=${() => {
+            this.linkError = false;
+          }}
+        />
+        <button type="submit">${m.drawing_board_link_add()}</button>
+      </form>
+      ${
+        this.linkError
+          ? html`<p class="error">${m.drawing_board_link_invalid()}</p>`
+          : nothing
+      }`;
+  }
+
+  private renderMaterials(kind: CardMaterialKind) {
+    const listed =
+      workspaceOf(this.edgeless.std)
+        ?.materials()
+        .filter((material) => material.kind === kind) ?? [];
+    if (!listed.length)
+      return html`<p class="note">
+        ${kind === 'quiz' ? m.drawing_board_no_quizzes() : m.drawing_board_no_flashcards()}
+      </p>`;
+    return html`<div class="rows">
+      ${listed.map(
+        ({ id, title }) =>
+          html`<button
+            title=${title}
+            type="button"
+            @click=${() => {
+              addCard(
+                this.gfx,
+                MATERIAL_FLAVOUR,
+                {
+                  kind,
+                  materialId: id,
+                  title: title.slice(0, BOARD_CATALOG.limits.CARD_TITLE_MAX),
+                },
+                [260, 84]
+              );
+              this.placed();
+            }}
+          >
+            ${title}
+          </button>`
+      )}
+    </div>`;
+  }
+
   override render() {
-    return MISC_GROUPS.map(
+    if (this.view === 'emoji')
+      return html`${this.head(m.drawing_board_emoji)}
+        <div class="emoji">
+          ${EMOJI.map(
+            (code) =>
+              html`<button
+                aria-label=${emojiText(code)}
+                type="button"
+                @click=${() =>
+                  this.placePicture(
+                    { kind: 'emoji', label: emojiText(code), ref: code },
+                    [1, 1],
+                    96
+                  )}
+              >
+                <img alt="" loading="lazy" src=${emojiStillUrl(code)} />
+              </button>`
+          )}
+        </div>`;
+    if (this.view === 'gif')
+      return html`${this.head(m.drawing_board_gif, true)}${this.renderGifs()}`;
+    if (this.view === 'link')
+      return html`${this.head(m.drawing_board_link)}${this.renderLink()}`;
+    if (this.view === 'quiz' || this.view === 'flashcards')
+      return html`${this.head(
+        this.view === 'quiz' ? m.drawing_board_quiz : m.drawing_board_flashcards
+      )}${this.renderMaterials(this.view)}`;
+    const workspace = workspaceOf(this.edgeless.std);
+    return MISC_GROUPS.filter(
+      ({ tiles }) =>
+        workspace ||
+        !tiles.some(
+          (tile) =>
+            'view' in tile &&
+            (tile.view === 'quiz' || tile.view === 'flashcards')
+        )
+    ).map(
       ({ label, tiles }) =>
         html`<div class="group">
           <h3>${label()}</h3>
-          <div class="tiles">
-            ${tiles.map(
-              (piece) =>
-                html`<div
-                  class="tile"
-                  data-kind=${piece.kind}
-                  role="button"
-                  @mousedown=${(event: MouseEvent) =>
-                    this.drag?.onMouseDown(event, {
-                      data: piece,
-                      preview: html`${pieceArt(piece)}`,
-                    })}
-                  @touchstart=${(event: TouchEvent) => {
-                    event.preventDefault();
-                    this.touch?.onTouchStart(event, {
-                      data: piece,
-                      preview: html`${pieceArt(piece)}`,
-                    });
-                  }}
-                >
-                  <span class="art">${pieceArt(piece)}</span>
-                  ${PIECE_TIPS[piece.kind].tip()}
-                </div>`
-            )}
-          </div>
+          <div class="tiles">${tiles.map((tile) => this.renderTile(tile))}</div>
         </div>`
     );
   }

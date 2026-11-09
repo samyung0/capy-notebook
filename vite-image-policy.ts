@@ -21,7 +21,8 @@ const DEPLOYED_NEEDS = ['B2_BUCKET', 'B2_ENDPOINT', 'VITE_SENTRY_DSN'];
  * The hosts the app's pages draw images from, as a report-only `img-src`
  * policy: the app itself, `data:` and `blob:` URLs, the environment's bucket
  * (addressed as Go's presigner addresses it, `B2_FORCE_PATH_STYLE`), the
- * bank's asset base, Clerk avatars and YouTube posters. Any other image or CSS
+ * bank's asset base, Clerk avatars, YouTube posters and, with a KLIPY key, KLIPY's
+ * GIF hosts. Any other image or CSS
  * `url()` a page loads is reported to the browser Sentry project's security
  * endpoint when `VITE_SENTRY_DSN` is set; a `uat` or `production` build
  * without it or its bucket fails. Enforcing it means sending the same value
@@ -66,6 +67,13 @@ function imageSources(env: Env): string {
     sources.push(base ? `${bank.origin}${base}/` : bank.origin);
   }
   sources.push('https://img.clerk.com', 'https://i.ytimg.com');
+  // The workspace canvas's GIFs show from KLIPY's media hosts (its terms).
+  if (env.VITE_KLIPY_KEY)
+    sources.push(
+      'https://static.klipy.com',
+      'https://static1.klipy.com',
+      'https://static2.klipy.com'
+    );
   return `img-src ${sources.join(' ')}`;
 }
 

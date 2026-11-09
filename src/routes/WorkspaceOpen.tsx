@@ -1105,7 +1105,10 @@ function WorkspaceOpen() {
         {section === 'canvas' ? (
           <div className="relative h-full" data-workspace-canvas>
             <Suspense fallback={null}>
-              <WorkspaceCanvas workspaceId={workspaceId} />
+              <WorkspaceCanvas
+                onOpenMaterial={(id) => setOpenItem({ id, kind: 'material' })}
+                workspaceId={workspaceId}
+              />
             </Suspense>
             {/* Phones have no rail to leave by. Back floats on the board's top left,
                 level with its ☰ menu and in its colours (AFFiNE's, set on <html> by

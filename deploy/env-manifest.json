@@ -991,6 +991,10 @@
       "kind": "variable",
       "targets": ["local"]
     },
+    "VITE_KLIPY_KEY": {
+      "kind": "variable",
+      "targets": ["local"]
+    },
     "VITE_BENCH_ROUTES": {
       "kind": "variable",
       "targets": ["local"]

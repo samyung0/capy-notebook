@@ -4629,8 +4629,29 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     **Misc** (`sheetTools(board)`). Misc's button opens a panel above the toolbar
     (`capy-misc-panel`, right-aligned, Shapes' look) of tiles in groups, each picked up
     and dropped like a slot's piece (a finger's tap puts it in the view's middle); the
-    panel closes once something is down. Charts is its first group; the kinds the
-    board catalog adds for the workspace join it.
+    panel closes once something is down. Its groups:
+    - **Diagrams:** Bar chart, Pie chart and **Mind map**, AFFiNE's own (`mindmap`
+      element, its topics and ideas shapes it lays out), registered on the workspace
+      canvas only and without its own toolbar button (`MindmapWithoutTool`); it
+      starts as a topic and three ideas.
+    - **Media:** **Emoji** opens a grid of 48 Noto Animated Emoji (Google, CC BY 4.0,
+      credited on the Credits page), shipped in `public/emoji/noto` as 96 px animated
+      WebP (about 5 MB together) with 64 px stills for the grid; a click puts one in
+      the view's middle. **GIF** searches KLIPY (`boardKlipy.ts`, `VITE_KLIPY_KEY`):
+      from the student's browser with an anonymous per-browser `customer_id`, the
+      `high` content filter, results in KLIPY's order, "Powered by KLIPY" under them;
+      the placed GIF stays KLIPY's link, as its terms ask. Without a key the view
+      says search is off; an uploaded GIF is an ordinary image. **Link** takes a web
+      address or YouTube link: a video shows its poster (`i.ytimg.com`) with a play
+      mark, anything else its host and address; a double click opens it in a new tab.
+    - **From the workspace:** **Quiz** and **Flashcards** list the workspace's own
+      (`DevWorkspaceCanvas` lends them through `workspace` in the mount options) and
+      place a card with its title; a double click opens it in the workspace, and a
+      card whose material the workspace no longer lists shows "can't be opened".
+    Emoji and GIFs are `affine:embed-capy-picture` blocks (an `<img>` that plays by
+    itself), links `affine:embed-capy-link` and quiz or set cards
+    `affine:embed-capy-material` (`boardPicture.ts`, `boardCards.ts`): the surface
+    takes `affine:embed-*` children, so no vendored change.
   - **Board catalog** (Epo 2026-11-09): `server/internal/boardcatalog` lists every
     canvas element and block a board may hold, which board takes each (`question`, a
     drawing answer's board; `workspace`, the workspace canvas) and the limits above.
