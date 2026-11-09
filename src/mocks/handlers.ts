@@ -67,6 +67,8 @@ import { DEV_SHARE_LINK_SECRET, sharePath } from '@/lib/shareLink';
 import { accountChatHandlers } from './accountChat';
 import { gradeQuestions, learnerView } from './answerKeys';
 import {
+  addHandInFile,
+  addPaperFile,
   assignmentActivity,
   assignmentHandlers,
   quizAssignmentFields,
@@ -557,6 +559,8 @@ function advanceChanges<T extends { id: string }>(
 }
 
 type SourceUploadMetadata = {
+  attemptId?: string;
+  handInId?: string;
   topicId?: string | null;
   topicName?: string | null;
   hidden?: boolean;
@@ -2608,6 +2612,58 @@ export const handlers = [
         );
       }
       await delay(500);
+      // A hand-in's file (S3): it joins the viewer's hand-in, never the lists.
+      if (body.handInId) {
+        const file = addHandInFile(body.handInId, body.name, body.kind, bytes);
+        return file
+          ? HttpResponse.json(
+              {
+                ...file,
+                addedAt: new Date().toISOString(),
+                hasBytes: true,
+                indexed: false,
+                isPayer: true,
+                position: 0,
+                revision: 1,
+                topicId: null,
+                workspaceId: '',
+              },
+              { status: 201 }
+            )
+          : HttpResponse.json(
+              {
+                code: 'hand_in_closed',
+                message: 'this assignment no longer takes your files',
+              },
+              { status: 409 }
+            );
+      }
+      // A paper's file (Upload file): it joins its attempt, never the lists.
+      if (body.attemptId) {
+        const paper = addPaperFile(body.attemptId, body.name, body.kind, bytes);
+        return paper
+          ? HttpResponse.json(
+              {
+                ...paper,
+                addedAt: new Date().toISOString(),
+                hasBytes: true,
+                indexed: false,
+                isPayer: true,
+                position: 0,
+                revision: 1,
+                topicId: null,
+                workspaceId: '',
+              },
+              { status: 201 }
+            )
+          : HttpResponse.json(
+              {
+                code: 'paper_closed',
+                message: 'this attempt no longer takes files',
+              },
+              { status: 409 }
+            );
+      }
       const name = body.name;
       const kind = body.kind as SourceKindFix;
       let topicId = body.topicId ?? null;

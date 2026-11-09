@@ -409,6 +409,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        allowUploads:
+          type: boolean
         attempts:
           format: int64
           type: integer
@@ -419,6 +421,8 @@ components:
           type: string
         draft:
           type: boolean
+        drawingParts:
+          type: boolean
         dueAt:
           format: date-time
           type: string
@@ -426,6 +430,8 @@ components:
           items:
             $ref: "#/components/schemas/AssignmentFile"
           type: array
+        gradesHidden:
+          type: boolean
         id:
           type: string
         kind:
@@ -480,8 +486,11 @@ components:
         - attempts
         - questions
         - marks
+        - drawingParts
+        - allowUploads
         - topicIds
         - files
+        - gradesHidden
       type: object
     AssignmentAnswerRow:
       additionalProperties: false
@@ -489,6 +498,11 @@ components:
         aiAwarded:
           format: double
           type: number
+        aiError:
+          enum:
+            - credits
+            - error
+          type: string
         aiMarked:
           type: boolean
         aiWarning:
@@ -556,6 +570,9 @@ components:
           type: string
         autoSubmitted:
           type: boolean
+        closesAt:
+          format: date-time
+          type: string
         correct:
           format: double
           type: number
@@ -563,6 +580,8 @@ components:
           format: date-time
           type: string
         drawingImages:
+          type: boolean
+        gradesHidden:
           type: boolean
         id:
           type: string
@@ -577,6 +596,16 @@ components:
         now:
           format: date-time
           type: string
+        paper:
+          enum:
+            - upload
+            - reading
+            - read
+          type: string
+        paperFiles:
+          items:
+            $ref: "#/components/schemas/PaperFile"
+          type: array
         questions:
           items:
             additionalProperties: {}
@@ -633,10 +662,12 @@ components:
         - waitingMarks
         - waitingAnswers
         - showAnswers
+        - gradesHidden
         - drawingImages
         - answers
         - questions
         - removedAssetIds
+        - paperFiles
       type: object
     AssignmentClosedInputBody:
       additionalProperties: false
@@ -698,6 +729,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        allowUploads:
+          type: boolean
         assignAll:
           type: boolean
         assignees:
@@ -741,7 +774,16 @@ components:
         quizId:
           type: string
         showAnswers:
-          type: boolean
+          enum:
+            - closed
+            - submitted
+            - never
+          type: string
+        showGrades:
+          enum:
+            - automatic
+            - manual
+          type: string
         shuffle:
           type: boolean
         timeLimitMin:
@@ -764,6 +806,7 @@ components:
         - draft
         - marking
         - showAnswers
+        - showGrades
         - shuffle
         - files
       type: object
@@ -824,12 +867,18 @@ components:
         done:
           format: int64
           type: integer
+        gradesReleasedAt:
+          format: date-time
+          type: string
         marking:
           enum:
             - ai_approve
             - ai
             - manual
           type: string
+        notGraded:
+          format: int64
+          type: integer
         quizId:
           type: string
         quizTitle:
@@ -837,7 +886,16 @@ components:
         quizTrashed:
           type: boolean
         showAnswers:
-          type: boolean
+          enum:
+            - closed
+            - submitted
+            - never
+          type: string
+        showGrades:
+          enum:
+            - automatic
+            - manual
+          type: string
         shuffle:
           type: boolean
         toApprove:
@@ -848,10 +906,12 @@ components:
         - assignees
         - marking
         - showAnswers
+        - showGrades
         - shuffle
         - assigned
         - done
         - toApprove
+        - notGraded
       type: object
     AssignmentMark:
       additionalProperties: false
@@ -901,6 +961,11 @@ components:
         correct:
           format: double
           type: number
+        files:
+          items:
+            $ref: "#/components/schemas/PaperFile"
+          nullable: true
+          type: array
         late:
           type: boolean
         latePenaltyPct:
@@ -954,6 +1019,11 @@ components:
         doneAt:
           format: date-time
           type: string
+        handIn:
+          items:
+            $ref: "#/components/schemas/PaperFile"
+          nullable: true
+          type: array
         late:
           type: boolean
         latePenaltyPct:
@@ -5053,6 +5123,44 @@ components:
         - x
         - "y"
       type: object
+    PaperFile:
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+        name:
+          type: string
+        sizeBytes:
+          format: int64
+          type: integer
+        status:
+          type: string
+      required:
+        - id
+        - name
+        - kind
+        - sizeBytes
+        - status
+      type: object
+    PaperOrderInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/PaperOrderInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        fileIds:
+          items:
+            type: string
+          maxItems: 15
+          type: array
+      required:
+        - fileIds
+      type: object
     PastReview:
       additionalProperties: false
       properties:
@@ -7349,6 +7457,18 @@ components:
       required:
         - limitCents
       type: object
+    StartAssignmentInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/StartAssignmentInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        upload:
+          type: boolean
+      type: object
     StorageBreakdown:
       additionalProperties: false
       properties:
@@ -7519,6 +7639,67 @@ components:
         - label
         - topics
       type: object
+    SubmittedPaper:
+      additionalProperties: false
+      properties:
+        assignmentId:
+          type: string
+        attemptId:
+          type: string
+        bytes:
+          format: int64
+          type: integer
+        createdAt:
+          format: date-time
+          type: string
+        id:
+          type: string
+        kind:
+          type: string
+        name:
+          type: string
+        quizName:
+          type: string
+        workspaceId:
+          type: string
+        workspaceName:
+          type: string
+      required:
+        - id
+        - name
+        - kind
+        - assignmentId
+        - quizName
+        - workspaceName
+        - bytes
+        - createdAt
+      type: object
+    SubmittedPapers:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SubmittedPapers.json
+          format: uri
+          readOnly: true
+          type: string
+        count:
+          format: int64
+          type: integer
+        items:
+          items:
+            $ref: "#/components/schemas/SubmittedPaper"
+          type: array
+        nextCursor:
+          type: string
+        totalBytes:
+          format: int64
+          type: integer
+      required:
+        - items
+        - count
+        - totalBytes
+      type: object
     SubscriptionBlocker:
       additionalProperties: false
       properties:
@@ -7661,6 +7842,24 @@ components:
         - title
         - done
         - dueDate
+      type: object
+    TodoDonePage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/TodoDonePage.json
+          format: uri
+          readOnly: true
+          type: string
+        nextCursor:
+          type: string
+        workspaces:
+          items:
+            $ref: "#/components/schemas/TodoWorkspace"
+          type: array
+      required:
+        - workspaces
       type: object
     TodoList:
       additionalProperties: false
@@ -9120,6 +9319,94 @@ paths:
       summary: Set or change a question's marks and comment in a member's answers
       tags:
         - Assignments
+  /api/assignment-attempts/{id}/paper/order:
+    put:
+      operationId: orderPaperFiles
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaperOrderInputBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Put a running attempt's paper files in order
+      tags:
+        - assignments
+  /api/assignment-attempts/{id}/paper/{fileId}:
+    delete:
+      operationId: removePaperFile
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+        - in: path
+          name: fileId
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Remove a file from a running attempt's paper
+      tags:
+        - assignments
+  /api/assignment-attempts/{id}/paper/{fileId}/links:
+    get:
+      operationId: getPaperFileLinks
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+        - in: path
+          name: fileId
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileLinks"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: A paper file's presigned reads, for its member or the class's staff
+      tags:
+        - assignments
   /api/assignment-attempts/{id}/submit:
     post:
       operationId: submitAssignmentAttempt
@@ -9315,6 +9602,66 @@ paths:
       summary: A member's tick on an unmarked assignment
       tags:
         - Assignments
+  /api/assignments/{id}/hand-in/{fileId}:
+    delete:
+      operationId: removeHandInFile
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+        - in: path
+          name: fileId
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Remove a file from the caller's open hand-in
+      tags:
+        - assignments
+  /api/assignments/{id}/hand-in/{fileId}/links:
+    get:
+      operationId: getHandInFileLinks
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+        - in: path
+          name: fileId
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileLinks"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: A hand-in file's presigned reads, for its member or, once handed in, the class's staff
+      tags:
+        - assignments
   /api/assignments/{id}/mark-with-ai:
     post:
       operationId: markAssignmentWithAI
@@ -9363,6 +9710,31 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Give a draft to its members
+      tags:
+        - Assignments
+  /api/assignments/{id}/release-grades:
+    post:
+      operationId: releaseAssignmentGrades
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assignment"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Show members their grades on an assignment whose grades are released by hand
       tags:
         - Assignments
   /api/assignments/{id}/report:
@@ -9424,6 +9796,12 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartAssignmentInputBody"
+        required: true
       responses:
         "200":
           content:
@@ -12712,6 +13090,86 @@ paths:
       summary: Mark one notification read
       tags:
         - Account
+  /api/papers:
+    delete:
+      operationId: deleteAllPapers
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DrawingsDeletedOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete every paper file the caller may delete; their marks stay
+      tags:
+        - assignments
+    get:
+      operationId: listPapers
+      parameters:
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmittedPapers"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: The caller's handed-in paper and hand-in files they may delete, newest first (Files › Submissions)
+      tags:
+        - assignments
+  /api/papers/{id}:
+    delete:
+      operationId: deletePaper
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DrawingsDeletedOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete one of the caller's deletable paper files; its marks stay
+      tags:
+        - assignments
   /api/public/flashcards/{token}:
     get:
       operationId: getAnonymousFlashcards
@@ -13741,6 +14199,67 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: "The To do page: what each of the caller's classes holds for them"
+      tags:
+        - Assignments
+  /api/todo/done:
+    get:
+      operationId: getTodoDone
+      parameters:
+        - description: "done: the day it was done, or closed if it never was; class: by class name, then done"
+          explode: false
+          in: query
+          name: sort
+          schema:
+            default: done
+            description: "done: the day it was done, or closed if it never was; class: by class name, then done"
+            enum:
+              - done
+              - class
+            type: string
+        - explode: false
+          in: query
+          name: dir
+          schema:
+            default: desc
+            enum:
+              - asc
+              - desc
+            type: string
+        - description: Comma-separated class workspace ids
+          explode: false
+          in: query
+          name: class
+          schema:
+            description: Comma-separated class workspace ids
+            type: string
+        - description: "Comma-separated: quiz, task"
+          explode: false
+          in: query
+          name: type
+          schema:
+            description: "Comma-separated: quiz, task"
+            type: string
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TodoDonePage"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "The To do page's Done tab: what was given to the caller that they finished or that closed, a page at a time"
       tags:
         - Assignments
   /api/topics/{id}:

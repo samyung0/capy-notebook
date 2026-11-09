@@ -111,6 +111,7 @@ export default function DrawingBoardScreen({
   /** Writes the device draft at once if a write is waiting. */
   const flushDraft = useRef<() => Promise<void>>(() => Promise.resolve());
   const phoneDone = useRef<HTMLButtonElement>(null);
+  const wideDone = useRef<HTMLButtonElement>(null);
   const board = useRef<Board | null>(null);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState<{ error: unknown } | null>(null);
@@ -205,15 +206,25 @@ export default function DrawingBoardScreen({
     close.current();
   }, [failed]);
 
-  // On a phone the board's undo and redo sit left of Done (drawingBoard.css),
-  // both 8px from the top and the edge.
+  // The board's ☰ menu sits left of whichever Done shows (drawingBoard.css):
+  // a phone's 8px from the top and the edge, a wider screen's 16px.
   useEffect(() => {
-    const width = phoneDone.current?.offsetWidth ?? 0;
-    host.current?.style.setProperty(
-      '--capy-board-done-width',
-      `${width + 8}px`
-    );
-  }, []);
+    const place = () => {
+      const wide = wideDone.current?.offsetWidth ?? 0;
+      const width = wide
+        ? wide + 16
+        : (phoneDone.current?.offsetWidth ?? 0) + 8;
+      host.current?.style.setProperty('--capy-board-done-width', `${width}px`);
+      host.current?.style.setProperty(
+        '--capy-board-menu-top',
+        wide ? '16px' : '8px'
+      );
+    };
+    place();
+    // A breakpoint hides one Done and shows the other; busy's spinner widens it.
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [busy]);
 
   /** Done; `anyway` skips the wide-board question (Done anyway, a time limit).
    * A Done pressed while one runs (a time limit during its upload) waits for
@@ -375,7 +386,7 @@ export default function DrawingBoardScreen({
         {shown && pinned.body}
       </aside>
       <div className={cn('absolute top-4 right-4 hidden md:block', UNDER_CARD)}>
-        {doneButton()}
+        {doneButton(wideDone)}
       </div>
       <SimpleDialog
         footer={

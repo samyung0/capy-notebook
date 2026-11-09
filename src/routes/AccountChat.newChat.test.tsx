@@ -22,9 +22,7 @@ vi.mock('@/api/auth', () => ({
 }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({}) }));
 vi.mock('@/api/queryClient', () => ({ showErrorToast: vi.fn() }));
-vi.mock('@/api/hooks', () => ({
-  useUnreadNotificationCount: () => ({ data: { count: 0 } }),
-}));
+vi.mock('@/api/hooks', () => ({}));
 vi.mock('@/lib/useMediaQuery', () => ({ useMediaQuery: () => true }));
 vi.mock('@/components/app/layout', () => ({
   Panel: ({ children }: { children: ReactNode }) => (
@@ -34,7 +32,6 @@ vi.mock('@/components/app/layout', () => ({
 vi.mock('@/components/app/AppErrorBoundary', () => ({
   AppErrorBoundary: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock('@/components/app/ProfileMenu', () => ({ ProfileMenu: () => null }));
 // The toolbar's tooltip needs a fuller DOM than linkedom's.
 vi.mock('@/components/ui/ToolbarButton', () => ({
   ToolbarButton: (props: {

@@ -299,7 +299,7 @@ func (a *api) saveAssignmentDrawing(ctx context.Context, in *assignmentDrawingIn
 	}
 	// Nothing reaches the bucket before the attempt, the part and the payer's
 	// storage pass (Q693); marked by hand, no marking image is written.
-	manual, err := a.s.CheckAssignmentDrawing(ctx, userID(ctx), in.ID, in.PartID, int64(len(packed)), int64(len(in.Body.Image)), time.Now())
+	manual, err := a.s.CheckAssignmentDrawing(ctx, userID(ctx), in.ID, in.PartID, time.Now())
 	if err != nil {
 		return nil, drawingSaveError(err)
 	}

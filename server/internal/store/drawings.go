@@ -121,29 +121,17 @@ func (s *Store) inDrawingAttempt(ctx context.Context, userID, attemptID string, 
 
 // CheckAssignmentDrawing refuses, before anything reaches the bucket, a drawing
 // that SaveAssignmentDrawing would refuse: not the caller's running attempt, not
-// a drawing part, or past the payer's storage (Epo 2026-11-07, Q693). Manual
+// a drawing part, or an account that may not write. Past the storage limit it
+// saves all the same (Epo 2026-11-08, superseding Q693's refusal). Manual
 // says the assignment is marked by hand, so no marking image is written or
 // counted. Save checks all of it again.
-func (s *Store) CheckAssignmentDrawing(ctx context.Context, userID, attemptID, partID string, boardBytes, imageBytes int64, now time.Time) (manual bool, err error) {
+func (s *Store) CheckAssignmentDrawing(ctx context.Context, userID, attemptID, partID string, now time.Time) (manual bool, err error) {
 	err = s.inDrawingAttempt(ctx, userID, attemptID, now, false, func(tx pgx.Tx, d drawingAttempt) error {
 		if !drawingPartIn(d.frozen, partID) {
 			return ErrNotDrawingPart
 		}
 		manual = d.marking == MarkingManual
-		adds := boardBytes
-		if !manual {
-			adds += imageBytes
-		}
-		var held int64
-		err := tx.QueryRow(ctx, `SELECT board_bytes + image_bytes FROM drawings
-			WHERE attempt_id=$1 AND part_id=$2`, attemptID, partID).Scan(&held)
-		if err != nil && !isNoRows(err) {
-			return err
-		}
-		if adds <= held {
-			return nil
-		}
-		return s.gateStorageTx(ctx, tx, userID, adds-held)
+		return s.admitAccountTx(ctx, tx, userID)
 	})
 	return manual, err
 }
@@ -165,7 +153,7 @@ func (s *Store) SaveAssignmentDrawing(ctx context.Context, userID, attemptID, pa
 			image = nil
 		}
 		var err error
-		saved, err = s.putDrawingTx(ctx, tx, userID, attemptID, partID, board, image)
+		saved, err = s.putDrawingTx(ctx, tx, userID, attemptID, partID, board, image, true)
 		return err
 	})
 	return saved, err
@@ -194,8 +182,9 @@ func (s *Store) AssertStorageRoom(ctx context.Context, userID string, requested 
 }
 
 // putDrawingTx upserts the part's drawing after the payer's gate passes for
-// what it adds over what the part held.
-func (s *Store) putDrawingTx(ctx context.Context, tx pgx.Tx, userID, attemptID, partID string, board DrawingObject, image *DrawingObject) (Drawing, error) {
+// what it adds over what the part held. pastLimit (an assignment's) checks the
+// account alone and lets it go over its storage limit.
+func (s *Store) putDrawingTx(ctx context.Context, tx pgx.Tx, userID, attemptID, partID string, board DrawingObject, image *DrawingObject, pastLimit bool) (Drawing, error) {
 	var held int64
 	err := tx.QueryRow(ctx, `SELECT board_bytes + image_bytes FROM drawings
 		WHERE attempt_id=$1 AND part_id=$2 FOR UPDATE`, attemptID, partID).Scan(&held)
@@ -208,7 +197,12 @@ func (s *Store) putDrawingTx(ctx context.Context, tx pgx.Tx, userID, attemptID, 
 		adds += image.Bytes
 		imageKey, imageType, imageBytes = &image.Key, &image.Type, image.Bytes
 	}
-	if adds > held {
+	switch {
+	case pastLimit:
+		if err := s.admitAccountTx(ctx, tx, userID); err != nil {
+			return Drawing{}, err
+		}
+	case adds > held:
 		if err := s.gateStorageTx(ctx, tx, userID, adds-held); err != nil {
 			return Drawing{}, err
 		}
@@ -307,7 +301,7 @@ func isDrawingAnswer(value any) bool {
 // the attempt row exists, and names them in the attempt's answers.
 func keepQuizDrawingsTx(ctx context.Context, s *Store, tx pgx.Tx, userID string, d AttemptDetail, answers map[string]any, drawings map[string]QuizDrawing) (AttemptDetail, error) {
 	for partID, drawing := range drawings {
-		if _, err := s.putDrawingTx(ctx, tx, userID, d.ID, partID, drawing.Board, drawing.Image); err != nil {
+		if _, err := s.putDrawingTx(ctx, tx, userID, d.ID, partID, drawing.Board, drawing.Image, false); err != nil {
 			return d, err
 		}
 	}
@@ -369,12 +363,17 @@ func dropLeaverMarkedDrawingsTx(ctx context.Context, tx pgx.Tx, wsID, userID str
 }
 
 // markedDrawingSQL finds, for a drawing d of attempt t, the question and part
-// it answers, only once that part is marked (graded, not waiting on anyone).
+// it answers, only once that part is marked (graded, not waiting on anyone)
+// and, for an assignment, once it has closed with its grades out, so staff can
+// still revise marks while it runs (Epo 2026-11-08).
 const markedDrawingSQL = `SELECT q.n AS question, p.n AS part, jsonb_array_length(q.v->'parts') AS parts
 	FROM jsonb_array_elements(COALESCE(t.questions, '[]'::jsonb)) WITH ORDINALITY q(v, n),
 		jsonb_array_elements(q.v->'parts') WITH ORDINALITY p(v, n)
 	WHERE p.v->>'id' = d.part_id AND p.v ? 'awarded'
 		AND COALESCE((p.v->>'pending')::boolean, false) = false
+		AND (t.assignment_id IS NULL OR EXISTS (SELECT 1 FROM assignments a WHERE a.id = t.assignment_id
+			AND (a.closed_at IS NOT NULL OR (a.no_late AND a.due_at <= now()))
+			AND (a.grades_shown = 'automatic' OR a.grades_released_at IS NOT NULL)))
 	LIMIT 1`
 
 // MarkedDrawing is one of a payer's marked drawings, for Files › Canvas.
@@ -401,8 +400,8 @@ type MarkedDrawings struct {
 }
 
 // ListMarkedDrawings lists the drawings userID pays for whose parts are marked
-// (Epo 2026-11-06): only those may be deleted, so only those show. A drawing
-// still waiting on marking never lists.
+// (Epo 2026-11-06), an assignment's only once it has closed with its grades out
+// (2026-11-08): only those may be deleted, so only those show.
 func (s *Store) ListMarkedDrawings(ctx context.Context, userID, cursor string, limit int) (MarkedDrawings, error) {
 	out := MarkedDrawings{Items: []MarkedDrawing{}}
 	if err := s.pool.QueryRow(ctx, `SELECT count(*), COALESCE(sum(d.board_bytes + d.image_bytes), 0)

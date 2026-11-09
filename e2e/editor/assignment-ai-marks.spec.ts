@@ -10,9 +10,13 @@ test('Mark with AI fills the waiting marks, and Approve all takes them', async (
     '/workspaces/ws_bio?study=assignments&assignment=as_paper&tab=approve'
   );
   const list = page.locator('li button');
-  await expect(list.first()).toContainText(m.assignment_not_marked(), {
-    timeout: 60_000,
-  });
+  // Why the AI left each unmarked (T3, Epo 2026-11-08): Grade Error, No credits.
+  await expect(
+    list.filter({ hasText: m.assignment_grade_error() }).first()
+  ).toBeVisible({ timeout: 60_000 });
+  await expect(
+    list.filter({ hasText: m.assignment_no_credits() }).first()
+  ).toBeVisible();
   const approveAll = page.getByRole('button', {
     exact: true,
     name: m.assignment_approve_all(),
@@ -46,6 +50,9 @@ test('Mark with AI fills the waiting marks, and Approve all takes them', async (
     timeout: 15_000,
   });
   await expect(list.filter({ hasText: m.assignment_not_marked() })).toHaveCount(
+    0
+  );
+  await expect(list.filter({ hasText: m.assignment_no_credits() })).toHaveCount(
     0
   );
 });

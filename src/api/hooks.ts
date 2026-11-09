@@ -146,8 +146,10 @@ import type {
   StudyPreferences,
   StudySummary,
   StudyTopics,
+  SubmittedPapers,
   Tag,
   Task,
+  TodoDonePage,
   TodoList,
   Topic,
   TopUpReq,
@@ -437,10 +439,26 @@ export function onAssignmentEvent(listener: (event: AssignmentEvent) => void) {
   };
 }
 
+// A class's submissions arrive in bursts; one refetch answers them.
+let todoTimer: ReturnType<typeof setTimeout> | undefined;
+
 export function applyNotificationEvent(
   qc: QueryClient,
   event: NotificationStreamEvent
 ) {
+  // Something on To do changed (Epo 2026-11-08): its lists and the nav dot.
+  if (event.type === 'todo') {
+    clearTimeout(todoTimer);
+    // The class Dashboards' To do reads each class's assignments.
+    todoTimer = setTimeout(() => {
+      void qc.invalidateQueries({ queryKey: qk.todo });
+      void qc.invalidateQueries({
+        predicate: ({ queryKey }) =>
+          queryKey[0] === 'workspace' && queryKey[3] === 'assignments',
+      });
+    }, 1000);
+    return;
+  }
   // A standalone file's ingest progress (no workspace to stream it on).
   if (event.type === 'ingest') {
     applyIngestEvent(qc, null, event);
@@ -452,7 +470,8 @@ export function applyNotificationEvent(
   }
   if (
     event.type === 'assignment_closed' ||
-    event.type === 'assignment_republished'
+    event.type === 'assignment_republished' ||
+    event.type === 'assignment_updated'
   ) {
     for (const listener of assignmentListeners) listener(event);
     return;
@@ -592,6 +611,7 @@ export function useEventStream(wsId: string) {
         qk.notifications,
         qk.notificationUnread,
         qk.billing,
+        qk.todo,
         // Standalone files' ingest events ride the notifications.
         qk.ownedFilesRoot,
       ];
@@ -1979,6 +1999,8 @@ export function useUploadSource(wsId: string | null) {
       batchId,
       batchTotal,
       hidden,
+      attemptId,
+      handInId,
       onQueued,
       onUploadProgress,
       signal,
@@ -1994,6 +2016,12 @@ export function useUploadSource(wsId: string | null) {
       /** The file starts hidden from members (Who can see it); a workspace
        * upload only. */
       hidden?: boolean;
+      /** Hands the file in as part of the caller's running paper attempt
+       * (standalone uploads only, Epo 2026-11-08). */
+      attemptId?: string;
+      /** Adds the file to the caller's hand-in on this unmarked assignment
+       * (S3): stored, never parsed. */
+      handInId?: string;
       /** fast = OpenDataLoader, with OCR on text-less pages; none = store-only
        * for non-text kinds (no parse, not indexed). Text kinds (txt/md/json)
        * still index under none — there is no parse route to pick. */
@@ -2015,8 +2043,10 @@ export function useUploadSource(wsId: string | null) {
       signal?: AbortSignal;
     }) => {
       const metadata = {
+        attemptId,
         batchId,
         batchTotal,
+        handInId,
         // A standalone file has no topic or members: the fields stay out.
         ...(wsId
           ? {
@@ -2051,6 +2081,17 @@ export function useUploadSource(wsId: string | null) {
       );
     },
     onSuccess: (file, vars) => {
+      // A paper's file shows in its attempt, never in the Files lists.
+      if (vars.attemptId) {
+        qc.invalidateQueries({
+          queryKey: qk.assignmentAttempt(vars.attemptId),
+        });
+        return;
+      }
+      if (vars.handInId) {
+        qc.invalidateQueries({ queryKey: qk.assignment(vars.handInId) });
+        return;
+      }
       track('source_uploaded', {
         kind: vars.kind,
         parseMode: vars.parseMode ?? 'fast',
@@ -3210,6 +3251,16 @@ export function useSetAssignmentClosed(workspaceId: string, id: string) {
   });
 }
 
+/** Release grades on an assignment whose grades are shown by hand (T5). */
+export function useReleaseAssignmentGrades(workspaceId: string, id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api.post<Assignment>(`/assignments/${id}/release-grades`, {}),
+    onSuccess: () => refreshAssignment(qc, workspaceId, id),
+  });
+}
+
 export function useSetAssignmentDone(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -3225,8 +3276,12 @@ export function useStartAssignment(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({
     meta: { errorToast: false },
-    mutationFn: (id: string) =>
-      api.post<AssignmentAttempt>(`/assignments/${id}/start`, {}),
+    /** upload starts an attempt answered on paper (Upload file, mock S4). */
+    mutationFn: ({ id, upload }: { id: string; upload?: boolean }) =>
+      api.post<AssignmentAttempt>(
+        `/assignments/${id}/start`,
+        upload ? { upload } : {}
+      ),
     onSuccess: (attempt) => {
       qc.setQueryData(qk.assignmentAttempt(attempt.id), attempt);
       return refreshAssignment(qc, workspaceId, attempt.assignmentId);
@@ -3295,6 +3350,96 @@ export function useDeleteAllDrawings() {
   return useMutation({
     mutationFn: () => api.del<{ deleted: number }>('/drawings'),
     onSuccess: () => invalidateAfterDrawingDelete(qc, null),
+  });
+}
+
+/** Remove a file from the member's running paper. */
+export function useRemovePaperFile(attemptId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (fileId: string) =>
+      api.del(`/assignment-attempts/${attemptId}/paper/${fileId}`),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.assignmentAttempt(attemptId) }),
+  });
+}
+
+/** Put the running paper's files in this order. */
+export function useOrderPaperFiles(attemptId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (fileIds: string[]) =>
+      api.put(`/assignment-attempts/${attemptId}/paper/order`, { fileIds }),
+    onSettled: () =>
+      qc.invalidateQueries({ queryKey: qk.assignmentAttempt(attemptId) }),
+  });
+}
+
+/** Whose files: a paper's attempt, or the member's hand-in on an unmarked
+ * assignment (S3). */
+export type SubmissionOf = { attemptId: string } | { handInId: string };
+
+const submissionFilePath = (of: SubmissionOf, fileId: string) =>
+  'attemptId' in of
+    ? `/assignment-attempts/${of.attemptId}/paper/${fileId}`
+    : `/assignments/${of.handInId}/hand-in/${fileId}`;
+
+/** Remove a file from the member's open hand-in. */
+export function useRemoveHandInFile(assignmentId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (fileId: string) =>
+      api.del(submissionFilePath({ handInId: assignmentId }, fileId)),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.assignment(assignmentId) }),
+  });
+}
+
+/** A paper or hand-in file's links, for its member or the class's staff. */
+export const usePaperFileLinks = (of: SubmissionOf, fileId: string) =>
+  useQuery({
+    meta: { errorBoundary: false },
+    queryFn: () =>
+      api.get<FileLinks>(`${submissionFilePath(of, fileId)}/links`),
+    queryKey: ['paperFileLinks', of, fileId] as const,
+    // Presigned for the hour.
+    staleTime: 30 * 60_000,
+  });
+
+/** Files › Submissions: the caller's papers they may delete, newest first. */
+export const useSubmittedPapers = (enabled: boolean) =>
+  useInfiniteQuery({
+    enabled,
+    getNextPageParam: (last: SubmittedPapers) => last.nextCursor || undefined,
+    initialPageParam: '',
+    meta: { errorBoundary: false },
+    queryFn: ({ pageParam }: { pageParam: string }) =>
+      api.get<SubmittedPapers>(
+        `/papers${pageParam ? `?${new URLSearchParams({ cursor: pageParam })}` : ''}`
+      ),
+    queryKey: qk.papers,
+  });
+
+function invalidateAfterPaperDelete(qc: QueryClient) {
+  qc.invalidateQueries({ queryKey: qk.papers });
+  qc.invalidateQueries({ queryKey: qk.billing });
+}
+
+/** Delete one handed-in paper file; its marks stay. */
+export function useDeletePaper() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del<{ deleted: number }>(`/papers/${id}`),
+    onSuccess: () => invalidateAfterPaperDelete(qc),
+  });
+}
+
+/** Delete every handed-in paper file the caller may delete. */
+export function useDeleteAllPapers() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.del<{ deleted: number }>('/papers'),
+    onSuccess: () => invalidateAfterPaperDelete(qc),
   });
 }
 
@@ -3472,15 +3617,44 @@ export const learningOverviewQuery = () =>
 export const useLearningOverview = (options?: QueryUiOptions) =>
   useQuery({ ...learningOverviewQuery(), meta: queryMeta(options) });
 
+/** To do goes stale in 15 s and rereads on focus (Epo 2026-11-08), so work a
+ * No late due date closed (no event) leaves soon. */
+const todoFresh = { refetchOnWindowFocus: true, staleTime: 15_000 } as const;
+
 /** The To do page: each class's Dashboard To do, across the viewer's classes. */
 export const todoQuery = () =>
   queryOptions({
     ...persisted,
+    ...todoFresh,
     queryFn: () => api.get<TodoList>('/todo'),
     queryKey: qk.todo,
   });
 export const useTodo = (options?: QueryUiOptions) =>
   useQuery({ ...todoQuery(), meta: queryMeta(options) });
+
+export interface TodoDoneParams {
+  class?: string[];
+  dir?: 'asc';
+  sort?: 'done' | 'class';
+  type?: string[];
+}
+/** The To do page's Done tab (Epo 2026-11-08): work given to the viewer that
+ * they finished or that closed, sorted and filtered by the server, a page at a
+ * time. Under qk.todo, so whatever refreshes To do refreshes it. */
+export const useTodoDone = (params: TodoDoneParams, enabled: boolean) =>
+  useInfiniteQuery({
+    enabled,
+    getNextPageParam: (last: TodoDonePage) => last.nextCursor || undefined,
+    initialPageParam: '',
+    meta: { errorBoundary: false },
+    placeholderData: keepPreviousData,
+    queryFn: ({ pageParam }) =>
+      api.get<TodoDonePage>(
+        `/todo/done${listSearch({ ...params }, pageParam)}`
+      ),
+    queryKey: qk.todoDone(params),
+    ...todoFresh,
+  });
 
 /** How many questions a practice group holds, for its start dialog. */
 export const useStudyQuestionCount = (

@@ -1,9 +1,10 @@
 import { Link, useRouterState } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
 import { useMediaQuery } from 'usehooks-ts';
-import { useUnreadNotificationCount } from '@/api/hooks';
+import { useTodo, useUnreadNotificationCount } from '@/api/hooks';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { GettingStartedRow } from '@/features/guide/GettingStartedRow';
+import { todoCount } from '@/features/study/assignments/todoRows';
 import { VoiceCard } from '@/features/voice/VoiceCard';
 import { setAccountVoiceOpen } from '@/features/voice/voiceAsk';
 import { recordingType } from '@/features/workspace/chat/voiceRecording';
@@ -124,20 +125,19 @@ function Row({
   active,
   onNavigate,
   unreadCount,
+  dotLabel,
 }: {
   item: NavItem;
   active: boolean;
   onNavigate?: () => void;
-  /** Notifications only: the dot, and the count for tests and screen readers. */
+  /** Notifications' unread and To do's open count: the dot, and the count for
+   * tests and screen readers. */
   unreadCount?: number;
+  dotLabel?: (count: string) => string;
 }) {
   return (
     <Link
-      aria-label={
-        unreadCount
-          ? m.notifications_unread_count({ count: String(unreadCount) })
-          : undefined
-      }
+      aria-label={unreadCount ? dotLabel?.(String(unreadCount)) : undefined}
       className={cn(
         BASE_BUTTON_STYLE,
         ROW_CLASS,
@@ -214,6 +214,16 @@ export function Sidebar({
   const { data: unread } = useUnreadNotificationCount({
     errorBoundary: false,
   });
+  // The To do row carries the same dot while anything is open (Epo 2026-11-08).
+  const { data: todo } = useTodo({ errorBoundary: false });
+  const open = todoCount(todo?.workspaces ?? []);
+  const dot = (i: NavItem) =>
+    i.to === '/todo'
+      ? {
+          dotLabel: (count: string) => m.todo_nav_count({ count }),
+          unreadCount: open,
+        }
+      : {};
   const nav = items();
   const withAccount = rail || account;
   const frosted = useFrosted('left');
@@ -263,6 +273,7 @@ export function Sidebar({
           <SearchRow />
           <Row
             active={pathname === NOTIFICATIONS}
+            dotLabel={(count) => m.notifications_unread_count({ count })}
             item={{
               icon: 'bell',
               label: m.notifications_title(),
@@ -278,7 +289,12 @@ export function Sidebar({
         <div className="flex flex-col gap-1 sm:gap-0.5">
           {nav.sections.flatMap((section) =>
             section.items.map((i) => (
-              <Row active={isActive(pathname, i)} item={i} key={i.to} />
+              <Row
+                active={isActive(pathname, i)}
+                item={i}
+                key={i.to}
+                {...dot(i)}
+              />
             ))
           )}
         </div>
@@ -300,6 +316,7 @@ export function Sidebar({
                   item={i}
                   key={i.to}
                   onNavigate={onNavigate}
+                  {...dot(i)}
                 />
               ))}
             </div>

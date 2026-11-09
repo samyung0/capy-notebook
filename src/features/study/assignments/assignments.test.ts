@@ -100,8 +100,12 @@ it('sends the due date policy only with a marked due date', () => {
   expect(
     latePolicy({ kind: 'marked', latePenaltyPct: 50, noLate: true })
   ).toEqual(none);
+  // Either kind closes at its due date; only a marked one takes a penalty.
   expect(
-    latePolicy({ dueAt, kind: 'unmarked', latePenaltyPct: 50, noLate: true })
+    latePolicy({ dueAt, kind: 'unmarked', latePenaltyPct: 0, noLate: true })
+  ).toEqual({ latePenaltyPct: 0, noLate: true });
+  expect(
+    latePolicy({ dueAt, kind: 'unmarked', latePenaltyPct: 50, noLate: false })
   ).toEqual(none);
 });
 
@@ -109,8 +113,8 @@ it('tells late work open from closed by its own due date', () => {
   const dueAt = '2026-11-07T18:00:00Z';
   const after = Date.parse(dueAt) + 1000;
   const before = Date.parse(dueAt) - 1000;
-  const noLate = { dueAt, kind: 'marked' as const, noLate: true };
-  const late = { dueAt, kind: 'marked' as const, noLate: false };
+  const noLate = { dueAt, noLate: true };
+  const late = { dueAt, noLate: false };
   expect(closedItself(noLate, after)).toBe(true);
   expect(closedItself(noLate, before)).toBe(false);
   expect(closedItself(late, after)).toBe(false);
@@ -118,7 +122,6 @@ it('tells late work open from closed by its own due date', () => {
   expect(takesLateWork(late, before)).toBe(false);
   expect(takesLateWork(noLate, after)).toBe(false);
   expect(takesLateWork({ ...late, closedAt: dueAt }, after)).toBe(false);
-  expect(takesLateWork({ ...late, kind: 'unmarked' }, after)).toBe(false);
 });
 
 it('names the penalty on late work', () => {

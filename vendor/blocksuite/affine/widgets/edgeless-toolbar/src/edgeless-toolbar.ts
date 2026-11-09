@@ -217,6 +217,11 @@ export class EdgelessToolbarWidget extends WidgetComponent<RootBlockModel> {
         width: ${unsafeCSS(FULL_WIDTH_TOOL)}px;
       }
     }
+    /* Capy (local change 29): a tool narrower than the rest sets its own width on
+       its element (data-own-width). */
+    .edgeless-toolbar-container .senior-tool-item:has(> [data-own-width]) {
+      width: auto;
+    }
     .senior-nav-button-wrapper {
       flex-shrink: 0;
       width: 0px;

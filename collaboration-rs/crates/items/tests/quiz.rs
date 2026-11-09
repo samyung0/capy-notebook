@@ -758,6 +758,42 @@ fn values_past_their_caps_are_refused_at_admission() {
     let _ = open_question;
 }
 
+/// An mcq's content answer says `multiple` only while several options are
+/// correct, so readers know to pick more than one; an editor's flag is admitted.
+#[test]
+fn several_correct_options_show_as_multiple() {
+    let questions = fixtures();
+    let multiple = |doc: &Doc, question: &Value| {
+        let (q, part) = (
+            question["id"].as_str().unwrap(),
+            question["parts"][0]["id"].as_str().unwrap(),
+        );
+        let answer = map_in(doc, &["questions", q, "parts", part, "answer"]);
+        answer.get(&doc.transact(), "multiple")
+    };
+    let (content, _, client, _) = rooms(&questions);
+    let mcqs: Vec<&Value> = questions
+        .iter()
+        .filter(|q| q["parts"][0]["answer"]["type"] == json!("mcq"))
+        .collect();
+    let several = |q: &Value| q["parts"][0]["answer"]["correct"].as_array().unwrap().len() > 1;
+    let single = mcqs.iter().find(|q| !several(q)).unwrap();
+    let both = mcqs.iter().find(|q| several(q)).unwrap();
+    assert_eq!(multiple(&content, both), Some(Out::Any(Any::Bool(true))));
+    assert_eq!(multiple(&content, single), None);
+    let (q, part) = (
+        single["id"].as_str().unwrap(),
+        single["parts"][0]["id"].as_str().unwrap(),
+    );
+    map_in(&client, &["questions", q, "parts", part, "answer"]).insert(
+        &mut client.transact_mut(),
+        "multiple",
+        true,
+    );
+    let mut check = validator(Kind::Quiz, &content);
+    accepted(&mut check, &content, &client);
+}
+
 /// A chart, plot or graph past its kind's caps is refused as it arrives,
 /// whether the update writes its value, its type or both; an unfinished one
 /// (D4) is admitted.

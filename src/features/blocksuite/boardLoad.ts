@@ -37,6 +37,7 @@ const ELEMENTS = new Set([
   'connector',
   'formula',
   'group',
+  'highlighter',
   'plane',
   'shape',
   'text',
@@ -96,11 +97,36 @@ function elementProblem(fields: Fields): string | null {
       (fields.ppu as number) > 0 &&
       finite(fields.x0) &&
       finite(fields.y0) &&
-      listUpTo(fields.marks, MARKS_MAX)
+      (fields.polar === undefined || typeof fields.polar === 'boolean') &&
+      listUpTo(fields.marks, MARKS_MAX) &&
+      (fields.marks as Fields[]).every(
+        (mark) =>
+          (mark?.kind !== 'label' ||
+            (typeof mark.text === 'string' &&
+              mark.text.length <= LABEL_LENGTH_MAX)) &&
+          // A formula is text KaTeX lays out, within the formula card's limit.
+          (mark?.kind !== 'formula' ||
+            (typeof mark.latex === 'string' &&
+              mark.latex.length <= LATEX_MAX)) &&
+          // A vector runs from one point to one other.
+          (mark?.kind !== 'vector' ||
+            (listUpTo(mark.points, 2) &&
+              (mark.points as unknown[]).length === 2)) &&
+          // An ellipse is drawn from exactly its four handles.
+          (mark?.kind !== 'ellipse' ||
+            (listUpTo(mark.points, 4) &&
+              (mark.points as unknown[]).length === 4 &&
+              (mark.points as unknown[]).every(
+                (point) =>
+                  Array.isArray(point) &&
+                  point.length === 2 &&
+                  point.every(finite)
+              )))
+      )
       ? null
       : 'plane fields';
   if (type === 'chart') {
-    const { axisMax, axisStep, bars, kind, labels, spokes } = fields;
+    const { axisMax, axisStep, bars, fills, kind, labels, spokes } = fields;
     const fine =
       (kind === 'bar' || kind === 'pie') &&
       finite(axisMax) &&
@@ -111,6 +137,9 @@ function elementProblem(fields: Fields): string | null {
       listUpTo(bars, BARS_MAX) &&
       listUpTo(spokes, SPOKES_MAX) &&
       (spokes as unknown[]).every(finite) &&
+      (fills === undefined ||
+        (listUpTo(fills, SPOKES_MAX) &&
+          (fills as Fields[]).every((slice) => finite(slice?.from)))) &&
       listUpTo(labels, LABELS_MAX) &&
       (labels as Fields[]).every(
         (label) =>

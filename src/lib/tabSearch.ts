@@ -44,6 +44,7 @@ export const FILES_TABS = [
   'blocks',
   'embeds',
   'canvas',
+  'submissions',
   'trash',
 ] as const;
 export type FilesTab = (typeof FILES_TABS)[number];

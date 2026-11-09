@@ -7,10 +7,13 @@
 import type { AssignmentFileRef } from './assignmentFileRef.ts';
 import type { AssignmentFormReqKind } from './assignmentFormReqKind.ts';
 import type { AssignmentFormReqMarking } from './assignmentFormReqMarking.ts';
+import type { AssignmentFormReqShowAnswers } from './assignmentFormReqShowAnswers.ts';
+import type { AssignmentFormReqShowGrades } from './assignmentFormReqShowGrades.ts';
 
 export interface AssignmentFormReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  allowUploads?: boolean;
   assignAll: boolean;
   /** @maxItems 500 */
   assignees: string[];
@@ -32,7 +35,8 @@ export interface AssignmentFormReq {
   marking: AssignmentFormReqMarking;
   noLate: boolean;
   quizId?: string;
-  showAnswers: boolean;
+  showAnswers: AssignmentFormReqShowAnswers;
+  showGrades: AssignmentFormReqShowGrades;
   shuffle: boolean;
   /**
      * @minimum 1

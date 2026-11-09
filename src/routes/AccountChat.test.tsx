@@ -36,7 +36,6 @@ vi.mock('@/api/queryClient', () => ({ showErrorToast: page.toast }));
 vi.mock('@/api/hooks', () => ({
   fileQuery: (id: string) => ({ queryKey: ['file', id] }),
   materialQuery: (id: string) => ({ queryKey: ['material', id] }),
-  useUnreadNotificationCount: () => ({ data: { count: 0 } }),
 }));
 vi.mock('@/lib/useMediaQuery', () => ({ useMediaQuery: () => true }));
 vi.mock('@/components/app/layout', () => ({
@@ -47,7 +46,6 @@ vi.mock('@/components/app/layout', () => ({
 vi.mock('@/components/app/AppErrorBoundary', () => ({
   AppErrorBoundary: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock('@/components/app/ProfileMenu', () => ({ ProfileMenu: () => null }));
 vi.mock('@/features/workspace/ChatPanel', () => ({
   ChatPanel: (props: { renderTabRow: () => ReactNode }) => {
     page.chat = props;

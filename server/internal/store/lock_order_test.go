@@ -220,7 +220,7 @@ func TestStudyWritesTakeTheWorkspaceFirst(t *testing.T) {
 	running := func(t *testing.T, label string) (assignmentFixture, Assignment, AssignmentAttempt) {
 		t.Helper()
 		f, created := assigned(t, label)
-		run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+		run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -244,7 +244,7 @@ func TestStudyWritesTakeTheWorkspaceFirst(t *testing.T) {
 	t.Run("start", func(t *testing.T) {
 		f, created := assigned(t, "locks-start")
 		holdThenRun(t, f.s, workspace(f), []lockStep{{lockAccountRow, f.viewer}}, func(ctx context.Context) error {
-			_, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+			_, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
 			return err
 		})
 	})

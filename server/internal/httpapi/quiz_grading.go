@@ -34,9 +34,9 @@ import (
 // shared page, where they stay Not marked. The response carries the key for what
 // was just checked.
 
-// answersMaxBytes bounds a request of answers: a hundred 5,000-character open
+// answersMaxBytes bounds a request of answers: 150 5,000-character open
 // answers at up to four bytes a character plus every closed answer of a
-// 100-part quiz.
+// 150-part quiz.
 const answersMaxBytes = 4 << 20
 
 var errGradeRequest = errors.New("answers must name parts of these questions, give every ordering part an order, and keep an open answer to text of at most 5,000 characters")
@@ -211,24 +211,32 @@ type partGrade struct {
 
 // gradeWithModel marks open parts on the payer's credits, ten at once (Epo
 // 2026-11-04). It keeps each part's result: one that fails, or all of them when
-// there is nothing to pay with, is simply absent, and stays "Not marked". Nothing
-// retries it.
-func (a *api) gradeWithModel(ctx context.Context, payerID, workspaceID string, parts map[string]openPart) map[string]partGrade {
+// there is nothing to pay with, is absent from grades and stays "Not marked", with
+// why in failed (store.AIErrorCredits or store.AIErrorGrade). Nothing retries it.
+func (a *api) gradeWithModel(ctx context.Context, payerID, workspaceID string, parts map[string]openPart) (grades map[string]partGrade, failed map[string]string) {
 	out := make(map[string]partGrade, len(parts))
+	failed = map[string]string{}
 	if len(parts) == 0 {
-		return out
+		return out, failed
+	}
+	failAll := func(reason string) (map[string]partGrade, map[string]string) {
+		for id := range parts {
+			failed[id] = reason
+		}
+		return out, failed
 	}
 	llm, err := a.gradingLLM(ctx, payerID)
 	if err != nil {
 		obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz})
-		return out
+		return failAll(store.AIErrorGrade)
 	}
 	charge, err := a.beginProviderSession(ctx, payerID, workspaceID, store.SurfaceQuiz, llm.Rates, store.TokenRates{}, llm.Thinking)
 	if err != nil {
-		if !errors.Is(err, store.ErrCreditsExhausted) {
-			obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz})
+		if errors.Is(err, store.ErrCreditsExhausted) {
+			return failAll(store.AIErrorCredits)
 		}
-		return out
+		obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz})
+		return failAll(store.AIErrorGrade)
 	}
 	defer charge.settle(ctx)
 	var mu sync.Mutex
@@ -240,20 +248,25 @@ func (a *api) gradeWithModel(ctx context.Context, payerID, workspaceID string, p
 	for id, part := range parts {
 		group.Go(func() error {
 			grade, err := a.gradePartSafely(ctx, llm, charge.id, part)
+			mu.Lock()
+			defer mu.Unlock()
 			if err != nil {
+				failed[id] = store.AIErrorGrade
+				if errors.Is(err, store.ErrCreditsExhausted) {
+					failed[id] = store.AIErrorCredits
+					return nil
+				}
 				report.Do(func() {
 					obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz, "stage": "grade_part"})
 				})
 				return nil
 			}
-			mu.Lock()
-			defer mu.Unlock()
 			out[id] = grade
 			return nil
 		})
 	}
 	_ = group.Wait()
-	return out
+	return out, failed
 }
 
 // gradePartSafely makes gradePart's panic that part's failure. It runs on a
@@ -386,7 +399,8 @@ func (a *api) gradeSignedIn(ctx context.Context, plan gradePlan, workspaceID str
 	}
 	marking, cancel := context.WithTimeout(ctx, gradingCheckTimeout)
 	defer cancel()
-	graded, correct, total := gradedWithModel(plan, a.gradeWithModel(marking, userID(ctx), workspaceID, plan.open))
+	grades, _ := a.gradeWithModel(marking, userID(ctx), workspaceID, plan.open)
+	graded, correct, total := gradedWithModel(plan, grades)
 	if total <= 0 {
 		return nil, 0, 0, huma.Error422UnprocessableEntity("there are no questions to grade")
 	}

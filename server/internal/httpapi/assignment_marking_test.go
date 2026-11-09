@@ -48,7 +48,7 @@ func markingAssignment(t *testing.T, h http.Handler, texts ...string) string {
 	rec := doReq(t, h, http.MethodPost, ws+"/assignments", "u_owner", map[string]any{
 		"kind": "marked", "title": "Marking", "quizId": made.ID, "dueAt": time.Now().Add(time.Hour).Format(time.RFC3339),
 		"attempts": 1, "noLate": false, "latePenaltyPct": 20, "assignAll": true, "assignees": []string{}, "draft": false,
-		"marking": "ai_approve", "showAnswers": true, "shuffle": false, "files": []any{},
+		"marking": "ai_approve", "showAnswers": "submitted", "showGrades": "automatic", "shuffle": false, "files": []any{},
 	})
 	if rec.Code != http.StatusOK && rec.Code != http.StatusCreated {
 		t.Fatalf("create assignment: status = %d body=%s", rec.Code, rec.Body.String())
@@ -114,13 +114,13 @@ func TestAssignmentSubmitMarksOnceInTheBackground(t *testing.T) {
 	if marked != 1 {
 		t.Fatalf("model calls = %d, want one", marked)
 	}
-	// The workspace owner pays, not the member, and the session settles.
+	// The member attempting pays, not the owner, and the session settles (Epo 2026-11-08).
 	var payer, status string
 	if err := st.Pool().QueryRow(context.Background(), `SELECT actor_user_id, status FROM provider_sessions
 		WHERE surface='quiz' AND workspace_id='ws_e2e_private' ORDER BY created_at DESC LIMIT 1`).Scan(&payer, &status); err != nil {
 		t.Fatal(err)
 	}
-	if payer != "u_owner" || status != "settled" {
+	if payer != "u_viewer" || status != "settled" {
 		t.Fatalf("session paid by %s, %s", payer, status)
 	}
 	submit()
@@ -208,34 +208,93 @@ func TestSubmitWithNoPipelineStaysNotMarked(t *testing.T) {
 	}
 }
 
-// Mark with AI says so while the page waits when the owner cannot pay, and a
-// frozen caller is refused.
-func TestMarkWithAIRefusesWhenItCannotRun(t *testing.T) {
+// A failed grade leaves the answer waiting with Grade Error on the owner's row,
+// counted as not graded among the answers waiting (mock T3); Mark with AI still
+// runs, each attempt on its member's credits, and a frozen caller is refused.
+func TestFailedGradeShowsGradeError(t *testing.T) {
 	h, st, _ := openGradingAPI(t, "fail")
 	id := markingAssignment(t, h)
 	startAndSubmit(t, h, id, map[string]any{"q1:part:1": "One."})
-	settledCalls(new(atomic.Int32))
+	row := waitForAIError(t, h, id)
+	if row.AIError != "error" || !row.Waiting || row.AIMarked {
+		t.Fatalf("row = %+v", row)
+	}
+	if manage := assignmentManage(t, h, id); manage.NotGraded != 1 || manage.ToApprove != 1 {
+		t.Fatalf("counts = %+v", manage)
+	}
+	if rec := doReq(t, h, http.MethodPost, "/api/assignments/"+id+"/mark-with-ai", "u_owner", nil); rec.Code != http.StatusOK {
+		t.Fatalf("mark with AI: status = %d body=%s", rec.Code, rec.Body.String())
+	}
 	ctx := context.Background()
-	suspend := func(user string) {
-		t.Helper()
-		if _, err := st.Pool().Exec(ctx, `UPDATE users SET suspended_at=now(), suspended_reason='test' WHERE id=$1`, user); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() {
-			_, _ = st.Pool().Exec(ctx, `UPDATE users SET suspended_at=NULL, suspended_reason=NULL WHERE id=$1`, user)
-		})
+	if _, err := st.Pool().Exec(ctx, `UPDATE users SET suspended_at=now(), suspended_reason='test' WHERE id='u_editor'`); err != nil {
+		t.Fatal(err)
 	}
-	suspend("u_owner")
-	if rec := doReq(t, h, http.MethodPost, "/api/assignments/"+id+"/mark-with-ai", "u_editor", nil); rec.Code < 400 {
-		t.Fatalf("a suspended owner's credits: status = %d", rec.Code)
-	}
-	suspend("u_editor")
+	t.Cleanup(func() {
+		_, _ = st.Pool().Exec(ctx, `UPDATE users SET suspended_at=NULL, suspended_reason=NULL WHERE id='u_editor'`)
+	})
 	for _, path := range []string{"/mark-with-ai", "/approve-ai-marks"} {
 		rec := doReq(t, h, http.MethodPost, "/api/assignments/"+id+path, "u_editor", map[string]any{"questionId": "q1"})
 		if rec.Code < 400 || rec.Code >= 500 {
 			t.Fatalf("a suspended editor at %s: status = %d", path, rec.Code)
 		}
 	}
+}
+
+// A member with no credits left submits all the same; their answer waits with
+// No credits on the owner's row, and the owner's credits are never touched.
+func TestNoCreditsLeavesTheAnswerNotGraded(t *testing.T) {
+	h, st, calls := openGradingAPI(t, "full")
+	ctx := context.Background()
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO user_credits (user_id, used_micros, purchased_micros)
+		VALUES ('u_viewer', 1000000000000000, 0)
+		ON CONFLICT (user_id) DO UPDATE SET used_micros=EXCLUDED.used_micros, purchased_micros=0`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM user_credits WHERE user_id='u_viewer'`)
+	})
+	id := markingAssignment(t, h)
+	startAndSubmit(t, h, id, map[string]any{"q1:part:1": "One."})
+	if row := waitForAIError(t, h, id); row.AIError != "credits" {
+		t.Fatalf("row = %+v", row)
+	}
+	if made := calls.Load(); made != 0 {
+		t.Fatalf("%d model calls with no credits", made)
+	}
+}
+
+type answerRow struct {
+	Waiting, AIMarked bool
+	AIError           string
+}
+
+func waitForAIError(t *testing.T, h http.Handler, id string) answerRow {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		rec := doReq(t, h, http.MethodGet, "/api/assignments/"+id+"/report", "u_owner", nil)
+		var report struct{ Answers []answerRow }
+		_ = json.Unmarshal(rec.Body.Bytes(), &report)
+		if len(report.Answers) > 0 && report.Answers[0].AIError != "" {
+			return report.Answers[0]
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no reason on the row: %s", rec.Body.String())
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func assignmentManage(t *testing.T, h http.Handler, id string) struct{ ToApprove, NotGraded int } {
+	t.Helper()
+	rec := doReq(t, h, http.MethodGet, "/api/assignments/"+id, "u_owner", nil)
+	var got struct {
+		Manage struct{ ToApprove, NotGraded int }
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	return got.Manage
 }
 
 // A part left Not marked joins no review, on a quiz check or a review check; once

@@ -394,6 +394,7 @@ export const qk = {
   ownedMaterials: (params?: unknown) =>
     ['materials', 'owned', params ?? null] as const,
   ownedMaterialsRoot: ['materials', 'owned'] as const,
+  papers: ['papers'] as const,
   pastReviews: (params?: unknown) =>
     ['review', 'past', params ?? null] as const,
   /** The workspace's Practice page; refreshed with the rest of study. */
@@ -419,6 +420,8 @@ export const qk = {
   tasks: ['tasks'] as const,
   /** GET /todo: the To do page, across the viewer's classes. */
   todo: ['todo'] as const,
+  /** GET /todo/done: the To do page's Done tab, a page at a time. */
+  todoDone: (params?: unknown) => ['todo', 'done', params ?? null] as const,
   topics: (wsId: string) => ['workspace', wsId, 'topics'] as const,
   trash: (wsId?: string) => ['trash', wsId ?? 'all'] as const,
   usage: ['usage'] as const,

@@ -297,6 +297,28 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
     (`putAway()` in `drawingBoard.ts`) calls it, since none of the events that turn the
     dispatcher off fire when the board is hidden, and its document-level key and
     clipboard handlers would otherwise still run.
+29. Narrower toolbar slots (`widgets/edgeless-toolbar` `edgeless-toolbar.ts`, marked
+    `Capy (local change 29)`): a slot whose element carries `data-own-width` takes that
+    element's width instead of AFFiNE's 96 px. The board's Charts slot is 60 px (Epo
+    2026-11-08). The toolbar's paging still counts every slot as 96 px, so it pages a
+    little early on a narrow screen.
+30. Elements the eraser skips (`gfx/brush` `src/eraser-tool.ts`, marked `Capy (local change
+    30)`): an element whose `erasable` is `false` is left out of the eraser's reach. The
+    board's plane and chart cards set it (their marks are erased inside them), so they can
+    answer `getLineIntersections` truthfully, which connectors need for their anchors.
+31. Auto-complete for shapes and notes only (`widgets/edgeless-selected-rect`
+    `src/edgeless-auto-complete.ts`, marked `Capy (local change 31)`): the next-shape
+    arrows and next-note plus buttons render only for a single selected shape or note.
+    Upstream hid them for other elements only while the pointer was over them, so a
+    selected connector (or plane, chart) showed note buttons once the pointer moved
+    away, and pressing one read a `background` the element doesn't have.
+32. Wheel over the floating toolbar (`affine/components` `src/toolbar/toolbar.ts`,
+    marked `Capy (local change 32)`): a pinch or swipe over the buttons goes on to the
+    canvas, which zooms or pans; only an open menu keeps it, so its list scrolls.
+    Upstream stopped every wheel without preventing it, so a pinch zoomed the page.
+33. Toasts through the app (`affine/components` `src/toast/toast.ts`, marked `Capy
+    (local change 33)`): `setToastHandler` hands every `toast()` message to the app's
+    own toast. BlockSuite's fixed container sat inside the board's page and was cut off.
 
 The specs named in local changes 6 to 9 are on the `blocksuite-notes` branch, with the
 note editor they pin.

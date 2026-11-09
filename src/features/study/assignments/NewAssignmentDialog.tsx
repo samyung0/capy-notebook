@@ -115,6 +115,7 @@ export function NewAssignmentDialog({
     watch,
   } = useForm<AssignmentFormReq>({
     defaultValues: {
+      allowUploads: existing?.allowUploads ?? false,
       assignAll: manage?.assignAll ?? true,
       assignees: manage?.assignees ?? [],
       attempts: existing?.attempts ?? 1,
@@ -129,7 +130,8 @@ export function NewAssignmentDialog({
       marking: manage?.marking ?? 'ai_approve',
       noLate: existing?.noLate ?? false,
       quizId: manage?.quizId ?? presetQuizId,
-      showAnswers: manage?.showAnswers ?? true,
+      showAnswers: manage?.showAnswers ?? 'closed',
+      showGrades: manage?.showGrades ?? 'automatic',
       shuffle: manage?.shuffle ?? false,
       timeLimitMin: existing?.timeLimitMin,
       title:
@@ -167,12 +169,13 @@ export function NewAssignmentDialog({
   const dueAt = watch('dueAt');
   const noLate = watch('noLate');
   const attempts = watch('attempts');
-  const [advancedOpen, setAdvancedOpen] = useState(() =>
-    advancedStartsOpen(existing)
+  const [advancedOpen, setAdvancedOpen] = useState(
+    () => advancedStartsOpen(existing) || !!manage?.shuffle
   );
-  // The policy goes with a marked assignment's due date; a published one is past
-  // being a draft.
-  const hasPolicy = kind === 'marked' && !!dueAt;
+  // No late submissions goes with a due date on either kind (Epo 2026-11-09),
+  // the penalty with a marked one's marks; a published one is past being a
+  // draft.
+  const hasPolicy = !!dueAt;
   const hasDraft = !existing || existing.draft;
   const [titleEdited, setTitleEdited] = useState(!!existing);
   const { mutate: create, isPending: creating } =
@@ -358,24 +361,6 @@ export function NewAssignmentDialog({
               )}
             />
           </Field>
-          {kind === 'unmarked' && (
-            <Field
-              hint={m.assignment_optional()}
-              label={m.assignment_field_files()}
-            >
-              <Controller
-                control={control}
-                name="files"
-                render={({ field }) => (
-                  <FilesField
-                    onChange={field.onChange}
-                    value={field.value}
-                    workspaceId={workspaceId}
-                  />
-                )}
-              />
-            </Field>
-          )}
           <div className="grid gap-4 sm:grid-cols-2">
             <Field
               error={errors.dueAt?.message}
@@ -466,10 +451,38 @@ export function NewAssignmentDialog({
               </>
             )}
           </div>
+          {/* C2 (Epo 2026-11-08): Files below Due and Assign to, then the switch:
+              members hand in files with Hand in. */}
+          {kind === 'unmarked' && (
+            <>
+              <Field
+                hint={m.assignment_optional()}
+                label={m.assignment_field_files()}
+              >
+                <Controller
+                  control={control}
+                  name="files"
+                  render={({ field }) => (
+                    <FilesField
+                      onChange={field.onChange}
+                      value={field.value}
+                      workspaceId={workspaceId}
+                    />
+                  )}
+                />
+              </Field>
+              <SwitchRow
+                control={control}
+                label={m.assignment_switch_uploads()}
+                name="allowUploads"
+              />
+            </>
+          )}
           {kind === 'marked' && (
             <div className="flex flex-col gap-2 pt-0.5">
-              {/* One dropdown for every AI-marked part (A4, Epo 2026-11-06). */}
-              <div className="mb-1 max-w-75">
+              {/* Marking (A4, Epo 2026-11-06) on its own row, then when
+                  members see grades and keys (C4, C3, Epo 2026-11-08). */}
+              <div className="mb-1 grid gap-4">
                 <Field label={m.assignment_field_marking()}>
                   <Controller
                     control={control}
@@ -499,24 +512,84 @@ export function NewAssignmentDialog({
                     )}
                   />
                 </Field>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label={m.assignment_field_grades()}>
+                    <Controller
+                      control={control}
+                      name="showGrades"
+                      render={({ field }) => (
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                        >
+                          <SelectTrigger
+                            aria-label={m.assignment_field_grades()}
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="automatic">
+                              {m.assignment_grades_automatic()}
+                            </SelectItem>
+                            <SelectItem value="manual">
+                              {m.assignment_grades_manual()}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  </Field>
+                  <Field label={m.assignment_field_answers()}>
+                    <Controller
+                      control={control}
+                      name="showAnswers"
+                      render={({ field }) => (
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                        >
+                          <SelectTrigger
+                            aria-label={m.assignment_field_answers()}
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="closed">
+                              {m.assignment_answers_closed()}
+                            </SelectItem>
+                            <SelectItem value="submitted">
+                              {m.assignment_answers_submitted()}
+                            </SelectItem>
+                            <SelectItem value="never">
+                              {m.assignment_answers_never()}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  </Field>
+                </div>
               </div>
+              {/* C1 (Epo 2026-11-08): members may hand in a paper instead. */}
               <SwitchRow
                 control={control}
-                label={m.assignment_switch_answers()}
-                name="showAnswers"
-              />
-              <SwitchRow
-                control={control}
-                label={m.assignment_switch_shuffle()}
-                name="shuffle"
+                label={m.assignment_switch_uploads()}
+                name="allowUploads"
               />
             </div>
           )}
-          {(hasPolicy || hasDraft) && (
+          {(kind === 'marked' || hasDraft || hasPolicy) && (
             <AdvancedSection
               onToggle={() => setAdvancedOpen(!advancedOpen)}
               open={advancedOpen}
             >
+              {kind === 'marked' && (
+                <SwitchRow
+                  control={control}
+                  label={m.assignment_switch_shuffle()}
+                  name="shuffle"
+                />
+              )}
               {hasPolicy && (
                 <SwitchRow
                   control={control}
@@ -524,7 +597,7 @@ export function NewAssignmentDialog({
                   name="noLate"
                 />
               )}
-              {hasPolicy && !noLate && (
+              {hasPolicy && kind === 'marked' && !noLate && (
                 <div className="flex min-h-8 items-center justify-between gap-4">
                   <span className="font-medium">
                     {m.assignment_field_late_penalty()}
@@ -616,7 +689,7 @@ function SwitchRow({
 }: {
   control: Control<AssignmentFormReq>;
   label: string;
-  name: 'draft' | 'noLate' | 'showAnswers' | 'shuffle';
+  name: 'allowUploads' | 'draft' | 'noLate' | 'shuffle';
 }) {
   return (
     <Controller

@@ -770,7 +770,7 @@ draft or published: a draft is invisible to members, and publishing posts it.
 
 | Table or column | Holds |
 | --- | --- |
-| `assignments` | Kind, title, `source_quiz_id`, the frozen `questions` with their keys, `question_count`, `total_marks`, `due_at`, `time_limit_min`, `attempts_allowed`, `no_late`, `late_penalty_pct`, `assign_all`, `draft`, `marking` (`ai_approve`, `ai` or `manual`, migration 0157), `show_answers`, `shuffle`, `posted_at`, `closed_at` (closed by hand; a No late submissions one closes from its due date without it), `released_at` (its quiz became practice, once) |
+| `assignments` | Kind, title, `source_quiz_id`, the frozen `questions` with their keys, `question_count`, `total_marks`, `due_at`, `time_limit_min`, `attempts_allowed`, `no_late`, `late_penalty_pct`, `assign_all`, `draft`, `marking` (`ai_approve`, `ai` or `manual`, migration 0157), `answers_shown` (`closed`, `submitted` or `never`, migration 0159), `shuffle`, `posted_at`, `closed_at` (closed by hand; a No late submissions one closes from its due date without it), `released_at` (its quiz became practice, once) |
 | `assignment_assignees` | Picked names and a staff member's own "You" |
 | `assignment_files` | An unmarked assignment's files and materials, in order; a file moved to another workspace leaves (`moveFileTx`) |
 | `assignment_done` | A member's tick |
@@ -804,8 +804,8 @@ still delete an assignment, and Republish, which writes, is refused for them. Th
 attempt at it (`frozenAssetReadable`), never another member, and they paste for
 nobody (`AdoptEditorAssets`).
 Members are only ever served this copy:
-answer-free while running (`questions.LearnerViews`), with keys only after
-submitting if Show answers is on.
+answer-free while running (`questions.LearnerViews`), with keys after
+submitting only as Show answers allows (below).
 
 **One row** (Epo 2026-11-04). A quiz and its assignment are the same content: lists
 hold one row, and making an assignment changes nothing about the quiz. Whether it
@@ -855,8 +855,13 @@ opening reads the attempt afresh, never from a cache, so its answers and clock a
 the server's: that read failing asks to retry, while a later refresh failing leaves
 the running attempt on the page. Nothing retries a failed save but the next change
 and Submit, which sends them all; a submit that fails at zero leaves Submit to
-press. A shuffled paper's order comes from a seed of the attempt's id, so a reload
-keeps it. Bookmarks stay in this browser. Taking it never joins a room, since it
+press. A No late due date ends it as its time running out does: the attempt's
+`closesAt` carries it, the page counts to the earlier of that and `deadlineAt`, and
+shows the clock always when timed but only in the last hour when only the due date
+ends it, ticking only then (Epo 2026-11-08). Editing the assignment sends
+`assignment_updated` to whoever is taking it, whose page rereads the attempt, so a
+moved or lifted due date moves the clock. A shuffled paper's order comes from a seed of the
+attempt's id, so a reload keeps it. Bookmarks stay in this browser. Taking it never joins a room, since it
 serves the frozen copy.
 
 **Settings** (Epo 2026-11-05, `AssignmentSettingsTab`). The report has no ⋮: its last
@@ -915,7 +920,15 @@ already open to them, the same short window a No late due date has.
 **Submitting.** `POST …/submit` grades closed parts with the same deterministic
 Go scoring as a quiz (`questions.Graded`). An answered open part is left
 `pending` ("Not marked"), and the AI then marks it in the background, on the
-workspace owner's credits (`markAnswersSoon`); a blank one earns 0. With Approve
+credits of the member attempting (`markAnswersSoon`, Epo 2026-11-08; one lock per
+member); a blank one earns 0. A part it could not mark keeps why, `aiError`
+`credits` (that member has none left) or `error` (the grade failed), which only
+staff read: Approve AI marks shows it on the row as No credits or Grade Error and
+in the answer pane as one line, with no banner and no names (mock T3). Waiting
+answers count as `toApprove`, and `notGraded` how many of them have no AI mark,
+which the Assignments row, the report header and Approve AI marks show apart from
+those to approve. Mark with AI runs each attempt on its member's credits and is
+refused only when grading isn't set up. With Approve
 AI marks on, its mark waits beside the answer (`aiAwards`, `aiComment`, `aiFlag`)
 where only staff read it; off, it is the mark at once (`markedBy: "ai"`). A part left
 Not marked joins no review; a quiz check can check it again (below). At zero the
@@ -938,6 +951,12 @@ submissions or a penalty (`advancedStartsOpen`, Claude's pick). Once opened it
 scrolls itself into view, since it opens at the dialog's foot, below the fold on a
 phone. Editing a published assignment has no Draft only, and one with no due date
 has no Advanced at all.
+
+Both kinds follow the same rules (Epo 2026-11-09, "same rules", migration 0162
+`assignments_late_policy`): an Unmarked one with a due date has No late
+submissions too and closes only by hand or under it, its ticks and hand-ins
+read Late past the due date, and a closed one takes no tick, Hand in or Undo.
+The penalty stays Marked's alone, since there is no mark to take it from.
 
 - **No late submissions on.** It closes itself at the due date: nothing starts, an
   attempt still running is submitted as saved, and nothing reads Late. Settings has
@@ -975,9 +994,75 @@ and an earlier one marked after the release moves its mark alone.
 **Results** (A5). The mark top right is marks decided over marks decided, so a
 waiting part never reads as lost; Submitted (A4) says the same as "Your mark so
 far". Right, partly, wrong and not marked counts sit above every question, which
-opens to its answer, marking points and worked solution. Show answers off leaves
-marks and comments and removes keys, marking points and solutions on the server
-(`gradedWithoutKeys`). Practise again shows once its quiz is practice. The top right
+opens to its answer, marking points and worked solution. Show answers (C3, Epo
+2026-11-08) picks when a member reads those: After assignment close (the
+default: closed by hand, or at the due date under No late submissions), After
+submission, or Do not show. Until then the server leaves marks and comments and removes keys, marking
+points and solutions (`gradedWithoutKeys`), so an early submitter has no answers to
+pass on while classmates still answer; per-part marks still show on submit.
+Reopening hides the keys again.
+
+**Answering on paper** (Epo 2026-11-08, todo-file-submissions.md 5a, migration
+0161, mocks C1, S4, S5, T1, F1, F2):
+- New assignment's "Allow submission with uploads" (`allow_uploads`) lets a member
+  pick Upload file beside Attempt online in Before you start, which then shows
+  for every such assignment, timed or not. Upload file needs storage not full
+  (S6); the attempt runs with `attempts.paper = 'upload'`, the clock covering the
+  upload. Typed and uploaded answers never mix in one attempt.
+- The page shows the questions read only (no answer fields) and Your paper as the
+  last row. Its files are the member's own standalone uploads through the normal
+  source upload with `attemptId` (`files.attempt_id`, in `attempt_position`
+  order): ingest runs and charges them as any upload, but credits never refuse
+  one and its bytes save past the storage limit. At most 15 files within the
+  member's source file cap across them (O1). They can be removed and dragged
+  into order until Submit, and never list in Files, search or Recent.
+- An upload attempt's matching options and ordering items are shuffled with the
+  attempt as the seed (`questions.LearnerViewsSeeded`), so the letters on paper
+  match what the read call is given.
+- Submitting leaves every part waiting with nothing logged (`paper = 'reading'`).
+  Marking waits for the files' ingest, then the pipeline's `/paper` reads every
+  page and grades the open and drawn parts on their pages, one call
+  (`observability-metering.md`). Go maps each closed answer from the member's
+  letters to the stored answer and marks it against the key, drops an answer
+  read with no pages, stores each part's `pages`, logs the answers
+  (`paper = 'read'`), then saves the AI's marks and failures as for typed
+  answers. Mark with AI later grades the waiting open parts again on their
+  pages. Under manual marking nothing is read.
+- Approve shows a part's pages of the paper with Whole paper a click away (T1),
+  through `GET /api/assignment-attempts/{id}/paper/{fileId}/links` (the member,
+  or staff once submitted).
+- Files › Submissions lists a paper's files once every part is marked and the
+  assignment has closed with its grades out, as Files › Canvas now does for
+  assignment drawings (Epo 2026-11-08, "Yes, both tabs"); deleting keeps the
+  marks, and Approve then says the member deleted it (F2).
+- Releasing grades rings each member who handed in (`grades_released`).
+
+**Handing in files** (Epo 2026-11-08, migration 0162, mocks C2, S3, T2): the
+same switch on an Unmarked assignment (C2: Files below Due and Assign to, then
+the switch) turns Mark as done into Hand in, which the Assignments list and To do
+then leave to the page (no quick tick). The member's page gets Your work,
+with Add files while it is open; each file is their own standalone upload with
+`handInId` (`files.hand_in_assignment_id`, in `submission_position` order),
+stored with no parse and never read or marked. Hand in needs a file and ticks
+the assignment (`assignment_done`), the meta line then saying Handed in on its
+date; Undo hand in reopens it until the assignment closes. The report's chip reads
+"N of M handed in", and its Members tab lists each member's date (Late past the
+due date) and files, which open in a viewer of their pages with Open file for a
+single one. Files › Submissions lists a hand-in's files once the assignment
+closes, by hand or at a No late due date.
+
+**Show grades** (C4, S7, T5; Epo 2026-11-08, migration 0160 `grades_shown`,
+`grades_released_at`). Automatic, the default, shows marks as they are decided.
+Manual holds them until an owner or editor presses Release grades in the report
+header (`POST /api/assignments/{id}/release-grades`), which confirms with how
+many answers still wait for approval. Until then a member's `gradesHidden`
+results carry their answers and the questions without marks, outcomes,
+comments or keys (Answered or Blank per question), their row reads Submitted,
+and the Submitted page says who releases it. Answers never show before grades.
+The topic-label read leaves out events of an attempt on such an assignment, and
+the sweep makes its quiz practice, rating what was submitted, only once it has
+closed and its grades are released. After release, later marks show as they
+land. Practise again shows once its quiz is practice. The top right
 shows the mark after any late penalty, with the unpenalised mark under it.
 
 **The report** (G3, G3m, A3; `GET /api/assignments/{id}/report`, owner and editor
@@ -997,7 +1082,7 @@ pane starts from it, so Approve saves what shows; changing a mark approves it to
 A rule the answer broke shows as a warning above its marking points (red for copying
 and instructions to the marker, amber for any other), with an icon on its row. Clear
 warning takes it off at once (`clearWarning`), and Approve keeps it for the member
-unless it was cleared. With Show answers off a member reads no warning until the
+unless it was cleared. While the keys are hidden from them a member reads no warning until the
 assignment closes, since it could quote the marking scheme while they can still
 resubmit; reopening hides it again.
 `POST /api/assignments/{id}/approve-ai-marks` takes every AI mark on one question
@@ -1032,9 +1117,34 @@ step and "What members see" link for an invite preview and board G5.
 
 **To do page.** `/todo` (`src/routes/Todo.tsx`, `GET /api/todo`,
 `store/assignment_todo.go`) lists each class's Dashboard rows across the classes
-the viewer owns or belongs to, in `TodoRows`, the rows both share. A class with
-nothing to show is left out; those with answers waiting come first, then by the
-soonest due.
+the viewer owns or belongs to, in `TodoRows`, the rows both share. Tabs To do
+(open work and answers waiting, with its count, all of it in one read) and Done
+(`GET /api/todo/done`, `ListTodoDone`, `qk.todoDone` under `qk.todo`, read only
+while the tab is open: what was given to the viewer that they finished, with the
+quiz's mark or "Waiting for marks" then the day, or that closed undone, "Closed"
+with "Not done · Closed {day}"; thirty a page, the next loading near the end as on
+Files, sorted and filtered in SQL with an offset cursor; a row a later page repeats
+is skipped; a closed task has no tick), then the list pages' Sort
+and Filter, all in the URL (`parseTodoSearch`: `tab=done`, `sort`, `dir=asc`,
+`class`, `type=quiz,task`). To do sorts by Due soonest (classes with answers
+waiting first), Recently posted or Class, in the browser; Done by Recently done
+(the day it closed for work never done) or Class, on the server. Class lists every
+class workspace (`useWorkspaces`). A class with nothing to show is left out. Undone
+work past its due date says Overdue, tasks and quizzes alike. The nav's To do row carries the notifications
+dot while `todoCount` (open plus waiting) is above zero (Epo 2026-11-08).
+
+**Keeping To do current** (Epo 2026-11-08). A `todo` event on the user's stream
+(`publishTodo`, after the commit, best effort) asks every open tab to refetch
+`qk.todo`, its Done pages too, and every class's assignments (the Dashboard's To
+do), a second after the last of a burst. Posting,
+editing (those it was given to before and after), closing, reopening, republishing,
+deleting and approving AI marks tell everyone it is given to and the class's staff
+(`TodoAudience`); a submission, a mark, saved AI marks or a read paper's marks tell the staff and that member; a tick
+tells the member's own tabs. Reconnecting refetches To do with the notifications.
+A No late due date closes with no request, so nothing is sent: To do's lists go
+stale in 15 s and refetch on window focus, and clicking a row past it refetches To
+do while its page says it closed. The sweep submitting an attempt left running
+tells the class's staff and that member (`publishSweptTodo`).
 
 **New assignment's Quiz field.** Its last rows make a quiz on the spot, wherever the
 dialog opens: New quiz opens Add file's Create tab (`?add=create`), Make a quiz from a

@@ -276,9 +276,21 @@ references, so a replaced board, a dropped image and every cascade queue their
 objects for the reaper.
 
 - **Gate before the bucket.** An assignment's Done passes
-  `CheckAssignmentDrawing` (the attempt, the part and the payer's storage for
-  what the part adds over what it held) before any object is written, and the
-  save's own `gateStorageTx` decides again (Q693). A practice Check of a
+  `CheckAssignmentDrawing` (the attempt, the part and the account's state)
+  before any object is written, and the save checks again. Storage never
+  blocks an assignment (Epo 2026-11-08, superseding Q693's refusal): both use
+  `admitAccountTx`, the account half of `gateStorageTx` with no quota check
+  that admits a frozen account too (O4), so a member at the limit saves the
+  drawing, is charged for it and goes over, into the usual over-quota states.
+  A paper's files (an assignment answered on paper, `files.attempt_id`) reserve
+  the same way (`reservePaperStorageTx`), within 15 files and the member's
+  source file cap across them; Upload file can only start while storage is not
+  full, and Files › Submissions deletes them once marked and closed. A hand-in's
+  files (`files.hand_in_assignment_id`, an unmarked assignment that takes files)
+  reserve the same way within the same bounds, are stored with no parse or
+  credits, and Files › Submissions deletes them once the assignment closes. Before you start warns such a member when
+  the paper has drawing parts (`drawingParts`); an assignment's pages show the
+  owner nothing about it. A practice Check of a
   drawing asks `AssertStorageRoom` for its boards and images before the model
   is paid for (Q694): over the limit it is refused with
   `storage_quota_exceeded`, no credits spent. Objects written before a refusal
@@ -294,7 +306,8 @@ objects for the reaper.
   A drawn sample answer's board is a quiz `board` editor asset under the same
   board cap (`editor_assets_size_check`, migration 0158).
 - **Seen and deleted.** Billing's breakdown shows them as Canvas; Files ›
-  Canvas lists the payer's marked drawings to delete.
+  Canvas lists the payer's marked drawings to delete, an assignment's once it
+  has closed with its grades released.
 
 ## Counter model
 

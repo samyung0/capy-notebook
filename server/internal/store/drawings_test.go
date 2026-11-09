@@ -71,7 +71,7 @@ func TestAssignmentDrawingIsChargedToTheMemberAndGoesWithTheAssignment(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,8 +122,9 @@ func TestAssignmentDrawingIsChargedToTheMemberAndGoesWithTheAssignment(t *testin
 }
 
 // TestMarkedDrawingsListAndDeleteForTheirPayer: Files › Canvas lists a member's
-// drawing only once its part is marked, named by the quiz with its question and
-// part; the member deletes it and the charge ends, while the marks stay.
+// assignment drawing only once its part is marked and the assignment has
+// closed, named by the quiz with its question and part; the member deletes it
+// and the charge ends, while the marks stay.
 func TestMarkedDrawingsListAndDeleteForTheirPayer(t *testing.T) {
 	f := newAssignmentFixture(t, "marked-drawings")
 	ctx := context.Background()
@@ -134,7 +135,7 @@ func TestMarkedDrawingsListAndDeleteForTheirPayer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,6 +151,13 @@ func TestMarkedDrawingsListAndDeleteForTheirPayer(t *testing.T) {
 		QuestionID: "q4",
 		Parts:      []AssignmentPartMark{{PartID: "p4", Items: []float64{1, 0}}},
 	}, now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	// Marked but still open: staff may revise it, so it isn't listed yet.
+	if page, err := f.s.ListMarkedDrawings(ctx, f.viewer, "", 50); err != nil || page.Count != 0 {
+		t.Fatalf("open assignment listed %+v, err %v", page, err)
+	}
+	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now.Add(3*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	page, err := f.s.ListMarkedDrawings(ctx, f.viewer, "", 50)
@@ -186,7 +194,7 @@ func TestAnEmptiedDrawingIsForgotten(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, now)
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +231,7 @@ func drawingRun(t *testing.T, f assignmentFixture, member, marking string, now t
 func drawIn(t *testing.T, f assignmentFixture, created Assignment, member string, now time.Time) AssignmentAttempt {
 	t.Helper()
 	ctx := context.Background()
-	run, err := f.s.StartAssignment(ctx, member, created.ID, now)
+	run, err := f.s.StartAssignment(ctx, member, created.ID, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -301,7 +309,7 @@ func TestADrawingWithoutAnImageNeedsHandMarking(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	_, _, answers, err := f.s.AnswersToMark(ctx, created.ID, "")
+	_, answers, err := f.s.AnswersToMark(ctx, created.ID, "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -13,201 +13,28 @@ import {
   polygonNearestPoint,
   type SerializedXYWH,
 } from '@blocksuite/affine/global/gfx';
+import { ColorScheme } from '@blocksuite/affine/model';
 import {
   field,
   type GfxController,
   GfxElementModelView,
   GfxPrimitiveElementModel,
+  GfxViewInteractionExtension,
 } from '@blocksuite/affine/std/gfx';
 import { html, render } from 'lit';
 import { inertTex } from '@/features/materials/inertTex';
+import mathFieldStyles from '@/features/questions/mathField.css?inline';
 import { getLocale, m } from '@/i18n';
-import { LATEX_MAX } from './boardData';
-import { setFormulaOpener } from './boardTools';
-
-const FONT_SIZE = 24;
-/** Bitmap pixels per board pixel, so a formula stays sharp when zoomed in. */
-const SHARPNESS = 3;
-/** The longest bitmap side, whatever a formula asks for. */
-const BITMAP_MAX = 4096;
-/** Bitmaps' memory: sharp up to the first, plain up to the second, then none. */
-const SHARP_BYTES_MAX = 128 * 1024 * 1024;
-const BITMAP_BYTES_MAX = 256 * 1024 * 1024;
-/** What MathLive writes that KaTeX has no command for. */
-const KATEX_OPTIONS = {
-  macros: {
-    '\\differentialD': '\\mathrm{d}',
-    '\\exponentialE': '\\mathrm{e}',
-    '\\imaginaryI': '\\mathrm{i}',
-    '\\placeholder': '\\square',
-  },
-  // A formula asks for no more than this many ems, or expansions, whoever wrote it.
-  maxExpand: 500,
-  maxSize: 12,
-  output: 'html',
-  trust: false,
-} as const;
-
-/** KaTeX and its stylesheet, loaded once a board holds a formula or the formula editor
- * opens: most boards have none (84 KB gzipped). */
-let katexLoad: Promise<typeof import('katex').default> | null = null;
-const loadKatex = () => {
-  katexLoad ??= Promise.all([
-    import('katex'),
-    import('katex/dist/katex.min.css'),
-  ]).then(
-    ([module]) => module.default,
-    (error) => {
-      katexLoad = null;
-      throw error;
-    }
-  );
-  return katexLoad;
-};
-
-type Drawn = { canvas: HTMLCanvasElement; h: number; w: number };
-
-const drawings = new Map<string, Promise<Drawn>>();
-const ready = new Map<string, Drawn>();
-let bitmapBytes = 0;
-
-class OverBudget extends Error {}
-
-/** KaTeX lays a formula out in HTML, which BlockSuite's export (html2canvas) can't
- * read, so its glyphs, rules and stretched SVGs are drawn onto a canvas from where
- * they sit. The canvas is what the board and the marking image show. */
-async function layOut(latex: string): Promise<Drawn> {
-  const host = document.createElement('div');
-  // The padding keeps tall glyphs and stretched delimiters inside the bitmap.
-  host.style.cssText = `position:fixed;left:0;top:0;visibility:hidden;pointer-events:none;padding:${FONT_SIZE / 3}px 2px;font-size:${FONT_SIZE}px;font-weight:400;color:#000;white-space:nowrap;width:max-content`;
-  const katex = await loadKatex();
-  document.body.append(host);
-  try {
-    // Its own macros, or a \\gdef in one formula would change the others.
-    katex.render(latex, host, {
-      ...KATEX_OPTIONS,
-      macros: { ...KATEX_OPTIONS.macros },
-      throwOnError: false,
-    });
-    await document.fonts.ready;
-    const box = host.getBoundingClientRect();
-    const canvas = document.createElement('canvas');
-    // Past the budget for sharp formulas, new ones are plain, and past the whole
-    // budget they aren't kept at all (drawing()).
-    const sharpness = Math.min(
-      bitmapBytes < SHARP_BYTES_MAX ? SHARPNESS : 1,
-      BITMAP_MAX / Math.max(box.width, box.height, 1)
-    );
-    canvas.width = Math.ceil(box.width * sharpness);
-    canvas.height = Math.ceil(box.height * sharpness);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('no canvas context');
-    ctx.scale(sharpness, sharpness);
-    ctx.textRendering = 'geometricPrecision';
-    ctx.translate(-box.x, -box.y);
-    const stretched: SVGElement[] = [];
-    const walk = (node: Node) => {
-      if (node.nodeType === Node.TEXT_NODE) {
-        if (!node.textContent?.trim() || !node.parentElement) return;
-        const range = document.createRange();
-        range.selectNodeContents(node);
-        const at = range.getBoundingClientRect();
-        const style = getComputedStyle(node.parentElement);
-        ctx.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-        ctx.fillStyle = style.color;
-        ctx.textBaseline = 'alphabetic';
-        const metrics = ctx.measureText(node.textContent);
-        const ascent = metrics.fontBoundingBoxAscent;
-        const height = ascent + metrics.fontBoundingBoxDescent;
-        ctx.fillText(
-          node.textContent,
-          at.left,
-          at.top + (at.height - height) / 2 + ascent
-        );
-        return;
-      }
-      if (!(node instanceof Element)) return;
-      if (node instanceof SVGElement) {
-        stretched.push(node);
-        return;
-      }
-      const style = getComputedStyle(node);
-      const at = node.getBoundingClientRect();
-      const bottom = Number.parseFloat(style.borderBottomWidth);
-      if (bottom > 0 && style.borderBottomStyle !== 'none') {
-        ctx.fillStyle = style.borderBottomColor;
-        ctx.fillRect(at.left, at.bottom - bottom, at.width, bottom);
-      }
-      const top = Number.parseFloat(style.borderTopWidth);
-      if (top > 0 && style.borderTopStyle !== 'none') {
-        ctx.fillStyle = style.borderTopColor;
-        ctx.fillRect(at.left, at.top, at.width, top);
-      }
-      for (const child of node.childNodes) walk(child);
-    };
-    walk(host);
-    for (const shape of stretched) {
-      const at = shape.getBoundingClientRect();
-      const copy = shape.cloneNode(true) as SVGElement;
-      copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-      copy.setAttribute('width', `${at.width}`);
-      copy.setAttribute('height', `${at.height}`);
-      copy.setAttribute('fill', '#000');
-      const image = new Image();
-      image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(copy))}`;
-      await image.decode();
-      // KaTeX stretches a root's bar with a 400em SVG cut off by a parent.
-      const cut = (function clipOf(el: Element | null): Element | null {
-        if (!el || el === host) return null;
-        return getComputedStyle(el).overflow === 'hidden'
-          ? el
-          : clipOf(el.parentElement);
-      })(shape.parentElement)?.getBoundingClientRect();
-      ctx.save();
-      if (cut) {
-        ctx.beginPath();
-        ctx.rect(cut.left, cut.top, cut.width, cut.height);
-        ctx.clip();
-      }
-      ctx.drawImage(image, at.left, at.top, at.width, at.height);
-      ctx.restore();
-    }
-    return { canvas, h: box.height, w: box.width };
-  } finally {
-    host.remove();
-  }
-}
-
-/** Lets go of every bitmap, when the board closes. */
-export function forgetFormulas() {
-  ready.clear();
-  drawings.clear();
-  bitmapBytes = 0;
-}
-
-export function drawing(latex: string) {
-  let pending = drawings.get(latex);
-  if (!pending) {
-    pending = layOut(latex).then(
-      (drawn) => {
-        // Nothing is thrown out to make room: the renderer would draw it again, for
-        // ever, on a board with many formulas. Over budget stays a failed draw.
-        const bytes = drawn.canvas.width * drawn.canvas.height * 4;
-        if (bitmapBytes + bytes > BITMAP_BYTES_MAX) throw new OverBudget();
-        bitmapBytes += bytes;
-        ready.set(latex, drawn);
-        return drawn;
-      },
-      (error) => {
-        // Not kept, so the next draw tries again.
-        if (!(error instanceof OverBudget)) drawings.delete(latex);
-        throw error;
-      }
-    );
-    drawings.set(latex, pending);
-  }
-  return pending;
-}
+import { LATEX_MAX, type Mark } from './boardData';
+import {
+  type Drawn,
+  drawing,
+  KATEX_OPTIONS,
+  laidOut,
+  loadKatex,
+  replay,
+} from './boardFormulaDraw';
+import { type FormulaStart, setFormulaOpener } from './boardTools';
 
 export class FormulaElementModel extends GfxPrimitiveElementModel<{
   index: string;
@@ -265,7 +92,7 @@ const formulaRenderer: ElementRenderer<FormulaElementModel> = (
   renderer
 ) => {
   if (model.latex.length > LATEX_MAX) return;
-  const drawn = ready.get(model.latex);
+  const drawn = laidOut(model.latex);
   if (!drawn) {
     drawing(model.latex).then(
       () => renderer.refresh(),
@@ -280,7 +107,13 @@ const formulaRenderer: ElementRenderer<FormulaElementModel> = (
       .rotateSelf(model.rotate)
       .translateSelf(-w / 2, -h / 2)
   );
-  ctx.drawImage(drawn.canvas, 0, 0, w, h);
+  // Black ink, so on a dark board it's turned light, its colours about kept. The
+  // marking image is drawn light.
+  if (renderer.getColorScheme() === ColorScheme.Dark)
+    ctx.filter = 'invert(1) hue-rotate(180deg)';
+  ctx.scale(w / drawn.w, h / drawn.h);
+  replay(ctx, drawn);
+  ctx.filter = 'none';
 };
 
 class FormulaElementView extends GfxElementModelView<FormulaElementModel> {
@@ -295,19 +128,28 @@ class FormulaElementView extends GfxElementModelView<FormulaElementModel> {
 export const formulaExtensions = [
   ElementRendererExtension('formula', formulaRenderer),
   FormulaElementView,
+  // Resizing keeps the formula's shape, as AFFiNE does for images.
+  GfxViewInteractionExtension('formula', {
+    resizeConstraint: { lockRatio: true },
+  }),
 ];
 
 /** Every formula on the board is drawn, before the board becomes an image. One that
  * can't be drawn is left out, not the whole answer. */
 export async function formulasDrawn(gfx: GfxController) {
+  const latex = gfx.layer.canvasElements.flatMap((element) => {
+    if (element.type === 'formula')
+      return [(element as FormulaElementModel).latex];
+    // A plane's formulas too.
+    const marks = (element as { marks?: Mark[] }).marks ?? [];
+    return marks.flatMap((mark) =>
+      mark.kind === 'formula' ? [mark.latex] : []
+    );
+  });
   await Promise.allSettled(
-    gfx.layer.canvasElements
-      .filter(
-        (element) =>
-          element.type === 'formula' &&
-          (element as FormulaElementModel).latex.length <= LATEX_MAX
-      )
-      .map((element) => drawing((element as FormulaElementModel).latex))
+    latex
+      .filter((each) => each.length <= LATEX_MAX)
+      .map((each) => drawing(each))
   );
 }
 
@@ -317,55 +159,13 @@ function boardOf(gfx: GfxController) {
 
 /** MathLive in a small card; Save draws the formula on the canvas. Double click
  * opens it again. */
-async function openEditor(gfx: GfxController, model?: FormulaElementModel) {
-  const board = boardOf(gfx);
-  // A teacher's board loads no MathLive.
-  if (gfx.doc.readonly || !board || board.querySelector('.capy-formula'))
-    return;
-  // Save draws with KaTeX: it loads while MathLive does.
-  loadKatex().catch(() => undefined);
-  const { MathfieldElement } = await import('mathlive');
-  MathfieldElement.fontsDirectory = '/mathlive/fonts';
-  MathfieldElement.soundsDirectory = null;
-  MathfieldElement.locale = getLocale();
-  const field = new MathfieldElement();
-  field.value = inertTex(model?.latex ?? '');
-  field.mathVirtualKeyboardPolicy = 'auto';
-  const card = document.createElement('div');
-  card.className = 'capy-formula';
-  const close = () => {
-    render(null, card);
-    card.remove();
-  };
-  const fail = (message: string) => {
-    error.textContent = message;
-    error.hidden = false;
-  };
-  // The card stays open until the formula is on the canvas, so nothing typed is lost.
-  const save = async () => {
-    const latex = field.value.trim();
-    if (!latex) {
-      close();
+function openEditor(gfx: GfxController, model?: FormulaElementModel) {
+  return openFormulaCard(gfx, model?.latex ?? '', (latex, drawn) => {
+    if (!(latex && drawn)) {
       if (model) gfx.surface?.deleteElement(model.id);
       gfx.doc.captureSync();
       return;
     }
-    if (latex.length > LATEX_MAX) {
-      fail(m.drawing_board_formula_too_long());
-      return;
-    }
-    let drawn: Drawn;
-    try {
-      (await loadKatex()).renderToString(latex, {
-        ...KATEX_OPTIONS,
-        throwOnError: true,
-      });
-      drawn = await drawing(latex);
-    } catch {
-      fail(m.drawing_board_formula_error());
-      return;
-    }
-    close();
     const { h, w } = drawn;
     const { centerX, centerY } = gfx.viewport;
     const box = model
@@ -383,6 +183,86 @@ async function openEditor(gfx: GfxController, model?: FormulaElementModel) {
       if (id) gfx.selection.set({ editing: false, elements: [id] });
     }
     gfx.doc.captureSync();
+  });
+}
+
+/** An empty formula card, for the M key: Save puts it in the view's middle. */
+export const openBlankFormula = (gfx: GfxController) => openEditor(gfx);
+
+/** The formula card in the middle of the board, holding `latex`. Save hands back what
+ * was typed once KaTeX has laid it out (an empty field hands back ''), Cancel or a
+ * press elsewhere nothing. A plane's formulas use it too. */
+export async function openFormulaCard(
+  gfx: GfxController,
+  latex: string,
+  done: (latex: string, drawn?: Drawn) => void
+) {
+  const board = boardOf(gfx);
+  // A teacher's board loads no MathLive.
+  if (gfx.doc.readonly || !board || board.querySelector('.capy-formula'))
+    return;
+  // Save draws with KaTeX: it loads while MathLive does.
+  loadKatex().catch(() => undefined);
+  const { MathfieldElement } = await import('mathlive');
+  MathfieldElement.fontsDirectory = '/mathlive/fonts';
+  MathfieldElement.soundsDirectory = null;
+  MathfieldElement.locale = getLocale();
+  const field = new MathfieldElement();
+  // The question editor's look inside MathLive's shadow root: the app's selection
+  // colours, no dark group highlight, the caret on the line.
+  const styles = document.createElement('style');
+  styles.textContent = mathFieldStyles;
+  field.shadowRoot?.append(styles);
+  field.mathVirtualKeyboardPolicy = 'auto';
+  const card = document.createElement('div');
+  card.className = 'capy-formula';
+  // Like a popup: a press anywhere else (another formula piece too) cancels it.
+  // MathLive's keyboard, menu and suggestions open outside the card.
+  const away = (event: PointerEvent) => {
+    const inside = event
+      .composedPath()
+      .some(
+        (el) =>
+          el === card ||
+          (el instanceof Element &&
+            el.matches('.ML__keyboard, .ML__popover, .ui-menu-container'))
+      );
+    if (!inside) close();
+  };
+  const close = () => {
+    document.removeEventListener('pointerdown', away, true);
+    render(null, card);
+    card.remove();
+  };
+  const fail = (message: string) => {
+    error.textContent = message;
+    error.hidden = false;
+  };
+  // The card stays open until the formula is on the canvas, so nothing typed is lost.
+  const save = async () => {
+    const typed = field.value.trim();
+    if (!typed) {
+      close();
+      done('');
+      return;
+    }
+    if (typed.length > LATEX_MAX) {
+      fail(m.drawing_board_formula_too_long());
+      return;
+    }
+    let drawn: Drawn;
+    try {
+      (await loadKatex()).renderToString(typed, {
+        ...KATEX_OPTIONS,
+        throwOnError: true,
+      });
+      drawn = await drawing(typed);
+    } catch {
+      fail(m.drawing_board_formula_error());
+      return;
+    }
+    close();
+    done(typed, drawn);
   };
   render(
     html`<div class="capy-formula-field"></div>
@@ -412,10 +292,44 @@ async function openEditor(gfx: GfxController, model?: FormulaElementModel) {
     if ((event as KeyboardEvent).key === 'Escape') close();
   });
   board.append(card);
+  // Once connected, as MathLive selects everything when it connects: the caret after
+  // the formula, nothing selected.
+  field.setValue(inertTex(latex), {
+    selectionMode: 'after',
+    silenceNotifications: true,
+  });
+  document.addEventListener('pointerdown', away, true);
   field.focus();
 }
 
-setFormulaOpener((gfx) => void openEditor(gfx));
+/** A starter from the toolbar's Formulas slot (Epo 2026-11-08): its card where it was
+ * dropped, then the editor on it to fill in. */
+async function placeFormula(gfx: GfxController, start: FormulaStart) {
+  if (gfx.doc.readonly) return;
+  let drawn: Drawn;
+  try {
+    drawn = await drawing(start.latex);
+  } catch {
+    return;
+  }
+  const { h, w } = drawn;
+  const [cx, cy] = start.at;
+  const id = gfx.surface?.addElement({
+    latex: start.latex,
+    type: 'formula',
+    xywh: new Bound(cx - w / 2, cy - h / 2, w, h).serialize(),
+  });
+  gfx.doc.captureSync();
+  gfx.tool.setTool(DefaultTool);
+  if (!id) return;
+  gfx.selection.set({ editing: false, elements: [id] });
+  const model = gfx.getElementById(id);
+  if (model instanceof FormulaElementModel) await openEditor(gfx, model);
+}
+
+setFormulaOpener(
+  (gfx, start) => void (start ? placeFormula(gfx, start) : openEditor(gfx))
+);
 
 const SYMBOLS = ['²', '³', '√', 'π', 'θ', '±', '≤', '≥', '≠', '∞', '→', '°'];
 /** Superscripts read better with something under them on the button. */

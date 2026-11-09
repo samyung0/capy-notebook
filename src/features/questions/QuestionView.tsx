@@ -19,6 +19,7 @@ import {
   isAuthoredPart,
   type LearnerPart,
   type LearnerQuestion,
+  multipleAnswers,
   type Question,
   type QuestionBlock,
   type QuestionPart,
@@ -340,6 +341,11 @@ function Choices({
   if (answer.type === 'mcq')
     return (
       <div className="@container col-[2/-1] min-w-0">
+        {multipleAnswers(answer) && (
+          <p className="mb-2 text-fg-muted text-sm">
+            {m.question_ui_multiple_answers()}
+          </p>
+        )}
         <ol className={answerBoxesClass(twoColumns)}>
           {answer.options.map((text, i) => (
             <li className={answerBoxClass()} key={i}>

@@ -4,9 +4,11 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { AssignmentAnswerRowAiError } from './assignmentAnswerRowAiError.ts';
 
 export interface AssignmentAnswerRow {
   aiAwarded: number;
+  aiError?: AssignmentAnswerRowAiError;
   aiMarked: boolean;
   aiWarning: string;
   attemptId: string;

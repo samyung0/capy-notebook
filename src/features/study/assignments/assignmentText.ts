@@ -62,10 +62,10 @@ export function latePolicy({
   latePenaltyPct,
   noLate,
 }: Pick<AssignmentFormReq, 'dueAt' | 'kind' | 'latePenaltyPct' | 'noLate'>) {
-  if (kind !== 'marked' || !dueAt) return { latePenaltyPct: 0, noLate: false };
-  return noLate
-    ? { latePenaltyPct: 0, noLate: true }
-    : { latePenaltyPct, noLate: false };
+  if (!dueAt) return { latePenaltyPct: 0, noLate: false };
+  if (noLate) return { latePenaltyPct: 0, noLate: true };
+  // Only marks take a penalty.
+  return { latePenaltyPct: kind === 'marked' ? latePenaltyPct : 0, noLate };
 }
 
 /** Advanced starts closed, unless a saved assignment holds something other than
@@ -90,11 +90,10 @@ export const takesLateWork = (
   {
     closedAt,
     dueAt,
-    kind,
     noLate,
-  }: Pick<Assignment, 'closedAt' | 'dueAt' | 'kind' | 'noLate'>,
+  }: Pick<Assignment, 'closedAt' | 'dueAt' | 'noLate'>,
   now = Date.now()
-) => kind === 'marked' && !noLate && !closedAt && pastDue(dueAt, now);
+) => !noLate && !closedAt && pastDue(dueAt, now);
 
 /** The boards' "78%"; marks decided so far only. */
 export const percentText = (share: number) => `${Math.round(share * 100)}%`;

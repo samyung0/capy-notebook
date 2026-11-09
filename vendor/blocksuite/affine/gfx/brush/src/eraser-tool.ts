@@ -147,10 +147,13 @@ export class EraserTool extends BaseTool {
     const [x, y] = this.gfx.viewport.toModelCoord(point.x, point.y);
     this._eraserPoints = [[x, y]];
     this._prevPoint = [x, y];
-    this._erasable = new Set([
-      ...this.gfx.layer.canvasElements,
-      ...this.gfx.layer.blocks,
-    ]);
+    // Capy (local change 30): an element that says it isn't erasable stays out of
+    // the eraser's reach, so it can still answer line intersections for connectors.
+    this._erasable = new Set(
+      [...this.gfx.layer.canvasElements, ...this.gfx.layer.blocks].filter(
+        element => !('erasable' in element && element.erasable === false)
+      )
+    );
     this._loop();
 
     this._surfaceComponent?.renderer.addOverlay(this._overlay);

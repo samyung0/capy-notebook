@@ -1,0 +1,10 @@
+{
+  // The drawing board (src/features/blocksuite), which tsconfig.json excludes.
+  // Run through scripts/typecheck-board.mjs: the board imports vendored
+  // BlockSuite as .ts sources, so tsc checks those too, and only errors
+  // outside vendor/blocksuite/ fail. The app's ambient .d.ts files come
+  // along.
+  "extends": "./tsconfig.json",
+  "include": ["src/features/blocksuite", "src/**/*.d.ts"],
+  "exclude": []
+}

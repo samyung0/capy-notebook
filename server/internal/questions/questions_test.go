@@ -135,12 +135,13 @@ func TestQuizBoundsCapPartsAndOpenParts(t *testing.T) {
 		}
 		return qs
 	}
-	// Every part of a full quiz may be AI-marked (Epo 2026-11-03).
-	if err := QuizBounds(many(100, 100)); err != nil {
-		t.Fatalf("100 AI-marked parts rejected: %v", err)
+	// 150 parts, 120 multiple-choice among them (Epo 2026-11-08), up to 100 of
+	// them AI-marked.
+	if err := QuizBounds(many(150, 100)); err != nil {
+		t.Fatalf("150 parts, 100 AI-marked, rejected: %v", err)
 	}
-	if QuizBounds(many(101, 0)) == nil {
-		t.Fatal("accepted 101 parts")
+	if QuizBounds(many(151, 0)) == nil {
+		t.Fatal("accepted 151 parts")
 	}
 }
 
@@ -239,6 +240,27 @@ func TestLearnerViewKeepsGroups(t *testing.T) {
 	}
 	if _, ok := parts[0].(map[string]any)["group"]; ok {
 		t.Fatalf("ungrouped part = %v", parts[0])
+	}
+}
+
+// An mcq's learner view says whether several options are correct, never which.
+func TestLearnerViewMarksMultipleChoice(t *testing.T) {
+	for file, want := range map[string]any{"mcq.json": nil, "mcq-several-correct.json": true} {
+		raw, err := os.ReadFile("testdata/" + file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var f struct{ Question map[string]any }
+		if err := json.Unmarshal(raw, &f); err != nil {
+			t.Fatal(err)
+		}
+		answer := LearnerView(f.Question)["parts"].([]any)[0].(map[string]any)["answer"].(map[string]any)
+		if answer["multiple"] != want {
+			t.Errorf("%s: multiple = %v, want %v", file, answer["multiple"], want)
+		}
+		if _, ok := answer["correct"]; ok {
+			t.Errorf("%s: leaked correct", file)
+		}
 	}
 }
 

@@ -36,6 +36,7 @@ from ..retrieval import (
     library,
     limits,
     models,
+    paper,
     pending,
     scripted,
     store,
@@ -758,6 +759,81 @@ async def grade(req: GradeReq) -> dict[str, Any]:
                 slot=registry.Slot.GRADING,
             ),
         )
+    finally:
+        _reset_accounting(accounting_token)
+        limits.reset_call_slots(slots_token)
+
+
+class PaperFile(BaseModel):
+    fileId: str = Field(min_length=1)
+    name: str
+
+
+class PaperPart(BaseModel):
+    id: str = Field(min_length=1)
+    type: Literal[
+        "choice",
+        "true/false",
+        "short",
+        "gaps",
+        "matching",
+        "ordering",
+        "open",
+        "drawing",
+    ]
+    # The part as the read call lists it, formatted by Go.
+    label: str
+    # Grading text and marking items, for open and drawing parts.
+    question: str = ""
+    items: list[GradeItem] = Field(default_factory=list)
+
+
+class PaperReq(LLMPin):
+    spendSessionId: str = Field(min_length=1)
+    # In the paper's order.
+    files: list[PaperFile] = Field(min_length=1)
+    parts: list[PaperPart] = Field(min_length=1)
+    # Given: no read, only these open and drawing parts graded on these pages.
+    pages: dict[str, list[int]] | None = None
+
+
+@app.post("/paper")
+async def mark_paper(req: PaperReq) -> dict[str, Any]:
+    """Mark an uploaded answer paper (todo-file-submissions.md 5a): each part's
+    pages, closed answers as read, and open and drawing grades. A failed read
+    fails the request; a failed grading batch leaves only its parts unmarked.
+    Calls wait in the model's line as /grade's do, and nothing retries them."""
+    _bind_llm(req)
+    slots_token = limits.bind_call_slots(
+        limits.CallSlotPolicy(wait_s=limits.CHAT_SLOT_WAIT_S)
+    )
+    accounting_token = None
+    try:
+        accounting_token = _bind_accounting(req.spendSessionId)
+        return await paper.mark(
+            [f.model_dump() for f in req.files],
+            [
+                paper.Part(
+                    p.id,
+                    p.type,
+                    p.label,
+                    p.question,
+                    [item.model_dump() for item in p.items],
+                )
+                for p in req.parts
+            ],
+            req.pages,
+            model=models.resolve_query_model(
+                req.providerSlug,
+                req.modelSlug,
+                req.configVersion,
+                slot=registry.Slot.GRADING,
+            ),
+        )
+    except paper.TooManyPages as exc:
+        raise HTTPException(
+            422, detail={"code": "too_many_pages", "message": str(exc)}
+        ) from exc
     finally:
         _reset_accounting(accounting_token)
         limits.reset_call_slots(slots_token)

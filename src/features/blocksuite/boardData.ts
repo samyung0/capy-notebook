@@ -1,4 +1,4 @@
-import type { Box, Vec } from './boardGeometry';
+import { type Box, smoothThrough, tidy, type Vec } from './boardGeometry';
 
 /** What a saved board's cards hold, and their limits, apart from the editor: the
  * board's check and its preview read them without loading BlockSuite. */
@@ -10,10 +10,85 @@ export type Color =
   | { dark: string; light: string };
 
 /** What's plotted on a plane, in its own units. A line or curve grows a click at a time,
- * each click one undo step. */
+ * each click one undo step. A label is text centred on its point (Epo 2026-11-08). An
+ * ellipse (Epo 2026-11-08) is upright, held by its four handles: right, top, left and
+ * bottom, so it starts as a circle and its handles stretch it. A formula (Epo
+ * 2026-11-08) is LaTeX centred on its point, drawn by KaTeX. A vector is a line
+ * from its first point to its second, with an arrowhead there. */
 export type Mark =
   | { id: string; kind: 'dot'; at: Vec }
-  | { id: string; kind: 'line' | 'curve'; points: Vec[] };
+  | { id: string; kind: 'label'; at: Vec; text: string }
+  | { id: string; kind: 'formula'; at: Vec; latex: string }
+  | {
+      id: string;
+      kind: 'line' | 'vector' | 'curve' | 'ellipse';
+      points: Vec[];
+    };
+
+/** The points a mark is drawn through, or at. */
+export const pointsOf = (mark: Mark): Vec[] =>
+  'points' in mark ? mark.points : [mark.at];
+
+/** An upright ellipse's handles from its box: right, top, left, bottom. */
+export const ellipseIn = (
+  left: number,
+  right: number,
+  bottom: number,
+  top: number
+): Vec[] => {
+  const [cx, cy] = [tidy((left + right) / 2), tidy((bottom + top) / 2)];
+  return [
+    [tidy(right), cy],
+    [cx, tidy(top)],
+    [tidy(left), cy],
+    [cx, tidy(bottom)],
+  ];
+};
+
+/** The middle of an upright ellipse, from its handles. */
+export const ellipseCentre = (points: Vec[]): Vec => [
+  points[1][0],
+  points[0][1],
+];
+
+/** The handles after one is pulled: right or left sets the width and top or bottom the
+ * height, about the middle, so it stays put on the grid. `uniform` (Shift) scales the
+ * other way by as much, keeping its shape. A pull onto the middle keeps the size. */
+export function pullEllipse(
+  points: Vec[],
+  index: number,
+  to: Vec,
+  uniform = false
+): Vec[] {
+  const [cx, cy] = ellipseCentre(points);
+  let [rx, ry] = [points[0][0] - cx, points[1][1] - cy];
+  if (index % 2 === 0) {
+    const next = Math.abs(to[0] - cx) || rx;
+    if (uniform && rx) ry *= next / rx;
+    rx = next;
+  } else {
+    const next = Math.abs(to[1] - cy) || ry;
+    if (uniform && ry) rx *= next / ry;
+    ry = next;
+  }
+  return ellipseIn(cx - rx, cx + rx, cy - ry, cy + ry);
+}
+
+/** What a line, curve or ellipse draws through, as short straight steps. */
+export function pathOf(
+  mark: Extract<Mark, { points: Vec[] }>,
+  perSegment = 16
+): Vec[] {
+  if (mark.kind === 'curve') return smoothThrough(mark.points, perSegment);
+  if (mark.kind === 'line' || mark.kind === 'vector') return mark.points;
+  const [[right, cy], [cx, top]] = mark.points;
+  const [rx, ry] = [right - cx, top - cy];
+  const steps = perSegment * 4;
+  return Array.from({ length: steps + 1 }, (_, i): Vec => {
+    const turn = (i / steps) * Math.PI * 2;
+    return [cx + rx * Math.cos(turn), cy + ry * Math.sin(turn)];
+  });
+}
 
 /** Most marks one plane holds. */
 export const MARKS_MAX = 500;
@@ -31,11 +106,15 @@ export type ChartBar = {
   value: number;
 };
 export type PieLabel = { angle: number; id: string; text: string };
+/** A pie slice's fill, by the line it starts at (clockwise). */
+export type SliceFill = { fill: Color; from: number };
 
 export type ChartData = {
   axisMax: number;
   axisStep: number;
   bars: ChartBar[];
+  /** Absent on a chart saved before pies had fills. */
+  fills?: SliceFill[];
   kind: ChartKind;
   labels: PieLabel[];
   spokes: number[];
@@ -58,6 +137,50 @@ export const INK = '#000';
 export const TEXT = '#1d1d1f';
 export const NUMBER = '#55555b';
 
+/** A plane or chart card's colours, with the board's light or dark: paper, grid,
+ * axes and ink. Dark paper is a dark note's. The paper is half see-through, on the
+ * board and open for editing alike, so the panel's frost shows (Epo 2026-11-08). The
+ * marking image is always light. */
+export type Paper = {
+  axis: string;
+  /** Dark paper: black ink drawn from elsewhere (a formula) is turned light. */
+  dark: boolean;
+  edge: string;
+  ink: string;
+  major: string;
+  minor: string;
+  number: string;
+  paper: string;
+  rule: string;
+  text: string;
+};
+export const PAPER: Record<'dark' | 'light', Paper> = {
+  dark: {
+    axis: '#9a9a9a',
+    dark: true,
+    edge: '#3a3a3a',
+    ink: '#fff',
+    major: '#3a3a3a',
+    minor: '#2e2e2e',
+    number: '#a6a6ab',
+    paper: 'rgba(37, 37, 37, 0.5)',
+    rule: '#363636',
+    text: '#eaeaea',
+  },
+  light: {
+    axis: '#6f6f6c',
+    dark: false,
+    edge: '#d9d9d6',
+    ink: INK,
+    major: '#dededb',
+    minor: '#f1f1ef',
+    number: NUMBER,
+    paper: 'rgba(255, 255, 255, 0.5)',
+    rule: '#e4e4e2',
+    text: TEXT,
+  },
+};
+
 /** A bar's width within its slot. */
 export const BAR_SHARE = 0.56;
 
@@ -79,6 +202,21 @@ export function pieCircle(frame: Box, pads: Pads) {
     cy: frame.y + pads.top + height / 2,
     r: Math.min(width, height) / 2,
   };
+}
+
+/** A pie's filled slices, clockwise from one line to the next (the whole round with
+ * one line). A fill whose line is gone draws nothing. */
+export function filledSlices({
+  fills = [],
+  spokes,
+}: Pick<ChartData, 'fills' | 'spokes'>) {
+  const sorted = [...spokes].sort((a, b) => a - b);
+  return sorted.flatMap((from, i) => {
+    const fill = fills.find((slice) => slice.from === from)?.fill;
+    if (!fill) return [];
+    const next = sorted[(i + 1) % sorted.length];
+    return [{ fill, from, to: next > from ? next : next + 360 }];
+  });
 }
 
 /** A clockwise angle from 12 o'clock to a point on the screen, where y goes down. */

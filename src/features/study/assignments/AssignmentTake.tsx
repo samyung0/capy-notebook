@@ -54,6 +54,7 @@ import { keptAnswers, partsById } from '@/features/quizzes/stillAnswers';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy, unexpectedErrorId } from '@/lib/errors';
+import { PaperPane } from './LazyPaper';
 
 /** How long typing rests before answers save. */
 const SAVE_AFTER_MS = 2000;
@@ -112,8 +113,14 @@ function useBookmarks(attemptId: string) {
   return { marks, toggle };
 }
 
-/** The clock left, counted from the server's time at the read. */
-function useTimeLeft(deadlineAt: string | undefined, serverNow: string) {
+/** The clock left, counted from the server's time at the read. With `within`,
+ * it ticks each second only from that long before the end: until then it
+ * rechecks once a minute, which also survives a sleeping laptop. */
+function useTimeLeft(
+  deadlineAt: string | undefined,
+  serverNow: string,
+  within?: number
+) {
   const offset = useRef(Date.parse(serverNow) - Date.now());
   const left = useCallback(
     () =>
@@ -124,12 +131,36 @@ function useTimeLeft(deadlineAt: string | undefined, serverNow: string) {
   );
   const [ms, setMs] = useState(left);
   useEffect(() => {
+    // An end taken away (No late turned off) leaves no clock.
+    setMs(left());
     if (!deadlineAt) return;
-    const tick = setInterval(() => setMs(left()), 1000);
-    return () => clearInterval(tick);
-  }, [deadlineAt, left]);
+    let tick: ReturnType<typeof setInterval> | undefined;
+    let later: ReturnType<typeof setTimeout> | undefined;
+    const arm = () => {
+      const wait = within === undefined ? 0 : (left() ?? 0) - within;
+      if (wait > 0) {
+        later = setTimeout(arm, Math.min(wait, 60_000));
+        return;
+      }
+      setMs(left());
+      tick = setInterval(() => setMs(left()), 1000);
+    };
+    arm();
+    return () => {
+      clearTimeout(later);
+      clearInterval(tick);
+    };
+  }, [deadlineAt, left, within]);
   return ms;
 }
+
+const HOUR = 60 * 60 * 1000;
+
+/** The earliest of the times given, if any. */
+const earliest = (...times: (string | undefined)[]) =>
+  times
+    .filter((t): t is string => !!t)
+    .sort((a, b) => Date.parse(a) - Date.parse(b))[0];
 
 function clockText(ms: number) {
   const total = Math.max(0, Math.ceil(ms / 1000));
@@ -162,6 +193,10 @@ export function AssignmentTake({
 }) {
   const qc = useQueryClient();
   const questions = attempt.questions as LearnerQuestion[];
+  // Answered on paper (S5): the questions read only, then Your paper.
+  const paper = attempt.paper === 'upload';
+  const files = attempt.paperFiles;
+  const [paperOpen, setPaperOpen] = useState(paper);
   const [wantedIndex, setIndex] = useState(0);
   // New questions can be fewer: the last one stands in.
   const index = Math.min(wantedIndex, Math.max(questions.length - 1, 0));
@@ -176,7 +211,12 @@ export function AssignmentTake({
   const removed = useRemovedAssets(attempt.removedAssetIds);
   const { mutate: submitAttempt, isPending: submitting } =
     useSubmitAssignmentAttempt(workspaceId);
-  const left = useTimeLeft(attempt.deadlineAt, attempt.now);
+  // It ends at the earlier of its time running out and a No late due date.
+  const left = useTimeLeft(
+    earliest(attempt.deadlineAt, attempt.closesAt),
+    attempt.now,
+    attempt.deadlineAt ? undefined : HOUR
+  );
   const latest = useRef(answers);
   latest.current = answers;
   const dirty = useRef(false);
@@ -329,6 +369,11 @@ export function AssignmentTake({
           userToast({ title: m.assignment_questions_updated() });
           return;
         }
+        // Its settings changed: a moved due date moves the clock.
+        if (event.type === 'assignment_updated') {
+          reread();
+          return;
+        }
         onClosed();
         void end('drop');
       }),
@@ -350,12 +395,19 @@ export function AssignmentTake({
   const unanswered = questions.length - answeredCount;
   const go = (next: number) => {
     void flush();
+    setPaperOpen(false);
     setIndex(next);
   };
+  const paperLabel =
+    files.length === 1
+      ? m.assignment_paper_one_file()
+      : m.assignment_paper_files({ count: files.length });
   const type = question?.parts[0]?.answer.type as QuestionType | undefined;
   const heading = useMemo(() => questionHeading(question), [question]);
 
-  const clock = left !== null && (
+  // A timed attempt always shows its clock; one only a due date ends shows it
+  // in the last hour (Epo 2026-11-08).
+  const clock = left !== null && (!!attempt.deadlineAt || left <= HOUR) && (
     <span
       aria-live="off"
       className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-page-hover px-3.5 font-bold"
@@ -380,6 +432,17 @@ export function AssignmentTake({
           : m.assignment_not_saved()}
     </span>
   );
+  const confirmText = paper
+    ? files.length === 0
+      ? m.assignment_submit_paper_empty()
+      : files.length === 1
+        ? m.assignment_submit_paper_one()
+        : m.assignment_submit_paper({ count: files.length })
+    : unanswered === 0
+      ? m.assignment_submit_all_answered()
+      : unanswered === 1
+        ? m.assignment_submit_unanswered_one()
+        : m.assignment_submit_unanswered({ count: unanswered });
   const submitButton = (
     <Button disabled={submitting} onClick={() => setConfirming(true)}>
       {submitting ? m.assignment_submitting() : m.assignment_submit()}
@@ -400,20 +463,51 @@ export function AssignmentTake({
               </div>
               {clock}
               <div className="ml-auto flex shrink-0 items-center justify-end gap-3.5 lg:flex-[1_1_0]">
-                {savedState}
+                {!paper && savedState}
                 {submitButton}
               </div>
             </header>
             <QuizSplit
               above={
-                <p className="t-meta px-1.5 pb-1.5 text-fg-secondary">
-                  {m.assignment_answered_of({
-                    answered: answeredCount,
-                    total: questions.length,
-                  })}
-                </p>
+                !paper && (
+                  <p className="t-meta px-1.5 pb-1.5 text-fg-secondary">
+                    {m.assignment_answered_of({
+                      answered: answeredCount,
+                      total: questions.length,
+                    })}
+                  </p>
+                )
               }
-              current={question?.id}
+              below={
+                paper && (
+                  <>
+                    <div className="mx-2 my-2 h-px bg-divider" />
+                    <button
+                      aria-current={paperOpen || undefined}
+                      className={cn(
+                        'grid min-h-9 w-full cursor-pointer grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2 py-1 text-left text-[13.5px] outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action',
+                        paperOpen && 'bg-page-hover hover:bg-page-hover'
+                      )}
+                      data-paper-row
+                      onClick={() => setPaperOpen(true)}
+                      type="button"
+                    >
+                      <Icon
+                        className="text-fg-secondary"
+                        name="fileText"
+                        size={18}
+                      />
+                      <span className="truncate font-semibold">
+                        {m.assignment_paper_title()}
+                      </span>
+                      <span className="text-fg-muted text-xs">
+                        {paperLabel}
+                      </span>
+                    </button>
+                  </>
+                )
+              }
+              current={paperOpen ? undefined : question?.id}
               onBack={() => undefined}
               onOpen={(id) => go(questions.findIndex((q) => q.id === id))}
               onQuestion
@@ -435,7 +529,9 @@ export function AssignmentTake({
                         return (
                           <li className="shrink-0" key={q.id}>
                             <button
-                              aria-current={i === index ? 'step' : undefined}
+                              aria-current={
+                                i === index && !paperOpen ? 'step' : undefined
+                              }
                               aria-label={name}
                               className={cn(
                                 'relative grid size-9 place-items-center rounded-[10px] border font-semibold outline-none focus-visible:ring-2 focus-visible:ring-action',
@@ -445,6 +541,7 @@ export function AssignmentTake({
                                     ? 'border-solid-accent-1 border-dashed text-fg'
                                     : 'border-line text-fg',
                                 i === index &&
+                                  !paperOpen &&
                                   'border-2 border-solid-accent-1 border-solid'
                               )}
                               onClick={() => go(i)}
@@ -462,6 +559,23 @@ export function AssignmentTake({
                           </li>
                         );
                       })}
+                      {paper && (
+                        <li className="shrink-0">
+                          <button
+                            aria-current={paperOpen ? 'step' : undefined}
+                            className={cn(
+                              'inline-flex h-9 items-center gap-1.5 rounded-[10px] border border-line px-2.5 font-semibold outline-none focus-visible:ring-2 focus-visible:ring-action',
+                              paperOpen &&
+                                'border-2 border-solid-accent-1 border-solid'
+                            )}
+                            onClick={() => setPaperOpen(true)}
+                            type="button"
+                          >
+                            <Icon name="fileText" size={16} />
+                            {m.assignment_paper_chip()}
+                          </button>
+                        </li>
+                      )}
                     </ol>
                   </nav>
                 </div>
@@ -478,7 +592,7 @@ export function AssignmentTake({
                       />
                     </RowMark>
                   )}
-                  {isAnswered(q) ? (
+                  {!paper && isAnswered(q) ? (
                     <RowMark label={stateLabel(q)}>
                       <span
                         className={cn(
@@ -494,7 +608,10 @@ export function AssignmentTake({
               )}
             >
               <div className="px-4 pt-6 pb-6 sm:px-6 md:pb-24 lg:px-21.5 lg:pt-12 lg:pb-10">
-                {question && (
+                {paperOpen && (
+                  <PaperPane attemptId={attempt.id} files={files} />
+                )}
+                {!paperOpen && question && (
                   <div
                     className="motion-safe:motion-text-in mx-auto flex w-full max-w-180 flex-col gap-3"
                     key={question.id}
@@ -515,11 +632,19 @@ export function AssignmentTake({
                     <div className="[&_textarea]:max-h-none [&_textarea]:min-h-[calc(var(--ruled-line)*10)]">
                       <QuestionRunner
                         answers={answers}
+                        disabled={paper}
+                        // On paper, the question alone: no field to answer in.
+                        frameAnswer={paper ? () => null : undefined}
                         headerMarks={false}
                         onChange={change}
                         question={heading.rest}
                       />
                     </div>
+                    {paper && (
+                      <p className="t-meta rounded-lg bg-page-hover px-3 py-2.5 text-fg-secondary">
+                        {m.assignment_paper_on_paper()}
+                      </p>
+                    )}
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                       <Button
                         iconLeft="bookmark"
@@ -541,9 +666,13 @@ export function AssignmentTake({
                           {m.action_previous()}
                         </Button>
                         <Button
-                          disabled={index === questions.length - 1}
+                          disabled={!paper && index === questions.length - 1}
                           iconRight="arrowRight"
-                          onClick={() => go(index + 1)}
+                          onClick={() =>
+                            index === questions.length - 1
+                              ? setPaperOpen(true)
+                              : go(index + 1)
+                          }
                         >
                           {m.action_next()}
                         </Button>
@@ -556,7 +685,7 @@ export function AssignmentTake({
             <div className="flex shrink-0 items-center gap-3 border-divider border-t px-4 py-2.5 md:hidden">
               {clock}
               <span className="ml-auto flex items-center gap-3">
-                {savedState}
+                {!paper && savedState}
                 {submitButton}
               </span>
             </div>
@@ -579,13 +708,7 @@ export function AssignmentTake({
                 <DialogTitle closable={false}>
                   {m.assignment_submit_confirm()}
                 </DialogTitle>
-                <p className="mt-1 text-fg-secondary">
-                  {unanswered === 0
-                    ? m.assignment_submit_all_answered()
-                    : unanswered === 1
-                      ? m.assignment_submit_unanswered_one()
-                      : m.assignment_submit_unanswered({ count: unanswered })}
-                </p>
+                <p className="mt-1 text-fg-secondary">{confirmText}</p>
                 <FormAlert
                   errorId={submitError?.errorId}
                   message={submitError?.message ?? null}

@@ -24,6 +24,24 @@ async function openBoard(page: Page, url = '/dev/drawing') {
   );
 }
 
+/** Picks a piece out of a toolbar slot (a click lifts it) and drops it in the middle
+ * of the board. */
+async function placePiece(page: Page, slot: string, kind: string) {
+  // The dev scenario panel sits over the toolbar's right end.
+  await page.addStyleTag({
+    content: '[data-testid="mock-scenario-panel"] { display: none; }',
+  });
+  await page.locator(`${slot} .piece[data-kind="${kind}"]`).first().click();
+  const board = await page.locator('affine-edgeless-root').boundingBox();
+  if (!board) throw new Error('no board');
+  const middle = [
+    board.x + board.width / 2,
+    board.y + board.height * 0.4,
+  ] as const;
+  await page.mouse.move(...middle, { steps: 6 });
+  await page.mouse.click(...middle);
+}
+
 /** A point on the first card, from 0 to 1 across it, on the page. */
 async function onCard(page: Page) {
   const box = (await page.evaluate(() => {
@@ -71,23 +89,28 @@ async function onPlane(page: Page) {
     [box.x + x * box.width, box.y + y * box.height] as const;
 }
 
-/** How much of an image isn't white: an empty sheet and a drawn one differ. */
-const inkIn = (page: Page, dataUrl: string) =>
-  page.evaluate(async (url) => {
-    const image = new Image();
-    image.src = url;
-    await image.decode();
-    const output = document.createElement('canvas');
-    output.width = image.width;
-    output.height = image.height;
-    const ctx = output.getContext('2d');
-    if (!ctx) throw new Error('no context');
-    ctx.drawImage(image, 0, 0);
-    const { data } = ctx.getImageData(0, 0, image.width, image.height);
-    let dark = 0;
-    for (let i = 0; i < data.length; i += 4) if (data[i] < 60) dark++;
-    return dark;
-  }, dataUrl);
+/** How much of an image falls in a band of red values, ink by default: an empty sheet
+ * and a drawn one differ. */
+const inkIn = (page: Page, dataUrl: string, band: [number, number] = [0, 60]) =>
+  page.evaluate(
+    async ([url, low, high]) => {
+      const image = new Image();
+      image.src = url;
+      await image.decode();
+      const output = document.createElement('canvas');
+      output.width = image.width;
+      output.height = image.height;
+      const ctx = output.getContext('2d');
+      if (!ctx) throw new Error('no context');
+      ctx.drawImage(image, 0, 0);
+      const { data } = ctx.getImageData(0, 0, image.width, image.height);
+      let dark = 0;
+      for (let i = 0; i < data.length; i += 4)
+        if (data[i] >= low && data[i] < high) dark++;
+      return dark;
+    },
+    [dataUrl, ...band] as const
+  );
 
 /** The marking image, as a data URL. */
 const toImage = (page: Page) =>
@@ -105,9 +128,7 @@ const toImage = (page: Page) =>
 const save = (page: Page) =>
   page.evaluate('window.__board.save().doc') as Promise<string>;
 
-test('draws over the card, labels, and reopens from what it saved', async ({
-  page,
-}) => {
+test('draws over the card and reopens from what it saved', async ({ page }) => {
   test.slow();
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -128,27 +149,14 @@ test('draws over the card, labels, and reopens from what it saved', async ({
   await expect(page.locator('edgeless-note-menu')).toBeVisible();
   await expect(page.locator('edgeless-note-menu .divider')).toHaveCount(0);
 
-  // A label goes on top of the card from the maths menu.
-  await page.keyboard.press('v');
-  await page.locator('capy-maths-button').first().click();
-  await page.getByRole('button', { exact: true, name: 'Label' }).click();
-  await page.mouse.click(...at(0.7, 0.3));
-  await page.keyboard.type('label');
-  // A blank line in a label is one line tall.
-  await page.keyboard.press('Enter');
-  const blank = page.locator('edgeless-text-editor v-line').nth(1);
-  expect((await blank.boundingBox())?.height).toBeLessThan(60);
-  await page.keyboard.press('Backspace');
-  await page.mouse.click(...at(0.05, 0.9));
-  await expect.poll(() => canvas(page)).toEqual(['plane', 'brush', 'text']);
   expect(errors).toEqual([]);
 
-  // The stroke and label reach the image.
+  // The stroke reaches the image.
   expect(await inkIn(page, await toImage(page))).toBeGreaterThan(before);
 
   const saved = await save(page);
   await page.evaluate(`window.__reopen(${JSON.stringify(saved)})`);
-  await expect.poll(() => canvas(page)).toEqual(['plane', 'brush', 'text']);
+  await expect.poll(() => canvas(page)).toEqual(['plane', 'brush']);
 });
 
 test('a note card takes typing and leaves $$ as text', async ({ page }) => {
@@ -247,10 +255,8 @@ test('double click opens the plane: it plots, undoes each click, and Escape leav
   ] as const)
     await page.mouse.click(...at(x, y));
   await expect.poll(() => marks(page)).toBe(1);
-  await page
-    .locator('.capy-board-history button')
-    .first()
-    .dispatchEvent('click');
+  await page.locator('.capy-plane-editor .capy-menu-button').click();
+  await page.getByRole('menuitem', { name: 'Undo' }).click();
   await page.mouse.click(...at(0.55, 0.3));
   await expect(
     page.getByRole('button', { name: 'Finish curve' })
@@ -259,9 +265,10 @@ test('double click opens the plane: it plots, undoes each click, and Escape leav
   await expect(page.getByRole('button', { name: 'Finish curve' })).toHaveCount(
     0
   );
-  await expect(
-    page.getByRole('button', { name: 'Move the plane' })
-  ).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Select' })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
   await expect.poll(() => marks(page)).toBe(1);
 
   // A point, then the eraser takes it, and undo brings it back.
@@ -341,9 +348,14 @@ test('undo inside the plane stops at what was done there', async ({ page }) => {
   for (const _ of [1, 2, 3]) await page.keyboard.press('ControlOrMeta+z');
   await expect.poll(() => marks(page)).toBe(0);
   expect(await canvas(page)).toEqual(['plane', 'brush']);
+  // Undo sits in the open plane's ☰ menu; Escape closes the menu first.
+  const planeMenu = page.locator('.capy-plane-editor .capy-menu');
+  await planeMenu.getByRole('button', { name: 'More' }).click();
   await expect(
-    page.getByRole('button', { name: 'Undo' }).first()
+    planeMenu.getByRole('menuitem', { name: 'Undo' })
   ).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await expect(planeMenu.getByRole('menu')).toHaveCount(0);
 
   // Both redo keys, whatever the Shift key does to the letter.
   await page.keyboard.press('Control+Shift+z');
@@ -563,7 +575,10 @@ test('a note scrolled out of view still reaches the image', async ({
         ?.classList.contains('block-idle')
     )
   ).toBe(true);
-  expect(await inkIn(page, await toImage(page))).toBeGreaterThan(10_000);
+  // Note fills are half see-through (N2), so the black note is mid grey on white.
+  expect(await inkIn(page, await toImage(page), [100, 160])).toBeGreaterThan(
+    10_000
+  );
   // Left as it was found.
   expect(
     await page.evaluate(() =>
@@ -603,10 +618,12 @@ test('a plane card has its pen and size, and fits its marks', async ({
 
   // Plotted past the card's right edge, zoomed out so it's on the screen.
   const inside = await onPlane(page);
-  // The dev scenario panel covers the zoom buttons here.
-  await page
+  // Zoom out sits in the open plane's ☰ menu.
+  const planeMenu = page.locator('.capy-plane-editor .capy-menu');
+  await planeMenu.getByRole('button', { name: 'More' }).click();
+  await planeMenu
     .getByRole('button', { exact: true, name: 'Zoom out' })
-    .dispatchEvent('click');
+    .click();
   await page.getByRole('button', { exact: true, name: 'Point' }).click();
   await page.mouse.click(...inside(0.95, 0.5));
   await expect.poll(() => marks(page)).toBe(1);
@@ -671,14 +688,12 @@ test('bar and pie charts are their own cards, with no coordinates', async ({
         words: bars?.map(({ label }) => label),
       };
     });
-  const charts = async (name: string) => {
-    await page.locator('capy-charts-button').first().click();
-    await page.getByRole('button', { exact: true, name }).click();
-  };
+  const charts = (kind: 'bar' | 'pie') =>
+    placePiece(page, 'capy-chart-slot', kind);
   const toolbar = page.locator('affine-toolbar-widget');
 
   // A bar chart: three places to start from. A plane's Size isn't on its toolbar.
-  await charts('Bar chart');
+  await charts('bar');
   await expect(toolbar.getByLabel('Edit the chart')).toBeVisible();
   await expect(
     toolbar.locator('.label', { hasText: 'Fit to size' })
@@ -702,7 +717,8 @@ test('bar and pie charts are their own cards, with no coordinates', async ({
   await expect.poll(async () => (await chart()).values).toEqual([3, 5]);
 
   // Fit brings the axis to the tallest, and a typed one holds.
-  await page.getByRole('button', { name: 'Fit' }).click();
+  await page.locator('.capy-chart-editor .capy-menu-button').click();
+  await page.getByRole('menuitem', { name: 'Fit to screen' }).click();
   await expect.poll(async () => (await chart()).axisMax).toBe(6);
   const axis = page.getByRole('textbox', { name: 'Axis to' });
   await axis.fill('10');
@@ -725,7 +741,7 @@ test('bar and pie charts are their own cards, with no coordinates', async ({
 
   // A pie: a line at each click, a label, and the eraser.
   await page.keyboard.press('v');
-  await charts('Pie chart');
+  await charts('pie');
   await toolbar.getByLabel('Edit the chart').click();
   await page.mouse.click(...at(0.7, 0.5));
   await expect.poll(async () => (await chart()).spokes).toBe(2);
@@ -772,16 +788,17 @@ test('a formula that cannot be read stays open, and a root stops at its contents
 }) => {
   test.slow();
   await openBoard(page);
-  await page.locator('capy-formula-button').first().click();
+  // The √x piece puts down its card and opens it to fill in.
+  await placePiece(page, 'capy-formula-slot', 'sqrt');
   const field = page.locator('.capy-formula math-field');
   await field.waitFor();
+  await expect.poll(() => canvas(page)).toEqual(['plane', 'formula']);
   await field.evaluate((element) => {
     (element as HTMLInputElement).value = '\\nosuchcommand{';
   });
   await page.locator('.capy-formula .primary').click();
   await expect(page.locator('.capy-formula-error')).toBeVisible();
   await expect(field).toBeVisible();
-  await expect.poll(() => canvas(page)).toEqual(['plane']);
 
   await field.evaluate((element) => {
     (element as HTMLInputElement).value = '\\sqrt{x}+y';
@@ -791,14 +808,21 @@ test('a formula that cannot be read stays open, and a root stops at its contents
 
   // Past the root's own width, the bitmap's top rows hold nothing.
   const inkAbove = await page.evaluate(async () => {
-    const { drawing } = (await import(
-      '/src/features/blocksuite/boardFormula.ts' as string
+    type Drawn = { h: number; w: number };
+    const { drawing, replay } = (await import(
+      '/src/features/blocksuite/boardFormulaDraw.ts' as string
     )) as {
-      drawing(latex: string): Promise<{ canvas: HTMLCanvasElement }>;
+      drawing(latex: string): Promise<Drawn>;
+      replay(ctx: CanvasRenderingContext2D, drawn: Drawn): void;
     };
-    const { canvas: bitmap } = await drawing('\\sqrt{x}+y');
+    // The laid-out formula, replayed at its own size.
+    const drawn = await drawing('\\sqrt{x}+y');
+    const bitmap = document.createElement('canvas');
+    bitmap.width = Math.ceil(drawn.w);
+    bitmap.height = Math.ceil(drawn.h);
     const ctx = bitmap.getContext('2d');
     if (!ctx) throw new Error('no context');
+    replay(ctx, drawn);
     const from = Math.floor(bitmap.width * 0.7);
     const { data } = ctx.getImageData(
       from,
@@ -813,14 +837,14 @@ test('a formula that cannot be read stays open, and a root stops at its contents
   expect(inkAbove).toBe(0);
 });
 
-test('a phone has undo at the top and the toolbar at full width', async ({
+test('a phone has the menu at the top and the toolbar at full width', async ({
   page,
 }) => {
   test.slow();
   await page.setViewportSize({ height: 720, width: 360 });
   await openBoard(page);
-  const undo = await page.locator('.capy-board-history').boundingBox();
-  expect(undo?.y).toBeLessThan(60);
+  const menu = await page.locator('.capy-board-menu').boundingBox();
+  expect(menu?.y).toBeLessThan(60);
   expect(
     await page.locator('edgeless-toolbar-widget smooth-corner').boundingBox()
   ).toMatchObject({ width: 344, x: 8 });
@@ -857,9 +881,11 @@ test.describe('with a finger', () => {
     await page.touchscreen.tap(...at(0.6, 0.5));
     await page.getByRole('button', { name: 'Finish curve' }).tap();
     await expect.poll(() => marks(page)).toBe(1);
-    const undo = page.locator('.capy-board-history button').first();
-    await undo.tap();
-    await undo.tap();
+    // Undo is in the menu, which closes after each.
+    for (const _ of [1, 2]) {
+      await page.locator('.capy-plane-editor .capy-menu-button').tap();
+      await page.getByRole('menuitem', { name: 'Undo' }).tap();
+    }
     await expect.poll(() => marks(page)).toBe(0);
     await page.getByRole('button', { name: 'Done' }).tap();
 
@@ -868,13 +894,13 @@ test.describe('with a finger', () => {
       content: '[data-testid="mock-scenario-panel"] { display: none; }',
     });
     await page.keyboard.press('Escape');
-    // Two to a page on a phone: Note and Pen, Shapes and Maths, Charts and Formula.
+    // Two to a page on a phone: Note and Pen, Shapes and Graphs, Charts and Formulas.
     const next = page.locator('.senior-nav-button-wrapper.next icon-button');
     await next.tap();
-    await expect(page.locator('capy-maths-button')).toHaveCount(1);
+    await expect(page.locator('capy-graph-slot')).toHaveCount(1);
     await next.tap();
-    await page.locator('capy-charts-button').first().tap();
-    await page.getByRole('button', { exact: true, name: 'Bar chart' }).tap();
+    // A tap puts the bars in the middle of the view.
+    await page.locator('capy-chart-slot .piece[data-kind="bar"]').tap();
     await page
       .locator('affine-toolbar-widget')
       .getByLabel('Edit the chart')
@@ -965,14 +991,14 @@ test('the workspace canvas stays in the URL at every width', async ({
   const board = page.locator('.capy-board');
   await board.waitFor();
 
-  // An iPad keeps the rail, and undo moves to the top right, clear of the toolbar.
+  // An iPad keeps the rail, and the menu sits top right, clear of the toolbar.
   const rail = page.getByRole('navigation', { name: 'Workspace' });
   await page.setViewportSize({ height: 800, width: 900 });
   await expect(rail).toBeVisible();
   await expect(board).toBeVisible();
   const boardBox = await board.boundingBox();
-  const undoBox = await page.locator('.capy-board-history').boundingBox();
-  expect(undoBox && boardBox && undoBox.y - boardBox.y).toBe(8);
+  const menuBox = await page.locator('.capy-board-menu').boundingBox();
+  expect(menuBox && boardBox && menuBox.y - boardBox.y).toBe(8);
 
   // Below the rail the board stays, and only the back button leaves it.
   await page.setViewportSize({ height: 800, width: 700 });
@@ -1039,7 +1065,11 @@ test('a saved board leaves its undo history out, and a teacher opens it read-onl
       ?.stats()
       .canvas.includes('plane')
   );
-  await expect(page.locator('.capy-board-history')).toHaveCount(0);
+  // A teacher's menu zooms but has no undo.
+  await page.locator('.capy-board-menu .capy-menu-button').click();
+  await expect(page.getByRole('menuitem', { name: 'Undo' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Zoom in' })).toBeVisible();
+  await page.keyboard.press('Escape');
   await expect(page.locator('edgeless-toolbar-widget')).toHaveCount(0);
   const board = await page.locator('.capy-board').boundingBox();
   const card = (await onCard(page))(0, 0);
