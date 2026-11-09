@@ -1,7 +1,7 @@
 ---
 type: Backend
 title: "Study Progress and Review"
-description: "Per-user study progress in a workspace, FSRS review state in Go, suggested reviews and their scoring, recorded review sessions, Study → Practice (suggestions, every quiz as practice, topic sessions and their result), Hide study progress, Study → Summary and its topic labels, Study → Members (a class's members for its staff), Learning's Overview, Past reviews and All results tabs, the workspace Dashboard's activity, the answer events log, lifecycle and access."
+description: "Per-user study progress in a workspace, FSRS review state in Go, suggested reviews and their scoring, recorded review sessions, Study → Practice (suggestions, every quiz as practice, topic sessions and their result), Study → Summary and its topic labels, Study → Members (a class's members for its staff), Learning's Overview, Past reviews and All results tabs, the workspace Dashboard's activity, the answer events log, lifecycle and access."
 tags: [backend, frontend, study, review, fsrs, flashcards, quizzes, progress]
 ---
 
@@ -10,8 +10,8 @@ tags: [backend, frontend, study, review, fsrs, flashcards, quizzes, progress]
 Each signed-in user keeps their own progress in each workspace: which
 quizzes and flashcard sets they have practised (started, or done once every
 item is) and an FSRS memory state per quiz question and flashcard. Progress
-shows by default; Hide study progress hides it per workspace while recording
-goes on. The workspace's Study section (the rail's Study, its panel listing
+always shows: Hide study progress, its switch and the `workspace_study` table
+went on 2026-11-09 (Epo, Q727 A). The workspace's Study section (the rail's Study, its panel listing
 Study's pages) shows Practice: suggested topics, every quiz members can see
 as practice and the learner's own topic reviews, each started as a review
 session in the page's place, and Summary: the learner's label per topic.
@@ -41,7 +41,6 @@ clone or charged to storage.
 
 | Table / column | Holds |
 | --- | --- |
-| `workspace_study (user_id, workspace_id, enabled)` | Hide study progress for one workspace (`enabled` false hides); no row shows progress (`StudyEnabled`). Migration `0108_study_plans.sql` dropped the old global default `users.study_progress`. |
 | `study_progress (user_id, material_id, workspace_id, state, updated_at)` | One row per practised quiz or set (`markProgressTx`: a check or a rating writes it); `state` is `started` or `done`. No row means untouched. Migration `0145_study_progress_practice_only.sql` dropped what Mark as read and Stop tracking left behind: `file_id` and `removed`. |
 | `review_states (user_id, material_id, item_id, item_hash, stability, difficulty, reps, lapses, fsrs_state, last_review)` | FSRS state per quiz question or card. The key includes `material_id`, so a cloned quiz that keeps its question ids stays separate. |
 | `review_log (user_id, material_id, item_id, rating, reviewed_at)` | Append-only, rating 1–4 for every rating and every rated attempt question. Suggestions read each item's last 8 (`review_log_item_idx`); kept for offline merge and parameter fitting later too. |
@@ -51,7 +50,7 @@ clone or charged to storage.
 | `answer_events`, `attempts.workspace_id` | Migration `0143_answer_events.sql`: one row per graded part of every checked question, and the workspace an attempt was taken in ([Answer events](#answer-events)). |
 | `flashcard_cards (card_id, material_id)` | The old `card_stats` without its review columns: the card-to-set lookup card edits, deletes, listing counts and clone use. `card_id` is a global key, so clones mint new card ids. |
 
-`study_progress` and `workspace_study` cascade with their workspace;
+`study_progress` cascades with its workspace;
 `study_progress` also with its material; `review_states` and
 `review_log` with their material. User foreign keys never cascade because user
 rows are tombstoned; `PurgeUser` deletes the four tables and `review_sessions`
@@ -135,13 +134,12 @@ workspace; writes need read access plus an account that can sign in
 
 | Endpoint | Effect |
 | --- | --- |
-| `GET /api/workspaces/{id}/study` | `StudySummary`: `enabled`, `recentAttempts` (the last 5 on the workspace's untrashed, non-embedded quizzes), `reviewable` (size of the review pool), `quickReview` and `unfinished` (the latest whole-workspace session left before its end, for Continue review). Since the workspace Study page went (2026-11-03) the app reads only `enabled` (Workspace settings → Study); `quickReview`, `unfinished`, `recentAttempts` and `/study/attempts` have no page, and stay for now. |
+| `GET /api/workspaces/{id}/study` | `StudySummary`: `recentAttempts` (the last 5 on the workspace's untrashed, non-embedded quizzes), `reviewable` (size of the review pool), `quickReview` and `unfinished` (the latest whole-workspace session left before its end, for Continue review). No page reads it since the workspace Study page (2026-11-03) and Hide study progress (2026-11-09) went; `quickReview`, `unfinished`, `recentAttempts` and `/study/attempts` stay for now. |
 | `GET /api/workspaces/{id}/study/attempts` | `WorkspaceAttempts`: every untrashed, non-embedded quiz and set of the workspace with its `size` (questions or cards, from `itemsOf`), the user's attempt `count` and its latest three attempts, for the Study progress page. |
-| `PUT /api/workspaces/{id}/study/enabled` | Upserts `workspace_study`: `false` is Hide study progress, `true` shows it. |
 | `GET /api/workspaces/{id}/dashboard` | `WorkspaceDashboard` (`dashboard.go`), the workspace Dashboard for any reader: the owner's name, `members` (owner included) and `activity`, the five newest of the workspace's untrashed files (`uploaded`) and top-level materials (`added`), newest first, each with its actor's name and avatar for a caller with a membership (a link or public visitor gets the rows without them). A material the chat agent made (an `agent_operations` row of kind `create_material` naming it) reads `agent` when the caller asked for it, else `added` under the asker's name. There is no activity log: joins, edits and deletions do not show, and notifications (personal: invites, role changes, removals) are not used. |
-| `POST /api/workspaces/{id}/study/reset` | Deletes the user's `study_progress` rows in the workspace and `review_states` of every material in it and of their own practice quizzes linked to it. Attempts, the review log and the switch stay. |
+| `POST /api/workspaces/{id}/study/reset` | Deletes the user's `study_progress` rows in the workspace and `review_states` of every material in it and of their own practice quizzes linked to it. Attempts and the review log stay. |
 | `GET /api/workspaces/{id}/review?group=&topicId=&mode=&items=&count=&order=` | A new session: a suggestion's items (mode set) or the group's (no mode: a topic, Other files or the whole workspace, new items mixed in), each with its content (card faces, or the answer-free question, `questions.LearnerView`), material title and `reason` (`new` from the new pool, `missed` with an Again among its latest answers, else `fading`), plus the group, mode and evidence to send back with each answer. `items=quiz` serves questions only whatever the review items preference, and 10 of them unless the learner picked a session size (Practice's topic sessions). A topic not in the workspace is 404. |
-| `GET /api/workspaces/{id}/practice` | `Practice` (`practice.go`), Study → Practice for any reader, by the workspace's kind: `suggestions`, this workspace's suggested reviews over its questions only (`groupSuggestions` at full interest, since the learner is here; at most three, none while study progress is hidden); `quizzes`, every untrashed top-level quiz in reading order with its question count (`itemCounts`, refused content left out) and the caller's `best` attempt (best share of marks); `reviews`, the caller's topic and Other files sessions that answered a question, one row per topic: the latest one's served count and the best one's marks. A class's owner and editor members get neither of those but `members` (viewer members) and per quiz `triedBy` (viewer members with an attempt) and `average` (the mean of their best scores, 0 to 1, only once five tried: aggregates need five, Epo 2026-11-03 §11.8); never anyone's answers. |
+| `GET /api/workspaces/{id}/practice` | `Practice` (`practice.go`), Study → Practice for any reader, by the workspace's kind: `suggestions`, this workspace's suggested reviews over its questions only (`groupSuggestions` at full interest, since the learner is here; at most three); `quizzes`, every untrashed top-level quiz in reading order with its question count (`itemCounts`, refused content left out) and the caller's `best` attempt (best share of marks); `reviews`, the caller's topic and Other files sessions that answered a question, one row per topic: the latest one's served count and the best one's marks. A class's owner and editor members get neither of those but `members` (viewer members) and per quiz `triedBy` (viewer members with an attempt) and `average` (the mean of their best scores, 0 to 1, only once five tried: aggregates need five, Epo 2026-11-03 §11.8); never anyone's answers. |
 | `GET /api/review/sessions/{id}` | Continue: an unfinished session's items still to answer, read now (items that left their material drop, as do those of a material the caller may not read now, `materialEffectiveAccess`: hidden or assigned since it was served, or never theirs, since the browser sends the served list), with answered of total. Another user's session is 404. |
 | `GET /api/review/sessions/{id}/result` | A session's result, finished or not: its Past reviews row (`ID` read), its answered items in answer order with their records (the resume read's `done`, under the same read rule), and `better`, how many were rated above their latest `review_log` rating before the session started. Another user's session is 404. |
 | `POST /api/review/sessions/{id}/finish` | Ends a session before its last item. |
@@ -155,7 +153,7 @@ graded copies: a missing image there keeps the plain empty box (Q270), the
 result body resetting the session's list.
 | `GET /api/review/sessions?sort=&dir=&workspaceId=&has=&offset=&limit=` | Past reviews: finished sessions with their quiz marks and cards remembered (Good or Easy). Sort date, quiz, cards or time; `has` quiz and/or flashcards. |
 | `GET /api/learning/overview` | `LearningOverview`, Learning's Overview tab, below. |
-| `GET /api/workspaces/{id}/study/topics` | `StudyTopics`, Study → Summary: `enabled` and each topic's standing. Refused (403) to a class's owner and editors. |
+| `GET /api/workspaces/{id}/study/topics` | `StudyTopics`, Study → Summary: each topic's standing. Refused (403) to a class's owner and editors. |
 | `GET /api/workspaces/{id}/study/members` | `MembersProgress`, Study → Members: each viewer member's marks, practice this week, full storage and topic standings, and the topic columns. A class's owner and editors only: a member 403, anyone else and a personal workspace 404. |
 | `GET /api/workspaces/{id}/study/members/{memberId}` | `MemberProfile`, a member's profile: assignments, topics, questions still missed, recent work. The same rule; a member who isn't a viewer 404. |
 | `POST /api/review/ratings` | `{materialId, itemId, rating, session?, attempt?}` for a card; `attempt` (`{id, startedAt}`, minted by the study page when a run begins) adds the rating to that flashcard attempt for a workspace set, creating it with the first rating (`recordCardTx`, under the account lock, as quiz attempts, and the rating lock); another user's, another set's or a quiz attempt's id is 422 (`ErrFlashcardAttempt`); a question is 422 (it is rated by a check). Needs read access to the material, so standalone shared sets can be rated too; an embedded set is 422 (`ErrStudyEmbedded`), its study page sends nothing. |
@@ -392,8 +390,7 @@ last: its label, "9 of 10 right" (each question's latest check, full marks),
 squares for every question (right, partly, wrong by its latest answer, grey when
 not attempted, a quiz left partway included; above 10 they scale to 10 and any
 unattempted question keeps at least 1 grey; `topicSquares`), and Practise, which starts that topic's session.
-Assignments' overall joins it once they exist. While study progress is hidden it
-says so, with a Workspace settings button. Make my own practice sits at the top right.
+Assignments' overall joins it once they exist. Make my own practice sits at the top right.
 
 ### Members
 
@@ -545,11 +542,11 @@ session.
   practice → Familiar) waits for mastery.
 - The session is kept in Practice as the learner's own review ("Only you").
 
-Hide study progress (a switch in Workspace settings → Study, on while
-progress is hidden) keeps recording; Practice then shows no Suggested. Everyone signed in with access
-opens Workspace settings: phones on the tab list, wider screens on the first
-tab, General for owner and editor members and Study for everyone else (viewers,
-share-role visitors), their only tab beside Others when they may clone. The rail avatar's menu carries Workspace settings.
+Workspace settings has no Study tab since Hide study progress went (Q727 A):
+owner and editor members open it on General, a viewer member on Others when
+they may clone, else Danger (Leave), and a share-role visitor on Others when
+they may clone; a visitor who may not has no Workspace settings entry
+(`hasWorkspaceSettings`). The rail avatar's menu carries Workspace settings.
 
 ### Flashcard results
 
@@ -671,7 +668,7 @@ session and result pages stay under
 `src/features/study/LearningOverview.tsx` over `GET /api/learning/overview`
 (`server/internal/store/learning_overview.go`). Scope (`learningScope`): the
 workspaces the user owns, has joined, or practised in while they can still read
-them, minus a class they own or edit (Practice's own test) and Hide study progress.
+them, minus a class they own or edit (Practice's own test).
 A row is the link: it hovers whole and square and has no action at its end.
 
 **What to do next**, at most 4 rows, led by what each is (the quiz or set's file
@@ -772,11 +769,11 @@ Past reviews or All results without a sort in the URL redirects to it.
 | Material purged | `study_progress`, `review_states` and `review_log` cascade; `answer_events` stay with no material. |
 | Item removed from a document | Its `review_states` row is ignored until the item returns. |
 | Question prompt or card face edited | That item's state resets on its next rating; until then it is out of the practised pool and comes back in a manual review as a new item. |
-| Workspace deleted | All four workspace-scoped tables and `answer_events` go by cascade; attempts stay with no workspace. |
+| Workspace deleted | All three workspace-scoped tables and `answer_events` go by cascade; attempts stay with no workspace. |
 | Member or link access lost | Rows stay, unreadable without access; Learning skips the workspace. |
 | Workspace or material clone | Nothing is copied; cloned cards get new ids. |
-| Workspace transfer | Rows stay with each user; `study_progress` and `workspace_study` are in `notOwnership` (`workspace_transfer_test.go`). |
-| Account purge | `PurgeUser` deletes the user's rows in all four tables and `answer_events`, their review sessions. |
+| Workspace transfer | Rows stay with each user. |
+| Account purge | `PurgeUser` deletes the user's rows in all three tables and `answer_events`, their review sessions. |
 | Reset | Clears progress rows and review states in the workspace; attempts and the log stay. |
 
 ## Authorization
@@ -1086,7 +1083,12 @@ Reopening hides the keys again.
   (`compressSource`). At most 15 files within the member's source file cap
   across them (O1), and at most 15 pages, which the browser counts as files
   are picked (a PDF's pages, anything else one) and refuses with "A paper holds
-  at most 15 pages…" (finding 7). They can be removed and dragged into order
+  at most 15 pages…" (finding 7). A password-protected or damaged PDF or Office
+  file is refused as it is picked, by the normal upload's browser analysis
+  (`localSourceAnalysisInput`, codes `password_protected` and `unreadable`, in
+  `useAddSubmissionFiles`, so hand-ins too), with its own message, while the
+  other picked files upload (Q726 A); such a PDF counts no pages. They can be
+  removed and dragged into order
   until Submit, which waits while a file uploads (the clock's own submit does
   not, finding 6), and never list in Files, search, Recent or account chat;
   their member opens them read only (no editing session, finding 4).
@@ -1113,7 +1115,11 @@ Reopening hides the keys again.
   with AI later grades the waiting open parts again on their pages. Under
   manual marking the paper is still read, on the member's credits (Q716): the
   read maps each part to its pages and marks closed parts (`/paper` with
-  `grade: false`), and open parts wait for staff.
+  `grade: false`), and open parts wait for staff. There Read papers again sits
+  where Mark with AI would, shown while the report's `papersToRead` (papers
+  still `reading`: a read that failed, never ran, or runs now) is above zero;
+  it is the same `mark-with-ai` call, reading without grading on each
+  member's credits (Q725).
 - Approve shows a part's pages of the paper with Whole paper a click away (T1),
   through `GET /api/assignment-attempts/{id}/paper/{fileId}/links` (the member,
   or staff once submitted).
@@ -1131,9 +1137,14 @@ the switch) turns Mark as done into Hand in, which the Assignments list and To d
 then leave to the page (no quick tick). The member's page gets Your work,
 with Add files while it is open; each file is their own standalone upload with
 `handInId` (`files.hand_in_assignment_id`, in `submission_position` order),
-stored with no parse and never read or marked. Hand in needs a file and ticks
-the assignment (`assignment_done`), the meta line then saying Handed in on its
-date; Undo hand in reopens it until the assignment closes. The report's chip reads
+stored with no parse and never read or marked. Hand in needs a file, waits
+while one uploads (as Submit does), and ticks the assignment
+(`assignment_done`), the meta line then saying Handed in on its date; Undo hand
+in reopens it until the assignment closes. Once the member's storage is full
+no file is added (`storageFullErr` at the ticket and the upload session, as a
+Marked paper's start, Q728 A): the refusal toasts the storage-limit copy, a
+file added while there was room still saves past the limit, and Hand in and
+Undo still work. The report's chip reads
 "N of M handed in", and its Members tab lists each member's date (Late past the
 due date) and files, which open in a viewer of their pages with Open file for a
 single one. Files › Submissions lists a hand-in's files once the assignment
@@ -1312,8 +1323,8 @@ Sources: [store](../server/internal/store/assignments.go),
 - `e2e/study/study-progress.spec.ts` (Docker stack, the detailed checks):
   quizzes and sets practised through the attempt and study pages becoming
   reviewable; a mixed review
-  session; a Practice topic session to its result and its row; Hide study
-  progress in Workspace settings.
+  session; a Practice topic session to its result and its row; Workspace
+  settings kept in the URL.
 - `e2e/uat/journeys/study.spec.ts` (deployed stack, thin): one quiz finished,
   one set studied, a three-item review, and the
   `study_progress`, `attempts` and `review_states` rows.

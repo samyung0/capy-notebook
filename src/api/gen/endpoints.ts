@@ -180,7 +180,6 @@ import type {
   SearchResult,
   SetChatPrefsReq,
   SetModelPrefsReq,
-  SetStudyEnabledReq,
   ShareRedemption,
   SharingNotice,
   SourceCandidateReadOutputBody,
@@ -13514,71 +13513,6 @@ export const getWorkspaceAttempts = async (id: string, options?: RequestInit): P
 
   const data: getWorkspaceAttemptsResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getWorkspaceAttemptsResponse
-}
-
-
-
-export type setWorkspaceStudyResponse204 = {
-  data: void
-  status: 204
-}
-
-export type setWorkspaceStudyResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 204>
-}
-
-export type setWorkspaceStudyResponseSuccess = (setWorkspaceStudyResponse204) & {
-  headers: Headers;
-};
-export type setWorkspaceStudyResponseError = (setWorkspaceStudyResponseDefault) & {
-  headers: Headers;
-};
-
-export type setWorkspaceStudyResponse = (setWorkspaceStudyResponseSuccess | setWorkspaceStudyResponseError)
-
-export const getSetWorkspaceStudyUrl = (id: string,) => {
-
-
-
-
-  return `/api/workspaces/${id}/study/enabled`
-}
-
-/**
- * @summary Show or hide study progress in a workspace
- */
-export const setWorkspaceStudy = async (id: string,
-    setStudyEnabledReq: NonReadonly<SetStudyEnabledReq>, options?: RequestInit): Promise<setWorkspaceStudyResponse> => {
-
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-const res = await fetch(getSetWorkspaceStudyUrl(id),
-  {
-    ...options,
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(setStudyEnabledReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: setWorkspaceStudyResponse['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as setWorkspaceStudyResponse
 }
 
 

@@ -96,10 +96,9 @@ type learningWorkspace struct {
 
 // learningScope splits the user's workspaces: those they study in, and the
 // classes they own or edit. A link or public visitor counts once they have
-// practised there; Hide study progress leaves a workspace out.
+// practised there.
 func (s *Store) learningScope(ctx context.Context, userID string) ([]*learningWorkspace, []LearningTeach, error) {
 	rows, err := s.pool.Query(ctx, `SELECT w.id, w.name, w.icon_id, w.kind, COALESCE(wm.role,''), w.user_id=$1,
-			COALESCE((SELECT enabled FROM workspace_study st WHERE st.user_id=$1 AND st.workspace_id=w.id), true),
 			(SELECT max(sp.updated_at) FROM study_progress sp WHERE sp.user_id=$1 AND sp.workspace_id=w.id),
 			(SELECT v.opened_at FROM workspace_visits v WHERE v.user_id=$1 AND v.workspace_id=w.id),
 			(SELECT count(*) FROM workspace_members m WHERE m.workspace_id=w.id AND m.role='viewer')
@@ -119,13 +118,12 @@ func (s *Store) learningScope(ctx context.Context, userID string) ([]*learningWo
 		kind    WorkspaceKind
 		role    WorkspaceRole
 		owner   bool
-		enabled bool
 		members int
 	}
 	var all []row
 	for rows.Next() {
 		var r row
-		if err := rows.Scan(&r.ws.id, &r.ws.name, &r.ws.iconID, &r.kind, &r.role, &r.owner, &r.enabled,
+		if err := rows.Scan(&r.ws.id, &r.ws.name, &r.ws.iconID, &r.kind, &r.role, &r.owner,
 			&r.ws.lastPractised, &r.ws.lastVisit, &r.members); err != nil {
 			rows.Close()
 			return nil, nil, err
@@ -161,9 +159,7 @@ func (s *Store) learningScope(ctx context.Context, userID string) ([]*learningWo
 			}
 			continue
 		}
-		if r.enabled {
-			out = append(out, &r.ws)
-		}
+		out = append(out, &r.ws)
 	}
 	return out, teaches, nil
 }
@@ -452,11 +448,9 @@ type SummaryTopic struct {
 	LastAt      *time.Time `json:"lastAt,omitempty"`
 }
 
-// StudyTopics is Study → Summary: the caller's own standing per topic. Enabled
-// is false while Hide study progress hides it.
+// StudyTopics is Study → Summary: the caller's own standing per topic.
 type StudyTopics struct {
-	Enabled bool           `json:"enabled"`
-	Topics  []SummaryTopic `json:"topics" nullable:"false"`
+	Topics []SummaryTopic `json:"topics" nullable:"false"`
 }
 
 // WorkspaceStudyTopics reads Summary, refused to a class's owner and editors
@@ -471,9 +465,6 @@ func (s *Store) WorkspaceStudyTopics(ctx context.Context, userID, wsID string, c
 		return out, ErrForbidden
 	}
 	var err error
-	if out.Enabled, err = s.StudyEnabled(ctx, userID, wsID); err != nil || !out.Enabled {
-		return out, err
-	}
 	out.Topics, err = s.topicStandings(ctx, userID, wsID, now)
 	return out, err
 }

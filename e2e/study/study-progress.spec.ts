@@ -501,34 +501,12 @@ test.describe('study progress', () => {
     ]);
   });
 
-  test('hidden progress: the Study switch in workspace settings, and settings stay in the URL', async ({
-    ownerApi,
-    ownerPage,
-    workspaceFactory,
-  }) => {
+  test('settings stay in the URL', async ({ ownerPage, workspaceFactory }) => {
     const workspace = await workspaceFactory.create({
-      name: `Progress hidden ${randomUUID().slice(0, 8)}`,
+      name: `Settings URL ${randomUUID().slice(0, 8)}`,
     });
-    const off = await ownerApi.put(
-      `/api/workspaces/${workspace.id}/study/enabled`,
-      { data: { enabled: false } }
-    );
-    expect(off.status()).toBe(204);
     const errors: string[] = [];
     ownerPage.on('pageerror', (error) => errors.push(error.message));
-
-    await ownerPage.goto(`/workspaces/${workspace.id}?settings=study`);
-    const hide = ownerPage.getByRole('switch', {
-      name: m.study_hide_progress(),
-    });
-    await expect(hide).toBeChecked();
-    const shown = waitForApi(
-      ownerPage,
-      apiEndsWith(`/api/workspaces/${workspace.id}/study/enabled`, 'PUT')
-    );
-    await hide.click();
-    expect((await shown).status()).toBe(204);
-    await ownerPage.keyboard.press('Escape');
 
     // Back with settings open leaves in-app (a goto would leave the
     // document, so the router never runs) and closes the dialog once.

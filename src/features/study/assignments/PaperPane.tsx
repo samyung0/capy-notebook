@@ -30,7 +30,8 @@ const SHEET_RATIO = 210 / 297;
 const PAPER_MAX_PAGES = 15;
 
 /** A picked file's pages as the read numbers them: a PDF's each, anything
- * else one. A PDF the browser cannot open counts one; the read reports it. */
+ * else one. A PDF the browser cannot open counts none: the upload refuses it
+ * as password-protected or damaged (Q726 A). */
 async function pickedPages(file: File) {
   if (fileExt(file.name) !== 'pdf') return 1;
   try {
@@ -41,7 +42,7 @@ async function pickedPages(file: File) {
     void pdf.destroy();
     return pages;
   } catch {
-    return 1;
+    return 0;
   }
 }
 

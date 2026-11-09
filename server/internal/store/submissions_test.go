@@ -175,6 +175,40 @@ func TestAnUploadJoinsOnlyTheUploadersOwnWork(t *testing.T) {
 	}
 }
 
+// TestHandInTakesNoFileOnceStorageIsFull (Q728 A): a file added while there
+// is room saves though it takes the member past their limit; once full, the
+// ticket and the upload session refuse the next file, as a Marked paper's
+// start does, while Hand in and Undo hand in still work.
+func TestHandInTakesNoFileOnceStorageIsFull(t *testing.T) {
+	f := newAssignmentFixture(t, "handin-full")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	handIn := unmarkedHandIn(t, f, now, f.viewer)
+	limit := mustPlanLimits(t, f.s, PlanFree).StorageBytes
+	if _, err := f.s.pool.Exec(ctx, `INSERT INTO user_storage (user_id, used_bytes) VALUES ($1, $2)
+		ON CONFLICT (user_id) DO UPDATE SET used_bytes=EXCLUDED.used_bytes`, f.viewer, limit-1024); err != nil {
+		t.Fatal(err)
+	}
+	addHandInFile(t, f, handIn.ID, now) // 2048 bytes into 1024 of room
+	var quota *QuotaExceededError
+	if err := f.s.AssertHandInUpload(ctx, handIn.ID, f.viewer, 1024, 10<<20); !errors.As(err, &quota) {
+		t.Fatalf("ticket once full = %v", err)
+	}
+	if _, err := f.s.CreateUploadSession(ctx, NewUploadSession{
+		ID: uid("up"), CreatedBy: f.viewer, ObjectPath: "sources/" + uid("blob"), FinalPath: "sources/" + uid("blob"),
+		Name: "more.pdf", Kind: "pdf", ContentType: "application/pdf", DeclaredSize: 1024, ParseMode: "none",
+		ExpiresAt: now.Add(time.Hour), HandInID: handIn.ID, PaperMaxBytes: 10 << 20,
+	}); !errors.As(err, &quota) {
+		t.Fatalf("upload session once full = %v", err)
+	}
+	if err := f.s.SetAssignmentDone(ctx, f.viewer, handIn.ID, true, now); err != nil {
+		t.Fatalf("hand in when full: %v", err)
+	}
+	if err := f.s.SetAssignmentDone(ctx, f.viewer, handIn.ID, false, now); err != nil {
+		t.Fatalf("undo hand in when full: %v", err)
+	}
+}
+
 // TestSubmissionIsNoAccountDocumentAndReadOnly (security, finding 4): a
 // handed-in file opens no editing session for its member, takes no edit, and
 // is neither listed nor readable in their account chat.

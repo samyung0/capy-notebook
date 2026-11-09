@@ -73,7 +73,7 @@ export function ApproveTab({
     () => new Map(report.members.map((row) => [row.userId, row])),
     [report.members]
   );
-  // Marked by hand (A4): no AI to run or approve.
+  // Marked by hand (A4): no AI marks to approve; the AI only reads papers.
   const manual = assignment.manage?.marking === 'manual';
   // A paper still to read waits on its closed questions too, which Mark with
   // AI reads (finding 2).
@@ -131,6 +131,14 @@ export function ApproveTab({
   const notGraded = manual
     ? 0
     : rows.filter((row) => row.waiting && !row.aiMarked).length;
+  // Mark with AI runs what waits unmarked; under manual marking it is Read
+  // papers again, reading papers still to read without grading, on each
+  // member's credits (Q725).
+  const runAI = manual
+    ? report.papersToRead > 0
+    : report.answers.some(
+        (row) => row.waiting && !row.aiMarked && !row.handMarking
+      );
   // Approve all clears a question: by member there is none to clear.
   const approvable = !member && rows.some((row) => row.waiting && row.aiMarked);
   const questionNumber = (id: string) =>
@@ -234,10 +242,7 @@ export function ApproveTab({
               total: report.marking.total,
             })}
           </p>
-        ) : !manual &&
-          report.answers.some(
-            (row) => row.waiting && !row.aiMarked && !row.handMarking
-          ) ? (
+        ) : runAI ? (
           <Button
             className="mt-2 w-full"
             disabled={marking}
@@ -253,7 +258,9 @@ export function ApproveTab({
             size="sm"
             variant="outline"
           >
-            {m.assignment_mark_with_ai()}
+            {manual
+              ? m.assignment_read_papers_again()
+              : m.assignment_mark_with_ai()}
           </Button>
         ) : null}
         <ul className="mt-2 flex flex-col gap-0.5 max-md:max-h-56 max-md:overflow-auto">

@@ -219,15 +219,19 @@ pub async fn live_role<C: GenericClient>(
     // material's owner); `payer` is owner_user_id, the account the material is
     // charged to (uploader pays): its frozen, locked or full state makes the
     // material read-only (Go's canEditMaterial). `hidden` also holds a quiz under
-    // an open assignment that went to this viewer, who takes its frozen copy
-    // instead (Go's quizAssignedToSQL).
+    // an assignment that went to this viewer, who takes its frozen copy instead:
+    // an open one, or a closed marked one still holding its keys, its grades
+    // Manual and unreleased or its answers Do not show (Go's quizAssignedToSQL
+    // and assignmentKeysHeldSQL, finding 5).
     let sql = format!(
         "SELECT m.owner_user_id, m.privacy, m.workspace_id,
            m.hidden OR (m.kind='quiz' AND EXISTS (SELECT 1 FROM assignments a
              JOIN workspaces aw ON aw.id=a.workspace_id AND aw.kind='class'
              JOIN workspace_members am ON am.workspace_id=a.workspace_id AND am.user_id=$2 AND am.role='viewer'
-             WHERE a.source_quiz_id=m.id AND NOT a.draft AND a.closed_at IS NULL
-               AND NOT (a.no_late AND a.due_at <= now())
+             WHERE a.source_quiz_id=m.id AND NOT a.draft
+               AND ((a.closed_at IS NULL AND NOT (a.no_late AND a.due_at <= now()))
+                 OR (a.kind='marked' AND ((a.grades_shown='manual' AND a.grades_released_at IS NULL)
+                   OR a.answers_shown='never')))
                AND (a.assign_all OR EXISTS (SELECT 1 FROM assignment_assignees x
                  WHERE x.assignment_id=a.id AND x.user_id=$2)))) AS hidden,
            owner.id AS owner_id,

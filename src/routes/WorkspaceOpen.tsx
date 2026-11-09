@@ -81,6 +81,7 @@ import { VoiceFooterButton } from '@/features/voice/VoiceCard';
 import type { AddSourceMode } from '@/features/workspace/AddSourceDialog';
 import {
   canManageWorkspaceSettings,
+  hasWorkspaceSettings,
   isWorkspaceReadOnly,
 } from '@/features/workspace/access';
 import { ChatPanel, type ChatRequest } from '@/features/workspace/ChatPanel';
@@ -811,8 +812,8 @@ function WorkspaceOpen() {
   if (!ws)
     return <WorkspaceError backLabel={m.workspace_back_to()} backTo="/" />;
 
-  // Everyone has settings: phones open on the tab list, wider screens on the
-  // first tab (General for owner and editor members, else their own Study).
+  // Members and anyone who may clone have settings: phones open on the tab
+  // list, wider screens on the first tab (General for owner and editor members).
   const openSettings = () => setSettingsTab('menu');
   // Below lg an open Office file keeps its bottom chrome (sheet tabs, slide
   // pager) clear: the chat dock stays a button above it.
@@ -847,11 +848,15 @@ function WorkspaceOpen() {
         },
       ];
   // One column has no rail: its menus carry the Dashboard and Study.
-  const settingsItem: MenuItem = {
-    icon: 'settings',
-    label: m.workspace_settings(),
-    onClick: openSettings,
-  };
+  const settingsEntry: MenuItem[] = hasWorkspaceSettings(ws)
+    ? [
+        {
+          icon: 'settings',
+          label: m.workspace_settings(),
+          onClick: openSettings,
+        },
+      ]
+    : [];
   const settingsItems: MenuItem[] = [
     {
       icon: 'dashboard',
@@ -891,7 +896,7 @@ function WorkspaceOpen() {
           },
         ]
       : []),
-    settingsItem,
+    ...settingsEntry,
   ];
   const centerHeader = () =>
     viewerBox.current?.querySelector<HTMLElement>(
@@ -947,11 +952,7 @@ function WorkspaceOpen() {
           },
         ]
       : []),
-    {
-      icon: 'settings',
-      label: m.workspace_settings(),
-      onClick: openSettings,
-    },
+    ...settingsEntry,
     ...(readOnly && canClone
       ? [
           {
@@ -1361,7 +1362,7 @@ function WorkspaceOpen() {
                     color="purple"
                     dock={{
                       // The chat page's ⋮: back leads to the rest (Epo 2026-11-05).
-                      menuItems: [settingsItem],
+                      menuItems: settingsEntry,
                       office: officeOpen,
                       onPageOpen: setChatPageOpen,
                       pageOpen: search.panel === 'agent',

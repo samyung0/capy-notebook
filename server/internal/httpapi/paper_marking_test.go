@@ -265,6 +265,56 @@ func TestManualMarkingReadsThePaperWithoutGrading(t *testing.T) {
 	}
 }
 
+// Under manual marking a paper whose read failed counts in the report's
+// papersToRead, and Read papers again (mark-with-ai) reads it once more without
+// grading, on the member's credits (Q725).
+func TestReadPapersAgainUnderManualMarking(t *testing.T) {
+	h, st, stub := openPaperAPI(t)
+	stub.fail.Store(true)
+	id := paperAssignment(t, h, "manual", 0)
+	attemptID := startPaperWithFile(t, h, st, id)
+	if rec := doReq(t, h, http.MethodPost, "/api/assignment-attempts/"+attemptID+"/submit", "u_viewer",
+		map[string]any{"answers": map[string]any{}}); rec.Code != http.StatusOK {
+		t.Fatalf("submit: status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	waitForAIError(t, h, id)
+	toRead := func() int {
+		rec := doReq(t, h, http.MethodGet, "/api/assignments/"+id+"/report", "u_owner", nil)
+		var report struct{ PapersToRead int }
+		_ = json.Unmarshal(rec.Body.Bytes(), &report)
+		return report.PapersToRead
+	}
+	if n := toRead(); n != 1 {
+		t.Fatalf("papersToRead after the failed read = %d", n)
+	}
+	stub.fail.Store(false)
+	rec := doReq(t, h, http.MethodPost, "/api/assignments/"+id+"/mark-with-ai", "u_owner", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("read again: status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	read := waitForPaper(t, st, attemptID, store.PaperRead)
+	if read.Correct != 1 || read.WaitingAnswers != 1 {
+		t.Fatalf("marked %v, waiting %d", read.Correct, read.WaitingAnswers)
+	}
+	if n := toRead(); n != 0 {
+		t.Fatalf("papersToRead after the read = %d", n)
+	}
+	stub.mu.Lock()
+	grades := append([]bool{}, stub.grades...)
+	stub.mu.Unlock()
+	if len(grades) != 2 || grades[1] {
+		t.Fatalf("read calls grading = %v, want a second read that grades nothing", grades)
+	}
+	var payer string
+	if err := st.Pool().QueryRow(context.Background(), `SELECT actor_user_id FROM provider_sessions
+		WHERE surface='quiz' AND workspace_id='ws_e2e_private' ORDER BY created_at DESC LIMIT 1`).Scan(&payer); err != nil {
+		t.Fatal(err)
+	}
+	if payer != "u_viewer" {
+		t.Fatalf("read paid by %s", payer)
+	}
+}
+
 // Show grades Manual hides what waits from the member, and the submit still
 // starts AI marking (finding 1).
 func TestManualGradesStillMarkAtSubmit(t *testing.T) {

@@ -21,7 +21,6 @@ import (
 // is copied by clone or charged to storage.
 
 type StudySummary struct {
-	Enabled        bool      `json:"enabled"`
 	RecentAttempts []Attempt `json:"recentAttempts" nullable:"false"`
 	// Reviewable counts the rated questions and cards a review session draws on.
 	Reviewable int `json:"reviewable"`
@@ -214,35 +213,16 @@ func (s *Store) StudyPreferencesOf(ctx context.Context, userID string) (StudyPre
 	return prefs, err
 }
 
-func (s *Store) SetWorkspaceStudy(ctx context.Context, userID, wsID string, enabled bool) error {
-	_, err := s.pool.Exec(ctx, `INSERT INTO workspace_study (user_id, workspace_id, enabled) VALUES ($1,$2,$3)
-		ON CONFLICT (user_id, workspace_id) DO UPDATE SET enabled=EXCLUDED.enabled`, userID, wsID, enabled)
-	return err
-}
-
 /* ------------------------------------------------------------- progress */
-
-// StudyEnabled is false while the user hides study progress in the
-// workspace; a workspace without its own row shows it.
-func (s *Store) StudyEnabled(ctx context.Context, userID, wsID string) (bool, error) {
-	var on bool
-	err := s.pool.QueryRow(ctx, `SELECT COALESCE(
-		(SELECT enabled FROM workspace_study WHERE user_id=$1 AND workspace_id=$2), true)`, userID, wsID).Scan(&on)
-	return on, err
-}
 
 func (s *Store) StudySummary(ctx context.Context, userID, wsID string, now time.Time) (StudySummary, error) {
 	out := StudySummary{RecentAttempts: []Attempt{}, QuickReview: []ReviewItem{}}
-	var err error
-	if out.Enabled, err = s.StudyEnabled(ctx, userID, wsID); err != nil {
-		return out, err
-	}
 	if err := s.recentAttempts(ctx, userID, wsID, &out); err != nil {
 		return out, err
 	}
 	// Continue review: the workspace's latest whole-workspace session.
 	var u UnfinishedSession
-	err = s.pool.QueryRow(ctx, `SELECT rs.id, rs.workspace_id, w.name, w.icon_id, rs.group_kind,
+	err := s.pool.QueryRow(ctx, `SELECT rs.id, rs.workspace_id, w.name, w.icon_id, rs.group_kind,
 			(SELECT count(*) FROM review_answers ra WHERE ra.session_id=rs.id), jsonb_array_length(rs.items), rs.last_answer_at
 		FROM review_sessions rs JOIN workspaces w ON w.id=rs.workspace_id
 		WHERE rs.user_id=$1 AND rs.workspace_id=$2 AND rs.group_kind=$3 AND rs.finished_at IS NULL

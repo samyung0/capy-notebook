@@ -11,7 +11,6 @@ import type { UnfinishedSession } from './unfinishedSession.ts';
 export interface StudySummary {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  enabled: boolean;
   quickReview: ReviewItem[];
   recentAttempts: Attempt[];
   reviewable: number;

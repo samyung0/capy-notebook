@@ -10,7 +10,10 @@ import {
 import type { Workspace } from '@/api/types';
 import { ConfirmDialog } from '@/components/ui/Dialog';
 import { Menu } from '@/components/ui/Menu';
-import { canManageWorkspaceSettings } from '@/features/workspace/access';
+import {
+  canManageWorkspaceSettings,
+  hasWorkspaceSettings,
+} from '@/features/workspace/access';
 import { CloneWorkspaceDialog } from '@/features/workspace/CloneWorkspaceDialog';
 import { ShareDialog } from '@/features/workspace/ShareDialog';
 import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsDialog';
@@ -44,12 +47,16 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
   const canManage = workspace.capabilities.canManageMembers;
   const canSettings = canManageWorkspaceSettings(workspace);
   const menuItems = [
-    // Everyone has settings (their own Study tab); managers also share.
-    {
-      icon: 'settings' as const,
-      label: m.workspace_settings(),
-      onClick: () => setEditOpen(true),
-    },
+    // Members and anyone who may clone have settings; managers also share.
+    ...(hasWorkspaceSettings(workspace)
+      ? [
+          {
+            icon: 'settings' as const,
+            label: m.workspace_settings(),
+            onClick: () => setEditOpen(true),
+          },
+        ]
+      : []),
     ...(canSettings
       ? [
           {

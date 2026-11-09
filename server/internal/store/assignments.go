@@ -2524,6 +2524,9 @@ type AssignmentReport struct {
 	// a question with an open part, and any other submission's answer still
 	// waiting: once marked it can become the highest.
 	Answers []AssignmentAnswerRow `json:"answers" nullable:"false"`
+	// PapersToRead counts the submitted papers not read yet (PapersToRead):
+	// under manual marking, Read papers again reads them (Q725).
+	PapersToRead int `json:"papersToRead"`
 }
 
 // AssignmentMemberRow is one member it went to.
@@ -2699,6 +2702,11 @@ func (s *Store) GetAssignmentReport(ctx context.Context, userID, id string, now 
 		}
 	}
 	out.Questions, out.Answers = questionReports(withRemoved(frozen, counted, waiting), counted, waiting)
+	papers, err := s.PapersToRead(ctx, id, "")
+	if err != nil {
+		return out, err
+	}
+	out.PapersToRead = len(papers)
 	if marking == MarkingManual {
 		return out, nil
 	}

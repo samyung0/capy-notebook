@@ -146,7 +146,6 @@ import type {
   SourceUploadPolicy,
   SpendingLimitReq,
   StudyPreferences,
-  StudySummary,
   StudyTopics,
   SubmittedPapers,
   Tag,
@@ -3086,19 +3085,6 @@ export const useCards = (
     meta: queryMeta(options),
   });
 /* ---------------- study progress and review ---------------- */
-export const workspaceStudyQuery = (workspaceId: string) =>
-  queryOptions({
-    ...persisted,
-    queryFn: () => api.get<StudySummary>(`/workspaces/${workspaceId}/study`),
-    queryKey: qk.study(workspaceId),
-  });
-/** The requester's own progress in a workspace; Workspace settings → Study
- * reads `enabled` (Hide study progress). */
-export const useWorkspaceStudy = (
-  workspaceId: string,
-  options?: QueryUiOptions
-) =>
-  useQuery({ ...workspaceStudyQuery(workspaceId), meta: queryMeta(options) });
 
 /** The workspace's Practice page: suggestions, every quiz members can see
  * and the caller's own topic reviews; owners and editors also get counts. */
@@ -3538,15 +3524,6 @@ export function invalidateStudy(
     }),
     qc.invalidateQueries({ queryKey: qk.reviewRoot }),
   ]);
-}
-
-export function useSetWorkspaceStudyEnabled(workspaceId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (enabled: boolean) =>
-      api.put<void>(`/workspaces/${workspaceId}/study/enabled`, { enabled }),
-    onSuccess: () => invalidateStudy(qc, workspaceId),
-  });
 }
 
 /** A new review session: a suggestion's items, or the whole workspace's

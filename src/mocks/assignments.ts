@@ -1262,7 +1262,11 @@ function report(row: Row, viewer: Viewer): AssignmentReport {
       };
     }
   );
-  return { answers, members, questions };
+  // The mock reads papers at once: one waits only as a seed sets it.
+  const papersToRead = [...attempts.values()].filter(
+    (a) => a.assignmentId === row.id && a.paper === 'reading'
+  ).length;
+  return { answers, members, papersToRead, questions };
 }
 
 function applyForm(row: Row, body: AssignmentFormReq) {

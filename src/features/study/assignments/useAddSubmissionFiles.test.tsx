@@ -1,7 +1,8 @@
 import { parseHTML } from 'linkedom';
 import { act } from 'react';
 import { expect, it, vi } from 'vitest';
-import { getLocale } from '@/i18n';
+import { ApiError } from '@/api/client';
+import { getLocale, m } from '@/i18n';
 
 getLocale();
 const { document, window } = parseHTML(
@@ -11,6 +12,7 @@ Object.assign(globalThis, { document, IS_REACT_ACT_ENVIRONMENT: true, window });
 
 const upload = vi.hoisted(() => vi.fn());
 const compress = vi.hoisted(() => vi.fn());
+const toast = vi.hoisted(() => vi.fn());
 vi.mock('@/api/hooks', () => ({
   useSourceUploadPolicy: () => ({
     data: {
@@ -27,7 +29,36 @@ vi.mock('@/api/hooks', () => ({
 vi.mock('@/features/workspace/sourceCompress', () => ({
   compressSource: compress,
 }));
-vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
+vi.mock('@/components/ui/userToast', () => ({ userToast: toast }));
+// The normal upload's browser analysis, by file name: a PDF opens unless a
+// test names why it can't.
+const refused = vi.hoisted(() => new Map<string, string>());
+vi.mock('@/features/workspace/sourceAnalysis', async (original) => {
+  const actual =
+    await original<typeof import('@/features/workspace/sourceAnalysis')>();
+  return {
+    ...actual,
+    localSourceAnalysisInput: (file: File) =>
+      file.name.endsWith('.pdf') ? { key: file.name, name: file.name } : null,
+    SourceAnalysisQueue: class {
+      enqueue({ input }: { input: { name: string } }) {
+        const code = refused.get(input.name);
+        return {
+          cancel: () => undefined,
+          promise: code
+            ? Promise.reject(
+                new actual.SourceAnalysisError(
+                  code as 'password_protected' | 'unreadable',
+                  code
+                )
+              )
+            : Promise.resolve({}),
+        };
+      }
+      dispose() {}
+    },
+  };
+});
 
 const { createRoot } = await import('react-dom/client');
 const { useAddSubmissionFiles } = await import('./useAddSubmissionFiles');
@@ -61,5 +92,59 @@ it('compresses a photo before it joins the paper', async () => {
     batchTotal: 2,
     kind: 'image',
   });
+  act(() => root.unmount());
+});
+
+// Q728 A: once the member's storage is full a hand-in file is refused, and the
+// refusal says so with the Marked Upload file refusal's message.
+it("says a full account's hand-in file was refused", async () => {
+  upload.mockRejectedValue(
+    new ApiError(403, 'Forbidden', undefined, {
+      code: 'storage_quota_exceeded',
+      ownerUserId: 'u_me',
+    })
+  );
+  let add: ReturnType<typeof useAddSubmissionFiles>['add'] = async () => {};
+  function Probe() {
+    add = useAddSubmissionFiles({ handInId: 'as1' }).add;
+    return null;
+  }
+  const root = createRoot(document.getElementById('root')!);
+  await act(async () => root.render(<Probe />));
+  await act(() =>
+    add([new File(['%PDF'], 'work.pdf', { type: 'application/pdf' })])
+  );
+  expect(toast).toHaveBeenCalledWith(
+    expect.objectContaining({ title: m.error_quota_body() })
+  );
+  act(() => root.unmount());
+});
+
+// Q726 A: a password-protected or damaged PDF is refused as it is picked, with
+// its own message, and the other picked files still upload.
+it('refuses a password-protected and a damaged PDF, uploading the rest', async () => {
+  refused.set('locked.pdf', 'password_protected');
+  refused.set('broken.pdf', 'unreadable');
+  upload.mockReset();
+  upload.mockResolvedValue({});
+  toast.mockReset();
+  let add: ReturnType<typeof useAddSubmissionFiles>['add'] = async () => {};
+  function Probe() {
+    add = useAddSubmissionFiles({ attemptId: 'at1' }).add;
+    return null;
+  }
+  const root = createRoot(document.getElementById('root')!);
+  await act(async () => root.render(<Probe />));
+  const pdf = (name: string) =>
+    new File(['%PDF'], name, { type: 'application/pdf' });
+  const good = pdf('answers.pdf');
+  await act(() => add([pdf('locked.pdf'), good, pdf('broken.pdf')]));
+  expect(toast.mock.calls.map(([body]) => body.title)).toEqual([
+    m.assignment_paper_password(),
+    m.assignment_paper_damaged(),
+  ]);
+  expect(upload).toHaveBeenCalledTimes(1);
+  expect(upload.mock.calls[0][0]).toMatchObject({ batchTotal: 1, file: good });
+  refused.clear();
   act(() => root.unmount());
 });

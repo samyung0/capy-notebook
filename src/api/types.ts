@@ -415,7 +415,6 @@ export type {
   ReviewSuggestion,
   Row as BankListRow,
   SessionScore,
-  SetStudyEnabledReq,
   SharingNotice,
   StudyTopics,
   SummaryTopic,

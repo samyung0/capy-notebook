@@ -122,18 +122,11 @@ func TestWorkspaceOnlyKeepsTheOperationsAndReplaysWithItsMessage(t *testing.T) {
 }
 
 // The open item reaches the model with its stored title, and only when it is a
-// live item of this workspace; the browser never supplies the title. Study
-// progress and the saved study preferences ride along.
-func TestStreamSendsTheOpenResourceAndStudySwitch(t *testing.T) {
+// live item of this workspace; the browser never supplies the title. The saved
+// study preferences ride along.
+func TestStreamSendsTheOpenResourceAndStudyPreferences(t *testing.T) {
 	h, st, bodies := streamCapture(t)
-	if _, err := st.Pool().Exec(t.Context(),
-		`INSERT INTO workspace_study (user_id, workspace_id, enabled) VALUES ('u_editor','ws_e2e_private',true)
-		 ON CONFLICT (user_id, workspace_id) DO UPDATE SET enabled=true`); err != nil {
-		t.Fatal(err)
-	}
 	t.Cleanup(func() {
-		_, _ = st.Pool().Exec(context.Background(),
-			`DELETE FROM workspace_study WHERE user_id='u_editor' AND workspace_id='ws_e2e_private'`)
 		_, _ = st.Pool().Exec(context.Background(), `UPDATE users SET study_preferences='{}' WHERE id='u_editor'`)
 	})
 	// Preferences are saved through the account route, then reach every turn.
