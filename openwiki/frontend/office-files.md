@@ -48,7 +48,7 @@ git submodule update --init vendor/betteroffice
 `prebuild`, `pretypecheck`, and `pretest` run
 `scripts/prepare-betteroffice.mjs`; `pnpm dev` and Playwright's Vite servers do
 not, so run `pnpm office:prepare` first (browser E2E CI does). It installs the fork's locked Bun workspace
-and builds the scoped DOCX stylesheet plus DOCX/XLSX/PPTX viewer/editor WASM artifacts, the fonts package's `fontpack.wasm` decoder (the fork gitignores it and builds it only with `bun run build:fonts-decoder`; without it every packed face fails) and the headless checkpoint bundle. The fork builder verifies source/output fingerprints before reusing WASM; the decoder script always runs and cargo decides what is stale. A cold build
+and builds the scoped DOCX stylesheet plus DOCX/XLSX/PPTX viewer/editor WASM artifacts, the fonts package's `fontpack.wasm` decoder (the fork gitignores it and builds it only with its `scripts/build-fonts-decoder.ts`, which office:prepare runs as `bun run build:fonts-decoder`; without it every packed face fails) and the headless checkpoint bundle. The fork builder verifies source/output fingerprints before reusing WASM; the decoder script always runs and cargo decides what is stale. A cold build
 requires Bun 1.4.3 (CI's), Rust, `wasm-pack` 0.15.0, and `wasm-opt` from Binaryen. Existing,
 intact generated artifacts are reused.
 
