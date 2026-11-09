@@ -90,3 +90,41 @@ it('lists a member twice by attempt and opens the one picked', async () => {
   expect(opened.ids.at(-1)).toBe('at_counted');
   act(() => root.unmount());
 });
+
+// Finding 2: a paper still to read waits on every question, a closed-only one
+// too: Approve lists it with Mark with AI to read the paper again.
+it('lists a paper waiting to be read on a question with no open part', async () => {
+  const closed = {
+    id: 'q2',
+    parts: [{ answer: { type: 'mcq' }, id: 'p2', marks: 1 }],
+    stem: [],
+  };
+  const root = createRoot(document.getElementById('root') as never);
+  await act(async () =>
+    root.render(
+      <ApproveTab
+        assignment={
+          { attempts: 1, id: 'as1', workspaceId: 'ws1' } as Assignment
+        }
+        report={
+          {
+            answers: [
+              { ...answer('at_paper', 1, true), marks: 1, questionId: 'q2' },
+            ],
+            members: [{ attemptId: 'at_paper', name: 'Ada', userId: 'u1' }],
+            questions: [{ parts: [], question: closed, submitted: 1 }],
+          } as unknown as AssignmentReport
+        }
+        search={{}}
+      />
+    )
+  );
+  expect(document.body.textContent).not.toContain(m.assignment_no_open());
+  expect(document.querySelectorAll('li button')).toHaveLength(1);
+  expect(
+    [...document.querySelectorAll('button')].some(
+      (button) => button.textContent === m.assignment_mark_with_ai()
+    )
+  ).toBe(true);
+  act(() => root.unmount());
+});

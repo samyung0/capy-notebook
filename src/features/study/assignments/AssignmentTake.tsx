@@ -55,6 +55,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy, unexpectedErrorId } from '@/lib/errors';
 import { PaperPane } from './LazyPaper';
+import { useAddSubmissionFiles } from './useAddSubmissionFiles';
 
 /** How long typing rests before answers save. */
 const SAVE_AFTER_MS = 2000;
@@ -211,6 +212,10 @@ export function AssignmentTake({
   const removed = useRemovedAssets(attempt.removedAssetIds);
   const { mutate: submitAttempt, isPending: submitting } =
     useSubmitAssignmentAttempt(workspaceId);
+  // Your paper's uploads, held here: Submit waits for them, while the clock's
+  // own submit does not (finding 6).
+  const uploads = useAddSubmissionFiles({ attemptId: attempt.id });
+  const uploading = uploads.uploading.length > 0;
   // It ends at the earlier of its time running out and a No late due date.
   const left = useTimeLeft(
     earliest(attempt.deadlineAt, attempt.closesAt),
@@ -444,9 +449,14 @@ export function AssignmentTake({
         ? m.assignment_submit_unanswered_one()
         : m.assignment_submit_unanswered({ count: unanswered });
   const submitButton = (
-    <Button disabled={submitting} onClick={() => setConfirming(true)}>
-      {submitting ? m.assignment_submitting() : m.assignment_submit()}
-    </Button>
+    <span title={uploading ? m.assignment_submit_wait_upload() : undefined}>
+      <Button
+        disabled={submitting || uploading}
+        onClick={() => setConfirming(true)}
+      >
+        {submitting ? m.assignment_submitting() : m.assignment_submit()}
+      </Button>
+    </span>
   );
 
   return (
@@ -609,7 +619,11 @@ export function AssignmentTake({
             >
               <div className="px-4 pt-6 pb-6 sm:px-6 md:pb-24 lg:px-21.5 lg:pt-12 lg:pb-10">
                 {paperOpen && (
-                  <PaperPane attemptId={attempt.id} files={files} />
+                  <PaperPane
+                    attemptId={attempt.id}
+                    files={files}
+                    uploads={uploads}
+                  />
                 )}
                 {!paperOpen && question && (
                   <div
@@ -724,7 +738,10 @@ export function AssignmentTake({
                   >
                     {m.action_cancel()}
                   </Button>
-                  <Button disabled={submitting} onClick={() => submit(true)}>
+                  <Button
+                    disabled={submitting || uploading}
+                    onClick={() => submit(true)}
+                  >
                     {submitting
                       ? m.assignment_submitting()
                       : m.assignment_submit()}

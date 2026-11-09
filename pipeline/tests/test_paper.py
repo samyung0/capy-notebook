@@ -118,6 +118,25 @@ async def test_read_then_grade(monkeypatch, pdf):
     assert ("f2", 2, 1568) in pdf.rendered and len(pdf.rendered) == 8
 
 
+async def test_manual_marking_reads_and_grades_nothing(monkeypatch, pdf):
+    """Q716: under manual marking the read maps the open part to its pages and
+    no batch grades it."""
+    parts = [part("1", "choice"), part("2", "open", ITEMS)]
+    read = {
+        "parts": [
+            {"part": "1", "pages": [1], "answer": ["A"]},
+            {"part": "2", "pages": [2]},
+        ]
+    }
+    calls = calls_with(monkeypatch, lambda m: json.dumps(read))
+    out = await paper.mark(FILES, parts, None, model=None, grade=False)
+    assert len(calls) == 1 and calls[0][0][0]["content"] == paper.R
+    assert out["parts"] == [
+        {"id": "1", "pages": [1], "answer": ["A"]},
+        {"id": "2", "pages": [2]},
+    ]
+
+
 async def test_given_pages_skip_the_read(monkeypatch, pdf):
     parts = [part("1", "choice"), part("2", "open", ITEMS), part("3", "open", ITEMS)]
     calls = calls_with(monkeypatch, lambda m: graded("2"))

@@ -820,6 +820,12 @@ due date):
 | A viewer it went to | The icon, listed even if the quiz is hidden, and it opens the assignment (`assignmentId`, the earliest due of several) | Refused: reads, checks, images, its room and the chat agent answer 404 (`materialEffectiveAccess`, `editorAssetReadable`, `live_access`, `AccountDocumentAccess`), a device drops its kept copy (`ReadableMaterialIDs`), and it is off Practice, reviews and new items. New joins and token requests are refused; nothing about an assignment closes a connection (Epo 2026-11-05) |
 | A viewer it did not go to | A normal quiz if it is visible; no row if hidden | As it was, the owner's choice |
 
+A viewer it went to keeps their row and refusal past the close while a closed
+marked assignment still holds its keys: grades waiting for release under Show
+grades Manual, or Show answers Do not show (`assignmentKeysHeldSQL`; Q714,
+finding 5). The collaboration server's own copy of the rule (`live_access`)
+still ends at the close; Go refuses the room token first.
+
 `quizAssignedToSQL` and `quizAssignmentOpenSQL` in `store/assignments.go` are the
 two reads; `materialIconName(kind, assigned)` is the icon, a quill in the file-icon
 sprite, on the file tree, Recent, Blocks cards and the open file's header. A direct
@@ -1013,28 +1019,48 @@ Reopening hides the keys again.
   last row. Its files are the member's own standalone uploads through the normal
   source upload with `attemptId` (`files.attempt_id`, in `attempt_position`
   order): ingest runs and charges them as any upload, but credits never refuse
-  one and its bytes save past the storage limit. At most 15 files within the
-  member's source file cap across them (O1). They can be removed and dragged
-  into order until Submit, and never list in Files, search or Recent.
+  one and its bytes save past the storage limit. A photo or an Office file's
+  pictures are compressed in the browser first, as any upload's are
+  (`compressSource`). At most 15 files within the member's source file cap
+  across them (O1), and at most 15 pages, which the browser counts as files
+  are picked (a PDF's pages, anything else one) and refuses with "A paper holds
+  at most 15 pages…" (finding 7). They can be removed and dragged into order
+  until Submit, which waits while a file uploads (the clock's own submit does
+  not, finding 6), and never list in Files, search, Recent or account chat;
+  their member opens them read only (no editing session, finding 4).
 - An upload attempt's matching options and ordering items are shuffled with the
   attempt as the seed (`questions.LearnerViewsSeeded`), so the letters on paper
   match what the read call is given.
 - Submitting leaves every part waiting with nothing logged (`paper = 'reading'`).
-  Marking waits for the files' ingest, then the pipeline's `/paper` reads every
-  page and grades the open and drawn parts on their pages, one call
+  The read starts at the member's submit, decided from the attempt as stored
+  (`NeedsMarking`), whatever Show grades hides from them (finding 1), and when
+  the server submits the paper for them: the sweep, or an attempt found past its
+  time when read or restarted (`store.OnPaperHandedIn`). Marking waits for the
+  files' ingest, then the pipeline's `/paper` reads every page of the paper as
+  the attempt holds it (`t.questions`, not a later republish, finding 10) and
+  grades the open and drawn parts on their pages, one call
   (`observability-metering.md`). Go maps each closed answer from the member's
   letters to the stored answer and marks it against the key, drops an answer
   read with no pages, stores each part's `pages`, logs the answers
   (`paper = 'read'`), then saves the AI's marks and failures as for typed
-  answers. Mark with AI later grades the waiting open parts again on their
-  pages. Under manual marking nothing is read.
+  answers. A text or Office file with no text (its ingest failed, or was
+  skipped for credits) is not read: every part waits with Grade Error or No
+  credits (finding 8). A failed read, or one that waited out the ingest, leaves
+  the paper `reading`, every question of it on Approve (closed ones too), and
+  Mark with AI reads it again (`PapersToRead`); nothing retries by itself. Mark
+  with AI later grades the waiting open parts again on their pages. Under
+  manual marking the paper is still read, on the member's credits (Q716): the
+  read maps each part to its pages and marks closed parts (`/paper` with
+  `grade: false`), and open parts wait for staff.
 - Approve shows a part's pages of the paper with Whole paper a click away (T1),
   through `GET /api/assignment-attempts/{id}/paper/{fileId}/links` (the member,
   or staff once submitted).
 - Files › Submissions lists a paper's files once every part is marked and the
   assignment has closed with its grades out, as Files › Canvas now does for
   assignment drawings (Epo 2026-11-08, "Yes, both tabs"); deleting keeps the
-  marks, and Approve then says the member deleted it (F2).
+  marks, and Approve then says the member deleted it (F2). As a member leaves
+  the class, their read papers with nothing waiting and their hand-ins go, as
+  their marked drawings do (`dropLeaverSubmissionsTx`, finding 11).
 - Releasing grades rings each member who handed in (`grades_released`).
 
 **Handing in files** (Epo 2026-11-08, migration 0162, mocks C2, S3, T2): the
@@ -1062,7 +1088,7 @@ and the Submitted page says who releases it. Answers never show before grades.
 The topic-label read leaves out events of an attempt on such an assignment, and
 the sweep makes its quiz practice, rating what was submitted, only once it has
 closed and its grades are released. After release, later marks show as they
-land. Practise again shows once its quiz is practice. The top right
+land. Practise again shows once its quiz is practice, never to members under Show answers Do not show, whose quiz stays refused to them (finding 5). The top right
 shows the mark after any late penalty, with the unpenalised mark under it.
 
 **The report** (G3, G3m, A3; `GET /api/assignments/{id}/report`, owner and editor
@@ -1096,7 +1122,10 @@ attempt at a time per payer, with "Marking 12 of 40 answers…" from the report'
 alone). Once it has closed, by hand or at a No late submissions due date, the sweep
 (within a minute) sets `released_at` and makes the quiz a normal visible one
 (`hidden=false`) unless another open assignment still holds it; the icon and the
-assignee's refusal end at the close itself. A hidden quiz's row can so go missing
+assignee's refusal end at the close itself, except while its grades wait for
+release under Show grades Manual or its answers are Do not show: the quiz then
+stays refused to those it went to, their row opening the assignment
+(`assignmentKeysHeldSQL` in `quizAssignedToSQL`, finding 5). A hidden quiz's row can so go missing
 for that minute. Practice notes "Assignment, closed 24 Oct" (`assignmentClosedAt`).
 The owner can hide it again from its ⋮, and the sweep leaves that alone. Marked
 answers join reviews at that moment (§11.6): each attempt's fully marked questions
