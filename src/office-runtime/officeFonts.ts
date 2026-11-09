@@ -1,9 +1,11 @@
 import {
+  BASE_LATIN_FAMILY,
   type BundledFontFace,
   type FontAssetOptions,
   type FontDecoder,
   loadBundledFontBytes,
   registerBundledFontFace,
+  resolveBundledFamilyFace,
   resolveLastResortFace,
   resolveMetricCompatFace,
   resolveScriptFallbackFace,
@@ -165,6 +167,13 @@ function fontProvider(
     resolve(family: string, bold: boolean, italic: boolean) {
       const face = resolveMetricCompatFace(family, bold, italic);
       return face && loader(face, family, options, runtime);
+    },
+    // DOCX's backstop for characters a document's faces lack (Greek, arrows,
+    // dingbats). Without it the engine loads the face itself: with the edit
+    // WASM's decoder, kept from the frame, and failing silently.
+    resolveBaseLatin(bold: boolean, italic: boolean) {
+      const face = resolveBundledFamilyFace(BASE_LATIN_FAMILY, bold, italic);
+      return face && loader(face, face.family, options, runtime);
     },
     resolveLastResort(family: string, bold: boolean, italic: boolean) {
       return loader(
