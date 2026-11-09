@@ -316,7 +316,7 @@ objects for the reaper.
 
 ### Workspace canvases
 
-A member's personal workspace canvas (Epo 2026-11-09, migration 0163) is a
+A member's personal workspace canvas (Epo 2026-11-09, migration 0164) is a
 standalone material of kind `canvas` (`canvas_workspace_id` names its workspace,
 one live canvas per member and workspace) paid for by the member, as any
 standalone material is. Its drawing is the material's own `board` editor asset,
