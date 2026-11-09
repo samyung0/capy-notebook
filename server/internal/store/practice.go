@@ -91,10 +91,6 @@ func (s *Store) WorkspacePractice(ctx context.Context, userID, wsID string, canE
 }
 
 func (s *Store) practiceSuggestions(ctx context.Context, userID, wsID string, out *Practice, now time.Time) error {
-	on, err := s.StudyEnabled(ctx, userID, wsID)
-	if err != nil || !on {
-		return err
-	}
 	prefsRaw, err := s.StudyPreferencesOf(ctx, userID)
 	if err != nil {
 		return err

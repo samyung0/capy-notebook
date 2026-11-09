@@ -28,7 +28,7 @@ import {
 } from './boardData';
 import { drawChip, openBoardEditor, toolTip } from './boardEditorShell';
 import { alongDrag, ERASER_SIZE, EraserTrail } from './boardEraser';
-import { clockAngle, snapTo, type Vec } from './boardGeometry';
+import { clockAngle, snapTo, tidy, type Vec } from './boardGeometry';
 import { fillRow, mathsIcon } from './boardTools';
 
 type Tool = 'select' | 'draw' | 'fill' | 'label' | 'erase';
@@ -92,8 +92,16 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     (a.kind === 'spoke'
       ? a.angle === (b as typeof a).angle
       : a.id === (b as typeof a).id);
-  /** A pie's line or label being dragged round, to this angle; written when it lifts. */
-  let turning: { angle: number; moved: boolean } | null = null;
+  /** How far a pie's line or label being dragged has turned; written when it lifts. */
+  let turning: { by: number } | null = null;
+  /** What a Select drag moves: every chosen item of the held one's kind when it's one
+   * of them, so several move together (Epo 2026-11-09), else just it. */
+  const groupOf = (held: Picked) =>
+    chosen.some((one) => same(one, held))
+      ? chosen.filter((one) => one.kind === held.kind)
+      : [held];
+  const spin = (angle: number, by: number) =>
+    (((angle + by) % 360) + 360) % 360;
   /** What the eraser has passed over while pressed; gone in one step when it lifts. */
   let erasing: {
     bars: Set<string>;
@@ -357,7 +365,9 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     };
     if (one.kind === 'spoke') {
       const held = picked && same(picked, one);
-      const angle = held && turning ? turning.angle : one.angle;
+      const turned =
+        turning && picked && groupOf(picked).some((other) => same(other, one));
+      const angle = turned && turning ? spin(one.angle, turning.by) : one.angle;
       if (!spokes.includes(angle)) return;
       const [x, y] = at(angle, r);
       outline(() => {
@@ -368,7 +378,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       ctx.beginPath();
       ctx.arc(x, y, 4.5, 0, Math.PI * 2);
       ctx.fill();
-      if (held && turning?.moved) drawChip(ctx, `${angle}°`, x, y, area.w);
+      if (held && turning) drawChip(ctx, `${angle}°`, x, y, area.w);
       return;
     }
     if (one.kind === 'label') {
@@ -386,38 +396,64 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     }
   };
 
-  const draw = () => {
-    const { height, width } = shell.sizeCanvas();
-    const area = { h: height, w: width, x: 0, y: 0 };
-    let bars: ChartBar[] = model.bars;
+  /** The chart with the press in progress: the bar being set, and what a Select drag
+   * moves. Chosen bars go up or down by as much as the held one, chosen lines and
+   * labels round by as far. */
+  const moving = () => {
+    let { bars, fills = [], labels, spokes } = model;
     if (live) {
       const { slot, value } = live;
-      bars = bars.map((bar, i) => (i === slot ? { ...bar, value } : bar));
+      const by = value - (bars[slot]?.value ?? value);
+      const along = new Set(
+        picked?.kind === 'bar'
+          ? groupOf(picked).flatMap((one) => (one.kind === 'bar' ? one.id : []))
+          : []
+      );
+      bars = bars.map((bar, i) => {
+        if (i === slot) return { ...bar, value };
+        if (!along.has(bar.id)) return bar;
+        return {
+          ...bar,
+          value: Math.min(AXIS_MAX, Math.max(0, tidy(bar.value + by))),
+        };
+      });
       if (slot >= bars.length)
         bars = [...bars, { fill: newFill(), id: '', label: '', value }];
     }
-    let { fills, labels, spokes } = model;
-    if (turning && picked?.kind === 'spoke') {
-      const { angle: from } = picked;
-      const { angle: to } = turning;
-      spokes = spokes.map((spoke) => (spoke === from ? to : spoke));
-      fills = fills?.map((slice) =>
-        slice.from === from ? { ...slice, from: to } : slice
+    if (turning && picked) {
+      const { by } = turning;
+      const group = groupOf(picked);
+      const angles = new Set(
+        group.flatMap((one) => (one.kind === 'spoke' ? one.angle : []))
       );
-    }
-    if (turning && picked?.kind === 'label') {
-      const { id } = picked;
-      const { angle } = turning;
+      const ids = new Set(
+        group.flatMap((one) => (one.kind === 'label' ? one.id : []))
+      );
+      spokes = spokes.map((spoke) =>
+        angles.has(spoke) ? spin(spoke, by) : spoke
+      );
+      fills = fills.map((slice) =>
+        angles.has(slice.from)
+          ? { ...slice, from: spin(slice.from, by) }
+          : slice
+      );
       labels = labels.map((label) =>
-        label.id === id ? { ...label, angle } : label
+        ids.has(label.id) ? { ...label, angle: spin(label.angle, by) } : label
       );
     }
+    return { bars, fills, labels, spokes };
+  };
+
+  const draw = () => {
+    const { height, width } = shell.sizeCanvas();
+    const area = { h: height, w: width, x: 0, y: 0 };
+    let { bars, fills, labels, spokes } = moving();
     if (erasing) {
       const gone = erasing;
       bars = bars.filter(({ id }) => !gone.bars.has(id));
       labels = labels.filter(({ id }) => !gone.labels.has(id));
       spokes = spokes.filter((spoke) => !gone.spokes.has(spoke));
-      fills = fills?.filter((slice) => !gone.spokes.has(slice.from));
+      fills = fills.filter((slice) => !gone.spokes.has(slice.from));
     }
     const { kind } = model;
     const { axisMax, axisStep } = axis();
@@ -724,13 +760,20 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
         const slot = model.bars.findIndex(({ id }) => id === held.id);
         if (slot >= 0) live = { slot, value: valueAt(at) };
       } else if (dragging) {
-        const angle = angleAt(at);
-        // A line stays off the others; a label goes anywhere round.
-        const taken =
-          held.kind === 'spoke' &&
-          angle !== held.angle &&
-          model.spokes.includes(angle);
-        if (!taken) turning = { angle, moved: true };
+        const from =
+          held.kind === 'spoke'
+            ? held.angle
+            : model.labels.find(({ id }) => id === held.id)?.angle;
+        const by = from === undefined ? 0 : angleAt(at) - from;
+        // Lines stay off the others; labels go anywhere round.
+        const group = groupOf(held).flatMap((one) =>
+          one.kind === 'spoke' ? one.angle : []
+        );
+        const taken = group.some((angle) => {
+          const to = spin(angle, by);
+          return model.spokes.includes(to) && !group.includes(to);
+        });
+        if (!taken) turning = { by };
       }
       canvas.style.cursor = dragging ? 'grabbing' : '';
     } else if (live && pressed) live = { ...live, value: valueAt(at) };
@@ -746,6 +789,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     const at = local(event);
     const gone = erasing;
     erasing = null;
+    const next = moving();
     const turned = turning;
     turning = null;
     const box = boxing;
@@ -784,40 +828,27 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
           labels: model.labels.filter(({ id }) => !gone.labels.has(id)),
           spokes: model.spokes.filter((spoke) => !gone.spokes.has(spoke)),
         });
-    } else if (turned && picked?.kind === 'spoke') {
-      const { angle: from } = picked;
-      const { angle: to } = turned;
-      if (to !== from)
-        update({
-          fills: (model.fills ?? []).map((slice) =>
-            slice.from === from ? { ...slice, from: to } : slice
-          ),
-          spokes: model.spokes.map((spoke) => (spoke === from ? to : spoke)),
-        });
-      picked = { angle: to, kind: 'spoke' };
+    } else if (turned && held?.kind === 'spoke') {
+      const { by } = turned;
+      if (by) update({ fills: next.fills, spokes: next.spokes });
+      // The selection follows its lines round.
+      const angles = groupOf(held).flatMap((one) =>
+        one.kind === 'spoke' ? one.angle : []
+      );
+      picked = { angle: spin(held.angle, by), kind: 'spoke' };
       chosen = chosen.map((one) =>
-        one.kind === 'spoke' && one.angle === from
-          ? { angle: to, kind: 'spoke' }
+        one.kind === 'spoke' && angles.includes(one.angle)
+          ? { angle: spin(one.angle, by), kind: 'spoke' }
           : one
       );
-    } else if (turned && picked?.kind === 'label') {
-      const { id } = picked;
-      update({
-        labels: model.labels.map((label) =>
-          label.id === id ? { ...label, angle: turned.angle } : label
-        ),
-      });
+    } else if (turned && held?.kind === 'label') {
+      if (turned.by) update({ labels: next.labels });
     } else if (live) {
       const { slot, value } = live;
       live = null;
-      const bar = model.bars[slot];
-      if (bar && value)
-        update({
-          bars: model.bars.map((other, i) =>
-            i === slot ? { ...other, value } : other
-          ),
-        });
-      else if (bar) update({ bars: model.bars.filter((_, i) => i !== slot) });
+      // A bar taken down to nothing goes.
+      if (model.bars[slot])
+        update({ bars: next.bars.filter((bar) => bar.value) });
       else if (value)
         update({
           bars: [

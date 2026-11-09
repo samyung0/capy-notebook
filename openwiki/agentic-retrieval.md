@@ -5571,7 +5571,11 @@ for life so the provider prompt cache holds.
   `store/account_scope.go`); the conversation's first message lists them once
   (saved in `toolEvidence.workspaces` and replayed unchanged), and
   `list_workspaces` gives the list as it stands. A workspace `create_workspace`
-  made this turn joins the turn's list at once (`tools._add_to_scope`).
+  made this turn joins the turn's list at once (`tools._add_to_scope`). A
+  paper's or hand-in's file (`files.submission_position` set) is in none of
+  it: `AccountDocuments` and `AccountDocumentAccess` leave it out, and the
+  searches' standalone legs (`_STANDALONE_OWNER`, the summary search, the
+  passage read by id) skip it (Q714, finding 4).
 - **Profile.** `profiles/account.py` offers the contract's `account` scope
   tools: `search_files_summary`, `search_files_content`, `list_workspaces`,
   `create_workspace`, `resolve_source_change`, `list_sources` and the shared

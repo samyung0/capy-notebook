@@ -479,7 +479,6 @@ func main() {
 	}()
 
 	go runTrashSweep(ctx, st)
-	go runAssignmentSweep(ctx, st, rdb)
 	go runBlobReaper(ctx, st, blobStore, artifactTTL{
 		CaptionDays: envInt("CAPY_CAPTION_CACHE_TTL_DAYS", 90),
 	})
@@ -542,6 +541,8 @@ func main() {
 	// Upload spools a crashed run left behind count against nothing now.
 	httpapi.RemoveUploadSpools(os.TempDir())
 	srv := httpapi.NewServer(addr, httpapi.New(st, blobStore, pipe, rdb, parser, cfg))
+	// After New: a paper the sweep submits starts its read through the handler.
+	go runAssignmentSweep(ctx, st, rdb)
 	runUsageWorkers(ctx, st, rdb, reconcile.Config{
 		StripeSecretKey: cfg.StripeSecretKey,
 		StripePricePro:  cfg.StripePricePro,

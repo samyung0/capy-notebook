@@ -114,6 +114,8 @@ import type {
   MaterialPage,
   MaterialRef,
   MaterialUpdateResult,
+  MemberProfile,
+  MembersProgress,
   ModelSlot,
   ModelsResponse,
   MoveFilesReq,
@@ -144,7 +146,6 @@ import type {
   SourceUploadPolicy,
   SpendingLimitReq,
   StudyPreferences,
-  StudySummary,
   StudyTopics,
   SubmittedPapers,
   Tag,
@@ -3084,19 +3085,6 @@ export const useCards = (
     meta: queryMeta(options),
   });
 /* ---------------- study progress and review ---------------- */
-export const workspaceStudyQuery = (workspaceId: string) =>
-  queryOptions({
-    ...persisted,
-    queryFn: () => api.get<StudySummary>(`/workspaces/${workspaceId}/study`),
-    queryKey: qk.study(workspaceId),
-  });
-/** The requester's own progress in a workspace; Workspace settings → Study
- * reads `enabled` (Hide study progress). */
-export const useWorkspaceStudy = (
-  workspaceId: string,
-  options?: QueryUiOptions
-) =>
-  useQuery({ ...workspaceStudyQuery(workspaceId), meta: queryMeta(options) });
 
 /** The workspace's Practice page: suggestions, every quiz members can see
  * and the caller's own topic reviews; owners and editors also get counts. */
@@ -3159,8 +3147,14 @@ export const useAssignmentReport = (id: string, options?: QueryUiOptions) =>
     meta: queryMeta(options),
     queryFn: () => api.get<AssignmentReport>(`/assignments/${id}/report`),
     queryKey: qk.assignmentReport(id),
-    // The AI marks in the background: its progress shows while it does.
-    refetchInterval: (query) => (query.state.data?.marking ? 3000 : false),
+    // The AI marks in the background: its progress, and which answers and
+    // members it holds, show while it does (Q729).
+    refetchInterval: ({ state: { data } }) =>
+      data?.marking ||
+      data?.answers.some((row) => row.marking) ||
+      data?.members.some((row) => row.marking)
+        ? 3000
+        : false,
   });
 
 export const useAssignmentAttempt = (
@@ -3172,6 +3166,8 @@ export const useAssignmentAttempt = (
     meta: queryMeta(options),
     queryFn: () => api.get<AssignmentAttempt>(`/assignment-attempts/${id}`),
     queryKey: qk.assignmentAttempt(id),
+    // Read again while a marking run holds it, until Marking… ends (Q729).
+    refetchInterval: (query) => (query.state.data?.marking ? 3000 : false),
     // Every opening reads it afresh: a running attempt's answers and the clock
     // its timer counts from must not come from a cache. It holds typed answers,
     // so a refocus doesn't replace them.
@@ -3538,15 +3534,6 @@ export function invalidateStudy(
   ]);
 }
 
-export function useSetWorkspaceStudyEnabled(workspaceId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (enabled: boolean) =>
-      api.put<void>(`/workspaces/${workspaceId}/study/enabled`, { enabled }),
-    onSuccess: () => invalidateStudy(qc, workspaceId),
-  });
-}
-
 /** A new review session: a suggestion's items, or the whole workspace's
  * without a mode. Fetched fresh for each session. */
 export const workspaceReviewQuery = (workspaceId: string, start: ReviewStart) =>
@@ -3678,6 +3665,34 @@ export const useStudyTopics = (workspaceId: string, options?: QueryUiOptions) =>
     queryFn: () =>
       api.get<StudyTopics>(`/workspaces/${workspaceId}/study/topics`),
     queryKey: qk.studyTopics(workspaceId),
+  });
+
+/** Study → Members: each member's line, for a class's owner and teaching
+ * assistants. */
+export const useMembersProgress = (
+  workspaceId: string,
+  options?: QueryUiOptions
+) =>
+  useQuery({
+    meta: queryMeta(options),
+    queryFn: () =>
+      api.get<MembersProgress>(`/workspaces/${workspaceId}/study/members`),
+    queryKey: qk.membersProgress(workspaceId),
+  });
+
+/** A member's profile on Study → Members (board G2). */
+export const useMemberProfile = (
+  workspaceId: string,
+  memberId: string,
+  options?: QueryUiOptions
+) =>
+  useQuery({
+    meta: queryMeta(options),
+    queryFn: () =>
+      api.get<MemberProfile>(
+        `/workspaces/${workspaceId}/study/members/${encodeURIComponent(memberId)}`
+      ),
+    queryKey: qk.memberProfile(workspaceId, memberId),
   });
 
 const PAST_REVIEWS_PAGE = 30;

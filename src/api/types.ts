@@ -398,6 +398,13 @@ export type {
   LearningOverview,
   LearningRow,
   LearningWorkspace,
+  MemberActivity,
+  MemberAssignment,
+  MemberProfile,
+  MemberProgress,
+  MembersProgress,
+  MembersTopic,
+  MissedQuestion,
   PastReview,
   Practice,
   PracticeQuiz,
@@ -408,7 +415,6 @@ export type {
   ReviewSuggestion,
   Row as BankListRow,
   SessionScore,
-  SetStudyEnabledReq,
   SharingNotice,
   StudyTopics,
   SummaryTopic,
@@ -425,10 +431,13 @@ export type AssignmentGradedPart = QuestionPart & {
   markedBy?: string;
   /** Staff only: the AI's marks per marking point. */
   aiAwards?: number[];
-  /** Staff only: why the AI left it unmarked (mock T3). */
-  aiError?: 'credits' | 'error';
+  /** Staff only: why the AI left it unmarked (mock T3): no credits, a grading
+   * failure, or a file of the paper it can't read (Q730). */
+  aiError?: 'credits' | 'error' | 'file';
   /** A paper's part: the pages of the paper its answer was read on. */
   pages?: number[];
+  /** A marking run holds it now (Q729). */
+  marking?: boolean;
 };
 export type AssignmentGradedQuestion = Omit<Question, 'parts'> & {
   parts: AssignmentGradedPart[];

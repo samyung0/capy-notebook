@@ -123,9 +123,15 @@ alone, and the store checks each of these itself (`assignmentStaff`,
 | Read every assignment, the report, any member's results; change marks | Yes | Yes | No | No | No |
 | See and take it, read own results, tick an unmarked one | If they ticked "You" | If they ticked "You" | No | Yes | No |
 | A running attempt | Only their own | Only their own | No | Their own | No |
+| Study → Members and a member's profile: every viewer member's marks, topic labels, practice counts and full storage | Yes | Yes | No | No | No |
 
 Everything else answers 404, as does every route in a personal workspace, where
-they are hidden and not deleted. Who pays and a frozen account: making or marking
+they are hidden and not deleted; Members' store refuses a class's own viewer
+members with `ErrForbidden` (`membersStaff`), which the API answers as 404 like
+the rest (`TestMembersRoutesAuthorize`). Members shows staff a member's practice
+as counts only, never answers; its Still missing lists prompts from the class's
+own quizzes only, never from a member's own practice quiz, whose title Recent
+activity hides too (Q723). Who pays and a frozen account: making or marking
 is editing and refused when frozen; a member's own start, save, submit and tick
 are study data and go through, as ratings do.
 
@@ -518,11 +524,12 @@ Sources: [migration](../server/migrations/0140_hidden_from_members.sql),
   and Invite. An editor member sees the list
   with each role as text, no invite and no pending invitations; they leave from
   Danger. Viewer members have no Sharing tab.
-- **Everyone signed in with access** (members and share-role visitors)
-  opens Workspace settings: its Study tab holds their own Hide study
-  progress. General, Sharing, Indexing and Statistics are for
-  owners and editors; Others shows with Clone, so not for a class's viewer
-  member, Danger for the owner.
+- **Members, and share-role visitors who may clone**, open Workspace
+  settings (`hasWorkspaceSettings`); with Hide study progress gone (Q727 A)
+  there is no Study tab, so a visitor who may not clone has no entry to it.
+  General, Sharing, Indexing and Statistics are for owners and editors;
+  Others shows with Clone, so not for a class's viewer member; Danger holds
+  Delete for the owner and Leave for any other member.
 - **The dialog's layout** (Epo 2026-11-04): the tabs sit in a left column under
   the file tree's search (`PanelSearch`). On phones the search and tabs fill
   the page, and a tab opens as its own page with an arrow back to them. The
@@ -1248,19 +1255,17 @@ Details live in [study-progress.md](study-progress.md).
   workspace records their own with read access only: owners, members of every
   role, and link or public visitors, viewers included. Ratings need read
   access to the rated material. Reads and writes never show another user's
-  rows, and the chat agent reads none (Hide study progress is per user and
-  workspace).
-- Frozen accounts record progress, ratings, Reset and the progress switches
-  like anyone else (`requireAccountMutate`), since the rows are their own and
+  rows, and the chat agent reads none. Progress always shows to its user
+  (Hide study progress went on 2026-11-09, Q727 A).
+- Frozen accounts record progress, ratings and Reset like anyone else (`requireAccountMutate`), since the rows are their own and
   charge no storage. Suspended, deletion-pending and deleted accounts have no
   API access.
 - Rows hold ids, timestamps and FSRS numbers, are never copied by a workspace
   or material clone, and are not charged to storage. They stay when access is
-  lost (unreadable until it returns) and when a workspace is transferred
-  (`study_progress` and `workspace_study` are in the transfer test's
-  `notOwnership`). Trashed items keep their rows, hidden until restored. Rows
-  cascade with their material or workspace, and `PurgeUser` deletes all
-  four tables at account purge.
+  lost (unreadable until it returns) and when a workspace is transferred.
+  Trashed items keep their rows, hidden until restored. Rows cascade with
+  their material or workspace, and `PurgeUser` deletes all three tables at
+  account purge.
 - Question-bank progress (`bank_progress`, see
   [question-bank.md](question-bank.md#learner-progress-and-retraction)) is
   private the same way: any signed-in user with the bank page's read access
@@ -1337,10 +1342,15 @@ member hands one in and no other member sees it. Its member adds, removes and
 orders files while the attempt runs; `GET /api/assignment-attempts/{id}/paper/{fileId}/links`
 signs a file for its member and, once submitted, for the class's owners and
 editors (`PaperFileBlob`); nothing else reads it. The files go with the attempt
-and its assignment (cascade), never list in Files, search, Recent or the trash
-path, and their member deletes them from Files › Submissions under the drawings'
-rule. A frozen account still attempts and submits, drawings and papers included
-(Epo 2026-11-08, O4): an answer is no material it edits.
+and its assignment (cascade), never list in Files, search, Recent, account chat
+(`AccountDocuments`, `AccountDocumentAccess` and the pipeline's standalone
+legs skip `submission_position`) or the trash path, open read only for their
+member (no editing session: `SourceSession` reads, and `sourceActorsAllowed`
+refuses an edit with 403; Q714, finding 4), and their member deletes them from
+Files › Submissions under the drawings' rule, a leaver's going once read with
+nothing waiting (`dropLeaverSubmissionsTx`). A frozen account still attempts
+and submits, drawings and papers included (Epo 2026-11-08, O4): an answer is no
+material it edits.
 
 A hand-in (an unmarked assignment that takes files, migration 0162, mocks S3
 and T2) is the same kind of file, linked by `files.hand_in_assignment_id` to
@@ -1352,8 +1362,9 @@ which the Members tab shows Late. Hand in (`PUT /api/assignments/{id}/done`)
 needs a file and locks them; Undo hand in reopens them while it is open.
 `GET /api/assignments/{id}/hand-in/{fileId}/links` signs a file for its member
 and, once handed in, for the class's owners and editors (`HandInFileBlob`).
-The files go with the assignment (cascade) and list in Files › Submissions once
-it closes, for the member to delete.
+The files go with the assignment (cascade), with the member as they leave the
+class, and list in Files › Submissions once it closes, for the member to
+delete; like a paper's they are read only and out of account chat.
 
 Sources: [drawing routes](../server/internal/httpapi/drawings.go) and
 [drawing store](../server/internal/store/drawings.go).

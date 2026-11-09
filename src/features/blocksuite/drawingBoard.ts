@@ -100,6 +100,7 @@ import { m } from '@/i18n';
 import { fitImageOffThread } from '@/lib/fitImageOffThread';
 import { fromBase64, toBase64 } from './base64';
 import { chartExtensions } from './boardChart';
+import { asImage } from './boardData';
 import {
   formulaExtensions,
   formulasDrawn,
@@ -509,12 +510,14 @@ export function mountDrawingBoard(
             {
               disabled: !store.canUndo,
               icon: Undo03Icon,
+              keepsOpen: true,
               label: m.drawing_board_undo(),
               run: () => store.undo(),
             },
             {
               disabled: !store.canRedo,
               icon: Redo03Icon,
+              keepsOpen: true,
               label: m.drawing_board_redo(),
               run: () => store.redo(),
             },
@@ -733,13 +736,16 @@ export function mountDrawingBoard(
           const [dx, dy] = key.split(',').map(Number);
           const from = new Bound(bound.x + dx, bound.y + dy, bound.w, bound.h);
           ctx.drawImage(
-            renderer.getCanvasByBound(
-              from,
-              elements,
-              undefined,
-              false,
-              false,
-              scale
+            // Card paper opaque, as previews draw it (cardPaper).
+            asImage(() =>
+              renderer.getCanvasByBound(
+                from,
+                elements,
+                undefined,
+                false,
+                false,
+                scale
+              )
             ),
             0,
             0,

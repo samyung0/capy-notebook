@@ -17,9 +17,7 @@ vi.mock('@/api/hooks', () => ({
   usePaperFileLinks: () => ({ data: undefined }),
   useRemoveHandInFile: () => ({ isPending: false, mutate: vi.fn() }),
   useSetAssignmentDone: () => ({ isPending: false, mutate: setDone }),
-  useSourceUploadPolicy: () => ({ data: undefined }),
   useStartAssignment: () => ({ isPending: false, mutate: start }),
-  useUploadSource: () => ({ mutateAsync: vi.fn() }),
 }));
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: React.ReactNode }) => (
@@ -28,6 +26,15 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigate,
 }));
 vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
+// Your work's uploads, as the page holds them.
+const uploads = vi.hoisted(() => ({ uploading: [] as string[] }));
+vi.mock('./useAddSubmissionFiles', () => ({
+  useAddSubmissionFiles: () => ({
+    add: vi.fn(),
+    ready: true,
+    uploading: uploads.uploading,
+  }),
+}));
 
 const { createRoot } = await import('react-dom/client');
 const { MemberAssignment } = await import('./MemberAssignment');
@@ -126,5 +133,38 @@ it("hands in an unmarked assignment's work, and shows it handed in (S3)", async 
   );
   expect(host.textContent).toContain(m.assignment_undo_hand_in());
   expect(host.textContent).not.toContain(m.assignment_paper_add());
+  act(() => root.unmount());
+});
+
+// Hand in waits while a file of the work uploads, as Submit does.
+it('holds Hand in while a file uploads', async () => {
+  uploads.uploading = ['page.jpg'];
+  const lab = {
+    allowUploads: true,
+    files: [],
+    id: 'as3',
+    kind: 'unmarked',
+    mine: {
+      done: false,
+      handIn: [
+        { id: 'f1', kind: 'pdf', name: 'a.pdf', sizeBytes: 1, status: 'ready' },
+      ],
+    },
+    postedAt: '2026-11-08T09:00:00Z',
+    title: 'Lab',
+    workspaceId: 'ws1',
+  } as unknown as Assignment;
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host);
+  await act(async () => root.render(<MemberAssignment assignment={lab} />));
+  const handIn = [...host.querySelectorAll('button')].find(
+    (item) => item.textContent === m.assignment_hand_in()
+  );
+  expect(handIn?.hasAttribute('disabled')).toBe(true);
+  expect(host.textContent).toContain(
+    m.assignment_paper_uploading({ name: 'page.jpg' })
+  );
+  uploads.uploading = [];
   act(() => root.unmount());
 });

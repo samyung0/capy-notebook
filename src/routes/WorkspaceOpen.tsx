@@ -81,6 +81,7 @@ import { VoiceFooterButton } from '@/features/voice/VoiceCard';
 import type { AddSourceMode } from '@/features/workspace/AddSourceDialog';
 import {
   canManageWorkspaceSettings,
+  hasWorkspaceSettings,
   isWorkspaceReadOnly,
 } from '@/features/workspace/access';
 import { ChatPanel, type ChatRequest } from '@/features/workspace/ChatPanel';
@@ -133,6 +134,11 @@ const choiceSearch = ({ answers, paper }: MakeQuizChoice) => ({
   paper: paper.join(',') || undefined,
 });
 
+const MembersPage = lazy(() =>
+  import('@/features/study/members/MembersPage').then((mod) => ({
+    default: mod.MembersPage,
+  }))
+);
 const AssignmentsPage = lazy(() =>
   import('@/features/study/assignments/AssignmentsPage').then((mod) => ({
     default: mod.AssignmentsPage,
@@ -628,7 +634,6 @@ function WorkspaceOpen() {
 
   /** A Study page takes the centre pane; Back returns here. */
   function openStudy(page: StudyPage) {
-    if (page === 'members') return;
     setCitationTarget(null);
     setFilesOpen(false);
     navigate({ search: { study: page }, to: '.' });
@@ -807,8 +812,8 @@ function WorkspaceOpen() {
   if (!ws)
     return <WorkspaceError backLabel={m.workspace_back_to()} backTo="/" />;
 
-  // Everyone has settings: phones open on the tab list, wider screens on the
-  // first tab (General for owner and editor members, else their own Study).
+  // Members and anyone who may clone have settings: phones open on the tab
+  // list, wider screens on the first tab (General for owner and editor members).
   const openSettings = () => setSettingsTab('menu');
   // Below lg an open Office file keeps its bottom chrome (sheet tabs, slide
   // pager) clear: the chat dock stays a button above it.
@@ -843,11 +848,15 @@ function WorkspaceOpen() {
         },
       ];
   // One column has no rail: its menus carry the Dashboard and Study.
-  const settingsItem: MenuItem = {
-    icon: 'settings',
-    label: m.workspace_settings(),
-    onClick: openSettings,
-  };
+  const settingsEntry: MenuItem[] = hasWorkspaceSettings(ws)
+    ? [
+        {
+          icon: 'settings',
+          label: m.workspace_settings(),
+          onClick: openSettings,
+        },
+      ]
+    : [];
   const settingsItems: MenuItem[] = [
     {
       icon: 'dashboard',
@@ -860,6 +869,15 @@ function WorkspaceOpen() {
       onClick: openPractice,
     },
     // Phones have no Study panel: the pages this person has sit beside Study.
+    ...(studyView(ws).pages.includes('members')
+      ? [
+          {
+            icon: 'userGroup' as const,
+            label: m.study_panel_members(),
+            onClick: () => openStudy('members'),
+          },
+        ]
+      : []),
     ...(studyView(ws).pages.includes('summary')
       ? [
           {
@@ -878,7 +896,7 @@ function WorkspaceOpen() {
           },
         ]
       : []),
-    settingsItem,
+    ...settingsEntry,
   ];
   const centerHeader = () =>
     viewerBox.current?.querySelector<HTMLElement>(
@@ -934,11 +952,7 @@ function WorkspaceOpen() {
           },
         ]
       : []),
-    {
-      icon: 'settings',
-      label: m.workspace_settings(),
-      onClick: openSettings,
-    },
+    ...settingsEntry,
     ...(readOnly && canClone
       ? [
           {
@@ -1035,7 +1049,8 @@ function WorkspaceOpen() {
   // A link to a page this person doesn't have opens Practice.
   const studyShown: StudyPage =
     search.study === 'assignments' ||
-    (search.study === 'summary' && studyView(ws).pages.includes('summary'))
+    ((search.study === 'summary' || search.study === 'members') &&
+      studyView(ws).pages.includes(search.study))
       ? search.study
       : 'practice';
   const studyContent =
@@ -1043,6 +1058,13 @@ function WorkspaceOpen() {
     (studyShown === 'summary' ? (
       <Suspense fallback={null}>
         <SummaryPage workspaceId={workspaceId} />
+      </Suspense>
+    ) : studyShown === 'members' ? (
+      <Suspense fallback={null}>
+        <MembersPage
+          search={{ member: search.member, show: search.show }}
+          workspaceId={workspaceId}
+        />
       </Suspense>
     ) : studyShown === 'assignments' ? (
       <Suspense fallback={null}>
@@ -1347,7 +1369,7 @@ function WorkspaceOpen() {
                     color="purple"
                     dock={{
                       // The chat page's ⋮: back leads to the rest (Epo 2026-11-05).
-                      menuItems: [settingsItem],
+                      menuItems: settingsEntry,
                       office: officeOpen,
                       onPageOpen: setChatPageOpen,
                       pageOpen: search.panel === 'agent',

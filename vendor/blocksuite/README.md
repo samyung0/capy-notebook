@@ -311,7 +311,8 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
     arrows and next-note plus buttons render only for a single selected shape or note.
     Upstream hid them for other elements only while the pointer was over them, so a
     selected connector (or plane, chart) showed note buttons once the pointer moved
-    away, and pressing one read a `background` the element doesn't have.
+    away, and pressing one read a `background` the element doesn't have. The hover
+    check's hit test and `render()`'s `isShape`, unused after it, are gone.
 32. Wheel over the floating toolbar (`affine/components` `src/toolbar/toolbar.ts`,
     marked `Capy (local change 32)`): a pinch or swipe over the buttons goes on to the
     canvas, which zooms or pans; only an open menu keeps it, so its list scrolls.

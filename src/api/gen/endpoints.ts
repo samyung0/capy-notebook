@@ -142,6 +142,8 @@ import type {
   MaterialPage,
   MaterialRef,
   MaterialUpdateResult,
+  MemberProfile,
+  MembersProgress,
   Message,
   MicrosoftDriveHost,
   ModelSlotsOutputBody,
@@ -180,7 +182,6 @@ import type {
   SearchResult,
   SetChatPrefsReq,
   SetModelPrefsReq,
-  SetStudyEnabledReq,
   ShareRedemption,
   SharingNotice,
   SourceCandidateReadOutputBody,
@@ -13633,67 +13634,104 @@ export const getWorkspaceAttempts = async (id: string, options?: RequestInit): P
 
 
 
-export type setWorkspaceStudyResponse204 = {
-  data: void
-  status: 204
+export type getWorkspaceMembersProgressResponse200 = {
+  data: MembersProgress
+  status: 200
 }
 
-export type setWorkspaceStudyResponseDefault = {
+export type getWorkspaceMembersProgressResponseDefault = {
   data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 204>
+  status: Exclude<HTTPStatusCodes, 200>
 }
 
-export type setWorkspaceStudyResponseSuccess = (setWorkspaceStudyResponse204) & {
+export type getWorkspaceMembersProgressResponseSuccess = (getWorkspaceMembersProgressResponse200) & {
   headers: Headers;
 };
-export type setWorkspaceStudyResponseError = (setWorkspaceStudyResponseDefault) & {
+export type getWorkspaceMembersProgressResponseError = (getWorkspaceMembersProgressResponseDefault) & {
   headers: Headers;
 };
 
-export type setWorkspaceStudyResponse = (setWorkspaceStudyResponseSuccess | setWorkspaceStudyResponseError)
+export type getWorkspaceMembersProgressResponse = (getWorkspaceMembersProgressResponseSuccess | getWorkspaceMembersProgressResponseError)
 
-export const getSetWorkspaceStudyUrl = (id: string,) => {
-
-
+export const getGetWorkspaceMembersProgressUrl = (id: string,) => {
 
 
-  return `/api/workspaces/${id}/study/enabled`
+
+
+  return `/api/workspaces/${id}/study/members`
 }
 
 /**
- * @summary Show or hide study progress in a workspace
+ * @summary Study → Members: each member's assignments, practice and topic labels, for a class's owner and teaching assistants
  */
-export const setWorkspaceStudy = async (id: string,
-    setStudyEnabledReq: NonReadonly<SetStudyEnabledReq>, options?: RequestInit): Promise<setWorkspaceStudyResponse> => {
+export const getWorkspaceMembersProgress = async (id: string, options?: RequestInit): Promise<getWorkspaceMembersProgressResponse> => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-const res = await fetch(getSetWorkspaceStudyUrl(id),
+  const res = await fetch(getGetWorkspaceMembersProgressUrl(id),
   {
     ...options,
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(setStudyEnabledReq)
+    method: 'GET'
+
+
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: setWorkspaceStudyResponse['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as setWorkspaceStudyResponse
+  const data: getWorkspaceMembersProgressResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getWorkspaceMembersProgressResponse
+}
+
+
+
+export type getWorkspaceMemberProfileResponse200 = {
+  data: MemberProfile
+  status: 200
+}
+
+export type getWorkspaceMemberProfileResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getWorkspaceMemberProfileResponseSuccess = (getWorkspaceMemberProfileResponse200) & {
+  headers: Headers;
+};
+export type getWorkspaceMemberProfileResponseError = (getWorkspaceMemberProfileResponseDefault) & {
+  headers: Headers;
+};
+
+export type getWorkspaceMemberProfileResponse = (getWorkspaceMemberProfileResponseSuccess | getWorkspaceMemberProfileResponseError)
+
+export const getGetWorkspaceMemberProfileUrl = (id: string,
+    memberId: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/study/members/${memberId}`
+}
+
+/**
+ * @summary A member's profile: assignments, topics, questions still missed and recent work, for a class's owner and teaching assistants
+ */
+export const getWorkspaceMemberProfile = async (id: string,
+    memberId: string, options?: RequestInit): Promise<getWorkspaceMemberProfileResponse> => {
+
+  const res = await fetch(getGetWorkspaceMemberProfileUrl(id,memberId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getWorkspaceMemberProfileResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getWorkspaceMemberProfileResponse
 }
 
 

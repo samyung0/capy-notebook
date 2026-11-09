@@ -81,14 +81,20 @@ export function NewAssignmentDialog({
   existing,
   onClose,
   onDone,
+  presetAssignee,
   presetQuizId,
+  presetTopicId,
   workspaceId,
 }: {
   existing?: Assignment;
   onClose: () => void;
   onDone: (assignment: Assignment) => void;
+  /** Opened from a member's profile (Q721): them as the only assignee. */
+  presetAssignee?: string;
   /** Opened from a quiz (A1): its quiz is set and Kind doesn't show. */
   presetQuizId?: string;
+  /** The topic Generate questions starts on: the profile card's (Q721). */
+  presetTopicId?: string;
   workspaceId: string;
 }) {
   const manage = existing?.manage;
@@ -116,8 +122,8 @@ export function NewAssignmentDialog({
   } = useForm<AssignmentFormReq>({
     defaultValues: {
       allowUploads: existing?.allowUploads ?? false,
-      assignAll: manage?.assignAll ?? true,
-      assignees: manage?.assignees ?? [],
+      assignAll: manage?.assignAll ?? !presetAssignee,
+      assignees: manage?.assignees ?? (presetAssignee ? [presetAssignee] : []),
       attempts: existing?.attempts ?? 1,
       draft: existing?.draft ?? false,
       dueAt: existing?.dueAt,
@@ -226,6 +232,7 @@ export function NewAssignmentDialog({
   if (generating)
     return (
       <MakePractice
+        initialTopicId={presetTopicId}
         onClose={onClose}
         onlyYou={false}
         onMade={onClose}

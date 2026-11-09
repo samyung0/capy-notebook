@@ -573,11 +573,6 @@ type SetChatPrefsReq struct {
 	SendKey *string `json:"sendKey,omitempty" enum:"enter,shift_enter" doc:"The key that sends a message; the other adds a new line"`
 }
 
-// SetStudyEnabledReq shows (true) or hides study progress in one workspace.
-type SetStudyEnabledReq struct {
-	Enabled bool `json:"enabled"`
-}
-
 // RateReviewItemReq rates a flashcard (rating) or a question answered in
 // review (score).
 type RateReviewItemReq struct {

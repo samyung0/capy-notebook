@@ -138,7 +138,7 @@ export const NUMBER = '#55555b';
 /** A plane or chart card's colours, with the board's light or dark: paper, grid,
  * axes and ink. Dark paper is a dark note's. The paper is half see-through, on the
  * board and open for editing alike, so the panel's frost shows (Epo 2026-11-08). The
- * marking image is always light. */
+ * marking image is always light, its paper opaque (`cardPaper`). */
 export type Paper = {
   axis: string;
   /** Dark paper: black ink drawn from elsewhere (a formula) is turned light. */
@@ -178,6 +178,21 @@ export const PAPER: Record<'dark' | 'light', Paper> = {
     text: TEXT,
   },
 };
+
+/** The marking image draws card paper opaque, as previews do, so a stroke under a card
+ * stays covered there; `asImage` turns it on while the image draws. */
+const IMAGE_PAPER: Paper = { ...PAPER.light, paper: '#fff' };
+let imaging = false;
+export const cardPaper = (scheme: 'dark' | 'light') =>
+  imaging ? IMAGE_PAPER : PAPER[scheme];
+export function asImage<T>(draw: () => T) {
+  imaging = true;
+  try {
+    return draw();
+  } finally {
+    imaging = false;
+  }
+}
 
 /** A bar's width within its slot. */
 export const BAR_SHARE = 0.56;

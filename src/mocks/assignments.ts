@@ -750,8 +750,13 @@ const assignedTo = (row: Row, viewer: Viewer) => {
     ...new Set([
       ...(row.assignAll ? members : []),
       ...named,
-      // The Member scenario's viewer is in the class.
-      ...(row.assignAll && viewer === 'member' ? [db.user.id] : []),
+      // The Member scenario's viewer is in the class, and staff see a paper
+      // they handed in.
+      ...(row.assignAll &&
+      (viewer === 'member' ||
+        submissions(row.id, db.user.id).some((a) => a.paper))
+        ? [db.user.id]
+        : []),
     ]),
   ];
 };
@@ -1257,7 +1262,11 @@ function report(row: Row, viewer: Viewer): AssignmentReport {
       };
     }
   );
-  return { answers, members, questions };
+  // The mock reads papers at once: one waits only as a seed sets it.
+  const papersToRead = [...attempts.values()].filter(
+    (a) => a.assignmentId === row.id && a.paper === 'reading'
+  ).length;
+  return { answers, members, papersToRead, questions };
 }
 
 function applyForm(row: Row, body: AssignmentFormReq) {

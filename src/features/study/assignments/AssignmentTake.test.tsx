@@ -39,6 +39,16 @@ vi.mock('@/components/ui/Dialog', () => ({
   DialogFooter: pass,
   DialogTitle: pass,
 }));
+// Your paper's uploads, as the page holds them (finding 6).
+const uploads = vi.hoisted(() => ({ uploading: [] as string[] }));
+vi.mock('./useAddSubmissionFiles', () => ({
+  useAddSubmissionFiles: () => ({
+    add: vi.fn(),
+    ready: true,
+    uploading: uploads.uploading,
+  }),
+}));
+vi.mock('./LazyPaper', () => ({ PaperPane: () => null }));
 vi.mock('@/features/quizzes/QuestionRunner', () => ({
   QuestionRunner: ({
     onChange,
@@ -258,4 +268,29 @@ it('rereads when republished, and drops an answer whose option moved', async () 
   );
   await wait(5000);
   expect(api.save).toHaveBeenLastCalledWith('at1', {});
+});
+
+// Finding 6: Submit waits while a file of the paper uploads; the clock's own
+// submit at zero does not wait.
+it('holds Submit while a paper file uploads, and submits at zero anyway', async () => {
+  uploads.uploading = ['page.pdf'];
+  const now = new Date();
+  await show(
+    attempt({
+      deadlineAt: new Date(now.getTime() + 60 * 1000).toISOString(),
+      now: now.toISOString(),
+      paper: 'upload',
+    })
+  );
+  const submitButtons = () =>
+    [...host.querySelectorAll('button')].filter(
+      (item) => item.textContent === m.assignment_submit()
+    );
+  expect(submitButtons().length).toBeGreaterThan(0);
+  for (const button of submitButtons())
+    expect(button.hasAttribute('disabled')).toBe(true);
+  expect(api.submit).not.toHaveBeenCalled();
+  await wait(61 * 1000);
+  expect(api.submit).toHaveBeenCalledTimes(1);
+  uploads.uploading = [];
 });

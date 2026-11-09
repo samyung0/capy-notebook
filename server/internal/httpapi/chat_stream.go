@@ -453,9 +453,8 @@ func withinUndoLimit(ev pipeChatEvent) pipeChatEvent {
 
 // chatTurn is the trusted per-turn context the pipeline receives beside the
 // query: the Workspace only switch, the open item as stored (never the browser's
-// title), whether study progress is on for the requester here, and their
-// study preferences. An account turn has no open item, role or study
-// progress, and carries the workspaces it searches instead.
+// title) and the requester's study preferences. An account turn has no open
+// item or role, and carries the workspaces it searches instead.
 type chatTurn struct {
 	workspaceOnly bool
 	// The requester's workspace role, said on the turn context's open line.

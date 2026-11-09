@@ -502,6 +502,7 @@ components:
           enum:
             - credits
             - error
+            - file
           type: string
         aiMarked:
           type: boolean
@@ -516,6 +517,8 @@ components:
           format: double
           type: number
         handMarking:
+          type: boolean
+        marking:
           type: boolean
         marks:
           format: double
@@ -593,6 +596,8 @@ components:
         mark:
           format: double
           type: number
+        marking:
+          type: boolean
         now:
           format: date-time
           type: string
@@ -974,6 +979,8 @@ components:
         mark:
           format: double
           type: number
+        marking:
+          type: boolean
         minutes:
           format: int64
           type: integer
@@ -1138,6 +1145,9 @@ components:
           items:
             $ref: "#/components/schemas/AssignmentMemberRow"
           type: array
+        papersToRead:
+          format: int64
+          type: integer
         questions:
           items:
             $ref: "#/components/schemas/AssignmentQuestionReport"
@@ -1146,6 +1156,7 @@ components:
         - members
         - questions
         - answers
+        - papersToRead
       type: object
     AssignmentWrongAnswer:
       additionalProperties: false
@@ -4667,6 +4678,220 @@ components:
         - maxDepth
         - updatedAt
       type: object
+    MemberActivity:
+      additionalProperties: false
+      properties:
+        at:
+          format: date-time
+          type: string
+        group:
+          enum:
+            - topic
+            - others
+          type: string
+        kind:
+          enum:
+            - practice
+            - review
+            - assignment
+          type: string
+        questions:
+          format: int64
+          type: integer
+        title:
+          type: string
+        topicName:
+          type: string
+      required:
+        - kind
+        - questions
+        - at
+      type: object
+    MemberAssignment:
+      additionalProperties: false
+      properties:
+        attemptId:
+          type: string
+        doneAt:
+          format: date-time
+          type: string
+        dueAt:
+          format: date-time
+          type: string
+        id:
+          type: string
+        kind:
+          enum:
+            - marked
+            - unmarked
+          type: string
+        mark:
+          format: double
+          type: number
+        missing:
+          type: boolean
+        running:
+          type: boolean
+        title:
+          type: string
+        total:
+          format: double
+          type: number
+        waitingMarks:
+          format: double
+          type: number
+      required:
+        - id
+        - kind
+        - title
+        - waitingMarks
+        - running
+        - missing
+      type: object
+    MemberProfile:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/MemberProfile.json
+          format: uri
+          readOnly: true
+          type: string
+        activity:
+          items:
+            $ref: "#/components/schemas/MemberActivity"
+          type: array
+        assigned:
+          format: int64
+          type: integer
+        assignments:
+          items:
+            $ref: "#/components/schemas/MemberAssignment"
+          type: array
+        avatarUrl:
+          type: string
+        done:
+          format: int64
+          type: integer
+        joinedAt:
+          format: date-time
+          type: string
+        lastActiveAt:
+          format: date-time
+          type: string
+        missed:
+          items:
+            $ref: "#/components/schemas/MissedQuestion"
+          type: array
+        missing:
+          format: int64
+          type: integer
+        name:
+          type: string
+        overall:
+          format: double
+          type: number
+        storageFull:
+          type: boolean
+        topics:
+          items:
+            $ref: "#/components/schemas/SummaryTopic"
+          type: array
+        userId:
+          type: string
+      required:
+        - userId
+        - name
+        - joinedAt
+        - storageFull
+        - assignments
+        - topics
+        - missed
+        - activity
+        - assigned
+        - done
+        - missing
+      type: object
+    MemberProgress:
+      additionalProperties: false
+      properties:
+        assigned:
+          format: int64
+          type: integer
+        avatarUrl:
+          type: string
+        done:
+          format: int64
+          type: integer
+        missing:
+          format: int64
+          type: integer
+        name:
+          type: string
+        overall:
+          format: double
+          type: number
+        practiceWeek:
+          format: int64
+          type: integer
+        storageFull:
+          type: boolean
+        topics:
+          items:
+            $ref: "#/components/schemas/SummaryTopic"
+          type: array
+        userId:
+          type: string
+      required:
+        - userId
+        - name
+        - practiceWeek
+        - storageFull
+        - topics
+        - assigned
+        - done
+        - missing
+      type: object
+    MembersProgress:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/MembersProgress.json
+          format: uri
+          readOnly: true
+          type: string
+        members:
+          items:
+            $ref: "#/components/schemas/MemberProgress"
+          type: array
+        topics:
+          items:
+            $ref: "#/components/schemas/MembersTopic"
+          type: array
+      required:
+        - members
+        - topics
+      type: object
+    MembersTopic:
+      additionalProperties: false
+      properties:
+        group:
+          enum:
+            - topic
+            - others
+          type: string
+        name:
+          type: string
+        questions:
+          format: int64
+          type: integer
+        topicId:
+          type: string
+      required:
+        - group
+        - questions
+      type: object
     Message:
       additionalProperties: false
       properties:
@@ -4731,6 +4956,38 @@ components:
         - id
         - driveType
         - webUrl
+      type: object
+    MissedQuestion:
+      additionalProperties: false
+      properties:
+        at:
+          format: date-time
+          type: string
+        group:
+          enum:
+            - topic
+            - others
+          type: string
+        materialId:
+          type: string
+        misses:
+          format: int64
+          type: integer
+        questionId:
+          type: string
+        text:
+          type: string
+        topicId:
+          type: string
+        topicName:
+          type: string
+      required:
+        - materialId
+        - questionId
+        - text
+        - group
+        - misses
+        - at
       type: object
     ModelOption:
       additionalProperties: false
@@ -6670,20 +6927,6 @@ components:
         noteAiEnabled:
           type: boolean
       type: object
-    SetStudyEnabledReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/SetStudyEnabledReq.json
-          format: uri
-          readOnly: true
-          type: string
-        enabled:
-          type: boolean
-      required:
-        - enabled
-      type: object
     ShareRedemption:
       additionalProperties: false
       properties:
@@ -7654,8 +7897,6 @@ components:
           format: uri
           readOnly: true
           type: string
-        enabled:
-          type: boolean
         quickReview:
           items:
             $ref: "#/components/schemas/ReviewItem"
@@ -7670,7 +7911,6 @@ components:
         unfinished:
           $ref: "#/components/schemas/UnfinishedSession"
       required:
-        - enabled
         - recentAttempts
         - reviewable
         - quickReview
@@ -7684,14 +7924,11 @@ components:
           format: uri
           readOnly: true
           type: string
-        enabled:
-          type: boolean
         topics:
           items:
             $ref: "#/components/schemas/SummaryTopic"
           type: array
       required:
-        - enabled
         - topics
       type: object
     Subject:
@@ -15843,31 +16080,59 @@ paths:
       summary: Each quiz's and set's attempt count and latest attempts
       tags:
         - Study
-  /api/workspaces/{id}/study/enabled:
-    put:
-      operationId: setWorkspaceStudy
+  /api/workspaces/{id}/study/members:
+    get:
+      operationId: getWorkspaceMembersProgress
       parameters:
         - in: path
           name: id
           required: true
           schema:
             type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SetStudyEnabledReq"
-        required: true
       responses:
-        "204":
-          description: No Content
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MembersProgress"
+          description: OK
         default:
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Show or hide study progress in a workspace
+      summary: "Study → Members: each member's assignments, practice and topic labels, for a class's owner and teaching assistants"
+      tags:
+        - Study
+  /api/workspaces/{id}/study/members/{memberId}:
+    get:
+      operationId: getWorkspaceMemberProfile
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: memberId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberProfile"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "A member's profile: assignments, topics, questions still missed and recent work, for a class's owner and teaching assistants"
       tags:
         - Study
   /api/workspaces/{id}/study/question-count:

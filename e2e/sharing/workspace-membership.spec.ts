@@ -88,8 +88,10 @@ test.describe('workspace invitations', () => {
 
     await viewerPage.goto('/workspaces');
     // Phone and desktop bars both link to the notifications page; click the
-    // one on screen.
-    await viewerPage.locator('[data-unread-count]:visible').click();
+    // one on screen. To do's row carries a count too.
+    await viewerPage
+      .locator('a[href="/notifications"][data-unread-count]:visible')
+      .click();
     await viewerPage
       .getByRole('link', { name: m.notification_workspace_invite_title() })
       .click();

@@ -89,6 +89,54 @@ async function onPlane(page: Page) {
     [box.x + x * box.width, box.y + y * box.height] as const;
 }
 
+type Vec = [number, number];
+/** A plane's marks' first points, in its units and on the page while it's open: the
+ * editor opens at the card's scale with the card's middle in its own. */
+async function planePoints(page: Page, polar = false) {
+  const box = await page.locator('.capy-plane-editor').boundingBox();
+  if (!box) throw new Error('no plane');
+  const { centre, points, ppu } = await page.evaluate((wanted) => {
+    const root = document.querySelector('affine-edgeless-root') as unknown as {
+      gfx: {
+        layer: {
+          canvasElements: {
+            h: number;
+            marks: { at?: Vec; points?: Vec[] }[];
+            polar: boolean;
+            ppu: number;
+            type: string;
+            w: number;
+            x0: number;
+            y0: number;
+          }[];
+        };
+      };
+    };
+    const card = root.gfx.layer.canvasElements.find(
+      (element) => element.type === 'plane' && element.polar === wanted
+    );
+    if (!card) throw new Error('no plane');
+    return {
+      centre: [
+        card.x0 + card.w / 2 / card.ppu,
+        card.y0 - card.h / 2 / card.ppu,
+      ],
+      points: card.marks.map((mark) => mark.at ?? mark.points?.[0] ?? [0, 0]),
+      ppu: card.ppu,
+    };
+  }, polar);
+  return {
+    points: points.map(([x, y]) => ({
+      at: [x, y] as Vec,
+      px: [
+        box.x + box.width / 2 + (x - centre[0]) * ppu,
+        box.y + box.height / 2 + (centre[1] - y) * ppu,
+      ] as Vec,
+    })),
+    ppu,
+  };
+}
+
 /** How much of an image falls in a band of red values, ink by default: an empty sheet
  * and a drawn one differ. */
 const inkIn = (page: Page, dataUrl: string, band: [number, number] = [0, 60]) =>
@@ -276,7 +324,8 @@ test('double click opens the plane: it plots, undoes each click, and Escape leav
   await page.mouse.click(...at(0.7, 0.45));
   await expect.poll(() => marks(page)).toBe(2);
   await page.getByRole('button', { name: 'Erase a mark' }).click();
-  await page.mouse.click(...at(0.7, 0.45));
+  // On the point where it snapped: the eraser reaches only as far as its ring.
+  await page.mouse.click(...(await planePoints(page)).points[1].px);
   await expect.poll(() => marks(page)).toBe(1);
   await page.keyboard.press('ControlOrMeta+z');
   await expect.poll(() => marks(page)).toBe(2);
@@ -381,12 +430,176 @@ test('undo inside the plane stops at what was done there', async ({ page }) => {
     )
     .toBeCloseTo(1, 1);
 
-  // Out again, undo carries on into the canvas.
+  // Out again, undo carries on into the canvas; the board's ☰ menu stays open through
+  // Undo and Redo.
   await page.keyboard.press('Escape');
   await page.keyboard.press('ControlOrMeta+z');
   await expect.poll(() => marks(page)).toBe(0);
-  await page.keyboard.press('ControlOrMeta+z');
+  const boardMenu = page.locator('.capy-board-menu');
+  await boardMenu.getByRole('button', { name: 'More' }).click();
+  await boardMenu.getByRole('menuitem', { name: 'Undo' }).click();
   await expect.poll(() => canvas(page)).toEqual(['plane']);
+  await boardMenu.getByRole('menuitem', { name: 'Redo' }).click();
+  await expect.poll(() => canvas(page)).toEqual(['plane', 'brush']);
+});
+
+test('in a plane, selected points move together, and the eraser takes what its ring covers', async ({
+  page,
+}) => {
+  test.slow();
+  await openBoard(page);
+  await page.mouse.dblclick(...(await onCard(page))(0.5, 0.5));
+  const at = await onPlane(page);
+  await page.getByRole('button', { exact: true, name: 'Point' }).click();
+  await page.mouse.click(...at(0.4, 0.4));
+  await page.mouse.click(...at(0.6, 0.4));
+  await expect.poll(() => marks(page)).toBe(2);
+
+  // A box picks both; dragging one takes the other along.
+  await page.getByRole('button', { name: 'Select' }).click();
+  await page.mouse.move(...at(0.3, 0.3));
+  await page.mouse.down();
+  await page.mouse.move(...at(0.7, 0.5), { steps: 5 });
+  await page.mouse.up();
+  const [first, second] = (await planePoints(page)).points;
+  await page.mouse.move(...first.px);
+  await page.mouse.down();
+  await page.mouse.move(first.px[0] + 80, first.px[1] - 80, { steps: 6 });
+  await page.mouse.up();
+  const [moved, along] = (await planePoints(page)).points;
+  const [dx, dy] = [moved.at[0] - first.at[0], moved.at[1] - first.at[1]];
+  expect(dx).toBeGreaterThan(0);
+  expect(along.at[0] - second.at[0]).toBeCloseTo(dx);
+  expect(along.at[1] - second.at[1]).toBeCloseTo(dy);
+
+  // The eraser reaches as far as its ring, 8 px round the pointer.
+  await page.getByRole('button', { name: 'Erase a mark' }).click();
+  await page.mouse.click(moved.px[0] + 10, moved.px[1]);
+  expect(await marks(page)).toBe(2);
+  await page.mouse.click(moved.px[0] + 6, moved.px[1]);
+  await expect.poll(() => marks(page)).toBe(1);
+
+  // On a polar plane a point moved whole lands where a ring crosses a spoke.
+  await page.getByRole('button', { name: 'Done' }).click();
+  await placePiece(page, 'capy-graph-slot', 'polar');
+  await page
+    .locator('affine-toolbar-widget')
+    .getByLabel('Edit the plane')
+    .click();
+  const polar = await onPlane(page);
+  await page.getByRole('button', { exact: true, name: 'Point' }).click();
+  await page.mouse.click(...polar(0.6, 0.4));
+  await expect
+    .poll(async () => (await planePoints(page, true)).points)
+    .toHaveLength(1);
+  const {
+    points: [placed],
+    ppu,
+  } = await planePoints(page, true);
+  await page.getByRole('button', { name: 'Select' }).click();
+  await page.mouse.move(...placed.px);
+  await page.mouse.down();
+  await page.mouse.move(placed.px[0] + 60, placed.px[1] + 40, { steps: 6 });
+  await page.mouse.up();
+  const [dropped] = (await planePoints(page, true)).points;
+  expect(dropped.at).not.toEqual(placed.at);
+  const step = await page.evaluate(async (scale) => {
+    const { tickStep } = (await import(
+      '/src/features/questions/graphTicks.ts' as string
+    )) as { tickStep(ppu: number): number };
+    const { minorStep } = (await import(
+      '/src/features/blocksuite/boardGeometry.ts' as string
+    )) as { minorStep(step: number): number };
+    return minorStep(tickStep(scale));
+  }, ppu);
+  const rings = Math.hypot(...dropped.at) / step;
+  const spokes =
+    (Math.atan2(dropped.at[1], dropped.at[0]) * 180) / Math.PI / 15;
+  expect(rings).toBeCloseTo(Math.round(rings), 6);
+  expect(spokes).toBeCloseTo(Math.round(spokes), 6);
+});
+
+test('in a chart, Select moves several bars, or several lines, together', async ({
+  page,
+}) => {
+  test.slow();
+  await openBoard(page);
+  const chart = () =>
+    page.evaluate(() => {
+      const root = document.querySelector(
+        'affine-edgeless-root'
+      ) as unknown as {
+        gfx: {
+          layer: {
+            canvasElements: {
+              bars: { value: number }[];
+              spokes: number[];
+              type: string;
+            }[];
+          };
+        };
+      };
+      const { bars = [], spokes = [] } =
+        root.gfx.layer.canvasElements.findLast(
+          ({ type }) => type === 'chart'
+        ) ?? {};
+      return { spokes, values: bars.map(({ value }) => value) };
+    });
+  const toolbar = page.locator('affine-toolbar-widget');
+  const select = page.getByRole('button', { name: 'Select' });
+
+  await placePiece(page, 'capy-chart-slot', 'bar');
+  await toolbar.getByLabel('Edit the chart').click();
+  const at = await onPlane(page);
+  const box = await page.locator('.capy-plane-editor').boundingBox();
+  if (!box) throw new Error('no editor');
+  const plotY = (value: number) =>
+    (box.height - 128 - ((box.height - 192) * value) / 10) / box.height;
+  await page.mouse.click(...at(0.2, plotY(3)));
+  await page.mouse.click(...at(0.5, plotY(5)));
+  await expect.poll(async () => (await chart()).values).toEqual([3, 5]);
+  // A box over both, then the first dragged up by 3 takes the second along.
+  await select.click();
+  await page.mouse.move(...at(0.05, plotY(9.5)));
+  await page.mouse.down();
+  await page.mouse.move(...at(0.62, plotY(0.5)), { steps: 5 });
+  await page.mouse.up();
+  await page.mouse.move(...at(0.2, plotY(1.5)));
+  await page.mouse.down();
+  await page.mouse.move(...at(0.2, plotY(6)), { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(async () => (await chart()).values).toEqual([6, 8]);
+  await page.getByRole('button', { name: 'Done' }).click();
+
+  // A pie's two lines, boxed, turn round together.
+  await page.keyboard.press('v');
+  await placePiece(page, 'capy-chart-slot', 'pie');
+  await toolbar.getByLabel('Edit the chart').click();
+  await page.mouse.click(...at(0.7, 0.5));
+  await expect.poll(async () => (await chart()).spokes).toHaveLength(2);
+  const before = (await chart()).spokes;
+  const cx = box.x + box.width / 2;
+  const cy = box.y + 64 + (box.height - 156) / 2;
+  const r = Math.min(box.width - 32, box.height - 156) / 2;
+  await select.click();
+  await page.mouse.move(cx - 60, cy - r * 0.9);
+  await page.mouse.down();
+  await page.mouse.move(cx + r * 0.8, cy + 40, { steps: 5 });
+  await page.mouse.up();
+  await page.mouse.move(cx, cy - r / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    cx + (r / 2) * Math.sin(Math.PI / 6),
+    cy - (r / 2) * Math.cos(Math.PI / 6),
+    {
+      steps: 6,
+    }
+  );
+  await page.mouse.up();
+  await expect.poll(async () => (await chart()).spokes[0]).not.toBe(before[0]);
+  const turned = (await chart()).spokes;
+  expect(turned[0] - before[0]).toBeGreaterThan(20);
+  expect(turned[1]).toBe(before[1] + turned[0] - before[0]);
 });
 
 test("selecting shows AFFiNE's toolbar, and a card keeps a real size", async ({
@@ -453,6 +666,20 @@ test('the image stacks as the screen does, and many formulas settle', async ({
   await expect
     .poll(async () => inkIn(page, await toImage(page)))
     .toBeLessThan(seen * 0.8);
+
+  // A card's paper, half see-through on the screen, is opaque in the image, as in
+  // previews: a black box under one doesn't show through as grey.
+  await add(`{ ${prelude}
+    gfx.surface.addElement({ type: 'shape', shapeType: 'rect', filled: true,
+      fillColor: '#000000', strokeColor: '#000000',
+      xywh: '[1000,300,300,200]' }); }`);
+  const grey = await inkIn(page, await toImage(page), [100, 160]);
+  await add(`{ ${prelude}
+    gfx.surface.addElement({ type: 'plane', fit: false, marks: [], polar: false,
+      ppu: 41, x0: 100, y0: 100, xywh: '[1000,300,300,200]' }); }`);
+  expect(
+    (await inkIn(page, await toImage(page), [100, 160])) - grey
+  ).toBeLessThan(2000);
 
   // More formulas than used to be kept: they all draw, then the board rests.
   await add(`{ ${prelude}
@@ -848,6 +1075,14 @@ test('a phone has the menu at the top and the toolbar at full width', async ({
   expect(
     await page.locator('edgeless-toolbar-widget smooth-corner').boundingBox()
   ).toMatchObject({ width: 344, x: 8 });
+
+  // The open plane's nine tools fit their panel.
+  await page.mouse.dblclick(...(await onCard(page))(0.5, 0.5));
+  const row = page.locator('.capy-plane-row');
+  await expect(row.getByRole('button')).toHaveCount(9);
+  expect(
+    await row.evaluate((element) => element.scrollWidth - element.clientWidth)
+  ).toBeLessThanOrEqual(0);
 });
 
 test.describe('with a finger', () => {
@@ -881,11 +1116,10 @@ test.describe('with a finger', () => {
     await page.touchscreen.tap(...at(0.6, 0.5));
     await page.getByRole('button', { name: 'Finish curve' }).tap();
     await expect.poll(() => marks(page)).toBe(1);
-    // Undo is in the menu, which closes after each.
-    for (const _ of [1, 2]) {
-      await page.locator('.capy-plane-editor .capy-menu-button').tap();
+    // Undo is in the menu, which stays open for it, as for the zoom row.
+    await page.locator('.capy-plane-editor .capy-menu-button').tap();
+    for (const _ of [1, 2])
       await page.getByRole('menuitem', { name: 'Undo' }).tap();
-    }
     await expect.poll(() => marks(page)).toBe(0);
     await page.getByRole('button', { name: 'Done' }).tap();
 

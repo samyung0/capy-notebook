@@ -41,6 +41,7 @@ import { questionLine } from '../practice/practiceText';
 import type { AssignmentsSearch } from './AssignmentsPage';
 import { markSteps, markText } from './assignmentText';
 import { PaperPages } from './LazyPaper';
+import { MarkingNow } from './MarkingNow';
 
 type Selected = { attemptId: string; questionId: string };
 const same = (row: AssignmentAnswerRow, s: Selected | null) =>
@@ -73,10 +74,16 @@ export function ApproveTab({
     () => new Map(report.members.map((row) => [row.userId, row])),
     [report.members]
   );
-  // Marked by hand (A4): no AI to run or approve.
+  // Marked by hand (A4): no AI marks to approve; the AI only reads papers.
   const manual = assignment.manage?.marking === 'manual';
-  const openQuestions = report.questions.filter((q) =>
-    q.question.parts.some((p) => modelMarked(p.answer.type))
+  // A paper still to read waits on its closed questions too, which Mark with
+  // AI reads (finding 2).
+  const openQuestions = report.questions.filter(
+    (q) =>
+      q.question.parts.some((p) => modelMarked(p.answer.type)) ||
+      report.answers.some(
+        (row) => row.waiting && row.questionId === q.question.id
+      )
   );
   const firstWaiting = report.answers.find((row) => row.waiting);
   const { isPending: marking, mutate: markWithAI } = useMarkAssignmentWithAI(
@@ -125,6 +132,14 @@ export function ApproveTab({
   const notGraded = manual
     ? 0
     : rows.filter((row) => row.waiting && !row.aiMarked).length;
+  // Mark with AI runs what waits unmarked; under manual marking it is Read
+  // papers again, reading papers still to read without grading, on each
+  // member's credits (Q725).
+  const runAI = manual
+    ? report.papersToRead > 0
+    : report.answers.some(
+        (row) => row.waiting && !row.aiMarked && !row.handMarking
+      );
   // Approve all clears a question: by member there is none to clear.
   const approvable = !member && rows.some((row) => row.waiting && row.aiMarked);
   const questionNumber = (id: string) =>
@@ -228,10 +243,7 @@ export function ApproveTab({
               total: report.marking.total,
             })}
           </p>
-        ) : !manual &&
-          report.answers.some(
-            (row) => row.waiting && !row.aiMarked && !row.handMarking
-          ) ? (
+        ) : runAI ? (
           <Button
             className="mt-2 w-full"
             disabled={marking}
@@ -247,7 +259,9 @@ export function ApproveTab({
             size="sm"
             variant="outline"
           >
-            {m.assignment_mark_with_ai()}
+            {manual
+              ? m.assignment_read_papers_again()
+              : m.assignment_mark_with_ai()}
           </Button>
         ) : null}
         <ul className="mt-2 flex flex-col gap-0.5 max-md:max-h-56 max-md:overflow-auto">
@@ -301,7 +315,10 @@ export function ApproveTab({
                       name="alert"
                     />
                   )}
-                  {row.waiting && row.aiMarked ? (
+                  {row.marking ? (
+                    // A marking run holds it now (Q729).
+                    <MarkingNow />
+                  ) : row.waiting && row.aiMarked ? (
                     <span className="shrink-0 font-semibold text-fg-secondary">
                       {m.assignment_ai_mark({
                         mark: markText(row.aiAwarded, row.marks),
@@ -312,7 +329,9 @@ export function ApproveTab({
                     <span className="inline-flex h-5.5 shrink-0 items-center rounded-md bg-tint-error px-1.75 font-semibold text-tint-error-fg text-xs">
                       {row.aiError === 'credits'
                         ? m.assignment_no_credits()
-                        : m.assignment_grade_error()}
+                        : row.aiError === 'file'
+                          ? m.assignment_cant_read_file()
+                          : m.assignment_grade_error()}
                     </span>
                   ) : row.waiting ? (
                     <span className="inline-flex h-5.5 shrink-0 items-center rounded-md bg-tint-warning px-1.75 font-semibold text-tint-warning-fg text-xs">
@@ -623,9 +642,11 @@ function MarkForm({
             })
           : parts.some((p) => p.aiError === 'credits')
             ? m.assignment_not_graded_credits()
-            : parts.some((p) => p.aiError === 'error')
-              ? m.assignment_not_graded_error()
-              : m.assignment_ai_not_marked()}
+            : parts.some((p) => p.aiError === 'file')
+              ? m.assignment_not_graded_file()
+              : parts.some((p) => p.aiError === 'error')
+                ? m.assignment_not_graded_error()
+                : m.assignment_ai_not_marked()}
         {' · '}
         <b className="font-bold text-fg">
           {m.assignment_mark_of({

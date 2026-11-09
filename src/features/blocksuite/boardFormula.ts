@@ -238,7 +238,9 @@ export async function openFormulaCard(
     error.textContent = message;
     error.hidden = false;
   };
-  // The card stays open until the formula is on the canvas, so nothing typed is lost.
+  // Save keeps the card open until the formula is on the canvas, so one KaTeX can't
+  // read stays to fix; a press outside the card discards the typing, as a popup does
+  // (Epo 2026-11-08).
   const save = async () => {
     const typed = field.value.trim();
     if (!typed) {

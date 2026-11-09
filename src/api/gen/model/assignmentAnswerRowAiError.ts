@@ -11,4 +11,5 @@ export type AssignmentAnswerRowAiError = typeof AssignmentAnswerRowAiError[keyof
 export const AssignmentAnswerRowAiError = {
   credits: 'credits',
   error: 'error',
+  file: 'file',
 } as const;
