@@ -1,7 +1,7 @@
 # The layout service (layout/app.py). The model comes in at build, from a pinned
 # revision and SHA-256; the weights are never in the repository. Apache-2.0,
 # bench/extraction/reports/2026-11-04-layout-models.md.
-FROM python:3.12.16-slim-bookworm@sha256:e697c81897302a4c4333bade000d98038fbb21eb064f8ee1fd42d02ebcd9d337
+FROM python:3.12.16-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

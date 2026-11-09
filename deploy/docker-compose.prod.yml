@@ -46,7 +46,7 @@ services:
   # Postgres and Redis are pinned by digest: a deploy pulls only the app
   # images, so upgrading either is an explicit commit (Epo 2026-10-23).
   db:
-    image: pgvector/pgvector:0.8.7-pg16@sha256:7b822b0aac60967beb1ea5e576b8602c94c300a157d187f385ae3e0da199b90a
+    image: pgvector/pgvector:0.8.7-pg16@sha256:0dd3149a06e4579a0d70d8fef9945636cd514005e7237deb27f9b67886f8dc4f
     environment:
       POSTGRES_USER: capy
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
@@ -66,7 +66,7 @@ services:
     restart: unless-stopped
 
   capy-redis:
-    image: redis:7.4.11-alpine@sha256:57e4255cc971b1c8d6f8a6ca283ac01bc3ecdd914273ef6bfaede87aaecd6541
+    image: redis:7.4.12-alpine@sha256:c5d34a98396a4775e223c74e929162c35c5a2182901ba26b50ade939941ce14b
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
