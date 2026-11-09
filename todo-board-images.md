@@ -125,13 +125,23 @@ refuses past them on Done with a message, as it does for the board's 250 KiB.
    asset rules: the plan image cap per image, refused when storage is full.
 5. The workspace canvas's owner pays for its images (no collaboration yet).
 
+## Decided later (Epo 2026-11-09)
+
+6. Workspace canvas images upload at once as editor assets and list on Files › Embeds,
+   as Plate's do.
+7. An answer-board image is at most 1 MiB after compression (the catalog's
+   `BOARD_IMAGE_MAX`, with `BOARD_IMAGES_MAX` 10).
+8. Animated GIFs follow Plate: kept moving within the side limit and the cap, refused
+   past them.
+
+Earlier decision this plan builds on: Epo (2026-11-06) allowed image upload on the drawing
+board as notes do (a placeholder while it uploads, the file in the bucket, the browser
+fetching its link, never embedded in the document). Decision 3 above amends its timing
+for answer boards only: their images go up with the board at Done or Check, since the
+board itself reaches the server only then. The workspace canvas keeps the 2026-11-06
+timing (upload at once).
+
 ## Still open
 
-1. **Workspace canvas upload timing:** upload at once and list on Files › Embeds, as
-   Plate does (proposed above), or something else?
-2. **Bytes per image on answer boards:** Plate's 2 MiB cap, or smaller, since a student
-   pays for up to 10 per answer and the marking image is 300 KiB (suggest 1 MiB).
-3. **Animated GIFs:** follow Plate, keep them moving within the side limit and the cap
-   (recommended).
-4. **Where the workspace canvas lives on the server**, which its images wait on: its own
-   plan.
+- Where the workspace canvas lives on the server, which its images wait on: see the
+  canvas storage question in this plan's thread (2026-11-09) and `todo-canvas-workspace.md`.
