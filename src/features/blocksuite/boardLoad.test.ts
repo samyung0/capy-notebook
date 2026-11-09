@@ -7,7 +7,12 @@ import {
   withElement,
   withElements,
 } from './boardFixture';
-import { BoardLoadError, checkSavedBoard, embedFits } from './boardLoad';
+import {
+  addedElementFits,
+  BoardLoadError,
+  checkSavedBoard,
+  embedFits,
+} from './boardLoad';
 
 const reason = (update: Uint8Array) => {
   try {
@@ -154,6 +159,39 @@ describe('checkSavedBoard', () => {
         topic: { index: 'a0' },
       })
     ).toBe('mindmap nodes');
+  });
+
+  it('refuses a board whose JSON would hide an element', () => {
+    const hidden = withElements({
+      id: '__proto__',
+      latex: 'x'.repeat(5000),
+      type: 'formula',
+      xywh: '[0,0,9,9]',
+    });
+    expect(reason(hidden)).toBe('hidden key');
+  });
+
+  it('takes an added element only as the load check would', () => {
+    const kinds = new Set(['shape', 'mindmap', 'chart']);
+    const [topic, idea, map] = MIND_MAP;
+    const all = { idea, map, topic } as Record<string, Record<string, unknown>>;
+    expect(addedElementFits('map', all, kinds)).toBe(true);
+    expect(
+      addedElementFits(
+        'map',
+        {
+          ...all,
+          map: {
+            ...map,
+            children: {
+              idea: { index: 'a0', parent: 'topic' },
+              topic: { index: 'a0', parent: 'idea' },
+            },
+          },
+        },
+        kinds
+      )
+    ).toBe(false);
   });
 
   it('takes a pasted emoji, GIF or card only as the load check would', () => {

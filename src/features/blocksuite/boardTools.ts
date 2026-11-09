@@ -1770,10 +1770,15 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
     this.placed();
   }
 
+  private placingGif = false;
+
   /** A GIF at KLIPY's size for it, or the file's own when KLIPY gives none. A link
    * past what a board stores can't be placed; the picker still shows it (KLIPY's
    * terms: no result removed). */
   private async placeGif(gif: KlipyGif) {
+    // One at a time: a size-less GIF waits for its file, and a second click then
+    // would place it twice.
+    if (this.placingGif) return;
     const ref = gif.media.url;
     if (ref.length > BOARD_CATALOG.limits.PICTURE_REF_MAX) {
       userToast({ title: m.drawing_board_gif_unplaceable() });
@@ -1791,12 +1796,17 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
       const image = new Image();
       image.referrerPolicy = 'no-referrer';
       image.src = ref;
+      this.placingGif = true;
       try {
         await image.decode();
       } catch {
         userToast({ title: m.drawing_board_gif_unplaceable() });
         return;
+      } finally {
+        this.placingGif = false;
       }
+      // The panel (and maybe the board) may have gone while it loaded.
+      if (!this.isConnected) return;
       ({ naturalHeight: height, naturalWidth: width } = image);
     }
     this.placePicture(

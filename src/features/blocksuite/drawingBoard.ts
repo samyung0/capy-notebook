@@ -118,7 +118,13 @@ import {
   type WorkspaceLinks,
 } from './boardCards';
 import { closeBoardEditor } from './boardEditorShell';
-import { type BoardKind, checkSavedBoard, holds } from './boardLoad';
+import {
+  addedElementFits,
+  type BoardKind,
+  checkSavedBoard,
+  type Fields,
+  holds,
+} from './boardLoad';
 import { BoardMenu } from './boardMenu';
 import { PictureStoreExtension, pictureViews } from './boardPicture';
 import './boardPlaneEditor';
@@ -264,20 +270,32 @@ class NoFrameOverlay extends Overlay {
   override render() {}
 }
 
-/** A board holds only its catalog's kinds whatever adds one (a paste, a duplicate, a
- * peer): the question board drops a pasted mind map or capy embed, which its load
- * check would refuse (Epo 2026-11-09). A mind map goes with its node shapes. */
+/** A board holds only what its load check would take, whatever adds it (a paste, a
+ * duplicate, a peer): the question board drops a pasted mind map or capy embed, and
+ * either board an element past its limits or a mind map with broken nodes (Epo
+ * 2026-11-09). A mind map goes with its node shapes. */
 function keepToCatalog(gfx: GfxController, board: BoardKind) {
   const { elements, parents } = holds(board);
   const { doc } = gfx;
   const surface = gfx.surface;
-  const added = surface?.elementAdded.subscribe(({ id }) => {
-    const type = surface.getElementById(id)?.type;
-    if (type && !elements.has(type))
-      queueMicrotask(
-        () => surface.getElementById(id) && surface.deleteElement(id)
-      );
-  });
+  // Checked once the add's transaction is done: a mind map gets its nodes after itself.
+  const added = surface?.elementAdded.subscribe(({ id }) =>
+    queueMicrotask(() => {
+      const element = surface.getElementById(id);
+      if (!element) return;
+      const fields = element.serialize() as Fields;
+      const all =
+        fields.type === 'mindmap'
+          ? Object.fromEntries(
+              surface.elementModels.map((each) => [
+                each.id,
+                each.serialize() as Fields,
+              ])
+            )
+          : { [id]: fields };
+      if (!addedElementFits(id, all, elements)) surface.deleteElement(id);
+    })
+  );
   const blocks = doc.slots.blockUpdated.subscribe((change) => {
     if (change.type !== 'add' || parents.has(change.flavour)) return;
     queueMicrotask(() => {

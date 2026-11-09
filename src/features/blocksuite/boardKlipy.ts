@@ -78,7 +78,12 @@ export async function klipyGifs(
             id: String(item.id),
             media,
             preview,
-            title: item.title ?? item.slug,
+            title:
+              typeof item.title === 'string'
+                ? item.title
+                : typeof item.slug === 'string'
+                  ? item.slug
+                  : '',
           },
         ]
       : [];

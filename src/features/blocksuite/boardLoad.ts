@@ -208,6 +208,32 @@ function mindmapFits(
   });
 }
 
+/** A mind map's nodes against the canvas: shapes no group or other mind map holds. */
+function mindmapOwnsItsNodes(id: string, all: Record<string, Fields>) {
+  const owned = new Set<string>();
+  for (const [other, element] of Object.entries(all))
+    if (
+      other !== id &&
+      (element.type === 'group' || element.type === 'mindmap') &&
+      element.children &&
+      typeof element.children === 'object'
+    )
+      for (const node of Object.keys(element.children)) owned.add(node);
+  return mindmapFits(all[id].children as Record<string, unknown>, all, owned);
+}
+
+/** An element added to a mounted board (a paste, a duplicate, a peer), as the load
+ * check would take it: `all` is the canvas's elements serialized, needed only for a
+ * mind map's nodes. */
+export function addedElementFits(
+  id: string,
+  all: Record<string, Fields>,
+  kinds: ReadonlySet<string>
+) {
+  if (hidesKeys(all[id]) || elementProblem(all[id], kinds)) return false;
+  return all[id].type !== 'mindmap' || mindmapOwnsItsNodes(id, all);
+}
+
 /** A picture: an emoji by its code points, or a GIF by its KLIPY link. */
 function pictureFits(props: Fields) {
   const kind = props['kind'];
@@ -268,6 +294,16 @@ export function embedFits(flavour: string, props: Fields) {
 /** A saved board's update, checked before anything mounts: one page with one canvas,
  * and only what the board's tools make, each within its limits. Its blocks and canvas
  * elements as plain data, for the preview. */
+/** Yjs's `toJSON` writes `obj[key] = value`, so a `__proto__` key becomes the object's
+ * prototype: its entry hides from every check while BlockSuite, reading the Y maps,
+ * still loads it. Such a board is refused. */
+function hidesKeys(value: unknown): boolean {
+  if (value === null || typeof value !== 'object') return false;
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== Array.prototype) return true;
+  return Object.values(value).some(hidesKeys);
+}
+
 /** A saved block's props without their `prop:` prefix. */
 const ownProps = (block: Fields): Fields =>
   Object.fromEntries(
@@ -285,6 +321,7 @@ export function checkSavedBoard(update: Uint8Array, board: BoardKind) {
     throw new BoardLoadError('unreadable', { cause });
   }
   const blocks = doc.getMap('blocks').toJSON() as Record<string, Fields>;
+  if (hidesKeys(blocks)) throw new BoardLoadError('hidden key');
   const flavours = Object.values(blocks).map((block) => block['sys:flavour']);
   for (const flavour of flavours)
     if (typeof flavour !== 'string' || !parents.has(flavour))
@@ -340,16 +377,8 @@ export function checkSavedBoard(update: Uint8Array, board: BoardKind) {
     const problem = elementProblem(element, kinds);
     if (problem) throw new BoardLoadError(problem);
   }
-  // Shapes a group holds can't also be a mind map's node.
-  const owned = new Set<string>();
-  for (const element of Object.values(all))
-    if (element.type === 'group')
-      for (const id of Object.keys(element.children as Fields)) owned.add(id);
-  for (const element of Object.values(all))
-    if (
-      element.type === 'mindmap' &&
-      !mindmapFits(element.children as Record<string, unknown>, all, owned)
-    )
+  for (const [id, element] of Object.entries(all))
+    if (element.type === 'mindmap' && !mindmapOwnsItsNodes(id, all))
       throw new BoardLoadError('mindmap nodes');
   doc.destroy();
   return { blocks, elements: elements as Record<string, Fields> };

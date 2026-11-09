@@ -4640,7 +4640,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       the view's middle. **GIF** searches KLIPY (`boardKlipy.ts`, `VITE_KLIPY_KEY`):
       from the student's browser with an anonymous per-browser `customer_id`, the
       `high` content filter, results in KLIPY's order and none removed but one off its
-      `*.klipy.com` hosts (its terms), "Powered by KLIPY" under them; a GIF without a
+      `*.klipy.com` hosts (its terms), "Search KLIPY" as the placeholder in every language (KLIPY's required attribution) and "Powered by KLIPY" under them; a GIF without a
       size places at its file's own, one whose link passes the stored limit says it
       can't be placed;
       the placed GIF stays KLIPY's link, as its terms ask. Without a key the view
@@ -4666,11 +4666,14 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   - **Holding to the catalog after load** (Epo 2026-11-09): the load check runs
     once, so a mounted board also drops what its catalog leaves out whatever adds it
     (a paste, a duplicate, later a peer): `keepToCatalog` in `drawingBoard.ts` deletes
-    such an element or block right after it lands, so a mind map copied from the
+    such an element or block right after it lands, and any element the load check's
+    per-element and mind map checks would refuse (`addedElementFits`), so a mind map copied from the
     workspace canvas and pasted into an answer goes with its node shapes, as does a capy
     embed. A saved mind map's nodes are checked too (`mindmapFits`): each a shape on
     the canvas no other mind map or group holds, under a parent among its own nodes,
-    one root, no cycle, layout 0–2. Emoji, GIFs and cards copy, paste and duplicate on
+    one root, no cycle, layout 0–2. A board whose JSON would hide a key (`__proto__`,
+    which Yjs's `toJSON` turns into the object's prototype while BlockSuite still loads
+    the entry) is refused. Emoji, GIFs and cards copy, paste and duplicate on
     the workspace canvas through a clipboard config each (`boardClipboard.ts`), which
     re-adds only a block the load check would take (`embedFits`, the same check), since
     any page can write the clipboard. Their renderers check again what they use: a link
