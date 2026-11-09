@@ -80,18 +80,15 @@ export const isWebAddress = (href: string) => {
   }
 };
 
-/** KLIPY's media hosts, which the image policy also lists. */
-export const KLIPY_MEDIA_HOSTS = [
-  'static.klipy.com',
-  'static1.klipy.com',
-  'static2.klipy.com',
-];
+/** Where KLIPY serves media: any https *.klipy.com host (Epo 2026-11-09), as the
+ * image policy allows. */
+export const KLIPY_MEDIA_SOURCE = 'https://*.klipy.com';
 
 /** Where a KLIPY GIF may come from (its media hosts). */
 export const isKlipyMedia = (url: string) => {
   try {
     const { hostname, protocol } = new URL(url);
-    return protocol === 'https:' && KLIPY_MEDIA_HOSTS.includes(hostname);
+    return protocol === 'https:' && hostname.endsWith('.klipy.com');
   } catch {
     return false;
   }

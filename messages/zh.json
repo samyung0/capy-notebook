@@ -3177,6 +3177,7 @@
   "drawing_board_gif_off": "GIF 搜索未开启：此应用还没有 KLIPY 密钥。",
   "drawing_board_gif_failed": "GIF 无法加载，请稍后再试。",
   "drawing_board_gif_none": "未找到 GIF。",
+  "drawing_board_gif_unplaceable": "无法放置这个 GIF。",
   "drawing_board_gif_credit": "由 KLIPY 提供",
   "drawing_board_link": "链接",
   "drawing_board_from_workspace": "来自工作区",

@@ -61,6 +61,7 @@ import { styleMap } from 'lit/directives/style-map.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import * as Y from 'yjs';
 import { BOARD_CATALOG } from '@/api/board.generated';
+import { userToast } from '@/components/ui/userToast';
 import {
   youtubeVideoId,
   youtubeWatchUrl,
@@ -1769,6 +1770,46 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
     this.placed();
   }
 
+  /** A GIF at KLIPY's size for it, or the file's own when KLIPY gives none. A link
+   * past what a board stores can't be placed; the picker still shows it (KLIPY's
+   * terms: no result removed). */
+  private async placeGif(gif: KlipyGif) {
+    const ref = gif.media.url;
+    if (ref.length > BOARD_CATALOG.limits.PICTURE_REF_MAX) {
+      userToast({ title: m.drawing_board_gif_unplaceable() });
+      return;
+    }
+    let { height = 0, width = 0 } = gif.media;
+    if (
+      !(
+        Number.isFinite(width) &&
+        width > 0 &&
+        Number.isFinite(height) &&
+        height > 0
+      )
+    ) {
+      const image = new Image();
+      image.referrerPolicy = 'no-referrer';
+      image.src = ref;
+      try {
+        await image.decode();
+      } catch {
+        userToast({ title: m.drawing_board_gif_unplaceable() });
+        return;
+      }
+      ({ naturalHeight: height, naturalWidth: width } = image);
+    }
+    this.placePicture(
+      {
+        kind: 'klipy',
+        label: gif.title.slice(0, BOARD_CATALOG.limits.PICTURE_LABEL_MAX),
+        ref,
+      },
+      [width, height],
+      240
+    );
+  }
+
   private open(view: MiscView) {
     this.view = view;
     this.linkError = false;
@@ -1876,19 +1917,7 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
                         aria-label=${gif.title}
                         title=${gif.title}
                         type="button"
-                        @click=${() =>
-                          this.placePicture(
-                            {
-                              kind: 'klipy',
-                              label: gif.title.slice(
-                                0,
-                                BOARD_CATALOG.limits.PICTURE_LABEL_MAX
-                              ),
-                              ref: gif.media.url,
-                            },
-                            [gif.media.width, gif.media.height],
-                            240
-                          )}
+                        @click=${() => this.placeGif(gif)}
                       >
                         <img
                           alt=""

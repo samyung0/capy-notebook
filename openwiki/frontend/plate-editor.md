@@ -4639,7 +4639,10 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       WebP (about 5 MB together) with 64 px stills for the grid; a click puts one in
       the view's middle. **GIF** searches KLIPY (`boardKlipy.ts`, `VITE_KLIPY_KEY`):
       from the student's browser with an anonymous per-browser `customer_id`, the
-      `high` content filter, results in KLIPY's order, "Powered by KLIPY" under them;
+      `high` content filter, results in KLIPY's order and none removed but one off its
+      `*.klipy.com` hosts (its terms), "Powered by KLIPY" under them; a GIF without a
+      size places at its file's own, one whose link passes the stored limit says it
+      can't be placed;
       the placed GIF stays KLIPY's link, as its terms ask. Without a key the view
       says search is off; an uploaded GIF is an ordinary image. **Link** takes a web
       address or YouTube link: a video shows its poster (`i.ytimg.com`) with a play
@@ -4671,8 +4674,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     the workspace canvas through a clipboard config each (`boardClipboard.ts`), which
     re-adds only a block the load check would take (`embedFits`, the same check), since
     any page can write the clipboard. Their renderers check again what they use: a link
-    opens only as http(s), an emoji shows only from the list, a GIF only from KLIPY's
-    hosts (`KLIPY_MEDIA_HOSTS`, which the image policy lists too), rotation as a number.
+    opens only as http(s), an emoji shows only from the list, a GIF only from https
+    `*.klipy.com` (`KLIPY_MEDIA_SOURCE`, which the image policy allows too), rotation as a number.
 - **Preview (`boardPreview.ts`):** `drawBoardPreview(saved, { width, height }, board)` draws a
   saved board as an SVG string from its data, for lists, results and marking views
   (Epo 2026-11-06: what's on it, not every detail). It never loads the editor: it imports

@@ -109,8 +109,7 @@ describe('image-source policy', () => {
     const policy = directives(
       imagePolicy({ ...DEPLOYED, VITE_KLIPY_KEY: 'key' })
     );
-    expect(policy['img-src']).toContain('https://static.klipy.com');
-    expect(policy['img-src']).toContain('https://static2.klipy.com');
+    expect(policy['img-src']).toContain('https://*.klipy.com');
   });
 
   it('fails a deployed build that misses its bucket or report endpoint', () => {

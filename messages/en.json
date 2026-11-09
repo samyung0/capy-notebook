@@ -3177,6 +3177,7 @@
   "drawing_board_gif_off": "GIF search is off: this app has no KLIPY key yet.",
   "drawing_board_gif_failed": "GIFs couldn't load. Try again in a moment.",
   "drawing_board_gif_none": "No GIFs found.",
+  "drawing_board_gif_unplaceable": "This GIF can't be placed.",
   "drawing_board_gif_credit": "Powered by KLIPY",
   "drawing_board_link": "Link",
   "drawing_board_from_workspace": "From the workspace",

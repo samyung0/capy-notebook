@@ -1,4 +1,3 @@
-import { BOARD_CATALOG } from '@/api/board.generated';
 import { isString, PREF_KEYS, readPref, writePref } from '@/lib/localPrefs';
 import { isKlipyMedia } from './boardPictureData';
 
@@ -14,12 +13,12 @@ export type KlipyGif = {
   id: string;
   title: string;
   /** Shown in the picker. */
-  preview: { height: number; url: string; width: number };
-  /** Placed on the canvas. */
-  media: { height: number; url: string; width: number };
+  preview: Rendition;
+  /** Placed on the canvas, at its size when KLIPY gives one. */
+  media: Rendition;
 };
 
-type Rendition = { height: number; url: string; width: number };
+type Rendition = { height?: number; url: string; width?: number };
 type Item = {
   id: number | string;
   slug: string;
@@ -38,16 +37,10 @@ function customerId() {
   return made;
 }
 
-/** A rendition the canvas can keep: from KLIPY's media hosts, within the picture
- * link's limit and with a size, as the board's load check asks. */
+/** A rendition from KLIPY's own hosts, the only check (Epo 2026-11-09): its terms
+ * forbid removing results, so length and size never drop one. */
 const fits = (rendition: Rendition | undefined) =>
-  rendition &&
-  isKlipyMedia(rendition.url) &&
-  rendition.url.length <= BOARD_CATALOG.limits.PICTURE_REF_MAX &&
-  Number.isFinite(rendition.width) &&
-  rendition.width > 0 &&
-  Number.isFinite(rendition.height) &&
-  rendition.height > 0
+  rendition && typeof rendition.url === 'string' && isKlipyMedia(rendition.url)
     ? rendition
     : undefined;
 
@@ -75,7 +68,7 @@ export async function klipyGifs(
   );
   if (!response.ok) throw new Error(`KLIPY ${response.status}`);
   const body = (await response.json()) as { data?: { data?: Item[] } };
-  // One that doesn't fit is left out; the rest keep KLIPY's order (its terms).
+  // One from another host is left out; the rest keep KLIPY's order (its terms).
   return (body.data?.data ?? []).flatMap((item) => {
     const preview = webp(item, 'sm') ?? webp(item, 'md');
     const media = webp(item, 'md') ?? preview;
