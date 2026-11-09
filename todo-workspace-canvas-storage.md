@@ -106,8 +106,10 @@ material the member can no longer open shows "can't be opened", as now.
    the canvas's assets), authorization (a canvas is a standalone material linked to a
    workspace), test-catalog.
 
+Decided (Epo 2026-11-09): a member's canvas and its images go with their membership
+when they leave the workspace, as a leaver's marked drawings go (the leave path deletes
+the member's canvas material; the cascade takes its assets).
+
 ## Decisions still open
 
 1. **Save cadence:** 2 s idle plus on leave (proposed), or the answer board's 500 ms.
-2. **Leaving a workspace:** the canvas and its images go with the membership (proposed,
-   as a leaver's marked drawings go), or stay as the member's standalone material.
