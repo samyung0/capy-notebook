@@ -143,5 +143,5 @@ timing (upload at once).
 
 ## Still open
 
-- Where the workspace canvas lives on the server, which its images wait on: see the
-  canvas storage question in this plan's thread (2026-11-09) and `todo-canvas-workspace.md`.
+- Nothing: the workspace canvas's server storage is `todo-workspace-canvas-storage.md`
+  (Epo 2026-11-09: a material of kind `canvas`).
