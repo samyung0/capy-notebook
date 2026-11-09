@@ -1,0 +1,561 @@
+<meta charset="utf-8">
+<title>Notion Notes Look</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: a review page (narrow column of text) with wide "frames" that show the
+   note and the canvas as they would look. Frame colours are our notion style's
+   tokens (src/styles/tokens/themes/notion.css, latte and frappé). */
+:root{
+  --bg:#f7f7f5; --panel:#ffffff; --fg:#37352f; --fg2:#787774; --muted:#9b9a97;
+  --line:#e9e9e7; --divider:#ececea; --hover:#f3f3f1; --dim:#f1f1ef;
+  --accent:#2383e2; --sel:#e8f0fb; --overlay:#ffffff; --overlay-line:#e9e9e7;
+  --shadow-pop:0 0 0 1px rgba(15,15,15,.06),0 3px 6px rgba(15,15,15,.08),0 9px 24px rgba(15,15,15,.14);
+  --frost:rgba(255,255,255,.62); --pick:#e8f4fd; --handle:rgba(55,53,47,.38);
+  --frame-a:#dcd3f0; --frame-b:#f5d4df; --frame-c:#fbe3cf;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#1d1d1f; --panel:#222225; --fg:#d8d7d5; --fg2:#a3a2a0; --muted:#83827f;
+  --line:#303034; --divider:#2a2a2e; --hover:#28282b; --dim:#303034;
+  --accent:#2383e2; --sel:#1f2d3d; --overlay:#222225; --overlay-line:#303034;
+  --shadow-pop:0 0 0 1px rgba(0,0,0,.4),0 3px 6px rgba(0,0,0,.3),0 9px 24px rgba(0,0,0,.5);
+  --frost:rgba(20,20,22,.55); --pick:#1f3546; --handle:rgba(216,215,213,.4);
+  --frame-a:#3b3356; --frame-b:#4a2e3b; --frame-c:#4a3a2c; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#1d1d1f; --panel:#222225; --fg:#d8d7d5; --fg2:#a3a2a0; --muted:#83827f;
+  --line:#303034; --divider:#2a2a2e; --hover:#28282b; --dim:#303034;
+  --accent:#2383e2; --sel:#1f2d3d; --overlay:#222225; --overlay-line:#303034;
+  --shadow-pop:0 0 0 1px rgba(0,0,0,.4),0 3px 6px rgba(0,0,0,.3),0 9px 24px rgba(0,0,0,.5);
+  --frost:rgba(20,20,22,.55); --pick:#1f3546; --handle:rgba(216,215,213,.4);
+  --frame-a:#3b3356; --frame-b:#4a2e3b; --frame-c:#4a3a2c; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 var(--sans);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 80px}
+h1,h2,h3{text-wrap:balance;margin:0}
+.review{max-width:1100px;margin:0 auto}
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--bg);padding:14px 0 10px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--bg)}
+.top h1{font-size:18px;font-weight:650}
+.top nav{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:13px}
+.top nav a{color:var(--fg2);text-decoration:none}
+.top nav a:hover{color:var(--fg);text-decoration:underline}
+.seg{margin-left:auto;display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{all:unset;cursor:pointer;padding:4px 10px;font-size:12px;color:var(--fg2)}
+.seg button[aria-pressed="true"]{background:var(--fg);color:var(--panel)}
+.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+section{padding-top:36px}
+section>h2{font-size:22px;font-weight:650;letter-spacing:-.01em;display:flex;gap:10px;align-items:center}
+section>p,section li{max-width:72ch}
+.muted{color:var(--fg2)}
+.tag{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:24px;padding:0 7px;border-radius:6px;background:var(--fg);color:var(--panel);font-size:13px;font-weight:650}
+.tag.soft{background:var(--dim);color:var(--fg)}
+kbd{font:12px var(--mono);background:var(--dim);border:1px solid var(--line);border-radius:4px;padding:0 5px}
+table.facts{border-collapse:collapse;width:100%;font-size:13px;margin-top:12px}
+table.facts th,table.facts td{border-top:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+table.facts th{font-weight:600;color:var(--fg2);font-size:12px;letter-spacing:.02em}
+table.facts td:first-child{font-weight:600;white-space:nowrap}
+.scroll{overflow-x:auto}
+.frames{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:20px;align-items:start;margin-top:16px}
+@media (max-width:900px){.frames{grid-template-columns:1fr}.frames>.phone-wrap{justify-self:start}}
+.frame-cap{font-size:12px;color:var(--fg2);margin:0 0 6px}
+.frame{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;position:relative}
+.phone-wrap{width:360px;max-width:100%}
+.phone{width:360px;max-width:100%;border-radius:22px;border:1px solid var(--line)}
+.options{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:20px;margin-top:16px}
+.option{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:14px 14px 16px;display:flex;flex-direction:column;gap:10px}
+.option h3{font-size:15px;font-weight:650;display:flex;gap:8px;align-items:center}
+.option .pros{font-size:13px;color:var(--fg2);margin:0;padding-left:18px}
+.option .stage{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:28px 16px 20px;position:relative;overflow:hidden;min-height:140px}
+.stage.framed{background:linear-gradient(120deg,var(--frame-a),var(--frame-b) 55%,var(--frame-c))}
+.stage.framed .sheet{background:var(--frost);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-radius:10px;padding:18px 20px}
+.stage .sheet.plain{background:var(--panel);border-radius:10px;padding:18px 20px}
+
+/* ---------- the note ---------- */
+.note{font-family:var(--sans);color:var(--fg);font-size:16px;line-height:1.5;padding:72px 96px 80px;max-width:912px;margin:0 auto;position:relative}
+.phone .note{padding:56px 16px 64px;font-size:16px}
+.note .ttl{font-size:40px;line-height:1.2;font-weight:700;padding:3px 2px;margin-bottom:8px}
+.phone .note .ttl{font-size:30px}
+.blk{position:relative;padding:3px 2px;border-radius:4px}
+.blk.h1{font-size:30px;line-height:1.3;font-weight:600;margin-top:32px;margin-bottom:4px}
+.blk.h2{font-size:24px;line-height:1.3;font-weight:600;margin-top:22px;margin-bottom:1px}
+.blk.h3{font-size:20px;line-height:1.3;font-weight:600;margin-top:16px;margin-bottom:1px}
+.phone .blk.h1{font-size:23px}.phone .blk.h2{font-size:20px}.phone .blk.h3{font-size:18px}
+.blk.p{margin-top:1px}
+.blk.li{display:flex;gap:2px;margin-top:1px}
+.blk.li .mk{width:24px;flex:0 0 24px;text-align:center;line-height:24px}
+.blk.li .mk.dot::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;vertical-align:middle;margin-top:-2px}
+.blk.callout{display:flex;gap:10px;background:var(--dim);border-radius:6px;padding:16px 16px 16px 12px;margin-top:4px;margin-bottom:4px}
+.blk.callout .ic{width:22px;flex:0 0 22px;font-size:20px;line-height:24px;text-align:center}
+.blk.hr{padding:6px 0;margin-top:1px}
+.blk.hr i{display:block;height:1px;background:var(--divider)}
+.blk.code{background:var(--dim);border-radius:6px;padding:34px 16px 32px 32px;font:85%/1.5 var(--mono);margin-top:4px;margin-bottom:4px;white-space:pre;overflow-x:auto;color:var(--fg)}
+.blk.code .lang{position:absolute;top:8px;left:10px;font:12px var(--sans);color:var(--fg2);display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:4px}
+.blk.code .lang:hover{background:var(--hover)}
+.blk.code .cp{position:absolute;top:6px;right:8px;display:inline-flex;gap:2px}
+.blk.code .cp button{all:unset;width:26px;height:26px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;color:var(--fg2)}
+.blk.code .cp button:hover{background:var(--hover)}
+.blk.img{margin-top:4px;margin-bottom:4px}
+.blk.img .pic{position:relative;width:82%;margin:0 auto;border-radius:4px;overflow:hidden;background:var(--dim)}
+.phone .blk.img .pic{width:100%}
+.blk.img svg.diagram{display:block;width:100%;height:auto}
+.blk.img .cap{text-align:center;font-size:14px;color:var(--fg2);padding-top:6px}
+.blk.embed{margin-top:4px;margin-bottom:4px;border:1px solid var(--line);border-radius:8px;padding:14px 16px;display:flex;gap:14px;align-items:center}
+.blk.embed .q{display:flex;flex-direction:column;gap:2px;flex:1 1 auto;min-width:0}
+.blk.embed .q b{font-size:15px;font-weight:600}
+.blk.embed .q span{font-size:13px;color:var(--fg2)}
+.blk.embed .btn{all:unset;cursor:pointer;height:32px;padding:0 12px;border:1px solid var(--line);border-radius:6px;font-size:14px;font-weight:500;white-space:nowrap}
+.blk.embed .btn:hover{background:var(--hover)}
+.inline-code{font:85% var(--mono);background:var(--dim);border-radius:3px;padding:1px 4px;color:#d44c47}
+.sel{background:var(--sel);box-decoration-break:clone;-webkit-box-decoration-break:clone}
+.blk.hov{background:var(--hover)}
+/* The gutter handles (Notion: + and ⠿ in the 44px gutter, on hover) */
+.handles{position:absolute;right:100%;top:3px;height:24px;display:none;gap:0;margin-right:2px;color:var(--handle)}
+.blk.hov>.handles,.blk.open>.handles{display:inline-flex}
+.handles i{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:4px;cursor:grab}
+.handles i:hover,.blk.open .handles i.grip{background:var(--hover);color:var(--fg2)}
+.blk.h1 .handles,.blk.h2 .handles,.blk.h3 .handles{top:calc(50% - 12px)}
+.phone .handles{display:none!important}
+.ico{width:18px;height:18px;flex:0 0 18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ico.s16{width:16px;height:16px;flex-basis:16px}
+.ico.s14{width:14px;height:14px;flex-basis:14px}
+
+/* ---------- floating toolbars (one language for note + canvas) ---------- */
+.bar{position:absolute;display:inline-flex;align-items:center;gap:0;height:36px;padding:0 4px;border-radius:8px;
+  background:var(--overlay);border:1px solid var(--overlay-line);box-shadow:var(--shadow-pop);color:var(--fg);white-space:nowrap;z-index:5}
+.bar.frosted{background:var(--frost);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-color:color-mix(in srgb,var(--overlay-line) 60%,transparent)}
+.bar .b{all:unset;display:inline-flex;align-items:center;justify-content:center;gap:4px;height:28px;min-width:28px;padding:0 5px;border-radius:5px;color:var(--fg);font-size:13px;font-weight:500;cursor:pointer}
+.bar .b:hover{background:var(--hover)}
+.bar .b.on{color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent)}
+.bar .b .ico{width:18px;height:18px}
+.bar .b.ai{color:#7c4dcc;font-weight:600}
+.bar .sep{width:1px;height:18px;background:var(--line);margin:0 3px}
+.bar .b.txt{padding:0 7px}
+.bar.sm{height:32px;padding:0 3px}.bar.sm .b{height:26px;min-width:26px}
+.bar.radius-capy{border-radius:8px}.bar.radius-fisheye{border-radius:14px}.bar.radius-fisheye .b{border-radius:10px}
+/* menus (opaque, the All blocks popover look: 28px rows, 18px icon) */
+.menu{position:absolute;z-index:6;background:var(--overlay);border:1px solid var(--overlay-line);border-radius:8px;box-shadow:var(--shadow-pop);padding:4px;min-width:200px;font-size:14px;color:var(--fg)}
+.menu .row{display:flex;align-items:center;gap:10px;height:28px;padding:0 8px;border-radius:5px}
+.menu .row:hover,.menu .row.cur{background:var(--hover)}
+.menu .row .k{margin-left:auto;font-size:12px;color:var(--muted)}
+.menu .row .arr{margin-left:auto;color:var(--muted)}
+.menu .grp{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);padding:8px 8px 4px}
+.menu .div{height:1px;background:var(--line);margin:4px 0}
+.menu.aff{width:280px;padding:8px 4px 8px 8px}
+.menu.aff .row{height:auto;padding:4px 8px;gap:10px;align-items:center}
+.menu.aff .row .box{width:28px;height:28px;flex:0 0 28px;border:1px solid var(--line);border-radius:4px;display:inline-flex;align-items:center;justify-content:center;color:var(--fg2);background:var(--overlay)}
+.menu.aff .row .tt{display:flex;flex-direction:column;line-height:1.25}
+.menu.aff .row .tt small{font-size:12px;color:var(--fg2)}
+.menu.aff .grp{text-transform:none;letter-spacing:0;font-size:12px;font-weight:500}
+.menu.v .row{height:32px}
+/* a drag handle variant: AFFiNE's bar */
+.affbar{position:absolute;right:100%;top:4px;margin-right:12px;width:4px;height:22px;border-radius:1px;background:var(--muted);display:none}
+.blk.hov>.affbar{display:block}
+/* ---------- tables ---------- */
+.blk.tbl{margin-top:8px;margin-bottom:14px;padding:0 2px;position:relative}
+.tbl table{border-collapse:collapse;width:100%;font-size:14px;line-height:1.4}
+.tbl td,.tbl th{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top;min-width:60px;position:relative}
+.tbl th{background:var(--dim);font-weight:600}
+.tbl .cellsel{box-shadow:inset 0 0 0 2px var(--accent)}
+/* Notion-style handles (T1): a ⋯ pill over a column, a ⋮ pill beside a row, + bars at the right and bottom */
+.tbl .colh{position:absolute;left:50%;top:-10px;transform:translateX(-50%);width:28px;height:14px;border-radius:7px;background:var(--overlay);border:1px solid var(--line);box-shadow:0 1px 2px rgba(15,15,15,.1);display:inline-flex;align-items:center;justify-content:center;color:var(--fg2)}
+.tbl .rowh{position:absolute;left:-10px;top:50%;transform:translateY(-50%);width:14px;height:28px;border-radius:7px;background:var(--overlay);border:1px solid var(--line);box-shadow:0 1px 2px rgba(15,15,15,.1);display:inline-flex;align-items:center;justify-content:center;color:var(--fg2)}
+.tbl .colh.on,.tbl .rowh.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.tbl .addc{position:absolute;top:0;bottom:0;right:-14px;width:12px;border-radius:3px;background:var(--hover);display:flex;align-items:center;justify-content:center;color:var(--fg2)}
+.tbl .addr{position:absolute;left:0;right:0;bottom:-14px;height:12px;border-radius:3px;background:var(--hover);display:flex;align-items:center;justify-content:center;color:var(--fg2)}
+.tbl .addc .ico,.tbl .addr .ico{width:12px;height:12px}
+.tbl .wrap{position:relative}
+.tbl .indicator{position:absolute;left:-1px;right:-1px;top:-2px;height:3px;background:var(--accent);border-radius:2px}
+/* ---------- media hover toolbar + handles ---------- */
+.pic .mbar{position:absolute;top:8px;right:8px;display:inline-flex;gap:0;padding:2px;border-radius:6px;background:var(--overlay);border:1px solid var(--overlay-line);box-shadow:var(--shadow-pop)}
+.pic .mbar .b{all:unset;width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;border-radius:4px;color:var(--fg);cursor:pointer}
+.pic .mbar .b:hover{background:var(--hover)}
+.pic .rh{position:absolute;top:50%;width:6px;height:48px;margin-top:-24px;border-radius:3px;background:rgba(15,15,15,.55);border:1px solid rgba(255,255,255,.9)}
+.pic .rh.l{left:6px}.pic .rh.r{right:6px}
+/* ---------- canvas ---------- */
+.board{position:relative;height:560px;background-color:var(--panel);background-image:radial-gradient(var(--line) 1px,transparent 1px);background-size:20px 20px;overflow:hidden}
+.phone .board{height:640px}
+.board .menu-btn{position:absolute;top:8px;right:8px;width:40px;height:40px;border-radius:8px;background:var(--overlay);border:1px solid var(--overlay-line);box-shadow:var(--shadow-pop);display:inline-flex;align-items:center;justify-content:center;color:var(--fg2)}
+.board .menu-btn.frosted{background:var(--frost);backdrop-filter:blur(16px)}
+.board .menu{top:54px;right:8px;min-width:168px}
+.board .menu .row{height:32px}
+.board .zoom{display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--line);margin-top:4px;padding-top:4px}
+.board .zoom b{flex:1;text-align:center;font-weight:500;font-size:14px}
+.board .zoom .zb{all:unset;width:36px;height:32px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;color:var(--fg2)}
+.board .zoom .zb:hover{background:var(--hover)}
+.board .done{position:absolute;top:8px;right:56px;height:40px;padding:0 16px;border-radius:8px;background:var(--fg);color:var(--panel);font-weight:600;font-size:14px;display:inline-flex;align-items:center;box-shadow:0 4px 12px rgba(0,0,0,.14)}
+.board .back{position:absolute;top:8px;left:8px;width:40px;height:40px;border-radius:8px;background:var(--overlay);border:1px solid var(--overlay-line);box-shadow:var(--shadow-pop);display:inline-flex;align-items:center;justify-content:center;color:var(--fg2)}
+.board .card{position:absolute;left:12%;top:120px;width:300px;height:200px;background:var(--panel);box-shadow:0 0 0 1px var(--accent),0 0 0 3px color-mix(in srgb,var(--accent) 25%,transparent);background-image:linear-gradient(var(--divider) 1px,transparent 1px),linear-gradient(90deg,var(--divider) 1px,transparent 1px);background-size:20px 20px;background-position:10px 10px}
+.phone .board .card{left:16px;top:140px;width:220px;height:160px}
+.board .card::before,.board .card::after{content:"";position:absolute;background:var(--fg2)}
+.board .card::before{left:0;right:0;top:50%;height:1px}
+.board .card::after{top:0;bottom:0;left:50%;width:1px}
+.board .card .pt{position:absolute;width:8px;height:8px;border-radius:50%;background:#1e96eb;border:1.5px solid #fff;transform:translate(-50%,-50%)}
+.board .card .hd{position:absolute;width:8px;height:8px;background:var(--panel);border:1px solid var(--accent)}
+.board .card .hd.tl{left:-5px;top:-5px}.board .card .hd.tr{right:-5px;top:-5px}.board .card .hd.bl{left:-5px;bottom:-5px}.board .card .hd.br{right:-5px;bottom:-5px}
+.board .card .bar{left:0;top:-48px}
+.board .stroke{position:absolute;left:52%;top:110px;width:260px;height:150px;fill:none;stroke:#173654;stroke-width:3;stroke-linecap:round}
+:root[data-theme="dark"] .board .stroke,[data-dark] .board .stroke{stroke:#5683b3}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .board .stroke{stroke:#5683b3}}
+.board .tools{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);display:inline-flex;align-items:center;gap:2px;height:52px;padding:0 8px;border-radius:12px;background:var(--overlay);border:1px solid var(--overlay-line);box-shadow:var(--shadow-pop)}
+.board .tools.frosted{background:var(--frost);backdrop-filter:blur(16px)}
+.board .tools .t{width:36px;height:36px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;color:var(--fg2)}
+.board .tools .t.on{background:var(--hover);color:var(--fg)}
+.board .tools .sep{width:1px;height:24px;background:var(--line);margin:0 6px}
+.board .tools .slot{display:inline-flex;align-items:flex-end;gap:4px;height:44px;padding:0 6px}
+.board .tools .piece{border-radius:3px;position:relative}
+.board .tools .piece.rect{width:22px;height:18px;background:#173654}
+.board .tools .piece.ell{width:20px;height:20px;border-radius:50%;background:#1e96eb}
+.board .tools .piece.tri{width:0;height:0;border-left:12px solid transparent;border-right:12px solid transparent;border-bottom:20px solid #d9dde3}
+.board .tools .piece.plane{width:26px;height:20px;border:1.5px solid var(--fg);background:var(--panel);background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:6px 6px}
+.board .tools .piece.pie{width:20px;height:20px;border-radius:50%;background:conic-gradient(#cb912f 0 120deg,#448361 120deg 250deg,#337ea9 250deg)}
+.board .tools .piece.bars{width:24px;height:20px;background:linear-gradient(90deg,#337ea9 0 5px,transparent 5px 8px,#337ea9 8px 13px,transparent 13px 16px,#337ea9 16px 21px,transparent 21px);background-size:100% 100%;mask:linear-gradient(to top,#000 60%,transparent 60%)}
+.board .tools .piece.fx{font:600 13px/20px var(--sans);color:var(--fg);padding:0 2px}
+.phone .board .tools{left:8px;right:8px;transform:none;justify-content:space-between;padding:0 6px;height:52px;border-radius:12px}
+.phone .board .tools .t{width:40px;height:40px}
+.phone .board .tools .sep{display:none}
+.phone .board .tools .slot{padding:0 2px;gap:3px}
+.phone .board .tools .hide-ph{display:none}
+/* ---------- comparison strip for scope (N) ---------- */
+.strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:14px;margin-top:14px}
+.strip .cell{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:14px;position:relative;min-height:190px}
+.strip .cell h4{margin:0 0 10px;font-size:13px;font-weight:600;color:var(--fg2)}
+.strip .cell .mini{font-size:15px;line-height:1.5;padding-top:42px}
+.strip .cell .mini .callout{display:flex;gap:8px;background:var(--dim);padding:12px;margin-top:8px}
+.strip .cell.capy .mini{font-family:"Fustat",var(--sans)}
+.strip .cell.capy .mini .callout{border-radius:10px}
+.strip .cell.fisheye .mini .callout{border-radius:18px}
+.strip .cell.notion .mini .callout{border-radius:6px}
+.strip .cell .bar{top:12px;left:14px;position:absolute}
+.qs{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:16px 18px;margin-top:16px}
+.qs ol{margin:8px 0 0;padding-left:20px}
+.qs li{margin:6px 0}
+a{color:var(--accent)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-grip" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></g></symbol>
+  <symbol id="i-dotsh" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><circle cx="6" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="18" cy="12" r="1.7"/></g></symbol>
+  <symbol id="i-dotsv" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><circle cx="12" cy="6" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="18" r="1.7"/></g></symbol>
+  <symbol id="i-bold" viewBox="0 0 24 24"><path d="M7 5h6a3.5 3.5 0 0 1 0 7H7zM7 12h7a3.5 3.5 0 0 1 0 7H7z"/></symbol>
+  <symbol id="i-italic" viewBox="0 0 24 24"><path d="M14 5h5M5 19h5M14 5l-4 14"/></symbol>
+  <symbol id="i-under" viewBox="0 0 24 24"><path d="M7 4v7a5 5 0 0 0 10 0V4M5 20h14"/></symbol>
+  <symbol id="i-strike" viewBox="0 0 24 24"><path d="M5 12h14M16 7.5c-.6-1.8-2.3-2.7-4.2-2.7-2.6 0-4.3 1.4-4.3 3.3M8 16.5c.7 1.8 2.4 2.7 4.3 2.7 2.7 0 4.4-1.4 4.4-3.3"/></symbol>
+  <symbol id="i-code" viewBox="0 0 24 24"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.5 1.5M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.5-1.5"/></symbol>
+  <symbol id="i-comment" viewBox="0 0 24 24"><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4z"/></symbol>
+  <symbol id="i-ai" viewBox="0 0 24 24"><path d="M12 3c.6 4.4 3.6 7.4 9 9-5.4 1.6-8.4 4.6-9 9-.6-4.4-3.6-7.4-9-9 5.4-1.6 8.4-4.6 9-9z"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></symbol>
+  <symbol id="i-text" viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/></symbol>
+  <symbol id="i-pen" viewBox="0 0 24 24"><path d="M4 20l4-1L19.5 7.5a2.1 2.1 0 0 0-3-3L5 16z"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-9 8"/></symbol>
+  <symbol id="i-table" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M10 4v16"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h12M9 12h12M9 18h12"/><g fill="currentColor" stroke="none"><circle cx="4.5" cy="6" r="1.3"/><circle cx="4.5" cy="12" r="1.3"/><circle cx="4.5" cy="18" r="1.3"/></g></symbol>
+  <symbol id="i-h1" viewBox="0 0 24 24"><path d="M4 6v12M4 12h8M12 6v12M18 10l2-1.5V18"/></symbol>
+  <symbol id="i-h2" viewBox="0 0 24 24"><path d="M4 6v12M4 12h8M12 6v12M16 10.5a2 2 0 0 1 4 0c0 2-4 3.5-4 7.5h4"/></symbol>
+  <symbol id="i-quote" viewBox="0 0 24 24"><path d="M6 15a4 4 0 0 1 4-4V7a8 8 0 0 0-8 8v2h4zM15 15a4 4 0 0 1 4-4V7a8 8 0 0 0-8 8v2h4z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l4 4L19 6"/></symbol>
+  <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-connect" viewBox="0 0 24 24"><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M7.8 16.2c3-3 5.4-5.4 8.4-8.4"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M8 7H4V3M4.5 7A8 8 0 1 1 4 13"/></symbol>
+  <symbol id="i-redo" viewBox="0 0 24 24"><path d="M16 7h4V3M19.5 7A8 8 0 1 0 20 13"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+  <symbol id="i-eraser" viewBox="0 0 24 24"><path d="M4 16l9-9a2 2 0 0 1 3 0l4 4a2 2 0 0 1 0 3l-5 5H9zM20 20H9M7 13l6 6"/></symbol>
+  <symbol id="i-select" viewBox="0 0 24 24"><path d="M5 4l14 7-6 2-2 6z"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M12 3l3 3-9 14H3v-3zM14 6l-2 2"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M14 6l-6 6 6 6"/></symbol>
+  <symbol id="i-color" viewBox="0 0 24 24"><path d="M6 18L12 4l6 14M8.5 13h7"/><path d="M4 21h16" stroke-width="3"/></symbol>
+  <symbol id="i-math" viewBox="0 0 24 24"><path d="M3 13l3-1 3 7 5-15h7"/></symbol>
+  <symbol id="i-dl" viewBox="0 0 24 24"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></symbol>
+  <symbol id="i-turn" viewBox="0 0 24 24"><path d="M4 7h11a4 4 0 0 1 0 8H9M12 12l-3 3 3 3"/></symbol>
+</svg>
+
+<main class="review">
+  <header class="top">
+    <h1>Notes look: Notion style, one toolbar language with the canvas</h1>
+    <nav>
+      <a href="#study">Study</a><a href="#note">The note</a><a href="#surface">S · Surface</a><a href="#tables">T · Tables</a><a href="#handle">H · Handle</a><a href="#slash">M · Slash</a><a href="#scope">N · Scope</a><a href="#canvas">Canvas</a><a href="#numbers">Numbers</a><a href="#step2">Step 2</a>
+    </nav>
+    <div class="seg" role="group" aria-label="Theme">
+      <button type="button" id="th-light" aria-pressed="false">Light</button><button type="button" id="th-dark" aria-pressed="false">Dark</button><button type="button" id="th-sys" aria-pressed="true">System</button>
+    </div>
+  </header>
+
+  <section id="study">
+    <h2>What Notion and AFFiNE do (2026-11-09)</h2>
+    <p class="muted">Notion measured on a public page and from its editor; AFFiNE on app.affine.pro (the vendored BlockSuite is its editor) and in the vendored sources. The frames below use the <b>notion</b> style's tokens (latte and frappé) and the body column Notion uses.</p>
+    <div class="scroll"><table class="facts">
+      <thead><tr><th></th><th>Notion</th><th>AFFiNE (our vendored BlockSuite)</th><th>Our note today (Plate)</th></tr></thead>
+      <tbody>
+        <tr><td>Table</td><td>No floating toolbar. Hovering shows a ⋯ pill over each column and a ⋮ pill beside each row; each opens a menu (insert, duplicate, delete, header toggle, colour). Thin + bars along the right and bottom edges add a column or row.</td><td>The <code>table</code> block does the same: ⋯ and ⋮ pills, + bars, a blue indicator on the active row or column, and the handle's menu (background colour, insert above/below, move, duplicate, clear, delete). Selecting text in a cell adds the small format bar.</td><td>One shared floating toolbar above the table (PE:24, 2026-09-25) for rows, columns, header and delete.</td></tr>
+        <tr><td>Text selection</td><td>Opaque white bar (dark: #252525), 8px corners, layered shadow, 32px tall: Ask AI · Text ▾ · Comment · B I U S · code · √x · link · colour ▾ · ⋯.</td><td>Opaque panel (<code>editor-toolbar</code>): 36px tall, 8px corners, 0.5px border, two-layer shadow: Ask AI · T ▾ · list ▾ · B · code · Tx · I · link · S · U · pen ▾ · ⧉ · ⋮. The same bar is the block menu.</td><td>Frosted glass over a frosted panel (2026-10-26), pill rounding (2026-09-27), 40px/32px buttons, 36px/28px on phones.</td></tr>
+        <tr><td>Block handle</td><td>A + and a ⠿ grip appear in the 44px gutter on hover, centred on the first line. Click ⠿: a vertical menu (Turn into, Colour, Duplicate, Move to, Copy link, Comment, Delete) with a search field.</td><td>A thin 4px bar in the gutter (a dots grip in some places). Click: the same horizontal toolbar as a selection, with ⋮ for more.</td><td>A ⠿ drag handle, opaque context menu in the All blocks popover look (2026-10-26).</td></tr>
+        <tr><td>Slash menu</td><td>Compact rows: 20px icon, name, shortcut at the right, group labels (Suggested, Basic blocks, Media, Advanced). The old big thumbnails are gone.</td><td>280px panel, 8px corners: a 28px bordered icon box, name and a grey description per row, group labels, Ask AI first.</td><td>Reuses the All blocks popover: grouped 28px rows, shortcut hints (2026-09-27).</td></tr>
+        <tr><td>Type and spacing</td><td>Body 16px/24px, blocks padded 3px 2px (30px rows). Title 40px/48px 700. H1 30px, H2 24px (padding-top 26px), H3 20px, all weight 600, line height 1.3. Text #2c2c2b, secondary #7d7a75.</td><td>Body 15px, line height 1em+8px, paragraphs 10px apart. H1 28, H2 26, H3 24, title 36. Inter.</td><td>Fustat or system, the note-fs rule on phones (2026-10-10).</td></tr>
+        <tr><td>Callout</td><td>Grey fill, 4px corners, padding 16px 16px 16px 12px, 22px emoji icon, full width.</td><td>Grey fill (#f5f5f5), emoji icon.</td><td>Unified callouts (2026-09-28, option C).</td></tr>
+        <tr><td>Divider</td><td>1px line in a 13px block.</td><td>1px line.</td><td>Selectable rule with a padded hit area (2026-09-27).</td></tr>
+        <tr><td>Code block</td><td>Grey fill, 4px corners, padding 34px 16px 32px 32px, 85% mono; language picker top left and Copy / ⋯ top right on hover.</td><td>Grey fill (#f5f5f5), language picker and copy on hover.</td><td>Language chooser, Copy; Task01 icon.</td></tr>
+        <tr><td>Images and embeds</td><td>Hover toolbar top right (Caption, Comment, Download, ⋯), 6×48px dark pills at the sides to resize, click opens a lightbox.</td><td>Hover toolbar at the top (caption, download, ⋯), side resize handles.</td><td>MediaFrame hover toolbar top right (Edit, Copy, Delete), side handles writing width % (2026-10-07/08).</td></tr>
+        <tr><td>Width and margins</td><td>720px body column (708px of text) in a 912px page: 96px each side. Full width: 96px margins on the window.</td><td>944px editor width, 96px side padding (24px under 640px).</td><td>Half / Full width toggle (2026-10-26).</td></tr>
+        <tr><td>Canvas toolbars</td><td>—</td><td>Bottom tools in an opaque panel with 12px corners; a selected element gets the same <code>editor-toolbar</code> panel above it.</td><td>☰ 40px panel button and menu, AFFiNE's bottom toolbar and selected toolbar in AFFiNE's own colours.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section id="note">
+    <h2>The note in the Notion look</h2>
+    <p class="muted">Desktop keeps Notion's 720px column and 96px margins inside our page panel; the phone keeps our 16px gutter. Hover and selection states are drawn in: a hovered paragraph with its gutter handles, a selected sentence with its bar, a hovered image and a table with its handles. These frames use <b>S2 · T1 · H1 · M1</b>; the sections after show the other option of each pair.</p>
+    <div class="frames">
+      <div>
+        <p class="frame-cap">Desktop, 1024px panel</p>
+        <div class="frame" id="f-note-desktop"></div>
+      </div>
+      <div class="phone-wrap">
+        <p class="frame-cap">Phone, 360px</p>
+        <div class="frame phone" id="f-note-phone"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="surface">
+    <h2><span class="tag">S</span>Toolbar surface, for the note and the canvas</h2>
+    <p class="muted">Every floating toolbar (text selection, media, table, link, the canvas's ☰ button, bottom toolbar and selected-element bar) shares one surface. The block context menu stays opaque either way (2026-10-26).</p>
+    <div class="options">
+      <div class="option">
+        <h3><span class="tag">S1</span>Frosted glass (keeps the 2026-10-26 decision)</h3>
+        <div class="stage framed">
+          <div class="sheet" style="position:relative;padding-top:52px">
+            <div class="bar frosted" style="top:8px;left:16px" id="bar-s1"></div>
+            <p style="margin:0;font-size:15px">Glycolysis splits one <span class="sel">glucose into two pyruvate molecules</span> in the cytosol.</p>
+          </div>
+          <div class="menu-btn frosted" style="position:absolute;top:12px;right:14px;width:40px;height:40px;border-radius:8px;border:1px solid color-mix(in srgb,var(--overlay-line) 60%,transparent);display:inline-flex;align-items:center;justify-content:center;color:var(--fg2);background:var(--frost);backdrop-filter:blur(16px)"><svg class="ico"><use href="#i-menu"/></svg></div>
+        </div>
+        <ul class="pros"><li>Reads as one piece with the frosted panels over a page frame.</li><li>Over paint, icons sit on a moving background; the canvas's bar gets the dot grid through it.</li><li>Costs a backdrop blur per open bar (phones).</li></ul>
+      </div>
+      <div class="option">
+        <h3><span class="tag">S2</span>Opaque panel (Notion and AFFiNE)</h3>
+        <div class="stage framed">
+          <div class="sheet" style="position:relative;padding-top:52px">
+            <div class="bar" style="top:8px;left:16px" id="bar-s2"></div>
+            <p style="margin:0;font-size:15px">Glycolysis splits one <span class="sel">glucose into two pyruvate molecules</span> in the cytosol.</p>
+          </div>
+          <div class="menu-btn" style="position:absolute;top:12px;right:14px;width:40px;height:40px;border-radius:8px;border:1px solid var(--overlay-line);display:inline-flex;align-items:center;justify-content:center;color:var(--fg2);background:var(--overlay);box-shadow:var(--shadow-pop)"><svg class="ico"><use href="#i-menu"/></svg></div>
+        </div>
+        <ul class="pros"><li>Same surface as menus and the block menu: one overlay token, one shadow.</li><li>What BlockSuite's widgets already are; mapping is colours and radii only.</li><li>Stays legible over any paint or canvas; no blur cost.</li></ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="tables">
+    <h2><span class="tag">T</span>Tables</h2>
+    <p class="muted">The hover handles (⋯ over a column, ⋮ beside a row, + bars at the right and bottom edges) are in both options, since Notion and AFFiNE both have them. The difference is whether a floating toolbar also appears.</p>
+    <div class="options">
+      <div class="option">
+        <h3><span class="tag">T1</span>Handles only (Notion)</h3>
+        <div class="stage" style="padding:40px 24px 36px"><div id="tbl-t1"></div></div>
+        <ul class="pros"><li>No toolbar on tables. Everything a row or column needs sits in its handle's menu; cell text gets the text bar like any text.</li><li>Replaces PE:24's shared table toolbar for the BlockSuite note.</li><li>Phones: the handles need a tap on a cell first (Notion does the same).</li></ul>
+      </div>
+      <div class="option">
+        <h3><span class="tag">T2</span>Handles and the block toolbar (AFFiNE, PE:24 kept)</h3>
+        <div class="stage" style="padding:40px 24px 36px"><div id="tbl-t2"></div></div>
+        <ul class="pros"><li>The table keeps a floating toolbar above it when it is selected as a block: header row, header column, colour, duplicate, delete.</li><li>Handles still do insert, move and delete per row or column.</li><li>Two places for the same actions.</li></ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="handle">
+    <h2><span class="tag">H</span>Block handle and its menu</h2>
+    <div class="options">
+      <div class="option">
+        <h3><span class="tag">H1</span>+ and ⠿, a vertical menu (Notion)</h3>
+        <div class="stage" style="padding:28px 24px 20px 72px;min-height:300px"><div id="hd-h1"></div></div>
+        <ul class="pros"><li>+ inserts a block below (opens the slash menu); ⠿ drags, a click opens the opaque context menu in the All blocks look (2026-10-26).</li><li>Menu rows: Turn into ▸, Colour ▸, Duplicate, Copy link, Comment, Delete.</li><li>BlockSuite's drag-handle widget restyled: its grabber becomes the pair.</li></ul>
+      </div>
+      <div class="option">
+        <h3><span class="tag">H2</span>One grip, the toolbar as the menu (AFFiNE)</h3>
+        <div class="stage" style="padding:28px 24px 20px 72px;min-height:300px"><div id="hd-h2"></div></div>
+        <ul class="pros"><li>A single ⠿ grip; a click selects the block and shows the same horizontal bar a text selection gets, with ⋮ for Duplicate, Copy link, Delete.</li><li>One widget to style, no second menu.</li><li>Inserting needs the slash menu or Enter.</li></ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="slash">
+    <h2><span class="tag">M</span>Slash menu</h2>
+    <div class="options">
+      <div class="option">
+        <h3><span class="tag">M1</span>Compact rows (Notion, and our All blocks popover)</h3>
+        <div class="stage" style="min-height:330px;padding:16px 24px"><div id="sl-m1"></div></div>
+        <ul class="pros"><li>28px rows, 18px icon, name, shortcut at the right, uppercase group labels. The 2026-09-27 slash decision already reads like this.</li><li>Narrow (240px), fits a 360px phone with room.</li></ul>
+      </div>
+      <div class="option">
+        <h3><span class="tag">M2</span>Boxed icon and description (AFFiNE)</h3>
+        <div class="stage" style="min-height:330px;padding:16px 24px"><div id="sl-m2"></div></div>
+        <ul class="pros"><li>280px, a bordered 28px icon box and a grey description per row: easier for a first-time user, longer.</li><li>BlockSuite's widget as it is, in our colours.</li></ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="scope">
+    <h2><span class="tag">N</span>Where the Notion look lives</h2>
+    <p class="muted">The app has three styles: capy, fisheye and notion. The note's chrome (bars, menus, handles) is one language either way; the question is the note body.</p>
+    <div class="options">
+      <div class="option">
+        <h3><span class="tag">N1</span>Notion look under the notion style only</h3>
+        <p class="pros" style="padding:0">Capy and fisheye notes keep their type (Fustat), callout and tile radii; only the toolbar language is shared. The Theme drawer's Style section can come out from behind its TODO once the notion style is finished.</p>
+      </div>
+      <div class="option">
+        <h3><span class="tag">N2</span>The note takes the Notion look in every style</h3>
+        <p class="pros" style="padding:0">Body spacing, handles, callout, code and table look the same everywhere; each style only changes the chrome's radii (capy 8px, fisheye 14px, notion 8px) and the font.</p>
+      </div>
+    </div>
+    <div class="strip">
+      <div class="cell capy"><h4>capy</h4><div class="bar sm radius-capy" id="bar-capy"></div><div class="mini">Pyruvate enters the <b>mitochondrial matrix</b>.<div class="callout"><span>💡</span><span>Oxygen is the final electron acceptor.</span></div></div></div>
+      <div class="cell fisheye"><h4>fisheye</h4><div class="bar sm radius-fisheye" id="bar-fisheye"></div><div class="mini">Pyruvate enters the <b>mitochondrial matrix</b>.<div class="callout"><span>💡</span><span>Oxygen is the final electron acceptor.</span></div></div></div>
+      <div class="cell notion"><h4>notion</h4><div class="bar sm" id="bar-notion"></div><div class="mini">Pyruvate enters the <b>mitochondrial matrix</b>.<div class="callout"><span>💡</span><span>Oxygen is the final electron acceptor.</span></div></div></div>
+    </div>
+  </section>
+
+  <section id="canvas">
+    <h2>The canvas in the same language</h2>
+    <p class="muted">The drawing board's ☰ button and menu, bottom toolbar and the selected card's bar restyled to the note's panel (S2 here; S1 is the frosted variant above). Tools and content are unchanged: the shape pieces, Graphs, Charts and Formulas slots, the pen and eraser stay as they are. The selected plane card shows its pen, Fit to size, Duplicate, Connect, Lock and ⋮.</p>
+    <div class="frames">
+      <div>
+        <p class="frame-cap">Desktop, inside the workspace centre</p>
+        <div class="frame" id="f-board-desktop"></div>
+      </div>
+      <div class="phone-wrap">
+        <p class="frame-cap">Phone, 360px: Back floats top left, Done and ☰ top right, the toolbar spans the width less 8px</p>
+        <div class="frame phone" id="f-board-phone"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="numbers">
+    <h2>Numbers behind the frames</h2>
+    <div class="scroll"><table class="facts">
+      <thead><tr><th></th><th>Notion</th><th>AFFiNE</th><th>Proposed for our BlockSuite note</th></tr></thead>
+      <tbody>
+        <tr><td>Body</td><td>16px / 24px, blocks 3px 2px</td><td>15px / 23px, paragraphs 10px apart</td><td>16px / 1.5, blocks 3px 2px (<code>--affine-paragraph-margin</code> → 0, padding on the block)</td></tr>
+        <tr><td>Title · H1 · H2 · H3</td><td>40/700 · 30/600 mt 32 · 24/600 mt 22 · 20/600 mt 16</td><td>36 · 28 · 26 · 24</td><td>Notion's; phones 30 · 23 · 20 · 18 (the note-fs rule)</td></tr>
+        <tr><td>Column</td><td>720px, 96px margins</td><td>944px incl. 96px padding</td><td><code>--affine-editor-width: 912px</code>, side padding 96px; 16px under 640px</td></tr>
+        <tr><td>Floating bar</td><td>32px tall, 28px buttons, 8px corners</td><td>36px tall, 8px corners, 0.5px border</td><td>36px tall from sm (28px buttons, 18px icons), 32px on phones (26px buttons); corners per style; surface per S</td></tr>
+        <tr><td>Shadow</td><td>0 0 0 1px .1 / 0 3px 6px .1 / 0 9px 24px .2</td><td>0 1px 6px .16 / 0 8px 14px .08</td><td><code>--shadow-pop</code> plus a 1px <code>--border-overlay</code></td></tr>
+        <tr><td>Menus</td><td>Rows 28px, 10px corners</td><td>Rows 28–32px, 8px corners, 280px slash</td><td>All blocks popover: 28px rows, radius <code>--radius-card</code>, slash 240px (M1) or 280px (M2)</td></tr>
+        <tr><td>Table handles</td><td>⋯ and ⋮ pills, + bars</td><td>28×16 and 16×28 pills, 16px + bars, 5px blue indicator</td><td>AFFiNE's sizes, our overlay and accent tokens</td></tr>
+        <tr><td>Gutter handles</td><td>+ and ⠿, 24px each, in a 44px gutter</td><td>4px bar, or 14×26 dots</td><td>H1: 24px pair; H2: the dots grip</td></tr>
+        <tr><td>Callout · divider · code</td><td>4px corners, 16px padding · 1px in 13px · 34/16/32/32px padding</td><td>#f5f5f5 fills</td><td><code>--surface-card-dark-bg</code> fill, 6px corners (notion), <code>--divider</code>, 85% mono</td></tr>
+        <tr><td>Canvas ☰ · tools · selected bar</td><td>—</td><td>12px panel, 36px tools</td><td>40px ☰ in the bar's surface; tools panel 52px tall, 12px corners (fisheye 18); selected bar = the note's bar</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section id="step2">
+    <h2>Step 2, to answer with the picks</h2>
+    <div class="qs">
+      <ol>
+        <li><b>E1 · Which editor.</b> Recommendation: the BlockSuite note only (todo-blocksuite-spike.md D12), Plate untouched since it goes at the cut.</li>
+        <li><b>E2 · D12.</b> BlockSuite's own widgets (toolbar, slash menu, drag handle, table handles) restyled onto our tokens, with icon and paraglide patches in the vendored code. Or replace them with our React toolbars (BlockToolbar, SlashInput) rendered into the editor.</li>
+        <li><b>E3 · PE:24.</b> Does "one shared floating toolbar for tables, columns and embeds" still hold for the BlockSuite note? T1 drops it for tables; media and embeds keep their hover bar either way.</li>
+      </ol>
+    </div>
+  </section>
+</main>
+
+<script>
+(function(){
+  var root=document.documentElement;
+  function setTheme(t){try{if(t==='sys'){root.removeAttribute('data-theme');localStorage.removeItem('mock-theme')}else{root.setAttribute('data-theme',t);localStorage.setItem('mock-theme',t)}}catch(e){}
+    ['light','dark','sys'].forEach(function(k){document.getElementById('th-'+k).setAttribute('aria-pressed',String(k===t))})}
+  ['light','dark','sys'].forEach(function(k){document.getElementById('th-'+k).addEventListener('click',function(){setTheme(k)})});
+  try{var s=localStorage.getItem('mock-theme');if(s)setTheme(s)}catch(e){}
+
+  var I=function(n,c){return '<svg class="ico '+(c||'')+'"><use href="#i-'+n+'"/></svg>'};
+  var B=function(n,o){return '<button type="button" class="b'+(o&&o.on?' on':'')+(o&&o.cls?' '+o.cls:'')+'">'+(n?I(n):'')+(o&&o.t?'<span>'+o.t+'</span>':'')+(o&&o.chev?I('chev','s14'):'')+'</button>'};
+  var SEP='<span class="sep"></span>';
+  // The text selection bar: Ask AI · Text ▾ · B I U S · code · √x · link · colour ▾ · comment · ⋯
+  function textBar(opts){opts=opts||{};var h=B('ai',{t:'Ask AI',cls:'ai txt'})+SEP+B('text',{t:opts.narrow?'':'Text',chev:true,cls:'txt'})+SEP+B('bold',{on:true})+B('italic')+B('under')+B('strike')+B('code')+(opts.narrow?'':B('math'))+B('link')+SEP+B('color',{chev:true})+(opts.narrow?'':B('comment'))+B('dotsh');return h}
+  function shortBar(){return B('bold',{on:true})+B('italic')+B('under')+B('strike')+B('code')+B('link')+SEP+B('color',{chev:true})+B('dotsh')}
+  var handles='<span class="handles"><i class="plus">'+I('plus')+'</i><i class="grip">'+I('grip')+'</i></span>';
+
+  var diagram='<svg class="diagram" viewBox="0 0 600 300" aria-label="Mitochondrion diagram"><rect width="600" height="300" fill="var(--dim)"/><ellipse cx="300" cy="150" rx="250" ry="105" fill="none" stroke="var(--fg2)" stroke-width="3"/><ellipse cx="300" cy="150" rx="222" ry="80" fill="none" stroke="var(--fg2)" stroke-width="2"/><path d="M110 150c20-55 40-55 60 0s40 55 60 0 40-55 60 0 40 55 60 0 40-55 60 0 40 55 60 0" fill="none" stroke="var(--accent)" stroke-width="3"/><text x="300" y="250" text-anchor="middle" font-size="16" fill="var(--fg2)" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">cristae · matrix · intermembrane space</text></svg>';
+
+  function tableHtml(variant,menu){
+    var pills=variant!=='none';
+    var cell=function(txt,o){o=o||{};return '<'+(o.th?'th':'td')+(o.sel?' class="cellsel"':'')+'>'+(o.colh?'<span class="colh'+(o.on?' on':'')+'">'+I('dotsh','s14')+'</span>':'')+(o.rowh?'<span class="rowh'+(o.on?' on':'')+'">'+I('dotsv','s14')+'</span>':'')+txt+'</'+(o.th?'th':'td')+'>'};
+    var h='<div class="blk tbl'+(variant==='t2'?' open':'')+'">'+(variant==='t2'?'<div class="bar sm" style="top:-44px;left:0">'+B('table',{t:'Header row',on:true,cls:'txt'})+B('table',{t:'Header column',cls:'txt'})+SEP+B('color',{chev:true})+B('copy')+B('trash')+B('dotsh')+'</div>':'')+'<div class="wrap">'+(variant==='t2'?'<span class="indicator"></span>':'')+'<table><tbody>'+
+      '<tr>'+cell('Stage',{th:true,colh:pills,rowh:pills})+cell('Where',{th:true,colh:pills})+cell('ATP (net)',{th:true,colh:pills,on:variant==='t1'})+cell('NADH',{th:true,colh:pills})+'</tr>'+
+      '<tr>'+cell('Glycolysis',{rowh:pills,on:variant==='t1'})+cell('Cytosol')+cell('2',{sel:variant==='t1'})+cell('2')+'</tr>'+
+      '<tr>'+cell('Pyruvate oxidation',{rowh:pills})+cell('Matrix')+cell('0')+cell('2')+'</tr>'+
+      '<tr>'+cell('Krebs cycle',{rowh:pills})+cell('Matrix')+cell('2')+cell('6')+'</tr>'+
+      '<tr>'+cell('Electron transport chain',{rowh:pills})+cell('Inner membrane')+cell('~28')+cell('—')+'</tr>'+
+      '</tbody></table>'+(pills?'<span class="addc">'+I('plus')+'</span><span class="addr">'+I('plus')+'</span>':'')+'</div>'+
+      (variant==='t1'&&menu?'<div class="menu" style="top:28px;left:40px;min-width:210px"><div class="row">'+I('plus')+'Insert above</div><div class="row">'+I('plus')+'Insert below</div><div class="row">'+I('copy')+'Duplicate row</div><div class="row">'+I('color')+'Colour<span class="arr">'+I('chev','s14')+'</span></div><div class="div"></div><div class="row">'+I('check')+'Header row</div><div class="div"></div><div class="row">'+I('trash')+'Delete row</div></div>':'')+
+      '</div>';
+    return h}
+
+  function noteHtml(ph){
+    return '<div class="note">'+
+      '<div class="ttl">Cellular respiration</div>'+
+      '<div class="blk p">How cells turn glucose into ATP, in four stages, and where each one happens. Revision notes for the Unit 3 test.</div>'+
+      '<div class="blk h1">'+handles+'Overview</div>'+
+      '<div class="blk p hov">'+handles+'Respiration is the controlled release of energy from glucose. Aerobic respiration needs oxygen and yields about <span class="inline-code">30–32 ATP</span> per glucose; anaerobic respiration stops after glycolysis.</div>'+
+      '<div class="blk p" style="position:relative;margin-top:48px">'+handles+'<div class="bar'+(ph?' sm':'')+'" style="top:-42px;left:'+(ph?'-8px':'0')+'">'+(ph?shortBar():textBar())+'</div>The overall equation is <span class="sel">C₆H₁₂O₆ + 6 O₂ → 6 CO₂ + 6 H₂O + energy</span>, but the energy is captured in small steps.</div>'+
+      '<div class="blk h2">'+handles+'Glycolysis</div>'+
+      '<div class="blk li">'+handles+'<span class="mk dot"></span><span>Happens in the <b>cytosol</b>, with or without oxygen.</span></div>'+
+      '<div class="blk li">'+handles+'<span class="mk dot"></span><span>Splits one glucose (6C) into two pyruvate (3C).</span></div>'+
+      '<div class="blk li">'+handles+'<span class="mk dot"></span><span>Net gain: 2 ATP and 2 NADH.</span></div>'+
+      '<div class="blk callout">'+handles+'<span class="ic">💡</span><span>Remember the investment phase: 2 ATP are <i>spent</i> before 4 are made, which is why the net gain is 2.</span></div>'+
+      '<div class="blk hr">'+handles+'<i></i></div>'+
+      '<div class="blk h2">'+handles+'Krebs cycle</div>'+
+      '<div class="blk li">'+handles+'<span class="mk">1.</span><span>Acetyl-CoA (2C) joins oxaloacetate (4C) to make citrate (6C).</span></div>'+
+      '<div class="blk li">'+handles+'<span class="mk">2.</span><span>Two decarboxylations release CO₂ and reduce NAD⁺ to NADH.</span></div>'+
+      '<div class="blk li">'+handles+'<span class="mk">3.</span><span>One turn makes 1 ATP, 3 NADH and 1 FADH₂; two turns per glucose.</span></div>'+
+      '<div class="blk code">'+handles+'<span class="lang">Plain text '+I('chev','s14')+'</span><span class="cp"><button type="button">'+I('copy','s16')+'</button><button type="button">'+I('dotsh','s16')+'</button></span>glucose + 2 NAD⁺ + 2 ADP + 2 Pi\n  → 2 pyruvate + 2 NADH + 2 ATP + 2 H₂O</div>'+
+      '<div class="blk h3">'+handles+'The mitochondrion</div>'+
+      '<div class="blk img">'+handles+'<div class="pic">'+diagram+'<span class="mbar"><button type="button" class="b">'+I('pen')+'</button><button type="button" class="b">'+I('copy')+'</button><button type="button" class="b">'+I('dl')+'</button><button type="button" class="b">'+I('trash')+'</button></span><span class="rh l"></span><span class="rh r"></span></div><div class="cap">Cristae fold the inner membrane so more electron transport chains fit.</div></div>'+
+      '<div class="blk h3">'+handles+'Yield per glucose</div>'+
+      tableHtml('t1',false)+
+      '<div class="blk embed">'+handles+'<span style="font-size:22px">⚡</span><div class="q"><b>Quick check: respiration</b><span>3 questions · best 2 of 3 · last tried yesterday</span></div><button type="button" class="btn">Start</button></div>'+
+      '<div class="blk p">'+handles+'Next: compare with photosynthesis (light-dependent and light-independent reactions).</div>'+
+    '</div>'}
+
+  document.getElementById('f-note-desktop').innerHTML=noteHtml(false);
+  document.getElementById('f-note-phone').innerHTML=noteHtml(true);
+  document.getElementById('bar-s1').innerHTML=textBar({narrow:true});
+  document.getElementById('bar-s2').innerHTML=textBar({narrow:true});
+  document.getElementById('bar-capy').innerHTML=shortBar();
+  document.getElementById('bar-fisheye').innerHTML=shortBar();
+  document.getElementById('bar-notion').innerHTML=shortBar();
+  document.getElementById('tbl-t1').innerHTML=tableHtml('t1',true);
+  document.getElementById('tbl-t2').innerHTML=tableHtml('t2',false);
+
+  // H1 / H2
+  document.getElementById('hd-h1').innerHTML='<div class="note" style="padding:0;font-size:15px"><div class="blk p">Respiration is the controlled release of energy from glucose.</div><div class="blk p open" style="background:var(--sel)">'+handles+'Aerobic respiration needs oxygen and yields about 30–32 ATP per glucose.<div class="menu v" style="top:30px;left:-44px;min-width:220px"><div class="row">'+I('turn')+'Turn into<span class="arr">'+I('chev','s14')+'</span></div><div class="row">'+I('color')+'Colour<span class="arr">'+I('chev','s14')+'</span></div><div class="div"></div><div class="row">'+I('copy')+'Duplicate<span class="k">⌘D</span></div><div class="row">'+I('link')+'Copy link</div><div class="row">'+I('comment')+'Comment<span class="k">⌘⇧M</span></div><div class="div"></div><div class="row">'+I('trash')+'Delete<span class="k">Del</span></div></div></div><div class="blk p">Anaerobic respiration stops after glycolysis.</div></div>';
+  document.getElementById('hd-h2').innerHTML='<div class="note" style="padding:0;font-size:15px"><div class="blk p">Respiration is the controlled release of energy from glucose.</div><div class="blk p hov" style="background:var(--sel);position:relative"><span class="handles" style="display:inline-flex"><i class="grip" style="background:var(--hover);color:var(--fg2)">'+I('grip')+'</i></span><div class="bar sm" style="top:-44px;left:0">'+B('ai',{t:'Ask AI',cls:'ai txt'})+SEP+B('text',{chev:true})+B('list',{chev:true})+SEP+B('bold')+B('italic')+B('under')+B('strike')+B('code')+B('link')+SEP+B('color',{chev:true})+B('copy')+B('dotsv')+'</div>Aerobic respiration needs oxygen and yields about 30–32 ATP per glucose.</div><div class="blk p">Anaerobic respiration stops after glycolysis.</div></div>';
+
+  // Slash menus
+  var m1='<div class="note" style="padding:0;font-size:15px"><div class="blk p">Net gain: 2 ATP and 2 NADH.</div><div class="blk p" style="color:var(--muted)">/<span style="color:var(--fg)">tab</span><div class="menu" style="top:30px;left:0;width:240px"><div class="grp">Basic blocks</div><div class="row cur">'+I('table')+'Table</div><div class="row">'+I('text')+'Text</div><div class="row">'+I('h1')+'Heading 1<span class="k">#</span></div><div class="row">'+I('h2')+'Heading 2<span class="k">##</span></div><div class="row">'+I('list')+'Bulleted list<span class="k">-</span></div><div class="row">'+I('quote')+'Quote<span class="k">&gt;</span></div><div class="grp">Media</div><div class="row">'+I('image')+'Image</div><div class="row">'+I('code')+'Code block<span class="k">```</span></div><div class="grp">Study</div><div class="row">⚡ Quiz</div></div></div></div>';
+  var box=function(n){return '<span class="box">'+I(n)+'</span>'};
+  var m2='<div class="note" style="padding:0;font-size:15px"><div class="blk p">Net gain: 2 ATP and 2 NADH.</div><div class="blk p" style="color:var(--muted)">/<span style="color:var(--fg)">tab</span><div class="menu aff" style="top:30px;left:0"><div class="grp">Basic</div><div class="row cur">'+box('table')+'<span class="tt">Table<small>Rows and columns of text.</small></span></div><div class="row">'+box('text')+'<span class="tt">Text<small>Start typing with plain text.</small></span></div><div class="row">'+box('h1')+'<span class="tt">Heading 1<small>Headings in the largest font.</small></span></div><div class="row">'+box('h2')+'<span class="tt">Heading 2<small>Headings in the 2nd font size.</small></span></div><div class="row">'+box('list')+'<span class="tt">Bulleted list<small>A simple bulleted list.</small></span></div><div class="grp">Media</div><div class="row">'+box('image')+'<span class="tt">Image<small>Insert an image.</small></span></div><div class="row">'+box('code')+'<span class="tt">Code block<small>Code snippet with formatting.</small></span></div></div></div></div>';
+  document.getElementById('sl-m1').innerHTML=m1;
+  document.getElementById('sl-m2').innerHTML=m2;
+
+  // Canvas
+  function boardHtml(ph){
+    var tools='<div class="tools"><span class="t on">'+I('select')+'</span><span class="t">'+I('pencil')+'</span><span class="t">'+I('eraser')+'</span><span class="t hide-ph">'+I('connect')+'</span><span class="sep"></span><span class="slot"><span class="piece rect"></span><span class="piece ell"></span><span class="piece tri"></span></span><span class="sep"></span><span class="slot"><span class="piece plane"></span></span><span class="slot"><span class="piece bars"></span><span class="piece pie"></span></span><span class="slot hide-ph"><span class="piece fx">∫</span><span class="piece fx">Σ</span></span></div>';
+    var selbar='<div class="bar'+(ph?' sm':'')+'">'+B('pen')+B('fit',{t:ph?'':'Fit to size',chev:true,cls:'txt'})+SEP+B('copy')+B('connect')+B('lock')+B('dotsv')+'</div>';
+    var card='<div class="card">'+selbar+'<span class="hd tl"></span><span class="hd tr"></span><span class="hd bl"></span><span class="hd br"></span><span class="pt" style="left:50%;top:50%"></span><span class="pt" style="left:70%;top:30%"></span></div>';
+    var stroke='<svg class="stroke" viewBox="0 0 260 150"><path d="M10 120c40-110 70-110 110-30s60 70 130-70"/></svg>';
+    var menu='<div class="menu-btn">'+I('menu')+'</div><div class="menu"><div class="row">'+I('undo')+'Undo</div><div class="row">'+I('redo')+'Redo</div><div class="row">'+I('fit')+'Fit to screen</div><div class="zoom"><button type="button" class="zb">'+I('minus')+'</button><b>100%</b><button type="button" class="zb">'+I('plus')+'</button></div></div>';
+    return '<div class="board">'+(ph?'<div class="back">'+I('back')+'</div>':'')+(ph?'<div class="done">Done</div>':'')+menu+card+(ph?'':stroke)+tools+'</div>'}
+  document.getElementById('f-board-desktop').innerHTML=boardHtml(false);
+  document.getElementById('f-board-phone').innerHTML=boardHtml(true);
+})();
+</script>
