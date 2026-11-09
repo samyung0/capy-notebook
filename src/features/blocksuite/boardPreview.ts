@@ -20,7 +20,12 @@ import {
   unite,
   type Vec,
 } from './boardGeometry';
-import { BoardLoadError, checkSavedBoard, type Fields } from './boardLoad';
+import {
+  type BoardKind,
+  BoardLoadError,
+  checkSavedBoard,
+  type Fields,
+} from './boardLoad';
 
 /** A saved board drawn from its data as an SVG string, for lists, results and marking
  * views, without the editor: what's on it, not every detail (Epo 2026-11-06). Framed as
@@ -30,7 +35,8 @@ import { BoardLoadError, checkSavedBoard, type Fields } from './boardLoad';
  * BoardLoadError for a board that doesn't check out. */
 export function drawBoardPreview(
   saved: string,
-  size: { height: number; width: number }
+  size: { height: number; width: number },
+  board: BoardKind
 ) {
   let update: Uint8Array;
   try {
@@ -38,7 +44,7 @@ export function drawBoardPreview(
   } catch (cause) {
     throw new BoardLoadError('unreadable', { cause });
   }
-  const { blocks, elements } = checkSavedBoard(update);
+  const { blocks, elements } = checkSavedBoard(update, board);
   // Where each card, shape, note and image sits, for the connectors' ends.
   const placed = [
     ...Object.entries(elements).filter(

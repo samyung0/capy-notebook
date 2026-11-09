@@ -1,4 +1,5 @@
 import * as Y from 'yjs';
+import { BOARD_CATALOG } from '@/api/board.generated';
 import {
   AXIS_MAX,
   BARS_MAX,
@@ -20,28 +21,27 @@ export class BoardLoadError extends Error {
   }
 }
 
-/** What a board may hold: the blocks its tools make, each under the parents it may
- * have. The page is the root. The store checks none of this when a saved board loads:
- * it skips a block it doesn't know and takes any tree. */
-const PARENTS: Record<string, string[]> = {
-  'affine:image': ['affine:surface', 'affine:note'],
-  'affine:list': ['affine:note', 'affine:paragraph', 'affine:list'],
-  'affine:note': ['affine:page'],
-  'affine:page': [],
-  'affine:paragraph': ['affine:note', 'affine:paragraph', 'affine:list'],
-  'affine:surface': ['affine:page'],
-};
-const ELEMENTS = new Set([
-  'brush',
-  'chart',
-  'connector',
-  'formula',
-  'group',
-  'highlighter',
-  'plane',
-  'shape',
-  'text',
-]);
+/** A question's answer board or the workspace canvas: each holds what the board
+ * catalog lists for it (Epo 2026-11-09). */
+export type BoardKind = (typeof BOARD_CATALOG.boards)[number];
+
+/** What a board may hold: its blocks, each under the parents it may have (the page is
+ * the root), and its canvas elements. The store checks none of this when a saved board
+ * loads: it skips a block it doesn't know and takes any tree. */
+function holds(board: BoardKind) {
+  const on = ({ boards }: { boards: readonly string[] }) =>
+    boards.includes(board);
+  return {
+    elements: new Set<string>(
+      BOARD_CATALOG.elements.filter(on).map(({ type }) => type)
+    ),
+    parents: new Map<string, readonly string[]>(
+      BOARD_CATALOG.blocks
+        .filter(on)
+        .map(({ flavour, parents }) => [flavour, parents])
+    ),
+  };
+}
 
 export type Fields = Record<string, unknown>;
 
@@ -73,9 +73,12 @@ const connection = (value: unknown) => {
 };
 
 /** The checks a card's own renderer relies on. */
-function elementProblem(fields: Fields): string | null {
+function elementProblem(
+  fields: Fields,
+  elements: ReadonlySet<string>
+): string | null {
   const { type } = fields;
-  if (typeof type !== 'string' || !ELEMENTS.has(type))
+  if (typeof type !== 'string' || !elements.has(type))
     return `element type ${String(type)}`;
   // A connector's place comes from its ends and a group's from its children, so
   // neither stores one; every other element does.
@@ -161,7 +164,8 @@ function elementProblem(fields: Fields): string | null {
 /** A saved board's update, checked before anything mounts: one page with one canvas,
  * and only what the board's tools make, each within its limits. Its blocks and canvas
  * elements as plain data, for the preview. */
-export function checkSavedBoard(update: Uint8Array) {
+export function checkSavedBoard(update: Uint8Array, board: BoardKind) {
+  const { elements: kinds, parents } = holds(board);
   const doc = new Y.Doc();
   try {
     Y.applyUpdate(doc, update);
@@ -171,7 +175,7 @@ export function checkSavedBoard(update: Uint8Array) {
   const blocks = doc.getMap('blocks').toJSON() as Record<string, Fields>;
   const flavours = Object.values(blocks).map((block) => block['sys:flavour']);
   for (const flavour of flavours)
-    if (typeof flavour !== 'string' || !Object.hasOwn(PARENTS, flavour))
+    if (typeof flavour !== 'string' || !parents.has(flavour))
       throw new BoardLoadError(`block ${String(flavour)}`);
   const count = (flavour: string) =>
     flavours.filter((each) => each === flavour).length;
@@ -188,7 +192,7 @@ export function checkSavedBoard(update: Uint8Array) {
       if (
         !flavour ||
         parentOf.has(child) ||
-        !PARENTS[flavour].includes(block['sys:flavour'] as string)
+        !parents.get(flavour)?.includes(block['sys:flavour'] as string)
       )
         throw new BoardLoadError('block tree');
       parentOf.set(child, id);
@@ -211,7 +215,7 @@ export function checkSavedBoard(update: Uint8Array) {
   if (!elements || typeof elements !== 'object')
     throw new BoardLoadError('canvas without elements');
   for (const element of Object.values(elements as Record<string, Fields>)) {
-    const problem = elementProblem(element);
+    const problem = elementProblem(element, kinds);
     if (problem) throw new BoardLoadError(problem);
   }
   doc.destroy();

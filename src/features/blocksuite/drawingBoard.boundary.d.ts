@@ -1,6 +1,7 @@
 // What the app's tsconfig sees of ./drawingBoard.ts (see tsconfig.json paths).
 export type DrawingBoardOptions = {
   answerArea?: { label: string };
+  board: 'question' | 'workspace';
   fitPadding?: [number, number, number, number];
   onChange?: () => void;
   plane?: boolean;
@@ -14,7 +15,7 @@ export class BoardLoadError extends Error {
 
 export function mountDrawingBoard(
   container: HTMLElement,
-  options?: DrawingBoardOptions
+  options: DrawingBoardOptions
 ): {
   fit: (padding: [number, number, number, number]) => void;
   save: () => { bytes: number; doc: string };

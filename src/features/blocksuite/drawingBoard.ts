@@ -99,7 +99,7 @@ import { closeUp, IMAGE_SIDE_MAX, type Vec } from './boardGeometry';
 import { addPlane, planeExtensions, planeMarks } from './boardPlane';
 import './boardChartEditor';
 import { closeBoardEditor } from './boardEditorShell';
-import { checkSavedBoard } from './boardLoad';
+import { type BoardKind, checkSavedBoard } from './boardLoad';
 import { BoardMenu } from './boardMenu';
 import './boardPlaneEditor';
 import {
@@ -239,6 +239,9 @@ export type DrawingBoardOptions = {
   plane?: boolean;
   /** Pan and zoom only: no tools, nothing opens for editing. */
   readOnly?: boolean;
+  /** A question's answer board or the workspace canvas: what it may hold and its
+   * tools (the board catalog). */
+  board: BoardKind;
   /** `save()`'s `doc`. A board that doesn't check out throws a BoardLoadError. */
   saved?: string;
 };
@@ -337,10 +340,10 @@ async function decodeImage(file: Blob) {
  * there is one. */
 export function mountDrawingBoard(
   container: HTMLElement,
-  options: DrawingBoardOptions = {}
+  options: DrawingBoardOptions
 ) {
   const saved = options.saved ? fromBase64(options.saved) : null;
-  if (saved) checkSavedBoard(saved);
+  if (saved) checkSavedBoard(saved, options.board);
   const { readOnly = false } = options;
   const workspace = new TestWorkspace();
   workspace.storeExtensions = stores.get('store');

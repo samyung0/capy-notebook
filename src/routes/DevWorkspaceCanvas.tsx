@@ -20,6 +20,7 @@ export default function DevWorkspaceCanvas({
     let changed = false;
     const saved = readPref(key, '', isString);
     const board = mountDrawingBoard(host, {
+      board: 'workspace',
       onChange: () => {
         changed = true;
         clearTimeout(timer);

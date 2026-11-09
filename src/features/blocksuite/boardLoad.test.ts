@@ -6,7 +6,7 @@ import { BoardLoadError, checkSavedBoard } from './boardLoad';
 
 const reason = (update: Uint8Array) => {
   try {
-    checkSavedBoard(update);
+    checkSavedBoard(update, 'question');
     return null;
   } catch (error) {
     return error instanceof BoardLoadError ? error.reason : String(error);

@@ -4616,15 +4616,23 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     answer flow refuses past Epo's 250 KB on Done.
   - `saved` is checked before anything mounts (`boardLoad.ts`), as BlockSuite's store
     skips a block it doesn't know and takes any tree on load: one page and one canvas,
-    only the blocks and elements the board's tools make (the pen menu's highlighter
-    included, which the preview draws as a see-through stroke), each block under a parent it
-    may have in one tree, and each card's fields within
+    only the blocks and elements the **board catalog** lists for that board (the pen
+    menu's highlighter included, which the preview draws as a see-through stroke), each
+    block under a parent it may have in one tree, and each card's fields within
     the limits its editor keeps (marks, bars, labels, spokes, axis values, formula
     length), with a place (`[x,y,w,h]`) on everything but a connector and a group, whose
     places BlockSuite works out (from the ends, each an element id or a finite point; from
     the children) and never stores. Anything else throws a `BoardLoadError` with a
     `reason`.
-- **Preview (`boardPreview.ts`):** `drawBoardPreview(saved, { width, height })` draws a
+  - **Board catalog** (Epo 2026-11-09): `server/internal/boardcatalog` lists every
+    canvas element and block a board may hold, which board takes each (`question`, a
+    drawing answer's board; `workspace`, the workspace canvas) and the limits above.
+    `pnpm gen:openapi` writes it to `src/api/board.generated.ts` (`BOARD_CATALOG`);
+    `TestGeneratedFileIsCurrent` fails when it's stale. `mountDrawingBoard`,
+    `checkSavedBoard` and `drawBoardPreview` take the board, and the limits in
+    `boardData.ts` come from it. The server keeps a saved board as opaque bytes, so
+    the browser is the only reader for now.
+- **Preview (`boardPreview.ts`):** `drawBoardPreview(saved, { width, height }, board)` draws a
   saved board as an SVG string from its data, for lists, results and marking views
   (Epo 2026-11-06: what's on it, not every detail). It never loads the editor: it imports
   yjs and the small modules the check uses (`boardData.ts` holds the cards' stored shape,
