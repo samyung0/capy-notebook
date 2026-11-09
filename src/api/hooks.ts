@@ -114,6 +114,8 @@ import type {
   MaterialPage,
   MaterialRef,
   MaterialUpdateResult,
+  MemberProfile,
+  MembersProgress,
   ModelSlot,
   ModelsResponse,
   MoveFilesReq,
@@ -3678,6 +3680,34 @@ export const useStudyTopics = (workspaceId: string, options?: QueryUiOptions) =>
     queryFn: () =>
       api.get<StudyTopics>(`/workspaces/${workspaceId}/study/topics`),
     queryKey: qk.studyTopics(workspaceId),
+  });
+
+/** Study → Members: each member's line, for a class's owner and teaching
+ * assistants. */
+export const useMembersProgress = (
+  workspaceId: string,
+  options?: QueryUiOptions
+) =>
+  useQuery({
+    meta: queryMeta(options),
+    queryFn: () =>
+      api.get<MembersProgress>(`/workspaces/${workspaceId}/study/members`),
+    queryKey: qk.membersProgress(workspaceId),
+  });
+
+/** A member's profile on Study → Members (board G2). */
+export const useMemberProfile = (
+  workspaceId: string,
+  memberId: string,
+  options?: QueryUiOptions
+) =>
+  useQuery({
+    meta: queryMeta(options),
+    queryFn: () =>
+      api.get<MemberProfile>(
+        `/workspaces/${workspaceId}/study/members/${encodeURIComponent(memberId)}`
+      ),
+    queryKey: qk.memberProfile(workspaceId, memberId),
   });
 
 const PAST_REVIEWS_PAGE = 30;

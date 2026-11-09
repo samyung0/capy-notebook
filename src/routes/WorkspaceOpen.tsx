@@ -133,6 +133,11 @@ const choiceSearch = ({ answers, paper }: MakeQuizChoice) => ({
   paper: paper.join(',') || undefined,
 });
 
+const MembersPage = lazy(() =>
+  import('@/features/study/members/MembersPage').then((mod) => ({
+    default: mod.MembersPage,
+  }))
+);
 const AssignmentsPage = lazy(() =>
   import('@/features/study/assignments/AssignmentsPage').then((mod) => ({
     default: mod.AssignmentsPage,
@@ -628,7 +633,6 @@ function WorkspaceOpen() {
 
   /** A Study page takes the centre pane; Back returns here. */
   function openStudy(page: StudyPage) {
-    if (page === 'members') return;
     setCitationTarget(null);
     setFilesOpen(false);
     navigate({ search: { study: page }, to: '.' });
@@ -860,6 +864,15 @@ function WorkspaceOpen() {
       onClick: openPractice,
     },
     // Phones have no Study panel: the pages this person has sit beside Study.
+    ...(studyView(ws).pages.includes('members')
+      ? [
+          {
+            icon: 'userGroup' as const,
+            label: m.study_panel_members(),
+            onClick: () => openStudy('members'),
+          },
+        ]
+      : []),
     ...(studyView(ws).pages.includes('summary')
       ? [
           {
@@ -1035,7 +1048,8 @@ function WorkspaceOpen() {
   // A link to a page this person doesn't have opens Practice.
   const studyShown: StudyPage =
     search.study === 'assignments' ||
-    (search.study === 'summary' && studyView(ws).pages.includes('summary'))
+    ((search.study === 'summary' || search.study === 'members') &&
+      studyView(ws).pages.includes(search.study))
       ? search.study
       : 'practice';
   const studyContent =
@@ -1043,6 +1057,13 @@ function WorkspaceOpen() {
     (studyShown === 'summary' ? (
       <Suspense fallback={null}>
         <SummaryPage workspaceId={workspaceId} />
+      </Suspense>
+    ) : studyShown === 'members' ? (
+      <Suspense fallback={null}>
+        <MembersPage
+          search={{ member: search.member, show: search.show }}
+          workspaceId={workspaceId}
+        />
       </Suspense>
     ) : studyShown === 'assignments' ? (
       <Suspense fallback={null}>

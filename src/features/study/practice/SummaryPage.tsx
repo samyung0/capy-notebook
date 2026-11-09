@@ -6,19 +6,11 @@ import { InlineErrorState } from '@/components/app/ErrorState';
 import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
-import { LabelChip, topicSquares } from '../topicLabels';
+import { LabelChip, TopicSquares } from '../topicLabels';
 import { MakePractice } from './MakePractice';
 import { PracticeFrame } from './studyPage';
 import { studyView } from './studyView';
-
-const RESULT: Record<string, string> = {
-  partial: 'bg-solid-warning',
-  right: 'bg-solid-success',
-  unattempted: 'bg-fg-muted/30',
-  wrong: 'bg-solid-error',
-};
 
 /** Study → Summary (boards G5, M1), for whoever practises here: each topic's
  * label, what it rests on and every question's result, grey when not attempted, with Practise. Assignments'
@@ -131,14 +123,7 @@ function TopicRow({
           <LabelChip label={topic.label} />
         </span>
         <span className="t-meta text-fg-muted">{evidence}</span>
-        <span aria-hidden className="hidden gap-[3px] md:flex">
-          {topicSquares(topic).map((result, i) => (
-            <span
-              className={cn('size-2 shrink-0 rounded-[1px]', RESULT[result])}
-              key={`${i}-${result}`}
-            />
-          ))}
-        </span>
+        <TopicSquares className="hidden md:flex" topic={topic} />
       </span>
       <Button
         className="col-start-2 row-span-2 row-start-1 justify-self-end md:col-start-auto md:row-span-1 md:row-start-auto"

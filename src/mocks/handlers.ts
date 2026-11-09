@@ -91,6 +91,7 @@ import * as db from './db';
 import { uid } from './db';
 import { editorAssetHandlers } from './editorAssets';
 import { extractionHandlers, seedExtractionFiles } from './extraction';
+import { membersHandlers } from './members';
 import { questionBankHandlers } from './questionBank';
 import {
   blankOffice,
@@ -3286,6 +3287,7 @@ export const handlers = [
       : new HttpResponse(null, { status: 404 });
   }),
   /* ---------------- study progress and review ---------------- */
+  ...membersHandlers,
   ...studyHandlers,
   ...assignmentHandlers('owner'),
 

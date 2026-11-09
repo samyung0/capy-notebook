@@ -9780,6 +9780,113 @@ export const SetWorkspaceStudyResponse = zod.void()
 
 
 /**
+ * @summary Study → Members: each member's assignments, practice and topic labels, for a class's owner and teaching assistants
+ */
+export const GetWorkspaceMembersProgressParams = zod.object({
+  "id": zod.string()
+})
+
+export const GetWorkspaceMembersProgressResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "members": zod.array(zod.object({
+  "assigned": zod.int(),
+  "avatarUrl": zod.string().optional(),
+  "done": zod.int(),
+  "missing": zod.int(),
+  "name": zod.string(),
+  "overall": zod.number().optional(),
+  "practiceWeek": zod.int(),
+  "storageFull": zod.boolean(),
+  "topics": zod.array(zod.object({
+  "asked": zod.int(),
+  "group": zod.enum(['topic', 'others']),
+  "label": zod.enum(['not_started', 'attempted', 'needs_practice', 'familiar', 'proficient', 'mastered']),
+  "lastAt": zod.iso.datetime({"offset":true}).optional(),
+  "name": zod.string().optional(),
+  "partial": zod.int(),
+  "right": zod.int(),
+  "topicId": zod.string().optional(),
+  "unattempted": zod.int(),
+  "wrong": zod.int()
+})),
+  "userId": zod.string()
+})),
+  "topics": zod.array(zod.object({
+  "group": zod.enum(['topic', 'others']),
+  "name": zod.string().optional(),
+  "questions": zod.int(),
+  "topicId": zod.string().optional()
+}))
+})
+
+
+/**
+ * @summary A member's profile: assignments, topics, questions still missed and recent work, for a class's owner and teaching assistants
+ */
+export const GetWorkspaceMemberProfileParams = zod.object({
+  "id": zod.string(),
+  "memberId": zod.string()
+})
+
+export const GetWorkspaceMemberProfileResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "activity": zod.array(zod.object({
+  "at": zod.iso.datetime({"offset":true}),
+  "group": zod.enum(['topic', 'others']).optional(),
+  "kind": zod.enum(['practice', 'review', 'assignment']),
+  "questions": zod.int(),
+  "title": zod.string().optional(),
+  "topicName": zod.string().optional()
+})),
+  "assigned": zod.int(),
+  "assignments": zod.array(zod.object({
+  "attemptId": zod.string().optional(),
+  "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "dueAt": zod.iso.datetime({"offset":true}).optional(),
+  "id": zod.string(),
+  "kind": zod.enum(['marked', 'unmarked']),
+  "mark": zod.number().optional(),
+  "missing": zod.boolean(),
+  "running": zod.boolean(),
+  "title": zod.string(),
+  "total": zod.number().optional(),
+  "waitingMarks": zod.number()
+})),
+  "avatarUrl": zod.string().optional(),
+  "done": zod.int(),
+  "joinedAt": zod.iso.datetime({"offset":true}),
+  "lastActiveAt": zod.iso.datetime({"offset":true}).optional(),
+  "missed": zod.array(zod.object({
+  "at": zod.iso.datetime({"offset":true}),
+  "group": zod.enum(['topic', 'others']),
+  "materialId": zod.string(),
+  "misses": zod.int(),
+  "questionId": zod.string(),
+  "text": zod.string(),
+  "topicId": zod.string().optional(),
+  "topicName": zod.string().optional()
+})),
+  "missing": zod.int(),
+  "name": zod.string(),
+  "overall": zod.number().optional(),
+  "storageFull": zod.boolean(),
+  "topics": zod.array(zod.object({
+  "asked": zod.int(),
+  "group": zod.enum(['topic', 'others']),
+  "label": zod.enum(['not_started', 'attempted', 'needs_practice', 'familiar', 'proficient', 'mastered']),
+  "lastAt": zod.iso.datetime({"offset":true}).optional(),
+  "name": zod.string().optional(),
+  "partial": zod.int(),
+  "right": zod.int(),
+  "topicId": zod.string().optional(),
+  "unattempted": zod.int(),
+  "wrong": zod.int()
+})),
+  "userId": zod.string()
+})
+
+
+/**
  * @summary How many questions a practice group holds, for its start dialog
  */
 export const GetStudyQuestionCountParams = zod.object({

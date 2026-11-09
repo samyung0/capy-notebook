@@ -65,7 +65,7 @@ export type WorkspaceOpenSearch = {
    * 2026-11-05). Below the panels, `agent` is the chat page over the viewer. */
   panel?: WorkspacePanel;
   /** A Study page in the centre while nothing is open. */
-  study?: 'practice' | 'summary' | 'assignments';
+  study?: 'practice' | 'summary' | 'assignments' | 'members';
   /** Assignments' open assignment, and a try at it: running, or results. */
   assignment?: string;
   attempt?: string;
@@ -73,10 +73,12 @@ export type WorkspaceOpenSearch = {
    * not its report. */
   own?: true;
   /** An assignment's report: its tab, and on Approve AI marks a question or
-   * member to open at. */
+   * member to open at. On Members, `member` is the profile open. */
   tab?: 'questions' | 'members' | 'approve' | 'settings';
   question?: string;
   member?: string;
+  /** Members' By topic view (board G4), kept while a profile is open. */
+  show?: 'topics';
   /** Assignments' New assignment, opened with this quiz (board A1). */
   newFromQuiz?: string;
   /** Practice's topic session to start: its group, topic and, from a
@@ -179,6 +181,7 @@ export function parseWorkspaceOpenSearch(
     review: undefined,
     reviewMode: undefined,
     run: undefined,
+    show: undefined,
     study: undefined,
     tab: undefined,
     topicId: undefined,
@@ -222,6 +225,7 @@ function parseOpenPage(search: Record<string, unknown>): WorkspaceOpenSearch {
   }
   if (search.study === 'assignments') return parseAssignments(search);
   if (search.study === 'summary') return { study: 'summary' };
+  if (search.study === 'members') return parseMembers(search);
   if (search.study === 'practice') return parsePractice(search);
   return parseMakeQuiz(search);
 }
@@ -282,6 +286,16 @@ function parseAssignments(
     ...(tab ? { tab } : {}),
     ...(question ? { question } : {}),
     ...(member ? { member } : {}),
+  };
+}
+
+/** Members, its By topic view, or a member's profile. */
+function parseMembers(search: Record<string, unknown>): WorkspaceOpenSearch {
+  const member = text(search.member);
+  return {
+    study: 'members',
+    ...(member ? { member } : {}),
+    ...(search.show === 'topics' ? { show: 'topics' as const } : {}),
   };
 }
 

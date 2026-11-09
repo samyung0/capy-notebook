@@ -171,4 +171,14 @@ describe('document mode cache', () => {
       topicId: undefined,
     });
   });
+
+  it("opens Members with its view and a member's profile", () => {
+    expect(
+      parseWorkspaceOpenSearch({
+        member: 'u1',
+        show: 'topics',
+        study: 'members',
+      })
+    ).toMatchObject({ member: 'u1', show: 'topics', study: 'members' });
+  });
 });
