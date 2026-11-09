@@ -214,7 +214,7 @@ Standalone quizzes and flashcard sets that are link-shared or public open for
 signed-out visitors at `/share/quizzes/{id}.{signature}` and
 `/share/flashcards/{id}.{signature}`, the `sharePath` their API responses carry
 (notes at `/share/notes/…`; `GET /api/materials/{id}` carries it too, for the
-owner's Share item in the open material's ⋮ menu, as the Blocks tab cards' list
+owner's Share item in the open material's ⋮ menu, as the Files page's block
 rows do). The token is the summary's `share:v1:{id}` HMAC. Workspace materials have no
 sharing of their own (a check constraint keeps their privacy `private`) and
 embedded ones follow a note visitors cannot open, so neither is reachable.
@@ -823,7 +823,7 @@ topicName?}` (`MoveFiles` in `store/file_move.go`).
   dialog with its name field and No workspace.
 
 Download (Epo 2026-10-27/28, `src/features/files/downloadItem.ts`). Every
-item menu that has Clone to… (the Files page's Files and Blocks tabs, the
+item menu that has Clone to… (the Files page's file and block rows, the
 workspace file tree, the open item's header) offers Download after it, to
 anyone who can read the item. A file downloads its latest saved state under
 its own name: an Office or text file reads view mode's source session and
@@ -1325,8 +1325,8 @@ member hands one in and no other member sees it. Its member adds, removes and
 orders files while the attempt runs; `GET /api/assignment-attempts/{id}/paper/{fileId}/links`
 signs a file for its member and, once submitted, for the class's owners and
 editors (`PaperFileBlob`); nothing else reads it. The files go with the attempt
-and its assignment (cascade), never list in Files, search, Recent or the trash
-path, and their member deletes them from Files › Submissions under the drawings'
+and its assignment (cascade), never list in `GET /api/files`, search, Recent or the trash
+path, and their member deletes them from the Files page under the drawings'
 rule. A frozen account still attempts and submits, drawings and papers included
 (Epo 2026-11-08, O4): an answer is no material it edits.
 
@@ -1340,8 +1340,8 @@ which the Members tab shows Late. Hand in (`PUT /api/assignments/{id}/done`)
 needs a file and locks them; Undo hand in reopens them while it is open.
 `GET /api/assignments/{id}/hand-in/{fileId}/links` signs a file for its member
 and, once handed in, for the class's owners and editors (`HandInFileBlob`).
-The files go with the assignment (cascade) and list in Files › Submissions once
-it closes, for the member to delete.
+The files go with the assignment (cascade) and list on the Files page once it
+closes, for the member to delete.
 
 Sources: [drawing routes](../server/internal/httpapi/drawings.go) and
 [drawing store](../server/internal/store/drawings.go).
@@ -1814,8 +1814,8 @@ Sources: [lifecycle states and gate methods](../server/internal/store/account_st
   pasted or placed by the chat agent for it (Epo 2026-10-24, M16). An embedded
   quiz or set row is the exception: it is charged to its note's payer.
 - A member who leaves or is removed keeps paying for those images and audio
-  and deletes them from its Files page's Embeds tab, where they are listed
-  under a note it can no longer open; deleting its account deletes them. The
+  and deletes them from its Files page, where they are listed under a note it
+  can no longer open; deleting its account deletes them. The
   note, and study screens, then show each as removed by its uploader.
 - Nobody adds bytes to another user's bill, except the embedded quiz or set
   row itself, charged to its note's payer; the images in it are the account's
@@ -2062,15 +2062,32 @@ it and offers Rename/Properties/Delete only where the workspace's
 `capabilities` allow editing. Global search (`Store.Search`) follows the same
 set for workspaces, files and flashcard sets.
 
-The Files page's Files tab filters by owner and location (Epo 2026-10-28):
-My files (the default, the paid-for list above) or All files (`scope=all`:
-that plus every file in workspaces the caller owns or is a member of,
-`memberWorkspacesSQL`, never a link or public workspace it only opened), and
-All locations (the default) or Workspace only (`location=workspace`). Every
-row of `GET /api/files` carries `rights` (`FileRights`: rename, trash, move,
-clone), read with the page from the rules each action checks, and the row's
-menu and the selection's Delete offer only those; a lost-access row has none
-and may only be deleted.
+The Files page shows one list (Epo 2026-11-09, `GET /api/items`,
+`store.ListItems`): to the user a file is any of them, so uploaded files, the
+files it handed in (submissions, once deletable), its blocks (notes, quizzes,
+flashcard sets) and the images and audio it added to notes page, sort and
+filter together, beside the Canvas and Trash tabs. A narrow `UNION ALL` over
+`files`, `materials` and `editor_assets` picks the page by a shared sort value
+(added, name, size, kind or workspace) with a `type:id` tie-break, then each
+row is read whole by its own listing by ids (`ListOwnedFiles`,
+`ListOwnedMaterials`, `ListEditorAssets`, `SubmittedPapers`), so every row
+keeps the access rules below. It filters by owner and location (Epo
+2026-10-28): My files (the default, the paid-for list above) or All files
+(`scope=all`: that plus every file and block in workspaces the caller owns or
+is a member of, `memberWorkspacesSQL`, never a link or public workspace it
+only opened, and a hidden quiz assigned to the caller while that assignment is
+open, which opens the assignment as in Recent (`quizAssignedToSQL`; Epo
+2026-11-09); embeds and submissions are always its own), and everywhere (the
+default) or Workspace only (`location=workspace`; a submission sits in its
+assignment's workspace). The Kind filter takes file kinds and note, quiz,
+flashcards; image and audio also take embedded images and audio. Every file
+row carries `rights` (`FileRights`: rename, trash, move, clone), read with the
+page from the rules each action checks, and the row's menu and the selection's
+Delete offer only those; a lost-access row has none and may only be deleted. A
+block row carries `isOwner`: another member's block (All files) opens, studies,
+clones, downloads and shows its properties, and only its owner renames,
+shares or deletes it. Files and blocks go to the trash; a selection holding an
+embed or a submission says those go for good.
 
 Workspace visits (Epo 2026-10-26, migration `0120_workspace_visits.sql`).
 `workspace_visits (user_id, workspace_id, opened_at)` records when each
@@ -2117,9 +2134,9 @@ agent changes and finished uploads, so it refetches wherever it shows. Past revi
 history but blank the live workspace (and topic) name once the caller can no
 longer reach the workspace (`lostAccessSQL`); a pending invite keeps its name,
 and a notice's own snapshot (a removal's `workspaceName`) still shows.
-The Embeds tab lists every image and audio clip the caller pays for
-(`GET /api/editor-assets`), under its note's current title and kind
-(`materialType`, for the row's icon; the Block column), marked
+The Files page lists every image and audio clip the caller pays for
+(`GET /api/items`, `ListEditorAssets`), under its note's current title and
+kind (`materialType`), marked
 `lostAccess` when the caller can no longer reach the note's workspace
 (`lostAccessSQL`; title and workspace name blank once that workspace's owner
 is no longer live). One in a note the caller can open opens that note; one it

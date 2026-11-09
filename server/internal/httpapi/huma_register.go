@@ -605,6 +605,7 @@ func registerRoutes(api huma.API, a *api) {
 	a.registerChat(api)
 	a.registerContent(api)
 	a.registerEditorAssets(api)
+	a.registerItems(api)
 	a.registerThumbnails(api)
 	a.registerSourceUploads(api)
 	a.registerGenerate(api)

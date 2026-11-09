@@ -22,6 +22,7 @@
 import type {
   ActivityBlockOutcome,
   ActivityCapture,
+  EditorAssetItem,
   FileKind,
   AnonymousEmbed as GenAnonymousEmbed,
   AnonymousNote as GenAnonymousNote,
@@ -44,9 +45,9 @@ import type {
   FilePage as GenFilePage,
   FilePreview as GenFilePreview,
   GradedQuestion as GenGradedQuestion,
+  ItemPage as GenItemPage,
   Material as GenMaterial,
   MaterialListItem as GenMaterialListItem,
-  MaterialPage as GenMaterialPage,
   Message as GenMessage,
   Quiz as GenQuiz,
   ResourceEffectOperation as GenResourceEffectOperation,
@@ -56,6 +57,7 @@ import type {
   ReviewSession as GenReviewSession,
   SearchResult as GenSearchResult,
   StudySummary as GenStudySummary,
+  SubmittedPaper as GenSubmittedPaper,
   TrashItem as GenTrashItem,
   TrashPage as GenTrashPage,
   UpdateCommentReq as GenUpdateCommentReq,
@@ -158,7 +160,6 @@ export type {
   SpendingLimitReq,
   StudyPreferences,
   SubmittedPaper,
-  SubmittedPapers,
   SubscriptionBlocker,
   Tag,
   TagInput,
@@ -672,9 +673,10 @@ import type {
 import type { Answers } from '@/features/quizzes/grade';
 import type {
   ListAttemptsSort,
+  ListItemsScope,
+  ListItemsSort,
   ListOwnedFilesScope,
   ListOwnedFilesSort,
-  ListOwnedMaterialsSort,
   ListPastReviewsSort,
   ListUsageEventsSort,
 } from './gen/model';
@@ -716,33 +718,13 @@ export type Material = Omit<GenMaterial, 'content'> & {
   content: import('@/features/materials/document').MaterialDocument;
 };
 
-/* Owner-scoped, paginated listings behind the Create and Files pages. */
-export type {
-  EditorAssetItem,
-  EditorAssetPage,
-  FileKind,
-  ListEditorAssetsAccess as EditorAssetAccess,
-} from './gen/model';
+/* Owner-scoped, paginated listings behind the Files page. */
+export type { EditorAssetItem, FileKind, ItemType } from './gen/model';
 /** Pages whose rows carry the narrowed preview types above. */
 export type FilePage = Omit<GenFilePage, 'items'> & { items: SourceFile[] };
-export type MaterialPage = Omit<GenMaterialPage, 'items'> & {
-  items: MaterialListItem[];
-};
 export type TrashPage = Omit<GenTrashPage, 'items'> & { items: TrashItem[] };
 export type MaterialListKind = 'note' | 'quiz' | 'flashcards';
 export type MaterialListLocation = 'workspace' | 'standalone';
-export type MaterialListSort = ListOwnedMaterialsSort;
-/** owned: the caller's workspaces (and standalone materials); member: also
- * every workspace they are a member of. */
-export type ListScope = 'owned' | 'member';
-export interface MaterialListParams {
-  dir?: 'asc' | 'desc';
-  kinds?: MaterialKind[];
-  locations?: MaterialListLocation[];
-  scope?: ListScope;
-  sort?: MaterialListSort;
-  workspaceIds?: string[];
-}
 export type FileListSort = ListOwnedFilesSort;
 /** A file with no workspace is standalone, its uploader's alone. */
 export type FileListLocation = MaterialListLocation;
@@ -757,6 +739,29 @@ export interface FileListParams {
   q?: string;
   scope?: FileListScope;
   sort?: FileListSort;
+  workspaceIds?: string[];
+}
+
+/** One row of the Files page's list (GET /api/items): a file, a handed-in
+ * submission, a block or an embedded image or audio clip; to the user each is
+ * a file (Epo 2026-11-09). */
+export type Item =
+  | { type: 'file'; file: SourceFile }
+  | { type: 'submission'; submission: GenSubmittedPaper }
+  | { type: 'material'; material: MaterialListItem }
+  | { type: 'embed'; embed: EditorAssetItem };
+export type ItemPage = Omit<GenItemPage, 'items'> & { items: Item[] };
+export type ItemKind = FileKind | MaterialListKind;
+export type ItemListSort = ListItemsSort;
+/** owned: what the caller pays for (My files); all: also every file and block
+ * of its own and member workspaces (All files). */
+export type ItemListScope = ListItemsScope;
+export interface ItemListParams {
+  dir?: 'asc' | 'desc';
+  kinds?: ItemKind[];
+  locations?: FileListLocation[];
+  scope?: ItemListScope;
+  sort?: ItemListSort;
   workspaceIds?: string[];
 }
 

@@ -590,7 +590,7 @@ func TestEditorAssetThumbnailFollowsItsAsset(t *testing.T) {
 	if got := blobRefCount(t, s, key); got != 1 {
 		t.Fatalf("thumbnail refs = %d, want 1", got)
 	}
-	page, err := s.ListEditorAssets(ctx, ownerID, "", 10, "")
+	page, err := s.ListEditorAssets(ctx, ownerID, EditorAssetFilter{Limit: 10})
 	if err != nil || len(page.Items) != 1 || page.Items[0].ThumbnailKey != key {
 		t.Fatalf("listed %+v, %v; want the asset with its thumbnail key", page.Items, err)
 	}

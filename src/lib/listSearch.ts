@@ -1,13 +1,9 @@
 import type {
-  EditorAssetAccess,
   FileKind,
-  FileListLocation,
-  FileListParams,
-  FileListSort,
+  ItemKind,
+  ItemListParams,
+  ItemListSort,
   MaterialListKind,
-  MaterialListLocation,
-  MaterialListParams,
-  MaterialListSort,
 } from '@/api/types';
 import { PREF_KEYS, readPref, type SortedList, writePref } from './localPrefs';
 import { FILES_TABS, type FilesTab } from './tabSearch';
@@ -118,95 +114,61 @@ export const FILE_KINDS: FileKind[] = [
   'json',
   'unknown',
 ];
-export const FILE_SORTS: FileListSort[] = [
+export const MATERIAL_KINDS: MaterialListKind[] = [
+  'note',
+  'quiz',
+  'flashcards',
+];
+/** The Files page's Kind filter: every file kind, then the blocks; image and
+ * audio also take embedded images and audio. */
+export const ITEM_KINDS: ItemKind[] = [...FILE_KINDS, ...MATERIAL_KINDS];
+export const ITEM_SORTS: ItemListSort[] = [
   'added',
   'name',
   'size',
   'kind',
   'workspace',
 ];
-export const FILE_SORT_DEFAULT: FileListSort = 'added';
-export const MATERIAL_KINDS: MaterialListKind[] = [
-  'note',
-  'quiz',
-  'flashcards',
-];
-export const MATERIAL_LOCATIONS: MaterialListLocation[] = [
-  'workspace',
-  'standalone',
-];
-export const FILE_LOCATIONS: FileListLocation[] = ['workspace'];
-export const MATERIAL_SORTS: MaterialListSort[] = [
-  'updated',
-  'created',
-  'title',
-  'kind',
-  'workspace',
-];
-export const MATERIAL_SORT_DEFAULT: MaterialListSort = 'updated';
+export const ITEM_SORT_DEFAULT: ItemListSort = 'added';
 
-export const EDITOR_ASSET_ACCESS: EditorAssetAccess[] = ['lost'];
-
-/** The Files page: the tab, then the Files or Blocks tab's own sort and
- * filters; Embeds keeps only its access filter, Trash none. */
+/** The Files page: the tab, then the list's sort and filters (Canvas and
+ * Trash have none). */
 export type FilesSearch = {
   tab?: FilesTab;
-  /** Files tab: All files adds every file of the caller's own and member
+  /** All files adds every file and block of the caller's own and member
    * workspaces to what it pays for (My files, the default). */
   owner?: 'all';
-  sort?: FileListSort | MaterialListSort;
+  sort?: ItemListSort;
   dir?: 'asc';
   kind?: string;
   workspace?: string;
-  location?: MaterialListLocation;
-  access?: EditorAssetAccess;
+  /** One switch (Epo 2026-10-30): only what sits in a workspace. */
+  location?: 'workspace';
 };
 export function parseFilesSearch(search: Record<string, unknown>): FilesSearch {
   const tab = one(FILES_TABS, search.tab);
-  if (tab === 'trash') return { tab };
-  if (tab === 'embeds')
-    return { access: one(EDITOR_ASSET_ACCESS, search.access), tab };
-  const blocks = tab === 'blocks';
+  // Canvas and Trash have no sort or filters; `files`, the default, drops
+  // out of the URL.
+  if (tab && tab !== 'files') return { tab };
   return {
     dir: dirOf(search.dir),
-    kind: csv(
-      listOf<string>(blocks ? MATERIAL_KINDS : FILE_KINDS, search.kind)
-    ),
-    // The Files tab filters to workspaces or not at all (Epo 2026-10-28).
-    location: blocks
-      ? one(MATERIAL_LOCATIONS, search.location)
-      : one(FILE_LOCATIONS, search.location),
-    owner: !blocks && search.owner === 'all' ? 'all' : undefined,
-    sort: blocks
-      ? one(MATERIAL_SORTS, search.sort)
-      : one(FILE_SORTS, search.sort),
-    tab,
+    kind: csv(listOf<string>(ITEM_KINDS, search.kind)),
+    location: search.location === 'workspace' ? 'workspace' : undefined,
+    owner: search.owner === 'all' ? 'all' : undefined,
+    sort: one(ITEM_SORTS, search.sort),
     workspace: anyList(search.workspace),
   };
 }
-const workspaceIds = (search: FilesSearch) => {
-  const ids = commaList(search.workspace);
-  return ids.length ? { workspaceIds: ids } : {};
-};
-export function fileListParams(search: FilesSearch): FileListParams {
-  const kinds = listOf(FILE_KINDS, search.kind);
+export function itemListParams(search: FilesSearch): ItemListParams {
+  const kinds = listOf(ITEM_KINDS, search.kind);
+  const workspaceIds = commaList(search.workspace);
   return {
     dir: search.dir ?? 'desc',
-    sort: one(FILE_SORTS, search.sort) ?? FILE_SORT_DEFAULT,
+    sort: search.sort ?? ITEM_SORT_DEFAULT,
     ...(kinds.length ? { kinds } : {}),
     ...(search.location ? { locations: [search.location] } : {}),
     ...(search.owner ? { scope: search.owner } : {}),
-    ...workspaceIds(search),
-  };
-}
-export function materialListParams(search: FilesSearch): MaterialListParams {
-  const kinds = listOf(MATERIAL_KINDS, search.kind);
-  return {
-    dir: search.dir ?? 'desc',
-    sort: one(MATERIAL_SORTS, search.sort) ?? MATERIAL_SORT_DEFAULT,
-    ...(kinds.length ? { kinds } : {}),
-    ...(search.location ? { locations: [search.location] } : {}),
-    ...workspaceIds(search),
+    ...(workspaceIds.length ? { workspaceIds } : {}),
   };
 }
 

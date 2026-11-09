@@ -552,57 +552,30 @@ type SubmittedPaper struct {
 	CreatedAt     time.Time `json:"createdAt"`
 }
 
-// SubmittedPapers is a page of the caller's deletable paper files, newest
-// first, with how many they have and what those hold in all.
-type SubmittedPapers struct {
-	Items      []SubmittedPaper `json:"items" nullable:"false"`
-	Count      int              `json:"count"`
-	TotalBytes int64            `json:"totalBytes"`
-	NextCursor string           `json:"nextCursor,omitempty"`
-}
-
-// ListSubmittedPapers lists the paper and hand-in files userID handed in and
-// may delete.
-func (s *Store) ListSubmittedPapers(ctx context.Context, userID, cursor string, limit int) (SubmittedPapers, error) {
-	out := SubmittedPapers{Items: []SubmittedPaper{}}
-	if err := s.pool.QueryRow(ctx, `SELECT count(*), COALESCE(sum(f.size_bytes), 0)
-		FROM files f WHERE f.user_id = $1 AND f.submission_position IS NOT NULL AND `+submittedDeletableSQL,
-		userID).Scan(&out.Count, &out.TotalBytes); err != nil {
-		return out, err
-	}
-	after, afterID, err := decodeTimeCursor(cursor)
-	if err != nil {
-		return out, err
-	}
+// SubmittedPapers reads the paper and hand-in files userID handed in and may
+// delete, by id, newest first: the Files page's submissions (ListItems).
+func (s *Store) SubmittedPapers(ctx context.Context, userID string, ids []string) ([]SubmittedPaper, error) {
 	rows, err := s.pool.Query(ctx, `SELECT f.id, COALESCE(t.id, ''), f.name, f.kind, COALESCE(t.assignment_id, h.id),
 			COALESCE(t.quiz_name, h.title, ''), COALESCE(t.workspace_id, h.workspace_id, ''),
 			COALESCE(t.workspace_name, w.name, ''), f.size_bytes, f.added_at
 		FROM files f LEFT JOIN attempts t ON t.id = f.attempt_id
 			LEFT JOIN assignments h ON h.id = f.hand_in_assignment_id LEFT JOIN workspaces w ON w.id = h.workspace_id
-		WHERE f.user_id = $1 AND f.submission_position IS NOT NULL AND `+submittedDeletableSQL+`
-			AND ($2::timestamptz IS NULL OR (f.added_at, f.id) < ($2, $3))
-		ORDER BY f.added_at DESC, f.id DESC LIMIT $4`, userID, after, afterID, limit+1)
+		WHERE f.user_id = $1 AND f.id = ANY($2) AND f.submission_position IS NOT NULL AND `+submittedDeletableSQL+`
+		ORDER BY f.added_at DESC, f.id DESC`, userID, ids)
 	if err != nil {
-		return out, err
+		return nil, err
 	}
 	defer rows.Close()
+	out := []SubmittedPaper{}
 	for rows.Next() {
 		var p SubmittedPaper
 		if err := rows.Scan(&p.ID, &p.AttemptID, &p.Name, &p.Kind, &p.AssignmentID, &p.QuizName,
 			&p.WorkspaceID, &p.WorkspaceName, &p.Bytes, &p.CreatedAt); err != nil {
-			return out, err
+			return nil, err
 		}
-		out.Items = append(out.Items, p)
+		out = append(out, p)
 	}
-	if err := rows.Err(); err != nil {
-		return out, err
-	}
-	if len(out.Items) > limit {
-		out.Items = out.Items[:limit]
-		last := out.Items[limit-1]
-		out.NextCursor = encodeTimeCursor(last.CreatedAt, last.ID)
-	}
-	return out, nil
+	return out, rows.Err()
 }
 
 // DeleteSubmittedPapers deletes the caller's deletable paper and hand-in

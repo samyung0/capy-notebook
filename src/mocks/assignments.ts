@@ -1370,6 +1370,55 @@ export function workspaceMaterialRefs(wsId: string, viewer: Viewer) {
   return refs;
 }
 
+/** The viewer's submissions on the Files page: papers of closed assignments,
+ * every part marked; hand-ins of closed ones. */
+export function submittedPapers(): SubmittedPaper[] {
+  seed();
+  const workspaceName = (id: string) =>
+    db.workspaces.find((w) => w.id === id)?.name ?? '';
+  const items: SubmittedPaper[] = [...attempts.values()].flatMap((a) => {
+    const row = rows.get(a.assignmentId);
+    const marked = a.graded.every((q) => q.parts.every((p) => !p.pending));
+    if (
+      !row ||
+      a.userId !== db.user.id ||
+      a.paper !== 'read' ||
+      !marked ||
+      !closedAtOf(row)
+    )
+      return [];
+    return (a.paperFiles ?? []).map((f) => ({
+      assignmentId: row.id,
+      attemptId: a.id,
+      bytes: f.sizeBytes,
+      createdAt: a.submittedAt ?? a.startedAt,
+      id: f.id,
+      kind: f.kind,
+      name: f.name,
+      quizName: row.title,
+      workspaceId: row.workspaceId,
+      workspaceName: workspaceName(row.workspaceId),
+    }));
+  });
+  for (const [assignmentId, byUser] of handIns) {
+    const row = rows.get(assignmentId);
+    if (!row || !isClosed(row)) continue;
+    for (const f of byUser.get(db.user.id) ?? [])
+      items.push({
+        assignmentId,
+        bytes: f.sizeBytes,
+        createdAt: row.postedAt,
+        id: f.id,
+        kind: f.kind,
+        name: f.name,
+        quizName: row.title,
+        workspaceId: row.workspaceId,
+        workspaceName: workspaceName(row.workspaceId),
+      });
+  }
+  return items;
+}
+
 const gone = () => new HttpResponse(null, { status: 404 });
 const conflict = (code: string, detail: string) =>
   HttpResponse.json(
@@ -1847,57 +1896,6 @@ export const assignmentHandlers = (viewer: Viewer) => {
         url: paperUrls.get(String(params.fileId)) ?? SCAN,
       })
     ),
-    // Files › Submissions: papers of closed assignments, every part marked;
-    // hand-ins of closed ones.
-    http.get('/api/papers', () => {
-      const items: SubmittedPaper[] = [...attempts.values()].flatMap((a) => {
-        const row = rowOf(a.assignmentId);
-        const marked = a.graded.every((q) => q.parts.every((p) => !p.pending));
-        if (
-          !row ||
-          a.userId !== db.user.id ||
-          a.paper !== 'read' ||
-          !marked ||
-          !closedAtOf(row)
-        )
-          return [];
-        return (a.paperFiles ?? []).map((f) => ({
-          assignmentId: row.id,
-          attemptId: a.id,
-          bytes: f.sizeBytes,
-          createdAt: a.submittedAt ?? a.startedAt,
-          id: f.id,
-          kind: f.kind,
-          name: f.name,
-          quizName: row.title,
-          workspaceId: row.workspaceId,
-          workspaceName:
-            db.workspaces.find((w) => w.id === row.workspaceId)?.name ?? '',
-        }));
-      });
-      for (const [assignmentId, byUser] of handIns) {
-        const row = rowOf(assignmentId);
-        if (!row || !isClosed(row)) continue;
-        for (const f of byUser.get(db.user.id) ?? [])
-          items.push({
-            assignmentId,
-            bytes: f.sizeBytes,
-            createdAt: row.postedAt,
-            id: f.id,
-            kind: f.kind,
-            name: f.name,
-            quizName: row.title,
-            workspaceId: row.workspaceId,
-            workspaceName:
-              db.workspaces.find((w) => w.id === row.workspaceId)?.name ?? '',
-          });
-      }
-      return HttpResponse.json({
-        count: items.length,
-        items,
-        totalBytes: items.reduce((n, p) => n + p.bytes, 0),
-      });
-    }),
     http.delete('/api/papers/:id', ({ params }) => {
       for (const a of attempts.values())
         a.paperFiles = a.paperFiles?.filter((f) => f.id !== params.id);
@@ -1907,15 +1905,6 @@ export const assignmentHandlers = (viewer: Viewer) => {
           db.user.id,
           handInOf(assignmentId, db.user.id).filter((f) => f.id !== params.id)
         );
-      return HttpResponse.json({ deleted: 1 });
-    }),
-    http.delete('/api/papers', () => {
-      for (const a of attempts.values())
-        if (a.userId === db.user.id && a.paper === 'read') a.paperFiles = [];
-      for (const [assignmentId] of handIns) {
-        const row = rowOf(assignmentId);
-        if (row && isClosed(row)) setHandIn(assignmentId, db.user.id, []);
-      }
       return HttpResponse.json({ deleted: 1 });
     }),
     http.post(

@@ -86,8 +86,6 @@ import type {
   Customization,
   DeletionPreflight,
   EditableQuiz,
-  EditorAssetAccess,
-  EditorAssetPage,
   Extraction,
   FileLinks,
   FileListParams,
@@ -101,6 +99,8 @@ import type {
   InspectSourceImportsResponse,
   IntegrationsStatus,
   InvoiceList,
+  ItemListParams,
+  ItemPage,
   Label,
   LearningOverview,
   LibraryFigure,
@@ -110,8 +110,6 @@ import type {
   MaterialComment,
   MaterialDiscussion,
   MaterialListItem,
-  MaterialListParams,
-  MaterialPage,
   MaterialRef,
   MaterialUpdateResult,
   ModelSlot,
@@ -146,7 +144,6 @@ import type {
   StudyPreferences,
   StudySummary,
   StudyTopics,
-  SubmittedPapers,
   Tag,
   Task,
   TodoDonePage,
@@ -1211,8 +1208,8 @@ function invalidateVisitLists(qc: QueryClient, visitor: boolean) {
   void qc.invalidateQueries({ queryKey: ['workspaces'] });
   void qc.invalidateQueries({ queryKey: qk.todo });
   if (!visitor) return;
+  // The owned files' root holds the Files page's list too.
   void qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
-  void qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
   void qc.invalidateQueries({ queryKey: ['search'] });
 }
 
@@ -1514,21 +1511,32 @@ export const useOwnedFiles = (params: FileListParams = {}) =>
     placeholderData: keepPreviousData,
   });
 
-/** The images and audio the caller pays for (M16), newest first, each marked
- * when its note can no longer be opened: the Files page's Embeds tab. A new
- * access filter loads afresh, so its notice never sits over the previous
- * filter's rows. */
-export const useEditorAssets = (access?: EditorAssetAccess) =>
+/** The Files page's one list: files, handed-in submissions, blocks and
+ * embedded images and audio, newest first by default (GET /api/items). */
+export const itemsQuery = (params: ItemListParams = {}) => ({
+  getNextPageParam: (last: ItemPage) => last.nextCursor || undefined,
+  initialPageParam: '',
+  queryFn: ({ pageParam }: { pageParam: string }) =>
+    api.get<ItemPage>(
+      `/items${listSearch(
+        {
+          dir: params.dir,
+          kind: params.kinds,
+          location: params.locations,
+          scope: params.scope,
+          sort: params.sort,
+          workspaceId: params.workspaceIds,
+        },
+        pageParam
+      )}`
+    ),
+  queryKey: qk.items(params),
+});
+// Nothing refreshes it when an editor adds an image, so each visit refetches.
+export const useItems = (params: ItemListParams = {}) =>
   useInfiniteQuery({
-    getNextPageParam: (last: EditorAssetPage) => last.nextCursor || undefined,
-    initialPageParam: '',
-    queryFn: ({ pageParam }: { pageParam: string }) =>
-      api.get<EditorAssetPage>(
-        `/editor-assets${listSearch({ access }, pageParam)}`
-      ),
-    queryKey: qk.editorAssets(access),
-    // Nothing invalidates it when an editor adds an image, so each visit
-    // refetches instead of showing the list from up to 5 minutes before.
+    ...itemsQuery(params),
+    placeholderData: keepPreviousData,
     staleTime: 0,
   });
 
@@ -1537,12 +1545,10 @@ export const useEditorAssets = (access?: EditorAssetAccess) =>
 export function useDeleteEditorAsset() {
   const qc = useQueryClient();
   return useMutation({
-    // Its confirmation shows the failure.
-    meta: { errorToast: false },
     mutationFn: (assetId: string) =>
       api.del<void>(`/editor-assets/${encodeURIComponent(assetId)}`),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.editorAssetsRoot });
+      qc.invalidateQueries({ queryKey: qk.itemsRoot });
       qc.invalidateQueries({ queryKey: qk.usage });
     },
   });
@@ -1730,7 +1736,6 @@ export const useTrash = (wsId: string | undefined, enabled: boolean) =>
 
 function invalidateAfterTrashChange(qc: QueryClient, item: TrashItem) {
   qc.invalidateQueries({ queryKey: qk.trash() });
-  qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
   qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
   qc.invalidateQueries({ queryKey: qk.usage });
   if (item.workspaceId) {
@@ -1894,14 +1899,31 @@ function patchFileInCache(
   if (wsId) {
     qc.setQueryData<SourceFile[]>(qk.files(wsId), (prev) => prev?.map(apply));
   } else {
+    // The owned file lists, then the Files page's, whose rows wrap files.
     qc.setQueriesData<InfiniteData<FilePage>>(
-      { queryKey: qk.ownedFilesRoot },
+      {
+        predicate: ({ queryKey }) => queryKey[2] !== qk.itemsRoot[2],
+        queryKey: qk.ownedFilesRoot,
+      },
       (prev) =>
         prev && {
           ...prev,
           pages: prev.pages.map((page) => ({
             ...page,
             items: page.items.map(apply),
+          })),
+        }
+    );
+    qc.setQueriesData<InfiniteData<ItemPage>>(
+      { queryKey: qk.itemsRoot },
+      (prev) =>
+        prev && {
+          ...prev,
+          pages: prev.pages.map((page) => ({
+            ...page,
+            items: page.items.map((item) =>
+              item.type === 'file' ? { ...item, file: apply(item.file) } : item
+            ),
           })),
         }
     );
@@ -2293,7 +2315,7 @@ export function useGenerate(wsId: string, options?: MutationUiOptions) {
       track('material_generated', { kind: 'quiz', workspaceId: wsId });
       await Promise.all([
         qc.invalidateQueries({ queryKey: qk.materials(wsId) }),
-        qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot }),
+        qc.invalidateQueries({ queryKey: qk.itemsRoot }),
         qc.invalidateQueries({ queryKey: qk.practice(wsId) }),
       ]);
     },
@@ -2345,35 +2367,9 @@ export const materialWithBodyQuery = (id: string) =>
 export const useMaterial = (id: string | null, options?: QueryUiOptions) =>
   useQuery({ ...materialQuery(id), meta: queryMeta(options) });
 
-/** Deleting a material moves it to the trash (see useDeleteFile). */
-export const ownedMaterialsQuery = (params: MaterialListParams = {}) => ({
-  getNextPageParam: (last: MaterialPage) => last.nextCursor || undefined,
-  initialPageParam: '',
-  queryFn: ({ pageParam }: { pageParam: string }) =>
-    api.get<MaterialPage>(
-      `/materials${listSearch(
-        {
-          dir: params.dir,
-          kind: params.kinds,
-          location: params.locations,
-          scope: params.scope,
-          sort: params.sort,
-          workspaceId: params.workspaceIds,
-        },
-        pageParam
-      )}`
-    ),
-  queryKey: qk.ownedMaterials(params),
-});
-/** Notes, quizzes and flashcard sets the caller owns, standalone or in their
- * own workspaces; the Create page's list. */
-export const useOwnedMaterials = (params: MaterialListParams = {}) =>
-  useInfiniteQuery({
-    ...ownedMaterialsQuery(params),
-    placeholderData: keepPreviousData,
-  });
+/** Blocks list on the Files page. */
 function invalidateOwnedMaterials(qc: QueryClient) {
-  qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
+  qc.invalidateQueries({ queryKey: qk.itemsRoot });
 }
 
 /** Create a note outside any workspace. */
@@ -3406,22 +3402,8 @@ export const usePaperFileLinks = (of: SubmissionOf, fileId: string) =>
     staleTime: 30 * 60_000,
   });
 
-/** Files › Submissions: the caller's papers they may delete, newest first. */
-export const useSubmittedPapers = (enabled: boolean) =>
-  useInfiniteQuery({
-    enabled,
-    getNextPageParam: (last: SubmittedPapers) => last.nextCursor || undefined,
-    initialPageParam: '',
-    meta: { errorBoundary: false },
-    queryFn: ({ pageParam }: { pageParam: string }) =>
-      api.get<SubmittedPapers>(
-        `/papers${pageParam ? `?${new URLSearchParams({ cursor: pageParam })}` : ''}`
-      ),
-    queryKey: qk.papers,
-  });
-
 function invalidateAfterPaperDelete(qc: QueryClient) {
-  qc.invalidateQueries({ queryKey: qk.papers });
+  qc.invalidateQueries({ queryKey: qk.itemsRoot });
   qc.invalidateQueries({ queryKey: qk.billing });
 }
 
@@ -3430,15 +3412,6 @@ export function useDeletePaper() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.del<{ deleted: number }>(`/papers/${id}`),
-    onSuccess: () => invalidateAfterPaperDelete(qc),
-  });
-}
-
-/** Delete every handed-in paper file the caller may delete. */
-export function useDeleteAllPapers() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => api.del<{ deleted: number }>('/papers'),
     onSuccess: () => invalidateAfterPaperDelete(qc),
   });
 }

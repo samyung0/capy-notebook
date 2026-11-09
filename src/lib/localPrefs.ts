@@ -54,12 +54,7 @@ export const PREF_KEYS = {
 } as const;
 
 /** The lists whose sort menu pick is remembered. */
-export type SortedList =
-  | 'workspaces'
-  | 'files'
-  | 'blocks'
-  | 'pastReviews'
-  | 'results';
+export type SortedList = 'workspaces' | 'files' | 'pastReviews' | 'results';
 
 export function readPref<T>(
   key: string,

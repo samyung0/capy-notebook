@@ -1,24 +1,12 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { memo, useCallback, useContext, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { useMediaQuery } from 'usehooks-ts';
+import { memo, useCallback, useContext, useState } from 'react';
 import {
-  useDeleteOwnedFile,
-  useOwnedFiles,
   usePurgeTrashed,
   useRestoreTrashed,
-  useRetryFileProcessing,
-  useRetryingFileIds,
   useTrash,
   useWorkspaces,
 } from '@/api/hooks';
-import type {
-  FileKind,
-  FileListSort,
-  SourceFile,
-  TrashItem,
-  Workspace,
-} from '@/api/types';
+import type { FileKind, TrashItem } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
 import {
   ItemCard,
@@ -29,33 +17,25 @@ import {
 } from '@/components/app/ItemCard';
 import { ListEnd } from '@/components/app/ListEnd';
 import {
-  ListToolbar,
   type ListView,
   ListViewToggle,
-  type SortOption,
-  toggleValue,
   useListView,
 } from '@/components/app/ListToolbar';
 import { PageBody, PageHeader, PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
-import type { ColumnSort } from '@/components/app/SortHeader';
 import { Button, ErrorAction } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/Dialog';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
 import { Tabs } from '@/components/ui/Tabs';
-import { AddFileDestinationDialog } from '@/features/files/AddFileDestinationDialog';
 import { CanvasTab } from '@/features/files/CanvasTab';
-import { EmbedsTab } from '@/features/files/EmbedsTab';
-import { fileKindLabel } from '@/features/files/fileKindLabel';
-import { fileCanClone, formatFileSize } from '@/features/files/fileUtils';
-import { toastLostAccess } from '@/features/files/lostAccess';
+import { formatFileSize } from '@/features/files/fileUtils';
+import { ItemsList } from '@/features/files/ItemsList';
 import {
   clearOnBlank,
   SelectionAction,
   SelectionBar,
 } from '@/features/files/SelectionBar';
-import { SubmissionsTab } from '@/features/files/SubmissionsTab';
 import {
   collectSelectionPages,
   useFileSelection,
@@ -64,42 +44,18 @@ import {
   cardCountLabel,
   questionCountLabel,
 } from '@/features/materials/countLabels';
-import { relativeTime } from '@/features/materials/MaterialListCard';
-import { MaterialsTab } from '@/features/materials/MaterialsTab';
-import { ContentActions } from '@/features/workspace/ContentActions';
-import { resumedConnect } from '@/features/workspace/connectResume';
-import { toFileActionTarget } from '@/features/workspace/contentActionTarget';
-import {
-  AddSourceDialog,
-  addSourceIntent,
-} from '@/features/workspace/LazyAddSourceDialog';
-import {
-  type RetryProcessing,
-  retryFailedFile,
-} from '@/features/workspace/retryProcessing';
-import {
-  AccountStatusButton,
-  useAccountFrozen,
-} from '@/features/workspace/WorkspaceHealth';
+import { AccountStatusButton } from '@/features/workspace/WorkspaceHealth';
 import { getLocale, m } from '@/i18n';
 import { describeError } from '@/lib/errors';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
-import {
-  csv,
-  FILE_KINDS,
-  FILE_SORT_DEFAULT,
-  type FilesSearch,
-  fileListParams,
-  sortSearch,
-} from '@/lib/listSearch';
+import { FILE_KINDS } from '@/lib/listSearch';
 import { PREF_KEYS } from '@/lib/localPrefs';
 import { waitsForConnection } from '@/lib/online';
 import type { FilesTab } from '@/lib/tabSearch';
-import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 export default function Files() {
   const navigate = useNavigate();
-  const { tab = 'files', access } = useSearch({ from: '/auth-shell/files' });
+  const { tab = 'files' } = useSearch({ from: '/auth-shell/files' });
   const [view, changeView] = useListView(PREF_KEYS.filesView);
   const [busy, setBusy] = useState(false);
   const [headerSlot, setHeaderSlot] = useState<HTMLDivElement | null>(null);
@@ -111,8 +67,8 @@ export default function Files() {
           actions={
             <>
               <AccountStatusButton />
-              {/* Blocks' New block and Files' Add file move here on phones,
-                  so the toolbar keeps one row. */}
+              {/* Add file and New block move here on phones, so the toolbar
+                  keeps one row. */}
               <div className="sm:hidden" ref={setHeaderSlot} />
             </>
           }
@@ -133,10 +89,7 @@ export default function Files() {
           }}
           tabs={[
             { label: m.files_tab_files(), value: 'files' },
-            { label: m.files_tab_blocks(), value: 'blocks' },
-            { label: m.files_tab_embeds(), value: 'embeds' },
             { label: m.files_tab_canvas(), value: 'canvas' },
-            { label: m.files_tab_submissions(), value: 'submissions' },
             { label: m.files_tab_trash(), value: 'trash' },
           ]}
           value={tab}
@@ -148,32 +101,10 @@ export default function Files() {
           onViewChange={changeView}
           view={view}
         />
-      ) : tab === 'submissions' ? (
-        <SubmissionsTab onViewChange={changeView} view={view} />
       ) : tab === 'canvas' ? (
         <CanvasTab onViewChange={changeView} view={view} />
-      ) : tab === 'embeds' ? (
-        <EmbedsTab
-          access={access}
-          onAccessChange={(next) =>
-            void navigate({
-              replace: true,
-              search: { access: next, tab: 'embeds' },
-              to: '/files',
-            })
-          }
-          onViewChange={changeView}
-          view={view}
-        />
-      ) : tab === 'blocks' ? (
-        <MaterialsTab
-          headerSlot={headerSlot}
-          onBusyChange={setBusy}
-          onViewChange={changeView}
-          view={view}
-        />
       ) : (
-        <ActiveFiles
+        <ItemsList
           headerSlot={headerSlot}
           onBusyChange={setBusy}
           onViewChange={changeView}
@@ -183,432 +114,6 @@ export default function Files() {
     </PagePanel>
   );
 }
-
-function ActiveFiles({
-  headerSlot,
-  view,
-  onViewChange,
-  onBusyChange,
-}: {
-  /** Where Add file goes on phones (beside the page title). */
-  headerSlot: HTMLElement | null;
-  view: ListView;
-  onViewChange: (view: ListView) => void;
-  onBusyChange: (busy: boolean) => void;
-}) {
-  const phone = !useMediaQuery('(min-width: 640px)');
-  const sorts: SortOption<FileListSort>[] = [
-    {
-      icon: 'clock',
-      label: m.files_sort_newest(),
-      value: 'added',
-    },
-    {
-      icon: 'pencil',
-      label: m.files_sort_name(),
-      value: 'name',
-    },
-    {
-      icon: 'files',
-      label: m.files_sort_size(),
-      value: 'size',
-    },
-    {
-      icon: 'topic',
-      label: m.files_sort_kind(),
-      value: 'kind',
-    },
-  ];
-  // Sort and filters live in the URL; picks replace the entry.
-  const search = useSearch({ from: '/auth-shell/files' });
-  const navigate = useNavigate({ from: '/files' });
-  const setSearch = (patch: FilesSearch) =>
-    void navigate({ replace: true, search: (prev) => ({ ...prev, ...patch }) });
-  const params = useMemo(() => fileListParams(search), [search]);
-  const { sort = FILE_SORT_DEFAULT, kinds = [], workspaceIds = [] } = params;
-  const { location, owner } = search;
-  const sorting: ColumnSort<FileListSort> = {
-    ascending: params.dir === 'asc',
-    ascendingFirst: ['name', 'workspace', 'kind'],
-    onSortChange: (next, asc) =>
-      setSearch(sortSearch('files', next, asc, FILE_SORT_DEFAULT)),
-    sort,
-  };
-  const {
-    data,
-    fetchNextPage,
-    fetchStatus,
-    hasNextPage,
-    isFetchNextPageError,
-    isFetchingNextPage,
-    isLoading,
-  } = useOwnedFiles(params);
-  const files = data?.pages.flatMap((page) => page.items) ?? [];
-  const selection = useFileSelection(
-    files,
-    (file) => file.id,
-    () =>
-      collectSelectionPages(data?.pages ?? [], () =>
-        fetchNextPage({ throwOnError: true })
-      ),
-    onBusyChange
-  );
-  const { mutateAsync: deleteFile } = useDeleteOwnedFile();
-  const [deleteTargets, setDeleteTargets] = useState<SourceFile[] | null>(null);
-  const { data: workspaces = [] } = useWorkspaces(
-    { sort: 'accessed' },
-    { errorBoundary: false }
-  );
-  const revealRef = useLoadingReveal(isLoading);
-  // A standalone file's Retry processing, one mutation for the whole list.
-  const { mutateAsync: retryStandalone } = useRetryFileProcessing(null);
-  const retryingIds = useRetryingFileIds(null);
-
-  // Add file: the destination chooser, then the Add file dialog aimed at the
-  // pick. A drive connected for No workspace comes back here on Import.
-  const frozen = useAccountFrozen();
-  const [choosing, setChoosing] = useState(false);
-  const [resumeProvider] = useState(() => resumedConnect(null));
-  const [adding, setAdding] = useState<{
-    resume: boolean;
-    workspaceId: string | null;
-  } | null>(resumeProvider ? { resume: true, workspaceId: null } : null);
-  const addFile = (
-    <Button
-      {...addSourceIntent}
-      className="px-1.5 font-bold text-link"
-      disabled={frozen}
-      iconLeft="plus"
-      onClick={() => setChoosing(true)}
-      size="sm"
-      variant="ghost-hover"
-    >
-      {m.action_add_file()}
-    </Button>
-  );
-  const addFileInHeader = phone && !!headerSlot;
-
-  return (
-    <>
-      {addFileInHeader && createPortal(addFile, headerSlot)}
-      <ListToolbar
-        action={addFileInHeader ? undefined : addFile}
-        filters={[
-          {
-            defaultValue: 'mine',
-            key: 'owner',
-            label: m.files_filter_owner(),
-            onToggle: (value) =>
-              setSearch({ owner: value === 'all' ? 'all' : undefined }),
-            options: [
-              { label: m.files_owner_mine(), value: 'mine' },
-              { label: m.files_owner_all(), value: 'all' },
-            ],
-            selected: [owner ?? 'mine'],
-          },
-          {
-            key: 'kind',
-            label: m.files_filter_kind(),
-            onToggle: (value) =>
-              setSearch({ kind: csv(toggleValue(kinds, value)) }),
-            options: FILE_KINDS.map((kind) => ({
-              label: fileKindLabel(kind),
-              value: kind,
-            })),
-            selected: kinds,
-          },
-          // One switch (Epo 2026-10-30): off lists every file, on only
-          // those in a workspace.
-          {
-            key: 'location',
-            label: m.create_filter_location(),
-            onToggle: () =>
-              setSearch({
-                location: location === 'workspace' ? undefined : 'workspace',
-              }),
-            options: [
-              { label: m.files_location_workspace(), value: 'workspace' },
-            ],
-            selected: location === 'workspace' ? ['workspace'] : [],
-          },
-          {
-            emptyLabel: m.create_filter_no_workspaces(),
-            key: 'workspace',
-            label: m.files_filter_workspace(),
-            onToggle: (value) =>
-              setSearch({ workspace: csv(toggleValue(workspaceIds, value)) }),
-            // All files reaches member workspaces too.
-            options: workspaces
-              .filter((ws) => ws.isOwner || (owner === 'all' && !!ws.role))
-              .map((ws) => ({ label: ws.name, value: ws.id })),
-            selected: workspaceIds,
-          },
-        ]}
-        onResetFilters={() =>
-          setSearch({
-            kind: undefined,
-            location: undefined,
-            owner: undefined,
-            workspace: undefined,
-          })
-        }
-        onViewChange={onViewChange}
-        selection={
-          selection.selecting && (
-            <SelectionBar
-              allSelected={
-                !hasNextPage && selection.selected.length === files.length
-              }
-              busy={selection.busy || isFetchingNextPage}
-              count={selection.selected.length}
-              onClear={selection.clear}
-              onSelectAll={() => void selection.selectAll()}
-            >
-              <SelectionAction
-                danger
-                disabled={selection.busy || isFetchingNextPage}
-                icon="trash"
-                label={m.action_delete()}
-                // All files lists what the caller may only open or clone.
-                onClick={() =>
-                  setDeleteTargets(selection.selected.filter(canDelete))
-                }
-              />
-            </SelectionBar>
-          )
-        }
-        sortMenu={{ ...sorting, hiddenFromMd: view === 'list', sorts }}
-        view={view}
-      />
-      {/* Mouse only: the selection bar's clear button is the keyboard way. */}
-      <PageBody belowToolbar onClick={clearOnBlank(selection.clear)}>
-        {waitsForConnection(fetchStatus, data) ? (
-          <QueryPausedState />
-        ) : isLoading ? (
-          view === 'grid' ? (
-            <ItemSkeletonGrid count={8} />
-          ) : (
-            <SkeletonCardGrid cardHeight={72} count={6} />
-          )
-        ) : files.length === 0 ? (
-          <p className="py-10 text-center text-fg-muted">
-            {kinds.length || workspaceIds.length || location || owner
-              ? m.files_empty()
-              : m.files_none()}
-          </p>
-        ) : (
-          <div className="flex flex-col gap-3" ref={revealRef}>
-            <ItemPick.Provider value={selection.pickContext}>
-              <ItemList
-                columns={[
-                  { label: m.list_col_name(), sort: 'name' },
-                  { label: m.create_filter_workspace(), sort: 'workspace' },
-                  { label: m.common_size(), sort: 'size' },
-                  { label: m.files_sort_added(), sort: 'added' },
-                ]}
-                sorting={sorting}
-                view={view}
-              >
-                {files.map((file) => (
-                  <FileItem
-                    file={file}
-                    key={file.id}
-                    onDelete={setDeleteTargets}
-                    retry={retryStandalone}
-                    retryPending={retryingIds.includes(file.id)}
-                    selected={selection.isSelected(file)}
-                    view={view}
-                    workspace={workspaces.find(
-                      (workspace) => workspace.id === file.workspaceId
-                    )}
-                  />
-                ))}
-              </ItemList>
-            </ItemPick.Provider>
-            <ListEnd
-              fetchNextPage={fetchNextPage}
-              hasNextPage={hasNextPage}
-              isFetchingNextPage={isFetchingNextPage}
-              isFetchNextPageError={isFetchNextPageError}
-            />
-          </div>
-        )}
-      </PageBody>
-      <ConfirmDialog
-        body={m.files_delete_selected_body({
-          count: deleteTargets?.length ?? 0,
-        })}
-        confirmLabel={m.action_delete()}
-        onClose={() => setDeleteTargets(null)}
-        onConfirm={() => {
-          if (deleteTargets) void selection.run(deleteTargets, deleteFile);
-        }}
-        open={!!deleteTargets}
-        title={m.files_delete_selected_title()}
-      />
-      {choosing && (
-        <AddFileDestinationDialog
-          onClose={() => setChoosing(false)}
-          onPick={(workspaceId) => {
-            setChoosing(false);
-            setAdding({ resume: false, workspaceId });
-          }}
-        />
-      )}
-      {adding && (
-        <AddSourceDialog
-          initialMode={adding.resume ? 'import' : 'upload'}
-          onClose={() => setAdding(null)}
-          onOpenItem={(item) => {
-            // The Create tab's file or block, in the workspace it went to.
-            if (!adding.workspaceId) return;
-            void navigate({
-              params: { workspaceId: adding.workspaceId },
-              search:
-                item.kind === 'file'
-                  ? { file: item.id }
-                  : { material: item.id },
-              to: '/workspaces/$workspaceId',
-            });
-          }}
-          open
-          resumeProvider={adding.resume ? resumeProvider : null}
-          workspaceId={adding.workspaceId}
-        />
-      )}
-    </>
-  );
-}
-
-/** A Files tab row's menu, from the rights the server read with the page
- * (Epo 2026-10-28). */
-export function fileRowActions(file: SourceFile) {
-  return {
-    canClone: fileCanClone(file) && !!file.rights?.clone,
-    canMoveTo: !!file.rights?.move,
-    canRename: !!file.rights?.rename,
-    readOnly: !file.rights?.trash,
-  };
-}
-
-/** A file the caller may delete from the Files tab: one it pays for after
- * losing access, or one its rights let it trash. */
-const canDelete = (file: SourceFile) => file.lostAccess || !!file.rights?.trash;
-
-/** One file in the Files tab; memoised so a pick re-renders only the cards
- * whose selection changed. */
-const FileItem = memo(function FileItem({
-  file,
-  onDelete,
-  retry,
-  retryPending,
-  selected,
-  view,
-  workspace,
-}: {
-  file: SourceFile;
-  /** A file in a workspace the viewer lost access to can only be deleted. */
-  onDelete: (files: SourceFile[]) => void;
-  /** Retry processing of a failed standalone file (its owner is the viewer). */
-  retry: RetryProcessing;
-  retryPending: boolean;
-  selected: boolean;
-  view: ListView;
-  workspace?: Workspace;
-}) {
-  const busy = !!useContext(ItemPick)?.busy;
-  // No workspace: the viewer's own file, never shared on its own.
-  const standalone = !file.workspaceId;
-  const [retrying, setRetrying] = useState(false);
-  return (
-    <>
-      <ItemCard
-        actions={
-          file.lostAccess ? (
-            // Lost access: its payer may still copy, download and delete it
-            // (Epo 2026-10-27, D3), never open or restore it in place.
-            <ContentActions
-              beforeDeleteItems={[
-                {
-                  danger: true,
-                  disabled: busy,
-                  icon: 'trash',
-                  label: m.action_delete(),
-                  onClick: () => onDelete([file]),
-                },
-              ]}
-              canClone
-              content={toFileActionTarget(file)}
-              display="menu"
-              menuAlign="end"
-              menuTriggerIcon={itemMenuIcon(view)}
-              readOnly
-              topics={[]}
-              workspaceId={file.workspaceId}
-            />
-          ) : (
-            // The server reads what the caller may do with each row.
-            <ContentActions
-              {...fileRowActions(file)}
-              content={toFileActionTarget(file)}
-              display="menu"
-              leadingItems={
-                standalone && file.status === 'failed'
-                  ? [
-                      {
-                        disabled: retryPending,
-                        icon: 'refresh',
-                        label: m.files_retry_processing(),
-                        onClick: () =>
-                          retryFailedFile(file, retry, () => setRetrying(true)),
-                        warning: true,
-                      },
-                    ]
-                  : []
-              }
-              menuAlign="end"
-              menuTriggerIcon={itemMenuIcon(view)}
-              renameFieldLabel={m.files_file_name()}
-              renameTitle={m.files_rename()}
-              showMove={false}
-              topics={[]}
-              workspaceId={file.workspaceId}
-            />
-          )
-        }
-        details={formatFileSize(file.sizeBytes)}
-        icon={fileIconName(file)}
-        link={
-          file.lostAccess
-            ? undefined
-            : { params: { fileId: file.id }, to: '/files/$fileId' }
-        }
-        meta={relativeTime(file.addedAt)}
-        onOpen={file.lostAccess ? toastLostAccess : undefined}
-        pickKey={file.id}
-        selected={selected}
-        thumbnail={{
-          fileKind: file.kind,
-          preview: file.preview,
-          thumbnailUrl: file.thumbnailUrl,
-        }}
-        title={file.name}
-        view={view}
-        workspace={workspace?.name ?? file.workspaceName ?? ''}
-        workspaceIconId={workspace?.iconId}
-        workspaceLost={file.lostAccess}
-      />
-      {retrying && (
-        <AddSourceDialog
-          onClose={() => setRetrying(false)}
-          open
-          retryFile={file}
-          workspaceId={null}
-        />
-      )}
-    </>
-  );
-});
 
 /** One trashed item; memoised like FileItem. */
 const TrashCard = memo(function TrashCard({

@@ -3315,6 +3315,8 @@ export function materialListItem(mt: Material): MaterialListItem {
   return {
     createdAt: mt.createdAt,
     id: mt.id,
+    // The mock user owns every mock material.
+    isOwner: true,
     kind: mt.kind,
     preview: materialPreview(mt),
     privacy: mt.privacy,

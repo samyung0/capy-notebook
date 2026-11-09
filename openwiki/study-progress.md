@@ -795,8 +795,8 @@ the workspace with no material and an `assignment_id`, so editing or deleting th
 quiz leaves them, deleting the assignment deletes them (the foreign key), and a
 workspace clone leaves them out. They and the questions JSON are charged to whoever
 published (Epo 2026-11-05, `frozen_by`, `frozen_bytes`,
-[backend-storage-quota.md](backend-storage-quota.md#what-counts)), and the Embeds tab
-doesn't list them. A publisher whose account is suspended or leaving stops nobody:
+[backend-storage-quota.md](backend-storage-quota.md#what-counts)), and the Files
+page's embeds don't list them. A publisher whose account is suspended or leaving stops nobody:
 staff still delete, which ends the charge, and republish, which moves the questions
 JSON's charge to whoever republished; an image the assignment already holds keeps its
 payer (Epo 2026-11-05), so that payer's purge takes it out of the paper. Frozen staff
@@ -822,7 +822,8 @@ due date):
 
 `quizAssignedToSQL` and `quizAssignmentOpenSQL` in `store/assignments.go` are the
 two reads; `materialIconName(kind, assigned)` is the icon, a quill in the file-icon
-sprite, on the file tree, Recent, Blocks cards and the open file's header. A direct
+sprite, on the file tree, Recent, the Files page (All files lists an assignee's
+hidden quiz too, opening its assignment) and the open file's header. A direct
 link to the quiz, or any fresh open of it, sends its assignee to the assignment
 (`CenterContent`). Delete
 (the toast's Undo) restores nothing, since nothing changed. Clones: see
@@ -1031,10 +1032,11 @@ Reopening hides the keys again.
 - Approve shows a part's pages of the paper with Whole paper a click away (T1),
   through `GET /api/assignment-attempts/{id}/paper/{fileId}/links` (the member,
   or staff once submitted).
-- Files › Submissions lists a paper's files once every part is marked and the
-  assignment has closed with its grades out, as Files › Canvas now does for
-  assignment drawings (Epo 2026-11-08, "Yes, both tabs"); deleting keeps the
-  marks, and Approve then says the member deleted it (F2).
+- The Files page lists a paper's files once every part is marked and the
+  assignment has closed with its grades out, as Files › Canvas does for
+  assignment drawings (Epo 2026-11-08; one list with the member's other files
+  since 2026-11-09, `GET /api/items`); deleting keeps the marks, and Approve
+  then says the member deleted it (F2).
 - Releasing grades rings each member who handed in (`grades_released`).
 
 **Handing in files** (Epo 2026-11-08, migration 0162, mocks C2, S3, T2): the
@@ -1048,7 +1050,7 @@ the assignment (`assignment_done`), the meta line then saying Handed in on its
 date; Undo hand in reopens it until the assignment closes. The report's chip reads
 "N of M handed in", and its Members tab lists each member's date (Late past the
 due date) and files, which open in a viewer of their pages with Open file for a
-single one. Files › Submissions lists a hand-in's files once the assignment
+single one. The Files page lists a hand-in's files once the assignment
 closes, by hand or at a No late due date.
 
 **Show grades** (C4, S7, T5; Epo 2026-11-08, migration 0160 `grades_shown`,

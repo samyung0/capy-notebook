@@ -24,9 +24,9 @@ const assets: Record<string, { name: string; url: string }> = {
 // Uploads keep their bytes as an object URL so resolve serves them back.
 const uploads = new Map<string, { contentType: string; name: string }>();
 
-/** The viewer's images and audio (M16): one in a set it can open, one in a
- * note it can no longer open. */
-const embeds: EditorAssetItem[] = [
+/** The viewer's images and audio (M16) as GET /api/items lists them: one in a
+ * set it can open, one in a note it can no longer open. Deletes splice it. */
+export const embeds: EditorAssetItem[] = [
   {
     assetId: 'asset_mock_cell_diagram',
     createdAt: new Date(Date.now() - 3 * 86_400_000).toISOString(),
@@ -92,14 +92,6 @@ export const editorAssetHandlers = [
       },
       { status: 201 }
     );
-  }),
-  http.get('/api/editor-assets', ({ request }) => {
-    const access = new URL(request.url).searchParams.get('access');
-    return HttpResponse.json({
-      items: embeds.filter(
-        (item) => !access || item.lostAccess === (access === 'lost')
-      ),
-    });
   }),
   http.delete('/api/editor-assets/:id', ({ params }) => {
     const i = embeds.findIndex((item) => item.assetId === params.id);
