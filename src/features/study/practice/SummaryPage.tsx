@@ -52,7 +52,7 @@ export function SummaryPage({ workspaceId }: { workspaceId: string }) {
           message={m.summary_error()}
           onRetry={() => void refetch()}
         />
-      ) : data.enabled ? (
+      ) : (
         data.topics.length > 0 && (
           <section className="mt-5">
             <h2 className="t-subtitle">{m.summary_topics()}</h2>
@@ -67,18 +67,6 @@ export function SummaryPage({ workspaceId }: { workspaceId: string }) {
             </ul>
           </section>
         )
-      ) : (
-        <div className="mt-8 flex flex-col items-start gap-3">
-          <p className="text-fg-secondary">{m.summary_hidden()}</p>
-          <Button
-            onClick={() =>
-              navigate({ search: { settings: 'study' as const }, to: '.' })
-            }
-            variant="outline"
-          >
-            {m.workspace_settings()}
-          </Button>
-        </div>
       )}
       {making && (
         <MakePractice

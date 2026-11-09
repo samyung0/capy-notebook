@@ -44,6 +44,7 @@ import {
 } from './assignmentText';
 import { HandInMembers } from './HandIns';
 import { LateBadge } from './LateBadge';
+import { MarkingNow } from './MarkingNow';
 
 /** Questions the report opens with, as the board draws them. */
 const OPEN_FIRST = 3;
@@ -376,17 +377,22 @@ function MembersTab({
       </span>
     );
   const approve = (member: AssignmentMemberRow) =>
-    member.waitingAnswers > 0 && (
-      <button
-        className="t-meta font-semibold text-tint-warning-fg underline decoration-[1.5px] underline-offset-3 outline-none focus-visible:ring-2 focus-visible:ring-action"
-        onClick={(event) => {
-          event.stopPropagation();
-          void go({ member: member.userId, tab: 'approve' });
-        }}
-        type="button"
-      >
-        {m.assignment_to_approve({ count: member.waitingAnswers })}
-      </button>
+    member.marking ? (
+      // A marking run holds an attempt of theirs now (Q729).
+      <MarkingNow className="t-meta" />
+    ) : (
+      member.waitingAnswers > 0 && (
+        <button
+          className="t-meta font-semibold text-tint-warning-fg underline decoration-[1.5px] underline-offset-3 outline-none focus-visible:ring-2 focus-visible:ring-action"
+          onClick={(event) => {
+            event.stopPropagation();
+            void go({ member: member.userId, tab: 'approve' });
+          }}
+          type="button"
+        >
+          {m.assignment_to_approve({ count: member.waitingAnswers })}
+        </button>
+      )
     );
   const open = (member: AssignmentMemberRow) => {
     if (member.attemptId) void go({ attempt: member.attemptId });

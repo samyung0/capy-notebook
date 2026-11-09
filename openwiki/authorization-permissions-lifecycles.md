@@ -524,11 +524,12 @@ Sources: [migration](../server/migrations/0140_hidden_from_members.sql),
   and Invite. An editor member sees the list
   with each role as text, no invite and no pending invitations; they leave from
   Danger. Viewer members have no Sharing tab.
-- **Everyone signed in with access** (members and share-role visitors)
-  opens Workspace settings: its Study tab holds their own Hide study
-  progress. General, Sharing, Indexing and Statistics are for
-  owners and editors; Others shows with Clone, so not for a class's viewer
-  member, Danger for the owner.
+- **Members, and share-role visitors who may clone**, open Workspace
+  settings (`hasWorkspaceSettings`); with Hide study progress gone (Q727 A)
+  there is no Study tab, so a visitor who may not clone has no entry to it.
+  General, Sharing, Indexing and Statistics are for owners and editors;
+  Others shows with Clone, so not for a class's viewer member; Danger holds
+  Delete for the owner and Leave for any other member.
 - **The dialog's layout** (Epo 2026-11-04): the tabs sit in a left column under
   the file tree's search (`PanelSearch`). On phones the search and tabs fill
   the page, and a tab opens as its own page with an arrow back to them. The
@@ -1254,19 +1255,17 @@ Details live in [study-progress.md](study-progress.md).
   workspace records their own with read access only: owners, members of every
   role, and link or public visitors, viewers included. Ratings need read
   access to the rated material. Reads and writes never show another user's
-  rows, and the chat agent reads none (Hide study progress is per user and
-  workspace).
-- Frozen accounts record progress, ratings, Reset and the progress switches
-  like anyone else (`requireAccountMutate`), since the rows are their own and
+  rows, and the chat agent reads none. Progress always shows to its user
+  (Hide study progress went on 2026-11-09, Q727 A).
+- Frozen accounts record progress, ratings and Reset like anyone else (`requireAccountMutate`), since the rows are their own and
   charge no storage. Suspended, deletion-pending and deleted accounts have no
   API access.
 - Rows hold ids, timestamps and FSRS numbers, are never copied by a workspace
   or material clone, and are not charged to storage. They stay when access is
-  lost (unreadable until it returns) and when a workspace is transferred
-  (`study_progress` and `workspace_study` are in the transfer test's
-  `notOwnership`). Trashed items keep their rows, hidden until restored. Rows
-  cascade with their material or workspace, and `PurgeUser` deletes all
-  four tables at account purge.
+  lost (unreadable until it returns) and when a workspace is transferred.
+  Trashed items keep their rows, hidden until restored. Rows cascade with
+  their material or workspace, and `PurgeUser` deletes all three tables at
+  account purge.
 - Question-bank progress (`bank_progress`, see
   [question-bank.md](question-bank.md#learner-progress-and-retraction)) is
   private the same way: any signed-in user with the bank page's read access

@@ -314,7 +314,7 @@ func (a *api) startAssignment(ctx context.Context, in *startAssignmentInput) (*a
 	if err != nil {
 		return nil, assignmentError(err)
 	}
-	return &assignmentAttemptOutput{Body: res}, nil
+	return &assignmentAttemptOutput{Body: a.withMarking(res)}, nil
 }
 
 func (a *api) getAssignmentReport(ctx context.Context, in *assignmentIDInput) (*assignmentReportOutput, error) {
@@ -322,7 +322,7 @@ func (a *api) getAssignmentReport(ctx context.Context, in *assignmentIDInput) (*
 	if err != nil {
 		return nil, assignmentError(err)
 	}
-	return &assignmentReportOutput{Body: assignmentReportBody{AssignmentReport: res, Marking: a.marking.progress(in.ID)}}, nil
+	return &assignmentReportOutput{Body: assignmentReportBody{AssignmentReport: a.reportMarking(res), Marking: a.marking.progress(in.ID)}}, nil
 }
 
 type markAssignmentWithAIOutput struct {
@@ -361,7 +361,20 @@ func (a *api) markAssignmentWithAI(ctx context.Context, in *assignmentIDInput) (
 	if _, err := a.gradingLLM(ctx, userID(ctx)); err != nil {
 		return nil, hErr(err)
 	}
-	a.markAnswersSoon(in.ID, "")
+	// Held before the reply, so the report the page reads next shows them
+	// being marked (Q729).
+	var held []func()
+	for _, answer := range answers {
+		held = append(held, a.marking.hold(answer.AttemptID, false, answer.PartID))
+	}
+	for _, id := range papers {
+		held = append(held, a.marking.hold(id, true))
+	}
+	a.markAnswersAfter(in.ID, "", func() {
+		for _, release := range held {
+			release()
+		}
+	})
 	return out, nil
 }
 
@@ -397,7 +410,7 @@ func (a *api) getAssignmentAttempt(ctx context.Context, in *assignmentIDInput) (
 	if err != nil {
 		return nil, assignmentError(err)
 	}
-	return &assignmentAttemptOutput{Body: res}, nil
+	return &assignmentAttemptOutput{Body: a.withMarking(res)}, nil
 }
 
 func (a *api) saveAssignmentAnswers(ctx context.Context, in *assignmentAnswersInput) (*Empty, error) {
@@ -422,7 +435,7 @@ func (a *api) submitAssignmentAttempt(ctx context.Context, in *assignmentAnswers
 	}
 	// The class's staff, for answers to approve, and the member's other tabs.
 	a.publishTodo(ctx, append(a.todoAudience(ctx, res.AssignmentID, true), userID(ctx))...)
-	return &assignmentAttemptOutput{Body: res}, nil
+	return &assignmentAttemptOutput{Body: a.withMarking(res)}, nil
 }
 
 func (a *api) markAssignmentAnswer(ctx context.Context, in *assignmentMarkInput) (*assignmentAttemptOutput, error) {
@@ -434,7 +447,7 @@ func (a *api) markAssignmentAnswer(ctx context.Context, in *assignmentMarkInput)
 		return nil, assignmentError(err)
 	}
 	a.publishTodo(ctx, append(a.todoAudience(ctx, res.AssignmentID, true), res.UserID)...)
-	return &assignmentAttemptOutput{Body: res}, nil
+	return &assignmentAttemptOutput{Body: a.withMarking(res)}, nil
 }
 
 // getSharingNotice reads the caller's own flag, so it needs no access check.

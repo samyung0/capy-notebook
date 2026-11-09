@@ -168,6 +168,7 @@ export const GetAssignmentAttemptResponse = zod.object({
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number(),
+  "marking": zod.boolean().optional(),
   "now": zod.iso.datetime({"offset":true}),
   "paper": zod.enum(['upload', 'reading', 'read']).optional(),
   "paperFiles": zod.array(zod.object({
@@ -299,6 +300,7 @@ export const MarkAssignmentAnswerResponse = zod.object({
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number(),
+  "marking": zod.boolean().optional(),
   "now": zod.iso.datetime({"offset":true}),
   "paper": zod.enum(['upload', 'reading', 'read']).optional(),
   "paperFiles": zod.array(zod.object({
@@ -411,6 +413,7 @@ export const SubmitAssignmentAttemptResponse = zod.object({
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number(),
+  "marking": zod.boolean().optional(),
   "now": zod.iso.datetime({"offset":true}),
   "paper": zod.enum(['upload', 'reading', 'read']).optional(),
   "paperFiles": zod.array(zod.object({
@@ -973,13 +976,14 @@ export const GetAssignmentReportResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "answers": zod.array(zod.object({
   "aiAwarded": zod.number(),
-  "aiError": zod.enum(['credits', 'error']).optional(),
+  "aiError": zod.enum(['credits', 'error', 'file']).optional(),
   "aiMarked": zod.boolean(),
   "aiWarning": zod.string(),
   "attemptId": zod.string(),
   "attemptNumber": zod.int(),
   "awarded": zod.number(),
   "handMarking": zod.boolean(),
+  "marking": zod.boolean().optional(),
   "marks": zod.number(),
   "questionId": zod.string(),
   "userId": zod.string(),
@@ -1003,6 +1007,7 @@ export const GetAssignmentReportResponse = zod.object({
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number().optional(),
+  "marking": zod.boolean().optional(),
   "minutes": zod.int().optional(),
   "missing": zod.boolean(),
   "name": zod.string(),
@@ -1012,6 +1017,7 @@ export const GetAssignmentReportResponse = zod.object({
   "userId": zod.string(),
   "waitingAnswers": zod.int()
 })),
+  "papersToRead": zod.int(),
   "questions": zod.array(zod.object({
   "average": zod.number().optional(),
   "parts": zod.array(zod.object({
@@ -1138,6 +1144,7 @@ export const StartAssignmentResponse = zod.object({
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number(),
+  "marking": zod.boolean().optional(),
   "now": zod.iso.datetime({"offset":true}),
   "paper": zod.enum(['upload', 'reading', 'read']).optional(),
   "paperFiles": zod.array(zod.object({
@@ -9689,7 +9696,6 @@ export const GetWorkspaceStudyParams = zod.object({
 
 export const GetWorkspaceStudyResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "enabled": zod.boolean(),
   "quickReview": zod.array(zod.object({
   "back": zod.string().optional(),
   "front": zod.string().optional(),
@@ -9763,20 +9769,6 @@ export const GetWorkspaceAttemptsResponse = zod.object({
   "size": zod.int()
 }))
 })
-
-
-/**
- * @summary Show or hide study progress in a workspace
- */
-export const SetWorkspaceStudyParams = zod.object({
-  "id": zod.string()
-})
-
-export const SetWorkspaceStudyBody = zod.object({
-  "enabled": zod.boolean()
-})
-
-export const SetWorkspaceStudyResponse = zod.void()
 
 
 /**
@@ -9925,7 +9917,6 @@ export const GetWorkspaceStudyTopicsParams = zod.object({
 
 export const GetWorkspaceStudyTopicsResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "enabled": zod.boolean(),
   "topics": zod.array(zod.object({
   "asked": zod.int(),
   "group": zod.enum(['topic', 'others']),

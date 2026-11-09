@@ -502,6 +502,7 @@ components:
           enum:
             - credits
             - error
+            - file
           type: string
         aiMarked:
           type: boolean
@@ -516,6 +517,8 @@ components:
           format: double
           type: number
         handMarking:
+          type: boolean
+        marking:
           type: boolean
         marks:
           format: double
@@ -593,6 +596,8 @@ components:
         mark:
           format: double
           type: number
+        marking:
+          type: boolean
         now:
           format: date-time
           type: string
@@ -974,6 +979,8 @@ components:
         mark:
           format: double
           type: number
+        marking:
+          type: boolean
         minutes:
           format: int64
           type: integer
@@ -1138,6 +1145,9 @@ components:
           items:
             $ref: "#/components/schemas/AssignmentMemberRow"
           type: array
+        papersToRead:
+          format: int64
+          type: integer
         questions:
           items:
             $ref: "#/components/schemas/AssignmentQuestionReport"
@@ -1146,6 +1156,7 @@ components:
         - members
         - questions
         - answers
+        - papersToRead
       type: object
     AssignmentWrongAnswer:
       additionalProperties: false
@@ -6844,20 +6855,6 @@ components:
         noteAiEnabled:
           type: boolean
       type: object
-    SetStudyEnabledReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/SetStudyEnabledReq.json
-          format: uri
-          readOnly: true
-          type: string
-        enabled:
-          type: boolean
-      required:
-        - enabled
-      type: object
     ShareRedemption:
       additionalProperties: false
       properties:
@@ -7828,8 +7825,6 @@ components:
           format: uri
           readOnly: true
           type: string
-        enabled:
-          type: boolean
         quickReview:
           items:
             $ref: "#/components/schemas/ReviewItem"
@@ -7844,7 +7839,6 @@ components:
         unfinished:
           $ref: "#/components/schemas/UnfinishedSession"
       required:
-        - enabled
         - recentAttempts
         - reviewable
         - quickReview
@@ -7858,14 +7852,11 @@ components:
           format: uri
           readOnly: true
           type: string
-        enabled:
-          type: boolean
         topics:
           items:
             $ref: "#/components/schemas/SummaryTopic"
           type: array
       required:
-        - enabled
         - topics
       type: object
     Subject:
@@ -15956,33 +15947,6 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Each quiz's and set's attempt count and latest attempts
-      tags:
-        - Study
-  /api/workspaces/{id}/study/enabled:
-    put:
-      operationId: setWorkspaceStudy
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SetStudyEnabledReq"
-        required: true
-      responses:
-        "204":
-          description: No Content
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Show or hide study progress in a workspace
       tags:
         - Study
   /api/workspaces/{id}/study/members:

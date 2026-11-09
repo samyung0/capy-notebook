@@ -171,7 +171,7 @@ type Paper struct {
 	Files       []PaperFile
 	Parts       []PaperPart
 	// TextGap is why a file of it with no page images has no text to read
-	// (AIErrorCredits or AIErrorGrade), or "".
+	// (AIErrorCredits or AIErrorFile), or "".
 	TextGap string
 }
 
@@ -216,8 +216,8 @@ func paperQuestions(r attemptRow) ([]map[string]any, error) {
 
 // paperTextGap is why one of an attempt's files that the read takes as text
 // (not a PDF or an image) has none: No credits when its ingest was skipped for
-// them (queueIngestTx), else a Grade Error (its ingest failed or hit a limit,
-// or no ingest reads its kind).
+// them (queueIngestTx), else Can't read file (its ingest failed or hit a
+// limit, or no ingest reads its kind; Q730).
 func paperTextGap(ctx context.Context, q rowsQueryer, attemptID string) (string, error) {
 	rows, err := q.Query(ctx, `SELECT name, kind, COALESCE(parse_mode, ''), status = 'ready' AND index_limit IS NULL
 		FROM files WHERE attempt_id=$1 AND kind NOT IN ('pdf', 'image') AND NOT indexed`, attemptID)
@@ -234,7 +234,7 @@ func paperTextGap(ctx context.Context, q rowsQueryer, attemptID string) (string,
 		}
 		plan, err := sourceupload.BuildProcessingPlan(name, kind, mode)
 		if !skipped || err != nil || plan.Route == sourceupload.RouteStoreOnly {
-			return AIErrorGrade, rows.Err()
+			return AIErrorFile, rows.Err()
 		}
 		gap = AIErrorCredits
 	}

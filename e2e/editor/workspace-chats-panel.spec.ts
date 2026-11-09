@@ -359,10 +359,10 @@ test('settings opened by the URL stay open while the panel labels it', async ({
 }) => {
   const cdp = await context.newCDPSession(page);
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
-  await page.goto('/workspaces/ws_bio?settings=study');
-  await expect(page).toHaveURL(/settings=study&panel=/, { timeout: 60_000 });
+  await page.goto('/workspaces/ws_bio?settings=danger');
+  await expect(page).toHaveURL(/settings=danger&panel=/, { timeout: 60_000 });
   await expect(
-    page.getByRole('switch', { name: m.study_hide_progress() })
+    page.getByRole('button', { name: m.workspace_transfer_confirm() })
   ).toBeVisible({ timeout: 60_000 });
-  await expect(page).toHaveURL(/settings=study/);
+  await expect(page).toHaveURL(/settings=danger/);
 });

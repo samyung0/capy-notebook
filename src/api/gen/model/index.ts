@@ -408,7 +408,6 @@ export * from './setChatPrefsReq.ts';
 export * from './setChatPrefsReqSendKey.ts';
 export * from './setChatPrefsReqSteps.ts';
 export * from './setModelPrefsReq.ts';
-export * from './setStudyEnabledReq.ts';
 export * from './shareRedemption.ts';
 export * from './shareRedemptionKind.ts';
 export * from './shareRole.ts';

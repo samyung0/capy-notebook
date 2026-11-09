@@ -14,6 +14,7 @@ const { document, window } = parseHTML(
 Object.assign(globalThis, { document, IS_REACT_ACT_ENVIRONMENT: true, window });
 
 const opened = vi.hoisted(() => ({ ids: [] as string[] }));
+const runAI = vi.hoisted(() => vi.fn());
 vi.mock('@/api/hooks', () => ({
   useApproveAssignmentAIMarks: () => ({ isPending: false, mutate: vi.fn() }),
   useAssignmentAttempt: (id: string) => {
@@ -21,7 +22,7 @@ vi.mock('@/api/hooks', () => ({
     return { data: undefined, isPending: true };
   },
   useMarkAssignmentAnswer: () => ({ isPending: false, mutate: () => {} }),
-  useMarkAssignmentWithAI: () => ({ isPending: false, mutate: vi.fn() }),
+  useMarkAssignmentWithAI: () => ({ isPending: false, mutate: runAI }),
 }));
 vi.mock('@/components/ui/Select', () => {
   const Pass = ({ children }: { children?: React.ReactNode }) => (
@@ -126,5 +127,93 @@ it('lists a paper waiting to be read on a question with no open part', async () 
       (button) => button.textContent === m.assignment_mark_with_ai()
     )
   ).toBe(true);
+  act(() => root.unmount());
+});
+
+// Q725: under manual marking a paper whose read failed or never ran offers Read
+// papers again where Mark with AI would sit; it runs the same call, which
+// reads without grading.
+it('offers Read papers again under manual marking while a paper waits to be read', async () => {
+  const root = createRoot(document.getElementById('root') as never);
+  await act(async () =>
+    root.render(
+      <ApproveTab
+        assignment={
+          {
+            attempts: 1,
+            id: 'as1',
+            manage: { marking: 'manual' },
+            workspaceId: 'ws1',
+          } as Assignment
+        }
+        report={{ ...report, papersToRead: 1 }}
+        search={{}}
+      />
+    )
+  );
+  const again = [...document.querySelectorAll('button')].find(
+    (button) => button.textContent === m.assignment_read_papers_again()
+  );
+  expect(again).toBeDefined();
+  await act(async () => again?.click());
+  expect(runAI).toHaveBeenCalledTimes(1);
+  act(() => root.unmount());
+});
+
+// Q730: a paper whose file can't be read says so on its rows, beside No
+// credits and Grade Error.
+it("badges a row whose paper file can't be read", async () => {
+  const root = createRoot(document.getElementById('root') as never);
+  await act(async () =>
+    root.render(
+      <ApproveTab
+        assignment={
+          { attempts: 1, id: 'as1', workspaceId: 'ws1' } as Assignment
+        }
+        report={
+          {
+            ...report,
+            answers: [{ ...answer('at_paper', 1, true), aiError: 'file' }],
+          } as unknown as AssignmentReport
+        }
+        search={{}}
+      />
+    )
+  );
+  expect(document.querySelector('li button')?.textContent).toContain(
+    m.assignment_cant_read_file()
+  );
+  act(() => root.unmount());
+});
+
+// Q729: a row whose answer a marking run holds shows Marking… in place of its
+// badge or waiting text; the others keep theirs.
+it('shows Marking… on the rows being marked only', async () => {
+  const root = createRoot(document.getElementById('root') as never);
+  await act(async () =>
+    root.render(
+      <ApproveTab
+        assignment={
+          { attempts: 3, id: 'as1', workspaceId: 'ws1' } as Assignment
+        }
+        report={
+          {
+            ...report,
+            answers: [
+              { ...answer('at_waiting', 1, true), marking: true },
+              answer('at_other', 2, true),
+            ],
+          } as unknown as AssignmentReport
+        }
+        search={{}}
+      />
+    )
+  );
+  const rows = [...document.querySelectorAll('li button')];
+  expect(rows.map((row) => !!row.querySelector('[data-marking]'))).toEqual([
+    true,
+    false,
+  ]);
+  expect(rows[1]?.textContent).toContain(m.assignment_not_marked());
   act(() => root.unmount());
 });

@@ -151,13 +151,6 @@ test('study progress: a quiz finished, a set studied and a short review are reco
     },
     204
   );
-  // Progress shows by default (no workspace_study row hides it).
-  assert.equal(
-    object(await api(run.owner, `/api/workspaces/${workspaceId}/study`))
-      .enabled,
-    true
-  );
-
   // The quiz finished, the set studied to its end.
   await page.goto(`${run.env.appUrl}/quizzes/${finishedQuiz}/attempt`);
   await page

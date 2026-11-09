@@ -1549,6 +1549,10 @@ type AssignmentAttempt struct {
 	// NeedsMarking: the submit that returned this handed it in with answers
 	// for the AI or a paper to read, whatever the member's view shows.
 	NeedsMarking bool `json:"-"`
+	// Marking: a marking run holds it now, and each part it holds carries
+	// "marking" (Q729). The gateway fills both from its runs, in memory; under
+	// Show grades Manual they still show, telling nothing of the marks.
+	Marking bool `json:"marking,omitempty"`
 }
 
 // PaperFile is one file of an attempt's paper: the member's own upload.
@@ -2524,6 +2528,9 @@ type AssignmentReport struct {
 	// a question with an open part, and any other submission's answer still
 	// waiting: once marked it can become the highest.
 	Answers []AssignmentAnswerRow `json:"answers" nullable:"false"`
+	// PapersToRead counts the submitted papers not read yet (PapersToRead):
+	// under manual marking, Read papers again reads them (Q725).
+	PapersToRead int `json:"papersToRead"`
 }
 
 // AssignmentMemberRow is one member it went to.
@@ -2551,6 +2558,9 @@ type AssignmentMemberRow struct {
 	Missing bool `json:"missing"`
 	// Files: what they handed in, on an unmarked one that takes files (T2).
 	Files []PaperFile `json:"files,omitempty"`
+	// Marking: a marking run holds an attempt of theirs now (Q729), filled by
+	// the gateway.
+	Marking bool `json:"marking,omitempty"`
 }
 
 // AssignmentQuestionReport is one question of the frozen copy, with its keys,
@@ -2611,7 +2621,10 @@ type AssignmentAnswerRow struct {
 	HandMarking bool `json:"handMarking"`
 	// AIError is why the AI left it unmarked: "credits" (the member has none)
 	// or "error" (the grade failed), shown as No credits or Grade Error (mock T3).
-	AIError string  `json:"aiError,omitempty" enum:"credits,error"`
+	AIError string `json:"aiError,omitempty" enum:"credits,error,file"`
+	// Marking: a marking run holds a part of this answer now (Q729), filled by
+	// the gateway.
+	Marking bool    `json:"marking,omitempty"`
 	Awarded float64 `json:"awarded"`
 	Marks   float64 `json:"marks"`
 }
@@ -2699,6 +2712,11 @@ func (s *Store) GetAssignmentReport(ctx context.Context, userID, id string, now 
 		}
 	}
 	out.Questions, out.Answers = questionReports(withRemoved(frozen, counted, waiting), counted, waiting)
+	papers, err := s.PapersToRead(ctx, id, "")
+	if err != nil {
+		return out, err
+	}
+	out.PapersToRead = len(papers)
 	if marking == MarkingManual {
 		return out, nil
 	}

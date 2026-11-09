@@ -3108,6 +3108,84 @@ async fn a_quiz_assigned_to_a_viewer_refuses_them_its_room() {
     assert_eq!(joins(&assignee).await, 0, "after closing");
 }
 
+/// A closed marked assignment still holding its keys keeps refusing its quiz's
+/// room to a viewer it went to: while its grades are Manual and unreleased,
+/// and while its answers are Do not show (security regression, finding 5,
+/// Go's assignmentKeysHeldSQL). Fails if `live_access` ends the refusal at the
+/// close.
+#[tokio::test]
+async fn a_closed_quiz_holding_its_keys_refuses_its_assignee_its_room() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let client = db(&env).await;
+    let (owner, assignee) = (user(&env).await, user(&env).await);
+    let workspace = format!("ws_it_{}", uuid_like());
+    client
+        .execute(
+            "INSERT INTO workspaces (id,user_id,name,kind) VALUES ($1,$2,'IT','class')",
+            &[&workspace, &owner],
+        )
+        .await
+        .expect("workspace");
+    client
+        .execute(
+            "INSERT INTO workspace_members (workspace_id,user_id,role) VALUES ($1,$2,'viewer')",
+            &[&workspace, &assignee],
+        )
+        .await
+        .expect("member");
+    let quiz = quiz_material(&env, &owner, "private").await;
+    client
+        .execute(
+            "UPDATE materials SET workspace_id=$2, workspace_name='IT' WHERE id=$1",
+            &[&quiz, &workspace],
+        )
+        .await
+        .expect("quiz in the class");
+    let assignment = format!("as_it_{}", uuid_like());
+    client
+        .execute(
+            "INSERT INTO assignments (id,workspace_id,created_by,kind,title,source_quiz_id,due_at,assign_all,draft,
+               questions,closed_at,grades_shown)
+             VALUES ($1,$2,$3,'marked','IT',$4,now()+interval '1 hour',true,false,'[]',now(),'manual')",
+            &[&assignment, &workspace, &owner, &quiz],
+        )
+        .await
+        .expect("closed, grades unreleased");
+    let room = format!("material:{quiz}:schema:1");
+    let read = token(&room, &assignee, "read");
+    let refused = |why: &'static str| {
+        let (room, read, port) = (room.clone(), read.clone(), server.port);
+        async move {
+            let mut peer = Client::open(port).await;
+            peer.join(&room, &read).await;
+            let reason = text_payload(&peer.until(2).await.expect(why));
+            assert_eq!(reason, "collaboration-forbidden", "{why}");
+        }
+    };
+    refused("closed with its grades unreleased").await;
+    client
+        .execute(
+            "UPDATE assignments SET grades_released_at=now() WHERE id=$1",
+            &[&assignment],
+        )
+        .await
+        .expect("release");
+    assert_eq!(
+        Client::open(server.port).await.joined(&room, &read).await,
+        0,
+        "grades released"
+    );
+    client
+        .execute(
+            "UPDATE assignments SET answers_shown='never' WHERE id=$1",
+            &[&assignment],
+        )
+        .await
+        .expect("answers never shown");
+    refused("closed with its answers never shown").await;
+}
+
 /// The version gate: a JOIN or draft send without the client protocol (a tab
 /// from before the gate), below its family's minimum (`MIN_MATERIAL`,
 /// `MIN_SOURCE`, read from `protocol.rs`) or above the server's own (a

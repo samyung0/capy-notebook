@@ -17,11 +17,9 @@ vi.mock('@/api/hooks', () => ({
   useDeleteWorkspace: () => idle,
   useLeaveWorkspace: () => idle,
   useMe: () => ({ data: { id: 'u_me' } }),
-  useSetWorkspaceStudyEnabled: () => idle,
   useUpdateWorkspace: () => idle,
   useUpdateWorkspaceSharing: () => idle,
   useWorkspaceStats: () => ({}),
-  useWorkspaceStudy: () => ({}),
 }));
 vi.mock('@tanstack/react-query', async (original) => ({
   ...(await original<typeof import('@tanstack/react-query')>()),
@@ -77,7 +75,7 @@ async function buttons(
   return labels;
 }
 
-const workspaceAs = (role: 'owner' | 'editor' | 'viewer') =>
+const workspaceAs = (role: 'owner' | 'editor' | 'viewer' | null) =>
   ({
     canClone: false,
     capabilities: {
@@ -117,7 +115,7 @@ it.each([
 );
 
 it('narrows the tabs to the one holding a match and names the setting', async () => {
-  expect(await buttons({ query: 'transfer', tab: 'study' })).toEqual([
+  expect(await buttons({ query: 'transfer', tab: 'menu' })).toEqual([
     `${m.workspace_tab_danger()}${m.workspace_transfer_action()}`,
   ]);
 });
@@ -126,4 +124,14 @@ it('shows a phone the tab list until a tab is picked', async () => {
   phone = true;
   expect(await buttons({ tab: 'menu' })).not.toContain(m.action_delete());
   expect(await buttons({ tab: 'danger' })).toContain(m.action_delete());
+});
+
+// With the Study tab gone (Q727 A), a share-role visitor has only Others when
+// they may clone, and no Workspace settings otherwise.
+it('gives a visitor Others when they may clone, else nothing', async () => {
+  const visitor = workspaceAs(null);
+  expect(
+    await buttons({ workspace: { ...visitor, canClone: true } })
+  ).toContain(m.action_clone());
+  expect(await buttons({ workspace: visitor })).toEqual([]);
 });

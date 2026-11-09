@@ -19,7 +19,7 @@ import { Td, Th } from '../practice/studyPage';
 import { dayLabel } from './assignmentText';
 import { LateBadge } from './LateBadge';
 import { PaperPages } from './LazyPaper';
-import { useAddSubmissionFiles } from './useAddSubmissionFiles';
+import type { SubmissionFiles } from './useAddSubmissionFiles';
 
 // Hand-ins (Epo 2026-11-08, mocks S3 and T2): an unmarked assignment that
 // takes files. The member adds their work and hands it in; staff read it on
@@ -86,19 +86,20 @@ function HandInViewer({
 }
 
 /** S3's Your work: Add files at the section's top right while it is open, each
- * file's ⋮ with Open and Remove; once handed in, the files alone. */
+ * file's ⋮ with Open and Remove; once handed in, the files alone. The page
+ * holds `uploads` (useAddSubmissionFiles), so Hand in waits for them. */
 export function YourWork({
   assignment,
   open,
+  uploads,
 }: {
   assignment: Assignment;
   /** Takes changes: not handed in, not closed. */
   open: boolean;
+  uploads: SubmissionFiles;
 }) {
   const files = assignment.mine?.handIn ?? [];
-  const { add, ready, uploading } = useAddSubmissionFiles({
-    handInId: assignment.id,
-  });
+  const { add, ready, uploading } = uploads;
   const { mutate: remove, isPending: removing } = useRemoveHandInFile(
     assignment.id
   );

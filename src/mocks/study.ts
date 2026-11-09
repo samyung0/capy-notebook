@@ -32,7 +32,6 @@ type Rated = { lapses: number; at: number };
 
 /** Practised quizzes and sets per workspace, as study_progress rows. */
 const progress = new Map<string, Set<string>>();
-const enabled = new Map<string, boolean>();
 const rated = new Map<string, Rated>(); // `${materialId}/${itemId}`
 
 function items(wsId: string) {
@@ -226,7 +225,6 @@ function summary(wsId: string): StudySummary {
   const all = pool(wsId);
   const ws = db.workspaces.find((w) => w.id === wsId);
   return {
-    enabled: enabled.get(wsId) ?? true,
     quickReview: quickReview(all),
     recentAttempts: db.attempts
       .filter((a) => a.kind === 'quiz' && a.workspaceName === ws?.name)
@@ -508,9 +506,7 @@ const isQuiz = (id: string) =>
 /** Learning's Overview: the same order as the server, from the mock's state
  * and the showcase rows. */
 function learningOverview() {
-  const real = [...progress.keys()].filter(
-    (wsId) => (enabled.get(wsId) ?? true) && items(wsId).size > 0
-  );
+  const real = [...progress.keys()].filter((wsId) => items(wsId).size > 0);
   const continued = unfinished().map((u) => ({
     answered: u.answered,
     at: u.lastAnswerAt,
@@ -1041,11 +1037,6 @@ export const studyHandlers = [
   http.get('/api/workspaces/:id/study', ({ params }) =>
     HttpResponse.json(summary(String(params.id)))
   ),
-  http.put('/api/workspaces/:id/study/enabled', async ({ params, request }) => {
-    const body = (await request.json()) as { enabled: boolean };
-    enabled.set(String(params.id), body.enabled);
-    return new HttpResponse(null, { status: 204 });
-  }),
   http.post('/api/workspaces/:id/study/reset', ({ params }) => {
     const wsId = String(params.id);
     progress.delete(wsId);
@@ -1117,13 +1108,9 @@ export const studyHandlers = [
   http.get('/api/learning/overview', () =>
     HttpResponse.json(learningOverview())
   ),
-  http.get('/api/workspaces/:id/study/topics', ({ params }) => {
-    const wsId = String(params.id);
-    return HttpResponse.json({
-      enabled: enabled.get(wsId) ?? true,
-      topics: studyTopics(wsId),
-    });
-  }),
+  http.get('/api/workspaces/:id/study/topics', ({ params }) =>
+    HttpResponse.json({ topics: studyTopics(String(params.id)) })
+  ),
   http.get('/api/review/sessions', ({ request }) =>
     HttpResponse.json(pastReviews(new URL(request.url).searchParams))
   ),

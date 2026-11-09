@@ -15,12 +15,83 @@ import (
 var markingAttemptTimeout = 10 * time.Minute
 
 // assignmentMarking is what the gateway is marking: the run's progress per
-// assignment, and one lock per payer (the member attempting), since a payer's sessions are few
-// (store.ConcurrentLLMLeases) and thirty submissions at once would use them all.
+// assignment, the answers its runs hold, and one lock per payer (the member
+// attempting), since a payer's sessions are few (store.ConcurrentLLMLeases) and
+// thirty submissions at once would use them all. In memory: one gateway
+// process marks, and a restart leaves nothing held (Q729).
 type assignmentMarking struct {
 	mu     sync.Mutex
 	runs   map[string]*markingRun
 	payers map[string]*sync.Mutex
+	held   map[string]*heldAnswers
+}
+
+// heldAnswers is what runs hold of one attempt, from queued until their call
+// returns or fails, each counted since runs may overlap: the attempt queued
+// before its parts are listed, its whole paper being read, or parts by id.
+type heldAnswers struct {
+	queued, whole int
+	parts         map[string]int
+}
+
+// hold notes attemptID as being marked until the returned release (which may
+// run more than once): parts by id, or with whole every part (a paper read),
+// or with neither the attempt alone.
+func (m *assignmentMarking) hold(attemptID string, whole bool, parts ...string) func() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.held == nil {
+		m.held = map[string]*heldAnswers{}
+	}
+	h := m.held[attemptID]
+	if h == nil {
+		h = &heldAnswers{parts: map[string]int{}}
+		m.held[attemptID] = h
+	}
+	add := func(n int) {
+		switch {
+		case whole:
+			h.whole += n
+		case len(parts) > 0:
+			for _, p := range parts {
+				h.parts[p] += n
+				if h.parts[p] == 0 {
+					delete(h.parts, p)
+				}
+			}
+		default:
+			h.queued += n
+		}
+	}
+	add(1)
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			m.mu.Lock()
+			defer m.mu.Unlock()
+			add(-1)
+			if h.queued == 0 && h.whole == 0 && len(h.parts) == 0 && m.held[attemptID] == h {
+				delete(m.held, attemptID)
+			}
+		})
+	}
+}
+
+// markingOf reads what runs hold of attemptID: whether any, and whether a part
+// is among them (every part while its paper is read).
+func (m *assignmentMarking) markingOf(attemptID string) (bool, func(partID string) bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	h := m.held[attemptID]
+	if h == nil {
+		return false, func(string) bool { return false }
+	}
+	whole := h.whole > 0
+	parts := make(map[string]bool, len(h.parts))
+	for p := range h.parts {
+		parts[p] = true
+	}
+	return true, func(partID string) bool { return whole || parts[partID] }
 }
 
 type markingRun struct {
@@ -92,15 +163,29 @@ func (m *assignmentMarking) progress(assignmentID string) *AssignmentMarkingProg
 // markAnswersSoon marks what waits, in the background: nobody waits on the page
 // for it, and a submission never fails for it. Whatever it leaves (no credits, a
 // failed part, a restart) stays "Not marked" for Mark with AI (Epo 2026-11-03).
+// One attempt is held at once, so its page reads Marking right after Submit.
 func (a *api) markAnswersSoon(assignmentID, attemptID string) {
-	go a.markAnswers(context.Background(), assignmentID, attemptID)
+	queued := func() {}
+	if attemptID != "" {
+		queued = a.marking.hold(attemptID, false)
+	}
+	a.markAnswersAfter(assignmentID, attemptID, queued)
+}
+
+// markAnswersAfter is markAnswersSoon with what the caller already holds,
+// released once the run holds its own.
+func (a *api) markAnswersAfter(assignmentID, attemptID string, queued func()) {
+	go a.markAnswers(context.Background(), assignmentID, attemptID, queued)
 }
 
 // markAnswers marks an assignment's waiting answers, or one attempt's, one attempt
 // at a time per payer. It reads each attempt again once its turn comes, so a
 // repeated submit or a second press of Mark with AI finds it marked and pays for
-// nothing. One attempt's failure leaves the rest to go on.
-func (a *api) markAnswers(ctx context.Context, assignmentID, attemptID string) {
+// nothing. One attempt's failure leaves the rest to go on. What it lists it
+// holds (assignmentMarking.hold) until that attempt's call ends; queued, the
+// caller's hold, gives way once it does.
+func (a *api) markAnswers(ctx context.Context, assignmentID, attemptID string, queued func()) {
+	defer queued()
 	report := func(err error) {
 		obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz, "stage": "assignment_marking"})
 	}
@@ -118,7 +203,35 @@ func (a *api) markAnswers(ctx context.Context, assignmentID, attemptID string) {
 		report(err)
 		return
 	}
-	a.readPapers(ctx, assignmentID, attemptID)
+	papers, err := a.s.PapersToRead(ctx, assignmentID, attemptID)
+	if err != nil {
+		report(err)
+		return
+	}
+	// Every part listed is held until its attempt's call ends, a paper's whole
+	// paper until its read does.
+	parts := map[string][]string{}
+	for _, answer := range listed {
+		parts[answer.AttemptID] = append(parts[answer.AttemptID], answer.PartID)
+	}
+	releases := make(map[string]func(), len(parts))
+	for id, ids := range parts {
+		releases[id] = a.marking.hold(id, false, ids...)
+	}
+	reads := make(map[string]func(), len(papers))
+	for _, id := range papers {
+		reads[id] = a.marking.hold(id, true)
+	}
+	defer func() {
+		for _, release := range releases {
+			release()
+		}
+		for _, release := range reads {
+			release()
+		}
+	}()
+	queued()
+	a.readPapers(ctx, assignmentID, papers, reads)
 	if len(listed) == 0 {
 		return
 	}
@@ -138,6 +251,7 @@ func (a *api) markAnswers(ctx context.Context, assignmentID, attemptID string) {
 		if err := a.markAttemptInTurn(ctx, a.marking.payer(payers[id]), assignmentID, id); err != nil {
 			report(err)
 		}
+		releases[id]()
 		a.marking.progressed(assignmentID, counts[id])
 	}
 }
@@ -244,4 +358,60 @@ func (a *api) markAttemptAnswers(ctx context.Context, assignmentID, attemptID st
 		}
 	}
 	return a.s.DropDrawingImages(saving, attemptID, marked)
+}
+
+// withMarking flags the attempt and each part a marking run holds (Q729).
+func (a *api) withMarking(res store.AssignmentAttempt) store.AssignmentAttempt {
+	held, part := a.marking.markingOf(res.ID)
+	if !held {
+		return res
+	}
+	res.Marking = true
+	for _, q := range res.Questions {
+		parts, _ := q["parts"].([]any)
+		for _, raw := range parts {
+			p, _ := raw.(map[string]any)
+			if id, _ := p["id"].(string); p != nil && part(id) {
+				p["marking"] = true
+			}
+		}
+	}
+	return res
+}
+
+// reportMarking flags each answer row with a part a marking run holds, and
+// each member with an attempt held (Q729).
+func (a *api) reportMarking(res store.AssignmentReport) store.AssignmentReport {
+	parts := make(map[string][]string, len(res.Questions))
+	for _, q := range res.Questions {
+		id, _ := q.Question["id"].(string)
+		list, _ := q.Question["parts"].([]any)
+		for _, raw := range list {
+			p, _ := raw.(map[string]any)
+			if partID, _ := p["id"].(string); partID != "" {
+				parts[id] = append(parts[id], partID)
+			}
+		}
+	}
+	busy := map[string]bool{}
+	for i := range res.Answers {
+		row := &res.Answers[i]
+		held, part := a.marking.markingOf(row.AttemptID)
+		if !held {
+			continue
+		}
+		busy[row.UserID] = true
+		for _, id := range parts[row.QuestionID] {
+			row.Marking = row.Marking || part(id)
+		}
+	}
+	for i := range res.Members {
+		row := &res.Members[i]
+		if row.AttemptID != nil {
+			held, _ := a.marking.markingOf(*row.AttemptID)
+			busy[row.UserID] = busy[row.UserID] || held
+		}
+		row.Marking = busy[row.UserID]
+	}
+	return res
 }
