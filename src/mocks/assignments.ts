@@ -115,6 +115,58 @@ export function addPaperFile(
   return file;
 }
 
+/** Hand-ins (S3, T2): each member's files on an unmarked assignment that
+ * takes them. */
+const handIns = new Map<string, Map<string, PaperFile[]>>();
+
+const handInOf = (assignmentId: string, userId: string) =>
+  handIns.get(assignmentId)?.get(userId) ?? [];
+
+const setHandIn = (
+  assignmentId: string,
+  userId: string,
+  files: PaperFile[]
+) => {
+  const byUser = handIns.get(assignmentId) ?? new Map<string, PaperFile[]>();
+  byUser.set(userId, files);
+  handIns.set(assignmentId, byUser);
+};
+
+/** Takes the viewer's changes: taking files, not handed in, not closed. */
+const handInOpen = (assignmentId: string) => {
+  const row = rows.get(assignmentId);
+  return (
+    !!row?.allowUploads &&
+    row.kind === 'unmarked' &&
+    !row.closedAt &&
+    !done.get(assignmentId)?.has(db.user.id)
+  );
+};
+
+/** Add files's files (the source upload with handInId). */
+export function addHandInFile(
+  assignmentId: string,
+  name: string,
+  kind: string,
+  bytes: Blob
+) {
+  seed();
+  if (!handInOpen(assignmentId)) return null;
+  const file: PaperFile = {
+    id: newId('f'),
+    kind,
+    name,
+    sizeBytes: bytes.size,
+    status: 'ready',
+  };
+  paperUrls.set(file.id, URL.createObjectURL(bytes));
+  setHandIn(assignmentId, db.user.id, [
+    ...handInOf(assignmentId, db.user.id),
+    file,
+  ]);
+  return file;
+}
+
 /** Drawings an assignment's Done stored, by id: their boards. */
 const mockDrawings = new Map<string, string>();
 
@@ -513,6 +565,17 @@ function seed() {
       questions: worksheet(9),
       title: 'Inheritance worksheet',
     },
+    // Members hand in files with Hand in (Epo 2026-11-08, S3/T2).
+    {
+      ...common,
+      allowUploads: true,
+      dueAt: at(3, 23),
+      files: files[0] ? [{ fileId: files[0].id }] : [],
+      id: 'as_lab',
+      kind: 'unmarked',
+      postedAt: at(-1, 11),
+      title: 'Osmosis lab write-up',
+    },
     {
       ...common,
       files: files[1] ? [{ fileId: files[1].id }] : [],
@@ -615,6 +678,33 @@ function seed() {
 
   done.set('as_read', new Map(class6.slice(0, 4).map((id) => [id, at(0, 9)])));
   done.set('as_notes', new Map(class6.slice(0, 2).map((id) => [id, at(0, 9)])));
+  // T2: four of the class handed in their write-ups.
+  const work = (id: string, name: string, kind: string, sizeBytes: number) => ({
+    id,
+    kind,
+    name,
+    sizeBytes,
+    status: 'ready',
+  });
+  const lab: [string, PaperFile[]][] = [
+    ['u_mock_tom', [work('f_lab_ben', 'Lab write-up.pdf', 'pdf', 1_800_000)]],
+    [
+      'u_mock_diego',
+      [
+        work('f_lab_cara', 'Osmosis write-up.pdf', 'pdf', 1_800_000),
+        work('f_lab_cara2', 'results-table.jpg', 'image', 900_000),
+      ],
+    ],
+    [
+      'u_mock_hana',
+      [1, 2, 3].map((n) =>
+        work(`f_lab_eve${n}`, `IMG_04${n}.jpg`, 'image', 1_200_000)
+      ),
+    ],
+    ['u_mock_farah', [work('f_lab_farah', 'Osmosis lab.docx', 'docx', 60_000)]],
+  ];
+  for (const [id, handed] of lab) setHandIn('as_lab', id, handed);
+  done.set('as_lab', new Map(lab.map(([id]) => [id, at(0, 10)])));
 }
 
 /** Who ticked an unmarked assignment, and when. */
@@ -885,6 +975,10 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
             countedAttemptId: mine?.id,
             done: !!mine || !!tick,
             doneAt: mine?.submittedAt ?? tick,
+            handIn:
+              row.kind === 'unmarked' && row.allowUploads
+                ? handInOf(row.id, db.user.id)
+                : undefined,
             late: isLate(row, mine?.submittedAt),
             latePenaltyPct: penaltyOf(row, mine?.submittedAt),
             mark:
@@ -1089,6 +1183,12 @@ function report(row: Row, viewer: Viewer): AssignmentReport {
         submittedAt: a?.submittedAt ?? tick,
         total: sum?.total,
         userId: id,
+        ...(row.kind === 'unmarked' && row.allowUploads && tick
+          ? {
+              files: handInOf(row.id, id),
+              late: !!row.dueAt && Date.parse(tick) > Date.parse(row.dueAt),
+            }
+          : {}),
         waitingAnswers: submissions(row.id, id).reduce(
           (n, x) => n + totals(x.graded).waitingAnswers,
           0
@@ -1452,6 +1552,20 @@ export const assignmentHandlers = (viewer: Viewer) => {
       seed();
       const id = String(params.id);
       const body = (await request.json()) as { done: boolean };
+      const row = rowOf(id);
+      if (row?.allowUploads && row.kind === 'unmarked') {
+        const open =
+          !row.closedAt &&
+          (body.done ? handInOpen(id) : done.get(id)?.has(db.user.id));
+        if (!open || (body.done && !handInOf(id, db.user.id).length))
+          return HttpResponse.json(
+            {
+              code: 'hand_in_closed',
+              message: 'this assignment no longer takes your files',
+            },
+            { status: 409 }
+          );
+      }
       const ticks = done.get(id) ?? new Map<string, string>();
       if (body.done) ticks.set(db.user.id, new Date().toISOString());
       else ticks.delete(db.user.id);
@@ -1659,7 +1773,24 @@ export const assignmentHandlers = (viewer: Viewer) => {
         });
       }
     ),
-    // Files › Submissions: papers of closed assignments, every part marked.
+    http.delete('/api/assignments/:id/hand-in/:fileId', ({ params }) => {
+      const id = String(params.id);
+      if (!handInOpen(id)) return gone();
+      setHandIn(
+        id,
+        db.user.id,
+        handInOf(id, db.user.id).filter((f) => f.id !== params.fileId)
+      );
+      return new HttpResponse(null, { status: 204 });
+    }),
+    http.get('/api/assignments/:id/hand-in/:fileId/links', ({ params }) =>
+      HttpResponse.json({
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+        url: paperUrls.get(String(params.fileId)) ?? SCAN,
+      })
+    ),
+    // Files › Submissions: papers of closed assignments, every part marked;
+    // hand-ins of closed ones.
     http.get('/api/papers', () => {
       const items: SubmittedPaper[] = [...attempts.values()].flatMap((a) => {
         const row = rowOf(a.assignmentId);
@@ -1686,6 +1817,23 @@ export const assignmentHandlers = (viewer: Viewer) => {
             db.workspaces.find((w) => w.id === row.workspaceId)?.name ?? '',
         }));
       });
+      for (const [assignmentId, byUser] of handIns) {
+        const row = rowOf(assignmentId);
+        if (!row || !isClosed(row)) continue;
+        for (const f of byUser.get(db.user.id) ?? [])
+          items.push({
+            assignmentId,
+            bytes: f.sizeBytes,
+            createdAt: row.postedAt,
+            id: f.id,
+            kind: f.kind,
+            name: f.name,
+            quizName: row.title,
+            workspaceId: row.workspaceId,
+            workspaceName:
+              db.workspaces.find((w) => w.id === row.workspaceId)?.name ?? '',
+          });
+      }
       return HttpResponse.json({
         count: items.length,
         items,
@@ -1695,11 +1843,21 @@ export const assignmentHandlers = (viewer: Viewer) => {
     http.delete('/api/papers/:id', ({ params }) => {
       for (const a of attempts.values())
         a.paperFiles = a.paperFiles?.filter((f) => f.id !== params.id);
+      for (const [assignmentId] of handIns)
+        setHandIn(
+          assignmentId,
+          db.user.id,
+          handInOf(assignmentId, db.user.id).filter((f) => f.id !== params.id)
+        );
       return HttpResponse.json({ deleted: 1 });
     }),
     http.delete('/api/papers', () => {
       for (const a of attempts.values())
         if (a.userId === db.user.id && a.paper === 'read') a.paperFiles = [];
+      for (const [assignmentId] of handIns) {
+        const row = rowOf(assignmentId);
+        if (row && isClosed(row)) setHandIn(assignmentId, db.user.id, []);
+      }
       return HttpResponse.json({ deleted: 1 });
     }),
     http.post(

@@ -4,11 +4,14 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { PaperFile } from './paperFile.ts';
 
 export interface AssignmentMemberRow {
   attemptId?: string;
   avatarUrl?: string;
   correct?: number;
+  /** @nullable */
+  files?: PaperFile[] | null;
   late: boolean;
   latePenaltyPct: number;
   mark?: number;

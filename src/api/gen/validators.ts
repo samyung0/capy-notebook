@@ -493,6 +493,13 @@ export const GetAssignmentResponse = zod.object({
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "handIn": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})).nullish(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number().optional(),
@@ -602,6 +609,13 @@ export const UpdateAssignmentResponse = zod.object({
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "handIn": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})).nullish(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number().optional(),
@@ -694,6 +708,13 @@ export const SetAssignmentClosedResponse = zod.object({
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "handIn": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})).nullish(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number().optional(),
@@ -727,6 +748,46 @@ export const SetAssignmentDoneBody = zod.object({
 })
 
 export const SetAssignmentDoneResponse = zod.void()
+
+
+/**
+ * @summary Remove a file from the caller's open hand-in
+ */
+export const removeHandInFilePathIdMax = 64;
+
+export const removeHandInFilePathFileIdMax = 64;
+
+
+
+export const RemoveHandInFileParams = zod.object({
+  "id": zod.string().max(removeHandInFilePathIdMax),
+  "fileId": zod.string().max(removeHandInFilePathFileIdMax)
+})
+
+export const RemoveHandInFileResponse = zod.void()
+
+
+/**
+ * @summary A hand-in file's presigned reads, for its member or, once handed in, the class's staff
+ */
+export const getHandInFileLinksPathIdMax = 64;
+
+export const getHandInFileLinksPathFileIdMax = 64;
+
+
+
+export const GetHandInFileLinksParams = zod.object({
+  "id": zod.string().max(getHandInFileLinksPathIdMax),
+  "fileId": zod.string().max(getHandInFileLinksPathFileIdMax)
+})
+
+export const GetHandInFileLinksResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "expiresAt": zod.iso.datetime({"offset":true}),
+  "previewUrl": zod.string().optional(),
+  "storageFull": zod.enum(['self', 'payer']).optional(),
+  "url": zod.string()
+})
 
 
 /**
@@ -792,6 +853,13 @@ export const PublishAssignmentResponse = zod.object({
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "handIn": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})).nullish(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number().optional(),
@@ -863,6 +931,13 @@ export const ReleaseAssignmentGradesResponse = zod.object({
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "handIn": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})).nullish(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number().optional(),
@@ -915,6 +990,13 @@ export const GetAssignmentReportResponse = zod.object({
   "attemptId": zod.string().optional(),
   "avatarUrl": zod.string().optional(),
   "correct": zod.number().optional(),
+  "files": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})).nullish(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number().optional(),
@@ -1000,6 +1082,13 @@ export const RepublishAssignmentResponse = zod.object({
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "handIn": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})).nullish(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number().optional(),
@@ -5700,7 +5789,7 @@ export const DeleteAllPapersResponse = zod.object({
 
 
 /**
- * @summary The caller's handed-in paper files they may delete, newest first (Files › Submissions)
+ * @summary The caller's handed-in paper and hand-in files they may delete, newest first (Files › Submissions)
  */
 export const listPapersQueryLimitDefault = 50;
 export const listPapersQueryLimitMax = 100;
@@ -5717,7 +5806,7 @@ export const ListPapersResponse = zod.object({
   "count": zod.int(),
   "items": zod.array(zod.object({
   "assignmentId": zod.string(),
-  "attemptId": zod.string(),
+  "attemptId": zod.string().optional(),
   "bytes": zod.int(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
@@ -7335,6 +7424,13 @@ export const GetTodoResponse = zod.object({
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "handIn": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})).nullish(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number().optional(),
@@ -8036,6 +8132,13 @@ export const ListAssignmentsResponse = zod.object({
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "handIn": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})).nullish(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number().optional(),
@@ -8147,6 +8250,13 @@ export const CreateAssignmentResponse = zod.object({
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
   "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "handIn": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})).nullish(),
   "late": zod.boolean(),
   "latePenaltyPct": zod.int(),
   "mark": zod.number().optional(),

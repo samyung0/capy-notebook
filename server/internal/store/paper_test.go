@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -116,5 +117,76 @@ func TestPaperIsHandedInReadAndDeleted(t *testing.T) {
 	after, err := f.s.GetAssignmentAttempt(ctx, f.user, run.ID, now.Add(5*time.Minute))
 	if err != nil || after.Correct != 7 || len(after.PaperFiles) != 0 {
 		t.Fatalf("after delete = %v, files %d, err %v", after.Correct, len(after.PaperFiles), err)
+	}
+}
+
+// TestHandInIsHandedInAndDeleted: on an unmarked assignment that takes files, a
+// member's upload joins their hand-in, stored with no parse; Hand in needs a
+// file and locks it; staff read the files on the member's row, and once the
+// assignment closes the member may delete them from Files › Submissions.
+func TestHandInIsHandedInAndDeleted(t *testing.T) {
+	f := newAssignmentFixture(t, "handin")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Lab write-up",
+		Attempts: 1, AssignAll: true, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic,
+		Files: []AssignmentFileRef{}, AllowUploads: true}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.SetAssignmentDone(ctx, f.viewer, created.ID, true, now); err == nil {
+		t.Fatal("handed in with no files")
+	}
+	upload, err := f.s.CreateUploadSession(ctx, NewUploadSession{
+		ID: uid("up"), CreatedBy: f.viewer, ObjectPath: "sources/" + uid("blob"), FinalPath: "sources/" + uid("blob"),
+		Name: "write-up.pdf", Kind: "pdf", ContentType: "application/pdf", DeclaredSize: 2048, ParseMode: "none",
+		ExpiresAt: now.Add(time.Hour), HandInID: created.ID, PaperMaxBytes: 10 << 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := f.s.FinalizeUploadSession(ctx, f.viewer, upload.ID, "etag", "", "")
+	if err != nil || file.Status != "ready" {
+		t.Fatalf("file %+v, err %v", file, err)
+	}
+	mine, err := f.s.GetAssignment(ctx, f.viewer, created.ID, now)
+	if err != nil || len(mine.Mine.HandIn) != 1 || mine.Mine.HandIn[0].ID != file.ID {
+		t.Fatalf("mine = %+v, err %v", mine.Mine, err)
+	}
+	if err := f.s.SetAssignmentDone(ctx, f.viewer, created.ID, true, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.RemoveHandInFile(ctx, f.viewer, created.ID, file.ID); !errors.Is(err, ErrHandInClosed) {
+		t.Fatalf("removed after hand in: %v", err)
+	}
+	report, err := f.s.GetAssignmentReport(ctx, f.user, created.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var handedIn []PaperFile
+	for _, row := range report.Members {
+		if row.UserID == f.viewer {
+			handedIn = row.Files
+		}
+	}
+	if len(handedIn) != 1 || handedIn[0].ID != file.ID {
+		t.Fatalf("member row files = %+v", handedIn)
+	}
+	if _, _, err := f.s.HandInFileBlob(ctx, f.user, created.ID, file.ID); err != nil {
+		t.Fatalf("staff link: %v", err)
+	}
+
+	if page, err := f.s.ListSubmittedPapers(ctx, f.viewer, "", 50); err != nil || page.Count != 0 {
+		t.Fatalf("open assignment listed %+v, err %v", page, err)
+	}
+	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	page, err := f.s.ListSubmittedPapers(ctx, f.viewer, "", 50)
+	if err != nil || page.Count != 1 || page.Items[0].ID != file.ID || page.Items[0].QuizName != "Lab write-up" || page.Items[0].AttemptID != "" {
+		t.Fatalf("listed %+v, err %v", page, err)
+	}
+	if n, err := f.s.DeleteSubmittedPapers(ctx, f.viewer, nil); err != nil || n != 1 {
+		t.Fatalf("deleted %d, err %v", n, err)
 	}
 }

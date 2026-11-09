@@ -1026,6 +1026,19 @@ Reopening hides the keys again.
   marks, and Approve then says the member deleted it (F2).
 - Releasing grades rings each member who handed in (`grades_released`).
 
+**Handing in files** (Epo 2026-11-08, migration 0162, mocks C2, S3, T2): the
+same switch on an Unmarked assignment (C2: Files below Due and Assign to, then
+the switch) turns Mark as done into Hand in. The member's page gets Your work,
+with Add files while it is open; each file is their own standalone upload with
+`handInId` (`files.hand_in_assignment_id`, in `submission_position` order),
+stored with no parse and never read or marked. Hand in needs a file and ticks
+the assignment (`assignment_done`), the meta line then saying Handed in on its
+date; Undo hand in reopens it until the owner closes it. The report's chip reads
+"N of M handed in", and its Members tab lists each member's date (Late past the
+due date) and files, which open in a viewer of their pages with Open file for a
+single one. Files › Submissions lists a hand-in's files once the assignment
+reads Closed.
+
 **Show grades** (C4, S7, T5; Epo 2026-11-08, migration 0160 `grades_shown`,
 `grades_released_at`). Automatic, the default, shows marks as they are decided.
 Manual holds them until an owner or editor presses Release grades in the report

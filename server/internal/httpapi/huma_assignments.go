@@ -277,7 +277,7 @@ func (a *api) setAssignmentDone(ctx context.Context, in *assignmentDoneInput) (*
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
-	return &Empty{}, assignmentError(a.s.SetAssignmentDone(ctx, userID(ctx), in.ID, in.Body.Done, time.Now()))
+	return &Empty{}, paperError(a.s.SetAssignmentDone(ctx, userID(ctx), in.ID, in.Body.Done, time.Now()))
 }
 
 type startAssignmentInput struct {

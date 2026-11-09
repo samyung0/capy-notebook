@@ -1,4 +1,4 @@
-import { Link, useNavigate } from '@tanstack/react-router';
+import { Link, type LinkProps, useNavigate } from '@tanstack/react-router';
 import { memo, useState } from 'react';
 import {
   useDeleteAllPapers,
@@ -172,11 +172,18 @@ export function SubmissionsTab({
   );
 }
 
-const resultLink = (item: SubmittedPaper) =>
-  ({
-    params: { attemptId: item.attemptId },
-    to: '/quizzes/attempts/$attemptId',
-  }) as const;
+/** A paper opens its results; a hand-in, its assignment's page. */
+const resultLink = (item: SubmittedPaper): LinkProps =>
+  item.attemptId
+    ? {
+        params: { attemptId: item.attemptId },
+        to: '/quizzes/attempts/$attemptId',
+      }
+    : {
+        params: { workspaceId: item.workspaceId ?? '' },
+        search: { assignment: item.assignmentId, study: 'assignments' },
+        to: '/workspaces/$workspaceId',
+      };
 
 const iconOf = (item: SubmittedPaper) =>
   fileIconName(item as Pick<SourceFile, 'kind' | 'name'>);

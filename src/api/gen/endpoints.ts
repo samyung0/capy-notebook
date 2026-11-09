@@ -1288,6 +1288,110 @@ const res = await fetch(getSetAssignmentDoneUrl(id),
 
 
 
+export type removeHandInFileResponse204 = {
+  data: void
+  status: 204
+}
+
+export type removeHandInFileResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type removeHandInFileResponseSuccess = (removeHandInFileResponse204) & {
+  headers: Headers;
+};
+export type removeHandInFileResponseError = (removeHandInFileResponseDefault) & {
+  headers: Headers;
+};
+
+export type removeHandInFileResponse = (removeHandInFileResponseSuccess | removeHandInFileResponseError)
+
+export const getRemoveHandInFileUrl = (id: string,
+    fileId: string,) => {
+
+
+
+
+  return `/api/assignments/${id}/hand-in/${fileId}`
+}
+
+/**
+ * @summary Remove a file from the caller's open hand-in
+ */
+export const removeHandInFile = async (id: string,
+    fileId: string, options?: RequestInit): Promise<removeHandInFileResponse> => {
+
+  const res = await fetch(getRemoveHandInFileUrl(id,fileId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: removeHandInFileResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as removeHandInFileResponse
+}
+
+
+
+export type getHandInFileLinksResponse200 = {
+  data: FileLinks
+  status: 200
+}
+
+export type getHandInFileLinksResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getHandInFileLinksResponseSuccess = (getHandInFileLinksResponse200) & {
+  headers: Headers;
+};
+export type getHandInFileLinksResponseError = (getHandInFileLinksResponseDefault) & {
+  headers: Headers;
+};
+
+export type getHandInFileLinksResponse = (getHandInFileLinksResponseSuccess | getHandInFileLinksResponseError)
+
+export const getGetHandInFileLinksUrl = (id: string,
+    fileId: string,) => {
+
+
+
+
+  return `/api/assignments/${id}/hand-in/${fileId}/links`
+}
+
+/**
+ * @summary A hand-in file's presigned reads, for its member or, once handed in, the class's staff
+ */
+export const getHandInFileLinks = async (id: string,
+    fileId: string, options?: RequestInit): Promise<getHandInFileLinksResponse> => {
+
+  const res = await fetch(getGetHandInFileLinksUrl(id,fileId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getHandInFileLinksResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getHandInFileLinksResponse
+}
+
+
+
 export type markAssignmentWithAIResponse200 = {
   data: MarkAssignmentWithAIOutputBody
   status: 200
@@ -8513,7 +8617,7 @@ export const getListPapersUrl = (params?: ListPapersParams,) => {
 }
 
 /**
- * @summary The caller's handed-in paper files they may delete, newest first (Files › Submissions)
+ * @summary The caller's handed-in paper and hand-in files they may delete, newest first (Files › Submissions)
  */
 export const listPapers = async (params?: ListPapersParams, options?: RequestInit): Promise<listPapersResponse> => {
 

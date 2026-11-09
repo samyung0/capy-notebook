@@ -958,6 +958,11 @@ components:
         correct:
           format: double
           type: number
+        files:
+          items:
+            $ref: "#/components/schemas/PaperFile"
+          nullable: true
+          type: array
         late:
           type: boolean
         latePenaltyPct:
@@ -1011,6 +1016,11 @@ components:
         doneAt:
           format: date-time
           type: string
+        handIn:
+          items:
+            $ref: "#/components/schemas/PaperFile"
+          nullable: true
+          type: array
         late:
           type: boolean
         latePenaltyPct:
@@ -7653,7 +7663,6 @@ components:
           type: string
       required:
         - id
-        - attemptId
         - name
         - kind
         - assignmentId
@@ -9572,6 +9581,66 @@ paths:
       summary: A member's tick on an unmarked assignment
       tags:
         - Assignments
+  /api/assignments/{id}/hand-in/{fileId}:
+    delete:
+      operationId: removeHandInFile
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+        - in: path
+          name: fileId
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Remove a file from the caller's open hand-in
+      tags:
+        - assignments
+  /api/assignments/{id}/hand-in/{fileId}/links:
+    get:
+      operationId: getHandInFileLinks
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+        - in: path
+          name: fileId
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileLinks"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: A hand-in file's presigned reads, for its member or, once handed in, the class's staff
+      tags:
+        - assignments
   /api/assignments/{id}/mark-with-ai:
     post:
       operationId: markAssignmentWithAI
@@ -13051,7 +13120,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: The caller's handed-in paper files they may delete, newest first (Files › Submissions)
+      summary: The caller's handed-in paper and hand-in files they may delete, newest first (Files › Submissions)
       tags:
         - assignments
   /api/papers/{id}:

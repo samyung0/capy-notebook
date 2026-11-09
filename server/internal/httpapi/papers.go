@@ -21,8 +21,14 @@ func (a *api) registerPapers(api huma.API) {
 		"Put a running attempt's paper files in order", 204, a.orderPaperFiles)
 	reg(api, "GET", "/api/assignment-attempts/{id}/paper/{fileId}/links", "getPaperFileLinks", "assignments",
 		"A paper file's presigned reads, for its member or the class's staff", 200, a.getPaperFileLinks)
+	// A hand-in (S3, T2): an unmarked assignment's files, through the source
+	// upload with handInId.
+	reg(api, "DELETE", "/api/assignments/{id}/hand-in/{fileId}", "removeHandInFile", "assignments",
+		"Remove a file from the caller's open hand-in", 204, a.removeHandInFile)
+	reg(api, "GET", "/api/assignments/{id}/hand-in/{fileId}/links", "getHandInFileLinks", "assignments",
+		"A hand-in file's presigned reads, for its member or, once handed in, the class's staff", 200, a.getHandInFileLinks)
 	reg(api, "GET", "/api/papers", "listPapers", "assignments",
-		"The caller's handed-in paper files they may delete, newest first (Files › Submissions)", 200, a.listPapers)
+		"The caller's handed-in paper and hand-in files they may delete, newest first (Files › Submissions)", 200, a.listPapers)
 	reg(api, "DELETE", "/api/papers/{id}", "deletePaper", "assignments",
 		"Delete one of the caller's deletable paper files; its marks stay", 200, a.deletePaper)
 	reg(api, "DELETE", "/api/papers", "deleteAllPapers", "assignments",
@@ -38,6 +44,8 @@ func paperError(err error) error {
 	switch {
 	case errors.Is(err, store.ErrPaperClosed):
 		return conflictError("paper_closed", err.Error())
+	case errors.Is(err, store.ErrHandInClosed):
+		return conflictError("hand_in_closed", err.Error())
 	case errors.Is(err, store.ErrPaperFull):
 		return huma.Error422UnprocessableEntity(err.Error())
 	}
@@ -59,11 +67,28 @@ func (a *api) orderPaperFiles(ctx context.Context, in *paperOrderInput) (*Empty,
 	return &Empty{}, paperError(a.s.OrderPaperFiles(ctx, userID(ctx), in.ID, in.Body.FileIDs, time.Now()))
 }
 
+func (a *api) removeHandInFile(ctx context.Context, in *paperFileInput) (*Empty, error) {
+	return &Empty{}, paperError(a.s.RemoveHandInFile(ctx, userID(ctx), in.ID, in.FileID))
+}
+
 func (a *api) getPaperFileLinks(ctx context.Context, in *paperFileInput) (*fileLinksOutput, error) {
 	source, kind, err := a.s.PaperFileBlob(ctx, userID(ctx), in.ID, in.FileID)
 	if err != nil {
 		return nil, hErr(err)
 	}
+	return a.submissionFileLinks(ctx, source, kind)
+}
+
+func (a *api) getHandInFileLinks(ctx context.Context, in *paperFileInput) (*fileLinksOutput, error) {
+	source, kind, err := a.s.HandInFileBlob(ctx, userID(ctx), in.ID, in.FileID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return a.submissionFileLinks(ctx, source, kind)
+}
+
+// submissionFileLinks signs a paper's or hand-in's stored file.
+func (a *api) submissionFileLinks(ctx context.Context, source, kind string) (*fileLinksOutput, error) {
 	if a.blob == nil {
 		return nil, huma.Error503ServiceUnavailable("blob store not configured")
 	}

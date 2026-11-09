@@ -2,24 +2,21 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { useEffect, useRef, useState } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import {
+  type SubmissionOf,
   useOrderPaperFiles,
   usePaperFileLinks,
   useRemovePaperFile,
-  useSourceUploadPolicy,
-  useUploadSource,
 } from '@/api/hooks';
 import type { PaperFile, SourceFile } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
-import { userToast } from '@/components/ui/userToast';
 import { formatFileSize } from '@/features/files/fileUtils';
-import { getFileKind } from '@/features/workspace/sourceUpload';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { errorCopy } from '@/lib/errors';
 import { fileIconName } from '@/lib/fileIcons';
+import { useAddSubmissionFiles } from './useAddSubmissionFiles';
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
@@ -90,15 +87,14 @@ function Sheet({
 /** One file's pages: a PDF's each, an image as one, any other file as one tile
  * (its text is read as one page, as Make a quiz does). */
 function FilePages({
-  attemptId,
   edit,
   file,
   first,
   only,
   onCount,
   width,
+  of,
 }: {
-  attemptId: string;
   edit?: PaperEdit;
   file: PaperFile;
   /** The paper's number for this file's first page. */
@@ -106,9 +102,10 @@ function FilePages({
   /** Shows only these paper page numbers. */
   only?: readonly number[];
   onCount: (fileId: string, pages: number) => void;
+  of: SubmissionOf;
   width: number;
 }) {
-  const { data: links, isError } = usePaperFileLinks(attemptId, file.id);
+  const { data: links, isError } = usePaperFileLinks(of, file.id);
   const [count, setCount] = useState(0);
   const [ratios, setRatios] = useState<Record<number, number>>({});
   const pdf = file.kind === 'pdf';
@@ -202,17 +199,17 @@ function FilePages({
 /** A paper's pages in one grid, numbered across its files as the read call
  * numbers them; `only` keeps the pages a part was found on (Approve, mock T1). */
 export function PaperPages({
-  attemptId,
   className,
   edit,
   files,
+  of,
   only,
   width = 220,
 }: {
-  attemptId: string;
   className?: string;
   edit?: PaperEdit;
   files: readonly PaperFile[];
+  of: SubmissionOf;
   only?: readonly number[];
   width?: number;
 }) {
@@ -230,11 +227,11 @@ export function PaperPages({
         first += counts[file.id] ?? 1;
         return (
           <FilePages
-            attemptId={attemptId}
             edit={edit}
             file={file}
             first={start}
             key={file.id}
+            of={of}
             onCount={onCount}
             only={only}
             width={width}
@@ -255,41 +252,12 @@ export function PaperPane({
   attemptId: string;
   files: readonly PaperFile[];
 }) {
-  const { data: policy } = useSourceUploadPolicy(undefined, {
-    errorBoundary: false,
-  });
-  const { mutateAsync: upload } = useUploadSource(null);
+  const { add, ready, uploading } = useAddSubmissionFiles({ attemptId });
   const { mutate: remove, isPending: removing } = useRemovePaperFile(attemptId);
   const { mutate: order } = useOrderPaperFiles(attemptId);
-  const [uploading, setUploading] = useState<string[]>([]);
   const [dragged, setDragged] = useState<string | null>(null);
   const picker = useRef<HTMLInputElement>(null);
   const camera = useRef<HTMLInputElement>(null);
-
-  const add = async (list: FileList | null) => {
-    if (!list?.length || !policy) return;
-    const picked = [...list];
-    const batchId = crypto.randomUUID();
-    setUploading((prev) => [...prev, ...picked.map((f) => f.name)]);
-    for (const file of picked) {
-      try {
-        await upload({
-          attemptId,
-          batchId,
-          batchTotal: picked.length,
-          file,
-          kind: getFileKind(file.name, policy),
-        });
-      } catch (error) {
-        userToast({
-          title: errorCopy(error, m.assignment_paper_upload_failed()),
-          variant: 'error',
-        });
-      } finally {
-        setUploading((prev) => prev.filter((name) => name !== file.name));
-      }
-    }
-  };
   const drop = (onto: string) => {
     if (!dragged || dragged === onto) return;
     const ids = files.map((f) => f.id).filter((id) => id !== dragged);
@@ -314,7 +282,7 @@ export function PaperPane({
           {m.assignment_paper_photo()}
         </Button>
         <Button
-          disabled={!policy}
+          disabled={!ready}
           iconLeft="plus"
           onClick={() => picker.current?.click()}
           size="sm"
@@ -364,7 +332,6 @@ export function PaperPane({
         </p>
       )}
       <PaperPages
-        attemptId={attemptId}
         className="grid-cols-3 sm:grid-cols-5"
         edit={{
           dragged,
@@ -374,6 +341,7 @@ export function PaperPane({
           removing,
         }}
         files={files}
+        of={{ attemptId }}
         width={160}
       />
       {uploading.map((name) => (

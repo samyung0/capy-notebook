@@ -12,9 +12,14 @@ Object.assign(globalThis, { document, IS_REACT_ACT_ENVIRONMENT: true, window });
 
 const start = vi.hoisted(() => vi.fn());
 const navigate = vi.hoisted(() => vi.fn());
+const setDone = vi.hoisted(() => vi.fn());
 vi.mock('@/api/hooks', () => ({
-  useSetAssignmentDone: () => ({ isPending: false, mutate: vi.fn() }),
+  usePaperFileLinks: () => ({ data: undefined }),
+  useRemoveHandInFile: () => ({ isPending: false, mutate: vi.fn() }),
+  useSetAssignmentDone: () => ({ isPending: false, mutate: setDone }),
+  useSourceUploadPolicy: () => ({ data: undefined }),
   useStartAssignment: () => ({ isPending: false, mutate: start }),
+  useUploadSource: () => ({ mutateAsync: vi.fn() }),
 }));
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: React.ReactNode }) => (
@@ -78,5 +83,48 @@ it('opens the attempt once the assignment reads it, though the start never calle
     })
   );
   expect(start).toHaveBeenCalledTimes(1);
+  act(() => root.unmount());
+});
+
+it("hands in an unmarked assignment's work, and shows it handed in (S3)", async () => {
+  const file = {
+    id: 'f1',
+    kind: 'pdf',
+    name: 'Osmosis write-up.pdf',
+    sizeBytes: 1_800_000,
+    status: 'ready',
+  };
+  const lab = {
+    allowUploads: true,
+    files: [],
+    id: 'as2',
+    kind: 'unmarked',
+    mine: { done: false, handIn: [file] },
+    postedAt: '2026-11-08T09:00:00Z',
+    title: 'Osmosis lab write-up',
+    workspaceId: 'ws1',
+  } as unknown as Assignment;
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host);
+  await act(async () => root.render(<MemberAssignment assignment={lab} />));
+  expect(host.textContent).toContain(m.assignment_your_work());
+  expect(host.textContent).toContain('Osmosis write-up.pdf');
+  expect(host.textContent).toContain(m.assignment_paper_add());
+  const handIn = [...host.querySelectorAll('button')].find(
+    (item) => item.textContent === m.assignment_hand_in()
+  );
+  await act(async () => handIn?.click());
+  expect(setDone).toHaveBeenCalledWith({ done: true, id: 'as2' });
+
+  const handedIn = {
+    ...lab,
+    mine: { done: true, doneAt: '2026-11-12T10:00:00Z', handIn: [file] },
+  } as unknown as Assignment;
+  await act(async () =>
+    root.render(<MemberAssignment assignment={handedIn} />)
+  );
+  expect(host.textContent).toContain(m.assignment_undo_hand_in());
+  expect(host.textContent).not.toContain(m.assignment_paper_add());
   act(() => root.unmount());
 });

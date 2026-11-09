@@ -406,9 +406,16 @@ drawings and papers (O4), and a paper's upload batch settling with no bell.
 Verified: Go store/httpapi suites, pipeline `test_paper.py`, vitest, e2e
 `assignment-paper.spec.ts` with the other assignment specs, screens against
 C1, S4, S5, T1, F1 at laptop and 360 px.
-**Not built yet:** Unmarked hand-ins (S3, T2); Approve's page view is two
-pages a row rather than T1's full-width strip, since pages are no longer
-cropped.
+**Built 2026-11-09:** Unmarked hand-ins (C2, S3, T2, migration 0162): the
+switch on Unmarked below Files, Your work with Add files and Hand in / Undo
+hand in, the Members tab's Handed in and Work columns with a file viewer, and
+hand-in files in Files › Submissions once the assignment closes. A hand-in
+takes files past its due date (Late on T2) until the owner closes it.
+Verified: Go store suites with `TestHandInIsHandedInAndDeleted`, vitest,
+e2e `assignment-hand-in.spec.ts`, screens against C2, S3, T2 at laptop and
+360 px. Not built: a page count on Your work's rows (files are not parsed, so
+it shows the size alone). Approve's page view is two pages a row rather than
+T1's full-width strip, since pages are no longer cropped.
 
 ## 5. Build outline (phase 2, after the decisions)
 

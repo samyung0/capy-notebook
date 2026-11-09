@@ -10,10 +10,11 @@ import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { PracticeFrame } from '../practice/studyPage';
 import { BackToAssignments } from './AssignmentAttemptPage';
 import { dayLabel, kindLabel } from './assignmentText';
+import { YourWork } from './HandIns';
 import { useAssignmentStart } from './useAssignmentStart';
 
 /** An assignment's page for a member (W4). An unmarked one shows its files and
- * Mark as done. A marked one goes on: to its running attempt or results, else
+ * Mark as done, or, taking files, Your work and Hand in (S3). A marked one goes on: to its running attempt or results, else
  * to Before you start (A0), straight in without a time limit. */
 export function MemberAssignment({ assignment }: { assignment: Assignment }) {
   if (assignment.kind === 'marked')
@@ -81,6 +82,9 @@ function StartMarked({ assignment }: { assignment: Assignment }) {
 function Unmarked({ assignment }: { assignment: Assignment }) {
   const { mutate, isPending } = useSetAssignmentDone(assignment.workspaceId);
   const done = !!assignment.mine?.done;
+  const handIn = assignment.allowUploads;
+  const closed = !!assignment.closedAt;
+  const handedIn = handIn && done && assignment.mine?.doneAt;
   const meta = [
     kindLabel(assignment.kind),
     assignment.postedBy
@@ -92,6 +96,7 @@ function Unmarked({ assignment }: { assignment: Assignment }) {
     assignment.dueAt
       ? m.assignment_due({ date: dayLabel(assignment.dueAt) })
       : null,
+    handedIn ? m.assignment_handed_in_on({ date: dayLabel(handedIn) }) : null,
   ]
     .filter(Boolean)
     .join(' · ');
@@ -103,13 +108,25 @@ function Unmarked({ assignment }: { assignment: Assignment }) {
           <h1 className="t-page-title">{assignment.title}</h1>
           <p className="t-meta mt-0.5 text-fg-muted">{meta}</p>
         </div>
-        <Button
-          disabled={isPending}
-          onClick={() => mutate({ done: !done, id: assignment.id })}
-          variant={done ? 'outline' : undefined}
-        >
-          {done ? m.assignment_mark_not_done() : m.assignment_mark_as_done()}
-        </Button>
+        {handIn ? (
+          <Button
+            disabled={
+              isPending || closed || (!done && !assignment.mine?.handIn?.length)
+            }
+            onClick={() => mutate({ done: !done, id: assignment.id })}
+            variant={done ? 'outline' : undefined}
+          >
+            {done ? m.assignment_undo_hand_in() : m.assignment_hand_in()}
+          </Button>
+        ) : (
+          <Button
+            disabled={isPending}
+            onClick={() => mutate({ done: !done, id: assignment.id })}
+            variant={done ? 'outline' : undefined}
+          >
+            {done ? m.assignment_mark_not_done() : m.assignment_mark_as_done()}
+          </Button>
+        )}
       </div>
       {assignment.files.length > 0 && (
         <section className="mt-6.5 max-w-180">
@@ -151,6 +168,7 @@ function Unmarked({ assignment }: { assignment: Assignment }) {
           </ul>
         </section>
       )}
+      {handIn && <YourWork assignment={assignment} open={!(done || closed)} />}
     </PracticeFrame>
   );
 }

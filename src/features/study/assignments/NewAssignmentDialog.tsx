@@ -360,24 +360,6 @@ export function NewAssignmentDialog({
               )}
             />
           </Field>
-          {kind === 'unmarked' && (
-            <Field
-              hint={m.assignment_optional()}
-              label={m.assignment_field_files()}
-            >
-              <Controller
-                control={control}
-                name="files"
-                render={({ field }) => (
-                  <FilesField
-                    onChange={field.onChange}
-                    value={field.value}
-                    workspaceId={workspaceId}
-                  />
-                )}
-              />
-            </Field>
-          )}
           <div className="grid gap-4 sm:grid-cols-2">
             <Field
               error={errors.dueAt?.message}
@@ -468,6 +450,33 @@ export function NewAssignmentDialog({
               </>
             )}
           </div>
+          {/* C2 (Epo 2026-11-08): Files below Due and Assign to, then the switch:
+              members hand in files with Hand in. */}
+          {kind === 'unmarked' && (
+            <>
+              <Field
+                hint={m.assignment_optional()}
+                label={m.assignment_field_files()}
+              >
+                <Controller
+                  control={control}
+                  name="files"
+                  render={({ field }) => (
+                    <FilesField
+                      onChange={field.onChange}
+                      value={field.value}
+                      workspaceId={workspaceId}
+                    />
+                  )}
+                />
+              </Field>
+              <SwitchRow
+                control={control}
+                label={m.assignment_switch_uploads()}
+                name="allowUploads"
+              />
+            </>
+          )}
           {kind === 'marked' && (
             <div className="flex flex-col gap-2 pt-0.5">
               {/* Marking (A4, Epo 2026-11-06) on its own row, then when

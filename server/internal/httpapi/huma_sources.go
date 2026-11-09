@@ -207,6 +207,10 @@ func (a *api) takeSourceTicket(w http.ResponseWriter, r *http.Request, batch *st
 		if err := a.s.AssertPaperUpload(ctx, body.AttemptID, uid(r), body.SizeBytes, limits.SourceFileBytes, time.Now()); err != nil {
 			return uploadTurn{}, err
 		}
+	} else if body.HandInID != "" {
+		if err := a.s.AssertHandInUpload(ctx, body.HandInID, uid(r), body.SizeBytes, limits.SourceFileBytes); err != nil {
+			return uploadTurn{}, err
+		}
 	} else if err := a.s.AssertSourceUploadRoom(ctx, wsID, uid(r), topicName, body.SizeBytes); err != nil {
 		return uploadTurn{}, err
 	}
@@ -376,7 +380,7 @@ func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *strin
 		ContentType: body.ContentType, DeclaredSize: body.SizeBytes,
 		ParseMode: body.ParseMode,
 		ExpiresAt: time.Now().UTC().Add(uploadSessionTTL), BatchID: body.BatchID,
-		AttemptID: body.AttemptID, PaperMaxBytes: limits.SourceFileBytes,
+		AttemptID: body.AttemptID, HandInID: body.HandInID, PaperMaxBytes: limits.SourceFileBytes,
 	}); err != nil {
 		return store.File{}, err
 	}
@@ -425,7 +429,8 @@ func (a *api) checkSourceUpload(
 		return "", "", err
 	}
 	*batch = body.BatchID
-	if body.AttemptID != "" {
+	submission := body.AttemptID != "" || body.HandInID != ""
+	if submission {
 		if err := a.s.MarkPaperBatch(ctx, body.BatchID, userID(ctx)); err != nil {
 			return "", "", err
 		}
@@ -444,6 +449,10 @@ func (a *api) checkSourceUpload(
 	if body.Kind == "" {
 		body.Kind = kindFromName(name)
 	}
+	// Nothing reads a hand-in's files.
+	if body.HandInID != "" {
+		body.ParseMode = sourceupload.ParseModeNone
+	}
 	if body.ParseMode == "" {
 		body.ParseMode = sourceupload.DefaultParseMode(name, body.Kind)
 	}
@@ -461,12 +470,15 @@ func (a *api) checkSourceUpload(
 	if body.DurationSeconds > sourceupload.AudioMaxDurationSeconds {
 		return "", "", huma.Error400BadRequest(fmt.Sprintf("audio uploads are at most %d hours", sourceupload.AudioMaxDurationSeconds/3600))
 	}
-	if body.AttemptID != "" && wsID != "" {
-		return "", "", huma.Error400BadRequest("a paper's file goes in no workspace")
+	if submission && wsID != "" {
+		return "", "", huma.Error400BadRequest("a paper's or hand-in's file goes in no workspace")
+	}
+	if body.AttemptID != "" && body.HandInID != "" {
+		return "", "", huma.Error400BadRequest("a file goes in a paper or a hand-in, not both")
 	}
 	// Credits never block handing in a paper (Epo 2026-11-08): its parse may then
 	// fail, and its answers wait as No credits.
-	if sourceupload.NeedsIngestJob(name, body.Kind, body.ParseMode) && body.AttemptID == "" {
+	if sourceupload.NeedsIngestJob(name, body.Kind, body.ParseMode) && !submission {
 		if err := a.s.AssertCreditsForEstimate(ctx, userID(ctx), body.EstimatedCreditMicros); err != nil {
 			return "", "", err
 		}

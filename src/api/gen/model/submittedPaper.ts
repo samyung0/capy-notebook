@@ -7,7 +7,7 @@
 
 export interface SubmittedPaper {
   assignmentId: string;
-  attemptId: string;
+  attemptId?: string;
   bytes: number;
   createdAt: string;
   id: string;

@@ -713,9 +713,9 @@ function PaperAnswer({
         </Button>
       </div>
       <PaperPages
-        attemptId={attemptId}
         className="grid-cols-1 sm:grid-cols-2"
         files={files}
+        of={{ attemptId }}
         only={whole ? undefined : pages}
         width={480}
       />

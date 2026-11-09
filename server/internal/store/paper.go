@@ -23,9 +23,9 @@ const PaperMaxFiles = 15
 // not answered on paper).
 var ErrPaperClosed = errors.New("this attempt no longer takes files")
 
-// ErrPaperFull: one more file would pass the paper's file count or the
+// ErrPaperFull: one more file would pass a paper's or hand-in's file count or the
 // member's source file cap across its files (O1, Epo 2026-11-08).
-var ErrPaperFull = errors.New("a paper holds at most 15 files within your file size limit")
+var ErrPaperFull = errors.New("you can hand in at most 15 files, within your file size limit")
 
 // checkPaperUploadTx admits size more bytes into userID's running paper
 // attempt: their own, answered on paper, before its time runs out, within
@@ -127,7 +127,7 @@ func (s *Store) OrderPaperFiles(ctx context.Context, userID, attemptID string, f
 			return assignmentInput("name each of the paper's files once")
 		}
 		for i, id := range fileIDs {
-			tag, err := tx.Exec(ctx, `UPDATE files SET attempt_position=$3 WHERE id=$1 AND attempt_id=$2`, id, attemptID, i+1)
+			tag, err := tx.Exec(ctx, `UPDATE files SET submission_position=$3 WHERE id=$1 AND attempt_id=$2`, id, attemptID, i+1)
 			if err != nil {
 				return err
 			}
@@ -530,10 +530,18 @@ const paperDeletableSQL = `t.submitted_at IS NOT NULL AND t.paper = 'read' AND t
 		AND (a.closed_at IS NOT NULL OR (a.no_late AND a.due_at <= now()))
 		AND (a.grades_shown = 'automatic' OR a.grades_released_at IS NOT NULL))`
 
-// SubmittedPaper is one file of a paper its member may delete.
+// submittedDeletableSQL holds for a file f, a paper's or a hand-in's, that its
+// member may delete. A hand-in's goes once its assignment closes, by its
+// owner or its due date, as an unmarked one reads Closed.
+const submittedDeletableSQL = `(EXISTS (SELECT 1 FROM attempts t WHERE t.id = f.attempt_id AND ` + paperDeletableSQL + `)
+	OR EXISTS (SELECT 1 FROM assignments h WHERE h.id = f.hand_in_assignment_id
+		AND (h.closed_at IS NOT NULL OR h.due_at <= now())))`
+
+// SubmittedPaper is one file of a paper or a hand-in its member may delete;
+// a hand-in's has no AttemptID.
 type SubmittedPaper struct {
 	ID            string    `json:"id"`
-	AttemptID     string    `json:"attemptId"`
+	AttemptID     string    `json:"attemptId,omitempty"`
 	Name          string    `json:"name"`
 	Kind          string    `json:"kind"`
 	AssignmentID  string    `json:"assignmentId"`
@@ -553,22 +561,25 @@ type SubmittedPapers struct {
 	NextCursor string           `json:"nextCursor,omitempty"`
 }
 
-// ListSubmittedPapers lists the paper files userID handed in and may delete.
+// ListSubmittedPapers lists the paper and hand-in files userID handed in and
+// may delete.
 func (s *Store) ListSubmittedPapers(ctx context.Context, userID, cursor string, limit int) (SubmittedPapers, error) {
 	out := SubmittedPapers{Items: []SubmittedPaper{}}
 	if err := s.pool.QueryRow(ctx, `SELECT count(*), COALESCE(sum(f.size_bytes), 0)
-		FROM files f JOIN attempts t ON t.id = f.attempt_id
-		WHERE f.user_id = $1 AND `+paperDeletableSQL, userID).Scan(&out.Count, &out.TotalBytes); err != nil {
+		FROM files f WHERE f.user_id = $1 AND f.submission_position IS NOT NULL AND `+submittedDeletableSQL,
+		userID).Scan(&out.Count, &out.TotalBytes); err != nil {
 		return out, err
 	}
 	after, afterID, err := decodeTimeCursor(cursor)
 	if err != nil {
 		return out, err
 	}
-	rows, err := s.pool.Query(ctx, `SELECT f.id, t.id, f.name, f.kind, t.assignment_id, COALESCE(t.quiz_name, ''),
-			COALESCE(t.workspace_id, ''), COALESCE(t.workspace_name, ''), f.size_bytes, f.added_at
-		FROM files f JOIN attempts t ON t.id = f.attempt_id
-		WHERE f.user_id = $1 AND `+paperDeletableSQL+`
+	rows, err := s.pool.Query(ctx, `SELECT f.id, COALESCE(t.id, ''), f.name, f.kind, COALESCE(t.assignment_id, h.id),
+			COALESCE(t.quiz_name, h.title, ''), COALESCE(t.workspace_id, h.workspace_id, ''),
+			COALESCE(t.workspace_name, w.name, ''), f.size_bytes, f.added_at
+		FROM files f LEFT JOIN attempts t ON t.id = f.attempt_id
+			LEFT JOIN assignments h ON h.id = f.hand_in_assignment_id LEFT JOIN workspaces w ON w.id = h.workspace_id
+		WHERE f.user_id = $1 AND f.submission_position IS NOT NULL AND `+submittedDeletableSQL+`
 			AND ($2::timestamptz IS NULL OR (f.added_at, f.id) < ($2, $3))
 		ORDER BY f.added_at DESC, f.id DESC LIMIT $4`, userID, after, afterID, limit+1)
 	if err != nil {
@@ -594,13 +605,14 @@ func (s *Store) ListSubmittedPapers(ctx context.Context, userID, cursor string, 
 	return out, nil
 }
 
-// DeleteSubmittedPapers deletes the caller's deletable paper files: the ids
-// given, or every one when ids is nil. Their marks stay; staff then read that
-// the member deleted the file (mock F2). It returns how many went.
+// DeleteSubmittedPapers deletes the caller's deletable paper and hand-in
+// files: the ids given, or every one when ids is nil. A paper's marks stay;
+// staff then read that the member deleted the file (mock F2). It returns how
+// many went.
 func (s *Store) DeleteSubmittedPapers(ctx context.Context, userID string, ids []string) (int, error) {
-	tag, err := s.pool.Exec(ctx, `DELETE FROM files f USING attempts t
-		WHERE t.id = f.attempt_id AND f.user_id = $1
-			AND ($2::text[] IS NULL OR f.id = ANY($2)) AND `+paperDeletableSQL, userID, ids)
+	tag, err := s.pool.Exec(ctx, `DELETE FROM files f
+		WHERE f.user_id = $1 AND f.submission_position IS NOT NULL
+			AND ($2::text[] IS NULL OR f.id = ANY($2)) AND `+submittedDeletableSQL, userID, ids)
 	return int(tag.RowsAffected()), err
 }
 

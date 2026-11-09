@@ -171,6 +171,8 @@ type AssignmentMine struct {
 	LatePenaltyPct int  `json:"latePenaltyPct"`
 	// Missing: a marked one past its due date with nothing submitted.
 	Missing bool `json:"missing"`
+	// HandIn is their work on an unmarked one that takes files (S3), in order.
+	HandIn []PaperFile `json:"handIn,omitempty"`
 }
 
 // AssignmentList is Study → Assignments. Members counts the workspace's viewer
@@ -539,7 +541,26 @@ func (s *Store) fillAssignmentMine(ctx context.Context, userID string, ids []str
 		mine.Missing = a.Kind == AssignmentMarked && !mine.Done && a.DueAt != nil && !a.DueAt.After(now)
 		a.Mine = &mine
 	}
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	var handIns []string
+	for _, id := range ids {
+		if a := list[at[id]]; a.Mine != nil && a.Kind == AssignmentUnmarked && a.AllowUploads {
+			handIns = append(handIns, id)
+		}
+	}
+	if len(handIns) == 0 {
+		return nil
+	}
+	files, err := handInFiles(ctx, s.pool, handIns, []string{userID})
+	if err != nil {
+		return err
+	}
+	for _, id := range handIns {
+		list[at[id]].Mine.HandIn = files[[2]string{id, userID}]
+	}
+	return nil
 }
 
 // ListAssignments is Study → Assignments: every assignment for a class's owner
@@ -1420,13 +1441,24 @@ func (s *Store) SetAssignmentDone(ctx context.Context, userID, id string, done b
 	if kind != AssignmentUnmarked {
 		return assignmentInput("a marked assignment is done when it is submitted")
 	}
-	if !done {
-		_, err = s.pool.Exec(ctx, `DELETE FROM assignment_done WHERE assignment_id=$1 AND user_id=$2`, id, userID)
+	return s.inTx(ctx, func(tx pgx.Tx) error {
+		// One that takes files is Hand in and Undo hand in (S3).
+		_, uploads, err := lockHandInTx(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		if uploads {
+			if err := s.setHandedInTx(ctx, tx, id, userID, done); err != nil || !done {
+				return err
+			}
+		} else if !done {
+			_, err = tx.Exec(ctx, `DELETE FROM assignment_done WHERE assignment_id=$1 AND user_id=$2`, id, userID)
+			return err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO assignment_done (assignment_id, user_id, done_at) VALUES ($1,$2,$3)
+			ON CONFLICT (assignment_id, user_id) DO NOTHING`, id, userID, now)
 		return err
-	}
-	_, err = s.pool.Exec(ctx, `INSERT INTO assignment_done (assignment_id, user_id, done_at) VALUES ($1,$2,$3)
-		ON CONFLICT (assignment_id, user_id) DO NOTHING`, id, userID, now)
-	return err
+	})
 }
 
 /* ---------------------------------------------------------------- attempts */
@@ -1491,7 +1523,7 @@ type PaperFile struct {
 // paperFiles are an attempt's paper files in order.
 func paperFiles(ctx context.Context, q rowsQueryer, attemptID string) ([]PaperFile, error) {
 	rows, err := q.Query(ctx, `SELECT id, name, kind, size_bytes, status FROM files
-		WHERE attempt_id=$1 ORDER BY attempt_position, id`, attemptID)
+		WHERE attempt_id=$1 ORDER BY submission_position, id`, attemptID)
 	if err != nil {
 		return nil, err
 	}
@@ -2443,6 +2475,8 @@ type AssignmentMemberRow struct {
 	Running        bool `json:"running"`
 	// Missing: past due, nothing submitted.
 	Missing bool `json:"missing"`
+	// Files: what they handed in, on an unmarked one that takes files (T2).
+	Files []PaperFile `json:"files,omitempty"`
 }
 
 // AssignmentQuestionReport is one question of the frozen copy, with its keys,
@@ -2544,7 +2578,7 @@ func (s *Store) GetAssignmentReport(ctx context.Context, userID, id string, now 
 	}
 	out.Members = members
 	if kind != AssignmentMarked {
-		return out, nil
+		return out, s.fillHandIns(ctx, id, due, out.Members)
 	}
 	attempts, err := countedAttempts(ctx, s.pool, id)
 	if err != nil {
@@ -2688,6 +2722,33 @@ func (s *Store) reportMembers(ctx context.Context, id, kind string, due *time.Ti
 		out = append(out, row)
 	}
 	return out, rows.Err()
+}
+
+// fillHandIns adds, on an unmarked assignment that takes files, what each
+// member handed in, Late past its due date (T2).
+func (s *Store) fillHandIns(ctx context.Context, id string, due *time.Time, members []AssignmentMemberRow) error {
+	var uploads bool
+	if err := s.pool.QueryRow(ctx, `SELECT allow_uploads FROM assignments WHERE id=$1`, id).Scan(&uploads); err != nil || !uploads {
+		return err
+	}
+	var users []string
+	for _, row := range members {
+		if row.SubmittedAt != nil {
+			users = append(users, row.UserID)
+		}
+	}
+	files, err := handInFiles(ctx, s.pool, []string{id}, users)
+	if err != nil {
+		return err
+	}
+	for i := range members {
+		row := &members[i]
+		if row.SubmittedAt != nil {
+			row.Files = files[[2]string{id, row.UserID}]
+			row.Late = due != nil && row.SubmittedAt.After(*due)
+		}
+	}
+	return nil
 }
 
 type reportAttempt struct {

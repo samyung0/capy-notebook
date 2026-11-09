@@ -124,7 +124,7 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 		JOIN users owner ON owner.id=COALESCE(w.user_id, f.user_id)
 		WHERE (f.workspace_id IN (`+visibleWorkspacesSQL("$2")+`) OR (f.workspace_id IS NULL AND f.user_id=$2))
 			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL
-			AND f.trashed_at IS NULL AND f.attempt_id IS NULL AND lower(f.name) LIKE $1
+			AND f.trashed_at IS NULL AND f.submission_position IS NULL AND lower(f.name) LIKE $1
 			AND workspace_item_visible(f.hidden, f.workspace_id, $2)
 		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID)
 	if err != nil {

@@ -42,6 +42,7 @@ import {
   percentText,
   takesLateWork,
 } from './assignmentText';
+import { HandInMembers } from './HandIns';
 import { LateBadge } from './LateBadge';
 
 /** Questions the report opens with, as the board draws them. */
@@ -108,10 +109,15 @@ export function AssignmentReport({
             done: manage?.done ?? 0,
             total: manage?.assigned ?? 0,
           })
-        : m.assignment_done_of({
-            done: manage?.done ?? 0,
-            total: manage?.assigned ?? 0,
-          }),
+        : assignment.allowUploads
+          ? m.assignment_handed_in_of({
+              done: manage?.done ?? 0,
+              total: manage?.assigned ?? 0,
+            })
+          : m.assignment_done_of({
+              done: manage?.done ?? 0,
+              total: manage?.assigned ?? 0,
+            }),
     manage?.average === undefined
       ? null
       : m.assignment_chip_average({ percent: percentText(manage.average) }),
@@ -300,6 +306,8 @@ function UnmarkedBody({
         <h2 className="t-subtitle">{m.assignment_tab_members()}</h2>
         {loading ? (
           <SkeletonList className="mt-3" count={5} rowHeight={40} />
+        ) : assignment.allowUploads ? (
+          <HandInMembers assignmentId={assignment.id} members={members} />
         ) : (
           <ul className="mt-2">
             {members.map((member) => (

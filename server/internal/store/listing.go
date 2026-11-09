@@ -458,8 +458,8 @@ func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFi
 		where = ` WHERE (f.user_id=$1 OR f.workspace_id IN (` + memberWorkspacesSQL("$1") + `)) AND f.trashed_at IS NULL
 			AND workspace_item_visible(f.hidden, f.workspace_id, $1)`
 	}
-	// A paper's files list only in Files › Submissions (Epo 2026-11-08).
-	where += ` AND f.attempt_id IS NULL`
+	// A paper's or a hand-in's files list only in Files › Submissions (Epo 2026-11-08).
+	where += ` AND f.submission_position IS NULL`
 	if len(f.Kinds) > 0 {
 		args = append(args, f.Kinds)
 		where += fmt.Sprintf(` AND f.kind = ANY($%d)`, len(args))

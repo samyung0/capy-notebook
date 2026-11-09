@@ -285,7 +285,10 @@ objects for the reaper.
   A paper's files (an assignment answered on paper, `files.attempt_id`) reserve
   the same way (`reservePaperStorageTx`), within 15 files and the member's
   source file cap across them; Upload file can only start while storage is not
-  full, and Files › Submissions deletes them once marked and closed. Before you start warns such a member when
+  full, and Files › Submissions deletes them once marked and closed. A hand-in's
+  files (`files.hand_in_assignment_id`, an unmarked assignment that takes files)
+  reserve the same way within the same bounds, are stored with no parse or
+  credits, and Files › Submissions deletes them once the assignment closes. Before you start warns such a member when
   the paper has drawing parts (`drawingParts`); an assignment's pages show the
   owner nothing about it. A practice Check of a
   drawing asks `AssertStorageRoom` for its boards and images before the model

@@ -1981,6 +1981,7 @@ export function useUploadSource(wsId: string | null) {
       batchTotal,
       hidden,
       attemptId,
+      handInId,
       onQueued,
       onUploadProgress,
       signal,
@@ -1999,6 +2000,9 @@ export function useUploadSource(wsId: string | null) {
       /** Hands the file in as part of the caller's running paper attempt
        * (standalone uploads only, Epo 2026-11-08). */
       attemptId?: string;
+      /** Adds the file to the caller's hand-in on this unmarked assignment
+       * (S3): stored, never parsed. */
+      handInId?: string;
       /** fast = OpenDataLoader, with OCR on text-less pages; none = store-only
        * for non-text kinds (no parse, not indexed). Text kinds (txt/md/json)
        * still index under none — there is no parse route to pick. */
@@ -2023,6 +2027,7 @@ export function useUploadSource(wsId: string | null) {
         attemptId,
         batchId,
         batchTotal,
+        handInId,
         // A standalone file has no topic or members: the fields stay out.
         ...(wsId
           ? {
@@ -2062,6 +2067,10 @@ export function useUploadSource(wsId: string | null) {
         qc.invalidateQueries({
           queryKey: qk.assignmentAttempt(vars.attemptId),
         });
+        return;
+      }
+      if (vars.handInId) {
+        qc.invalidateQueries({ queryKey: qk.assignment(vars.handInId) });
         return;
       }
       track('source_uploaded', {
@@ -3347,15 +3356,33 @@ export function useOrderPaperFiles(attemptId: string) {
   });
 }
 
-/** A paper file's links, for its member or the class's staff. */
-export const usePaperFileLinks = (attemptId: string, fileId: string) =>
+/** Whose files: a paper's attempt, or the member's hand-in on an unmarked
+ * assignment (S3). */
+export type SubmissionOf = { attemptId: string } | { handInId: string };
+
+const submissionFilePath = (of: SubmissionOf, fileId: string) =>
+  'attemptId' in of
+    ? `/assignment-attempts/${of.attemptId}/paper/${fileId}`
+    : `/assignments/${of.handInId}/hand-in/${fileId}`;
+
+/** Remove a file from the member's open hand-in. */
+export function useRemoveHandInFile(assignmentId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (fileId: string) =>
+      api.del(submissionFilePath({ handInId: assignmentId }, fileId)),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.assignment(assignmentId) }),
+  });
+}
+
+/** A paper or hand-in file's links, for its member or the class's staff. */
+export const usePaperFileLinks = (of: SubmissionOf, fileId: string) =>
   useQuery({
     meta: { errorBoundary: false },
     queryFn: () =>
-      api.get<FileLinks>(
-        `/assignment-attempts/${attemptId}/paper/${fileId}/links`
-      ),
-    queryKey: ['paperFileLinks', attemptId, fileId] as const,
+      api.get<FileLinks>(`${submissionFilePath(of, fileId)}/links`),
+    queryKey: ['paperFileLinks', of, fileId] as const,
     // Presigned for the hour.
     staleTime: 30 * 60_000,
   });

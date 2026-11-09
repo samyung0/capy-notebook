@@ -356,6 +356,9 @@ type CreateSourceUploadReq struct {
 	// attempt (Epo 2026-11-08): uploaded with no workspace, it saves past the
 	// storage limit, and running out of credits never refuses it.
 	AttemptID string `json:"attemptId,omitempty" maxLength:"64"`
+	// HandInID adds the file to the caller's hand-in on that unmarked
+	// assignment (S3): stored, never parsed, in no workspace.
+	HandInID string `json:"handInId,omitempty" maxLength:"64"`
 }
 
 // ImportSourcesReq pulls files from a connected Drive/OneDrive account.
