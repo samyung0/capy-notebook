@@ -137,22 +137,33 @@ func (a *api) markPaper(ctx context.Context, assignmentID, attemptID string, aga
 		return nil
 	}
 	body := paperBody(paper, again)
+	// Under manual marking the read maps parts to pages and marks closed
+	// parts; staff mark the open ones (Q716).
+	body["grade"] = !paper.Manual
 	byLabel := map[string]store.PaperPart{}
 	for _, p := range paper.Parts {
 		byLabel[p.Label] = p
 	}
-	reply, reason, callErr := a.postPaper(marking, paper, body)
 	saving, done := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer done()
-	if callErr != nil {
-		// Every part this run was for waits, saying why.
+	// Every part this run is for waits, saying why.
+	waitAll := func(reason string) error {
 		var failures []store.AIFailure
 		for _, p := range paper.Parts {
 			if _, listed := again[p.PartID]; again == nil || listed {
 				failures = append(failures, store.AIFailure{QuestionID: p.QuestionID, PartID: p.PartID, Reason: reason})
 			}
 		}
-		if err := a.s.SaveAIFailures(saving, attemptID, failures); err != nil {
+		return a.s.SaveAIFailures(saving, attemptID, failures)
+	}
+	// A text or Office file with no text would read as blank and score
+	// nothing (finding 8).
+	if paper.TextGap != "" {
+		return waitAll(paper.TextGap)
+	}
+	reply, reason, callErr := a.postPaper(marking, paper, body)
+	if callErr != nil {
+		if err := waitAll(reason); err != nil {
 			return err
 		}
 		return fmt.Errorf("paper %s: %w", attemptID, callErr)

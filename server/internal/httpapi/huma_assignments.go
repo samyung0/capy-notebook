@@ -327,6 +327,7 @@ func (a *api) getAssignmentReport(ctx context.Context, in *assignmentIDInput) (*
 
 type markAssignmentWithAIOutput struct {
 	Body struct {
+		// Total counts the answers and the papers to read it runs over.
 		Total int `json:"total"`
 	}
 }
@@ -344,9 +345,15 @@ func (a *api) markAssignmentWithAI(ctx context.Context, in *assignmentIDInput) (
 	if err != nil {
 		return nil, assignmentError(err)
 	}
+	// A paper still to read (its read failed, waited out its ingest, or was
+	// never started) is read first; its parts then join (finding 2).
+	papers, err := a.s.PapersToRead(ctx, in.ID, "")
+	if err != nil {
+		return nil, assignmentError(err)
+	}
 	out := &markAssignmentWithAIOutput{}
-	out.Body.Total = len(answers)
-	if len(answers) == 0 {
+	out.Body.Total = len(answers) + len(papers)
+	if out.Body.Total == 0 {
 		return out, nil
 	}
 	// Refused here while the page waits only when grading is not set up: each
@@ -404,13 +411,13 @@ func (a *api) submitAssignmentAttempt(ctx context.Context, in *assignmentAnswers
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
-	now := time.Now()
-	res, err := a.s.SubmitAssignmentAttempt(ctx, userID(ctx), in.ID, in.Body.Answers, now)
+	res, err := a.s.SubmitAssignmentAttempt(ctx, userID(ctx), in.ID, in.Body.Answers, time.Now())
 	if err != nil {
 		return nil, assignmentError(err)
 	}
-	// Only the submit that did it: a repeated one is answered from the attempt.
-	if res.WaitingAnswers > 0 && res.SubmittedAt != nil && !res.SubmittedAt.Before(now.Add(-time.Millisecond)) {
+	// Only the submit that did it, read from the attempt as stored: the
+	// member's view shows nothing waiting while grades wait for release.
+	if res.NeedsMarking {
 		a.markAnswersSoon(res.AssignmentID, res.ID)
 	}
 	// The class's staff, for answers to approve, and the member's other tabs.

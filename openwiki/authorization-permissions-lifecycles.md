@@ -1325,10 +1325,15 @@ member hands one in and no other member sees it. Its member adds, removes and
 orders files while the attempt runs; `GET /api/assignment-attempts/{id}/paper/{fileId}/links`
 signs a file for its member and, once submitted, for the class's owners and
 editors (`PaperFileBlob`); nothing else reads it. The files go with the attempt
-and its assignment (cascade), never list in Files, search, Recent or the trash
-path, and their member deletes them from Files › Submissions under the drawings'
-rule. A frozen account still attempts and submits, drawings and papers included
-(Epo 2026-11-08, O4): an answer is no material it edits.
+and its assignment (cascade), never list in Files, search, Recent, account chat
+(`AccountDocuments`, `AccountDocumentAccess` and the pipeline's standalone
+legs skip `submission_position`) or the trash path, open read only for their
+member (no editing session: `SourceSession` reads, and `sourceActorsAllowed`
+refuses an edit with 403; Q714, finding 4), and their member deletes them from
+Files › Submissions under the drawings' rule, a leaver's going once read with
+nothing waiting (`dropLeaverSubmissionsTx`). A frozen account still attempts
+and submits, drawings and papers included (Epo 2026-11-08, O4): an answer is no
+material it edits.
 
 A hand-in (an unmarked assignment that takes files, migration 0162, mocks S3
 and T2) is the same kind of file, linked by `files.hand_in_assignment_id` to
@@ -1340,8 +1345,9 @@ which the Members tab shows Late. Hand in (`PUT /api/assignments/{id}/done`)
 needs a file and locks them; Undo hand in reopens them while it is open.
 `GET /api/assignments/{id}/hand-in/{fileId}/links` signs a file for its member
 and, once handed in, for the class's owners and editors (`HandInFileBlob`).
-The files go with the assignment (cascade) and list in Files › Submissions once
-it closes, for the member to delete.
+The files go with the assignment (cascade), with the member as they leave the
+class, and list in Files › Submissions once it closes, for the member to
+delete; like a paper's they are read only and out of account chat.
 
 Sources: [drawing routes](../server/internal/httpapi/drawings.go) and
 [drawing store](../server/internal/store/drawings.go).

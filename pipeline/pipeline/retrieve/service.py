@@ -795,6 +795,8 @@ class PaperReq(LLMPin):
     parts: list[PaperPart] = Field(min_length=1)
     # Given: no read, only these open and drawing parts graded on these pages.
     pages: dict[str, list[int]] | None = None
+    # False under manual marking: the read alone, open parts left to staff.
+    grade: bool = True
 
 
 @app.post("/paper")
@@ -823,6 +825,7 @@ async def mark_paper(req: PaperReq) -> dict[str, Any]:
                 for p in req.parts
             ],
             req.pages,
+            grade=req.grade,
             model=models.resolve_query_model(
                 req.providerSlug,
                 req.modelSlug,

@@ -283,8 +283,10 @@ func (s *Store) readAssignments(ctx context.Context, userID string, staff bool, 
 		if staff {
 			a.Manage = &manage
 		}
-		// Hidden again by the owner, it is no longer practice for members.
-		if manage.QuizID != nil && src.released != nil && !src.trashed && (staff || !src.hidden) {
+		// Hidden again by the owner, it is no longer practice for members; under
+		// Do not show it never is, as its quiz stays refused (assignmentKeysHeldSQL).
+		if manage.QuizID != nil && src.released != nil && !src.trashed &&
+			(staff || (!src.hidden && manage.ShowAnswers != AnswersNever)) {
 			a.PracticeQuizID = manage.QuizID
 		}
 		sources[a.ID] = src
@@ -796,15 +798,22 @@ func (s *Store) lockAssignmentPayerRowsTx(ctx context.Context, tx pgx.Tx, wsID, 
 // closed by hand nor past a No late submissions due date.
 const assignmentOpenSQL = `NOT a.draft AND a.closed_at IS NULL AND NOT (a.no_late AND a.due_at <= now())`
 
-// quizAssignedToSQL reads the open assignment a viewer member takes this quiz
-// through, the earliest due, or null (Epo 2026-11-04). While it reads an id the
+// assignmentKeysHeldSQL is a closed marked assignment row a whose quiz still
+// holds back its keys from those it went to: its grades wait for release under
+// Show grades Manual, or its answers are Do not show (finding 5, Q714).
+const assignmentKeysHeldSQL = `a.kind='marked' AND ((a.grades_shown='manual' AND a.grades_released_at IS NULL)
+	OR a.answers_shown='never')`
+
+// quizAssignedToSQL reads the assignment a viewer member takes this quiz
+// through, the earliest due, or null (Epo 2026-11-04): an open one, or a closed
+// one still holding its keys (assignmentKeysHeldSQL). While it reads an id the
 // row lists for them, hidden or not, and opens that assignment, while the quiz
 // itself is refused (materialEffectiveAccess) and is not their practice.
 func quizAssignedToSQL(quiz, user string) string {
 	return `(SELECT a.id FROM assignments a
 		JOIN workspaces aw ON aw.id=a.workspace_id AND aw.kind='class'
 		JOIN workspace_members am ON am.workspace_id=a.workspace_id AND am.user_id=` + user + ` AND am.role='viewer'
-		WHERE a.source_quiz_id=` + quiz + ` AND ` + assignmentOpenSQL + `
+		WHERE a.source_quiz_id=` + quiz + ` AND NOT a.draft AND (` + assignmentOpenSQL + ` OR ` + assignmentKeysHeldSQL + `)
 			AND (a.assign_all OR EXISTS (SELECT 1 FROM assignment_assignees x WHERE x.assignment_id=a.id AND x.user_id=` + user + `))
 		ORDER BY a.due_at, a.id LIMIT 1)`
 }
@@ -1537,6 +1546,9 @@ type AssignmentAttempt struct {
 	// files in order; "" when answered in the app.
 	Paper      string      `json:"paper,omitempty" enum:"upload,reading,read"`
 	PaperFiles []PaperFile `json:"paperFiles" nullable:"false"`
+	// NeedsMarking: the submit that returned this handed it in with answers
+	// for the AI or a paper to read, whatever the member's view shows.
+	NeedsMarking bool `json:"-"`
 }
 
 // PaperFile is one file of an attempt's paper: the member's own upload.
@@ -1582,19 +1594,21 @@ type attemptRow struct {
 	answers, graded, frozen                  []byte
 	// paper is PaperUpload, PaperReading or PaperRead, or "" in the app.
 	paper string
+	// marking is the assignment's (MarkingAIApprove, MarkingAI or MarkingManual).
+	marking string
 }
 
 const attemptRowCols = `t.id, t.assignment_id, t.user_id, a.workspace_id, COALESCE(a.source_quiz_id,''),
 	t.started_at, t.deadline_at, t.submitted_at, a.due_at, a.closed_at, a.released_at,
 	a.no_late, a.late_penalty_pct, t.auto_submitted, a.answers_shown, a.grades_shown, a.grades_released_at, a.shuffle, t.correct::float8, t.total::float8, t.waiting_marks::float8, t.waiting_answers,
-	t.answers, t.questions, a.questions, COALESCE(t.paper, '')`
+	t.answers, t.questions, a.questions, COALESCE(t.paper, ''), a.marking`
 
 func scanAttemptRow(row pgx.Row) (attemptRow, error) {
 	var r attemptRow
 	err := row.Scan(&r.id, &r.assignmentID, &r.userID, &r.wsID, &r.sourceID,
 		&r.startedAt, &r.deadline, &r.submitted, &r.dueAt, &r.closedAt, &r.released,
 		&r.noLate, &r.latePenaltyPct, &r.auto, &r.showAnswers, &r.showGrades, &r.gradesReleased, &r.shuffle, &r.correct, &r.total, &r.waitingMarks, &r.waitingAnswers,
-		&r.answers, &r.graded, &r.frozen, &r.paper)
+		&r.answers, &r.graded, &r.frozen, &r.paper, &r.marking)
 	if isNoRows(err) {
 		return r, ErrNotFound
 	}
@@ -1623,13 +1637,14 @@ func (r attemptRow) timedOut(now time.Time) bool {
 // and the member's storage must not be full (S6), since the paper's files then
 // save past the limit.
 func (s *Store) StartAssignment(ctx context.Context, userID, id string, upload bool, now time.Time) (AssignmentAttempt, error) {
-	var attemptID string
+	var attemptID, handedIn string
 	var view AssignmentAttempt
 	wsID, err := s.assignmentWorkspace(ctx, id)
 	if err != nil {
 		return view, err
 	}
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
+		handedIn = ""
 		if err := lockWorkspaceKeyShareTx(ctx, tx, wsID); err != nil {
 			return err
 		}
@@ -1680,6 +1695,9 @@ func (s *Store) StartAssignment(ctx context.Context, userID, id string, upload b
 			if err := s.finishAttemptTx(ctx, tx, running, nil, running.timedOut(now), now); err != nil {
 				return err
 			}
+			if running.paper == PaperUpload {
+				handedIn = running.id
+			}
 		} else if !errors.Is(err, ErrNotFound) {
 			return err
 		}
@@ -1718,6 +1736,9 @@ func (s *Store) StartAssignment(ctx context.Context, userID, id string, upload b
 	})
 	if err != nil {
 		return view, err
+	}
+	if handedIn != "" {
+		s.paperSubmitted(id, handedIn)
 	}
 	return s.GetAssignmentAttempt(ctx, userID, attemptID, now)
 }
@@ -1835,11 +1856,15 @@ func checkAssignmentAnswers(answers map[string]any) error {
 // SubmitAssignmentAttempt submits the running attempt with its final answers.
 // Past its time the answers sent are ignored, and what was saved is submitted.
 // A second submit of a submitted attempt changes nothing and returns it.
+// NeedsMarking reads the attempt as stored, not the member's view, which
+// shows no waiting answers while grades wait for release.
 func (s *Store) SubmitAssignmentAttempt(ctx context.Context, userID, attemptID string, answers map[string]any, now time.Time) (AssignmentAttempt, error) {
 	if err := checkAssignmentAnswers(answers); err != nil {
 		return AssignmentAttempt{}, err
 	}
+	needsMarking := false
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
+		needsMarking = false
 		if err := lockAttemptWorkspaceTx(ctx, tx, attemptID); err != nil {
 			return err
 		}
@@ -1858,15 +1883,24 @@ func (s *Store) SubmitAssignmentAttempt(ctx context.Context, userID, attemptID s
 		if r.submitted != nil {
 			return nil
 		}
+		sent, auto := answers, false
 		if r.expired(now) {
-			return s.finishAttemptTx(ctx, tx, r, nil, r.timedOut(now), now)
+			sent, auto = nil, r.timedOut(now)
 		}
-		return s.finishAttemptTx(ctx, tx, r, answers, false, now)
+		if err := s.finishAttemptTx(ctx, tx, r, sent, auto, now); err != nil {
+			return err
+		}
+		// A paper is read under every marking (Q716); typed answers go to the AI
+		// unless staff mark by hand.
+		return tx.QueryRow(ctx, `SELECT COALESCE(paper, '') = 'reading' OR (waiting_answers > 0 AND $2 <> 'manual')
+			FROM attempts WHERE id=$1`, r.id, r.marking).Scan(&needsMarking)
 	})
 	if err != nil {
 		return AssignmentAttempt{}, err
 	}
-	return s.GetAssignmentAttempt(ctx, userID, attemptID, now)
+	out, err := s.GetAssignmentAttempt(ctx, userID, attemptID, now)
+	out.NeedsMarking = needsMarking
+	return out, err
 }
 
 // finishAttemptTx grades a running attempt: closed parts here, with today's
@@ -2110,9 +2144,12 @@ func lockAttemptWorkspaceTx(ctx context.Context, tx pgx.Tx, attemptID string) er
 	return lockWorkspaceKeyShareTx(ctx, tx, wsID)
 }
 
-// finishAttemptIfRunning submits what was saved, if nothing beat it to it.
+// finishAttemptIfRunning submits what was saved, if nothing beat it to it. A
+// paper it hands in starts its read (OnPaperHandedIn).
 func (s *Store) finishAttemptIfRunning(ctx context.Context, attemptID string, now time.Time) error {
-	return s.inTx(ctx, func(tx pgx.Tx) error {
+	handedIn := ""
+	err := s.inTx(ctx, func(tx pgx.Tx) error {
+		handedIn = ""
 		if err := lockAttemptWorkspaceTx(ctx, tx, attemptID); err != nil {
 			return err
 		}
@@ -2127,8 +2164,15 @@ func (s *Store) finishAttemptIfRunning(ctx context.Context, attemptID string, no
 		if r.submitted != nil || !r.expired(now) {
 			return nil
 		}
+		if r.paper == PaperUpload {
+			handedIn = r.assignmentID
+		}
 		return s.finishAttemptTx(ctx, tx, r, nil, r.timedOut(now), now)
 	})
+	if err == nil && handedIn != "" {
+		s.paperSubmitted(handedIn, attemptID)
+	}
+	return err
 }
 
 // attemptView renders an attempt for its caller.
@@ -2886,7 +2930,8 @@ func questionReports(frozen []map[string]any, attempts, others []reportAttempt) 
 				}
 			}
 			// By their own copy: a republish may have changed the question since.
-			if hasOpenPart(graded) {
+			// A paper still to read waits on its closed parts too.
+			if hasOpenPart(graded) || waiting {
 				rows = append(rows, AssignmentAnswerRow{QuestionID: id, UserID: attempt.userID, AttemptID: attempt.id, AttemptNumber: attempt.number,
 					Waiting: waiting, AIMarked: waiting && questionAIMarked(graded), AIAwarded: questionAIAwarded(graded), AIWarning: questionAIWarning(graded), AIError: questionAIError(graded), Awarded: awarded, Marks: marks})
 			}

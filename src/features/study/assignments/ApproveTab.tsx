@@ -75,8 +75,14 @@ export function ApproveTab({
   );
   // Marked by hand (A4): no AI to run or approve.
   const manual = assignment.manage?.marking === 'manual';
-  const openQuestions = report.questions.filter((q) =>
-    q.question.parts.some((p) => modelMarked(p.answer.type))
+  // A paper still to read waits on its closed questions too, which Mark with
+  // AI reads (finding 2).
+  const openQuestions = report.questions.filter(
+    (q) =>
+      q.question.parts.some((p) => modelMarked(p.answer.type)) ||
+      report.answers.some(
+        (row) => row.waiting && row.questionId === q.question.id
+      )
   );
   const firstWaiting = report.answers.find((row) => row.waiting);
   const { isPending: marking, mutate: markWithAI } = useMarkAssignmentWithAI(

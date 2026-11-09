@@ -193,6 +193,11 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		stripePortal:         billing.CreatePortalSession,
 		streamByUser:         make(map[string]int),
 	}
+	// A paper the server submits for its member (the sweep, an attempt past
+	// its time read or restarted) starts its read as a submit does (finding 2).
+	if s != nil {
+		s.OnPaperHandedIn(a.markAnswersSoon)
+	}
 	// Provisioning, from the first request or the Clerk webhook, also adds the
 	// starter workspace's sample content.
 	provisioner := starterProvisioner{Store: s, a: a}
