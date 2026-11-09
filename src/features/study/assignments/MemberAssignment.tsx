@@ -120,7 +120,7 @@ function Unmarked({ assignment }: { assignment: Assignment }) {
           </Button>
         ) : (
           <Button
-            disabled={isPending}
+            disabled={isPending || closed}
             onClick={() => mutate({ done: !done, id: assignment.id })}
             variant={done ? 'outline' : undefined}
           >

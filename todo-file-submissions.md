@@ -410,7 +410,9 @@ C1, S4, S5, T1, F1 at laptop and 360 px.
 switch on Unmarked below Files, Your work with Add files and Hand in / Undo
 hand in, the Members tab's Handed in and Work columns with a file viewer, and
 hand-in files in Files › Submissions once the assignment closes. A hand-in
-takes files past its due date (Late on T2) until the owner closes it.
+takes files past its due date (Late on T2) until it closes. Unmarked
+assignments follow the Marked late rules (Epo 2026-11-09, "same rules"): No
+late submissions on Unmarked too, closing only by hand or under it.
 Verified: Go store suites with `TestHandInIsHandedInAndDeleted`, vitest,
 e2e `assignment-hand-in.spec.ts`, screens against C2, S3, T2 at laptop and
 360 px. Not built: a page count on Your work's rows (files are not parsed, so

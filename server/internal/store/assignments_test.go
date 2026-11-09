@@ -190,6 +190,7 @@ func TestCheckLatePolicy(t *testing.T) {
 		func(f *AssignmentForm) { f.NoLate = true },
 		func(f *AssignmentForm) { f.LatePenaltyPct = 20 },
 		func(f *AssignmentForm) { f.LatePenaltyPct = 50 },
+		func(f *AssignmentForm) { f.NoLate, f.Kind = true, AssignmentUnmarked },
 	} {
 		f := marked
 		form(&f)
@@ -202,7 +203,7 @@ func TestCheckLatePolicy(t *testing.T) {
 		func(f *AssignmentForm) { f.NoLate, f.LatePenaltyPct = true, 20 },
 		func(f *AssignmentForm) { f.NoLate, f.DueAt = true, nil },
 		func(f *AssignmentForm) { f.LatePenaltyPct, f.DueAt = 20, nil },
-		func(f *AssignmentForm) { f.NoLate, f.Kind = true, AssignmentUnmarked },
+		func(f *AssignmentForm) { f.LatePenaltyPct, f.Kind = 20, AssignmentUnmarked },
 	} {
 		f := marked
 		form(&f)

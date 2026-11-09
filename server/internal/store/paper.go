@@ -532,10 +532,10 @@ const paperDeletableSQL = `t.submitted_at IS NOT NULL AND t.paper = 'read' AND t
 
 // submittedDeletableSQL holds for a file f, a paper's or a hand-in's, that its
 // member may delete. A hand-in's goes once its assignment closes, by its
-// owner or its due date, as an unmarked one reads Closed.
+// owner, or at its due date under NoLate.
 const submittedDeletableSQL = `(EXISTS (SELECT 1 FROM attempts t WHERE t.id = f.attempt_id AND ` + paperDeletableSQL + `)
 	OR EXISTS (SELECT 1 FROM assignments h WHERE h.id = f.hand_in_assignment_id
-		AND (h.closed_at IS NOT NULL OR h.due_at <= now())))`
+		AND (h.closed_at IS NOT NULL OR (h.no_late AND h.due_at <= now()))))`
 
 // SubmittedPaper is one file of a paper or a hand-in its member may delete;
 // a hand-in's has no AttemptID.

@@ -8,9 +8,10 @@ test('To do lists a class, its heading opens the Dashboard and a row its assignm
   await expect(
     page.getByRole('heading', { exact: true, name: m.nav_todo() })
   ).toBeVisible({ timeout: 30_000 });
-  const approve = page.getByRole('link', {
-    name: new RegExp(m.dashboard_approve_on()),
-  });
+  // The mock's past paper and paper-answered exam both wait for approval.
+  const approve = page
+    .getByRole('link', { name: new RegExp(m.dashboard_approve_on()) })
+    .first();
   await expect(approve).toBeVisible({ timeout: 30_000 });
   await expect(approve).toHaveAttribute('href', /tab=approve/);
   await page

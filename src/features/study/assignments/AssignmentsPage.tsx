@@ -489,9 +489,13 @@ function MemberList({ workspaceId }: { workspaceId: string }) {
     if (row.kind === 'unmarked')
       return mine.done ? (
         <span className="t-meta font-semibold text-fg-muted">
-          {m.assignment_done()}
+          {row.allowUploads
+            ? m.assignment_col_handed_in()
+            : m.assignment_done()}
         </span>
-      ) : (
+      ) : // One that takes files is handed in from its page (S3); a closed one
+      // takes no tick.
+      row.allowUploads || row.closedAt ? null : (
         <Button
           disabled={ticking}
           onClick={(event) => {

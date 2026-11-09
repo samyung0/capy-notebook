@@ -175,7 +175,8 @@ export function TodoRows({
           : null;
         return (
           <Row key={a.id}>
-            {a.kind === 'unmarked' && (
+            {/* One that takes files is handed in from its page (S3). */}
+            {a.kind === 'unmarked' && !a.allowUploads && (
               <span className="grid w-7 shrink-0 justify-items-start pl-1.5">
                 <Checkbox
                   aria-label={a.title}

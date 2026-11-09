@@ -138,7 +138,7 @@ const handInOpen = (assignmentId: string) => {
   return (
     !!row?.allowUploads &&
     row.kind === 'unmarked' &&
-    !row.closedAt &&
+    !isClosed(row) &&
     !done.get(assignmentId)?.has(db.user.id)
   );
 };
@@ -724,8 +724,8 @@ const closedAtOf = (row: Row) => {
   return row.closedAt;
 };
 
-const isClosed = (row: Row) =>
-  !!closedAtOf(row) || (row.kind === 'unmarked' && pastDue(row));
+/** Either kind (Epo 2026-11-09, "same rules"). */
+const isClosed = (row: Row) => !!closedAtOf(row);
 
 const isLate = (row: Row, submittedAt?: string) =>
   !row.noLate &&
@@ -979,7 +979,7 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
               row.kind === 'unmarked' && row.allowUploads
                 ? handInOf(row.id, db.user.id)
                 : undefined,
-            late: isLate(row, mine?.submittedAt),
+            late: isLate(row, mine?.submittedAt ?? tick),
             latePenaltyPct: penaltyOf(row, mine?.submittedAt),
             mark:
               myTotals && !gradesHidden
@@ -1160,7 +1160,7 @@ function report(row: Row, viewer: Viewer): AssignmentReport {
         attemptId: a?.id,
         avatarUrl: person.avatarUrl,
         correct: sum?.correct,
-        late: isLate(row, a?.submittedAt),
+        late: isLate(row, a?.submittedAt ?? tick),
         latePenaltyPct: penaltyOf(row, a?.submittedAt),
         mark: sum && penalised(sum.correct, penaltyOf(row, a?.submittedAt)),
         minutes: a
@@ -1184,10 +1184,7 @@ function report(row: Row, viewer: Viewer): AssignmentReport {
         total: sum?.total,
         userId: id,
         ...(row.kind === 'unmarked' && row.allowUploads && tick
-          ? {
-              files: handInOf(row.id, id),
-              late: !!row.dueAt && Date.parse(tick) > Date.parse(row.dueAt),
-            }
+          ? { files: handInOf(row.id, id) }
           : {}),
         waitingAnswers: submissions(row.id, id).reduce(
           (n, x) => n + totals(x.graded).waitingAnswers,
@@ -1553,10 +1550,13 @@ export const assignmentHandlers = (viewer: Viewer) => {
       const id = String(params.id);
       const body = (await request.json()) as { done: boolean };
       const row = rowOf(id);
+      if (row && isClosed(row))
+        return HttpResponse.json(
+          { code: 'assignment_closed', message: 'this assignment is closed' },
+          { status: 409 }
+        );
       if (row?.allowUploads && row.kind === 'unmarked') {
-        const open =
-          !row.closedAt &&
-          (body.done ? handInOpen(id) : done.get(id)?.has(db.user.id));
+        const open = body.done ? handInOpen(id) : done.get(id)?.has(db.user.id);
         if (!open || (body.done && !handInOf(id, db.user.id).length))
           return HttpResponse.json(
             {

@@ -41,7 +41,8 @@ func (s *Store) openHandInTx(ctx context.Context, tx pgx.Tx, assignmentID, userI
 	}
 	var wsID string
 	var draft, uploads, closed, handedIn bool
-	err := tx.QueryRow(ctx, `SELECT workspace_id, draft, kind='unmarked' AND allow_uploads, closed_at IS NOT NULL,
+	err := tx.QueryRow(ctx, `SELECT workspace_id, draft, kind='unmarked' AND allow_uploads,
+			closed_at IS NOT NULL OR (no_late AND due_at <= now()),
 			EXISTS (SELECT 1 FROM assignment_done d WHERE d.assignment_id=a.id AND d.user_id=$2)
 		FROM assignments a WHERE id=$1`, assignmentID, userID).Scan(&wsID, &draft, &uploads, &closed, &handedIn)
 	if isNoRows(err) {
@@ -60,7 +61,8 @@ func (s *Store) openHandInTx(ctx context.Context, tx pgx.Tx, assignmentID, userI
 	if draft || !assigned {
 		return ErrNotFound
 	}
-	// Past its due date it still takes work, shown as Late (T2); closing ends it.
+	// Past its due date it still takes work, shown as Late (T2), unless NoLate
+	// closed it there; closing by hand ends it too.
 	if !uploads || closed || handedIn {
 		return ErrHandInClosed
 	}

@@ -172,9 +172,10 @@ export function NewAssignmentDialog({
   const [advancedOpen, setAdvancedOpen] = useState(
     () => advancedStartsOpen(existing) || !!manage?.shuffle
   );
-  // The policy goes with a marked assignment's due date; a published one is past
-  // being a draft.
-  const hasPolicy = kind === 'marked' && !!dueAt;
+  // No late submissions goes with a due date on either kind (Epo 2026-11-09),
+  // the penalty with a marked one's marks; a published one is past being a
+  // draft.
+  const hasPolicy = !!dueAt;
   const hasDraft = !existing || existing.draft;
   const [titleEdited, setTitleEdited] = useState(!!existing);
   const { mutate: create, isPending: creating } =
@@ -577,7 +578,7 @@ export function NewAssignmentDialog({
               />
             </div>
           )}
-          {(kind === 'marked' || hasDraft) && (
+          {(kind === 'marked' || hasDraft || hasPolicy) && (
             <AdvancedSection
               onToggle={() => setAdvancedOpen(!advancedOpen)}
               open={advancedOpen}
@@ -596,7 +597,7 @@ export function NewAssignmentDialog({
                   name="noLate"
                 />
               )}
-              {hasPolicy && !noLate && (
+              {hasPolicy && kind === 'marked' && !noLate && (
                 <div className="flex min-h-8 items-center justify-between gap-4">
                   <span className="font-medium">
                     {m.assignment_field_late_penalty()}

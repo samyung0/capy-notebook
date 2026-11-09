@@ -190,3 +190,36 @@ func TestHandInIsHandedInAndDeleted(t *testing.T) {
 		t.Fatalf("deleted %d, err %v", n, err)
 	}
 }
+
+// TestUnmarkedFollowsTheLateRules: an unmarked assignment closes at its due
+// date only under No late submissions, as a marked one does (Epo 2026-11-09);
+// without it a tick after the due date stays open and reads Late.
+func TestUnmarkedFollowsTheLateRules(t *testing.T) {
+	f := newAssignmentFixture(t, "unmarked-late")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	due := now.Add(time.Hour)
+	after := now.Add(2 * time.Hour)
+	create := func(noLate bool) Assignment {
+		t.Helper()
+		created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it",
+			Attempts: 1, AssignAll: true, DueAt: &due, NoLate: noLate, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose,
+			ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{}}, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return created
+	}
+	open := create(false)
+	if err := f.s.SetAssignmentDone(ctx, f.viewer, open.ID, true, after); err != nil {
+		t.Fatal(err)
+	}
+	mine, err := f.s.GetAssignment(ctx, f.viewer, open.ID, after)
+	if err != nil || mine.Closed || !mine.Mine.Late {
+		t.Fatalf("late tick: closed %v, mine %+v, err %v", mine.Closed, mine.Mine, err)
+	}
+	closing := create(true)
+	if err := f.s.SetAssignmentDone(ctx, f.viewer, closing.ID, true, after); !errors.Is(err, ErrAssignmentClosed) {
+		t.Fatalf("ticked after a No late due date: %v", err)
+	}
+}

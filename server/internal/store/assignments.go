@@ -73,12 +73,12 @@ type Assignment struct {
 	DueAt    *time.Time `json:"dueAt,omitempty"`
 	// ClosedAt is when it closed: by hand, or at the due date under NoLate.
 	ClosedAt *time.Time `json:"closedAt,omitempty"`
-	// Closed: as ClosedAt, and an unmarked one past its due date, which only
-	// leaves the open list.
+	// Closed: as ClosedAt, for either kind (Epo 2026-11-09, "same rules").
 	Closed bool `json:"closed"`
 	Draft  bool `json:"draft"`
 	// NoLate: it closes itself at the due date. Off, late work is open until it
-	// is closed by hand, with LatePenaltyPct (0, 20 or 50) off its mark.
+	// is closed by hand, with a marked one's LatePenaltyPct (0, 20 or 50) off
+	// its mark.
 	NoLate         bool `json:"noLate"`
 	LatePenaltyPct int  `json:"latePenaltyPct"`
 	// TimeLimitMin, when set, starts the server's clock at Start.
@@ -273,7 +273,7 @@ func (s *Store) readAssignments(ctx context.Context, userID string, staff bool, 
 		}
 		a.ClosedAt = assignmentClosedAt(a.NoLate, a.DueAt, a.ClosedAt, now)
 		a.GradesHidden = gradesHidden(manage.ShowGrades, manage.GradesReleasedAt)
-		a.Closed = a.ClosedAt != nil || (a.Kind == AssignmentUnmarked && a.DueAt != nil && !a.DueAt.After(now))
+		a.Closed = a.ClosedAt != nil
 		a.TopicIDs, a.Files = []string{}, []AssignmentFile{}
 		if src.topicID != nil {
 			a.TopicIDs = []string{*src.topicID}
@@ -526,6 +526,10 @@ func (s *Store) fillAssignmentMine(ctx context.Context, userID string, ids []str
 		if a.Draft {
 			continue
 		}
+		if mine.DoneAt != nil && submittedAt == nil {
+			// An unmarked one's tick is late as a submission is.
+			mine.Late = assignmentLate(a.NoLate, a.DueAt, *mine.DoneAt)
+		}
 		if submittedAt != nil {
 			mine.DoneAt = submittedAt
 			mine.Late = assignmentLate(a.NoLate, a.DueAt, *submittedAt)
@@ -709,8 +713,12 @@ func checkLatePolicy(form AssignmentForm) error {
 	if !form.NoLate && form.LatePenaltyPct == 0 {
 		return nil
 	}
-	if form.Kind != AssignmentMarked || form.DueAt == nil {
-		return assignmentInput("a late policy needs a marked assignment with a due date")
+	// Either kind closes at its due date under NoLate; only marks take a penalty.
+	if form.DueAt == nil {
+		return assignmentInput("a late policy needs a due date")
+	}
+	if form.Kind != AssignmentMarked && form.LatePenaltyPct != 0 {
+		return assignmentInput("an unmarked assignment has no mark to penalise")
 	}
 	if form.NoLate && form.LatePenaltyPct != 0 {
 		return assignmentInput("no late submissions leaves nothing to penalise")
@@ -1446,6 +1454,16 @@ func (s *Store) SetAssignmentDone(ctx context.Context, userID, id string, done b
 		_, uploads, err := lockHandInTx(ctx, tx, id)
 		if err != nil {
 			return err
+		}
+		// Closed, by hand or at its due date under NoLate, it takes no change,
+		// as a marked one takes no submission.
+		var closed bool
+		if err := tx.QueryRow(ctx, `SELECT closed_at IS NOT NULL OR (no_late AND due_at <= $2) FROM assignments WHERE id=$1`,
+			id, now).Scan(&closed); err != nil {
+			return err
+		}
+		if closed {
+			return ErrAssignmentClosed
 		}
 		if uploads {
 			if err := s.setHandedInTx(ctx, tx, id, userID, done); err != nil || !done {
@@ -2578,7 +2596,7 @@ func (s *Store) GetAssignmentReport(ctx context.Context, userID, id string, now 
 	}
 	out.Members = members
 	if kind != AssignmentMarked {
-		return out, s.fillHandIns(ctx, id, due, out.Members)
+		return out, s.fillUnmarked(ctx, id, noLate, due, out.Members)
 	}
 	attempts, err := countedAttempts(ctx, s.pool, id)
 	if err != nil {
@@ -2724,9 +2742,15 @@ func (s *Store) reportMembers(ctx context.Context, id, kind string, due *time.Ti
 	return out, rows.Err()
 }
 
-// fillHandIns adds, on an unmarked assignment that takes files, what each
-// member handed in, Late past its due date (T2).
-func (s *Store) fillHandIns(ctx context.Context, id string, due *time.Time, members []AssignmentMemberRow) error {
+// fillUnmarked marks an unmarked assignment's ticks Late past its due date,
+// as a marked one's submissions, and adds what each member handed in when it
+// takes files (T2).
+func (s *Store) fillUnmarked(ctx context.Context, id string, noLate bool, due *time.Time, members []AssignmentMemberRow) error {
+	for i := range members {
+		if at := members[i].SubmittedAt; at != nil {
+			members[i].Late = assignmentLate(noLate, due, *at)
+		}
+	}
 	var uploads bool
 	if err := s.pool.QueryRow(ctx, `SELECT allow_uploads FROM assignments WHERE id=$1`, id).Scan(&uploads); err != nil || !uploads {
 		return err
@@ -2745,7 +2769,6 @@ func (s *Store) fillHandIns(ctx context.Context, id string, due *time.Time, memb
 		row := &members[i]
 		if row.SubmittedAt != nil {
 			row.Files = files[[2]string{id, row.UserID}]
-			row.Late = due != nil && row.SubmittedAt.After(*due)
 		}
 	}
 	return nil

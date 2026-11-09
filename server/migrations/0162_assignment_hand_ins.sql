@@ -19,3 +19,10 @@ CREATE INDEX files_hand_in_idx ON files (hand_in_assignment_id, user_id, submiss
 -- An upload reserved for a hand-in, which its finalize links to the assignment.
 ALTER TABLE upload_sessions
   ADD COLUMN hand_in_assignment_id text REFERENCES assignments(id) ON DELETE SET NULL;
+
+-- No late submissions on either kind (Epo 2026-11-09, "same rules"): it needs
+-- a due date; only a marked one's marks take a late penalty.
+ALTER TABLE assignments DROP CONSTRAINT assignments_check3;
+ALTER TABLE assignments ADD CONSTRAINT assignments_late_policy CHECK (
+  (NOT no_late OR due_at IS NOT NULL)
+  AND (late_penalty_pct = 0 OR (kind = 'marked' AND due_at IS NOT NULL)));

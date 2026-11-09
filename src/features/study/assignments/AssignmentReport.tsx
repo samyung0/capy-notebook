@@ -316,12 +316,13 @@ function UnmarkedBody({
                 key={member.userId}
               >
                 <MemberName member={member} />
-                <span className="t-meta ml-auto shrink-0 text-fg-muted">
+                <span className="t-meta ml-auto flex shrink-0 items-center gap-2 text-fg-muted">
                   {member.submittedAt
                     ? m.assignment_done_on({
                         date: dayLabel(member.submittedAt),
                       })
                     : m.assignment_not_done()}
+                  {member.late && <LateBadge penaltyPct={0} />}
                 </span>
               </li>
             ))}

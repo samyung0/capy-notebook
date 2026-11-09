@@ -1334,13 +1334,14 @@ A hand-in (an unmarked assignment that takes files, migration 0162, mocks S3
 and T2) is the same kind of file, linked by `files.hand_in_assignment_id` to
 the assignment and owned by its member. The member adds and removes files
 (`DELETE /api/assignments/{id}/hand-in/{fileId}`) while the hand-in is open:
-not handed in and not closed by its owner; a due date that passed still takes
-work, which the Members tab shows Late. Hand in (`PUT /api/assignments/{id}/done`)
+not handed in and the assignment not closed (by hand, or at its due date under
+No late submissions); without No late a due date that passed still takes work,
+which the Members tab shows Late. Hand in (`PUT /api/assignments/{id}/done`)
 needs a file and locks them; Undo hand in reopens them while it is open.
 `GET /api/assignments/{id}/hand-in/{fileId}/links` signs a file for its member
 and, once handed in, for the class's owners and editors (`HandInFileBlob`).
 The files go with the assignment (cascade) and list in Files › Submissions once
-it reads Closed (closed by hand or past its due date), for the member to delete.
+it closes, for the member to delete.
 
 Sources: [drawing routes](../server/internal/httpapi/drawings.go) and
 [drawing store](../server/internal/store/drawings.go).

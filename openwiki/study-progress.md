@@ -947,6 +947,12 @@ scrolls itself into view, since it opens at the dialog's foot, below the fold on
 phone. Editing a published assignment has no Draft only, and one with no due date
 has no Advanced at all.
 
+Both kinds follow the same rules (Epo 2026-11-09, "same rules", migration 0162
+`assignments_late_policy`): an Unmarked one with a due date has No late
+submissions too and closes only by hand or under it, its ticks and hand-ins
+read Late past the due date, and a closed one takes no tick, Hand in or Undo.
+The penalty stays Marked's alone, since there is no mark to take it from.
+
 - **No late submissions on.** It closes itself at the due date: nothing starts, an
   attempt still running is submitted as saved, and nothing reads Late. Settings has
   no Reopen once it has closed itself (`closedItself`), though staff can still close
@@ -1028,16 +1034,17 @@ Reopening hides the keys again.
 
 **Handing in files** (Epo 2026-11-08, migration 0162, mocks C2, S3, T2): the
 same switch on an Unmarked assignment (C2: Files below Due and Assign to, then
-the switch) turns Mark as done into Hand in. The member's page gets Your work,
+the switch) turns Mark as done into Hand in, which the Assignments list and To do
+then leave to the page (no quick tick). The member's page gets Your work,
 with Add files while it is open; each file is their own standalone upload with
 `handInId` (`files.hand_in_assignment_id`, in `submission_position` order),
 stored with no parse and never read or marked. Hand in needs a file and ticks
 the assignment (`assignment_done`), the meta line then saying Handed in on its
-date; Undo hand in reopens it until the owner closes it. The report's chip reads
+date; Undo hand in reopens it until the assignment closes. The report's chip reads
 "N of M handed in", and its Members tab lists each member's date (Late past the
 due date) and files, which open in a viewer of their pages with Open file for a
 single one. Files › Submissions lists a hand-in's files once the assignment
-reads Closed.
+closes, by hand or at a No late due date.
 
 **Show grades** (C4, S7, T5; Epo 2026-11-08, migration 0160 `grades_shown`,
 `grades_released_at`). Automatic, the default, shows marks as they are decided.
