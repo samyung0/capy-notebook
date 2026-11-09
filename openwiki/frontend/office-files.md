@@ -48,14 +48,16 @@ git submodule update --init vendor/betteroffice
 `prebuild`, `pretypecheck`, and `pretest` run
 `scripts/prepare-betteroffice.mjs`; `pnpm dev` and Playwright's Vite servers do
 not, so run `pnpm office:prepare` first (browser E2E CI does). It installs the fork's locked Bun workspace
-and builds the scoped DOCX stylesheet plus DOCX/XLSX/PPTX viewer/editor WASM artifacts and the headless checkpoint bundle. The fork builder verifies source/output fingerprints before reusing WASM. A cold build
+and builds the scoped DOCX stylesheet plus DOCX/XLSX/PPTX viewer/editor WASM artifacts, the fonts package's `fontpack.wasm` decoder (the fork gitignores it and builds it only with `bun run build:fonts-decoder`; without it every packed face fails) and the headless checkpoint bundle. The fork builder verifies source/output fingerprints before reusing WASM; the decoder script always runs and cargo decides what is stale. A cold build
 requires Bun 1.4.3 (CI's), Rust, `wasm-pack` 0.15.0, and `wasm-opt` from Binaryen. Existing,
 intact generated artifacts are reused.
 
 Frontend CI, browser E2E CI, and SPA deployment restore
-`vendor/betteroffice/target/wasm-pack` through
+`vendor/betteroffice/target/wasm-pack` and the decoder's cargo target
+`target/fonts-decoder` through
 `.github/actions/cache-betteroffice`. The cache key uses the fork's
-`scripts/wasm-cache-key.ts` fingerprint plus runner OS and architecture. It
+`scripts/wasm-cache-key.ts` fingerprint plus runner OS and architecture and
+the hash of `scripts/build-fonts-decoder.ts`, which the fingerprint leaves out. It
 covers Rust sources, Cargo configuration, compiler/optimizer versions, build
 flags, and WASM build scripts, so a compiler change can invalidate the cache
 even with an unchanged submodule pin. Preparation still validates cached output
@@ -2234,9 +2236,18 @@ them CJK text overlapped in view and vanished in edit. A DOCX downloads one
 whole face per script, picked by the document's East Asian language (a
 Japanese file loads Noto Sans JP alone, 3.6 MB packed, where the old rule added
 Noto Sans SC; Epo 2026-11-09, Q708 A); the Unicode-range slices come at a later
-pin. The editor's
+pin. The language is each run's resolved East Asian language: a Japanese file
+whose runs carry none (or one other than Japanese, Korean or Chinese) also
+loads Noto Sans SC for its Han (about 10 MB with JP), and its kanji-only
+paragraphs paint in Simplified Chinese forms, with no error since both faces
+load; a document-level language (`w:themeFontLang`) is for the slices pin. The editor's
 Google Fonts lookup is off (`setGoogleFontsEnabled(false)`), so a document
-font with no bundled face paints with its CSS fallback stack. A face that fails to load
+font with no bundled face paints with its CSS fallback stack. Characters a
+document's face and Liberation lack (unstyled Greek or Cyrillic, general
+punctuation, arrows, shapes, dingbats) measure and paint with the engine's
+backstop, BetterOffice Base Latin, which Capy's provider loads like any other
+face (`resolveBaseLatin`): the viewer worker decodes it with `fontpack.wasm`
+and sends it to the frame. A face that fails to load
 shows an explicit error instead of the fallback layout
 (`src/office-runtime/officeFonts.ts`, `pptxFonts.ts`).
 
