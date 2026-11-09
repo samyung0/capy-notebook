@@ -302,7 +302,7 @@ struct Written {
 /// level): `material::assert_canonical`, the embed catalog's `required` of
 /// the elements a Plate room holds, less a media block's `assetId`
 /// ([on_candidate] checks it).
-pub const OWN_KEYS: [(&str, &[&str]); 7] = [
+pub const OWN_KEYS: [(&str, &[&str]); 8] = [
     // Not a top-level block only, so its id is its own key.
     ("mermaid", &["id", "source"]),
     ("chart", &["block"]),
@@ -314,6 +314,9 @@ pub const OWN_KEYS: [(&str, &[&str]); 7] = [
         &["materialId", "refKind"],
     ),
     ("video", &["provider", "videoId"]),
+    // A canvas's one block; no room serves a canvas, but admission keeps the
+    // store's rules for every non-item kind.
+    ("canvas_board", &["boardAssetId", "version", "images"]),
 ];
 
 /// The keys an element of type `kind` needs besides `type` and `id`.
@@ -385,7 +388,10 @@ fn shared_keys(keys: fn(&catalog::Element) -> &'static [&'static str]) -> Vec<&'
 }
 
 /// The keys whose value the store checks beyond its presence ([value_ok]).
-const VALUE_KEYS: [&str; 12] = [
+const VALUE_KEYS: [&str; 15] = [
+    "boardAssetId",
+    "version",
+    "images",
     "refKind",
     "provider",
     "videoId",
@@ -407,10 +413,21 @@ const VALUE_KEYS: [&str; 12] = [
 /// fit, a figure's block is its live map (checked whole on the copy,
 /// [on_candidate]), a Mermaid source is a string (or its shared text), any
 /// block's indent is a number that stops at `LIST_INDENT_MAX`, a table's
-/// column sizes and left margin are sizes, and a list's style holds no `;` or
-/// control character.
+/// column sizes and left margin are sizes, a list's style holds no `;` or
+/// control character, and a canvas's block names its board asset (empty
+/// before the first save), counts its saves and lists its images by asset id
+/// (Go's `materialdoc.CanvasDocument`).
 fn value_ok(kind: &str, key: &str, value: &Any) -> bool {
     match (kind, key, value) {
+        ("canvas_board", "boardAssetId", value) => matches!(value, Any::String(_)),
+        ("canvas_board", "version", value) => {
+            matches!(value, Any::Number(version) if *version >= 0.0 && version.fract() == 0.0)
+        }
+        ("canvas_board", "images", value) => {
+            matches!(value, Any::Array(images) if images.iter().all(|image| {
+                matches!(image, Any::Map(entry) if matches!(entry.get("assetId"), Some(Any::String(_))))
+            }))
+        }
         (crate::material::MATERIAL_REF_TYPE, "refKind", Any::String(item)) => {
             catalog::material_kind(item).is_some_and(|item| item.item)
         }
