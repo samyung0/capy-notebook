@@ -179,10 +179,13 @@ type AIMark struct {
 	Flag       string
 }
 
-// Why the AI left an open part unmarked, shown on the owner's row (mock T3).
+// Why the AI left an open part unmarked, shown on the owner's row (mock T3):
+// no credits, a grading failure, or a file of its paper that can't be read
+// (Q730).
 const (
 	AIErrorCredits = "credits"
 	AIErrorGrade   = "error"
+	AIErrorFile    = "file"
 )
 
 // AIFailure is an open part the AI could not mark, and why.

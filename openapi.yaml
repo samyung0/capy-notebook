@@ -502,6 +502,7 @@ components:
           enum:
             - credits
             - error
+            - file
           type: string
         aiMarked:
           type: boolean

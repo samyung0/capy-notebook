@@ -2614,7 +2614,7 @@ type AssignmentAnswerRow struct {
 	HandMarking bool `json:"handMarking"`
 	// AIError is why the AI left it unmarked: "credits" (the member has none)
 	// or "error" (the grade failed), shown as No credits or Grade Error (mock T3).
-	AIError string  `json:"aiError,omitempty" enum:"credits,error"`
+	AIError string  `json:"aiError,omitempty" enum:"credits,error,file"`
 	Awarded float64 `json:"awarded"`
 	Marks   float64 `json:"marks"`
 }

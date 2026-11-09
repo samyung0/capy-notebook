@@ -159,3 +159,29 @@ it('offers Read papers again under manual marking while a paper waits to be read
   expect(runAI).toHaveBeenCalledTimes(1);
   act(() => root.unmount());
 });
+
+// Q730: a paper whose file can't be read says so on its rows, beside No
+// credits and Grade Error.
+it("badges a row whose paper file can't be read", async () => {
+  const root = createRoot(document.getElementById('root') as never);
+  await act(async () =>
+    root.render(
+      <ApproveTab
+        assignment={
+          { attempts: 1, id: 'as1', workspaceId: 'ws1' } as Assignment
+        }
+        report={
+          {
+            ...report,
+            answers: [{ ...answer('at_paper', 1, true), aiError: 'file' }],
+          } as unknown as AssignmentReport
+        }
+        search={{}}
+      />
+    )
+  );
+  expect(document.querySelector('li button')?.textContent).toContain(
+    m.assignment_cant_read_file()
+  );
+  act(() => root.unmount());
+});

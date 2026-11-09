@@ -973,7 +973,7 @@ export const GetAssignmentReportResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "answers": zod.array(zod.object({
   "aiAwarded": zod.number(),
-  "aiError": zod.enum(['credits', 'error']).optional(),
+  "aiError": zod.enum(['credits', 'error', 'file']).optional(),
   "aiMarked": zod.boolean(),
   "aiWarning": zod.string(),
   "attemptId": zod.string(),

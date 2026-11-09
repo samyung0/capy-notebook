@@ -390,19 +390,21 @@ func TestPaperReadUsesTheAttemptsOwnCopy(t *testing.T) {
 	}
 }
 
-// TestPaperTextGapSaysWhy (finding 8): a text paper with no text says No
-// credits when its ingest was skipped for them and Grade Error when it failed.
+// TestPaperTextGapSaysWhy (finding 8, Q730): an Office paper with no passages
+// says No credits when its ingest was skipped for them and Can't read file
+// when it failed.
 func TestPaperTextGapSaysWhy(t *testing.T) {
 	f := newAssignmentFixture(t, "paper-text-gap")
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	run := startPaper(t, f, now, nil)
-	file := addPaperFile(t, f, run.attemptID, "answers.txt", "txt", now)
+	file := addPaperFile(t, f, run.attemptID, "answers.docx", "doc", now)
 	if _, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.attemptID, map[string]any{}, now.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	for status, want := range map[string]string{"ready": AIErrorCredits, "failed": AIErrorGrade} {
-		if _, err := f.s.pool.Exec(ctx, `UPDATE files SET status=$2, indexed=false WHERE id=$1`, file.ID, status); err != nil {
+	for status, want := range map[string]string{"ready": AIErrorCredits, "failed": AIErrorFile} {
+		// A fast parse it would have run, had credits not skipped it.
+		if _, err := f.s.pool.Exec(ctx, `UPDATE files SET status=$2, indexed=false, parse_mode='fast' WHERE id=$1`, file.ID, status); err != nil {
 			t.Fatal(err)
 		}
 		paper, err := f.s.GetPaper(ctx, run.attemptID)

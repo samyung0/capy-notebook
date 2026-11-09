@@ -22,10 +22,12 @@ import (
 // paperStub stands in for the pipeline's /paper: it finds every part on page
 // 1, reads the choice part as B and grades the open part full when asked to.
 type paperStub struct {
-	calls  atomic.Int32
-	fail   atomic.Bool
-	mu     sync.Mutex
-	grades []bool
+	calls atomic.Int32
+	fail  atomic.Bool
+	// unreadable answers as the pipeline does for a PDF it can't open (Q730).
+	unreadable atomic.Bool
+	mu         sync.Mutex
+	grades     []bool
 }
 
 func openPaperAPI(t *testing.T) (http.Handler, *store.Store, *paperStub) {
@@ -49,6 +51,11 @@ func openPaperAPI(t *testing.T) (http.Handler, *store.Store, *paperStub) {
 		stub.mu.Lock()
 		stub.grades = append(stub.grades, body.Grade)
 		stub.mu.Unlock()
+		if stub.unreadable.Load() {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"code":"file_unreadable","message":"a.pdf can't be opened."}`))
+			return
+		}
 		if stub.fail.Load() {
 			w.WriteHeader(http.StatusBadGateway)
 			return
@@ -265,9 +272,34 @@ func TestManualMarkingReadsThePaperWithoutGrading(t *testing.T) {
 	}
 }
 
+// A paper file the pipeline can't open leaves Can't read file on every part's
+// row, which Mark with AI still retries (Q730).
+func TestPaperFileThatCannotBeReadSaysSo(t *testing.T) {
+	h, st, stub := openPaperAPI(t)
+	stub.unreadable.Store(true)
+	id := paperAssignment(t, h, "ai", 0)
+	attemptID := startPaperWithFile(t, h, st, id)
+	if rec := doReq(t, h, http.MethodPost, "/api/assignment-attempts/"+attemptID+"/submit", "u_viewer",
+		map[string]any{"answers": map[string]any{}}); rec.Code != http.StatusOK {
+		t.Fatalf("submit: status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	waitForAIError(t, h, id)
+	rec := doReq(t, h, http.MethodGet, "/api/assignments/"+id+"/report", "u_owner", nil)
+	var report struct{ Answers []answerRow }
+	_ = json.Unmarshal(rec.Body.Bytes(), &report)
+	if len(report.Answers) != 2 {
+		t.Fatalf("rows = %+v", report.Answers)
+	}
+	for _, row := range report.Answers {
+		if row.AIError != store.AIErrorFile {
+			t.Fatalf("row = %+v, want Can't read file", row)
+		}
+	}
+}
+
 // Under manual marking a paper whose read failed counts in the report's
-// papersToRead, and Read papers again (mark-with-ai) reads it once more without
-// grading, on the member's credits (Q725).
+// papersToRead with no error on its rows, and Read papers again (mark-with-ai)
+// reads it once more without grading, on the member's credits (Q725, Q730).
 func TestReadPapersAgainUnderManualMarking(t *testing.T) {
 	h, st, stub := openPaperAPI(t)
 	stub.fail.Store(true)
@@ -277,15 +309,30 @@ func TestReadPapersAgainUnderManualMarking(t *testing.T) {
 		map[string]any{"answers": map[string]any{}}); rec.Code != http.StatusOK {
 		t.Fatalf("submit: status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	waitForAIError(t, h, id)
-	toRead := func() int {
-		rec := doReq(t, h, http.MethodGet, "/api/assignments/"+id+"/report", "u_owner", nil)
-		var report struct{ PapersToRead int }
-		_ = json.Unmarshal(rec.Body.Bytes(), &report)
-		return report.PapersToRead
+	deadline := time.Now().Add(10 * time.Second)
+	for stub.calls.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
 	}
-	if n := toRead(); n != 1 {
-		t.Fatalf("papersToRead after the failed read = %d", n)
+	if settledCalls(&stub.calls) != 1 {
+		t.Fatal("no failed read")
+	}
+	report := func() (papersToRead int, rows []answerRow) {
+		rec := doReq(t, h, http.MethodGet, "/api/assignments/"+id+"/report", "u_owner", nil)
+		var got struct {
+			PapersToRead int
+			Answers      []answerRow
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &got)
+		return got.PapersToRead, got.Answers
+	}
+	toRead, rows := report()
+	if toRead != 1 || len(rows) == 0 {
+		t.Fatalf("after the failed read: papersToRead %d, rows %+v", toRead, rows)
+	}
+	for _, row := range rows {
+		if row.AIError != "" || !row.Waiting {
+			t.Fatalf("row = %+v, want waiting with no error", row)
+		}
 	}
 	stub.fail.Store(false)
 	rec := doReq(t, h, http.MethodPost, "/api/assignments/"+id+"/mark-with-ai", "u_owner", nil)
@@ -296,7 +343,7 @@ func TestReadPapersAgainUnderManualMarking(t *testing.T) {
 	if read.Correct != 1 || read.WaitingAnswers != 1 {
 		t.Fatalf("marked %v, waiting %d", read.Correct, read.WaitingAnswers)
 	}
-	if n := toRead(); n != 0 {
+	if n, _ := report(); n != 0 {
 		t.Fatalf("papersToRead after the read = %d", n)
 	}
 	stub.mu.Lock()

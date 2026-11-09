@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/pipeline"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -86,8 +88,16 @@ func (a *api) waitForPaperFiles(ctx context.Context, attemptID string) (store.Pa
 	}
 }
 
+// unreadablePaperCodes are /paper's refusals of a file it can't open or render
+// (the pipeline's ExtractionRefused): the owner's rows say Can't read file
+// (Q730).
+var unreadablePaperCodes = map[string]bool{
+	"file_unreadable": true, "file_unavailable": true, "unsupported_format": true, "unavailable_target": true,
+}
+
 // postPaper runs /paper on the payer's credits. A failure of the whole call
-// returns why (store.AIErrorCredits or store.AIErrorGrade) and the error.
+// returns why (store.AIErrorCredits, store.AIErrorFile or store.AIErrorGrade)
+// and the error.
 func (a *api) postPaper(ctx context.Context, paper store.Paper, body map[string]any) (paperReply, string, error) {
 	var reply paperReply
 	llm, err := a.gradingLLM(ctx, paper.PayerID)
@@ -109,6 +119,10 @@ func (a *api) postPaper(ctx context.Context, paper store.Paper, body map[string]
 		if errors.Is(err, store.ErrCreditsExhausted) {
 			return reply, store.AIErrorCredits, err
 		}
+		var refused *pipeline.Error
+		if errors.As(err, &refused) && refused.Status == http.StatusBadRequest && unreadablePaperCodes[refused.Decode().Code] {
+			return reply, store.AIErrorFile, err
+		}
 		return reply, store.AIErrorGrade, err
 	}
 	if err := json.Unmarshal(raw, &reply); err != nil {
@@ -119,7 +133,9 @@ func (a *api) postPaper(ctx context.Context, paper store.Paper, body map[string]
 
 // markPaper reads a submitted paper and grades its open parts, or with the
 // paper read, grades again the open parts in again (part id to pages). What
-// could not be graded waits with why, for Mark with AI.
+// could not be graded waits with why, for Mark with AI. Under manual marking
+// nothing is noted: a failed read leaves its parts waiting for hand marking
+// with no badge, and Read papers again reads it (Q730).
 func (a *api) markPaper(ctx context.Context, assignmentID, attemptID string, again map[string][]int) error {
 	marking, cancel := context.WithTimeout(ctx, markingAttemptTimeout)
 	defer cancel()
@@ -148,6 +164,9 @@ func (a *api) markPaper(ctx context.Context, assignmentID, attemptID string, aga
 	defer done()
 	// Every part this run is for waits, saying why.
 	waitAll := func(reason string) error {
+		if paper.Manual {
+			return nil
+		}
 		var failures []store.AIFailure
 		for _, p := range paper.Parts {
 			if _, listed := again[p.PartID]; again == nil || listed {
@@ -182,7 +201,7 @@ func (a *api) markPaper(ctx context.Context, assignmentID, attemptID string, aga
 		}
 		reads[part.PartID] = store.PaperFinding{Pages: got.Pages, Answer: answer}
 		switch {
-		case got.Error != "":
+		case got.Error != "" && !paper.Manual:
 			failures = append(failures, store.AIFailure{QuestionID: part.QuestionID, PartID: part.PartID, Reason: got.Error})
 		case len(got.Shares) == len(part.ItemMarks) && len(got.Shares) > 0:
 			items := make([]float64, len(got.Shares))

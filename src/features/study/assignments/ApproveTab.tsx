@@ -325,7 +325,9 @@ export function ApproveTab({
                     <span className="inline-flex h-5.5 shrink-0 items-center rounded-md bg-tint-error px-1.75 font-semibold text-tint-error-fg text-xs">
                       {row.aiError === 'credits'
                         ? m.assignment_no_credits()
-                        : m.assignment_grade_error()}
+                        : row.aiError === 'file'
+                          ? m.assignment_cant_read_file()
+                          : m.assignment_grade_error()}
                     </span>
                   ) : row.waiting ? (
                     <span className="inline-flex h-5.5 shrink-0 items-center rounded-md bg-tint-warning px-1.75 font-semibold text-tint-warning-fg text-xs">
@@ -636,9 +638,11 @@ function MarkForm({
             })
           : parts.some((p) => p.aiError === 'credits')
             ? m.assignment_not_graded_credits()
-            : parts.some((p) => p.aiError === 'error')
-              ? m.assignment_not_graded_error()
-              : m.assignment_ai_not_marked()}
+            : parts.some((p) => p.aiError === 'file')
+              ? m.assignment_not_graded_file()
+              : parts.some((p) => p.aiError === 'error')
+                ? m.assignment_not_graded_error()
+                : m.assignment_ai_not_marked()}
         {' · '}
         <b className="font-bold text-fg">
           {m.assignment_mark_of({

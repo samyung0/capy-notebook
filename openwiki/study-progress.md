@@ -987,9 +987,10 @@ Go scoring as a quiz (`questions.Graded`). An answered open part is left
 `pending` ("Not marked"), and the AI then marks it in the background, on the
 credits of the member attempting (`markAnswersSoon`, Epo 2026-11-08; one lock per
 member); a blank one earns 0. A part it could not mark keeps why, `aiError`
-`credits` (that member has none left) or `error` (the grade failed), which only
-staff read: Approve AI marks shows it on the row as No credits or Grade Error and
-in the answer pane as one line, with no banner and no names (mock T3). Waiting
+`credits` (that member has none left), `error` (the grade failed) or `file` (a
+file of its paper can't be read, Q730), which only staff read: Approve AI marks
+shows it on the row as No credits, Grade Error or Can't read file and in the
+answer pane as one line, with no banner and no names (mock T3). Waiting
 answers count as `toApprove`, and `notGraded` how many of them have no AI mark,
 which the Assignments row, the report header and Approve AI marks show apart from
 those to approve. Mark with AI runs each attempt on its member's credits and is
@@ -1108,14 +1109,22 @@ Reopening hides the keys again.
   read with no pages, stores each part's `pages`, logs the answers
   (`paper = 'read'`), then saves the AI's marks and failures as for typed
   answers. A text or Office file with no text (its ingest failed, or was
-  skipped for credits) is not read: every part waits with Grade Error or No
-  credits (finding 8). A failed read, or one that waited out the ingest, leaves
+  skipped for credits) is not read: every part waits with Can't read file or
+  No credits (finding 8, Q730). A PDF the pipeline can't open (or that opens
+  with no pages) or render answers `/paper` 400 `file_unreadable`, and its
+  `file_unavailable`, `unsupported_format` and `unavailable_target` refusals
+  read the same: every part waits with Can't read file, which Mark with AI
+  still retries (Q730). Processing is never part of submitting: an uploaded
+  file counts as handed in, and nothing about its processing shows to the
+  member or holds Submit (Q730). A failed read, or one that waited out the ingest, leaves
   the paper `reading`, every question of it on Approve (closed ones too), and
   Mark with AI reads it again (`PapersToRead`); nothing retries by itself. Mark
   with AI later grades the waiting open parts again on their pages. Under
   manual marking the paper is still read, on the member's credits (Q716): the
   read maps each part to its pages and marks closed parts (`/paper` with
-  `grade: false`), and open parts wait for staff. There Read papers again sits
+  `grade: false`), and open parts wait for staff. A read that fails there
+  notes no reason: its parts wait for hand marking with no badge, as any
+  Manual answer (Q730). There Read papers again sits
   where Mark with AI would, shown while the report's `papersToRead` (papers
   still `reading`: a read that failed, never ran, or runs now) is above zero;
   it is the same `mark-with-ai` call, reading without grading on each

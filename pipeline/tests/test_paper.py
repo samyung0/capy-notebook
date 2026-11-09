@@ -196,6 +196,23 @@ def test_the_route_refuses_too_many_pages(monkeypatch, pdf):
     assert refused.json()["detail"]["code"] == "too_many_pages"
 
 
+async def test_a_pdf_that_will_not_open_is_unreadable(monkeypatch, pdf):
+    """Q730: Go shows Can't read file for this refusal, on every part."""
+
+    def broken(path):
+        raise RuntimeError("cannot open broken document")
+
+    monkeypatch.setattr(extraction, "_page_count", broken)
+    with pytest.raises(extraction.ExtractionRefused) as refused:
+        await paper.mark(FILES, [part("1", "open", ITEMS)], None, model=None)
+    assert refused.value.code == paper.UNREADABLE
+    pdf.count = 0
+    monkeypatch.setattr(extraction, "_page_count", lambda path: pdf.count)
+    with pytest.raises(extraction.ExtractionRefused) as refused:
+        await paper.mark(FILES, [part("1", "open", ITEMS)], None, model=None)
+    assert refused.value.code == paper.UNREADABLE
+
+
 async def test_a_batch_failed_for_credits_says_so(monkeypatch, pdf):
     monkeypatch.setattr(
         paper.accounting, "current", lambda: SimpleNamespace(credits_exhausted=True)
