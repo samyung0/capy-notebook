@@ -340,6 +340,14 @@ func gradesHidden(shown string, released *time.Time) bool {
 	return shown == GradesManual && released == nil
 }
 
+// noLateDue is the due date that closes it under No late submissions.
+func noLateDue(noLate bool, due *time.Time) *time.Time {
+	if noLate {
+		return due
+	}
+	return nil
+}
+
 // assignmentLate is whether a submission came after the due date. Under No late
 // submissions nothing is late: a running attempt is submitted for its member.
 func assignmentLate(noLate bool, due *time.Time, submitted time.Time) bool {
@@ -1495,7 +1503,10 @@ type AssignmentAttempt struct {
 	StartedAt     *time.Time `json:"startedAt,omitempty"`
 	// DeadlineAt is when the time runs out; Now is the server's clock, which
 	// the page's timer counts against.
-	DeadlineAt    *time.Time `json:"deadlineAt,omitempty"`
+	DeadlineAt *time.Time `json:"deadlineAt,omitempty"`
+	// ClosesAt is a No late submissions due date, which ends it as its time
+	// running out does; the page shows it in its last hour (Epo 2026-11-08).
+	ClosesAt      *time.Time `json:"closesAt,omitempty"`
 	Now           time.Time  `json:"now"`
 	SubmittedAt   *time.Time `json:"submittedAt,omitempty"`
 	AutoSubmitted bool       `json:"autoSubmitted"`
@@ -2124,6 +2135,7 @@ func (s *Store) finishAttemptIfRunning(ctx context.Context, attemptID string, no
 func (s *Store) attemptView(ctx context.Context, r attemptRow, staff bool, now time.Time) (AssignmentAttempt, error) {
 	v := AssignmentAttempt{
 		ID: r.id, AssignmentID: r.assignmentID, UserID: r.userID, StartedAt: r.startedAt, DeadlineAt: r.deadline, Now: now,
+		ClosesAt:    noLateDue(r.noLate, r.dueAt),
 		SubmittedAt: r.submitted, AutoSubmitted: r.auto, Correct: r.correct, Total: r.total,
 		WaitingMarks: r.waitingMarks, WaitingAnswers: r.waitingAnswers,
 		Answers: map[string]any{}, Questions: []map[string]any{}, RemovedAssetIDs: []string{},
@@ -3016,23 +3028,24 @@ func partReport(p map[string]any, attempts []reportAttempt) AssignmentPartReport
 // The quiz stays hidden while another open assignment uses it. One row that
 // fails is logged and passed over; each batch is a random pick, so rows that keep
 // failing never fill it every minute and hold up the rest.
-func (s *Store) SweepAssignments(ctx context.Context, limit int, now time.Time) (finished, released int, err error) {
-	rows, err := s.pool.Query(ctx, `SELECT t.id FROM attempts t JOIN assignments a ON a.id=t.assignment_id
+// finished names the attempts it submitted, whose To do changed.
+func (s *Store) SweepAssignments(ctx context.Context, limit int, now time.Time) (finished []SweptAttempt, released int, err error) {
+	rows, err := s.pool.Query(ctx, `SELECT t.id, t.assignment_id, t.user_id FROM attempts t JOIN assignments a ON a.id=t.assignment_id
 		WHERE t.assignment_id IS NOT NULL AND t.submitted_at IS NULL
 			AND (t.deadline_at <= $1 OR a.closed_at <= $1 OR (a.no_late AND a.due_at <= $1)) ORDER BY random() LIMIT $2`, now.Add(-assignmentGrace), limit)
 	if err != nil {
-		return 0, 0, err
+		return nil, 0, err
 	}
-	attemptIDs, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	due, err := pgx.CollectRows(rows, pgx.RowToStructByPos[SweptAttempt])
 	if err != nil {
-		return 0, 0, err
+		return nil, 0, err
 	}
-	for _, id := range attemptIDs {
-		if err := s.finishAttemptIfRunning(ctx, id, now); err != nil {
-			obs.Log(ctx).Warn("assignment attempt not submitted", "attempt_id", id, "error", err)
+	for _, t := range due {
+		if err := s.finishAttemptIfRunning(ctx, t.ID, now); err != nil {
+			obs.Log(ctx).Warn("assignment attempt not submitted", "attempt_id", t.ID, "error", err)
 			continue
 		}
-		finished++
+		finished = append(finished, t)
 	}
 	rows, err = s.pool.Query(ctx, `SELECT id FROM assignments
 		WHERE released_at IS NULL AND kind='marked' AND NOT draft AND (closed_at IS NOT NULL OR (no_late AND due_at <= $1))
@@ -3053,6 +3066,11 @@ func (s *Store) SweepAssignments(ctx context.Context, limit int, now time.Time) 
 		released++
 	}
 	return finished, released, nil
+}
+
+// SweptAttempt is an attempt the sweep submitted for its member.
+type SweptAttempt struct {
+	ID, AssignmentID, UserID string
 }
 
 // releaseAssignment makes its quiz a normal visible one, practice for members,

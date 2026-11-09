@@ -5,7 +5,9 @@ import {
 } from '@blocksuite/affine/blocks/surface';
 import {
   Bound,
+  getPointsFromBoundWithRotation,
   type IVec,
+  linePolygonIntersects,
   pointInPolygon,
   polygonNearestPoint,
   type SerializedXYWH,
@@ -19,11 +21,21 @@ import {
 } from '@blocksuite/affine/std/gfx';
 import { axisNumber } from '@/features/questions/graph';
 import { tickStep } from '@/features/questions/graphTicks';
-import type { Mark } from './boardData';
-import { minorStep, smoothThrough, ticks, type Vec } from './boardGeometry';
+import { LATEX_MAX, type Mark, PAPER, type Paper, pointsOf } from './boardData';
+import { type Drawn, drawing, laidOut, replay } from './boardFormulaDraw';
+import { curvePieces, minorStep, ticks, type Vec } from './boardGeometry';
 
-/** The plane's top left corner in its own units, and board pixels per unit. */
-export type PlaneView = { ppu: number; x0: number; y0: number };
+/** The plane's top left corner in its own units, and board pixels per unit. A polar
+ * plane draws rings and spokes round its origin instead of squares (Epo 2026-11-08). */
+export type PlaneView = {
+  polar?: boolean;
+  ppu: number;
+  x0: number;
+  y0: number;
+};
+
+/** A polar plane's spokes: a light one every 15°, a darker one every 30°. */
+export const POLAR_SPOKE = 15;
 export type Frame = { h: number; w: number; x: number; y: number };
 
 const DOT_RADIUS = 4.5;
@@ -41,7 +53,12 @@ export function drawPlane(
   ctx: CanvasRenderingContext2D,
   frame: Frame,
   view: PlaneView,
-  marks: Mark[]
+  marks: Mark[],
+  paper: Paper,
+  /** Marks whose points show (the editor's, under the pointer). */
+  shown: ReadonlySet<string> = NONE,
+  /** Draws again once a formula on it is laid out. */
+  refresh: () => void = () => undefined
 ) {
   const X = (x: number) => frame.x + (x - view.x0) * view.ppu;
   const Y = (y: number) => frame.y + (view.y0 - y) * view.ppu;
@@ -52,12 +69,21 @@ export function drawPlane(
   ctx.save();
   ctx.beginPath();
   ctx.rect(frame.x, frame.y, frame.w, frame.h);
-  ctx.fillStyle = '#fff';
+  ctx.fillStyle = paper.paper;
   ctx.fill();
   ctx.clip();
 
   const step = tickStep(view.ppu);
   const minor = minorStep(step);
+  if (view.polar) {
+    drawPolarGrid(ctx, frame, view, X, Y, step, minor, paper);
+    drawMarks(ctx, X, Y, marks, paper, shown, refresh);
+    ctx.restore();
+    ctx.strokeStyle = paper.edge;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(frame.x, frame.y, frame.w, frame.h);
+    return;
+  }
   const grid = (every: number, color: string) => {
     ctx.strokeStyle = color;
     ctx.lineWidth = 1;
@@ -72,13 +98,13 @@ export function drawPlane(
     }
     ctx.stroke();
   };
-  grid(minor, '#f1f1ef');
-  grid(step, '#dededb');
+  grid(minor, paper.minor);
+  grid(step, paper.major);
 
   // Numbers sit by their axis and leave with it (Epo 2026-11-06).
   const axisX = X(0);
   const axisY = Y(0);
-  ctx.strokeStyle = '#6f6f6c';
+  ctx.strokeStyle = paper.axis;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(axisX, frame.y);
@@ -87,61 +113,265 @@ export function drawPlane(
   ctx.lineTo(frame.x + frame.w, axisY);
   ctx.stroke();
   ctx.font = '12px Arial, sans-serif';
-  ctx.fillStyle = '#55555b';
+  ctx.fillStyle = paper.number;
   ctx.textBaseline = 'middle';
-  const label = (
-    text: string,
-    x: number,
-    y: number,
-    align: CanvasTextAlign
-  ) => {
-    if (!text) return;
-    ctx.textAlign = align;
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = '#fff';
-    ctx.strokeText(text, x, y);
-    ctx.fillText(text, x, y);
-  };
+  const label = (text: string, x: number, y: number, align: CanvasTextAlign) =>
+    haloText(ctx, text, x, y, align, paper);
   for (const x of ticks(left, right, step))
     label(axisNumber(x, step), X(x), axisY + 14, 'center');
   for (const y of ticks(bottom, top, step))
     label(axisNumber(y, step), axisX - 7, Y(y), 'right');
 
-  // Marks keep their thickness whatever the plane's zoom.
-  ctx.strokeStyle = '#000';
-  ctx.lineWidth = 2;
+  drawMarks(ctx, X, Y, marks, paper, shown, refresh);
+  ctx.restore();
+  ctx.strokeStyle = paper.edge;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(frame.x, frame.y, frame.w, frame.h);
+}
+
+/** Text with a halo of the paper, so grid lines don't cross it. */
+function haloText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  align: CanvasTextAlign,
+  paper: Paper
+) {
+  if (!text) return;
+  ctx.textAlign = align;
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = paper.paper;
+  ctx.strokeText(text, x, y);
+  ctx.fillText(text, x, y);
+}
+
+/** Rings at the grid's steps round the origin, numbered along 0°, and spokes with their
+ * angles where they leave the card. */
+function drawPolarGrid(
+  ctx: CanvasRenderingContext2D,
+  frame: Frame,
+  view: PlaneView,
+  X: (x: number) => number,
+  Y: (y: number) => number,
+  step: number,
+  minor: number,
+  paper: Paper
+) {
+  const ox = X(0);
+  const oy = Y(0);
+  // Out to the card's farthest corner, in plane units.
+  const reach =
+    Math.max(
+      Math.hypot(frame.x - ox, frame.y - oy),
+      Math.hypot(frame.x + frame.w - ox, frame.y - oy),
+      Math.hypot(frame.x - ox, frame.y + frame.h - oy),
+      Math.hypot(frame.x + frame.w - ox, frame.y + frame.h - oy)
+    ) / view.ppu;
+  const rings = (every: number, color: string) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let r = every; r <= reach; r += every) {
+      ctx.moveTo(ox + r * view.ppu, oy);
+      ctx.arc(ox, oy, r * view.ppu, 0, Math.PI * 2);
+    }
+    ctx.stroke();
+  };
+  rings(minor, paper.minor);
+  const far = reach * view.ppu;
+  for (let a = 0; a < 360; a += POLAR_SPOKE) {
+    const t = (a * Math.PI) / 180;
+    ctx.strokeStyle =
+      a % 90 === 0 ? paper.axis : a % 30 === 0 ? paper.major : paper.minor;
+    ctx.lineWidth = a % 90 === 0 ? 1.5 : 1;
+    ctx.beginPath();
+    ctx.moveTo(ox, oy);
+    ctx.lineTo(ox + far * Math.cos(t), oy - far * Math.sin(t));
+    ctx.stroke();
+  }
+  rings(step, paper.major);
+  ctx.font = '12px Arial, sans-serif';
+  ctx.fillStyle = paper.number;
+  ctx.textBaseline = 'middle';
+  for (let r = step; r <= reach; r += step)
+    haloText(
+      ctx,
+      axisNumber(r, step),
+      ox + r * view.ppu,
+      oy + 14,
+      'center',
+      paper
+    );
+  // Each 30° spoke's angle, just inside where it leaves the card.
+  const inset = 16;
+  const [left, right] = [frame.x + inset, frame.x + frame.w - inset];
+  const [top, bottom] = [frame.y + inset, frame.y + frame.h - inset];
+  for (let a = 30; a < 360; a += 30) {
+    if (a % 90 === 0 && a !== 90 && a !== 270) continue;
+    const t = (a * Math.PI) / 180;
+    const [dx, dy] = [Math.cos(t), -Math.sin(t)];
+    const hits = [
+      dx > 0
+        ? (right - ox) / dx
+        : dx < 0
+          ? (left - ox) / dx
+          : Number.POSITIVE_INFINITY,
+      dy > 0
+        ? (bottom - oy) / dy
+        : dy < 0
+          ? (top - oy) / dy
+          : Number.POSITIVE_INFINITY,
+    ];
+    const k = Math.min(...hits);
+    if (!(k > 24)) continue;
+    haloText(ctx, `${a}°`, ox + dx * k, oy + dy * k, 'center', paper);
+  }
+}
+
+/** Dots, lines and curves; marks keep their thickness whatever the plane's zoom. */
+/** A line, curve or ellipse as a canvas path, smooth at any zoom; the caller strokes
+ * it. */
+export function traceMark(
+  ctx: CanvasRenderingContext2D,
+  mark: Extract<Mark, { points: Vec[] }>,
+  X: (x: number) => number,
+  Y: (y: number) => number
+) {
+  ctx.beginPath();
+  if (mark.kind === 'ellipse') {
+    const [[right, cy], [cx, top]] = mark.points;
+    ctx.ellipse(
+      X(cx),
+      Y(cy),
+      Math.abs(X(right) - X(cx)),
+      Math.abs(Y(top) - Y(cy)),
+      0,
+      0,
+      Math.PI * 2
+    );
+    return;
+  }
+  const [first] = mark.points;
+  ctx.moveTo(X(first[0]), Y(first[1]));
+  if (mark.kind === 'curve')
+    for (const [, c1, c2, to] of curvePieces(mark.points))
+      ctx.bezierCurveTo(
+        X(c1[0]),
+        Y(c1[1]),
+        X(c2[0]),
+        Y(c2[1]),
+        X(to[0]),
+        Y(to[1])
+      );
+  else for (const [x, y] of mark.points.slice(1)) ctx.lineTo(X(x), Y(y));
+}
+
+/** A vector's arrowhead, filled with the context's fill, at its second point. */
+export function arrowHead(
+  ctx: CanvasRenderingContext2D,
+  mark: Extract<Mark, { points: Vec[] }>,
+  X: (x: number) => number,
+  Y: (y: number) => number
+) {
+  const [from, to] = mark.points.slice(-2);
+  if (!(from && to)) return;
+  const [x, y] = [X(to[0]), Y(to[1])];
+  const turn = Math.atan2(y - Y(from[1]), x - X(from[0]));
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  for (const side of [-1, 1])
+    ctx.lineTo(
+      x - ARROW_LENGTH * Math.cos(turn + side * ARROW_SPREAD),
+      y - ARROW_LENGTH * Math.sin(turn + side * ARROW_SPREAD)
+    );
+  ctx.closePath();
+  ctx.fill();
+}
+
+/** The marks; a line's, curve's or ellipse's points only where `shown` names it (Epo
+ * 2026-11-08: the editor shows them under the pointer), a single point always. */
+function drawMarks(
+  ctx: CanvasRenderingContext2D,
+  X: (x: number) => number,
+  Y: (y: number) => number,
+  marks: Mark[],
+  paper: Paper,
+  shown: ReadonlySet<string>,
+  refresh: () => void
+) {
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   const dot = ([x, y]: Vec) => {
-    ctx.fillStyle = '#000';
+    ctx.fillStyle = paper.ink;
     ctx.beginPath();
     ctx.arc(X(x), Y(y), DOT_RADIUS, 0, Math.PI * 2);
     ctx.fill();
   };
-  const trace = (points: Vec[]) => {
-    ctx.beginPath();
-    for (const [i, [x, y]] of points.entries())
-      if (i) ctx.lineTo(X(x), Y(y));
-      else ctx.moveTo(X(x), Y(y));
-    ctx.stroke();
-  };
   for (const mark of marks) {
     if (mark.kind === 'dot') dot(mark.at);
-    else {
-      trace(mark.kind === 'curve' ? smoothThrough(mark.points) : mark.points);
-      for (const point of mark.points) dot(point);
+    else if (mark.kind === 'label') {
+      ctx.font = '15px Arial, sans-serif';
+      ctx.fillStyle = paper.text;
+      ctx.textBaseline = 'middle';
+      haloText(ctx, mark.text, X(mark.at[0]), Y(mark.at[1]), 'center', paper);
+    } else if (mark.kind === 'formula') {
+      const drawn = formulaAt(mark.latex, refresh);
+      if (!drawn) continue;
+      const box = formulaBox(drawn, X(mark.at[0]), Y(mark.at[1]));
+      ctx.save();
+      // KaTeX's ink is black; dark paper turns it light, its colours about kept.
+      if (paper.dark) ctx.filter = 'invert(1) hue-rotate(180deg)';
+      ctx.translate(box.x, box.y);
+      ctx.scale(FORMULA_SCALE, FORMULA_SCALE);
+      replay(ctx, drawn);
+      ctx.restore();
+    } else {
+      // Set per mark: a label's halo before it leaves the paper's colour behind.
+      ctx.strokeStyle = paper.ink;
+      ctx.lineWidth = 2;
+      traceMark(ctx, mark, X, Y);
+      ctx.stroke();
+      if (mark.kind === 'vector') {
+        ctx.fillStyle = paper.ink;
+        arrowHead(ctx, mark, X, Y);
+      }
+      if (shown.has(mark.id)) for (const point of mark.points) dot(point);
     }
   }
-  ctx.restore();
-  ctx.strokeStyle = '#d9d9d6';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(frame.x, frame.y, frame.w, frame.h);
+}
+
+const NONE: ReadonlySet<string> = new Set();
+
+/** A vector's arrowhead, in screen pixels: a mark keeps its size as the plane zooms. */
+const ARROW_LENGTH = 12;
+const ARROW_SPREAD = Math.PI / 7;
+
+/** A formula on a plane at 18 px, as KaTeX lays it out at 24, so it reads beside a
+ * label's 15 px text; it keeps that size as the plane zooms. */
+export const FORMULA_SCALE = 0.75;
+
+/** A formula laid out, or nothing yet: it's laid out and `refresh` draws again. One
+ * KaTeX can't read stays undrawn. */
+export function formulaAt(latex: string, refresh: () => void) {
+  if (latex.length > LATEX_MAX) return;
+  const drawn = laidOut(latex);
+  if (!drawn) drawing(latex).then(refresh, () => undefined);
+  return drawn;
+}
+
+/** Where a formula's laid-out box sits on screen, centred on its point. */
+export function formulaBox(drawn: Drawn, x: number, y: number) {
+  const w = drawn.w * FORMULA_SCALE;
+  const h = drawn.h * FORMULA_SCALE;
+  return { h, w, x: x - w / 2, y: y - h / 2 };
 }
 
 export class PlaneElementModel extends GfxPrimitiveElementModel<{
   fit: boolean;
   index: string;
   marks: Mark[];
+  polar: boolean;
   ppu: number;
   rotate: number;
   seed: number;
@@ -159,9 +389,19 @@ export class PlaneElementModel extends GfxPrimitiveElementModel<{
     );
   }
 
-  /** The eraser asks this, so it leaves a card alone: its marks are erased inside. */
-  override getLineIntersections() {
-    return null;
+  /** The eraser leaves a card alone: its marks are erased inside (vendored local
+   * change 30). */
+  get erasable() {
+    return false;
+  }
+
+  /** Where a connector meets the card's edge. */
+  override getLineIntersections(start: IVec, end: IVec) {
+    return linePolygonIntersects(
+      start,
+      end,
+      getPointsFromBoundWithRotation(this)
+    );
   }
 
   override getNearestPoint(point: IVec) {
@@ -181,6 +421,9 @@ export class PlaneElementModel extends GfxPrimitiveElementModel<{
 
   @field()
   accessor marks: Mark[] = [];
+
+  @field()
+  accessor polar = false;
 
   @field()
   accessor ppu = 41;
@@ -204,11 +447,20 @@ Object.assign(elementsCtorMap, { plane: PlaneElementModel });
 const planeRenderer: ElementRenderer<PlaneElementModel> = (
   model,
   ctx,
-  matrix
+  matrix,
+  renderer
 ) => {
   const [, , w, h] = model.deserializedXYWH;
   ctx.setTransform(matrix);
-  drawPlane(ctx, { h, w, x: 0, y: 0 }, model, model.marks);
+  drawPlane(
+    ctx,
+    { h, w, x: 0, y: 0 },
+    model,
+    model.marks,
+    PAPER[renderer.getColorScheme()],
+    undefined,
+    () => renderer.refresh()
+  );
 };
 
 /** The full-screen editor, set by its module so this one stays light. */
@@ -222,10 +474,7 @@ export const openPlane = (gfx: GfxController, model: PlaneElementModel) =>
 
 /** Every point a plane's marks reach, and its origin, so the axes stay in view. */
 export function markPoints(marks: Mark[]) {
-  return [
-    [0, 0] as Vec,
-    ...marks.flatMap((mark) => (mark.kind === 'dot' ? [mark.at] : mark.points)),
-  ];
+  return [[0, 0] as Vec, ...marks.flatMap(pointsOf)];
 }
 
 /** Sizes a card to its marks at its scale, its top left staying put. Past the longest
@@ -341,16 +590,23 @@ export const planeExtensions = [
   planeInteraction,
 ];
 
-/** A card on the canvas, its plane's origin towards the lower left. */
-export function addPlane(gfx: GfxController, box: Bound, ppu: number) {
+/** A card on the canvas, its plane's origin towards the lower left, or in the middle
+ * of a polar one. */
+export function addPlane(
+  gfx: GfxController,
+  box: Bound,
+  ppu: number,
+  polar: boolean
+) {
   return gfx.surface?.addElement({
     fit: true,
     marks: [],
+    polar,
     ppu,
     type: 'plane',
-    x0: -1,
+    x0: polar ? -box.w / 2 / ppu : -1,
     xywh: box.serialize(),
-    y0: (box.h * 0.7) / ppu,
+    y0: (box.h * (polar ? 0.5 : 0.7)) / ppu,
   });
 }
 

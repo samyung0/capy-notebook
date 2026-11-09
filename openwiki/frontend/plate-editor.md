@@ -4435,21 +4435,44 @@ The board adds to BlockSuite through its own extensions (`boardTools.ts`, `board
 vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
 
 - **Toolbar:** AFFiNE's shape pieces in the eraser's fixed colours (CSS variables on
-  `.capy-board`), then three sheets that only add things: Maths (a plane card or a label), Charts (a bar or pie chart card) and Formula. The
-  toolbar and its pen touch the canvas only, never into a card. New shapes have no fill
+  `.capy-board`), then three slots of pieces drawn like AFFiNE's shapes (Epo 2026-11-08,
+  canvas NsamYcLR4imjm5Xi2fWFj2 "Picked"): Graphs (a polar disc behind a coordinate plane),
+  Charts (a pie behind bars) and Formulas (d/dx, ∫, Σ, √x). `CapyPieceSlot` runs on
+  BlockSuite's `EdgelessDraggableElementController` as the shape slot does: a piece lifts
+  under the pointer, a click or a drag picks it up, it lands where it's dropped and a new
+  one rises into the slot once it leaves the toolbar; Escape or the toolbar puts it back.
+  A finger has nothing to carry it with, so a tap puts the card in the middle of the view
+  and a drag brings it out (a second controller without click-to-carry).
+  Pieces sit round the slot's middle, so a phone's narrower slot keeps them. A formula
+  piece puts down its starter card (`placeFormula`) and opens the editor on it. There is no
+  label tool. The toolbar and its pen touch the canvas only, never into a card. New shapes have no fill
   and a black outline.
 - **Pen strokes** keep the moves inside BlockSuite's 2 px drag threshold, and a stroke
   ending back near its start (a closed circle) is no click, so it leaves no dot (local
   change 25, in the pointer controller, so every tool's drags and clicks behave this way).
-- **Undo and redo** are the board's own, not in the toolbar: left of zoom, or below 768 px
-  top right, where the page around the board reserves Done's width through
-  `--capy-board-done-width`. Below that width the toolbar spans the screen less an 8 px
-  gutter and zoom is hidden, since pinch does it. Zoom's row folds into AFFiNE's ⋯ up to
-  1200 px, which needs `.capy-board` to be the `viewport` container.
+- **Slot keys and tooltips** (Epo 2026-11-08): each piece's tooltip names it with its
+  key, the slot's between pieces. G puts a coordinate plane in the view's middle, ⇧G a
+  polar one, B a bar chart, ⇧B a pie chart, and M opens an empty formula card (a
+  formula piece starts filled in, so has no key); none of these is one of AFFiNE's,
+  and they're off while typing, while a card is open and with the board out of sight.
+- **The ☰ menu** (`boardMenu.ts`, Epo 2026-11-08) sits top right, left of any Done the
+  page around the board places (its width through `--capy-board-done-width`, its top through
+  `--capy-board-menu-top`; a drawing answer measures whichever Done shows, the phone's or the
+  wider screen's), so the
+  bottom row holds only the toolbar: Undo, Redo, Fit to screen, then a row of −, the
+  zoom (which resets to 100%) and +. An entry closes it, the zoom row keeps it open, as
+  do a press anywhere else and Escape. A teacher's board has Fit to screen and zoom only.
+  AFFiNE's zoom toolbar isn't loaded. Below 768 px the toolbar spans the screen less an
+  8 px gutter, which needs `.capy-board` to be the `viewport` container.
 - **Selecting** shows AFFiNE's own toolbar. It reads the editor's mode, so the board
   reports edgeless (`boardToolbar` in `boardTools.ts`) and hides what makes no sense on an
-  answer: Frame, Comment, a note's page mode entries and the linked doc entries. Connect shows its name. A plane card
+  answer: Frame, Comment, a note's page mode entries, a group's or frame's Insert into
+  Page (the board has one mode, Epo 2026-11-09) and the linked doc entries. Connect shows its name. A plane card
   adds a pen that opens it and a Fit to size / Custom size toggle; a chart card adds the pen.
+  The board (`.capy-board`) is positioned, so this selection layer and the ☰ menu sit
+  against it even with a header row above it (a tablet's). BlockSuite's own toasts go to
+  the app's `userToast` (`setToastHandler`, vendored local change 33); its fixed
+  container was cut off by the page.
 - **Shapes panel:** replaces AFFiNE's one-row menu through a DI override of the `shape`
   senior tool. BlockSuite has four shape types, so the rest are presets of straight
   connectors and ellipses in a group (a pen stroke smears at corners).
@@ -4458,15 +4481,65 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   renderer with a clip, so a card stacks with strokes and reaches the marking image with
   no special case. A card is a picture on the canvas: Select moves it, its corners resize
   it, between 120 by 80 and 4000 px, showing more or less of the plane at the same scale,
-  scrolling over it moves the canvas, and the eraser leaves it alone. A fresh board starts
+  scrolling over it moves the canvas, and the eraser leaves it alone (`erasable` false,
+  which the vendored eraser reads: local change 30), while a connector meets its edge
+  at four anchors as on a shape. A fresh board starts
   with one. Double click, double tap or the pen opens it. **Fit to size**, on by default:
   each time the plane is left, a card with marks takes their size at the plane's scale plus
   40 px, its top left staying put; past 1600 px it zooms out instead. Dragging a corner
   makes it Custom size, as resizing a note does. Neither is in the undo history. Pen
-  strokes over a card stay where they are, so they can stop lining up.
+  strokes over a card stay where they are, so they can stop lining up. A **polar** card
+  (`polar: true`, its origin in the middle) draws rings at the grid's steps, numbered along
+  0°, and spokes every 15° (darker every 30°, the axes every 90°) labelled where they
+  leave the card; its marks are stored as on any plane, and its editor snaps them to where
+  a ring crosses a spoke.
 - **Editing a plane** (`boardPlaneEditor.ts`, on the shell in `boardEditorShell.ts`): it
-  opens over the whole board. Done leaves, as does Escape when no mark is open. Inside, the wheel pans, Ctrl or pinch zooms, and Move drags.
-  Point, Line and Curve snap to the fine squares for the current zoom, so the
+  opens over the whole board. At its top right sit the same ☰ menu (Fit to screen where the card
+  has one, Undo, Redo, and − and + where it zooms; the board's menu hides meanwhile)
+  and Done on its own (Epo 2026-11-08). Done leaves, as does Escape when no mark is open (Escape closes
+  an open menu first, then a selection). Inside, the wheel or two fingers pan, Ctrl or
+  pinch zooms, a middle-button drag pans, and Select drags, as on the board.
+  A point's dot picks up with any tool but Erase (Epo 2026-11-08, option C): it rings
+  blue under the mouse, a drag moves it to the grid with the coordinate chip, and a tap
+  still does the tool's job at that point (Line starts from it). Select also drags a
+  whole line, curve or label (snapped by grid steps); dragging one of several selected
+  marks moves them all. The moved copies are only drawn until the pointer lifts, so a
+  drag is one undo step. Select works as the board's does (Epo 2026-11-09): a click
+  selects a mark (blue, its points showing), Shift-click adds or takes one away, and a
+  drag on empty paper draws a selection box that picks every mark it touches (Shift
+  adds them); a click on empty paper, Escape or another tool lets go, and Delete or
+  Backspace removes all that's selected.
+  Where points coincide, the last drawn moves.
+  Label (Epo 2026-11-08) types text centred where it's clicked, a `label` mark at that
+  coordinate that moves and zooms with the plane (a click near one edits it; up to 24
+  characters; previews leave labels out, as numbers); after one, the tool goes back to
+  Select. Formula (Epo 2026-11-08) opens the board's formula card (`openFormulaCard`) for
+  a `formula` mark centred where it's clicked (a click on one opens it again, emptied it
+  goes); KaTeX's layout (`boardFormulaDraw.ts`, loaded only once a formula is on the
+  board or a plane) is replayed at 18 px, inverted on dark paper, keeping its size as
+  the plane zooms. Select drags it whole; Erase takes it. Previews leave formulas out, as
+  they can't lay them out (Epo: none rather than broken); the marking image has them.
+  Vector (Epo 2026-11-08) is a line of two clicks with an arrowhead (12 px, kept as
+  the plane zooms) at its second point, a `vector` mark of two points. Each tool's
+  button shows AFFiNE's tooltip with its key, and the open card takes those keys: V
+  Select, P Point, L Line, A Vector, C Curve, O Ellipse, T Label, F Formula, E Erase (a
+  chart: V Select, D its bars or slices, F Fill, T Label, E Erase). Erase (Epo
+  2026-11-09) works as the board's eraser does: the pointer is a ring as wide as its
+  reach (16 px, `--capy-eraser-cursor`, also on the board's own eraser), a press leaves
+  BlockSuite's fading grey trail (`EraserTrail` in `boardEraser.ts`), everything it
+  passes over hides, and lifting removes them in one undo step. Ellipse (Epo 2026-11-08, square
+  planes only): a press and drag sizes a circle from its middle (the chip shows `r`), a
+  click places one a grid step round. It's an `ellipse` mark of four handles (right,
+  top, left, bottom); pulling one sets the width or height about the middle, so it
+  stays upright and on the grid, and Shift scales it evenly. Select drags it whole, its
+  middle (any other mark's first point) landing on the grid. Curves draw as cubic Bézier pieces of their
+  Catmull-Rom curve (`curvePieces`) and ellipses as canvas ellipses, smooth at any zoom;
+  the sampled path (`smoothThrough`, `pathOf`) is for hit tests and previews. A line's,
+  curve's or ellipse's points show only in the editor, on the mark under the pointer,
+  held or still open (Epo 2026-11-08); a single point always shows, on cards, previews
+  and the marking image too. A curve clicked back onto its first point closes, smooth there,
+  and ends. Point, Line and Curve snap to the
+  fine squares for the current zoom, so the
   plane has no edge and no fixed scale (the numbers are the question editor's, `tickStep`
   and `axisNumber` in `graph.ts`, with no JSXGraph). Numbers leave with their axis and
   marks keep their thickness. The view stops 1e9 units from the origin, and a grid too
@@ -4477,7 +4550,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   can line it up against the coordinate chip. The view is written on leaving and isn't in
   the undo history.
 - **Ending a mark:** Finish (shown while a line or curve is open), Escape, or clicking
-  a curve's last point again. The tool then goes back to Move, as AFFiNE's shape and
+  a curve's last point again. The tool then goes back to Select, as AFFiNE's shape and
   connector tools go back to Select; Point stays on. Leaving keeps a curve with two points
   or more and removes a mark that has only its first. Canvas drawings over a card aren't in it: they stay in place
   if the view moves.
@@ -4485,12 +4558,26 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   kind `bar` or `pie`, holding plain data, since a coordinate means nothing on either. They
   move and resize like a plane card, the eraser leaves them alone, and their editor fills
   the board on the same shell. Bar chart: numbers on the value axis only, up to a top and
-  step the student types (Fit takes the top to the first line above the tallest bar).
-  Dragging in a place sets its bar, in half steps, with the value in the chip; a free place
+  step the student types (Fit, in the menu, takes the top to the first line above the
+  tallest bar). The wheel or a pinch zooms the value axis: its top moves, the step
+  following in 1, 2, 2.5 or 5 for about five lines, bars staying on 0; the zoom is
+  written as one undo step once it rests 300 ms. Hovering shows where a press would set the bar, a dashed line with its
+  value, as the plane shows where a point would go. Dragging in a place sets its bar, in half steps, with the value in the chip; a free place
   after the last bar starts the next, up to 24, in the current fill. Labels are typed under
   the bars. Pie chart: no grid or axes, starting with a line at 12 o'clock. A click adds a
-  line, whose chip shows the sector it closes, from the line before it clockwise, and
-  labels sit at an angle inside the circle.
+  line, whose chip shows the sector it closes, from the line before it clockwise;
+  Finish slicing (shown once there's a line) moves to Fill, where a click gives the slice
+  under it the picked fill (`fills`, keyed by the line the slice starts at; erasing that
+  line drops it, No fill clears it). Labels sit at an angle inside the circle. Select
+  (Epo 2026-11-09) selects bars, pie lines and pie labels as the plane does (a click,
+  Shift-click, a selection box; Delete removes them all, Escape lets go) and drags the
+  one pressed: a bar up or down to its value, a line round to a new
+  angle (off the other lines, its fill going with it), a label round the circle. After
+  one label the tool goes back to Select, as on the plane.
+- **See-through cards:** plane and chart paper (`PAPER`) and note fills are half
+  see-through so the panel's frost over the page frame shows. An open editor uses the
+  same paper with no ground of its own and hides the board's `editor-host` under it
+  (`data-editor-open`). The marking image draws them on white, so it's unchanged.
 - **Marking image (`toImage()`):** everything on the canvas as it stands, including each
   card with the view it was left at, so a plotted mark panned out of view isn't in it. It's
   drawn layer by layer at a scale capped to 1,568 px on its longest side (the size the
@@ -4525,11 +4612,12 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     undo history (200 undo steps on a card were 606 KB live and a few KB saved). Stroke
     points are rounded to whole pixels and every place (`xywh`) to a tenth, which leaves
     60% of the bytes with no visible change (pressure stays: perfect-freehand draws the
-    line from it). The
+    line from it); highlighter strokes from the pen menu are rounded the same way. The
     answer flow refuses past Epo's 250 KB on Done.
   - `saved` is checked before anything mounts (`boardLoad.ts`), as BlockSuite's store
     skips a block it doesn't know and takes any tree on load: one page and one canvas,
-    only the blocks and elements the board's tools make, each block under a parent it
+    only the blocks and elements the board's tools make (the pen menu's highlighter
+    included, which the preview draws as a see-through stroke), each block under a parent it
     may have in one tree, and each card's fields within
     the limits its editor keeps (marks, bars, labels, spokes, axis values, formula
     length), with a place (`[x,y,w,h]`) on everything but a connector and a group, whose
@@ -4553,19 +4641,42 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   where the browser has it. A plane card with 5 strokes takes 0.4 ms
   in Node, a 300 KB board (50 strokes of 300 points, 500 marks) 5 ms. Show it as an
   `<img src="data:image/svg+xml,…">` in a list, so rows don't add SVG nodes to the page.
+- **Note cards:** every note on the board is a tight card (8×10 px padding, a 1 px
+  hairline, a 6 px corner, no shadow, the same size while typing), set in
+  `drawingBoard.css` over the note's stored style, since AFFiNE's corner field only takes
+  0/8/16/24/32; the preview draws it the same. AFFiNE's slash menu is registered, offering
+  text styles, lists, alignment, inline styles, Image, dates and the move/copy/delete
+  actions; Image stores its file in the board's blob store, as a pasted image does.
+- **Theme:** the board follows the app's light or dark. The app's dark themes set
+  `data-theme` to a Catppuccin flavour, which AFFiNE's `[data-theme=dark]` never matches,
+  so `drawingBoard.ts` puts AFFiNE's dark variables under `html.dark` (on `<html>`, for
+  its popovers too) and sets BlockSuite's theme signal from the `dark` class. The board
+  paints no ground: its dots sit on the panel's colour, or its frost over the page frame.
+  Plane and chart cards take a light or dark `PAPER` (dark paper is a dark note's), and a
+  formula's black ink is inverted (hue kept) on a dark board. The marking image is
+  always light: `toImage` lifts the dark variables (`data-board-light`) and switches the
+  signal to light while it draws, so the board shows light for that moment. AFFiNE's
+  own dark placeholder and border greys (rgb(62, 62, 63) and rgb(46, 46, 46) on
+  rgb(30, 30, 30) panels) are lifted to readable ones, and the toolbar pieces' navy
+  (`--capy-navy`) lightens to #5683b3 on a dark board.
 - **Formulas:** a `formula` canvas element holding LaTeX, typed in MathLive (loaded on
-  first open). AFFiNE keeps LaTeX as HTML in note cards, and its export (html2canvas)
+  first open) with the question editor's field styles (`mathField.css`: app selection
+  colours, caret on the line), the caret after the formula and nothing selected. Its
+  card opens in the middle of the board and closes like a popup on a
+  press anywhere else, another formula piece too (MathLive's keyboard and menus aside),
+  discarding what was typed, as Cancel does. AFFiNE keeps LaTeX as HTML in note cards, and its export (html2canvas)
   garbles that, so typing `$$` in a note here stays text; AFFiNE's inline spec stays
   registered because paragraphs read it as they render (the specs only: its LaTeX node and
   editor menu, which load KaTeX and shiki, are left out). KaTeX and its stylesheet load
   once the board holds a formula or the formula editor opens (84 KB gzipped most boards
   never need). It lays the formula out in a
-  hidden host and its glyphs, rules and stretched SVGs (clipped as KaTeX clips them) are
-  drawn onto a bitmap the canvas renderer draws. Tested in Chromium only. Size and
-  expansion limits are set on KaTeX, and a saved answer holding more than 2,000
-  characters draws nothing. Bitmaps stay until the board closes: sharp up to 128 MB, plain
-  up to 256 MB, and past that a formula isn't drawn, on screen or in the image. Saving
-  answers still needs limits on the server.
+  hidden host and where its glyphs, rules and stretched SVGs sit (clipped as KaTeX clips
+  them) is kept as drawing steps, which the canvas renderer replays at the card's size
+  each frame, so a formula stays sharp at any size and zoom. Resizing keeps its shape
+  (`lockRatio`, as AFFiNE's images). Tested in Chromium only. Size and expansion limits
+  are set on KaTeX, and a saved answer holding more than 2,000 characters draws
+  nothing. Laid-out formulas stay until the board closes. Saving answers still needs
+  limits on the server.
 - **Labels** come from the Maths menu's Label, which can place one on top of a card (a
   double click there opens the plane), or a double click on empty canvas. They have a
   maths symbol row while typing. BlockSuite's default canvas font has no

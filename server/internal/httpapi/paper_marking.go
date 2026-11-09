@@ -120,7 +120,7 @@ func (a *api) postPaper(ctx context.Context, paper store.Paper, body map[string]
 // markPaper reads a submitted paper and grades its open parts, or with the
 // paper read, grades again the open parts in again (part id to pages). What
 // could not be graded waits with why, for Mark with AI.
-func (a *api) markPaper(ctx context.Context, attemptID string, again map[string][]int) error {
+func (a *api) markPaper(ctx context.Context, assignmentID, attemptID string, again map[string][]int) error {
 	marking, cancel := context.WithTimeout(ctx, markingAttemptTimeout)
 	defer cancel()
 	paper, err := a.waitForPaperFiles(marking, attemptID)
@@ -189,7 +189,13 @@ func (a *api) markPaper(ctx context.Context, attemptID string, again map[string]
 	if err := a.s.SaveAIMarks(saving, attemptID, marks, time.Now()); err != nil {
 		return err
 	}
-	return a.s.SaveAIFailures(saving, attemptID, failures)
+	if err := a.s.SaveAIFailures(saving, attemptID, failures); err != nil {
+		return err
+	}
+	// A read paper's closed parts are marked and its open ones may be: staff
+	// and the member refetch To do, as for typed answers.
+	a.publishTodo(saving, append(a.todoAudience(saving, assignmentID, true), paper.PayerID)...)
+	return nil
 }
 
 // readPapers reads, in the background, the papers an assignment (or one
@@ -218,7 +224,7 @@ func (a *api) readPapers(ctx context.Context, assignmentID, attemptID string) {
 					report(panicError("reading a paper", r))
 				}
 			}()
-			if err := a.markPaper(ctx, id, nil); err != nil {
+			if err := a.markPaper(ctx, assignmentID, id, nil); err != nil {
 				report(err)
 			}
 		}()

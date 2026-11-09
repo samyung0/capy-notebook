@@ -32,8 +32,10 @@ entries); mocks: `artifacts/2026-10-20-painted-cards-cursors-mocks.html`.
   `src/routes/Workspaces.tsx`) is **Workspaces**, and `/workspaces` redirects
   there; there is no Home. A workspace's front page, its landing with no file
   open, is its **Dashboard**. **To do** (`/todo`, `src/routes/Todo.tsx`) sits
-  under Workspaces in the nav: every class's Dashboard To do, one section per
-  workspace whose heading opens its Dashboard, at most 860px wide.
+  under Workspaces in the nav, with the notifications dot while anything is
+  open: every class's Dashboard To do, one section per workspace whose heading
+  opens its Dashboard, at most 860px wide, under tabs To do · Done and the list
+  pages' Sort and Filter.
 - **Dashboard (Epo 2026-11-03, boards H1 owner, H2 member, H3):**
   `WorkspaceDashboard.tsx`, the centre with nothing open (from lg without a
   file header; one column keeps it). The workspace's name with "owner · N
@@ -66,9 +68,9 @@ says where you are, then Dashboard (Hugeicons' `DashboardSquare01Icon`),
 Files (a folder), Agent (the AI icon), Study (an open book) and, in dev builds only,
 Canvas (the drawing board, `frontend/plate-editor.md`), each icon
 over its 11px label in a 48px-high item, 8px apart, that takes the sidebar's dark
-fill while current. The app sidebar's rows are 32px high and 2px apart from `sm` (the
+fill while current. Labels sit on the frame plainly, with no halo (Epo 2026-11-08). The app sidebar's rows are 32px high and 2px apart from `sm` (the
 phone drawer keeps 36px and 4px for touch).
-Your avatar sits at its foot and opens the profile menu upwards, headed by
+Your avatar (44px, no ring) sits at its foot and opens the profile menu upwards, headed by
 the workspace's part: Invite member (owners and editors), Workspace
 settings, and Clone for readers who may.
 

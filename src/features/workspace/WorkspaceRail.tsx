@@ -46,11 +46,9 @@ const SECTIONS: {
     : []),
 ];
 
-/* A rail item: the icon over its label, as the app sidebar's rows look. The
-   page-coloured glow keeps it readable over a dark page frame, and can't be
-   seen without one. */
+/* A rail item: the icon over its label, as the app sidebar's rows look. */
 const ITEM =
-  'flex w-[68px] cursor-pointer flex-col items-center gap-0.5 rounded-button-lg px-1 pt-2 pb-1.5 font-medium text-[11px] text-fg leading-[1.1] outline-none transition-colors drop-shadow-[0_0_3px_var(--color-page)] hover:bg-fg/6 focus-visible:ring-2 focus-visible:ring-action';
+  'flex w-[68px] cursor-pointer flex-col items-center gap-0.5 rounded-button-lg px-1 pt-2 pb-1.5 font-medium text-[11px] text-fg leading-[1.1] outline-none transition-colors hover:bg-fg/6 focus-visible:ring-2 focus-visible:ring-action';
 
 function RailItem({
   active,
@@ -68,8 +66,7 @@ function RailItem({
       aria-current={active ? 'page' : undefined}
       className={cn(
         ITEM,
-        active &&
-          'bg-action font-bold text-action-fg drop-shadow-none hover:bg-action'
+        active && 'bg-action font-bold text-action-fg hover:bg-action'
       )}
       onClick={onClick}
       type="button"

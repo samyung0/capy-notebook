@@ -209,3 +209,27 @@ export function materialListParams(search: FilesSearch): MaterialListParams {
     ...workspaceIds(search),
   };
 }
+
+/* The To do page (Epo 2026-11-08): its tab, sort and filters. Each tab has
+   its own sorts; a sort the tab lacks reads as its default. */
+export const TODO_SORTS = ['due', 'posted', 'class', 'done'] as const;
+export type TodoSort = (typeof TODO_SORTS)[number];
+export const TODO_TYPES = ['quiz', 'task'] as const;
+export type TodoType = (typeof TODO_TYPES)[number];
+export type TodoSearch = {
+  tab?: 'done';
+  sort?: TodoSort;
+  dir?: 'asc';
+  /** Workspace ids. */
+  class?: string;
+  type?: string;
+};
+export const parseTodoSearch = (
+  search: Record<string, unknown>
+): TodoSearch => ({
+  class: anyList(search.class),
+  dir: dirOf(search.dir),
+  sort: one(TODO_SORTS, search.sort),
+  tab: search.tab === 'done' ? 'done' : undefined,
+  type: csv(listOf(TODO_TYPES, search.type)),
+});

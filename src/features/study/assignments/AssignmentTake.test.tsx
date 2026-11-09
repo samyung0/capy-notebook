@@ -154,6 +154,24 @@ it('leaves Submit to press after the submit at zero failed', async () => {
   expect(button?.hasAttribute('disabled')).toBe(false);
 });
 
+it('shows a No late due date only in its last hour, and submits at it', async () => {
+  api.submit.mockReset();
+  const now = new Date();
+  await show(
+    attempt({
+      closesAt: new Date(now.getTime() + 61 * 60 * 1000).toISOString(),
+      now: now.toISOString(),
+    })
+  );
+  expect(host.querySelector('[role="timer"]')).toBeNull();
+  await wait(60 * 1000);
+  expect(host.querySelector('[role="timer"]')?.textContent).toContain(
+    '1:00:00'
+  );
+  await wait(60 * 60 * 1000);
+  expect(api.submit).toHaveBeenCalledTimes(1);
+});
+
 it('keeps the confirm dialog open with a refused submit', async () => {
   toast.mockClear();
   api.submit.mockImplementation(

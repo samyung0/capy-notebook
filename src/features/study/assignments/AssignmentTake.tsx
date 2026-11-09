@@ -113,8 +113,14 @@ function useBookmarks(attemptId: string) {
   return { marks, toggle };
 }
 
-/** The clock left, counted from the server's time at the read. */
-function useTimeLeft(deadlineAt: string | undefined, serverNow: string) {
+/** The clock left, counted from the server's time at the read. With `within`,
+ * it ticks each second only from that long before the end: until then it
+ * rechecks once a minute, which also survives a sleeping laptop. */
+function useTimeLeft(
+  deadlineAt: string | undefined,
+  serverNow: string,
+  within?: number
+) {
   const offset = useRef(Date.parse(serverNow) - Date.now());
   const left = useCallback(
     () =>
@@ -125,12 +131,36 @@ function useTimeLeft(deadlineAt: string | undefined, serverNow: string) {
   );
   const [ms, setMs] = useState(left);
   useEffect(() => {
+    // An end taken away (No late turned off) leaves no clock.
+    setMs(left());
     if (!deadlineAt) return;
-    const tick = setInterval(() => setMs(left()), 1000);
-    return () => clearInterval(tick);
-  }, [deadlineAt, left]);
+    let tick: ReturnType<typeof setInterval> | undefined;
+    let later: ReturnType<typeof setTimeout> | undefined;
+    const arm = () => {
+      const wait = within === undefined ? 0 : (left() ?? 0) - within;
+      if (wait > 0) {
+        later = setTimeout(arm, Math.min(wait, 60_000));
+        return;
+      }
+      setMs(left());
+      tick = setInterval(() => setMs(left()), 1000);
+    };
+    arm();
+    return () => {
+      clearTimeout(later);
+      clearInterval(tick);
+    };
+  }, [deadlineAt, left, within]);
   return ms;
 }
+
+const HOUR = 60 * 60 * 1000;
+
+/** The earliest of the times given, if any. */
+const earliest = (...times: (string | undefined)[]) =>
+  times
+    .filter((t): t is string => !!t)
+    .sort((a, b) => Date.parse(a) - Date.parse(b))[0];
 
 function clockText(ms: number) {
   const total = Math.max(0, Math.ceil(ms / 1000));
@@ -181,7 +211,12 @@ export function AssignmentTake({
   const removed = useRemovedAssets(attempt.removedAssetIds);
   const { mutate: submitAttempt, isPending: submitting } =
     useSubmitAssignmentAttempt(workspaceId);
-  const left = useTimeLeft(attempt.deadlineAt, attempt.now);
+  // It ends at the earlier of its time running out and a No late due date.
+  const left = useTimeLeft(
+    earliest(attempt.deadlineAt, attempt.closesAt),
+    attempt.now,
+    attempt.deadlineAt ? undefined : HOUR
+  );
   const latest = useRef(answers);
   latest.current = answers;
   const dirty = useRef(false);
@@ -334,6 +369,11 @@ export function AssignmentTake({
           userToast({ title: m.assignment_questions_updated() });
           return;
         }
+        // Its settings changed: a moved due date moves the clock.
+        if (event.type === 'assignment_updated') {
+          reread();
+          return;
+        }
         onClosed();
         void end('drop');
       }),
@@ -365,7 +405,9 @@ export function AssignmentTake({
   const type = question?.parts[0]?.answer.type as QuestionType | undefined;
   const heading = useMemo(() => questionHeading(question), [question]);
 
-  const clock = left !== null && (
+  // A timed attempt always shows its clock; one only a due date ends shows it
+  // in the last hour (Epo 2026-11-08).
+  const clock = left !== null && (!!attempt.deadlineAt || left <= HOUR) && (
     <span
       aria-live="off"
       className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-page-hover px-3.5 font-bold"

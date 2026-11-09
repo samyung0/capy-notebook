@@ -159,6 +159,7 @@ export const GetAssignmentAttemptResponse = zod.object({
   "answers": zod.record(zod.string(), zod.unknown()),
   "assignmentId": zod.string(),
   "autoSubmitted": zod.boolean(),
+  "closesAt": zod.iso.datetime({"offset":true}).optional(),
   "correct": zod.number(),
   "deadlineAt": zod.iso.datetime({"offset":true}).optional(),
   "drawingImages": zod.boolean(),
@@ -289,6 +290,7 @@ export const MarkAssignmentAnswerResponse = zod.object({
   "answers": zod.record(zod.string(), zod.unknown()),
   "assignmentId": zod.string(),
   "autoSubmitted": zod.boolean(),
+  "closesAt": zod.iso.datetime({"offset":true}).optional(),
   "correct": zod.number(),
   "deadlineAt": zod.iso.datetime({"offset":true}).optional(),
   "drawingImages": zod.boolean(),
@@ -400,6 +402,7 @@ export const SubmitAssignmentAttemptResponse = zod.object({
   "answers": zod.record(zod.string(), zod.unknown()),
   "assignmentId": zod.string(),
   "autoSubmitted": zod.boolean(),
+  "closesAt": zod.iso.datetime({"offset":true}).optional(),
   "correct": zod.number(),
   "deadlineAt": zod.iso.datetime({"offset":true}).optional(),
   "drawingImages": zod.boolean(),
@@ -1126,6 +1129,7 @@ export const StartAssignmentResponse = zod.object({
   "answers": zod.record(zod.string(), zod.unknown()),
   "assignmentId": zod.string(),
   "autoSubmitted": zod.boolean(),
+  "closesAt": zod.iso.datetime({"offset":true}).optional(),
   "correct": zod.number(),
   "deadlineAt": zod.iso.datetime({"offset":true}).optional(),
   "drawingImages": zod.boolean(),
@@ -7379,6 +7383,101 @@ export const UpdateTaskResponse = zod.object({
  */
 export const GetTodoResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "workspaces": zod.array(zod.object({
+  "iconId": zod.string(),
+  "items": zod.array(zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean(),
+  "attempts": zod.int(),
+  "closed": zod.boolean(),
+  "closedAt": zod.iso.datetime({"offset":true}).optional(),
+  "draft": zod.boolean(),
+  "drawingParts": zod.boolean(),
+  "dueAt": zod.iso.datetime({"offset":true}).optional(),
+  "files": zod.array(zod.object({
+  "fileId": zod.string().optional(),
+  "kind": zod.string(),
+  "materialId": zod.string().optional(),
+  "name": zod.string()
+})),
+  "gradesHidden": zod.boolean(),
+  "id": zod.string(),
+  "kind": zod.enum(['marked', 'unmarked']),
+  "latePenaltyPct": zod.int(),
+  "manage": zod.object({
+  "assignAll": zod.boolean(),
+  "assigned": zod.int(),
+  "assignees": zod.array(zod.string()),
+  "average": zod.number().optional(),
+  "done": zod.int(),
+  "gradesReleasedAt": zod.iso.datetime({"offset":true}).optional(),
+  "marking": zod.enum(['ai_approve', 'ai', 'manual']),
+  "notGraded": zod.int(),
+  "quizId": zod.string().optional(),
+  "quizTitle": zod.string().optional(),
+  "quizTrashed": zod.boolean().optional(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
+  "shuffle": zod.boolean(),
+  "toApprove": zod.int()
+}).optional(),
+  "marks": zod.number(),
+  "mine": zod.object({
+  "attemptsUsed": zod.int(),
+  "correct": zod.number().optional(),
+  "countedAttemptId": zod.string().optional(),
+  "done": zod.boolean(),
+  "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "handIn": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})).nullish(),
+  "late": zod.boolean(),
+  "latePenaltyPct": zod.int(),
+  "mark": zod.number().optional(),
+  "missing": zod.boolean(),
+  "runningAttemptId": zod.string().optional(),
+  "total": zod.number().optional(),
+  "waitingAnswers": zod.int(),
+  "waitingMarks": zod.number()
+}).optional(),
+  "noLate": zod.boolean(),
+  "postedAt": zod.iso.datetime({"offset":true}),
+  "postedBy": zod.string(),
+  "practiceQuizId": zod.string().optional(),
+  "questions": zod.int(),
+  "timeLimitMin": zod.int().optional(),
+  "title": zod.string(),
+  "topicIds": zod.array(zod.string()),
+  "workspaceId": zod.string()
+})),
+  "manages": zod.boolean(),
+  "name": zod.string(),
+  "workspaceId": zod.string()
+}))
+})
+
+
+/**
+ * @summary The To do page's Done tab: what was given to the caller that they finished or that closed, a page at a time
+ */
+export const getTodoDoneQuerySortDefault = `done`;
+export const getTodoDoneQueryDirDefault = `desc`;
+
+export const GetTodoDoneQueryParams = zod.object({
+  "sort": zod.enum(['done', 'class']).default(getTodoDoneQuerySortDefault).describe('done: the day it was done, or closed if it never was; class: by class name, then done'),
+  "dir": zod.enum(['asc', 'desc']).default(getTodoDoneQueryDirDefault),
+  "class": zod.string().optional().describe('Comma-separated class workspace ids'),
+  "type": zod.string().optional().describe('Comma-separated: quiz, task'),
+  "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
+})
+
+export const GetTodoDoneResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "nextCursor": zod.string().optional(),
   "workspaces": zod.array(zod.object({
   "iconId": zod.string(),
   "items": zod.array(zod.object({

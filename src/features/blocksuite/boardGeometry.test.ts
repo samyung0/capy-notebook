@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import {
   clockAngle,
+  curvePieces,
   minorStep,
   smoothThrough,
   snapTo,
@@ -33,6 +34,44 @@ it('passes through every plotted point', () => {
   const curve = smoothThrough(points, 8);
   for (const [index, point] of points.entries())
     expect(curve[index * 8]).toEqual(point);
+});
+
+it('draws the same curve as smooth Bézier pieces', () => {
+  const points: Vec[] = [
+    [0, 0],
+    [1, -1],
+    [2, 0],
+    [3, 3],
+  ];
+  const sampled = smoothThrough(points, 2);
+  for (const [i, [from, c1, c2, to]] of curvePieces(points).entries()) {
+    expect(from).toEqual(points[i]);
+    expect(to).toEqual(points[i + 1]);
+    const middle = [0, 1].map(
+      (axis) => (from[axis] + 3 * c1[axis] + 3 * c2[axis] + to[axis]) / 8
+    );
+    expect(middle[0]).toBeCloseTo(sampled[i * 2 + 1][0], 9);
+    expect(middle[1]).toBeCloseTo(sampled[i * 2 + 1][1], 9);
+  }
+});
+
+it('closes a loop without a corner where it ends on its start', () => {
+  const curve = smoothThrough(
+    [
+      [0, 0],
+      [1, 1],
+      [2, 0],
+      [1, -1],
+      [0, 0],
+    ],
+    8
+  );
+  const [start, next] = curve;
+  const [before, end] = curve.slice(-2);
+  const arriving = Math.atan2(end[1] - before[1], end[0] - before[0]);
+  const leaving = Math.atan2(next[1] - start[1], next[0] - start[0]);
+  // The turn between two short steps of the curve; without the loop, a 90° corner.
+  expect(Math.abs(arriving - leaving)).toBeLessThan(0.6);
 });
 
 it("reads a pie angle clockwise from 12 o'clock", () => {

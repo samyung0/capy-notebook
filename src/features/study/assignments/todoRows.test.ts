@@ -1,6 +1,12 @@
 import { expect, it } from 'vitest';
 import type { Assignment, TodoWorkspace } from '@/api/types';
-import { todoRows, todoSections } from './todoRows';
+import {
+  mergeTodoPages,
+  type TodoView,
+  todoCount,
+  todoRows,
+  todoSections,
+} from './todoRows';
 
 const row = (id: string, patch: Partial<Assignment> = {}) =>
   ({
@@ -34,6 +40,16 @@ it('splits a class into open, done and answers waiting for its staff', () => {
   expect(todoRows(items, false).toApprove).toEqual([]);
 });
 
+const view = (patch: Partial<TodoView> = {}): TodoView => ({
+  classes: [],
+  reversed: false,
+  sort: 'due',
+  types: [],
+  ...patch,
+});
+const ids = (sections: ReturnType<typeof todoSections>) =>
+  sections.map((s) => s.workspace.workspaceId);
+
 it('orders sections by answers waiting, then the soonest due', () => {
   const sections = todoSections(
     [
@@ -51,20 +67,71 @@ it('orders sections by answers waiting, then the soonest due', () => {
         true
       ),
     ],
-    false
+    view()
   );
-  expect(sections.map((s) => s.workspace.workspaceId)).toEqual([
-    'waiting',
-    'soon',
-    'later',
-    'no-due',
-  ]);
+  expect(ids(sections)).toEqual(['waiting', 'soon', 'later', 'no-due']);
 });
 
-it('shows a class with only done work once Show done is on', () => {
-  const finished = workspace('finished', [
-    row('a', { mine: { done: true } as Assignment['mine'] }),
+it('sorts rows and classes by the newest post, and classes by name', () => {
+  const classes = [
+    workspace('Biology', [
+      row('old', { postedAt: '2026-11-01T00:00:00Z' }),
+      row('new', { postedAt: '2026-11-06T00:00:00Z' }),
+    ]),
+    workspace('Art', [row('mid', { postedAt: '2026-11-03T00:00:00Z' })]),
+  ];
+  const posted = todoSections(classes, view({ sort: 'posted' }));
+  expect(ids(posted)).toEqual(['Biology', 'Art']);
+  expect(posted[0]?.shown.map((a) => a.id)).toEqual(['new', 'old']);
+  expect(ids(todoSections(classes, view({ sort: 'class' })))).toEqual([
+    'Art',
+    'Biology',
   ]);
-  expect(todoSections([finished], false)).toEqual([]);
-  expect(todoSections([finished], true)[0]?.shown).toHaveLength(1);
+  expect(
+    ids(todoSections(classes, view({ reversed: true, sort: 'class' })))
+  ).toEqual(['Biology', 'Art']);
+});
+
+it('merges the Done pages, a class split across pages keeping its place', () => {
+  const merged = mergeTodoPages([
+    { workspaces: [workspace('a', [row('1')]), workspace('b', [row('2')])] },
+    { workspaces: [workspace('a', [row('3')])] },
+  ]);
+  expect(merged.map((w) => w.workspaceId)).toEqual(['a', 'b']);
+  expect(merged[0]?.items.map((a) => a.id)).toEqual(['1', '3']);
+});
+
+it('skips a Done row a later page repeats', () => {
+  const merged = mergeTodoPages([
+    { workspaces: [workspace('a', [row('1'), row('2')])] },
+    { workspaces: [workspace('a', [row('2'), row('3')])] },
+  ]);
+  expect(merged[0]?.items.map((a) => a.id)).toEqual(['1', '2', '3']);
+});
+
+it('keeps the classes and types the filter picks', () => {
+  const classes = [
+    workspace('a', [
+      row('quiz', { kind: 'marked' }),
+      row('task', { kind: 'unmarked' }),
+    ]),
+    workspace('b', [row('other', { kind: 'marked' })]),
+  ];
+  const sections = todoSections(
+    classes,
+    view({ classes: ['a'], types: ['task'] })
+  );
+  expect(ids(sections)).toEqual(['a']);
+  expect(sections[0]?.shown.map((a) => a.id)).toEqual(['task']);
+});
+
+it('counts open work and answers waiting for the nav dot', () => {
+  const waiting = row('waiting', {
+    manage: { toApprove: 3 } as Assignment['manage'],
+    mine: undefined,
+  });
+  const done = row('done', { mine: { done: true } as Assignment['mine'] });
+  expect(todoCount([workspace('a', [row('open'), done, waiting], true)])).toBe(
+    2
+  );
 });

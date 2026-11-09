@@ -182,7 +182,7 @@ func (a *api) markAttemptAnswers(ctx context.Context, assignmentID, attemptID st
 	}
 	answers = typed
 	if len(again) > 0 {
-		if err := a.markPaper(ctx, attemptID, again); err != nil {
+		if err := a.markPaper(ctx, assignmentID, attemptID, again); err != nil {
 			return err
 		}
 	}
@@ -230,6 +230,11 @@ func (a *api) markAttemptAnswers(ctx context.Context, assignmentID, attemptID st
 	}
 	if err := a.s.SaveAIFailures(saving, attemptID, reasons); err != nil {
 		return err
+	}
+	// Marks that need no approval clear answers waiting: staff and the member
+	// refetch To do (Epo 2026-11-08).
+	if member, err := a.s.AttemptUserID(saving, attemptID); err == nil {
+		a.publishTodo(saving, append(a.todoAudience(saving, assignmentID, true), member)...)
 	}
 	// The AI marking landed: its images go, whether or not staff approve it yet.
 	var marked []string

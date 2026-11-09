@@ -5,16 +5,17 @@ import {
   barPlot,
   CARD_PADS,
   type ChartData,
+  filledSlices,
   INK,
   type Mark,
   onScreen,
+  pathOf,
   pieCircle,
 } from './boardData';
 import {
   type Box,
   closeUp,
   IMAGE_SIDE_MAX,
-  smoothThrough,
   ticks,
   unite,
   type Vec,
@@ -142,6 +143,8 @@ type Item = {
 /** One preview pixel in board units: lines never thinner, points never closer. */
 type Pen = { pixel: number };
 
+/** AFFiNE's own highlighter default, see-through. */
+const HIGHLIGHTER = '#84cfff4d';
 const FONT_SIZE_NOTE = 15;
 const LINE_HEIGHT = 1.3;
 
@@ -152,7 +155,9 @@ function drawItem(
 ) {
   switch (kind) {
     case 'brush':
-      return drawBrush(box, fields, pen);
+      return drawBrush(box, fields, pen, INK);
+    case 'highlighter':
+      return drawBrush(box, fields, pen, HIGHLIGHTER);
     case 'shape':
       return drawShape(box, fields, pen);
     case 'text':
@@ -180,13 +185,13 @@ function drawItem(
   }
 }
 
-function drawBrush({ x, y }: Box, fields: Fields, pen: Pen) {
+function drawBrush({ x, y }: Box, fields: Fields, pen: Pen, ink: string) {
   const points = ((fields.points as unknown[] | undefined) ?? []).filter(
     (point): point is number[] => Array.isArray(point) && point.length >= 2
   );
   if (!points.length) return '';
   const width = Math.max(Number(fields.lineWidth) || 4, pen.pixel);
-  const stroke = colour(fields.color, INK);
+  const stroke = colour(fields.color, ink);
   if (points.length === 1)
     return `<circle cx="${num(x + points[0][0])}" cy="${num(y + points[0][1])}" r="${num(width / 2)}" fill="${stroke}"/>`;
   let d = '';
@@ -293,7 +298,25 @@ function drawPlane(box: Box, fields: Fields, pen: Pen) {
   const Y = (v: number) => y + (y0 - v) * ppu;
   const step = tickStep(ppu);
   let grid = '';
-  if (step * ppu > pen.pixel * 6) {
+  if (step * ppu > pen.pixel * 6 && fields.polar === true) {
+    // Rings round the origin and a spoke every 30°, out to the farthest corner.
+    const [ox, oy] = [X(0), Y(0)];
+    const far = Math.max(
+      ...[
+        [x, y],
+        [x + w, y],
+        [x, y + h],
+        [x + w, y + h],
+      ].map(([cx, cy]) => Math.hypot(cx - ox, cy - oy))
+    );
+    for (let r = step * ppu; r <= far; r += step * ppu)
+      grid += `M${num(ox + r)} ${num(oy)}a${num(r)} ${num(r)} 0 1 0 ${num(-2 * r)} 0a${num(r)} ${num(r)} 0 1 0 ${num(2 * r)} 0`;
+    for (let a = 30; a < 360; a += 30) {
+      if (a % 90 === 0) continue;
+      const t = (a * Math.PI) / 180;
+      grid += `M${num(ox)} ${num(oy)}L${num(ox + far * Math.cos(t))} ${num(oy - far * Math.sin(t))}`;
+    }
+  } else if (step * ppu > pen.pixel * 6) {
     for (const u of ticks(x0, x0 + w / ppu, step))
       grid += `M${num(X(u))} ${num(y)}V${num(y + h)}`;
     for (const v of ticks(y0 - h / ppu, y0, step))
@@ -302,23 +325,35 @@ function drawPlane(box: Box, fields: Fields, pen: Pen) {
   const axes = `M${num(X(0))} ${num(y)}V${num(y + h)}M${num(x)} ${num(Y(0))}H${num(x + w)}`;
   const ink = Math.max(2, pen.pixel);
   let traces = '';
+  let heads = '';
   let dots = '';
   const dot = ([u, v]: Vec) => {
     dots += `M${num(X(u))} ${num(Y(v))}h0`;
   };
   for (const mark of marks) {
+    // No labels on previews, as no numbers, and no formulas: the preview can't lay
+    // them out, and better none than a broken one (Epo 2026-11-08).
+    if (mark.kind === 'label' || mark.kind === 'formula') continue;
     if (mark.kind === 'dot') {
       dot(mark.at);
       continue;
     }
-    const path =
-      mark.kind === 'curve' ? smoothThrough(mark.points, 6) : mark.points;
-    traces += path
+    traces += pathOf(mark, 6)
       .map(([u, v], i) => `${i ? 'L' : 'M'}${num(X(u))} ${num(Y(v))}`)
       .join('');
-    for (const point of mark.points) dot(point);
+    // A line's points show only in the editor, a single point always.
+    const [from, to] = mark.points.slice(-2);
+    if (mark.kind === 'vector' && from && to) {
+      // Its arrowhead, as the card draws it, never under four preview pixels.
+      const [tx, ty] = [X(to[0]), Y(to[1])];
+      const turn = Math.atan2(ty - Y(from[1]), tx - X(from[0]));
+      const size = Math.max(12, pen.pixel * 4);
+      const side = (sign: number) =>
+        `${num(tx - size * Math.cos(turn + (sign * Math.PI) / 7))} ${num(ty - size * Math.sin(turn + (sign * Math.PI) / 7))}`;
+      heads += `M${num(tx)} ${num(ty)}L${side(-1)}L${side(1)}Z`;
+    }
   }
-  return `<svg x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" viewBox="${num(x)} ${num(y)} ${num(w)} ${num(h)}" overflow="hidden">${rect(box, '#fff', 'none', 0)}${grid ? `<path d="${grid}" stroke="#dededb" stroke-width="${num(Math.max(1, pen.pixel))}"/>` : ''}<path d="${axes}" stroke="#6f6f6c" stroke-width="${num(Math.max(1.5, pen.pixel))}"/>${traces ? `<path d="${traces}" stroke="${INK}" stroke-width="${num(ink)}"/>` : ''}${dots ? `<path d="${dots}" stroke="${INK}" stroke-width="${num(Math.max(9, pen.pixel * 2))}"/>` : ''}</svg>${rect(box, 'none', '#d9d9d6', Math.max(1, pen.pixel))}`;
+  return `<svg x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" viewBox="${num(x)} ${num(y)} ${num(w)} ${num(h)}" overflow="hidden">${rect(box, '#fff', 'none', 0)}${grid ? `<path d="${grid}" stroke="#dededb" stroke-width="${num(Math.max(1, pen.pixel))}"/>` : ''}<path d="${axes}" stroke="#6f6f6c" stroke-width="${num(Math.max(1.5, pen.pixel))}"/>${traces ? `<path d="${traces}" stroke="${INK}" stroke-width="${num(ink)}"/>` : ''}${heads ? `<path d="${heads}" fill="${INK}" stroke="none"/>` : ''}${dots ? `<path d="${dots}" stroke="${INK}" stroke-width="${num(Math.max(9, pen.pixel * 2))}"/>` : ''}</svg>${rect(box, 'none', '#d9d9d6', Math.max(1, pen.pixel))}`;
 }
 
 /** Bars and the axes, or the circle and its spokes. */
@@ -342,6 +377,19 @@ function drawChart(box: Box, chart: ChartData, pen: Pen) {
     out += `<path d="M${num(left)} ${num(top)}V${num(base)}H${num(left + width)}" stroke="#6f6f6c" stroke-width="${num(Math.max(1.5, pen.pixel))}"/>`;
   } else {
     const { cx, cy, r } = pieCircle(box, CARD_PADS.pie);
+    for (const { fill, from, to } of filledSlices({
+      fills: chart.fills ?? [],
+      spokes: chart.spokes,
+    })) {
+      const paint = colour(fill, 'none');
+      if (to - from >= 360) {
+        out += `<circle cx="${num(cx)}" cy="${num(cy)}" r="${num(r)}" fill="${paint}"/>`;
+        continue;
+      }
+      const [x0, y0] = onScreen(cx, cy, r, from);
+      const [x1, y1] = onScreen(cx, cy, r, to);
+      out += `<path d="M${num(cx)} ${num(cy)}L${num(x0)} ${num(y0)}A${num(r)} ${num(r)} 0 ${to - from > 180 ? 1 : 0} 1 ${num(x1)} ${num(y1)}Z" fill="${paint}"/>`;
+    }
     const spokes = chart.spokes
       .map((spoke) => {
         const [sx, sy] = onScreen(cx, cy, r, spoke);
@@ -378,9 +426,9 @@ function drawNote(box: Box, note: Fields, blocks: Record<string, Fields>) {
   };
   walk(note['sys:children']);
   const { h, w, x, y } = box;
-  const pad = 16;
-  const inner = { h: h - pad * 2, w: w - pad * 2, x: x + pad, y: y + pad };
-  return `${rect(box, colour(note['prop:background'], '#fff'), '#d9d9d6', 1)}<svg x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" viewBox="${num(x)} ${num(y)} ${num(w)} ${num(h)}" overflow="hidden">${lines(inner, texts.join('\n'), FONT_SIZE_NOTE, '#1d1d1f', 'left')}</svg>`;
+  // The board's tight card (N2): 8 by 10 px padding, a hairline, a 6 px corner.
+  const inner = { h: h - 16, w: w - 20, x: x + 10, y: y + 8 };
+  return `<rect x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" rx="6" fill="${colour(note['prop:background'], '#fff')}" stroke="#e6e6e6" stroke-width="1"/><svg x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" viewBox="${num(x)} ${num(y)} ${num(w)} ${num(h)}" overflow="hidden">${lines(inner, texts.join('\n'), FONT_SIZE_NOTE, '#1d1d1f', 'left')}</svg>`;
 }
 
 function lines(

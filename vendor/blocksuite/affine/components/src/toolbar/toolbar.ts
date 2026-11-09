@@ -35,9 +35,26 @@ export class EditorToolbar extends WithDisposable(LitElement) {
       e.stopPropagation();
       e.preventDefault();
     });
-    this._disposables.addFromEvent(this, 'wheel', stopPropagation, {
-      passive: false,
-    });
+    // Capy (local change 32): a pinch or swipe over the buttons reaches the canvas,
+    // which zooms or pans it; upstream stopped every wheel here without preventing
+    // it, so a pinch zoomed the page. An open menu still keeps its scroll.
+    this._disposables.addFromEvent(
+      this,
+      'wheel',
+      (e: WheelEvent) => {
+        if (
+          e
+            .composedPath()
+            .some(
+              (node) =>
+                node instanceof HTMLElement &&
+                node.tagName === 'EDITOR-MENU-CONTENT'
+            )
+        )
+          stopPropagation(e);
+      },
+      { passive: false }
+    );
   }
 
   override render() {

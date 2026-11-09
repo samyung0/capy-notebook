@@ -1,7 +1,10 @@
+import { ThemeProvider } from '@blocksuite/affine/shared/services';
 import type { GfxController } from '@blocksuite/affine/std/gfx';
 import { HistoryExtension } from '@blocksuite/affine/store';
-import { render } from 'lit';
+import { Redo03Icon, Undo03Icon } from '@hugeicons/core-free-icons';
+import { html, render } from 'lit';
 import { m } from '@/i18n';
+import { BoardMenu, type MenuZoom } from './boardMenu';
 
 const closing = new WeakMap<GfxController, () => void>();
 
@@ -16,10 +19,17 @@ export function openBoardEditor(
   gfx: GfxController,
   cardId: string,
   hooks: {
+    /** The menu's Fit and zoom row, where the card has them. */
+    fit?: () => void;
+    zoom?: MenuZoom;
     /** Before it goes: whatever it has to write. */
     onLeave: () => void;
     /** Escape's own use, if it has one right now. */
     onEscape: () => boolean;
+    /** Delete or Backspace: removes what's selected, true when something was. */
+    onDelete?: () => boolean;
+    /** A tool's letter key (`P`), true when it was one. */
+    onShortcut?: (key: string) => boolean;
     onUpdate: () => void;
   }
 ) {
@@ -34,7 +44,10 @@ export function openBoardEditor(
   const canvas = document.createElement('canvas');
   canvas.setAttribute('aria-label', m.drawing_board_maths());
   const controls = document.createElement('div');
-  root.append(canvas, controls);
+  // Top right: a menu (Fit, Undo, Redo) and Done (Epo 2026-11-08).
+  const top = document.createElement('div');
+  top.className = 'capy-editor-top';
+  root.append(canvas, controls, top);
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
   board.append(root);
@@ -55,6 +68,36 @@ export function openBoardEditor(
 
   const box = () => root.getBoundingClientRect();
 
+  const menu = new BoardMenu(() => ({
+    entries: [
+      ...(hooks.fit
+        ? [{ label: m.drawing_board_fit_to_screen(), run: hooks.fit }]
+        : []),
+      {
+        disabled: !gfx.doc.canUndo,
+        icon: Undo03Icon,
+        label: m.drawing_board_undo(),
+        run: () => gfx.doc.undo(),
+      },
+      {
+        disabled: !gfx.doc.canRedo,
+        icon: Redo03Icon,
+        label: m.drawing_board_redo(),
+        run: () => gfx.doc.redo(),
+      },
+    ],
+    zoom: hooks.zoom,
+  }));
+  const done = document.createElement('button');
+  done.className = 'capy-editor-done';
+  done.type = 'button';
+  done.textContent = m.drawing_board_done();
+  done.addEventListener('click', () => close());
+  top.append(menu.element, done);
+  const history = gfx.doc
+    .get(HistoryExtension)
+    .onUpdated.subscribe(() => menu.open && menu.draw());
+
   const close = () => {
     hooks.onLeave();
     gfx.doc.captureSync();
@@ -65,6 +108,9 @@ export function openBoardEditor(
     stacksSwapped();
     window.removeEventListener('keydown', onKey, true);
     updates?.unsubscribe();
+    unwatchTheme();
+    history.unsubscribe();
+    menu.dispose();
     render(null, controls);
     root.remove();
     board.removeAttribute('data-editor-open');
@@ -90,19 +136,34 @@ export function openBoardEditor(
     const command = event.metaKey || event.ctrlKey;
     if (key === 'escape') {
       event.preventDefault();
-      if (!hooks.onEscape()) close();
+      if (menu.open) menu.set(false);
+      else if (!hooks.onEscape()) close();
     } else if (command && (key === 'y' || (key === 'z' && event.shiftKey))) {
       event.preventDefault();
       gfx.doc.redo();
     } else if (command && key === 'z') {
       event.preventDefault();
       gfx.doc.undo();
-    }
+    } else if ((key === 'delete' || key === 'backspace') && hooks.onDelete?.())
+      event.preventDefault();
+    else if (
+      !(command || event.altKey || event.shiftKey) &&
+      event.code.startsWith('Key') &&
+      hooks.onShortcut?.(event.code.slice(3))
+    )
+      event.preventDefault();
   };
   window.addEventListener('keydown', onKey, true);
   root.addEventListener('keydown', (event) => event.stopPropagation());
 
   const updates = gfx.surface?.elementUpdated.subscribe(hooks.onUpdate);
+  // The card draws in the board's light or dark, so a switch redraws it. The signal
+  // calls at once on subscribing, before the card's editor is set up: that one's skipped.
+  let themeSeen = false;
+  const unwatchTheme = gfx.std.get(ThemeProvider).theme$.subscribe(() => {
+    if (themeSeen) hooks.onUpdate();
+    themeSeen = true;
+  });
 
   return {
     box,
@@ -155,3 +216,13 @@ export function drawChip(
   ctx.fillStyle = '#fff';
   ctx.fillText(text, chipX + 7, chipY + 11);
 }
+
+/** AFFiNE's tooltip with its shortcut, as the board's toolbar shows them, for a button
+ * in an open card. It goes inside the button. */
+export const toolTip = (tip: string, key: string) =>
+  html`<affine-tooltip tip-position="top" .offsetY=${10}>
+    <affine-tooltip-content-with-shortcut
+      data-tip=${tip}
+      data-shortcut=${key}
+    ></affine-tooltip-content-with-shortcut>
+  </affine-tooltip>`;

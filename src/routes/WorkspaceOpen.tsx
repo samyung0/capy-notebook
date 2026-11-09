@@ -1103,23 +1103,23 @@ function WorkspaceOpen() {
       <WorkspaceHealth workspace={ws} />
       <AppErrorBoundary resetKeys={[openItem?.kind, openItem?.id]}>
         {section === 'canvas' ? (
-          <div className="flex h-full flex-col">
-            {/* Phones have no rail to leave by. */}
+          <div className="relative h-full" data-workspace-canvas>
+            <Suspense fallback={null}>
+              <WorkspaceCanvas workspaceId={workspaceId} />
+            </Suspense>
+            {/* Phones have no rail to leave by. Back floats on the board's top left,
+                level with its ☰ menu and in its colours (AFFiNE's, set on <html> by
+                the board), so the board and its gestures reach the top; an open card
+                has its own corners. */}
             {!railShown && (
-              <div className="flex shrink-0 items-center p-1">
-                <ToolbarButton
-                  label={m.workspace_section_dashboard()}
-                  onClick={openDashboard}
-                >
-                  <Icon name="navigationBack" />
-                </ToolbarButton>
-              </div>
+              <ToolbarButton
+                className="absolute top-2 left-2 z-10 size-10 rounded-lg border border-(--affine-border-color) bg-(--affine-background-overlay-panel-color) text-(--affine-icon-color) shadow-[0_4px_12px_rgb(0_0_0/8%)] hover:bg-[linear-gradient(var(--affine-hover-color),var(--affine-hover-color))] hover:text-(--affine-icon-color) [[data-workspace-canvas]:has(.capy-board[data-editor-open])_&]:hidden"
+                label={m.workspace_section_dashboard()}
+                onClick={openDashboard}
+              >
+                <Icon name="navigationBack" />
+              </ToolbarButton>
             )}
-            <div className="min-h-0 flex-1">
-              <Suspense fallback={null}>
-                <WorkspaceCanvas workspaceId={workspaceId} />
-              </Suspense>
-            </div>
           </div>
         ) : lg && pageContent ? (
           pageContent

@@ -226,33 +226,45 @@ func TestClosingTellsWhoIsTakingIt(t *testing.T) {
 			t.Fatalf("closed %v: status = %d body=%s", closed, rec.Code, rec.Body.String())
 		}
 	}
+	// To do's own refetch event goes to members too (Epo 2026-11-08); this
+	// test listens for the assignment's.
+	next := func(wait time.Duration) *redis.Message {
+		t.Helper()
+		deadline := time.After(wait)
+		for {
+			select {
+			case msg := <-sub.Channel():
+				if msg.Payload == `{"type":"todo"}` {
+					continue
+				}
+				return msg
+			case <-deadline:
+				return nil
+			}
+		}
+	}
+	id := strings.TrimPrefix(path, "/api/assignments/")
 	setClosed(false)
 	if rec := doReq(t, h, http.MethodPost, path+"/republish", "u_owner", map[string]any{}); rec.Code != http.StatusOK {
 		t.Fatalf("republish: status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	select {
-	case msg := <-sub.Channel():
-		want := fmt.Sprintf(`{"type":"assignment_republished","assignmentId":%q}`, strings.TrimPrefix(path, "/api/assignments/"))
-		if msg.Channel != "notif:u_viewer" || msg.Payload != want {
-			t.Fatalf("heard %s on %s", msg.Payload, msg.Channel)
-		}
-	case <-time.After(5 * time.Second):
+	msg := next(5 * time.Second)
+	if msg == nil {
 		t.Fatal("the member taking it heard no republish")
 	}
+	if want := fmt.Sprintf(`{"type":"assignment_republished","assignmentId":%q}`, id); msg.Channel != "notif:u_viewer" || msg.Payload != want {
+		t.Fatalf("heard %s on %s", msg.Payload, msg.Channel)
+	}
 	setClosed(true)
-	select {
-	case msg := <-sub.Channel():
-		want := fmt.Sprintf(`{"type":"assignment_closed","assignmentId":%q}`, strings.TrimPrefix(path, "/api/assignments/"))
-		if msg.Channel != "notif:u_viewer" || msg.Payload != want {
-			t.Fatalf("heard %s on %s", msg.Payload, msg.Channel)
-		}
-	case <-time.After(5 * time.Second):
+	msg = next(5 * time.Second)
+	if msg == nil {
 		t.Fatal("the member taking it heard nothing")
 	}
-	select {
-	case msg := <-sub.Channel():
+	if want := fmt.Sprintf(`{"type":"assignment_closed","assignmentId":%q}`, id); msg.Channel != "notif:u_viewer" || msg.Payload != want {
+		t.Fatalf("heard %s on %s", msg.Payload, msg.Channel)
+	}
+	if msg := next(200 * time.Millisecond); msg != nil {
 		t.Fatalf("heard a second event: %s on %s", msg.Payload, msg.Channel)
-	case <-time.After(200 * time.Millisecond):
 	}
 }
 
