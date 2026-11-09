@@ -11,6 +11,7 @@ import { PracticeFrame } from '../practice/studyPage';
 import { BackToAssignments } from './AssignmentAttemptPage';
 import { dayLabel, kindLabel } from './assignmentText';
 import { YourWork } from './HandIns';
+import { useAddSubmissionFiles } from './useAddSubmissionFiles';
 import { useAssignmentStart } from './useAssignmentStart';
 
 /** An assignment's page for a member (W4). An unmarked one shows its files and
@@ -85,6 +86,9 @@ function Unmarked({ assignment }: { assignment: Assignment }) {
   const handIn = assignment.allowUploads;
   const closed = !!assignment.closedAt;
   const handedIn = handIn && done && assignment.mine?.doneAt;
+  // Your work's uploads, held here: Hand in waits for them, as Submit does.
+  const uploads = useAddSubmissionFiles({ handInId: assignment.id });
+  const uploading = uploads.uploading.length > 0;
   const meta = [
     kindLabel(assignment.kind),
     assignment.postedBy
@@ -109,15 +113,25 @@ function Unmarked({ assignment }: { assignment: Assignment }) {
           <p className="t-meta mt-0.5 text-fg-muted">{meta}</p>
         </div>
         {handIn ? (
-          <Button
-            disabled={
-              isPending || closed || (!done && !assignment.mine?.handIn?.length)
+          <span
+            title={
+              uploading && !done
+                ? m.assignment_hand_in_wait_upload()
+                : undefined
             }
-            onClick={() => mutate({ done: !done, id: assignment.id })}
-            variant={done ? 'outline' : undefined}
           >
-            {done ? m.assignment_undo_hand_in() : m.assignment_hand_in()}
-          </Button>
+            <Button
+              disabled={
+                isPending ||
+                closed ||
+                (!done && (uploading || !assignment.mine?.handIn?.length))
+              }
+              onClick={() => mutate({ done: !done, id: assignment.id })}
+              variant={done ? 'outline' : undefined}
+            >
+              {done ? m.assignment_undo_hand_in() : m.assignment_hand_in()}
+            </Button>
+          </span>
         ) : (
           <Button
             disabled={isPending || closed}
@@ -168,7 +182,13 @@ function Unmarked({ assignment }: { assignment: Assignment }) {
           </ul>
         </section>
       )}
-      {handIn && <YourWork assignment={assignment} open={!(done || closed)} />}
+      {handIn && (
+        <YourWork
+          assignment={assignment}
+          open={!(done || closed)}
+          uploads={uploads}
+        />
+      )}
     </PracticeFrame>
   );
 }

@@ -87,7 +87,7 @@ export function LearningOverviewTab() {
               onClick={() =>
                 navigate({
                   params: { workspaceId: ws.workspaceId },
-                  search: { study: 'practice' as const },
+                  search: { study: 'members' as const },
                   to: '/workspaces/$workspaceId',
                 })
               }

@@ -25,6 +25,7 @@ export interface AssignmentAttempt {
   late: boolean;
   latePenaltyPct: number;
   mark: number;
+  marking?: boolean;
   now: string;
   paper?: AssignmentAttemptPaper;
   paperFiles: PaperFile[];

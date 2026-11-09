@@ -70,9 +70,13 @@ func (s *Store) openHandInTx(ctx context.Context, tx pgx.Tx, assignmentID, userI
 }
 
 // checkHandInUploadTx admits size more bytes into userID's open hand-in, within
-// PaperMaxFiles and maxBytes across its files and pending uploads.
+// PaperMaxFiles and maxBytes across its files and pending uploads, while their
+// storage is not full yet, as a Marked paper's start (Q728 A).
 func (s *Store) checkHandInUploadTx(ctx context.Context, tx pgx.Tx, assignmentID, userID string, size, maxBytes int64) error {
 	if err := s.openHandInTx(ctx, tx, assignmentID, userID); err != nil {
+		return err
+	}
+	if err := s.storageFullErr(ctx, tx, userID); err != nil {
 		return err
 	}
 	var files int
@@ -92,8 +96,9 @@ func (s *Store) checkHandInUploadTx(ctx context.Context, tx pgx.Tx, assignmentID
 }
 
 // AssertHandInUpload is an upload ticket's check of checkHandInUploadTx, with
-// the account's lifecycle and no storage quota: handed-in work saves past the
-// limit, as a paper does.
+// the account's lifecycle. An account already full adds no file, as a Marked
+// paper starts no upload then; a file added while there was room saves past
+// the limit (reservePaperStorageTx), and Hand in and Undo still work when full.
 func (s *Store) AssertHandInUpload(ctx context.Context, assignmentID, userID string, size, maxBytes int64) error {
 	return s.inTx(ctx, func(tx pgx.Tx) error {
 		if _, _, err := lockHandInTx(ctx, tx, assignmentID); err != nil {

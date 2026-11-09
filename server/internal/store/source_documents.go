@@ -311,12 +311,19 @@ func sourceActorsAllowed(ctx context.Context, q rowQueryer, fileID, ws, payer st
 			return ErrForbidden
 		}
 		if ws == "" {
-			var gone bool
-			if err := q.QueryRow(ctx, `SELECT deleted_at IS NOT NULL OR deletion_requested_at IS NOT NULL FROM users WHERE id=$1`, payer).Scan(&gone); err != nil {
+			var gone, submitted bool
+			if err := q.QueryRow(ctx, `SELECT deleted_at IS NOT NULL OR deletion_requested_at IS NOT NULL,
+					EXISTS (SELECT 1 FROM files WHERE id=$2 AND submission_position IS NOT NULL)
+				FROM users WHERE id=$1`, payer, fileID).Scan(&gone, &submitted); err != nil {
 				return err
 			}
 			if actor != payer || gone {
 				return ErrNotFound
+			}
+			// A paper's or hand-in's file is read only: handed in, it is no
+			// longer the member's to change (finding 4, Q714).
+			if edit && submitted {
+				return ErrForbidden
 			}
 			continue
 		}
@@ -390,9 +397,14 @@ func (s *Store) SourceSession(ctx context.Context, actor, fileID string) (Source
 	}
 	out.OwnerID = payer
 	// sourceLockTx admits only the payer of a file with no workspace, who
-	// edits it.
+	// edits it unless it is a paper's or hand-in's (sourceActorsAllowed).
 	canEdit := ws == ""
-	if !canEdit {
+	if canEdit {
+		err = tx.QueryRow(ctx, `SELECT submission_position IS NULL FROM files WHERE id=$1`, fileID).Scan(&canEdit)
+		if err != nil {
+			return out, err
+		}
+	} else {
 		err = tx.QueryRow(ctx, `SELECT w.user_id=$2 OR EXISTS(SELECT 1 FROM workspace_members m WHERE m.workspace_id=w.id AND m.user_id=$2 AND m.role IN ('owner','editor')) OR(w.privacy IN ('link','public') AND w.share_role='editor' AND `+linkReachSQL("w", "$2")+`) FROM workspaces w WHERE id=$1`, ws, actor).Scan(&canEdit)
 		if err != nil {
 			return out, err

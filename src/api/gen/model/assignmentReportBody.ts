@@ -15,5 +15,6 @@ export interface AssignmentReportBody {
   answers: AssignmentAnswerRow[];
   marking?: AssignmentMarkingProgress;
   members: AssignmentMemberRow[];
+  papersToRead: number;
   questions: AssignmentQuestionReport[];
 }

@@ -125,7 +125,9 @@ func (s *Store) AccountDocumentAccess(ctx context.Context, userID string, items 
 				COALESCE(m.kind, '') AS material_kind,
 				COALESCE(f.hidden, p.hidden, m.hidden, false) OR (m.kind='quiz' AND `+quizAssignedToSQL("m.id", "$1")+` IS NOT NULL) AS hidden
 			FROM req
+			-- A paper's or hand-in's file is no account chat's (finding 4, Q714).
 			LEFT JOIN files f ON req.kind='source_file' AND f.id=req.id AND f.trashed_at IS NULL
+				AND f.submission_position IS NULL
 			LEFT JOIN materials m ON req.kind='material' AND m.id=req.id AND m.trashed_at IS NULL
 			LEFT JOIN materials p ON p.id=m.parent_material_id AND p.trashed_at IS NULL
 			WHERE f.id IS NOT NULL OR (m.id IS NOT NULL AND (m.parent_material_id IS NULL OR p.id IS NOT NULL))
@@ -251,7 +253,7 @@ func (s *Store) AccountDocuments(ctx context.Context, userID string, place Accou
 				'' AS material_kind, f.topic_id, f.workspace_id AS ws_id, f.position, f.added_at AS at,
 				fc.content_id, f.hidden
 			FROM files f LEFT JOIN rag_file_contents fc ON fc.file_id=f.id
-			WHERE f.trashed_at IS NULL
+			WHERE f.trashed_at IS NULL AND f.submission_position IS NULL
 				AND (f.workspace_id IN (SELECT id FROM scope) OR (f.workspace_id IS NULL AND f.user_id=$1))
 			UNION ALL
 			SELECT 1, 'material', m.id, m.title, '', m.kind, m.topic_id, m.workspace_id, m.position,

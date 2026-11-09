@@ -65,10 +65,6 @@ type pastReviewsOutput struct {
 		More  bool               `json:"more"`
 	}
 }
-type studyEnabledInput struct {
-	ID   string `path:"id"`
-	Body apimodel.SetStudyEnabledReq
-}
 type reviewRatingInput struct {
 	Body apimodel.RateReviewItemReq
 }
@@ -86,7 +82,6 @@ func (a *api) registerStudy(api huma.API) {
 	const tag = "Study"
 	reg(api, http.MethodGet, "/api/workspaces/{id}/study", "getWorkspaceStudy", tag, "Study progress in a workspace", http.StatusOK, a.getWorkspaceStudy)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/study/attempts", "getWorkspaceAttempts", tag, "Each quiz's and set's attempt count and latest attempts", http.StatusOK, a.getWorkspaceAttempts)
-	reg(api, http.MethodPut, "/api/workspaces/{id}/study/enabled", "setWorkspaceStudy", tag, "Show or hide study progress in a workspace", http.StatusNoContent, a.setWorkspaceStudy)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/study/reset", "resetWorkspaceStudy", tag, "Clear study progress in a workspace", http.StatusNoContent, a.resetWorkspaceStudy)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/dashboard", "getWorkspaceDashboard", tag, "The workspace's Dashboard: its owner, member count and latest activity", http.StatusOK, a.getWorkspaceDashboard)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/practice", "getWorkspacePractice", tag, "The workspace's Practice page: suggestions, quizzes and the caller's topic reviews", http.StatusOK, a.getWorkspacePractice)
@@ -137,13 +132,6 @@ func (a *api) getWorkspaceAttempts(ctx context.Context, in *workspaceIDInput) (*
 	out := &workspaceAttemptsOutput{}
 	out.Body.Items = items
 	return out, nil
-}
-
-func (a *api) setWorkspaceStudy(ctx context.Context, in *studyEnabledInput) (*Empty, error) {
-	if err := a.requireStudyWrite(ctx, in.ID); err != nil {
-		return nil, err
-	}
-	return &Empty{}, hErr(a.s.SetWorkspaceStudy(ctx, userID(ctx), in.ID, in.Body.Enabled))
 }
 
 func (a *api) resetWorkspaceStudy(ctx context.Context, in *workspaceIDInput) (*Empty, error) {

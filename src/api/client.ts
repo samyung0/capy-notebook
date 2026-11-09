@@ -385,6 +385,12 @@ export const qk = {
   materialDiscussions: (id: string) => ['material', id, 'discussions'] as const,
   materials: (wsId: string) => ['workspace', wsId, 'materials'] as const,
   me: ['me'] as const,
+  memberProfile: (wsId: string, memberId: string) =>
+    ['workspace', wsId, 'study', 'members', memberId] as const,
+  /** Study → Members and a member's profile; refreshed with the rest of
+   * study. */
+  membersProgress: (wsId: string) =>
+    ['workspace', wsId, 'study', 'members'] as const,
   messages: (convId: string) => ['conversation', convId, 'messages'] as const,
   models: (surface: string) => ['models', surface] as const,
   notificationPrefs: ['notification-prefs'] as const,

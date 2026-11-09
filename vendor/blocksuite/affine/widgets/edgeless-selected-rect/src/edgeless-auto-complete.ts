@@ -724,7 +724,6 @@ export class EdgelessAutoComplete extends WithDisposable(LitElement) {
   }
 
   override render() {
-    const isShape = this.current instanceof ShapeElementModel;
     const isMindMap = this.current.group instanceof MindmapElementModel;
 
     // Capy (local change 31): only a single shape or note gets the buttons. Upstream

@@ -43,6 +43,7 @@ import {
   questionOutcome,
 } from './assignmentText';
 import { LateBadge } from './LateBadge';
+import { MarkingNow } from './MarkingNow';
 import { useAssignmentStart } from './useAssignmentStart';
 
 const OUTCOME_CHIP: Record<Outcome, string> = {
@@ -261,6 +262,7 @@ function MarkedResults({
             )}
           </div>
         </div>
+        {attempt.marking && <MarkingNow className="t-meta mt-3" />}
         {attempt.waitingAnswers > 0 && !staff && (
           <p className="t-meta mt-3 text-fg-secondary">
             {attempt.waitingAnswers === 1
@@ -611,14 +613,19 @@ function OpenPart({
           </div>
         )}
       </div>
-      {part.pending && !editing && (
-        <span
-          className={cn(CHIP, OUTCOME_CHIP.waiting, 'self-start')}
-          data-not-marked
-        >
-          {m.assignment_not_marked()}
-        </span>
-      )}
+      {part.pending &&
+        !editing &&
+        (part.marking ? (
+          // A marking run holds it now (Q729).
+          <MarkingNow className="self-start" />
+        ) : (
+          <span
+            className={cn(CHIP, OUTCOME_CHIP.waiting, 'self-start')}
+            data-not-marked
+          >
+            {m.assignment_not_marked()}
+          </span>
+        ))}
       {part.aiComment && (
         <AiWarning flag={part.aiFlag} message={part.aiComment} />
       )}

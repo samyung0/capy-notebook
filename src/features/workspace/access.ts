@@ -17,3 +17,11 @@ export function canManageWorkspaceSettings(
 ): boolean {
   return workspace?.role === 'owner' || workspace?.role === 'editor';
 }
+
+/** Workspace settings has a tab for members (their workspace's tabs, or Leave)
+ * and for anyone who may clone (Others); anyone else gets no entry to it. */
+export function hasWorkspaceSettings(
+  workspace: Pick<Workspace, 'role' | 'canClone'>
+): boolean {
+  return !!workspace.role || workspace.canClone;
+}

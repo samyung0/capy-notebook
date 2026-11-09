@@ -330,6 +330,17 @@ html.dark:not([data-board-light]) .capy-board {
   justify-content: center;
 }
 
+/* The plane's nine tools fit a 360 px phone at 32 px each, 36 px from 380 px up. */
+.capy-plane-row button {
+  min-width: 32px;
+}
+
+@container viewport (width >= 380px) {
+  .capy-plane-row button {
+    min-width: 36px;
+  }
+}
+
 .capy-plane-tools .fills {
   display: flex;
   gap: 2px;

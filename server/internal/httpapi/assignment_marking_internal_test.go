@@ -10,7 +10,7 @@ import (
 // catches one and the whole server would stop. No store or pipeline here, so each of
 // these panics without its recover, which fails the test.
 func TestMarkingKeepsAPanicInsideTheRun(t *testing.T) {
-	(&api{}).markAnswers(context.Background(), "a1", "")
+	(&api{}).markAnswers(context.Background(), "a1", "", func() {})
 }
 
 func TestMarkingPanicFreesThePayersLock(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -130,6 +131,25 @@ type Store struct {
 	shareLinkSecret             []byte
 	planLimits                  planlimits.Catalog
 	planLimitsMu                sync.Mutex
+	// paperHandedIn starts a paper's read (OnPaperHandedIn).
+	paperHandedIn atomic.Pointer[func(assignmentID, attemptID string)]
+}
+
+// OnPaperHandedIn sets what starts the read of a paper the server submits for
+// its member: the sweep, or an attempt past its time read or restarted. A
+// submit the member makes starts its own (AssignmentAttempt.NeedsMarking).
+func (s *Store) OnPaperHandedIn(read func(assignmentID, attemptID string)) {
+	if read == nil {
+		s.paperHandedIn.Store(nil)
+		return
+	}
+	s.paperHandedIn.Store(&read)
+}
+
+func (s *Store) paperSubmitted(assignmentID, attemptID string) {
+	if read := s.paperHandedIn.Load(); read != nil {
+		(*read)(assignmentID, attemptID)
+	}
 }
 
 // Pool exposes the connection pool so the model registry can share it.

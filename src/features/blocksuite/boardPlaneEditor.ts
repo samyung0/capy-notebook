@@ -17,7 +17,7 @@ import {
   pullEllipse,
 } from './boardData';
 import { drawChip, openBoardEditor, toolTip } from './boardEditorShell';
-import { alongDrag, EraserTrail } from './boardEraser';
+import { alongDrag, ERASER_SIZE, EraserTrail } from './boardEraser';
 import { openFormulaCard } from './boardFormula';
 import { laidOut } from './boardFormulaDraw';
 import { minorStep, snapTo, tidy, type Vec } from './boardGeometry';
@@ -46,7 +46,8 @@ type Tool =
   | 'formula'
   | 'erase';
 
-const PIXELS_TO_ERASE = 12;
+/** How near a line, curve or ellipse a press with Select picks it. */
+const PIXELS_TO_SELECT = 12;
 const PIXELS_TO_LABEL = 24;
 /** How near a point's dot a press picks it up, and how far it goes before it's a drag
  * rather than a tap. */
@@ -307,7 +308,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
         ? onFormula(mark, px)
         : mark.kind !== 'dot' &&
           distanceTo(mark, here) <=
-            (mark.kind === 'label' ? PIXELS_TO_LABEL : PIXELS_TO_ERASE) /
+            (mark.kind === 'label' ? PIXELS_TO_LABEL : PIXELS_TO_SELECT) /
               view.ppu
     );
   };
@@ -344,13 +345,21 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   const pickable = (px: Vec) => {
     if (tool === 'erase') return null;
     const point = pointAt(px);
+    // With Select a single point, or any point of a selected mark, takes the whole
+    // mark, so several selected dots move together.
+    if (
+      point &&
+      tool === 'select' &&
+      (selected.has(point.id) ||
+        model.marks.find(({ id }) => id === point.id)?.kind === 'dot')
+    )
+      return { id: point.id, index: null };
     if (point) return point;
     const mark = tool === 'select' ? markAt(px) : undefined;
     return mark ? { id: mark.id, index: null } : null;
   };
   /** To grid points; on a polar plane, to where a ring crosses a spoke. */
-  const snapped = (px: Vec): Vec => {
-    const [x, y] = toPlane(px);
+  const snapPlane = ([x, y]: Vec): Vec => {
     const step = minor();
     if (!view.polar) return [snapTo(x, step), snapTo(y, step)];
     const r = snapTo(Math.hypot(x, y), step);
@@ -358,6 +367,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     const t = snapTo(Math.atan2(y, x), spoke);
     return [r * Math.cos(t), r * Math.sin(t)];
   };
+  const snapped = (px: Vec) => snapPlane(toPlane(px));
 
   const write = (marks: Mark[]) =>
     shell.write(() => gfx.surface?.updateElement(model.id, { marks }));
@@ -645,14 +655,14 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     }
   };
 
-  /** Every mark within the eraser's reach of a pixel joins what it's erasing. */
+  /** Every mark within the eraser's ring round a pixel joins what it's erasing. */
   const eraseNear = (px: Vec) => {
     const here = toPlane(px);
     for (const mark of model.marks)
       if (
         mark.kind === 'formula'
           ? onFormula(mark, px)
-          : distanceTo(mark, here) <= PIXELS_TO_ERASE / view.ppu
+          : distanceTo(mark, here) <= ERASER_SIZE / 2 / view.ppu
       )
         erasing?.add(mark.id);
   };
@@ -836,19 +846,19 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
           PIXELS_TO_DRAG
       )
         return;
-      const step = minor();
       const [from, to] = [toPlane(grab.start), toPlane(at)];
-      // A whole mark lands its first point (an ellipse its middle) on the grid, so one
-      // off it from before comes back.
+      // A whole mark lands its first point (an ellipse its middle) on the grid, a polar
+      // one's rings and spokes included, so one off it from before comes back.
       const anchor =
         picked.kind === 'ellipse'
           ? ellipseCentre(picked.points)
           : pointsOf(picked)[0];
       if (grab.index === null) {
-        const by: Vec = [
-          snapTo(anchor[0] + to[0] - from[0], step) - anchor[0],
-          snapTo(anchor[1] + to[1] - from[1], step) - anchor[1],
-        ];
+        const landed = snapPlane([
+          anchor[0] + to[0] - from[0],
+          anchor[1] + to[1] - from[1],
+        ]);
+        const by: Vec = [landed[0] - anchor[0], landed[1] - anchor[1]];
         // One of several selected marks takes them all along.
         const group = selected.has(picked.id)
           ? model.marks.filter(({ id }) => selected.has(id))

@@ -6,11 +6,9 @@ import {
   useDeleteWorkspace,
   useLeaveWorkspace,
   useMe,
-  useSetWorkspaceStudyEnabled,
   useUpdateWorkspace,
   useUpdateWorkspaceSharing,
   useWorkspaceStats,
-  useWorkspaceStudy,
 } from '@/api/hooks';
 import type { Workspace } from '@/api/types';
 import { InlineErrorState } from '@/components/app/ErrorState';
@@ -25,11 +23,10 @@ import {
 import { FormAlert } from '@/components/ui/FormAlert';
 import { Skeleton } from '@/components/ui/feedback';
 import { NumberPopIn } from '@/components/ui/NumberPopIn';
-import { Switch } from '@/components/ui/Switch';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { describeError, unexpectedErrorId } from '@/lib/errors';
-import { canManageWorkspaceSettings } from './access';
+import { canManageWorkspaceSettings, hasWorkspaceSettings } from './access';
 import { CloneWorkspaceDialog } from './CloneWorkspaceDialog';
 import { IndexingTab } from './IndexingTab';
 import { ShareDialog } from './ShareDialog';
@@ -60,19 +57,18 @@ export function WorkspaceSettingsDialog({
   open: boolean;
   onClose: () => void;
 }) {
-  // Everyone with access has Study; the workspace's own tabs are for owner
-  // and editor members;
-  // Others shows when it holds a row. Danger holds Delete for the owner and
-  // Leave for any other member (Epo 2026-10-28), never both.
+  // The workspace's own tabs are for owner and editor members; Others shows
+  // when it holds a row. Danger holds Delete for the owner and Leave for any
+  // other member (Epo 2026-10-28), never both. Anyone with none of them has
+  // no Workspace settings (hasWorkspaceSettings).
   const manage = canManageWorkspaceSettings(workspace);
   const others = workspace.canClone;
   const owner = workspace.capabilities.canManageMembers;
   const member = !!workspace.role && workspace.role !== 'owner';
   const danger = owner || member;
   const allowed = (value: SettingsTab) =>
-    value === 'study' ||
-    (value === 'others' ? others : value === 'danger' ? danger : manage);
-  const first: SettingsTab = manage ? 'general' : 'study';
+    value === 'others' ? others : value === 'danger' ? danger : manage;
+  const first: SettingsTab = manage ? 'general' : others ? 'others' : 'danger';
   const [ownTab, setOwnTab] = useState<SettingsView>(initialTab ?? 'menu');
   const requested = controlledTab ?? ownTab;
   // While it fades out the URL has no tab: keep showing the last one.
@@ -186,12 +182,6 @@ export function WorkspaceSettingsDialog({
           },
         ]
       : []),
-    {
-      icon: 'book' as const,
-      label: m.workspace_tab_study(),
-      terms: [m.study_hide_progress()],
-      value: 'study' as const,
-    },
     ...(others
       ? [
           {
@@ -286,7 +276,6 @@ export function WorkspaceSettingsDialog({
       {tab === 'indexing' && (
         <IndexingTab error={statsError} stats={stats} workspace={workspace} />
       )}
-      {tab === 'study' && <StudyTab workspaceId={workspace.id} />}
       {tab === 'others' && (
         <div className="flex flex-col gap-6">
           <SettingRow
@@ -359,6 +348,7 @@ export function WorkspaceSettingsDialog({
       )}
     </>
   );
+  if (!hasWorkspaceSettings(workspace)) return null;
   // A lone tab needs no list, and a phone's list is the whole page until a tab
   // is picked.
   const nav = tabs.length > 1;
@@ -463,32 +453,5 @@ export function WorkspaceSettingsDialog({
         />
       </ConfirmDialog>
     </SimpleDialog>
-  );
-}
-
-/** The member's own study switches for this workspace, whichever plan the
- * Study page shows. */
-function StudyTab({ workspaceId }: { workspaceId: string }) {
-  const { data: study } = useWorkspaceStudy(workspaceId);
-  const { isPending, mutate: setShown } =
-    useSetWorkspaceStudyEnabled(workspaceId);
-  return (
-    <div className="flex flex-col gap-6">
-      <SettingRow
-        hint={m.study_hide_progress_hint()}
-        title={m.study_hide_progress()}
-      >
-        {study ? (
-          <Switch
-            aria-label={m.study_hide_progress()}
-            checked={!study.enabled}
-            disabled={isPending}
-            onCheckedChange={(on) => setShown(!on)}
-          />
-        ) : (
-          <Skeleton className="h-6 w-10 rounded-full" />
-        )}
-      </SettingRow>
-    </div>
   );
 }

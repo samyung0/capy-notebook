@@ -12,16 +12,39 @@ import { Button } from '@/components/ui/Button';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
-import { formatFileSize } from '@/features/files/fileUtils';
+import { userToast } from '@/components/ui/userToast';
+import { fileExt, formatFileSize } from '@/features/files/fileUtils';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName } from '@/lib/fileIcons';
-import { useAddSubmissionFiles } from './useAddSubmissionFiles';
+import type { SubmissionFiles } from './useAddSubmissionFiles';
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 /** A page yet to be measured takes a4's shape. */
 const SHEET_RATIO = 210 / 297;
+
+/** The read's page cap (`PAPER_MAX_PAGES` in pipeline/retrieval/paper.py,
+ * Epo's 15, held): checked as files are picked so the member hears it then,
+ * not as every part's Grade Error once marked (finding 7). */
+const PAPER_MAX_PAGES = 15;
+
+/** A picked file's pages as the read numbers them: a PDF's each, anything
+ * else one. A PDF the browser cannot open counts none: the upload refuses it
+ * as password-protected or damaged (Q726 A). */
+async function pickedPages(file: File) {
+  if (fileExt(file.name) !== 'pdf') return 1;
+  try {
+    const pdf = await pdfjs.getDocument({
+      data: new Uint8Array(await file.arrayBuffer()),
+    }).promise;
+    const pages = pdf.numPages;
+    void pdf.destroy();
+    return pages;
+  } catch {
+    return 0;
+  }
+}
 
 /** Removing and reordering a running paper's files, page by page. */
 type PaperEdit = {
@@ -203,6 +226,7 @@ export function PaperPages({
   edit,
   files,
   of,
+  onCounts,
   only,
   width = 220,
 }: {
@@ -210,6 +234,8 @@ export function PaperPages({
   edit?: PaperEdit;
   files: readonly PaperFile[];
   of: SubmissionOf;
+  /** Each file's pages once known, for the page cap. */
+  onCounts?: (counts: Record<string, number>) => void;
   only?: readonly number[];
   width?: number;
 }) {
@@ -219,6 +245,7 @@ export function PaperPages({
       prev[fileId] === pages ? prev : { ...prev, [fileId]: pages }
     )
   ).current;
+  useEffect(() => onCounts?.(counts), [counts, onCounts]);
   let first = 1;
   return (
     <div className={cn('grid gap-3', className)}>
@@ -244,16 +271,56 @@ export function PaperPages({
 
 /** S5's Your paper (Epo 2026-11-08): the whole paper as a PDF or photos, in
  * order, nothing labelled; files can be removed or dragged into order. Each
- * file goes through the normal upload with the attempt named. */
+ * file goes through the normal upload with the attempt named, by `uploads`,
+ * which the page holds so Submit waits for them (finding 6). */
 export function PaperPane({
   attemptId,
   files,
+  uploads,
 }: {
   attemptId: string;
   files: readonly PaperFile[];
+  uploads: SubmissionFiles;
 }) {
-  const { add, ready, uploading } = useAddSubmissionFiles({ attemptId });
+  const { ready, uploading } = uploads;
   const { mutate: remove, isPending: removing } = useRemovePaperFile(attemptId);
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  // A PDF's pages as picked, until its own render counts them.
+  const picked = useRef(new Map<string, number>());
+  // Pages of picks still uploading.
+  const flying = useRef(0);
+  const add = async (list: FileList | null) => {
+    if (!list?.length) return;
+    const chosen = [...list];
+    const pages = await Promise.all(chosen.map(pickedPages));
+    const held = files.reduce(
+      (n, f) =>
+        n +
+        (counts[f.id] ?? picked.current.get(`${f.name}:${f.sizeBytes}`) ?? 1),
+      flying.current
+    );
+    const adding = pages.reduce((n, p) => n + p, 0);
+    if (held + adding > PAPER_MAX_PAGES) {
+      userToast({
+        title: m.assignment_paper_too_many_pages({
+          max: PAPER_MAX_PAGES,
+          pages: held + adding,
+        }),
+        variant: 'error',
+      });
+      return;
+    }
+    chosen.forEach((file, i) => {
+      if (pages[i]! > 1)
+        picked.current.set(`${file.name}:${file.size}`, pages[i]!);
+    });
+    flying.current += adding;
+    try {
+      await uploads.add(chosen);
+    } finally {
+      flying.current -= adding;
+    }
+  };
   const { mutate: order } = useOrderPaperFiles(attemptId);
   const [dragged, setDragged] = useState<string | null>(null);
   const picker = useRef<HTMLInputElement>(null);
@@ -342,6 +409,7 @@ export function PaperPane({
         }}
         files={files}
         of={{ attemptId }}
+        onCounts={setCounts}
         width={160}
       />
       {uploading.map((name) => (

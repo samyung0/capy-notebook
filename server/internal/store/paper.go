@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
+	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 )
 
 // Papers: an assignment attempt answered on paper (Epo 2026-11-08,
@@ -161,12 +162,17 @@ type PaperPart struct {
 // Paper is a submitted paper with the parts its marking lists.
 type Paper struct {
 	// Read: its pages are read; else the read call is still to run.
-	Read        bool
+	Read bool
+	// Manual: staff mark its open parts, so the read grades none (Q716).
+	Manual      bool
 	AttemptID   string
 	WorkspaceID string
 	PayerID     string
 	Files       []PaperFile
 	Parts       []PaperPart
+	// TextGap is why a file of it with no page images has no text to read
+	// (AIErrorCredits or AIErrorFile), or "".
+	TextGap string
 }
 
 // paperTypes names each answer type as the read call's prompt does.
@@ -187,6 +193,54 @@ func lettered(values []any) string {
 	return strings.Join(lines, "\n")
 }
 
+// paperQuestions is the copy a submitted paper holds (t.questions, not the
+// assignment's, which a republish may have changed since) without what its
+// submission and any earlier read wrote on its parts.
+func paperQuestions(r attemptRow) ([]map[string]any, error) {
+	held, err := decodeFrozen(r.graded)
+	if err != nil {
+		return nil, err
+	}
+	for _, q := range held {
+		parts, _ := q["parts"].([]any)
+		for _, raw := range parts {
+			p, _ := raw.(map[string]any)
+			for _, key := range []string{"pending", "awarded", "itemAwards", "itemResults", "markedBy", "markedAt",
+				"aiAwards", "aiComment", "aiFlag", "aiError", "pages"} {
+				delete(p, key)
+			}
+		}
+	}
+	return held, nil
+}
+
+// paperTextGap is why one of an attempt's files that the read takes as text
+// (not a PDF or an image) has none: No credits when its ingest was skipped for
+// them (queueIngestTx), else Can't read file (its ingest failed or hit a
+// limit, or no ingest reads its kind; Q730).
+func paperTextGap(ctx context.Context, q rowsQueryer, attemptID string) (string, error) {
+	rows, err := q.Query(ctx, `SELECT name, kind, COALESCE(parse_mode, ''), status = 'ready' AND index_limit IS NULL
+		FROM files WHERE attempt_id=$1 AND kind NOT IN ('pdf', 'image') AND NOT indexed`, attemptID)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	gap := ""
+	for rows.Next() {
+		var name, kind, mode string
+		var skipped bool
+		if err := rows.Scan(&name, &kind, &mode, &skipped); err != nil {
+			return "", err
+		}
+		plan, err := sourceupload.BuildProcessingPlan(name, kind, mode)
+		if !skipped || err != nil || plan.Route == sourceupload.RouteStoreOnly {
+			return AIErrorFile, rows.Err()
+		}
+		gap = AIErrorCredits
+	}
+	return gap, rows.Err()
+}
+
 // GetPaper is a submitted attempt's paper, or ErrNotFound. Its parts follow the attempt's own question order with the options as the
 // member's seeded view shows them (questions.LearnerViewsSeeded).
 func (s *Store) GetPaper(ctx context.Context, attemptID string) (Paper, error) {
@@ -201,7 +255,11 @@ func (s *Store) GetPaper(ctx context.Context, attemptID string) (Paper, error) {
 	if err != nil {
 		return Paper{}, err
 	}
-	frozen, err := decodeFrozen(r.frozen)
+	gap, err := paperTextGap(ctx, s.pool, attemptID)
+	if err != nil {
+		return Paper{}, err
+	}
+	frozen, err := paperQuestions(r)
 	if err != nil {
 		return Paper{}, err
 	}
@@ -209,7 +267,8 @@ func (s *Store) GetPaper(ctx context.Context, attemptID string) (Paper, error) {
 		frozen = shuffledQuestions(r.id, frozen)
 	}
 	views := questions.LearnerViewsSeeded(frozen, r.id)
-	out := Paper{Read: r.paper == PaperRead, AttemptID: r.id, WorkspaceID: r.wsID, PayerID: r.userID, Files: files}
+	out := Paper{Read: r.paper == PaperRead, Manual: r.marking == MarkingManual, AttemptID: r.id, WorkspaceID: r.wsID,
+		PayerID: r.userID, Files: files, TextGap: gap}
 	for n, q := range frozen {
 		qid, _ := q["id"].(string)
 		parts, _ := q["parts"].([]any)
@@ -364,7 +423,7 @@ func (s *Store) SavePaperRead(ctx context.Context, attemptID string, reads map[s
 		if r.paper != PaperReading {
 			return nil
 		}
-		frozen, err := decodeFrozen(r.frozen)
+		frozen, err := paperQuestions(r)
 		if err != nil {
 			return err
 		}
@@ -485,10 +544,11 @@ func paperPages(value any) []int {
 }
 
 // PapersToRead are an assignment's submitted papers not read yet, or one
-// attempt's (attemptID).
+// attempt's (attemptID), a failed read's included. Under manual marking too:
+// the read maps parts to pages and marks closed parts (Q716).
 func (s *Store) PapersToRead(ctx context.Context, assignmentID, attemptID string) ([]string, error) {
-	rows, err := s.pool.Query(ctx, `SELECT t.id FROM attempts t JOIN assignments a ON a.id=t.assignment_id
-		WHERE t.assignment_id=$1 AND ($2='' OR t.id=$2) AND t.paper='reading' AND a.marking <> 'manual'
+	rows, err := s.pool.Query(ctx, `SELECT t.id FROM attempts t
+		WHERE t.assignment_id=$1 AND ($2='' OR t.id=$2) AND t.paper='reading'
 		ORDER BY t.submitted_at`, assignmentID, attemptID)
 	if err != nil {
 		return nil, err
@@ -587,6 +647,20 @@ func (s *Store) DeleteSubmittedPapers(ctx context.Context, userID string, ids []
 		WHERE f.user_id = $1 AND f.submission_position IS NOT NULL
 			AND ($2::text[] IS NULL OR f.id = ANY($2)) AND `+submittedDeletableSQL, userID, ids)
 	return int(tag.RowsAffected()), err
+}
+
+// dropLeaverSubmissionsTx deletes, as a member leaves or is removed, the files
+// of their papers in the workspace's assignments that are read with nothing
+// waiting, and of their hand-ins there, as their marked drawings go
+// (dropLeaverMarkedDrawingsTx); a paper still waiting stays for staff to mark.
+// The marks stay.
+func dropLeaverSubmissionsTx(ctx context.Context, tx pgx.Tx, wsID, userID string) error {
+	_, err := tx.Exec(ctx, `DELETE FROM files f WHERE f.user_id=$2 AND (
+		EXISTS (SELECT 1 FROM attempts t JOIN assignments a ON a.id=t.assignment_id
+			WHERE t.id=f.attempt_id AND a.workspace_id=$1 AND t.submitted_at IS NOT NULL
+				AND t.paper='read' AND t.waiting_answers=0)
+		OR EXISTS (SELECT 1 FROM assignments h WHERE h.id=f.hand_in_assignment_id AND h.workspace_id=$1))`, wsID, userID)
+	return err
 }
 
 // MarkPaperBatch makes an upload batch a paper's, which settles with no

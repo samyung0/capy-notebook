@@ -287,7 +287,12 @@ objects for the reaper.
   full, and the Files page deletes them once marked and closed. A hand-in's
   files (`files.hand_in_assignment_id`, an unmarked assignment that takes files)
   reserve the same way within the same bounds, are stored with no parse or
-  credits, and the Files page deletes them once the assignment closes. Before you start warns such a member when
+  credits, and the Files page deletes them once the assignment closes.
+  Like Upload file, a hand-in takes a new file only while the member's storage
+  is not full (`storageFullErr` in `checkHandInUploadTx`, at the ticket and the
+  upload session; Epo 2026-11-09, Q728 A): a file added while there was room
+  still saves past the limit, files already added stay, and Hand in and Undo
+  hand in still work. Before you start warns such a member when
   the paper has drawing parts (`drawingParts`); an assignment's pages show the
   owner nothing about it. A practice Check of a
   drawing asks `AssertStorageRoom` for its boards and images before the model

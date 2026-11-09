@@ -1373,9 +1373,11 @@ LIMIT %(candidates)s
 # chat, the caller's own files with no workspace, owned through rag_contents
 # and kept to the search's embedding space. Both rank in one pool (Epo
 # 2026-10-27); standalone notes are never indexed, so there is no note leg
-# for them. Passages and vectors follow through scoped_files' content ids.
+# for them. Passages and vectors follow through scoped_files' content ids. A
+# paper's or hand-in's file (submission_position) is never searched.
 _STANDALONE_OWNER = (
     "(fc.workspace_id IS NULL AND rc.user_id = %(owner)s"
+    " AND f.submission_position IS NULL"
     " AND rc.embedding_provider_slug = %(pin_provider)s"
     " AND rc.embedding_model_slug = %(pin_model)s"
     " AND rc.embedding_model_version = %(pin_version)s)"
@@ -1566,6 +1568,7 @@ WITH scoped AS (
     SELECT f.id, 'file', f.name, NULL, NULL, fc.content_id
     FROM files f LEFT JOIN rag_file_contents fc ON fc.file_id = f.id
     WHERE f.workspace_id IS NULL AND f.user_id = %(me)s AND f.trashed_at IS NULL
+      AND f.submission_position IS NULL
     UNION ALL
     SELECT m.id, 'material', m.title, m.workspace_id, m.topic_id, mc.content_id
     FROM materials m LEFT JOIN rag_material_contents mc ON mc.material_id = m.id
@@ -1672,7 +1675,7 @@ async def account_history_passages(
             JOIN files f ON f.id = fc.file_id
             JOIN rag_chunks c ON c.content_id = fc.content_id
             WHERE (f.workspace_id = ANY(%s) OR (f.workspace_id IS NULL AND f.user_id = %s))
-              AND f.trashed_at IS NULL AND c.id = ANY(%s)
+              AND f.trashed_at IS NULL AND f.submission_position IS NULL AND c.id = ANY(%s)
             UNION ALL
             SELECT c.id, mc.material_id, 'material', c.chunk_idx, c.section_path, c.text,
                    c.page_start, c.page_end, c.regions, c.confidence, c.confidence_reasons,

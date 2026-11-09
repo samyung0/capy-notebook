@@ -1,7 +1,7 @@
 ---
 type: Backend
 title: "Study Progress and Review"
-description: "Per-user study progress in a workspace, FSRS review state in Go, suggested reviews and their scoring, recorded review sessions, Study → Practice (suggestions, every quiz as practice, topic sessions and their result), Hide study progress, Study → Summary and its topic labels, Learning's Overview, Past reviews and All results tabs, the workspace Dashboard's activity, the answer events log, lifecycle and access."
+description: "Per-user study progress in a workspace, FSRS review state in Go, suggested reviews and their scoring, recorded review sessions, Study → Practice (suggestions, every quiz as practice, topic sessions and their result), Study → Summary and its topic labels, Study → Members (a class's members for its staff), Learning's Overview, Past reviews and All results tabs, the workspace Dashboard's activity, the answer events log, lifecycle and access."
 tags: [backend, frontend, study, review, fsrs, flashcards, quizzes, progress]
 ---
 
@@ -10,8 +10,8 @@ tags: [backend, frontend, study, review, fsrs, flashcards, quizzes, progress]
 Each signed-in user keeps their own progress in each workspace: which
 quizzes and flashcard sets they have practised (started, or done once every
 item is) and an FSRS memory state per quiz question and flashcard. Progress
-shows by default; Hide study progress hides it per workspace while recording
-goes on. The workspace's Study section (the rail's Study, its panel listing
+always shows: Hide study progress, its switch and the `workspace_study` table
+went on 2026-11-09 (Epo, Q727 A). The workspace's Study section (the rail's Study, its panel listing
 Study's pages) shows Practice: suggested topics, every quiz members can see
 as practice and the learner's own topic reviews, each started as a review
 session in the page's place, and Summary: the learner's label per topic.
@@ -41,7 +41,6 @@ clone or charged to storage.
 
 | Table / column | Holds |
 | --- | --- |
-| `workspace_study (user_id, workspace_id, enabled)` | Hide study progress for one workspace (`enabled` false hides); no row shows progress (`StudyEnabled`). Migration `0108_study_plans.sql` dropped the old global default `users.study_progress`. |
 | `study_progress (user_id, material_id, workspace_id, state, updated_at)` | One row per practised quiz or set (`markProgressTx`: a check or a rating writes it); `state` is `started` or `done`. No row means untouched. Migration `0145_study_progress_practice_only.sql` dropped what Mark as read and Stop tracking left behind: `file_id` and `removed`. |
 | `review_states (user_id, material_id, item_id, item_hash, stability, difficulty, reps, lapses, fsrs_state, last_review)` | FSRS state per quiz question or card. The key includes `material_id`, so a cloned quiz that keeps its question ids stays separate. |
 | `review_log (user_id, material_id, item_id, rating, reviewed_at)` | Append-only, rating 1–4 for every rating and every rated attempt question. Suggestions read each item's last 8 (`review_log_item_idx`); kept for offline merge and parameter fitting later too. |
@@ -51,7 +50,7 @@ clone or charged to storage.
 | `answer_events`, `attempts.workspace_id` | Migration `0143_answer_events.sql`: one row per graded part of every checked question, and the workspace an attempt was taken in ([Answer events](#answer-events)). |
 | `flashcard_cards (card_id, material_id)` | The old `card_stats` without its review columns: the card-to-set lookup card edits, deletes, listing counts and clone use. `card_id` is a global key, so clones mint new card ids. |
 
-`study_progress` and `workspace_study` cascade with their workspace;
+`study_progress` cascades with its workspace;
 `study_progress` also with its material; `review_states` and
 `review_log` with their material. User foreign keys never cascade because user
 rows are tombstoned; `PurgeUser` deletes the four tables and `review_sessions`
@@ -135,13 +134,12 @@ workspace; writes need read access plus an account that can sign in
 
 | Endpoint | Effect |
 | --- | --- |
-| `GET /api/workspaces/{id}/study` | `StudySummary`: `enabled`, `recentAttempts` (the last 5 on the workspace's untrashed, non-embedded quizzes), `reviewable` (size of the review pool), `quickReview` and `unfinished` (the latest whole-workspace session left before its end, for Continue review). Since the workspace Study page went (2026-11-03) the app reads only `enabled` (Workspace settings → Study); `quickReview`, `unfinished`, `recentAttempts` and `/study/attempts` have no page, and stay for now. |
+| `GET /api/workspaces/{id}/study` | `StudySummary`: `recentAttempts` (the last 5 on the workspace's untrashed, non-embedded quizzes), `reviewable` (size of the review pool), `quickReview` and `unfinished` (the latest whole-workspace session left before its end, for Continue review). No page reads it since the workspace Study page (2026-11-03) and Hide study progress (2026-11-09) went; `quickReview`, `unfinished`, `recentAttempts` and `/study/attempts` stay for now. |
 | `GET /api/workspaces/{id}/study/attempts` | `WorkspaceAttempts`: every untrashed, non-embedded quiz and set of the workspace with its `size` (questions or cards, from `itemsOf`), the user's attempt `count` and its latest three attempts, for the Study progress page. |
-| `PUT /api/workspaces/{id}/study/enabled` | Upserts `workspace_study`: `false` is Hide study progress, `true` shows it. |
 | `GET /api/workspaces/{id}/dashboard` | `WorkspaceDashboard` (`dashboard.go`), the workspace Dashboard for any reader: the owner's name, `members` (owner included) and `activity`, the five newest of the workspace's untrashed files (`uploaded`) and top-level materials (`added`), newest first, each with its actor's name and avatar for a caller with a membership (a link or public visitor gets the rows without them). A material the chat agent made (an `agent_operations` row of kind `create_material` naming it) reads `agent` when the caller asked for it, else `added` under the asker's name. There is no activity log: joins, edits and deletions do not show, and notifications (personal: invites, role changes, removals) are not used. |
-| `POST /api/workspaces/{id}/study/reset` | Deletes the user's `study_progress` rows in the workspace and `review_states` of every material in it and of their own practice quizzes linked to it. Attempts, the review log and the switch stay. |
+| `POST /api/workspaces/{id}/study/reset` | Deletes the user's `study_progress` rows in the workspace and `review_states` of every material in it and of their own practice quizzes linked to it. Attempts and the review log stay. |
 | `GET /api/workspaces/{id}/review?group=&topicId=&mode=&items=&count=&order=` | A new session: a suggestion's items (mode set) or the group's (no mode: a topic, Other files or the whole workspace, new items mixed in), each with its content (card faces, or the answer-free question, `questions.LearnerView`), material title and `reason` (`new` from the new pool, `missed` with an Again among its latest answers, else `fading`), plus the group, mode and evidence to send back with each answer. `items=quiz` serves questions only whatever the review items preference, and 10 of them unless the learner picked a session size (Practice's topic sessions). A topic not in the workspace is 404. |
-| `GET /api/workspaces/{id}/practice` | `Practice` (`practice.go`), Study → Practice for any reader, by the workspace's kind: `suggestions`, this workspace's suggested reviews over its questions only (`groupSuggestions` at full interest, since the learner is here; at most three, none while study progress is hidden); `quizzes`, every untrashed top-level quiz in reading order with its question count (`itemCounts`, refused content left out) and the caller's `best` attempt (best share of marks); `reviews`, the caller's topic and Other files sessions that answered a question, one row per topic: the latest one's served count and the best one's marks. A class's owner and editor members get neither of those but `members` (viewer members) and per quiz `triedBy` (viewer members with an attempt) and `average` (the mean of their best scores, 0 to 1, only once five tried: aggregates need five, Epo 2026-11-03 §11.8); never anyone's answers. |
+| `GET /api/workspaces/{id}/practice` | `Practice` (`practice.go`), Study → Practice for any reader, by the workspace's kind: `suggestions`, this workspace's suggested reviews over its questions only (`groupSuggestions` at full interest, since the learner is here; at most three); `quizzes`, every untrashed top-level quiz in reading order with its question count (`itemCounts`, refused content left out) and the caller's `best` attempt (best share of marks); `reviews`, the caller's topic and Other files sessions that answered a question, one row per topic: the latest one's served count and the best one's marks. A class's owner and editor members get neither of those but `members` (viewer members) and per quiz `triedBy` (viewer members with an attempt) and `average` (the mean of their best scores, 0 to 1, only once five tried: aggregates need five, Epo 2026-11-03 §11.8); never anyone's answers. |
 | `GET /api/review/sessions/{id}` | Continue: an unfinished session's items still to answer, read now (items that left their material drop, as do those of a material the caller may not read now, `materialEffectiveAccess`: hidden or assigned since it was served, or never theirs, since the browser sends the served list), with answered of total. Another user's session is 404. |
 | `GET /api/review/sessions/{id}/result` | A session's result, finished or not: its Past reviews row (`ID` read), its answered items in answer order with their records (the resume read's `done`, under the same read rule), and `better`, how many were rated above their latest `review_log` rating before the session started. Another user's session is 404. |
 | `POST /api/review/sessions/{id}/finish` | Ends a session before its last item. |
@@ -155,7 +153,9 @@ graded copies: a missing image there keeps the plain empty box (Q270), the
 result body resetting the session's list.
 | `GET /api/review/sessions?sort=&dir=&workspaceId=&has=&offset=&limit=` | Past reviews: finished sessions with their quiz marks and cards remembered (Good or Easy). Sort date, quiz, cards or time; `has` quiz and/or flashcards. |
 | `GET /api/learning/overview` | `LearningOverview`, Learning's Overview tab, below. |
-| `GET /api/workspaces/{id}/study/topics` | `StudyTopics`, Study → Summary: `enabled` and each topic's standing. Refused (403) to a class's owner and editors. |
+| `GET /api/workspaces/{id}/study/topics` | `StudyTopics`, Study → Summary: each topic's standing. Refused (403) to a class's owner and editors. |
+| `GET /api/workspaces/{id}/study/members` | `MembersProgress`, Study → Members: each viewer member's marks, practice this week, full storage and topic standings, and the topic columns, read for the whole class in a fixed number of queries. A class's owner and editor members only: everyone else (its viewer members, a link editor, a nonmember) and a personal workspace 404; the store refuses a member with `ErrForbidden`, which the API answers as 404 too. |
+| `GET /api/workspaces/{id}/study/members/{memberId}` | `MemberProfile`, a member's profile: assignments, topics, questions still missed, recent work. The same rule; a `memberId` who isn't this class's viewer member (staff, removed, another class's) 404. |
 | `POST /api/review/ratings` | `{materialId, itemId, rating, session?, attempt?}` for a card; `attempt` (`{id, startedAt}`, minted by the study page when a run begins) adds the rating to that flashcard attempt for a workspace set, creating it with the first rating (`recordCardTx`, under the account lock, as quiz attempts, and the rating lock); another user's, another set's or a quiz attempt's id is 422 (`ErrFlashcardAttempt`); a question is 422 (it is rated by a check). Needs read access to the material, so standalone shared sets can be rated too; an embedded set is 422 (`ErrStudyEmbedded`), its study page sends nothing. |
 | `POST /api/review/check` | `{materialId, itemId, answers, session?}` for a question: grades it on the server (open parts by the grading model), rates it from `correct / total` and returns `{correct, total, question}`, the question with its key and awards. A card is 422. |
 | `POST /api/quizzes/{id}/check` | `{questionId, answers, attemptId?, startedAt?}`: grades one question on the server ([question-bank.md](question-bank.md#answer-keys-and-server-grading)) and adds it to the learner's attempt, whose `AttemptDetail` so far it returns; a missing or unknown `attemptId` (another user's, another quiz's, deleted) starts a new attempt, a question already checked in the attempt is 409. Its side effect is below. |
@@ -339,15 +339,14 @@ The page is `src/features/study/practice/PracticePage.tsx`, lazy-loaded into
 the centre while nothing is open and the URL has `study=practice`
 (`parseWorkspaceOpenSearch`). From lg it fills the centre panel without a
 file header (28px 36px padding); one column keeps the header for the Files
-dropdown and ⋮, which with the dropdown's foot lead to Practice, Summary and
-Assignments, each only for whoever has that page. The rail's Study opens it and
+dropdown and ⋮, which with the dropdown's foot lead to Practice, Members,
+Summary and Assignments, each only for whoever has that page. The rail's Study opens it and
 its panel (`StudyPanel.tsx`)
 lists Study's pages: in a class, Members, Assignments and Practice for owner
 and editor members, Summary, Assignments and Practice for others; in a
-personal workspace, Summary and Practice for everyone. Practice, Summary and
-[Assignments](#assignments) are built; the rest show as muted rows with a
-"Coming soon" title and do nothing. Practice's row is current on the page, during a topic session
-and on its result.
+personal workspace, Summary and Practice for everyone. All four are built
+([Members](#members), [Assignments](#assignments)). Practice's row is current on the
+page, during a topic session and on its result.
 
 Data: `GET /api/workspaces/{id}/practice` (`qk.practice`, under the
 workspace's `study` key, so `invalidateStudy` refreshes it) and the topics.
@@ -391,8 +390,80 @@ last: its label, "9 of 10 right" (each question's latest check, full marks),
 squares for every question (right, partly, wrong by its latest answer, grey when
 not attempted, a quiz left partway included; above 10 they scale to 10 and any
 unattempted question keeps at least 1 grey; `topicSquares`), and Practise, which starts that topic's session.
-Assignments' overall joins it once they exist. While study progress is hidden it
-says so, with a Workspace settings button. Make my own practice sits at the top right.
+Assignments' overall joins it once they exist. Make my own practice sits at the top right.
+
+### Members
+
+`src/features/study/members/MembersPage.tsx`, `study=members` (boards Main, G4
+and G2 on the study-tracking canvas, Epo 2026-11-02/03; built 2026-11-08), for a
+class's owner and teaching assistants (editor members) only: anyone else is sent
+to Practice, and the routes refuse them. Members never see it. It lists the
+class's viewer members; `GET /api/workspaces/{id}/study/members`
+(`WorkspaceMembersProgress` in `store/members_progress.go`, `qk.membersProgress`,
+under the workspace's `study` key).
+
+- **Show: Summary** (Main): one 52px line per member: Assignments ("76% · 3 of
+  4 done", then "2 missing"), Practice this week (questions checked in quizzes
+  and reviews over the last seven days, never assignments; "–" for none) and
+  Needs practice (the topics labelled so, as amber chips; else a grey Attempted
+  while nothing is past Attempted, Not started before any answer, Nothing
+  flagged otherwise). Overall is the counted submission's mark after any late
+  penalty (`countedAttemptOrder`, `attemptMarkSQL`) over the marks decided so
+  far, summed across submitted marked assignments; "x of y" counts published
+  assignments given to them, submitted or ticked; missing is marked ones past
+  due with nothing submitted. Sort: Needs attention (missing, then topics
+  needing practice, then lowest overall; no grade yet sorts after a grade;
+  `sortMembers`) or Name. A line opens the profile; there is no accordion.
+- **Storage full** (Epo 2026-11-08, added since the mock): a red chip by the
+  name while the member's own storage is full (`StorageUsage.Full`; the list
+  reads every member's in one query, `membersStorageFull`). Hover or tap says
+  "Their storage is full. They can't upload files, including for new
+  assignments." (Q722; [backend-storage-quota.md](backend-storage-quota.md)).
+  It shows on Members and the profile to class staff, owner and editor members
+  alike (Q720), never on an assignment's pages.
+- **Show: By topic** (G4, `show=topics`): members × topics, 64px rows, each cell
+  the member's label as a pill with "9 of 10 right" (or "–" and Not started),
+  under a pinned All members row: how many need practice when any do, else the
+  commonest label, a tie to the stronger (`topicCount`). Columns are the
+  topics any member has standing in, in topic order with Other files last, each
+  with its size, the most questions any member can answer in it. A member's
+  labels are exactly their own Summary's (`topicStandings` read as them), so an
+  assigned quiz counts only what was answered; the list reads them for the
+  whole class in one pass (`membersStandings`: the quizzes, their sizes, then
+  the class's answers grouped by member, `review.TopicLabel` per member),
+  which `TestMembersStandingsMatchSummary` keeps equal to `topicStandings`.
+  The grid scrolls both ways in a box no taller than the window
+  (`100dvh` less the page's head), so the header and the All members row stay
+  pinned (Q723, finding 9).
+- **Profile** (G2, `member=<id>`, keeping `show`): back to Members, name, "Joined
+  2 Sep · active today" (their latest answer or submission), then Assignments (mark of total and Submitted, In progress, Missing,
+  Done or the due date; a row opens their results, or the report's Members tab
+  before a submission) with Overall, and Topics as Summary shows them. On the
+  right: the weakest topic needing practice (lowest share right) with "Missed 3
+  of 4 questions" and Assign practice; Still missing
+  (up to five questions whose latest check was not right, most missed first,
+  from the class's own quizzes Summary counts, the prompt from
+  `questions.PromptText`; a member's own practice quiz is private and stays
+  out, and an assignment's answers wait for released grades as labels do,
+  `gradesHeldSQL`; Q723 findings 2 and 7); and
+  Recent activity (the latest five: an attempt at a class practice quiz with its
+  title and question count, a day's reviews in a topic, and submissions). A
+  member's own practice quiz is private, so it shows as its topic, never its
+  title. Assign practice opens New assignment with the member as its only
+  assignee, and its Generate questions starts on the card's topic (Q721,
+  `presetAssignee`, `presetTopicId`). A `memberId` that isn't one (a removed
+  member) shows Member not found with nothing to retry. Board G2's Draft a follow-up
+  quiz (F3) was removed (Epo 2026-11-08): the labels already show which topics
+  to make a quiz on; remaking a quiz from another one is queued instead. The ⋮
+  menu is not built.
+- Phones and narrow panes (below the `@4xl` container, where the table no
+  longer fits) get a plain list instead of either view (Epo 2026-11-08): the
+  name and any Storage full chip, "3 of 4 done · 2 missing" under it and the
+  overall on the right, with Sort but no Show. Practice and topic labels are
+  left to the profile.
+
+MSW (`src/mocks/members.ts`) serves Biology 101's viewers with the boards' own
+numbers, Farah's storage full.
 
 ### Make my own practice
 
@@ -483,11 +554,11 @@ session.
   practice → Familiar) waits for mastery.
 - The session is kept in Practice as the learner's own review ("Only you").
 
-Hide study progress (a switch in Workspace settings → Study, on while
-progress is hidden) keeps recording; Practice then shows no Suggested. Everyone signed in with access
-opens Workspace settings: phones on the tab list, wider screens on the first
-tab, General for owner and editor members and Study for everyone else (viewers,
-share-role visitors), their only tab beside Others when they may clone. The rail avatar's menu carries Workspace settings.
+Workspace settings has no Study tab since Hide study progress went (Q727 A):
+owner and editor members open it on General, a viewer member on Others when
+they may clone, else Danger (Leave), and a share-role visitor on Others when
+they may clone; a visitor who may not has no Workspace settings entry
+(`hasWorkspaceSettings`). The rail avatar's menu carries Workspace settings.
 
 ### Flashcard results
 
@@ -609,7 +680,7 @@ session and result pages stay under
 `src/features/study/LearningOverview.tsx` over `GET /api/learning/overview`
 (`server/internal/store/learning_overview.go`). Scope (`learningScope`): the
 workspaces the user owns, has joined, or practised in while they can still read
-them, minus a class they own or edit (Practice's own test) and Hide study progress.
+them, minus a class they own or edit (Practice's own test).
 A row is the link: it hovers whole and square and has no action at its end.
 
 **What to do next**, at most 4 rows, led by what each is (the quiz or set's file
@@ -630,7 +701,7 @@ per topic label, weakest first, "38 of 120 items tried" (rated items with curren
 content, of all items) and the last practice. A row opens the workspace's Dashboard.
 
 **You teach** lists a class's owner or editor's classes with their member count; a
-row opens the class's Practice until Members exists.
+row opens the class's Members.
 
 With nothing in any section the page shows the ink book, "No quizzes or flashcards
 yet" and an outline Go to Workspaces. An empty section is not shown.
@@ -710,11 +781,11 @@ Past reviews or All results without a sort in the URL redirects to it.
 | Material purged | `study_progress`, `review_states` and `review_log` cascade; `answer_events` stay with no material. |
 | Item removed from a document | Its `review_states` row is ignored until the item returns. |
 | Question prompt or card face edited | That item's state resets on its next rating; until then it is out of the practised pool and comes back in a manual review as a new item. |
-| Workspace deleted | All four workspace-scoped tables and `answer_events` go by cascade; attempts stay with no workspace. |
+| Workspace deleted | All three workspace-scoped tables and `answer_events` go by cascade; attempts stay with no workspace. |
 | Member or link access lost | Rows stay, unreadable without access; Learning skips the workspace. |
 | Workspace or material clone | Nothing is copied; cloned cards get new ids. |
-| Workspace transfer | Rows stay with each user; `study_progress` and `workspace_study` are in `notOwnership` (`workspace_transfer_test.go`). |
-| Account purge | `PurgeUser` deletes the user's rows in all four tables and `answer_events`, their review sessions. |
+| Workspace transfer | Rows stay with each user. |
+| Account purge | `PurgeUser` deletes the user's rows in all three tables and `answer_events`, their review sessions. |
 | Reset | Clears progress rows and review states in the workspace; attempts and the log stay. |
 
 ## Authorization
@@ -820,6 +891,12 @@ due date):
 | A viewer it went to | The icon, listed even if the quiz is hidden, and it opens the assignment (`assignmentId`, the earliest due of several) | Refused: reads, checks, images, its room and the chat agent answer 404 (`materialEffectiveAccess`, `editorAssetReadable`, `live_access`, `AccountDocumentAccess`), a device drops its kept copy (`ReadableMaterialIDs`), and it is off Practice, reviews and new items. New joins and token requests are refused; nothing about an assignment closes a connection (Epo 2026-11-05) |
 | A viewer it did not go to | A normal quiz if it is visible; no row if hidden | As it was, the owner's choice |
 
+A viewer it went to keeps their row and refusal past the close while a closed
+marked assignment still holds its keys: grades waiting for release under Show
+grades Manual, or Show answers Do not show (`assignmentKeysHeldSQL`; Q714,
+finding 5). The collaboration server's own copy of the rule (`live_access`)
+still ends at the close; Go refuses the room token first.
+
 `quizAssignedToSQL` and `quizAssignmentOpenSQL` in `store/assignments.go` are the
 two reads; `materialIconName(kind, assigned)` is the icon, a quill in the file-icon
 sprite, on the file tree, Recent, the Files page (All files lists an assignee's
@@ -923,13 +1000,27 @@ Go scoring as a quiz (`questions.Graded`). An answered open part is left
 `pending` ("Not marked"), and the AI then marks it in the background, on the
 credits of the member attempting (`markAnswersSoon`, Epo 2026-11-08; one lock per
 member); a blank one earns 0. A part it could not mark keeps why, `aiError`
-`credits` (that member has none left) or `error` (the grade failed), which only
-staff read: Approve AI marks shows it on the row as No credits or Grade Error and
-in the answer pane as one line, with no banner and no names (mock T3). Waiting
+`credits` (that member has none left), `error` (the grade failed) or `file` (a
+file of its paper can't be read, Q730), which only staff read: Approve AI marks
+shows it on the row as No credits, Grade Error or Can't read file and in the
+answer pane as one line, with no banner and no names (mock T3). Waiting
 answers count as `toApprove`, and `notGraded` how many of them have no AI mark,
 which the Assignments row, the report header and Approve AI marks show apart from
 those to approve. Mark with AI runs each attempt on its member's credits and is
-refused only when grading isn't set up. With Approve
+refused only when grading isn't set up. While a run holds answers they read
+Marking… with a spinner (Q729): the gateway notes, in memory beside the run's
+progress (one gateway process; a restart forgets it), each attempt it holds
+from queued until its call returns or fails, its parts by id, or every part
+while its paper is read; a re-grade of a paper holds exactly the parts it
+sends (four to a call in the pipeline, all of them at once). Submit and the
+sweep hold the attempt before the reply, and Mark with AI what it lists, so
+the next read already says so. The report's answer rows and members and the
+attempt (with `marking` on each part held) carry `marking`, which Approve
+shows in place of a row's badge or waiting text, the Members tab in place of
+"to approve", and the member's submitted page and results as Marking… (each
+waiting part too); the report and the attempt are read again every 3 s while
+anything says it, and under Show grades Manual the flag still shows, telling
+nothing of the marks. With Approve
 AI marks on, its mark waits beside the answer (`aiAwards`, `aiComment`, `aiFlag`)
 where only staff read it; off, it is the mark at once (`markedBy: "ai"`). A part left
 Not marked joins no review; a quiz check can check it again (below). At zero the
@@ -1014,29 +1105,66 @@ Reopening hides the keys again.
   last row. Its files are the member's own standalone uploads through the normal
   source upload with `attemptId` (`files.attempt_id`, in `attempt_position`
   order): ingest runs and charges them as any upload, but credits never refuse
-  one and its bytes save past the storage limit. At most 15 files within the
-  member's source file cap across them (O1). They can be removed and dragged
-  into order until Submit, and never list in Files, search or Recent.
+  one and its bytes save past the storage limit. A photo or an Office file's
+  pictures are compressed in the browser first, as any upload's are
+  (`compressSource`). At most 15 files within the member's source file cap
+  across them (O1), and at most 15 pages, which the browser counts as files
+  are picked (a PDF's pages, anything else one) and refuses with "A paper holds
+  at most 15 pages…" (finding 7). A password-protected or damaged PDF or Office
+  file is refused as it is picked, by the normal upload's browser analysis
+  (`localSourceAnalysisInput`, codes `password_protected` and `unreadable`, in
+  `useAddSubmissionFiles`, so hand-ins too), with its own message, while the
+  other picked files upload (Q726 A); such a PDF counts no pages. They can be
+  removed and dragged into order
+  until Submit, which waits while a file uploads (the clock's own submit does
+  not, finding 6), and never list in Files, search, Recent or account chat;
+  their member opens them read only (no editing session, finding 4).
 - An upload attempt's matching options and ordering items are shuffled with the
   attempt as the seed (`questions.LearnerViewsSeeded`), so the letters on paper
   match what the read call is given.
 - Submitting leaves every part waiting with nothing logged (`paper = 'reading'`).
-  Marking waits for the files' ingest, then the pipeline's `/paper` reads every
-  page and grades the open and drawn parts on their pages, one call
+  The read starts at the member's submit, decided from the attempt as stored
+  (`NeedsMarking`), whatever Show grades hides from them (finding 1), and when
+  the server submits the paper for them: the sweep, or an attempt found past its
+  time when read or restarted (`store.OnPaperHandedIn`). Marking waits for the
+  files' ingest, then the pipeline's `/paper` reads every page of the paper as
+  the attempt holds it (`t.questions`, not a later republish, finding 10) and
+  grades the open and drawn parts on their pages, one call
   (`observability-metering.md`). Go maps each closed answer from the member's
   letters to the stored answer and marks it against the key, drops an answer
   read with no pages, stores each part's `pages`, logs the answers
   (`paper = 'read'`), then saves the AI's marks and failures as for typed
-  answers. Mark with AI later grades the waiting open parts again on their
-  pages. Under manual marking nothing is read.
+  answers. A text or Office file with no text (its ingest failed, or was
+  skipped for credits) is not read: every part waits with Can't read file or
+  No credits (finding 8, Q730). A PDF the pipeline can't open (or that opens
+  with no pages) or render answers `/paper` 400 `file_unreadable`, and its
+  `file_unavailable`, `unsupported_format` and `unavailable_target` refusals
+  read the same: every part waits with Can't read file, which Mark with AI
+  still retries (Q730). Processing is never part of submitting: an uploaded
+  file counts as handed in, and nothing about its processing shows to the
+  member or holds Submit (Q730). A failed read, or one that waited out the ingest, leaves
+  the paper `reading`, every question of it on Approve (closed ones too), and
+  Mark with AI reads it again (`PapersToRead`); nothing retries by itself. Mark
+  with AI later grades the waiting open parts again on their pages. Under
+  manual marking the paper is still read, on the member's credits (Q716): the
+  read maps each part to its pages and marks closed parts (`/paper` with
+  `grade: false`), and open parts wait for staff. A read that fails there
+  notes no reason: its parts wait for hand marking with no badge, as any
+  Manual answer (Q730). There Read papers again sits
+  where Mark with AI would, shown while the report's `papersToRead` (papers
+  still `reading`: a read that failed, never ran, or runs now) is above zero;
+  it is the same `mark-with-ai` call, reading without grading on each
+  member's credits (Q725).
 - Approve shows a part's pages of the paper with Whole paper a click away (T1),
   through `GET /api/assignment-attempts/{id}/paper/{fileId}/links` (the member,
   or staff once submitted).
 - The Files page lists a paper's files once every part is marked and the
   assignment has closed with its grades out, as Files › Canvas does for
   assignment drawings (Epo 2026-11-08; one list with the member's other files
-  since 2026-11-09, `GET /api/items`); deleting keeps the marks, and Approve
-  then says the member deleted it (F2).
+  since 2026-11-09, `GET /api/items`); deleting keeps the
+  marks, and Approve then says the member deleted it (F2). As a member leaves
+  the class, their read papers with nothing waiting and their hand-ins go, as
+  their marked drawings do (`dropLeaverSubmissionsTx`, finding 11).
 - Releasing grades rings each member who handed in (`grades_released`).
 
 **Handing in files** (Epo 2026-11-08, migration 0162, mocks C2, S3, T2): the
@@ -1045,9 +1173,14 @@ the switch) turns Mark as done into Hand in, which the Assignments list and To d
 then leave to the page (no quick tick). The member's page gets Your work,
 with Add files while it is open; each file is their own standalone upload with
 `handInId` (`files.hand_in_assignment_id`, in `submission_position` order),
-stored with no parse and never read or marked. Hand in needs a file and ticks
-the assignment (`assignment_done`), the meta line then saying Handed in on its
-date; Undo hand in reopens it until the assignment closes. The report's chip reads
+stored with no parse and never read or marked. Hand in needs a file, waits
+while one uploads (as Submit does), and ticks the assignment
+(`assignment_done`), the meta line then saying Handed in on its date; Undo hand
+in reopens it until the assignment closes. Once the member's storage is full
+no file is added (`storageFullErr` at the ticket and the upload session, as a
+Marked paper's start, Q728 A): the refusal toasts the storage-limit copy, a
+file added while there was room still saves past the limit, and Hand in and
+Undo still work. The report's chip reads
 "N of M handed in", and its Members tab lists each member's date (Late past the
 due date) and files, which open in a viewer of their pages with Open file for a
 single one. The Files page lists a hand-in's files once the assignment
@@ -1064,7 +1197,7 @@ and the Submitted page says who releases it. Answers never show before grades.
 The topic-label read leaves out events of an attempt on such an assignment, and
 the sweep makes its quiz practice, rating what was submitted, only once it has
 closed and its grades are released. After release, later marks show as they
-land. Practise again shows once its quiz is practice. The top right
+land. Practise again shows once its quiz is practice, never to members under Show answers Do not show, whose quiz stays refused to them (finding 5). The top right
 shows the mark after any late penalty, with the unpenalised mark under it.
 
 **The report** (G3, G3m, A3; `GET /api/assignments/{id}/report`, owner and editor
@@ -1098,7 +1231,10 @@ attempt at a time per payer, with "Marking 12 of 40 answers…" from the report'
 alone). Once it has closed, by hand or at a No late submissions due date, the sweep
 (within a minute) sets `released_at` and makes the quiz a normal visible one
 (`hidden=false`) unless another open assignment still holds it; the icon and the
-assignee's refusal end at the close itself. A hidden quiz's row can so go missing
+assignee's refusal end at the close itself, except while its grades wait for
+release under Show grades Manual or its answers are Do not show: the quiz then
+stays refused to those it went to, their row opening the assignment
+(`assignmentKeysHeldSQL` in `quizAssignedToSQL`, finding 5). A hidden quiz's row can so go missing
 for that minute. Practice notes "Assignment, closed 24 Oct" (`assignmentClosedAt`).
 The owner can hide it again from its ⋮, and the sweep leaves that alone. Marked
 answers join reviews at that moment (§11.6): each attempt's fully marked questions
@@ -1109,9 +1245,9 @@ from `sm` and the width of the page less its gutters on a phone, on a viewer mem
 first open of a class after joining or once for those already in one: the workspace's
 name, its owner as public pages show one (avatar left of the name, read with the
 notice only while it is due, supersedes the 2026-11-03 "doesn't name the owner"),
-"You are sharing the following data:", then what this branch really shares with its
-owner and teaching assistants, results on assignments and practice on each quiz as
-part of a class count and average, and one button (`SharingNotice.tsx`, `GET` and
+the one line "Your practice and attempts are shared" (Q718: Members shows its owner
+and teaching assistants each member's practice and attempts), and one button; a
+member who dismissed the earlier wording is not told again (`SharingNotice.tsx`, `GET` and
 `PUT /api/workspaces/{id}/sharing-notice`). Dismissing it counts as told, once per member
 row, so leaving and rejoining tells again. Staff and personal workspaces never see
 it. The board's own line about topic labels waits for topic summaries, and its Join
@@ -1178,6 +1314,11 @@ Sources: [store](../server/internal/store/assignments.go),
 
 - `server/internal/store/assignments_test.go` and
   `e2e/study/assignments.spec.ts`: see [test-catalog.md](test-catalog.md).
+- `server/internal/store/members_progress_test.go`,
+  `server/internal/httpapi/members_progress_test.go`,
+  `src/features/study/members/membersRows.test.ts` and
+  `src/features/study/members/MembersPage.test.tsx`: Members; see
+  [test-catalog.md](test-catalog.md).
 - `server/internal/review/review_test.go` also holds the answer-history
   order Epo signed off (`TestHistoryWeightsOrder`).
 - `server/internal/review/topic_label_test.go`: the label counts Epo reviewed, a
@@ -1220,8 +1361,8 @@ Sources: [store](../server/internal/store/assignments.go),
 - `e2e/study/study-progress.spec.ts` (Docker stack, the detailed checks):
   quizzes and sets practised through the attempt and study pages becoming
   reviewable; a mixed review
-  session; a Practice topic session to its result and its row; Hide study
-  progress in Workspace settings.
+  session; a Practice topic session to its result and its row; Workspace
+  settings kept in the URL.
 - `e2e/uat/journeys/study.spec.ts` (deployed stack, thin): one quiz finished,
   one set studied, a three-item review, and the
   `study_progress`, `attempts` and `review_states` rows.

@@ -173,10 +173,6 @@ func TestStudyLeavesOutAQuizARuleRefuses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rec := doReq(t, h, http.MethodPut, "/api/workspaces/"+ws.ID+"/study/enabled", "u_owner",
-		map[string]any{"enabled": true}); rec.Code != http.StatusNoContent {
-		t.Fatalf("study on = %d %s", rec.Code, rec.Body.String())
-	}
 	quiz := func(title string) string {
 		t.Helper()
 		created, err := st.CreateMaterial(ctx, store.Material{

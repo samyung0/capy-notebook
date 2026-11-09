@@ -83,9 +83,16 @@ class Page:
     images: dict[int, str] = field(default_factory=dict)
 
 
+UNREADABLE = "file_unreadable"
+"""A paper file that can't be opened or rendered: Go shows Can't read file
+on every part (Q730)."""
+
+
 async def assemble(files: list[dict[str, str]]) -> list[Page]:
     """The paper's pages in file order, numbered on across files from 1. Text
-    and Office files are one text page each, as in Make a quiz."""
+    and Office files are one text page each, as in Make a quiz. A PDF that
+    won't open, or opens with no pages (one still locked by a password), is
+    refused as unreadable."""
     pages: list[Page] = []
     for file in files:
         file_id, name = file["fileId"], file["name"]
@@ -99,7 +106,16 @@ async def assemble(files: list[dict[str, str]]) -> list[Page]:
                 pdf = await capture.pdf_path(None, file_id)
             except capture.CaptureUnavailable as exc:
                 raise extraction.ExtractionRefused(exc.code, f"{name}: {exc}.") from exc
-            count = await limits.render_thread(extraction._page_count, pdf)
+            try:
+                count = await limits.render_thread(extraction._page_count, pdf)
+            except RuntimeError as exc:  # PyMuPDF's open errors
+                raise extraction.ExtractionRefused(
+                    UNREADABLE, f"{name} can't be opened."
+                ) from exc
+            if count < 1:
+                raise extraction.ExtractionRefused(
+                    UNREADABLE, f"{name} has no pages that open."
+                )
         elif row.get("kind") == "image":
             count = 1
         else:
@@ -121,9 +137,14 @@ async def _render(pages: list[Page], edge: int) -> None:
 
     async def one(page: Page) -> None:
         if page.text is None and edge not in page.images:
-            jpeg, _box, _size = await capture.render_file(
-                None, page.file_id, page.file_page, None, edge
-            )
+            try:
+                jpeg, _box, _size = await capture.render_file(
+                    None, page.file_id, page.file_page, None, edge
+                )
+            except RuntimeError as exc:  # PyMuPDF's render errors
+                raise extraction.ExtractionRefused(
+                    UNREADABLE, f"page {page.number} can't be rendered."
+                ) from exc
             page.images[edge] = capture.data_url(jpeg)
 
     await asyncio.gather(*(one(page) for page in pages))
@@ -279,11 +300,12 @@ async def mark(
     given: dict[str, list[int]] | None,
     *,
     model: ModelConfig,
+    grade: bool = True,
 ) -> dict[str, Any]:
     """The paper's page count and, per part in order, its pages, a closed
     part's read answer, and an open or drawing part's grade or error. With
     ``given`` pages there is no read: only those open and drawing parts are
-    graded on them."""
+    graded on them. ``grade`` False (manual marking) grades none."""
     pages = await assemble(files)
     if given is None:
         found = await read(parts, pages, model=model)
@@ -293,7 +315,9 @@ async def mark(
             for part in parts
         }
     pages_of = {part.id: found[part.id]["pages"] for part in parts}
-    graded = [part for part in parts if part.type in GRADED and pages_of[part.id]]
+    graded = [
+        part for part in parts if grade and part.type in GRADED and pages_of[part.id]
+    ]
     needed = sorted({n for part in graded for n in pages_of[part.id]})
     await _render([pages[n - 1] for n in needed], GRADE_EDGE)
     results: dict[str, dict[str, Any]] = {}

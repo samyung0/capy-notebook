@@ -96,10 +96,9 @@ type learningWorkspace struct {
 
 // learningScope splits the user's workspaces: those they study in, and the
 // classes they own or edit. A link or public visitor counts once they have
-// practised there; Hide study progress leaves a workspace out.
+// practised there.
 func (s *Store) learningScope(ctx context.Context, userID string) ([]*learningWorkspace, []LearningTeach, error) {
 	rows, err := s.pool.Query(ctx, `SELECT w.id, w.name, w.icon_id, w.kind, COALESCE(wm.role,''), w.user_id=$1,
-			COALESCE((SELECT enabled FROM workspace_study st WHERE st.user_id=$1 AND st.workspace_id=w.id), true),
 			(SELECT max(sp.updated_at) FROM study_progress sp WHERE sp.user_id=$1 AND sp.workspace_id=w.id),
 			(SELECT v.opened_at FROM workspace_visits v WHERE v.user_id=$1 AND v.workspace_id=w.id),
 			(SELECT count(*) FROM workspace_members m WHERE m.workspace_id=w.id AND m.role='viewer')
@@ -119,13 +118,12 @@ func (s *Store) learningScope(ctx context.Context, userID string) ([]*learningWo
 		kind    WorkspaceKind
 		role    WorkspaceRole
 		owner   bool
-		enabled bool
 		members int
 	}
 	var all []row
 	for rows.Next() {
 		var r row
-		if err := rows.Scan(&r.ws.id, &r.ws.name, &r.ws.iconID, &r.kind, &r.role, &r.owner, &r.enabled,
+		if err := rows.Scan(&r.ws.id, &r.ws.name, &r.ws.iconID, &r.kind, &r.role, &r.owner,
 			&r.ws.lastPractised, &r.ws.lastVisit, &r.members); err != nil {
 			rows.Close()
 			return nil, nil, err
@@ -161,9 +159,7 @@ func (s *Store) learningScope(ctx context.Context, userID string) ([]*learningWo
 			}
 			continue
 		}
-		if r.enabled {
-			out = append(out, &r.ws)
-		}
+		out = append(out, &r.ws)
 	}
 	return out, teaches, nil
 }
@@ -452,11 +448,9 @@ type SummaryTopic struct {
 	LastAt      *time.Time `json:"lastAt,omitempty"`
 }
 
-// StudyTopics is Study → Summary: the caller's own standing per topic. Enabled
-// is false while Hide study progress hides it.
+// StudyTopics is Study → Summary: the caller's own standing per topic.
 type StudyTopics struct {
-	Enabled bool           `json:"enabled"`
-	Topics  []SummaryTopic `json:"topics" nullable:"false"`
+	Topics []SummaryTopic `json:"topics" nullable:"false"`
 }
 
 // WorkspaceStudyTopics reads Summary, refused to a class's owner and editors
@@ -471,110 +465,28 @@ func (s *Store) WorkspaceStudyTopics(ctx context.Context, userID, wsID string, c
 		return out, ErrForbidden
 	}
 	var err error
-	if out.Enabled, err = s.StudyEnabled(ctx, userID, wsID); err != nil || !out.Enabled {
-		return out, err
-	}
 	out.Topics, err = s.topicStandings(ctx, userID, wsID, now)
 	return out, err
 }
 
+// gradesHeldSQL is true for an answer event ae whose assignment's grades staff
+// have not released yet (Show grades Manual): it waits for the release, in
+// labels and in a member's Still missing alike.
+const gradesHeldSQL = `EXISTS (SELECT 1 FROM attempts t JOIN assignments a ON a.id=t.assignment_id
+	WHERE t.id=ae.attempt_id AND a.grades_shown='manual' AND a.grades_released_at IS NULL)`
+
 // topicStandings is every topic holding a quiz the caller can see, in reading
 // order with Other files last, each with its label. An answer counts toward its
 // quiz's topic: questions carry no topic of their own yet, and flashcards stay
-// out of mastery. Trashed and deleted quizzes leave their answers out.
+// out of mastery. Trashed and deleted quizzes leave their answers out. It is
+// membersStandings read for one member.
 func (s *Store) topicStandings(ctx context.Context, userID, wsID string, now time.Time) ([]SummaryTopic, error) {
-	sizes, err := s.itemCounts(ctx, userID, wsID)
+	standings, err := s.membersStandings(ctx, wsID, []string{userID}, now)
 	if err != nil {
 		return nil, err
 	}
-	size := make(map[string]int, len(sizes))
-	for _, it := range sizes {
-		size[it.MaterialID] = it.Size
+	if standings[userID] == nil {
+		return []SummaryTopic{}, nil
 	}
-	rows, err := s.pool.Query(ctx, `SELECT m.id, COALESCE(m.topic_id, m.practice_topic_id), t.name
-		FROM materials m LEFT JOIN topics t ON t.id=COALESCE(m.topic_id, m.practice_topic_id)
-		WHERE (m.workspace_id=$1 OR (m.practice_workspace_id=$1 AND m.owner_user_id=$2)) AND m.kind='quiz' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
-			AND workspace_item_visible(m.hidden, m.workspace_id, $2)
-		ORDER BY t.id IS NULL, t.position, m.id`, wsID, userID)
-	if err != nil {
-		return nil, err
-	}
-	out := []SummaryTopic{}
-	at := map[string]int{}
-	totals := map[string]int{}
-	for rows.Next() {
-		var id string
-		var t SummaryTopic
-		var name *string
-		if err := rows.Scan(&id, &t.TopicID, &name); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		key := ""
-		t.Group = GroupOthers
-		if t.TopicID != nil {
-			key, t.Group, t.Name = *t.TopicID, GroupTopic, *name
-		}
-		if _, seen := at[key]; !seen {
-			at[key] = len(out)
-			out = append(out, t)
-		}
-		totals[key] += size[id]
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	// A changed mark is a new row, and the latest for an attempt's part stands. A
-	// review's check has no attempt, so each of its rows does.
-	// An assignment's answers wait for its grades, when staff release them.
-	rows, err = s.pool.Query(ctx, `SELECT COALESCE(m.topic_id, m.practice_topic_id), ae.material_id, ae.question_id, COALESCE(ae.attempt_id, ''), ae.item_hash, ae.awarded, ae.marks, ae.key_seen, ae.created_at
-		FROM answer_events ae JOIN materials m ON m.id=ae.material_id
-		WHERE ae.workspace_id=$1 AND ae.user_id=$2 AND m.kind='quiz' AND m.trashed_at IS NULL
-			AND m.parent_material_id IS NULL AND workspace_item_visible(m.hidden, m.workspace_id, $2)
-			AND NOT EXISTS (SELECT 1 FROM answer_events newer WHERE newer.material_id=ae.material_id AND newer.question_id=ae.question_id
-				AND newer.attempt_id=ae.attempt_id AND newer.part_id=ae.part_id AND newer.id>ae.id)
-			AND NOT EXISTS (SELECT 1 FROM attempts t JOIN assignments a ON a.id=t.assignment_id
-				WHERE t.id=ae.attempt_id AND a.grades_shown='manual' AND a.grades_released_at IS NULL)
-		ORDER BY ae.created_at, ae.id`, wsID, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	parts := map[string][]review.PartAnswer{}
-	for rows.Next() {
-		var topicID *string
-		var materialID string
-		var p review.PartAnswer
-		if err := rows.Scan(&topicID, &materialID, &p.QuestionID, &p.AttemptID, &p.Hash, &p.Awarded, &p.Marks, &p.KeySeen, &p.At); err != nil {
-			return nil, err
-		}
-		// A cloned quiz keeps its question ids.
-		p.QuestionID = materialID + "/" + p.QuestionID
-		key := ""
-		if topicID != nil {
-			key = *topicID
-		}
-		parts[key] = append(parts[key], p)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	for i := range out {
-		key := ""
-		if out[i].TopicID != nil {
-			key = *out[i].TopicID
-		}
-		standing := review.TopicLabel(parts[key], now)
-		out[i].Label, out[i].Right, out[i].Partial, out[i].Wrong = standing.Label, standing.Right, standing.Partial, standing.Wrong
-		out[i].Asked = standing.Asked
-		// ponytail: answers to questions since removed still count as asked;
-		// reading each quiz's current ids here would parse them all.
-		out[i].Unattempted = max(0, totals[key]-standing.Asked)
-		if !standing.LastAt.IsZero() {
-			last := standing.LastAt
-			out[i].LastAt = &last
-		}
-	}
-	return out, nil
+	return standings[userID], nil
 }
