@@ -385,6 +385,20 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
           ),
         },
         {
+          find: '@betteroffice/fonts-intl',
+          replacement: path.resolve(
+            import.meta.dirname,
+            './vendor/betteroffice/packages/fonts-intl/src/index.ts'
+          ),
+        },
+        {
+          find: '@betteroffice/fonts-latin',
+          replacement: path.resolve(
+            import.meta.dirname,
+            './vendor/betteroffice/packages/fonts-latin/src/index.ts'
+          ),
+        },
+        {
           find: '@betteroffice/pptx/editor',
           replacement: path.resolve(
             import.meta.dirname,

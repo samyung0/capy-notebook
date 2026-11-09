@@ -5,6 +5,13 @@ import { showPanelView } from '../helpers/panelView';
 import { openWorkspaceSettings } from '../helpers/workspace';
 import { m } from '../i18n';
 
+declare global {
+  interface Window {
+    /** Families of the runtime's `font-failed` messages, as the host got them. */
+    fontFailures?: string[];
+  }
+}
+
 async function openWorkspace(page: Page) {
   await page.goto('/workspaces/ws_bio');
   await expect(
@@ -316,3 +323,35 @@ test.fixme('PDF annotation load toast shows before the PDF loads', async ({
     page.getByRole('button', { exact: true, name: m.pdf_draw() })
   ).toBeDisabled();
 });
+
+// Q710 C: an XLSX face that fails to download keeps the sheet drawing with the
+// browser's font and shows nothing; the family reaches the host, which reports
+// it to Sentry (reportOfficeFontFailure).
+for (const mode of ['view', 'edit'] as const) {
+  test(`an XLSX face that fails to load in ${mode} reaches the host's report`, async ({
+    page,
+  }) => {
+    await page.context().route('**/*.ttf.zst', (route) => route.abort());
+    await page.addInitScript(() => {
+      window.fontFailures = [];
+      window.addEventListener('message', (event) => {
+        if (event.data?.type === 'font-failed')
+          window.fontFailures?.push(event.data.family);
+      });
+    });
+    await page.goto(
+      `/workspaces/ws_bio?file=bio-office-xlsx${mode === 'edit' ? '&mode=edit' : ''}`
+    );
+    const frame = page.frameLocator('iframe[src*="office-runtime"]');
+    await expect(frame.locator('canvas').first()).toBeVisible({
+      timeout: 60_000,
+    });
+    // course-guide.xlsx is set in Arial.
+    await expect
+      .poll(() => page.evaluate(() => window.fontFailures), {
+        timeout: 30_000,
+      })
+      .toContain('Arial');
+    await expect(frame.locator('canvas').first()).toBeVisible();
+  });
+}

@@ -1,3 +1,4 @@
+import { captureException } from '@sentry/react';
 import { describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { setHeld } from '@/features/collaboration/held';
@@ -11,6 +12,7 @@ import {
   keepsFocus,
   officeNotices,
   openRequestedPresenter,
+  reportOfficeFontFailure,
   viewCheckpoint,
 } from './useOfficeRuntime';
 
@@ -19,6 +21,8 @@ import {
   opensAtSizeLimit,
   SOURCE_IFRAME_ORIGIN,
 } from './useSourceSession';
+
+vi.mock('@sentry/react', () => ({ captureException: vi.fn() }));
 
 // Capy's vitest has no DOM, so these elements are outside any dialog or menu
 // (`closest` finds nothing); the e2e checks an open menu.
@@ -151,6 +155,21 @@ describe('the notices a frame shows', () => {
     ];
     expect(toast.mock.calls).toEqual(
       [...titles, ...titles].map((title) => [title])
+    );
+  });
+});
+
+// Q710 C: an XLSX face that failed keeps the browser's font with nothing
+// shown; Sentry hears which family.
+describe('an XLSX face the frame failed to load', () => {
+  it('goes to Sentry with its family', () => {
+    reportOfficeFontFailure('Calibri', 'decode failed');
+    expect(captureException).toHaveBeenCalledExactlyOnceWith(
+      new Error('An XLSX font failed to load'),
+      {
+        extra: { cause: 'decode failed' },
+        tags: { component: 'office-font', family: 'Calibri' },
+      }
     );
   });
 });

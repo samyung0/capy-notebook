@@ -397,6 +397,17 @@ export type OfficeRuntimeMessage =
       notice: OfficeNotice;
       revision: number;
     }
+  /**
+   * An XLSX bundled face failed to load: its text keeps the browser's font,
+   * nothing is shown, and Capy reports it to Sentry (Q710 C).
+   */
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'font-failed';
+      family: string;
+      message: string;
+      revision: number;
+    }
   /** The whole menu bar and header actions, re-sent when either changes. */
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;
@@ -622,6 +633,8 @@ export function isOfficeRuntimeMessage(
     if (raw.type === 'render-failed') return typeof raw.id === 'string';
     if (raw.type === 'notice')
       return (OFFICE_NOTICES as readonly unknown[]).includes(raw.notice);
+    if (raw.type === 'font-failed')
+      return typeof raw.family === 'string' && typeof raw.message === 'string';
     if (raw.type === 'zoom') return isOfficeZoom(raw.zoom);
     if (raw.type === 'presenting') return typeof raw.presenting === 'boolean';
     if (raw.type === 'bottom-inset') return isFiniteNumber(raw.inset);

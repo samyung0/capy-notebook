@@ -1,3 +1,4 @@
+import { captureException } from '@sentry/react';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import { authHeaders } from '@/api/auth';
@@ -123,6 +124,18 @@ export function isCurrentOfficeRuntimeMessage(
   currentRevision: number
 ): boolean {
   return messageRevision === currentRevision;
+}
+
+/**
+ * An XLSX bundled face the frame failed to load. The sheet keeps the
+ * browser's font and shows nothing (Q710 C); Sentry hears which family.
+ */
+export function reportOfficeFontFailure(family: string, message: string) {
+  // Only bundled families load, so the tag stays a short list.
+  captureException(new Error('An XLSX font failed to load'), {
+    extra: { cause: message },
+    tags: { component: 'office-font', family },
+  });
 }
 
 /**
@@ -810,6 +823,10 @@ export function useOfficeRuntime({
         // image cap; without one (no edit session) there is nothing to word.
         const imageMaxBytes = active.session?.imageMaxBytes;
         if (imageMaxBytes) notices.show(message.notice, imageMaxBytes);
+        return;
+      }
+      if (message.type === 'font-failed') {
+        reportOfficeFontFailure(message.family, message.message);
         return;
       }
       if (message.type === 'error') {

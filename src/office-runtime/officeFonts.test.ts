@@ -1,11 +1,55 @@
+import {
+  decodeFontFaceOutsideEngine,
+  resolveMetricCompatFace,
+} from '@betteroffice/fonts';
 import { expect, onTestFinished, test, vi } from 'vitest';
 import {
   type OfficeFace,
   officeFonts,
+  officeViewerFonts,
+  onOfficeFontFailure,
   paintedFaces,
   paintedFamilies,
   registerOfficeFaces,
 } from './officeFonts';
+
+const PACKED = /\.ttf\.zst$/;
+
+test('a packed face decodes with the engine decoder, which keeps no decoded copy', async () => {
+  const decoder = vi.fn(decodeFontFaceOutsideEngine);
+  const load = officeFonts
+    .createFontProvider(undefined, { decoder })
+    .resolve('Calibri', false, false);
+  const face = resolveMetricCompatFace('Calibri', false, false);
+  expect(face?.file).toMatch(PACKED);
+  expect((await load?.())?.byteLength).toBe(face?.byteLength);
+  await load?.();
+  // retain: false, so the second load decodes again.
+  expect(decoder).toHaveBeenCalledTimes(2);
+});
+
+test('the DOCX viewer worker decodes packed faces without an engine', async () => {
+  const load = officeViewerFonts
+    .createFontProvider()
+    .resolve('Calibri', true, false);
+  const face = resolveMetricCompatFace('Calibri', true, false);
+  expect((await load?.())?.byteLength).toBe(face?.byteLength);
+});
+
+test('a face whose decode fails is reported as an error', async () => {
+  const errors: Error[] = [];
+  onTestFinished(onOfficeFontFailure((error) => errors.push(error)));
+  const decoder = vi.fn(() => Promise.reject(new Error('corrupt pack')));
+  const load = officeFonts
+    .createFontProvider(undefined, { decoder })
+    .resolve('Cambria', false, false);
+  // The loader rejects with the error its listeners got.
+  const failure = await load?.().catch((error: unknown) => error);
+  expect(errors).toEqual([failure]);
+  expect(errors[0]?.message).toBe(
+    `The font ${resolveMetricCompatFace('Cambria', false, false)?.file} failed to load`
+  );
+});
 
 test('DOCX layout gets the CJK faces it measures and paints with', () => {
   const provider = officeFonts.createFontProvider();

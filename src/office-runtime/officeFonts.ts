@@ -1,5 +1,7 @@
 import {
   type BundledFontFace,
+  type FontAssetOptions,
+  type FontDecoder,
   loadBundledFontBytes,
   registerBundledFontFace,
   resolveLastResortFace,
@@ -123,12 +125,24 @@ export function registerOfficeFaces(faces: readonly OfficeFace[]) {
   );
 }
 
-function loader(face: BundledFontFace, family: string) {
+/** How faces load: their pack's decoder, and no decoded copy kept once a load
+ * settles (font bytes live only in the engines' WASM). */
+type FaceRuntime = { decoder?: FontDecoder; retain: false };
+
+function loader(
+  face: BundledFontFace,
+  family: string,
+  options: FontAssetOptions | undefined,
+  runtime: FaceRuntime
+) {
   return async () => {
     try {
-      const bytes = await loadBundledFontBytes(face);
-      // What the engine measures is what the page paints (fillText).
-      await registerBundledFontFace(face, family);
+      // Together, so the face is fetched and decoded once for both. What the
+      // engine measures is what the page paints (fillText).
+      const [bytes] = await Promise.all([
+        loadBundledFontBytes(face, options, runtime),
+        registerBundledFontFace(face, family, options, runtime),
+      ]);
       if (keepBytes)
         used.set(`${family}|${face.file}`, { bytes, face, family });
       return bytes;
@@ -142,31 +156,60 @@ function loader(face: BundledFontFace, family: string) {
   };
 }
 
-/**
- * The fork's bundled fonts for configureDefaultFonts (record 16): DOCX
- * measures with the metric-compatible faces and the CJK coverage faces
- * (@betteroffice/fonts-cjk, emitted as same-origin assets that load only when
- * a document needs that script), each also registered as a
- * FontFace under the Office family it stands in for (a no-op in a worker).
- * The engine falls back silently when a face fails, so each failure is also
- * reported to onOfficeFontFailure listeners, which show it as an error.
- */
-export const officeFonts = {
-  createFontProvider: () => ({
+function fontProvider(
+  options: FontAssetOptions | undefined,
+  decoder: FontDecoder | undefined
+) {
+  const runtime: FaceRuntime = { decoder, retain: false };
+  return {
     resolve(family: string, bold: boolean, italic: boolean) {
       const face = resolveMetricCompatFace(family, bold, italic);
-      return face && loader(face, family);
+      return face && loader(face, family, options, runtime);
     },
     resolveLastResort(family: string, bold: boolean, italic: boolean) {
-      return loader(resolveLastResortFace(family, bold, italic), family);
+      return loader(
+        resolveLastResortFace(family, bold, italic),
+        family,
+        options,
+        runtime
+      );
     },
     resolveScriptFallback(
       script: Parameters<typeof resolveScriptFallbackFace>[0],
       bold: boolean,
       italic: boolean
     ) {
+      // One whole face per script, which DOCX picks by the document's
+      // language (Q708 A): no slices at this pin.
       const face = resolveScriptFallbackFace(script, bold, italic);
-      return face && loader(face, face.family);
+      return face && loader(face, face.family, options, runtime);
     },
-  }),
+  };
+}
+
+/**
+ * The fork's bundled fonts for configureDefaultFonts (record 16): DOCX
+ * measures with the metric-compatible faces and the CJK coverage faces
+ * (@betteroffice/fonts-cjk, emitted as same-origin assets that load only when
+ * a document needs that script), each also registered as a
+ * FontFace under the Office family it stands in for (a no-op in a worker).
+ * Faces ship packed and decode with the engine's decoder. The engine falls
+ * back silently when a face fails, so each failure is also reported to
+ * onOfficeFontFailure listeners, which show it as an error.
+ */
+export const officeFonts = {
+  createFontProvider: (
+    options?: FontAssetOptions,
+    runtime?: { decoder?: FontDecoder }
+  ) => fontProvider(options, runtime?.decoder),
+};
+
+/**
+ * officeFonts for the DOCX viewer worker: the view WASM links no decoder and
+ * the engine's default is the edit WASM's (13 MB), so packed faces decode with
+ * the fonts package's own decoder (fontpack.wasm, about 30 KB).
+ */
+export const officeViewerFonts = {
+  createFontProvider: (options?: FontAssetOptions) =>
+    fontProvider(options, undefined),
 };
