@@ -117,6 +117,10 @@ const (
 	DrawingBoardBytes = 250 << 10
 	DrawingImageBytes = 300 << 10
 	DrawingImageSide  = 1_568
+	// A workspace canvas's saved board, before gzip (Epo 2026-11-09): the
+	// material's own board asset, a whole personal canvas rather than one
+	// answer.
+	CanvasBoardBytes = 2 << 20
 	// A flashcard's front and back (human/frontend/plate-editor.md for the
 	// back); the collaboration server reads them from the embed catalog.
 	CardFront = 200

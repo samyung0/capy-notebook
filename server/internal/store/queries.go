@@ -1232,13 +1232,13 @@ func (s *Store) UpdateFile(ctx context.Context, actorID, id string, p FilePatch)
 
 /* ------------------------------------------------------------- materials */
 
-const materialCols = `id, COALESCE(created_by,''), owner_user_id, COALESCE(workspace_id,''), workspace_name, kind, title, content, topic_id, position, scope_topics, scope_file_names, privacy, color, created_at, updated_at, revision, size_bytes, node_count, max_depth, provenance, COALESCE(parent_material_id,''), hidden, COALESCE(practice_workspace_id,''), practice_topic_id`
-const materialColsM = `m.id, COALESCE(m.created_by,''), m.owner_user_id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.topic_id, m.position, m.scope_topics, m.scope_file_names, m.privacy, m.color, m.created_at, m.updated_at, m.revision, m.size_bytes, m.node_count, m.max_depth, m.provenance, COALESCE(m.parent_material_id,''), m.hidden, COALESCE(m.practice_workspace_id,''), m.practice_topic_id`
+const materialCols = `id, COALESCE(created_by,''), owner_user_id, COALESCE(workspace_id,''), workspace_name, kind, title, content, topic_id, position, scope_topics, scope_file_names, privacy, color, created_at, updated_at, revision, size_bytes, node_count, max_depth, provenance, COALESCE(parent_material_id,''), hidden, COALESCE(practice_workspace_id,''), practice_topic_id, COALESCE(canvas_workspace_id,'')`
+const materialColsM = `m.id, COALESCE(m.created_by,''), m.owner_user_id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.topic_id, m.position, m.scope_topics, m.scope_file_names, m.privacy, m.color, m.created_at, m.updated_at, m.revision, m.size_bytes, m.node_count, m.max_depth, m.provenance, COALESCE(m.parent_material_id,''), m.hidden, COALESCE(m.practice_workspace_id,''), m.practice_topic_id, COALESCE(m.canvas_workspace_id,'')`
 
 func scanMaterial(row pgx.Row) (Material, error) {
 	var mt Material
 	var provenance []byte
-	err := row.Scan(&mt.ID, &mt.CreatedBy, &mt.OwnerUserID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.TopicID, &mt.Position, &mt.ScopeTopics, &mt.ScopeFileNames, &mt.Privacy, &mt.Color, &mt.CreatedAt, &mt.UpdatedAt, &mt.Revision, &mt.SizeBytes, &mt.NodeCount, &mt.MaxDepth, &provenance, &mt.ParentMaterialID, &mt.Hidden, &mt.PracticeWorkspaceID, &mt.PracticeTopicID)
+	err := row.Scan(&mt.ID, &mt.CreatedBy, &mt.OwnerUserID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.TopicID, &mt.Position, &mt.ScopeTopics, &mt.ScopeFileNames, &mt.Privacy, &mt.Color, &mt.CreatedAt, &mt.UpdatedAt, &mt.Revision, &mt.SizeBytes, &mt.NodeCount, &mt.MaxDepth, &provenance, &mt.ParentMaterialID, &mt.Hidden, &mt.PracticeWorkspaceID, &mt.PracticeTopicID, &mt.CanvasWorkspaceID)
 	if mt.ScopeTopics == nil {
 		mt.ScopeTopics = []string{}
 	}
@@ -1372,13 +1372,16 @@ func (s *Store) createMaterialTx(ctx context.Context, tx pgx.Tx, mt Material) (s
 	_, err = tx.Exec(ctx, `INSERT INTO materials
 		(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
 		 topic_id, scope_topics, scope_file_names, privacy, color, node_count, max_depth, updated_by, provenance,
-		 parent_material_id, index_dirty_at, preview, hidden, practice_workspace_id, practice_topic_id)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
+		 parent_material_id, index_dirty_at, preview, hidden, practice_workspace_id, practice_topic_id, canvas_workspace_id)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
 		mt.ID, creatorID, ownerID, nullStr(mt.WorkspaceID), mt.WorkspaceName, mt.Kind,
 		mt.Title, json.RawMessage(mt.Content), mt.TopicID, mt.ScopeTopics,
 		mt.ScopeFileNames, mt.Privacy, mt.Color, metrics.NodeCount, metrics.MaxDepth, creatorID,
-		provenance, nullStr(mt.ParentMaterialID), indexDirtyAt, preview, mt.Hidden, nullStr(mt.PracticeWorkspaceID), mt.PracticeTopicID)
+		provenance, nullStr(mt.ParentMaterialID), indexDirtyAt, preview, mt.Hidden, nullStr(mt.PracticeWorkspaceID), mt.PracticeTopicID, nullStr(mt.CanvasWorkspaceID))
 	if err != nil {
+		if uniqueConstraintName(err) == "materials_canvas_per_member" {
+			return "", ErrCanvasExists
+		}
 		if uniqueConstraintName(err) == "materials_pkey" {
 			return "", ErrMaterialIDTaken
 		}

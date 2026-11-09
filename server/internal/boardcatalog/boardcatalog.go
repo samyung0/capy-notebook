@@ -95,6 +95,9 @@ func Get() Catalog {
 			"LINK_URL_MAX":    2048,
 			"CARD_TITLE_MAX":  fieldlimits.MaterialTitle,
 			"MATERIAL_ID_MAX": 64,
+			// A workspace canvas's saved board, cleaned up, before gzip (the answer
+			// board's is DRAWING_BOARD_MAX in the question bounds).
+			"CANVAS_BOARD_MAX": fieldlimits.CanvasBoardBytes,
 		},
 	}
 }

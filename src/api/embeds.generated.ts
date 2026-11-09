@@ -520,6 +520,39 @@ export const EMBED_CATALOG = {
       ]
     },
     {
+      "type": "canvas_board",
+      "index": "none",
+      "void": true,
+      "topLevel": true,
+      "required": [
+        "id",
+        "boardAssetId",
+        "version",
+        "images"
+      ],
+      "fields": [
+        "type",
+        "id",
+        "children",
+        "boardAssetId",
+        "version",
+        "images"
+      ],
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
+      "assets": [
+        "boardAssetId",
+        "images[].assetId"
+      ],
+      "materials": [
+        "canvas"
+      ]
+    },
+    {
       "type": "placeholder",
       "index": "none",
       "void": true,
@@ -1302,6 +1335,10 @@ export const EMBED_CATALOG = {
     {
       "kind": "diagram",
       "requires": "mermaid"
+    },
+    {
+      "kind": "canvas",
+      "requires": "canvas_board"
     }
   ],
   "limits": {

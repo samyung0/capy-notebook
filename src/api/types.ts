@@ -693,7 +693,7 @@ export type {
   ExtractionFoundQuestion,
   ExtractionReport,
 } from './gen/model';
-export type GenerateKind = Exclude<MaterialKind, 'note'>;
+export type GenerateKind = Exclude<MaterialKind, 'note' | 'canvas'>;
 
 /** A quiz written from sources (Make my own practice). */
 export interface GenerateOptions {

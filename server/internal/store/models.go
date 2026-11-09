@@ -458,6 +458,9 @@ type Material struct {
 	// its maker's study reads count in this workspace and topic. Never exposed.
 	PracticeWorkspaceID string  `json:"-"`
 	PracticeTopicID     *string `json:"-"`
+	// CanvasWorkspaceID is the workspace a member's personal canvas belongs
+	// to (kind canvas, standalone otherwise; Epo 2026-11-09).
+	CanvasWorkspaceID string `json:"canvasWorkspaceId,omitempty"`
 	// IsOwner is request-scoped (not persisted): true when the requester owns
 	// the parent workspace, false for link/public shared reads.
 	IsOwner      bool               `json:"isOwner"`

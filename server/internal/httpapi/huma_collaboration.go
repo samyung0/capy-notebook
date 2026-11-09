@@ -195,7 +195,7 @@ func (a *api) adoptMaterialChildren(ctx context.Context, in *materialChildrenInp
 	out.Body.Assets = []adoptedMaterialChild{}
 	out.Body.Materials = []adoptedMaterialChild{}
 	// The actor pays for the images it pastes, under its plan caps (M16).
-	workspaceID, limits, err := a.s.EditorAssetMaterial(ctx, in.ID, actor)
+	workspaceID, _, limits, err := a.s.EditorAssetMaterial(ctx, in.ID, actor)
 	if err != nil {
 		return nil, hErr(err)
 	}

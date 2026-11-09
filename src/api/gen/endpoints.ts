@@ -44,6 +44,7 @@ import type {
   BillingInfo,
   BootstrapSourceDocumentParams,
   BrowserSourceSession,
+  CanvasBody,
   CheckBankQuestionReq,
   CheckQuizQuestionReq,
   CheckReviewItemReq,
@@ -174,6 +175,7 @@ import type {
   RetryProcessingInputBody,
   ReviewResult,
   ReviewSession,
+  SaveCanvasInputBody,
   SearchParams,
   SearchResult,
   SetChatPrefsReq,
@@ -11706,6 +11708,121 @@ const res = await fetch(getCreateAssignmentUrl(id),
 
   const data: createAssignmentResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createAssignmentResponse
+}
+
+
+
+export type workspaceCanvasResponse200 = {
+  data: CanvasBody
+  status: 200
+}
+
+export type workspaceCanvasResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type workspaceCanvasResponseSuccess = (workspaceCanvasResponse200) & {
+  headers: Headers;
+};
+export type workspaceCanvasResponseError = (workspaceCanvasResponseDefault) & {
+  headers: Headers;
+};
+
+export type workspaceCanvasResponse = (workspaceCanvasResponseSuccess | workspaceCanvasResponseError)
+
+export const getWorkspaceCanvasUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/canvas`
+}
+
+/**
+ * @summary The caller's own canvas in the workspace, made on first open
+ */
+export const workspaceCanvas = async (id: string, options?: RequestInit): Promise<workspaceCanvasResponse> => {
+
+  const res = await fetch(getWorkspaceCanvasUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: workspaceCanvasResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as workspaceCanvasResponse
+}
+
+
+
+export type saveWorkspaceCanvasResponse200 = {
+  data: CanvasBody
+  status: 200
+}
+
+export type saveWorkspaceCanvasResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type saveWorkspaceCanvasResponseSuccess = (saveWorkspaceCanvasResponse200) & {
+  headers: Headers;
+};
+export type saveWorkspaceCanvasResponseError = (saveWorkspaceCanvasResponseDefault) & {
+  headers: Headers;
+};
+
+export type saveWorkspaceCanvasResponse = (saveWorkspaceCanvasResponseSuccess | saveWorkspaceCanvasResponseError)
+
+export const getSaveWorkspaceCanvasUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/canvas`
+}
+
+/**
+ * @summary Record a save of the caller's canvas: its new board asset, version and images
+ */
+export const saveWorkspaceCanvas = async (id: string,
+    saveCanvasInputBody: NonReadonly<SaveCanvasInputBody>, options?: RequestInit): Promise<saveWorkspaceCanvasResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getSaveWorkspaceCanvasUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(saveCanvasInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: saveWorkspaceCanvasResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as saveWorkspaceCanvasResponse
 }
 
 

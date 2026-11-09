@@ -170,6 +170,7 @@ export const BOARD_CATALOG = {
   "limits": {
     "AXIS_MAX": 1000000000,
     "BARS_MAX": 24,
+    "CANVAS_BOARD_MAX": 2097152,
     "CARD_TITLE_MAX": 120,
     "LABELS_MAX": 60,
     "LABEL_LENGTH_MAX": 24,

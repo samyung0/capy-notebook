@@ -1800,6 +1800,45 @@ components:
         - netTokens
         - access
       type: object
+    CanvasBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/CanvasBody.json
+          format: uri
+          readOnly: true
+          type: string
+        boardAssetId:
+          description: The saved board's editor asset (gzipped Yjs update); empty before the first save
+          type: string
+        id:
+          description: The canvas material
+          type: string
+        imageAssetIds:
+          description: The canvas's images, as image editor assets
+          items:
+            type: string
+          type: array
+        revision:
+          description: The material's revision; a save sends the one it read
+          format: int64
+          type: integer
+        updatedAt:
+          format: date-time
+          type: string
+        version:
+          description: Counts the saves
+          format: int64
+          type: integer
+      required:
+        - id
+        - revision
+        - boardAssetId
+        - version
+        - imageAssetIds
+        - updatedAt
+      type: object
     Card:
       additionalProperties: false
       properties:
@@ -4455,6 +4494,7 @@ components:
         - quiz
         - flashcards
         - note
+        - canvas
       type: string
     MaterialListItem:
       additionalProperties: false
@@ -4590,6 +4630,7 @@ components:
         - quiz
         - flashcards
         - note
+        - canvas
       type: string
     MaterialUpdateResult:
       additionalProperties: false
@@ -6490,6 +6531,43 @@ components:
         - reviewedAt
         - reviewedBy
         - reviewerName
+      type: object
+    SaveCanvasInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SaveCanvasInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        boardAssetId:
+          description: The new board asset, uploaded first
+          maxLength: 64
+          minLength: 1
+          type: string
+        imageAssetIds:
+          description: The canvas's images now
+          items:
+            type: string
+          maxItems: 1000
+          nullable: true
+          type: array
+        revision:
+          description: The revision the browser read; another tab's save since is refused (409)
+          format: int64
+          minimum: 1
+          type: integer
+        version:
+          description: The save's version, one past the last
+          format: int64
+          minimum: 1
+          type: integer
+      required:
+        - revision
+        - boardAssetId
+        - version
+        - imageAssetIds
       type: object
     SearchKind:
       enum:
@@ -14771,6 +14849,65 @@ paths:
       summary: Give a class an assignment, freezing its quiz
       tags:
         - Assignments
+  /api/workspaces/{id}/canvas:
+    get:
+      operationId: workspaceCanvas
+      parameters:
+        - description: Workspace id
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Workspace id
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CanvasBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: The caller's own canvas in the workspace, made on first open
+      tags:
+        - materials
+    put:
+      operationId: saveWorkspaceCanvas
+      parameters:
+        - description: Workspace id
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Workspace id
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveCanvasInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CanvasBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "Record a save of the caller's canvas: its new board asset, version and images"
+      tags:
+        - materials
   /api/workspaces/{id}/clone:
     post:
       operationId: cloneWorkspace

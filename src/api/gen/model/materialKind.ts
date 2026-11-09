@@ -14,4 +14,5 @@ export const MaterialKind = {
   quiz: 'quiz',
   flashcards: 'flashcards',
   note: 'note',
+  canvas: 'canvas',
 } as const;

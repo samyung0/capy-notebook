@@ -62,6 +62,18 @@ func validateEditorAssetMetadata(
 	storageCeiling int64,
 	limits planlimits.Limits,
 ) (name, ext, contentType string, err error) {
+	return validateEditorAssetMetadataFor(in, storageCeiling, limits, "")
+}
+
+// validateEditorAssetMetadataFor is validateEditorAssetMetadata for a material
+// of `kind`: a canvas's board asset is a whole personal canvas, capped at
+// fieldlimits.CanvasBoardBytes rather than a drawing answer's (Epo 2026-11-09).
+func validateEditorAssetMetadataFor(
+	in reserveEditorAssetRequest,
+	storageCeiling int64,
+	limits planlimits.Limits,
+	kind store.MaterialKind,
+) (name, ext, contentType string, err error) {
 	name = strings.TrimSpace(in.Name)
 	name = fieldlimits.ClampFileName(path.Base(strings.ReplaceAll(name, `\`, "/")))
 	hasControl := strings.IndexFunc(name, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0
@@ -75,6 +87,9 @@ func validateEditorAssetMetadata(
 	// The uploader's plan cap (the browser shrinks larger images first), never
 	// above the storage ceiling.
 	maxBytes := min(limits.EditorAssetBytes(in.Purpose), storageCeiling)
+	if in.Purpose == "board" && kind == store.MaterialCanvas {
+		maxBytes = min(fieldlimits.CanvasBoardBytes, storageCeiling)
+	}
 	if in.SizeBytes <= 0 || in.SizeBytes > maxBytes {
 		return "", "", "", fmt.Errorf("%s uploads must be between 1 byte and %d MB", in.Purpose, maxBytes>>20)
 	}
@@ -100,6 +115,8 @@ func validateEditorAssetMetadata(
 // one.
 type editorAssetScope struct {
 	workspaceID, materialID string
+	// The material's kind: a canvas's board asset takes the canvas cap.
+	kind store.MaterialKind
 	// The uploader's plan limits, which cap each asset (EditorAssetBytes).
 	// Bank figures have their own limit (bank/assets.go).
 	limits planlimits.Limits
@@ -119,12 +136,12 @@ func (a *api) editorAssetScopeFor(w http.ResponseWriter, r *http.Request) (edito
 		a.fail(w, err)
 		return editorAssetScope{}, false
 	}
-	workspaceID, limits, err := a.s.EditorAssetMaterial(r.Context(), materialID, uid(r))
+	workspaceID, kind, limits, err := a.s.EditorAssetMaterial(r.Context(), materialID, uid(r))
 	if err != nil {
 		a.fail(w, err)
 		return editorAssetScope{}, false
 	}
-	return editorAssetScope{workspaceID: workspaceID, materialID: materialID, limits: limits}, true
+	return editorAssetScope{workspaceID: workspaceID, materialID: materialID, kind: kind, limits: limits}, true
 }
 
 // editorAssetUploadTicket checks an editor asset's metadata and its uploader's
@@ -166,7 +183,7 @@ func (a *api) checkEditorAsset(in reserveEditorAssetRequest, scope editorAssetSc
 	if err != nil {
 		return "", "", "", err
 	}
-	name, ext, contentType, err = validateEditorAssetMetadata(in, freeLimits.StorageBytes, scope.limits)
+	name, ext, contentType, err = validateEditorAssetMetadataFor(in, freeLimits.StorageBytes, scope.limits, scope.kind)
 	if err != nil {
 		return "", "", "", huma.Error400BadRequest(err.Error())
 	}

@@ -42,6 +42,8 @@ export function materialKindLabel(kind: MaterialListItem['kind']): string {
       return m.generate_kind_diagram();
     case 'note':
       return m.create_kind_note();
+    case 'canvas':
+      return m.workspace_section_canvas();
   }
 }
 

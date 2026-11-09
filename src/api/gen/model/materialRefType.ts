@@ -14,4 +14,5 @@ export const MaterialRefType = {
   quiz: 'quiz',
   flashcards: 'flashcards',
   note: 'note',
+  canvas: 'canvas',
 } as const;
