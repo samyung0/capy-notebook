@@ -6542,12 +6542,12 @@ components:
           readOnly: true
           type: string
         boardAssetId:
-          description: The new board asset, uploaded first
+          description: "The new board asset, uploaded first: a ready board asset of this canvas"
           maxLength: 64
           minLength: 1
           type: string
         imageAssetIds:
-          description: The canvas's images now
+          description: "The canvas's images now: ready image assets of this canvas"
           items:
             type: string
           maxItems: 1000
@@ -6558,15 +6558,9 @@ components:
           format: int64
           minimum: 1
           type: integer
-        version:
-          description: The save's version, one past the last
-          format: int64
-          minimum: 1
-          type: integer
       required:
         - revision
         - boardAssetId
-        - version
         - imageAssetIds
       type: object
     SearchKind:
@@ -14905,7 +14899,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: "Record a save of the caller's canvas: its new board asset, version and images"
+      summary: "Record a save of the caller's canvas: its new board asset and images; the server counts the version"
       tags:
         - materials
   /api/workspaces/{id}/clone:

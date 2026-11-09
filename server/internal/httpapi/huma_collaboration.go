@@ -284,6 +284,10 @@ func (a *api) createMaterialCollaborationToken(
 	if err != nil {
 		return nil, collaborationError(err)
 	}
+	// A personal canvas opens no room (Epo 2026-11-09): its board is an asset.
+	if mt, err := a.s.GetMaterial(ctx, in.ID); err == nil && mt.Kind == store.MaterialCanvas {
+		return nil, huma.Error404NotFound("not found")
+	}
 	access := "write"
 	if !store.RoleCanEdit(role) {
 		// Viewers join read-only: the server closes a read channel that writes.

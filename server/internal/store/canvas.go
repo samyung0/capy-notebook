@@ -17,7 +17,8 @@ import (
 // own `board` editor asset; the document names it and the canvas's images.
 
 // ErrCanvasExists is the unique index's answer when two opens race to create
-// the same member's canvas; WorkspaceCanvas then reads the one that won.
+// the same member's canvas (WorkspaceCanvas then reads the one that won), and
+// when a trashed canvas is restored beside the live one made since.
 var ErrCanvasExists = errors.New("the member's canvas already exists")
 
 // WorkspaceCanvas is the caller's canvas for the workspace, made on first
@@ -60,11 +61,12 @@ func (s *Store) memberCanvas(ctx context.Context, userID, wsID string) (Material
 }
 
 // SaveWorkspaceCanvas writes the canvas's document after a save: the new
-// board asset, the save's version and the images now on the canvas. The
-// caller's revision must be the stored one (ErrConflict otherwise: the same
-// person's other tab saved first). The pruner trashes the board asset and
-// images the new document no longer names.
-func (s *Store) SaveWorkspaceCanvas(ctx context.Context, userID, materialID string, board materialdoc.CanvasBoard, revision int64) (Material, error) {
+// board asset and the images now on the canvas, each a ready asset of this
+// material with that purpose (anything else is refused as invalid), and the
+// save's version, one past the last. The caller's revision must be the stored
+// one (ErrConflict otherwise: the same person's other tab saved first). The
+// pruner trashes the board asset and images the new document no longer names.
+func (s *Store) SaveWorkspaceCanvas(ctx context.Context, userID, materialID, boardAssetID string, imageAssetIDs []string, revision int64) (Material, error) {
 	current, err := s.GetMaterial(ctx, materialID)
 	if err != nil {
 		return Material{}, err
@@ -72,13 +74,59 @@ func (s *Store) SaveWorkspaceCanvas(ctx context.Context, userID, materialID stri
 	if current.Kind != MaterialCanvas || current.OwnerUserID != userID {
 		return Material{}, ErrNotFound
 	}
-	content, err := materialdoc.CanvasDocument(board)
+	last, err := materialdoc.ReadCanvasBoard(current.Content)
+	if err != nil {
+		return Material{}, err
+	}
+	if err := s.assertCanvasAssets(ctx, materialID, boardAssetID, imageAssetIDs); err != nil {
+		return Material{}, err
+	}
+	content, err := materialdoc.CanvasDocument(materialdoc.CanvasBoard{
+		BoardAssetID: boardAssetID, Version: last.Version + 1, ImageAssetIDs: imageAssetIDs,
+	})
 	if err != nil {
 		return Material{}, err
 	}
 	return s.UpdateMaterial(ctx, materialID, MaterialPatch{
 		Content: &content, ExpectedRevision: &revision, UpdatedBy: userID,
 	})
+}
+
+// assertCanvasAssets checks the save names only this material's ready, untrashed
+// assets: the board a `board` asset, each image an `image` asset.
+func (s *Store) assertCanvasAssets(ctx context.Context, materialID, boardAssetID string, imageAssetIDs []string) error {
+	want := map[string]string{boardAssetID: "board"}
+	for _, id := range imageAssetIDs {
+		want[id] = "image"
+	}
+	ids := make([]string, 0, len(want))
+	for id := range want {
+		ids = append(ids, id)
+	}
+	rows, err := s.pool.Query(ctx, `SELECT id, purpose FROM editor_assets
+		WHERE material_id=$1 AND status='ready' AND trashed_at IS NULL AND id = ANY($2::text[])`, materialID, ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	found := 0
+	for rows.Next() {
+		var id, purpose string
+		if err := rows.Scan(&id, &purpose); err != nil {
+			return err
+		}
+		if want[id] != purpose {
+			return fmt.Errorf("%w: asset %s is not a %s of this canvas", materialdoc.ErrInvalid, id, want[id])
+		}
+		found++
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if found != len(want) {
+		return fmt.Errorf("%w: a save names only this canvas's ready assets", materialdoc.ErrInvalid)
+	}
+	return nil
 }
 
 // dropLeaverCanvasTx deletes the member's canvas in the workspace they leave

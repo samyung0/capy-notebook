@@ -11790,7 +11790,7 @@ export const getSaveWorkspaceCanvasUrl = (id: string,) => {
 }
 
 /**
- * @summary Record a save of the caller's canvas: its new board asset, version and images
+ * @summary Record a save of the caller's canvas: its new board asset and images; the server counts the version
  */
 export const saveWorkspaceCanvas = async (id: string,
     saveCanvasInputBody: NonReadonly<SaveCanvasInputBody>, options?: RequestInit): Promise<saveWorkspaceCanvasResponse> => {

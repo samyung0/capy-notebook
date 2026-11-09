@@ -9,13 +9,13 @@ export interface SaveCanvasInputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   /**
-     * The new board asset, uploaded first
+     * The new board asset, uploaded first: a ready board asset of this canvas
      * @minLength 1
      * @maxLength 64
      */
   boardAssetId: string;
   /**
-     * The canvas's images now
+     * The canvas's images now: ready image assets of this canvas
      * @maxItems 1000
      * @nullable
      */
@@ -25,9 +25,4 @@ export interface SaveCanvasInputBody {
      * @minimum 1
      */
   revision: number;
-  /**
-     * The save's version, one past the last
-     * @minimum 1
-     */
-  version: number;
 }

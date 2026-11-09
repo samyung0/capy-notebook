@@ -8396,7 +8396,7 @@ export const WorkspaceCanvasResponse = zod.object({
 
 
 /**
- * @summary Record a save of the caller's canvas: its new board asset, version and images
+ * @summary Record a save of the caller's canvas: its new board asset and images; the server counts the version
  */
 export const SaveWorkspaceCanvasParams = zod.object({
   "id": zod.string().describe('Workspace id')
@@ -8409,12 +8409,10 @@ export const saveWorkspaceCanvasBodyImageAssetIdsMax = 1000;
 
 
 
-
 export const SaveWorkspaceCanvasBody = zod.object({
-  "boardAssetId": zod.string().min(1).max(saveWorkspaceCanvasBodyBoardAssetIdMax).describe('The new board asset, uploaded first'),
-  "imageAssetIds": zod.array(zod.string()).max(saveWorkspaceCanvasBodyImageAssetIdsMax).nullable().describe('The canvas\'s images now'),
-  "revision": zod.int().min(1).describe('The revision the browser read; another tab\'s save since is refused (409)'),
-  "version": zod.int().min(1).describe('The save\'s version, one past the last')
+  "boardAssetId": zod.string().min(1).max(saveWorkspaceCanvasBodyBoardAssetIdMax).describe('The new board asset, uploaded first: a ready board asset of this canvas'),
+  "imageAssetIds": zod.array(zod.string()).max(saveWorkspaceCanvasBodyImageAssetIdsMax).nullable().describe('The canvas\'s images now: ready image assets of this canvas'),
+  "revision": zod.int().min(1).describe('The revision the browser read; another tab\'s save since is refused (409)')
 })
 
 export const SaveWorkspaceCanvasResponse = zod.object({

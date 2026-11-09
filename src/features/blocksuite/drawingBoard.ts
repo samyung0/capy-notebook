@@ -790,8 +790,10 @@ export function mountDrawingBoard(
     /** The board to store, with no undo history: a fresh document keeps only what's
      * on the board (200 plane clicks were 606 KB live, 7.5 KB this way), rounded
      * (roundPlaces). */
-    save: () => {
-      finishPlot();
+    save: ({ finish = true }: { finish?: boolean } = {}) => {
+      // An autosave (the workspace canvas) leaves an open card and the tool as
+      // they are; Done finishes the plot first.
+      if (finish) finishPlot();
       const fresh = new Y.Doc();
       Y.applyUpdate(fresh, Y.encodeStateAsUpdate(store.spaceDoc));
       roundPlaces(fresh);

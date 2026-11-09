@@ -38,9 +38,8 @@ type saveCanvasInput struct {
 	ID   string `path:"id" doc:"Workspace id"`
 	Body struct {
 		Revision      int64    `json:"revision" minimum:"1" doc:"The revision the browser read; another tab's save since is refused (409)"`
-		BoardAssetID  string   `json:"boardAssetId" minLength:"1" maxLength:"64" doc:"The new board asset, uploaded first"`
-		Version       int64    `json:"version" minimum:"1" doc:"The save's version, one past the last"`
-		ImageAssetIDs []string `json:"imageAssetIds" maxItems:"1000" doc:"The canvas's images now"`
+		BoardAssetID  string   `json:"boardAssetId" minLength:"1" maxLength:"64" doc:"The new board asset, uploaded first: a ready board asset of this canvas"`
+		ImageAssetIDs []string `json:"imageAssetIds" maxItems:"1000" doc:"The canvas's images now: ready image assets of this canvas"`
 	}
 }
 
@@ -49,7 +48,7 @@ func (a *api) registerCanvas(api huma.API) {
 	reg(api, http.MethodGet, "/api/workspaces/{id}/canvas", "workspaceCanvas", tag,
 		"The caller's own canvas in the workspace, made on first open", http.StatusOK, a.workspaceCanvas)
 	reg(api, http.MethodPut, "/api/workspaces/{id}/canvas", "saveWorkspaceCanvas", tag,
-		"Record a save of the caller's canvas: its new board asset, version and images", http.StatusOK, a.saveWorkspaceCanvas)
+		"Record a save of the caller's canvas: its new board asset and images; the server counts the version", http.StatusOK, a.saveWorkspaceCanvas)
 }
 
 func canvasResponse(mt store.Material) (*canvasOutput, error) {
@@ -96,9 +95,7 @@ func (a *api) saveWorkspaceCanvas(ctx context.Context, in *saveCanvasInput) (*ca
 	if images == nil {
 		images = []string{}
 	}
-	saved, err := a.s.SaveWorkspaceCanvas(ctx, userID(ctx), mt.ID, materialdoc.CanvasBoard{
-		BoardAssetID: in.Body.BoardAssetID, Version: in.Body.Version, ImageAssetIDs: images,
-	}, in.Body.Revision)
+	saved, err := a.s.SaveWorkspaceCanvas(ctx, userID(ctx), mt.ID, in.Body.BoardAssetID, images, in.Body.Revision)
 	if errors.Is(err, store.ErrConflict) {
 		return nil, huma.Error409Conflict("this canvas was saved from another tab; reload to keep drawing")
 	}

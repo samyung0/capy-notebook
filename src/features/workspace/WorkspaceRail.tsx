@@ -80,7 +80,9 @@ export function WorkspaceRail({
   accountItems: MenuItem[];
   active: WorkspaceSection;
   onSelect: (section: WorkspaceSection) => void;
-  workspace: Pick<Workspace, 'iconId' | 'name'>;
+  /** `role` is the caller's membership: a link or public visitor has none,
+   * and no canvas (Epo 2026-11-09). */
+  workspace: Pick<Workspace, 'iconId' | 'name' | 'role'>;
 }) {
   const { data: unread } = useUnreadNotificationCount({ errorBoundary: false });
   return (
@@ -100,7 +102,9 @@ export function WorkspaceRail({
         src={iconUrl(workspace.iconId)}
         title={workspace.name}
       />
-      {SECTIONS.map((section) => (
+      {SECTIONS.filter(
+        (section) => section.value !== 'canvas' || workspace.role
+      ).map((section) => (
         <RailItem
           active={active === section.value}
           icon={section.icon}

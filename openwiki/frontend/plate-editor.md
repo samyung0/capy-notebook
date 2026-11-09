@@ -4690,14 +4690,25 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     the canvas's images, so the asset pruner keeps them. `WorkspaceCanvas.tsx` opens
     the board from the material's `board` editor asset (`boardAsset.ts`: gzip in the
     browser, `assetLink` and `DecompressionStream` back), or from this device's unsaved
-    copy (IndexedDB `drawingDrafts`, key `canvas:<material>`, written 400 ms after each
-    change) when the last save didn't go up. It saves 2 s after the last change and on
-    leaving: the cleaned-up `save()` document, gzipped, uploaded as a new `board` asset
-    under `CANVAS_BOARD_MAX` (2 MiB before gzip, the board catalog; over it the board
-    says so and the last good save stands), then `PUT /api/workspaces/{id}/canvas` with
-    the asset, `version + 1` and the revision it read: 409 (the same person's other tab
-    saved first) says so and stops saving until a reload. Images on the canvas are the
-    next piece (`todo-board-images.md`); `imageAssetIds` is empty until then.
+    copy (IndexedDB `drawingDrafts`, key `canvas:<material>`: the live `snapshot()` with
+    the material revision it was taken at, written 400 ms after each change and on
+    `pagehide`) when the last save didn't go up and the copy's revision is the material's
+    current one; an older copy (another tab's or device's save landed since) is deleted.
+    It saves 2 s after the last change and when the page within the app leaves the
+    canvas: `save({ finish: false })`, the cleaned-up document that leaves the drawer's
+    tool and open card alone, gzipped, uploaded as a new `board` asset under
+    `CANVAS_BOARD_MAX` (2 MiB before gzip, the board catalog; over it the board says so
+    and the last good save stands), then `PUT /api/workspaces/{id}/canvas` with the
+    asset and the revision it read; the server checks the asset is a ready `board`
+    asset of the canvas (images likewise) and counts the version. 409 (the same person's
+    other tab saved first) says so, deletes this tab's copy and stops saving until a
+    reload; any other failure waits for the next change or open, the copy holding the
+    work (no retry loop). A closed tab keeps the copy only: the upload can't run as a
+    keepalive request. A canvas opens no room (the collaboration token route refuses
+    it); the Canvas tab shows to members only, since a link or public visitor has none.
+    Restoring a trashed canvas beside the live one made since is refused (409
+    `canvas_exists`). Images on the canvas are the next piece (`todo-board-images.md`);
+    `imageAssetIds` is empty until then.
 - **Preview (`boardPreview.ts`):** `drawBoardPreview(saved, { width, height }, board)` draws a
   saved board as an SVG string from its data, for lists, results and marking views
   (Epo 2026-11-06: what's on it, not every detail). It never loads the editor: it imports

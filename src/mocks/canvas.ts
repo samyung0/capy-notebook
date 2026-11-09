@@ -32,7 +32,6 @@ export const canvasHandlers = [
       boardAssetId: string;
       imageAssetIds?: string[];
       revision: number;
-      version: number;
     };
     if (body.revision !== canvas.revision)
       return HttpResponse.json(
@@ -40,7 +39,7 @@ export const canvasHandlers = [
         { status: 409 }
       );
     canvas.boardAssetId = body.boardAssetId;
-    canvas.version = body.version;
+    canvas.version += 1;
     canvas.imageAssetIds = body.imageAssetIds ?? [];
     canvas.revision += 1;
     canvas.updatedAt = new Date().toISOString();
