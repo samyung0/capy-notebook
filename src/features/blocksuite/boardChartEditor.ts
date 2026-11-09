@@ -27,13 +27,22 @@ import {
   SPOKES_MAX,
 } from './boardData';
 import { drawChip, openBoardEditor, toolTip } from './boardEditorShell';
+import { alongDrag, ERASER_SIZE, EraserTrail } from './boardEraser';
 import { clockAngle, snapTo, type Vec } from './boardGeometry';
 import { fillRow, mathsIcon } from './boardTools';
 
-type Tool = 'draw' | 'fill' | 'label' | 'erase';
+type Tool = 'select' | 'draw' | 'fill' | 'label' | 'erase';
+/** What Select picked (Epo 2026-11-09): a bar, a pie's line or a pie's label. */
+type Picked =
+  | { id: string; kind: 'bar' }
+  | { angle: number; kind: 'spoke' }
+  | { id: string; kind: 'label' };
 
 const PIXELS_TO_LABEL = 30;
-const DEGREES_TO_ERASE = 8;
+/** How far a press goes before it's a drag rather than a click. */
+const PIXELS_TO_DRAG = 4;
+const BLUE = '#1e96eb';
+const HALO = 'rgba(30, 150, 235, 0.18)';
 /** Most numbered lines the axis takes. */
 const AXIS_LINES_MAX = 100;
 /** The smallest axis top zooming in reaches. */
@@ -72,6 +81,16 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   } | null = null;
   /** The bar being dragged up. */
   let live: { slot: number; value: number } | null = null;
+  let picked: Picked | null = null;
+  /** A pie's line or label being dragged round, to this angle; written when it lifts. */
+  let turning: { angle: number; moved: boolean } | null = null;
+  /** What the eraser has passed over while pressed; gone in one step when it lifts. */
+  let erasing: {
+    bars: Set<string>;
+    labels: Set<string>;
+    spokes: Set<number>;
+  } | null = null;
+  const trail = new EraserTrail(() => redraw());
   /** The value axis while a zoom is still moving (Epo 2026-11-08), and its top
    * before rounding. */
   let zoom: { axisMax: number; axisStep: number; top: number } | null = null;
@@ -80,10 +99,22 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
 
   const shell = openBoardEditor(gfx, model.id, {
     fit: model.kind === 'bar' ? () => fitAxis() : undefined,
+    onDelete: () => {
+      if (!picked) return false;
+      remove(picked);
+      picked = null;
+      redraw();
+      return true;
+    },
     onEscape: () => {
-      if (!typing) return false;
-      typing = null;
-      drawControls();
+      if (typing) {
+        typing = null;
+        drawControls();
+        return true;
+      }
+      if (!picked) return false;
+      picked = null;
+      redraw();
       return true;
     },
     onLeave: () => {
@@ -177,6 +208,132 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     });
   };
 
+  /** A bar's box on screen, its label under it included. */
+  const barBox = (slot: number, value: number) => {
+    const { base, height, left, slotW } = barPlot(screen(), pads(), slots());
+    const w = slotW * BAR_SHARE;
+    const top =
+      base - (height * Math.min(value, axis().axisMax)) / axis().axisMax;
+    return {
+      bottom: base + 24,
+      left: left + slotW * slot + (slotW - w) / 2,
+      top,
+      w,
+    };
+  };
+  /** How far a pixel is from a pie's line, rim to centre. */
+  const offSpoke = ([x, y]: Vec, spoke: number) => {
+    const { cx, cy, r } = pieCircle(screen(), pads());
+    const turn = (spoke * Math.PI) / 180;
+    const [dx, dy] = [Math.sin(turn), -Math.cos(turn)];
+    const t = Math.max(0, Math.min(r, (x - cx) * dx + (y - cy) * dy));
+    return Math.hypot(x - cx - t * dx, y - cy - t * dy);
+  };
+  /** The bar, pie line or pie label under a pixel, within `reach` of it. */
+  const hitAt = (at: Vec, reach: number): Picked | null => {
+    if (isBar) {
+      const slot = model.bars.findIndex(({ value }, i) => {
+        const bar = barBox(i, value);
+        return (
+          at[0] >= bar.left - reach &&
+          at[0] <= bar.left + bar.w + reach &&
+          at[1] >= bar.top - reach &&
+          at[1] <= bar.bottom
+        );
+      });
+      const bar = model.bars[slot];
+      return bar ? { id: bar.id, kind: 'bar' } : null;
+    }
+    const label = labelAt(at);
+    if (label) return { id: label.id, kind: 'label' };
+    const spoke = model.spokes.find((each) => offSpoke(at, each) <= reach);
+    return spoke === undefined ? null : { angle: spoke, kind: 'spoke' };
+  };
+  const remove = (gone: Picked) => {
+    if (gone.kind === 'bar')
+      update({ bars: model.bars.filter(({ id }) => id !== gone.id) });
+    else if (gone.kind === 'label')
+      update({ labels: model.labels.filter(({ id }) => id !== gone.id) });
+    else
+      update({
+        fills: (model.fills ?? []).filter(({ from }) => from !== gone.angle),
+        spokes: model.spokes.filter((spoke) => spoke !== gone.angle),
+      });
+  };
+  /** Whatever is within the eraser's reach of a pixel joins what it's erasing. */
+  const eraseNear = (at: Vec) => {
+    const hit = hitAt(at, ERASER_SIZE / 2);
+    if (hit?.kind === 'bar') erasing?.bars.add(hit.id);
+    if (hit?.kind === 'label') erasing?.labels.add(hit.id);
+    if (hit?.kind === 'spoke') erasing?.spokes.add(hit.angle);
+  };
+
+  /** What Select picked, in blue, where it's being dragged to. */
+  const drawPicked = (
+    area: { h: number; w: number; x: number; y: number },
+    bars: ChartBar[],
+    labels: PieLabel[],
+    spokes: number[]
+  ) => {
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    const outline = (trace: () => void) => {
+      for (const [colour, width] of [
+        [HALO, 10],
+        [BLUE, 2],
+      ] as const) {
+        ctx.strokeStyle = colour;
+        ctx.lineWidth = width;
+        ctx.beginPath();
+        trace();
+        ctx.stroke();
+      }
+    };
+    if (picked?.kind === 'bar') {
+      const { id } = picked;
+      const slot = bars.findIndex((bar) => bar.id === id);
+      if (slot < 0) return;
+      const bar = barBox(slot, bars[slot].value);
+      outline(() =>
+        ctx.rect(bar.left, bar.top, bar.w, bar.bottom - 24 - bar.top)
+      );
+      return;
+    }
+    const { cx, cy, r } = pieCircle(area, pads());
+    const at = (angle: number, reach: number): Vec => {
+      const turn = (angle * Math.PI) / 180;
+      return [cx + reach * Math.sin(turn), cy - reach * Math.cos(turn)];
+    };
+    if (picked?.kind === 'spoke') {
+      const angle = turning?.angle ?? picked.angle;
+      if (!spokes.includes(angle)) return;
+      const [x, y] = at(angle, r);
+      outline(() => {
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(x, y);
+      });
+      ctx.fillStyle = BLUE;
+      ctx.beginPath();
+      ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      if (turning?.moved) drawChip(ctx, `${angle}°`, x, y, area.w);
+      return;
+    }
+    if (picked?.kind === 'label') {
+      const { id } = picked;
+      const label = labels.find((each) => each.id === id);
+      if (!label) return;
+      const [x, y] = at(label.angle, r * LABEL_REACH);
+      ctx.font = '12px Arial, sans-serif';
+      const w = ctx.measureText(label.text).width + 12;
+      ctx.fillStyle = HALO;
+      ctx.fillRect(x - w / 2, y - 11, w, 22);
+      ctx.strokeStyle = BLUE;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(x - w / 2, y - 11, w, 22);
+    }
+  };
+
   const draw = () => {
     const { height, width } = shell.sizeCanvas();
     const area = { h: height, w: width, x: 0, y: 0 };
@@ -187,7 +344,30 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       if (slot >= bars.length)
         bars = [...bars, { fill: newFill(), id: '', label: '', value }];
     }
-    const { fills, kind, labels, spokes } = model;
+    let { fills, labels, spokes } = model;
+    if (turning && picked?.kind === 'spoke') {
+      const { angle: from } = picked;
+      const { angle: to } = turning;
+      spokes = spokes.map((spoke) => (spoke === from ? to : spoke));
+      fills = fills?.map((slice) =>
+        slice.from === from ? { ...slice, from: to } : slice
+      );
+    }
+    if (turning && picked?.kind === 'label') {
+      const { id } = picked;
+      const { angle } = turning;
+      labels = labels.map((label) =>
+        label.id === id ? { ...label, angle } : label
+      );
+    }
+    if (erasing) {
+      const gone = erasing;
+      bars = bars.filter(({ id }) => !gone.bars.has(id));
+      labels = labels.filter(({ id }) => !gone.labels.has(id));
+      spokes = spokes.filter((spoke) => !gone.spokes.has(spoke));
+      fills = fills?.filter((slice) => !gone.spokes.has(slice.from));
+    }
+    const { kind } = model;
     const { axisMax, axisStep } = axis();
     drawChart(
       ctx,
@@ -213,6 +393,8 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
         width
       );
     }
+    if (picked) drawPicked(area, bars, labels, spokes);
+    trail.draw(ctx);
     // Where a press would set a bar, as the plane shows where a point would go.
     if (isBar && tool === 'draw' && pointer && !live) {
       const slot = slotAt(pointer);
@@ -328,31 +510,9 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
         });
       else if (open.id) update({ labels: others });
     }
+    // One label, then back to Select, as on the plane.
+    if (tool === 'label') tool = 'select';
     drawControls();
-  };
-
-  const eraseAt = (at: Vec) => {
-    if (isBar) {
-      const slot = slotAt(at);
-      if (model.bars[slot])
-        update({ bars: model.bars.filter((_, i) => i !== slot) });
-      return;
-    }
-    const label = labelAt(at);
-    if (label) {
-      update({ labels: model.labels.filter((other) => other !== label) });
-      return;
-    }
-    const angle = angleAt(at);
-    const near = model.spokes.find((spoke) => {
-      const apart = Math.abs(spoke - angle) % 360;
-      return Math.min(apart, 360 - apart) <= DEGREES_TO_ERASE;
-    });
-    if (near !== undefined)
-      update({
-        fills: (model.fills ?? []).filter((slice) => slice.from !== near),
-        spokes: model.spokes.filter((spoke) => spoke !== near),
-      });
   };
 
   /** The pie slice under a point takes the picked fill; No fill clears it. */
@@ -425,6 +585,11 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   const touches = new Map<number, Vec>();
   let pinch = 0;
   let pressed = false;
+  let pressedAt: Vec = [0, 0];
+  /** Where the pointer was at its last move, so a swipe erases all along it. */
+  let lastAt: Vec = [0, 0];
+  /** Whether a press with Select has gone far enough to drag what it picked. */
+  let dragging = false;
   canvas.addEventListener('pointerdown', (event) => {
     touches.set(event.pointerId, local(event));
     if (isBar && touches.size === 2) {
@@ -441,6 +606,15 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     pressed = true;
     const at = local(event);
     pointer = at;
+    pressedAt = at;
+    lastAt = at;
+    dragging = false;
+    if (tool === 'erase') {
+      erasing = { bars: new Set(), labels: new Set(), spokes: new Set() };
+      trail.start(at);
+      eraseNear(at);
+    }
+    if (tool === 'select') picked = hitAt(at, 6);
     if (isBar && tool === 'draw') {
       const slot = slotAt(at);
       if (slot <= model.bars.length && slot < BARS_MAX)
@@ -460,7 +634,32 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       return;
     }
     pointer = pressed || event.pointerType === 'mouse' ? at : null;
-    if (live && pressed) live = { ...live, value: valueAt(at) };
+    if (erasing && pressed) {
+      for (const px of alongDrag(lastAt, at)) eraseNear(px);
+      trail.add(at);
+    }
+    lastAt = at;
+    const held = picked;
+    if (tool === 'select' && pressed && held) {
+      dragging ||=
+        Math.hypot(at[0] - pressedAt[0], at[1] - pressedAt[1]) >=
+        PIXELS_TO_DRAG;
+      if (dragging && held.kind === 'bar') {
+        const slot = model.bars.findIndex(({ id }) => id === held.id);
+        if (slot >= 0) live = { slot, value: valueAt(at) };
+      } else if (dragging) {
+        const angle = angleAt(at);
+        // A line stays off the others; a label goes anywhere round.
+        const taken =
+          held.kind === 'spoke' &&
+          angle !== held.angle &&
+          model.spokes.includes(angle);
+        if (!taken) turning = { angle, moved: true };
+      }
+      canvas.style.cursor = dragging ? 'grabbing' : '';
+    } else if (live && pressed) live = { ...live, value: valueAt(at) };
+    if (tool === 'select' && !pressed && event.pointerType === 'mouse')
+      canvas.style.cursor = hitAt(at, 6) ? 'grab' : '';
     redraw();
   });
   canvas.addEventListener('pointerup', (event) => {
@@ -469,7 +668,41 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     if (!pressed) return;
     pressed = false;
     const at = local(event);
-    if (live) {
+    const gone = erasing;
+    erasing = null;
+    const turned = turning;
+    turning = null;
+    canvas.style.cursor = '';
+    if (gone) {
+      trail.end();
+      if (gone.bars.size || gone.labels.size || gone.spokes.size)
+        update({
+          bars: model.bars.filter(({ id }) => !gone.bars.has(id)),
+          fills: (model.fills ?? []).filter(
+            ({ from }) => !gone.spokes.has(from)
+          ),
+          labels: model.labels.filter(({ id }) => !gone.labels.has(id)),
+          spokes: model.spokes.filter((spoke) => !gone.spokes.has(spoke)),
+        });
+    } else if (turned && picked?.kind === 'spoke') {
+      const { angle: from } = picked;
+      const { angle: to } = turned;
+      if (to !== from)
+        update({
+          fills: (model.fills ?? []).map((slice) =>
+            slice.from === from ? { ...slice, from: to } : slice
+          ),
+          spokes: model.spokes.map((spoke) => (spoke === from ? to : spoke)),
+        });
+      picked = { angle: to, kind: 'spoke' };
+    } else if (turned && picked?.kind === 'label') {
+      const { id } = picked;
+      update({
+        labels: model.labels.map((label) =>
+          label.id === id ? { ...label, angle: turned.angle } : label
+        ),
+      });
+    } else if (live) {
       const { slot, value } = live;
       live = null;
       const bar = model.bars[slot];
@@ -490,9 +723,8 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     } else if (tool === 'label') {
       commitLabel();
       openLabel(at);
-    } else if (tool === 'erase') eraseAt(at);
-    else if (tool === 'fill') fillAt(at);
-    else if (!isBar && model.spokes.length < SPOKES_MAX) {
+    } else if (tool === 'fill') fillAt(at);
+    else if (tool === 'draw' && !isBar && model.spokes.length < SPOKES_MAX) {
       const angle = angleAt(at);
       if (!model.spokes.includes(angle))
         update({ spokes: [...model.spokes, angle] });
@@ -505,6 +737,9 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     pinch = 0;
     pressed = false;
     live = null;
+    turning = null;
+    erasing = null;
+    trail.end();
     pointer = null;
     redraw();
   });
@@ -516,6 +751,12 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   /** With their keys, shown in their tooltips (Epo 2026-11-08). */
   const tools: { icon: string; id: Tool; key: string; label: () => string }[] =
     [
+      {
+        icon: 'select',
+        id: 'select',
+        key: 'V',
+        label: m.drawing_board_select,
+      },
       ...(isBar
         ? [
             {
@@ -554,6 +795,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     ];
   const pick = (id: Tool) => {
     commitLabel();
+    picked = null;
     tool = id;
     pointer = null;
     drawControls();

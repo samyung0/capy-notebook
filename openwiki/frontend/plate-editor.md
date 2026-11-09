@@ -4490,31 +4490,37 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   opens over the whole board. At its top right sit the same ☰ menu (Fit to screen where the card
   has one, Undo, Redo, and − and + where it zooms; the board's menu hides meanwhile)
   and Done on its own (Epo 2026-11-08). Done leaves, as does Escape when no mark is open (Escape closes
-  an open menu first). Inside, the wheel pans, Ctrl or pinch zooms, and Move drags.
+  an open menu first, then a selection). Inside, the wheel pans, Ctrl or pinch zooms, and Select drags.
   A point's dot picks up with any tool but Erase (Epo 2026-11-08, option C): it rings
   blue under the mouse, a drag moves it to the grid with the coordinate chip, and a tap
-  still does the tool's job at that point (Line starts from it). Move also drags a
+  still does the tool's job at that point (Line starts from it). Select also drags a
   whole line, curve or label (snapped by grid steps) and pans on empty paper. The
-  moved copy is only drawn until the pointer lifts, so a drag is one undo step; nothing
-  stays selected, and Erase still removes. Where points coincide, the last drawn moves.
+  moved copy is only drawn until the pointer lifts, so a drag is one undo step. A click
+  or drag with Select leaves that mark selected, blue with its points, until a click
+  elsewhere, Escape or another tool; Delete or Backspace removes it (Epo 2026-11-09).
+  Where points coincide, the last drawn moves.
   Label (Epo 2026-11-08) types text centred where it's clicked, a `label` mark at that
   coordinate that moves and zooms with the plane (a click near one edits it; up to 24
   characters; previews leave labels out, as numbers); after one, the tool goes back to
-  Move. Formula (Epo 2026-11-08) opens the board's formula card (`openFormulaCard`) for
+  Select. Formula (Epo 2026-11-08) opens the board's formula card (`openFormulaCard`) for
   a `formula` mark centred where it's clicked (a click on one opens it again, emptied it
   goes); KaTeX's layout (`boardFormulaDraw.ts`, loaded only once a formula is on the
   board or a plane) is replayed at 18 px, inverted on dark paper, keeping its size as
-  the plane zooms. Move drags it whole; Erase takes it. Previews leave formulas out, as
+  the plane zooms. Select drags it whole; Erase takes it. Previews leave formulas out, as
   they can't lay them out (Epo: none rather than broken); the marking image has them.
   Vector (Epo 2026-11-08) is a line of two clicks with an arrowhead (12 px, kept as
   the plane zooms) at its second point, a `vector` mark of two points. Each tool's
   button shows AFFiNE's tooltip with its key, and the open card takes those keys: V
-  Move, P Point, L Line, A Vector, C Curve, O Ellipse, T Label, F Formula, E Erase (a
-  chart: D its bars or slices, F Fill, T Label, E Erase). Ellipse (Epo 2026-11-08, square
+  Select, P Point, L Line, A Vector, C Curve, O Ellipse, T Label, F Formula, E Erase (a
+  chart: V Select, D its bars or slices, F Fill, T Label, E Erase). Erase (Epo
+  2026-11-09) works as the board's eraser does: the pointer is a ring as wide as its
+  reach (16 px, `--capy-eraser-cursor`, also on the board's own eraser), a press leaves
+  BlockSuite's fading grey trail (`EraserTrail` in `boardEraser.ts`), everything it
+  passes over hides, and lifting removes them in one undo step. Ellipse (Epo 2026-11-08, square
   planes only): a press and drag sizes a circle from its middle (the chip shows `r`), a
   click places one a grid step round. It's an `ellipse` mark of four handles (right,
   top, left, bottom); pulling one sets the width or height about the middle, so it
-  stays upright and on the grid, and Shift scales it evenly. Move drags it whole, its
+  stays upright and on the grid, and Shift scales it evenly. Select drags it whole, its
   middle (any other mark's first point) landing on the grid. Curves draw as cubic Bézier pieces of their
   Catmull-Rom curve (`curvePieces`) and ellipses as canvas ellipses, smooth at any zoom;
   the sampled path (`smoothThrough`, `pathOf`) is for hit tests and previews. A line's,
@@ -4533,7 +4539,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   can line it up against the coordinate chip. The view is written on leaving and isn't in
   the undo history.
 - **Ending a mark:** Finish (shown while a line or curve is open), Escape, or clicking
-  a curve's last point again. The tool then goes back to Move, as AFFiNE's shape and
+  a curve's last point again. The tool then goes back to Select, as AFFiNE's shape and
   connector tools go back to Select; Point stays on. Leaving keeps a curve with two points
   or more and removes a mark that has only its first. Canvas drawings over a card aren't in it: they stay in place
   if the view moves.
@@ -4551,7 +4557,11 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   line, whose chip shows the sector it closes, from the line before it clockwise;
   Finish slicing (shown once there's a line) moves to Fill, where a click gives the slice
   under it the picked fill (`fills`, keyed by the line the slice starts at; erasing that
-  line drops it, No fill clears it). Labels sit at an angle inside the circle.
+  line drops it, No fill clears it). Labels sit at an angle inside the circle. Select
+  (Epo 2026-11-09) clicks a bar, a pie line or a pie label to select it (Delete removes
+  it, Escape lets go) and drags it: a bar up or down to its value, a line round to a new
+  angle (off the other lines, its fill going with it), a label round the circle. After
+  one label the tool goes back to Select, as on the plane.
 - **See-through cards:** plane and chart paper (`PAPER`) and note fills are half
   see-through so the panel's frost over the page frame shows. An open editor uses the
   same paper with no ground of its own and hides the board's `editor-host` under it

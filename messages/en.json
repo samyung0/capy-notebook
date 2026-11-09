@@ -3081,7 +3081,7 @@
   "drawing_board_bars": "Drag a bar up to its value",
   "drawing_board_pie": "Click to add a line",
   "workspace_section_canvas": "Canvas",
-  "drawing_board_move_plane": "Move the plane",
+  "drawing_board_select": "Select",
   "drawing_board_erase_mark": "Erase a mark",
   "drawing_board_finish_curve": "Finish curve",
   "drawing_board_finish_line": "Finish line",

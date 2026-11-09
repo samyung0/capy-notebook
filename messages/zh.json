@@ -3081,7 +3081,7 @@
   "drawing_board_bars": "向上拖动柱形至其数值",
   "drawing_board_pie": "点击添加一条线",
   "workspace_section_canvas": "画布",
-  "drawing_board_move_plane": "移动平面",
+  "drawing_board_select": "选择",
   "drawing_board_erase_mark": "擦除标记",
   "drawing_board_finish_curve": "结束曲线",
   "drawing_board_finish_line": "结束直线",

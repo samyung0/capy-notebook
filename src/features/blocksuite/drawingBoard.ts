@@ -411,6 +411,10 @@ export function mountDrawingBoard(
       percent: { reset: () => zoomTo(1), value: () => gfx.viewport.zoom },
     },
   }));
+  // The stylesheet shows the eraser's ring while it's the tool.
+  const unwatchTool = gfx.tool.currentToolName$.subscribe((name) => {
+    if (board instanceof HTMLElement) board.dataset.tool = name;
+  });
   menu.element.classList.add('capy-board-menu');
   board?.append(menu.element);
   const historyUpdates = store
@@ -719,6 +723,7 @@ export function mountDrawingBoard(
       subscription.unsubscribe();
       historyUpdates.unsubscribe();
       zoomUpdates.unsubscribe();
+      unwatchTool();
       document.removeEventListener('keydown', slotKeys);
       menu.dispose();
       if (onChange) store.spaceDoc.off('update', onChange);
