@@ -4666,7 +4666,10 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       the card is the note embed's own runner, answered and checked on the canvas
       (below). A double click on its header opens the material in the workspace for
       editing, and a card whose material the workspace no longer lists shows "can't be
-      opened" and no runner.
+      opened" and no runner. `WorkspaceCanvas` reads every page of the list before
+      lending it (`fetchNextPage` while `hasNextPage`); until then the list is
+      `undefined`, the grid shows the New tile alone and a placed card's body loads
+      rather than reading as gone.
     Emoji and GIFs are `affine:embed-capy-picture` blocks (an `<img>` that plays by
     itself), links `affine:embed-capy-link` and quiz or set cards
     `affine:embed-capy-material` (`boardPicture.ts`, `boardCards.ts`): the surface
@@ -4679,8 +4682,12 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     fetched snapshot and never joins the material's live room (`live` off on the embed,
     Epo 2026-11-09: editing happens in the dialog, and many cards would mean many
     connections against the 22-channel cap); it refetches the snapshot when the card
-    comes back into view (`useRefreshOnEnter`) and when the window regains focus, and
-    the dialog's save invalidates the quiz query. The block is a BlockSuite block
+    comes back into view (`useRefreshOnEnter`, from the second entry: the observer's
+    first call is the mount's own) and when the window regains focus (the hook's own
+    `focus` listener, since the app's queries never refetch on focus), and
+    `WorkspaceCanvas` invalidates the quiz and material queries of the material the
+    item dialog showed when the dialog closes (the dialog's saves go through its live
+    room, not the snapshot query). The block is a BlockSuite block
     like any other but hosts React: it adopts one `div` per card from the host registry
     (`src/features/canvas/materialCardHosts.ts` — kept out of `src/features/blocksuite`,
     which the app's tsconfig excludes), and `CanvasMaterialCards.tsx`, rendered by
@@ -4692,10 +4699,13 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     chrome (the header row with icon, title and kind, the hairline and the panel
     background) stays in the block's markup. The header is what moves and selects the
     card; the body swallows `pointerdown`, `pointerup`, `click`, `dblclick`, `wheel`,
-    `keydown` and `keyup` so BlockSuite neither selects nor drags nor pans nor takes
-    the keys from inside the quiz (React's own listeners sit on the host element, a
-    portal container, so they still run), and the first click inside needs no selection
-    first. Under any tool but Select the body takes no pointer events
+    `keydown`, `keyup`, `beforeinput` (Android's Backspace hotkey) and `cut`, `copy`,
+    `paste` (BlockSuite's clipboard handlers on the document would cut or copy the
+    selected card instead of the field's text) so BlockSuite neither selects nor drags
+    nor pans nor takes the keys from inside the quiz (React's own listeners sit on the
+    host element, a portal container, so they still run); a swallowed `pointerdown` is
+    re-dispatched on the document so the app's menus and popovers still close on a
+    press inside a card; and the first click inside needs no selection first. Under any tool but Select the body takes no pointer events
     (`.capy-board:not([data-tool="default"]) .capy-card-body`), so a stroke draws over
     the card. A card out of view (`useNearScreen`) draws the material's stored preview
     through `ThumbnailPanel` instead of the runner; the previews come from the paged

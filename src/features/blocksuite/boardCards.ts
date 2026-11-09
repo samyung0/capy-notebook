@@ -93,15 +93,18 @@ const MaterialBlockSchema = defineBlockSchema({
 });
 
 /** What the workspace page lends the canvas: its quizzes and sets (with their stored
- * previews, for the panel's thumbnails), opening one, and making a new one (Epo
- * 2026-11-09: the New tile creates it unfiled, places it and opens its editor). */
+ * previews, for the panel's thumbnails; `undefined` until the whole list has loaded),
+ * opening one, and making a new one (Epo 2026-11-09: the New tile creates it unfiled,
+ * places it and opens its editor). */
 export type WorkspaceLinks = {
-  materials: () => {
-    id: string;
-    kind: CardMaterialKind;
-    title: string;
-    preview?: MaterialPreview;
-  }[];
+  materials: () =>
+    | {
+        id: string;
+        kind: CardMaterialKind;
+        title: string;
+        preview?: MaterialPreview;
+      }[]
+    | undefined;
   open: (materialId: string) => void;
   create: (kind: CardMaterialKind) => Promise<{ id: string; title: string }>;
 };
@@ -116,8 +119,10 @@ export const lendWorkspace = (std: BlockStdScope, links: WorkspaceLinks) =>
 export const workspaceOf = (std: BlockStdScope) => lent.get(std);
 
 /** What the body swallows under the Select tool, so BlockSuite neither selects nor
- * drags nor pans nor takes the keys from inside the runner. React's own listeners sit
- * on the host element itself (a portal container), so they still run. */
+ * drags nor pans nor takes the keys from inside the runner, and its clipboard handlers
+ * on the document (which cut or copy the selected card) never see a cut, copy or paste
+ * in a field (`beforeinput` is Android's Backspace). React's own listeners sit on the
+ * host element itself (a portal container), so they still run. */
 const BODY_EVENTS = [
   'pointerdown',
   'pointerup',
@@ -126,6 +131,10 @@ const BODY_EVENTS = [
   'wheel',
   'keydown',
   'keyup',
+  'beforeinput',
+  'cut',
+  'copy',
+  'paste',
 ] as const;
 
 const CARD_STYLES = css`
@@ -264,11 +273,15 @@ class MaterialBlockComponent extends GfxBlockComponent<MaterialBlockModel> {
   /** The page's element for this card, the same one across re-creations. */
   private body: HTMLDivElement | null = null;
 
+  /** The workspace's entry for this card's material: `undefined` while the list is
+   * still loading, `null` once it isn't there (gone, or a board with no workspace). */
   private listed() {
     const { materialId } = this.model.props;
-    return workspaceOf(this.std)
-      ?.materials()
-      .find(({ id }) => id === materialId);
+    const links = workspaceOf(this.std);
+    if (!links) return null;
+    const all = links.materials();
+    if (!all) return;
+    return all.find(({ id }) => id === materialId) ?? null;
   }
 
   private adopt() {
@@ -288,9 +301,14 @@ class MaterialBlockComponent extends GfxBlockComponent<MaterialBlockModel> {
     shown.add(this);
     const body = this.adopt();
     for (const type of BODY_EVENTS)
-      this.disposables.addFromEvent(body, type, (event: Event) =>
-        event.stopPropagation()
-      );
+      this.disposables.addFromEvent(body, type, (event: Event) => {
+        event.stopPropagation();
+        // The app's menus and popovers close on a press outside them through document
+        // listeners, which a stopped press never reaches: they hear a copy whose
+        // target is the document itself, outside any of them.
+        if (type === 'pointerdown' && event instanceof PointerEvent)
+          document.dispatchEvent(new PointerEvent('pointerdown', event));
+      });
   }
 
   /** The card is pointed at another material, or renamed: the page's host follows. */
@@ -305,6 +323,8 @@ class MaterialBlockComponent extends GfxBlockComponent<MaterialBlockModel> {
   override renderGfxBlock() {
     const { kind, title } = this.model.props;
     const listed = this.listed();
+    // An unloaded list isn't a missing material: the runner host, its body loading.
+    const runs = listed !== null;
     const what =
       kind === 'quiz' ? m.drawing_board_quiz() : m.drawing_board_flashcards();
     const icon =
@@ -313,7 +333,7 @@ class MaterialBlockComponent extends GfxBlockComponent<MaterialBlockModel> {
         : html`<svg width="18" height="18" viewBox="0 0 32 30" aria-hidden="true"><rect x="9" y="3" width="20" height="14" rx="2" fill="none" stroke="currentColor" transform="rotate(8 19 10)" /><rect x="4" y="9" width="20" height="14" rx="2" fill="#e8798f" /></svg>`;
     // The header moves and selects the card, and opens the material for editing on a
     // double click; the body below is the runner (Epo 2026-11-09).
-    return html`<div class=${listed ? 'capy-card capy-run' : 'capy-card gone'}>
+    return html`<div class=${runs ? 'capy-card capy-run' : 'capy-card gone'}>
       <div
         class="row head"
         @dblclick=${() => {
@@ -322,10 +342,10 @@ class MaterialBlockComponent extends GfxBlockComponent<MaterialBlockModel> {
       >
         ${icon}
         <span class="title">${listed?.title ?? title}</span>
-        ${listed ? html`<span class="kind">${what}</span>` : nothing}
+        ${runs ? html`<span class="kind">${what}</span>` : nothing}
       </div>
       ${
-        listed
+        runs
           ? this.body
           : html`<span class="meta"
               >${what} · ${m.drawing_board_card_gone()}</span

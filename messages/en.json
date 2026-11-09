@@ -3187,6 +3187,7 @@
   "drawing_board_new_quiz": "New quiz",
   "drawing_board_new_set": "New set",
   "drawing_board_create_failed": "The quiz couldn't be created.",
+  "drawing_board_create_set_failed": "The set couldn't be created.",
   "drawing_board_filter": "Filter",
   "drawing_board_card_front": "Front",
   "drawing_board_link": "Link",

@@ -233,19 +233,25 @@ function SetGate({
   );
 }
 
-/** A snapshot embed refetches when its block comes back into view (the card was
- * read once at mount, so the first entry is left alone). */
+/** A snapshot embed (`live` off) refetches when its block comes back into view and
+ * when the window regains focus (the app's queries never refetch on focus by
+ * themselves). The observer's first call counts the mount's own entry, which the gate
+ * has just read, so refetching starts from the second. */
 function useRefreshOnEnter(
   live: boolean,
   entered: number,
   refresh?: () => unknown
 ) {
-  const seen = useRef(entered);
   useEffect(() => {
-    if (live || !refresh || entered <= seen.current) return;
-    seen.current = entered;
+    if (live || !refresh || entered <= 1) return;
     void refresh();
   }, [entered, live, refresh]);
+  useEffect(() => {
+    if (live || !refresh) return;
+    const focused = () => void refresh();
+    window.addEventListener('focus', focused);
+    return () => window.removeEventListener('focus', focused);
+  }, [live, refresh]);
 }
 
 function QuizView({

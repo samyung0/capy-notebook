@@ -30,9 +30,9 @@ export function CanvasMaterialCards({
   listed,
   workspaceId,
 }: {
-  /** The materials the workspace still lists; the card's own header says when a
-   * placed one is gone. */
-  listed: ReadonlySet<string>;
+  /** The materials the workspace still lists, `undefined` until the list has
+   * loaded; the card's own header says when a placed one is gone. */
+  listed: ReadonlySet<string> | undefined;
   workspaceId: string;
 }) {
   const [cards, setCards] = useState<Placed[]>([]);
@@ -61,12 +61,12 @@ function PlacedCards({
   workspaceId,
 }: {
   cards: Placed[];
-  listed: ReadonlySet<string>;
+  listed: ReadonlySet<string> | undefined;
   workspaceId: string;
 }) {
   // The workspace's own materials read carries no preview, so the stored previews
-  // come from the paged list (its first page; a card whose preview isn't there
-  // falls back to the kind's icon).
+  // come from the paged list, every page of which WorkspaceCanvas reads (a card
+  // whose preview isn't stored falls back to the kind's icon).
   const { data } = useOwnedMaterials({
     kinds: ['quiz', 'flashcards'],
     scope: 'member',
@@ -87,7 +87,7 @@ function PlacedCards({
         createPortal(
           <CanvasMaterial
             kind={kind}
-            listed={listed.has(materialId)}
+            listed={listed?.has(materialId)}
             materialId={materialId}
             preview={previews.get(materialId)}
           />,
@@ -106,17 +106,20 @@ function CanvasMaterial({
   preview,
 }: {
   kind: CardMaterialKind;
-  listed: boolean;
+  /** `undefined` while the workspace's list loads. */
+  listed: boolean | undefined;
   materialId: string;
   preview?: MaterialPreview;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const { near } = useNearScreen(box);
   // The workspace no longer lists it: the card's own chrome says so.
-  if (!listed) return null;
+  if (listed === false) return null;
   return (
     <div className="h-full min-h-0 p-3" ref={box}>
-      {near ? (
+      {listed === undefined ? (
+        <EmbedLoading />
+      ) : near ? (
         <Suspense fallback={<EmbedLoading />}>
           {/* The workspace's own quiz or set, not a note's copy: there is no owner
               to wait for, so no ownerId. */}

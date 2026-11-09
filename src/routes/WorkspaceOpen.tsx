@@ -1107,6 +1107,9 @@ function WorkspaceOpen() {
             <Suspense fallback={null}>
               <WorkspaceCanvas
                 onOpenMaterial={(id) => setOpenItem({ id, kind: 'material' })}
+                openMaterialId={
+                  openItem?.kind === 'material' ? openItem.id : null
+                }
                 workspaceId={workspaceId}
                 workspaceName={ws.name}
               />

@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { BOARD_CATALOG } from '@/api/board.generated';
 import {
@@ -5,6 +6,7 @@ import {
   saveWorkspaceCanvas,
   workspaceCanvas,
 } from '@/api/canvas';
+import { qk } from '@/api/client';
 import { useCreateMaterial, useOwnedMaterials } from '@/api/hooks';
 import { userToast } from '@/components/ui/userToast';
 import {
@@ -42,10 +44,13 @@ const CANVAS_BOARD_MAX = BOARD_CATALOG.limits.CANVAS_BOARD_MAX;
  * the work. Nothing here opens a room: the canvas is personal. */
 export default function WorkspaceCanvas({
   onOpenMaterial,
+  openMaterialId,
   workspaceId,
   workspaceName,
 }: {
   onOpenMaterial: (materialId: string) => void;
+  /** The material the workspace's item dialog shows, if any. */
+  openMaterialId: string | null;
   workspaceId: string;
   /** For a new quiz's or set's default title. */
   workspaceName: string;
@@ -54,12 +59,41 @@ export default function WorkspaceCanvas({
   const [failed, setFailed] = useState<string | null>(null);
   // The canvas mounts once and reads the latest of these when it needs them. The
   // Files list carries each quiz's and set's stored preview, for the panel's grid.
-  const { data: pages } = useOwnedMaterials({
+  const {
+    data: pages,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useOwnedMaterials({
     kinds: ['quiz', 'flashcards'],
     scope: 'member',
     workspaceIds: [workspaceId],
   });
-  const materials = pages?.pages.flatMap((page) => page.items);
+  // Every page: a card whose material sits past the first page is still listed, and
+  // a new title is checked against every existing one. Until the last page is in,
+  // the list is unknown, and the cards and the grid load rather than read as gone.
+  useEffect(() => {
+    if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
+  const materials = useMemo(
+    () =>
+      pages && !hasNextPage
+        ? pages.pages.flatMap((page) => page.items)
+        : undefined,
+    [pages, hasNextPage]
+  );
+  // Editing happens in the item dialog, whose saves go through its live room, not
+  // the card's snapshot query: when the dialog closes or moves on, the material it
+  // showed is read again by any card in view.
+  const qc = useQueryClient();
+  const lastOpen = useRef(openMaterialId);
+  useEffect(() => {
+    const previous = lastOpen.current;
+    lastOpen.current = openMaterialId;
+    if (!previous || previous === openMaterialId) return;
+    void qc.invalidateQueries({ queryKey: qk.quiz(previous) });
+    void qc.invalidateQueries({ queryKey: qk.material(previous) });
+  }, [openMaterialId, qc]);
   const { mutateAsync: createMaterial } = useCreateMaterial(workspaceId);
   const latest = useRef({
     createMaterial,
@@ -237,11 +271,10 @@ export default function WorkspaceCanvas({
             return { id: made.id, title: made.title };
           },
           materials: () =>
-            (latest.current.materials ?? []).flatMap(
-              ({ id, kind, preview, title }) =>
-                kind === 'quiz' || kind === 'flashcards'
-                  ? [{ id, kind, preview, title }]
-                  : []
+            latest.current.materials?.flatMap(({ id, kind, preview, title }) =>
+              kind === 'quiz' || kind === 'flashcards'
+                ? [{ id, kind, preview, title }]
+                : []
             ),
           open: (id) => latest.current.onOpenMaterial(id),
         },
@@ -277,7 +310,7 @@ export default function WorkspaceCanvas({
   // The placed quizzes and sets run in the page's own tree, through portals into the
   // board's card hosts (Epo 2026-11-09).
   const listed = useMemo(
-    () => new Set((materials ?? []).map(({ id }) => id)),
+    () => materials && new Set(materials.map(({ id }) => id)),
     [materials]
   );
   return (

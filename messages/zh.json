@@ -3187,6 +3187,7 @@
   "drawing_board_new_quiz": "新测验",
   "drawing_board_new_set": "新卡组",
   "drawing_board_create_failed": "无法创建测验。",
+  "drawing_board_create_set_failed": "无法创建卡组。",
   "drawing_board_filter": "筛选",
   "drawing_board_card_front": "正面",
   "drawing_board_link": "链接",

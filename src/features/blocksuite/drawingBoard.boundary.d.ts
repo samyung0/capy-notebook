@@ -3,12 +3,15 @@ export type DrawingBoardOptions = {
   answerArea?: { label: string };
   board: 'question' | 'workspace';
   workspace?: {
-    materials: () => {
-      id: string;
-      kind: 'quiz' | 'flashcards';
-      title: string;
-      preview?: import('@/api/types').MaterialPreview;
-    }[];
+    /** `undefined` until the whole list has loaded. */
+    materials: () =>
+      | {
+          id: string;
+          kind: 'quiz' | 'flashcards';
+          title: string;
+          preview?: import('@/api/types').MaterialPreview;
+        }[]
+      | undefined;
     open: (materialId: string) => void;
     create: (
       kind: 'quiz' | 'flashcards'

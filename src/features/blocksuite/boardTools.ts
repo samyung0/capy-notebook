@@ -66,7 +66,7 @@ import { styleMap } from 'lit/directives/style-map.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import * as Y from 'yjs';
 import { BOARD_CATALOG } from '@/api/board.generated';
-import type { MaterialPreview } from '@/api/types';
+import type { MaterialPreview, QuizPreviewQuestion } from '@/api/types';
 import { userToast } from '@/components/ui/userToast';
 import {
   cardCountLabel,
@@ -1546,6 +1546,28 @@ const FILTER_FROM = 6;
  * two tabs), Link, and the workspace's quizzes and sets as thumbnail grids with a
  * New tile first. One 360 × 440 frame: Back, the title, a close; the body scrolls.
  * While KLIPY loads, a shimmer grid of the final shape stands in. */
+/** A quiz tile's pill: its first question's answer type. */
+function questionTypeLabel(type: QuizPreviewQuestion['type']) {
+  switch (type) {
+    case 'mcq':
+      return m.question_ui_multiple_choice();
+    case 'boolean':
+      return m.question_ui_true_false();
+    case 'short':
+      return m.question_ui_short_answer();
+    case 'matching':
+      return m.question_ui_matching();
+    case 'ordering':
+      return m.question_ui_ordering();
+    case 'open':
+      return m.question_ui_open_answer();
+    case 'gaps':
+      return m.question_ui_fill_in_the_gaps();
+    case 'drawing':
+      return m.question_ui_drawing();
+  }
+}
+
 class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
   static override styles = [
     POPPER_STYLES,
@@ -1767,6 +1789,8 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         align-items: stretch;
         gap: 4px;
         width: 100%;
+        /* Not the toolbar's 36px button: its content sets the height. */
+        height: auto;
         min-height: 96px;
         padding: 8px 10px 9px;
         border: 1px solid var(--affine-border-color);
@@ -1777,6 +1801,16 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
       }
       .card:hover {
         background: var(--affine-hover-color);
+      }
+      .card .pill {
+        align-self: flex-start;
+        padding: 3px 6px;
+        border-radius: 4px;
+        background: var(--affine-hover-color);
+        color: var(--affine-primary-color);
+        font-size: 10px;
+        font-weight: 500;
+        line-height: 1;
       }
       .card .t {
         overflow: hidden;
@@ -2273,20 +2307,25 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
     this.placed();
   }
 
-  /** The New tile: the workspace makes one, the card lands, its editor opens. */
+  /** The New tile: the workspace makes one, the card lands, its editor opens (also
+   * when the panel closed while the create was in flight: nothing made is left
+   * unplaced and unsaid). */
   private async createMaterial(kind: CardMaterialKind) {
     const workspace = workspaceOf(this.edgeless.std);
     if (!workspace || this.creating) return;
     this.creating = true;
     try {
       const made = await workspace.create(kind);
-      if (!this.isConnected) return;
       this.placeMaterial(kind, made.id, made.title);
       workspace.open(made.id);
     } catch (error) {
+      const failed =
+        kind === 'quiz'
+          ? m.drawing_board_create_failed()
+          : m.drawing_board_create_set_failed();
       userToast({
-        description: errorCopy(error, m.drawing_board_create_failed()),
-        title: m.drawing_board_create_failed(),
+        description: errorCopy(error, failed),
+        title: failed,
         variant: 'error',
       });
     } finally {
@@ -2295,10 +2334,9 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
   }
 
   private renderMaterials(kind: CardMaterialKind) {
-    const all =
-      workspaceOf(this.edgeless.std)
-        ?.materials()
-        .filter((material) => material.kind === kind) ?? [];
+    // Unknown while the workspace's list loads: the New tile alone, no "none yet".
+    const loaded = workspaceOf(this.edgeless.std)?.materials();
+    const all = loaded?.filter((material) => material.kind === kind) ?? [];
     const needle = this.filter.trim().toLowerCase();
     const listed = needle
       ? all.filter(({ title }) => title.toLowerCase().includes(needle))
@@ -2337,14 +2375,13 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
               type="button"
               @click=${() => this.placeMaterial(kind, id, title)}
             >
-              ${this.thumbnail(kind, preview)}
-              <span class="t">${title}</span>
+              ${this.thumbnail(kind, title, preview)}
               <span class="n">${this.count(kind, preview)}</span>
             </button>`
         )}
       </div>
       ${
-        all.length === 0
+        loaded && all.length === 0
           ? html`<p class="note">
               ${kind === 'quiz' ? m.drawing_board_no_quizzes() : m.drawing_board_no_flashcards()}
             </p>`
@@ -2353,20 +2390,31 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
     </div>`;
   }
 
-  /** The stored preview's first question stem, or first card's front. */
-  private thumbnail(kind: CardMaterialKind, preview?: MaterialPreview) {
-    if (kind === 'quiz')
-      return preview?.kind === 'quiz' && preview.first
-        ? html`<span class="q">${preview.first.stem}</span>`
-        : nothing;
+  /** A quiz tile's top, as the mock orders it: the stored preview's first question
+   * type as a pill, the title, then the stem; a set's: the stacked pair with the
+   * first card's front, then the title. */
+  private thumbnail(
+    kind: CardMaterialKind,
+    title: string,
+    preview?: MaterialPreview
+  ) {
+    const name = html`<span class="t">${title}</span>`;
+    if (kind === 'quiz') {
+      const first = preview?.kind === 'quiz' ? preview.first : undefined;
+      return first
+        ? html`<span class="pill">${questionTypeLabel(first.type)}</span>${name}
+            <span class="q">${first.stem}</span>`
+        : name;
+    }
     const front =
       preview?.kind === 'flashcards' && preview.first
         ? preview.first.front
         : m.drawing_board_card_front();
     return html`<span class="fc">
-      <span class="back"></span>
-      <span class="front">${front}</span>
-    </span>`;
+        <span class="back"></span>
+        <span class="front">${front}</span>
+      </span>
+      ${name}`;
   }
 
   private count(kind: CardMaterialKind, preview?: MaterialPreview) {
