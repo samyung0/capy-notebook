@@ -63,7 +63,7 @@ boards K6, K7 and K8 on the study Design canvas. Scanned submissions build on it
 
 ### 2. Note look: copy Notion's styles
 
-Started 2026-11-09 in session `notes-look` (Epo: notes follow Notion's style, and the canvas is unified with it, e.g. floating toolbars), mocks first.
+Started 2026-11-09 in session `notes-look` (Epo: notes follow Notion's style, and the canvas is unified with it, e.g. floating toolbars), mocks first: round 1 at https://claude.ai/artifact/GDgyxY9JYW73KGmdU6bCVP (S1/S2 toolbar surface, T1/T2 tables, H1/H2 block handle, M1/M2 slash menu, N1/N2 where the look lives, E1–E3 editor questions), Epo's picks pending. Base: `blocksuite-notes` from f5bb8f37e (main 7d09ff117 merged in).
 
 Epo's words: "note themeing/styling, e.g. copy notion styles so i think we dont have those
 floating toolbars on e.g. tables and stuff, and affine has a table view as well."
@@ -76,7 +76,7 @@ floating toolbars on e.g. tables and stuff, and affine has a table view as well.
 ## Queued, no order yet
 
 - **Workspace canvas** (`todo-canvas-workspace.md`): on hold since 2026-11-02. Was next after the study rework; ask Epo where it goes once drawing answers are in, since it reuses the same edgeless editor.
-- **The Plate cut to BlockSuite** (`todo-blocksuite-spike.md`): step 1 done on `blocksuite-notes`, which is 124 commits behind `main`. Comes with 2 or the canvas, not decided.
+- **The Plate cut to BlockSuite** (`todo-blocksuite-spike.md`): step 1 done on `blocksuite-notes`; `main` 7d09ff117 merged into it 2026-11-09 (f5bb8f37e, Epo "sure merge": one base holding the BlockSuite note editor and the board; vendored tree is main's, our vanilla-extract plugin dropped like main's, `/dev/blocksuite` and a mock note in the blocks layout checked in the browser, Rust test build and e2e left to CI) so notes-look builds on it. Comes with 2 or the canvas, not decided.
 - **Scanned submissions** (`todo-study-tracking.md`, "Later"): needs its own design round.
 - **Study leftovers** (`todo-study-tracking.md` §11 "Can wait"): AI insights, the app-wide Learning page redesign, "Copy to my workspace", sharing practice with the class, gamification.
 - **Handed over by Windows, not started** (`todo-study-tracking.md`, "Where it stands"): a question with no answers through `insert_child`; dotted question ids in `quiz.rs`; locks in `source_imports.go`; the `StartAssignment` expired-attempt lock; `DeleteAssignment` returning 404; a whole run's figure cap; sweep starvation.
