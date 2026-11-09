@@ -224,14 +224,14 @@ function ContextIcon({
     return notification.workspaceIconId ? (
       <img
         alt=""
-        className="size-9 rounded-button"
-        height={36}
+        className="size-7 rounded-button"
+        height={28}
         src={iconUrl(notification.workspaceIconId)}
-        width={36}
+        width={28}
       />
     ) : (
-      <span className="flex size-9 items-center justify-center rounded-button bg-tint-accent-1 text-tint-accent-1-fg">
-        <Icon name="workspaces" size={20} />
+      <span className="flex size-7 items-center justify-center rounded-button bg-tint-accent-1 text-tint-accent-1-fg">
+        <Icon name="workspaces" size={18} />
       </span>
     );
   }
@@ -239,7 +239,7 @@ function ContextIcon({
     case 'workspace_invite_accepted':
       return (
         <Avatar
-          className="size-9 text-[14.4px]"
+          className="size-7 text-[11.2px]"
           name={dataString(notification.data, 'memberName')}
           src={notification.memberAvatarUrl || undefined}
         />
@@ -248,16 +248,16 @@ function ContextIcon({
     case 'account_deletion_cancelled':
       return (
         <Avatar
-          className="size-9 text-[14.4px]"
+          className="size-7 text-[11.2px]"
           name={self?.name}
           src={self?.avatarUrl}
         />
       );
     case 'pending_edits_too_large':
       return (
-        <span className="flex size-9 items-center justify-center">
+        <span className="flex size-7 items-center justify-center">
           <FileIcon
-            className="size-6"
+            className="size-5"
             name={fileIconName({
               kind: 'unknown',
               name: dataString(notification.data, 'fileName'),
@@ -266,7 +266,7 @@ function ContextIcon({
         </span>
       );
     default:
-      return <LogoMark size={36} />;
+      return <LogoMark size={28} />;
   }
 }
 
@@ -291,8 +291,8 @@ export function NotificationItem({
 }) {
   const copy = notificationCopy(notification);
   return (
-    <span className={cn('t-body flex w-full gap-4 text-left', className)}>
-      <span className="relative shrink-0">
+    <span className={cn('t-body flex w-full gap-3 text-left', className)}>
+      <span className="relative mt-0.5 shrink-0">
         <ContextIcon notification={notification} self={self} />
         {!notification.readAt && (
           <span className="absolute -top-0.5 -right-0.5 size-2 animate-pulse rounded-full bg-solid-error ring-2 ring-surface" />
@@ -302,19 +302,22 @@ export function NotificationItem({
         className="min-w-0 flex-1"
         contentKey={JSON.stringify([copy.title, copy.body])}
       >
+        {/* Title and time share the first line; the body wraps under them. */}
         <span className="flex min-w-0 flex-col">
-          <span
-            className={cn(
-              'font-semibold transition-colors duration-(--motion-duration-quick)',
-              notification.readAt ? 'text-fg-secondary' : 'text-fg'
-            )}
-          >
-            {copy.title}
+          <span className="flex items-baseline gap-3">
+            <span
+              className={cn(
+                'min-w-0 flex-1 truncate font-semibold transition-colors duration-(--motion-duration-quick)',
+                notification.readAt ? 'text-fg-secondary' : 'text-fg'
+              )}
+            >
+              {copy.title}
+            </span>
+            <span className="t-meta shrink-0 text-fg-muted">
+              {timeLabel(notification.at)}
+            </span>
           </span>
           <span className="text-fg-secondary">{copy.body}</span>
-          <span className="t-meta mt-0.5 text-fg-muted">
-            {timeLabel(notification.at)}
-          </span>
         </span>
       </ContentSwap>
     </span>

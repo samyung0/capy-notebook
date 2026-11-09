@@ -7,7 +7,6 @@ import type { MenuItem } from '@/components/ui/Menu';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { iconUrl } from '@/lib/icon-catalog';
 
 /** The workspace's sections (Epo 2026-11-02, S2 and N1): Dashboard has no
  * panel; Files, Agent and Study each show theirs beside the rail. */
@@ -78,8 +77,7 @@ function RailItem({
 }
 
 /** The labelled icon rail on every workspace page from md, so iPads keep it:
- * Workspaces back to the list, the workspace's badge (it only says where you
- * are), the sections, and your avatar opening the workspace and account menu.
+ * Workspaces back to the list, the sections, and your avatar opening the workspace and account menu.
  * From lg the sections open panels; below, the Files dropdown and the pages. */
 export function WorkspaceRail({
   accountItems,
@@ -91,7 +89,7 @@ export function WorkspaceRail({
   accountItems: MenuItem[];
   active: WorkspaceSection;
   onSelect: (section: WorkspaceSection) => void;
-  workspace: Pick<Workspace, 'iconId' | 'name'>;
+  workspace: Pick<Workspace, 'name'>;
 }) {
   const { data: unread } = useUnreadNotificationCount({ errorBoundary: false });
   return (
@@ -105,12 +103,6 @@ export function WorkspaceRail({
         <Icon name="navigationBack" size={20} />
         <span>{m.nav_workspaces()}</span>
       </Link>
-      <img
-        alt={workspace.name}
-        className="mb-1.5 size-8.5 shrink-0 rounded-[9px]"
-        src={iconUrl(workspace.iconId)}
-        title={workspace.name}
-      />
       {SECTIONS.map((section) => (
         <RailItem
           active={active === section.value}

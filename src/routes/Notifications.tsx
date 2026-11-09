@@ -68,13 +68,13 @@ function Row({
   const item = <NotificationItem notification={n} self={self} />;
   if (!n.href)
     return (
-      <div className="flex w-full border-divider border-b px-3 py-2.5 last:border-0">
+      <div className="flex w-full border-divider border-b px-3 py-2 last:border-0">
         {item}
       </div>
     );
   return (
     <Link
-      className="flex w-full rounded-button border-divider border-b px-3 py-2.5 transition-[background-color,scale] last:border-0 hover:border-transparent hover:bg-surface-hover-bg active:scale-[0.99]"
+      className="flex w-full rounded-button border-divider border-b px-3 py-2 transition-[background-color,scale] last:border-0 hover:border-transparent hover:bg-surface-hover-bg active:scale-[0.99]"
       onClick={() => {
         if (!n.readAt) markRead(n.id);
       }}
@@ -120,6 +120,8 @@ export default function Notifications() {
           </Button>
           <IconButton
             asChild
+            // Square at the text button's height, so the two line up.
+            className="size-(--button-h-sm) p-0"
             icon="settings"
             label={m.notifications_settings()}
             size="sm"
@@ -134,7 +136,7 @@ export default function Notifications() {
             (fetchStatus === 'paused' ? (
               <QueryPausedState />
             ) : (
-              <SkeletonList className="mt-4" count={6} rowHeight={64} />
+              <SkeletonList className="mt-4" count={6} rowHeight={60} />
             ))}
           {data && !items.length && (
             <div className="flex flex-col items-center gap-2 px-6 py-16 text-center">

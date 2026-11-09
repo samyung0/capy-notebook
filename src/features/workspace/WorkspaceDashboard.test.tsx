@@ -52,6 +52,7 @@ const render = (canEdit = true) =>
         onUpload={() => undefined}
         workspace={{
           capabilities: { canEdit } as never,
+          iconId: 'ws-icon',
           id: 'ws',
           kind: page.kind,
           name: 'Biology 101',
