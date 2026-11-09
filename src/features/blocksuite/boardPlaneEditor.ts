@@ -135,6 +135,8 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   /** The label being typed, at its point on the plane; `id` when it's an old one. */
   let typing: { at: Vec; id?: string; text: string } | null = null;
   let frame = 0;
+  /** The menu's zoom counts from the card's scale on the canvas as 100% (Epo 2026-11-09). */
+  const cardPpu = model.ppu;
 
   const shell = openBoardEditor(gfx, model.id, {
     fit: () => fitMarks(),
@@ -183,6 +185,10 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     zoom: {
       in: () => zoomCentre(1.5),
       out: () => zoomCentre(1 / 1.5),
+      percent: {
+        reset: () => zoomCentre(cardPpu / view.ppu),
+        value: () => view.ppu / cardPpu,
+      },
     },
   });
   if (!shell) return;
