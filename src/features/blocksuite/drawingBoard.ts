@@ -375,7 +375,7 @@ export function mountDrawingBoard(
       : [
           ...views.get('edgeless'),
           shapeButtonTool,
-          ...sheetTools,
+          ...sheetTools(options.board),
           StampTool,
           ...drawn,
           noLatexMarkdown,

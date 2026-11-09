@@ -4624,6 +4624,13 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     places BlockSuite works out (from the ends, each an element id or a finite point; from
     the children) and never stores. Anything else throws a `BoardLoadError` with a
     `reason`.
+  - **Toolbar per board** (Epo 2026-11-09): the question board has Graphs, Charts and
+    Formulas slots after the shapes; the workspace canvas has Graphs, Formulas and
+    **Misc** (`sheetTools(board)`). Misc's button opens a panel above the toolbar
+    (`capy-misc-panel`, right-aligned, Shapes' look) of tiles in groups, each picked up
+    and dropped like a slot's piece (a finger's tap puts it in the view's middle); the
+    panel closes once something is down. Charts is its first group; the kinds the
+    board catalog adds for the workspace join it.
   - **Board catalog** (Epo 2026-11-09): `server/internal/boardcatalog` lists every
     canvas element and block a board may hold, which board takes each (`question`, a
     drawing answer's board; `workspace`, the workspace canvas) and the limits above.

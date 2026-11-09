@@ -5,7 +5,7 @@ import {
   ShapeTool,
 } from '@blocksuite/affine/gfx/shape';
 import { Bound } from '@blocksuite/affine/global/gfx';
-import { SignalWatcher } from '@blocksuite/affine/global/lit';
+import { SignalWatcher, WithDisposable } from '@blocksuite/affine/global/lit';
 import { LatexExtension } from '@blocksuite/affine/inlines/latex';
 import {
   type Color,
@@ -42,7 +42,15 @@ import {
   SeniorToolIdentifier,
 } from '@blocksuite/affine/widgets/edgeless-toolbar';
 import { Pen01Icon } from '@hugeicons/core-free-icons';
-import { css, html, LitElement, nothing, svg, type TemplateResult } from 'lit';
+import {
+  css,
+  html,
+  LitElement,
+  nothing,
+  svg,
+  type TemplateResult,
+  unsafeCSS,
+} from 'lit';
 import { property, state } from 'lit/decorators.js';
 import { classMap } from 'lit/directives/class-map.js';
 import { styleMap } from 'lit/directives/style-map.js';
@@ -50,6 +58,7 @@ import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import * as Y from 'yjs';
 import { m } from '@/i18n';
 import { addChart, type ChartElementModel, openChart } from './boardChart';
+import type { BoardKind } from './boardLoad';
 import {
   addPlane,
   fitCard,
@@ -719,6 +728,7 @@ function openPopper(
   const clip = element.parentElement;
   if (clip) clip.style.height = `${height}px`;
   Object.assign(element.style, style);
+  return element;
 }
 
 /** Leaving the tool closes its menu. Forgetting it at once lets a quick click open
@@ -1372,6 +1382,218 @@ class CapyFormulaSlot extends CapyPieceSlot {
   protected slotTip = { key: 'M', tip: m.drawing_board_formulas };
 }
 
+/** The workspace canvas's Misc panel (Epo 2026-11-09, A): tiles in groups, each a card
+ * picked up and dropped like a slot's piece; a finger's tap puts it in the view's
+ * middle. Groups join as their kinds land (board catalog). */
+const MISC_GROUPS: { label: () => string; tiles: Piece[] }[] = [
+  {
+    label: m.drawing_board_charts,
+    tiles: [...CHART_PIECES].reverse(),
+  },
+];
+
+class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
+  static override styles = [
+    POPPER_STYLES,
+    css`
+      :host {
+        background: var(--affine-background-overlay-panel-color);
+        border: 1px solid var(--affine-border-color);
+        border-bottom: 0;
+        border-radius: 10px 10px 0 0;
+        box-shadow: 0 -6px 20px rgb(0 0 0 / 6%);
+        padding: 10px 10px 8px;
+      }
+      h3 {
+        margin: 0 0 4px 4px;
+        color: var(--affine-text-secondary-color);
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .group + .group {
+        margin-top: 8px;
+      }
+      .tiles {
+        display: grid;
+        grid-template-columns: repeat(4, 76px);
+        gap: 4px;
+      }
+      .tile {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        height: 76px;
+        border-radius: 8px;
+        color: var(--affine-text-secondary-color);
+        font-size: 11.5px;
+        cursor: grab;
+      }
+      .tile:hover {
+        background: var(--affine-hover-color);
+        color: var(--affine-text-primary-color);
+      }
+      .art {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 40px;
+        filter: ${unsafeCSS(PIECE_SHADOW)};
+      }
+    `,
+  ];
+
+  @property({ attribute: false })
+  accessor edgeless!: BlockComponent;
+
+  private drag: EdgelessDraggableElementController<Piece> | undefined;
+  private touch: EdgelessDraggableElementController<Piece> | undefined;
+
+  override firstUpdated() {
+    const gfx = this.edgeless.std.get(GfxControllerIdentifier);
+    // Once something is down, the panel goes, as AFFiNE's template panel does.
+    const place = (kind: PieceKind, at: Vec) => {
+      placePiece(gfx, kind, at);
+      this.dispatchEvent(
+        new Event('placed', { bubbles: true, composed: true })
+      );
+    };
+    const options = (clickToDrag: boolean) => ({
+      clickToDrag,
+      edgeless: this.edgeless,
+      onDrop: (element: { data: Piece }, bound: Bound) =>
+        place(element.data.kind, [
+          bound.x + bound.w / 2,
+          bound.y + bound.h / 2,
+        ]),
+      onEnterOrLeaveScope: (overlay: OverlayLayer, isOutside?: boolean) => {
+        overlay.element.style.filter = isOutside ? 'none' : PIECE_SHADOW;
+      },
+      onOverlayCreated: (overlay: OverlayLayer) => {
+        overlay.element.style.filter = PIECE_SHADOW;
+      },
+      scopeElement: this,
+    });
+    this.drag = new EdgelessDraggableElementController(this, options(true));
+    this.touch = new EdgelessDraggableElementController(this, {
+      ...options(false),
+      onElementClick: ({ data }) =>
+        place(data.kind, [gfx.viewport.centerX, gfx.viewport.centerY]),
+    });
+  }
+
+  override render() {
+    return MISC_GROUPS.map(
+      ({ label, tiles }) =>
+        html`<div class="group">
+          <h3>${label()}</h3>
+          <div class="tiles">
+            ${tiles.map(
+              (piece) =>
+                html`<div
+                  class="tile"
+                  data-kind=${piece.kind}
+                  role="button"
+                  @mousedown=${(event: MouseEvent) =>
+                    this.drag?.onMouseDown(event, {
+                      data: piece,
+                      preview: html`${pieceArt(piece)}`,
+                    })}
+                  @touchstart=${(event: TouchEvent) => {
+                    event.preventDefault();
+                    this.touch?.onTouchStart(event, {
+                      data: piece,
+                      preview: html`${pieceArt(piece)}`,
+                    });
+                  }}
+                >
+                  <span class="art">${pieceArt(piece)}</span>
+                  ${PIECE_TIPS[piece.kind].tip()}
+                </div>`
+            )}
+          </div>
+        </div>`
+    );
+  }
+}
+
+/** Misc's toolbar button: four small pieces, opening its panel above the toolbar. */
+class CapyMiscButton extends EdgelessToolbarToolMixin(
+  SignalWatcher(LitElement)
+) {
+  static override styles = css`
+    :host {
+      display: block;
+      width: 56px;
+      height: 64px;
+    }
+    edgeless-toolbar-button {
+      display: block;
+      width: 100%;
+      height: 64px;
+    }
+    .box {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 64px;
+    }
+  `;
+
+  // Not a tool: it opens a panel.
+  override type = DefaultTool as never;
+
+  // @ts-expect-error the mixin defines it as a getter, typed as a property.
+  override get active() {
+    return !!this.popper;
+  }
+
+  private toggle() {
+    if (this.popper) {
+      closePopper(this);
+      this.requestUpdate();
+      return;
+    }
+    const panel = openPopper(this, 'capy-misc-panel', 300, {
+      marginLeft: 'auto',
+      marginRight: '0',
+      maxWidth: '100%',
+      width: 'auto',
+    });
+    panel.addEventListener('placed', () => {
+      closePopper(this);
+      this.requestUpdate();
+    });
+    this.requestUpdate();
+  }
+
+  override render() {
+    return html`<edgeless-toolbar-button
+      .active=${this.active}
+      .tooltip=${m.drawing_board_misc()}
+      .tooltipOffset=${5}
+      @click=${() => this.toggle()}
+    >
+      <div class="box">
+        <svg width="34" height="34" viewBox="0 0 40 40" aria-hidden="true">
+          <rect x="5" y="9" width="12" height="12" rx="2" fill="#1e96eb" />
+          <circle cx="29" cy="15" r="6.5" fill="#f6c343" />
+          <rect x="5" y="25" width="12" height="12" rx="2" fill="#e8798f" />
+          <rect
+            x="23"
+            y="25"
+            width="12"
+            height="12"
+            rx="2"
+            style="fill:var(--capy-navy, #173654)"
+          />
+        </svg>
+      </div>
+    </edgeless-toolbar-button>`;
+  }
+}
+
 const NEVER_MATCHES = /(?!)/;
 
 /** Note cards keep AFFiNE's inline LaTeX spec, which paragraphs read as they render,
@@ -1409,37 +1631,50 @@ const seniorTool = (
   },
 });
 
-/** The toolbar's slots, after the shapes. */
-export const sheetTools = [
-  seniorTool(
-    'capy-graphs',
-    m.drawing_board_graphs,
-    (block, toolbar) =>
-      html`<capy-graph-slot
-        .edgeless=${block}
-        .toolbarContainer=${toolbar}
-      ></capy-graph-slot>`
-  ),
-  seniorTool(
-    'capy-charts',
-    m.drawing_board_charts,
-    (block, toolbar) =>
-      html`<capy-chart-slot
-        data-own-width
-        .edgeless=${block}
-        .toolbarContainer=${toolbar}
-      ></capy-chart-slot>`
-  ),
-  seniorTool(
-    'capy-formulas',
-    m.drawing_board_formulas,
-    (block, toolbar) =>
-      html`<capy-formula-slot
-        .edgeless=${block}
-        .toolbarContainer=${toolbar}
-      ></capy-formula-slot>`
-  ),
-];
+const graphsTool = seniorTool(
+  'capy-graphs',
+  m.drawing_board_graphs,
+  (block, toolbar) =>
+    html`<capy-graph-slot
+      .edgeless=${block}
+      .toolbarContainer=${toolbar}
+    ></capy-graph-slot>`
+);
+const chartsTool = seniorTool(
+  'capy-charts',
+  m.drawing_board_charts,
+  (block, toolbar) =>
+    html`<capy-chart-slot
+      data-own-width
+      .edgeless=${block}
+      .toolbarContainer=${toolbar}
+    ></capy-chart-slot>`
+);
+const formulasTool = seniorTool(
+  'capy-formulas',
+  m.drawing_board_formulas,
+  (block, toolbar) =>
+    html`<capy-formula-slot
+      .edgeless=${block}
+      .toolbarContainer=${toolbar}
+    ></capy-formula-slot>`
+);
+const miscTool = seniorTool(
+  'capy-misc',
+  m.drawing_board_misc,
+  (block, toolbar) =>
+    html`<capy-misc-button
+      .edgeless=${block}
+      .toolbarContainer=${toolbar}
+    ></capy-misc-button>`
+);
+
+/** The toolbar's slots after the shapes: the question board keeps Charts as its own
+ * slot; the workspace canvas has them in Misc (Epo 2026-11-09). */
+export const sheetTools = (board: BoardKind) =>
+  board === 'question'
+    ? [graphsTool, chartsTool, formulasTool]
+    : [graphsTool, formulasTool, miscTool];
 
 for (const [tag, element] of [
   ['capy-shape-panel', CapyShapePanel],
@@ -1447,5 +1682,7 @@ for (const [tag, element] of [
   ['capy-graph-slot', CapyGraphSlot],
   ['capy-chart-slot', CapyChartSlot],
   ['capy-formula-slot', CapyFormulaSlot],
+  ['capy-misc-panel', CapyMiscPanel],
+  ['capy-misc-button', CapyMiscButton],
 ] as const)
   if (!customElements.get(tag)) customElements.define(tag, element);
