@@ -2500,6 +2500,8 @@
   "make_quiz_run_missing": "找不到此次读取",
   "make_quiz_ready_toast": "{title} 已准备好",
   "make_quiz_failed_toast": "无法读取 {title}",
+  "make_quiz_no_file_read": "无法读取你的文件",
+  "make_quiz_some_files_failed": "部分文件无法添加：{names}",
   "make_quiz_open": "打开",
   "make_quiz_stopped_credits": "读取题目时点数已用完，部分题目可能不完整。",
   "make_quiz_stopped_full": "测验已满，停在最后一道放得下的题目。",

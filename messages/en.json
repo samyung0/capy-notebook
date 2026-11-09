@@ -2500,6 +2500,8 @@
   "make_quiz_run_missing": "This run can't be found",
   "make_quiz_ready_toast": "{title} is ready",
   "make_quiz_failed_toast": "{title} couldn't be read",
+  "make_quiz_no_file_read": "Your files couldn't be read",
+  "make_quiz_some_files_failed": "Some files couldn't be added: {names}",
   "make_quiz_open": "Open",
   "make_quiz_stopped_credits": "You ran out of credits while reading the questions. Some questions may be incomplete.",
   "make_quiz_stopped_full": "The quiz is full, so it stops at the last question that fits.",
