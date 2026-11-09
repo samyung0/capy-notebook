@@ -7,8 +7,12 @@ export type DrawingBoardOptions = {
       id: string;
       kind: 'quiz' | 'flashcards';
       title: string;
+      preview?: import('@/api/types').MaterialPreview;
     }[];
     open: (materialId: string) => void;
+    create: (
+      kind: 'quiz' | 'flashcards'
+    ) => Promise<{ id: string; title: string }>;
   };
   fitPadding?: [number, number, number, number];
   onChange?: () => void;

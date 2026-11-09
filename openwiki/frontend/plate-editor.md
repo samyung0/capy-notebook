@@ -4627,9 +4627,12 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   - **Toolbar per board** (Epo 2026-11-09): the question board has Graphs, Charts and
     Formulas slots after the shapes; the workspace canvas has Graphs, Formulas and
     **Misc** (`sheetTools(board)`). Misc's button opens a panel above the toolbar
-    (`capy-misc-panel`, right-aligned, Shapes' look) of tiles in groups, each picked up
-    and dropped like a slot's piece (a finger's tap puts it in the view's middle); the
-    panel closes once something is down. Its groups:
+    (`capy-misc-panel`, right-aligned, Shapes' look): one 360 × 440 frame in every view
+    (Epo 2026-11-09, round 2, mock DVxJzY5A3XiYHKuqQPezST), with Back, the title or
+    KLIPY's search, and a close in its header and the body scrolling inside, so
+    switching views moves nothing; the home view is tiles in groups, each picked up and
+    dropped like a slot's piece (a finger's tap puts it in the view's middle); the panel
+    closes once something is down. Its groups:
     - **Diagrams:** Bar chart, Pie chart and **Mind map**, AFFiNE's own (`mindmap`
       element, its topics and ideas shapes it lays out), registered on the workspace
       canvas only and without its own toolbar button (`MindmapWithoutTool`); it
@@ -4637,20 +4640,31 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     - **Media:** **Emoji** opens a grid of 48 Noto Animated Emoji (Google, CC BY 4.0,
       credited on the Credits page), shipped in `public/emoji/noto` as 96 px animated
       WebP (about 5 MB together) with 64 px stills for the grid; a click puts one in
-      the view's middle. **GIF** searches KLIPY (`boardKlipy.ts`, `VITE_KLIPY_KEY`):
-      from the student's browser with an anonymous per-browser `customer_id`, the
-      `high` content filter, results in KLIPY's order and none removed but one off its
-      `*.klipy.com` hosts (its terms), "Search KLIPY" as the placeholder in every language (KLIPY's required attribution) and "Powered by KLIPY" under them; a GIF without a
-      size places at its file's own, one whose link passes the stored limit says it
-      can't be placed;
+      the view's middle. **GIF** and **Sticker** open KLIPY's view on its GIFs or
+      Stickers tab (`boardKlipy.ts` `klipyMedia(kind, …)`, the same API under `/gifs`
+      and `/stickers`, `VITE_KLIPY_KEY`): from the student's browser with an anonymous
+      per-browser `customer_id`, the `high` content filter, results in KLIPY's order and
+      none removed but one off its `*.klipy.com` hosts (its terms), "Search KLIPY" as
+      the placeholder in every language (KLIPY's required attribution) and "Powered by
+      KLIPY" under them; while a search loads, a shimmer grid of the final shape stands
+      in (16:10 cells for GIFs, squares on a checker for stickers, which have no
+      background on the canvas either); a GIF without a size places at its file's own,
+      one whose link passes the stored limit says it can't be placed;
       the placed GIF stays KLIPY's link, as its terms ask. Without a key the view
       says search is off; an uploaded GIF is an ordinary image. **Link** takes a web
       address or YouTube link: a video shows its poster (`i.ytimg.com`) with a play
       mark, anything else its host and address; a double click opens it in a new tab.
-    - **From the workspace:** **Quiz** and **Flashcards** list the workspace's own
-      (`WorkspaceCanvas` lends them through `workspace` in the mount options) and
-      place a card with its title; a double click opens it in the workspace, and a
-      card whose material the workspace no longer lists shows "can't be opened".
+    - **From the workspace:** **Quiz** and **Flashcards** show the workspace's own as a
+      two-column grid of thumbnails from each material's stored preview (the first
+      question's stem, the title, the question count; a set's first card front on a
+      stacked pair and its card count), from the Files list (`useOwnedMaterials`, which
+      carries previews; `WorkspaceCanvas` lends them through `workspace` in the mount
+      options), with a filter field from six items. A **New** tile comes first: the page
+      creates the quiz or set unfiled in the workspace, named as the Create page names
+      one (`nextGenerateTitle`), places its card and opens it. A click places a card
+      (360 × 420 for a quiz, 360 × 260 for a set); a double click on its header opens
+      it in the workspace, and a card whose material the workspace no longer lists
+      shows "can't be opened".
     Emoji and GIFs are `affine:embed-capy-picture` blocks (an `<img>` that plays by
     itself), links `affine:embed-capy-link` and quiz or set cards
     `affine:embed-capy-material` (`boardPicture.ts`, `boardCards.ts`): the surface

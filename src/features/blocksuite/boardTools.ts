@@ -45,7 +45,12 @@ import {
   EdgelessToolbarToolMixin,
   SeniorToolIdentifier,
 } from '@blocksuite/affine/widgets/edgeless-toolbar';
-import { ArrowLeft04Icon, Pen01Icon } from '@hugeicons/core-free-icons';
+import {
+  ArrowLeft04Icon,
+  Cancel01Icon,
+  Pen01Icon,
+  PlusSignIcon,
+} from '@hugeicons/core-free-icons';
 import {
   css,
   html,
@@ -61,12 +66,18 @@ import { styleMap } from 'lit/directives/style-map.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import * as Y from 'yjs';
 import { BOARD_CATALOG } from '@/api/board.generated';
+import type { MaterialPreview } from '@/api/types';
 import { userToast } from '@/components/ui/userToast';
+import {
+  cardCountLabel,
+  questionCountLabel,
+} from '@/features/materials/countLabels';
 import {
   youtubeVideoId,
   youtubeWatchUrl,
 } from '@/features/materials/youtubeUrl';
 import { m } from '@/i18n';
+import { errorCopy } from '@/lib/errors';
 import {
   addCard,
   type CardMaterialKind,
@@ -75,7 +86,12 @@ import {
   workspaceOf,
 } from './boardCards';
 import { addChart, type ChartElementModel, openChart } from './boardChart';
-import { type KlipyGif, klipyEnabled, klipyGifs } from './boardKlipy';
+import {
+  type KlipyGif,
+  type KlipyKind,
+  klipyEnabled,
+  klipyMedia,
+} from './boardKlipy';
 import type { BoardKind } from './boardLoad';
 import { addPicture } from './boardPicture';
 import {
@@ -1449,11 +1465,17 @@ class CapyFormulaSlot extends CapyPieceSlot {
 /** The workspace canvas's Misc panel (Epo 2026-11-09, A): tiles in groups, each a card
  * picked up and dropped like a slot's piece; a finger's tap puts it in the view's
  * middle. Groups join as their kinds land (board catalog). */
-type MiscView = 'emoji' | 'gif' | 'link' | 'quiz' | 'flashcards';
-/** A tile: a card picked up like a slot's piece, or a picker it opens. */
+type MiscView = 'emoji' | 'klipy' | 'link' | 'quiz' | 'flashcards';
+/** A tile: a card picked up like a slot's piece, or a picker it opens (KLIPY's on
+ * one of its two tabs). */
 type MiscTile =
   | { piece: Piece }
-  | { art: TemplateResult; label: () => string; view: MiscView };
+  | {
+      art: TemplateResult;
+      klipy?: KlipyKind;
+      label: () => string;
+      view: MiscView;
+    };
 const MISC_GROUPS: { label: () => string; tiles: MiscTile[] }[] = [
   {
     label: m.drawing_board_diagrams,
@@ -1477,8 +1499,15 @@ const MISC_GROUPS: { label: () => string; tiles: MiscTile[] }[] = [
       },
       {
         art: svg`<svg width="40" height="32" viewBox="0 0 40 32" aria-hidden="true"><rect x="2" y="2" width="36" height="28" rx="4" fill="#7f5fd6"/><text x="9" y="21" font-size="11" font-weight="700" font-family="monospace" fill="#fff">GIF</text></svg>`,
+        klipy: 'gifs',
         label: m.drawing_board_gif,
-        view: 'gif',
+        view: 'klipy',
+      },
+      {
+        art: svg`<svg width="34" height="34" viewBox="0 0 28 28" aria-hidden="true"><path d="M4 6a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v9l-9 9H7a3 3 0 0 1-3-3Z" fill="#f2c94c"/><path d="M24 15l-9 9v-6a3 3 0 0 1 3-3Z" fill="#e0b335"/></svg>`,
+        klipy: 'stickers',
+        label: m.drawing_board_sticker,
+        view: 'klipy',
       },
       {
         art: svg`<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#173654" stroke-width="1.6" stroke-linecap="round" aria-hidden="true" style="stroke:var(--capy-navy, #173654)"><path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/></svg>`,
@@ -1504,19 +1533,41 @@ const MISC_GROUPS: { label: () => string; tiles: MiscTile[] }[] = [
   },
 ];
 
+/** The panel's one frame (Epo 2026-11-09, Misc round 2): the same size in every
+ * view, so switching views moves nothing. */
+const PANEL_WIDTH = 360;
+const PANEL_HEIGHT = 440;
+/** A placed quiz or set: room for the runner (todo-workspace-canvas-storage.md). */
+const CARD_SIZE: Record<CardMaterialKind, [number, number]> = {
+  flashcards: [360, 260],
+  quiz: [360, 420],
+};
+/** The grid shows a filter field from this many quizzes or sets. */
+const FILTER_FROM = 6;
+
+/** The Misc panel: the chart and mind map pieces, picked up like a slot's piece,
+ * and the pickers (Epo 2026-11-09): Emoji, GIF and Sticker (KLIPY, one search with
+ * two tabs), Link, and the workspace's quizzes and sets as thumbnail grids with a
+ * New tile first. One 360 × 440 frame: Back, the title, a close; the body scrolls.
+ * While KLIPY loads, a shimmer grid of the final shape stands in. */
 class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
   static override styles = [
     POPPER_STYLES,
     css`
       :host {
+        display: flex;
+        flex-direction: column;
+        width: ${PANEL_WIDTH}px;
+        height: ${PANEL_HEIGHT}px;
+        max-width: 100vw;
+        box-sizing: border-box;
+        padding: 10px 10px 8px;
         background: var(--affine-background-overlay-panel-color);
         border: 1px solid var(--affine-border-color);
         border-bottom: 0;
         border-radius: 10px 10px 0 0;
         box-shadow: 0 -6px 20px rgb(0 0 0 / 6%);
-        padding: 10px 10px 8px;
-        width: 336px;
-        box-sizing: border-box;
+        color: var(--affine-text-primary-color);
       }
       h3 {
         margin: 0 0 4px 4px;
@@ -1524,12 +1575,17 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         font-size: 12px;
         font-weight: 600;
       }
+      .body {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+      }
       .group + .group {
         margin-top: 8px;
       }
       .tiles {
         display: grid;
-        grid-template-columns: repeat(4, 76px);
+        grid-template-columns: repeat(4, 1fr);
         gap: 4px;
       }
       .tile {
@@ -1538,7 +1594,6 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         align-items: center;
         justify-content: center;
         gap: 6px;
-        width: 76px;
         height: 76px;
         border-radius: 8px;
         color: var(--affine-text-secondary-color);
@@ -1556,25 +1611,37 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         display: flex;
         align-items: center;
         justify-content: center;
-        height: 40px;
+        width: 40px;
+        height: 36px;
+      }
+      .tile[data-kind] .art {
         filter: ${unsafeCSS(PIECE_SHADOW)};
       }
       .head {
         display: flex;
         align-items: center;
         gap: 6px;
-        margin-bottom: 8px;
+        min-height: 32px;
+        margin-bottom: 6px;
       }
       .head button {
         width: 32px;
         height: 32px;
+        flex: none;
       }
-      .head h3 {
+      .head .title {
+        flex: 1;
+        min-width: 0;
         margin: 0;
-        font-size: 13px;
+        overflow: hidden;
         color: var(--affine-text-primary-color);
+        font-size: 13px;
+        font-weight: 600;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
-      .head input {
+      .head input,
+      .filter {
         flex: 1;
         min-width: 0;
         height: 32px;
@@ -1587,65 +1654,195 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         font-size: 13px;
         outline: none;
       }
-      .head input:focus {
+      .head input:focus,
+      .filter:focus {
         border-color: var(--affine-primary-color);
+      }
+      .filter {
+        width: 100%;
+        box-sizing: border-box;
+        margin-bottom: 8px;
+      }
+      .tabs {
+        display: flex;
+        gap: 2px;
+        margin: 0 0 8px;
+        border-bottom: 1px solid var(--affine-border-color);
+      }
+      .tabs button {
+        width: auto;
+        height: auto;
+        margin-bottom: -1px;
+        padding: 6px 10px 7px;
+        border-bottom: 2px solid transparent;
+        border-radius: 0;
+        color: var(--affine-text-secondary-color);
+        font-size: 12.5px;
+        font-weight: 600;
+      }
+      .tabs button[aria-selected='true'] {
+        border-bottom-color: var(--affine-primary-color);
+        color: var(--affine-text-primary-color);
       }
       .emoji {
         display: grid;
         grid-template-columns: repeat(8, 1fr);
         gap: 2px;
-        max-height: 196px;
-        overflow-y: auto;
       }
       .emoji button {
-        width: 38px;
-        height: 38px;
+        width: 100%;
+        aspect-ratio: 1;
       }
       .emoji img {
         width: 30px;
         height: 30px;
       }
-      .gifs {
+      .cells {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
-        gap: 4px;
-        height: 196px;
-        overflow-y: auto;
+        gap: 6px;
         align-content: start;
       }
-      .gifs button {
+      .cells > * {
         width: 100%;
-        height: 96px;
+        aspect-ratio: 16 / 10;
         padding: 0;
+        border-radius: 6px;
         overflow: hidden;
       }
-      .gifs img {
+      .cells.stickers > * {
+        aspect-ratio: 1;
+      }
+      .cells img {
         width: 100%;
         height: 100%;
         object-fit: cover;
       }
+      .cells.stickers img {
+        object-fit: contain;
+      }
+      .cells.stickers button {
+        background-color: var(--affine-background-primary-color);
+        background-image:
+          linear-gradient(45deg, var(--affine-hover-color) 25%, transparent 25%),
+          linear-gradient(-45deg, var(--affine-hover-color) 25%, transparent 25%),
+          linear-gradient(45deg, transparent 75%, var(--affine-hover-color) 75%),
+          linear-gradient(-45deg, transparent 75%, var(--affine-hover-color) 75%);
+        background-size: 12px 12px;
+        background-position:
+          0 0,
+          0 6px,
+          6px -6px,
+          -6px 0;
+      }
+      .skeleton {
+        background: linear-gradient(
+          100deg,
+          var(--affine-hover-color) 30%,
+          var(--affine-background-overlay-panel-color) 50%,
+          var(--affine-hover-color) 70%
+        );
+        background-size: 200% 100%;
+        animation: shine 1.4s infinite;
+      }
+      @keyframes shine {
+        to {
+          background-position: -200% 0;
+        }
+      }
       .note {
-        grid-column: 1 / -1;
-        padding: 16px 4px;
+        padding: 28px 10px;
         color: var(--affine-text-secondary-color);
         font-size: 12.5px;
+        text-align: center;
       }
-      .rows {
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+        align-content: start;
+      }
+      .cards > * {
+        min-width: 0;
+      }
+      .card {
         display: flex;
         flex-direction: column;
-        max-height: 196px;
-        overflow-y: auto;
-      }
-      .rows button {
-        justify-content: flex-start;
+        align-items: stretch;
+        gap: 4px;
         width: 100%;
-        height: 36px;
-        padding: 0 10px;
-        overflow: hidden;
+        min-height: 96px;
+        padding: 8px 10px 9px;
+        border: 1px solid var(--affine-border-color);
+        border-radius: 8px;
+        background: var(--affine-background-primary-color);
         color: var(--affine-text-primary-color);
-        font-size: 13px;
+        text-align: left;
+      }
+      .card:hover {
+        background: var(--affine-hover-color);
+      }
+      .card .t {
+        overflow: hidden;
+        font-size: 12.5px;
+        font-weight: 600;
         text-overflow: ellipsis;
         white-space: nowrap;
+      }
+      .card .q {
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        overflow: hidden;
+        font-size: 11.5px;
+        line-height: 1.4;
+      }
+      .card .n {
+        margin-top: auto;
+        color: var(--affine-text-secondary-color);
+        font-size: 11px;
+      }
+      .card.new {
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        border-style: dashed;
+        color: var(--affine-text-secondary-color);
+        font-size: 12px;
+      }
+      .card.new .plus {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: var(--affine-hover-color);
+        color: var(--affine-primary-color);
+      }
+      .fc {
+        position: relative;
+        height: 48px;
+      }
+      .fc span {
+        position: absolute;
+        inset: 0;
+        padding: 6px 8px;
+        border: 1px solid var(--affine-border-color);
+        border-radius: 6px;
+        background: var(--affine-background-overlay-panel-color);
+        font-size: 11.5px;
+        line-height: 1.35;
+        overflow: hidden;
+      }
+      .fc span.back {
+        z-index: 0;
+        border-color: #e8798f;
+        background: #e8798f;
+        opacity: 0.55;
+        transform: translate(5px, -5px) rotate(3deg);
+      }
+      .fc span.front {
+        z-index: 1;
       }
       form.link {
         display: flex;
@@ -1695,14 +1892,21 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
   @state()
   private accessor view: MiscView | null = null;
   @state()
-  private accessor gifs: KlipyGif[] | 'loading' | 'failed' = 'loading';
+  private accessor klipyKind: KlipyKind = 'gifs';
+  @state()
+  private accessor found: KlipyGif[] | 'loading' | 'failed' = 'loading';
   @state()
   private accessor linkError = false;
+  @state()
+  private accessor filter = '';
+  @state()
+  private accessor creating = false;
 
   private drag: EdgelessDraggableElementController<Piece> | undefined;
   private touch: EdgelessDraggableElementController<Piece> | undefined;
   private search: AbortController | undefined;
   private searchTimer: ReturnType<typeof setTimeout> | undefined;
+  private query = '';
 
   private get gfx() {
     return this.edgeless.std.get(GfxControllerIdentifier);
@@ -1772,9 +1976,9 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
 
   private placingGif = false;
 
-  /** A GIF at KLIPY's size for it, or the file's own when KLIPY gives none. A link
-   * past what a board stores can't be placed; the picker still shows it (KLIPY's
-   * terms: no result removed). */
+  /** A GIF or sticker at KLIPY's size for it, or the file's own when KLIPY gives
+   * none. A link past what a board stores can't be placed; the picker still shows
+   * it (KLIPY's terms: no result removed). */
   private async placeGif(gif: KlipyGif) {
     // One at a time: a size-less GIF waits for its file, and a second click then
     // would place it twice.
@@ -1816,34 +2020,46 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         ref,
       },
       [width, height],
-      240
+      this.klipyKind === 'stickers' ? 160 : 240
     );
   }
 
-  private open(view: MiscView) {
+  private open(view: MiscView, klipy?: KlipyKind) {
     this.view = view;
     this.linkError = false;
-    if (view === 'gif') this.findGifs('');
+    this.filter = '';
+    if (view === 'klipy') {
+      this.klipyKind = klipy ?? 'gifs';
+      this.query = '';
+      this.find('');
+    }
   }
 
-  private findGifs(query: string) {
+  private pick(kind: KlipyKind) {
+    if (this.klipyKind === kind) return;
+    this.klipyKind = kind;
+    this.find(this.query, true);
+  }
+
+  private find(query: string, now = false) {
+    this.query = query;
     clearTimeout(this.searchTimer);
     this.searchTimer = setTimeout(
       () => {
         this.search?.abort();
         const search = new AbortController();
         this.search = search;
-        this.gifs = 'loading';
-        klipyGifs(query, search.signal).then(
+        this.found = 'loading';
+        klipyMedia(this.klipyKind, query, search.signal).then(
           (found) => {
-            if (!search.signal.aborted) this.gifs = found;
+            if (!search.signal.aborted) this.found = found;
           },
           () => {
-            if (!search.signal.aborted) this.gifs = 'failed';
+            if (!search.signal.aborted) this.found = 'failed';
           }
         );
       },
-      query ? 300 : 0
+      query && !now ? 300 : 0
     );
   }
 
@@ -1873,15 +2089,16 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
     }
     return html`<button
       class="tile"
-      data-view=${tile.view}
+      data-view=${tile.klipy ?? tile.view}
       type="button"
-      @click=${() => this.open(tile.view)}
+      @click=${() => this.open(tile.view, tile.klipy)}
     >
       <span class="art">${tile.art}</span>
       ${tile.label()}
     </button>`;
   }
 
+  /** Every view's header: Back, the title or KLIPY's search, and a close. */
   private head(title: () => string, search?: boolean) {
     return html`<div class="head">
       <button
@@ -1900,44 +2117,81 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
               aria-label=${m.drawing_board_gif_search()}
               placeholder=${m.drawing_board_gif_search()}
               type="search"
+              .value=${this.query}
               @input=${(event: Event) =>
-                this.findGifs((event.target as HTMLInputElement).value)}
+                this.find((event.target as HTMLInputElement).value)}
             />`
-          : html`<h3>${title()}</h3>`
+          : html`<h3 class="title">${title()}</h3>`
       }
+      ${this.closeButton()}
     </div>`;
   }
 
-  private renderGifs() {
+  private closeButton() {
+    return html`<button
+      aria-label=${m.drawing_board_close()}
+      title=${m.drawing_board_close()}
+      type="button"
+      @click=${() =>
+        this.dispatchEvent(
+          new Event('closed', { bubbles: true, composed: true })
+        )}
+    >
+      ${hugeIcon(Cancel01Icon)}
+    </button>`;
+  }
+
+  private renderKlipy() {
+    const stickers = this.klipyKind === 'stickers';
+    const tabs = html`<div class="tabs" role="tablist">
+      ${(['gifs', 'stickers'] as const).map(
+        (kind) =>
+          html`<button
+            aria-selected=${this.klipyKind === kind}
+            role="tab"
+            type="button"
+            @click=${() => this.pick(kind)}
+          >
+            ${kind === 'gifs' ? m.drawing_board_gifs_tab() : m.drawing_board_stickers_tab()}
+          </button>`
+      )}
+    </div>`;
     if (!klipyEnabled())
-      return html`<div class="gifs">
-        <p class="note">${m.drawing_board_gif_off()}</p>
-      </div>`;
-    const gifs = this.gifs;
-    return html`<div class="gifs">
+      return html`${tabs}
+        <div class="body"><p class="note">${m.drawing_board_gif_off()}</p></div>`;
+    const found = this.found;
+    const cells = classMap({ cells: true, stickers });
+    return html`${tabs}
+      <div class="body">
         ${
-          gifs === 'loading'
-            ? nothing
-            : gifs === 'failed'
+          found === 'loading'
+            ? html`<div class=${cells} aria-busy="true">
+                ${Array.from({ length: 9 }, () => html`<div class="skeleton"></div>`)}
+              </div>`
+            : found === 'failed'
               ? html`<p class="note">${m.drawing_board_gif_failed()}</p>`
-              : gifs.length
-                ? gifs.map(
-                    (gif) =>
-                      html`<button
-                        aria-label=${gif.title}
-                        title=${gif.title}
-                        type="button"
-                        @click=${() => this.placeGif(gif)}
-                      >
-                        <img
-                          alt=""
-                          loading="lazy"
-                          referrerpolicy="no-referrer"
-                          src=${gif.preview.url}
-                        />
-                      </button>`
-                  )
-                : html`<p class="note">${m.drawing_board_gif_none()}</p>`
+              : found.length
+                ? html`<div class=${cells}>
+                    ${found.map(
+                      (gif) =>
+                        html`<button
+                          aria-label=${gif.title}
+                          title=${gif.title}
+                          type="button"
+                          @click=${() => this.placeGif(gif)}
+                        >
+                          <img
+                            alt=""
+                            loading="lazy"
+                            referrerpolicy="no-referrer"
+                            src=${gif.preview.url}
+                          />
+                        </button>`
+                    )}
+                  </div>`
+                : html`<p class="note">
+                    ${stickers ? m.drawing_board_sticker_none() : m.drawing_board_gif_none()}
+                  </p>`
         }
       </div>
       <div class="credit">${m.drawing_board_gif_credit()}</div>`;
@@ -1978,7 +2232,8 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
   }
 
   private renderLink() {
-    return html`<form
+    return html`<div class="body">
+      <form
         class="link"
         @submit=${(event: SubmitEvent) => {
           event.preventDefault();
@@ -2003,66 +2258,155 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         this.linkError
           ? html`<p class="error">${m.drawing_board_link_invalid()}</p>`
           : nothing
-      }`;
+      }
+    </div>`;
+  }
+
+  /** A quiz or set card at the view's middle, then the panel goes. */
+  private placeMaterial(kind: CardMaterialKind, id: string, title: string) {
+    addCard(
+      this.gfx,
+      MATERIAL_FLAVOUR,
+      {
+        kind,
+        materialId: id,
+        title: title.slice(0, BOARD_CATALOG.limits.CARD_TITLE_MAX),
+      },
+      CARD_SIZE[kind]
+    );
+    this.placed();
+  }
+
+  /** The New tile: the workspace makes one, the card lands, its editor opens. */
+  private async createMaterial(kind: CardMaterialKind) {
+    const workspace = workspaceOf(this.edgeless.std);
+    if (!workspace || this.creating) return;
+    this.creating = true;
+    try {
+      const made = await workspace.create(kind);
+      if (!this.isConnected) return;
+      this.placeMaterial(kind, made.id, made.title);
+      workspace.open(made.id);
+    } catch (error) {
+      userToast({
+        description: errorCopy(error, m.drawing_board_create_failed()),
+        title: m.drawing_board_create_failed(),
+        variant: 'error',
+      });
+    } finally {
+      this.creating = false;
+    }
   }
 
   private renderMaterials(kind: CardMaterialKind) {
-    const listed =
+    const all =
       workspaceOf(this.edgeless.std)
         ?.materials()
         .filter((material) => material.kind === kind) ?? [];
-    if (!listed.length)
-      return html`<p class="note">
-        ${kind === 'quiz' ? m.drawing_board_no_quizzes() : m.drawing_board_no_flashcards()}
-      </p>`;
-    return html`<div class="rows">
-      ${listed.map(
-        ({ id, title }) =>
-          html`<button
-            title=${title}
-            type="button"
-            @click=${() => {
-              addCard(
-                this.gfx,
-                MATERIAL_FLAVOUR,
-                {
-                  kind,
-                  materialId: id,
-                  title: title.slice(0, BOARD_CATALOG.limits.CARD_TITLE_MAX),
-                },
-                [260, 84]
-              );
-              this.placed();
-            }}
-          >
-            ${title}
-          </button>`
-      )}
+    const needle = this.filter.trim().toLowerCase();
+    const listed = needle
+      ? all.filter(({ title }) => title.toLowerCase().includes(needle))
+      : all;
+    const newTile = html`<button
+      class="card new"
+      ?disabled=${this.creating}
+      type="button"
+      @click=${() => this.createMaterial(kind)}
+    >
+      <span class="plus">${hugeIcon(PlusSignIcon)}</span>
+      ${kind === 'quiz' ? m.drawing_board_new_quiz() : m.drawing_board_new_set()}
+    </button>`;
+    return html`<div class="body">
+      ${
+        all.length >= FILTER_FROM
+          ? html`<input
+              aria-label=${m.drawing_board_filter()}
+              class="filter"
+              placeholder=${m.drawing_board_filter()}
+              type="search"
+              .value=${this.filter}
+              @input=${(event: Event) => {
+                this.filter = (event.target as HTMLInputElement).value;
+              }}
+            />`
+          : nothing
+      }
+      <div class="cards">
+        ${newTile}
+        ${listed.map(
+          ({ id, preview, title }) =>
+            html`<button
+              class="card"
+              title=${title}
+              type="button"
+              @click=${() => this.placeMaterial(kind, id, title)}
+            >
+              ${this.thumbnail(kind, preview)}
+              <span class="t">${title}</span>
+              <span class="n">${this.count(kind, preview)}</span>
+            </button>`
+        )}
+      </div>
+      ${
+        all.length === 0
+          ? html`<p class="note">
+              ${kind === 'quiz' ? m.drawing_board_no_quizzes() : m.drawing_board_no_flashcards()}
+            </p>`
+          : nothing
+      }
     </div>`;
+  }
+
+  /** The stored preview's first question stem, or first card's front. */
+  private thumbnail(kind: CardMaterialKind, preview?: MaterialPreview) {
+    if (kind === 'quiz')
+      return preview?.kind === 'quiz' && preview.first
+        ? html`<span class="q">${preview.first.stem}</span>`
+        : nothing;
+    const front =
+      preview?.kind === 'flashcards' && preview.first
+        ? preview.first.front
+        : m.drawing_board_card_front();
+    return html`<span class="fc">
+      <span class="back"></span>
+      <span class="front">${front}</span>
+    </span>`;
+  }
+
+  private count(kind: CardMaterialKind, preview?: MaterialPreview) {
+    if (kind === 'quiz')
+      return questionCountLabel(
+        preview?.kind === 'quiz' ? preview.questionCount : 0
+      );
+    return cardCountLabel(
+      preview?.kind === 'flashcards' ? preview.cardCount : 0
+    );
   }
 
   override render() {
     if (this.view === 'emoji')
       return html`${this.head(m.drawing_board_emoji)}
-        <div class="emoji">
-          ${EMOJI.map(
-            (code) =>
-              html`<button
-                aria-label=${emojiText(code)}
-                type="button"
-                @click=${() =>
-                  this.placePicture(
-                    { kind: 'emoji', label: emojiText(code), ref: code },
-                    [1, 1],
-                    96
-                  )}
-              >
-                <img alt="" loading="lazy" src=${emojiStillUrl(code)} />
-              </button>`
-          )}
+        <div class="body">
+          <div class="emoji">
+            ${EMOJI.map(
+              (code) =>
+                html`<button
+                  aria-label=${emojiText(code)}
+                  type="button"
+                  @click=${() =>
+                    this.placePicture(
+                      { kind: 'emoji', label: emojiText(code), ref: code },
+                      [1, 1],
+                      96
+                    )}
+                >
+                  <img alt="" loading="lazy" src=${emojiStillUrl(code)} />
+                </button>`
+            )}
+          </div>
         </div>`;
-    if (this.view === 'gif')
-      return html`${this.head(m.drawing_board_gif, true)}${this.renderGifs()}`;
+    if (this.view === 'klipy')
+      return html`${this.head(m.drawing_board_gif, true)}${this.renderKlipy()}`;
     if (this.view === 'link')
       return html`${this.head(m.drawing_board_link)}${this.renderLink()}`;
     if (this.view === 'quiz' || this.view === 'flashcards')
@@ -2070,21 +2414,29 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         this.view === 'quiz' ? m.drawing_board_quiz : m.drawing_board_flashcards
       )}${this.renderMaterials(this.view)}`;
     const workspace = workspaceOf(this.edgeless.std);
-    return MISC_GROUPS.filter(
-      ({ tiles }) =>
-        workspace ||
-        !tiles.some(
-          (tile) =>
-            'view' in tile &&
-            (tile.view === 'quiz' || tile.view === 'flashcards')
-        )
-    ).map(
-      ({ label, tiles }) =>
-        html`<div class="group">
-          <h3>${label()}</h3>
-          <div class="tiles">${tiles.map((tile) => this.renderTile(tile))}</div>
-        </div>`
-    );
+    return html`<div class="head">
+        <h3 class="title">${m.drawing_board_misc()}</h3>
+        ${this.closeButton()}
+      </div>
+      <div class="body">
+        ${MISC_GROUPS.filter(
+          ({ tiles }) =>
+            workspace ||
+            !tiles.some(
+              (tile) =>
+                'view' in tile &&
+                (tile.view === 'quiz' || tile.view === 'flashcards')
+            )
+        ).map(
+          ({ label, tiles }) =>
+            html`<div class="group">
+              <h3>${label()}</h3>
+              <div class="tiles">
+                ${tiles.map((tile) => this.renderTile(tile))}
+              </div>
+            </div>`
+        )}
+      </div>`;
   }
 }
 
@@ -2129,14 +2481,20 @@ class CapyMiscButton extends EdgelessToolbarToolMixin(
     const panel = openPopper(
       this,
       'capy-misc-panel',
-      300,
-      { marginLeft: 'auto', marginRight: '0', maxWidth: '100%', width: 'auto' },
+      PANEL_HEIGHT,
+      {
+        marginLeft: 'auto',
+        marginRight: '0',
+        maxWidth: '100%',
+        width: `${PANEL_WIDTH}px`,
+      },
       () => this.requestUpdate()
     );
-    panel.addEventListener('placed', () => {
-      closePopper(this);
-      this.requestUpdate();
-    });
+    for (const done of ['placed', 'closed'])
+      panel.addEventListener(done, () => {
+        closePopper(this);
+        this.requestUpdate();
+      });
     this.requestUpdate();
   }
 

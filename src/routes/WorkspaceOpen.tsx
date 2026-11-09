@@ -1108,6 +1108,7 @@ function WorkspaceOpen() {
               <WorkspaceCanvas
                 onOpenMaterial={(id) => setOpenItem({ id, kind: 'material' })}
                 workspaceId={workspaceId}
+                workspaceName={ws.name}
               />
             </Suspense>
             {/* Phones have no rail to leave by. Back floats on the board's top left,

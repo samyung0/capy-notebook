@@ -1,9 +1,12 @@
 import { isString, PREF_KEYS, readPref, writePref } from '@/lib/localPrefs';
 import { isKlipyMedia } from './boardPictureData';
 
-/** KLIPY's GIF search for the workspace canvas (Epo 2026-11-09): called from the
- * student's browser and shown from KLIPY's links as its terms ask, results in its
- * order, with the strictest content filter. Its ads are off on the key. */
+/** KLIPY's GIF and sticker search for the workspace canvas (Epo 2026-11-09): called
+ * from the student's browser and shown from KLIPY's links as its terms ask, results in
+ * its order, with the strictest content filter. Its ads are off on the key. */
+
+/** KLIPY's two kinds, the same API under each path (stickers come as PNG and WebP). */
+export type KlipyKind = 'gifs' | 'stickers';
 
 const KEY = import.meta.env.VITE_KLIPY_KEY as string | undefined;
 const API = 'https://api.klipy.com/api/v1';
@@ -46,8 +49,9 @@ const fits = (rendition: Rendition | undefined) =>
 
 const webp = (item: Item, size: string) => fits(item.file?.[size]?.webp);
 
-/** Trending when `query` is empty, else the search's first page. */
-export async function klipyGifs(
+/** Trending when `query` is empty, else the search's first page, of GIFs or stickers. */
+export async function klipyMedia(
+  kind: KlipyKind,
   query: string,
   signal: AbortSignal
 ): Promise<KlipyGif[]> {
@@ -63,7 +67,7 @@ export async function klipyGifs(
   if (trimmed) params.set('q', trimmed);
   const route = trimmed ? 'search' : 'trending';
   const response = await fetch(
-    `${API}/${encodeURIComponent(KEY)}/gifs/${route}?${params}`,
+    `${API}/${encodeURIComponent(KEY)}/${kind}/${route}?${params}`,
     { signal }
   );
   if (!response.ok) throw new Error(`KLIPY ${response.status}`);

@@ -5,7 +5,7 @@ import {
   saveWorkspaceCanvas,
   workspaceCanvas,
 } from '@/api/canvas';
-import { useMaterials } from '@/api/hooks';
+import { useCreateMaterial, useOwnedMaterials } from '@/api/hooks';
 import { userToast } from '@/components/ui/userToast';
 import {
   boardFile,
@@ -13,6 +13,7 @@ import {
   gzipBoard,
 } from '@/features/blocksuite/boardAsset';
 import { mountDrawingBoard } from '@/features/blocksuite/drawingBoard';
+import { nextGenerateTitle } from '@/features/workspace/generateTitle';
 import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
 import {
@@ -41,17 +42,30 @@ const CANVAS_BOARD_MAX = BOARD_CATALOG.limits.CANVAS_BOARD_MAX;
 export default function WorkspaceCanvas({
   onOpenMaterial,
   workspaceId,
+  workspaceName,
 }: {
   onOpenMaterial: (materialId: string) => void;
   workspaceId: string;
+  /** For a new quiz's or set's default title. */
+  workspaceName: string;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState<string | null>(null);
-  // The canvas mounts once and reads the latest of both when it needs them.
-  const { data: materials } = useMaterials(workspaceId, {
-    errorBoundary: false,
+  // The canvas mounts once and reads the latest of these when it needs them. The
+  // Files list carries each quiz's and set's stored preview, for the panel's grid.
+  const { data: listed } = useOwnedMaterials({
+    kinds: ['quiz', 'flashcards'],
+    scope: 'member',
+    workspaceIds: [workspaceId],
   });
-  const latest = useRef({ materials, onOpenMaterial });
+  const materials = listed?.pages.flatMap((page) => page.items);
+  const { mutateAsync: createMaterial } = useCreateMaterial(workspaceId);
+  const latest = useRef({
+    createMaterial,
+    materials,
+    onOpenMaterial,
+    workspaceName,
+  });
   const mounted = useRef<{ refreshCards: () => void } | null>(null);
   // Cards redraw only when the list changes, not on each render of the page.
   useEffect(() => {
@@ -60,7 +74,9 @@ export default function WorkspaceCanvas({
   }, [materials]);
   useEffect(() => {
     latest.current.onOpenMaterial = onOpenMaterial;
-  }, [onOpenMaterial]);
+    latest.current.createMaterial = createMaterial;
+    latest.current.workspaceName = workspaceName;
+  }, [onOpenMaterial, createMaterial, workspaceName]);
   useEffect(() => {
     const host = container.current;
     if (!host) return;
@@ -204,11 +220,27 @@ export default function WorkspaceCanvas({
         saved,
         // Its quiz and flashcard cards (Epo 2026-11-09).
         workspace: {
+          // The New tile: an unfiled quiz or set, named as the Create page names
+          // one ("Biology 101 quiz 2").
+          create: async (kind) => {
+            const { materials: current = [], workspaceName: name } =
+              latest.current;
+            const made = await latest.current.createMaterial({
+              kind,
+              title: nextGenerateTitle(
+                kind,
+                name,
+                current.map(({ title }) => title)
+              ),
+            });
+            return { id: made.id, title: made.title };
+          },
           materials: () =>
-            (latest.current.materials ?? []).flatMap(({ id, title, type }) =>
-              type === 'quiz' || type === 'flashcards'
-                ? [{ id, kind: type, title }]
-                : []
+            (latest.current.materials ?? []).flatMap(
+              ({ id, kind, preview, title }) =>
+                kind === 'quiz' || kind === 'flashcards'
+                  ? [{ id, kind, preview, title }]
+                  : []
             ),
           open: (id) => latest.current.onOpenMaterial(id),
         },

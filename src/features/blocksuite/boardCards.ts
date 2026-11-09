@@ -20,6 +20,7 @@ import {
 } from '@blocksuite/affine/store';
 import { css, html, nothing } from 'lit';
 import { literal } from 'lit/static-html.js';
+import type { MaterialPreview } from '@/api/types';
 import { youtubeWatchUrl } from '@/features/materials/youtubeUrl';
 import { m } from '@/i18n';
 import { copiesOnCanvas } from './boardClipboard';
@@ -78,10 +79,18 @@ const MaterialBlockSchema = defineBlockSchema({
   toModel: () => new MaterialBlockModel(),
 });
 
-/** What the workspace page lends the canvas: its quizzes and sets, and opening one. */
+/** What the workspace page lends the canvas: its quizzes and sets (with their stored
+ * previews, for the panel's thumbnails), opening one, and making a new one (Epo
+ * 2026-11-09: the New tile creates it unfiled, places it and opens its editor). */
 export type WorkspaceLinks = {
-  materials: () => { id: string; kind: CardMaterialKind; title: string }[];
+  materials: () => {
+    id: string;
+    kind: CardMaterialKind;
+    title: string;
+    preview?: MaterialPreview;
+  }[];
   open: (materialId: string) => void;
+  create: (kind: CardMaterialKind) => Promise<{ id: string; title: string }>;
 };
 const lent = new WeakMap<BlockStdScope, WorkspaceLinks>();
 /** The material cards on screen, redrawn when the workspace's list changes. */
