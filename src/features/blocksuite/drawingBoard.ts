@@ -34,6 +34,18 @@ import { ConnectorStoreExtension } from '@blocksuite/affine/gfx/connector/store'
 import { ConnectorViewExtension } from '@blocksuite/affine/gfx/connector/view';
 import { GroupStoreExtension } from '@blocksuite/affine/gfx/group/store';
 import { GroupViewExtension } from '@blocksuite/affine/gfx/group/view';
+import {
+  MindMapDragExtension,
+  MindMapIndicatorOverlay,
+  MindMapInteraction,
+  MindMapView,
+  MindmapDomRendererExtension,
+  MindmapElementRendererExtension,
+  mindmapToolbarExtension,
+  shapeMindmapToolbarExtension,
+} from '@blocksuite/affine/gfx/mindmap';
+import { MindmapStoreExtension } from '@blocksuite/affine/gfx/mindmap/store';
+import { MindmapViewExtension } from '@blocksuite/affine/gfx/mindmap/view';
 import { NoteViewExtension as GfxNoteViewExtension } from '@blocksuite/affine/gfx/note/view';
 import { PointerViewExtension } from '@blocksuite/affine/gfx/pointer/view';
 import { ShapeStoreExtension } from '@blocksuite/affine/gfx/shape/store';
@@ -134,6 +146,7 @@ const stores = new StoreExtensionManager([
   FootnoteStoreExtension,
   LinkStoreExtension,
   InlinePresetStoreExtension,
+  MindmapStoreExtension,
 ]);
 /** AFFiNE's inline LaTeX specs, which note paragraphs need to render, without its
  * LaTeX node and editor menu: the board keeps `$$` as text, and those two load KaTeX
@@ -178,6 +191,26 @@ const VIEWS = [
   ViewportOverlayViewExtension,
 ];
 const views = new ViewExtensionManager(VIEWS);
+
+/** AFFiNE's mind map without its own toolbar button: the workspace canvas places one
+ * from Misc (Epo 2026-11-09). Its effects (custom elements) still run. */
+class MindmapWithoutTool extends MindmapViewExtension {
+  override setup(context: ViewExtensionContext) {
+    ViewExtensionProvider.prototype.setup.call(this, context);
+    context.register([
+      MindmapElementRendererExtension,
+      MindmapDomRendererExtension,
+      mindmapToolbarExtension,
+      shapeMindmapToolbarExtension,
+      MindMapView,
+      MindMapDragExtension,
+      MindMapIndicatorOverlay,
+      MindMapInteraction,
+    ]);
+  }
+}
+/** The workspace canvas's: the question board's and what only it may hold. */
+const workspaceViews = new ViewExtensionManager([...VIEWS, MindmapWithoutTool]);
 /** A teacher's view: pan and zoom, with no tools or selection toolbar. */
 const READ_ONLY_TOOLS = new Set<unknown>([
   EdgelessAutoConnectViewExtension,
@@ -373,7 +406,9 @@ export function mountDrawingBoard(
     extensions: readOnly
       ? [...readOnlyViews.get('edgeless'), ...drawn]
       : [
-          ...views.get('edgeless'),
+          ...(options.board === 'workspace' ? workspaceViews : views).get(
+            'edgeless'
+          ),
           shapeButtonTool,
           ...sheetTools(options.board),
           StampTool,

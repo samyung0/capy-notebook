@@ -67,6 +67,12 @@ export const BOARD_CATALOG = {
         "question",
         "workspace"
       ]
+    },
+    {
+      "type": "mindmap",
+      "boards": [
+        "workspace"
+      ]
     }
   ],
   "blocks": [

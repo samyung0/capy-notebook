@@ -1,4 +1,7 @@
-import { DefaultTool } from '@blocksuite/affine/blocks/surface';
+import {
+  DefaultTool,
+  EdgelessCRUDIdentifier,
+} from '@blocksuite/affine/blocks/surface';
 import { ConnectorTool } from '@blocksuite/affine/gfx/connector';
 import {
   EdgelessShapeToolButton,
@@ -13,6 +16,7 @@ import {
   DEFAULT_CONNECTOR_MODE,
   DefaultTheme,
   isTransparent,
+  MindmapStyle,
   PointStyle,
   type ShapeName,
   ShapeType,
@@ -992,6 +996,7 @@ type PieceKind =
   | 'cart'
   | 'deriv'
   | 'int'
+  | 'mindmap'
   | 'pie'
   | 'polar'
   | 'sqrt'
@@ -1020,6 +1025,7 @@ const PIECE_TIPS: Record<PieceKind, { key?: string; tip: () => string }> = {
   cart: { key: 'G', tip: m.drawing_board_coordinate_plane },
   deriv: { tip: m.drawing_board_derivative },
   int: { tip: m.drawing_board_integral },
+  mindmap: { tip: m.drawing_board_mind_map },
   pie: { key: '⇧ B', tip: m.drawing_board_pie_chart },
   polar: { key: '⇧ G', tip: m.drawing_board_polar_plane },
   sqrt: { tip: m.drawing_board_square_root },
@@ -1151,6 +1157,38 @@ const pieceArt = (piece: Piece) =>
     )}</svg>`
   );
 
+/** AFFiNE's starting mind map, a topic and three ideas, centred on a point; its own
+ * layout places the ideas. */
+function addMindmap(gfx: GfxController, [cx, cy]: Vec) {
+  const root = { h: 50, w: 145 };
+  const idea = { h: 35, w: 80 };
+  const left = cx - (root.w + 120 + idea.w) / 2;
+  return gfx.std.get(EdgelessCRUDIdentifier).addElement('mindmap', {
+    children: {
+      children: [0, 1, 2].map((i) => ({
+        children: [],
+        text: m.drawing_board_mind_map_idea(),
+        xywh: `[${left + root.w + 120},${cy - idea.h / 2 + (i - 1) * 50},${idea.w},${idea.h}]`,
+      })),
+      text: m.drawing_board_mind_map_topic(),
+      xywh: `[${left},${cy - root.h / 2},${root.w},${root.h}]`,
+    },
+    style: MindmapStyle.ONE,
+  }) as string;
+}
+
+const MINDMAP_PIECE: Piece = {
+  body: `<path d="M17 20C22 20 22 8 28 8M17 20h11M17 20c5 0 5 12 11 12" fill="none" stroke="#173654" stroke-width="2"/><rect x="1" y="14" width="18" height="12" rx="3" fill="#1e96eb"/><rect x="27" y="3" width="13" height="9" rx="2.5" fill="#f6c343"/><rect x="27" y="15.5" width="13" height="9" rx="2.5" fill="#f6c343"/><rect x="27" y="28" width="13" height="9" rx="2.5" fill="#f6c343"/>`,
+  dy: -8,
+  h: 40,
+  kind: 'mindmap',
+  r: 0,
+  viewBox: '0 0 41 40',
+  w: 41,
+  x: 28,
+  y: 20,
+};
+
 /** Puts down the card a piece stands for, centred where it was dropped. */
 export function placePiece(gfx: GfxController, kind: PieceKind, [cx, cy]: Vec) {
   const centred = (w: number, h: number) =>
@@ -1161,6 +1199,8 @@ export function placePiece(gfx: GfxController, kind: PieceKind, [cx, cy]: Vec) {
   } else if (kind === 'bar' || kind === 'pie') {
     const { h, w } = NEW_CHART[kind];
     finishPlacing(gfx, addChart(gfx, centred(w, h), kind));
+  } else if (kind === 'mindmap') {
+    finishPlacing(gfx, addMindmap(gfx, [cx, cy]));
   } else {
     const latex = FORMULA_STARTS[kind];
     if (latex) openFormula(gfx, { at: [cx, cy], latex });
@@ -1387,8 +1427,8 @@ class CapyFormulaSlot extends CapyPieceSlot {
  * middle. Groups join as their kinds land (board catalog). */
 const MISC_GROUPS: { label: () => string; tiles: Piece[] }[] = [
   {
-    label: m.drawing_board_charts,
-    tiles: [...CHART_PIECES].reverse(),
+    label: m.drawing_board_diagrams,
+    tiles: [...CHART_PIECES].reverse().concat(MINDMAP_PIECE),
   },
 ];
 

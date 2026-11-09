@@ -99,4 +99,15 @@ describe('checkSavedBoard', () => {
       )
     ).toBe('chart fields');
   });
+
+  it('holds what the catalog lists for each board', () => {
+    const mindmap = withElement({
+      children: {},
+      layoutType: 0,
+      style: 1,
+      type: 'mindmap',
+    });
+    expect(() => checkSavedBoard(mindmap, 'workspace')).not.toThrow();
+    expect(reason(mindmap)).toBe('element type mindmap');
+  });
 });

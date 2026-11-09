@@ -59,6 +59,8 @@ func Get() Catalog {
 			{Type: "plane", Boards: both},
 			{Type: "chart", Boards: both},
 			{Type: "formula", Boards: both},
+			// AFFiNE's mind map: its topics and ideas are shapes it lays out.
+			{Type: "mindmap", Boards: []string{Workspace}},
 		},
 		Blocks: []Block{
 			{Flavour: "affine:page", Parents: []string{}, Boards: both},

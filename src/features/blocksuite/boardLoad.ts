@@ -90,6 +90,14 @@ function elementProblem(
     return fields.children && typeof fields.children === 'object'
       ? null
       : 'group children';
+  // A mind map's place comes from its nodes, shapes it lays out by style and layout.
+  if (type === 'mindmap')
+    return fields.children &&
+      typeof fields.children === 'object' &&
+      [1, 2, 3, 4].includes(fields.style as number) &&
+      finite(fields.layoutType)
+      ? null
+      : 'mindmap fields';
   if (!isPlace(fields.xywh)) return `${type} without a place`;
   if (type === 'formula')
     return typeof fields.latex === 'string' && fields.latex.length <= LATEX_MAX
