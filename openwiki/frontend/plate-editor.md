@@ -4660,6 +4660,19 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     `checkSavedBoard` and `drawBoardPreview` take the board, and the limits in
     `boardData.ts` come from it. The server keeps a saved board as opaque bytes, so
     the browser is the only reader for now.
+  - **Holding to the catalog after load** (Epo 2026-11-09): the load check runs
+    once, so a mounted board also drops what its catalog leaves out whatever adds it
+    (a paste, a duplicate, later a peer): `keepToCatalog` in `drawingBoard.ts` deletes
+    such an element or block right after it lands, so a mind map copied from the
+    workspace canvas and pasted into an answer goes with its node shapes, as does a capy
+    embed. A saved mind map's nodes are checked too (`mindmapFits`): each a shape on
+    the canvas no other mind map or group holds, under a parent among its own nodes,
+    one root, no cycle, layout 0–2. Emoji, GIFs and cards copy, paste and duplicate on
+    the workspace canvas through a clipboard config each (`boardClipboard.ts`), which
+    re-adds only a block the load check would take (`embedFits`, the same check), since
+    any page can write the clipboard. Their renderers check again what they use: a link
+    opens only as http(s), an emoji shows only from the list, a GIF only from KLIPY's
+    hosts (`KLIPY_MEDIA_HOSTS`, which the image policy lists too), rotation as a number.
 - **Preview (`boardPreview.ts`):** `drawBoardPreview(saved, { width, height }, board)` draws a
   saved board as an SVG string from its data, for lists, results and marking views
   (Epo 2026-11-06: what's on it, not every detail). It never loads the editor: it imports

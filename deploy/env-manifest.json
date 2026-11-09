@@ -993,7 +993,7 @@
     },
     "VITE_KLIPY_KEY": {
       "kind": "variable",
-      "targets": ["local"]
+      "targets": ["workflow", "build"]
     },
     "VITE_BENCH_ROUTES": {
       "kind": "variable",

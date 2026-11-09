@@ -7,7 +7,7 @@ import {
   withElement,
   withElements,
 } from './boardFixture';
-import { BoardLoadError, checkSavedBoard } from './boardLoad';
+import { BoardLoadError, checkSavedBoard, embedFits } from './boardLoad';
 
 const reason = (update: Uint8Array) => {
   try {
@@ -148,6 +148,31 @@ describe('checkSavedBoard', () => {
         topic: { index: 'a0', parent: 'idea' },
       })
     ).toBe('mindmap nodes');
+    expect(
+      nodes({
+        idea: { index: 'a0', parent: 'toString' },
+        topic: { index: 'a0' },
+      })
+    ).toBe('mindmap nodes');
+  });
+
+  it('takes a pasted emoji, GIF or card only as the load check would', () => {
+    const place = { rotate: 0, xywh: '[0,0,96,96]' };
+    expect(
+      embedFits('affine:embed-capy-picture', {
+        ...place,
+        kind: 'emoji',
+        label: '🧠',
+        ref: '1f9e0',
+      })
+    ).toBe(true);
+    expect(
+      embedFits('affine:embed-capy-link', {
+        ...place,
+        url: 'javascript:alert(1)',
+        videoId: '',
+      })
+    ).toBe(false);
   });
 
   it('opens the workspace canvas pictures and cards it can show', () => {

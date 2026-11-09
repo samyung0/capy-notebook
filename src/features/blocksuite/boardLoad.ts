@@ -190,7 +190,7 @@ function mindmapFits(
       typeof index !== 'string' ||
       (collapsed !== undefined && typeof collapsed !== 'boolean') ||
       (parent !== undefined &&
-        (typeof parent !== 'string' || !(parent in children)))
+        (typeof parent !== 'string' || !Object.hasOwn(children, parent)))
     )
       return false;
     owned.add(id);
@@ -209,40 +209,40 @@ function mindmapFits(
 }
 
 /** A picture: an emoji by its code points, or a GIF by its KLIPY link. */
-function pictureFits(block: Fields) {
-  const kind = block['prop:kind'];
-  const ref = block['prop:ref'];
-  const label = block['prop:label'];
+function pictureFits(props: Fields) {
+  const kind = props['kind'];
+  const ref = props['ref'];
+  const label = props['label'];
   return (
     typeof ref === 'string' &&
     ref.length <= BOARD_CATALOG.limits.PICTURE_REF_MAX &&
     typeof label === 'string' &&
     label.length <= BOARD_CATALOG.limits.PICTURE_LABEL_MAX &&
-    finite(block['prop:rotate']) &&
+    finite(props['rotate']) &&
     ((kind === 'emoji' && isListedEmoji(ref)) ||
       (kind === 'klipy' && isKlipyMedia(ref)))
   );
 }
 
 /** A link card: a web address, and a YouTube video's id when it is one. */
-function linkFits(block: Fields) {
-  const url = block['prop:url'];
-  const videoId = block['prop:videoId'];
+function linkFits(props: Fields) {
+  const url = props['url'];
+  const videoId = props['videoId'];
   return (
     typeof url === 'string' &&
     url.length <= BOARD_CATALOG.limits.LINK_URL_MAX &&
     isWebAddress(url) &&
     typeof videoId === 'string' &&
     (videoId === '' || YOUTUBE_ID.test(videoId)) &&
-    finite(block['prop:rotate'])
+    finite(props['rotate'])
   );
 }
 
 /** A material card: a workspace quiz or set by id, with its title. */
-function materialFits(block: Fields) {
-  const kind = block['prop:kind'];
-  const id = block['prop:materialId'];
-  const title = block['prop:title'];
+function materialFits(props: Fields) {
+  const kind = props['kind'];
+  const id = props['materialId'];
+  const title = props['title'];
   return (
     (kind === 'quiz' || kind === 'flashcards') &&
     typeof id === 'string' &&
@@ -250,13 +250,32 @@ function materialFits(block: Fields) {
     id.length <= BOARD_CATALOG.limits.MATERIAL_ID_MAX &&
     typeof title === 'string' &&
     title.length <= BOARD_CATALOG.limits.CARD_TITLE_MAX &&
-    finite(block['prop:rotate'])
+    finite(props['rotate'])
   );
+}
+
+/** A capy embed's own props (no `prop:` prefix) as its renderer expects them, with a
+ * place: the load check and the workspace canvas's paste both ask this. */
+export function embedFits(flavour: string, props: Fields) {
+  const fits = {
+    'affine:embed-capy-link': linkFits,
+    'affine:embed-capy-material': materialFits,
+    'affine:embed-capy-picture': pictureFits,
+  }[flavour];
+  return !!fits && fits(props) && isPlace(props.xywh);
 }
 
 /** A saved board's update, checked before anything mounts: one page with one canvas,
  * and only what the board's tools make, each within its limits. Its blocks and canvas
  * elements as plain data, for the preview. */
+/** A saved block's props without their `prop:` prefix. */
+const ownProps = (block: Fields): Fields =>
+  Object.fromEntries(
+    Object.entries(block)
+      .filter(([key]) => key.startsWith('prop:'))
+      .map(([key, value]) => [key.slice(5), value])
+  );
+
 export function checkSavedBoard(update: Uint8Array, board: BoardKind) {
   const { elements: kinds, parents } = holds(board);
   const doc = new Y.Doc();
@@ -295,12 +314,13 @@ export function checkSavedBoard(update: Uint8Array, board: BoardKind) {
     if ((block['sys:flavour'] === 'affine:page') === parentOf.has(id))
       throw new BoardLoadError('block tree');
     const flavour = block['sys:flavour'] as string;
-    if (flavour === 'affine:embed-capy-picture' && !pictureFits(block))
-      throw new BoardLoadError('picture fields');
-    if (flavour === 'affine:embed-capy-link' && !linkFits(block))
-      throw new BoardLoadError('link fields');
-    if (flavour === 'affine:embed-capy-material' && !materialFits(block))
-      throw new BoardLoadError('material card fields');
+    if (
+      flavour.startsWith('affine:embed-capy-') &&
+      !embedFits(flavour, ownProps(block))
+    )
+      throw new BoardLoadError(
+        `${flavour.slice('affine:embed-capy-'.length)} fields`
+      );
     const onCanvas =
       flavour === 'affine:note' ||
       flavour.startsWith('affine:embed-capy-') ||
