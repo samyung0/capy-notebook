@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import { fromBase64 } from './base64';
-import { SAVED, withCanvasBlock, withElement } from './boardFixture';
+import {
+  SAVED,
+  withCanvasBlock,
+  withElement,
+  withElements,
+} from './boardFixture';
 import { BoardLoadError, checkSavedBoard } from './boardLoad';
 
 const reason = (update: Uint8Array) => {
@@ -12,6 +17,21 @@ const reason = (update: Uint8Array) => {
     return error instanceof BoardLoadError ? error.reason : String(error);
   }
 };
+
+/** A topic and one idea, as the workspace canvas's mind map saves them. */
+const MIND_MAP = [
+  { id: 'topic', type: 'shape', xywh: '[0,0,120,40]' },
+  { id: 'idea', type: 'shape', xywh: '[200,0,120,40]' },
+  {
+    children: {
+      idea: { index: 'a0', parent: 'topic' },
+      topic: { index: 'a0' },
+    },
+    layoutType: 0,
+    style: 1,
+    type: 'mindmap',
+  },
+];
 
 describe('checkSavedBoard', () => {
   it('opens what the board saved', () => {
@@ -101,14 +121,33 @@ describe('checkSavedBoard', () => {
   });
 
   it('holds what the catalog lists for each board', () => {
-    const mindmap = withElement({
-      children: {},
-      layoutType: 0,
-      style: 1,
-      type: 'mindmap',
-    });
+    const mindmap = withElements(...MIND_MAP);
     expect(() => checkSavedBoard(mindmap, 'workspace')).not.toThrow();
     expect(reason(mindmap)).toBe('element type mindmap');
+  });
+
+  it("checks a mind map's nodes against the canvas", () => {
+    const nodes = (children: Record<string, unknown>) => {
+      try {
+        checkSavedBoard(
+          withElements(MIND_MAP[0], MIND_MAP[1], { ...MIND_MAP[2], children }),
+          'workspace'
+        );
+        return null;
+      } catch (error) {
+        return error instanceof BoardLoadError ? error.reason : String(error);
+      }
+    };
+    expect(
+      nodes({ idea: { index: 'a0', parent: 'topic' }, topic: { index: 'a0' } })
+    ).toBeNull();
+    expect(nodes({ gone: { index: 'a0' } })).toBe('mindmap nodes');
+    expect(
+      nodes({
+        idea: { index: 'a0', parent: 'topic' },
+        topic: { index: 'a0', parent: 'idea' },
+      })
+    ).toBe('mindmap nodes');
   });
 
   it('opens the workspace canvas pictures and cards it can show', () => {

@@ -23,6 +23,8 @@ export const PREF_KEYS = {
   /** The Get started list, written only by the browser that ran onboarding
    * (gettingStarted.ts). */
   gettingStarted: 'capy.gettingStarted',
+  /** The anonymous id KLIPY's GIF search asks per user, for this browser (boardKlipy.ts). */
+  klipyCustomer: 'capy.klipy.customer',
   /** Progress maps whose finish animation has played: `topic:<id>:<count>`, `workspace:<id>:<count>`. */
   mapFinishPlayed: 'capy.map.finishPlayed',
   /** A note's toolbar is shown in Edit (Q461; no key: hidden). */

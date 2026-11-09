@@ -118,7 +118,7 @@ import {
   type WorkspaceLinks,
 } from './boardCards';
 import { closeBoardEditor } from './boardEditorShell';
-import { type BoardKind, checkSavedBoard } from './boardLoad';
+import { type BoardKind, checkSavedBoard, holds } from './boardLoad';
 import { BoardMenu } from './boardMenu';
 import { PictureStoreExtension, pictureViews } from './boardPicture';
 import './boardPlaneEditor';
@@ -262,6 +262,33 @@ class NoFrameOverlay extends Overlay {
   static override overlayName = 'frame';
   override clear() {}
   override render() {}
+}
+
+/** A board holds only its catalog's kinds whatever adds one (a paste, a duplicate, a
+ * peer): the question board drops a pasted mind map or capy embed, which its load
+ * check would refuse (Epo 2026-11-09). A mind map goes with its node shapes. */
+function keepToCatalog(gfx: GfxController, board: BoardKind) {
+  const { elements, parents } = holds(board);
+  const { doc } = gfx;
+  const surface = gfx.surface;
+  const added = surface?.elementAdded.subscribe(({ id }) => {
+    const type = surface.getElementById(id)?.type;
+    if (type && !elements.has(type))
+      queueMicrotask(
+        () => surface.getElementById(id) && surface.deleteElement(id)
+      );
+  });
+  const blocks = doc.slots.blockUpdated.subscribe((change) => {
+    if (change.type !== 'add' || parents.has(change.flavour)) return;
+    queueMicrotask(() => {
+      const model = doc.getModelById(change.id);
+      if (model) doc.deleteBlock(model);
+    });
+  });
+  return () => {
+    added?.unsubscribe();
+    blocks.unsubscribe();
+  };
 }
 
 const surfaceOf = (gfx: GfxController) =>
@@ -451,6 +478,7 @@ export function mountDrawingBoard(
   );
   const board = container.querySelector('.capy-board');
   const gfx = std.get(GfxControllerIdentifier);
+  const unguard = readOnly ? null : keepToCatalog(gfx, options.board);
   // Top right, left of any Done the page puts there: undo, redo and zoom, so the
   // bottom row holds only the toolbar (Epo 2026-11-08). A teacher's has zoom only.
   const zoomTo = (zoom: number) =>
@@ -796,6 +824,7 @@ export function mountDrawingBoard(
       historyUpdates.unsubscribe();
       zoomUpdates.unsubscribe();
       unwatchTool();
+      unguard?.();
       document.removeEventListener('keydown', slotKeys);
       menu.dispose();
       if (onChange) store.spaceDoc.off('update', onChange);

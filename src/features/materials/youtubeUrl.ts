@@ -13,7 +13,7 @@ export const YOUTUBE_PLAYER_ALLOW =
   'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
 
 /** A video id from a pasted link (watch, youtu.be, embed, shorts) or the id itself. */
-const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/;
+export const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/;
 const WWW_PREFIX = /^www\./;
 
 export function youtubeVideoId(input: string): string | null {

@@ -1,3 +1,7 @@
+import { BOARD_CATALOG } from '@/api/board.generated';
+import { isString, PREF_KEYS, readPref, writePref } from '@/lib/localPrefs';
+import { isKlipyMedia } from './boardPictureData';
+
 /** KLIPY's GIF search for the workspace canvas (Epo 2026-11-09): called from the
  * student's browser and shown from KLIPY's links as its terms ask, results in its
  * order, with the strictest content filter. Its ads are off on the key. */
@@ -5,7 +9,6 @@
 const KEY = import.meta.env.VITE_KLIPY_KEY as string | undefined;
 const API = 'https://api.klipy.com/api/v1';
 const PER_PAGE = 24;
-const CUSTOMER_KEY = 'capy.klipy.customer';
 
 export type KlipyGif = {
   id: string;
@@ -28,18 +31,27 @@ export const klipyEnabled = () => !!KEY;
 
 /** The same anonymous id for this browser, as KLIPY asks per user: not the account. */
 function customerId() {
-  try {
-    const kept = localStorage.getItem(CUSTOMER_KEY);
-    if (kept) return kept;
-    const made = crypto.randomUUID();
-    localStorage.setItem(CUSTOMER_KEY, made);
-    return made;
-  } catch {
-    return crypto.randomUUID();
-  }
+  const kept = readPref(PREF_KEYS.klipyCustomer, '', isString);
+  if (kept) return kept;
+  const made = crypto.randomUUID();
+  writePref(PREF_KEYS.klipyCustomer, made);
+  return made;
 }
 
-const webp = (item: Item, size: string) => item.file?.[size]?.webp;
+/** A rendition the canvas can keep: from KLIPY's media hosts, within the picture
+ * link's limit and with a size, as the board's load check asks. */
+const fits = (rendition: Rendition | undefined) =>
+  rendition &&
+  isKlipyMedia(rendition.url) &&
+  rendition.url.length <= BOARD_CATALOG.limits.PICTURE_REF_MAX &&
+  Number.isFinite(rendition.width) &&
+  rendition.width > 0 &&
+  Number.isFinite(rendition.height) &&
+  rendition.height > 0
+    ? rendition
+    : undefined;
+
+const webp = (item: Item, size: string) => fits(item.file?.[size]?.webp);
 
 /** Trending when `query` is empty, else the search's first page. */
 export async function klipyGifs(
@@ -63,6 +75,7 @@ export async function klipyGifs(
   );
   if (!response.ok) throw new Error(`KLIPY ${response.status}`);
   const body = (await response.json()) as { data?: { data?: Item[] } };
+  // One that doesn't fit is left out; the rest keep KLIPY's order (its terms).
   return (body.data?.data ?? []).flatMap((item) => {
     const preview = webp(item, 'sm') ?? webp(item, 'md');
     const media = webp(item, 'md') ?? preview;

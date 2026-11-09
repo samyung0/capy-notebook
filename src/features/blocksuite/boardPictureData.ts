@@ -63,18 +63,35 @@ export const emojiText = (code: string) =>
     ...code.split('_').map((part) => Number.parseInt(part, 16))
   );
 
+/** One of the emoji Misc offers, the only ones with files. */
+export const isListedEmoji = (code: string) =>
+  (EMOJI as readonly string[]).includes(code);
+
 export const emojiUrl = (code: string) => `/emoji/noto/${code}.webp`;
 /** Its first frame, small, for the picker: 48 moving ones would load ~5 MB. */
 export const emojiStillUrl = (code: string) => `/emoji/noto/still/${code}.webp`;
 
-/** KLIPY's media hosts (static, static1, static2.klipy.com). */
-const KLIPY_MEDIA = /^static\d*\.klipy\.com$/;
+/** An http(s) address: what a link card holds and opens. */
+export const isWebAddress = (href: string) => {
+  try {
+    return ['http:', 'https:'].includes(new URL(href).protocol);
+  } catch {
+    return false;
+  }
+};
+
+/** KLIPY's media hosts, which the image policy also lists. */
+export const KLIPY_MEDIA_HOSTS = [
+  'static.klipy.com',
+  'static1.klipy.com',
+  'static2.klipy.com',
+];
 
 /** Where a KLIPY GIF may come from (its media hosts). */
 export const isKlipyMedia = (url: string) => {
   try {
     const { hostname, protocol } = new URL(url);
-    return protocol === 'https:' && KLIPY_MEDIA.test(hostname);
+    return protocol === 'https:' && KLIPY_MEDIA_HOSTS.includes(hostname);
   } catch {
     return false;
   }

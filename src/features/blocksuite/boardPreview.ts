@@ -45,10 +45,11 @@ export function drawBoardPreview(
     throw new BoardLoadError('unreadable', { cause });
   }
   const { blocks, elements } = checkSavedBoard(update, board);
-  // Where each card, shape, note and image sits, for the connectors' ends.
+  // Where each card, shape, note and image sits, for the connectors' ends. A group,
+  // a connector and a mind map store no place (a mind map's nodes are its shapes).
   const placed = [
     ...Object.entries(elements).filter(
-      ([, element]) => element.type !== 'group' && element.type !== 'connector'
+      ([, element]) => !UNPLACED.has(element.type as string)
     ),
     ...Object.entries(blocks).filter(
       ([id, block]) =>
@@ -476,6 +477,8 @@ function colour(value: unknown, fallback: string): string {
   return fallback;
 }
 const SAFE_COLOUR = /^(#[0-9a-f]{3,8}|[a-z]+|rgba?\([\d\s.,%]+\))$/i;
+
+const UNPLACED = new Set(['group', 'connector', 'mindmap']);
 
 function isOnCanvas(blocks: Record<string, Fields>, id: string) {
   return Object.values(blocks).some(

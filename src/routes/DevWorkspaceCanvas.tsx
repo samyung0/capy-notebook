@@ -21,10 +21,14 @@ export default function DevWorkspaceCanvas({
   });
   const latest = useRef({ materials, onOpenMaterial });
   const mounted = useRef<{ refreshCards: () => void } | null>(null);
+  // Cards redraw only when the list changes, not on each render of the page.
   useEffect(() => {
-    latest.current = { materials, onOpenMaterial };
+    latest.current.materials = materials;
     mounted.current?.refreshCards();
-  }, [materials, onOpenMaterial]);
+  }, [materials]);
+  useEffect(() => {
+    latest.current.onOpenMaterial = onOpenMaterial;
+  }, [onOpenMaterial]);
   useEffect(() => {
     const host = container.current;
     if (!host) return;

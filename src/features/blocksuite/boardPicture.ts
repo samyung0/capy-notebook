@@ -18,8 +18,15 @@ import {
   type ExtensionType,
 } from '@blocksuite/affine/store';
 import { css, html } from 'lit';
+import { styleMap } from 'lit/directives/style-map.js';
 import { literal } from 'lit/static-html.js';
-import { emojiUrl, isKlipyMedia, type PictureKind } from './boardPictureData';
+import { copiesOnCanvas } from './boardClipboard';
+import {
+  emojiUrl,
+  isKlipyMedia,
+  isListedEmoji,
+  type PictureKind,
+} from './boardPictureData';
 
 type PictureProps = {
   kind: PictureKind;
@@ -72,13 +79,16 @@ class PictureBlockComponent extends GfxBlockComponent<PictureBlockModel> {
 
   override renderGfxBlock() {
     const { kind, label, ref, rotate } = this.model.props;
-    const src = kind === 'emoji' ? emojiUrl(ref) : isKlipyMedia(ref) ? ref : '';
+    // Checked again here: a peer's change reaches the board after its load check.
+    let src = '';
+    if (kind === 'emoji' && isListedEmoji(ref)) src = emojiUrl(ref);
+    if (kind === 'klipy' && isKlipyMedia(ref)) src = ref;
     return html`<img
       alt=${label}
       draggable="false"
       referrerpolicy="no-referrer"
       src=${src}
-      style="transform:rotate(${rotate}deg)"
+      style=${styleMap({ transform: `rotate(${Number(rotate) || 0}deg)` })}
     />`;
   }
 }
@@ -103,6 +113,7 @@ export const pictureViews: ExtensionType[] = [
   GfxViewInteractionExtension(PICTURE_FLAVOUR, {
     resizeConstraint: { lockRatio: true },
   }),
+  copiesOnCanvas(PICTURE_FLAVOUR, ['kind', 'ref', 'label']),
 ];
 
 /** Puts a picture down, centred on a box's middle at its size. */

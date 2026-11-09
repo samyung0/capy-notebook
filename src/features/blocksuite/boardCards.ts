@@ -22,6 +22,8 @@ import { css, html, nothing } from 'lit';
 import { literal } from 'lit/static-html.js';
 import { youtubeWatchUrl } from '@/features/materials/youtubeUrl';
 import { m } from '@/i18n';
+import { copiesOnCanvas } from './boardClipboard';
+import { isWebAddress } from './boardPictureData';
 
 /** Cards on the workspace canvas (Epo 2026-11-09): a link (a YouTube video shows its
  * poster) and a quiz or flashcard set from the workspace. Both open on a double
@@ -153,8 +155,9 @@ const CARD_STYLES = css`
   }
 `;
 
+/** Checked again here: a peer's change reaches the board after its load check. */
 const opensNewTab = (url: string) => {
-  window.open(url, '_blank', 'noopener,noreferrer');
+  if (isWebAddress(url)) window.open(url, '_blank', 'noopener,noreferrer');
 };
 
 class LinkBlockComponent extends GfxBlockComponent<LinkBlockModel> {
@@ -162,7 +165,7 @@ class LinkBlockComponent extends GfxBlockComponent<LinkBlockModel> {
 
   override connectedCallback() {
     super.connectedCallback();
-    this.addEventListener('dblclick', () => {
+    this.disposables.addFromEvent(this, 'dblclick', () => {
       const { url, videoId } = this.model.props;
       opensNewTab(videoId ? youtubeWatchUrl(videoId) : url);
     });
@@ -215,7 +218,7 @@ class MaterialBlockComponent extends GfxBlockComponent<MaterialBlockModel> {
   override connectedCallback() {
     super.connectedCallback();
     shown.add(this);
-    this.addEventListener('dblclick', () => {
+    this.disposables.addFromEvent(this, 'dblclick', () => {
       if (this.listed())
         workspaceOf(this.std)?.open(this.model.props.materialId);
     });
@@ -268,11 +271,13 @@ export const cardViews: ExtensionType[] = [
   GfxViewInteractionExtension(LINK_FLAVOUR, {
     resizeConstraint: { lockRatio: true },
   }),
+  copiesOnCanvas(LINK_FLAVOUR, ['url', 'videoId']),
   FlavourExtension(MATERIAL_FLAVOUR),
   BlockViewExtension(MATERIAL_FLAVOUR, literal`capy-material-card`),
   GfxViewInteractionExtension(MATERIAL_FLAVOUR, {
     resizeConstraint: { minHeight: 56, minWidth: 160 },
   }),
+  copiesOnCanvas(MATERIAL_FLAVOUR, ['kind', 'materialId', 'title']),
 ];
 
 /** A card in the view's middle, `w` × `h` screen pixels. */

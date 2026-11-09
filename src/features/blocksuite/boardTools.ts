@@ -81,6 +81,7 @@ import {
   EMOJI,
   emojiStillUrl,
   emojiText,
+  isWebAddress,
   type PictureKind,
 } from './boardPictureData';
 import {
@@ -1906,7 +1907,16 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
   /** A link card: a YouTube video shows its poster; any other address its host. */
   private addLink(value: string) {
     const typed = value.trim();
-    const videoId = youtubeVideoId(typed);
+    let url: URL | null = null;
+    for (const candidate of [typed, `https://${typed}`])
+      try {
+        url = new URL(candidate);
+        break;
+      } catch {
+        // The next spelling.
+      }
+    // Only an address is a video: a bare 11-letter word is a typo, not an id.
+    const videoId = url && youtubeVideoId(url.href);
     if (videoId) {
       addCard(
         this.gfx,
@@ -1917,20 +1927,8 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
       this.placed();
       return;
     }
-    let url: URL | null = null;
-    for (const candidate of [typed, `https://${typed}`])
-      try {
-        url = new URL(candidate);
-        break;
-      } catch {
-        // The next spelling.
-      }
     if (
-      !(
-        url &&
-        ['http:', 'https:'].includes(url.protocol) &&
-        url.hostname.includes('.')
-      ) ||
+      !(url && isWebAddress(url.href) && url.hostname.includes('.')) ||
       url.href.length > BOARD_CATALOG.limits.LINK_URL_MAX
     ) {
       this.linkError = true;

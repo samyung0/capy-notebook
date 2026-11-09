@@ -1,5 +1,6 @@
 import * as Y from 'yjs';
 import { BOARD_CATALOG } from '@/api/board.generated';
+import { YOUTUBE_ID } from '@/features/materials/youtubeUrl';
 import {
   AXIS_MAX,
   BARS_MAX,
@@ -9,7 +10,7 @@ import {
   MARKS_MAX,
   SPOKES_MAX,
 } from './boardData';
-import { isKlipyMedia } from './boardPictureData';
+import { isKlipyMedia, isListedEmoji, isWebAddress } from './boardPictureData';
 
 /** Why a saved board doesn't open: it's handed to the page, never half mounted. */
 export class BoardLoadError extends Error {
@@ -29,7 +30,7 @@ export type BoardKind = (typeof BOARD_CATALOG.boards)[number];
 /** What a board may hold: its blocks, each under the parents it may have (the page is
  * the root), and its canvas elements. The store checks none of this when a saved board
  * loads: it skips a block it doesn't know and takes any tree. */
-function holds(board: BoardKind) {
+export function holds(board: BoardKind) {
   const on = ({ boards }: { boards: readonly string[] }) =>
     boards.includes(board);
   return {
@@ -91,12 +92,13 @@ function elementProblem(
     return fields.children && typeof fields.children === 'object'
       ? null
       : 'group children';
-  // A mind map's place comes from its nodes, shapes it lays out by style and layout.
+  // A mind map's place comes from its nodes, shapes it lays out by style and layout
+  // (its nodes are checked against the canvas in `mindmapFits`).
   if (type === 'mindmap')
     return fields.children &&
       typeof fields.children === 'object' &&
       [1, 2, 3, 4].includes(fields.style as number) &&
-      finite(fields.layoutType)
+      [0, 1, 2].includes(fields.layoutType as number)
       ? null
       : 'mindmap fields';
   if (!isPlace(fields.xywh)) return `${type} without a place`;
@@ -170,6 +172,42 @@ function elementProblem(
   return null;
 }
 
+/** A mind map's nodes, which BlockSuite reads without checking: each a shape on the
+ * canvas no other mind map or group holds, under a parent among them, one root and no
+ * cycle. `owned` gathers the shapes held so far. */
+function mindmapFits(
+  children: Record<string, unknown>,
+  elements: Record<string, Fields>,
+  owned: Set<string>
+) {
+  const nodes = Object.entries(children);
+  let roots = 0;
+  for (const [id, node] of nodes) {
+    const { collapsed, index, parent } = (node ?? {}) as Fields;
+    if (
+      elements[id]?.type !== 'shape' ||
+      owned.has(id) ||
+      typeof index !== 'string' ||
+      (collapsed !== undefined && typeof collapsed !== 'boolean') ||
+      (parent !== undefined &&
+        (typeof parent !== 'string' || !(parent in children)))
+    )
+      return false;
+    owned.add(id);
+    if (parent === undefined) roots += 1;
+  }
+  if (roots !== 1) return false;
+  // From any node, its parents reach the root within as many steps as there are nodes.
+  return nodes.every(([id]) => {
+    let at: string | undefined = id;
+    for (let step = 0; at !== undefined; step += 1) {
+      if (step > nodes.length) return false;
+      at = (children[at] as Fields).parent as string | undefined;
+    }
+    return true;
+  });
+}
+
 /** A picture: an emoji by its code points, or a GIF by its KLIPY link. */
 function pictureFits(block: Fields) {
   const kind = block['prop:kind'];
@@ -181,30 +219,23 @@ function pictureFits(block: Fields) {
     typeof label === 'string' &&
     label.length <= BOARD_CATALOG.limits.PICTURE_LABEL_MAX &&
     finite(block['prop:rotate']) &&
-    ((kind === 'emoji' && EMOJI_CODE.test(ref)) ||
+    ((kind === 'emoji' && isListedEmoji(ref)) ||
       (kind === 'klipy' && isKlipyMedia(ref)))
   );
 }
-const EMOJI_CODE = /^[0-9a-f]{2,6}(_[0-9a-f]{2,6})*$/;
-const VIDEO_ID = /^([A-Za-z0-9_-]{11})?$/;
 
 /** A link card: a web address, and a YouTube video's id when it is one. */
 function linkFits(block: Fields) {
   const url = block['prop:url'];
   const videoId = block['prop:videoId'];
-  if (
-    typeof url !== 'string' ||
-    url.length > BOARD_CATALOG.limits.LINK_URL_MAX ||
-    typeof videoId !== 'string' ||
-    !VIDEO_ID.test(videoId) ||
-    !finite(block['prop:rotate'])
-  )
-    return false;
-  try {
-    return ['http:', 'https:'].includes(new URL(url).protocol);
-  } catch {
-    return false;
-  }
+  return (
+    typeof url === 'string' &&
+    url.length <= BOARD_CATALOG.limits.LINK_URL_MAX &&
+    isWebAddress(url) &&
+    typeof videoId === 'string' &&
+    (videoId === '' || YOUTUBE_ID.test(videoId)) &&
+    finite(block['prop:rotate'])
+  );
 }
 
 /** A material card: a workspace quiz or set by id, with its title. */
@@ -284,10 +315,22 @@ export function checkSavedBoard(update: Uint8Array, board: BoardKind) {
   const elements = (surface['prop:elements'] as Fields | undefined)?.value;
   if (!elements || typeof elements !== 'object')
     throw new BoardLoadError('canvas without elements');
-  for (const element of Object.values(elements as Record<string, Fields>)) {
+  const all = elements as Record<string, Fields>;
+  for (const element of Object.values(all)) {
     const problem = elementProblem(element, kinds);
     if (problem) throw new BoardLoadError(problem);
   }
+  // Shapes a group holds can't also be a mind map's node.
+  const owned = new Set<string>();
+  for (const element of Object.values(all))
+    if (element.type === 'group')
+      for (const id of Object.keys(element.children as Fields)) owned.add(id);
+  for (const element of Object.values(all))
+    if (
+      element.type === 'mindmap' &&
+      !mindmapFits(element.children as Record<string, unknown>, all, owned)
+    )
+      throw new BoardLoadError('mindmap nodes');
   doc.destroy();
   return { blocks, elements: elements as Record<string, Fields> };
 }

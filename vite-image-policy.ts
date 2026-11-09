@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { appendFileSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Plugin } from 'vite';
+import { KLIPY_MEDIA_HOSTS } from './src/features/blocksuite/boardPictureData';
 import { posthogApiHost, posthogScriptHost } from './src/lib/posthogHost';
 
 type Env = Record<string, string | undefined>;
@@ -69,11 +70,7 @@ function imageSources(env: Env): string {
   sources.push('https://img.clerk.com', 'https://i.ytimg.com');
   // The workspace canvas's GIFs show from KLIPY's media hosts (its terms).
   if (env.VITE_KLIPY_KEY)
-    sources.push(
-      'https://static.klipy.com',
-      'https://static1.klipy.com',
-      'https://static2.klipy.com'
-    );
+    sources.push(...KLIPY_MEDIA_HOSTS.map((host) => `https://${host}`));
   return `img-src ${sources.join(' ')}`;
 }
 
