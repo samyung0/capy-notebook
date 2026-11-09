@@ -1,4 +1,5 @@
 import { tickStep } from '@/features/questions/graphTicks';
+import { m } from '@/i18n';
 import { fromBase64 } from './base64';
 import {
   BAR_SHARE,
@@ -31,7 +32,8 @@ import {
  * views, without the editor: what's on it, not every detail (Epo 2026-11-06). Framed as
  * the marking image is: everything on the board, far groups drawn nearer, on white.
  * Strokes are plain lines, connectors straight, formulas their LaTeX, notes a line per
- * paragraph, pasted images a grey box, and no numbers or labels on cards. Throws a
+ * paragraph, a placed quiz or set its title and kind, pasted images a grey box, and no
+ * numbers or labels on cards. Throws a
  * BoardLoadError for a board that doesn't check out. */
 export function drawBoardPreview(
   saved: string,
@@ -56,6 +58,7 @@ export function drawBoardPreview(
         // A note kept for page mode only isn't on the canvas.
         (block['sys:flavour'] === 'affine:note' &&
           block['prop:displayMode'] !== 'doc') ||
+        block['sys:flavour'] === MATERIAL_CARD ||
         (block['sys:flavour'] === 'affine:image' && isOnCanvas(blocks, id))
     ),
   ];
@@ -147,6 +150,10 @@ type Item = {
   index: string;
   kind: string;
 };
+/** A placed quiz or flashcard set, named as the board catalog names it: this module
+ * draws without the board's own code, which the app imports it without. */
+const MATERIAL_CARD = 'affine:embed-capy-material';
+
 /** One preview pixel in board units: lines never thinner, points never closer. */
 type Pen = { pixel: number };
 
@@ -185,6 +192,8 @@ function drawItem(
       return drawFormula(box, String(fields.latex ?? ''));
     case 'affine:note':
       return drawNote(box, fields, blocks);
+    case MATERIAL_CARD:
+      return drawMaterialCard(box, fields);
     case 'affine:image':
       return `${rect(box, '#f1f1ef', '#d9d9d6', pen.pixel)}`;
     default:
@@ -436,6 +445,19 @@ function drawNote(box: Box, note: Fields, blocks: Record<string, Fields>) {
   // The board's tight card (N2): 8 by 10 px padding, a hairline, a 6 px corner.
   const inner = { h: h - 16, w: w - 20, x: x + 10, y: y + 8 };
   return `<rect x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" rx="6" fill="${colour(note['prop:background'], '#fff')}" stroke="#e6e6e6" stroke-width="1"/><svg x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" viewBox="${num(x)} ${num(y)} ${num(w)} ${num(h)}" overflow="hidden">${lines(inner, texts.join('\n'), FONT_SIZE_NOTE, '#1d1d1f', 'left')}</svg>`;
+}
+
+/** A placed quiz or flashcard set: its box with the title and what it is, as the
+ * note card draws its paragraphs (Epo 2026-11-09). */
+function drawMaterialCard(box: Box, card: Fields) {
+  const { h, w, x, y } = box;
+  const what =
+    card['prop:kind'] === 'flashcards'
+      ? m.drawing_board_flashcards()
+      : m.drawing_board_quiz();
+  const title = String(card['prop:title'] ?? '');
+  const inner = { h: h - 16, w: w - 20, x: x + 10, y: y + 8 };
+  return `<rect x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" rx="6" fill="#fff" stroke="#e6e6e6" stroke-width="1"/><svg x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" viewBox="${num(x)} ${num(y)} ${num(w)} ${num(h)}" overflow="hidden">${lines(inner, `${title}\n${what}`, FONT_SIZE_NOTE, '#1d1d1f', 'left')}</svg>`;
 }
 
 function lines(

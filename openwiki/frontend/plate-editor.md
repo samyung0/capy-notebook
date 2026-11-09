@@ -4649,12 +4649,39 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       mark, anything else its host and address; a double click opens it in a new tab.
     - **From the workspace:** **Quiz** and **Flashcards** list the workspace's own
       (`WorkspaceCanvas` lends them through `workspace` in the mount options) and
-      place a card with its title; a double click opens it in the workspace, and a
-      card whose material the workspace no longer lists shows "can't be opened".
+      place a card that runs it (360x420 for a quiz, 360x260 for a set,
+      `MATERIAL_CARD_SIZE`): the card is the note embed's own runner,
+      answered and checked on the canvas (below). A double click on its header opens
+      the material in the workspace for editing, and a card whose material the
+      workspace no longer lists shows "can't be opened" and no runner.
     Emoji and GIFs are `affine:embed-capy-picture` blocks (an `<img>` that plays by
     itself), links `affine:embed-capy-link` and quiz or set cards
     `affine:embed-capy-material` (`boardPicture.ts`, `boardCards.ts`): the surface
     takes `affine:embed-*` children, so no vendored change.
+  - **A placed quiz or set runs on the canvas** (Epo 2026-11-09): the card's body is
+    the note embed's `AppEmbedView` (`AppEmbed.tsx`), the same runner a note's embedded
+    quiz or set uses, with no `ownerId` (a workspace's own material has no owning note
+    to wait for), so a question is answered and Checked by direct clicks and a set is
+    studied in place; nothing is recorded, as in a note. The block is a BlockSuite block
+    like any other but hosts React: it adopts one `div` per card from the host registry
+    (`src/features/canvas/materialCardHosts.ts` — kept out of `src/features/blocksuite`,
+    which the app's tsconfig excludes), and `CanvasMaterialCards.tsx`, rendered by
+    `WorkspaceCanvas`, portals the runner into it, so the page's providers are the
+    runner's own. The registry hands a re-created block the element it had (released
+    hosts are parked for the rest of the tick), so an answer in progress survives
+    BlockSuite re-rendering the view. Blocks are light DOM upstream
+    (`ShadowlessElement`), so the app's stylesheet reaches the runner; the card's own
+    chrome (the header row with icon, title and kind, the hairline and the panel
+    background) stays in the block's markup. The header is what moves and selects the
+    card; the body swallows `pointerdown`, `pointerup`, `click`, `dblclick`, `wheel`,
+    `keydown` and `keyup` so BlockSuite neither selects nor drags nor pans nor takes
+    the keys from inside the quiz (React's own listeners sit on the host element, a
+    portal container, so they still run), and the first click inside needs no selection
+    first. Under any tool but Select the body takes no pointer events
+    (`.capy-board:not([data-tool="default"]) .capy-card-body`), so a stroke draws over
+    the card. A card out of view (`useNearScreen`) draws the material's stored preview
+    through `ThumbnailPanel` instead of the runner; the previews come from the paged
+    materials list, since the workspace's own materials read carries none.
   - **Board catalog** (Epo 2026-11-09): `server/internal/boardcatalog` lists every
     canvas element and block a board may hold, which board takes each (`question`, a
     drawing answer's board; `workspace`, the workspace canvas) and the limits above.
@@ -4725,7 +4752,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   from end to end with their arrowheads; text and shape labels a line per line break;
   plane cards their grid (while lines are 6 px apart), axes and marks; charts their bars
   or circle and spokes; formulas their LaTeX as text; notes their box and a line per
-  paragraph; pasted images a grey box. No numbers or labels on cards. It checks the board
+  paragraph; a placed quiz or set its box with the title and what it is (text only, the
+  runner being on the canvas alone); pasted images a grey box. No numbers or labels on cards. It checks the board
   first and throws the same `BoardLoadError`. `fromBase64` uses `Uint8Array.fromBase64`
   where the browser has it. A plane card with 5 strokes takes 0.4 ms
   in Node, a 300 KB board (50 strokes of 300 points, 500 marks) 5 ms. Show it as an

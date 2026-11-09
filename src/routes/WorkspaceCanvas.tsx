@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { BOARD_CATALOG } from '@/api/board.generated';
 import {
   isCanvasConflict,
@@ -13,6 +13,7 @@ import {
   gzipBoard,
 } from '@/features/blocksuite/boardAsset';
 import { mountDrawingBoard } from '@/features/blocksuite/drawingBoard';
+import { CanvasMaterialCards } from '@/features/canvas/CanvasMaterialCards';
 import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
 import {
@@ -241,6 +242,12 @@ export default function WorkspaceCanvas({
       board = null;
     };
   }, [workspaceId]);
+  // The placed quizzes and sets run in the page's own tree, through portals into the
+  // board's card hosts (Epo 2026-11-09).
+  const listed = useMemo(
+    () => new Set((materials ?? []).map(({ id }) => id)),
+    [materials]
+  );
   return (
     <div
       className="h-full w-full overflow-hidden rounded-card-xl [&>div]:h-full"
@@ -251,6 +258,7 @@ export default function WorkspaceCanvas({
           {failed}
         </p>
       )}
+      <CanvasMaterialCards listed={listed} workspaceId={workspaceId} />
     </div>
   );
 }

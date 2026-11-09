@@ -71,6 +71,7 @@ import {
   addCard,
   type CardMaterialKind,
   LINK_FLAVOUR,
+  MATERIAL_CARD_SIZE,
   MATERIAL_FLAVOUR,
   workspaceOf,
 } from './boardCards';
@@ -2030,7 +2031,7 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
                   materialId: id,
                   title: title.slice(0, BOARD_CATALOG.limits.CARD_TITLE_MAX),
                 },
-                [260, 84]
+                MATERIAL_CARD_SIZE[kind]
               );
               this.placed();
             }}

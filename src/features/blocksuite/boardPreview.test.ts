@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
+import { m } from '@/i18n';
 import { toBase64 } from './base64';
-import { SAVED, withElements } from './boardFixture';
+import { SAVED, withCanvasBlock, withElements } from './boardFixture';
 import { BoardLoadError } from './boardLoad';
 import { drawBoardPreview } from './boardPreview';
 
@@ -76,6 +77,25 @@ it('draws a connector saved before the board placed it, between its ends', () =>
     'question'
   );
   expect(svg).toContain('stroke="#1971c2"');
+});
+
+// A placed quiz or set draws as text, as a note card does: the runner itself is
+// only on the canvas (Epo 2026-11-09).
+it('draws a placed quiz card with its title and kind', () => {
+  const svg = drawBoardPreview(
+    toBase64(
+      withCanvasBlock('affine:embed-capy-material', {
+        kind: 'quiz',
+        materialId: 'qz_1',
+        title: 'Cell cycle',
+        xywh: '[0,0,360,420]',
+      })
+    ),
+    SIZE,
+    'workspace'
+  );
+  expect(svg).toContain('Cell cycle');
+  expect(svg).toContain(m.drawing_board_quiz());
 });
 
 it('refuses a board that does not check out', () => {
