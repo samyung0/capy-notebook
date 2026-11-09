@@ -55,11 +55,21 @@
   box-shadow: var(--shadow-pop);
 }
 
-:host .ui-menu-container:not(.insert-matrix-submenu) > li {
+:host
+  .ui-menu-container:not(.insert-matrix-submenu)
+  > li:not([role="divider"]) {
   min-height: 28px;
   padding: 0 8px;
   margin: 0;
   border-radius: 8px;
+}
+
+:host .ui-menu-container > li[role="divider"] {
+  width: auto;
+  min-height: 0;
+  padding: 0;
+  margin: 4px 8px;
+  border-bottom: 1px solid var(--border-overlay);
 }
 
 :host .ui-menu-container > li > .label {
