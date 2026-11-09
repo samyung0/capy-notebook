@@ -82,6 +82,7 @@ import {
   addCard,
   type CardMaterialKind,
   LINK_FLAVOUR,
+  MATERIAL_CARD_SIZE,
   MATERIAL_FLAVOUR,
   workspaceOf,
 } from './boardCards';
@@ -1537,11 +1538,6 @@ const MISC_GROUPS: { label: () => string; tiles: MiscTile[] }[] = [
  * view, so switching views moves nothing. */
 const PANEL_WIDTH = 360;
 const PANEL_HEIGHT = 440;
-/** A placed quiz or set: room for the runner (todo-workspace-canvas-storage.md). */
-const CARD_SIZE: Record<CardMaterialKind, [number, number]> = {
-  flashcards: [360, 260],
-  quiz: [360, 420],
-};
 /** The grid shows a filter field from this many quizzes or sets. */
 const FILTER_FROM = 6;
 
@@ -2272,7 +2268,7 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         materialId: id,
         title: title.slice(0, BOARD_CATALOG.limits.CARD_TITLE_MAX),
       },
-      CARD_SIZE[kind]
+      MATERIAL_CARD_SIZE[kind]
     );
     this.placed();
   }

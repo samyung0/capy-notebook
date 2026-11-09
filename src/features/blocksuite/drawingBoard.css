@@ -221,6 +221,13 @@ html.dark:not([data-board-light]) .capy-board {
   cursor: crosshair;
 }
 
+/* A placed quiz or set is answered by direct clicks while Select is the tool
+   (Epo 2026-11-09); under any other tool the card lets them through, so a stroke
+   can be drawn over it. */
+.capy-board:not([data-tool="default"]) .capy-card-body {
+  pointer-events: none;
+}
+
 /* The eraser's reach as a ring, on the board and in an open card (Epo 2026-11-09):
    dark on a light halo, so it shows on either paper. */
 .capy-board {

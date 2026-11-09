@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { BOARD_CATALOG } from '@/api/board.generated';
 import {
   isCanvasConflict,
@@ -13,6 +13,7 @@ import {
   gzipBoard,
 } from '@/features/blocksuite/boardAsset';
 import { mountDrawingBoard } from '@/features/blocksuite/drawingBoard';
+import { CanvasMaterialCards } from '@/features/canvas/CanvasMaterialCards';
 import { nextGenerateTitle } from '@/features/workspace/generateTitle';
 import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
@@ -53,12 +54,12 @@ export default function WorkspaceCanvas({
   const [failed, setFailed] = useState<string | null>(null);
   // The canvas mounts once and reads the latest of these when it needs them. The
   // Files list carries each quiz's and set's stored preview, for the panel's grid.
-  const { data: listed } = useOwnedMaterials({
+  const { data: pages } = useOwnedMaterials({
     kinds: ['quiz', 'flashcards'],
     scope: 'member',
     workspaceIds: [workspaceId],
   });
-  const materials = listed?.pages.flatMap((page) => page.items);
+  const materials = pages?.pages.flatMap((page) => page.items);
   const { mutateAsync: createMaterial } = useCreateMaterial(workspaceId);
   const latest = useRef({
     createMaterial,
@@ -273,6 +274,12 @@ export default function WorkspaceCanvas({
       board = null;
     };
   }, [workspaceId]);
+  // The placed quizzes and sets run in the page's own tree, through portals into the
+  // board's card hosts (Epo 2026-11-09).
+  const listed = useMemo(
+    () => new Set((materials ?? []).map(({ id }) => id)),
+    [materials]
+  );
   return (
     <div
       className="h-full w-full overflow-hidden rounded-card-xl [&>div]:h-full"
@@ -283,6 +290,7 @@ export default function WorkspaceCanvas({
           {failed}
         </p>
       )}
+      <CanvasMaterialCards listed={listed} workspaceId={workspaceId} />
     </div>
   );
 }

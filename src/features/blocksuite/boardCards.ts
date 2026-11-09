@@ -21,14 +21,22 @@ import {
 import { css, html, nothing } from 'lit';
 import { literal } from 'lit/static-html.js';
 import type { MaterialPreview } from '@/api/types';
+import {
+  adoptMaterialHost,
+  type CardMaterialKind,
+  materialHostOf,
+  releaseMaterialHost,
+} from '@/features/canvas/materialCardHosts';
 import { youtubeWatchUrl } from '@/features/materials/youtubeUrl';
 import { m } from '@/i18n';
 import { copiesOnCanvas } from './boardClipboard';
 import { isWebAddress } from './boardPictureData';
 
 /** Cards on the workspace canvas (Epo 2026-11-09): a link (a YouTube video shows its
- * poster) and a quiz or flashcard set from the workspace. Both open on a double
- * click, a link in a new tab and a material in the workspace. */
+ * poster) and a quiz or flashcard set from the workspace. A placed quiz or set is the
+ * runner itself, answered on the canvas: the block lends the page one host element per
+ * card (the registry below) and the page renders the note embed's `AppEmbedView` into
+ * it. A link opens on a double click in a new tab, a material in the workspace. */
 
 type Common = { rotate: number } & Omit<GfxCommonBlockProps, 'scale'>;
 const common = (): Common => ({
@@ -44,11 +52,16 @@ const onSurface = {
   version: 1,
 };
 
+/** The card kinds and their placed sizes come from the host registry. */
+export {
+  type CardMaterialKind,
+  MATERIAL_CARD_SIZE,
+} from '@/features/canvas/materialCardHosts';
+
 export const LINK_FLAVOUR = 'affine:embed-capy-link';
 export const MATERIAL_FLAVOUR = 'affine:embed-capy-material';
 
 type LinkProps = Common & { url: string; videoId: string };
-export type CardMaterialKind = 'quiz' | 'flashcards';
 type MaterialProps = Common & {
   kind: CardMaterialKind;
   materialId: string;
@@ -102,6 +115,19 @@ export const lendWorkspace = (std: BlockStdScope, links: WorkspaceLinks) =>
   lent.set(std, links);
 export const workspaceOf = (std: BlockStdScope) => lent.get(std);
 
+/** What the body swallows under the Select tool, so BlockSuite neither selects nor
+ * drags nor pans nor takes the keys from inside the runner. React's own listeners sit
+ * on the host element itself (a portal container), so they still run. */
+const BODY_EVENTS = [
+  'pointerdown',
+  'pointerup',
+  'click',
+  'dblclick',
+  'wheel',
+  'keydown',
+  'keyup',
+] as const;
+
 const CARD_STYLES = css`
   .capy-card {
     box-sizing: border-box;
@@ -141,6 +167,29 @@ const CARD_STYLES = css`
   }
   .capy-card.gone {
     opacity: 0.55;
+  }
+  /* A runner card: its header row is what moves and selects it, and the body below
+     holds the page's React host. */
+  .capy-card.capy-run {
+    gap: 0;
+    padding: 0;
+  }
+  .capy-card.capy-run .head {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--affine-border-color);
+  }
+  .capy-card.capy-run .kind {
+    margin-left: auto;
+    color: var(--affine-text-secondary-color);
+    font-size: 12.5px;
+    white-space: nowrap;
+  }
+  .capy-card-body {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    user-select: text;
   }
   .capy-video {
     position: relative;
@@ -212,6 +261,9 @@ class LinkBlockComponent extends GfxBlockComponent<LinkBlockModel> {
 class MaterialBlockComponent extends GfxBlockComponent<MaterialBlockModel> {
   static override styles = CARD_STYLES;
 
+  /** The page's element for this card, the same one across re-creations. */
+  private body: HTMLDivElement | null = null;
+
   private listed() {
     const { materialId } = this.model.props;
     return workspaceOf(this.std)
@@ -219,37 +271,66 @@ class MaterialBlockComponent extends GfxBlockComponent<MaterialBlockModel> {
       .find(({ id }) => id === materialId);
   }
 
+  private adopt() {
+    const { kind, materialId } = this.model.props;
+    this.body = adoptMaterialHost(this.model.id, { kind, materialId });
+    return this.body;
+  }
+
   override disconnectedCallback() {
     super.disconnectedCallback();
     shown.delete(this);
+    releaseMaterialHost(this.model.id);
   }
 
   override connectedCallback() {
     super.connectedCallback();
     shown.add(this);
-    this.disposables.addFromEvent(this, 'dblclick', () => {
-      if (this.listed())
-        workspaceOf(this.std)?.open(this.model.props.materialId);
-    });
+    const body = this.adopt();
+    for (const type of BODY_EVENTS)
+      this.disposables.addFromEvent(body, type, (event: Event) =>
+        event.stopPropagation()
+      );
+  }
+
+  /** The card is pointed at another material, or renamed: the page's host follows. */
+  override updated(changed: Map<string, unknown>) {
+    super.updated(changed);
+    const { kind, materialId } = this.model.props;
+    const held = this.body && materialHostOf(this.model.id);
+    if (held && (held.kind !== kind || held.materialId !== materialId))
+      this.adopt();
   }
 
   override renderGfxBlock() {
     const { kind, title } = this.model.props;
     const listed = this.listed();
-    return html`<div class=${listed ? 'capy-card' : 'capy-card gone'}>
-      <div class="row">
-        ${
-          kind === 'quiz'
-            ? html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1e96eb" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6L13 3Z" /></svg>`
-            : html`<svg width="18" height="18" viewBox="0 0 32 30" aria-hidden="true"><rect x="9" y="3" width="20" height="14" rx="2" fill="none" stroke="currentColor" transform="rotate(8 19 10)" /><rect x="4" y="9" width="20" height="14" rx="2" fill="#e8798f" /></svg>`
-        }
-        <span class="title">${listed?.title ?? title}</span>
-      </div>
-      <span class="meta"
-        >${kind === 'quiz' ? m.drawing_board_quiz() : m.drawing_board_flashcards()}${
-          listed ? nothing : html` · ${m.drawing_board_card_gone()}`
-        }</span
+    const what =
+      kind === 'quiz' ? m.drawing_board_quiz() : m.drawing_board_flashcards();
+    const icon =
+      kind === 'quiz'
+        ? html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1e96eb" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6L13 3Z" /></svg>`
+        : html`<svg width="18" height="18" viewBox="0 0 32 30" aria-hidden="true"><rect x="9" y="3" width="20" height="14" rx="2" fill="none" stroke="currentColor" transform="rotate(8 19 10)" /><rect x="4" y="9" width="20" height="14" rx="2" fill="#e8798f" /></svg>`;
+    // The header moves and selects the card, and opens the material for editing on a
+    // double click; the body below is the runner (Epo 2026-11-09).
+    return html`<div class=${listed ? 'capy-card capy-run' : 'capy-card gone'}>
+      <div
+        class="row head"
+        @dblclick=${() => {
+          if (listed) workspaceOf(this.std)?.open(this.model.props.materialId);
+        }}
       >
+        ${icon}
+        <span class="title">${listed?.title ?? title}</span>
+        ${listed ? html`<span class="kind">${what}</span>` : nothing}
+      </div>
+      ${
+        listed
+          ? this.body
+          : html`<span class="meta"
+              >${what} · ${m.drawing_board_card_gone()}</span
+            >`
+      }
     </div>`;
   }
 }
@@ -284,7 +365,8 @@ export const cardViews: ExtensionType[] = [
   FlavourExtension(MATERIAL_FLAVOUR),
   BlockViewExtension(MATERIAL_FLAVOUR, literal`capy-material-card`),
   GfxViewInteractionExtension(MATERIAL_FLAVOUR, {
-    resizeConstraint: { minHeight: 56, minWidth: 160 },
+    // Room for a question with its options, or a card's front.
+    resizeConstraint: { minHeight: 140, minWidth: 240 },
   }),
   copiesOnCanvas(MATERIAL_FLAVOUR, ['kind', 'materialId', 'title']),
 ];
