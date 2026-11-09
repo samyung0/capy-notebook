@@ -21,7 +21,13 @@ import {
 } from '@blocksuite/affine/std/gfx';
 import { axisNumber } from '@/features/questions/graph';
 import { tickStep } from '@/features/questions/graphTicks';
-import { LATEX_MAX, type Mark, PAPER, type Paper, pointsOf } from './boardData';
+import {
+  cardPaper,
+  LATEX_MAX,
+  type Mark,
+  type Paper,
+  pointsOf,
+} from './boardData';
 import { type Drawn, drawing, laidOut, replay } from './boardFormulaDraw';
 import { curvePieces, minorStep, ticks, type Vec } from './boardGeometry';
 
@@ -457,7 +463,7 @@ const planeRenderer: ElementRenderer<PlaneElementModel> = (
     { h, w, x: 0, y: 0 },
     model,
     model.marks,
-    PAPER[renderer.getColorScheme()],
+    cardPaper(renderer.getColorScheme()),
     undefined,
     () => renderer.refresh()
   );

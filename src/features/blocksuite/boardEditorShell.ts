@@ -76,12 +76,14 @@ export function openBoardEditor(
       {
         disabled: !gfx.doc.canUndo,
         icon: Undo03Icon,
+        keepsOpen: true,
         label: m.drawing_board_undo(),
         run: () => gfx.doc.undo(),
       },
       {
         disabled: !gfx.doc.canRedo,
         icon: Redo03Icon,
+        keepsOpen: true,
         label: m.drawing_board_redo(),
         run: () => gfx.doc.redo(),
       },

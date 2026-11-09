@@ -4460,8 +4460,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   `--capy-board-menu-top`; a drawing answer measures whichever Done shows, the phone's or the
   wider screen's), so the
   bottom row holds only the toolbar: Undo, Redo, Fit to screen, then a row of −, the
-  zoom (which resets to 100%) and +. An entry closes it, the zoom row keeps it open, as
-  do a press anywhere else and Escape. A teacher's board has Fit to screen and zoom only.
+  zoom (which resets to 100%) and +. Fit to screen closes it; Undo, Redo and the zoom
+  row keep it open, so a few presses step back or zoom; a press anywhere else and
+  Escape close it. A teacher's board has Fit to screen and zoom only.
   AFFiNE's zoom toolbar isn't loaded. Below 768 px the toolbar spans the screen less an
   8 px gutter, which needs `.capy-board` to be the `viewport` container.
 - **Selecting** shows AFFiNE's own toolbar. It reads the editor's mode, so the board
@@ -4502,8 +4503,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   A point's dot picks up with any tool but Erase (Epo 2026-11-08, option C): it rings
   blue under the mouse, a drag moves it to the grid with the coordinate chip, and a tap
   still does the tool's job at that point (Line starts from it). Select also drags a
-  whole line, curve or label (snapped by grid steps); dragging one of several selected
-  marks moves them all. The moved copies are only drawn until the pointer lifts, so a
+  whole line, curve or label (snapped by grid steps), and a single point or any point
+  of a selected mark takes the whole mark, so dragging one of several selected marks
+  (dots too) moves them all. The moved copies are only drawn until the pointer lifts, so a
   drag is one undo step. Select works as the board's does (Epo 2026-11-09): a click
   selects a mark (blue, its points showing), Shift-click adds or takes one away, and a
   drag on empty paper draws a selection box that picks every mark it touches (Shift
@@ -4523,16 +4525,19 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   the plane zooms) at its second point, a `vector` mark of two points. Each tool's
   button shows AFFiNE's tooltip with its key, and the open card takes those keys: V
   Select, P Point, L Line, A Vector, C Curve, O Ellipse, T Label, F Formula, E Erase (a
-  chart: V Select, D its bars or slices, F Fill, T Label, E Erase). Erase (Epo
+  chart: V Select, D its bars or slices, F Fill, T Label, E Erase); the row fits a 360 px
+  phone, its buttons 32 px wide on a board under 380 px and 36 px from there. Erase (Epo
   2026-11-09) works as the board's eraser does: the pointer is a ring as wide as its
-  reach (16 px, `--capy-eraser-cursor`, also on the board's own eraser), a press leaves
+  reach (16 px, `--capy-eraser-cursor`, also on the board's own eraser), it takes what
+  is within the ring's radius (`ERASER_SIZE / 2`, in planes and charts alike), a press leaves
   BlockSuite's fading grey trail (`EraserTrail` in `boardEraser.ts`), everything it
   passes over hides, and lifting removes them in one undo step. Ellipse (Epo 2026-11-08, square
   planes only): a press and drag sizes a circle from its middle (the chip shows `r`), a
   click places one a grid step round. It's an `ellipse` mark of four handles (right,
   top, left, bottom); pulling one sets the width or height about the middle, so it
   stays upright and on the grid, and Shift scales it evenly. Select drags it whole, its
-  middle (any other mark's first point) landing on the grid. Curves draw as cubic Bézier pieces of their
+  middle (any other mark's first point) landing on the grid, where a ring crosses a
+  spoke on a polar plane (`snapPlane`), as points do. Curves draw as cubic Bézier pieces of their
   Catmull-Rom curve (`curvePieces`) and ellipses as canvas ellipses, smooth at any zoom;
   the sampled path (`smoothThrough`, `pathOf`) is for hit tests and previews. A line's,
   curve's or ellipse's points show only in the editor, on the mark under the pointer,
@@ -4572,12 +4577,16 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   (Epo 2026-11-09) selects bars, pie lines and pie labels as the plane does (a click,
   Shift-click, a selection box; Delete removes them all, Escape lets go) and drags the
   one pressed: a bar up or down to its value, a line round to a new
-  angle (off the other lines, its fill going with it), a label round the circle. After
+  angle (off the other lines, its fill going with it), a label round the circle. One of
+  several chosen items takes the others of its kind along: bars up or down by as much
+  (none below 0, one taken to 0 goes), lines and labels round by as far. After
   one label the tool goes back to Select, as on the plane.
 - **See-through cards:** plane and chart paper (`PAPER`) and note fills are half
   see-through so the panel's frost over the page frame shows. An open editor uses the
   same paper with no ground of its own and hides the board's `editor-host` under it
-  (`data-editor-open`). The marking image draws them on white, so it's unchanged.
+  (`data-editor-open`). The marking image draws plane and chart paper opaque, as
+  previews do (`cardPaper`, opaque while `asImage` draws), so a stroke under a card
+  stays covered; note fills stay half see-through on its white.
 - **Marking image (`toImage()`):** everything on the canvas as it stands, including each
   card with the view it was left at, so a plotted mark panned out of view isn't in it. It's
   drawn layer by layer at a scale capped to 1,568 px on its longest side (the size the

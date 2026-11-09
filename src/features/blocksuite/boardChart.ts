@@ -27,9 +27,9 @@ import {
   type ChartBar,
   type ChartData,
   type ChartKind,
+  cardPaper,
   filledSlices,
   onScreen,
-  PAPER,
   type Paper,
   type PieLabel,
   pieCircle,
@@ -228,7 +228,7 @@ const chartRenderer: ElementRenderer<ChartElementModel> = (
     { h, w, x: 0, y: 0 },
     model,
     (color) => renderer.getColorValue(color, 'transparent', true),
-    PAPER[renderer.getColorScheme()]
+    cardPaper(renderer.getColorScheme())
   );
 };
 

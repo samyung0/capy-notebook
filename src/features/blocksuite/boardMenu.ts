@@ -12,6 +12,9 @@ type Icon = Parameters<typeof hugeIcon>[0];
 export type MenuEntry = {
   disabled?: boolean;
   icon?: Icon;
+  /** Undo and Redo keep the menu open, as the zoom row does, so a few presses step
+   * back. */
+  keepsOpen?: boolean;
   label: string;
   run: () => void;
 };
@@ -25,7 +28,8 @@ export type MenuZoom = {
 
 /** The ☰ button and its menu, top right of the board and of an open card (Epo
  * 2026-11-08): everything that isn't a tool lives here, so the bottom row holds only
- * the toolbar. An entry closes it, as does a press anywhere else or Escape. */
+ * the toolbar. An entry closes it unless it keeps it open, as does a press anywhere
+ * else or Escape. */
 export class BoardMenu {
   readonly element = document.createElement('div');
   open = false;
@@ -80,12 +84,12 @@ export class BoardMenu {
           this.open
             ? html`<div class="capy-menu-list" role="menu">
                 ${entries.map(
-                  ({ disabled, icon, label, run: action }) =>
+                  ({ disabled, icon, keepsOpen, label, run: action }) =>
                     html`<button
                       ?disabled=${disabled}
                       role="menuitem"
                       type="button"
-                      @click=${run(action)}
+                      @click=${keepsOpen ? step(action) : run(action)}
                     >
                       ${icon ? hugeIcon(icon) : nothing} ${label}
                     </button>`
