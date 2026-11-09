@@ -314,6 +314,23 @@ objects for the reaper.
   Canvas lists the payer's marked drawings to delete, an assignment's once it
   has closed with its grades released.
 
+### Workspace canvases
+
+A member's personal workspace canvas (Epo 2026-11-09, migration 0164) is a
+standalone material of kind `canvas` (`canvas_workspace_id` names its workspace,
+one live canvas per member and workspace) paid for by the member, as any
+standalone material is. Its drawing is the material's own `board` editor asset,
+gzipped, replaced on every save and trashed by the pruner as the material's
+`canvas_board` block stops naming it; the block also names the canvas's image
+assets. A canvas's board asset is capped at `CANVAS_BOARD_MAX` (2 MiB before
+gzip, `fieldlimits.CanvasBoardBytes`), checked in the browser before the upload
+and by `validateEditorAssetMetadataFor` with the material's kind; a drawn sample
+answer's board keeps the drawing's 250 KiB. The `editor_assets_size_check` row
+constraint is the backstop at 2 MiB for every `board` asset. A full storage
+refuses the upload as it refuses any editor asset. The canvas goes with the
+membership (`dropLeaverCanvasTx`) and with the workspace (cascade), its assets
+with it.
+
 ## Counter model
 
 `user_storage` holds folded `used_bytes` and `reserved_bytes`.

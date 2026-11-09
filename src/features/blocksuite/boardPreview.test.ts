@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
+import { m } from '@/i18n';
 import { toBase64 } from './base64';
-import { SAVED, withElements } from './boardFixture';
+import { SAVED, withCanvasBlock, withElements } from './boardFixture';
 import { BoardLoadError } from './boardLoad';
 import { drawBoardPreview } from './boardPreview';
 
@@ -9,7 +10,7 @@ const SVG_HEAD = /^<svg [^>]*width="180" height="120"/;
 const RED_STROKE = /<path d="([^"]*)" stroke="#e03131"/;
 
 it('draws the plane card, its marks and its axes', () => {
-  const svg = drawBoardPreview(SAVED, SIZE);
+  const svg = drawBoardPreview(SAVED, SIZE, 'question');
   expect(svg).toMatch(SVG_HEAD);
   expect(svg).toContain('stroke="#6f6f6c"');
 });
@@ -26,7 +27,8 @@ it('keeps a long stroke to what the preview can show', () => {
         xywh: '[0,600,500,20]',
       })
     ),
-    SIZE
+    SIZE,
+    'question'
   );
   const stroke = svg.match(RED_STROKE)?.[1] ?? '';
   expect(stroke.split('L').length).toBeLessThan(400);
@@ -46,7 +48,8 @@ it('opens and draws a highlighter stroke', () => {
         xywh: '[0,600,80,10]',
       })
     ),
-    SIZE
+    SIZE,
+    'question'
   );
   expect(svg).toContain('stroke="#84cfff4d"');
 });
@@ -70,11 +73,33 @@ it('draws a connector saved before the board placed it, between its ends', () =>
         }
       )
     ),
-    SIZE
+    SIZE,
+    'question'
   );
   expect(svg).toContain('stroke="#1971c2"');
 });
 
+// A placed quiz or set draws as text, as a note card does: the runner itself is
+// only on the canvas (Epo 2026-11-09).
+it('draws a placed quiz card with its title and kind', () => {
+  const svg = drawBoardPreview(
+    toBase64(
+      withCanvasBlock('affine:embed-capy-material', {
+        kind: 'quiz',
+        materialId: 'qz_1',
+        title: 'Cell cycle',
+        xywh: '[0,0,360,420]',
+      })
+    ),
+    SIZE,
+    'workspace'
+  );
+  expect(svg).toContain('Cell cycle');
+  expect(svg).toContain(m.drawing_board_quiz());
+});
+
 it('refuses a board that does not check out', () => {
-  expect(() => drawBoardPreview('AAAA', SIZE)).toThrow(BoardLoadError);
+  expect(() => drawBoardPreview('AAAA', SIZE, 'question')).toThrow(
+    BoardLoadError
+  );
 });

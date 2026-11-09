@@ -124,7 +124,9 @@ events' URL list, transactions), Replay's `beforeAddRecordingEvent` (which
 @sentry/replay 10.70 calls for Custom recording events only: breadcrumbs and
 navigation and fetch spans) and PostHog `sanitize_properties`
 (`src/lib/urlTokens.ts`): a share link keeps its id without its signature, an
-invite link becomes `/workspace-invites/:token`. A replay's Meta events (the
+invite link becomes `/workspace-invites/:token`, and a KLIPY GIF search URL
+loses its query string (the student's typed words and KLIPY customer id; Epo
+2026-11-09). A replay's Meta events (the
 page href at each full snapshot) and DOM frames never reach those hooks, so
 the tokens leave the address bar before Sentry starts instead (Sam
 2026-10-19, review C1): `src/lib/bootUrlTokens.ts`, imported right after Zod

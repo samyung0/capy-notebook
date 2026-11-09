@@ -43,6 +43,10 @@ const uploadsPath = (materialId: string) =>
   `/materials/${encodeURIComponent(materialId)}/editor-assets/uploads`;
 
 export interface EditorAssetUploadOptions {
+  /** The cap to check instead of the plan's: a workspace canvas's board takes
+   * CANVAS_BOARD_MAX, not a drawing answer's (the gateway checks by the
+   * material's kind). */
+  maxBytes?: number;
   onProgress?: (percent: number) => void;
   signal?: AbortSignal;
 }
@@ -72,7 +76,8 @@ export async function uploadEditorAsset(
   purpose: UploadPurpose,
   options: EditorAssetUploadOptions = {}
 ): Promise<EditorAsset> {
-  const maxBytes = await editorAssetMaxBytes(materialId, purpose);
+  const maxBytes =
+    options.maxBytes ?? (await editorAssetMaxBytes(materialId, purpose));
   const file =
     purpose === 'image' ? await fitImageOffThread(picked, maxBytes) : picked;
   if (file.size > maxBytes)
@@ -105,6 +110,11 @@ export async function uploadEditorAsset(
   );
   return { ...asset, name: picked.name };
 }
+
+/** Deletes one of the caller's assets: a board uploaded for a save that then
+ * failed (the workspace canvas), so it stops being charged. */
+export const deleteEditorAsset = (assetId: string) =>
+  api.del<void>(`/editor-assets/${encodeURIComponent(assetId)}`);
 
 // Resolve at render/download time. Nothing persists the URL; a tab's views share
 // it in memory until it expires (`resolvedAssetLinks.ts`).

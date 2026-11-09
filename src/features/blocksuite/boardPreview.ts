@@ -1,4 +1,5 @@
 import { tickStep } from '@/features/questions/graphTicks';
+import { m } from '@/i18n';
 import { fromBase64 } from './base64';
 import {
   BAR_SHARE,
@@ -20,17 +21,24 @@ import {
   unite,
   type Vec,
 } from './boardGeometry';
-import { BoardLoadError, checkSavedBoard, type Fields } from './boardLoad';
+import {
+  type BoardKind,
+  BoardLoadError,
+  checkSavedBoard,
+  type Fields,
+} from './boardLoad';
 
 /** A saved board drawn from its data as an SVG string, for lists, results and marking
  * views, without the editor: what's on it, not every detail (Epo 2026-11-06). Framed as
  * the marking image is: everything on the board, far groups drawn nearer, on white.
  * Strokes are plain lines, connectors straight, formulas their LaTeX, notes a line per
- * paragraph, pasted images a grey box, and no numbers or labels on cards. Throws a
+ * paragraph, a placed quiz or set its title and kind, pasted images a grey box, and no
+ * numbers or labels on cards. Throws a
  * BoardLoadError for a board that doesn't check out. */
 export function drawBoardPreview(
   saved: string,
-  size: { height: number; width: number }
+  size: { height: number; width: number },
+  board: BoardKind
 ) {
   let update: Uint8Array;
   try {
@@ -38,17 +46,19 @@ export function drawBoardPreview(
   } catch (cause) {
     throw new BoardLoadError('unreadable', { cause });
   }
-  const { blocks, elements } = checkSavedBoard(update);
-  // Where each card, shape, note and image sits, for the connectors' ends.
+  const { blocks, elements } = checkSavedBoard(update, board);
+  // Where each card, shape, note and image sits, for the connectors' ends. A group,
+  // a connector and a mind map store no place (a mind map's nodes are its shapes).
   const placed = [
     ...Object.entries(elements).filter(
-      ([, element]) => element.type !== 'group' && element.type !== 'connector'
+      ([, element]) => !UNPLACED.has(element.type as string)
     ),
     ...Object.entries(blocks).filter(
       ([id, block]) =>
         // A note kept for page mode only isn't on the canvas.
         (block['sys:flavour'] === 'affine:note' &&
           block['prop:displayMode'] !== 'doc') ||
+        block['sys:flavour'] === MATERIAL_CARD ||
         (block['sys:flavour'] === 'affine:image' && isOnCanvas(blocks, id))
     ),
   ];
@@ -140,6 +150,10 @@ type Item = {
   index: string;
   kind: string;
 };
+/** A placed quiz or flashcard set, named as the board catalog names it: this module
+ * draws without the board's own code, which the app imports it without. */
+const MATERIAL_CARD = 'affine:embed-capy-material';
+
 /** One preview pixel in board units: lines never thinner, points never closer. */
 type Pen = { pixel: number };
 
@@ -178,6 +192,8 @@ function drawItem(
       return drawFormula(box, String(fields.latex ?? ''));
     case 'affine:note':
       return drawNote(box, fields, blocks);
+    case MATERIAL_CARD:
+      return drawMaterialCard(box, fields);
     case 'affine:image':
       return `${rect(box, '#f1f1ef', '#d9d9d6', pen.pixel)}`;
     default:
@@ -431,6 +447,19 @@ function drawNote(box: Box, note: Fields, blocks: Record<string, Fields>) {
   return `<rect x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" rx="6" fill="${colour(note['prop:background'], '#fff')}" stroke="#e6e6e6" stroke-width="1"/><svg x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" viewBox="${num(x)} ${num(y)} ${num(w)} ${num(h)}" overflow="hidden">${lines(inner, texts.join('\n'), FONT_SIZE_NOTE, '#1d1d1f', 'left')}</svg>`;
 }
 
+/** A placed quiz or flashcard set: its box with the title and what it is, as the
+ * note card draws its paragraphs (Epo 2026-11-09). */
+function drawMaterialCard(box: Box, card: Fields) {
+  const { h, w, x, y } = box;
+  const what =
+    card['prop:kind'] === 'flashcards'
+      ? m.drawing_board_flashcards()
+      : m.drawing_board_quiz();
+  const title = String(card['prop:title'] ?? '');
+  const inner = { h: h - 16, w: w - 20, x: x + 10, y: y + 8 };
+  return `<rect x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" rx="6" fill="#fff" stroke="#e6e6e6" stroke-width="1"/><svg x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" viewBox="${num(x)} ${num(y)} ${num(w)} ${num(h)}" overflow="hidden">${lines(inner, `${title}\n${what}`, FONT_SIZE_NOTE, '#1d1d1f', 'left')}</svg>`;
+}
+
 function lines(
   { w, x, y }: Box,
   text: string,
@@ -470,6 +499,8 @@ function colour(value: unknown, fallback: string): string {
   return fallback;
 }
 const SAFE_COLOUR = /^(#[0-9a-f]{3,8}|[a-z]+|rgba?\([\d\s.,%]+\))$/i;
+
+const UNPLACED = new Set(['group', 'connector', 'mindmap']);
 
 function isOnCanvas(blocks: Record<string, Fields>, id: string) {
   return Object.values(blocks).some(

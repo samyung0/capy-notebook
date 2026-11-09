@@ -251,6 +251,7 @@ const EXTENSION_ICON: Record<string, FileIconName> = {
 };
 
 const MATERIAL_ICON: Record<MaterialRefType, FileIconName> = {
+  canvas: 'drawing',
   diagram: 'api-blueprint',
   flashcards: 'vhs',
   mindmap: 'forgejo',

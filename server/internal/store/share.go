@@ -377,6 +377,10 @@ func (s *Store) UpdateStandaloneMaterialPrivacy(
 		(expectedKind != "" && string(material.Kind) != expectedKind) {
 		return Material{}, ErrNotFound
 	}
+	// A personal canvas is its owner's alone (Epo 2026-11-09): never shared.
+	if material.Kind == MaterialCanvas {
+		return Material{}, ErrForbidden
+	}
 	return s.UpdateMaterial(ctx, materialID, MaterialPatch{
 		Privacy: &privacy, UpdatedBy: userID,
 	})
@@ -2232,6 +2236,10 @@ func (s *Store) queueCloneIngestTx(ctx context.Context, tx pgx.Tx, actorID, work
 // card ids; editor assets get fresh rows over shared blobs. Comments, Yjs
 // state and study progress are not copied. The cloner pays.
 func (s *Store) CloneMaterial(ctx context.Context, userID, matID string, target CloneTarget) (Material, error) {
+	// A personal canvas is its owner's alone (Epo 2026-11-09): never copied.
+	if src, err := s.GetMaterial(ctx, matID); err == nil && src.Kind == MaterialCanvas {
+		return Material{}, ErrNotFound
+	}
 	payer := clonePayerLock(userID)
 	var newID string
 	err := func() error {

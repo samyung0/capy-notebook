@@ -166,6 +166,7 @@ export default function DrawingBoardScreen({
           board.current = mountDrawingBoard(element, {
             // Where to draw (W3, W4); a read-only board draws none.
             answerArea: { label: m.drawing_answer_area() },
+            board: 'question',
             fitPadding: fitPadding(readOnly),
             onChange: readOnly ? undefined : keep,
             readOnly,

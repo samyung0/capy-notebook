@@ -131,10 +131,11 @@ const (
 	MaterialQuiz       MaterialKind = "quiz"
 	MaterialFlashcards MaterialKind = "flashcards"
 	MaterialNote       MaterialKind = "note"
+	MaterialCanvas     MaterialKind = "canvas"
 )
 
 func (MaterialKind) Schema(r huma.Registry) *huma.Schema {
-	return enumRef(r, "MaterialKind", "mindmap", "diagram", "quiz", "flashcards", "note")
+	return enumRef(r, "MaterialKind", "mindmap", "diagram", "quiz", "flashcards", "note", "canvas")
 }
 
 // CognitiveLevel is the Depth-of-Knowledge tag on generated quiz questions.
@@ -171,6 +172,7 @@ type MaterialRefType string
 
 const (
 	MaterialRefMindmap    MaterialRefType = "mindmap"
+	MaterialRefCanvas     MaterialRefType = "canvas"
 	MaterialRefDiagram    MaterialRefType = "diagram"
 	MaterialRefQuiz       MaterialRefType = "quiz"
 	MaterialRefFlashcards MaterialRefType = "flashcards"
@@ -178,7 +180,7 @@ const (
 )
 
 func (MaterialRefType) Schema(r huma.Registry) *huma.Schema {
-	return enumRef(r, "MaterialRefType", "mindmap", "diagram", "quiz", "flashcards", "note")
+	return enumRef(r, "MaterialRefType", "mindmap", "diagram", "quiz", "flashcards", "note", "canvas")
 }
 
 func (k MaterialKind) RefType() MaterialRefType {

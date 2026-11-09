@@ -18,10 +18,6 @@ export type WorkspaceSection =
   | 'study'
   | 'canvas';
 
-/** The canvas to play with: dev builds only, like the board's dev route, so a
- * production build drops BlockSuite's chunk until a page that ships opens it. */
-export const CANVAS_SECTION = import.meta.env.DEV;
-
 const SECTIONS: {
   value: WorkspaceSection;
   icon: IconName;
@@ -35,15 +31,8 @@ const SECTIONS: {
   { icon: 'folder', label: m.workspace_tab_files, value: 'files' },
   { icon: 'ai', label: m.workspace_section_agent, value: 'agent' },
   { icon: 'book', label: m.workspace_tab_study, value: 'study' },
-  ...(CANVAS_SECTION
-    ? [
-        {
-          icon: 'shape' as const,
-          label: m.workspace_section_canvas,
-          value: 'canvas' as const,
-        },
-      ]
-    : []),
+  // Each member's own canvas, stored as their canvas material (Epo 2026-11-09).
+  { icon: 'shape', label: m.workspace_section_canvas, value: 'canvas' },
 ];
 
 /* A rail item: the icon over its label, as the app sidebar's rows look. */
@@ -91,7 +80,9 @@ export function WorkspaceRail({
   accountItems: MenuItem[];
   active: WorkspaceSection;
   onSelect: (section: WorkspaceSection) => void;
-  workspace: Pick<Workspace, 'iconId' | 'name'>;
+  /** `role` is the caller's membership: a link or public visitor has none,
+   * and no canvas (Epo 2026-11-09). */
+  workspace: Pick<Workspace, 'iconId' | 'name' | 'role'>;
 }) {
   const { data: unread } = useUnreadNotificationCount({ errorBoundary: false });
   return (
@@ -111,7 +102,9 @@ export function WorkspaceRail({
         src={iconUrl(workspace.iconId)}
         title={workspace.name}
       />
-      {SECTIONS.map((section) => (
+      {SECTIONS.filter(
+        (section) => section.value !== 'canvas' || workspace.role
+      ).map((section) => (
         <RailItem
           active={active === section.value}
           icon={section.icon}

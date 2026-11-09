@@ -207,7 +207,7 @@ func (a *api) putAgentFigures(ctx context.Context, f *agentFigures, imageMaxByte
 // edits, under the chatting actor's image cap and quota (the actor pays, M16),
 // and returns the ids of the assets it added (a retried edit adds none).
 func (a *api) ensureFigureAssets(ctx context.Context, req internalDocumentsEditReq, f *agentFigures) ([]string, error) {
-	_, limits, err := a.s.EditorAssetMaterial(ctx, req.Target.ID, req.UserID)
+	_, _, limits, err := a.s.EditorAssetMaterial(ctx, req.Target.ID, req.UserID)
 	if err != nil {
 		return nil, err
 	}

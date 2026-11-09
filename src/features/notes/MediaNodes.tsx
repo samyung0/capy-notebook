@@ -43,7 +43,10 @@ import {
   YouTubeEmbed,
   type YouTubeNode,
 } from '@/features/materials/YouTubeEmbed';
-import { youtubeWatchUrl } from '@/features/materials/youtubeUrl';
+import {
+  youtubeVideoId,
+  youtubeWatchUrl,
+} from '@/features/materials/youtubeUrl';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -63,7 +66,6 @@ import {
   editorAwareness,
   useUploadingElsewhere,
 } from './uploadPresence';
-import { youtubeVideoId } from './youtube';
 
 const PLACEHOLDER_COPY: Record<
   EditorAssetPurpose,

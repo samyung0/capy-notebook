@@ -249,6 +249,9 @@ func mapHTTPError(err error) error {
 	if errors.Is(err, store.ErrConflict) {
 		return conflictError("revision_conflict", "someone else changed this first")
 	}
+	if errors.Is(err, store.ErrCanvasExists) {
+		return conflictError("canvas_exists", "you already have a canvas in this workspace")
+	}
 	if errors.Is(err, store.ErrInvalidCheckpoint) {
 		return &huma.ErrorModel{
 			Status: http.StatusUnprocessableEntity,
@@ -611,6 +614,7 @@ func registerRoutes(api huma.API, a *api) {
 	a.registerExtractions(api)
 	a.registerHidden(api)
 	a.registerMaterials(api)
+	a.registerCanvas(api)
 	a.registerOpens(api)
 	a.registerQuizzes(api)
 	a.registerFlashcards(api)
