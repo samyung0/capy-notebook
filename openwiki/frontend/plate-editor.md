@@ -2276,6 +2276,10 @@ design, option d), and the nudge's release file on 2026-10-17.
   `CLIENT_PROTOCOL` to 27 and `MIN_SOURCE` to 27, so source tabs drawing the old
   header reload; `MIN_MATERIAL` stays 22. Its deploy request names "client
   protocol 26 -> 27, source 26 -> 27".
+  The second upstream sync's pin (294a64d6a: packed fonts, regenerated engine
+  types) raised `CLIENT_PROTOCOL` to 28 and `MIN_SOURCE` to 28; `MIN_MATERIAL`
+  stays 22 and `OFFICE_PROTOCOL_VERSION` stays 14. Its deploy request names
+  "client protocol 27 -> 28, source 27 -> 28".
 
 #### When to bump
 

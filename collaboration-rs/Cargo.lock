@@ -211,6 +211,7 @@ dependencies = [
  "betteroffice-docx-layout",
  "betteroffice-docx-parse",
  "betteroffice-ooxml-text",
+ "libm",
  "ryu-js",
  "serde",
  "serde_json",
@@ -226,6 +227,7 @@ dependencies = [
  "betteroffice-ooxml-text",
  "foldhash",
  "js-sys",
+ "libm",
  "serde",
  "serde_json",
  "unicode-segmentation",
@@ -241,6 +243,7 @@ dependencies = [
  "betteroffice-drawingml",
  "betteroffice-opc",
  "indexmap",
+ "libm",
  "memchr",
  "quick-xml",
  "ryu-js",
@@ -257,9 +260,18 @@ dependencies = [
  "crc32fast",
  "flate2",
  "indexmap",
+ "libm",
  "serde",
  "tiff",
  "weezl",
+]
+
+[[package]]
+name = "betteroffice-metafile"
+version = "0.5.1"
+dependencies = [
+ "betteroffice-drawingml",
+ "libm",
 ]
 
 [[package]]
@@ -316,6 +328,7 @@ version = "0.5.1"
 dependencies = [
  "base64 0.22.1",
  "betteroffice-drawingml",
+ "betteroffice-metafile",
  "betteroffice-opc",
  "betteroffice-pptx-parse",
  "serde",
@@ -332,6 +345,7 @@ dependencies = [
  "base64 0.22.1",
  "betteroffice-drawingml",
  "betteroffice-opc",
+ "libm",
  "quick-xml",
  "serde",
  "thiserror",
@@ -359,12 +373,14 @@ name = "betteroffice-xlsx-calc"
 version = "0.5.1"
 dependencies = [
  "betteroffice-xlsx-model",
+ "libm",
 ]
 
 [[package]]
 name = "betteroffice-xlsx-model"
 version = "0.5.1"
 dependencies = [
+ "libm",
  "serde",
 ]
 
@@ -375,6 +391,7 @@ dependencies = [
  "betteroffice-xlsx-calc",
  "betteroffice-xlsx-model",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -393,6 +410,7 @@ dependencies = [
  "betteroffice-drawingml",
  "betteroffice-xlsx-model",
  "hashbrown 0.17.1",
+ "libm",
  "serde",
  "unicode-segmentation",
 ]
@@ -1781,9 +1799,9 @@ dependencies = [
 
 [[package]]
 name = "libm"
-version = "0.2.16"
+version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
+checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
 
 [[package]]
 name = "libredox"

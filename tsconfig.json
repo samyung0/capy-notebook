@@ -35,6 +35,9 @@
       "@betteroffice/fonts": [
         "./vendor/betteroffice/packages/fonts/src/index.ts"
       ],
+      "@betteroffice/fonts/progressive": [
+        "./vendor/betteroffice/packages/fonts/src/progressive-entry.ts"
+      ],
       "@betteroffice/fonts-cjk": [
         "./vendor/betteroffice/packages/fonts-cjk/src/index.ts"
       ],
