@@ -316,6 +316,9 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
     marked `Capy (local change 32)`): a pinch or swipe over the buttons goes on to the
     canvas, which zooms or pans; only an open menu keeps it, so its list scrolls.
     Upstream stopped every wheel without preventing it, so a pinch zoomed the page.
+33. Toasts through the app (`affine/components` `src/toast/toast.ts`, marked `Capy
+    (local change 33)`): `setToastHandler` hands every `toast()` message to the app's
+    own toast. BlockSuite's fixed container sat inside the board's page and was cut off.
 
 The specs named in local changes 6 to 9 are on the `blocksuite-notes` branch, with the
 note editor they pin.

@@ -877,14 +877,21 @@ export const boardToolbar = [
           'c.comment',
           'Z.a.selection',
           'd.conversions',
-          // A note's place in page mode: the board has no page mode.
+          // A note's place in page mode, and a group's copy into the page: the board
+          // has no page mode (Epo 2026-11-09).
           'a.show-in',
           'b.display-in-page',
+          'a.insert-into-page',
         ].map((id) => ({ id, when: false })),
         connectAction,
       ],
     },
     id: BlockFlavourIdentifier('custom:affine:surface:*'),
+  }),
+  // A frame is a block, outside the surface's scope, with the same Insert into Page.
+  ToolbarModuleExtension({
+    config: { actions: [{ id: 'a.insert-into-page', when: false }] },
+    id: BlockFlavourIdentifier('custom:affine:frame'),
   }),
   ToolbarModuleExtension({
     config: {

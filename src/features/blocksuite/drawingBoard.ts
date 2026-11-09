@@ -19,6 +19,7 @@ import {
 } from '@blocksuite/affine/blocks/surface';
 import { SurfaceStoreExtension } from '@blocksuite/affine/blocks/surface/store';
 import { SurfaceViewExtension } from '@blocksuite/affine/blocks/surface/view';
+import { setToastHandler } from '@blocksuite/affine/components/toast';
 import {
   StoreExtensionManager,
   type ViewExtensionContext,
@@ -82,6 +83,7 @@ import { Redo03Icon, Undo03Icon } from '@hugeicons/core-free-icons';
 import { combinedDarkCssVariables } from '@toeverything/theme';
 import { html, render } from 'lit';
 import * as Y from 'yjs';
+import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { fitImageOffThread } from '@/lib/fitImageOffThread';
 import { fromBase64, toBase64 } from './base64';
@@ -110,6 +112,9 @@ import {
   shapeButtonTool,
   sheetTools,
 } from './boardTools';
+
+// BlockSuite's notices (a copy, a lock) show in the app's own toast (local change 33).
+setToastHandler((message) => userToast({ title: message }));
 
 const stores = new StoreExtensionManager([
   ImageStoreExtension,

@@ -88,6 +88,13 @@ const TOOLS: { icon: string; id: Tool; key: string; label: () => string }[] = [
   { icon: 'erase', id: 'erase', key: 'E', label: m.drawing_board_erase_mark },
 ];
 
+/** Whether segment ab crosses segment cd. */
+function crosses(a: Vec, b: Vec, c: Vec, d: Vec) {
+  const side = (p: Vec, q: Vec, r: Vec) =>
+    Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]));
+  return side(a, b, c) !== side(a, b, d) && side(c, d, a) !== side(c, d, b);
+}
+
 /** How far a mark is from a point on the plane, in plane units. */
 function distanceTo(mark: Mark, [x, y]: Vec) {
   if (!('points' in mark)) return Math.hypot(x - mark.at[0], y - mark.at[1]);
@@ -142,9 +149,9 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   const shell = openBoardEditor(gfx, model.id, {
     fit: () => fitMarks(),
     onDelete: () => {
-      if (!selectedMark()) return false;
-      write(model.marks.filter((mark) => mark.id !== selected));
-      selected = null;
+      if (!model.marks.some(({ id }) => selected.has(id))) return false;
+      write(model.marks.filter(({ id }) => !selected.has(id)));
+      selected = new Set();
       redraw();
       return true;
     },
@@ -154,8 +161,8 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
         drawControls();
         return true;
       }
-      if (selected) {
-        selected = null;
+      if (selected.size) {
+        selected = new Set();
         redraw();
         return true;
       }
@@ -225,9 +232,11 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   /** Under the mouse: a point to pick up (with any tool but Erase), or with Select a
    * whole mark (`index` null). */
   let hover: { id: string; index: number | null } | null = null;
-  /** The mark Select clicked or dragged, which Delete removes (Epo 2026-11-09). */
-  let selected: string | null = null;
-  const selectedMark = () => model.marks.find(({ id }) => id === selected);
+  /** What Select clicked, boxed or dragged, as the board's Select does: Shift adds or
+   * takes away, Delete removes them all (Epo 2026-11-09). */
+  let selected = new Set<string>();
+  /** The selection box being dragged out on empty paper, in pixels. */
+  let boxing: { adding: boolean; from: Vec; to: Vec } | null = null;
   /** What the eraser has passed over while pressed; gone in one step when it lifts. */
   let erasing: Set<string> | null = null;
   const trail = new EraserTrail(() => redraw());
@@ -237,10 +246,12 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
    * moved copy is only drawn, so the drag is one undo step. */
   /** A new circle being sized: pressed at its middle, its radius from the drag. */
   let sizing: { centre: Vec; r: number | null; start: Vec } | null = null;
+  /** `preview` holds the moved copies: the mark, or every selected one when it's one
+   * of them. */
   let grab: {
     id: string;
     index: number | null;
-    preview: Mark | null;
+    preview: Mark[] | null;
     start: Vec;
   } | null = null;
 
@@ -299,6 +310,36 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
             (mark.kind === 'label' ? PIXELS_TO_LABEL : PIXELS_TO_ERASE) /
               view.ppu
     );
+  };
+  /** Whether a mark has any part inside a box of pixels, as the board's selection box
+   * picks what it touches. */
+  const touches = (mark: Mark, [ax, ay]: Vec, [bx, by]: Vec) => {
+    const [x0, x1, y0, y1] = [
+      Math.min(ax, bx),
+      Math.max(ax, bx),
+      Math.min(ay, by),
+      Math.max(ay, by),
+    ];
+    const inside = ([x, y]: Vec) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
+    if (mark.kind === 'formula') {
+      const drawn = laidOut(mark.latex);
+      if (!drawn) return inside(toScreen(mark.at));
+      const f = formulaBox(drawn, ...toScreen(mark.at));
+      return f.x <= x1 && f.x + f.w >= x0 && f.y <= y1 && f.y + f.h >= y0;
+    }
+    const path = ('points' in mark ? pathOf(mark) : [mark.at]).map(toScreen);
+    if (path.some(inside)) return true;
+    const corners: Vec[] = [
+      [x0, y0],
+      [x1, y0],
+      [x1, y1],
+      [x0, y1],
+    ];
+    return path
+      .slice(1)
+      .some((b, i) =>
+        corners.some((c, j) => crosses(path[i], b, c, corners[(j + 1) % 4]))
+      );
   };
   const pickable = (px: Vec) => {
     if (tool === 'erase') return null;
@@ -386,11 +427,9 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   const draw = () => {
     const { height, width } = shell.sizeCanvas();
     const preview = grab?.preview;
-    const marks = (
-      preview
-        ? model.marks.map((mark) => (mark.id === preview.id ? preview : mark))
-        : model.marks
-    ).filter(({ id }) => !erasing?.has(id));
+    const marks = model.marks
+      .map((mark) => preview?.find(({ id }) => id === mark.id) ?? mark)
+      .filter(({ id }) => !erasing?.has(id));
     drawPlane(
       ctx,
       { h: height, w: width, x: 0, y: 0 },
@@ -399,18 +438,18 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       PAPER[theme.theme],
       // The open mark's points, and those of the mark under the pointer or held.
       new Set(
-        [openId, near, grab?.id, selected].filter((id): id is string => !!id)
+        [openId, near, grab?.id, ...selected].filter((id): id is string => !!id)
       ),
       redraw
     );
-    const chosen = marks.find(({ id }) => id === selected);
-    if (chosen && chosen.id !== (preview ? grab : hover)?.id)
-      drawPicked(chosen, null);
     const picked = preview ? grab : hover;
+    for (const chosen of marks)
+      if (selected.has(chosen.id) && chosen.id !== picked?.id)
+        drawPicked(chosen, null);
     const mark = picked && marks.find(({ id }) => id === picked.id);
     if (picked && mark) drawPicked(mark, picked.index);
     if (preview && grab?.index != null) {
-      const [x, y] = pointsOf(preview)[grab.index];
+      const [x, y] = pointsOf(preview[0])[grab.index];
       const [sx, sy] = toScreen([x, y]);
       drawChip(
         ctx,
@@ -421,6 +460,14 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       );
     }
     trail.draw(ctx);
+    if (boxing) {
+      const { from, to } = boxing;
+      ctx.fillStyle = 'rgba(30, 150, 235, 0.08)';
+      ctx.strokeStyle = BLUE;
+      ctx.lineWidth = 1;
+      ctx.fillRect(from[0], from[1], to[0] - from[0], to[1] - from[1]);
+      ctx.strokeRect(from[0], from[1], to[0] - from[0], to[1] - from[1]);
+    }
     if (
       !pointer ||
       grab ||
@@ -694,18 +741,25 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   const pointers = new Map<number, Vec>();
   let pinch = 0;
   let pressed = false;
-  /** Whether the press moved the plane rather than tapping. */
-  let panned = false;
-  let pressedAt: Vec = [0, 0];
+  /** A middle-button drag pans, as on the board. */
+  let panning = false;
   const local = (event: PointerEvent): Vec => {
     const rect = box();
     return [event.clientX - rect.left, event.clientY - rect.top];
   };
+  // The middle button pans here rather than starting the browser's autoscroll.
+  canvas.addEventListener('mousedown', (event) => {
+    if (event.button === 1) event.preventDefault();
+  });
   canvas.addEventListener('pointerdown', (event) => {
-    if (event.button) return;
+    if (event.button > 1) return;
     canvas.setPointerCapture(event.pointerId);
     const at = local(event);
     pointers.set(event.pointerId, at);
+    if (event.button === 1) {
+      panning = true;
+      return;
+    }
     if (pointers.size === 2) {
       const [a, b] = [...pointers.values()];
       pinch = Math.hypot(a[0] - b[0], a[1] - b[1]);
@@ -716,8 +770,6 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       return;
     }
     pressed = true;
-    panned = false;
-    pressedAt = at;
     pointer = at;
     if (tool === 'erase') {
       erasing = new Set();
@@ -728,6 +780,8 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     }
     const target = pickable(at);
     grab = target && { ...target, preview: null, start: at };
+    if (tool === 'select' && !target)
+      boxing = { adding: event.shiftKey, from: at, to: at };
     sizing =
       tool === 'ellipse' && !grab
         ? { centre: snapped(at), r: null, start: at }
@@ -738,6 +792,10 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     const at = local(event);
     const last = pointers.get(event.pointerId);
     if (last) pointers.set(event.pointerId, at);
+    if (panning && last) {
+      panBy(at[0] - last[0], at[1] - last[1]);
+      return;
+    }
     if (last && pointers.size === 2) {
       const [a, b] = [...pointers.values()];
       const distance = Math.hypot(a[0] - b[0], a[1] - b[1]);
@@ -786,26 +844,25 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
         picked.kind === 'ellipse'
           ? ellipseCentre(picked.points)
           : pointsOf(picked)[0];
-      grab.preview = moved(
-        picked,
-        grab.index,
-        grab.index === null
-          ? [
-              snapTo(anchor[0] + to[0] - from[0], step) - anchor[0],
-              snapTo(anchor[1] + to[1] - from[1], step) - anchor[1],
-            ]
-          : snapped(at),
-        event.shiftKey
-      );
+      if (grab.index === null) {
+        const by: Vec = [
+          snapTo(anchor[0] + to[0] - from[0], step) - anchor[0],
+          snapTo(anchor[1] + to[1] - from[1], step) - anchor[1],
+        ];
+        // One of several selected marks takes them all along.
+        const group = selected.has(picked.id)
+          ? model.marks.filter(({ id }) => selected.has(id))
+          : [picked];
+        grab.preview = group.map((mark) => moved(mark, null, by, false));
+      } else
+        grab.preview = [moved(picked, grab.index, snapped(at), event.shiftKey)];
       canvas.style.cursor = 'grabbing';
       redraw();
       return;
     }
-    if (last && pressed && tool === 'select') {
-      panned ||=
-        Math.hypot(at[0] - pressedAt[0], at[1] - pressedAt[1]) >=
-        PIXELS_TO_DRAG;
-      panBy(at[0] - last[0], at[1] - last[1]);
+    if (boxing && last && pressed) {
+      boxing.to = at;
+      redraw();
       return;
     }
     pointer = last || event.pointerType === 'mouse' ? at : null;
@@ -821,6 +878,12 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     const was = pointers.get(event.pointerId);
     pointers.delete(event.pointerId);
     pinch = 0;
+    if (panning) {
+      panning = false;
+      return;
+    }
+    const boxed = boxing;
+    boxing = null;
     const held = grab;
     grab = null;
     canvas.style.cursor = '';
@@ -836,16 +899,32 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       addCircle(sized.centre, sized.r ?? tickStep(view.ppu));
     } else if (held?.preview) {
       const { preview } = held;
-      const before = model.marks.find(({ id }) => id === preview.id);
-      if (JSON.stringify(preview) !== JSON.stringify(before))
-        write(
-          model.marks.map((mark) => (mark.id === preview.id ? preview : mark))
-        );
-      if (tool === 'select') selected = preview.id;
-    } else if (was && pressed && tool === 'select') {
-      // A click picks the mark under it, or nothing; a drag of the plane keeps it.
-      if (!panned) selected = held?.id ?? null;
-    } else if (was && pressed) {
+      const next = model.marks.map(
+        (mark) => preview.find(({ id }) => id === mark.id) ?? mark
+      );
+      if (JSON.stringify(next) !== JSON.stringify(model.marks)) write(next);
+      if (tool === 'select' && !selected.has(held.id))
+        selected = event.shiftKey
+          ? new Set([...selected, held.id])
+          : new Set([held.id]);
+    } else if (boxed && pressed) {
+      // A click on empty paper lets go; a box picks all it touches, Shift adding.
+      const caught = model.marks
+        .filter((mark) => touches(mark, boxed.from, boxed.to))
+        .map(({ id }) => id);
+      const dragged =
+        Math.hypot(boxed.to[0] - boxed.from[0], boxed.to[1] - boxed.from[1]) >=
+        PIXELS_TO_DRAG;
+      if (boxed.adding)
+        selected = new Set([...selected, ...(dragged ? caught : [])]);
+      else selected = new Set(dragged ? caught : []);
+    } else if (was && pressed && tool === 'select' && held) {
+      // A click picks the mark under it; with Shift it's added or taken away.
+      const next = new Set(event.shiftKey ? selected : []);
+      if (event.shiftKey && selected.has(held.id)) next.delete(held.id);
+      else next.add(held.id);
+      selected = next;
+    } else if (was && pressed && tool !== 'select') {
       // A tap on a point does the tool's job right at it: Line starts from it.
       const mark = held && model.marks.find(({ id }) => id === held.id);
       place(
@@ -864,6 +943,8 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     grab = null;
     sizing = null;
     erasing = null;
+    boxing = null;
+    panning = false;
     trail.end();
     redraw();
   });
@@ -881,7 +962,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     commitLabel();
     finish();
     hover = null;
-    selected = null;
+    selected = new Set();
     tool = id;
     drawControls();
   };

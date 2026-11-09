@@ -81,7 +81,17 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   } | null = null;
   /** The bar being dragged up. */
   let live: { slot: number; value: number } | null = null;
+  /** What a press with Select landed on, which a drag moves. */
   let picked: Picked | null = null;
+  /** What's selected, as on the board: a click, Shift adding or taking away, or a box
+   * on empty paper; Delete removes them all (Epo 2026-11-09). */
+  let chosen: Picked[] = [];
+  let boxing: { adding: boolean; from: Vec; to: Vec } | null = null;
+  const same = (a: Picked, b: Picked) =>
+    a.kind === b.kind &&
+    (a.kind === 'spoke'
+      ? a.angle === (b as typeof a).angle
+      : a.id === (b as typeof a).id);
   /** A pie's line or label being dragged round, to this angle; written when it lifts. */
   let turning: { angle: number; moved: boolean } | null = null;
   /** What the eraser has passed over while pressed; gone in one step when it lifts. */
@@ -100,8 +110,9 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   const shell = openBoardEditor(gfx, model.id, {
     fit: model.kind === 'bar' ? () => fitAxis() : undefined,
     onDelete: () => {
-      if (!picked) return false;
-      remove(picked);
+      if (!chosen.length) return false;
+      remove(chosen);
+      chosen = [];
       picked = null;
       redraw();
       return true;
@@ -112,8 +123,8 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
         drawControls();
         return true;
       }
-      if (!picked) return false;
-      picked = null;
+      if (!chosen.length) return false;
+      chosen = [];
       redraw();
       return true;
     },
@@ -249,16 +260,55 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     const spoke = model.spokes.find((each) => offSpoke(at, each) <= reach);
     return spoke === undefined ? null : { angle: spoke, kind: 'spoke' };
   };
-  const remove = (gone: Picked) => {
-    if (gone.kind === 'bar')
-      update({ bars: model.bars.filter(({ id }) => id !== gone.id) });
-    else if (gone.kind === 'label')
-      update({ labels: model.labels.filter(({ id }) => id !== gone.id) });
-    else
-      update({
-        fills: (model.fills ?? []).filter(({ from }) => from !== gone.angle),
-        spokes: model.spokes.filter((spoke) => spoke !== gone.angle),
-      });
+  /** Removes them in one step. */
+  const remove = (gone: Picked[]) => {
+    const has = (item: Picked) => gone.some((other) => same(other, item));
+    const spokeGone = (angle: number) => has({ angle, kind: 'spoke' });
+    update({
+      bars: model.bars.filter(({ id }) => !has({ id, kind: 'bar' })),
+      fills: (model.fills ?? []).filter(({ from }) => !spokeGone(from)),
+      labels: model.labels.filter(({ id }) => !has({ id, kind: 'label' })),
+      spokes: model.spokes.filter((spoke) => !spokeGone(spoke)),
+    });
+  };
+  /** Everything with a part inside a box of pixels, as the board's selection box. */
+  const boxed = ([ax, ay]: Vec, [bx, by]: Vec): Picked[] => {
+    const [x0, x1, y0, y1] = [
+      Math.min(ax, bx),
+      Math.max(ax, bx),
+      Math.min(ay, by),
+      Math.max(ay, by),
+    ];
+    const inside = ([x, y]: Vec) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
+    if (isBar)
+      return model.bars
+        .filter(({ value }, i) => {
+          const bar = barBox(i, value);
+          return (
+            bar.left <= x1 &&
+            bar.left + bar.w >= x0 &&
+            bar.top <= y1 &&
+            bar.bottom >= y0
+          );
+        })
+        .map(({ id }) => ({ id, kind: 'bar' }));
+    const { cx, cy, r } = pieCircle(screen(), pads());
+    const at = (angle: number, reach: number): Vec => {
+      const turn = (angle * Math.PI) / 180;
+      return [cx + reach * Math.sin(turn), cy - reach * Math.cos(turn)];
+    };
+    // A line is in when a point along it is, sampled finer than any box worth drawing.
+    const spokes: Picked[] = model.spokes
+      .filter((spoke) =>
+        Array.from({ length: 41 }, (_, i) => at(spoke, (r * i) / 40)).some(
+          inside
+        )
+      )
+      .map((angle) => ({ angle, kind: 'spoke' }));
+    const labels: Picked[] = model.labels
+      .filter(({ angle }) => inside(at(angle, r * LABEL_REACH)))
+      .map(({ id }) => ({ id, kind: 'label' }));
+    return [...spokes, ...labels];
   };
   /** Whatever is within the eraser's reach of a pixel joins what it's erasing. */
   const eraseNear = (at: Vec) => {
@@ -268,8 +318,9 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     if (hit?.kind === 'spoke') erasing?.spokes.add(hit.angle);
   };
 
-  /** What Select picked, in blue, where it's being dragged to. */
+  /** A selected or held item, in blue, where it's being dragged to. */
   const drawPicked = (
+    one: Picked,
     area: { h: number; w: number; x: number; y: number },
     bars: ChartBar[],
     labels: PieLabel[],
@@ -289,8 +340,8 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
         ctx.stroke();
       }
     };
-    if (picked?.kind === 'bar') {
-      const { id } = picked;
+    if (one.kind === 'bar') {
+      const { id } = one;
       const slot = bars.findIndex((bar) => bar.id === id);
       if (slot < 0) return;
       const bar = barBox(slot, bars[slot].value);
@@ -304,8 +355,9 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       const turn = (angle * Math.PI) / 180;
       return [cx + reach * Math.sin(turn), cy - reach * Math.cos(turn)];
     };
-    if (picked?.kind === 'spoke') {
-      const angle = turning?.angle ?? picked.angle;
+    if (one.kind === 'spoke') {
+      const held = picked && same(picked, one);
+      const angle = held && turning ? turning.angle : one.angle;
       if (!spokes.includes(angle)) return;
       const [x, y] = at(angle, r);
       outline(() => {
@@ -316,11 +368,11 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       ctx.beginPath();
       ctx.arc(x, y, 4.5, 0, Math.PI * 2);
       ctx.fill();
-      if (turning?.moved) drawChip(ctx, `${angle}°`, x, y, area.w);
+      if (held && turning?.moved) drawChip(ctx, `${angle}°`, x, y, area.w);
       return;
     }
-    if (picked?.kind === 'label') {
-      const { id } = picked;
+    if (one.kind === 'label') {
+      const { id } = one;
       const label = labels.find((each) => each.id === id);
       if (!label) return;
       const [x, y] = at(label.angle, r * LABEL_REACH);
@@ -393,8 +445,24 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
         width
       );
     }
-    if (picked) drawPicked(area, bars, labels, spokes);
+    for (const one of chosen) drawPicked(one, area, bars, labels, spokes);
+    if (picked && turning && !chosen.some((one) => picked && same(one, picked)))
+      drawPicked(picked, area, bars, labels, spokes);
+    if (
+      live &&
+      picked?.kind === 'bar' &&
+      !chosen.some((one) => picked && same(one, picked))
+    )
+      drawPicked(picked, area, bars, labels, spokes);
     trail.draw(ctx);
+    if (boxing) {
+      const { from, to } = boxing;
+      ctx.fillStyle = 'rgba(30, 150, 235, 0.08)';
+      ctx.strokeStyle = BLUE;
+      ctx.lineWidth = 1;
+      ctx.fillRect(from[0], from[1], to[0] - from[0], to[1] - from[1]);
+      ctx.strokeRect(from[0], from[1], to[0] - from[0], to[1] - from[1]);
+    }
     // Where a press would set a bar, as the plane shows where a point would go.
     if (isBar && tool === 'draw' && pointer && !live) {
       const slot = slotAt(pointer);
@@ -614,7 +682,10 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       trail.start(at);
       eraseNear(at);
     }
-    if (tool === 'select') picked = hitAt(at, 6);
+    if (tool === 'select') {
+      picked = hitAt(at, 6);
+      if (!picked) boxing = { adding: event.shiftKey, from: at, to: at };
+    }
     if (isBar && tool === 'draw') {
       const slot = slotAt(at);
       if (slot <= model.bars.length && slot < BARS_MAX)
@@ -639,6 +710,11 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       trail.add(at);
     }
     lastAt = at;
+    if (boxing && pressed) {
+      boxing.to = at;
+      redraw();
+      return;
+    }
     const held = picked;
     if (tool === 'select' && pressed && held) {
       dragging ||=
@@ -672,7 +748,31 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     erasing = null;
     const turned = turning;
     turning = null;
+    const box = boxing;
+    boxing = null;
+    const held = picked;
     canvas.style.cursor = '';
+    // What Select ends up with: a box's catch, or the item clicked or dragged.
+    if (box) {
+      const dragged =
+        Math.hypot(box.to[0] - box.from[0], box.to[1] - box.from[1]) >=
+        PIXELS_TO_DRAG;
+      const caught = dragged ? boxed(box.from, box.to) : [];
+      chosen = box.adding
+        ? [
+            ...chosen,
+            ...caught.filter((one) => !chosen.some((c) => same(c, one))),
+          ]
+        : caught;
+    } else if (tool === 'select' && held) {
+      const has = chosen.some((one) => same(one, held));
+      if (dragging) chosen = has ? chosen : [held];
+      else if (event.shiftKey)
+        chosen = has
+          ? chosen.filter((one) => !same(one, held))
+          : [...chosen, held];
+      else chosen = [held];
+    }
     if (gone) {
       trail.end();
       if (gone.bars.size || gone.labels.size || gone.spokes.size)
@@ -695,6 +795,11 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
           spokes: model.spokes.map((spoke) => (spoke === from ? to : spoke)),
         });
       picked = { angle: to, kind: 'spoke' };
+      chosen = chosen.map((one) =>
+        one.kind === 'spoke' && one.angle === from
+          ? { angle: to, kind: 'spoke' }
+          : one
+      );
     } else if (turned && picked?.kind === 'label') {
       const { id } = picked;
       update({
@@ -739,6 +844,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     live = null;
     turning = null;
     erasing = null;
+    boxing = null;
     trail.end();
     pointer = null;
     redraw();
@@ -796,6 +902,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   const pick = (id: Tool) => {
     commitLabel();
     picked = null;
+    chosen = [];
     tool = id;
     pointer = null;
     drawControls();

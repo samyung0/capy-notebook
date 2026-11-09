@@ -4464,8 +4464,13 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   8 px gutter, which needs `.capy-board` to be the `viewport` container.
 - **Selecting** shows AFFiNE's own toolbar. It reads the editor's mode, so the board
   reports edgeless (`boardToolbar` in `boardTools.ts`) and hides what makes no sense on an
-  answer: Frame, Comment, a note's page mode entries and the linked doc entries. Connect shows its name. A plane card
+  answer: Frame, Comment, a note's page mode entries, a group's or frame's Insert into
+  Page (the board has one mode, Epo 2026-11-09) and the linked doc entries. Connect shows its name. A plane card
   adds a pen that opens it and a Fit to size / Custom size toggle; a chart card adds the pen.
+  The board (`.capy-board`) is positioned, so this selection layer and the ☰ menu sit
+  against it even with a header row above it (a tablet's). BlockSuite's own toasts go to
+  the app's `userToast` (`setToastHandler`, vendored local change 33); its fixed
+  container was cut off by the page.
 - **Shapes panel:** replaces AFFiNE's one-row menu through a DI override of the `shape`
   senior tool. BlockSuite has four shape types, so the rest are presets of straight
   connectors and ellipses in a group (a pen stroke smears at corners).
@@ -4490,14 +4495,18 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   opens over the whole board. At its top right sit the same ☰ menu (Fit to screen where the card
   has one, Undo, Redo, and − and + where it zooms; the board's menu hides meanwhile)
   and Done on its own (Epo 2026-11-08). Done leaves, as does Escape when no mark is open (Escape closes
-  an open menu first, then a selection). Inside, the wheel pans, Ctrl or pinch zooms, and Select drags.
+  an open menu first, then a selection). Inside, the wheel or two fingers pan, Ctrl or
+  pinch zooms, a middle-button drag pans, and Select drags, as on the board.
   A point's dot picks up with any tool but Erase (Epo 2026-11-08, option C): it rings
   blue under the mouse, a drag moves it to the grid with the coordinate chip, and a tap
   still does the tool's job at that point (Line starts from it). Select also drags a
-  whole line, curve or label (snapped by grid steps) and pans on empty paper. The
-  moved copy is only drawn until the pointer lifts, so a drag is one undo step. A click
-  or drag with Select leaves that mark selected, blue with its points, until a click
-  elsewhere, Escape or another tool; Delete or Backspace removes it (Epo 2026-11-09).
+  whole line, curve or label (snapped by grid steps); dragging one of several selected
+  marks moves them all. The moved copies are only drawn until the pointer lifts, so a
+  drag is one undo step. Select works as the board's does (Epo 2026-11-09): a click
+  selects a mark (blue, its points showing), Shift-click adds or takes one away, and a
+  drag on empty paper draws a selection box that picks every mark it touches (Shift
+  adds them); a click on empty paper, Escape or another tool lets go, and Delete or
+  Backspace removes all that's selected.
   Where points coincide, the last drawn moves.
   Label (Epo 2026-11-08) types text centred where it's clicked, a `label` mark at that
   coordinate that moves and zooms with the plane (a click near one edits it; up to 24
@@ -4558,8 +4567,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   Finish slicing (shown once there's a line) moves to Fill, where a click gives the slice
   under it the picked fill (`fills`, keyed by the line the slice starts at; erasing that
   line drops it, No fill clears it). Labels sit at an angle inside the circle. Select
-  (Epo 2026-11-09) clicks a bar, a pie line or a pie label to select it (Delete removes
-  it, Escape lets go) and drags it: a bar up or down to its value, a line round to a new
+  (Epo 2026-11-09) selects bars, pie lines and pie labels as the plane does (a click,
+  Shift-click, a selection box; Delete removes them all, Escape lets go) and drags the
+  one pressed: a bar up or down to its value, a line round to a new
   angle (off the other lines, its fill going with it), a label round the circle. After
   one label the tool goes back to Select, as on the plane.
 - **See-through cards:** plane and chart paper (`PAPER`) and note fills are half

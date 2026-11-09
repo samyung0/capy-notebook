@@ -17,6 +17,9 @@
   --capy-shape-button-triangle: #fff;
   --capy-shape-button-stroke-triangle: #d9dde3;
   --capy-note-edge: #e6e6e6;
+  /* BlockSuite's selection layer and the ☰ menu are placed against the board, not
+     against a page box that starts higher (a tablet's header row above it). */
+  position: relative;
   container: viewport / inline-size;
 }
 
@@ -208,11 +211,8 @@ html.dark:not([data-board-light]) .capy-board {
   height: 100%;
 }
 
+/* Select boxes on empty paper, as on the board; a mark under it shows grab. */
 .capy-plane-editor[data-tool="select"] canvas {
-  cursor: grab;
-}
-
-.capy-chart-editor[data-tool="select"] canvas {
   cursor: default;
 }
 
