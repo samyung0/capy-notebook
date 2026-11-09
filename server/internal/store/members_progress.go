@@ -170,10 +170,10 @@ func topicKey(id *string) string {
 	return *id
 }
 
-// membersStandings is topicStandings read as each member, for the whole class
-// in one pass: the class's quizzes and each member's own, their sizes, and the
-// class's answers grouped by member, each labelled by review.TopicLabel.
-// TestMembersStandingsMatchSummary keeps it equal to topicStandings.
+// membersStandings is each member's Summary standings (topicStandings reads one
+// member through it), for the whole class in one pass: the class's quizzes and
+// each member's own, their sizes, and the class's answers grouped by member,
+// each labelled by review.TopicLabel.
 func (s *Store) membersStandings(ctx context.Context, wsID string, users []string, now time.Time) (map[string][]SummaryTopic, error) {
 	rows, err := s.pool.Query(ctx, `SELECT u.id, m.id, m.revision, COALESCE(m.topic_id, m.practice_topic_id), t.name,
 			`+quizAssignedToSQL("m.id", "u.id")+` IS NOT NULL
@@ -236,6 +236,8 @@ func (s *Store) membersStandings(ctx context.Context, wsID string, users []strin
 			totals[q.user][q.key] += sizes[q.id]
 		}
 	}
+	// A changed mark is a new row, and the latest for an attempt's part stands. A
+	// review's check has no attempt, so each of its rows does.
 	rows, err = s.pool.Query(ctx, `SELECT ae.user_id, COALESCE(m.topic_id, m.practice_topic_id), ae.material_id, ae.question_id, COALESCE(ae.attempt_id, ''), ae.item_hash, ae.awarded, ae.marks, ae.key_seen, ae.created_at
 		FROM answer_events ae JOIN materials m ON m.id=ae.material_id
 		WHERE ae.workspace_id=$1 AND ae.user_id = ANY($2) AND m.kind='quiz' AND m.trashed_at IS NULL
@@ -256,6 +258,7 @@ func (s *Store) membersStandings(ctx context.Context, wsID string, users []strin
 		if err := rows.Scan(&user, &topicID, &materialID, &p.QuestionID, &p.AttemptID, &p.Hash, &p.Awarded, &p.Marks, &p.KeySeen, &p.At); err != nil {
 			return nil, err
 		}
+		// A cloned quiz keeps its question ids.
 		p.QuestionID = materialID + "/" + p.QuestionID
 		if parts[user] == nil {
 			parts[user] = map[string][]review.PartAnswer{}
@@ -272,6 +275,8 @@ func (s *Store) membersStandings(ctx context.Context, wsID string, users []strin
 			standing := review.TopicLabel(parts[user][key], now)
 			topics[i].Label, topics[i].Right, topics[i].Partial, topics[i].Wrong = standing.Label, standing.Right, standing.Partial, standing.Wrong
 			topics[i].Asked = standing.Asked
+			// ponytail: answers to questions since removed still count as asked;
+			// reading each quiz's current ids here would parse them all.
 			topics[i].Unattempted = max(0, totals[user][key]-standing.Asked)
 			if !standing.LastAt.IsZero() {
 				last := standing.LastAt

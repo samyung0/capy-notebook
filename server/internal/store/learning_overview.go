@@ -478,98 +478,15 @@ const gradesHeldSQL = `EXISTS (SELECT 1 FROM attempts t JOIN assignments a ON a.
 // topicStandings is every topic holding a quiz the caller can see, in reading
 // order with Other files last, each with its label. An answer counts toward its
 // quiz's topic: questions carry no topic of their own yet, and flashcards stay
-// out of mastery. Trashed and deleted quizzes leave their answers out.
+// out of mastery. Trashed and deleted quizzes leave their answers out. It is
+// membersStandings read for one member.
 func (s *Store) topicStandings(ctx context.Context, userID, wsID string, now time.Time) ([]SummaryTopic, error) {
-	sizes, err := s.itemCounts(ctx, userID, wsID)
+	standings, err := s.membersStandings(ctx, wsID, []string{userID}, now)
 	if err != nil {
 		return nil, err
 	}
-	size := make(map[string]int, len(sizes))
-	for _, it := range sizes {
-		size[it.MaterialID] = it.Size
+	if standings[userID] == nil {
+		return []SummaryTopic{}, nil
 	}
-	rows, err := s.pool.Query(ctx, `SELECT m.id, COALESCE(m.topic_id, m.practice_topic_id), t.name
-		FROM materials m LEFT JOIN topics t ON t.id=COALESCE(m.topic_id, m.practice_topic_id)
-		WHERE (m.workspace_id=$1 OR (m.practice_workspace_id=$1 AND m.owner_user_id=$2)) AND m.kind='quiz' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
-			AND workspace_item_visible(m.hidden, m.workspace_id, $2)
-		ORDER BY t.id IS NULL, t.position, m.id`, wsID, userID)
-	if err != nil {
-		return nil, err
-	}
-	out := []SummaryTopic{}
-	at := map[string]int{}
-	totals := map[string]int{}
-	for rows.Next() {
-		var id string
-		var t SummaryTopic
-		var name *string
-		if err := rows.Scan(&id, &t.TopicID, &name); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		key := ""
-		t.Group = GroupOthers
-		if t.TopicID != nil {
-			key, t.Group, t.Name = *t.TopicID, GroupTopic, *name
-		}
-		if _, seen := at[key]; !seen {
-			at[key] = len(out)
-			out = append(out, t)
-		}
-		totals[key] += size[id]
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	// A changed mark is a new row, and the latest for an attempt's part stands. A
-	// review's check has no attempt, so each of its rows does.
-	rows, err = s.pool.Query(ctx, `SELECT COALESCE(m.topic_id, m.practice_topic_id), ae.material_id, ae.question_id, COALESCE(ae.attempt_id, ''), ae.item_hash, ae.awarded, ae.marks, ae.key_seen, ae.created_at
-		FROM answer_events ae JOIN materials m ON m.id=ae.material_id
-		WHERE ae.workspace_id=$1 AND ae.user_id=$2 AND m.kind='quiz' AND m.trashed_at IS NULL
-			AND m.parent_material_id IS NULL AND workspace_item_visible(m.hidden, m.workspace_id, $2)
-			AND NOT EXISTS (SELECT 1 FROM answer_events newer WHERE newer.material_id=ae.material_id AND newer.question_id=ae.question_id
-				AND newer.attempt_id=ae.attempt_id AND newer.part_id=ae.part_id AND newer.id>ae.id)
-			AND NOT `+gradesHeldSQL+`
-		ORDER BY ae.created_at, ae.id`, wsID, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	parts := map[string][]review.PartAnswer{}
-	for rows.Next() {
-		var topicID *string
-		var materialID string
-		var p review.PartAnswer
-		if err := rows.Scan(&topicID, &materialID, &p.QuestionID, &p.AttemptID, &p.Hash, &p.Awarded, &p.Marks, &p.KeySeen, &p.At); err != nil {
-			return nil, err
-		}
-		// A cloned quiz keeps its question ids.
-		p.QuestionID = materialID + "/" + p.QuestionID
-		key := ""
-		if topicID != nil {
-			key = *topicID
-		}
-		parts[key] = append(parts[key], p)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	for i := range out {
-		key := ""
-		if out[i].TopicID != nil {
-			key = *out[i].TopicID
-		}
-		standing := review.TopicLabel(parts[key], now)
-		out[i].Label, out[i].Right, out[i].Partial, out[i].Wrong = standing.Label, standing.Right, standing.Partial, standing.Wrong
-		out[i].Asked = standing.Asked
-		// ponytail: answers to questions since removed still count as asked;
-		// reading each quiz's current ids here would parse them all.
-		out[i].Unattempted = max(0, totals[key]-standing.Asked)
-		if !standing.LastAt.IsZero() {
-			last := standing.LastAt
-			out[i].LastAt = &last
-		}
-	}
-	return out, nil
+	return standings[userID], nil
 }
