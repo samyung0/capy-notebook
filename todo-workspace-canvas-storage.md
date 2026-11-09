@@ -110,6 +110,8 @@ Decided (Epo 2026-11-09): a member's canvas and its images go with their members
 when they leave the workspace, as a leaver's marked drawings go (the leave path deletes
 the member's canvas material; the cascade takes its assets).
 
+Decided (Epo 2026-11-09): autosave 2 s after the last change and on leaving the page.
+
 ## Decisions still open
 
-1. **Save cadence:** 2 s idle plus on leave (proposed), or the answer board's 500 ms.
+None.
