@@ -487,7 +487,9 @@ const COUNT: Record<SummaryTopic['label'], (count: number) => string> = {
 };
 
 /** By topic (board G4): members × topics, under a pinned All members row of
- * counts. A member's row opens their profile. */
+ * counts. A member's row opens their profile. The grid scrolls both ways in a
+ * box no taller than the window, so the header and All members stay in view
+ * (Q723, finding 9): a sideways scroller would otherwise hold them. */
 function TopicsGrid({
   data,
   onOpen,
@@ -497,13 +499,14 @@ function TopicsGrid({
 }) {
   const { members, topics } = data;
   return (
-    <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+    <div className="-mx-4 max-h-[calc(100dvh-190px)] overflow-auto px-4 sm:mx-0 sm:px-0">
       <table
         className="w-full table-fixed border-separate border-spacing-0"
         style={{ minWidth: 190 + topics.length * 120 }}
       >
-        <thead>
-          <tr>
+        {/* Opaque rows: the card's colour, then All members on the page's. */}
+        <thead className="sticky top-0 z-10">
+          <tr className="bg-surface">
             <th className="t-meta w-47.5 border-divider border-b py-3 pr-2 pl-3 text-left align-bottom font-semibold text-fg-muted">
               {m.members_col_member()}
             </th>
@@ -519,17 +522,15 @@ function TopicsGrid({
               </th>
             ))}
           </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td className="sticky top-0 h-10 border-divider border-b bg-page pr-2 pl-3 font-semibold">
+          <tr className="bg-page">
+            <td className="h-10 border-divider border-b pr-2 pl-3 font-semibold">
               {m.members_all()}
             </td>
             {topics.map((topic) => {
               const count = topicCount(members, topic);
               return (
                 <td
-                  className="t-meta sticky top-0 h-10 border-divider border-b bg-page px-2 text-center font-semibold text-fg-muted"
+                  className="t-meta h-10 border-divider border-b px-2 text-center font-semibold text-fg-muted"
                   key={topic.topicId ?? topic.group}
                 >
                   {count && COUNT[count.label](count.count)}
@@ -537,6 +538,8 @@ function TopicsGrid({
               );
             })}
           </tr>
+        </thead>
+        <tbody>
           {members.map((member) => (
             <tr
               className="cursor-pointer hover:[&>td]:bg-surface-hover-bg"

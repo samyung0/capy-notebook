@@ -478,6 +478,12 @@ func (s *Store) WorkspaceStudyTopics(ctx context.Context, userID, wsID string, c
 	return out, err
 }
 
+// gradesHeldSQL is true for an answer event ae whose assignment's grades staff
+// have not released yet (Show grades Manual): it waits for the release, in
+// labels and in a member's Still missing alike.
+const gradesHeldSQL = `EXISTS (SELECT 1 FROM attempts t JOIN assignments a ON a.id=t.assignment_id
+	WHERE t.id=ae.attempt_id AND a.grades_shown='manual' AND a.grades_released_at IS NULL)`
+
 // topicStandings is every topic holding a quiz the caller can see, in reading
 // order with Other files last, each with its label. An answer counts toward its
 // quiz's topic: questions carry no topic of their own yet, and flashcards stay
@@ -527,15 +533,13 @@ func (s *Store) topicStandings(ctx context.Context, userID, wsID string, now tim
 	}
 	// A changed mark is a new row, and the latest for an attempt's part stands. A
 	// review's check has no attempt, so each of its rows does.
-	// An assignment's answers wait for its grades, when staff release them.
 	rows, err = s.pool.Query(ctx, `SELECT COALESCE(m.topic_id, m.practice_topic_id), ae.material_id, ae.question_id, COALESCE(ae.attempt_id, ''), ae.item_hash, ae.awarded, ae.marks, ae.key_seen, ae.created_at
 		FROM answer_events ae JOIN materials m ON m.id=ae.material_id
 		WHERE ae.workspace_id=$1 AND ae.user_id=$2 AND m.kind='quiz' AND m.trashed_at IS NULL
 			AND m.parent_material_id IS NULL AND workspace_item_visible(m.hidden, m.workspace_id, $2)
 			AND NOT EXISTS (SELECT 1 FROM answer_events newer WHERE newer.material_id=ae.material_id AND newer.question_id=ae.question_id
 				AND newer.attempt_id=ae.attempt_id AND newer.part_id=ae.part_id AND newer.id>ae.id)
-			AND NOT EXISTS (SELECT 1 FROM attempts t JOIN assignments a ON a.id=t.assignment_id
-				WHERE t.id=ae.attempt_id AND a.grades_shown='manual' AND a.grades_released_at IS NULL)
+			AND NOT `+gradesHeldSQL+`
 		ORDER BY ae.created_at, ae.id`, wsID, userID)
 	if err != nil {
 		return nil, err

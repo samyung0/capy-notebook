@@ -6,9 +6,9 @@ import {
 } from '@/components/ui/Tooltip';
 import { m } from '@/i18n';
 
-/** A member's storage is full (Epo 2026-11-08): their assignment drawings
- * still save past the limit, but they can't upload new files. Hover or tap
- * says so. Only on Study → Members, never on an assignment's pages. */
+/** A member's storage is full (Epo 2026-11-08): they can't upload files, new
+ * assignments' included (Q722). Hover or tap says so. Only on Study → Members,
+ * to class staff (Q720), never on an assignment's pages. */
 export function StorageFullChip() {
   const [open, setOpen] = useState(false);
   return (

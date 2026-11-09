@@ -1,5 +1,6 @@
 import { useNavigate } from '@tanstack/react-router';
 import { type ReactNode, useState } from 'react';
+import { isApiError } from '@/api/client';
 import { useMemberProfile } from '@/api/hooks';
 import type {
   MemberActivity,
@@ -94,6 +95,19 @@ export function MemberProfilePage({
       <PracticeFrame className="lg:pt-6">
         {back}
         <SkeletonList className="mt-6" count={6} rowHeight={36} />
+      </PracticeFrame>
+    );
+  // Not a viewer member here (removed, or never one): nothing to retry.
+  if (isError && isApiError(error) && error.status === 404)
+    return (
+      <PracticeFrame className="lg:pt-6">
+        {back}
+        <ErrorState
+          className="mt-10"
+          kind="notFound"
+          title={m.member_profile_not_found()}
+          variant="panel"
+        />
       </PracticeFrame>
     );
   if (isError)
@@ -250,6 +264,8 @@ export function MemberProfilePage({
         <NewAssignmentDialog
           onClose={() => setAssigning(false)}
           onDone={() => setAssigning(false)}
+          presetAssignee={memberId}
+          presetTopicId={focus?.topicId}
           workspaceId={workspaceId}
         />
       )}

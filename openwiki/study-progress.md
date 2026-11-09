@@ -156,8 +156,8 @@ result body resetting the session's list.
 | `GET /api/review/sessions?sort=&dir=&workspaceId=&has=&offset=&limit=` | Past reviews: finished sessions with their quiz marks and cards remembered (Good or Easy). Sort date, quiz, cards or time; `has` quiz and/or flashcards. |
 | `GET /api/learning/overview` | `LearningOverview`, Learning's Overview tab, below. |
 | `GET /api/workspaces/{id}/study/topics` | `StudyTopics`, Study → Summary: `enabled` and each topic's standing. Refused (403) to a class's owner and editors. |
-| `GET /api/workspaces/{id}/study/members` | `MembersProgress`, Study → Members: each viewer member's marks, practice this week, full storage and topic standings, and the topic columns. A class's owner and editors only: a member 403, anyone else and a personal workspace 404. |
-| `GET /api/workspaces/{id}/study/members/{memberId}` | `MemberProfile`, a member's profile: assignments, topics, questions still missed, recent work. The same rule; a member who isn't a viewer 404. |
+| `GET /api/workspaces/{id}/study/members` | `MembersProgress`, Study → Members: each viewer member's marks, practice this week, full storage and topic standings, and the topic columns, read for the whole class in a fixed number of queries. A class's owner and editor members only: everyone else (its viewer members, a link editor, a nonmember) and a personal workspace 404; the store refuses a member with `ErrForbidden`, which the API answers as 404 too. |
+| `GET /api/workspaces/{id}/study/members/{memberId}` | `MemberProfile`, a member's profile: assignments, topics, questions still missed, recent work. The same rule; a `memberId` who isn't this class's viewer member (staff, removed, another class's) 404. |
 | `POST /api/review/ratings` | `{materialId, itemId, rating, session?, attempt?}` for a card; `attempt` (`{id, startedAt}`, minted by the study page when a run begins) adds the rating to that flashcard attempt for a workspace set, creating it with the first rating (`recordCardTx`, under the account lock, as quiz attempts, and the rating lock); another user's, another set's or a quiz attempt's id is 422 (`ErrFlashcardAttempt`); a question is 422 (it is rated by a check). Needs read access to the material, so standalone shared sets can be rated too; an embedded set is 422 (`ErrStudyEmbedded`), its study page sends nothing. |
 | `POST /api/review/check` | `{materialId, itemId, answers, session?}` for a question: grades it on the server (open parts by the grading model), rates it from `correct / total` and returns `{correct, total, question}`, the question with its key and awards. A card is 422. |
 | `POST /api/quizzes/{id}/check` | `{questionId, answers, attemptId?, startedAt?}`: grades one question on the server ([question-bank.md](question-bank.md#answer-keys-and-server-grading)) and adds it to the learner's attempt, whose `AttemptDetail` so far it returns; a missing or unknown `attemptId` (another user's, another quiz's, deleted) starts a new attempt, a question already checked in the attempt is 409. Its side effect is below. |
@@ -418,11 +418,12 @@ under the workspace's `study` key).
   needing practice, then lowest overall; no grade yet sorts after a grade;
   `sortMembers`) or Name. A line opens the profile; there is no accordion.
 - **Storage full** (Epo 2026-11-08, added since the mock): a red chip by the
-  name while the member's own storage is full (`StorageUsage.Full`). Hover or
-  tap says their assignment drawings still save and go over the limit, but they
-  can't upload new files until they free up space
-  ([backend-storage-quota.md](backend-storage-quota.md)). It shows on Members and
-  the profile, never on an assignment's pages.
+  name while the member's own storage is full (`StorageUsage.Full`; the list
+  reads every member's in one query, `membersStorageFull`). Hover or tap says
+  "Their storage is full. They can't upload files, including for new
+  assignments." (Q722; [backend-storage-quota.md](backend-storage-quota.md)).
+  It shows on Members and the profile to class staff, owner and editor members
+  alike (Q720), never on an assignment's pages.
 - **Show: By topic** (G4, `show=topics`): members × topics, 64px rows, each cell
   the member's label as a pill with "9 of 10 right" (or "–" and Not started),
   under a pinned All members row: how many need practice when any do, else the
@@ -430,8 +431,13 @@ under the workspace's `study` key).
   topics any member has standing in, in topic order with Other files last, each
   with its size, the most questions any member can answer in it. A member's
   labels are exactly their own Summary's (`topicStandings` read as them), so an
-  assigned quiz counts only what was answered. Hide study progress doesn't hide
-  them from staff. Wide grids scroll sideways.
+  assigned quiz counts only what was answered; the list reads them for the
+  whole class in one pass (`membersStandings`: the quizzes, their sizes, then
+  the class's answers grouped by member, `review.TopicLabel` per member),
+  which `TestMembersStandingsMatchSummary` keeps equal to `topicStandings`.
+  The grid scrolls both ways in a box no taller than the window
+  (`100dvh` less the page's head), so the header and the All members row stay
+  pinned (Q723, finding 9).
 - **Profile** (G2, `member=<id>`, keeping `show`): back to Members, name, "Joined
   2 Sep · active today" (their latest answer or submission), then Assignments (mark of total and Submitted, In progress, Missing,
   Done or the due date; a row opens their results, or the report's Members tab
@@ -439,11 +445,17 @@ under the workspace's `study` key).
   right: the weakest topic needing practice (lowest share right) with "Missed 3
   of 4 questions" and Assign practice; Still missing
   (up to five questions whose latest check was not right, most missed first,
-  from the quizzes Summary counts, the prompt from `questions.PromptText`); and
+  from the class's own quizzes Summary counts, the prompt from
+  `questions.PromptText`; a member's own practice quiz is private and stays
+  out, and an assignment's answers wait for released grades as labels do,
+  `gradesHeldSQL`; Q723 findings 2 and 7); and
   Recent activity (the latest five: an attempt at a class practice quiz with its
   title and question count, a day's reviews in a topic, and submissions). A
   member's own practice quiz is private, so it shows as its topic, never its
-  title. Assign practice opens New assignment. Board G2's Draft a follow-up
+  title. Assign practice opens New assignment with the member as its only
+  assignee, and its Generate questions starts on the card's topic (Q721,
+  `presetAssignee`, `presetTopicId`). A `memberId` that isn't one (a removed
+  member) shows Member not found with nothing to retry. Board G2's Draft a follow-up
   quiz (F3) was removed (Epo 2026-11-08): the labels already show which topics
   to make a quiz on; remaking a quiz from another one is queued instead. The ⋮
   menu is not built.
@@ -1198,9 +1210,9 @@ from `sm` and the width of the page less its gutters on a phone, on a viewer mem
 first open of a class after joining or once for those already in one: the workspace's
 name, its owner as public pages show one (avatar left of the name, read with the
 notice only while it is due, supersedes the 2026-11-03 "doesn't name the owner"),
-"You are sharing the following data:", then what this branch really shares with its
-owner and teaching assistants, results on assignments and practice on each quiz as
-part of a class count and average, and one button (`SharingNotice.tsx`, `GET` and
+the one line "Your practice and attempts are shared" (Q718: Members shows its owner
+and teaching assistants each member's practice and attempts), and one button; a
+member who dismissed the earlier wording is not told again (`SharingNotice.tsx`, `GET` and
 `PUT /api/workspaces/{id}/sharing-notice`). Dismissing it counts as told, once per member
 row, so leaving and rejoining tells again. Staff and personal workspaces never see
 it. The board's own line about topic labels waits for topic summaries, and its Join
@@ -1267,8 +1279,10 @@ Sources: [store](../server/internal/store/assignments.go),
 
 - `server/internal/store/assignments_test.go` and
   `e2e/study/assignments.spec.ts`: see [test-catalog.md](test-catalog.md).
-- `server/internal/store/members_progress_test.go` and
-  `src/features/study/members/membersRows.test.ts`: Members; see
+- `server/internal/store/members_progress_test.go`,
+  `server/internal/httpapi/members_progress_test.go`,
+  `src/features/study/members/membersRows.test.ts` and
+  `src/features/study/members/MembersPage.test.tsx`: Members; see
   [test-catalog.md](test-catalog.md).
 - `server/internal/review/review_test.go` also holds the answer-history
   order Epo signed off (`TestHistoryWeightsOrder`).

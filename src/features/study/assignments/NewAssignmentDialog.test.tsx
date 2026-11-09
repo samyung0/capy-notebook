@@ -22,7 +22,9 @@ vi.mock('@/features/workspace/access', () => ({
   isWorkspaceReadOnly: () => frozen.value,
 }));
 vi.mock('../practice/MakePractice', () => ({
-  MakePractice: () => <div data-make-practice />,
+  MakePractice: ({ initialTopicId }: { initialTopicId?: string }) => (
+    <div data-make-practice={initialTopicId ?? ''} />
+  ),
 }));
 vi.mock('@/api/hooks', () => ({
   useCreateAssignment: () => ({ isPending: false, mutate: save }),
@@ -245,5 +247,31 @@ it('shows grades automatically and answers after it closes by default', async ()
   );
   expect(values).toContain('automatic');
   expect(values).toContain('closed');
+  act(() => root.unmount());
+});
+
+it("assigns a member's practice to them alone, generating on their topic", async () => {
+  const root = createRoot(host);
+  await act(async () =>
+    root.render(
+      <NewAssignmentDialog
+        onClose={vi.fn()}
+        onDone={vi.fn()}
+        presetAssignee="ann"
+        presetTopicId="t1"
+        workspaceId="ws1"
+      />
+    )
+  );
+  expect(
+    host.querySelector(`[aria-label="${m.assignment_field_assign_to()}"]`)
+      ?.textContent
+  ).toBe(m.workspace_members_one());
+  await press(row(m.assignment_generate_questions()));
+  expect(
+    host
+      .querySelector('[data-make-practice]')
+      ?.getAttribute('data-make-practice')
+  ).toBe('t1');
   act(() => root.unmount());
 });

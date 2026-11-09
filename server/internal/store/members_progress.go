@@ -7,13 +7,13 @@ import (
 	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/questions"
+	"github.com/samyung0/capy-notebook/server/internal/review"
 )
 
 // Study → Members (boards Main, G4 and G2; todo-study-tracking.md §4): how each
 // member of a class is doing, for its owner and teaching assistants (editor
 // members) only. Members never see it. A member's topic labels are the ones
-// their own Summary shows (topicStandings read as them), and Hide study
-// progress does not hide them from staff (§2).
+// their own Summary shows (topicStandings read as them).
 
 // MemberProgress is one member's line on Members, and their row of By topic.
 type MemberProgress struct {
@@ -24,8 +24,8 @@ type MemberProgress struct {
 	// PracticeWeek counts the questions they checked in practice (quizzes and
 	// reviews, not assignments) over the last seven days.
 	PracticeWeek int `json:"practiceWeek"`
-	// StorageFull: their own storage is full. Their assignment drawings still
-	// save past the limit, but they can't upload new files (Epo 2026-11-08).
+	// StorageFull: their own storage is full (StorageUsage.Full), so they can't
+	// upload files (Epo 2026-11-08, Q722).
 	StorageFull bool           `json:"storageFull"`
 	Topics      []SummaryTopic `json:"topics" nullable:"false"`
 }
@@ -112,28 +112,31 @@ func (s *Store) WorkspaceMembersProgress(ctx context.Context, userID, wsID strin
 	if err != nil {
 		return out, err
 	}
-	// ponytail: each member's standings and storage are read one member at a
-	// time, as their Summary reads them; one pass over the class's answers if
-	// large classes make this slow.
+	// The whole class at once, never a query per member (Q723, finding 3).
+	standings, err := s.membersStandings(ctx, wsID, ids, now)
+	if err != nil {
+		return out, err
+	}
+	full, err := s.membersStorageFull(ctx, ids)
+	if err != nil {
+		return out, err
+	}
 	sizes := map[string]int{}
 	held := map[string]bool{}
 	for i := range out.Members {
 		mp := &out.Members[i]
 		mp.MemberMarks = marks[mp.UserID]
 		mp.PracticeWeek = practice[mp.UserID]
-		if mp.Topics, err = s.topicStandings(ctx, mp.UserID, wsID, now); err != nil {
-			return out, err
+		mp.StorageFull = full[mp.UserID]
+		mp.Topics = standings[mp.UserID]
+		if mp.Topics == nil {
+			mp.Topics = []SummaryTopic{}
 		}
 		for _, t := range mp.Topics {
 			key := topicKey(t.TopicID)
 			held[key] = true
 			sizes[key] = max(sizes[key], t.Asked+t.Unattempted)
 		}
-		usage, err := s.StorageUsage(ctx, mp.UserID)
-		if err != nil {
-			return out, err
-		}
-		mp.StorageFull = usage.Full()
 	}
 	topics, err := s.pool.Query(ctx, `SELECT id, name FROM topics WHERE workspace_id=$1 ORDER BY position, id`, wsID)
 	if err != nil {
@@ -165,6 +168,195 @@ func topicKey(id *string) string {
 		return ""
 	}
 	return *id
+}
+
+// membersStandings is topicStandings read as each member, for the whole class
+// in one pass: the class's quizzes and each member's own, their sizes, and the
+// class's answers grouped by member, each labelled by review.TopicLabel.
+// TestMembersStandingsMatchSummary keeps it equal to topicStandings.
+func (s *Store) membersStandings(ctx context.Context, wsID string, users []string, now time.Time) (map[string][]SummaryTopic, error) {
+	rows, err := s.pool.Query(ctx, `SELECT u.id, m.id, m.revision, COALESCE(m.topic_id, m.practice_topic_id), t.name,
+			`+quizAssignedToSQL("m.id", "u.id")+` IS NOT NULL
+		FROM unnest($2::text[]) u(id)
+		JOIN materials m ON m.workspace_id=$1 OR (m.practice_workspace_id=$1 AND m.owner_user_id=u.id)
+		LEFT JOIN topics t ON t.id=COALESCE(m.topic_id, m.practice_topic_id)
+		WHERE m.kind='quiz' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
+			AND workspace_item_visible(m.hidden, m.workspace_id, u.id)
+		ORDER BY t.id IS NULL, t.position, m.id`, wsID, users)
+	if err != nil {
+		return nil, err
+	}
+	type quiz struct {
+		user, id, key string
+		// An assigned quiz counts only what was answered, as itemCounts leaves
+		// it out.
+		assigned bool
+	}
+	out := map[string][]SummaryTopic{}
+	at := map[string]map[string]int{}
+	var quizzes []quiz
+	revisions := map[string]int64{}
+	for rows.Next() {
+		var q quiz
+		var revision int64
+		var t SummaryTopic
+		var name *string
+		if err := rows.Scan(&q.user, &q.id, &revision, &t.TopicID, &name, &q.assigned); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		t.Group = GroupOthers
+		if t.TopicID != nil {
+			q.key, t.Group, t.Name = *t.TopicID, GroupTopic, *name
+		}
+		if at[q.user] == nil {
+			at[q.user] = map[string]int{}
+		}
+		if _, seen := at[q.user][q.key]; !seen {
+			at[q.user][q.key] = len(out[q.user])
+			out[q.user] = append(out[q.user], t)
+		}
+		quizzes = append(quizzes, q)
+		revisions[q.id] = revision
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	sizes, err := s.quizSizes(ctx, revisions)
+	if err != nil {
+		return nil, err
+	}
+	totals := map[string]map[string]int{}
+	for _, q := range quizzes {
+		if totals[q.user] == nil {
+			totals[q.user] = map[string]int{}
+		}
+		if !q.assigned {
+			totals[q.user][q.key] += sizes[q.id]
+		}
+	}
+	rows, err = s.pool.Query(ctx, `SELECT ae.user_id, COALESCE(m.topic_id, m.practice_topic_id), ae.material_id, ae.question_id, COALESCE(ae.attempt_id, ''), ae.item_hash, ae.awarded, ae.marks, ae.key_seen, ae.created_at
+		FROM answer_events ae JOIN materials m ON m.id=ae.material_id
+		WHERE ae.workspace_id=$1 AND ae.user_id = ANY($2) AND m.kind='quiz' AND m.trashed_at IS NULL
+			AND m.parent_material_id IS NULL AND workspace_item_visible(m.hidden, m.workspace_id, ae.user_id)
+			AND NOT EXISTS (SELECT 1 FROM answer_events newer WHERE newer.material_id=ae.material_id AND newer.question_id=ae.question_id
+				AND newer.attempt_id=ae.attempt_id AND newer.part_id=ae.part_id AND newer.id>ae.id)
+			AND NOT `+gradesHeldSQL+`
+		ORDER BY ae.created_at, ae.id`, wsID, users)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	parts := map[string]map[string][]review.PartAnswer{}
+	for rows.Next() {
+		var user, materialID string
+		var topicID *string
+		var p review.PartAnswer
+		if err := rows.Scan(&user, &topicID, &materialID, &p.QuestionID, &p.AttemptID, &p.Hash, &p.Awarded, &p.Marks, &p.KeySeen, &p.At); err != nil {
+			return nil, err
+		}
+		p.QuestionID = materialID + "/" + p.QuestionID
+		if parts[user] == nil {
+			parts[user] = map[string][]review.PartAnswer{}
+		}
+		key := topicKey(topicID)
+		parts[user][key] = append(parts[user][key], p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for user, topics := range out {
+		for i := range topics {
+			key := topicKey(topics[i].TopicID)
+			standing := review.TopicLabel(parts[user][key], now)
+			topics[i].Label, topics[i].Right, topics[i].Partial, topics[i].Wrong = standing.Label, standing.Right, standing.Partial, standing.Wrong
+			topics[i].Asked = standing.Asked
+			topics[i].Unattempted = max(0, totals[user][key]-standing.Asked)
+			if !standing.LastAt.IsZero() {
+				last := standing.LastAt
+				topics[i].LastAt = &last
+			}
+		}
+	}
+	return out, nil
+}
+
+// quizSizes is each quiz's item count at its revision, from parsedItems when
+// it holds that revision, else parsed; a quiz whose content is refused has
+// none, as itemCounts reads them.
+func (s *Store) quizSizes(ctx context.Context, revisions map[string]int64) (map[string]int, error) {
+	out := map[string]int{}
+	var misses []string
+	parsedItems.Lock()
+	for id, revision := range revisions {
+		if hit, ok := parsedItems.m[id]; ok && hit.revision == revision {
+			out[id] = len(hit.items)
+		} else {
+			misses = append(misses, id)
+		}
+	}
+	parsedItems.Unlock()
+	if len(misses) == 0 {
+		return out, nil
+	}
+	rows, err := s.pool.Query(ctx, `SELECT `+materialCols+` FROM materials WHERE id = ANY($1)`, misses)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		mt, err := scanMaterial(rows)
+		if err != nil {
+			return nil, err
+		}
+		items, err := itemsOf(mt)
+		if refused(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		out[mt.ID] = len(items)
+	}
+	return out, rows.Err()
+}
+
+// membersStorageFull is StorageUsage.Full for every member in one query: the
+// plan read as effectiveSubscriptionStateForUser reads it, the bytes as
+// unlockedStorageUsage counts them.
+func (s *Store) membersStorageFull(ctx context.Context, users []string) (map[string]bool, error) {
+	rows, err := s.pool.Query(ctx, `SELECT u.id, CASE
+			WHEN NOT EXISTS(SELECT 1 FROM user_subscriptions any_sub
+				WHERE any_sub.user_id=u.id) THEN u.plan_tier
+			ELSE COALESCE((SELECT live.plan_tier FROM user_subscriptions live
+				WHERE live.user_id=u.id AND live.status IN `+entitlingStatuses+`
+					AND (live.current_period_end IS NULL OR live.current_period_end > now() - `+renewalTolerance+`)
+				ORDER BY (live.plan_tier='pro') DESC,
+					live.current_period_end DESC NULLS FIRST LIMIT 1), 'free')
+			END,
+			COALESCE(st.used_bytes, 0) + COALESCE((SELECT sum(delta_bytes) FROM user_storage_deltas d WHERE d.user_id=u.id), 0),
+			COALESCE(st.reserved_bytes, 0)
+		FROM users u LEFT JOIN user_storage st ON st.user_id=u.id
+		WHERE u.id = ANY($1)`, users)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var usage StorageUsage
+		if err := rows.Scan(&usage.UserID, &usage.PlanTier, &usage.UsedBytes, &usage.ReservedBytes); err != nil {
+			return nil, err
+		}
+		limits, err := s.PlanLimits(usage.PlanTier)
+		if err != nil {
+			return nil, err
+		}
+		usage.LimitBytes = limits.StorageBytes
+		out[usage.UserID] = usage.Full()
+	}
+	return out, rows.Err()
 }
 
 // membersMarks reads each member's standing on the class's published
@@ -415,16 +607,20 @@ func (s *Store) memberAssignments(ctx context.Context, wsID, memberID string, no
 }
 
 // memberMissed is the questions whose latest check by the member was not
-// right, most missed first, from the quizzes their Summary counts.
+// right, most missed first, from the class's own quizzes their Summary counts.
+// A member's own practice quiz ("In class, only them", no workspace) is private
+// and stays out (Q723, finding 2), and an assignment's answers wait for its
+// grades as labels do (finding 7).
 func (s *Store) memberMissed(ctx context.Context, wsID, memberID string) ([]MissedQuestion, error) {
 	rows, err := s.pool.Query(ctx, `SELECT ae.material_id, ae.question_id, COALESCE(ae.attempt_id, ''), ae.item_hash,
 			ae.awarded, ae.marks, ae.created_at, COALESCE(m.topic_id, m.practice_topic_id), t.name
 		FROM answer_events ae JOIN materials m ON m.id=ae.material_id
 		LEFT JOIN topics t ON t.id=COALESCE(m.topic_id, m.practice_topic_id)
-		WHERE ae.workspace_id=$1 AND ae.user_id=$2 AND m.kind='quiz' AND m.trashed_at IS NULL
+		WHERE ae.workspace_id=$1 AND ae.user_id=$2 AND m.workspace_id=$1 AND m.kind='quiz' AND m.trashed_at IS NULL
 			AND m.parent_material_id IS NULL AND workspace_item_visible(m.hidden, m.workspace_id, $2)
 			AND NOT EXISTS (SELECT 1 FROM answer_events newer WHERE newer.material_id=ae.material_id AND newer.question_id=ae.question_id
 				AND newer.attempt_id=ae.attempt_id AND newer.part_id=ae.part_id AND newer.id>ae.id)
+			AND NOT `+gradesHeldSQL+`
 		ORDER BY ae.created_at, ae.id`, wsID, memberID)
 	if err != nil {
 		return nil, err
