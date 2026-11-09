@@ -89,23 +89,28 @@ async function onPlane(page: Page) {
     [box.x + x * box.width, box.y + y * box.height] as const;
 }
 
-/** How much of an image isn't white: an empty sheet and a drawn one differ. */
-const inkIn = (page: Page, dataUrl: string) =>
-  page.evaluate(async (url) => {
-    const image = new Image();
-    image.src = url;
-    await image.decode();
-    const output = document.createElement('canvas');
-    output.width = image.width;
-    output.height = image.height;
-    const ctx = output.getContext('2d');
-    if (!ctx) throw new Error('no context');
-    ctx.drawImage(image, 0, 0);
-    const { data } = ctx.getImageData(0, 0, image.width, image.height);
-    let dark = 0;
-    for (let i = 0; i < data.length; i += 4) if (data[i] < 60) dark++;
-    return dark;
-  }, dataUrl);
+/** How much of an image falls in a band of red values, ink by default: an empty sheet
+ * and a drawn one differ. */
+const inkIn = (page: Page, dataUrl: string, band: [number, number] = [0, 60]) =>
+  page.evaluate(
+    async ([url, low, high]) => {
+      const image = new Image();
+      image.src = url;
+      await image.decode();
+      const output = document.createElement('canvas');
+      output.width = image.width;
+      output.height = image.height;
+      const ctx = output.getContext('2d');
+      if (!ctx) throw new Error('no context');
+      ctx.drawImage(image, 0, 0);
+      const { data } = ctx.getImageData(0, 0, image.width, image.height);
+      let dark = 0;
+      for (let i = 0; i < data.length; i += 4)
+        if (data[i] >= low && data[i] < high) dark++;
+      return dark;
+    },
+    [dataUrl, ...band] as const
+  );
 
 /** The marking image, as a data URL. */
 const toImage = (page: Page) =>
@@ -343,9 +348,14 @@ test('undo inside the plane stops at what was done there', async ({ page }) => {
   for (const _ of [1, 2, 3]) await page.keyboard.press('ControlOrMeta+z');
   await expect.poll(() => marks(page)).toBe(0);
   expect(await canvas(page)).toEqual(['plane', 'brush']);
+  // Undo sits in the open plane's ☰ menu; Escape closes the menu first.
+  const planeMenu = page.locator('.capy-plane-editor .capy-menu');
+  await planeMenu.getByRole('button', { name: 'More' }).click();
   await expect(
-    page.getByRole('button', { name: 'Undo' }).first()
+    planeMenu.getByRole('menuitem', { name: 'Undo' })
   ).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await expect(planeMenu.getByRole('menu')).toHaveCount(0);
 
   // Both redo keys, whatever the Shift key does to the letter.
   await page.keyboard.press('Control+Shift+z');
@@ -565,7 +575,10 @@ test('a note scrolled out of view still reaches the image', async ({
         ?.classList.contains('block-idle')
     )
   ).toBe(true);
-  expect(await inkIn(page, await toImage(page))).toBeGreaterThan(10_000);
+  // Note fills are half see-through (N2), so the black note is mid grey on white.
+  expect(await inkIn(page, await toImage(page), [100, 160])).toBeGreaterThan(
+    10_000
+  );
   // Left as it was found.
   expect(
     await page.evaluate(() =>
@@ -605,10 +618,12 @@ test('a plane card has its pen and size, and fits its marks', async ({
 
   // Plotted past the card's right edge, zoomed out so it's on the screen.
   const inside = await onPlane(page);
-  // The dev scenario panel covers the zoom buttons here.
-  await page
+  // Zoom out sits in the open plane's ☰ menu.
+  const planeMenu = page.locator('.capy-plane-editor .capy-menu');
+  await planeMenu.getByRole('button', { name: 'More' }).click();
+  await planeMenu
     .getByRole('button', { exact: true, name: 'Zoom out' })
-    .dispatchEvent('click');
+    .click();
   await page.getByRole('button', { exact: true, name: 'Point' }).click();
   await page.mouse.click(...inside(0.95, 0.5));
   await expect.poll(() => marks(page)).toBe(1);
@@ -793,14 +808,21 @@ test('a formula that cannot be read stays open, and a root stops at its contents
 
   // Past the root's own width, the bitmap's top rows hold nothing.
   const inkAbove = await page.evaluate(async () => {
-    const { drawing } = (await import(
-      '/src/features/blocksuite/boardFormula.ts' as string
+    type Drawn = { h: number; w: number };
+    const { drawing, replay } = (await import(
+      '/src/features/blocksuite/boardFormulaDraw.ts' as string
     )) as {
-      drawing(latex: string): Promise<{ canvas: HTMLCanvasElement }>;
+      drawing(latex: string): Promise<Drawn>;
+      replay(ctx: CanvasRenderingContext2D, drawn: Drawn): void;
     };
-    const { canvas: bitmap } = await drawing('\\sqrt{x}+y');
+    // The laid-out formula, replayed at its own size.
+    const drawn = await drawing('\\sqrt{x}+y');
+    const bitmap = document.createElement('canvas');
+    bitmap.width = Math.ceil(drawn.w);
+    bitmap.height = Math.ceil(drawn.h);
     const ctx = bitmap.getContext('2d');
     if (!ctx) throw new Error('no context');
+    replay(ctx, drawn);
     const from = Math.floor(bitmap.width * 0.7);
     const { data } = ctx.getImageData(
       from,
