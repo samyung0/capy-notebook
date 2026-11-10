@@ -507,8 +507,8 @@ export const bioNotes: SeedNote[] = [
     id: 'mat_note_bio_welcome',
     title: 'Welcome to Capy Notebook',
     topicId: null,
+    // As the server's starter note: its name is its title, not a heading.
     value: [
-      heading(1, 'Welcome to Capy Notebook'),
       p(
         'This is a note: write in it like any document, and add study blocks that turn what you read into practice.'
       ),

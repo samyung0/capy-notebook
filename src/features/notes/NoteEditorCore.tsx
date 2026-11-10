@@ -353,8 +353,11 @@ const NoteAttribution = memo(function NoteAttribution({
  * Outside the editable: the title is the file's name, not text in the note.
  * Memoized: the editor re-renders on every save acknowledgement. */
 const EditorNoteHeading = memo(function EditorNoteHeading({
+  locked,
   material,
 }: {
+  /** The note takes no edits now: neither does its name. */
+  locked: boolean;
   material: Material;
 }) {
   const editor = useEditorRef();
@@ -368,7 +371,7 @@ const EditorNoteHeading = memo(function EditorNoteHeading({
         editor.tf.focus();
       }}
       plate
-      readonly={false}
+      readonly={locked}
       title={material.title}
       words={() => countWords(noteText(editor.children))}
     />
@@ -2541,7 +2544,12 @@ export function NoteEditorCore({
                       </div>
                     ) : handshaking || lateMerging ? null : (
                       <>
-                        <EditorNoteHeading material={material} />
+                        <EditorNoteHeading
+                          locked={
+                            offlineLimit || copyFull || outdated || accessLost
+                          }
+                          material={material}
+                        />
                         <EditorScrollAreaContext.Provider value={scrollArea}>
                           <CollaborationHold>
                             <NoteEditorContent

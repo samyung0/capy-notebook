@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { updateMaterialBodyTitleMax } from '@/api/gen/validators';
@@ -22,6 +22,34 @@ const autosize = (element: HTMLTextAreaElement | null) => {
   element.style.height = 'auto';
   element.style.height = `${element.scrollHeight}px`;
 };
+
+/* Which notes have Info open, shared by a note's views (its painted copy, the
+   editor, Preview): open in one, it is open in the next, so the note does not
+   jump by Info's height as one takes over from another. */
+const openInfo = new Set<string>();
+const infoWatchers = new Set<() => void>();
+const watchInfo = (watch: () => void) => {
+  infoWatchers.add(watch);
+  return () => {
+    infoWatchers.delete(watch);
+  };
+};
+
+function useInfoOpen(id: string | undefined) {
+  const open = useSyncExternalStore(
+    watchInfo,
+    () => id !== undefined && openInfo.has(id),
+    // Closed where a note is rendered to a string.
+    () => false
+  );
+  const setOpen = (next: boolean) => {
+    if (id === undefined) return;
+    if (next) openInfo.add(id);
+    else openInfo.delete(id);
+    for (const watch of infoWatchers) watch();
+  };
+  return [open, setOpen] as const;
+}
 
 /** A note's text, block after block, for its word count. */
 export function noteText(node: unknown): string {
@@ -57,7 +85,7 @@ export function countWords(text: string) {
  * note's `note-column`, whose text has no 2px inset. Both cap at 912px unless
  * the note is full width.
  */
-export function NoteHeading({
+export const NoteHeading = memo(function NoteHeading({
   fullWidth,
   material,
   onEnter,
@@ -78,9 +106,10 @@ export function NoteHeading({
 }) {
   return (
     // `note-editor` gives the Plate note's title its body's font; its body
-    // starts 16px lower than the BlockSuite note's, taken back here.
+    // starts 16px lower than the BlockSuite note's, taken back here, with the
+    // Info row kept above the editable that now reaches under it.
     <div
-      className={cn('@container', plate && 'note-editor -mb-4')}
+      className={cn('@container', plate && 'note-editor relative z-10 -mb-4')}
       data-note-heading=""
     >
       <div
@@ -106,7 +135,7 @@ export function NoteHeading({
       </div>
     </div>
   );
-}
+});
 
 function NoteTitle({
   material,
@@ -131,17 +160,21 @@ function NoteTitle({
   // Whether this field was typed in since it last showed the file's name: only
   // then does leaving it rename, so a rename from elsewhere is never undone.
   const typed = useRef(false);
+  // Bumped when the field is given a name to show: a reset writes the field
+  // on the render after it, and only then can its height be measured.
+  const [shown, setShown] = useState(0);
   const show = (title: string) => {
     typed.current = false;
     reset({ title });
+    setShown((count) => count + 1);
   };
   // A rename from elsewhere shows here, unless this field is being typed in.
   useEffect(() => {
     if (!typed.current) show(name);
   }, [name]);
-  // The field's height follows its text: after every render (a reset writes the
-  // field on the render after it) and when its column's width changes.
-  useEffect(() => autosize(field.current));
+  // The field's height follows its text: when a name is shown, as it is typed
+  // (onInput) and when its column's width changes.
+  useEffect(() => autosize(field.current), [shown]);
   useEffect(() => {
     const element = field.current;
     if (!element) return;
@@ -225,11 +258,16 @@ function NoteInfo({
   readonly: boolean;
   words: () => number;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useInfoOpen(material?.id);
   const [moving, setMoving] = useState(false);
   const [count, setCount] = useState(0);
+  // Counted when Info opens, here or in another view of this note.
+  useEffect(() => {
+    if (open) setCount(words());
+  }, [open]);
   const workspaceId = material?.workspaceId ?? '';
-  const { data: topics } = useTopics(workspaceId);
+  // A failed topics read leaves Topic blank: it never takes the note down.
+  const { data: topics } = useTopics(workspaceId, { errorBoundary: false });
   const { mutate: move } = useMoveMaterial(workspaceId);
   const topic = topics?.find(({ id }) => id === material?.topicId);
   const topicName = material?.topicId
@@ -246,10 +284,7 @@ function NoteInfo({
           'flex h-10 w-full items-center justify-between text-fg-secondary',
           !plate && 'px-0.5'
         )}
-        onClick={() => {
-          if (!open) setCount(words());
-          setOpen(!open);
-        }}
+        onClick={() => setOpen(!open)}
         type="button"
       >
         {m.note_info()}

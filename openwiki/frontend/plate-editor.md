@@ -4556,15 +4556,19 @@ aligned while Plate stays in the app). Built so far:
   to the editor and Preview opens without a jump (positions are restored
   block by block). A note painted before its read answers has its name only:
   the same box, with nothing under Info yet. Enter puts the caret at the
-  note's start; Words counts the blocks' text (`noteText`).
+  note's start; Words counts the blocks' text (`noteText`). Info's open state
+  is kept per note for the session and shared by these views, so opening the
+  editor or Preview does not close it. The editor's title is read-only while
+  the note is locked (lost access, outdated, offline limit, full copy), and
+  the phone's paused copy makes it read-only too (`copyPausedView`).
 - **Gutter** (`BlockInteractions.tsx`): from `sm` a + sits left of the grip on
   a top-level block. It adds a paragraph below and types the slash, so the
   slash plugin opens its menu; left without a pick or a search, the line
   stays empty (`gutterSlash.ts` marks the input node, `SlashInput.tsx` skips
   writing the slash back). A click on the grip opens the block menu under it
   (the right-click menu: Delete, Duplicate, Turn into, Indent, Outdent,
-  Align) through `BlockMenuOpener`; a drag still moves the block. Neither is
-  offered on a touch device or in a read-only note. The chunk containment
+  Align) through `BlockMenuOpener`; a drag still moves the block. The grip
+  menu is not offered on a touch device; a read-only note has no gutter. The chunk containment
   margin (`[data-slate-chunk]` in `tailwind.css`) is 44px on the left from
   `sm` so the + is not clipped.
 - **Tables** (`TableNodes.tsx`): a pill beside the hovered row (it also drags
@@ -4574,9 +4578,12 @@ aligned while Plate stays in the app). Built so far:
   the table. The caret bar holds Merge and Split where they apply, Header
   row, Duplicate and Delete. A header is the first row's cells as header
   cells: inserting a row above it or deleting it keeps the header on the
-  first row. `TABLE_WRAP_CLASS` pads the table (8px above, 20px below) in
-  the editor and the static renderer alike, so the pills and the + bar fit
-  inside its scroll box and both draw the same height.
+  first row, and rows added below it or at the end are never header rows.
+  `TABLE_WRAP_CLASS` pads the table (8px above, 20px right and below) in the
+  editor and the static renderer alike, so the pills and the + bars fit
+  inside its scroll box and both draw the same size. A pill acts on its
+  cell's whole span: deleting from a merged cell takes every row or column it
+  covers.
 
 Kept different on the Plate note: on a phone its gutters stay 20px, and 40px
 on the editor's right for the thread buttons, where the approved look has

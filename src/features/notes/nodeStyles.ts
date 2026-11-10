@@ -80,9 +80,10 @@ export const OL_CLASS = 'my-(--note-gap) ml-5 list-decimal space-y-1';
 export const LI_CLASS = 'text-fg';
 
 /** Padding, not margin, around a table: its column pills straddle the top
- * border and its + bar sits under the last row, both inside the scroll box
- * (TableNodes.tsx). The static table keeps the same box. */
-export const TABLE_WRAP_CLASS = 'mt-1 overflow-auto pt-2 pb-5';
+ * border and its + bars sit right of the last column and under the last row,
+ * all inside the scroll box (TableNodes.tsx). The static table keeps the same
+ * box, so both scroll sideways at the same width. */
+export const TABLE_WRAP_CLASS = 'mt-1 overflow-auto pt-2 pr-5 pb-5';
 export const TABLE_CLASS = 'w-full border-collapse text-sm';
 export const TD_CLASS =
   'h-12 border border-line px-2 py-1.5 align-top sm:px-3 sm:py-2';

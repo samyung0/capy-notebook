@@ -226,6 +226,10 @@ function PaintedNote({
     [body, value]
   );
   const displayWidth = useNoteEditorPrefs((state) => state.displayWidth);
+  // Stable, so the heading is not drawn again with every change to the note.
+  const shown = useRef(value);
+  shown.current = value;
+  const words = useCallback(() => countWords(noteText(shown.current)), []);
   return (
     <>
       {/* The title and Info row, as the editor draws them over its own
@@ -237,7 +241,7 @@ function PaintedNote({
           plate
           readonly
           title={label.title}
-          words={() => countWords(noteText(value))}
+          words={words}
         />
       )}
       <Preview

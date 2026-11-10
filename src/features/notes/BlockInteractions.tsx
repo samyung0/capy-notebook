@@ -303,10 +303,11 @@ function DraggableBlock(props: PlateElementProps) {
             )}
           >
             {/* + beside the grip (Epo 2026-11-10, mock H1): a line below, with
-             * the slash menu open on it. From `sm`, where the gutter holds
-             * both; a nested block keeps its grip alone. */}
+             * the slash menu open on it. From `sm`, where the 40px gutter
+             * holds both (18px each and the grip's 4px); a nested block
+             * keeps its grip alone. */}
             {path.length === 1 && (
-              <div className="pointer-events-auto relative mr-0.5 hidden w-4.5 items-center sm:flex">
+              <div className="pointer-events-auto relative hidden w-4.5 items-center sm:flex">
                 <button
                   aria-label={m.chrome_add_block()}
                   className="absolute left-0 flex h-6 w-full items-center justify-center rounded-button p-0 text-fg-muted hover:bg-surface-hover-bg"

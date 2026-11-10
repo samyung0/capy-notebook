@@ -75,7 +75,7 @@ function setRowKind(
   kind: typeof KEYS.td | typeof KEYS.th
 ) {
   const row = editor.api.node<TElement>(path)?.[0];
-  if (!row) return;
+  if (row?.type !== editor.getType(KEYS.tr)) return;
   const type = editor.getType(kind);
   editor.tf.withoutNormalizing(() => {
     row.children.forEach((_, index) => {
@@ -226,7 +226,7 @@ function TableElementContent({ children, ...props }: PlateElementProps) {
            * and one under the last row, shown while the pointer or the caret
            * is in the table. */}
           <div
-            className="group/table relative w-fit pr-5"
+            className="group/table relative w-fit"
             onMouseLeave={() => setHoveredColumn(null)}
             onMouseOver={(event) => {
               const cell = (event.target as Element).closest?.(
@@ -239,7 +239,7 @@ function TableElementContent({ children, ...props }: PlateElementProps) {
             {table}
             <button
               aria-label={m.editor_insert_col_after()}
-              className="absolute top-0 right-0 bottom-0 flex w-4 items-center justify-center rounded-(--radius-toolbar-button) bg-surface-hover-bg text-fg-muted opacity-0 outline-none transition-opacity hover:text-fg focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-action group-focus-within/table:opacity-100 group-hover/table:opacity-100"
+              className="absolute top-0 bottom-0 left-full ml-1 flex w-4 items-center justify-center rounded-(--radius-toolbar-button) bg-surface-hover-bg text-fg-muted opacity-0 outline-none transition-opacity hover:text-fg focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-action group-focus-within/table:opacity-100 group-hover/table:opacity-100"
               contentEditable={false}
               data-plate-prevent-deselect
               onClick={() =>
@@ -257,10 +257,12 @@ function TableElementContent({ children, ...props }: PlateElementProps) {
             </button>
             <button
               aria-label={m.editor_insert_row_after()}
-              className="absolute top-full right-5 left-2 mt-0.5 flex h-4 items-center justify-center rounded-(--radius-toolbar-button) bg-surface-hover-bg text-fg-muted opacity-0 outline-none transition-opacity hover:text-fg focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-action group-focus-within/table:opacity-100 group-hover/table:opacity-100"
+              className="absolute top-full right-0 left-2 mt-0.5 flex h-4 items-center justify-center rounded-(--radius-toolbar-button) bg-surface-hover-bg text-fg-muted opacity-0 outline-none transition-opacity hover:text-fg focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-action group-focus-within/table:opacity-100 group-hover/table:opacity-100"
               contentEditable={false}
               data-plate-prevent-deselect
-              onClick={() => add((path) => tf.insert.tableRow({ at: path }))}
+              onClick={() =>
+                add((path) => tf.insert.tableRow({ at: path, header: false }))
+              }
               title={m.editor_insert_row_after()}
               type="button"
             >
@@ -360,6 +362,8 @@ function TableFloatingToolbarContent({ multiCell }: { multiCell: boolean }) {
               editor
                 .getTransforms(BlockSelectionPlugin)
                 .blockSelection.duplicate();
+              // The copy holds the selection: the caret leaves the original.
+              blocks.focus();
             }}
           >
             <EditorIcon name="clone" />
@@ -428,7 +432,7 @@ export function TableRowElement({ children, ...props }: PlateElementProps) {
             className="top-1/2 left-0 h-7 w-4 -translate-y-1/2 cursor-grab active:cursor-grabbing group-focus-within/row:opacity-100 group-hover/row:opacity-100"
             handleRef={draggable.handleRef}
             icon="moreVertical"
-            label={m.editor_drag_row()}
+            label={m.editor_row()}
             side="right"
           >
             <BlockMenuItem
@@ -449,7 +453,10 @@ export function TableRowElement({ children, ...props }: PlateElementProps) {
               icon="arrowDown"
               label={m.editor_insert_row_after()}
               onSelect={() =>
-                row((path) => tf.insert.tableRow({ fromRow: path }))
+                row((path) =>
+                  // Never a second header row under the header.
+                  tf.insert.tableRow({ fromRow: path, header: false })
+                )
               }
             />
             <DropdownMenuSeparator />
@@ -460,10 +467,14 @@ export function TableRowElement({ children, ...props }: PlateElementProps) {
                 row((path) => {
                   const header =
                     path.at(-1) === 0 && isHeaderRow(editor, element);
+                  const tablePath = PathApi.parent(path);
+                  const table = editor.api.node<TElement>(tablePath)?.[0];
                   editor.tf.select(editor.api.start([...path, 0]));
                   tf.remove.tableRow();
-                  // The next row takes a deleted header's place.
-                  if (header && editor.api.node(path))
+                  // The next row takes a deleted header's place, if the table
+                  // is still there (its last row takes the table with it).
+                  const left = editor.api.node<TElement>(tablePath)?.[0];
+                  if (header && table && left?.id === table.id)
                     setRowKind(editor, path, KEYS.th);
                 })
               }
@@ -476,15 +487,24 @@ export function TableRowElement({ children, ...props }: PlateElementProps) {
   );
 }
 
-export function TableCellElement({
-  isHeader = false,
-  ...props
-}: PlateElementProps & { isHeader?: boolean }) {
-  const { api, editor, tf } = useEditorPlugin(TablePlugin);
-  const readOnly = useReadOnly();
-  const element = props.element as TTableCellElement;
-  const { colIndex, colSpan, minHeight, rowIndex } = useTableCellElement();
+/** A column's pill, over its first-row cell while the pointer is in one of the
+ * cell's columns or the caret is in the table. Its own component: only the
+ * first row's pills follow the hovered column, not every cell. */
+function ColumnPill({
+  colIndex,
+  colSpan,
+  element,
+}: {
+  colIndex: number;
+  colSpan: number;
+  element: TTableCellElement;
+}) {
+  const { editor, tf } = useEditorPlugin(TablePlugin);
   const hoveredColumn = useContext(HoveredColumn);
+  const hovered =
+    hoveredColumn !== null &&
+    hoveredColumn >= colIndex &&
+    hoveredColumn < colIndex + colSpan;
   // A column menu's action, on this cell's column.
   const column = (run: (path: number[]) => void) => {
     const path = editor.api.findPath(element);
@@ -492,6 +512,55 @@ export function TableCellElement({
     run(path);
     editor.tf.focus();
   };
+  return (
+    <TableHandle
+      className={cn(
+        '-top-2 left-1/2 h-4 w-7 -translate-x-1/2 group-focus-within/table:opacity-100',
+        hovered && 'opacity-100'
+      )}
+      icon="moreHorizontal"
+      label={m.editor_column()}
+      side="bottom"
+    >
+      <BlockMenuItem
+        icon="arrowLeft"
+        label={m.editor_insert_col_before()}
+        onSelect={() =>
+          column((path) =>
+            tf.insert.tableColumn({ before: true, fromCell: path })
+          )
+        }
+      />
+      <BlockMenuItem
+        icon="arrowRight"
+        label={m.editor_insert_col_after()}
+        onSelect={() =>
+          column((path) => tf.insert.tableColumn({ fromCell: path }))
+        }
+      />
+      <DropdownMenuSeparator />
+      <BlockMenuItem
+        icon="trash"
+        label={m.editor_delete_col()}
+        onSelect={() =>
+          column((path) => {
+            editor.tf.select(editor.api.start(path));
+            tf.remove.tableColumn();
+          })
+        }
+      />
+    </TableHandle>
+  );
+}
+
+export function TableCellElement({
+  isHeader = false,
+  ...props
+}: PlateElementProps & { isHeader?: boolean }) {
+  const { api } = useEditorPlugin(TablePlugin);
+  const readOnly = useReadOnly();
+  const element = props.element as TTableCellElement;
+  const { colIndex, colSpan, minHeight, rowIndex } = useTableCellElement();
   const { rightProps } = useTableCellElementResizable({
     colIndex,
     colSpan,
@@ -521,46 +590,8 @@ export function TableCellElement({
       >
         {props.children}
       </div>
-      {/* The column's pill, over the first row's cell while the pointer is in
-       * its column or the caret is in the table. */}
       {!readOnly && rowIndex === 0 && (
-        <TableHandle
-          className={cn(
-            '-top-2 left-1/2 h-4 w-7 -translate-x-1/2 group-focus-within/table:opacity-100',
-            hoveredColumn === colIndex && 'opacity-100'
-          )}
-          icon="moreHorizontal"
-          label={m.editor_column()}
-          side="bottom"
-        >
-          <BlockMenuItem
-            icon="arrowLeft"
-            label={m.editor_insert_col_before()}
-            onSelect={() =>
-              column((path) =>
-                tf.insert.tableColumn({ before: true, fromCell: path })
-              )
-            }
-          />
-          <BlockMenuItem
-            icon="arrowRight"
-            label={m.editor_insert_col_after()}
-            onSelect={() =>
-              column((path) => tf.insert.tableColumn({ fromCell: path }))
-            }
-          />
-          <DropdownMenuSeparator />
-          <BlockMenuItem
-            icon="trash"
-            label={m.editor_delete_col()}
-            onSelect={() =>
-              column((path) => {
-                editor.tf.select(editor.api.start(path));
-                tf.remove.tableColumn();
-              })
-            }
-          />
-        </TableHandle>
+        <ColumnPill colIndex={colIndex} colSpan={colSpan} element={element} />
       )}
       {!readOnly && (
         <ResizeHandle
