@@ -212,6 +212,7 @@ export function NoteEditor({
           key={material.id}
           material={material}
           onEditorStatusChange={onEditorStatusChange}
+          onShown={onShown}
         />
       </Suspense>
     );

@@ -170,11 +170,9 @@ test('offline edits outlive a reload and save once the room is back', async ({
   await setReachable(page, false);
   await setOnline(page, true);
   await page.reload();
-  await expect(saveState(page)).toHaveAttribute(
-    'data-save-state',
-    'connecting',
-    { timeout: 30_000 }
-  );
+  await expect(saveState(page)).toHaveAttribute('data-save-state', 'opening', {
+    timeout: 30_000,
+  });
   await setReachable(page, true);
   await expect(
     page

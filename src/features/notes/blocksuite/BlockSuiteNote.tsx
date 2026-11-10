@@ -64,9 +64,13 @@ function loadPageEditor() {
 export default function BlockSuiteNote({
   material,
   onEditorStatusChange,
+  onShown,
 }: {
   material: Material;
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
+  /** As NoteEditor's: the first view (or an error in its place) is ready for
+   * the screen. Null, as there is no Plate view to hand over. */
+  onShown?: (view: null) => void;
 }) {
   // Under MSW the room is seeded from the stored content, as the server
   // seeds it (`state_from_value`); a later refetch changes nothing.
@@ -93,6 +97,13 @@ export default function BlockSuiteNote({
     onEditorStatusChange?.(saveState ? { saveState, slowed } : null);
   }, [onEditorStatusChange, saveState, slowed]);
   useEffect(() => () => onEditorStatusChange?.(null), [onEditorStatusChange]);
+  // Once: later paints are room swaps, which happen on screen.
+  const reported = useRef(false);
+  const shown = () => {
+    if (reported.current) return;
+    reported.current = true;
+    onShown?.(null);
+  };
 
   if (!live) return <FileLoading />;
   // One strip, the live room's: a paused view shows none.
@@ -111,7 +122,10 @@ export default function BlockSuiteNote({
           opened && (
             <RoomView
               key={opened.key}
-              onPainted={() => painted(opened)}
+              onPainted={() => {
+                painted(opened);
+                shown();
+              }}
               opened={opened}
               phase={opened === paused ? 'paused' : paused ? 'standby' : 'live'}
             />
@@ -238,7 +252,8 @@ function restorePlace(key: number, { block, offset }: Place) {
 
 /** One room's view: its editor once synced, its copy-only recovery, or the
  * state it waits in. `standby` builds hidden beside the paused view and says
- * `onPainted` once it can take its place. */
+ * `onPainted` once it can take its place; the first view says it too, to
+ * leave the painted note. */
 function RoomView({
   opened,
   phase,
@@ -259,8 +274,8 @@ function RoomView({
       !recovery &&
       (snapshot.status === 'offline' || isOutdatedBanner(snapshot.offline)));
   useEffect(() => {
-    if (phase !== 'standby') return;
-    if (settled || document.visibilityState === 'hidden') onPainted();
+    const hidden = document.visibilityState === 'hidden';
+    if (settled || (phase === 'standby' && hidden)) onPainted();
   }, [phase, settled, onPainted]);
 
   let content: ReactNode;

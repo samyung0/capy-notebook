@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page, test } from '@playwright/test';
 import { EDITOR_NOTE, EDITOR_WORKSPACE_ID } from '../../src/mocks/editorSeed';
+import { showChatHistory } from '../helpers/panelView';
 
 /**
  * The BlockSuite note on MSW (todo-blocksuite-spike.md, step 1 piece 3): a
@@ -216,19 +217,13 @@ test.describe('BlockSuite note', () => {
   test('a chat answer pastes with its callout', async ({ page }) => {
     const note = await openNote(page);
     await joinPeer(page);
-    await page
-      .getByText('OpenUI: tabs, steps + reveals', { exact: true })
-      .first()
-      .click();
-    await expect(page.locator('[data-ui]').first()).toBeVisible();
+    await showChatHistory(page);
+    await page.getByRole('button', { name: 'Answer: tabs + reveals' }).click();
+    await expect(page.locator('[data-chat-answer]').first()).toBeVisible();
     // The whole answer, copied with the keyboard (answerCopy.ts).
     await page.evaluate(() => {
-      const blocks = [...document.querySelectorAll('[data-ui]')].filter(
-        (element) => !element.parentElement?.closest('[data-ui]')
-      );
       const range = document.createRange();
-      range.setStartBefore(blocks[0]);
-      range.setEndAfter(blocks.at(-1)!);
+      range.selectNodeContents(document.querySelector('[data-chat-answer]')!);
       getSelection()!.removeAllRanges();
       getSelection()!.addRange(range);
     });
