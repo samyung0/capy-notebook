@@ -21,6 +21,7 @@ import pymupdf
 from . import page_text
 from .furniture import _folio
 from .order import normal, repair_page
+from .source_text import center_inside
 
 BULLET = re.compile(r"^\s*[•●▪◦‣⁃∙·■□☐➢✓✔]")
 SENTENCE_END = re.compile(r"[.!?][\"'”’)\]]*$")
@@ -41,12 +42,6 @@ def _literal(text: str) -> str:
 def _outline_title(text: str) -> str:
     return _literal(
         re.sub(r"^(?:chapter\s+)?\d+(?:\.\d+)*[.\s]+", "", text, flags=re.IGNORECASE)
-    )
-
-
-def _centred(span: tuple[float, float, float, float], rect: pymupdf.Rect) -> bool:
-    return rect.contains(
-        pymupdf.Point((span[0] + span[2]) / 2, (span[1] + span[3]) / 2)
     )
 
 
@@ -81,7 +76,7 @@ def _source_spans(
             or not 0 <= page_index < len(document)
         ):
             continue
-        page = document[page_index]
+        page = page_text.page_at(document, page_index)
         if page.rotation:
             continue
         if page_index not in pages:
@@ -102,7 +97,7 @@ def _source_spans(
         text = block.get("text", "")
         # The thin-box test runs only when centre containment finds no match,
         # so it never replaces evidence the centre test already proves.
-        for inside in (_centred, _thin):
+        for inside in (center_inside, _thin):
             spans = [s for s in pages[page_index] if inside(s["bbox"], rect)]
             if spans and _literal(text) == _literal(" ".join(s["text"] for s in spans)):
                 evidence[index] = spans
@@ -152,7 +147,7 @@ def correct_outline_roots(
     blocks: list[dict], document: pymupdf.Document, evidence: dict[int, list[dict]]
 ) -> list[dict]:
     """Require complete literal roots and proof across existing scope boundaries."""
-    toc = document.get_toc(simple=False)
+    toc = page_text.outline(document, simple=False)
     matches = [_outline_match(blocks, document, evidence, row) for row in toc]
     counts = Counter(matches)
     roots: list[int] = []
@@ -562,7 +557,7 @@ def correct_roles(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
     """Correct source-backed heading roles before any section context is built."""
     outline = {
         (page - 1, _outline_title(text))
-        for _, text, page in document.get_toc()
+        for _, text, page in page_text.outline(document)
         if page > 0
     }
     page_spans: dict[int, list[dict]] = {}
@@ -684,7 +679,7 @@ def insert_outline_headings(
     """
     from .outline_levels import _entries  # outline_levels imports this module
 
-    toc = document.get_toc(simple=False)
+    toc = page_text.outline(document, simple=False)
     kept = {(e["page"], _outline_title(e["title"])) for e in _entries(document)}
     pages: dict[int, list[int]] = defaultdict(list)
     for index, block in enumerate(blocks):
@@ -821,7 +816,7 @@ def promote_capitals(blocks: list[dict], document: pymupdf.Document) -> list[dic
     def text_of(block: dict) -> str:
         return " ".join(str(block.get("text") or "").split())
 
-    known = {letters(title) for _, title, _ in document.get_toc()}
+    known = {letters(title) for _, title, _ in page_text.outline(document)}
     known |= {letters(text_of(b)) for b in blocks if _is_heading(b)}
     labels: dict[str, set] = defaultdict(set)
     for block in blocks:
@@ -926,7 +921,7 @@ def source_headings(blocks: list[dict], pdf: Path) -> dict[int, dict]:
             if not block.get("text_level") and not (box[0] > 950 or box[2] < 50):
                 continue
             page_index = block["page_idx"]
-            page = document[page_index]
+            page = page_text.page_at(document, page_index)
             if page.rotation:
                 continue
             if page_index not in page_lines:

@@ -840,8 +840,15 @@ about 200 MiB, pages are read from MuPDF on each call). `page_dict` and
 `page_words` keeps words the same way, so every stage reads the page without
 MuPDF. Text-less page detection reads plain text only for pages whose kept
 characters fall short of its 40. Only the facts two stages need from the text
-trace are kept; drawings and image placements are still read from MuPDF where
-a stage needs them. `ParseOutput.stages` (the receipt's `_stages`) records
+trace are kept. Drawings are not kept either: `page_drawings` reads them and
+keeps the page's long horizontal strokes (`page_rules`), so table recovery
+reuses the read vector figures make of every page instead of reading drawings
+again; image placements are still read from MuPDF where a stage needs them.
+The session also reads the outline once (`outline`) and hands a stage that
+asks for its block's page the page object it handed out last (`page_at`).
+Span-centre tests against a block's box (heading evidence, glyph repairs)
+answer in plain floats and ask MuPDF's single-precision test only within
+rounding distance of an edge. `ParseOutput.stages` (the receipt's `_stages`) records
 the seconds of each stage. ODL writes JSON only, with no image files (above):
 the figure-heavy textbook's whole parse fell from 189 s to 87 s, its Java step
 from 127 s to 8 s. ODL's `--threads` gave identical output and no speed, so it

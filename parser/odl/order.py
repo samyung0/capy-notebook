@@ -100,14 +100,20 @@ def repair(blocks: list[dict]) -> tuple[list[dict], set[int]]:
     """Reorder each page independently; return the pages that changed."""
     result = blocks.copy()
     reordered: set[int] = set()
-    for page in sorted({b["page_idx"] for b in blocks}):
-        slots = [i for i, b in enumerate(blocks) if b["page_idx"] == page]
-        ordered, reason = repair_page([blocks[i] for i in slots])
+    pages: dict[int, list[int]] = {}
+    for i, block in enumerate(blocks):
+        pages.setdefault(block["page_idx"], []).append(i)
+    for page, slots in sorted(pages.items()):
+        original = [blocks[i] for i in slots]
+        ordered, reason = repair_page(original)
         for i, block in zip(slots, ordered):
             result[i] = block
         if reason == "reordered":
             reordered.add(page)
-    assert Counter(map(_signature, blocks)) == Counter(map(_signature, result))
+            # Only a reordered page can have lost or gained a block.
+            assert Counter(map(_signature, original)) == Counter(
+                map(_signature, ordered)
+            )
     return result, reordered
 
 
