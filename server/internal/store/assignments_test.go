@@ -1402,6 +1402,26 @@ func TestAssignedHiddenQuizOpensToItsAssignees(t *testing.T) {
 	if _, ok := f.assignedRow(t, f.other); ok {
 		t.Fatal("the hidden quiz lists for a member it did not go to")
 	}
+	// The Files page's All files lists it the same way (Epo 2026-11-09).
+	allFiles := func(user string) *MaterialListItem {
+		t.Helper()
+		page, err := f.s.ListItems(ctx, user, ItemListFilter{All: true, Kinds: []string{"quiz"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range page.Items {
+			if item.Material != nil && item.Material.ID == f.quiz.ID {
+				return item.Material
+			}
+		}
+		return nil
+	}
+	if row := allFiles(f.viewer); row == nil || row.AssignmentID != created.ID || row.Hidden {
+		t.Fatalf("the assignee's All files row = %+v", row)
+	}
+	if row := allFiles(f.other); row != nil {
+		t.Fatalf("All files lists the hidden quiz for a member it did not go to: %+v", row)
+	}
 
 	// Undo: as it was.
 	if err := f.s.DeleteAssignment(ctx, f.user, created.ID); err != nil {

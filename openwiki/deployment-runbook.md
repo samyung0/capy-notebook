@@ -1494,8 +1494,9 @@ Two content security policies, both built once per SPA build by
   Worker renders are sent with `Content-Security-Policy-Report-Only` listing
   the only places a page may draw an image or CSS `url()` from: `'self'`,
   `data:`, `blob:`, the environment's bucket, the `BANK_ASSETS_URL` base,
-  `https://img.clerk.com` (avatars) and `https://i.ytimg.com` (YouTube
-  posters). It stays report-only.
+  `https://img.clerk.com` (avatars), `https://i.ytimg.com` (YouTube
+  posters) and, in a build that has `VITE_KLIPY_KEY`, `https://*.klipy.com`
+  (the workspace canvas's GIFs and stickers, §11.1). It stays report-only.
 - **Scripts, enforced on the Worker's pages.** The share, summary and error
   pages the site Worker renders are also sent with an enforced
   `Content-Security-Policy` (`pagePolicy`):
@@ -2431,7 +2432,18 @@ pinned per environment.
    republishing from the book's saved run. There is no migration path: a changed `LIBRARY_SCHEMA`
    means dropping the `library` database, running `schema` again and
    republishing every book. That costs one loader run and no model calls,
-   because the builder's output is on the developer PC.
+   because the builder's output is on the developer PC. Added columns are
+   the exception: `schema` adds them in place. The vector table's generated
+   `bits` code (2026-11-10) rewrites that table once under an exclusive
+   lock, during which library searches wait, and library search orders by
+   it: run `schema` before releasing a pipeline that reads the column, or
+   every library search with no subject or role fails on the missing column.
+   The column needs pgvector 0.7 or later (`binary_quantize`); the library
+   reported 0.8.6 on 2026-11-10, and `CREATE EXTENSION IF NOT EXISTS` never
+   upgrades an installed extension, so check `extversion` first on any
+   other library database. The live library got the column on 2026-11-10:
+   94 seconds for 206,776 vectors, and the rewrite shrank the table from
+   2.4 GB to 1.3 GB.
 
 #### Question bank database and backups
 
@@ -2709,17 +2721,29 @@ docker exec "$parser" sh -c 'test -w /tmp || echo read-only'                  # 
 ### 7.6 Layout service
 
 Make a quiz finds figures with PP-DocLayout_plus-L's ONNX export under
-onnxruntime (`layout/app.py`). One pool runs on this host and serves UAT and
-production together, with no split and no queue of its own (Epo 2026-11-04). The
-service is stateless: a JPEG in, regions out, nothing stored, only counts and
-timings logged. It is its own compose project under `/opt/capy-layout`, outside
-the UAT and production projects and the release workflows, like the library
-database (§7.3). The image holds the model: `layout/Dockerfile` adds it from a
-pinned Hugging Face revision and checks its SHA-256 at build, so the build needs
-the network and the running service does not. It runs at a low CPU weight
-(`cpu_shares: 128`, no `cpus` cap) with onnxruntime's spinning off, so the parser
-beside it keeps the cores when both are busy; sizes come from the
-[capacity test](../bench/extraction/reports/2026-11-04-layout-capacity.md).
+onnxruntime, its convolutions in int8 (`layout/app.py`). One pool runs on this
+host and serves UAT and production together, with no split and no queue of its
+own (Epo 2026-11-04). The service is stateless: a JPEG in, regions out, nothing
+stored, only counts and timings logged. It is its own compose project under
+`/opt/capy-layout`, outside the UAT and production projects and the release
+workflows, like the library database (§7.3). The image holds the model:
+`layout/Dockerfile` adds the float export from a pinned Hugging Face revision
+and checks its SHA-256 at build, and a build stage makes the int8 model from it
+(`layout/quantise.py`, with the calibration ranges in
+`layout/calibration-ranges.json`; no page is read). Only the int8 model reaches
+the runtime image, which has no quantisation package. So the build needs the
+network and the running service does not. The int8 file's bytes differ between
+build machines (the Mac's and this host's differ, and agree on 99.9% of
+regions), and the timings are of this host's build, so build here, as step 3
+does. It runs at a low CPU weight (`cpu_shares: 128`, no `cpus` cap) with
+onnxruntime's spinning off, so the parser beside it keeps the cores when both
+are busy; sizes come from the
+[capacity test](../bench/extraction/reports/2026-11-04-layout-capacity.md),
+which ran the float model. With int8
+([report](../bench/extraction/reports/2026-11-10-layout-int8.md)) a page costs
+528 CPU-ms at one thread an inference, the same at two and 11% more at four, so
+a higher `LAYOUT_THREADS` only shortens one page's wait; one process running a
+page at a time peaks at 425 MB, 544 MB with the float model.
 
 1. Check out the reviewed commit under `/opt/capy-layout/src`.
 2. Create `/opt/capy-layout/.env` (mode 0600) from `deploy/layout.env.example`.
@@ -2732,7 +2756,13 @@ beside it keeps the cores when both are busy; sizes come from the
      -f /opt/capy-layout/src/deploy/docker-compose.layout.yml up -d --build
    ```
 
-4. Check it. `docker inspect --format '{{.State.Health.Status}}' capy-layout`
+4. Check it. `docker exec capy-layout sha256sum /opt/layout/inference.onnx`
+   gives `9f8d9c6d53b2051b3ab8620c5881c9741df1bf71cc9b8a6266862fb267083304`,
+   the build that was timed; another value is a model nobody measured (a new
+   CPU, onnxruntime or pin), so score the gold figures with it before use
+   ([report](../bench/extraction/reports/2026-11-10-layout-int8.md)). The
+   measurements are from CPUs with VNNI, as this host's; x86 without it can
+   saturate the int8 convolutions. `docker inspect --format '{{.State.Health.Status}}' capy-layout`
    reports `healthy`, `curl http://10.77.0.2:8092/healthz` answers `ok`, `ss -tlnp
    | grep 8092` shows the WireGuard address alone, and a probe of the public
    address is refused. The container uses host networking like the parser, because
@@ -3112,6 +3142,59 @@ Import stays `POST /api/workspaces/{id}/sources/import` with `fileIds` and,
 for OneDrive, optional `driveIds` of the same length. Download uses
 `/drives/{driveId}/items/{id}` when `driveId` is present, otherwise
 `/me/drive/items/{id}`.
+
+## 11.1 KLIPY GIF and sticker search
+
+The workspace canvas's GIF and Sticker tiles search KLIPY from the student's
+browser (`src/features/blocksuite/boardKlipy.ts`). Nothing passes through the
+gateway, so the setup is KLIPY's partner panel and one build value. Skip this
+section and both tiles open on "GIF search is off: this app has no KLIPY key
+yet"; the rest of the canvas works, uploading a GIF included.
+
+1. In KLIPY's partner panel (partner.klipy.com) create the app and copy its app
+   key.
+2. On that key turn ads off and set the strictest content filter. The browser
+   also asks for `content_filter=high` on every search.
+3. Production access waits (Epo 2026-11-10). The key was registered with the
+   UAT site and is a test key: KLIPY's pages (read 2026-11-10) give a test key
+   100 calls a minute, a limit on the key that every student's browser shares,
+   and say production status, after its review, lifts the limit on the key
+   picked in the panel. That same key is expected to serve production once
+   promoted, so `deploy/.env.prod` carries the same value when production is
+   set up. KLIPY's pages do not say outright that the key string stays the
+   same: compare it with the stored variable after promotion.
+4. Set on the SPA build:
+
+```
+VITE_KLIPY_KEY=...
+```
+
+The manifest lists it as a GitHub **variable** (targets `workflow` and
+`build`), not a secret: the key ships in the browser bundle. It is a build-time
+value, so put it in the environment's local env file (`deploy/.env.uat`,
+`deploy/.env.prod`), run `pnpm env:push` (§12.7) and redeploy to rebuild the
+SPA. A `VITE_KLIPY_KEY=` line left empty in that file, as the examples have it,
+makes `pnpm env:push` delete the stored variable, and the next build ships with
+GIF search off: the real file must carry the key before any later push.
+
+A build that has the key adds `https://*.klipy.com` to the report-only image
+policy on its own (§2.4). No Cloudflare rule, bucket CORS entry or gateway
+setting is involved.
+
+KLIPY's terms the code is built on; read them again before changing any of it:
+
+- searches and media load from the browser straight from KLIPY, at the links it
+  returns: no proxy, cache or copy in the bucket, and a placed GIF stays a KLIPY
+  link;
+- results show in KLIPY's order and none is removed (the picker drops only a
+  result whose media is off `*.klipy.com`);
+- the search field's placeholder is "Search KLIPY" in every language, with
+  "Powered by KLIPY" under the results.
+
+The typed words and the per-browser customer id stay out of Sentry
+([observability-metering.md](observability-metering.md)). Replacing the key is
+the same variable and a redeploy; placed GIFs hold KLIPY's media links, not the
+key, and keep showing.
 
 ---
 

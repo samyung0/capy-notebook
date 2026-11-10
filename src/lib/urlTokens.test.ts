@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { scrubRecordingEvent, stripUrlTokensDeep } from '@/lib/urlTokens';
+import {
+  scrubRecordingEvent,
+  stripUrlTokens,
+  stripUrlTokensDeep,
+} from '@/lib/urlTokens';
 
 describe('stripUrlTokensDeep', () => {
   it('scrubs a Sentry event and breadcrumb wherever a token rides', () => {
@@ -31,6 +35,16 @@ describe('stripUrlTokensDeep', () => {
     expect(text).not.toContain(invite);
     expect(text).not.toContain('AbCdEfGhIjKlMnOp');
     expect(text).toContain('qz_0123456789');
+  });
+});
+
+describe('KLIPY searches', () => {
+  it('keep the endpoint and drop the typed words and customer id', () => {
+    const url =
+      'https://api.klipy.com/api/v1/key/gifs/search?q=my+teacher&customer_id=abc-123';
+    expect(stripUrlTokens(url)).toBe(
+      'https://api.klipy.com/api/v1/key/gifs/search'
+    );
   });
 });
 

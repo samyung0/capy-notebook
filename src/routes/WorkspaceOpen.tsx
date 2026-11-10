@@ -115,7 +115,7 @@ import {
 import { waitsForConnection } from '@/lib/online';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
-const WorkspaceCanvas = lazy(() => import('@/routes/DevWorkspaceCanvas'));
+const WorkspaceCanvas = lazy(() => import('@/routes/WorkspaceCanvas'));
 const SummaryPage = lazy(() =>
   import('@/features/study/practice/SummaryPage').then((mod) => ({
     default: mod.SummaryPage,
@@ -1127,7 +1127,14 @@ function WorkspaceOpen() {
         {section === 'canvas' ? (
           <div className="relative h-full" data-workspace-canvas>
             <Suspense fallback={null}>
-              <WorkspaceCanvas workspaceId={workspaceId} />
+              <WorkspaceCanvas
+                onOpenMaterial={(id) => setOpenItem({ id, kind: 'material' })}
+                openMaterialId={
+                  openItem?.kind === 'material' ? openItem.id : null
+                }
+                workspaceId={workspaceId}
+                workspaceName={ws.name}
+              />
             </Suspense>
             {/* Phones have no rail to leave by. Back floats on the board's top left,
                 level with its ☰ menu and in its colours (AFFiNE's, set on <html> by

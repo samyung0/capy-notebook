@@ -72,7 +72,11 @@ CREATE INDEX IF NOT EXISTS library_chunks_content_idx ON library_chunks (content
 CREATE INDEX IF NOT EXISTS library_chunks_excerpt_idx ON library_chunks (excerpt_id);
 CREATE OR REPLACE VIEW rag_chunks AS SELECT id,workspace_id,content_id,chunk_idx,section_path,text,indexed_text,page_start,page_end,regions,lang,confidence,confidence_reasons,search FROM library_chunks WHERE searchable;
 CREATE TABLE IF NOT EXISTS rag_chunk_vectors_2560 (chunk_id text PRIMARY KEY REFERENCES library_chunks, workspace_id text NOT NULL, embedding halfvec(2560) NOT NULL);
--- ponytail: exact vector scans, matching the pilot; add an HNSW index when the corpus outgrows them.
+-- One bit per dimension (its sign), kept by Postgres beside the vector. Search
+-- orders by Hamming distance on it first and re-scores a shortlist with the
+-- full vectors (store._LIBRARY_VEC_ROWS), so it reads this 320-byte column
+-- rather than every 5 KB vector. Adding it rewrites the table once.
+ALTER TABLE rag_chunk_vectors_2560 ADD COLUMN IF NOT EXISTS bits bit(2560) GENERATED ALWAYS AS (binary_quantize(embedding)::bit(2560)) STORED;
 CREATE TABLE IF NOT EXISTS library_books (
   id text PRIMARY KEY, title text NOT NULL, authors jsonb NOT NULL,
   edition text NOT NULL, source_url text NOT NULL, download_url text NOT NULL, license text NOT NULL, license_url text NOT NULL,
@@ -168,8 +172,8 @@ _IN_SUBJECT = (
 
 
 def _search_filter() -> str:
-    """The search's chunk predicate: verified tags, an optional subject and
-    optional roles."""
+    """The chunk predicate of a search with no subject or roles: verified
+    tags only."""
     return f"""
       AND EXISTS (
             SELECT 1 FROM library_chunks lc
@@ -177,9 +181,29 @@ def _search_filter() -> str:
               ON e.content_id = lc.content_id AND e.id = lc.excerpt_id
             WHERE lc.id = c.id
               AND {_verified()}
-              AND (%(no_subject)s OR {_IN_SUBJECT})
-              AND (%(no_roles)s OR e.roles && %(roles)s::text[])
       )"""
+
+
+def _allowed_passages() -> str:
+    """The passages a search with a subject or roles may return: verified
+    tags and those facets. Listed once, so both search legs run on them
+    instead of checking every match in the library."""
+    return f"""
+            SELECT lc.id FROM library_excerpts e
+            JOIN library_chunks lc
+              ON lc.content_id = e.content_id AND lc.excerpt_id = e.id
+            WHERE {_verified()}
+              AND (%(no_subject)s OR {_IN_SUBJECT})
+              AND (%(no_roles)s OR e.roles && %(roles)s::text[])"""
+
+
+def _facets(subject: str | None, roles: list[str]) -> dict[str, str]:
+    """Which shape ``store.hybrid_search`` takes: with a subject or roles the
+    statement starts from the allowed passages; with neither, from the 1-bit
+    codes, checking ``_search_filter`` on the nearest ones."""
+    if subject or roles:
+        return {"allowed": _allowed_passages()}
+    return {"chunk_filter": _search_filter()}
 
 
 _pool: AsyncConnectionPool | None = None
@@ -451,7 +475,7 @@ async def search(
             candidates=candidates,
             pin=pin,
             conn=conn,
-            chunk_filter=_search_filter(),
+            **_facets(subject, roles),
             chunk_filter_params={
                 "min_confidence": cfg.library_tag_min_confidence,
                 "no_subject": not subject,

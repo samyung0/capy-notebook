@@ -125,7 +125,7 @@ export function MediaFrame({
       {toolbar && (
         <BlockToolbar
           className={cn(
-            'absolute top-2 right-2 z-10 rounded-md p-0.5 opacity-0 transition-opacity',
+            'absolute top-2 right-2 z-10 opacity-0 transition-opacity',
             'pointer-coarse:opacity-100 group-hover/media:opacity-100 has-data-[state=open]:opacity-100 has-focus-visible:opacity-100'
           )}
         >

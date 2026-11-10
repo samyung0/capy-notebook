@@ -168,7 +168,7 @@ func (a *api) listMaterials(ctx context.Context, in *workspaceIDInput) (*materia
 func (a *api) listOwnedMaterials(ctx context.Context, in *materialsListInput) (*materialPageOutput, error) {
 	for _, kind := range csv(in.Kind) {
 		switch kind {
-		case "note", "quiz", "flashcards", "mindmap", "diagram":
+		case "note", "quiz", "flashcards", "mindmap", "diagram", "canvas":
 		default:
 			return nil, huma.Error400BadRequest("unsupported material kind")
 		}

@@ -373,7 +373,9 @@ Outside this directory, for BlockSuite:
     types the slash and opens the menu on the first `selectionchange` that finds the
     inline range after the slash and the browser's caret inside that line (a note's
     caret is moved by the host a moment after the inline range is set). A menu
-    dismissed without a pick leaves the slash on the line, as a typed one does.
+    opened this way and left without a pick takes its slash with it, so the line is
+    empty again (`_handleInput` hands the menu the caller's `AbortController`); a
+    search typed after the slash stays.
 37. Labels through one hook (`shared` `src/utils/label.ts`, new, exported from
     `utils/index.ts`; marked `Capy (local change 37)`; Epo 2026-11-10): `tr(label)`
     returns the app's translation of an English label, set once with
@@ -390,7 +392,9 @@ Outside this directory, for BlockSuite:
     (`src/features/blocksuite/tableBar.ts`). A table's header is its first row:
     `keepHeaderFirst` runs inside the transaction of every row add, delete, move,
     reorder and duplicate and leaves `header` on the first row alone, and a deleted
-    header row hands it to the next first row.
+    header row hands it to the next first row. Only the first row draws as a header
+    (`table-cell.ts` checks its row index), so a flag that arrives lower down (two
+    people moving rows at once, a converted table) shows nothing.
 39. Callout kinds (`blocks/callout` `callout-block.ts`, marked `Capy (local change
     39)`; Epo 2026-11-10): once the app calls `setCalloutVariantIcon`, a callout sets
     `data-variant` from the block's `variant` (none reads as info), draws that kind's

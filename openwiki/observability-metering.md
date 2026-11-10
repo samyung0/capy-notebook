@@ -124,7 +124,9 @@ events' URL list, transactions), Replay's `beforeAddRecordingEvent` (which
 @sentry/replay 10.70 calls for Custom recording events only: breadcrumbs and
 navigation and fetch spans) and PostHog `sanitize_properties`
 (`src/lib/urlTokens.ts`): a share link keeps its id without its signature, an
-invite link becomes `/workspace-invites/:token`. A replay's Meta events (the
+invite link becomes `/workspace-invites/:token`, and a KLIPY GIF search URL
+loses its query string (the student's typed words and KLIPY customer id; Epo
+2026-11-09). A replay's Meta events (the
 page href at each full snapshot) and DOM frames never reach those hooks, so
 the tokens leave the address bar before Sentry starts instead (Sam
 2026-10-19, review C1): `src/lib/bootUrlTokens.ts`, imported right after Zod
@@ -1723,6 +1725,7 @@ The rate-limit audit (Epo 2026-10-24) added these classes:
 | Stripe session | subscription Checkout, top-up, card setup, portal, portal cancel (`checkout_limit`) | 10/hour | user |
 | Share page | every GET or HEAD under `/api/public/{kind}/{token}/`, direct or through the site Worker (instead of the base class) | 300/minute (Epo 2026-10-24, Q244) | visitor and share token |
 | Bank comment | `POST /api/bank/questions/{id}/comments`, each a notice in the maintainers' 4-hourly digest ([question-bank.md](question-bank.md#comments)) | 120/hour, burst 20 (Epo 2026-10-24, Q314) | user |
+| Assignment | `POST /api/workspaces/{id}/assignments` and `POST /api/assignments/{id}/publish`, each an update to every member's To do | 60/hour, burst 20 (Epo 2026-11-10) | user |
 
 The Integration class counts by method and path; the limiter never reads a
 body. Import routes take the upload and the integration budgets. Clerk's

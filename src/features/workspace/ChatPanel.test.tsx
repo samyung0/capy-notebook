@@ -8,7 +8,7 @@ import type { ChatMessage, Conversation } from '@/api/types';
 import { getLocale, m } from '@/i18n';
 import type { ChatRequest } from './ChatPanel';
 
-// The locale resolves before a window exists (see EmbedsTab.test.tsx), then
+// The locale resolves before a window exists (see ItemsList.test.tsx), then
 // linkedom's document goes in before react-dom/client loads.
 getLocale();
 const { document, window } = parseHTML(

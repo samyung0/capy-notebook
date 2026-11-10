@@ -20,6 +20,20 @@ export function dayLabel(iso: string) {
     .replace(',', '');
 }
 
+/** "11 Nov 2026": the To do page's dates, with the year and no weekday
+ * (Epo 2026-11-10). */
+export function dateLabel(iso: string) {
+  return new Intl.DateTimeFormat(dateLocale(), {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).format(new Date(iso));
+}
+
+/** "11 Nov 2026, 09:00". */
+export const dateTimeLabel = (iso: string) =>
+  `${dateLabel(iso)}, ${timeLabel(iso)}`;
+
 /** "Mon". */
 export function weekdayLabel(iso: string) {
   return new Intl.DateTimeFormat(dateLocale(), { weekday: 'short' }).format(
@@ -37,12 +51,40 @@ export function dayMonth(iso: string) {
 
 /** "Fri 7 Nov, 18:00". */
 export function dayTimeLabel(iso: string) {
-  const time = new Intl.DateTimeFormat(dateLocale(), {
+  return `${dayLabel(iso)}, ${timeLabel(iso)}`;
+}
+
+/** "18:00". */
+export const timeLabel = (iso: string) =>
+  new Intl.DateTimeFormat(dateLocale(), {
     hour: '2-digit',
     hourCycle: 'h23',
     minute: '2-digit',
   }).format(new Date(iso));
-  return `${dayLabel(iso)}, ${time}`;
+
+const dayStart = (at: Date) =>
+  new Date(at.getFullYear(), at.getMonth(), at.getDate()).getTime();
+
+/** A To do row's due date (Epo 2026-11-10): today and tomorrow with the time,
+ * past it Overdue unless ticked, otherwise the date. */
+export function dueText(
+  dueAt: string | undefined,
+  ticked: boolean,
+  now = new Date()
+): { text: string; tone?: 'overdue' | 'soon' } {
+  if (!dueAt) return { text: m.todo_no_due() };
+  const due = new Date(dueAt);
+  if (!ticked && due.getTime() <= now.getTime())
+    return {
+      text: m.todo_overdue({ date: dateLabel(dueAt) }),
+      tone: 'overdue',
+    };
+  const days = Math.round((dayStart(due) - dayStart(now)) / 86_400_000);
+  if (days === 0)
+    return { text: m.todo_due_today({ time: timeLabel(dueAt) }), tone: 'soon' };
+  if (days === 1)
+    return { text: m.todo_due_tomorrow({ time: timeLabel(dueAt) }) };
+  return { text: dateLabel(dueAt) };
 }
 
 export const kindLabel = (kind: Assignment['kind']) =>

@@ -238,9 +238,13 @@ dialogs, drawers and the phone chat button (S1, E2 and P3, Epo 2026-11-03):
   on the shown or waiting toast (×2, ×3) and restarts its timer. A new copy
   under the same id replaces it in place, so a working toast
   (`variant: 'loading'`) turns into its done toast.
-- Errors stay until closed with their ×. Warnings last twelve seconds, other
+- Errors stay until closed with their × or swiped away. Warnings last twelve seconds, other
   toasts with a button seven, the rest four, and a working toast until it is
-  updated. Timers pause while the toast is hovered or the tab is hidden.
+  updated or closed. Timers pause while the toast is hovered or the tab is hidden.
+- A drag moves a toast (up into the screen only a fifth as far). Released
+  past 40px down or 80px sideways, or flicked, it flies on the way it was
+  thrown and closes; otherwise it springs back (ding's swipe, Epo
+  2026-11-09). A drag never starts on a button.
 - Its look (board K2) is in `appearance.md` § Shared pieces.
 
 ## Persisted query cache

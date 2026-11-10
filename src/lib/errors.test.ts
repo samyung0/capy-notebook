@@ -57,6 +57,8 @@ describe('frontend error normalization', () => {
     ['comment_limit', 409, m.error_comment_limit_title()],
     ['annotation_limit', 409, m.error_annotation_limit_title()],
     ['event_limit', 409, m.error_event_limit_title()],
+    ['assignment_limit', 409, m.error_assignment_limit_title()],
+    ['assignment_open_limit', 409, m.error_assignment_open_limit_title()],
     ['checkout_limit', 429, m.error_checkout_limit_title()],
     ['rate_limit_unavailable', 503, m.error_rate_limit_unavailable_title()],
   ] as const)('names the %s refusal', (code, status, title) => {

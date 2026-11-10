@@ -24,7 +24,7 @@ export function TabContent({
   const body = (
     <div
       className={cn(
-        !fill && (narrow ? 'max-w-3xl' : 'max-w-7xl'),
+        !fill && (narrow ? 'max-w-5xl' : 'max-w-7xl'),
         centered && 'mx-auto'
       )}
     >

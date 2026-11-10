@@ -60,15 +60,17 @@ func TestEditorImageUploadMakesItsThumbnail(t *testing.T) {
 		t.Fatalf("thumbnail %dx%d (%v), want 200x150", thumb.Width, thumb.Height, err)
 	}
 
-	list := doAsUser(t, th.h, http.MethodGet, "/api/editor-assets", "u_owner", nil)
-	expectStatus(t, list, http.StatusOK, "the embeds list")
+	list := doAsUser(t, th.h, http.MethodGet, "/api/items?kind=image", "u_owner", nil)
+	expectStatus(t, list, http.StatusOK, "the Files list")
 	var page struct {
-		Items []struct{ AssetID, ThumbnailURL string }
+		Items []struct {
+			Embed *struct{ AssetID, ThumbnailURL string }
+		}
 	}
 	if err := json.Unmarshal(list.Body.Bytes(), &page); err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Items) != 1 || page.Items[0].AssetID != asset.ID || page.Items[0].ThumbnailURL == "" {
-		t.Fatalf("embeds list %+v, want the image with its thumbnail link", page.Items)
+	if len(page.Items) != 1 || page.Items[0].Embed == nil || page.Items[0].Embed.AssetID != asset.ID || page.Items[0].Embed.ThumbnailURL == "" {
+		t.Fatalf("Files list %s, want the image with its thumbnail link", list.Body.String())
 	}
 }

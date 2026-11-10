@@ -4,6 +4,7 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { DrawingPictureLink } from './drawingPictureLink.ts';
 
 export interface DrawingOutputBody {
   /** A URL to the JSON Schema for this object. */
@@ -13,4 +14,6 @@ export interface DrawingOutputBody {
   bytes: number;
   id: string;
   partId: string;
+  /** The pictures on the board, each by the id its image block names, as links that last as the board's does */
+  pictures: DrawingPictureLink[];
 }

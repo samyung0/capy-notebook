@@ -255,13 +255,22 @@ func (u *user) seedHistory(ctx context.Context, f fixtures) error {
 			}
 		}
 	}
-	var embeds struct {
-		Items []json.RawMessage `json:"items"`
+	// The Files page's list holds the note's images among its image files.
+	var images struct {
+		Items []struct {
+			Type string `json:"type"`
+		} `json:"items"`
 	}
-	if err := u.call(ctx, http.MethodGet, "/api/editor-assets?limit=100", "/api/editor-assets", nil, &embeds); err != nil {
+	if err := u.call(ctx, http.MethodGet, "/api/items?kind=image&limit=100", "/api/items kind=image", nil, &images); err != nil {
 		return err
 	}
-	if len(embeds.Items) == 0 {
+	embeds := 0
+	for _, item := range images.Items {
+		if item.Type == "embed" {
+			embeds++
+		}
+	}
+	if embeds == 0 {
 		for k := range 150 {
 			name := fmt.Sprintf("figure-%03d.png", k)
 			meta := map[string]any{"contentType": "image/png", "name": name, "purpose": "image", "sizeBytes": len(f.png)}

@@ -372,6 +372,38 @@
   line-height: var(--meta-line-height);
 }
 
+/* A note's reading column (Epo 2026-11-10, mock N2), shared by the editor, its
+   painted copy, the preview and their footers: from a box wider than 640px the
+   margins are 96px, which `max-w-[912px]` caps at 720px of text. Padding
+   percentages read the parent's width, so the step needs no container query.
+   A narrower box keeps the Plate note's gutters: 20px on a phone and 40px
+   from `sm` (a narrow pane on a wide window), and always the editor's 40px on
+   the right for its thread buttons (`note-column-threads`). */
+@utility note-column {
+  --note-gutter: 20px;
+  margin-inline: auto;
+  width: 100%;
+  padding-inline: clamp(
+    var(--note-gutter),
+    calc((100% - 640px) * 1000),
+    96px
+  );
+  @media (width >= 40rem) {
+    --note-gutter: 40px;
+  }
+}
+@utility note-column-threads {
+  padding-right: clamp(40px, calc((100% - 640px) * 1000), 96px);
+}
+/* The space over the Plate note's title: 40px, and 64px from the same box
+   width, by the same step. Not a container query: with a query container in
+   the note's scroller WebKit's scroll anchoring stops holding a reader's place
+   as blocks go in above (measured 2026-11-10, Playwright WebKit 26.5; the
+   same note holds without the container). */
+@utility note-column-head {
+  padding-top: clamp(40px, calc((100% - 640px) * 1000), 64px);
+}
+
 /* A note font size, unitless in --note-fs, that shrinks on narrow screens: at
    360px wide it keeps 16px plus half of what it has above 16px, growing
    linearly to its full size at 768px. Sizes up to 16px render as written. */
@@ -538,11 +570,12 @@ math-field {
 }
 
 @layer components {
-  /* Note text (noteFont.ts): Fustat with roomy block gaps, or the system font
-     with the Plate playground's compact ones (nodeStyles.ts reads the gaps).
-     A pick on <html data-note-font> wins; otherwise notion gets the system
-     font. The roomy gaps sit on :root so note blocks outside .note-editor
-     keep them. The Fustat stack repeats capy.css. */
+  /* Note text (noteFont.ts): Fustat or the system font. A pick on
+     <html data-note-font> wins; otherwise notion gets the system font. A note
+     (.note-editor) keeps Notion's rhythm in either font (Epo 2026-11-10, mock
+     N2): text blocks 8px apart on a 1.5 line (nodeStyles.ts reads the gaps).
+     The roomy gaps sit on :root for note blocks drawn outside a note. The
+     Fustat stack repeats capy.css. */
   :root {
     --note-font-fustat:
       "Fustat Variable", "Fustat", "Fustat Fallback", var(--font-cjk),
@@ -558,6 +591,10 @@ math-field {
 
   .note-editor {
     font-family: var(--font-sans);
+    --note-gap: var(--spacing);
+    --note-p-py: var(--spacing);
+    --note-li-py: var(--spacing);
+    --note-leading: 1.5;
   }
 
   :root[data-style="notion"][data-note-font="fustat"] .note-editor {
@@ -569,10 +606,6 @@ math-field {
     --font-sans: var(--note-font-system);
     /* capy's body weight (500) suits Fustat; system text reads at 400. */
     font-weight: 400;
-    --note-gap: var(--spacing);
-    --note-p-py: var(--spacing);
-    --note-li-py: var(--spacing);
-    --note-leading: 1.5;
   }
 
   /* Taking an assignment on a phone: no workspace header or chat button
@@ -584,14 +617,15 @@ math-field {
     }
   }
 
-  /* Paint-contained chunks must include the drag-handle gutter on the left and
-     the comment trigger in the editor's right padding (px-5 sm:px-10). */
+  /* Paint-contained chunks must include the drag-handle gutter on the left
+     (from `sm` the + button beside the grip too) and the comment trigger in
+     the editor's right padding (note-column's gutters). */
   .note-editor [data-slate-chunk] {
     margin-inline: -24px -20px;
     padding-inline: 24px 20px;
     @variant sm {
-      margin-right: -40px;
-      padding-right: 40px;
+      margin-inline: -44px -40px;
+      padding-inline: 44px 40px;
     }
   }
 

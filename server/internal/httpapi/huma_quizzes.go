@@ -71,7 +71,7 @@ func (a *api) registerQuizzes(api huma.API) {
 	reg(api, http.MethodPatch, "/api/quizzes/{id}/metadata", "updateQuizMetadata", tag, "Update quiz metadata", http.StatusOK, a.updateQuizMetadata)
 	reg(api, http.MethodPatch, "/api/quizzes/{id}/sharing", "updateQuizSharing", tag, "Update standalone quiz sharing", http.StatusOK, a.updateQuizSharing)
 	reg(api, http.MethodDelete, "/api/quizzes/{id}", "deleteQuiz", tag, "Delete a quiz", http.StatusNoContent, a.deleteQuiz)
-	regWithMaxBody(api, http.MethodPost, "/api/quizzes/{id}/check", "checkQuizQuestion", tag, "Grade one question of a quiz attempt and record it", http.StatusOK, answersMaxBytes, a.checkQuizQuestion)
+	regWithMaxBody(api, http.MethodPost, "/api/quizzes/{id}/check", "checkQuizQuestion", tag, "Grade one question of a quiz attempt and record it", http.StatusOK, checkMaxBytes, a.checkQuizQuestion, drawingBodyDeadline)
 	reg(api, http.MethodGet, "/api/attempts", "listAttempts", tag, "List attempts", http.StatusOK, a.listAttempts)
 	reg(api, http.MethodGet, "/api/attempts/{id}", "getAttempt", tag, "Get an attempt's result breakdown", http.StatusOK, a.getAttempt)
 	a.registerComputationCheck(api)
@@ -297,8 +297,10 @@ func (a *api) checkQuizQuestion(ctx context.Context, in *checkQuizQuestionInput)
 		return nil, err
 	}
 	var drawings map[string]store.QuizDrawing
+	writes := &drawingWrites{}
 	if keep {
-		if drawings, err = a.keepCheckDrawings(ctx, plan, packed, graded[0]); err != nil {
+		if drawings, err = a.keepCheckDrawings(ctx, writes, plan, packed, graded[0]); err != nil {
+			a.dropDrawingWrites(ctx, writes)
 			return nil, hErr(err)
 		}
 	}
@@ -307,6 +309,9 @@ func (a *api) checkQuizQuestion(ctx context.Context, in *checkQuizQuestionInput)
 		Answers: answers, Question: graded[0], Order: order, Marks: marks,
 		Drawings: drawings,
 	}, time.Now())
+	if err != nil {
+		a.dropDrawingWrites(ctx, writes)
+	}
 	if errors.Is(err, store.ErrQuestionChecked) {
 		return nil, huma.Error409Conflict(err.Error())
 	}

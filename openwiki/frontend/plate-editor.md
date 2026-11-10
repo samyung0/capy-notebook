@@ -3932,8 +3932,11 @@ size as `--note-fs`, and `FONT_SIZE_NODE_PROPS` renders px font-size marks the
 same way in the editor and static views (other units render as written). The
 font-size control reads a heading's authored size, not the rendered one.
 Callout, code block, table cell and column padding also tighten below `sm`.
-Paragraphs are 8px top and bottom (16px apart) while list items keep 6px;
-code blocks have 8px margins and block equations 4px.
+Inside a note (`.note-editor`) text blocks are 4px top and bottom (8px apart)
+on a 1.5 line in either note font, as the BlockSuite note's are (mock N2);
+note blocks drawn outside one keep 8px (16px apart) with list items at 6px.
+Quotes, code blocks, callouts and columns take the same gap as margins (4px in
+a note, 8px outside); block equations 4px.
 
 Tabs and both toolbar scroll containers share `useHorizontalWheelScroll`.
 Vertical mouse-wheel input scrolls overflowing controls horizontally without
@@ -4015,19 +4018,21 @@ menu body, keeping those reads off the typing path.
 
 Editor settings uses the shared workspace-style tabs: General holds Display
 size and Commands holds toolbar group visibility. Both preferences apply on
-Apply and persist locally in `capy-note-editor-prefs`. Half width retains the
-768px centered reading container; Full width fills the pane. Below `md`, both
-fill the available width. Note previews use the same preference.
+Apply and persist locally in `capy-note-editor-prefs`. Half width caps the
+note's column at 912px (720px of text between 96px margins); Full width keeps
+the margins and drops the cap. In a box of 640px or less both fill the width
+with the note's gutters. Note previews use the same preference.
 
-General also holds Note font: Fustat with roomy block gaps, or the system font
-with the Plate playground's compact ones (paragraphs 4px padding and 1.5 line
-height, my-1 lists, quotes, code, callouts and columns; headings unchanged).
+General also holds Note font: Fustat or the system font (at weight 400). Both
+keep the note's compact gaps since 2026-11-10 (paragraphs 4px padding and 1.5
+line height, my-1 lists, quotes, code, callouts and columns); before, Fustat
+had roomier ones.
 Without a pick the style decides: capy and fisheye show Fustat, notion the system
 font. A pick is per browser in `capy.noteFont` (`noteFont.ts`), not the prefs
 blob, so the head scripts in `index.html` and `share.html` set
 `<html data-note-font>` before first paint; `tailwind.css` maps it to
-`--font-sans` and the `--note-*` gap variables on `.note-editor`, which the
-editor, View and shared note pages all render in. Applying an unchanged font
+`--font-sans` on `.note-editor`, which also sets the `--note-*` gap variables
+and which the editor, View and shared note pages all render in. Applying an unchanged font
 stores nothing, so the default keeps following the style. Shared note pages
 show the viewer's own choice (visitors without one get capy, so Fustat)
 and carry a server-rendered Aa button that switches it with plain script
@@ -4482,8 +4487,8 @@ everything that floats, and the note body takes the Notion look in every style.
 - **Gutter handle and block menu** (local change 36, `blockMenu.ts`): a hovered
   block shows + and a six-dot grip, centred on its first line. + adds a line
   below and opens the slash menu on it (the slash is typed there, so a search
-  can follow; dismissing the menu without a pick leaves the slash, as a typed
-  one does). A click on the grip selects the block and opens a vertical menu
+  can follow; leaving the menu without a pick removes the slash again, so the
+  line is empty). A click on the grip selects the block and opens a vertical menu
   beside it: Turn into (a side submenu, text blocks only), Copy, Duplicate,
   Delete. The floating bar stays away while it is open, and closing it lets the
   block go; the menu closes with its editor.
@@ -4498,11 +4503,12 @@ everything that floats, and the note body takes the Notion look in every style.
   the first row's `header` prop, drawn semibold on the dim fill (local change 38).
   The header belongs to the table's first row, whichever row that is: adding,
   moving, copying or deleting rows keeps it there (`keepHeaderFirst` in the
-  vendored `table-data-manager.ts`). The rule runs with each local row change,
-  so a `header` flag that arrives lower down (two people moving rows at once, a
-  converted table with a second header row) is drawn until the next row change
-  or press of Header row clears it.
-- **Title and Info** (`src/features/notes/blocksuite/NoteHeading.tsx`): the top
+  vendored `table-data-manager.ts`). Only the first row draws as a header, so a
+  `header` flag that arrives lower down (two people moving rows at once, a
+  converted table with a second header row) shows nothing, and the next row
+  change or press of Header row clears it.
+- **Title and Info** (`src/features/notes/NoteHeading.tsx`, shared with the
+  Plate note below): the top
   of the body shows the file's name as a 40px title. It is the material's
   `title`, not text in the note: leaving the field or pressing Enter renames the
   file through `PATCH /materials/{id}/metadata` (an empty or too long name is
@@ -4513,6 +4519,84 @@ everything that floats, and the note body takes the Notion look in every style.
   collapsed Info row opens Topic (a press moves the note to another topic),
   Created, Updated and Words, counted when it opens. A reader, and a note outside
   a workspace, see Topic as text; a reader's title cannot be typed in.
+
+**The Plate note takes the same look** (Epo 2026-11-10: both note engines are
+aligned while Plate stays in the app). Built so far:
+
+- **Headings, quote and divider** (`nodeStyles.ts`, shared with the static
+  renderer, so previews and shared pages follow): 30, 24 and 20px at 600 on a
+  1.3 line with 32, 22 and 16px above; a quote is upright text behind a 3px
+  bar in the text colour; a divider is 1px.
+- **Rhythm** (`tailwind.css`, `.note-editor`): text blocks 8px apart on a 1.5
+  line in either note font; the font setting changes the font and its weight
+  only.
+- **Column** (`note-column` in `tailwind.css`): 96px margins from a box wider
+  than 640px, capped at 912px unless Full width, in the editor
+  (`NoteEditorSurface`), the painted note and the preview (`MaterialPreview`),
+  and their footers. The step is a padding clamp on the parent's width, so no
+  container is declared. A narrower box keeps Plate's gutters (20px on a
+  phone and 40px from `sm`, and always 40px on the editor's right for its
+  thread buttons) where the BlockSuite note uses 16px. As in the BlockSuite
+  note, a box just over 640px holds less text than one just under it.
+  The same shared classes also restyle what else draws them: `.md` previews,
+  the merge view, and the standalone quiz, flashcard, mindmap and diagram
+  title (`StandaloneMaterialTitle`, now 30px at 600).
+- **Floating bars** (`components/ui/BlockToolbar.tsx`, shared by the
+  selection, link, table, column and media bars, the flashcard tile and graph
+  editor bars and the question editors'; the study block bar in
+  `notes/blocks/elements.tsx` repeats its box):
+  36px tall with 28px buttons from `sm`, 32px and 26px on phones, on
+  `--radius-toolbar` with `--radius-toolbar-button` buttons.
+
+- **Title and Info** (`NoteHeading` with `plate`): over the editor
+  (`EditorNoteHeading` in `NoteEditorCore.tsx`, outside the editable), over the
+  painted note, Preview and a reader's note (`PaintedNote` in `NoteBody.tsx`,
+  read-only) and over the late copy, in `note-column` with the title flush to
+  the text. Every view draws it at the same height, so the paint hands over
+  to the editor and Preview opens without a jump (positions are restored
+  block by block). A note painted before its read answers has its name only:
+  the same box, with nothing under Info yet. Enter puts the caret at the
+  note's start; Words counts the blocks' text (`noteText`). Info's open state
+  is kept per note for the session and shared by these views, so opening the
+  editor or Preview does not close it. The editor's title is read-only while
+  the note is locked (lost access, outdated, offline limit, full copy), and
+  the phone's paused copy makes it read-only too (`copyPausedView`). The
+  block lies over the note's corner buttons (`NoteDisplayToggles`) and the top
+  16px of the editable, so only the title and the Info row take the pointer:
+  clicks on its padding go through to what is under it. The space over the
+  title (40px, 64px from a box wider than 640px) is `note-column-head`, the
+  column's padding clamp again and not a container query: with a query
+  container in the note's scroller, WebKit's scroll anchoring stops holding a
+  reader's place while blocks go in above (measured 2026-11-10 on Playwright
+  WebKit 26.5; `e2e/sharing/live-note-view.spec.ts` runs that reader in
+  WebKit). The BlockSuite note's title still declares its container.
+- **Gutter** (`BlockInteractions.tsx`): from `sm` a + sits left of the grip on
+  a top-level block. It adds a paragraph below and types the slash, so the
+  slash plugin opens its menu; left without a pick or a search, the line
+  stays empty (`gutterSlash.ts` marks the input node, `SlashInput.tsx` skips
+  writing the slash back). A click on the grip opens the block menu under it
+  (the right-click menu: Delete, Duplicate, Turn into, Indent, Outdent,
+  Align) through `BlockMenuOpener`; a drag still moves the block. The grip
+  menu is not offered on a touch device; a read-only note has no gutter. The chunk containment
+  margin (`[data-slate-chunk]` in `tailwind.css`) is 44px on the left from
+  `sm` so the + is not clipped.
+- **Tables** (`TableNodes.tsx`): a pill beside the hovered row (it also drags
+  the row) and over the hovered column opens a menu (insert before or after,
+  delete); a + bar along the right edge and one under the last row add a
+  column or a row at the end; they show while the pointer or the caret is in
+  the table. The caret bar holds Merge and Split where they apply, Header
+  row, Duplicate and Delete. A header is the first row's cells as header
+  cells: inserting a row above it or deleting it keeps the header on the
+  first row, and rows added below it or at the end are never header rows.
+  `TABLE_WRAP_CLASS` pads the table (8px above, 20px right and below) in the
+  editor and the static renderer alike, so the pills and the + bars fit
+  inside its scroll box and both draw the same size. A pill acts on its
+  cell's whole span: deleting from a merged cell takes every row or column it
+  covers.
+
+Kept different on the Plate note: on a phone its gutters stay 20px, and 40px
+on the editor's right for the thread buttons, where the approved look has
+16px; rows moved by dragging do not re-place the header.
 
 Not built: the Table view block (AFFiNE's database, mock V2), queued as its own
 step; Colour, Copy link and Comment in the block menu (the BlockSuite note has
@@ -4716,15 +4800,228 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     answer flow refuses past Epo's 250 KB on Done.
   - `saved` is checked before anything mounts (`boardLoad.ts`), as BlockSuite's store
     skips a block it doesn't know and takes any tree on load: one page and one canvas,
-    only the blocks and elements the board's tools make (the pen menu's highlighter
-    included, which the preview draws as a see-through stroke), each block under a parent it
-    may have in one tree, and each card's fields within
+    only the blocks and elements the **board catalog** lists for that board (the pen
+    menu's highlighter included, which the preview draws as a see-through stroke), each
+    block under a parent it may have in one tree, and each card's fields within
     the limits its editor keeps (marks, bars, labels, spokes, axis values, formula
     length), with a place (`[x,y,w,h]`) on everything but a connector and a group, whose
     places BlockSuite works out (from the ends, each an element id or a finite point; from
     the children) and never stores. Anything else throws a `BoardLoadError` with a
     `reason`.
-- **Preview (`boardPreview.ts`):** `drawBoardPreview(saved, { width, height })` draws a
+  - **Toolbar per board** (Epo 2026-11-09): the question board has Graphs, Charts and
+    Formulas slots after the shapes; the workspace canvas has Graphs, Formulas and
+    **Misc** (`sheetTools(board)`). Misc's button opens a panel above the toolbar
+    (`capy-misc-panel`, right-aligned, Shapes' look): one 360 × 440 frame in every view
+    (Epo 2026-11-09, round 2, mock DVxJzY5A3XiYHKuqQPezST), with Back, the title or
+    KLIPY's search, and a close in its header and the body scrolling inside, so
+    switching views moves nothing; the home view is tiles in groups, each picked up and
+    dropped like a slot's piece (a finger's tap puts it in the view's middle); the panel
+    closes once something is down. Its groups:
+    - **Diagrams:** Bar chart, Pie chart and **Mind map**, AFFiNE's own (`mindmap`
+      element, its topics and ideas shapes it lays out), registered on the workspace
+      canvas only and without its own toolbar button (`MindmapWithoutTool`); it
+      starts as a topic and three ideas.
+    - **Media:** **Emoji** opens a grid of 48 Noto Animated Emoji (Google, CC BY 4.0,
+      credited on the Credits page), shipped in `public/emoji/noto` as 96 px animated
+      WebP (about 5 MB together) with 64 px stills for the grid; a click puts one in
+      the view's middle. **GIF** and **Sticker** open KLIPY's view on its GIFs or
+      Stickers tab (`boardKlipy.ts` `klipyMedia(kind, …)`, the same API under `/gifs`
+      and `/stickers`, `VITE_KLIPY_KEY`): from the student's browser with an anonymous
+      per-browser `customer_id`, the `high` content filter, results in KLIPY's order and
+      none removed but one off its `*.klipy.com` hosts (its terms), "Search KLIPY" as
+      the placeholder in every language (KLIPY's required attribution) and "Powered by
+      KLIPY" under them; while a search loads, a shimmer grid of the final shape stands
+      in (16:10 cells for GIFs, squares on a checker for stickers, which have no
+      background on the canvas either); a GIF without a size places at its file's own,
+      one whose link passes the stored limit says it can't be placed;
+      the placed GIF stays KLIPY's link, as its terms ask. Without a key the view
+      says search is off; an uploaded GIF is an ordinary image. **Link** takes a web
+      address or YouTube link: a video shows its poster (`i.ytimg.com`) with a play
+      mark, anything else its host and address; a double click opens it in a new tab.
+    - **From the workspace:** **Quiz** and **Flashcards** show the workspace's own as a
+      two-column grid of thumbnails from each material's stored preview (the first
+      question's stem, the title, the question count; a set's first card front on a
+      stacked pair and its card count), from the Files list (`useOwnedMaterials`, which
+      carries previews; `WorkspaceCanvas` lends them through `workspace` in the mount
+      options), with a filter field from six items. A **New** tile comes first: the page
+      creates the quiz or set unfiled in the workspace, named as the Create page names
+      one (`nextGenerateTitle`), places its card and opens it. A click places a card
+      that runs it (360 × 420 for a quiz, 360 × 260 for a set, `MATERIAL_CARD_SIZE`):
+      the card is the note embed's own runner, answered and checked on the canvas
+      (below). A double click on its header opens the material in the workspace for
+      editing, and a card whose material the workspace no longer lists shows "can't be
+      opened" and no runner. `WorkspaceCanvas` reads every page of the list before
+      lending it (`fetchNextPage` while `hasNextPage`); until then the list is
+      `undefined`, the grid shows the New tile alone and a placed card's body loads
+      rather than reading as gone.
+    Emoji and GIFs are `affine:embed-capy-picture` blocks (an `<img>` that plays by
+    itself), links `affine:embed-capy-link` and quiz or set cards
+    `affine:embed-capy-material` (`boardPicture.ts`, `boardCards.ts`): the surface
+    takes `affine:embed-*` children, so no vendored change.
+  - **A placed quiz or set runs on the canvas** (Epo 2026-11-09): the card's body is
+    the note embed's `AppEmbedView` (`AppEmbed.tsx`), the same runner a note's embedded
+    quiz or set uses, with no `ownerId` (a workspace's own material has no owning note
+    to wait for), so a question is answered and Checked by direct clicks and a set is
+    studied in place; nothing is recorded, as in a note. The card renders from the
+    fetched snapshot and never joins the material's live room (`live` off on the embed,
+    Epo 2026-11-09: editing happens in the dialog, and many cards would mean many
+    connections against the 22-channel cap); it refetches the snapshot when the card
+    comes back into view (`useRefreshOnEnter`, from the second entry: the observer's
+    first call is the mount's own) and when the window regains focus (the hook's own
+    `focus` listener, since the app's queries never refetch on focus), and
+    `WorkspaceCanvas` invalidates the quiz and material queries of the material the
+    item dialog showed when the dialog closes (the dialog's saves go through its live
+    room, not the snapshot query). The block is a BlockSuite block
+    like any other but hosts React: it adopts one `div` per card from the host registry
+    (`src/features/canvas/materialCardHosts.ts` — kept out of `src/features/blocksuite`,
+    which the app's tsconfig excludes), and `CanvasMaterialCards.tsx`, rendered by
+    `WorkspaceCanvas`, portals the runner into it, so the page's providers are the
+    runner's own. The registry hands a re-created block the element it had (released
+    hosts are parked for the rest of the tick), so an answer in progress survives
+    BlockSuite re-rendering the view. Blocks are light DOM upstream
+    (`ShadowlessElement`), so the app's stylesheet reaches the runner; the card's own
+    chrome (the header row with icon, title and kind, the hairline and the panel
+    background) stays in the block's markup. The header is what moves and selects the
+    card; the body swallows `pointerdown`, `pointerup`, `click`, `dblclick`, `wheel`,
+    `keydown`, `keyup`, `beforeinput` (Android's Backspace hotkey) and `cut`, `copy`,
+    `paste` (BlockSuite's clipboard handlers on the document would cut or copy the
+    selected card instead of the field's text) so BlockSuite neither selects nor drags
+    nor pans nor takes the keys from inside the quiz (React's own listeners sit on the
+    host element, a portal container, so they still run); a swallowed `pointerdown` is
+    re-dispatched on the document so the app's menus and popovers still close on a
+    press inside a card; and the first click inside needs no selection first. Under any tool but Select the body takes no pointer events
+    (`.capy-board:not([data-tool="default"]) .capy-card-body`), so a stroke draws over
+    the card. A card out of view (`useNearScreen`) draws the material's stored preview
+    through `ThumbnailPanel` instead of the runner; the previews come from the paged
+    materials list, since the workspace's own materials read carries none.
+  - **Board catalog** (Epo 2026-11-09): `server/internal/boardcatalog` lists every
+    canvas element and block a board may hold, which board takes each (`question`, a
+    drawing answer's board; `workspace`, the workspace canvas) and the limits above.
+    `pnpm gen:openapi` writes it to `src/api/board.generated.ts` (`BOARD_CATALOG`);
+    `TestGeneratedFileIsCurrent` fails when it's stale. `mountDrawingBoard`,
+    `checkSavedBoard` and `drawBoardPreview` take the board, and the limits in
+    `boardData.ts` come from it. The server keeps a saved board as opaque bytes, so
+    the browser is the only reader for now.
+  - **Holding to the catalog after load** (Epo 2026-11-09): the load check runs
+    once, so a mounted board also drops what its catalog leaves out whatever adds it
+    (a paste, a duplicate, later a peer): `keepToCatalog` in `drawingBoard.ts` deletes
+    such an element or block right after it lands, and any element the load check's
+    per-element and mind map checks would refuse (`addedElementFits`), so a mind map copied from the
+    workspace canvas and pasted into an answer goes with its node shapes, as does a capy
+    embed. A saved mind map's nodes are checked too (`mindmapFits`): each a shape on
+    the canvas no other mind map or group holds, under a parent among its own nodes,
+    one root, no cycle, layout 0–2. A board whose JSON would hide a key (`__proto__`,
+    which Yjs's `toJSON` turns into the object's prototype while BlockSuite still loads
+    the entry) is refused. Emoji, GIFs and cards copy, paste and duplicate on
+    the workspace canvas through a clipboard config each (`boardClipboard.ts`), which
+    re-adds only a block the load check would take (`embedFits`, the same check), since
+    any page can write the clipboard. Their renderers check again what they use: a link
+    opens only as http(s), an emoji shows only from the list, a GIF only from https
+    `*.klipy.com` (`KLIPY_MEDIA_SOURCE`, which the image policy allows too), rotation as a number.
+  - **Stored (Epo 2026-11-09, `todo-workspace-canvas-storage.md`):** the workspace canvas
+    is personal: one per member per workspace, seen by its owner alone, one editor over
+    the whole canvas and no collaboration room (collaboration means resuming the held
+    canvas plan). It is a standalone material of kind `canvas` linked to its workspace
+    by `canvas_workspace_id`, owned and paid for by the member, listed in Files with the
+    drawing icon, never shared or cloned, and deleted with their membership when they
+    leave. `GET /api/workspaces/{id}/canvas` finds or makes it; its document is one
+    `canvas_board` block (embed catalog) naming the board asset, the save's version and
+    the canvas's images, so the asset pruner keeps them. `WorkspaceCanvas.tsx` opens
+    the board from the material's `board` editor asset (`boardAsset.ts`: gzip in the
+    browser, `assetLink` and `DecompressionStream` back), or from this device's unsaved
+    copy (IndexedDB `drawingDrafts`, key `canvas:<material>`: the live `snapshot()` with
+    the material revision it was taken at, written 400 ms after each change and on
+    `pagehide`) when the last save didn't go up and the copy's revision is the material's
+    current one; an older copy (another tab's or device's save landed since) is deleted.
+    It saves 2 s after the last change (`save({ finish: false })`, the cleaned-up document
+    that leaves the drawer's tool and open card alone) and when the page within the app
+    leaves the canvas (`save()`, which finishes an open card's view into it; a save still
+    in flight then rewrites the copy from the document as left, at the revision it lands
+    on), gzipped, uploaded as a new `board` asset under
+    `CANVAS_BOARD_MAX` (2 MiB before gzip, the board catalog; over it the board says so
+    and the last good save stands), then `PUT /api/workspaces/{id}/canvas` with the
+    asset and the revision it read; the server checks the asset is a ready `board`
+    asset of the canvas (images likewise) and counts the version. 409 (the same person's
+    other tab saved first) says so, deletes this tab's copy and stops saving until a
+    reload; any other failure waits for the next change or open, the copy holding the
+    work (no retry loop), and the board asset uploaded for the failed save is deleted
+    again. A closed tab keeps the copy only: the upload can't run as a keepalive request.
+    Both routes answer 404 to a non-member (a link or public visitor), and a save naming
+    an asset that isn't a ready board or image asset of the canvas is a 400. A canvas opens no room (the collaboration token route refuses
+    it); the Canvas tab shows to members only, since a link or public visitor has none.
+    Restoring a trashed canvas beside the live one made since is refused (409
+    `canvas_exists`).
+  - **In Files (2026-11-10, a stopgap: Epo plans an account-level canvas page):** the
+    Files page's one list holds a member's own canvases with their blocks (`items.go`:
+    kind `canvas`, only ever through the owner's branch, since a canvas has no
+    `workspace_id`), filed under the workspace each is the Canvas tab of
+    (`canvasWorkspaceId`, the workspace's name and icon, the In a workspace filter)
+    and sized with its board asset, which no row of its own shows. Its card draws the
+    saved board in the browser (`useCanvasDrawing`: the stored preview is
+    `{ kind: 'canvas', boardAssetId }`, the board comes through `boardFromAsset` and
+    `drawBoardPreview(…, 'workspace')`; the icon until then). A canvas has no page of
+    its own, so the row and its Open go to `/workspaces/{id}?panel=canvas`
+    (`blockLink`), as does the row of one of its images; its menu is Open and Delete
+    alone (no rename, share or clone). Delete trashes it as any standalone block, the
+    Canvas tab then makes a fresh one, and Trash lists it with the canvas icon.
+  - **Images (Epo 2026-11-09 and 2026-11-10, `todo-board-images.md`):** an image block
+    keeps only an id (`sourceId`), and the board reads and stores files through its own
+    blob source (`boardBlobs.ts`, `BoardBlobSource`, in place of BlockSuite's in-memory
+    one), which the page feeds through the mount's `images` option (`boardImages.ts`).
+    Every way an image arrives (a paste, a drop, a note's slash menu, Misc's Image tile,
+    which opens the device's file picker for a phone with no paste or drop) goes
+    through BlockSuite's `blobSync.set`, so the source is the one place that sees them.
+    On the workspace canvas (`assetImages` in `boardAsset.ts`) an image is stored at
+    once as the canvas material's own `image` editor asset through `uploadEditorAsset`,
+    as a note's is: compressed in the browser first (`fitImageOffThread`: WebP where the
+    browser encodes it, JPEG or PNG where it doesn't, as Safari), capped at the plan's
+    image cap, refused when storage is full, billed to the member and listed on the
+    Files page. The block lands with BlockSuite's hash and shows the local file with the
+    upload state set (`blobState$`); when the upload completes its `sourceId` becomes
+    the asset id and its `size` the stored size, outside the undo history, and a refused
+    image leaves the board with a toast. An image already stored under its id is never
+    stored again: a copy pasted back hands its file to `set` under that id, which the
+    source leaves alone (`stored`). `GET` and `PUT /api/workspaces/{id}/canvas` answer
+    `ownImageAssetIds`, every ready image asset of the canvas, one the pruner trashed
+    included; a save waits for uploads in flight (at most 20 s, `IMAGE_WAIT_MS`, on
+    leaving the canvas too, since the board's document outlives its unmount) and sends
+    as `imageAssetIds` the ids on the board that are in that list or were uploaded
+    since. The pruner then keeps them, and trashes a removed one at the next save once
+    it is over a minute old. An image deleted on the canvas and brought back by undo is
+    named again and that save restores it (`assertCanvasAssets` takes a trashed image,
+    never a trashed board), after which the board asks for its file again
+    (`reloadImages`). An image deleted for good elsewhere (the Files page) is not in the
+    list, so it is left out; a save refused for what it named (400) reads the list again
+    for the next one. An image pasted from another canvas resolves as another material's
+    and is stored again as this one's, also when the board opens with one. Opened again,
+    an image loads from its asset's link (`assetLink`). A tab closed mid-upload keeps the
+    hash in its device copy and shows an empty frame after a reload.
+    On an **answer board** (`DrawingBoardScreen`) a picture is compressed as it lands
+    (`shrink`: `fitImageOffThread` under `BOARD_IMAGE_MAX`, 1 MiB, from the board
+    catalog) and refused with a toast past `BOARD_IMAGES_MAX` (10, counting the ones of
+    the same drop still being compressed) or when no size fits; its block keeps
+    BlockSuite's hash for good, and the file stays on the board. The device keeps each
+    file once, beside the draft (`drawingPictures` in `localDb.ts`, by draft and id;
+    `syncLocalDrawingPictures` adds the new ones and forgets the ones off the board),
+    so a reload before Done loses none and a stroke rewrites no picture. Done checks the
+    count again, asks the board for every file (`imageFiles`, fetching a stored
+    drawing's not shown yet) and keeps them in the page's memory under the part's key
+    (`holdDrawingPictures`); the value names them by that key (`pictures`), since files
+    don't sit in an answer. An assignment's Done sends them in base64 with the board
+    (`drawingUpload`, `pictures: [{ sourceId, data }]`) and then lets them go
+    (`releaseDrawingPictures`): from there they are read from the stored drawing. A
+    practice Check sends them the same way and keeps them for Check again. A check that
+    keeps no drawing sends none: a shared page's, a quiz inside a note
+    (`embedded`), a review session's and the bank's (those two now send a drawing as
+    its board and image at all, where they sent the page's raw value). Sending a value
+    whose pictures are no longer held throws rather than storing empty frames.
+    `GET /api/drawings/{id}` answers a link per picture (`pictures`), from which a
+    reopened answer and a teacher's read-only board load them (`fetchDrawingPicture`,
+    which asks for the links again once when one has lapsed; a Done forgets the page's
+    copy of its drawing). The marking image draws them as before, and list previews
+    still draw a grey box. A drawn sample answer's board in the quiz editor still keeps
+    pictures on the page only, and an answer board has no file picker (no Misc panel).
+- **Preview (`boardPreview.ts`):** `drawBoardPreview(saved, { width, height }, board)` draws a
   saved board as an SVG string from its data, for lists, results and marking views
   (Epo 2026-11-06: what's on it, not every detail). It never loads the editor: it imports
   yjs and the small modules the check uses (`boardData.ts` holds the cards' stored shape,
@@ -4736,7 +5033,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   from end to end with their arrowheads; text and shape labels a line per line break;
   plane cards their grid (while lines are 6 px apart), axes and marks; charts their bars
   or circle and spokes; formulas their LaTeX as text; notes their box and a line per
-  paragraph; pasted images a grey box. No numbers or labels on cards. It checks the board
+  paragraph; a placed quiz or set its box with the title and what it is (text only, the
+  runner being on the canvas alone); pasted images a grey box. No numbers or labels on cards. It checks the board
   first and throws the same `BoardLoadError`. `fromBase64` uses `Uint8Array.fromBase64`
   where the browser has it. A plane card with 5 strokes takes 0.4 ms
   in Node, a 300 KB board (50 strokes of 300 points, 500 marks) 5 ms. Show it as an
@@ -4746,7 +5044,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   `drawingBoard.css` over the note's stored style, since AFFiNE's corner field only takes
   0/8/16/24/32; the preview draws it the same. AFFiNE's slash menu is registered, offering
   text styles, lists, alignment, inline styles, Image, dates and the move/copy/delete
-  actions; Image stores its file in the board's blob store, as a pasted image does.
+  actions; Image stores its file through the board's blob source, as a pasted image does.
 - **Theme:** the board follows the app's light or dark. The app's dark themes set
   `data-theme` to a Catppuccin flavour, which AFFiNE's `[data-theme=dark]` never matches,
   so `drawingBoard.ts` puts AFFiNE's dark variables under `html.dark` (on `<html>`, for

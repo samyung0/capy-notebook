@@ -3,7 +3,7 @@ import { act } from 'react';
 import { expect, it, vi } from 'vitest';
 import { getLocale } from '@/i18n';
 
-// As EmbedsTab.test: the locale first, then the document react-dom/client reads.
+// As ItemsList.test: the locale first, then the document react-dom/client reads.
 getLocale();
 const { document, window } = parseHTML(
   '<!doctype html><html><body><div id="root"></div></body></html>'

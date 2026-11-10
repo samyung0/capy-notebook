@@ -426,6 +426,43 @@ test('a board put away shows none of its note card or image, and Draw shows them
   await expect.poll(async () => (await boardSeen(page)).cardsShown).toBe(2);
 });
 
+test("a picture on an answer board is kept with the device's draft through Done and a reload", async ({
+  page,
+}) => {
+  test.slow();
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await page.goto('/quizzes/qz_2/attempt');
+  await hideMockPanel(page);
+  let question = await openQuestion(page);
+  await showBoard(
+    page,
+    question.getByRole('button', { name: m.drawing_answer_draw() })
+  );
+  await addCardAndImage(page);
+  await pressDone(page);
+  await putAway(page);
+
+  // Practice keeps the board on the device until Check: after a reload the
+  // draft opens with the picture's file, which no server holds yet.
+  await page.reload();
+  await hideMockPanel(page);
+  question = await openQuestion(page);
+  await showBoard(
+    page,
+    question.getByRole('button', { name: m.drawing_answer_draw() })
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document.querySelector<HTMLImageElement>(
+            '.answer-board affine-edgeless-image img'
+          )?.naturalWidth ?? 0
+      )
+    )
+    .toBeGreaterThan(0);
+});
+
 test('a drawn sample put away in the quiz editor shows none of its note card or image', async ({
   page,
 }) => {

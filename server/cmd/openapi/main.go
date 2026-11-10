@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
+	"github.com/samyung0/capy-notebook/server/internal/boardcatalog"
 	"github.com/samyung0/capy-notebook/server/internal/embeds"
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi"
@@ -34,6 +35,7 @@ func main() {
 	agentTools := flag.String("agent-tools", "", "optional generated agent-tool contract JSON path")
 	officeLimits := flag.String("office-limits", "", "the Office engine's limits.json, required with -agent-tools")
 	embedCatalog := flag.String("embeds", "", "optional repository root to write the embed catalog's JSON, TypeScript and Rust files under")
+	boardCatalog := flag.String("board", "", "optional repository root to write the board catalog's TypeScript file under")
 	flag.Parse()
 
 	spec, err := httpapi.SpecYAML()
@@ -81,6 +83,16 @@ func main() {
 	if *embedCatalog != "" {
 		if err := writeEmbeds(*embedCatalog); err != nil {
 			fmt.Fprintln(os.Stderr, "embeds:", err)
+			os.Exit(1)
+		}
+	}
+	if *boardCatalog != "" {
+		ts, err := boardcatalog.TypeScript()
+		if err == nil {
+			err = writeAtomic(filepath.Join(*boardCatalog, filepath.FromSlash(boardcatalog.TypeScriptPath)), ts)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "board catalog:", err)
 			os.Exit(1)
 		}
 	}

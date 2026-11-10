@@ -25,3 +25,31 @@ export function withElements(...list: Record<string, unknown>[]) {
 
 export const withElement = (fields: Record<string, unknown>) =>
   withElements(fields);
+
+/** The saved board with one more block on its canvas: `flavour` and its props. */
+export function withCanvasBlock(
+  flavour: string,
+  props: Record<string, unknown>
+) {
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, fromBase64(SAVED));
+  const blocks = doc.getMap<Y.Map<unknown>>('blocks');
+  const surface = [...blocks.values()].find(
+    (block) => block.get('sys:flavour') === 'affine:surface'
+  );
+  const block = new Y.Map<unknown>();
+  block.set('sys:id', 'extra');
+  block.set('sys:flavour', flavour);
+  block.set('sys:children', new Y.Array());
+  for (const [key, value] of Object.entries({
+    index: 'a1',
+    rotate: 0,
+    xywh: '[0,0,96,96]',
+    ...props,
+  }))
+    block.set(`prop:${key}`, value);
+  blocks.set('extra', block);
+  if (!surface) throw new Error('the saved board has no canvas');
+  (surface.get('sys:children') as Y.Array<string>).push(['extra']);
+  return Y.encodeStateAsUpdate(doc);
+}

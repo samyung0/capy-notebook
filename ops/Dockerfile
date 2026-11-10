@@ -16,14 +16,14 @@ ENV VITE_APP_ENV=$VITE_APP_ENV
 ENV VITE_RELEASE_SHA=$VITE_RELEASE_SHA
 RUN pnpm --filter @capy-notebook/ops build
 
-FROM golang:1.26.10-alpine3.24@sha256:9ce231b28998b32e116927c61aa5c406183061d4f3f2d61b292c88e7f6bdf7ca AS backend
+FROM golang:1.26.10-alpine3.24@sha256:87c65a688975c0b1d4585d204874c45ca78354670e3a5f11368c5a492303d696 AS backend
 WORKDIR /src
 COPY server/go.mod server/go.sum ./
 RUN go mod download
 COPY server .
 RUN CGO_ENABLED=0 go build -trimpath -o /out/ops ./cmd/ops
 
-FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+FROM alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 RUN apk add --no-cache ca-certificates && adduser -D -u 10001 app
 # The server names Clerk's frontend host in its content security policy from
 # this key (server/internal/ops/config.go), the one the bundle was built with.

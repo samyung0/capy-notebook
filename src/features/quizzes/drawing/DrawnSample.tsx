@@ -1,7 +1,11 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/Button';
-import { fromBase64, toBase64 } from '@/features/blocksuite/base64';
-import { assetLink } from '@/features/materials/resolvedAssetLinks';
+import {
+  boardFile,
+  boardFromAsset,
+  gzipBoard,
+  rememberBoardAsset,
+} from '@/features/blocksuite/boardAsset';
 import type { DrawnSample } from '@/features/questions/types';
 import { m } from '@/i18n';
 import { loadBoard, useBoardAhead } from './boardPrefetch';
@@ -14,25 +18,16 @@ const DrawingBoardScreen = lazy(loadBoard);
 /** Stores a drawn sample answer as the quiz's own assets and returns them. */
 export type UploadDrawnSample = (value: DrawingValue) => Promise<DrawnSample>;
 
-const gzip = (bytes: Uint8Array<ArrayBuffer>) =>
-  new Response(
-    new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))
-  ).arrayBuffer();
-
 /** A quiz's drawn sample answer upload (Q3): the board gzipped as a `board`
  * asset, beside its image as an ordinary quiz image. */
 export function quizSampleUpload(quizId: string): UploadDrawnSample {
   return async ({ board, image }) => {
     // Its module holds the upload code, which learners never load.
     const { uploadEditorAsset } = await import('@/api/editorAssets');
-    const packed = await gzip(fromBase64(board) as Uint8Array<ArrayBuffer>);
+    const packed = await gzipBoard(board);
     const picture = await (await fetch(image)).blob();
     const [stored, shown] = await Promise.all([
-      uploadEditorAsset(
-        quizId,
-        new File([packed], 'sample.ydoc.gz', { type: 'application/gzip' }),
-        'board'
-      ),
+      uploadEditorAsset(quizId, boardFile(packed, 'sample.ydoc.gz'), 'board'),
       uploadEditorAsset(
         quizId,
         new File([picture], 'sample-answer', { type: picture.type }),
@@ -43,31 +38,6 @@ export function quizSampleUpload(quizId: string): UploadDrawnSample {
   };
 }
 
-/** Sample boards fetched in this page, by asset id, base64. */
-const fetched = new Map<string, Promise<string>>();
-
-function fetchSampleBoard(assetId: string) {
-  let board = fetched.get(assetId);
-  if (!board) {
-    board = assetLink(assetId, new AbortController().signal, false)
-      .then((link) => fetch(link.url))
-      .then(async (response) => {
-        if (!response.ok || !response.body)
-          throw new Error(`sample board fetch failed: ${response.status}`);
-        const inflated = response.body.pipeThrough(
-          new DecompressionStream('gzip')
-        );
-        return toBase64(
-          new Uint8Array(await new Response(inflated).arrayBuffer())
-        );
-      });
-    // A failure is fetched again on the next view, not retried here.
-    board.catch(() => fetched.delete(assetId));
-    fetched.set(assetId, board);
-  }
-  return board;
-}
-
 /** A drawn sample answer's board, base64, once fetched; null while it loads,
  * or when there is none or it can't be read. Fetched in the browser only. */
 export function useSampleBoard(sample: DrawnSample | undefined) {
@@ -76,7 +46,7 @@ export function useSampleBoard(sample: DrawnSample | undefined) {
   useEffect(() => {
     if (!id) return;
     let live = true;
-    fetchSampleBoard(id)
+    boardFromAsset(id)
       .then((board) => live && setHeld({ board, id }))
       .catch(() => undefined);
     return () => {
@@ -141,7 +111,7 @@ export function DrawnSampleField({
               }
               const stored = await upload(value);
               // Its board is already here: no fetch back.
-              fetched.set(stored.board, Promise.resolve(value.board));
+              rememberBoardAsset(stored.board, value.board);
               onChange(stored);
               return null;
             }}

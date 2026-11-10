@@ -603,6 +603,23 @@ pub const ELEMENTS: &[Element] = &[
         materials: &["note", "quiz", "flashcards", "mindmap", "diagram"],
     },
     Element {
+        name: "canvas_board",
+        index: Index::None,
+        void: true,
+        inline: false,
+        top_level: true,
+        required: &["id", "boardAssetId", "version", "images"],
+        fields: Some(&["type", "id", "children", "boardAssetId", "version", "images"]),
+        forbidden: &["color", "backgroundColor", "fontSize", "fontFamily"],
+        shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
+        assets: &["boardAssetId", "images[].assetId"],
+        resizable: false,
+        children: &[],
+        materials: &["canvas"],
+    },
+    Element {
         name: "placeholder",
         index: Index::None,
         void: true,
@@ -939,6 +956,11 @@ pub const MATERIAL_KINDS: &[MaterialKind] = &[
     MaterialKind {
         kind: "diagram",
         requires: Some("mermaid"),
+        item: false,
+    },
+    MaterialKind {
+        kind: "canvas",
+        requires: Some("canvas_board"),
         item: false,
     },
 ];

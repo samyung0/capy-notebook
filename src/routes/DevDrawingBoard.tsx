@@ -22,12 +22,17 @@ export default function DevDrawingBoard() {
     let board: ReturnType<typeof mountDrawingBoard> | undefined;
     if (!new URLSearchParams(location.search).has('unmounted')) {
       performance.mark('board:mount-start');
-      board = mountDrawingBoard(host, { plane: true, saved: __benchBoard });
+      board = mountDrawingBoard(host, {
+        board: 'question',
+        plane: true,
+        saved: __benchBoard,
+      });
       performance.mark('board:mount-end');
     }
-    const mount = (options: DrawingBoardOptions) => {
+    // The drawing answer's board, as every test on this page opens it.
+    const mount = (options: Omit<DrawingBoardOptions, 'board'>) => {
       board?.unmount();
-      board = mountDrawingBoard(host, options);
+      board = mountDrawingBoard(host, { ...options, board: 'question' });
       Object.assign(window, { __board: board });
     };
     const reopen = (
@@ -38,7 +43,8 @@ export default function DevDrawingBoard() {
     Object.assign(window, {
       __board: board,
       __mount: mount,
-      __preview: drawBoardPreview,
+      __preview: (saved: string, size: { height: number; width: number }) =>
+        drawBoardPreview(saved, size, 'question'),
       __reopen: reopen,
     });
     return () => board?.unmount();

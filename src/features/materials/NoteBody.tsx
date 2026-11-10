@@ -39,6 +39,11 @@ import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { NoteBlocks } from '@/features/notes/liveNoteBlocks';
 import { NoteDisplayToggles } from '@/features/notes/NoteDisplayToggles';
+import {
+  countWords,
+  NoteHeading,
+  noteText,
+} from '@/features/notes/NoteHeading';
 import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
 import {
   EditorPreviewing,
@@ -89,10 +94,14 @@ const LazyMaterialPreview = lazy(() =>
 
 /** The skeleton where nothing is stored yet: no words (Epo 2026-11-04). */
 export function NoteSkeleton() {
+  const displayWidth = useNoteEditorPrefs((state) => state.displayWidth);
   return (
     <div
       aria-label={m.a11y_loading()}
-      className="mx-auto flex w-full flex-col gap-2.5 px-5 pt-6 sm:px-10"
+      className={cn(
+        'note-column flex flex-col gap-2.5 pt-6',
+        displayWidth === 'half' && 'max-w-[912px]'
+      )}
       role="status"
     >
       {[45, 100, 85, 92, 65].map((width) => (
@@ -159,9 +168,11 @@ export function DocumentAttribution({
   return (
     <MaterialAttributionFooter
       className={cn(
-        'mx-auto w-full px-5 sm:px-10',
-        overBar ? 'pb-28' : 'pb-12',
-        (kind !== 'note' || displayWidth === 'half') && 'md:max-w-3xl'
+        kind === 'note'
+          ? 'note-column'
+          : 'mx-auto w-full px-5 sm:px-10 md:max-w-3xl',
+        kind === 'note' && displayWidth === 'half' && 'max-w-[912px]',
+        overBar ? 'pb-28' : 'pb-12'
       )}
       inline
       provenance={provenance}
@@ -214,14 +225,33 @@ function PaintedNote({
     () => body ?? { schemaVersion: 1, value },
     [body, value]
   );
+  const displayWidth = useNoteEditorPrefs((state) => state.displayWidth);
+  // Stable, so the heading is not drawn again with every change to the note.
+  const shown = useRef(value);
+  shown.current = value;
+  const words = useCallback(() => countWords(noteText(shown.current)), []);
   return (
-    <Preview
-      content={content}
-      isStandalone={label.standalone}
-      kind={label.kind}
-      title={label.title}
-      value={value}
-    />
+    <>
+      {/* The title and Info row, as the editor draws them over its own
+       * (NoteEditorCore), so a note opens and takes over without a jump. */}
+      {label.kind === 'note' && (
+        <NoteHeading
+          fullWidth={displayWidth === 'full'}
+          material={material}
+          plate
+          readonly
+          title={label.title}
+          words={words}
+        />
+      )}
+      <Preview
+        content={content}
+        isStandalone={label.standalone}
+        kind={label.kind}
+        title={label.title}
+        value={value}
+      />
+    </>
   );
 }
 

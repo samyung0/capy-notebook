@@ -39,12 +39,6 @@ export const LEARNING_TABS = ['overview', 'past', 'results'] as const;
 export type LearningTab = (typeof LEARNING_TABS)[number];
 export const parseLearningSearch = tabSearch(LEARNING_TABS);
 
-export const FILES_TABS = [
-  'files',
-  'blocks',
-  'embeds',
-  'canvas',
-  'submissions',
-  'trash',
-] as const;
+/** `files` is the default and stays out of the URL. */
+export const FILES_TABS = ['files', 'canvas', 'trash'] as const;
 export type FilesTab = (typeof FILES_TABS)[number];

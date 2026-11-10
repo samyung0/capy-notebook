@@ -97,6 +97,7 @@ import {
   QUESTION_TYPES,
   type Question,
 } from '@/features/questions/types';
+import { answersForCheck } from '@/features/quizzes/drawing/drawingValue';
 import type { Answers } from '@/features/quizzes/grade';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import { type Crumb, QuizPageHeader } from '@/features/quizzes/QuizPageHeader';
@@ -1047,8 +1048,11 @@ function CheckableQuestion({
     mutate: check,
     reset,
   } = useMutation({
-    mutationFn: (sent: Answers) =>
-      checkBankQuestion(question.id, { answers: sent }),
+    // A drawing goes as its board and image; the bank keeps no drawing.
+    mutationFn: async (sent: Answers) =>
+      checkBankQuestion(question.id, {
+        answers: await answersForCheck(sent, false),
+      }),
     onSuccess: () => {
       void client.invalidateQueries({
         queryKey: bankMarksQuery(topicId).queryKey,

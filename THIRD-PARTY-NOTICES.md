@@ -30,7 +30,9 @@ its registry entry has no license field. It loads with the drawing board.
 
 `layout/Dockerfile` adds PaddlePaddle's ONNX export of PP-DocLayout_plus-L from
 Hugging Face (`PaddlePaddle/PP-DocLayout_plus-L_onnx`, pinned revision and
-SHA-256). The weights are not in this repository.
+SHA-256). The weights are not in this repository. The image's build changes
+them: `layout/quantise.py` stores the convolutions' weights as int8, and the
+service runs that copy.
 
 License: Apache License, Version 2.0.
 

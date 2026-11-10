@@ -1,10 +1,13 @@
 import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
 import {
+  deleteLocalDrawingDraft,
   localCardStates,
+  localDrawingPictures,
   localQuizAttempts,
   recordLocalCardReview,
   saveLocalQuizAttempt,
+  syncLocalDrawingPictures,
 } from './localDb';
 import { newSrsState, reviewSrs } from './srs';
 
@@ -46,5 +49,30 @@ describe('browser-local study data', () => {
     expect(await localCardStates('mat_s')).toEqual([
       { cardId: 'c1', setId: 'mat_s', srs },
     ]);
+  });
+
+  it("keeps a drawing draft's pictures beside it, each written once, until they leave the board or the draft goes", async () => {
+    const file = (text: string) => new Blob([text], { type: 'image/webp' });
+    await syncLocalDrawingPictures(
+      'quiz:q:p',
+      [
+        { file: file('a'), id: 'a' },
+        { file: file('b'), id: 'b' },
+      ],
+      ['a', 'b']
+    );
+    await syncLocalDrawingPictures(
+      'quiz:q:other',
+      [{ file: file('z'), id: 'a' }],
+      ['a']
+    );
+    // A later write adds nothing and names what is still on the board.
+    await syncLocalDrawingPictures('quiz:q:p', [], ['b']);
+    expect(
+      (await localDrawingPictures('quiz:q:p')).map(({ id }) => id)
+    ).toEqual(['b']);
+    await deleteLocalDrawingDraft('quiz:q:p');
+    expect(await localDrawingPictures('quiz:q:p')).toEqual([]);
+    expect(await localDrawingPictures('quiz:q:other')).toHaveLength(1);
   });
 });

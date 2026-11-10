@@ -1177,17 +1177,44 @@ test.describe('with a finger', () => {
   });
 });
 
+/** Whether the workspace canvas's device copy in IndexedDB (src/lib/localDb.ts)
+ * is the board as it is now. */
+const copyIsCurrent = (page: Page) =>
+  page.evaluate(
+    () =>
+      new Promise<boolean>((resolve, reject) => {
+        // The mocks keep their own database; their canvas is cv_<workspace>.
+        const opened = indexedDB.open('capy-local-msw');
+        opened.onerror = () => reject(opened.error);
+        opened.onsuccess = () => {
+          const read = opened.result
+            .transaction('drawingDrafts')
+            .objectStore('drawingDrafts')
+            .get('canvas:cv_ws_bio');
+          read.onsuccess = () => {
+            opened.result.close();
+            const { __board: board } = window as unknown as {
+              __board: { snapshot(): string };
+            };
+            resolve(read.result?.doc === board.snapshot());
+          };
+        };
+      })
+  );
+
 test('the workspace canvas keeps its plane on reload', async ({ page }) => {
   test.slow();
   await page.goto('/workspaces/ws_bio');
   const tab = page.getByRole('button', { name: 'Canvas' });
   await tab.waitFor();
   await tab.click();
-  await page.waitForFunction(() =>
-    (window as unknown as { __board?: { stats(): Stats } }).__board
-      ?.stats()
-      .canvas.includes('plane')
+  // The board mounts once the canvas and its stored board have loaded, and a
+  // fresh canvas is empty: the Graphs tool places a plane card.
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
   );
+  await placePiece(page, 'capy-graph-slot', 'cart');
+  await expect.poll(() => canvas(page)).toEqual(['plane']);
   const card = await onCard(page);
   await page.mouse.dblclick(...card(0.5, 0.5));
   const at = await onPlane(page);
@@ -1196,13 +1223,10 @@ test('the workspace canvas keeps its plane on reload', async ({ page }) => {
   await expect.poll(() => marks(page)).toBe(1);
   await page.keyboard.press('Escape');
 
-  // Saved in this browser after a short wait, with no request.
-  await expect
-    .poll(() =>
-      page.evaluate(() => localStorage.getItem('capy.workspace.canvas.ws_bio'))
-    )
-    .not.toBeNull();
-  await page.waitForTimeout(700);
+  // Kept in this browser 400 ms after the last change, with no request; the
+  // reload comes before the save 2 s after it (WorkspaceCanvas.tsx), which the
+  // mocks would forget on reload.
+  await expect.poll(() => copyIsCurrent(page), { intervals: [50] }).toBe(true);
   // The URL brings the tab back on its own.
   await page.reload();
   await page.waitForFunction(() =>
@@ -1211,6 +1235,101 @@ test('the workspace canvas keeps its plane on reload', async ({ page }) => {
       .canvas.includes('plane')
   );
   await expect.poll(() => marks(page)).toBe(1);
+});
+
+test('an image pasted or picked on the workspace canvas is stored as its asset and opens from it', async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/workspaces/ws_bio');
+  const tab = page.getByRole('button', { name: 'Canvas' });
+  await tab.waitFor();
+  await tab.click();
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  type Images = { images(): { file?: Blob; id: string }[] };
+  const imageIds = () =>
+    page.evaluate(() =>
+      (window as unknown as { __board: Images }).__board
+        .images()
+        .map(({ id }) => id)
+    );
+  // A paste on the board, as the clipboard hands an image over.
+  await page.locator('.capy-board').click({ position: { x: 300, y: 200 } });
+  await page.evaluate(async () => {
+    const drawn = document.createElement('canvas');
+    drawn.width = 320;
+    drawn.height = 200;
+    const context = drawn.getContext('2d');
+    if (!context) throw new Error('no 2d canvas');
+    context.fillStyle = '#2f7d56';
+    context.fillRect(0, 0, 320, 200);
+    const png = await new Promise<Blob | null>((resolve) =>
+      drawn.toBlob(resolve, 'image/png')
+    );
+    if (!png) throw new Error('no image');
+    const clipboard = new DataTransfer();
+    clipboard.items.add(new File([png], 'pasted.png', { type: 'image/png' }));
+    document.querySelector('.capy-board editor-host')?.dispatchEvent(
+      new ClipboardEvent('paste', {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: clipboard,
+        composed: true,
+      })
+    );
+  });
+  // Uploaded at once as the canvas's image asset: its block keeps the asset's id.
+  await expect.poll(imageIds).toEqual([expect.stringMatching(/^asset_mock_/)]);
+  const [assetId] = await imageIds();
+  // The save 2 s after names it, so the pruner keeps it.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() =>
+          fetch('/api/workspaces/ws_bio/canvas')
+            .then((response) => response.json())
+            .then((canvas: { imageAssetIds: string[] }) => canvas.imageAssetIds)
+        ),
+      { timeout: 15_000 }
+    )
+    .toEqual([assetId]);
+  // Opened again, the board has no file in hand: the image comes from its asset.
+  await page.getByRole('button', { name: 'Dashboard' }).click();
+  await expect(page.locator('.capy-board')).toHaveCount(0);
+  await tab.click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document.querySelector<HTMLImageElement>('affine-edgeless-image img')
+            ?.naturalWidth ?? 0
+      )
+    )
+    .toBe(320);
+  expect(await imageIds()).toEqual([assetId]);
+
+  // Misc's Image tile picks a file from the device, for a phone with no paste
+  // or drop: it lands and is stored the same way.
+  const png = await page.evaluate(() => {
+    const drawn = document.createElement('canvas');
+    drawn.width = 120;
+    drawn.height = 80;
+    drawn.getContext('2d')?.fillRect(0, 0, 120, 80);
+    return drawn.toDataURL('image/png').split(',')[1];
+  });
+  await page.locator('capy-misc-button').click();
+  const chooser = page.waitForEvent('filechooser');
+  await page.locator('capy-misc-panel [data-pick="image"]').click();
+  await (await chooser).setFiles({
+    buffer: Buffer.from(png, 'base64'),
+    mimeType: 'image/png',
+    name: 'picked.png',
+  });
+  await expect
+    .poll(imageIds)
+    .toEqual([assetId, expect.stringMatching(/^asset_mock_/)]);
 });
 
 test('the workspace canvas stays in the URL at every width', async ({

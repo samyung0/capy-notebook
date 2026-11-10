@@ -389,7 +389,12 @@ every container each second. `layout_crash.py` runs a throwaway service
 (`layout_service.py`, `layout_health.py`) under simulated callers
 (`layout_callers.py`) and injects faults;
 [layout capacity](extraction/reports/2026-11-04-layout-capacity.md) has both
-results.
+results. [Layout int8](extraction/reports/2026-11-10-layout-int8.md) measures the
+service's model with int8 convolutions against the float export: CPU a page on
+the ingest host, the gold crops through `layout_score.py`, and region agreement
+on mixed and fresh pages (`layout_agree.py` compares two `layout_detect.py`
+records). Its pages and raw records stayed local; the build that ships is
+`layout/quantise.py`.
 
 ### rag
 
