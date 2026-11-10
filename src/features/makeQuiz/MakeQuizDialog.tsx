@@ -8,6 +8,7 @@ import type { Extraction, SourceFile, SourceUploadPolicy } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { DialogCancel, SimpleDialog } from '@/components/ui/Dialog';
 import { FileIcon } from '@/components/ui/FileIcon';
+import { FormAlert } from '@/components/ui/FormAlert';
 import { Icon } from '@/components/ui/Icon';
 import {
   Popover,
@@ -37,7 +38,7 @@ import {
   isUnreadable,
 } from './makeQuiz';
 import { type DialogStep, usePageStep } from './PagePicker';
-import { addQuizWait } from './quizWaits';
+import { addQuizWait, clearQuizNotice, useQuizNotice } from './quizWaits';
 import { useQuizUpload } from './useQuizUpload';
 
 /** A file on the dialog: from Files, or an upload, whose transfer row `key`
@@ -56,6 +57,9 @@ export interface MakeQuizChoice {
   answers: string[];
   paper: string[];
 }
+
+/** A picked file as the upload panel follows it (quizWaits). */
+const waitingFile = ({ fileId, key, name }: Picked) => ({ fileId, key, name });
 
 function pickedOf(file: SourceFile): Picked {
   return { fileId: file.id, key: file.id, kind: file.kind, name: file.name };
@@ -357,6 +361,12 @@ export function MakeQuizDialog({
     setPaper(fromFiles(initial.paper));
     setAnswers(fromFiles(initial.answers));
   });
+  // Files a wait lost before this dialog opened again (openQuizWait): read once as
+  // the dialog opens and said while it stays open.
+  const [lost] = useState(() => useQuizNotice.getState().failures);
+  useEffect(() => {
+    clearQuizNotice();
+  }, []);
   // Which menu is open: the paper's, or Add a file under either list.
   const [menu, setMenu] = useState<'answers' | 'more' | 'paper' | null>(null);
   const paperInput = useRef<HTMLInputElement>(null);
@@ -410,11 +420,54 @@ export function MakeQuizDialog({
   });
   const canContinue =
     paper.length > 0 && paper.every(usable) && answers.every(usable);
-  const waitingFile = ({ fileId, key, name }: Picked) => ({
-    fileId,
-    key,
-    name,
-  });
+  // The upload panel sits under the dialog, so an upload from here closes the dialog
+  // and the panel follows it, offering Make quiz once it is read (Epo 2026-11-09). The
+  // browser counts a file's pages in the dialog first, so it closes once every file
+  // picked has started, or been refused.
+  const [uploading, setUploading] = useState<string[]>([]);
+  useEffect(() => {
+    if (uploading.length === 0) return;
+    const picked = [...paper, ...answers];
+    const started = uploading.every(
+      (key) =>
+        transfers.some((item) => item.key === key) ||
+        !picked.some((row) => row.key === key)
+    );
+    if (!started) return;
+    setUploading([]);
+    if (!picked.some((row) => uploading.includes(row.key))) return;
+    addQuizWait({
+      answers: answers.map(waitingFile),
+      paper: paper.map(waitingFile),
+      title: paper[0]?.name ?? answers[0]?.name ?? '',
+      workspaceId,
+    });
+    onClose();
+  }, [answers, onClose, paper, transfers, uploading, workspaceId]);
+
+  // A file from Files still being read is treated as an upload (Epo 2026-11-09): the
+  // dialog closes and the panel follows it instead of holding "Reading pages". An
+  // upload still counting its pages closes the dialog itself, with every row.
+  const leaveFor = (nextPaper: Picked[], nextAnswers: Picked[]) => {
+    addQuizWait({
+      answers: nextAnswers.map(waitingFile),
+      paper: nextPaper.map(waitingFile),
+      title: nextPaper[0]?.name ?? nextAnswers[0]?.name ?? '',
+      workspaceId,
+    });
+    onClose();
+  };
+  const pickFile = (
+    file: SourceFile,
+    next: (picked: Picked) => { answers: Picked[]; paper: Picked[] }
+  ) => {
+    setMenu(null);
+    const rows = next(pickedOf(file));
+    setPaper(rows.paper);
+    setAnswers(rows.answers);
+    if (isReadingFile(file) && !file.indexed && uploading.length === 0)
+      leaveFor(rows.paper, rows.answers);
+  };
 
   // Which menu asked for the upload, kept past the menu closing.
   const uploadFor = useRef<'more' | 'paper'>('paper');
@@ -423,8 +476,9 @@ export function MakeQuizDialog({
     const rows = add(
       list.slice(0, EXTRACTION_PAPER_FILES_MAX - (more ? paper.length : 0))
     );
-    if (rows.length > 0)
-      setPaper((current) => (more ? [...current, ...rows] : rows));
+    if (rows.length === 0) return;
+    setPaper((current) => (more ? [...current, ...rows] : rows));
+    setUploading((current) => [...current, ...rows.map((row) => row.key)]);
   };
   const startUpload = (target: 'answers' | 'more' | 'paper') => {
     setMenu(null);
@@ -481,11 +535,31 @@ export function MakeQuizDialog({
           const rows = add(
             list.slice(0, EXTRACTION_ANSWER_FILES_MAX - answers.length)
           );
+          if (rows.length === 0) return;
           setAnswers((current) => [...current, ...rows]);
+          setUploading((current) => [
+            ...current,
+            ...rows.map((row) => row.key),
+          ]);
         }}
       />
-      <div className="flex flex-col gap-7 pb-1">
-        <p className="t-meta text-fg-muted">{m.make_quiz_no_spreadsheets()}</p>
+      {/* 24px between sections; Add a file sits as far under its rows (8px of
+          row padding, the 6px gap and its own margin) as the next label does. */}
+      <div className="flex flex-col gap-6 pb-1">
+        <div>
+          <p className="t-meta text-fg-muted">
+            {m.make_quiz_no_spreadsheets()}
+          </p>
+          {lost.length > 0 && (
+            <FormAlert
+              message={m.make_quiz_some_files_failed({
+                names: lost
+                  .map(({ name, reason }) => `${name} (${reason})`)
+                  .join(', '),
+              })}
+            />
+          )}
+        </div>
         <div className="flex min-w-0 flex-col gap-1.5">
           <p className="t-meta font-semibold text-fg-secondary">
             {m.make_quiz_question_paper()}{' '}
@@ -498,10 +572,9 @@ export function MakeQuizDialog({
               files={quizFiles}
               label={m.make_quiz_question_paper()}
               onOpenChange={(open) => setMenu(open ? 'paper' : null)}
-              onPick={(file) => {
-                setPaper([pickedOf(file)]);
-                setMenu(null);
-              }}
+              onPick={(file) =>
+                pickFile(file, (picked) => ({ answers, paper: [picked] }))
+              }
               onUpload={() => startUpload('paper')}
               open={menu === 'paper'}
               policy={policy}
@@ -532,10 +605,12 @@ export function MakeQuizDialog({
                         files={quizFiles}
                         label={m.make_quiz_question_paper()}
                         onOpenChange={(open) => setMenu(open ? 'paper' : null)}
-                        onPick={(file) => {
-                          setPaper([pickedOf(file)]);
-                          setMenu(null);
-                        }}
+                        onPick={(file) =>
+                          pickFile(file, (picked) => ({
+                            answers,
+                            paper: [picked],
+                          }))
+                        }
                         onUpload={() => startUpload('paper')}
                         open={menu === 'paper'}
                         policy={policy}
@@ -555,15 +630,17 @@ export function MakeQuizDialog({
                   picked={row}
                 />
               ))}
-              <div className="mt-2">
+              <div className="mt-2.5">
                 <FileMenu
                   files={quizFiles}
                   label={m.make_quiz_question_paper()}
                   onOpenChange={(open) => setMenu(open ? 'more' : null)}
-                  onPick={(file) => {
-                    setPaper((current) => [...current, pickedOf(file)]);
-                    setMenu(null);
-                  }}
+                  onPick={(file) =>
+                    pickFile(file, (picked) => ({
+                      answers,
+                      paper: [...paper, picked],
+                    }))
+                  }
                   onUpload={() => startUpload('more')}
                   open={menu === 'more'}
                   policy={policy}
@@ -602,15 +679,17 @@ export function MakeQuizDialog({
               picked={row}
             />
           ))}
-          <div className={cn(answers.length > 0 && 'mt-2')}>
+          <div className={cn(answers.length > 0 && 'mt-2.5')}>
             <FileMenu
               files={quizFiles}
               label={m.make_quiz_answers()}
               onOpenChange={(open) => setMenu(open ? 'answers' : null)}
-              onPick={(file) => {
-                setAnswers((current) => [...current, pickedOf(file)]);
-                setMenu(null);
-              }}
+              onPick={(file) =>
+                pickFile(file, (picked) => ({
+                  answers: [...answers, picked],
+                  paper,
+                }))
+              }
               onUpload={() => startUpload('answers')}
               open={menu === 'answers'}
               policy={policy}

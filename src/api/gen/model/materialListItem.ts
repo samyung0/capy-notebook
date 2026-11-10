@@ -15,6 +15,7 @@ export interface MaterialListItem {
   createdAt: string;
   hidden?: boolean;
   id: string;
+  isOwner?: boolean;
   kind: MaterialKind;
   /** The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it */
   lostAccess?: boolean;

@@ -4,13 +4,11 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { SubmittedPaper } from './submittedPaper.ts';
+import type { Item } from './item.ts';
 
-export interface SubmittedPapers {
+export interface ItemPage {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  count: number;
-  items: SubmittedPaper[];
+  items: Item[];
   nextCursor?: string;
-  totalBytes: number;
 }

@@ -10,8 +10,8 @@ import { getLocale, m } from '@/i18n';
 import { materialIconName } from '@/lib/fileIcons';
 import { cardCountLabel, questionCountLabel } from './countLabels';
 
-/** Blocks tab item mapped onto the shared ItemCard. The tab owns navigation,
- * the action menu and every dialog. */
+/** A block in the Files page's list, mapped onto the shared ItemCard. The
+ * page owns navigation, the action menu and every dialog. */
 
 const RELATIVE_STEPS: [Intl.RelativeTimeFormatUnit, number][] = [
   ['year', 365 * 86_400_000],
@@ -62,14 +62,15 @@ export function materialDetails(item: MaterialListItem): string {
   return '';
 }
 
-/** One block in the Blocks tab, pickable there. Memoised: its menu and link
- * come from the tab's stable `menuFor` and `linkFor`, so a pick re-renders
- * only the cards whose selection changed. */
+/** One block in the Files page's list, pickable there. Memoised: its menu
+ * and link come from the page's stable `menuFor` and `linkFor`, so a pick
+ * re-renders only the cards whose selection changed. */
 export const MaterialCard = memo(function MaterialCard({
   item,
   view,
   menuFor,
   linkFor,
+  pickKey,
   selected,
   workspaceIconId,
 }: {
@@ -77,6 +78,7 @@ export const MaterialCard = memo(function MaterialCard({
   view: ListView;
   menuFor: (item: MaterialListItem) => MenuItem[];
   linkFor: (item: MaterialListItem) => LinkProps;
+  pickKey: string;
   selected: boolean;
   workspaceIconId?: string;
 }) {
@@ -86,9 +88,9 @@ export const MaterialCard = memo(function MaterialCard({
       details={materialListDetails(item)}
       icon={materialIconName(item.kind, item.assigned)}
       link={item.lostAccess ? undefined : linkFor(item)}
-      meta={relativeTime(item.updatedAt)}
+      meta={relativeTime(item.createdAt)}
       onOpen={item.lostAccess ? toastLostAccess : undefined}
-      pickKey={item.id}
+      pickKey={pickKey}
       selected={selected}
       thumbnail={{
         pill: materialDetails(item) || undefined,

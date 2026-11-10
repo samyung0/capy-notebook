@@ -31,9 +31,8 @@ import {
   useRecordOpen,
 } from '@/api/hooks';
 import type {
+  ItemPage,
   Material,
-  MaterialListItem,
-  MaterialPage,
   Provenance,
   Region,
   Topic,
@@ -385,17 +384,18 @@ export function CenterContent({
   );
 }
 
-/** The kind a cached material list (a Files page or the quick open) gives a
- * standalone material, so a read that fails can still name it. */
+/** The kind the cached Files page list gives a standalone material, so a
+ * read that fails can still name it. */
 function listedKind(queryClient: QueryClient, id: string) {
-  for (const [, data] of queryClient.getQueriesData<
-    InfiniteData<MaterialPage> | MaterialListItem[]
-  >({ queryKey: qk.ownedMaterialsRoot })) {
-    const rows = Array.isArray(data)
-      ? data
-      : (data?.pages.flatMap((page) => page.items) ?? []);
-    const hit = rows.find((item) => item.id === id);
-    if (hit) return hit.kind;
+  for (const [, data] of queryClient.getQueriesData<InfiniteData<ItemPage>>({
+    queryKey: qk.itemsRoot,
+  })) {
+    for (const page of data?.pages ?? []) {
+      for (const item of page.items) {
+        if (item.type === 'material' && item.material.id === id)
+          return item.material.kind;
+      }
+    }
   }
 }
 

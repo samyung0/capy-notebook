@@ -138,9 +138,7 @@ function Study({ setId }: { setId: string }) {
         frame={PagePanel}
         name={set.name}
         onBack={() =>
-          canGoBack
-            ? router.history.back()
-            : void navigate({ search: { tab: 'blocks' }, to: '/files' })
+          canGoBack ? router.history.back() : void navigate({ to: '/files' })
         }
         onFinished={(total) =>
           track('flashcards_study_finished', {

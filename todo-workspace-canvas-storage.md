@@ -85,7 +85,7 @@ message; it ships behind the answer flow's gate, which has landed.
 
 As `todo-board-images.md` decides: an image uploads at once as an `image` editor asset
 of the canvas material (the owner pays), the block's `sourceId` becomes the asset id,
-and `imageAssetIds` keeps it alive. Files › Embeds lists them under the canvas.
+and `imageAssetIds` keeps it alive. The Files page lists them under the canvas.
 
 ### 5. Quiz and flashcard cards
 

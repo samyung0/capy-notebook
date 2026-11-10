@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"slices"
 	"sort"
 	"strconv"
 	"time"
@@ -116,13 +115,11 @@ func (s *Store) todoClasses(ctx context.Context, userID string) (todoClasses, er
 	return out, rows.Err()
 }
 
-// TodoDoneParams page the To do page's Done tab: Sort is done (the day it was
-// done, or closed if never done) or class (by name, then done); Classes and
-// Kinds filter, empty keeping all.
+// TodoDoneParams page the To do page's Done tab, newest done first (the day it
+// was done, or closed if never done) unless Ascending; Kinds filter, empty
+// keeping all.
 type TodoDoneParams struct {
-	Sort      string
 	Ascending bool
-	Classes   []string
 	Kinds     []string
 	Offset    int
 	Limit     int
@@ -136,8 +133,10 @@ type TodoDonePage struct {
 	NextCursor string `json:"nextCursor,omitempty"`
 }
 
-// ListTodoDone pages what was given to the caller that they finished or that
-// closed, open or not (Epo 2026-11-08), sorted and filtered in SQL.
+// ListTodoDone pages what was given to the caller that they finished, ticked
+// off by hand, or that closed, open or not (Epo 2026-11-08; ticks by hand
+// 2026-11-10: done for them is done, closed or not), sorted and filtered in
+// SQL. Rows the caller removed (HideTodoDone) stay out until finished again.
 func (s *Store) ListTodoDone(ctx context.Context, userID string, now time.Time, p TodoDoneParams) (TodoDonePage, error) {
 	out := TodoDonePage{Workspaces: []TodoWorkspace{}}
 	cs, err := s.todoClasses(ctx, userID)
@@ -145,9 +144,6 @@ func (s *Store) ListTodoDone(ctx context.Context, userID string, now time.Time, 
 		return out, err
 	}
 	classes := cs.order
-	if len(p.Classes) > 0 {
-		classes = slices.DeleteFunc(slices.Clone(cs.order), func(id string) bool { return !slices.Contains(p.Classes, id) })
-	}
 	if len(classes) == 0 {
 		return out, nil
 	}
@@ -155,28 +151,26 @@ func (s *Store) ListTodoDone(ctx context.Context, userID string, now time.Time, 
 	if len(p.Kinds) > 0 {
 		kinds = p.Kinds
 	}
-	dir, classDir := "DESC", "ASC"
+	order := "f.at DESC, a.id"
 	if p.Ascending {
-		dir, classDir = "ASC", "DESC"
+		order = "f.at ASC, a.id"
 	}
-	order := "f.at " + dir + ", a.id"
-	if p.Sort == "class" {
-		order = "lower(w.name) " + classDir + ", w.id " + classDir + ", f.at DESC, a.id"
-	}
-	// f.at is when it was finished: the counted submission or the tick, else
+	// f.at is when it was finished: the counted submission, the tick or the tick
+	// by hand, else
 	// when it closed (assignmentClosedAt).
 	rows, err := s.pool.Query(ctx, `SELECT a.id FROM assignments a
-		JOIN workspaces w ON w.id=a.workspace_id
 		LEFT JOIN workspace_members wm ON wm.workspace_id=a.workspace_id AND wm.user_id=$1
 		LEFT JOIN assignment_done d ON d.assignment_id=a.id AND d.user_id=$1
+		LEFT JOIN assignment_todo_checks x ON x.assignment_id=a.id AND x.user_id=$1 AND NOT x.approvals
 		LEFT JOIN LATERAL (SELECT t.submitted_at FROM attempts t
 			WHERE t.assignment_id=a.id AND t.user_id=$1 AND t.submitted_at IS NOT NULL
 			ORDER BY `+countedAttemptOrder+` LIMIT 1) l ON true
-		CROSS JOIN LATERAL (SELECT COALESCE(l.submitted_at, d.done_at,
+		CROSS JOIN LATERAL (SELECT COALESCE(l.submitted_at, d.done_at, x.checked_at,
 			LEAST(a.closed_at, CASE WHEN a.no_late AND a.due_at <= $3 THEN a.due_at END)) AS at) f
 		WHERE a.workspace_id = ANY($2) AND NOT a.draft AND f.at IS NOT NULL
 			AND ((a.assign_all AND wm.role='viewer') OR EXISTS (SELECT 1 FROM assignment_assignees aa WHERE aa.assignment_id=a.id AND aa.user_id=$1))
 			AND ($4::text[] IS NULL OR a.kind = ANY($4))
+			AND NOT EXISTS (SELECT 1 FROM assignment_todo_hidden h WHERE h.assignment_id=a.id AND h.user_id=$1 AND h.hidden_at >= f.at)
 		ORDER BY `+order+` LIMIT $5 OFFSET $6`, userID, classes, now, kinds, p.Limit+1, p.Offset)
 	if err != nil {
 		return out, err
@@ -219,6 +213,66 @@ func (s *Store) ListTodoDone(ctx context.Context, userID string, now time.Time, 
 		out.Workspaces[i].Items = append(out.Workspaces[i].Items, a)
 	}
 	return out, nil
+}
+
+// SetAssignmentTodoCheck is a To do tick that is not the work itself (Epo
+// 2026-11-10). A member ticks a marked assignment, or one handed in with files,
+// which submitting or handing in ticks on its own; staff tick the answers
+// waiting for them (approvals), until a later submission brings them back. A
+// plain task's tick is SetAssignmentDone. Nothing is submitted or handed in.
+func (s *Store) SetAssignmentTodoCheck(ctx context.Context, userID, id string, approvals, checked bool, now time.Time) error {
+	var wsID, kind string
+	var draft, uploads bool
+	err := s.pool.QueryRow(ctx, `SELECT workspace_id, kind, draft, allow_uploads FROM assignments WHERE id=$1`, id).
+		Scan(&wsID, &kind, &draft, &uploads)
+	if isNoRows(err) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	// Not a class, or its owner's account is locked: nothing is ticked.
+	staff, err := s.assignmentStaff(ctx, s.pool, userID, wsID)
+	if err != nil {
+		return err
+	}
+	if draft || (approvals && !staff) {
+		return ErrNotFound
+	}
+	if !approvals {
+		assigned, err := assignedTx(ctx, s.pool, id, userID)
+		if err != nil {
+			return err
+		}
+		if !assigned {
+			return ErrNotFound
+		}
+		if kind == AssignmentUnmarked && !uploads {
+			return assignmentInput("a task is ticked as done")
+		}
+	}
+	if !checked {
+		_, err = s.pool.Exec(ctx, `DELETE FROM assignment_todo_checks WHERE assignment_id=$1 AND user_id=$2 AND approvals=$3`,
+			id, userID, approvals)
+		return err
+	}
+	_, err = s.pool.Exec(ctx, `INSERT INTO assignment_todo_checks (assignment_id, user_id, approvals, checked_at)
+		VALUES ($1,$2,$3,$4) ON CONFLICT (assignment_id, user_id, approvals) DO UPDATE SET checked_at=EXCLUDED.checked_at`,
+		id, userID, approvals, now)
+	return err
+}
+
+// HideTodoDone takes rows off the caller's Done tab (Epo 2026-11-10): nothing
+// else changes, for them or anyone. Only work given to them is hidden; other
+// ids are skipped.
+func (s *Store) HideTodoDone(ctx context.Context, userID string, ids []string, now time.Time) error {
+	_, err := s.pool.Exec(ctx, `INSERT INTO assignment_todo_hidden (assignment_id, user_id, hidden_at)
+		SELECT a.id, $1, $3 FROM assignments a
+		LEFT JOIN workspace_members wm ON wm.workspace_id=a.workspace_id AND wm.user_id=$1
+		WHERE a.id = ANY($2)
+			AND ((a.assign_all AND wm.role='viewer') OR EXISTS (SELECT 1 FROM assignment_assignees aa WHERE aa.assignment_id=a.id AND aa.user_id=$1))
+		ON CONFLICT (assignment_id, user_id) DO UPDATE SET hidden_at=EXCLUDED.hidden_at`, userID, ids, now)
+	return err
 }
 
 // isTodo: answers waiting for this staff member, or work given to the caller

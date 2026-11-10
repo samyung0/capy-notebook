@@ -5,18 +5,9 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { GetTodoDoneDir } from './getTodoDoneDir.ts';
-import type { GetTodoDoneSort } from './getTodoDoneSort.ts';
 
 export type GetTodoDoneParams = {
-/**
- * done: the day it was done, or closed if it never was; class: by class name, then done
- */
-sort?: GetTodoDoneSort;
 dir?: GetTodoDoneDir;
-/**
- * Comma-separated class workspace ids
- */
-class?: string;
 /**
  * Comma-separated: quiz, task
  */

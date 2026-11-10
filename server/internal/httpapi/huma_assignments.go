@@ -48,6 +48,15 @@ type assignmentDoneInput struct {
 		Done bool `json:"done"`
 	}
 }
+
+type assignmentTodoCheckInput struct {
+	ID   string `path:"id"`
+	Body struct {
+		Checked bool `json:"checked"`
+		// Approvals: staff's tick on the answers waiting, not their own work.
+		Approvals bool `json:"approvals,omitempty"`
+	}
+}
 type assignmentReportOutput struct {
 	Body assignmentReportBody
 }
@@ -86,6 +95,7 @@ func (a *api) registerAssignments(api huma.API) {
 	reg(api, http.MethodPut, "/api/assignments/{id}/closed", "setAssignmentClosed", tag, "Close an assignment to late submissions, or reopen it", http.StatusOK, a.setAssignmentClosed)
 	reg(api, http.MethodPost, "/api/assignments/{id}/release-grades", "releaseAssignmentGrades", tag, "Show members their grades on an assignment whose grades are released by hand", http.StatusOK, a.releaseAssignmentGrades)
 	reg(api, http.MethodPut, "/api/assignments/{id}/done", "setAssignmentDone", tag, "A member's tick on an unmarked assignment", http.StatusNoContent, a.setAssignmentDone)
+	reg(api, http.MethodPut, "/api/assignments/{id}/todo-check", "setAssignmentTodoCheck", tag, "Tick an assignment, or the answers waiting on it, off the caller's To do without doing it", http.StatusNoContent, a.setAssignmentTodoCheck)
 	reg(api, http.MethodPost, "/api/assignments/{id}/start", "startAssignment", tag, "Start an attempt, starting its clock, or return the one running", http.StatusOK, a.startAssignment)
 	reg(api, http.MethodPost, "/api/assignments/{id}/mark-with-ai", "markAssignmentWithAI", tag, "Have the AI mark the answers still waiting, in the background", http.StatusOK, a.markAssignmentWithAI)
 	reg(api, http.MethodPost, "/api/assignments/{id}/approve-ai-marks", "approveAssignmentAIMarks", tag, "Approve every AI mark on one question", http.StatusOK, a.approveAssignmentAIMarks)
@@ -294,6 +304,18 @@ func (a *api) setAssignmentDone(ctx context.Context, in *assignmentDoneInput) (*
 		return nil, paperError(err)
 	}
 	// The member's other tabs and devices.
+	a.publishTodo(ctx, userID(ctx))
+	return &Empty{}, nil
+}
+
+func (a *api) setAssignmentTodoCheck(ctx context.Context, in *assignmentTodoCheckInput) (*Empty, error) {
+	if err := a.requireAccountMutate(ctx); err != nil {
+		return nil, err
+	}
+	if err := a.s.SetAssignmentTodoCheck(ctx, userID(ctx), in.ID, in.Body.Approvals, in.Body.Checked, time.Now()); err != nil {
+		return nil, assignmentError(err)
+	}
+	// The caller's other tabs and devices.
 	a.publishTodo(ctx, userID(ctx))
 	return &Empty{}, nil
 }

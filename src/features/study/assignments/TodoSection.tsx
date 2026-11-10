@@ -8,17 +8,16 @@ import { Button } from '@/components/ui/Button';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Icon } from '@/components/ui/Icon';
-import { formatPoints } from '@/features/quizzes/grade';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { dayLabel } from './assignmentText';
 import { NewAssignmentDialog } from './LazyNewAssignmentDialog';
-import { todoRows } from './todoRows';
+import { isPlainTask, isTicked, todoRows } from './todoRows';
 
 /** A chip naming a quiz: the assignment's quill, tinted (Epo 2026-11-03);
- * crossed out once done, grey on the To do page's Done tab. */
-function WorkChip({
+ * crossed out once done on the Dashboard, grey on the To do page once ticked. */
+export function WorkChip({
   title,
   done,
 }: {
@@ -44,30 +43,16 @@ function WorkChip({
   );
 }
 
-function FileChip({
-  file,
-  grey,
-}: {
-  file: Assignment['files'][number];
-  grey?: boolean;
-}) {
+/** An assignment file's or material's icon. */
+export const assignmentFileIcon = (file: Assignment['files'][number]) =>
+  file.fileId
+    ? fileIconName({ kind: file.kind as FileKind, name: file.name })
+    : materialIconName(file.kind as MaterialRefType);
+
+function FileChip({ file }: { file: Assignment['files'][number] }) {
   return (
-    <span
-      className={cn(
-        'inline-flex h-5.5 min-w-0 items-center gap-1 rounded-md px-1.75 font-semibold text-[13px]',
-        grey
-          ? 'bg-surface-hover-bg text-fg-secondary'
-          : 'bg-tint-accent-1 text-tint-accent-1-fg'
-      )}
-    >
-      <FileIcon
-        className="size-3.5 shrink-0"
-        name={
-          file.fileId
-            ? fileIconName({ kind: file.kind as FileKind, name: file.name })
-            : materialIconName(file.kind as MaterialRefType)
-        }
-      />
+    <span className="inline-flex h-5.5 min-w-0 items-center gap-1 rounded-md bg-tint-accent-1 px-1.75 font-semibold text-[13px] text-tint-accent-1-fg">
+      <FileIcon className="size-3.5 shrink-0" name={assignmentFileIcon(file)} />
       <span className="truncate">{file.name}</span>
     </span>
   );
@@ -138,34 +123,18 @@ export function TodoSection({
   );
 }
 
-/** A To do list's rows, on the Dashboard and the To do page. A row is its own
- * button, with nothing else to press but a tick (Epo 2026-11-05); an assignment's
- * page starts or continues it. Open work past its due date says Overdue. On the
- * To do page's Done tab (`doneTab`) rows say when they were done, uncrossed, or
- * that they closed undone. */
-export function TodoRows({
-  doneTab = false,
-  manages,
-  shown,
-  toApprove,
-  workspaceId,
-}: {
-  doneTab?: boolean;
-  manages: boolean;
-  shown: Assignment[];
-  toApprove: Assignment[];
-  workspaceId: string;
-}) {
+/** Opens an assignment's page (Epo 2026-11-05): it starts or continues the work,
+ * or shows the counted submission. Staff who assigned themselves open their own. */
+export function useOpenAssignment() {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { mutate: setDone } = useSetAssignmentDone(workspaceId);
-  const openPage = (a: Assignment) => {
+  return (a: Assignment, manages: boolean) => {
     // Closing at a No late due date sends no event: past it, To do rereads
     // (Epo 2026-11-08) while its page says it closed.
     if (a.noLate && a.dueAt && Date.parse(a.dueAt) <= Date.now())
       void qc.invalidateQueries({ queryKey: qk.todo });
     return navigate({
-      params: { workspaceId },
+      params: { workspaceId: a.workspaceId },
       search: {
         assignment: a.id,
         ...(a.mine?.countedAttemptId && a.kind === 'marked'
@@ -177,6 +146,24 @@ export function TodoRows({
       to: '/workspaces/$workspaceId',
     });
   };
+}
+
+/** The Dashboard's To do rows. A row is its own button, with nothing else to
+ * press but a tick (Epo 2026-11-05); an assignment's page starts or continues
+ * it. Open work past its due date says Overdue. */
+export function TodoRows({
+  manages,
+  shown,
+  toApprove,
+  workspaceId,
+}: {
+  manages: boolean;
+  shown: Assignment[];
+  toApprove: Assignment[];
+  workspaceId: string;
+}) {
+  const openPage = useOpenAssignment();
+  const { mutate: setDone } = useSetAssignmentDone(workspaceId);
   return (
     <ul className="-mx-1.5 border-divider border-t">
       {toApprove.map((a) => (
@@ -203,21 +190,14 @@ export function TodoRows({
       ))}
       {shown.map((a) => {
         const isDone = !!a.mine?.done;
-        const crossed = isDone && !doneTab;
+        const crossed = isTicked(a);
         const overdue =
-          !doneTab && !isDone && !!a.dueAt && Date.parse(a.dueAt) <= Date.now();
-        const meta = doneTab
-          ? doneMeta(a)
-          : a.dueAt
-            ? (overdue ? m.todo_overdue : m.assignment_due)({
-                date: dayLabel(a.dueAt),
-              })
-            : null;
+          !crossed && !!a.dueAt && Date.parse(a.dueAt) <= Date.now();
         return (
           <Row key={a.id}>
             {/* Closed work takes no tick (Epo 2026-11-08); one that takes
                 files is handed in from its page (S3). */}
-            {a.kind === 'unmarked' && !a.closedAt && !a.allowUploads && (
+            {isPlainTask(a) && !a.closedAt && (
               <span className="grid w-7 shrink-0 justify-items-start pl-1.5">
                 <Checkbox
                   aria-label={a.title}
@@ -230,26 +210,19 @@ export function TodoRows({
             <button
               className={cn(
                 'flex min-h-10 min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 px-1.5 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset',
-                crossed && 'text-fg-muted line-through',
-                doneTab && 'text-fg-secondary'
+                crossed && 'text-fg-muted line-through'
               )}
-              onClick={() => void openPage(a)}
+              onClick={() => void openPage(a, manages)}
               type="button"
             >
               {a.kind === 'marked' ? (
                 <>
-                  {doneTab
-                    ? isDone
-                      ? m.todo_finished()
-                      : m.todo_closed()
-                    : isDone
-                      ? m.dashboard_finish()
-                      : m.dashboard_do()}
+                  {isDone ? m.dashboard_finish() : m.dashboard_do()}
                   <WorkChip
-                    done={doneTab ? 'grey' : isDone ? 'crossed' : undefined}
+                    done={crossed ? 'crossed' : undefined}
                     title={a.title}
                   />
-                  {a.timeLimitMin && !isDone && !doneTab && (
+                  {a.timeLimitMin && !crossed && (
                     <span className="text-fg-secondary">
                       {m.assignment_minutes_short({ count: a.timeLimitMin })}
                     </span>
@@ -257,18 +230,16 @@ export function TodoRows({
                 </>
               ) : (
                 <>
-                  {doneTab && !isDone && m.todo_closed()}
                   <span className="min-w-0">{a.title}</span>
                   {a.files.map((file) => (
                     <FileChip
                       file={file}
-                      grey={doneTab}
                       key={file.fileId ?? file.materialId}
                     />
                   ))}
                 </>
               )}
-              {meta && (
+              {a.dueAt && (
                 <span
                   className={cn(
                     't-meta shrink-0 text-fg-secondary sm:ml-auto sm:pl-3',
@@ -276,7 +247,9 @@ export function TodoRows({
                     overdue && 'font-semibold text-tint-error-fg'
                   )}
                 >
-                  {meta}
+                  {(overdue ? m.todo_overdue : m.assignment_due)({
+                    date: dayLabel(a.dueAt),
+                  })}
                 </span>
               )}
             </button>
@@ -285,29 +258,6 @@ export function TodoRows({
       })}
     </ul>
   );
-}
-
-/** A Done tab row's meta: a quiz's mark or that it waits for one, then the day;
- * closed undone, that and the day it closed. */
-function doneMeta(a: Assignment) {
-  if (!a.mine?.done)
-    return [
-      m.assignment_not_done(),
-      a.closedAt && m.assignment_closed_on({ date: dayLabel(a.closedAt) }),
-    ]
-      .filter(Boolean)
-      .join(' · ');
-  const parts = [
-    a.kind === 'marked' && a.mine?.waitingMarks
-      ? m.todo_waiting_marks()
-      : a.kind === 'marked' && a.mine?.mark !== undefined
-        ? `${formatPoints(a.mine.mark)}/${formatPoints(a.mine.total ?? a.marks)}`
-        : null,
-    a.mine?.doneAt
-      ? m.assignment_done_on({ date: dayLabel(a.mine.doneAt) })
-      : null,
-  ].filter(Boolean);
-  return parts.length ? parts.join(' · ') : null;
 }
 
 /** Its hover fills the row, square, past the text's left edge like Activity's. */

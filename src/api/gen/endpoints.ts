@@ -24,6 +24,7 @@ import type {
   AssignmentList,
   AssignmentMark,
   AssignmentReportBody,
+  AssignmentTodoCheckInputBody,
   AttemptDetail,
   AttemptsOutputBody,
   AutoReloadReq,
@@ -82,7 +83,6 @@ import type {
   DrawingSavedOutputBody,
   DrawingUpload,
   DrawingsDeletedOutputBody,
-  EditorAssetPage,
   ErrorModel,
   Event,
   ExploreFlashcardSetsParams,
@@ -112,6 +112,7 @@ import type {
   InspectSourceImportsResponse,
   IntegrationsStatus,
   InvoiceList,
+  ItemPage,
   Label,
   LearningOverview,
   LibraryFigure,
@@ -119,12 +120,11 @@ import type {
   ListAttemptsParams,
   ListConversationsParams,
   ListDrawingsParams,
-  ListEditorAssetsParams,
+  ListItemsParams,
   ListModelsParams,
   ListNotificationsParams,
   ListOwnedFilesParams,
   ListOwnedMaterialsParams,
-  ListPapersParams,
   ListPastReviewsParams,
   ListRecentParams,
   ListTagsParams,
@@ -208,11 +208,11 @@ import type {
   StudyQuestionCountOutputBody,
   StudySummary,
   StudyTopics,
-  SubmittedPapers,
   Syllabus,
   Tag,
   Task,
   TodoDonePage,
+  TodoHideInputBody,
   TodoList,
   TopUpReq,
   Topic,
@@ -1708,6 +1708,71 @@ const res = await fetch(getStartAssignmentUrl(id),
 
   const data: startAssignmentResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as startAssignmentResponse
+}
+
+
+
+export type setAssignmentTodoCheckResponse204 = {
+  data: void
+  status: 204
+}
+
+export type setAssignmentTodoCheckResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type setAssignmentTodoCheckResponseSuccess = (setAssignmentTodoCheckResponse204) & {
+  headers: Headers;
+};
+export type setAssignmentTodoCheckResponseError = (setAssignmentTodoCheckResponseDefault) & {
+  headers: Headers;
+};
+
+export type setAssignmentTodoCheckResponse = (setAssignmentTodoCheckResponseSuccess | setAssignmentTodoCheckResponseError)
+
+export const getSetAssignmentTodoCheckUrl = (id: string,) => {
+
+
+
+
+  return `/api/assignments/${id}/todo-check`
+}
+
+/**
+ * @summary Tick an assignment, or the answers waiting on it, off the caller's To do without doing it
+ */
+export const setAssignmentTodoCheck = async (id: string,
+    assignmentTodoCheckInputBody: NonReadonly<AssignmentTodoCheckInputBody>, options?: RequestInit): Promise<setAssignmentTodoCheckResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getSetAssignmentTodoCheckUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(assignmentTodoCheckInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setAssignmentTodoCheckResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as setAssignmentTodoCheckResponse
 }
 
 
@@ -4173,63 +4238,6 @@ const res = await fetch(getReportEditIncidentUrl(),
 
 
 
-export type listEditorAssetsResponse200 = {
-  data: EditorAssetPage
-  status: 200
-}
-
-export type listEditorAssetsResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type listEditorAssetsResponseSuccess = (listEditorAssetsResponse200) & {
-  headers: Headers;
-};
-export type listEditorAssetsResponseError = (listEditorAssetsResponseDefault) & {
-  headers: Headers;
-};
-
-export type listEditorAssetsResponse = (listEditorAssetsResponseSuccess | listEditorAssetsResponseError)
-
-export const getListEditorAssetsUrl = (params?: ListEditorAssetsParams,) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0 ? `/api/editor-assets?${stringifiedParams}` : `/api/editor-assets`
-}
-
-/**
- * @summary List the images and audio the caller pays for, each marked when its note can no longer be opened
- */
-export const listEditorAssets = async (params?: ListEditorAssetsParams, options?: RequestInit): Promise<listEditorAssetsResponse> => {
-
-  const res = await fetch(getListEditorAssetsUrl(params),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: listEditorAssetsResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listEditorAssetsResponse
-}
-
-
-
 export type deleteEditorAssetResponse204 = {
   data: void
   status: 204
@@ -6452,6 +6460,63 @@ export const deleteIntegration = async (provider: string, options?: RequestInit)
 
 
 
+export type listItemsResponse200 = {
+  data: ItemPage
+  status: 200
+}
+
+export type listItemsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listItemsResponseSuccess = (listItemsResponse200) & {
+  headers: Headers;
+};
+export type listItemsResponseError = (listItemsResponseDefault) & {
+  headers: Headers;
+};
+
+export type listItemsResponse = (listItemsResponseSuccess | listItemsResponseError)
+
+export const getListItemsUrl = (params?: ListItemsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/items?${stringifiedParams}` : `/api/items`
+}
+
+/**
+ * @summary List the caller's files, handed-in submissions it may delete, notes, quizzes, flashcard sets and embedded images and audio as one list (the Files page)
+ */
+export const listItems = async (params?: ListItemsParams, options?: RequestInit): Promise<listItemsResponse> => {
+
+  const res = await fetch(getListItemsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listItemsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listItemsResponse
+}
+
+
+
 export type listLabelsResponse200 = {
   data: Label[]
   status: 200
@@ -8533,113 +8598,6 @@ export const readNotification = async (id: string, options?: RequestInit): Promi
 
   const data: readNotificationResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as readNotificationResponse
-}
-
-
-
-export type deleteAllPapersResponse200 = {
-  data: DrawingsDeletedOutputBody
-  status: 200
-}
-
-export type deleteAllPapersResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type deleteAllPapersResponseSuccess = (deleteAllPapersResponse200) & {
-  headers: Headers;
-};
-export type deleteAllPapersResponseError = (deleteAllPapersResponseDefault) & {
-  headers: Headers;
-};
-
-export type deleteAllPapersResponse = (deleteAllPapersResponseSuccess | deleteAllPapersResponseError)
-
-export const getDeleteAllPapersUrl = () => {
-
-
-
-
-  return `/api/papers`
-}
-
-/**
- * @summary Delete every paper file the caller may delete; their marks stay
- */
-export const deleteAllPapers = async ( options?: RequestInit): Promise<deleteAllPapersResponse> => {
-
-  const res = await fetch(getDeleteAllPapersUrl(),
-  {
-    ...options,
-    method: 'DELETE'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: deleteAllPapersResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as deleteAllPapersResponse
-}
-
-
-
-export type listPapersResponse200 = {
-  data: SubmittedPapers
-  status: 200
-}
-
-export type listPapersResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type listPapersResponseSuccess = (listPapersResponse200) & {
-  headers: Headers;
-};
-export type listPapersResponseError = (listPapersResponseDefault) & {
-  headers: Headers;
-};
-
-export type listPapersResponse = (listPapersResponseSuccess | listPapersResponseError)
-
-export const getListPapersUrl = (params?: ListPapersParams,) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0 ? `/api/papers?${stringifiedParams}` : `/api/papers`
-}
-
-/**
- * @summary The caller's handed-in paper and hand-in files they may delete, newest first (Files › Submissions)
- */
-export const listPapers = async (params?: ListPapersParams, options?: RequestInit): Promise<listPapersResponse> => {
-
-  const res = await fetch(getListPapersUrl(params),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: listPapersResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listPapersResponse
 }
 
 
@@ -10787,6 +10745,70 @@ export const getTodoDone = async (params?: GetTodoDoneParams, options?: RequestI
 
   const data: getTodoDoneResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getTodoDoneResponse
+}
+
+
+
+export type hideTodoDoneResponse204 = {
+  data: void
+  status: 204
+}
+
+export type hideTodoDoneResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type hideTodoDoneResponseSuccess = (hideTodoDoneResponse204) & {
+  headers: Headers;
+};
+export type hideTodoDoneResponseError = (hideTodoDoneResponseDefault) & {
+  headers: Headers;
+};
+
+export type hideTodoDoneResponse = (hideTodoDoneResponseSuccess | hideTodoDoneResponseError)
+
+export const getHideTodoDoneUrl = () => {
+
+
+
+
+  return `/api/todo/done/hide`
+}
+
+/**
+ * @summary Take rows off the caller's Done tab, changing nothing else
+ */
+export const hideTodoDone = async (todoHideInputBody: NonReadonly<TodoHideInputBody>, options?: RequestInit): Promise<hideTodoDoneResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getHideTodoDoneUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(todoHideInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: hideTodoDoneResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as hideTodoDoneResponse
 }
 
 

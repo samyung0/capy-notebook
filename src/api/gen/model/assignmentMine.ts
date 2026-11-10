@@ -8,6 +8,8 @@ import type { PaperFile } from './paperFile.ts';
 
 export interface AssignmentMine {
   attemptsUsed: number;
+  checkedAt?: string;
+  checkedOff: boolean;
   correct?: number;
   countedAttemptId?: string;
   done: boolean;

@@ -3,7 +3,7 @@
 Status: built 2026-11-10: the blob source (§1), the workspace canvas half
 (`boardBlobs.ts`, `boardImages.ts`, `assetImages` in `boardAsset.ts`,
 `WorkspaceCanvas.tsx`), answer-board pictures stored with the drawing (§2, migration
-0165 `drawing_pictures`, `drawings.go`, `DrawingBoardScreen.tsx`, `drawingValue.ts`)
+0166 `drawing_pictures`, `drawings.go`, `DrawingBoardScreen.tsx`, `drawingValue.ts`)
 and the catalog limits (§5, `BOARD_IMAGE_MAX`, `BOARD_IMAGES_MAX`). Not built: the
 sample-answer board's images (§3).
 

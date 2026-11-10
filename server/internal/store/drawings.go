@@ -21,7 +21,7 @@ type DrawingObject struct {
 }
 
 // DrawingPicture is a picture pasted on a drawing's board, by the id its image
-// block names it by (migration 0165).
+// block names it by (migration 0166).
 type DrawingPicture struct {
 	SourceID string
 	Object   DrawingObject

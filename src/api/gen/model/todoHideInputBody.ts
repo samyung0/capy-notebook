@@ -4,11 +4,15 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { EditorAssetItem } from './editorAssetItem.ts';
 
-export interface EditorAssetPage {
+export interface TodoHideInputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  items: EditorAssetItem[];
-  nextCursor?: string;
+  /**
+     * Assignment ids to take off the caller's Done tab
+     * @minItems 1
+     * @maxItems 200
+     * @nullable
+     */
+  ids: string[] | null;
 }

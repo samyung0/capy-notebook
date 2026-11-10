@@ -106,8 +106,9 @@ function QuizRunRow({ run: picked }: { run: QuizRun }) {
   );
 }
 
-/** Files read after Continue, with the way back to the dialog's pages; or what failed,
- * with the way back to its files. Reading shows here only for files with no upload row. */
+/** Files the dialog left reading, with the way back to it once they are through; a file
+ * that failed is named, and Make quiz goes on with the rest. Reading shows here only for
+ * files with no upload row. */
 function QuizWaitRow({ state }: { state: QuizWaitState }) {
   const { failures, status, wait } = state;
   return (
@@ -142,16 +143,6 @@ function QuizWaitRow({ state }: { state: QuizWaitState }) {
             {m.make_quiz_make_action()}
           </Button>
         )}
-        {status === 'failed' && (
-          <Button
-            onClick={() => openQuizWait(state)}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            {m.make_quiz_try_again()}
-          </Button>
-        )}
       </div>
       {status === 'reading' && (
         <div className="flex items-center gap-3">
@@ -182,8 +173,9 @@ export function QuizRunRows({ waits }: { waits: QuizWaitState[] }) {
         <span className="t-label text-fg-muted">
           {m.make_quiz_panel_heading({
             count: runs.length + waits.length,
+            // A wait whose files are through only waits on Make quiz.
             done:
-              done + waits.filter((state) => state.status === 'failed').length,
+              done + waits.filter((state) => state.status !== 'reading').length,
           })}
         </span>
       </div>

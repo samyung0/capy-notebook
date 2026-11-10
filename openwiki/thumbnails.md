@@ -190,7 +190,7 @@ already has `DATABASE_URL`).
 | `mindmap`, `diagram` | `{kind, source}`, the Mermaid source cut to 1 KB on a line boundary |
 
 Material previews do not draw editor images (an image's small copy is for
-the Embeds tab only, [Editor images](#editor-images)), so `{t:'image'}` and
+the Files page's embed rows only, [Editor images](#editor-images)), so `{t:'image'}` and
 `hasImage` are markers only:
 cards draw a tinted frame with the image glyph where the image is (a note that
 is only an image fills its page with it; under a long flashcard front the frame
@@ -214,7 +214,7 @@ Sources: [extractor](../server/internal/materialdoc/preview.go),
 ## Editor images
 
 Each image in a note, quiz or flashcard set (an editor asset, `purpose =
-'image'`) gets a small JPEG for the Files page's Embeds tab (Sam 2026-10-29),
+'image'`) gets a small JPEG for its row on the Files page (Sam 2026-10-29),
 which drew only icons before. Audio gets none.
 
 - Made in Go from the bytes it already holds, never fetched back: an upload
@@ -241,7 +241,7 @@ which drew only icons before. Audio gets none.
   (migration 0133), a counted blob reference beside `object_path`. It follows
   its row: kept while the image's node is gone from its note (the row is only
   trashed, so undo and redo find it), released when the row is purged a day
-  later, deleted with its uploader, or deleted from the Embeds tab. A row gone
+  later, deleted with its uploader, or deleted from the Files page. A row gone
   before its thumbnail lands takes nothing and the key is queued at once.
 - Copies of a row (a pasted image, an embedded copy, a workspace or material
   clone) take its key with its `object_path`: both already name the source
@@ -249,8 +249,8 @@ which drew only icons before. Audio gets none.
   no object is copied.
 - A platform cost like file thumbnails: no quota, and the storage triggers
   ignore it.
-- `GET /api/editor-assets` signs it per row as `thumbnailUrl`, the same
-  hour-stable link; every row is one the caller pays for. The Embeds grid card
+- `GET /api/items` signs it per embed row as `thumbnailUrl`, the same
+  hour-stable link; every such row is one the caller pays for. The grid card
   draws it, the list row keeps the image or audio icon.
 - Images stored before migration 0133 get theirs from the one-shot,
   idempotent `assetthumbbackfill` (ready images still without one, one attempt

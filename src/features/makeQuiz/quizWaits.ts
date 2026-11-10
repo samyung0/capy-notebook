@@ -1,5 +1,6 @@
 import { useQueries } from '@tanstack/react-query';
 import { useEffect } from 'react';
+import { create } from 'zustand';
 import { filesQuery } from '@/api/hooks';
 import { isMissing } from '@/api/queryClient';
 import type { SourceFile } from '@/api/types';
@@ -67,12 +68,19 @@ export function waitingFileState(
 
 export type QuizWaitStatus = 'failed' | 'reading' | 'ready';
 
-/** Any file that fails ends the wait (Epo 2026-11-05, "default abort"). */
+/** The wait goes on past a failed file (Epo 2026-11-09): once every file is through,
+ * the quiz can be made from those read, and only every file failing fails it. */
 export function quizWaitStatus(states: FileState[]): QuizWaitStatus {
-  if (states.some((state) => state === 'failed' || state === 'gone'))
-    return 'failed';
-  return states.includes('reading') ? 'reading' : 'ready';
+  if (states.includes('reading')) return 'reading';
+  return states.includes('read') ? 'ready' : 'failed';
 }
+
+/** The files a wait lost, for the dialog to say so when it opens again
+ * (Epo 2026-11-09, "an error banner inside the quiz dialog"). */
+export const useQuizNotice = create<{
+  failures: { name: string; reason: string }[];
+}>(() => ({ failures: [] }));
+export const clearQuizNotice = () => useQuizNotice.setState({ failures: [] });
 
 export interface QuizWaitState {
   answers: string[];
@@ -82,14 +90,24 @@ export interface QuizWaitState {
   wait: QuizWait;
 }
 
-/** Make quiz, on to the pages, or after a failure Try again, back on the files with those still good. */
-export function openQuizWait({ answers, paper, status, wait }: QuizWaitState) {
+/** Make quiz: on to the pages, or, with any file lost, back on the files with those
+ * still good and a notice naming the lost ones; Try again after every file failed opens
+ * the files empty. */
+export function openQuizWait({
+  answers,
+  failures,
+  paper,
+  wait,
+}: QuizWaitState) {
   removeQuizWait(wait);
+  useQuizNotice.setState({
+    failures: failures.map(({ name, reason }) => ({ name, reason })),
+  });
   quizRunLinks()?.pickAgain({
     answers,
     id: wait.id,
     paper,
-    step: status === 'failed' ? 'files' : undefined,
+    step: failures.length > 0 ? 'files' : undefined,
     workspaceId: wait.workspaceId,
   });
 }
@@ -163,22 +181,44 @@ export function useQuizWaitStates(): QuizWaitState[] {
     }));
     if (changed) useQuizWaits.setState({ waits: next });
   }, [transfers]);
+  // A wait that ends with every file failed leaves the panel: its toast offers Try
+  // again (Epo 2026-11-09); the upload rows show their failure as any upload's.
   useEffect(() => {
     for (const state of states) {
-      if (state.status !== 'ready' || state.wait.announced) continue;
+      if (state.status === 'reading' || state.wait.announced) continue;
       useQuizWaits.setState(({ waits: all }) => ({
         waits: all.map((wait) =>
           wait.id === state.wait.id ? { ...wait, announced: true } : wait
         ),
       }));
+      if (state.status === 'failed') {
+        useQuizWaits.setState(({ waits: all }) => ({
+          waits: all.filter((wait) => wait.id !== state.wait.id),
+        }));
+        userToast({
+          button: {
+            label: m.make_quiz_try_again(),
+            onClick: () => openQuizWait(state),
+          },
+          description: state.wait.title,
+          title: m.make_quiz_no_file_read(),
+          variant: 'error',
+        });
+        continue;
+      }
       userToast({
         button: {
           label: m.make_quiz_make_action(),
           onClick: () => openQuizWait(state),
         },
-        description: state.wait.title,
+        description:
+          state.failures.length > 0
+            ? m.make_quiz_some_files_failed({
+                names: state.failures.map(({ name }) => name).join(', '),
+              })
+            : state.wait.title,
         title: m.make_quiz_files_ready(),
-        variant: 'success',
+        variant: state.failures.length > 0 ? 'warning' : 'success',
       });
     }
   });
