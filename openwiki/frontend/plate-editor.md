@@ -4426,6 +4426,78 @@ MSW on still does). Two consequences:
 
 Numbers in [editor-perf.md](../editor-perf.md#drawing-board-in-dev).
 
+### The note's and the board's chrome
+
+Decisions: `human/frontend/plate-editor.md`, 2026-11-10 (mocks
+`artifacts/2026-11-09-notion-notes-look-mocks.html`). The BlockSuite note
+(`VITE_DOCUMENT_LAYOUT=blocks`) and the drawing board share one look for
+everything that floats, and the note body takes the Notion look in every style.
+
+- **Tokens:** `src/features/blocksuite/chrome.css`, imported by `pageEditor.ts`
+  and `drawingBoard.ts`, maps AFFiNE's `--affine-*` variables onto the app's tokens
+  at the root (text, icon, panel, border, hover, shadow, font), since BlockSuite's
+  parts read them from inside shadow roots and from popups under `<body>`. It
+  outranks the theme sheet and the board's dark palette, and stands down while the
+  marking image is drawn (`[data-board-light]`). The note's active colour is the
+  app's accent; the board keeps AFFiNE's blue, as its selection frames and pieces
+  are drawn in it (`drawingBoard.css`).
+- **One floating bar:** BlockSuite's `editor-toolbar` draws every bar: a text
+  selection, a selected block (table, callout, image), a link, and on the board a
+  selected element or several (Group, Align, Lock). It is an opaque overlay panel:
+  36px tall from `sm` with 28px buttons and 18px icons, 32px and 26px on phones,
+  where it keeps every control and scrolls sideways inside the screen. Sizes are
+  `--capy-toolbar-*` properties in `chrome.css`; corners are the style's
+  `--radius-toolbar` and `--radius-toolbar-button`. The bar lives in a shadow root,
+  so the vendored parts read those properties (vendor README local change 34).
+  The board's own panels (the ☰ button and list, an open card's tools, the
+  formula card) take the same corner and shadow; its bottom toolbar keeps
+  AFFiNE's 64px height and corner, which its pieces are fitted to.
+- **Icons:** `vite.config.ts` aliases `@blocksuite/icons/lit` to
+  `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
+  replaces about ninety names with Hugeicons in the app's 1.8 stroke, in the
+  vendored code and ours alike. A name not listed there keeps AFFiNE's drawing
+  (connector ends, line and shape styles, list markers, file types).
+- **Labels:** BlockSuite's English labels pass through `tr()` where they are drawn
+  (local change 37) and `chromeLabels.ts` answers with paraglide messages (existing
+  `editor_*` and `action_*` keys where one says it, `chrome_*` otherwise). A label
+  not in the table, or one written straight into a template the hook does not
+  cover, stays English.
+- **Note body** (`pageEditor.css`): a 720px column with 96px margins (912px
+  editor width; the 16px gutter under 640px; no cap at the note's Full width
+  setting, read in `BlockSuiteNote.tsx`), 16px/1.5 text in blocks padded 3px 2px,
+  headings 30, 24 and 20px at 600 with 32, 22 and 16px above. Sizes above 16px
+  shrink on narrow screens as `note-fs` does. Code blocks take the dim fill.
+- **Callouts** keep the app's own look (`calloutLook.ts`, local change 39): the
+  five kinds of `richBlockConfig.ts` with their tint, border and icon, from the
+  block's `variant` (none reads as info). A selected callout's bar switches its
+  kind; BlockSuite's emoji and background pickers are off.
+- **Gutter handle and block menu** (local change 36, `blockMenu.ts`): a hovered
+  block shows + and a six-dot grip, centred on its first line. + adds a paragraph
+  below. A click on the grip selects the block and opens a vertical menu beside
+  it: Turn into (a side submenu, text blocks only), Copy, Duplicate, Delete. The
+  floating bar stays away while it is open, and closing it lets the block go.
+  A table, callout or image has a bar of its own, so its grip only selects it.
+  The handle needs the editor to report page mode, which `pageEditor.ts` does
+  (`DocModeExtension`); without AFFiNE's app nothing else reports one.
+- **Slash menu** (local change 35): 28px rows in a 240px panel, an 18px icon,
+  the name and its Markdown shortcut, uppercase group labels, no descriptions.
+- **Tables** keep BlockSuite's hover handles (⋯ over a column, ⋮ beside a row,
+  + bars at the right and bottom edges, each with its menu). A table selected as
+  a block shows Header row, Duplicate and Delete (`tableBar.ts`); a header row is
+  the first row's `header` prop, drawn semibold on the dim fill (local change 38).
+- **Title and Info** (`src/features/notes/blocksuite/NoteHeading.tsx`): the top
+  of the body shows the file's name as a 40px title. It is the material's
+  `title`, not text in the note: leaving the field or pressing Enter renames the
+  file through `PATCH /materials/{id}/metadata` (an empty or too long name is
+  dropped), and a rename from elsewhere shows there. Under it a collapsed Info row
+  opens Topic (a press moves the note to another topic), Created, Updated and
+  Words, counted when it opens. A reader sees the title as text and no Topic
+  button.
+
+Not built: the Table view block (AFFiNE's database, mock V2), queued as its own
+step; Copy link and Comment in the block menu (the BlockSuite note has neither
+yet).
+
 ### The board's tools
 
 The board adds to BlockSuite through its own extensions (`boardTools.ts`, `boardPlane.ts`,
