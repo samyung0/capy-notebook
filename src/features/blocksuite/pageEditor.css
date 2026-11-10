@@ -121,16 +121,88 @@ affine-note
   color: var(--text-primary);
 }
 
-/* Callout and code: the dim fill, 16px inside, the style's small corner. */
+/* A callout keeps the app's own look (Epo 2026-11-10; calloutLook.ts): the kind's
+   tint and border, its icon in the tint's ink on the first line, as the Plate note
+   and the chat draw it (richBlockConfig.ts). */
 .affine-page-viewport affine-callout {
   margin: 4px 0;
 }
 
 .affine-page-viewport affine-callout > .affine-block-component > div {
-  padding: 13px 16px 13px 12px;
-  border-radius: var(--radius-toolbar-button);
+  gap: 8px;
+  padding: 5px 12px;
+  border: 1px solid;
+  border-radius: 8px;
 }
 
+.affine-page-viewport affine-callout > .affine-block-component > div > div {
+  padding-left: 0;
+}
+
+/* The icon's box: 20px, centred on the first line (BlockSuite sets a margin inline). */
+.affine-page-viewport affine-callout [contenteditable="false"]:has(> span) {
+  width: 20px;
+  height: 20px;
+  margin-top: 6px !important;
+  margin-bottom: 0;
+  font-size: 20px;
+}
+
+.affine-page-viewport affine-callout [contenteditable="false"] > span {
+  cursor: default;
+  opacity: 1;
+}
+
+@media (min-width: 640px) {
+  .affine-page-viewport affine-callout > .affine-block-component > div {
+    gap: 10px;
+    padding: 7px 14px;
+  }
+}
+
+.affine-page-viewport affine-callout[data-variant="info"] {
+  --callout-bg: var(--tint-info-bg);
+  --callout-fg: var(--tint-info-fg);
+  --callout-line: var(--solid-info);
+}
+
+.affine-page-viewport affine-callout[data-variant="tip"] {
+  --callout-bg: var(--tint-accent-1-bg);
+  --callout-fg: var(--tint-accent-1-fg);
+  --callout-line: var(--solid-accent-1);
+}
+
+.affine-page-viewport affine-callout[data-variant="warning"] {
+  --callout-bg: var(--tint-warning-bg);
+  --callout-fg: var(--tint-warning-fg);
+  --callout-line: var(--solid-warning);
+}
+
+.affine-page-viewport affine-callout[data-variant="success"] {
+  --callout-bg: var(--tint-success-bg);
+  --callout-fg: var(--tint-success-fg);
+  --callout-line: var(--solid-success);
+}
+
+.affine-page-viewport affine-callout[data-variant="danger"] {
+  --callout-bg: var(--tint-error-bg);
+  --callout-fg: var(--tint-error-fg);
+  --callout-line: var(--solid-error);
+}
+
+.affine-page-viewport
+  affine-callout[data-variant]
+  > .affine-block-component
+  > div {
+  background: var(--callout-bg);
+  border-color: color-mix(in srgb, var(--callout-line) 45%, transparent);
+}
+
+.affine-page-viewport affine-callout[data-variant] [contenteditable="false"] {
+  color: var(--callout-fg);
+}
+
+/* Code: the dim fill, the style's small corner. */
 .affine-page-viewport .affine-code-block-container {
   padding: 34px 16px 32px 32px;
   margin: 4px 0;
@@ -145,4 +217,9 @@ affine-note
 
 .affine-page-viewport .affine-divider-block-container hr {
   border-top-color: var(--divider);
+}
+
+/* While the block menu is open the floating bar stays away (blockMenu.ts). */
+[data-block-menu] affine-toolbar-widget {
+  display: none;
 }

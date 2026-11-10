@@ -345,3 +345,45 @@ Outside this directory, for BlockSuite:
     icon size (`--capy-toolbar-button-size`, `-button-justify`, `-button-radius`,
     `-icon-size`), a separator's width and line (`--capy-toolbar-separator-*`), and a
     menu row's corner and height (`--capy-menu-row-height`).
+    The bar also takes `--capy-toolbar-max-width` and scrolls sideways past it (a
+    phone keeps every control), and the slash menu and the context `icon-button` use
+    the app's font.
+35. Slash menu rows (`widgets/slash-menu` `slash-menu-popover.ts` and `styles.ts`,
+    marked `Capy (local change 35)`; Epo 2026-11-10, mock M1): 28px rows in a 240px
+    panel with an 18px icon, the name and its Markdown shortcut at the right (a small
+    table of names in the popover), uppercase group labels, and no description line.
+36. Gutter handle (`widgets/drag-handle` `drag-handle.ts`, `styles.ts`, `config.ts`,
+    `utils.ts`, `components/add-block-widget.ts`, `watchers/pointer-event-watcher.ts`,
+    and `components` `context-menu/sub-menu.ts`, marked `Capy (local change 36)`; Epo
+    2026-11-10, mock H1): a note block's handle is the six-dot grip beside a 20 by 24px
+    + button (upstream: a 4px bar, the dots on the canvas only), both centred on the
+    block's first line; `heightMap` is retuned to the note's own type sizes
+    (`src/features/blocksuite/pageEditor.css`), with callout and table entries. A
+    click on the grip dispatches `capy-block-menu` (`{ block, grip }`) after selecting
+    the block, which the app answers with its block menu
+    (`src/features/blocksuite/blockMenu.ts`); `sideSubMenuMiddleware` places a submenu
+    beside its row for it.
+37. Labels through one hook (`shared` `src/utils/label.ts`, new, exported from
+    `utils/index.ts`; marked `Capy (local change 37)`; Epo 2026-11-10): `tr(label)`
+    returns the app's translation of an English label, set once with
+    `setLabelTranslator` (`src/features/blocksuite/chromeLabels.ts`), or the label as
+    written. Called where labels are drawn: a bar button's tooltip
+    (`components` `toolbar/icon-button.ts`), an action's label (`widgets/toolbar`
+    `utils.ts`), a popup menu's item and submenu names (`components`
+    `context-menu/button.ts`, `sub-menu.ts`), the slash menu's item and group names,
+    the Turn into and alignment names (`blocks/root` `configs/toolbar.ts`) and the +
+    button's title. Labels written straight into other templates are not covered yet.
+38. Header rows (`blocks/table` `table-cell.ts`, marked `Capy (local change 38)`): a
+    row with `header` (the note layout's own prop) draws semibold on the dim fill
+    unless a colour was picked; the app's table bar toggles it
+    (`src/features/blocksuite/tableBar.ts`).
+39. Callout kinds (`blocks/callout` `callout-block.ts`, marked `Capy (local change
+    39)`; Epo 2026-11-10): once the app calls `setCalloutVariantIcon`, a callout sets
+    `data-variant` from the block's `variant` (none reads as info), draws that kind's
+    icon in place of the emoji with no icon picker, and leaves its background to the
+    app's styles (`src/features/blocksuite/calloutLook.ts`, `pageEditor.css`).
+
+Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
+`src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
+replaces about ninety names with the app's Hugeicons, so no vendored file was edited
+for icons.

@@ -86,6 +86,8 @@
   --capy-toolbar-separator-line: 1px;
   --capy-toolbar-separator-height: 18px;
   --capy-menu-row-height: 28px;
+  /* A bar wider than a phone scrolls sideways inside the screen's 8px gutters. */
+  --capy-toolbar-max-width: calc(100vw - 18px);
 }
 
 @media (min-width: 640px) {
@@ -93,5 +95,37 @@
     --capy-toolbar-height: 34px;
     --capy-toolbar-padding: 0 4px;
     --capy-toolbar-button-size: 28px;
+    --capy-toolbar-max-width: none;
   }
+}
+
+/* BlockSuite's popup menus (the note's block menu, a table handle's menu): plain
+   elements under <body>, in the All blocks popover's look: the overlay panel,
+   gapless 28px rows, an 18px icon before each name. */
+:root affine-menu {
+  gap: 0;
+  min-width: 200px;
+  max-width: 320px;
+  padding: 4px;
+  border: 1px solid var(--border-overlay);
+  border-radius: var(--radius-toolbar);
+  box-shadow: var(--shadow-pop);
+}
+
+:root affine-menu div[style*="gap:4px"] {
+  gap: 0 !important;
+}
+
+:root affine-menu .affine-menu-button {
+  gap: 10px;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 18px;
+  color: var(--text-secondary);
+  border-radius: var(--radius-toolbar-button);
+}
+
+:root affine-menu .affine-menu-button .affine-menu-action-text {
+  font-size: 14px;
+  line-height: 20px;
 }

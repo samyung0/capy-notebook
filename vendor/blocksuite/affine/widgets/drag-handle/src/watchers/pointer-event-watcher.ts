@@ -94,6 +94,14 @@ export class PointerEventWatcher {
     }
 
     this.widget.selectionHelper.setSelectedBlocks([block]);
+    // Capy (local change 36): the app opens its block menu at the grip.
+    this.widget.dispatchEvent(
+      new CustomEvent('capy-block-menu', {
+        bubbles: true,
+        composed: true,
+        detail: { block, grip: this.widget.dragHandleGrabber },
+      })
+    );
   };
 
   // Need to consider block padding and scale
@@ -351,7 +359,16 @@ export class PointerEventWatcher {
         this.widget.showAddBlockWidget &&
         this.widget.mode === 'page'
       ) {
-        const posTop = this._getTopWithBlockComponent(block);
+        // Capy (local change 36): the 24px + button centred on the block's first
+        // line, where the grip is, for every block kind (upstream: 8px down).
+        const posTop =
+          this._getTopWithBlockComponent(block) +
+          (getDragHandleContainerHeight(block.model) -
+            DRAG_HANDLE_GRABBER_HEIGHT) /
+            2 +
+          2 +
+          DRAG_HANDLE_GRABBER_HEIGHT / 2 -
+          12;
         addBlockWidgetContainer.style.left = `${draggingAreaRect.left - ADD_BLOCK_WIDGET_WIDTH}px`;
         addBlockWidgetContainer.style.top = `${posTop}px`;
         addBlockWidgetContainer.style.height = 'auto';

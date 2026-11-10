@@ -1,5 +1,6 @@
 import '@toeverything/theme/style.css';
 import './chrome.css';
+import './chromeLabels';
 import './pageEditor.css';
 import { AttachmentViewExtension } from '@blocksuite/affine/blocks/attachment/view';
 import { BookmarkViewExtension } from '@blocksuite/affine/blocks/bookmark/view';
@@ -15,6 +16,10 @@ import { SurfaceRefViewExtension } from '@blocksuite/affine/blocks/surface-ref/v
 import { ViewExtensionManager } from '@blocksuite/affine/ext-loader';
 import { getInternalViewExtensions } from '@blocksuite/affine/extensions/view';
 import { PlainTextClipboardConfig } from '@blocksuite/affine/foundation/clipboard';
+import {
+  DocModeExtension,
+  DocModeService,
+} from '@blocksuite/affine/shared/services';
 import { BlockStdScope } from '@blocksuite/affine/std';
 import { Text } from '@blocksuite/affine/store';
 import { TestWorkspace } from '@blocksuite/affine/store/test';
@@ -24,6 +29,8 @@ import { html, render } from 'lit';
 import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { BlockIslands } from '@/features/notes/blocksuite/islands';
+import { blockMenu } from './blockMenu';
+import { calloutBar } from './calloutLook';
 import { blockIslandsExtension, CapyViewExtension } from './capyViews';
 import {
   CapyPageClipboard,
@@ -31,6 +38,7 @@ import {
   TextClipboardConfig,
 } from './clipboard';
 import { noteStoreExtensions, openRoomStore } from './roomStore';
+import { tableBar } from './tableBar';
 
 const OFF = new Set([
   // The views of the blocks the store refuses (roomStore.ts `REFUSED`),
@@ -59,6 +67,16 @@ const viewManager = new ViewExtensionManager([
   CapyViewExtension,
 ]);
 
+/** A note is a page: the gutter handle and the floating bar ask the editor's mode,
+ * which nothing reports without AFFiNE's app (the board reports edgeless). */
+const pageMode = DocModeExtension(
+  new (class extends DocModeService {
+    override getEditorMode() {
+      return 'page' as const;
+    }
+  })()
+);
+
 /** The note's page extensions: our paste in place of BlockSuite's plain-text
  * adapter and id replacement, and a chat answer's clipboard type. */
 let noteExtensions: ReturnType<ViewExtensionManager['get']> | undefined;
@@ -73,6 +91,9 @@ function pageExtensions() {
     CapyPageClipboard,
     TextClipboardConfig,
     ChatAnswerClipboardConfig,
+    pageMode,
+    tableBar,
+    calloutBar,
   ];
   return noteExtensions;
 }
@@ -100,11 +121,13 @@ export function mountNoteEditor(
     html`<div class="affine-page-viewport">${std.render()}</div>`,
     container
   );
+  const removeBlockMenu = blockMenu(container, std);
   return {
     setReadonly: (readonly: boolean) => {
       opened.store.readonly = readonly;
     },
     unmount: () => {
+      removeBlockMenu();
       render(null, container);
       opened.dispose();
     },
@@ -130,7 +153,7 @@ export function createLocalNote() {
  * unmount. */
 export function mountPageEditor(container: HTMLElement) {
   const std = new BlockStdScope({
-    extensions: viewManager.get('page'),
+    extensions: [...viewManager.get('page'), pageMode],
     store: createLocalNote(),
   });
   render(

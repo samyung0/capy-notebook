@@ -534,9 +534,15 @@ export class TableCell extends SignalWatcher(
 
   tdStyle() {
     const columnWidth = this.virtualWidth$.value ?? this.column?.width;
+    // Capy (local change 38): a header row (`rows.<id>.header`, the note layout's
+    // own prop) draws semibold on the dim fill unless a colour was picked.
+    const header = (this.row as { header?: boolean } | undefined)?.header;
     const backgroundColor =
-      this.column?.backgroundColor ?? this.row?.backgroundColor ?? undefined;
+      this.column?.backgroundColor ??
+      this.row?.backgroundColor ??
+      (header ? 'var(--affine-background-secondary-color)' : undefined);
     return styleMap({
+      fontWeight: header ? '600' : undefined,
       backgroundColor,
       minWidth: columnWidth ? `${columnWidth}px` : `${DefaultColumnWidth}px`,
       maxWidth: columnWidth ? `${columnWidth}px` : `${ColumnMaxWidth}px`,

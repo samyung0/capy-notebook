@@ -41,19 +41,25 @@ import {
   NOTE_CONTAINER_PADDING,
 } from './config.js';
 
+// Capy (local change 36): retuned to the note's own type (pageEditor.css): each
+// value puts the grip's centre on the block's first line, which sits lower under a
+// heading's top margin. Upstream: text 23, h1 40, h2 36, h3 32, h4 32, h5 28, h6 26,
+// quote 46, list 24, divider 36, and no callout or table entry.
 const heightMap: Record<string, number> = {
-  text: 23,
-  h1: 40,
-  h2: 36,
-  h3: 32,
-  h4: 32,
-  h5: 28,
-  h6: 26,
-  quote: 46,
-  list: 24,
+  text: 28,
+  h1: 107,
+  h2: 79,
+  h3: 62,
+  h4: 59,
+  h5: 57,
+  h6: 57,
+  quote: 28,
+  list: 28,
+  callout: 52,
+  table: 58,
   database: 28,
   image: 28,
-  divider: 36,
+  divider: 10,
 };
 
 export const getDragHandleContainerHeight = (model: BlockModel) => {

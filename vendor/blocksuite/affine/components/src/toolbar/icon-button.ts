@@ -1,4 +1,5 @@
 import { unsafeCSSVarV2 } from '@blocksuite/affine-shared/theme';
+import { tr } from '@blocksuite/affine-shared/utils';
 import type { Placement } from '@floating-ui/dom';
 import type { TemplateResult } from 'lit';
 import { css, html, LitElement, nothing } from 'lit';
@@ -120,7 +121,12 @@ export class EditorIconButton extends LitElement {
   }
 
   override render() {
-    const tooltip = this.coming ? '(Coming soon)' : this.tooltip;
+    // Capy (local change 37): a string tooltip in the app's language.
+    const tooltip = this.coming
+      ? '(Coming soon)'
+      : typeof this.tooltip === 'string'
+        ? tr(this.tooltip)
+        : this.tooltip;
     const classnames = `icon-container active-mode-${this.activeMode} ${this.hoverState ? 'hovered' : ''}`;
     const padding = this.iconContainerPadding;
     const iconContainerStyles = styleMap({

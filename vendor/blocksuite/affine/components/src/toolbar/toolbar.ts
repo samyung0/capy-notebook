@@ -12,6 +12,15 @@ export class EditorToolbar extends WithDisposable(LitElement) {
       gap: var(--capy-toolbar-gap, 8px);
       padding: var(--capy-toolbar-padding, 0 6px);
       box-sizing: content-box;
+      /* A bar wider than a phone keeps every control and scrolls sideways. */
+      max-width: var(--capy-toolbar-max-width, none);
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: none;
+    }
+
+    ::slotted(*) {
+      flex-shrink: 0;
     }
 
     :host([data-without-bg]) {

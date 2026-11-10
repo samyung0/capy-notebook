@@ -249,7 +249,7 @@ const ListChevronsUpDownIcon = [
   ],
 ] as const satisfies IconSvgElement;
 
-const AiIcon = [
+export const AiIcon = [
   [
     'path',
     {

@@ -39,6 +39,17 @@ import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
 import { cn } from '@/lib/cn';
 import { type BlocksRoom, createBlocksRoom } from './blocksRoom';
 import { BlockIslands } from './islands';
+import { NoteHeading } from './NoteHeading';
+
+/** Words as the reader's language counts them (a CJK run is several). */
+function countWords(text: string) {
+  let count = 0;
+  for (const part of new Intl.Segmenter(undefined, {
+    granularity: 'word',
+  }).segment(text))
+    if (part.isWordLike) count++;
+  return count;
+}
 
 const EMPTY: MaterialValue = [{ children: [{ text: '' }], type: 'p' }];
 
@@ -123,6 +134,7 @@ export default function BlockSuiteNote({
           opened && (
             <RoomView
               key={opened.key}
+              material={material}
               onPainted={() => {
                 painted(opened);
                 shown();
@@ -256,10 +268,12 @@ function restorePlace(key: number, { block, offset }: Place) {
  * `onPainted` once it can take its place; the first view says it too, to
  * leave the painted note. */
 function RoomView({
+  material,
   opened,
   phase,
   onPainted,
 }: {
+  material: Material;
   opened: Opened;
   phase: Phase;
   onPainted: () => void;
@@ -286,6 +300,7 @@ function RoomView({
       <RecoveryEditor
         doc={recovery.doc}
         id={materialId}
+        material={material}
         onPainted={onPainted}
       />
     );
@@ -298,6 +313,7 @@ function RoomView({
           awareness={room.awareness}
           doc={room.doc}
           id={materialId}
+          material={material}
           onPainted={onPainted}
           readonly={
             phase === 'paused' ||
@@ -337,10 +353,12 @@ function RoomView({
 function RecoveryEditor({
   doc,
   id,
+  material,
   onPainted,
 }: {
   doc: Y.Doc;
   id: string;
+  material: Material;
   onPainted: () => void;
 }) {
   const [awareness, setAwareness] = useState<Awareness | null>(null);
@@ -355,6 +373,7 @@ function RecoveryEditor({
       awareness={awareness}
       doc={doc}
       id={id}
+      material={material}
       onPainted={onPainted}
       readonly
     />
@@ -365,12 +384,14 @@ function BlocksEditor({
   awareness,
   doc,
   id,
+  material,
   readonly,
   onPainted,
 }: {
   awareness: Awareness;
   doc: Y.Doc;
   id: string;
+  material: Material;
   readonly: boolean;
   onPainted: () => void;
 }) {
@@ -417,9 +438,25 @@ function BlocksEditor({
   }, [readonly]);
   return (
     <>
+      <NoteHeading
+        fullWidth={displayWidth === 'full'}
+        material={material}
+        onEnter={() => {
+          // The caret goes to the start of the note's first line.
+          const line = container.current?.querySelector('rich-text v-line');
+          if (!line) return;
+          const selection = window.getSelection();
+          selection?.removeAllRanges();
+          const range = document.createRange();
+          range.setStart(line, 0);
+          selection?.addRange(range);
+        }}
+        readonly={readonly}
+        words={() => countWords(container.current?.textContent ?? '')}
+      />
       {/* The column's width and gutters are the editor's own (pageEditor.css). */}
       <div
-        className="w-full pt-6 pb-24"
+        className="w-full pb-24"
         data-note-width={displayWidth}
         ref={container}
       />
