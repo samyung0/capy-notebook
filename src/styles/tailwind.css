@@ -609,14 +609,15 @@ math-field {
     }
   }
 
-  /* Paint-contained chunks must include the drag-handle gutter on the left and
-     the comment trigger in the editor's right padding (note-column's gutters). */
+  /* Paint-contained chunks must include the drag-handle gutter on the left
+     (from `sm` the + button beside the grip too) and the comment trigger in
+     the editor's right padding (note-column's gutters). */
   .note-editor [data-slate-chunk] {
     margin-inline: -24px -20px;
     padding-inline: 24px 20px;
     @variant sm {
-      margin-right: -40px;
-      padding-right: 40px;
+      margin-inline: -44px -40px;
+      padding-inline: 44px 40px;
     }
   }
 

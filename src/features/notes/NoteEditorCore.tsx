@@ -154,6 +154,7 @@ import {
   piecesFromDrafts,
 } from './merge/pieces';
 import type { MergePiece } from './merge/types';
+import { countWords, NoteHeading, noteText } from './NoteHeading';
 import { noteComponents } from './nodeComponents';
 import { useNoteEditorPrefs } from './noteEditorPrefs';
 import { sendCaret, sendPointer } from './notePresence';
@@ -346,6 +347,54 @@ const NoteAttribution = memo(function NoteAttribution({
     />
   );
 });
+
+/** The note's title and Info row over its content, as its painted copy draws
+ * them (NoteBody's PaintedNote), so the editor takes over at the same height.
+ * Outside the editable: the title is the file's name, not text in the note.
+ * Memoized: the editor re-renders on every save acknowledgement. */
+const EditorNoteHeading = memo(function EditorNoteHeading({
+  material,
+}: {
+  material: Material;
+}) {
+  const editor = useEditorRef();
+  const displayWidth = useNoteEditorPrefs((state) => state.displayWidth);
+  return (
+    <NoteHeading
+      fullWidth={displayWidth === 'full'}
+      material={material}
+      onEnter={() => {
+        editor.tf.select(editor.api.start([]));
+        editor.tf.focus();
+      }}
+      plate
+      readonly={false}
+      title={material.title}
+      words={() => countWords(noteText(editor.children))}
+    />
+  );
+});
+
+/** The same over the own copy shown in the editor's place. */
+function LateCopyHeading({
+  material,
+  value,
+}: {
+  material: Material;
+  value: MaterialValue;
+}) {
+  const displayWidth = useNoteEditorPrefs((state) => state.displayWidth);
+  return (
+    <NoteHeading
+      fullWidth={displayWidth === 'full'}
+      material={material}
+      plate
+      readonly
+      title={material.title}
+      words={() => countWords(noteText(value))}
+    />
+  );
+}
 
 // Keep this component identity stable: changing Editable's `as` remounts Slate.
 function NoteEditorSurface({ children, ...props }: ComponentProps<'div'>) {
@@ -2479,6 +2528,10 @@ export function NoteEditorCore({
                     (phase === 'live' || lateUnloaded) ? (
                       // The own copy, where no paused note shows it (Q295).
                       <div data-testid="late-copy">
+                        <LateCopyHeading
+                          material={material}
+                          value={lateCopy.value}
+                        />
                         <MaterialPreview
                           content={lateCopy}
                           isStandalone={!material.workspaceId}
@@ -2488,6 +2541,7 @@ export function NoteEditorCore({
                       </div>
                     ) : handshaking || lateMerging ? null : (
                       <>
+                        <EditorNoteHeading material={material} />
                         <EditorScrollAreaContext.Provider value={scrollArea}>
                           <CollaborationHold>
                             <NoteEditorContent

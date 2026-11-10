@@ -39,6 +39,11 @@ import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { NoteBlocks } from '@/features/notes/liveNoteBlocks';
 import { NoteDisplayToggles } from '@/features/notes/NoteDisplayToggles';
+import {
+  countWords,
+  NoteHeading,
+  noteText,
+} from '@/features/notes/NoteHeading';
 import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
 import {
   EditorPreviewing,
@@ -220,14 +225,29 @@ function PaintedNote({
     () => body ?? { schemaVersion: 1, value },
     [body, value]
   );
+  const displayWidth = useNoteEditorPrefs((state) => state.displayWidth);
   return (
-    <Preview
-      content={content}
-      isStandalone={label.standalone}
-      kind={label.kind}
-      title={label.title}
-      value={value}
-    />
+    <>
+      {/* The title and Info row, as the editor draws them over its own
+       * (NoteEditorCore), so a note opens and takes over without a jump. */}
+      {label.kind === 'note' && (
+        <NoteHeading
+          fullWidth={displayWidth === 'full'}
+          material={material}
+          plate
+          readonly
+          title={label.title}
+          words={() => countWords(noteText(value))}
+        />
+      )}
+      <Preview
+        content={content}
+        isStandalone={label.standalone}
+        kind={label.kind}
+        title={label.title}
+        value={value}
+      />
+    </>
   );
 }
 

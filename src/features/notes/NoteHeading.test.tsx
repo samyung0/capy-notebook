@@ -60,6 +60,7 @@ async function show() {
           material={material}
           onEnter={() => undefined}
           readonly={false}
+          title={material.title}
           words={() => 412}
         />
       </QueryClientProvider>

@@ -35,21 +35,11 @@ import {
 } from '@/features/materials/embeds/AppEmbed';
 import { EmbedLoading } from '@/features/materials/embeds/EmbedView';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
+import { countWords, NoteHeading } from '@/features/notes/NoteHeading';
 import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
 import { cn } from '@/lib/cn';
 import { type BlocksRoom, createBlocksRoom } from './blocksRoom';
 import { BlockIslands } from './islands';
-import { NoteHeading } from './NoteHeading';
-
-/** Words as the reader's language counts them (a CJK run is several). */
-function countWords(text: string) {
-  let count = 0;
-  for (const part of new Intl.Segmenter(undefined, {
-    granularity: 'word',
-  }).segment(text))
-    if (part.isWordLike) count++;
-  return count;
-}
 
 const EMPTY: MaterialValue = [{ children: [{ text: '' }], type: 'p' }];
 
@@ -452,6 +442,7 @@ function BlocksEditor({
           selection?.addRange(range);
         }}
         readonly={readonly}
+        title={material.title}
         words={() => countWords(container.current?.textContent ?? '')}
       />
       {/* The column's width and gutters are the editor's own (pageEditor.css). */}

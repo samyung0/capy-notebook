@@ -23,7 +23,7 @@ import {
   BlockMenuPlugin,
   BlockSelectionPlugin,
 } from '@platejs/selection/react';
-import { getPluginByType, isType, KEYS, type TElement } from 'platejs';
+import { getPluginByType, isType, KEYS, PathApi, type TElement } from 'platejs';
 import {
   MemoizedChildren,
   type PlateEditor,
@@ -55,6 +55,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useEditorScrollArea } from './editorScrollArea';
 import { toggleEditorBlock } from './editorTransforms';
+import { markGutterSlash } from './gutterSlash';
 
 const UNDRAGGABLE_KEYS = [KEYS.column, KEYS.tr, KEYS.td, KEYS.th];
 
@@ -172,6 +173,12 @@ function useNearViewport(ref: React.RefObject<HTMLElement | null>) {
   }, [near, ref, root]);
   return [near, () => setNear(true)] as const;
 }
+
+/** Opens the block menu under an element (the grip), where it is offered:
+ * null on a touch device and in a read-only note. */
+const BlockMenuOpener = React.createContext<((anchor: Element) => void) | null>(
+  null
+);
 
 type DragState = { isAboutToDrag: boolean; isDragging: boolean };
 const IDLE: DragState = { isAboutToDrag: false, isDragging: false };
@@ -295,6 +302,43 @@ function DraggableBlock(props: PlateElementProps) {
               isMaterialRef && 'h-full'
             )}
           >
+            {/* + beside the grip (Epo 2026-11-10, mock H1): a line below, with
+             * the slash menu open on it. From `sm`, where the gutter holds
+             * both; a nested block keeps its grip alone. */}
+            {path.length === 1 && (
+              <div className="pointer-events-auto relative mr-0.5 hidden w-4.5 items-center sm:flex">
+                <button
+                  aria-label={m.chrome_add_block()}
+                  className="absolute left-0 flex h-6 w-full items-center justify-center rounded-button p-0 text-fg-muted hover:bg-surface-hover-bg"
+                  contentEditable={false}
+                  data-plate-prevent-deselect
+                  onClick={() => {
+                    // Focus first: asked for after the changes, Slate focuses the
+                    // note a moment later and the slash menu's input loses it.
+                    editor.tf.focus();
+                    editor.tf.insertNodes(
+                      editor.api.create.block({ type: KEYS.p }),
+                      { at: PathApi.next(path), select: true }
+                    );
+                    // Typed as a person types it, so the slash plugin opens.
+                    editor.tf.insertText('/');
+                    const input = editor.api.node({
+                      at: PathApi.next(path),
+                      match: { type: 'slash_input' },
+                    });
+                    if (input) markGutterSlash(input[0]);
+                  }}
+                  // The note keeps its selection until the new line takes it.
+                  onMouseDown={(event) => event.preventDefault()}
+                  style={{
+                    top: isMaterialRef ? 'calc(50% - 12px)' : `${handleTop}px`,
+                  }}
+                  type="button"
+                >
+                  <EditorIcon name="plus" />
+                </button>
+              </div>
+            )}
             <div
               className={cn(
                 'pointer-events-auto relative mr-1 flex w-4.5 items-center',
@@ -410,6 +454,7 @@ const DragHandle = React.memo(function DragHandle({
 }) {
   const editor = useEditorRef();
   const element = useElement();
+  const openMenu = React.useContext(BlockMenuOpener);
 
   return (
     // Interaction surface only; the parent <button aria-label="Drag block">
@@ -420,6 +465,9 @@ const DragHandle = React.memo(function DragHandle({
       onClick={(event) => {
         event.preventDefault();
         editor.getApi(BlockSelectionPlugin).blockSelection.focus();
+        // A click (the press selected the block) opens its menu under the
+        // grip (Epo 2026-11-10, mock H1); a drag still moves it.
+        openMenu?.(event.currentTarget);
       }}
       onMouseDown={(event) => {
         // The plugin's editor-level onMouseDown deselects on left click; its
@@ -689,6 +737,20 @@ export function BlockContextMenu({ children }: { children: React.ReactNode }) {
   const [point, setPoint] = React.useState({ x: 0, y: 0 });
   const openId = usePluginOption(BlockMenuPlugin, 'openId');
   const isOpen = openId === BLOCK_CONTEXT_MENU_ID;
+  const box = React.useRef<HTMLDivElement>(null);
+  const openUnder = React.useCallback(
+    (anchor: Element) => {
+      const frame = box.current?.getBoundingClientRect();
+      if (!frame) return;
+      const { bottom, left } = anchor.getBoundingClientRect();
+      setPoint({ x: left - frame.left, y: bottom - frame.top + 4 });
+      // After this click, which would otherwise close it again.
+      setTimeout(() => {
+        api.blockMenu.show(BLOCK_CONTEXT_MENU_ID, { x: left, y: bottom });
+      }, 0);
+    },
+    [api]
+  );
 
   if (isTouch) {
     return children;
@@ -743,8 +805,11 @@ export function BlockContextMenu({ children }: { children: React.ReactNode }) {
             });
           }, 0);
         }}
+        ref={box}
       >
-        {children}
+        <BlockMenuOpener.Provider value={readOnly ? null : openUnder}>
+          {children}
+        </BlockMenuOpener.Provider>
         <DropdownMenuAnchor asChild>
           <span
             aria-hidden
