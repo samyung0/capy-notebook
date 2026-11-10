@@ -1,13 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import {
-  continueWhileReading,
   drawnSheets,
   expectRealPages,
   extractPage,
   keepRunRequests,
   makeQuizFromPanel,
   pageSheet,
+  panelTakesUpload,
   QUIZ_PAPERS,
   sentRuns,
   uploadPaper,
@@ -36,7 +36,7 @@ for (const { format, name } of QUIZ_PAPERS) {
         new URL(`../fixtures/files/make-quiz/${name}`, import.meta.url)
       )
     );
-    await continueWhileReading(page, name);
+    await panelTakesUpload(page, name);
     const fileId = await makeQuizFromPanel(page);
 
     const drawn = await drawnSheets(page, 2);

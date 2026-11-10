@@ -9,13 +9,13 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
 import {
-  continueWhileReading,
   drawnSheets,
   expectRealPages,
   extractPage,
   keepRunRequests,
   makeQuizFromPanel,
   pageSheet,
+  panelTakesUpload,
   QUIZ_PAPERS,
   quizDialog,
   quizPanel,
@@ -192,12 +192,12 @@ for (const { format, name } of QUIZ_PAPERS) {
     const workspaceId = await workspace(run, `quiz ${format}`);
     const marker = `UAT_${randomUUID().replaceAll('-', '')}`;
 
-    // A file still reading: Continue closes the dialog, and the panel reopens it at the
+    // A file still reading: its upload closes the dialog, and the panel reopens it at the
     // pages. An empty workspace's Dashboard offers only Add file, so its address opens
     // the dialog here.
     await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}?make=files`);
     await uploadPaper(page, name, await fixture(name, marker, 'make-quiz'));
-    await continueWhileReading(page, name);
+    await panelTakesUpload(page, name);
     const fileId = await uploadedFile(run, workspaceId, name);
     await processed(run, fileId, [marker]);
     const [file] = await run.query(
