@@ -4563,7 +4563,13 @@ aligned while Plate stays in the app). Built so far:
   the phone's paused copy makes it read-only too (`copyPausedView`). The
   block lies over the note's corner buttons (`NoteDisplayToggles`) and the top
   16px of the editable, so only the title and the Info row take the pointer:
-  clicks on its padding go through to what is under it.
+  clicks on its padding go through to what is under it. The space over the
+  title (40px, 64px from a box wider than 640px) is `note-column-head`, the
+  column's padding clamp again and not a container query: with a query
+  container in the note's scroller, WebKit's scroll anchoring stops holding a
+  reader's place while blocks go in above (measured 2026-11-10 on Playwright
+  WebKit 26.5; `e2e/sharing/live-note-view.spec.ts` runs that reader in
+  WebKit). The BlockSuite note's title still declares its container.
 - **Gutter** (`BlockInteractions.tsx`): from `sm` a + sits left of the grip on
   a top-level block. It adds a paragraph below and types the slash, so the
   slash plugin opens its menu; left without a pick or a search, the line

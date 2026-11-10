@@ -395,6 +395,14 @@
 @utility note-column-threads {
   padding-right: clamp(40px, calc((100% - 640px) * 1000), 96px);
 }
+/* The space over the Plate note's title: 40px, and 64px from the same box
+   width, by the same step. Not a container query: with a query container in
+   the note's scroller WebKit's scroll anchoring stops holding a reader's place
+   as blocks go in above (measured 2026-11-10, Playwright WebKit 26.5; the
+   same note holds without the container). */
+@utility note-column-head {
+  padding-top: clamp(40px, calc((100% - 640px) * 1000), 64px);
+}
 
 /* A note font size, unitless in --note-fs, that shrinks on narrow screens: at
    360px wide it keeps 16px plus half of what it has above 16px, growing

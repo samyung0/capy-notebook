@@ -113,15 +113,18 @@ export const NoteHeading = memo(function NoteHeading({
     // top edge, which keep their clicks.
     <div
       className={cn(
-        '@container',
-        plate && 'note-editor pointer-events-none relative z-10 -mb-4'
+        plate
+          ? 'note-editor pointer-events-none relative z-10 -mb-4'
+          : '@container'
       )}
       data-note-heading=""
     >
       <div
         className={cn(
-          '@min-[641px]:pt-16 pt-10',
-          plate ? 'note-column' : 'mx-auto w-full @min-[641px]:px-24 px-4',
+          // The Plate title declares no container (`note-column-head`).
+          plate
+            ? 'note-column note-column-head'
+            : 'mx-auto w-full @min-[641px]:px-24 px-4 @min-[641px]:pt-16 pt-10',
           !fullWidth && 'max-w-[912px]'
         )}
       >
