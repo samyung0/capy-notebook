@@ -4625,15 +4625,159 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     answer flow refuses past Epo's 250 KB on Done.
   - `saved` is checked before anything mounts (`boardLoad.ts`), as BlockSuite's store
     skips a block it doesn't know and takes any tree on load: one page and one canvas,
-    only the blocks and elements the board's tools make (the pen menu's highlighter
-    included, which the preview draws as a see-through stroke), each block under a parent it
-    may have in one tree, and each card's fields within
+    only the blocks and elements the **board catalog** lists for that board (the pen
+    menu's highlighter included, which the preview draws as a see-through stroke), each
+    block under a parent it may have in one tree, and each card's fields within
     the limits its editor keeps (marks, bars, labels, spokes, axis values, formula
     length), with a place (`[x,y,w,h]`) on everything but a connector and a group, whose
     places BlockSuite works out (from the ends, each an element id or a finite point; from
     the children) and never stores. Anything else throws a `BoardLoadError` with a
     `reason`.
-- **Preview (`boardPreview.ts`):** `drawBoardPreview(saved, { width, height })` draws a
+  - **Toolbar per board** (Epo 2026-11-09): the question board has Graphs, Charts and
+    Formulas slots after the shapes; the workspace canvas has Graphs, Formulas and
+    **Misc** (`sheetTools(board)`). Misc's button opens a panel above the toolbar
+    (`capy-misc-panel`, right-aligned, Shapes' look): one 360 × 440 frame in every view
+    (Epo 2026-11-09, round 2, mock DVxJzY5A3XiYHKuqQPezST), with Back, the title or
+    KLIPY's search, and a close in its header and the body scrolling inside, so
+    switching views moves nothing; the home view is tiles in groups, each picked up and
+    dropped like a slot's piece (a finger's tap puts it in the view's middle); the panel
+    closes once something is down. Its groups:
+    - **Diagrams:** Bar chart, Pie chart and **Mind map**, AFFiNE's own (`mindmap`
+      element, its topics and ideas shapes it lays out), registered on the workspace
+      canvas only and without its own toolbar button (`MindmapWithoutTool`); it
+      starts as a topic and three ideas.
+    - **Media:** **Emoji** opens a grid of 48 Noto Animated Emoji (Google, CC BY 4.0,
+      credited on the Credits page), shipped in `public/emoji/noto` as 96 px animated
+      WebP (about 5 MB together) with 64 px stills for the grid; a click puts one in
+      the view's middle. **GIF** and **Sticker** open KLIPY's view on its GIFs or
+      Stickers tab (`boardKlipy.ts` `klipyMedia(kind, …)`, the same API under `/gifs`
+      and `/stickers`, `VITE_KLIPY_KEY`): from the student's browser with an anonymous
+      per-browser `customer_id`, the `high` content filter, results in KLIPY's order and
+      none removed but one off its `*.klipy.com` hosts (its terms), "Search KLIPY" as
+      the placeholder in every language (KLIPY's required attribution) and "Powered by
+      KLIPY" under them; while a search loads, a shimmer grid of the final shape stands
+      in (16:10 cells for GIFs, squares on a checker for stickers, which have no
+      background on the canvas either); a GIF without a size places at its file's own,
+      one whose link passes the stored limit says it can't be placed;
+      the placed GIF stays KLIPY's link, as its terms ask. Without a key the view
+      says search is off; an uploaded GIF is an ordinary image. **Link** takes a web
+      address or YouTube link: a video shows its poster (`i.ytimg.com`) with a play
+      mark, anything else its host and address; a double click opens it in a new tab.
+    - **From the workspace:** **Quiz** and **Flashcards** show the workspace's own as a
+      two-column grid of thumbnails from each material's stored preview (the first
+      question's stem, the title, the question count; a set's first card front on a
+      stacked pair and its card count), from the Files list (`useOwnedMaterials`, which
+      carries previews; `WorkspaceCanvas` lends them through `workspace` in the mount
+      options), with a filter field from six items. A **New** tile comes first: the page
+      creates the quiz or set unfiled in the workspace, named as the Create page names
+      one (`nextGenerateTitle`), places its card and opens it. A click places a card
+      that runs it (360 × 420 for a quiz, 360 × 260 for a set, `MATERIAL_CARD_SIZE`):
+      the card is the note embed's own runner, answered and checked on the canvas
+      (below). A double click on its header opens the material in the workspace for
+      editing, and a card whose material the workspace no longer lists shows "can't be
+      opened" and no runner. `WorkspaceCanvas` reads every page of the list before
+      lending it (`fetchNextPage` while `hasNextPage`); until then the list is
+      `undefined`, the grid shows the New tile alone and a placed card's body loads
+      rather than reading as gone.
+    Emoji and GIFs are `affine:embed-capy-picture` blocks (an `<img>` that plays by
+    itself), links `affine:embed-capy-link` and quiz or set cards
+    `affine:embed-capy-material` (`boardPicture.ts`, `boardCards.ts`): the surface
+    takes `affine:embed-*` children, so no vendored change.
+  - **A placed quiz or set runs on the canvas** (Epo 2026-11-09): the card's body is
+    the note embed's `AppEmbedView` (`AppEmbed.tsx`), the same runner a note's embedded
+    quiz or set uses, with no `ownerId` (a workspace's own material has no owning note
+    to wait for), so a question is answered and Checked by direct clicks and a set is
+    studied in place; nothing is recorded, as in a note. The card renders from the
+    fetched snapshot and never joins the material's live room (`live` off on the embed,
+    Epo 2026-11-09: editing happens in the dialog, and many cards would mean many
+    connections against the 22-channel cap); it refetches the snapshot when the card
+    comes back into view (`useRefreshOnEnter`, from the second entry: the observer's
+    first call is the mount's own) and when the window regains focus (the hook's own
+    `focus` listener, since the app's queries never refetch on focus), and
+    `WorkspaceCanvas` invalidates the quiz and material queries of the material the
+    item dialog showed when the dialog closes (the dialog's saves go through its live
+    room, not the snapshot query). The block is a BlockSuite block
+    like any other but hosts React: it adopts one `div` per card from the host registry
+    (`src/features/canvas/materialCardHosts.ts` — kept out of `src/features/blocksuite`,
+    which the app's tsconfig excludes), and `CanvasMaterialCards.tsx`, rendered by
+    `WorkspaceCanvas`, portals the runner into it, so the page's providers are the
+    runner's own. The registry hands a re-created block the element it had (released
+    hosts are parked for the rest of the tick), so an answer in progress survives
+    BlockSuite re-rendering the view. Blocks are light DOM upstream
+    (`ShadowlessElement`), so the app's stylesheet reaches the runner; the card's own
+    chrome (the header row with icon, title and kind, the hairline and the panel
+    background) stays in the block's markup. The header is what moves and selects the
+    card; the body swallows `pointerdown`, `pointerup`, `click`, `dblclick`, `wheel`,
+    `keydown`, `keyup`, `beforeinput` (Android's Backspace hotkey) and `cut`, `copy`,
+    `paste` (BlockSuite's clipboard handlers on the document would cut or copy the
+    selected card instead of the field's text) so BlockSuite neither selects nor drags
+    nor pans nor takes the keys from inside the quiz (React's own listeners sit on the
+    host element, a portal container, so they still run); a swallowed `pointerdown` is
+    re-dispatched on the document so the app's menus and popovers still close on a
+    press inside a card; and the first click inside needs no selection first. Under any tool but Select the body takes no pointer events
+    (`.capy-board:not([data-tool="default"]) .capy-card-body`), so a stroke draws over
+    the card. A card out of view (`useNearScreen`) draws the material's stored preview
+    through `ThumbnailPanel` instead of the runner; the previews come from the paged
+    materials list, since the workspace's own materials read carries none.
+  - **Board catalog** (Epo 2026-11-09): `server/internal/boardcatalog` lists every
+    canvas element and block a board may hold, which board takes each (`question`, a
+    drawing answer's board; `workspace`, the workspace canvas) and the limits above.
+    `pnpm gen:openapi` writes it to `src/api/board.generated.ts` (`BOARD_CATALOG`);
+    `TestGeneratedFileIsCurrent` fails when it's stale. `mountDrawingBoard`,
+    `checkSavedBoard` and `drawBoardPreview` take the board, and the limits in
+    `boardData.ts` come from it. The server keeps a saved board as opaque bytes, so
+    the browser is the only reader for now.
+  - **Holding to the catalog after load** (Epo 2026-11-09): the load check runs
+    once, so a mounted board also drops what its catalog leaves out whatever adds it
+    (a paste, a duplicate, later a peer): `keepToCatalog` in `drawingBoard.ts` deletes
+    such an element or block right after it lands, and any element the load check's
+    per-element and mind map checks would refuse (`addedElementFits`), so a mind map copied from the
+    workspace canvas and pasted into an answer goes with its node shapes, as does a capy
+    embed. A saved mind map's nodes are checked too (`mindmapFits`): each a shape on
+    the canvas no other mind map or group holds, under a parent among its own nodes,
+    one root, no cycle, layout 0–2. A board whose JSON would hide a key (`__proto__`,
+    which Yjs's `toJSON` turns into the object's prototype while BlockSuite still loads
+    the entry) is refused. Emoji, GIFs and cards copy, paste and duplicate on
+    the workspace canvas through a clipboard config each (`boardClipboard.ts`), which
+    re-adds only a block the load check would take (`embedFits`, the same check), since
+    any page can write the clipboard. Their renderers check again what they use: a link
+    opens only as http(s), an emoji shows only from the list, a GIF only from https
+    `*.klipy.com` (`KLIPY_MEDIA_SOURCE`, which the image policy allows too), rotation as a number.
+  - **Stored (Epo 2026-11-09, `todo-workspace-canvas-storage.md`):** the workspace canvas
+    is personal: one per member per workspace, seen by its owner alone, one editor over
+    the whole canvas and no collaboration room (collaboration means resuming the held
+    canvas plan). It is a standalone material of kind `canvas` linked to its workspace
+    by `canvas_workspace_id`, owned and paid for by the member, listed in Files with the
+    drawing icon, never shared or cloned, and deleted with their membership when they
+    leave. `GET /api/workspaces/{id}/canvas` finds or makes it; its document is one
+    `canvas_board` block (embed catalog) naming the board asset, the save's version and
+    the canvas's images, so the asset pruner keeps them. `WorkspaceCanvas.tsx` opens
+    the board from the material's `board` editor asset (`boardAsset.ts`: gzip in the
+    browser, `assetLink` and `DecompressionStream` back), or from this device's unsaved
+    copy (IndexedDB `drawingDrafts`, key `canvas:<material>`: the live `snapshot()` with
+    the material revision it was taken at, written 400 ms after each change and on
+    `pagehide`) when the last save didn't go up and the copy's revision is the material's
+    current one; an older copy (another tab's or device's save landed since) is deleted.
+    It saves 2 s after the last change (`save({ finish: false })`, the cleaned-up document
+    that leaves the drawer's tool and open card alone) and when the page within the app
+    leaves the canvas (`save()`, which finishes an open card's view into it; a save still
+    in flight then rewrites the copy from the document as left, at the revision it lands
+    on), gzipped, uploaded as a new `board` asset under
+    `CANVAS_BOARD_MAX` (2 MiB before gzip, the board catalog; over it the board says so
+    and the last good save stands), then `PUT /api/workspaces/{id}/canvas` with the
+    asset and the revision it read; the server checks the asset is a ready `board`
+    asset of the canvas (images likewise) and counts the version. 409 (the same person's
+    other tab saved first) says so, deletes this tab's copy and stops saving until a
+    reload; any other failure waits for the next change or open, the copy holding the
+    work (no retry loop), and the board asset uploaded for the failed save is deleted
+    again. A closed tab keeps the copy only: the upload can't run as a keepalive request.
+    Both routes answer 404 to a non-member (a link or public visitor), and a save naming
+    an asset that isn't a ready board or image asset of the canvas is a 400. A canvas opens no room (the collaboration token route refuses
+    it); the Canvas tab shows to members only, since a link or public visitor has none.
+    Restoring a trashed canvas beside the live one made since is refused (409
+    `canvas_exists`). Images on the canvas are the next piece (`todo-board-images.md`);
+    `imageAssetIds` is empty until then.
+- **Preview (`boardPreview.ts`):** `drawBoardPreview(saved, { width, height }, board)` draws a
   saved board as an SVG string from its data, for lists, results and marking views
   (Epo 2026-11-06: what's on it, not every detail). It never loads the editor: it imports
   yjs and the small modules the check uses (`boardData.ts` holds the cards' stored shape,
@@ -4645,7 +4789,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   from end to end with their arrowheads; text and shape labels a line per line break;
   plane cards their grid (while lines are 6 px apart), axes and marks; charts their bars
   or circle and spokes; formulas their LaTeX as text; notes their box and a line per
-  paragraph; pasted images a grey box. No numbers or labels on cards. It checks the board
+  paragraph; a placed quiz or set its box with the title and what it is (text only, the
+  runner being on the canvas alone); pasted images a grey box. No numbers or labels on cards. It checks the board
   first and throws the same `BoardLoadError`. `fromBase64` uses `Uint8Array.fromBase64`
   where the browser has it. A plane card with 5 strokes takes 0.4 ms
   in Node, a 300 KB board (50 strokes of 300 points, 500 marks) 5 ms. Show it as an

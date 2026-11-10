@@ -58,8 +58,12 @@ export interface LocalUndoPayload extends UndoPayload {
 export interface LocalDrawingDraft {
   /** The board's saved document (base64). */
   doc: string;
-  /** Where the answer is: the attempt or quiz, then the part. */
+  /** Where the answer is: the attempt or quiz, then the part; a workspace
+   * canvas's is `canvas:<material>`. */
   key: string;
+  /** A canvas copy: the material revision it was taken at, so a copy from
+   * before another tab's save is left alone (Epo 2026-11-09). */
+  revision?: number;
   savedAt: string;
 }
 

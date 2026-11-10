@@ -1324,6 +1324,18 @@ the person attempting (see [study-progress.md](study-progress.md) and
   a practice attempt's quiz when it is permanently deleted, and a leaver's
   marked ones go as they leave.
 
+### Workspace canvases
+
+A member's workspace canvas (Epo 2026-11-09) is theirs alone: a standalone
+material of kind `canvas` linked to the workspace by `canvas_workspace_id`, so a
+standalone material's owner-only rules apply (read, trash, restore, purge) with
+no new path. `GET /api/workspaces/{id}/canvas` finds or makes the caller's own
+for any member (a frozen account opens an existing one; making one needs an
+editing account), and `PUT` records a save at the revision read. It is never
+shared (`UpdateStandaloneMaterialPrivacy` refuses it), never cloned
+(`CloneMaterial` refuses it) and never hidden or filed; it leaves with the
+member (`RemoveWorkspaceMemberWithResult`) and with the workspace.
+
 A paper (an assignment answered on paper, migration 0161) is the member's own
 standalone uploads, linked to the attempt by `files.attempt_id`, so a viewer
 member hands one in and no other member sees it. Its member adds, removes and

@@ -34,6 +34,18 @@ import { ConnectorStoreExtension } from '@blocksuite/affine/gfx/connector/store'
 import { ConnectorViewExtension } from '@blocksuite/affine/gfx/connector/view';
 import { GroupStoreExtension } from '@blocksuite/affine/gfx/group/store';
 import { GroupViewExtension } from '@blocksuite/affine/gfx/group/view';
+import {
+  MindMapDragExtension,
+  MindMapIndicatorOverlay,
+  MindMapInteraction,
+  MindMapView,
+  MindmapDomRendererExtension,
+  MindmapElementRendererExtension,
+  mindmapToolbarExtension,
+  shapeMindmapToolbarExtension,
+} from '@blocksuite/affine/gfx/mindmap';
+import { MindmapStoreExtension } from '@blocksuite/affine/gfx/mindmap/store';
+import { MindmapViewExtension } from '@blocksuite/affine/gfx/mindmap/view';
 import { NoteViewExtension as GfxNoteViewExtension } from '@blocksuite/affine/gfx/note/view';
 import { PointerViewExtension } from '@blocksuite/affine/gfx/pointer/view';
 import { ShapeStoreExtension } from '@blocksuite/affine/gfx/shape/store';
@@ -99,9 +111,23 @@ import { forgetFormulas } from './boardFormulaDraw';
 import { closeUp, IMAGE_SIDE_MAX, type Vec } from './boardGeometry';
 import { addPlane, planeExtensions, planeMarks } from './boardPlane';
 import './boardChartEditor';
+import {
+  CardsStoreExtension,
+  cardViews,
+  lendWorkspace,
+  refreshMaterialCards,
+  type WorkspaceLinks,
+} from './boardCards';
 import { closeBoardEditor } from './boardEditorShell';
-import { checkSavedBoard } from './boardLoad';
+import {
+  addedElementFits,
+  type BoardKind,
+  checkSavedBoard,
+  type Fields,
+  holds,
+} from './boardLoad';
 import { BoardMenu } from './boardMenu';
+import { PictureStoreExtension, pictureViews } from './boardPicture';
 import './boardPlaneEditor';
 import {
   boardToolbar,
@@ -135,6 +161,9 @@ const stores = new StoreExtensionManager([
   FootnoteStoreExtension,
   LinkStoreExtension,
   InlinePresetStoreExtension,
+  MindmapStoreExtension,
+  PictureStoreExtension,
+  CardsStoreExtension,
 ]);
 /** AFFiNE's inline LaTeX specs, which note paragraphs need to render, without its
  * LaTeX node and editor menu: the board keeps `$$` as text, and those two load KaTeX
@@ -179,6 +208,26 @@ const VIEWS = [
   ViewportOverlayViewExtension,
 ];
 const views = new ViewExtensionManager(VIEWS);
+
+/** AFFiNE's mind map without its own toolbar button: the workspace canvas places one
+ * from Misc (Epo 2026-11-09). Its effects (custom elements) still run. */
+class MindmapWithoutTool extends MindmapViewExtension {
+  override setup(context: ViewExtensionContext) {
+    ViewExtensionProvider.prototype.setup.call(this, context);
+    context.register([
+      MindmapElementRendererExtension,
+      MindmapDomRendererExtension,
+      mindmapToolbarExtension,
+      shapeMindmapToolbarExtension,
+      MindMapView,
+      MindMapDragExtension,
+      MindMapIndicatorOverlay,
+      MindMapInteraction,
+    ]);
+  }
+}
+/** The workspace canvas's: the question board's and what only it may hold. */
+const workspaceViews = new ViewExtensionManager([...VIEWS, MindmapWithoutTool]);
 /** A teacher's view: pan and zoom, with no tools or selection toolbar. */
 const READ_ONLY_TOOLS = new Set<unknown>([
   EdgelessAutoConnectViewExtension,
@@ -191,6 +240,11 @@ const READ_ONLY_TOOLS = new Set<unknown>([
 const readOnlyViews = new ViewExtensionManager(
   VIEWS.filter((view) => !READ_ONLY_TOOLS.has(view))
 );
+/** A teacher's or a viewer's workspace canvas still draws what only it may hold. */
+const readOnlyWorkspaceViews = new ViewExtensionManager([
+  ...VIEWS.filter((view) => !READ_ONLY_TOOLS.has(view)),
+  MindmapWithoutTool,
+]);
 
 const PHONE_WIDTH = 768;
 
@@ -217,6 +271,45 @@ class NoFrameOverlay extends Overlay {
   override render() {}
 }
 
+/** A board holds only what its load check would take, whatever adds it (a paste, a
+ * duplicate, a peer): the question board drops a pasted mind map or capy embed, and
+ * either board an element past its limits or a mind map with broken nodes (Epo
+ * 2026-11-09). A mind map goes with its node shapes. */
+function keepToCatalog(gfx: GfxController, board: BoardKind) {
+  const { elements, parents } = holds(board);
+  const { doc } = gfx;
+  const surface = gfx.surface;
+  // Checked once the add's transaction is done: a mind map gets its nodes after itself.
+  const added = surface?.elementAdded.subscribe(({ id }) =>
+    queueMicrotask(() => {
+      const element = surface.getElementById(id);
+      if (!element) return;
+      const fields = element.serialize() as Fields;
+      const all =
+        fields.type === 'mindmap'
+          ? Object.fromEntries(
+              surface.elementModels.map((each) => [
+                each.id,
+                each.serialize() as Fields,
+              ])
+            )
+          : { [id]: fields };
+      if (!addedElementFits(id, all, elements)) surface.deleteElement(id);
+    })
+  );
+  const blocks = doc.slots.blockUpdated.subscribe((change) => {
+    if (change.type !== 'add' || parents.has(change.flavour)) return;
+    queueMicrotask(() => {
+      const model = doc.getModelById(change.id);
+      if (model) doc.deleteBlock(model);
+    });
+  });
+  return () => {
+    added?.unsubscribe();
+    blocks.unsubscribe();
+  };
+}
+
 const surfaceOf = (gfx: GfxController) =>
   gfx.surfaceComponent as SurfaceBlockComponent | null;
 
@@ -240,6 +333,11 @@ export type DrawingBoardOptions = {
   plane?: boolean;
   /** Pan and zoom only: no tools, nothing opens for editing. */
   readOnly?: boolean;
+  /** A question's answer board or the workspace canvas: what it may hold and its
+   * tools (the board catalog). */
+  board: BoardKind;
+  /** The workspace canvas's quizzes and sets for its cards, and opening one. */
+  workspace?: WorkspaceLinks;
   /** `save()`'s `doc`. A board that doesn't check out throws a BoardLoadError. */
   saved?: string;
 };
@@ -338,10 +436,10 @@ async function decodeImage(file: Blob) {
  * there is one. */
 export function mountDrawingBoard(
   container: HTMLElement,
-  options: DrawingBoardOptions = {}
+  options: DrawingBoardOptions
 ) {
   const saved = options.saved ? fromBase64(options.saved) : null;
-  if (saved) checkSavedBoard(saved);
+  if (saved) checkSavedBoard(saved, options.board);
   const { readOnly = false } = options;
   const workspace = new TestWorkspace();
   workspace.storeExtensions = stores.get('store');
@@ -369,11 +467,22 @@ export function mountDrawingBoard(
   ];
   const std = new BlockStdScope({
     extensions: readOnly
-      ? [...readOnlyViews.get('edgeless'), ...drawn]
+      ? [
+          ...(options.board === 'workspace'
+            ? [
+                ...readOnlyWorkspaceViews.get('edgeless'),
+                ...pictureViews,
+                ...cardViews,
+              ]
+            : readOnlyViews.get('edgeless')),
+          ...drawn,
+        ]
       : [
-          ...views.get('edgeless'),
+          ...(options.board === 'workspace'
+            ? [...workspaceViews.get('edgeless'), ...pictureViews, ...cardViews]
+            : views.get('edgeless')),
           shapeButtonTool,
-          ...sheetTools,
+          ...sheetTools(options.board),
           StampTool,
           ...drawn,
           noLatexMarkdown,
@@ -381,12 +490,14 @@ export function mountDrawingBoard(
         ],
     store,
   });
+  if (options.workspace) lendWorkspace(std, options.workspace);
   render(
     html`<div class="affine-edgeless-viewport capy-board">${std.render()}</div>`,
     container
   );
   const board = container.querySelector('.capy-board');
   const gfx = std.get(GfxControllerIdentifier);
+  const unguard = readOnly ? null : keepToCatalog(gfx, options.board);
   // Top right, left of any Done the page puts there: undo, redo and zoom, so the
   // bottom row holds only the toolbar (Epo 2026-11-08). A teacher's has zoom only.
   const zoomTo = (zoom: number) =>
@@ -680,11 +791,15 @@ export function mountDrawingBoard(
       std.selection.clear();
       std.event.deactivate();
     },
+    /** Redraws the quiz and flashcard cards, after the workspace's list changes. */
+    refreshCards: refreshMaterialCards,
     /** The board to store, with no undo history: a fresh document keeps only what's
      * on the board (200 plane clicks were 606 KB live, 7.5 KB this way), rounded
      * (roundPlaces). */
-    save: () => {
-      finishPlot();
+    save: ({ finish = true }: { finish?: boolean } = {}) => {
+      // An autosave (the workspace canvas) leaves an open card and the tool as
+      // they are; Done finishes the plot first.
+      if (finish) finishPlot();
       const fresh = new Y.Doc();
       Y.applyUpdate(fresh, Y.encodeStateAsUpdate(store.spaceDoc));
       roundPlaces(fresh);
@@ -735,6 +850,7 @@ export function mountDrawingBoard(
       historyUpdates.unsubscribe();
       zoomUpdates.unsubscribe();
       unwatchTool();
+      unguard?.();
       document.removeEventListener('keydown', slotKeys);
       menu.dispose();
       if (onChange) store.spaceDoc.off('update', onChange);

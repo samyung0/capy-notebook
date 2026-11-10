@@ -532,7 +532,7 @@ func TestEditorAssetMaterialTakesTheUploadersCaps(t *testing.T) {
 	}
 	caps := func() (image, audio int64) {
 		t.Helper()
-		_, limits, err := s.EditorAssetMaterial(ctx, material.ID, editorID)
+		_, _, limits, err := s.EditorAssetMaterial(ctx, material.ID, editorID)
 		if err != nil {
 			t.Fatal(err)
 		}

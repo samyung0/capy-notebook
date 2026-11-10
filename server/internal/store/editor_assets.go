@@ -328,17 +328,17 @@ func (s *Store) MarkEditorAssetUploadExpired(ctx context.Context, uploadID strin
 // EditorAssetMaterial returns the live material's workspace (empty when
 // standalone) and the plan limits of the uploader, who pays for the images and
 // audio it adds (Epo 2026-10-24, M16).
-func (s *Store) EditorAssetMaterial(ctx context.Context, id, uploaderID string) (workspaceID string, limits planlimits.Limits, err error) {
-	err = s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id,'')
-		FROM materials WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&workspaceID)
+func (s *Store) EditorAssetMaterial(ctx context.Context, id, uploaderID string) (workspaceID string, kind MaterialKind, limits planlimits.Limits, err error) {
+	err = s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id,''), kind
+		FROM materials WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&workspaceID, &kind)
 	if isNoRows(err) {
-		return "", planlimits.Limits{}, ErrNotFound
+		return "", "", planlimits.Limits{}, ErrNotFound
 	}
 	if err != nil {
-		return "", planlimits.Limits{}, err
+		return "", "", planlimits.Limits{}, err
 	}
 	limits, err = s.PayerPlanLimits(ctx, uploaderID)
-	return workspaceID, limits, err
+	return workspaceID, kind, limits, err
 }
 
 // pruneMaterialAssetsTx trashes the material's own ready editor assets that its

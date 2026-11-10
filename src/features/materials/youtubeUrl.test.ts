@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { youtubeVideoId } from './youtube';
+import { youtubeVideoId } from '@/features/materials/youtubeUrl';
 
 describe('YouTube URLs', () => {
   it('accepts watch, short, and embed URLs', () => {

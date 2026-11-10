@@ -4254,7 +4254,7 @@ export const ListItemsResponse = zod.object({
   "lostAccess": zod.boolean(),
   "materialId": zod.string().optional(),
   "materialTitle": zod.string(),
-  "materialType": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
+  "materialType": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']),
   "name": zod.string(),
   "purpose": zod.enum(['image', 'audio']),
   "sizeBytes": zod.int(),
@@ -4348,7 +4348,7 @@ export const ListItemsResponse = zod.object({
   "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "isOwner": zod.boolean().optional(),
-  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
+  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']),
   "lostAccess": zod.boolean().optional().describe('The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "preview": zod.record(zod.string(), zod.unknown()).optional().describe('List-card preview, a union on kind (note, quiz, flashcards, mindmap, diagram); see openwiki/thumbnails.md'),
   "privacy": zod.enum(['private', 'public', 'link']),
@@ -4539,7 +4539,7 @@ export const ListOwnedMaterialsResponse = zod.object({
   "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "isOwner": zod.boolean().optional(),
-  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
+  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']),
   "lostAccess": zod.boolean().optional().describe('The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "preview": zod.record(zod.string(), zod.unknown()).optional().describe('List-card preview, a union on kind (note, quiz, flashcards, mindmap, diagram); see openwiki/thumbnails.md'),
   "privacy": zod.enum(['private', 'public', 'link']),
@@ -4569,7 +4569,7 @@ export const CreateStandaloneMaterialBody = zod.object({
   "schemaVersion": zod.int(),
   "value": zod.array(zod.record(zod.string(), zod.unknown())).nullable()
 }).optional().describe('Versioned Plate document'),
-  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']).describe('Material kind'),
+  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']).describe('Material kind'),
   "scopeFileNames": zod.array(zod.string()).nullish(),
   "scopeTopics": zod.array(zod.string()).nullish(),
   "title": zod.string().max(createStandaloneMaterialBodyTitleMax).optional()
@@ -4641,7 +4641,7 @@ export const CreateStandaloneMaterialResponse = zod.object({
   "id": zod.string(),
   "imageMaxBytes": zod.int(),
   "isOwner": zod.boolean(),
-  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
+  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']),
   "maxDepth": zod.int(),
   "nodeCount": zod.int(),
   "parentMaterialId": zod.string().optional(),
@@ -4820,7 +4820,7 @@ export const GetMaterialResponse = zod.object({
   "id": zod.string(),
   "imageMaxBytes": zod.int(),
   "isOwner": zod.boolean(),
-  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
+  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']),
   "maxDepth": zod.int(),
   "nodeCount": zod.int(),
   "parentMaterialId": zod.string().optional(),
@@ -4973,7 +4973,7 @@ export const CloneMaterialResponse = zod.object({
   "id": zod.string(),
   "imageMaxBytes": zod.int(),
   "isOwner": zod.boolean(),
-  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
+  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']),
   "maxDepth": zod.int(),
   "nodeCount": zod.int(),
   "parentMaterialId": zod.string().optional(),
@@ -5248,7 +5248,7 @@ export const CreateEmbeddedMaterialResponse = zod.object({
   "id": zod.string(),
   "imageMaxBytes": zod.int(),
   "isOwner": zod.boolean(),
-  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
+  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']),
   "maxDepth": zod.int(),
   "nodeCount": zod.int(),
   "parentMaterialId": zod.string().optional(),
@@ -5458,7 +5458,7 @@ export const UpdateMaterialSharingResponse = zod.object({
   "id": zod.string(),
   "imageMaxBytes": zod.int(),
   "isOwner": zod.boolean(),
-  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
+  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']),
   "maxDepth": zod.int(),
   "nodeCount": zod.int(),
   "parentMaterialId": zod.string().optional(),
@@ -6943,7 +6943,7 @@ export const ListRecentResponse = zod.object({
   "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "isOwner": zod.boolean().optional(),
-  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
+  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']),
   "lostAccess": zod.boolean().optional().describe('The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "preview": zod.record(zod.string(), zod.unknown()).optional().describe('List-card preview, a union on kind (note, quiz, flashcards, mindmap, diagram); see openwiki/thumbnails.md'),
   "privacy": zod.enum(['private', 'public', 'link']),
@@ -7269,7 +7269,7 @@ export const RedeemShareLinkResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "id": zod.string(),
   "kind": zod.enum(['workspace', 'material']),
-  "materialKind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']).optional()
+  "materialKind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']).optional()
 })
 
 
@@ -8471,6 +8471,55 @@ export const CreateAssignmentResponse = zod.object({
 
 
 /**
+ * @summary The caller's own canvas in the workspace, made on first open
+ */
+export const WorkspaceCanvasParams = zod.object({
+  "id": zod.string().describe('Workspace id')
+})
+
+export const WorkspaceCanvasResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "boardAssetId": zod.string().describe('The saved board\'s editor asset (gzipped Yjs update); empty before the first save'),
+  "id": zod.string().describe('The canvas material'),
+  "imageAssetIds": zod.array(zod.string()).describe('The canvas\'s images, as image editor assets'),
+  "revision": zod.int().describe('The material\'s revision; a save sends the one it read'),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().describe('Counts the saves')
+})
+
+
+/**
+ * @summary Record a save of the caller's canvas: its new board asset and images; the server counts the version
+ */
+export const SaveWorkspaceCanvasParams = zod.object({
+  "id": zod.string().describe('Workspace id')
+})
+
+export const saveWorkspaceCanvasBodyBoardAssetIdMax = 64;
+
+export const saveWorkspaceCanvasBodyImageAssetIdsMax = 1000;
+
+
+
+
+export const SaveWorkspaceCanvasBody = zod.object({
+  "boardAssetId": zod.string().min(1).max(saveWorkspaceCanvasBodyBoardAssetIdMax).describe('The new board asset, uploaded first: a ready board asset of this canvas'),
+  "imageAssetIds": zod.array(zod.string()).max(saveWorkspaceCanvasBodyImageAssetIdsMax).nullable().describe('The canvas\'s images now: ready image assets of this canvas'),
+  "revision": zod.int().min(1).describe('The revision the browser read; another tab\'s save since is refused (409)')
+})
+
+export const SaveWorkspaceCanvasResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "boardAssetId": zod.string().describe('The saved board\'s editor asset (gzipped Yjs update); empty before the first save'),
+  "id": zod.string().describe('The canvas material'),
+  "imageAssetIds": zod.array(zod.string()).describe('The canvas\'s images, as image editor assets'),
+  "revision": zod.int().describe('The material\'s revision; a save sends the one it read'),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().describe('Counts the saves')
+})
+
+
+/**
  * @summary Clone a shared workspace
  */
 export const CloneWorkspaceParams = zod.object({
@@ -9101,7 +9150,7 @@ export const ListMaterialsResponseItem = zod.object({
   "sizeBytes": zod.int(),
   "title": zod.string(),
   "topicId": zod.string().nullable(),
-  "type": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note'])
+  "type": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas'])
 })
 export const ListMaterialsResponse = zod.array(ListMaterialsResponseItem)
 
@@ -9122,7 +9171,7 @@ export const CreateMaterialBody = zod.object({
   "schemaVersion": zod.int(),
   "value": zod.array(zod.record(zod.string(), zod.unknown())).nullable()
 }).optional().describe('Versioned Plate document'),
-  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']).describe('Material kind'),
+  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']).describe('Material kind'),
   "scopeFileNames": zod.array(zod.string()).nullish(),
   "scopeTopics": zod.array(zod.string()).nullish(),
   "title": zod.string().max(createMaterialBodyTitleMax).optional()
@@ -9194,7 +9243,7 @@ export const CreateMaterialResponse = zod.object({
   "id": zod.string(),
   "imageMaxBytes": zod.int(),
   "isOwner": zod.boolean(),
-  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
+  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']),
   "maxDepth": zod.int(),
   "nodeCount": zod.int(),
   "parentMaterialId": zod.string().optional(),
@@ -9455,7 +9504,7 @@ export const ListWorkspaceRecentResponse = zod.object({
   "hidden": zod.boolean().optional(),
   "id": zod.string(),
   "isOwner": zod.boolean().optional(),
-  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
+  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']),
   "lostAccess": zod.boolean().optional().describe('The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "preview": zod.record(zod.string(), zod.unknown()).optional().describe('List-card preview, a union on kind (note, quiz, flashcards, mindmap, diagram); see openwiki/thumbnails.md'),
   "privacy": zod.enum(['private', 'public', 'link']),

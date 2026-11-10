@@ -77,6 +77,7 @@ import {
   submittedPapers,
   workspaceMaterialRefs,
 } from './assignments';
+import { canvasHandlers } from './canvas';
 import { mockResumeStream } from './chatResume';
 import { mockChatStream } from './chatStream';
 import { mockUndo } from './chatUndo';
@@ -753,6 +754,7 @@ export const handlers = [
   ),
   ...questionBankHandlers,
   ...editorAssetHandlers,
+  ...canvasHandlers,
   ...voiceInputHandlers,
   http.get('/api/files/:id/annotations', ({ params }) =>
     params.id === 'mock-preview-annotations'

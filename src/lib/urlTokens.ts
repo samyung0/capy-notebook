@@ -10,9 +10,15 @@
 const SHARE_SIGNATURE =
   /([a-z]+_[A-Za-z0-9_-]{1,64})\.[A-Za-z0-9_-]{16}(?![A-Za-z0-9_-])/g;
 const INVITE_TOKEN = /(workspace-invites(?:\/|%2F))[A-Za-z0-9_-]+/gi;
+/** A KLIPY GIF search's query string: the student's typed words and their KLIPY id
+ * (Epo 2026-11-09, security review). */
+const KLIPY_QUERY = /(api\.klipy\.com\/[^\s?#"']*)\?[^\s#"']*/gi;
 
 export function stripUrlTokens(text: string): string {
-  return text.replace(SHARE_SIGNATURE, '$1').replace(INVITE_TOKEN, '$1:token');
+  return text
+    .replace(SHARE_SIGNATURE, '$1')
+    .replace(INVITE_TOKEN, '$1:token')
+    .replace(KLIPY_QUERY, '$1');
 }
 
 /** stripUrlTokens over every string inside value, in place where it can. */

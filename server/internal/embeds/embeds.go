@@ -49,8 +49,14 @@ const (
 	Flashcards = "flashcards"
 	Mindmap    = "mindmap"
 	Diagram    = "diagram"
+	// Canvas is a member's personal workspace canvas (Epo 2026-11-09): its
+	// document is one canvas_board block naming the board asset and the
+	// canvas's images; the drawing itself is that asset, never a room.
+	Canvas = "canvas"
 )
 
+// allMaterials are the kinds whose documents hold Plate's elements; a canvas
+// holds its one block only.
 var allMaterials = []string{Note, Quiz, Flashcards, Mindmap, Diagram}
 
 // Class is how an embed is stored, which decides most of its lifecycle.
@@ -330,6 +336,15 @@ func elementTypes() []Element {
 	video.Forbidden = []string{"assetId", "url", "src"}
 	video.Resizable = true
 
+	// A canvas's one block: its board asset, the save's version and its
+	// images, all editor assets of the canvas material.
+	canvas := void("canvas_board", IndexNone)
+	canvas.TopLevel = true
+	canvas.Required = []string{"id", "boardAssetId", "version", "images"}
+	canvas.Fields = []string{"type", "id", "children", "boardAssetId", "version", "images"}
+	canvas.Assets = []string{"boardAssetId", "images[].assetId"}
+	canvas.Materials = []string{Canvas}
+
 	return []Element{
 		plain("p", IndexText),
 		plain("h1", IndexText), plain("h2", IndexText), plain("h3", IndexText),
@@ -351,6 +366,7 @@ func elementTypes() []Element {
 		inline("slash_input", true, IndexNone),
 		media("img", true), media("audio", false),
 		video,
+		canvas,
 		// An upload in progress holds nothing yet.
 		void("placeholder", IndexNone),
 		figure("chart", "series"), figure("plot", "series"), figure("graph", "elements"),
@@ -463,6 +479,7 @@ func MaterialKinds() []MaterialKind {
 		{Kind: Flashcards, Requires: "flashcards", Item: true},
 		{Kind: Mindmap, Requires: "mermaid"},
 		{Kind: Diagram, Requires: "mermaid"},
+		{Kind: Canvas, Requires: "canvas_board"},
 	}
 }
 

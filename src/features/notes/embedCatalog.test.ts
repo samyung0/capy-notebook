@@ -1,6 +1,6 @@
 /* The browser against the embed catalog (openwiki/embeds.md): the read-only
-   plugin kit and the live editor know every element type with the catalog's
-   void and inline flags, every embed's fence converts
+   plugin kit and the live editor know every element type a Plate material
+   holds with the catalog's void and inline flags, every embed's fence converts
    to its element and back, and every element names its index rule. */
 import { readFileSync } from 'node:fs';
 import { serializeMd } from '@platejs/markdown';
@@ -45,14 +45,28 @@ function elementFlags(editor: SlateEditor) {
   return kit;
 }
 
+/* The material kinds Plate hosts. A canvas is a BlockSuite board whose one
+   canvas_board block Plate never holds, so the plugin kits leave it out. */
+const plateKinds: string[] = [
+  'note',
+  'quiz',
+  'flashcards',
+  'mindmap',
+  'diagram',
+];
+
 const catalogFlags = Object.fromEntries(
-  EMBED_CATALOG.elements.map((element) => [
-    element.type,
-    flags({
-      isInline: 'inline' in element && element.inline,
-      isVoid: 'void' in element && element.void,
-    }),
-  ])
+  EMBED_CATALOG.elements
+    .filter((element) =>
+      element.materials.some((kind) => plateKinds.includes(kind))
+    )
+    .map((element) => [
+      element.type,
+      flags({
+        isInline: 'inline' in element && element.inline,
+        isVoid: 'void' in element && element.void,
+      }),
+    ])
 );
 
 describe('the embed catalog', () => {

@@ -1177,17 +1177,44 @@ test.describe('with a finger', () => {
   });
 });
 
+/** Whether the workspace canvas's device copy in IndexedDB (src/lib/localDb.ts)
+ * is the board as it is now. */
+const copyIsCurrent = (page: Page) =>
+  page.evaluate(
+    () =>
+      new Promise<boolean>((resolve, reject) => {
+        // The mocks keep their own database; their canvas is cv_<workspace>.
+        const opened = indexedDB.open('capy-local-msw');
+        opened.onerror = () => reject(opened.error);
+        opened.onsuccess = () => {
+          const read = opened.result
+            .transaction('drawingDrafts')
+            .objectStore('drawingDrafts')
+            .get('canvas:cv_ws_bio');
+          read.onsuccess = () => {
+            opened.result.close();
+            const { __board: board } = window as unknown as {
+              __board: { snapshot(): string };
+            };
+            resolve(read.result?.doc === board.snapshot());
+          };
+        };
+      })
+  );
+
 test('the workspace canvas keeps its plane on reload', async ({ page }) => {
   test.slow();
   await page.goto('/workspaces/ws_bio');
   const tab = page.getByRole('button', { name: 'Canvas' });
   await tab.waitFor();
   await tab.click();
-  await page.waitForFunction(() =>
-    (window as unknown as { __board?: { stats(): Stats } }).__board
-      ?.stats()
-      .canvas.includes('plane')
+  // The board mounts once the canvas and its stored board have loaded, and a
+  // fresh canvas is empty: the Graphs tool places a plane card.
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
   );
+  await placePiece(page, 'capy-graph-slot', 'cart');
+  await expect.poll(() => canvas(page)).toEqual(['plane']);
   const card = await onCard(page);
   await page.mouse.dblclick(...card(0.5, 0.5));
   const at = await onPlane(page);
@@ -1196,13 +1223,10 @@ test('the workspace canvas keeps its plane on reload', async ({ page }) => {
   await expect.poll(() => marks(page)).toBe(1);
   await page.keyboard.press('Escape');
 
-  // Saved in this browser after a short wait, with no request.
-  await expect
-    .poll(() =>
-      page.evaluate(() => localStorage.getItem('capy.workspace.canvas.ws_bio'))
-    )
-    .not.toBeNull();
-  await page.waitForTimeout(700);
+  // Kept in this browser 400 ms after the last change, with no request; the
+  // reload comes before the save 2 s after it (WorkspaceCanvas.tsx), which the
+  // mocks would forget on reload.
+  await expect.poll(() => copyIsCurrent(page), { intervals: [50] }).toBe(true);
   // The URL brings the tab back on its own.
   await page.reload();
   await page.waitForFunction(() =>

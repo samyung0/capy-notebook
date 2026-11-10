@@ -112,9 +112,14 @@ func catalogDocuments(t *testing.T) map[string][]map[string]any {
 	if err != nil {
 		t.Fatal(err)
 	}
+	canvas, err := CanvasDocument(CanvasBoard{BoardAssetID: "asset_board", Version: 1, ImageAssetIDs: []string{"asset_2"}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	docs := map[string][]map[string]any{embeds.Note: reparse(t, append(note.Value, extra...))}
 	for kind, raw := range map[string]string{
 		embeds.Quiz: quiz, embeds.Flashcards: cards, embeds.Mindmap: mindmap, embeds.Diagram: mindmap,
+		embeds.Canvas: canvas,
 	} {
 		var doc Envelope
 		if err := json.Unmarshal([]byte(raw), &doc); err != nil {
