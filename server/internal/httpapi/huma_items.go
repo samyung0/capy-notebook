@@ -14,7 +14,7 @@ import (
 // embeds together.
 
 type itemsListInput struct {
-	Kind        string `query:"kind" doc:"Comma-separated kinds: file kinds, note, quiz, flashcards; image and audio also match embedded images and audio"`
+	Kind        string `query:"kind" doc:"Comma-separated kinds: file kinds, note, quiz, flashcards, canvas; image and audio also match embedded images and audio"`
 	WorkspaceID string `query:"workspaceId" doc:"Comma-separated workspace ids; a submission sits in its assignment's workspace"`
 	Location    string `query:"location" doc:"Comma-separated locations: workspace, standalone"`
 	Query       string `query:"q" maxLength:"120" doc:"Keeps rows whose shown name holds this text, any case"`

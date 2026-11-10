@@ -4283,7 +4283,7 @@ export const listItemsQueryLimitMax = 100;
 
 
 export const ListItemsQueryParams = zod.object({
-  "kind": zod.string().optional().describe('Comma-separated kinds: file kinds, note, quiz, flashcards; image and audio also match embedded images and audio'),
+  "kind": zod.string().optional().describe('Comma-separated kinds: file kinds, note, quiz, flashcards, canvas; image and audio also match embedded images and audio'),
   "workspaceId": zod.string().optional().describe('Comma-separated workspace ids; a submission sits in its assignment\'s workspace'),
   "location": zod.string().optional().describe('Comma-separated locations: workspace, standalone'),
   "q": zod.string().max(listItemsQueryQMax).optional().describe('Keeps rows whose shown name holds this text, any case'),
@@ -4392,6 +4392,7 @@ export const ListItemsResponse = zod.object({
   "material": zod.object({
   "assigned": zod.boolean().optional(),
   "assignmentId": zod.string().optional(),
+  "canvasWorkspaceId": zod.string().optional(),
   "cardCount": zod.int().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "hidden": zod.boolean().optional(),
@@ -4583,6 +4584,7 @@ export const ListOwnedMaterialsResponse = zod.object({
   "items": zod.array(zod.object({
   "assigned": zod.boolean().optional(),
   "assignmentId": zod.string().optional(),
+  "canvasWorkspaceId": zod.string().optional(),
   "cardCount": zod.int().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "hidden": zod.boolean().optional(),
@@ -6987,6 +6989,7 @@ export const ListRecentResponse = zod.object({
   "material": zod.object({
   "assigned": zod.boolean().optional(),
   "assignmentId": zod.string().optional(),
+  "canvasWorkspaceId": zod.string().optional(),
   "cardCount": zod.int().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "hidden": zod.boolean().optional(),
@@ -9573,6 +9576,7 @@ export const ListWorkspaceRecentResponse = zod.object({
   "materials": zod.array(zod.object({
   "assigned": zod.boolean().optional(),
   "assignmentId": zod.string().optional(),
+  "canvasWorkspaceId": zod.string().optional(),
   "cardCount": zod.int().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "hidden": zod.boolean().optional(),

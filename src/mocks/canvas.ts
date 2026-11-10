@@ -25,6 +25,28 @@ const canvasFor = (workspaceId: string): CanvasBody => {
   return canvas;
 };
 
+/** The Files page's rows for the canvases opened so far: each under the
+ * workspace it is the Canvas tab of, with a preview once it has a board. */
+export const mockCanvasRows = (workspaceName: (id: string) => string) =>
+  [...canvases].map(([workspaceId, canvas]) => ({
+    canvasWorkspaceId: workspaceId,
+    createdAt: canvas.updatedAt,
+    id: canvas.id,
+    isOwner: true,
+    kind: 'canvas' as const,
+    preview: canvas.boardAssetId
+      ? { boardAssetId: canvas.boardAssetId, kind: 'canvas' as const }
+      : undefined,
+    privacy: 'private' as const,
+    sizeBytes: 2048,
+    title: workspaceName(workspaceId),
+    topicId: null,
+    topicName: '',
+    updatedAt: canvas.updatedAt,
+    workspaceId: '',
+    workspaceName: workspaceName(workspaceId),
+  }));
+
 /** With the image assets a save may name, as the gateway lists them. */
 const listed = (canvas: CanvasBody): CanvasBody => ({
   ...canvas,
@@ -32,6 +54,14 @@ const listed = (canvas: CanvasBody): CanvasBody => ({
 });
 
 export const canvasHandlers = [
+  // Its row's Delete: the canvas goes, and the tab makes a fresh one. Any
+  // other material falls through to the materials mock.
+  http.delete('/api/materials/:id', ({ params }) => {
+    const id = String(params.id);
+    if (!id.startsWith('cv_')) return;
+    canvases.delete(id.slice('cv_'.length));
+    return new HttpResponse(null, { status: 204 });
+  }),
   // The canvas read as a material, for its owner's plan image cap; any other
   // material falls through to the materials mock.
   http.get('/api/materials/:id', ({ params }) => {

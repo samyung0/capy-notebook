@@ -24,8 +24,15 @@ import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 
 /** A block opens itself; an assignee's quiz opens its assignment, as in
- * Recent, since the quiz itself is refused to them while it is open. */
+ * Recent, since the quiz itself is refused to them while it is open. A canvas
+ * has no page of its own: it is its workspace's Canvas tab. */
 export function blockLink(item: MaterialListItem) {
+  if (item.kind === 'canvas' && item.canvasWorkspaceId)
+    return linkOptions({
+      params: { workspaceId: item.canvasWorkspaceId },
+      search: { panel: 'canvas' },
+      to: '/workspaces/$workspaceId',
+    });
   if (item.assignmentId && !item.isOwner)
     return linkOptions({
       params: { workspaceId: item.workspaceId },
@@ -131,6 +138,17 @@ export function useBlockActions() {
             label: m.assignment_open(),
             onClick: () => navigate(blockLink(item)),
           },
+        ];
+      // A canvas is personal: opened in its workspace, or deleted, and nothing
+      // else (no sharing, cloning or renaming; Epo 2026-11-09).
+      if (item.kind === 'canvas')
+        return [
+          {
+            icon: 'navigationForward',
+            label: m.action_open(),
+            onClick: () => navigate(blockLink(item)),
+          },
+          ...(owner ? [remove] : []),
         ];
       const items: MenuItem[] = [];
       if (item.kind === 'quiz') {

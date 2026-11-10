@@ -121,7 +121,11 @@ export const MATERIAL_KINDS: MaterialListKind[] = [
 ];
 /** The Files page's Kind filter: every file kind, then the blocks; image and
  * audio also take embedded images and audio. */
-export const ITEM_KINDS: ItemKind[] = [...FILE_KINDS, ...MATERIAL_KINDS];
+export const ITEM_KINDS: ItemKind[] = [
+  ...FILE_KINDS,
+  ...MATERIAL_KINDS,
+  'canvas',
+];
 export const ITEM_SORTS: ItemListSort[] = [
   'added',
   'name',

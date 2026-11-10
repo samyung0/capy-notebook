@@ -4776,6 +4776,19 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     it); the Canvas tab shows to members only, since a link or public visitor has none.
     Restoring a trashed canvas beside the live one made since is refused (409
     `canvas_exists`).
+  - **In Files (2026-11-10, a stopgap: Epo plans an account-level canvas page):** the
+    Files page's one list holds a member's own canvases with their blocks (`items.go`:
+    kind `canvas`, only ever through the owner's branch, since a canvas has no
+    `workspace_id`), filed under the workspace each is the Canvas tab of
+    (`canvasWorkspaceId`, the workspace's name and icon, the In a workspace filter)
+    and sized with its board asset, which no row of its own shows. Its card draws the
+    saved board in the browser (`useCanvasDrawing`: the stored preview is
+    `{ kind: 'canvas', boardAssetId }`, the board comes through `boardFromAsset` and
+    `drawBoardPreview(…, 'workspace')`; the icon until then). A canvas has no page of
+    its own, so the row and its Open go to `/workspaces/{id}?panel=canvas`
+    (`blockLink`), as does the row of one of its images; its menu is Open and Delete
+    alone (no rename, share or clone). Delete trashes it as any standalone block, the
+    Canvas tab then makes a fresh one, and Trash lists it with the canvas icon.
   - **Images (Epo 2026-11-09 and 2026-11-10, `todo-board-images.md`):** an image block
     keeps only an id (`sourceId`), and the board reads and stores files through its own
     blob source (`boardBlobs.ts`, `BoardBlobSource`, in place of BlockSuite's in-memory
