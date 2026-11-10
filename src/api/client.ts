@@ -344,6 +344,8 @@ export const qk = {
   attempts: (params?: unknown) => ['attempts', params ?? null] as const,
   attemptsRoot: ['attempts'] as const,
   billing: ['billing'] as const,
+  /** The Canvas page's panel: every canvas the caller has. */
+  canvases: ['canvases'] as const,
   cards: (flashcardSetId: string) =>
     ['flashcardSet', flashcardSetId, 'cards'] as const,
   /** One workspace's chats, or with null the account chat's. */

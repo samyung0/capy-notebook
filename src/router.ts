@@ -334,6 +334,15 @@ const appRoutes = [
     getParentRoute: () => authShellRoute,
     path: '/workspaces/$workspaceId/study/assignments/$assignmentId',
   }),
+  // The account's Canvas page: `c` names the canvas of the person's own shown.
+  createRoute({
+    component: lazyPage(() => import('@/routes/Canvas')),
+    getParentRoute: () => authShellRoute,
+    path: '/canvas',
+    validateSearch: (search: Record<string, unknown>): { c?: string } => ({
+      c: typeof search.c === 'string' ? search.c : undefined,
+    }),
+  }),
   // Chat across all the user's files; the optional id keeps the page mounted
   // (and its streams running) while the shown conversation changes.
   createRoute({

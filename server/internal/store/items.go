@@ -39,7 +39,7 @@ type ItemPage struct {
 
 // ItemListFilter narrows the list; empty slices mean no filter.
 type ItemListFilter struct {
-	// Kinds are file kinds, material kinds (note, quiz, flashcards, canvas) and an
+	// Kinds are file kinds, material kinds (note, quiz, flashcards) and an
 	// embed's image or audio, which match image and audio files too.
 	Kinds        []string
 	WorkspaceIDs []string
@@ -59,9 +59,9 @@ type ItemListFilter struct {
 	Cursor    string
 }
 
-// itemMaterialKinds are the blocks the list holds. A canvas is its owner's
-// alone: it has no workspace_id, so only the owner's own branch finds it.
-var itemMaterialKinds = []string{"note", "quiz", "flashcards", "canvas"}
+// itemMaterialKinds are the blocks the list holds. Canvases have their own
+// page and list (ListCanvases; Epo 2026-11-10).
+var itemMaterialKinds = []string{"note", "quiz", "flashcards"}
 
 // Every branch yields the same columns: the row's type and id, a key unique
 // across tables for the cursor, then the sort and filter values as shown.
@@ -91,10 +91,10 @@ func itemUnionSQL(all bool) string {
 	}
 	materialBranch := func(scope string) string {
 		return `SELECT 'material', m.id, 'material:' || m.id, m.created_at, lower(m.title),
-			` + materialListSizeSQL + `, m.kind::text, lower(` + materialListWorkspaceNameSQL + `), ` + materialListWorkspaceIDSQL + `
+			m.size_bytes, m.kind::text, lower(` + materialWorkspaceNameSQL + `), NULLIF(m.workspace_id, '')
 		FROM materials m
 		WHERE ` + scope + ` AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
-			AND m.kind IN ('note','quiz','flashcards','canvas')`
+			AND m.kind IN ('note','quiz','flashcards')`
 	}
 	files := fileBranch(`f.user_id=$1`)
 	materials := materialBranch(`m.owner_user_id=$1`)

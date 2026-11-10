@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -58,6 +59,62 @@ func (s *Store) memberCanvas(ctx context.Context, userID, wsID string) (Material
 		return Material{}, ErrNotFound
 	}
 	return mt, err
+}
+
+// CanvasListItem is one of a person's canvases: one of their own, or the one
+// they drew in a workspace (WorkspaceID names it).
+type CanvasListItem struct {
+	ID              string    `json:"id"`
+	Title           string    `json:"title"`
+	WorkspaceID     string    `json:"workspaceId,omitempty" doc:"The workspace whose Canvas tab this is; none for a canvas of the caller's own"`
+	WorkspaceName   string    `json:"workspaceName,omitempty"`
+	WorkspaceIconID string    `json:"workspaceIconId,omitempty"`
+	UpdatedAt       time.Time `json:"updatedAt"`
+}
+
+// ListCanvases are every canvas the caller owns, latest saved first: their own
+// and the ones of their workspaces (Epo 2026-11-10: the account's Canvas page
+// shows all there are). A workspace whose owner's account is no longer live is
+// left out, like every other read of that workspace.
+func (s *Store) ListCanvases(ctx context.Context, userID string) ([]CanvasListItem, error) {
+	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, COALESCE(m.canvas_workspace_id, ''),
+			COALESCE(w.name, ''), COALESCE(w.icon_id, ''), m.updated_at
+		FROM materials m LEFT JOIN workspaces w ON w.id = m.canvas_workspace_id
+		WHERE m.kind='canvas' AND m.owner_user_id=$1 AND m.trashed_at IS NULL
+			AND (m.canvas_workspace_id IS NULL OR `+liveWorkspaceSQL("m.canvas_workspace_id")+`)
+		ORDER BY m.updated_at DESC, m.id`, userID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (CanvasListItem, error) {
+		var item CanvasListItem
+		return item, row.Scan(&item.ID, &item.Title, &item.WorkspaceID, &item.WorkspaceName, &item.WorkspaceIconID, &item.UpdatedAt)
+	})
+}
+
+// CreateCanvas makes a canvas of the caller's own, in no workspace.
+func (s *Store) CreateCanvas(ctx context.Context, userID, title string) (Material, error) {
+	content, err := materialdoc.CanvasDocument(materialdoc.CanvasBoard{ImageAssetIDs: []string{}})
+	if err != nil {
+		return Material{}, err
+	}
+	return s.CreateMaterial(ctx, Material{
+		CreatedBy: userID, Kind: MaterialCanvas, Title: title, Content: content, Privacy: "private",
+	})
+}
+
+// OwnCanvas is one of the caller's own canvases, in no workspace, by id. Anyone
+// else's, another kind of material, or a workspace's canvas (opened through its
+// workspace, whose membership it follows) is not found.
+func (s *Store) OwnCanvas(ctx context.Context, userID, materialID string) (Material, error) {
+	mt, err := s.GetMaterial(ctx, materialID)
+	if err != nil {
+		return Material{}, err
+	}
+	if mt.Kind != MaterialCanvas || mt.OwnerUserID != userID || mt.CanvasWorkspaceID != "" {
+		return Material{}, ErrNotFound
+	}
+	return mt, nil
 }
 
 // SaveWorkspaceCanvas writes the canvas's document after a save: the new

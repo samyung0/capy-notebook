@@ -46,6 +46,7 @@ import type {
   BootstrapSourceDocumentParams,
   BrowserSourceSession,
   CanvasBody,
+  CanvasListOutputBody,
   CheckBankQuestionReq,
   CheckQuizQuestionReq,
   CheckReviewItemReq,
@@ -61,6 +62,7 @@ import type {
   ConfirmExtractionReq,
   Conversation,
   CreateBlankFileReq,
+  CreateCanvasInputBody,
   CreateCommentReq,
   CreateConversationReq,
   CreateDiscussionReq,
@@ -178,6 +180,7 @@ import type {
   ReviewResult,
   ReviewSession,
   SaveCanvasInputBody,
+  SaveOwnCanvasInputBody,
   SearchParams,
   SearchResult,
   SetChatPrefsReq,
@@ -3230,6 +3233,235 @@ const res = await fetch(getBillingTopUpUrl(),
 
   const data: billingTopUpResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as billingTopUpResponse
+}
+
+
+
+export type listCanvasesResponse200 = {
+  data: CanvasListOutputBody
+  status: 200
+}
+
+export type listCanvasesResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listCanvasesResponseSuccess = (listCanvasesResponse200) & {
+  headers: Headers;
+};
+export type listCanvasesResponseError = (listCanvasesResponseDefault) & {
+  headers: Headers;
+};
+
+export type listCanvasesResponse = (listCanvasesResponseSuccess | listCanvasesResponseError)
+
+export const getListCanvasesUrl = () => {
+
+
+
+
+  return `/api/canvases`
+}
+
+/**
+ * @summary Every canvas the caller owns: their own and their workspaces', latest saved first
+ */
+export const listCanvases = async ( options?: RequestInit): Promise<listCanvasesResponse> => {
+
+  const res = await fetch(getListCanvasesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listCanvasesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listCanvasesResponse
+}
+
+
+
+export type createCanvasResponse201 = {
+  data: CanvasBody
+  status: 201
+}
+
+export type createCanvasResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type createCanvasResponseSuccess = (createCanvasResponse201) & {
+  headers: Headers;
+};
+export type createCanvasResponseError = (createCanvasResponseDefault) & {
+  headers: Headers;
+};
+
+export type createCanvasResponse = (createCanvasResponseSuccess | createCanvasResponseError)
+
+export const getCreateCanvasUrl = () => {
+
+
+
+
+  return `/api/canvases`
+}
+
+/**
+ * @summary Make a canvas of the caller's own, in no workspace
+ */
+export const createCanvas = async (createCanvasInputBody: NonReadonly<CreateCanvasInputBody>, options?: RequestInit): Promise<createCanvasResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getCreateCanvasUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createCanvasInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createCanvasResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createCanvasResponse
+}
+
+
+
+export type getCanvasResponse200 = {
+  data: CanvasBody
+  status: 200
+}
+
+export type getCanvasResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getCanvasResponseSuccess = (getCanvasResponse200) & {
+  headers: Headers;
+};
+export type getCanvasResponseError = (getCanvasResponseDefault) & {
+  headers: Headers;
+};
+
+export type getCanvasResponse = (getCanvasResponseSuccess | getCanvasResponseError)
+
+export const getGetCanvasUrl = (id: string,) => {
+
+
+
+
+  return `/api/canvases/${id}`
+}
+
+/**
+ * @summary One of the caller's canvases
+ */
+export const getCanvas = async (id: string, options?: RequestInit): Promise<getCanvasResponse> => {
+
+  const res = await fetch(getGetCanvasUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getCanvasResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getCanvasResponse
+}
+
+
+
+export type saveCanvasResponse200 = {
+  data: CanvasBody
+  status: 200
+}
+
+export type saveCanvasResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type saveCanvasResponseSuccess = (saveCanvasResponse200) & {
+  headers: Headers;
+};
+export type saveCanvasResponseError = (saveCanvasResponseDefault) & {
+  headers: Headers;
+};
+
+export type saveCanvasResponse = (saveCanvasResponseSuccess | saveCanvasResponseError)
+
+export const getSaveCanvasUrl = (id: string,) => {
+
+
+
+
+  return `/api/canvases/${id}`
+}
+
+/**
+ * @summary Record a save of one of the caller's canvases, as a workspace canvas's
+ */
+export const saveCanvas = async (id: string,
+    saveOwnCanvasInputBody: NonReadonly<SaveOwnCanvasInputBody>, options?: RequestInit): Promise<saveCanvasResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getSaveCanvasUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(saveOwnCanvasInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: saveCanvasResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as saveCanvasResponse
 }
 
 

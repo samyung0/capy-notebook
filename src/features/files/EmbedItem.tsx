@@ -50,14 +50,16 @@ export const EmbedItem = memo(function EmbedItem({
       icon={kind}
       link={
         open
-          ? // A canvas's image opens its workspace's Canvas tab: the canvas has
-            // no page of its own.
+          ? // A canvas has no page of its own: its image opens its workspace's
+            // Canvas tab, or the Canvas page for one of the person's own.
             item.materialType === 'canvas'
-            ? linkOptions({
-                params: { workspaceId: item.workspaceId ?? '' },
-                search: { panel: 'canvas' },
-                to: '/workspaces/$workspaceId',
-              })
+            ? item.workspaceId
+              ? linkOptions({
+                  params: { workspaceId: item.workspaceId },
+                  search: { panel: 'canvas' },
+                  to: '/workspaces/$workspaceId',
+                })
+              : linkOptions({ search: { c: open }, to: '/canvas' })
             : linkOptions({
                 params: { materialId: open },
                 to: '/materials/$materialId',

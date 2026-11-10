@@ -10,7 +10,7 @@ import type { ListItemsSort } from './listItemsSort.ts';
 
 export type ListItemsParams = {
 /**
- * Comma-separated kinds: file kinds, note, quiz, flashcards, canvas; image and audio also match embedded images and audio
+ * Comma-separated kinds: file kinds, note, quiz, flashcards; image and audio also match embedded images and audio
  */
 kind?: string;
 /**
