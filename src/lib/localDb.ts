@@ -61,6 +61,9 @@ export interface LocalDrawingDraft {
   /** Where the answer is: the attempt or quiz, then the part; a workspace
    * canvas's is `canvas:<material>`. */
   key: string;
+  /** An answer board's pasted pictures, by the id their image blocks name:
+   * they go up with the board at Done or Check (Epo 2026-11-09). */
+  pictures?: { file: Blob; id: string }[];
   /** A canvas copy: the material revision it was taken at, so a copy from
    * before another tab's save is left alone (Epo 2026-11-09). */
   revision?: number;

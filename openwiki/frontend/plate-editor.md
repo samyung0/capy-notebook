@@ -4807,8 +4807,23 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     for the next one. An image pasted from another canvas resolves as another material's
     and is stored again as this one's, also when the board opens with one. Opened again,
     an image loads from its asset's link (`assetLink`). A tab closed mid-upload keeps the
-    hash in its device copy and shows an empty frame after a reload. Answer boards still
-    keep images on the page only: storing them with the drawing is the plan's other half.
+    hash in its device copy and shows an empty frame after a reload.
+    On an **answer board** (`DrawingBoardScreen`) a picture is compressed as it lands
+    (`shrink`: `fitImageOffThread` under `BOARD_IMAGE_MAX`, 1 MiB, from the board
+    catalog) and refused with a toast past `BOARD_IMAGES_MAX` (10) or when no size
+    fits; its block keeps BlockSuite's hash for good, and the file stays on the board.
+    The device draft keeps the files beside the board (`LocalDrawingDraft.pictures`), so
+    a reload before Done loses none. Done checks the count again, asks the board for
+    every file (`imageFiles`, fetching a stored drawing's not shown yet) and keeps them
+    in the page's memory under the part's key (`holdDrawingPictures`); the value names
+    them by that key (`pictures`), since files don't sit in an answer. A Done's store
+    (assignments) and a Check (practice) send them in base64 with the board
+    (`drawingUpload`, `pictures: [{ sourceId, data }]`); a shared page's check sends
+    none. `GET /api/drawings/{id}` answers a link per picture (`pictures`), from which a
+    reopened answer and a teacher's read-only board load them (`fetchDrawingPicture`).
+    The marking image draws them as before, and list previews still draw a grey box. A
+    drawn sample answer's board in the quiz editor still keeps pictures on the page
+    only, and an answer board has no file picker (no Misc panel).
 - **Preview (`boardPreview.ts`):** `drawBoardPreview(saved, { width, height }, board)` draws a
   saved board as an SVG string from its data, for lists, results and marking views
   (Epo 2026-11-06: what's on it, not every detail). It never loads the editor: it imports

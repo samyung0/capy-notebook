@@ -1,10 +1,11 @@
 # Images on the drawing board
 
-Status: the blob source (§1) and the workspace canvas half are built (2026-11-10:
-`boardBlobs.ts`, `boardImages.ts`, `assetImages` in `boardAsset.ts`,
-`WorkspaceCanvas.tsx`). Not built: answer-board images stored with the drawing (§2),
-the sample-answer board's images (§3) and the catalog limits (§5). Open for Epo
-before §2: how the image bytes travel (see "Still open").
+Status: built 2026-11-10: the blob source (§1), the workspace canvas half
+(`boardBlobs.ts`, `boardImages.ts`, `assetImages` in `boardAsset.ts`,
+`WorkspaceCanvas.tsx`), answer-board pictures stored with the drawing (§2, migration
+0165 `drawing_pictures`, `drawings.go`, `DrawingBoardScreen.tsx`, `drawingValue.ts`)
+and the catalog limits (§5, `BOARD_IMAGE_MAX`, `BOARD_IMAGES_MAX`). Not built: the
+sample-answer board's images (§3).
 
 ## The problem
 
@@ -147,15 +148,16 @@ timing (upload at once).
 
 ## Still open
 
-- **How an answer board's images reach the server (found 2026-11-10).** §2 sends them
-  "with the board", and today a board travels as base64 inside the JSON of Done
-  (`PUT /api/assignment-attempts/{id}/drawings/{partId}`, capped near 0.75 MB) or of a
-  practice Check (`answersMaxBytes`, 4 MiB for the whole question, shared with the
-  bank, review and assignment answer routes). Ten images of 1 MiB are about 14 MB of
-  JSON per drawing part, held in memory by the gateway while it decodes. Either the
-  caps on those routes rise to about 15 MB per drawing part, or each image goes up on
-  its own first (a stream of at most 1 MiB) and Done or Check names them, which needs a
-  place to hold a practice image before its attempt exists.
+- **How an answer board's pictures travel: built as §2 says, in the board's own
+  request, for Epo to confirm.** Each is base64 inside the JSON of Done or Check. An
+  assignment's Done may reach about 14 MB; a practice check's cap rose from 4 MiB to
+  about 17 MiB (`checkMaxBytes`: its answers plus one board's pictures at their
+  most), shared by the quiz, review and bank check routes. A question whose drawing
+  parts together hold more than about 10 MiB of pictures is refused as too large,
+  with the page's general error. Typical pictures are a few hundred KB after
+  compression, so the worst case needs ten photos near the cap. The alternative is
+  one upload per picture before Done or Check, which needs a place to hold a
+  practice picture before its attempt exists.
 - **A sample-answer board's images (§3)** need the quiz's document to name them, as
   the canvas block names its images, or the pruner trashes them a minute after the
   quiz's next save.

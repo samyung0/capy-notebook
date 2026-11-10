@@ -71,7 +71,7 @@ func (a *api) registerQuizzes(api huma.API) {
 	reg(api, http.MethodPatch, "/api/quizzes/{id}/metadata", "updateQuizMetadata", tag, "Update quiz metadata", http.StatusOK, a.updateQuizMetadata)
 	reg(api, http.MethodPatch, "/api/quizzes/{id}/sharing", "updateQuizSharing", tag, "Update standalone quiz sharing", http.StatusOK, a.updateQuizSharing)
 	reg(api, http.MethodDelete, "/api/quizzes/{id}", "deleteQuiz", tag, "Delete a quiz", http.StatusNoContent, a.deleteQuiz)
-	regWithMaxBody(api, http.MethodPost, "/api/quizzes/{id}/check", "checkQuizQuestion", tag, "Grade one question of a quiz attempt and record it", http.StatusOK, answersMaxBytes, a.checkQuizQuestion)
+	regWithMaxBody(api, http.MethodPost, "/api/quizzes/{id}/check", "checkQuizQuestion", tag, "Grade one question of a quiz attempt and record it", http.StatusOK, checkMaxBytes, a.checkQuizQuestion)
 	reg(api, http.MethodGet, "/api/attempts", "listAttempts", tag, "List attempts", http.StatusOK, a.listAttempts)
 	reg(api, http.MethodGet, "/api/attempts/{id}", "getAttempt", tag, "Get an attempt's result breakdown", http.StatusOK, a.getAttempt)
 	a.registerComputationCheck(api)

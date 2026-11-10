@@ -3026,10 +3026,12 @@ export function useCheckQuizQuestion(options?: MutationUiOptions) {
       quizId,
       ...body
     }: CheckQuizQuestionReq & { quizId: string }) =>
-      api.post<AttemptDetail>(`/quizzes/${quizId}/check`, {
-        ...body,
-        answers: answersForCheck(body.answers as Answers),
-      }),
+      answersForCheck(body.answers as Answers).then((answers) =>
+        api.post<AttemptDetail>(`/quizzes/${quizId}/check`, {
+          ...body,
+          answers,
+        })
+      ),
     onSuccess: (attempt) => {
       // An embedded quiz records nothing: its attempt comes back without an id.
       if (!attempt.id) return;
@@ -3297,10 +3299,12 @@ export const saveAssignmentDrawing = (
   partId: string,
   value: DrawingValue
 ) =>
-  api
-    .put<{ id: string }>(
-      `/assignment-attempts/${attemptId}/drawings/${encodeURIComponent(partId)}`,
-      drawingUpload(value)
+  drawingUpload(value)
+    .then((upload) =>
+      api.put<{ id: string }>(
+        `/assignment-attempts/${attemptId}/drawings/${encodeURIComponent(partId)}`,
+        upload
+      )
     )
     .then(({ id }) => id);
 

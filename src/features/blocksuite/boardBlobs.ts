@@ -95,7 +95,8 @@ export class BoardBlobSource implements BlobSource {
         throw error;
       }
     this.files.set(key, file);
-    this.fresh.add(key);
+    // Only a board that stores images at once has anything to store.
+    if (this.images.store) this.fresh.add(key);
     return key;
   }
 

@@ -230,7 +230,7 @@ export const DeleteAssignmentDrawingResponse = zod.void()
 
 
 /**
- * @summary Store a drawing part's board (and its marking image) for a running attempt
+ * @summary Store a drawing part's board (its marking image and its pictures) for a running attempt
  */
 export const saveAssignmentDrawingPathIdMax = 64;
 
@@ -251,11 +251,23 @@ export const saveAssignmentDrawingBodyBoardMax = 400000;
 
 export const saveAssignmentDrawingBodyImageMax = 420000;
 
+export const saveAssignmentDrawingBodyPicturesItemDataMax = 1400000;
+
+export const saveAssignmentDrawingBodyPicturesItemSourceIdMax = 128;
+
+
+export const saveAssignmentDrawingBodyPicturesItemSourceIdRegExp = new RegExp('^[A-Za-z0-9_=-]+$');
+export const saveAssignmentDrawingBodyPicturesMax = 10;
+
 
 
 export const SaveAssignmentDrawingBody = zod.object({
   "board": zod.string().max(saveAssignmentDrawingBodyBoardMax).describe('The board\'s saved document, base64'),
-  "image": zod.string().max(saveAssignmentDrawingBodyImageMax).optional().describe('The marking image (WebP, or JPEG or PNG where the browser makes no WebP), base64; left out when nothing will mark it')
+  "image": zod.string().max(saveAssignmentDrawingBodyImageMax).optional().describe('The marking image (WebP, or JPEG or PNG where the browser makes no WebP), base64; left out when nothing will mark it'),
+  "pictures": zod.array(zod.object({
+  "data": zod.string().max(saveAssignmentDrawingBodyPicturesItemDataMax).describe('The picture as the browser compressed it (WebP, JPEG, PNG or GIF), base64'),
+  "sourceId": zod.string().min(1).max(saveAssignmentDrawingBodyPicturesItemSourceIdMax).regex(saveAssignmentDrawingBodyPicturesItemSourceIdRegExp)
+})).max(saveAssignmentDrawingBodyPicturesMax).nullish().describe('The pictures pasted on the board')
 })
 
 export const SaveAssignmentDrawingResponse = zod.object({
@@ -2523,7 +2535,11 @@ export const GetDrawingResponse = zod.object({
   "boardUrl": zod.string().describe('The board\'s saved document, gzipped; the link is the same all hour and lasts two'),
   "bytes": zod.int(),
   "id": zod.string(),
-  "partId": zod.string()
+  "partId": zod.string(),
+  "pictures": zod.array(zod.object({
+  "sourceId": zod.string(),
+  "url": zod.string()
+})).describe('The pictures on the board, each by the id its image block names, as links that last as the board\'s does')
 })
 
 

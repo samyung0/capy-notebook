@@ -20,6 +20,13 @@ type DrawingObject struct {
 	Type  string
 }
 
+// DrawingPicture is a picture pasted on a drawing's board, by the id its image
+// block names it by (migration 0165).
+type DrawingPicture struct {
+	SourceID string
+	Object   DrawingObject
+}
+
 // Drawing is a stored drawing answer.
 type Drawing struct {
 	ID         string
@@ -31,7 +38,9 @@ type Drawing struct {
 	ImageKey   string
 	ImageType  string
 	ImageBytes int64
-	CreatedAt  time.Time
+	// PictureBytes is what the board's pasted pictures hold together.
+	PictureBytes int64
+	CreatedAt    time.Time
 }
 
 // ErrNotDrawingPart refuses a drawing for a part that is not a drawing part of
@@ -39,12 +48,12 @@ type Drawing struct {
 var ErrNotDrawingPart = errors.New("not a drawing part")
 
 const drawingCols = `id, user_id, attempt_id, part_id, board_key, board_bytes,
-	COALESCE(image_key, ''), COALESCE(image_type, ''), image_bytes, created_at`
+	COALESCE(image_key, ''), COALESCE(image_type, ''), image_bytes, picture_bytes, created_at`
 
 func scanDrawing(row pgx.Row) (Drawing, error) {
 	var d Drawing
 	err := row.Scan(&d.ID, &d.UserID, &d.AttemptID, &d.PartID, &d.BoardKey, &d.BoardBytes,
-		&d.ImageKey, &d.ImageType, &d.ImageBytes, &d.CreatedAt)
+		&d.ImageKey, &d.ImageType, &d.ImageBytes, &d.PictureBytes, &d.CreatedAt)
 	return d, err
 }
 
@@ -142,7 +151,7 @@ func (s *Store) CheckAssignmentDrawing(ctx context.Context, userID, attemptID, p
 // pays (Epo 2026-11-06): the growth passes their storage gate. The objects are
 // already in the bucket, after CheckAssignmentDrawing; a refusal here (a race)
 // leaves them to the orphan sweep.
-func (s *Store) SaveAssignmentDrawing(ctx context.Context, userID, attemptID, partID string, board DrawingObject, image *DrawingObject, now time.Time) (Drawing, error) {
+func (s *Store) SaveAssignmentDrawing(ctx context.Context, userID, attemptID, partID string, board DrawingObject, image *DrawingObject, pictures []DrawingPicture, now time.Time) (Drawing, error) {
 	var saved Drawing
 	err := s.inDrawingAttempt(ctx, userID, attemptID, now, true, func(tx pgx.Tx, d drawingAttempt) error {
 		if !drawingPartIn(d.frozen, partID) {
@@ -153,7 +162,7 @@ func (s *Store) SaveAssignmentDrawing(ctx context.Context, userID, attemptID, pa
 			image = nil
 		}
 		var err error
-		saved, err = s.putDrawingTx(ctx, tx, userID, attemptID, partID, board, image, true)
+		saved, err = s.putDrawingTx(ctx, tx, userID, attemptID, partID, board, image, pictures, true)
 		return err
 	})
 	return saved, err
@@ -182,16 +191,21 @@ func (s *Store) AssertStorageRoom(ctx context.Context, userID string, requested 
 }
 
 // putDrawingTx upserts the part's drawing after the payer's gate passes for
-// what it adds over what the part held. pastLimit (an assignment's) checks the
-// account alone and lets it go over its storage limit.
-func (s *Store) putDrawingTx(ctx context.Context, tx pgx.Tx, userID, attemptID, partID string, board DrawingObject, image *DrawingObject, pastLimit bool) (Drawing, error) {
+// what it adds over what the part held, and replaces the board's pictures with
+// the ones sent. pastLimit (an assignment's) checks the account alone and lets
+// it go over its storage limit.
+func (s *Store) putDrawingTx(ctx context.Context, tx pgx.Tx, userID, attemptID, partID string, board DrawingObject, image *DrawingObject, pictures []DrawingPicture, pastLimit bool) (Drawing, error) {
 	var held int64
-	err := tx.QueryRow(ctx, `SELECT board_bytes + image_bytes FROM drawings
+	err := tx.QueryRow(ctx, `SELECT board_bytes + image_bytes + picture_bytes FROM drawings
 		WHERE attempt_id=$1 AND part_id=$2 FOR UPDATE`, attemptID, partID).Scan(&held)
 	if err != nil && !isNoRows(err) {
 		return Drawing{}, err
 	}
-	adds := board.Bytes
+	var pictureBytes int64
+	for _, picture := range pictures {
+		pictureBytes += picture.Object.Bytes
+	}
+	adds := board.Bytes + pictureBytes
 	imageKey, imageType, imageBytes := (*string)(nil), (*string)(nil), int64(0)
 	if image != nil {
 		adds += image.Bytes
@@ -207,15 +221,43 @@ func (s *Store) putDrawingTx(ctx context.Context, tx pgx.Tx, userID, attemptID, 
 			return Drawing{}, err
 		}
 	}
-	return scanDrawing(tx.QueryRow(ctx, `INSERT INTO drawings
-		(id, user_id, attempt_id, part_id, board_key, board_bytes, image_key, image_type, image_bytes)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+	saved, err := scanDrawing(tx.QueryRow(ctx, `INSERT INTO drawings
+		(id, user_id, attempt_id, part_id, board_key, board_bytes, image_key, image_type, image_bytes, picture_bytes)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
 		ON CONFLICT (attempt_id, part_id) DO UPDATE SET
 			board_key=EXCLUDED.board_key, board_bytes=EXCLUDED.board_bytes,
 			image_key=EXCLUDED.image_key, image_type=EXCLUDED.image_type,
-			image_bytes=EXCLUDED.image_bytes, updated_at=now()
+			image_bytes=EXCLUDED.image_bytes, picture_bytes=EXCLUDED.picture_bytes, updated_at=now()
 		RETURNING `+drawingCols,
-		uid("dr"), userID, attemptID, partID, board.Key, board.Bytes, imageKey, imageType, imageBytes))
+		uid("dr"), userID, attemptID, partID, board.Key, board.Bytes, imageKey, imageType, imageBytes, pictureBytes))
+	if err != nil {
+		return Drawing{}, err
+	}
+	// Every Done sends every picture on the board: the ones it held go.
+	if _, err := tx.Exec(ctx, `DELETE FROM drawing_pictures WHERE drawing_id=$1`, saved.ID); err != nil {
+		return Drawing{}, err
+	}
+	for _, picture := range pictures {
+		if _, err := tx.Exec(ctx, `INSERT INTO drawing_pictures (drawing_id, source_id, object_key, bytes, type)
+			VALUES ($1,$2,$3,$4,$5)`, saved.ID, picture.SourceID, picture.Object.Key, picture.Object.Bytes, picture.Object.Type); err != nil {
+			return Drawing{}, err
+		}
+	}
+	return saved, nil
+}
+
+// DrawingPictures are the pictures on a stored drawing's board, for a reader
+// ReadableDrawing admitted.
+func (s *Store) DrawingPictures(ctx context.Context, drawingID string) ([]DrawingPicture, error) {
+	rows, err := s.pool.Query(ctx, `SELECT source_id, object_key, bytes, type FROM drawing_pictures
+		WHERE drawing_id=$1 ORDER BY source_id`, drawingID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (DrawingPicture, error) {
+		var p DrawingPicture
+		return p, row.Scan(&p.SourceID, &p.Object.Key, &p.Object.Bytes, &p.Object.Type)
+	})
 }
 
 // AttemptDrawings are an attempt's drawings by part id.
@@ -301,7 +343,7 @@ func isDrawingAnswer(value any) bool {
 // the attempt row exists, and names them in the attempt's answers.
 func keepQuizDrawingsTx(ctx context.Context, s *Store, tx pgx.Tx, userID string, d AttemptDetail, answers map[string]any, drawings map[string]QuizDrawing) (AttemptDetail, error) {
 	for partID, drawing := range drawings {
-		if _, err := s.putDrawingTx(ctx, tx, userID, d.ID, partID, drawing.Board, drawing.Image, false); err != nil {
+		if _, err := s.putDrawingTx(ctx, tx, userID, d.ID, partID, drawing.Board, drawing.Image, drawing.Pictures, false); err != nil {
 			return d, err
 		}
 	}
@@ -404,7 +446,7 @@ type MarkedDrawings struct {
 // (2026-11-08): only those may be deleted, so only those show.
 func (s *Store) ListMarkedDrawings(ctx context.Context, userID, cursor string, limit int) (MarkedDrawings, error) {
 	out := MarkedDrawings{Items: []MarkedDrawing{}}
-	if err := s.pool.QueryRow(ctx, `SELECT count(*), COALESCE(sum(d.board_bytes + d.image_bytes), 0)
+	if err := s.pool.QueryRow(ctx, `SELECT count(*), COALESCE(sum(d.board_bytes + d.image_bytes + d.picture_bytes), 0)
 		FROM drawings d JOIN attempts t ON t.id = d.attempt_id
 		WHERE d.user_id = $1 AND EXISTS (`+markedDrawingSQL+`)`, userID).
 		Scan(&out.Count, &out.TotalBytes); err != nil {
@@ -416,7 +458,7 @@ func (s *Store) ListMarkedDrawings(ctx context.Context, userID, cursor string, l
 	}
 	rows, err := s.pool.Query(ctx, `SELECT d.id, d.attempt_id, t.assignment_id IS NOT NULL,
 			COALESCE(t.quiz_name, ''), COALESCE(t.workspace_id, ''), COALESCE(t.workspace_name, ''), m.question, CASE WHEN m.parts > 1 THEN m.part ELSE 0 END,
-			d.board_bytes + d.image_bytes, d.created_at
+			d.board_bytes + d.image_bytes + d.picture_bytes, d.created_at
 		FROM drawings d JOIN attempts t ON t.id = d.attempt_id
 		CROSS JOIN LATERAL (`+markedDrawingSQL+`) m
 		WHERE d.user_id = $1 AND ($2::timestamptz IS NULL OR (d.created_at, d.id) < ($2, $3))

@@ -810,6 +810,19 @@ export function mountDrawingBoard(
       room = padding;
       if (fitted) fitView();
     },
+    /** The same with every file the board can get, asking for the ones it
+     * doesn't hold yet (a stored drawing's, not shown so far): what Done sends.
+     * An image whose file is nowhere is left out, and stays an empty frame. */
+    imageFiles: async () => {
+      const ids = [
+        ...new Set(imageBlocks().flatMap(({ props }) => props.sourceId ?? [])),
+      ];
+      const files = await Promise.all(ids.map((id) => blobs.get(id)));
+      return ids.flatMap((id, i) => {
+        const file = files[i];
+        return file ? [{ file, id }] : [];
+      });
+    },
     /** The images on the board now, each id once, with the file the board holds
      * for it (none: stored elsewhere and not shown yet). */
     images: () =>

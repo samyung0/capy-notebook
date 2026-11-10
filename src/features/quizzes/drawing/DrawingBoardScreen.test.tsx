@@ -35,8 +35,16 @@ const mountDrawingBoard = vi.hoisted(() =>
   vi.fn((_host: unknown, _options: MountOptions): unknown => undefined)
 );
 vi.mock('@/features/blocksuite/drawingBoard', () => ({ mountDrawingBoard }));
+const boardImages = vi.hoisted(() =>
+  vi.fn((): { file?: Blob; id: string }[] => [])
+);
 const handle = {
   fit,
+  imageFiles: () =>
+    Promise.resolve(
+      boardImages().flatMap(({ file, id }) => (file ? [{ file, id }] : []))
+    ),
+  images: boardImages,
   putAway,
   save: () => ({ bytes: 100, doc: 'AA==' }),
   snapshot: () => 'AA==',
@@ -93,7 +101,9 @@ vi.mock('@/components/ui/Dialog', () => ({
 
 const { createRoot } = await import('react-dom/client');
 const { default: DrawingBoardScreen } = await import('./DrawingBoardScreen');
-const { finishOpenDrawing } = await import('./drawingValue');
+const { drawingUpload, finishOpenDrawing, heldDrawingPictures } = await import(
+  './drawingValue'
+);
 
 const PINNED = { body: null, marks: '', short: '1', summary: '', title: '1' };
 
@@ -196,6 +206,48 @@ it('keeps a practice drawing on the device after Done, until Check', async () =>
   await act(async () => finishOpenDrawing());
   expect(onDone).toHaveBeenCalledOnce();
   expect(deleteLocalDrawingDraft).not.toHaveBeenCalled();
+  await act(async () => root.unmount());
+});
+
+it("Done hands the board's pictures on with its value, and the draft keeps them", async () => {
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host as never);
+  const file = new Blob(['abc'], { type: 'image/webp' });
+  boardImages.mockReturnValue([{ file, id: 'hash1' }]);
+  saveLocalDrawingDraft.mockClear();
+  let options: MountOptions | undefined;
+  mountDrawingBoard.mockImplementation((_host, mounted) => {
+    options = mounted;
+    return handle;
+  });
+  const onDone = vi.fn();
+  await act(async () =>
+    root.render(
+      <DrawingBoardScreen
+        draft="quiz:qz_1:p"
+        onClose={() => undefined}
+        onDone={onDone}
+        pinned={PINNED}
+        withImage={false}
+      />
+    )
+  );
+  // A change writes the draft with the files the board holds.
+  await act(async () => options?.onChange?.());
+  await act(async () => finishOpenDrawing());
+  expect(saveLocalDrawingDraft.mock.calls.at(-1)?.[0]).toMatchObject({
+    pictures: [{ file, id: 'hash1' }],
+  });
+  const [value] = onDone.mock.calls[0];
+  expect(heldDrawingPictures(value)).toEqual([{ file, id: 'hash1' }]);
+  // A check or a store sends them in base64; a shared page's check doesn't.
+  expect(await drawingUpload(value)).toMatchObject({
+    pictures: [{ data: 'YWJj', sourceId: 'hash1' }],
+  });
+  expect(await drawingUpload(value, false)).not.toHaveProperty('pictures');
+  boardImages.mockReturnValue([]);
+  mountDrawingBoard.mockImplementation(() => handle);
   await act(async () => root.unmount());
 });
 

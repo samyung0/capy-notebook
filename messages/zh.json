@@ -3230,6 +3230,8 @@
   "drawing_answer_question": "题目",
   "drawing_answer_hide_question": "隐藏题目",
   "drawing_answer_show_question": "显示题目",
+  "drawing_picture_refused": "无法添加图片。",
+  "drawing_pictures_too_many": "一幅作答最多可放 {max} 张图片。请先移除一张再添加。",
   "drawing_answer_too_big": "作图太大，无法保存。请删去部分内容后再按完成。",
   "workspace_canvas_too_big": "这个画布太大，无法保存。删除一部分后才能继续保存。",
   "workspace_canvas_saved_elsewhere": "这个画布已在另一个标签页保存。重新加载后再继续绘制。",

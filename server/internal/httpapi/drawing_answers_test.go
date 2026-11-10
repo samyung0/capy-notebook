@@ -355,3 +355,62 @@ func TestAnUnreadableKeptImageLeavesThePartNotMarked(t *testing.T) {
 		t.Fatalf("%d grading calls without an image to send", sent)
 	}
 }
+
+// TestABoardsPicturesAreStoredWithItAndReadByItsLinks (Epo 2026-11-09): the
+// pictures pasted on an answer board go up with it at Done and at Check, are
+// stored beside the board, and come back as links under the ids their image
+// blocks name; too many, or one that is no image, is refused with nothing
+// written.
+func TestABoardsPicturesAreStoredWithItAndReadByItsLinks(t *testing.T) {
+	h, st, _, mem := openGradingAPIWithBlob(t, "full")
+	ctx := context.Background()
+	attempt := startDrawingAttempt(t, h, drawingAssignment(t, h, "ai_approve"), "u_viewer")
+	path := "/api/assignment-attempts/" + attempt + "/drawings/draw-a"
+	done := drawingDone(t)
+	picture := func(id string) map[string]any {
+		return map[string]any{"sourceId": id, "data": done["image"]}
+	}
+	with := func(pictures ...map[string]any) map[string]any {
+		return map[string]any{"board": done["board"], "image": done["image"], "pictures": pictures}
+	}
+	many := make([]map[string]any, 11)
+	for i := range many {
+		many[i] = picture("hash" + string(rune('a'+i)))
+	}
+	expectStatus(t, doReq(t, h, http.MethodPut, path, "u_viewer", with(many...)), http.StatusUnprocessableEntity, "eleven pictures")
+	expectStatus(t, doReq(t, h, http.MethodPut, path, "u_viewer", with(map[string]any{
+		"sourceId": "hashA", "data": base64.StdEncoding.EncodeToString([]byte("not an image")),
+	})), http.StatusBadRequest, "a picture that is no image")
+	if keys := bucketKeys(t, mem, "drawings/"); len(keys) != 0 {
+		t.Fatalf("refused pictures left %v in the bucket", keys)
+	}
+
+	rec := doReq(t, h, http.MethodPut, path, "u_viewer", with(picture("hashA"), picture("hashB")))
+	expectStatus(t, rec, http.StatusOK, "Done with two pictures")
+	var saved struct{ ID string }
+	_ = json.Unmarshal(rec.Body.Bytes(), &saved)
+	if keys := bucketKeys(t, mem, "drawings/"+attempt+"/"); len(keys) != 4 {
+		t.Fatalf("Done wrote %v, want a board, an image and two pictures", keys)
+	}
+	read := doReq(t, h, http.MethodGet, "/api/drawings/"+saved.ID, "u_viewer", nil)
+	expectStatus(t, read, http.StatusOK, "the drawer's read")
+	var drawing struct {
+		Pictures []struct{ SourceID, URL string }
+	}
+	_ = json.Unmarshal(read.Body.Bytes(), &drawing)
+	if len(drawing.Pictures) != 2 || drawing.Pictures[0].SourceID != "hashA" || drawing.Pictures[0].URL == "" {
+		t.Fatalf("the drawing's pictures = %+v", drawing.Pictures)
+	}
+
+	// A practice check keeps them with the attempt it makes.
+	quiz := drawingQuiz(t, h, nil)
+	check := doReq(t, h, http.MethodPost, "/api/quizzes/"+quiz+"/check", "u_owner", map[string]any{
+		"questionId": "q1", "answers": map[string]any{"draw-a": with(picture("hashA"))},
+	})
+	expectStatus(t, check, http.StatusOK, "a check with a picture")
+	var kept int
+	if err := st.Pool().QueryRow(ctx, `SELECT count(*) FROM drawing_pictures p JOIN drawings d ON d.id=p.drawing_id
+		JOIN attempts t ON t.id=d.attempt_id WHERE t.material_id=$1 AND d.user_id='u_owner'`, quiz).Scan(&kept); err != nil || kept != 1 {
+		t.Fatalf("the check kept %d pictures, err %v", kept, err)
+	}
+}

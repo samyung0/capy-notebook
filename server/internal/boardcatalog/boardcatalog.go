@@ -98,6 +98,10 @@ func Get() Catalog {
 			// A workspace canvas's saved board, cleaned up, before gzip (the answer
 			// board's is DRAWING_BOARD_MAX in the question bounds).
 			"CANVAS_BOARD_MAX": fieldlimits.CanvasBoardBytes,
+			// A picture on an answer board after compression, and how many it holds
+			// (the workspace canvas's are editor assets, under the plan's image cap).
+			"BOARD_IMAGE_MAX":  fieldlimits.BoardPictureBytes,
+			"BOARD_IMAGES_MAX": fieldlimits.BoardPictures,
 		},
 	}
 }

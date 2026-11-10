@@ -3230,6 +3230,8 @@
   "drawing_answer_question": "Question",
   "drawing_answer_hide_question": "Hide question",
   "drawing_answer_show_question": "Show question",
+  "drawing_picture_refused": "The picture couldn't be added.",
+  "drawing_pictures_too_many": "A drawing can hold at most {max} pictures. Remove one to add another.",
   "drawing_answer_too_big": "This drawing is too big to save. Remove some of it, then press Done again.",
   "workspace_canvas_too_big": "This canvas is too big to save. Remove some of it to keep saving.",
   "workspace_canvas_saved_elsewhere": "This canvas was saved from another tab. Reload to keep drawing.",

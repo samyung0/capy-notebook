@@ -35,6 +35,7 @@ export function mountDrawingBoard(
 ): {
   fit: (padding: [number, number, number, number]) => void;
   images: () => { file?: Blob; id: string }[];
+  imageFiles: () => Promise<{ file: Blob; id: string }[]>;
   imagesSettled: () => Promise<void>;
   reloadImages: () => void;
   save: (options?: { finish?: boolean }) => { bytes: number; doc: string };
