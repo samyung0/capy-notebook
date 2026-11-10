@@ -2710,17 +2710,29 @@ docker exec "$parser" sh -c 'test -w /tmp || echo read-only'                  # 
 ### 7.6 Layout service
 
 Make a quiz finds figures with PP-DocLayout_plus-L's ONNX export under
-onnxruntime (`layout/app.py`). One pool runs on this host and serves UAT and
-production together, with no split and no queue of its own (Epo 2026-11-04). The
-service is stateless: a JPEG in, regions out, nothing stored, only counts and
-timings logged. It is its own compose project under `/opt/capy-layout`, outside
-the UAT and production projects and the release workflows, like the library
-database (§7.3). The image holds the model: `layout/Dockerfile` adds it from a
-pinned Hugging Face revision and checks its SHA-256 at build, so the build needs
-the network and the running service does not. It runs at a low CPU weight
-(`cpu_shares: 128`, no `cpus` cap) with onnxruntime's spinning off, so the parser
-beside it keeps the cores when both are busy; sizes come from the
-[capacity test](../bench/extraction/reports/2026-11-04-layout-capacity.md).
+onnxruntime, its convolutions in int8 (`layout/app.py`). One pool runs on this
+host and serves UAT and production together, with no split and no queue of its
+own (Epo 2026-11-04). The service is stateless: a JPEG in, regions out, nothing
+stored, only counts and timings logged. It is its own compose project under
+`/opt/capy-layout`, outside the UAT and production projects and the release
+workflows, like the library database (§7.3). The image holds the model:
+`layout/Dockerfile` adds the float export from a pinned Hugging Face revision
+and checks its SHA-256 at build, and a build stage makes the int8 model from it
+(`layout/quantise.py`, with the calibration ranges in
+`layout/calibration-ranges.json`; no page is read). Only the int8 model reaches
+the runtime image, which has no quantisation package. So the build needs the
+network and the running service does not. The int8 file's bytes differ between
+build machines (the Mac's and this host's differ, and agree on 99.9% of
+regions), and the timings are of this host's build, so build here, as step 3
+does. It runs at a low CPU weight (`cpu_shares: 128`, no `cpus` cap) with
+onnxruntime's spinning off, so the parser beside it keeps the cores when both
+are busy; sizes come from the
+[capacity test](../bench/extraction/reports/2026-11-04-layout-capacity.md),
+which ran the float model. With int8
+([report](../bench/extraction/reports/2026-11-10-layout-int8.md)) a page costs
+528 CPU-ms at one thread an inference, the same at two and 11% more at four, so
+a higher `LAYOUT_THREADS` only shortens one page's wait; one process running a
+page at a time peaks at 425 MB, 544 MB with the float model.
 
 1. Check out the reviewed commit under `/opt/capy-layout/src`.
 2. Create `/opt/capy-layout/.env` (mode 0600) from `deploy/layout.env.example`.
@@ -2733,7 +2745,13 @@ beside it keeps the cores when both are busy; sizes come from the
      -f /opt/capy-layout/src/deploy/docker-compose.layout.yml up -d --build
    ```
 
-4. Check it. `docker inspect --format '{{.State.Health.Status}}' capy-layout`
+4. Check it. `docker exec capy-layout sha256sum /opt/layout/inference.onnx`
+   gives `9f8d9c6d53b2051b3ab8620c5881c9741df1bf71cc9b8a6266862fb267083304`,
+   the build that was timed; another value is a model nobody measured (a new
+   CPU, onnxruntime or pin), so score the gold figures with it before use
+   ([report](../bench/extraction/reports/2026-11-10-layout-int8.md)). The
+   measurements are from CPUs with VNNI, as this host's; x86 without it can
+   saturate the int8 convolutions. `docker inspect --format '{{.State.Health.Status}}' capy-layout`
    reports `healthy`, `curl http://10.77.0.2:8092/healthz` answers `ok`, `ss -tlnp
    | grep 8092` shows the WireGuard address alone, and a probe of the public
    address is refused. The container uses host networking like the parser, because
