@@ -1286,11 +1286,22 @@ _CONTENT_SCOPE = "{alias}.content_id = ANY(ARRAY(SELECT content_id FROM scoped_f
 _VEC_ROWS = "{vector_table} v WHERE " + _CONTENT_SCOPE.format(alias="v")
 # The rows the keyword leg matches: the scope's passages, each against its own
 # language's query.
-_LEX_ROWS = (
-    "rag_chunks c JOIN q ON q.lang = c.lang WHERE "
-    + _CONTENT_SCOPE.format(alias="c")
-    + "{chunk_filter}"
+_LEX_ROWS = "rag_chunks c JOIN q ON q.lang = c.lang WHERE " + _CONTENT_SCOPE.format(
+    alias="c"
 )
+# The keyword leg: the rows matching any term, those matching every term first.
+# _LIBRARY_LEX below ranks and flags the same way; change them together.
+_LEX = """
+    SELECT c.id,
+           row_number() OVER (
+               ORDER BY (c.search @@ q.all_of) DESC,
+                        ts_rank_cd(c.search, q.any_of) DESC, c.id
+           ) AS rank,
+           (c.search @@ q.all_of AND q.lookup) AS exact
+        FROM {lex_rows}
+      AND c.search @@ q.any_of
+    ORDER BY (c.search @@ q.all_of) DESC, ts_rank_cd(c.search, q.any_of) DESC, c.id
+    LIMIT %(candidates)s"""
 
 # The knowledge library is one scope of every book, so it takes two other
 # shapes (Epo 2026-11-10). Its vector rows carry the workspace, not a content
@@ -1323,6 +1334,39 @@ _LIBRARY_VEC_ROWS = (
              ORDER BY v.h, v.chunk_id
              LIMIT %(shortlist)s
         ) v"""
+)
+# The same search's keyword leg matches about a quarter of the library for an
+# everyday question (54,041 passages) and paid for that twice. Joined to q,
+# each of the eight languages' queries read its own matches, mostly English
+# passages that seven of them then dropped; and chunk_filter was checked on
+# every match before any was ranked. So one index scan takes the passages
+# matching any language's query, each is matched and ranked against its own
+# language's, and chunk_filter is checked in rank order until the candidate
+# count pass. The rows are the same, exactly; the statement fell from a median
+# 1.5 s to 0.8 s on the live library (18 searches, 2026-11-10). OFFSET 0 keeps
+# the filter a per-row check, as in the vector leg.
+_LIBRARY_LEX = (
+    """
+    SELECT id, row_number() OVER (ORDER BY has_all DESC, score DESC, id) AS rank,
+           exact
+      FROM (SELECT m.id, m.has_all, m.score, m.exact
+              FROM (SELECT c.id, (c.search @@ q.all_of) AS has_all,
+                           ts_rank_cd(c.search, q.any_of) AS score,
+                           (c.search @@ q.all_of AND q.lookup) AS exact
+                      FROM rag_chunks c JOIN q ON q.lang = c.lang
+                     WHERE """
+    + _CONTENT_SCOPE.format(alias="c")
+    + """
+                       AND c.search @@ (
+                             SELECT string_agg('(' || any_of::text || ')', ' | ')::tsquery
+                               FROM q WHERE numnode(any_of) > 0)
+                       AND c.search @@ q.any_of
+                     ORDER BY has_all DESC, score DESC, c.id) m
+             WHERE EXISTS (SELECT 1 FROM rag_chunks c
+                            WHERE c.id = m.id{chunk_filter}
+                           OFFSET 0)
+             ORDER BY m.has_all DESC, m.score DESC, m.id
+             LIMIT %(candidates)s) ranked"""
 )
 # With a subject or role, Postgres matched the keywords library-wide and
 # checked the facets per match (about 1.3 s for a 113-passage subject). So the
@@ -1392,17 +1436,7 @@ q AS MATERIALIZED (
                    to_tsvector('simple', %(latin)s)), 1), 0) AS lookup
       FROM unnest(%(langs)s::text[], %(cfgs)s::text[]) AS m(lang, cfg)
 ),
-lex AS (
-    SELECT c.id,
-           row_number() OVER (
-               ORDER BY (c.search @@ q.all_of) DESC,
-                        ts_rank_cd(c.search, q.any_of) DESC, c.id
-           ) AS rank,
-           (c.search @@ q.all_of AND q.lookup) AS exact
-        FROM {lex_rows}
-      AND c.search @@ q.any_of
-    ORDER BY (c.search @@ q.all_of) DESC, ts_rank_cd(c.search, q.any_of) DESC, c.id
-    LIMIT %(candidates)s
+lex AS ({lex}
 ),
 fused AS (
     SELECT id, sum(score) AS score, sum(flat) AS flat_score FROM (
@@ -1476,9 +1510,10 @@ async def hybrid_search(
     ``pin``, ``conn``, ``chunk_filter`` and ``allowed`` exist for the
     knowledge library, which runs this statement against its own database;
     workspace search never sets them. A search with no subject or role passes
-    ``chunk_filter``, a predicate on the passage's excerpt tags, and its
-    vector leg ranks a shortlist picked by the stored 1-bit codes
-    (``_LIBRARY_VEC_ROWS``). A search with one passes ``allowed``, a SELECT
+    ``chunk_filter``, a predicate on the passage's excerpt tags: its vector
+    leg ranks a shortlist picked by the stored 1-bit codes
+    (``_LIBRARY_VEC_ROWS``) and its keyword leg checks the predicate in rank
+    order (``_LIBRARY_LEX``). A search with one passes ``allowed``, a SELECT
     of the passage ids its facets allow, and both legs run on those.
 
     RRF rather than a weighted score sum because the two scales are not
@@ -1517,15 +1552,20 @@ async def hybrid_search(
             " one; any other search passes neither"
         )
     if allowed:
-        vec_rows, lex_rows = _ALLOWED_VEC_ROWS, _ALLOWED_LEX_ROWS
+        vec_rows, lex = _ALLOWED_VEC_ROWS, _LEX.format(lex_rows=_ALLOWED_LEX_ROWS)
+    elif library:
+        vec_rows, lex = (
+            _LIBRARY_VEC_ROWS,
+            _LIBRARY_LEX.format(chunk_filter=chunk_filter),
+        )
     else:
-        vec_rows, lex_rows = _LIBRARY_VEC_ROWS if library else _VEC_ROWS, _LEX_ROWS
+        vec_rows, lex = _VEC_ROWS, _LEX.format(lex_rows=_LEX_ROWS)
     sql = _SEARCH_SQL_TEMPLATE.format(
         allowed=_ALLOWED_CTE.format(allowed=allowed) if allowed else "",
         vec_rows=vec_rows.format(
             vector_table=vector_table_for_pin(pin), chunk_filter=chunk_filter
         ),
-        lex_rows=lex_rows.format(chunk_filter=chunk_filter),
+        lex=lex,
         material_scope=""
         if library or in_ws is None
         else _MATERIAL_SCOPE_SQL.format(in_ws=in_ws),
