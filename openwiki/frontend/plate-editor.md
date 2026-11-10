@@ -4435,9 +4435,10 @@ The board adds to BlockSuite through its own extensions (`boardTools.ts`, `board
 vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
 
 - **Toolbar:** AFFiNE's shape pieces in the eraser's fixed colours (CSS variables on
-  `.capy-board`), then three slots of pieces drawn like AFFiNE's shapes (Epo 2026-11-08,
-  canvas NsamYcLR4imjm5Xi2fWFj2 "Picked"): Graphs (a polar disc behind a coordinate plane),
-  Charts (a pie behind bars) and Formulas (d/dx, ∫, Σ, √x). `CapyPieceSlot` runs on
+  `.capy-board`), then two slots of pieces drawn like AFFiNE's shapes (Epo 2026-11-08,
+  canvas NsamYcLR4imjm5Xi2fWFj2 "Picked"): Graphs (a polar disc behind a coordinate plane)
+  and Formulas (d/dx, ∫, Σ, √x), then Misc, which holds the charts since 2026-11-10 (the
+  Charts slot is gone; the B and Shift+B keys still place a chart). `CapyPieceSlot` runs on
   BlockSuite's `EdgelessDraggableElementController` as the shape slot does: a piece lifts
   under the pointer, a click or a drag picks it up, it lands where it's dropped and a new
   one rises into the slot once it leaves the toolbar; Escape or the toolbar puts it back.
@@ -4633,9 +4634,12 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     places BlockSuite works out (from the ends, each an element id or a finite point; from
     the children) and never stores. Anything else throws a `BoardLoadError` with a
     `reason`.
-  - **Toolbar per board** (Epo 2026-11-09): the question board has Graphs, Charts and
-    Formulas slots after the shapes; the workspace canvas has Graphs, Formulas and
-    **Misc** (`sheetTools(board)`). Misc's button opens a panel above the toolbar
+  - **One toolbar, Misc per board** (Epo 2026-11-10, superseding the question board's own
+    Charts slot of 2026-11-09): both boards have Graphs, Formulas and **Misc** after the
+    shapes (`sheetTools`). Misc shows each board what it may hold (`tileFits`, by the
+    board `markBoard` names at mount): an answer board the Bar and Pie chart and Image
+    tiles, the workspace canvas also the mind map, emoji, GIFs, stickers, links and the
+    workspace's quizzes and sets. Misc's button opens a panel above the toolbar
     (`capy-misc-panel`, right-aligned, Shapes' look): one 360 × 440 frame in every view
     (Epo 2026-11-09, round 2, mock DVxJzY5A3XiYHKuqQPezST), with Back, the title or
     KLIPY's search, and a close in its header and the body scrolling inside, so
@@ -4845,7 +4849,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     which asks for the links again once when one has lapsed; a Done forgets the page's
     copy of its drawing). The marking image draws them as before, and list previews
     still draw a grey box. A drawn sample answer's board in the quiz editor still keeps
-    pictures on the page only, and an answer board has no file picker (no Misc panel).
+    pictures on the page only (a decision for Epo: the quiz would have to name them, in the
+    shared question format). An answer board's Misc has the same Image tile as the
+    canvas's.
 - **Preview (`boardPreview.ts`):** `drawBoardPreview(saved, { width, height }, board)` draws a
   saved board as an SVG string from its data, for lists, results and marking views
   (Epo 2026-11-06: what's on it, not every detail). It never loads the editor: it imports

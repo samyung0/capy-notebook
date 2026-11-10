@@ -31,11 +31,20 @@ async function placePiece(page: Page, slot: string, kind: string) {
   await page.addStyleTag({
     content: '[data-testid="mock-scenario-panel"] { display: none; }',
   });
-  await page.locator(`${slot} .piece[data-kind="${kind}"]`).first().click();
+  // Misc's pieces are tiles in its panel, which its button opens.
+  if (slot === 'capy-misc-panel')
+    await page.locator('capy-misc-button').click();
+  await page
+    .locator(
+      `${slot} ${slot === 'capy-misc-panel' ? '.tile' : '.piece'}[data-kind="${kind}"]`
+    )
+    .first()
+    .click();
   const board = await page.locator('affine-edgeless-root').boundingBox();
   if (!board) throw new Error('no board');
+  // Misc's panel covers the board's middle, and a drop on it puts nothing down.
   const middle = [
-    board.x + board.width / 2,
+    board.x + board.width * (slot === 'capy-misc-panel' ? 0.25 : 0.5),
     board.y + board.height * 0.4,
   ] as const;
   await page.mouse.move(...middle, { steps: 6 });
@@ -548,7 +557,7 @@ test('in a chart, Select moves several bars, or several lines, together', async 
   const toolbar = page.locator('affine-toolbar-widget');
   const select = page.getByRole('button', { name: 'Select' });
 
-  await placePiece(page, 'capy-chart-slot', 'bar');
+  await placePiece(page, 'capy-misc-panel', 'bar');
   await toolbar.getByLabel('Edit the chart').click();
   const at = await onPlane(page);
   const box = await page.locator('.capy-plane-editor').boundingBox();
@@ -573,7 +582,7 @@ test('in a chart, Select moves several bars, or several lines, together', async 
 
   // A pie's two lines, boxed, turn round together.
   await page.keyboard.press('v');
-  await placePiece(page, 'capy-chart-slot', 'pie');
+  await placePiece(page, 'capy-misc-panel', 'pie');
   await toolbar.getByLabel('Edit the chart').click();
   await page.mouse.click(...at(0.7, 0.5));
   await expect.poll(async () => (await chart()).spokes).toHaveLength(2);
@@ -916,7 +925,7 @@ test('bar and pie charts are their own cards, with no coordinates', async ({
       };
     });
   const charts = (kind: 'bar' | 'pie') =>
-    placePiece(page, 'capy-chart-slot', kind);
+    placePiece(page, 'capy-misc-panel', kind);
   const toolbar = page.locator('affine-toolbar-widget');
 
   // A bar chart: three places to start from. A plane's Size isn't on its toolbar.
@@ -1128,13 +1137,14 @@ test.describe('with a finger', () => {
       content: '[data-testid="mock-scenario-panel"] { display: none; }',
     });
     await page.keyboard.press('Escape');
-    // Two to a page on a phone: Note and Pen, Shapes and Graphs, Charts and Formulas.
+    // Two to a page on a phone: Note and Pen, Shapes and Graphs, Formulas and Misc.
     const next = page.locator('.senior-nav-button-wrapper.next icon-button');
     await next.tap();
     await expect(page.locator('capy-graph-slot')).toHaveCount(1);
     await next.tap();
     // A tap puts the bars in the middle of the view.
-    await page.locator('capy-chart-slot .piece[data-kind="bar"]').tap();
+    await page.locator('capy-misc-button').tap();
+    await page.locator('capy-misc-panel .tile[data-kind="bar"]').tap();
     await page
       .locator('affine-toolbar-widget')
       .getByLabel('Edit the chart')
