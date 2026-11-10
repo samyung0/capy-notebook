@@ -4775,8 +4775,31 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     an asset that isn't a ready board or image asset of the canvas is a 400. A canvas opens no room (the collaboration token route refuses
     it); the Canvas tab shows to members only, since a link or public visitor has none.
     Restoring a trashed canvas beside the live one made since is refused (409
-    `canvas_exists`). Images on the canvas are the next piece (`todo-board-images.md`);
-    `imageAssetIds` is empty until then.
+    `canvas_exists`).
+  - **Images (Epo 2026-11-09, `todo-board-images.md`):** an image block keeps only an
+    id (`sourceId`), and the board reads and stores files through its own blob source
+    (`boardBlobs.ts`, `BoardBlobSource`, in place of BlockSuite's in-memory one), which
+    the page feeds through the mount's `images` option (`boardImages.ts`). Every way an
+    image arrives (a paste, a drop, a note's slash menu) goes through BlockSuite's
+    `blobSync.set`, so the source is the one place that sees them. On the workspace
+    canvas (`assetImages` in `boardAsset.ts`) an image is stored at once as the canvas
+    material's own `image` editor asset through `uploadEditorAsset`, as a note's is:
+    compressed first, capped at the plan's image cap, refused when storage is full,
+    billed to the member and listed on Files › Embeds. The block lands with
+    BlockSuite's hash and shows the local file with the upload mark (`blobState$`);
+    when the upload completes its `sourceId` becomes the asset id and its `size` the
+    stored size, outside the undo history, and a refused image leaves the board with a
+    toast. A save waits for uploads in flight and sends `imageAssetIds`: of the ids on
+    the board, the canvas's own image assets (the ones its last save named, the ones
+    uploaded since, and any other the resolve route says belong to this material), so
+    the pruner keeps them and trashes a removed one a minute later. An image deleted
+    and brought back by undo is named again and the save restores it
+    (`assertCanvasAssets` takes a trashed image, never a trashed board). An image
+    pasted from another canvas resolves as another material's and is stored again as
+    this one's. Opened again, an image loads from its asset's link (`assetLink`). A
+    board left mid-upload keeps the hash in its device copy and shows an empty frame
+    after a reload. Answer boards still keep images on the page only: storing them
+    with the drawing is the plan's other half.
 - **Preview (`boardPreview.ts`):** `drawBoardPreview(saved, { width, height }, board)` draws a
   saved board as an SVG string from its data, for lists, results and marking views
   (Epo 2026-11-06: what's on it, not every detail). It never loads the editor: it imports
@@ -4800,7 +4823,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   `drawingBoard.css` over the note's stored style, since AFFiNE's corner field only takes
   0/8/16/24/32; the preview draws it the same. AFFiNE's slash menu is registered, offering
   text styles, lists, alignment, inline styles, Image, dates and the move/copy/delete
-  actions; Image stores its file in the board's blob store, as a pasted image does.
+  actions; Image stores its file through the board's blob source, as a pasted image does.
 - **Theme:** the board follows the app's light or dark. The app's dark themes set
   `data-theme` to a Catppuccin flavour, which AFFiNE's `[data-theme=dark]` never matches,
   so `drawingBoard.ts` puts AFFiNE's dark variables under `html.dark` (on `<html>`, for

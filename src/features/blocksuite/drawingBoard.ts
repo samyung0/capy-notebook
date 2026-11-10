@@ -99,6 +99,7 @@ import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { fitImageOffThread } from '@/lib/fitImageOffThread';
 import { fromBase64, toBase64 } from './base64';
+import { BoardBlobSource } from './boardBlobs';
 import { chartExtensions } from './boardChart';
 import { asImage } from './boardData';
 import {
@@ -109,6 +110,7 @@ import {
 } from './boardFormula';
 import { forgetFormulas } from './boardFormulaDraw';
 import { closeUp, IMAGE_SIDE_MAX, type Vec } from './boardGeometry';
+import type { BoardImages } from './boardImages';
 import { addPlane, planeExtensions, planeMarks } from './boardPlane';
 import './boardChartEditor';
 import {
@@ -328,6 +330,8 @@ export type DrawingBoardOptions = {
    * Without it, room for the board's own toolbar and undo. */
   fitPadding?: [number, number, number, number];
   onChange?: () => void;
+  /** Where its image files come from and go: none keeps them on the page only. */
+  images?: BoardImages;
   /** A fresh board starts with a plane card: the dev pages. Every answer starts on the
    * same plain board (Epo 2026-11-06). */
   plane?: boolean;
@@ -441,7 +445,8 @@ export function mountDrawingBoard(
   const saved = options.saved ? fromBase64(options.saved) : null;
   if (saved) checkSavedBoard(saved, options.board);
   const { readOnly = false } = options;
-  const workspace = new TestWorkspace();
+  const blobs = new BoardBlobSource(options.images);
+  const workspace = new TestWorkspace({ blobSources: { main: blobs } });
   workspace.storeExtensions = stores.get('store');
   workspace.meta.initialize();
   const doc = workspace.createDoc('board');
@@ -459,6 +464,24 @@ export function mountDrawingBoard(
   store.readonly = readOnly;
   const { onChange } = options;
   if (onChange) store.spaceDoc.on('update', onChange);
+  const imageBlocks = () =>
+    store.getModelsByFlavour('affine:image') as ImageBlockModel[];
+  // An image stored at once (the workspace canvas) moves its blocks to the stored
+  // id, or takes them away when it was refused: neither is a step to undo.
+  blobs.onSettled = (from, to) =>
+    store.withoutTransact(() => {
+      for (const model of imageBlocks()) {
+        if (model.props.sourceId !== from) continue;
+        if (to) store.updateBlock(model, { size: to.bytes, sourceId: to.id });
+        else store.deleteBlock(model);
+      }
+    });
+  const imageAdds = store.slots.blockUpdated.subscribe((change) => {
+    if (change.type !== 'add' || change.flavour !== 'affine:image') return;
+    const model = store.getModelById(change.id) as ImageBlockModel | null;
+    const id = model?.props.sourceId;
+    if (id) void blobs.landed(id);
+  });
   const drawn = [
     ...formulaExtensions,
     ...planeExtensions,
@@ -783,6 +806,14 @@ export function mountDrawingBoard(
       room = padding;
       if (fitted) fitView();
     },
+    /** The images on the board now, each id once, with the file the board holds
+     * for it (none: stored elsewhere and not shown yet). */
+    images: () =>
+      [
+        ...new Set(imageBlocks().flatMap(({ props }) => props.sourceId ?? [])),
+      ].map((id) => ({ file: blobs.held(id), id })),
+    /** Once no image is being stored. */
+    imagesSettled: () => blobs.settled(),
     /** Out of sight but kept mounted: an open card closes, nothing stays selected,
      * and the page's keys and pastes no longer reach it. */
     putAway: () => {
@@ -851,6 +882,7 @@ export function mountDrawingBoard(
       zoomUpdates.unsubscribe();
       unwatchTool();
       unguard?.();
+      imageAdds.unsubscribe();
       document.removeEventListener('keydown', slotKeys);
       menu.dispose();
       if (onChange) store.spaceDoc.off('update', onChange);

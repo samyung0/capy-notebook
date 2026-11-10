@@ -23,6 +23,18 @@ const canvasFor = (workspaceId: string): CanvasBody => {
 };
 
 export const canvasHandlers = [
+  // The canvas read as a material, for its owner's plan image cap; any other
+  // material falls through to the materials mock.
+  http.get('/api/materials/:id', ({ params }) => {
+    const id = String(params.id);
+    if (!id.startsWith('cv_')) return;
+    return HttpResponse.json({
+      audioMaxBytes: 20 * 1024 * 1024,
+      id,
+      imageMaxBytes: 2 * 1024 * 1024,
+      kind: 'canvas',
+    });
+  }),
   http.get('/api/workspaces/:id/canvas', ({ params }) =>
     HttpResponse.json(canvasFor(String(params.id)))
   ),

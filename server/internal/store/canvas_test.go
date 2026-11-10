@@ -91,6 +91,20 @@ func TestWorkspaceCanvasIsPersonalAndGoesWithTheMembership(t *testing.T) {
 	if _, err := f.s.SaveWorkspaceCanvas(ctx, f.user, mine.ID, image, []string{}, saved.Revision); !errors.Is(err, materialdoc.ErrInvalid) {
 		t.Fatalf("an image was taken as the board: %v", err)
 	}
+	// An image the pruner trashed is named again (its delete undone on the
+	// canvas): the save takes it and its prune restores it.
+	if _, err := f.s.pool.Exec(ctx, `UPDATE editor_assets SET trashed_at=now() WHERE id=$1`, image); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.SaveWorkspaceCanvas(ctx, f.user, mine.ID, next, []string{image}, saved.Revision); err != nil {
+		t.Fatalf("a save naming a trashed image again: %v", err)
+	}
+	if err := f.s.pool.QueryRow(ctx, `SELECT count(*) FROM editor_assets WHERE id=$1 AND trashed_at IS NOT NULL`, image).Scan(&trashed); err != nil {
+		t.Fatal(err)
+	}
+	if trashed != 0 {
+		t.Fatal("the image named again stayed trashed")
+	}
 
 	// Never shared, never copied.
 	if _, err := f.s.UpdateStandaloneMaterialPrivacy(ctx, f.user, mine.ID, "", "link"); !errors.Is(err, ErrForbidden) {

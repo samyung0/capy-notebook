@@ -1,6 +1,10 @@
 # Images on the drawing board
 
-Status: plan only (2026-11-09). Nothing built. Decisions for Epo are at the end.
+Status: the blob source (§1) and the workspace canvas half are built (2026-11-10:
+`boardBlobs.ts`, `boardImages.ts`, `assetImages` in `boardAsset.ts`,
+`WorkspaceCanvas.tsx`). Not built: answer-board images stored with the drawing (§2),
+the sample-answer board's images (§3) and the catalog limits (§5). Open for Epo
+before §2: how the image bytes travel (see "Still open").
 
 ## The problem
 
@@ -143,5 +147,17 @@ timing (upload at once).
 
 ## Still open
 
-- Nothing: the workspace canvas's server storage is `todo-workspace-canvas-storage.md`
-  (Epo 2026-11-09: a material of kind `canvas`).
+- **How an answer board's images reach the server (found 2026-11-10).** §2 sends them
+  "with the board", and today a board travels as base64 inside the JSON of Done
+  (`PUT /api/assignment-attempts/{id}/drawings/{partId}`, capped near 0.75 MB) or of a
+  practice Check (`answersMaxBytes`, 4 MiB for the whole question, shared with the
+  bank, review and assignment answer routes). Ten images of 1 MiB are about 14 MB of
+  JSON per drawing part, held in memory by the gateway while it decodes. Either the
+  caps on those routes rise to about 15 MB per drawing part, or each image goes up on
+  its own first (a stream of at most 1 MiB) and Done or Check names them, which needs a
+  place to hold a practice image before its attempt exists.
+- **A sample-answer board's images (§3)** need the quiz's document to name them, as
+  the canvas block names its images, or the pruner trashes them a minute after the
+  quiz's next save.
+- **No way to pick a file.** A paste, a drop and a note's slash menu add an image; the
+  toolbar has no image button, so a phone has no way in. It needs a mock first.

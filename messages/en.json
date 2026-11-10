@@ -3234,6 +3234,7 @@
   "workspace_canvas_saved_elsewhere": "This canvas was saved from another tab. Reload to keep drawing.",
   "workspace_canvas_save_failed": "The canvas couldn't be saved. It's kept on this device and tried again.",
   "workspace_canvas_open_failed": "The canvas couldn't be opened.",
+  "workspace_canvas_image_refused": "The image couldn't be added.",
   "drawing_answer_area": "Answer area",
   "drawing_wide_title": "This drawing is very wide",
   "drawing_wide_body": "It's marked from one picture of the whole board, so small writing may be too small to read. Move parts closer together, or write labels bigger.",

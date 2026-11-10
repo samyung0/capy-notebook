@@ -1237,6 +1237,80 @@ test('the workspace canvas keeps its plane on reload', async ({ page }) => {
   await expect.poll(() => marks(page)).toBe(1);
 });
 
+test('a pasted image on the workspace canvas is stored as its asset and opens from it', async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/workspaces/ws_bio');
+  const tab = page.getByRole('button', { name: 'Canvas' });
+  await tab.waitFor();
+  await tab.click();
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  type Images = { images(): { file?: Blob; id: string }[] };
+  const imageIds = () =>
+    page.evaluate(() =>
+      (window as unknown as { __board: Images }).__board
+        .images()
+        .map(({ id }) => id)
+    );
+  // A paste on the board, as the clipboard hands an image over.
+  await page.locator('.capy-board').click({ position: { x: 300, y: 200 } });
+  await page.evaluate(async () => {
+    const drawn = document.createElement('canvas');
+    drawn.width = 320;
+    drawn.height = 200;
+    const context = drawn.getContext('2d');
+    if (!context) throw new Error('no 2d canvas');
+    context.fillStyle = '#2f7d56';
+    context.fillRect(0, 0, 320, 200);
+    const png = await new Promise<Blob | null>((resolve) =>
+      drawn.toBlob(resolve, 'image/png')
+    );
+    if (!png) throw new Error('no image');
+    const clipboard = new DataTransfer();
+    clipboard.items.add(new File([png], 'pasted.png', { type: 'image/png' }));
+    document.querySelector('.capy-board editor-host')?.dispatchEvent(
+      new ClipboardEvent('paste', {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: clipboard,
+        composed: true,
+      })
+    );
+  });
+  // Uploaded at once as the canvas's image asset: its block keeps the asset's id.
+  await expect.poll(imageIds).toEqual([expect.stringMatching(/^asset_mock_/)]);
+  const [assetId] = await imageIds();
+  // The save 2 s after names it, so the pruner keeps it.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() =>
+          fetch('/api/workspaces/ws_bio/canvas')
+            .then((response) => response.json())
+            .then((canvas: { imageAssetIds: string[] }) => canvas.imageAssetIds)
+        ),
+      { timeout: 15_000 }
+    )
+    .toEqual([assetId]);
+  // Opened again, the board has no file in hand: the image comes from its asset.
+  await page.getByRole('button', { name: 'Dashboard' }).click();
+  await expect(page.locator('.capy-board')).toHaveCount(0);
+  await tab.click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document.querySelector<HTMLImageElement>('affine-edgeless-image img')
+            ?.naturalWidth ?? 0
+      )
+    )
+    .toBe(320);
+  expect(await imageIds()).toEqual([assetId]);
+});
+
 test('the workspace canvas stays in the URL at every width', async ({
   page,
 }) => {

@@ -10,6 +10,7 @@ import { qk } from '@/api/client';
 import { useCreateMaterial, useOwnedMaterials } from '@/api/hooks';
 import { userToast } from '@/components/ui/userToast';
 import {
+  assetImages,
   boardFile,
   boardFromAsset,
   gzipBoard,
@@ -37,11 +38,14 @@ const CANVAS_BOARD_MAX = BOARD_CATALOG.limits.CANVAS_BOARD_MAX;
  * The board opens from the material's board asset, or from this device's unsaved
  * copy when the last save didn't go up and the copy was taken at the material's
  * current revision. Saves: the cleaned-up document, gzipped, uploaded as a new
- * board asset, then recorded on the material at the revision read; the device
+ * board asset, then recorded on the material at the revision read with the
+ * canvas's images; the device
  * copy (the live snapshot, so the drawer's tool and open card are left alone)
  * follows each change in between. Another tab's save (409) stops saving until a
  * reload; any other failure waits for the next change or open, the copy holding
- * the work. Nothing here opens a room: the canvas is personal. */
+ * the work. An image uploads at once as the material's own image asset, as a
+ * note's does, and a save waits for the ones still going up. Nothing here opens
+ * a room: the canvas is personal. */
 export default function WorkspaceCanvas({
   onOpenMaterial,
   openMaterialId,
@@ -128,6 +132,9 @@ export default function WorkspaceCanvas({
     /** The board as it was left, once unmounted: what a save still in flight
      * writes the copy from, at the revision it lands on. */
     let leftDoc: string | null = null;
+    /** Which of the board's image ids the save names: this canvas's assets. */
+    let named: (ids: readonly string[]) => Promise<string[]> = () =>
+      Promise.resolve([]);
     const draftKey = () => `canvas:${materialId}`;
 
     /** The device copy: the live snapshot at the revision it was taken on, written
@@ -152,20 +159,35 @@ export default function WorkspaceCanvas({
         // Charged until the next successful save's prune.
       }
     };
-    const flush = async (prepared?: { bytes: number; doc: string }) => {
+    const flush = async (prepared?: {
+      bytes: number;
+      doc: string;
+      images: string[];
+    }) => {
       if (!(board && dirty) || stopped || saving) return;
-      dirty = false;
-      const { bytes, doc } = prepared ?? board.save({ finish: false });
-      if (bytes > CANVAS_BOARD_MAX) {
-        // The last good save stands; said once until it fits again.
-        if (!tooBig)
-          userToast({ title: m.workspace_canvas_too_big(), variant: 'error' });
-        tooBig = true;
-        return;
-      }
-      tooBig = false;
+      const drawing = board;
       let uploaded: string | null = null;
       saving = (async () => {
+        // An image still going up is in the save once it has its asset id; a
+        // board left mid-upload goes as it stands.
+        if (!prepared) await drawing.imagesSettled();
+        dirty = false;
+        const { bytes, doc, images } = prepared ?? {
+          ...drawing.save({ finish: false }),
+          images: drawing.images().map(({ id }) => id),
+        };
+        if (bytes > CANVAS_BOARD_MAX) {
+          // The last good save stands; said once until it fits again.
+          if (!tooBig)
+            userToast({
+              title: m.workspace_canvas_too_big(),
+              variant: 'error',
+            });
+          tooBig = true;
+          return;
+        }
+        tooBig = false;
+        const imageAssetIds = await named(images);
         const { uploadEditorAsset } = await import('@/api/editorAssets');
         const asset = await uploadEditorAsset(
           materialId,
@@ -176,7 +198,7 @@ export default function WorkspaceCanvas({
         uploaded = asset.assetId;
         const next = await saveWorkspaceCanvas(workspaceId, {
           boardAssetId: asset.assetId,
-          imageAssetIds: [],
+          imageAssetIds,
           revision,
         });
         uploaded = null;
@@ -249,8 +271,17 @@ export default function WorkspaceCanvas({
           ? await boardFromAsset(canvas.boardAssetId)
           : undefined);
       if (disposed) return;
+      const assets = assetImages(canvas.id, canvas.imageAssetIds, (error) =>
+        userToast({
+          description: errorCopy(error, m.workspace_canvas_image_refused()),
+          title: m.workspace_canvas_image_refused(),
+          variant: 'error',
+        })
+      );
+      named = assets.named;
       board = mountDrawingBoard(host, {
         board: 'workspace',
+        images: assets.images,
         onChange: schedule,
         saved,
         // Its quiz and flashcard cards (Epo 2026-11-09).
@@ -297,7 +328,10 @@ export default function WorkspaceCanvas({
       // already in flight rewrites the copy from `leftDoc` at the revision it
       // lands on.
       if (board && dirty) {
-        const finished = board.save();
+        const finished = {
+          ...board.save(),
+          images: board.images().map(({ id }) => id),
+        };
         leftDoc = finished.doc;
         void keep();
         if (!saving) void flush(finished);

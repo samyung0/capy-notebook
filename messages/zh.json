@@ -3234,6 +3234,7 @@
   "workspace_canvas_saved_elsewhere": "这个画布已在另一个标签页保存。重新加载后再继续绘制。",
   "workspace_canvas_save_failed": "画布无法保存。已保留在此设备上，稍后会再试。",
   "workspace_canvas_open_failed": "无法打开画布。",
+  "workspace_canvas_image_refused": "无法添加图片。",
   "drawing_answer_area": "作答区",
   "drawing_wide_title": "这幅作图很宽",
   "drawing_wide_body": "批改时会把整块画板拍成一张图，较小的字可能看不清。请把各部分移近一些，或把标注写大一些。",
