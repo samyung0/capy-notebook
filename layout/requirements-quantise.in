@@ -1,0 +1,6 @@
+# What layout/quantise.py runs under in the image's build stage: the versions
+# the measured int8 model was built with. onnxruntime matches requirements.in.
+numpy==2.2.6
+onnx==1.23.2
+onnxruntime==1.31.1
+protobuf==7.36.2

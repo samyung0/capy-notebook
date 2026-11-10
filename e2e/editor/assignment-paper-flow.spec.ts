@@ -26,9 +26,9 @@ async function asScenario(page: Page, scenario: string | null, url: string) {
 
 // The board train's gates found no spec from a member's upload through Submit
 // to staff: two pages handed in show in Approve's whole paper, and once marked
-// and closed the paper lists under the member's Files › Submissions. Fails if
+// and closed the paper lists in the member's Files. Fails if
 // Submit stops carrying the paper with the attempt.
-test('a paper of two pages reaches Approve and Files › Submissions', async ({
+test("a paper of two pages reaches Approve and the member's Files", async ({
   page,
 }) => {
   test.slow();
@@ -101,9 +101,13 @@ test('a paper of two pages reaches Approve and Files › Submissions', async ({
     });
   }, attemptId);
 
-  // Both files, each linking to the attempt they were handed in with.
+  // Both files are in the member's Files list, and one opens the attempt it
+  // was handed in with (a click selects an item there; a double click opens).
   await asScenario(page, 'workspace-member', '/files');
-  await expect(
-    page.locator(`a[href$="/quizzes/attempts/${attemptId}"]`)
-  ).toHaveCount(2, { timeout: 30_000 });
+  const papers = page.getByRole('button', {
+    name: m.files_select_item({ name: 'flat.png' }),
+  });
+  await expect(papers).toHaveCount(2, { timeout: 30_000 });
+  await papers.first().dblclick();
+  await expect(page).toHaveURL(new RegExp(`/quizzes/attempts/${attemptId}$`));
 });
