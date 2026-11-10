@@ -4022,15 +4022,16 @@ note's column at 912px (720px of text between 96px margins); Full width keeps
 the margins and drops the cap. In a box of 640px or less both fill the width
 with the note's gutters. Note previews use the same preference.
 
-General also holds Note font: Fustat with roomy block gaps, or the system font
-with the Plate playground's compact ones (paragraphs 4px padding and 1.5 line
-height, my-1 lists, quotes, code, callouts and columns; headings unchanged).
+General also holds Note font: Fustat or the system font (at weight 400). Both
+keep the note's compact gaps since 2026-11-10 (paragraphs 4px padding and 1.5
+line height, my-1 lists, quotes, code, callouts and columns); before, Fustat
+had roomier ones.
 Without a pick the style decides: capy and fisheye show Fustat, notion the system
 font. A pick is per browser in `capy.noteFont` (`noteFont.ts`), not the prefs
 blob, so the head scripts in `index.html` and `share.html` set
 `<html data-note-font>` before first paint; `tailwind.css` maps it to
-`--font-sans` and the `--note-*` gap variables on `.note-editor`, which the
-editor, View and shared note pages all render in. Applying an unchanged font
+`--font-sans` on `.note-editor`, which also sets the `--note-*` gap variables
+and which the editor, View and shared note pages all render in. Applying an unchanged font
 stores nothing, so the default keeps following the style. Shared note pages
 show the viewer's own choice (visitors without one get capy, so Fustat)
 and carry a server-rendered Aa button that switches it with plain script
