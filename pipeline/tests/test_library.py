@@ -284,6 +284,50 @@ async def test_the_shortlist_counts_only_passages_the_tag_filter_passes(
     assert [e.hit_chunk_id for e in result.excerpts] == ["c_worked_a"]
 
 
+@pytest.fixture
+def fused_rows(monkeypatch):
+    """The rows each hybrid search returned, with their per-leg ranks."""
+    seen: list[list[dict]] = []
+    real = store.hybrid_search
+
+    async def spy(**kwargs):
+        seen.append(await real(**kwargs))
+        return seen[-1]
+
+    monkeypatch.setattr(store, "hybrid_search", spy)
+    return seen
+
+
+async def test_the_keyword_leg_takes_the_first_match_the_tag_filter_passes(
+    library_db, fused_rows
+):
+    """Three passages say "worked example" and tie on rank; the unverified one
+    sorts first by id. One keyword candidate is still the verified one."""
+    await library.search("worked example", candidates=1, vector=_unit_vector(1))
+    assert [(r["id"], r["lex_rank"]) for r in fused_rows[0]] == [("c_worked_a", 1)]
+
+
+async def test_a_passage_is_matched_by_its_own_languages_query(library_db, fused_rows):
+    """Only the Spanish stemmer reduces "ajustan" and "ajustar" to one word, so
+    the passage is found through the Spanish query alone."""
+    with psycopg.connect(library_db, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO library_chunks SELECT (jsonb_populate_record(c,"
+            """ '{"id": "c_es", "chunk_idx": 9, "lang": "es"}')).*"""
+            " FROM library_chunks c WHERE c.id = 'c_intro'"
+        )
+        conn.execute(
+            "UPDATE library_chunks SET search = to_tsvector('spanish', 'ajustar una recta')"
+            " WHERE id = 'c_es'"
+        )
+        conn.execute(
+            "INSERT INTO rag_chunk_vectors_2560 VALUES('c_es', %s, %s::halfvec)",
+            (library.WORKSPACE, store.vector_literal(_unit_vector(3))),
+        )
+    await library.search("ajustan", vector=_unit_vector(0))
+    assert ("c_es", 1) in [(r["id"], r["lex_rank"]) for r in fused_rows[0]]
+
+
 async def test_a_subject_search_ranks_a_keyword_match_over_the_nearest_vector(
     library_db,
 ):

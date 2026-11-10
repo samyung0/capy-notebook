@@ -2395,9 +2395,17 @@ their own (`library._facets`, Epo 2026-11-10):
   the exact statement, 12 of them with real question embeddings and 6 with
   stored passage vectors. Through the developer tunnel a search fell from a
   median 7.0 s to 3.5 s; in the database two plans took 0.9 and 1.9 s, the
-  vector leg about 0.18 s of each. The keyword leg is the rest: it still
-  matches library-wide (54,041 passages for one question) and checks the tag
-  filter on every match.
+  vector leg about 0.18 s of each. The keyword leg was the rest, and it has
+  its own shape here too (`_LIBRARY_LEX`). An everyday question matches about
+  a quarter of the library (54,041 passages for one), and the shared leg paid
+  for that twice: each of the eight languages' queries read its own matches,
+  mostly English passages that seven of them dropped, and the tag filter was
+  checked on every match before any was ranked. Now one index scan takes the
+  passages matching any language's query, each is matched and ranked against
+  its own language's, and the tag filter is checked in rank order until the
+  candidate count pass. This is exact: 18 of 18 live searches identical in
+  every column, median database time 1.5 s to 0.8 s. What is left is ranking
+  every match (`ts_rank_cd` on about 54,000 passages).
 
 The loader's `schema` command adds `bits` by rewriting the vector table once;
 a pipeline that reads it must not be released before that
