@@ -1494,8 +1494,9 @@ Two content security policies, both built once per SPA build by
   Worker renders are sent with `Content-Security-Policy-Report-Only` listing
   the only places a page may draw an image or CSS `url()` from: `'self'`,
   `data:`, `blob:`, the environment's bucket, the `BANK_ASSETS_URL` base,
-  `https://img.clerk.com` (avatars) and `https://i.ytimg.com` (YouTube
-  posters). It stays report-only.
+  `https://img.clerk.com` (avatars), `https://i.ytimg.com` (YouTube
+  posters) and, in a build that has `VITE_KLIPY_KEY`, `https://*.klipy.com`
+  (the workspace canvas's GIFs and stickers, §11.1). It stays report-only.
 - **Scripts, enforced on the Worker's pages.** The share, summary and error
   pages the site Worker renders are also sent with an enforced
   `Content-Security-Policy` (`pagePolicy`):
@@ -3112,6 +3113,53 @@ Import stays `POST /api/workspaces/{id}/sources/import` with `fileIds` and,
 for OneDrive, optional `driveIds` of the same length. Download uses
 `/drives/{driveId}/items/{id}` when `driveId` is present, otherwise
 `/me/drive/items/{id}`.
+
+## 11.1 KLIPY GIF and sticker search
+
+The workspace canvas's GIF and Sticker tiles search KLIPY from the student's
+browser (`src/features/blocksuite/boardKlipy.ts`). Nothing passes through the
+gateway, so the setup is KLIPY's partner panel and one build value. Skip this
+section and both tiles open on "GIF search is off: this app has no KLIPY key
+yet"; the rest of the canvas works, uploading a GIF included.
+
+1. In KLIPY's partner panel (partner.klipy.com) create the app and copy its app
+   key.
+2. On that key turn ads off and set the strictest content filter. The browser
+   also asks for `content_filter=high` on every search.
+3. Ask KLIPY for production access to the key; it grants it on approval. UAT's
+   key was stored on 2026-11-10 before that approval.
+4. Set on the SPA build:
+
+```
+VITE_KLIPY_KEY=...
+```
+
+The manifest lists it as a GitHub **variable** (targets `workflow` and
+`build`), not a secret: the key ships in the browser bundle. It is a build-time
+value, so put it in the environment's local env file (`deploy/.env.uat`,
+`deploy/.env.prod`), run `pnpm env:push` (§12.7) and redeploy to rebuild the
+SPA. A `VITE_KLIPY_KEY=` line left empty in that file, as the examples have it,
+makes `pnpm env:push` delete the stored variable, and the next build ships with
+GIF search off: the real file must carry the key before any later push.
+
+A build that has the key adds `https://*.klipy.com` to the report-only image
+policy on its own (§2.4). No Cloudflare rule, bucket CORS entry or gateway
+setting is involved.
+
+KLIPY's terms the code is built on; read them again before changing any of it:
+
+- searches and media load from the browser straight from KLIPY, at the links it
+  returns: no proxy, cache or copy in the bucket, and a placed GIF stays a KLIPY
+  link;
+- results show in KLIPY's order and none is removed (the picker drops only a
+  result whose media is off `*.klipy.com`);
+- the search field's placeholder is "Search KLIPY" in every language, with
+  "Powered by KLIPY" under the results.
+
+The typed words and the per-browser customer id stay out of Sentry
+([observability-metering.md](observability-metering.md)). Replacing the key is
+the same variable and a redeploy; placed GIFs hold KLIPY's media links, not the
+key, and keep showing.
 
 ---
 

@@ -378,6 +378,12 @@ Clerk development instance. Point a local gateway at the UAT database only with
   app deploy leaves recovery pending rather than resuming incompatible workers.
 - Local UI plus UAT still renders the same summary through Vite. Full-local
   Compose uses `deploy/.env` with the renamed `CAPY_*` keys.
+- GitHub `uat` holds `VITE_KLIPY_KEY` as a variable
+  (`gh variable list --env uat | grep KLIPY`; set up in
+  [deployment-runbook.md §11.1](deployment-runbook.md#111-klipy-gif-and-sticker-search)),
+  and in a build made after it was set the workspace canvas's Misc → GIF shows
+  KLIPY's trending GIFs under a "Search KLIPY" field. "GIF search is off" there
+  means the build predates the variable or an `env:push` cleared it.
 
 
 ## Manual critical-path gate
