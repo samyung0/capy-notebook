@@ -17,6 +17,14 @@
   --capy-shape-button-triangle: #fff;
   --capy-shape-button-stroke-triangle: #d9dde3;
   --capy-note-edge: #e6e6e6;
+  /* The board keeps AFFiNE's blue for what is selected or active, as its selection
+     frames and pieces are drawn in it; chrome.css maps it to the app's accent for
+     the note. */
+  --affine-primary-color: #1e96eb;
+  --affine-brand-color: #1e96eb;
+  --affine-v2-icon-activated: #1e96eb;
+  --affine-v2-button-primary: #1e96eb;
+  --affine-v2-table-indicator-activated: #1e96eb;
   /* BlockSuite's selection layer and the ☰ menu are placed against the board, not
      against a page box that starts higher (a tablet's header row above it). */
   position: relative;
