@@ -107,9 +107,15 @@ export const NoteHeading = memo(function NoteHeading({
   return (
     // `note-editor` gives the Plate note's title its body's font; its body
     // starts 16px lower than the BlockSuite note's, taken back here, with the
-    // Info row kept above the editable that now reaches under it.
+    // Info row kept above the editable that now reaches under it. Only the
+    // title and the Info row take the pointer: the padding around them lies
+    // over the note's corner buttons (NoteDisplayToggles) and the editable's
+    // top edge, which keep their clicks.
     <div
-      className={cn('@container', plate && 'note-editor relative z-10 -mb-4')}
+      className={cn(
+        '@container',
+        plate && 'note-editor pointer-events-none relative z-10 -mb-4'
+      )}
       data-note-heading=""
     >
       <div
@@ -218,7 +224,7 @@ function NoteTitle({
       aria-label={m.common_title()}
       // 40px at 700 from 768px, shrinking as the note's headings do (note-fs).
       className={cn(
-        'note-fs block w-full resize-none overflow-hidden bg-transparent py-[3px] font-bold text-fg leading-[1.2] outline-none placeholder:text-fg-muted',
+        'note-fs pointer-events-auto block w-full resize-none overflow-hidden bg-transparent py-[3px] font-bold text-fg leading-[1.2] outline-none placeholder:text-fg-muted',
         !plate && 'px-0.5'
       )}
       maxLength={updateMaterialBodyTitleMax}
@@ -277,7 +283,7 @@ function NoteInfo({
   const canMove =
     !readonly && !!material?.capabilities.canEdit && Boolean(workspaceId);
   return (
-    <div className="mt-2 mb-2 border-divider border-y text-sm">
+    <div className="pointer-events-auto mt-2 mb-2 border-divider border-y text-sm">
       <button
         aria-expanded={open}
         className={cn(

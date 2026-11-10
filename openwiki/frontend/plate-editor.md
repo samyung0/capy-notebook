@@ -4560,7 +4560,10 @@ aligned while Plate stays in the app). Built so far:
   is kept per note for the session and shared by these views, so opening the
   editor or Preview does not close it. The editor's title is read-only while
   the note is locked (lost access, outdated, offline limit, full copy), and
-  the phone's paused copy makes it read-only too (`copyPausedView`).
+  the phone's paused copy makes it read-only too (`copyPausedView`). The
+  block lies over the note's corner buttons (`NoteDisplayToggles`) and the top
+  16px of the editable, so only the title and the Info row take the pointer:
+  clicks on its padding go through to what is under it.
 - **Gutter** (`BlockInteractions.tsx`): from `sm` a + sits left of the grip on
   a top-level block. It adds a paragraph below and types the slash, so the
   slash plugin opens its menu; left without a pick or a search, the line
