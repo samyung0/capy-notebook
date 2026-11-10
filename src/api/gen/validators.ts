@@ -476,6 +476,7 @@ export const GetAssignmentResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
+  "approvalsCheckedOff": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
@@ -495,6 +496,8 @@ export const GetAssignmentResponse = zod.object({
   "marks": zod.number(),
   "mine": zod.object({
   "attemptsUsed": zod.int(),
+  "checkedAt": zod.iso.datetime({"offset":true}).optional(),
+  "checkedOff": zod.boolean(),
   "correct": zod.number().optional(),
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
@@ -592,6 +595,7 @@ export const UpdateAssignmentResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
+  "approvalsCheckedOff": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
@@ -611,6 +615,8 @@ export const UpdateAssignmentResponse = zod.object({
   "marks": zod.number(),
   "mine": zod.object({
   "attemptsUsed": zod.int(),
+  "checkedAt": zod.iso.datetime({"offset":true}).optional(),
+  "checkedOff": zod.boolean(),
   "correct": zod.number().optional(),
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
@@ -691,6 +697,7 @@ export const SetAssignmentClosedResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
+  "approvalsCheckedOff": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
@@ -710,6 +717,8 @@ export const SetAssignmentClosedResponse = zod.object({
   "marks": zod.number(),
   "mine": zod.object({
   "attemptsUsed": zod.int(),
+  "checkedAt": zod.iso.datetime({"offset":true}).optional(),
+  "checkedOff": zod.boolean(),
   "correct": zod.number().optional(),
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
@@ -836,6 +845,7 @@ export const PublishAssignmentResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
+  "approvalsCheckedOff": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
@@ -855,6 +865,8 @@ export const PublishAssignmentResponse = zod.object({
   "marks": zod.number(),
   "mine": zod.object({
   "attemptsUsed": zod.int(),
+  "checkedAt": zod.iso.datetime({"offset":true}).optional(),
+  "checkedOff": zod.boolean(),
   "correct": zod.number().optional(),
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
@@ -914,6 +926,7 @@ export const ReleaseAssignmentGradesResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
+  "approvalsCheckedOff": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
@@ -933,6 +946,8 @@ export const ReleaseAssignmentGradesResponse = zod.object({
   "marks": zod.number(),
   "mine": zod.object({
   "attemptsUsed": zod.int(),
+  "checkedAt": zod.iso.datetime({"offset":true}).optional(),
+  "checkedOff": zod.boolean(),
   "correct": zod.number().optional(),
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
@@ -1068,6 +1083,7 @@ export const RepublishAssignmentResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
+  "approvalsCheckedOff": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
@@ -1087,6 +1103,8 @@ export const RepublishAssignmentResponse = zod.object({
   "marks": zod.number(),
   "mine": zod.object({
   "attemptsUsed": zod.int(),
+  "checkedAt": zod.iso.datetime({"offset":true}).optional(),
+  "checkedOff": zod.boolean(),
   "correct": zod.number().optional(),
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
@@ -1168,6 +1186,21 @@ export const StartAssignmentResponse = zod.object({
   "waitingAnswers": zod.int(),
   "waitingMarks": zod.number()
 })
+
+
+/**
+ * @summary Tick an assignment, or the answers waiting on it, off the caller's To do without doing it
+ */
+export const SetAssignmentTodoCheckParams = zod.object({
+  "id": zod.string()
+})
+
+export const SetAssignmentTodoCheckBody = zod.object({
+  "approvals": zod.boolean().optional(),
+  "checked": zod.boolean()
+})
+
+export const SetAssignmentTodoCheckResponse = zod.void()
 
 
 /**
@@ -2548,40 +2581,6 @@ export const ReportEditIncidentBody = zod.object({
 })
 
 export const ReportEditIncidentResponse = zod.void()
-
-
-/**
- * @summary List the images and audio the caller pays for, each marked when its note can no longer be opened
- */
-export const listEditorAssetsQueryLimitDefault = 40;
-export const listEditorAssetsQueryLimitMax = 100;
-
-
-
-export const ListEditorAssetsQueryParams = zod.object({
-  "access": zod.enum(['lost']).optional().describe('Only media in notes the caller can no longer open'),
-  "limit": zod.int().min(1).max(listEditorAssetsQueryLimitMax).default(listEditorAssetsQueryLimitDefault),
-  "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
-})
-
-export const ListEditorAssetsResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "items": zod.array(zod.object({
-  "assetId": zod.string(),
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "lostAccess": zod.boolean(),
-  "materialId": zod.string().optional(),
-  "materialTitle": zod.string(),
-  "materialType": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']),
-  "name": zod.string(),
-  "purpose": zod.enum(['image', 'audio']),
-  "sizeBytes": zod.int(),
-  "thumbnailUrl": zod.string().optional().describe('An image\'s 200 px card thumbnail, an hour-stable link; absent for audio and for images without one'),
-  "workspaceId": zod.string().optional(),
-  "workspaceName": zod.string()
-})),
-  "nextCursor": zod.string().optional()
-})
 
 
 /**
@@ -4255,6 +4254,166 @@ export const DeleteIntegrationResponse = zod.void()
 
 
 /**
+ * @summary List the caller's files, handed-in submissions it may delete, notes, quizzes, flashcard sets and embedded images and audio as one list (the Files page)
+ */
+export const listItemsQueryQMax = 120;
+
+export const listItemsQueryScopeDefault = `owned`;
+export const listItemsQuerySortDefault = `added`;
+export const listItemsQueryDirDefault = `desc`;
+export const listItemsQueryLimitDefault = 40;
+export const listItemsQueryLimitMax = 100;
+
+
+
+export const ListItemsQueryParams = zod.object({
+  "kind": zod.string().optional().describe('Comma-separated kinds: file kinds, note, quiz, flashcards; image and audio also match embedded images and audio'),
+  "workspaceId": zod.string().optional().describe('Comma-separated workspace ids; a submission sits in its assignment\'s workspace'),
+  "location": zod.string().optional().describe('Comma-separated locations: workspace, standalone'),
+  "q": zod.string().max(listItemsQueryQMax).optional().describe('Keeps rows whose shown name holds this text, any case'),
+  "scope": zod.enum(['owned', 'all']).default(listItemsQueryScopeDefault).describe('owned: what the caller pays for, wherever it sits (My files); all: those plus every file and block of its own workspaces and those it is a member of (All files)'),
+  "sort": zod.enum(['added', 'name', 'size', 'kind', 'workspace']).default(listItemsQuerySortDefault),
+  "dir": zod.enum(['asc', 'desc']).default(listItemsQueryDirDefault),
+  "limit": zod.int().min(1).max(listItemsQueryLimitMax).default(listItemsQueryLimitDefault),
+  "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
+})
+
+export const ListItemsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
+  "embed": zod.object({
+  "assetId": zod.string(),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "lostAccess": zod.boolean(),
+  "materialId": zod.string().optional(),
+  "materialTitle": zod.string(),
+  "materialType": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']),
+  "name": zod.string(),
+  "purpose": zod.enum(['image', 'audio']),
+  "sizeBytes": zod.int(),
+  "thumbnailUrl": zod.string().optional().describe('An image\'s 200 px card thumbnail, an hour-stable link; absent for audio and for images without one'),
+  "workspaceId": zod.string().optional(),
+  "workspaceName": zod.string()
+}).optional(),
+  "file": zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "addedAt": zod.iso.datetime({"offset":true}),
+  "errorId": zod.string().optional(),
+  "hasBytes": zod.boolean(),
+  "hidden": zod.boolean().optional(),
+  "id": zod.string(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
+  "indexed": zod.boolean(),
+  "isPayer": zod.boolean(),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
+  "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
+  "name": zod.string(),
+  "position": zod.int(),
+  "preview": zod.object({
+  "text": zod.string()
+}).optional(),
+  "previewUrl": zod.string().optional(),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "questions": zod.record(zod.string(), zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+})).optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+}).optional(),
+  "revision": zod.int(),
+  "rights": zod.object({
+  "clone": zod.boolean(),
+  "move": zod.boolean(),
+  "rename": zod.boolean(),
+  "trash": zod.boolean()
+}).optional().describe('What the caller may do with the file, read with the page (Files page rows)'),
+  "sizeBytes": zod.int(),
+  "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
+  "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
+  "topicId": zod.string().nullable(),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string().optional()
+}).optional(),
+  "material": zod.object({
+  "assigned": zod.boolean().optional(),
+  "assignmentId": zod.string().optional(),
+  "cardCount": zod.int().optional(),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "hidden": zod.boolean().optional(),
+  "id": zod.string(),
+  "isOwner": zod.boolean().optional(),
+  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']),
+  "lostAccess": zod.boolean().optional().describe('The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
+  "preview": zod.record(zod.string(), zod.unknown()).optional().describe('List-card preview, a union on kind (note, quiz, flashcards, mindmap, diagram); see openwiki/thumbnails.md'),
+  "privacy": zod.enum(['private', 'public', 'link']),
+  "questionCount": zod.int().optional(),
+  "sharePath": zod.string().optional(),
+  "sizeBytes": zod.int(),
+  "title": zod.string(),
+  "topicId": zod.string().nullable(),
+  "topicName": zod.string(),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string()
+}).optional(),
+  "submission": zod.object({
+  "assignmentId": zod.string(),
+  "attemptId": zod.string().optional(),
+  "bytes": zod.int(),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "quizName": zod.string(),
+  "workspaceId": zod.string().optional(),
+  "workspaceName": zod.string()
+}).optional(),
+  "type": zod.enum(['file', 'submission', 'material', 'embed'])
+})),
+  "nextCursor": zod.string().optional()
+})
+
+
+/**
  * @summary List labels
  */
 export const ListLabelsResponseItem = zod.object({
@@ -4412,6 +4571,7 @@ export const ListOwnedMaterialsResponse = zod.object({
   "createdAt": zod.iso.datetime({"offset":true}),
   "hidden": zod.boolean().optional(),
   "id": zod.string(),
+  "isOwner": zod.boolean().optional(),
   "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']),
   "lostAccess": zod.boolean().optional().describe('The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "preview": zod.record(zod.string(), zod.unknown()).optional().describe('List-card preview, a union on kind (note, quiz, flashcards, mindmap, diagram); see openwiki/thumbnails.md'),
@@ -5791,48 +5951,6 @@ export const ReadNotificationResponse = zod.void()
 
 
 /**
- * @summary Delete every paper file the caller may delete; their marks stay
- */
-export const DeleteAllPapersResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "deleted": zod.int()
-})
-
-
-/**
- * @summary The caller's handed-in paper and hand-in files they may delete, newest first (Files › Submissions)
- */
-export const listPapersQueryLimitDefault = 50;
-export const listPapersQueryLimitMax = 100;
-
-
-
-export const ListPapersQueryParams = zod.object({
-  "limit": zod.int().min(1).max(listPapersQueryLimitMax).default(listPapersQueryLimitDefault),
-  "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
-})
-
-export const ListPapersResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "count": zod.int(),
-  "items": zod.array(zod.object({
-  "assignmentId": zod.string(),
-  "attemptId": zod.string().optional(),
-  "bytes": zod.int(),
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "id": zod.string(),
-  "kind": zod.string(),
-  "name": zod.string(),
-  "quizName": zod.string(),
-  "workspaceId": zod.string().optional(),
-  "workspaceName": zod.string()
-})),
-  "nextCursor": zod.string().optional(),
-  "totalBytes": zod.int()
-})
-
-
-/**
  * @summary Delete one of the caller's deletable paper files; its marks stay
  */
 export const deletePaperPathIdMax = 64;
@@ -6857,6 +6975,7 @@ export const ListRecentResponse = zod.object({
   "createdAt": zod.iso.datetime({"offset":true}),
   "hidden": zod.boolean().optional(),
   "id": zod.string(),
+  "isOwner": zod.boolean().optional(),
   "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']),
   "lostAccess": zod.boolean().optional().describe('The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "preview": zod.record(zod.string(), zod.unknown()).optional().describe('List-card preview, a union on kind (note, quiz, flashcards, mindmap, diagram); see openwiki/thumbnails.md'),
@@ -7412,6 +7531,7 @@ export const GetTodoResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
+  "approvalsCheckedOff": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
@@ -7431,6 +7551,8 @@ export const GetTodoResponse = zod.object({
   "marks": zod.number(),
   "mine": zod.object({
   "attemptsUsed": zod.int(),
+  "checkedAt": zod.iso.datetime({"offset":true}).optional(),
+  "checkedOff": zod.boolean(),
   "correct": zod.number().optional(),
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
@@ -7471,13 +7593,10 @@ export const GetTodoResponse = zod.object({
 /**
  * @summary The To do page's Done tab: what was given to the caller that they finished or that closed, a page at a time
  */
-export const getTodoDoneQuerySortDefault = `done`;
 export const getTodoDoneQueryDirDefault = `desc`;
 
 export const GetTodoDoneQueryParams = zod.object({
-  "sort": zod.enum(['done', 'class']).default(getTodoDoneQuerySortDefault).describe('done: the day it was done, or closed if it never was; class: by class name, then done'),
   "dir": zod.enum(['asc', 'desc']).default(getTodoDoneQueryDirDefault),
-  "class": zod.string().optional().describe('Comma-separated class workspace ids'),
   "type": zod.string().optional().describe('Comma-separated: quiz, task'),
   "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
 })
@@ -7507,6 +7626,7 @@ export const GetTodoDoneResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
+  "approvalsCheckedOff": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
@@ -7526,6 +7646,8 @@ export const GetTodoDoneResponse = zod.object({
   "marks": zod.number(),
   "mine": zod.object({
   "attemptsUsed": zod.int(),
+  "checkedAt": zod.iso.datetime({"offset":true}).optional(),
+  "checkedOff": zod.boolean(),
   "correct": zod.number().optional(),
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
@@ -7561,6 +7683,20 @@ export const GetTodoDoneResponse = zod.object({
   "workspaceId": zod.string()
 }))
 })
+
+
+/**
+ * @summary Take rows off the caller's Done tab, changing nothing else
+ */
+export const hideTodoDoneBodyIdsMax = 200;
+
+
+
+export const HideTodoDoneBody = zod.object({
+  "ids": zod.array(zod.string()).min(1).max(hideTodoDoneBodyIdsMax).nullable().describe('Assignment ids to take off the caller\'s Done tab')
+})
+
+export const HideTodoDoneResponse = zod.void()
 
 
 /**
@@ -8215,6 +8351,7 @@ export const ListAssignmentsResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
+  "approvalsCheckedOff": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
@@ -8234,6 +8371,8 @@ export const ListAssignmentsResponse = zod.object({
   "marks": zod.number(),
   "mine": zod.object({
   "attemptsUsed": zod.int(),
+  "checkedAt": zod.iso.datetime({"offset":true}).optional(),
+  "checkedOff": zod.boolean(),
   "correct": zod.number().optional(),
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
@@ -8333,6 +8472,7 @@ export const CreateAssignmentResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
+  "approvalsCheckedOff": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
@@ -8352,6 +8492,8 @@ export const CreateAssignmentResponse = zod.object({
   "marks": zod.number(),
   "mine": zod.object({
   "attemptsUsed": zod.int(),
+  "checkedAt": zod.iso.datetime({"offset":true}).optional(),
+  "checkedOff": zod.boolean(),
   "correct": zod.number().optional(),
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
@@ -9417,6 +9559,7 @@ export const ListWorkspaceRecentResponse = zod.object({
   "createdAt": zod.iso.datetime({"offset":true}),
   "hidden": zod.boolean().optional(),
   "id": zod.string(),
+  "isOwner": zod.boolean().optional(),
   "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']),
   "lostAccess": zod.boolean().optional().describe('The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "preview": zod.record(zod.string(), zod.unknown()).optional().describe('List-card preview, a union on kind (note, quiz, flashcards, mindmap, diagram); see openwiki/thumbnails.md'),

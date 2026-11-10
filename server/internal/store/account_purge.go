@@ -259,7 +259,7 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 		// Make a quiz runs it started, in any workspace.
 		"question_extractions",
 		// Assignments given to it and its ticks; its attempts went above.
-		"assignment_assignees", "assignment_done"} {
+		"assignment_assignees", "assignment_done", "assignment_todo_checks", "assignment_todo_hidden"} {
 		if _, err := tx.Exec(ctx, `DELETE FROM `+table+` WHERE user_id=$1`, userID); err != nil {
 			return err
 		}

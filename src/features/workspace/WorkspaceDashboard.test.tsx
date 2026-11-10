@@ -52,6 +52,7 @@ const render = (canEdit = true) =>
         onUpload={() => undefined}
         workspace={{
           capabilities: { canEdit } as never,
+          iconId: 'ws-icon',
           id: 'ws',
           kind: page.kind,
           name: 'Biology 101',
@@ -186,6 +187,7 @@ it("lists a class's To do: answers to approve for its owner, nothing when empty"
       kind: 'marked',
       latePenaltyPct: 0,
       manage: {
+        approvalsCheckedOff: false,
         assignAll: true,
         assigned: 6,
         assignees: [],

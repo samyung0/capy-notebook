@@ -109,7 +109,8 @@ ownership transfer moves no charges (`TransferWorkspace` only swaps roles and
 still checks the recipient's file cap; the workspace cap counts members, so a
 transfer leaves it unchanged). A member who
 leaves or is removed keeps paying for what it added; the items stay in the
-workspace, and the Files page (files, blocks, trash), which lists only what the
+workspace, and the Files page (its one list of files, submissions, blocks and
+embeds, and the trash), which lists only what the
 caller pays for and so adds up to its storage meter (Sam 2026-10-19), still
 lists them. One the payer can no longer open is marked `lostAccess`
 (`lostAccessSQL`: not the owner and no reach as member, public share or
@@ -125,15 +126,13 @@ deleted, deleting or suspended owner's workspace also loses its name there
 read of it answers 404, yet its payer still trashes and purges what it pays
 for there (`lockWorkspacePayerTx`, which needs only the payer live; Sam
 2026-10-19). Every image and audio clip it pays for is listed on the Files
-page's Embeds tab (Epo 2026-10-24; `GET /api/editor-assets`,
-`ListEditorAssets` on `editor_assets_payer_idx`, migration 0110), named by
-its note's current title (an embedded quiz's or set's note), with its kind,
-size, workspace and added time, and `lostAccess` once the payer can no longer
-open that note (`lostAccessSQL` on the note's workspace). The tab lists
-everything by default; its one filter, Private files (`access=lost`, Sam
-2026-10-29), keeps only media in notes the payer can no longer open, loaded
-afresh on each switch; pages are
-keyset (newest first, ties by id) within the caller's own rows. Title and workspace name are blank once
+page (Epo 2026-10-24, one list since 2026-11-09: `GET /api/items`, whose
+embeds rows come from `ListEditorAssets` on `editor_assets_payer_idx`,
+migration 0110), named by its note's current title (an embedded quiz's or
+set's note), with its kind, size, workspace and added time, and `lostAccess`
+once the payer can no longer open that note (`lostAccessSQL` on the note's
+workspace); the Kind filter's Image and Audio take them with image and audio
+files. Title and workspace name are blank once
 that workspace's owner is no longer live. Media in a trashed note or set the
 payer can still open are left out; they go with that material's trash and
 purge. One it can open opens its note. Every one can be deleted by its payer
@@ -172,8 +171,8 @@ trigger moves any change to `frozen_bytes` or `frozen_by` anyway. Deleting the
 assignment or the workspace releases both, and a workspace clone leaves them out.
 Purging the publisher deletes the images, as it deletes everything it pays for, but
 keeps the questions, so the class keeps the paper and its members' work, charged to
-nobody. The Embeds tab joins through a material and doesn't list any of this, so
-such a payer's meter runs ahead of that tab by its size
+nobody. The Files page's embeds join through a material and don't list any of
+this, so such a payer's meter runs ahead of that list by its size
 ([study-progress.md](study-progress.md#assignments)). An attempt's snapshot isn't
 charged.
 
@@ -285,10 +284,10 @@ objects for the reaper.
   A paper's files (an assignment answered on paper, `files.attempt_id`) reserve
   the same way (`reservePaperStorageTx`), within 15 files and the member's
   source file cap across them; Upload file can only start while storage is not
-  full, and Files › Submissions deletes them once marked and closed. A hand-in's
+  full, and the Files page deletes them once marked and closed. A hand-in's
   files (`files.hand_in_assignment_id`, an unmarked assignment that takes files)
   reserve the same way within the same bounds, are stored with no parse or
-  credits, and Files › Submissions deletes them once the assignment closes.
+  credits, and the Files page deletes them once the assignment closes.
   Like Upload file, a hand-in takes a new file only while the member's storage
   is not full (`storageFullErr` in `checkHandInUploadTx`, at the ticket and the
   upload session; Epo 2026-11-09, Q728 A): a file added while there was room

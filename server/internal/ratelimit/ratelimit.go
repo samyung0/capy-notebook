@@ -88,6 +88,9 @@ type Config struct {
 	// BankComment applies to question-bank comment posts, each a notice in
 	// the maintainers' digest.
 	BankComment Rule
+	// Assignment applies to making an assignment and publishing a draft, each
+	// an update to every member's To do.
+	Assignment Rule
 }
 
 // DefaultConfig is tuned for a single-seat free tier: generous enough that
@@ -115,6 +118,8 @@ func DefaultConfig() Config {
 		Review: Rule{Limit: 60, Window: time.Hour, Burst: 10},
 		// Epo 2026-10-24, Q314.
 		BankComment: Rule{Limit: 120, Window: time.Hour, Burst: 20},
+		// Epo 2026-11-10: staff post a few at a time; a script stops at 20.
+		Assignment: Rule{Limit: 60, Window: time.Hour, Burst: 20},
 	}
 }
 

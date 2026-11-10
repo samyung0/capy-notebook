@@ -354,11 +354,6 @@ export const qk = {
   deletionPreflight: ['account', 'deletion'] as const,
   /** Files › Canvas: the caller's marked drawings. */
   drawings: ['drawings'] as const,
-  /** The images and audio the caller pays for (the Embeds tab), all or one
-   * access filter. */
-  editorAssets: (access?: string) =>
-    ['editor-assets', access ?? 'all'] as const,
-  editorAssetsRoot: ['editor-assets'] as const,
   eventStream: ['event-stream'] as const,
   events: ['events'] as const,
   exploreFlashcardSets: ['explore', 'flashcardSets'] as const,
@@ -376,6 +371,12 @@ export const qk = {
   ingestSlots: ['me', 'ingest-slots'] as const,
   integrations: ['integrations'] as const,
   invoices: ['billing', 'invoices'] as const,
+  /** The Files page's list (files, submissions, blocks, embeds), under the
+   * owned files' root so whatever refreshes the owned file lists refreshes it
+   * too; a setQueriesData over that root skips it (patchFileInCache). */
+  items: (params?: unknown) =>
+    ['files', 'owned', 'items', params ?? null] as const,
+  itemsRoot: ['files', 'owned', 'items'] as const,
   labels: ['labels'] as const,
   /** Learning's Overview. */
   learningOverview: ['review', 'learning'] as const,
@@ -397,10 +398,11 @@ export const qk = {
   notificationUnread: ['notifications', 'unread-count'] as const,
   ownedFiles: (params?: unknown) => ['files', 'owned', params ?? null] as const,
   ownedFilesRoot: ['files', 'owned'] as const,
+  /** GET /materials: the blocks a member can open, as the workspace canvas
+   * lists a workspace's quizzes and sets. */
   ownedMaterials: (params?: unknown) =>
     ['materials', 'owned', params ?? null] as const,
   ownedMaterialsRoot: ['materials', 'owned'] as const,
-  papers: ['papers'] as const,
   pastReviews: (params?: unknown) =>
     ['review', 'past', params ?? null] as const,
   /** The workspace's Practice page; refreshed with the rest of study. */

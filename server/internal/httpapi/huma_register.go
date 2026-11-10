@@ -108,9 +108,11 @@ func mapHTTPError(err error) error {
 		return nil
 	}
 	for code, rowCap := range map[string]error{
-		"comment_limit":    store.ErrTooManyComments,
-		"annotation_limit": store.ErrTooManyAnnotations,
-		"event_limit":      store.ErrTooManyEvents,
+		"comment_limit":         store.ErrTooManyComments,
+		"annotation_limit":      store.ErrTooManyAnnotations,
+		"event_limit":           store.ErrTooManyEvents,
+		"assignment_limit":      store.ErrTooManyAssignments,
+		"assignment_open_limit": store.ErrTooManyOpenAssignments,
 	} {
 		if errors.Is(err, rowCap) {
 			return conflictError(code, rowCap.Error())
@@ -608,6 +610,7 @@ func registerRoutes(api huma.API, a *api) {
 	a.registerChat(api)
 	a.registerContent(api)
 	a.registerEditorAssets(api)
+	a.registerItems(api)
 	a.registerThumbnails(api)
 	a.registerSourceUploads(api)
 	a.registerGenerate(api)

@@ -31,21 +31,21 @@ export const failureScenarios = [
     id: 'file-list',
     label: 'Files list GET 500',
     method: 'get',
-    paths: ['/api/files', '/api/workspaces/:id/files'],
+    paths: ['/api/files', '/api/items', '/api/workspaces/:id/files'],
     status: 500,
   },
   {
     id: 'file-list-forbidden',
     label: 'Files list GET 403',
     method: 'get',
-    paths: ['/api/files', '/api/workspaces/:id/files'],
+    paths: ['/api/files', '/api/items', '/api/workspaces/:id/files'],
     status: 403,
   },
   {
     id: 'file-list-network',
     label: 'Files list network error',
     method: 'get',
-    paths: ['/api/files', '/api/workspaces/:id/files'],
+    paths: ['/api/files', '/api/items', '/api/workspaces/:id/files'],
     status: 'network',
   },
   {
@@ -596,7 +596,7 @@ export const failureScenarios = [
     id: 'dashboard-lists',
     label: 'Dashboard lists GET 503',
     method: 'get',
-    paths: ['/api/workspaces', '/api/files', '/api/materials'],
+    paths: ['/api/workspaces', '/api/files', '/api/items', '/api/materials'],
     status: 503,
   },
   {

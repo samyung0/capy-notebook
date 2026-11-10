@@ -126,11 +126,12 @@ func decodeListCursor(cursor string) (primary, id string, ok bool, err error) {
 	if err != nil {
 		return "", "", false, ErrInvalidCursor
 	}
-	primary, id, found := strings.Cut(string(raw), "|")
-	if !found {
+	// Split at the last bar: a name or title may hold one, an id never does.
+	at := strings.LastIndex(string(raw), "|")
+	if at < 0 {
 		return "", "", false, ErrInvalidCursor
 	}
-	return primary, id, true, nil
+	return string(raw[:at]), string(raw[at+1:]), true, nil
 }
 
 // cursorClause returns the keyset predicate for one page and the typed cursor
@@ -218,6 +219,9 @@ type MaterialListFilter struct {
 	IDs       []string
 	Locations []string
 	Member    bool
+	// All adds every block of the caller's own and member workspaces to what
+	// it pays for, as FileListFilter.All (the Files page's All files).
+	All       bool
 	Sort      string
 	Ascending bool
 	Limit     int
@@ -249,6 +253,9 @@ type MaterialListItem struct {
 	// Assigned and AssignmentID as MaterialRef.
 	Assigned     bool   `json:"assigned,omitempty"`
 	AssignmentID string `json:"assignmentId,omitempty"`
+	// IsOwner: the caller owns it, so it may rename, share and delete it; All
+	// files also lists other members' blocks.
+	IsOwner bool `json:"isOwner,omitempty"`
 }
 
 // forAssignee keeps from a quiz's assignee that it is hidden from others and its
@@ -289,6 +296,9 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 		where = ` WHERE m.id IN (SELECT id FROM materials WHERE workspace_id IS NULL AND owner_user_id=$1
 			UNION ALL SELECT id FROM materials WHERE workspace_id IN (` + visibleWorkspacesSQL("$1") + `))
 			AND (workspace_item_visible(m.hidden, m.workspace_id, $1) OR ` + quizAssignedToSQL("m.id", "$1") + ` IS NOT NULL)`
+	} else if f.All {
+		where = ` WHERE (m.owner_user_id=$1 OR m.workspace_id IN (` + memberWorkspacesSQL("$1") + `))
+			AND (workspace_item_visible(m.hidden, m.workspace_id, $1) OR ` + quizAssignedToSQL("m.id", "$1") + ` IS NOT NULL)`
 	}
 	where += ` AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND m.kind = ANY($2)`
 	if len(f.WorkspaceIDs) > 0 {
@@ -323,7 +333,7 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 			CASE WHEN m.kind='quiz' THEN (SELECT (SELECT count(*) FROM jsonb_array_elements(elem->'children') child WHERE child->>'type'='quiz_question')
 				FROM jsonb_array_elements(m.content->'value') elem WHERE elem->>'type'='quiz' LIMIT 1) END,
 			CASE WHEN m.kind='flashcards' THEN (SELECT count(*) FROM flashcard_cards fc WHERE fc.material_id=m.id) END,
-			m.preview, `+lostMaterialSQL+`, m.hidden, `+materialAssignedCols("$1")+`
+			m.preview, `+lostMaterialSQL+`, m.hidden, `+materialAssignedCols("$1")+`, m.owner_user_id=$1
 		FROM materials m
 		LEFT JOIN topics c ON c.id=m.topic_id`+where+
 		orderClause(sort, "m.id", f.Ascending)+fmt.Sprintf(` LIMIT $%d`, len(args)), args...)
@@ -337,7 +347,8 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 		if err := rows.Scan(&item.ID, &item.Kind, &item.Title, &item.WorkspaceID, &item.WorkspaceName,
 			&item.TopicID, &item.TopicName,
 			&item.Privacy, &item.CreatedAt, &item.UpdatedAt, &item.SizeBytes,
-			&item.QuestionCount, &item.CardCount, &item.Preview, &item.LostAccess, &item.Hidden, &item.Assigned, &item.AssignmentID); err != nil {
+			&item.QuestionCount, &item.CardCount, &item.Preview, &item.LostAccess, &item.Hidden, &item.Assigned, &item.AssignmentID,
+			&item.IsOwner); err != nil {
 			return MaterialPage{}, err
 		}
 		item.forAssignee()
@@ -378,7 +389,7 @@ func lostMaterialItem(item MaterialListItem) MaterialListItem {
 	return MaterialListItem{
 		ID: item.ID, Kind: item.Kind, Title: item.Title, WorkspaceID: item.WorkspaceID,
 		WorkspaceName: item.WorkspaceName, Privacy: item.Privacy, CreatedAt: item.CreatedAt,
-		UpdatedAt: item.CreatedAt, SizeBytes: item.SizeBytes, LostAccess: true,
+		UpdatedAt: item.CreatedAt, SizeBytes: item.SizeBytes, LostAccess: true, IsOwner: item.IsOwner,
 	}
 }
 

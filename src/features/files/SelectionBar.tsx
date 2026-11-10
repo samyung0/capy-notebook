@@ -25,7 +25,7 @@ export function SelectionBar({
   return (
     <div className="-mx-1.5 flex min-h-10 w-full items-center gap-1 sm:min-h-11.5">
       <IconButton
-        className="p-1.5"
+        className="-translate-y-px p-1.5"
         disabled={busy}
         icon="x"
         label={m.files_clear_selection()}

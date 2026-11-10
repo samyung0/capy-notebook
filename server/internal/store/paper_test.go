@@ -101,15 +101,14 @@ func TestPaperIsHandedInReadAndDeleted(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Marked but open: staff may still revise it.
-	if page, err := f.s.ListSubmittedPapers(ctx, f.viewer, "", 50); err != nil || page.Count != 0 {
-		t.Fatalf("open assignment listed %+v, err %v", page, err)
+	if got := submissionsOf(t, f.s, f.viewer); len(got) != 0 {
+		t.Fatalf("open assignment listed %+v", got)
 	}
 	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now.Add(4*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	page, err := f.s.ListSubmittedPapers(ctx, f.viewer, "", 50)
-	if err != nil || page.Count != 1 || page.Items[0].ID != file.ID || page.TotalBytes != 4096 {
-		t.Fatalf("listed %+v, err %v", page, err)
+	if got := submissionsOf(t, f.s, f.viewer); len(got) != 1 || got[0].ID != file.ID || got[0].Bytes != 4096 {
+		t.Fatalf("listed %+v", got)
 	}
 	if n, err := f.s.DeleteSubmittedPapers(ctx, f.viewer, nil); err != nil || n != 1 {
 		t.Fatalf("deleted %d, err %v", n, err)
@@ -176,15 +175,14 @@ func TestHandInIsHandedInAndDeleted(t *testing.T) {
 		t.Fatalf("staff link: %v", err)
 	}
 
-	if page, err := f.s.ListSubmittedPapers(ctx, f.viewer, "", 50); err != nil || page.Count != 0 {
-		t.Fatalf("open assignment listed %+v, err %v", page, err)
+	if got := submissionsOf(t, f.s, f.viewer); len(got) != 0 {
+		t.Fatalf("open assignment listed %+v", got)
 	}
 	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now.Add(2*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	page, err := f.s.ListSubmittedPapers(ctx, f.viewer, "", 50)
-	if err != nil || page.Count != 1 || page.Items[0].ID != file.ID || page.Items[0].QuizName != "Lab write-up" || page.Items[0].AttemptID != "" {
-		t.Fatalf("listed %+v, err %v", page, err)
+	if got := submissionsOf(t, f.s, f.viewer); len(got) != 1 || got[0].ID != file.ID || got[0].QuizName != "Lab write-up" || got[0].AttemptID != "" {
+		t.Fatalf("listed %+v", got)
 	}
 	if n, err := f.s.DeleteSubmittedPapers(ctx, f.viewer, nil); err != nil || n != 1 {
 		t.Fatalf("deleted %d, err %v", n, err)
@@ -222,4 +220,20 @@ func TestUnmarkedFollowsTheLateRules(t *testing.T) {
 	if err := f.s.SetAssignmentDone(ctx, f.viewer, closing.ID, true, after); !errors.Is(err, ErrAssignmentClosed) {
 		t.Fatalf("ticked after a No late due date: %v", err)
 	}
+}
+
+// submissionsOf lists user's submissions as the Files page does (ListItems).
+func submissionsOf(t *testing.T, s *Store, user string) []SubmittedPaper {
+	t.Helper()
+	page, err := s.ListItems(context.Background(), user, ItemListFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []SubmittedPaper
+	for _, item := range page.Items {
+		if item.Submission != nil {
+			out = append(out, *item.Submission)
+		}
+	}
+	return out
 }

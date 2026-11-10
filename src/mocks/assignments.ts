@@ -227,6 +227,8 @@ const markedDrawings: MarkedDrawing[] = [
     workspaceName: 'Biology 101',
   },
 ];
+const minutes = (count: number) =>
+  new Date(Date.now() + count * 60_000).toISOString();
 const at = (days: number, hours = 18) => {
   const d = new Date(Date.now() + days * DAY);
   d.setHours(hours, 0, 0, 0);
@@ -556,7 +558,8 @@ function seed() {
       questions: pastPaper(),
       quizId: quizzes[0]?.id,
       timeLimitMin: 60,
-      title: 'Mock exam on paper',
+      title:
+        'Mock exam on paper: Paper 2 structured questions on cells, tissues and organisation',
     },
     {
       ...common,
@@ -618,6 +621,94 @@ function seed() {
       quizId: quizzes[0]?.id,
       title: 'Membranes quiz',
     },
+    // Given to the viewer by name ("You"), so the owner's To do shows how each
+    // kind of due date reads: overdue, the last hour of No late, today,
+    // tomorrow, further out and none.
+    ...(
+      [
+        ['as_me_overdue', 'unmarked', 'Return the lab coats', at(-1, 17)],
+        ['as_me_soon', 'marked', 'Enzymes quick check', minutes(40)],
+        ['as_me_today', 'unmarked', 'Print the field trip forms', minutes(180)],
+        ['as_me_tomorrow', 'marked', 'Photosynthesis quiz', at(1, 9)],
+        [
+          'as_me_week',
+          'unmarked',
+          'Review the revision guide and write a one-page summary of chapters 3 to 5 before Friday',
+          at(8, 16),
+        ],
+        ['as_me_far', 'marked', 'End of term paper', at(75, 9)],
+        ['as_me_open', 'unmarked', 'Tidy the shared notes', undefined],
+      ] as const
+    ).map(
+      ([id, kind, title, dueAt]): Row => ({
+        ...common,
+        assignAll: false,
+        assignees: [db.user.id],
+        dueAt,
+        // Two tasks carry files, for the details dialog's list.
+        files:
+          id === 'as_me_week'
+            ? files.slice(0, 2).map((f) => ({ fileId: f.id }))
+            : id === 'as_me_today' && files[2]
+              ? [{ fileId: files[2].id }]
+              : [],
+        id,
+        kind,
+        noLate: id === 'as_me_soon',
+        postedAt: at(-2, 9),
+        questions: kind === 'marked' ? worksheet(5) : undefined,
+        timeLimitMin: id === 'as_me_tomorrow' ? 20 : undefined,
+        title,
+      })
+    ),
+    // Two more classes given to the viewer by name, so To do groups several.
+    ...(
+      [
+        [
+          'as_hist_essay',
+          'ws_hist',
+          'unmarked',
+          'Essay: the long-term and short-term causes of the First World War, with sources',
+          at(3, 9),
+        ],
+        [
+          'as_hist_quiz',
+          'ws_hist',
+          'marked',
+          'Cold War quiz: the Berlin Blockade, the Cuban Missile Crisis and détente',
+          at(2, 13),
+        ],
+        ['as_hist_read', 'ws_hist', 'unmarked', 'Read chapter 4', undefined],
+        [
+          'as_eng_poetry',
+          'ws_eng',
+          'marked',
+          'Poetry analysis quiz',
+          minutes(300),
+        ],
+        [
+          'as_eng_macbeth',
+          'ws_eng',
+          'unmarked',
+          'Annotate Macbeth Act 1',
+          at(5, 17),
+        ],
+      ] as const
+    ).map(
+      ([id, workspaceId, kind, title, dueAt]): Row => ({
+        ...common,
+        assignAll: false,
+        assignees: [db.user.id],
+        dueAt,
+        id,
+        kind,
+        postedAt: at(-3, 9),
+        questions: kind === 'marked' ? worksheet(6) : undefined,
+        timeLimitMin: id === 'as_hist_quiz' ? 15 : undefined,
+        title,
+        workspaceId,
+      })
+    ),
   ];
   for (const row of list) rows.set(row.id, row);
 
@@ -711,6 +802,16 @@ function seed() {
 
 /** Who ticked an unmarked assignment, and when. */
 const done = new Map<string, Map<string, string>>();
+/** The viewer's To do ticks that aren't the work (Epo 2026-11-10): `work` on
+ * their own quiz or hand-in, `approvals` on the answers waiting for them. */
+const todoChecks = new Map<string, { approvals?: string; work?: string }>();
+/** Who posted in the other classes, so To do's Posted by varies. */
+const POSTERS: Record<string, string> = {
+  ws_eng: 'Ms Rivera',
+  ws_hist: 'Mr Okafor',
+};
+/** Rows taken off Done, by when: finished again after, they come back. */
+const todoHidden = new Map<string, number>();
 
 const pastDue = (row: Row) =>
   !!row.dueAt && Date.parse(row.dueAt) <= Date.now();
@@ -922,7 +1023,7 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
     marks,
     noLate: row.noLate,
     postedAt: row.postedAt,
-    postedBy: db.user.name,
+    postedBy: POSTERS[row.workspaceId] ?? db.user.name,
     practiceQuizId: row.releasedAt && !gradesHidden ? row.quizId : undefined,
     questions: questions.length,
     timeLimitMin: row.timeLimitMin,
@@ -932,6 +1033,18 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
     ...(staff
       ? {
           manage: {
+            // Ticked off until an answer is submitted after it.
+            approvalsCheckedOff: (() => {
+              const at = todoChecks.get(row.id)?.approvals;
+              const latest = assigned
+                .flatMap((id) => submissions(row.id, id))
+                .filter((a) => totals(a.graded).waitingAnswers > 0)
+                .reduce(
+                  (max, a) => Math.max(max, Date.parse(a.submittedAt ?? '')),
+                  Number.NEGATIVE_INFINITY
+                );
+              return !!at && Date.parse(at) >= latest;
+            })(),
             assignAll: row.assignAll,
             assigned: assigned.length,
             assignees: row.assignees,
@@ -978,6 +1091,8 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
                 a.userId === db.user.id &&
                 a.submittedAt
             ).length,
+            checkedAt: todoChecks.get(row.id)?.work,
+            checkedOff: !!todoChecks.get(row.id)?.work,
             correct: gradesHidden ? undefined : myTotals?.correct,
             countedAttemptId: mine?.id,
             done: !!mine || !!tick,
@@ -1379,6 +1494,55 @@ export function workspaceMaterialRefs(wsId: string, viewer: Viewer) {
   return refs;
 }
 
+/** The viewer's submissions on the Files page: papers of closed assignments,
+ * every part marked; hand-ins of closed ones. */
+export function submittedPapers(): SubmittedPaper[] {
+  seed();
+  const workspaceName = (id: string) =>
+    db.workspaces.find((w) => w.id === id)?.name ?? '';
+  const items: SubmittedPaper[] = [...attempts.values()].flatMap((a) => {
+    const row = rows.get(a.assignmentId);
+    const marked = a.graded.every((q) => q.parts.every((p) => !p.pending));
+    if (
+      !row ||
+      a.userId !== db.user.id ||
+      a.paper !== 'read' ||
+      !marked ||
+      !closedAtOf(row)
+    )
+      return [];
+    return (a.paperFiles ?? []).map((f) => ({
+      assignmentId: row.id,
+      attemptId: a.id,
+      bytes: f.sizeBytes,
+      createdAt: a.submittedAt ?? a.startedAt,
+      id: f.id,
+      kind: f.kind,
+      name: f.name,
+      quizName: row.title,
+      workspaceId: row.workspaceId,
+      workspaceName: workspaceName(row.workspaceId),
+    }));
+  });
+  for (const [assignmentId, byUser] of handIns) {
+    const row = rows.get(assignmentId);
+    if (!row || !isClosed(row)) continue;
+    for (const f of byUser.get(db.user.id) ?? [])
+      items.push({
+        assignmentId,
+        bytes: f.sizeBytes,
+        createdAt: row.postedAt,
+        id: f.id,
+        kind: f.kind,
+        name: f.name,
+        quizName: row.title,
+        workspaceId: row.workspaceId,
+        workspaceName: workspaceName(row.workspaceId),
+      });
+  }
+  return items;
+}
+
 const gone = () => new HttpResponse(null, { status: 404 });
 const conflict = (code: string, detail: string) =>
   HttpResponse.json(
@@ -1420,38 +1584,32 @@ export const assignmentHandlers = (viewer: Viewer) => {
         .filter((ws) => ws.items.length > 0);
       return HttpResponse.json({ workspaces } satisfies TodoList);
     }),
-    // The Done tab: done or closed, sorted, filtered and paged like the server.
+    // The Done tab: done, ticked off or closed, sorted, filtered and paged like
+    // the server.
     http.get('/api/todo/done', ({ request }) => {
       seed();
       const search = new URL(request.url).searchParams;
       const list = (key: string) =>
         (search.get(key) ?? '').split(',').filter(Boolean);
-      const classes = list('class');
       const kinds = list('type').map((t) =>
         t === 'quiz' ? 'marked' : 'unmarked'
       );
       const asc = search.get('dir') === 'asc';
       const at = (a: Assignment) =>
-        Date.parse(a.mine?.doneAt ?? a.closedAt ?? '') || 0;
+        Date.parse(a.mine?.doneAt ?? a.mine?.checkedAt ?? a.closedAt ?? '') ||
+        0;
       const named = db.workspaces.filter((ws) => ws.kind === 'class');
-      const nameOf = (a: Assignment) =>
-        named.find((ws) => ws.id === a.workspaceId)?.name ?? '';
       const done = [...rows.values()]
         .map((row) => toAssignment(row, viewer))
         .filter(
           (a) =>
             a.mine &&
             !a.draft &&
-            (a.mine.done || a.closedAt) &&
-            (classes.length === 0 || classes.includes(a.workspaceId)) &&
-            (kinds.length === 0 || kinds.includes(a.kind))
+            (a.mine.done || a.mine.checkedOff || a.closedAt) &&
+            (kinds.length === 0 || kinds.includes(a.kind)) &&
+            at(a) > (todoHidden.get(a.id) ?? -1)
         )
-        .sort((a, b) =>
-          search.get('sort') === 'class'
-            ? (asc ? -1 : 1) * nameOf(a).localeCompare(nameOf(b)) ||
-              at(b) - at(a)
-            : (asc ? 1 : -1) * (at(a) - at(b))
-        );
+        .sort((a, b) => (asc ? 1 : -1) * (at(a) - at(b)));
       const offset = Number(search.get('cursor') ?? 0);
       const page = done.slice(offset, offset + 30);
       const workspaces: TodoWorkspace[] = [];
@@ -1637,6 +1795,28 @@ export const assignmentHandlers = (viewer: Viewer) => {
       if (body.done) ticks.set(db.user.id, new Date().toISOString());
       else ticks.delete(db.user.id);
       done.set(id, ticks);
+      return new HttpResponse(null, { status: 204 });
+    }),
+    // Off the caller's Done tab; nothing else changes.
+    http.post('/api/todo/done/hide', async ({ request }) => {
+      seed();
+      const { ids } = (await request.json()) as { ids: string[] };
+      for (const id of ids) todoHidden.set(id, Date.now());
+      return new HttpResponse(null, { status: 204 });
+    }),
+    // A To do tick that isn't the work: nothing is submitted or handed in.
+    http.put('/api/assignments/:id/todo-check', async ({ params, request }) => {
+      seed();
+      const row = rowOf(params.id);
+      if (!row) return gone();
+      const body = (await request.json()) as {
+        approvals?: boolean;
+        checked: boolean;
+      };
+      const side = body.approvals ? 'approvals' : 'work';
+      const ticks = todoChecks.get(row.id) ?? {};
+      ticks[side] = body.checked ? new Date().toISOString() : undefined;
+      todoChecks.set(row.id, ticks);
       return new HttpResponse(null, { status: 204 });
     }),
     http.post('/api/assignments/:id/start', async ({ params, request }) => {
@@ -1856,57 +2036,6 @@ export const assignmentHandlers = (viewer: Viewer) => {
         url: paperUrls.get(String(params.fileId)) ?? SCAN,
       })
     ),
-    // Files › Submissions: papers of closed assignments, every part marked;
-    // hand-ins of closed ones.
-    http.get('/api/papers', () => {
-      const items: SubmittedPaper[] = [...attempts.values()].flatMap((a) => {
-        const row = rowOf(a.assignmentId);
-        const marked = a.graded.every((q) => q.parts.every((p) => !p.pending));
-        if (
-          !row ||
-          a.userId !== db.user.id ||
-          a.paper !== 'read' ||
-          !marked ||
-          !closedAtOf(row)
-        )
-          return [];
-        return (a.paperFiles ?? []).map((f) => ({
-          assignmentId: row.id,
-          attemptId: a.id,
-          bytes: f.sizeBytes,
-          createdAt: a.submittedAt ?? a.startedAt,
-          id: f.id,
-          kind: f.kind,
-          name: f.name,
-          quizName: row.title,
-          workspaceId: row.workspaceId,
-          workspaceName:
-            db.workspaces.find((w) => w.id === row.workspaceId)?.name ?? '',
-        }));
-      });
-      for (const [assignmentId, byUser] of handIns) {
-        const row = rowOf(assignmentId);
-        if (!row || !isClosed(row)) continue;
-        for (const f of byUser.get(db.user.id) ?? [])
-          items.push({
-            assignmentId,
-            bytes: f.sizeBytes,
-            createdAt: row.postedAt,
-            id: f.id,
-            kind: f.kind,
-            name: f.name,
-            quizName: row.title,
-            workspaceId: row.workspaceId,
-            workspaceName:
-              db.workspaces.find((w) => w.id === row.workspaceId)?.name ?? '',
-          });
-      }
-      return HttpResponse.json({
-        count: items.length,
-        items,
-        totalBytes: items.reduce((n, p) => n + p.bytes, 0),
-      });
-    }),
     http.delete('/api/papers/:id', ({ params }) => {
       for (const a of attempts.values())
         a.paperFiles = a.paperFiles?.filter((f) => f.id !== params.id);
@@ -1916,15 +2045,6 @@ export const assignmentHandlers = (viewer: Viewer) => {
           db.user.id,
           handInOf(assignmentId, db.user.id).filter((f) => f.id !== params.id)
         );
-      return HttpResponse.json({ deleted: 1 });
-    }),
-    http.delete('/api/papers', () => {
-      for (const a of attempts.values())
-        if (a.userId === db.user.id && a.paper === 'read') a.paperFiles = [];
-      for (const [assignmentId] of handIns) {
-        const row = rowOf(assignmentId);
-        if (row && isClosed(row)) setHandIn(assignmentId, db.user.id, []);
-      }
       return HttpResponse.json({ deleted: 1 });
     }),
     http.post(

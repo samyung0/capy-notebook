@@ -146,6 +146,9 @@ type AssignmentManage struct {
 	// 2026-11-08, mock T3).
 	ToApprove int `json:"toApprove"`
 	NotGraded int `json:"notGraded"`
+	// ApprovalsCheckedOff: the caller ticked the answers waiting off their To do
+	// (SetAssignmentTodoCheck), and none was submitted since.
+	ApprovalsCheckedOff bool `json:"approvalsCheckedOff"`
 }
 
 // AssignmentMine is the caller's own state on an assignment given to them.
@@ -171,6 +174,11 @@ type AssignmentMine struct {
 	LatePenaltyPct int  `json:"latePenaltyPct"`
 	// Missing: a marked one past its due date with nothing submitted.
 	Missing bool `json:"missing"`
+	// CheckedOff: they ticked a marked one, or one handed in with files, off
+	// their To do without doing it (SetAssignmentTodoCheck), at CheckedAt.
+	// Done stays false.
+	CheckedOff bool       `json:"checkedOff"`
+	CheckedAt  *time.Time `json:"checkedAt,omitempty"`
 	// HandIn is their work on an unmarked one that takes files (S3), in order.
 	HandIn []PaperFile `json:"handIn,omitempty"`
 }
@@ -308,7 +316,7 @@ func (s *Store) readAssignments(ctx context.Context, userID string, staff bool, 
 		return nil, err
 	}
 	if staff {
-		if err := s.fillAssignmentManage(ctx, ids, at, list); err != nil {
+		if err := s.fillAssignmentManage(ctx, userID, ids, at, list); err != nil {
 			return nil, err
 		}
 	}
@@ -436,8 +444,9 @@ const assigneesSQL = `SELECT a.id AS assignment_id, wm.user_id
 	WHERE a.id = ANY($1) AND ((a.assign_all AND wm.role='viewer')
 		OR EXISTS (SELECT 1 FROM assignment_assignees aa WHERE aa.assignment_id=a.id AND aa.user_id=wm.user_id))`
 
-// fillAssignmentManage adds the counts and the named assignees.
-func (s *Store) fillAssignmentManage(ctx context.Context, ids []string, at map[string]int, list []Assignment) error {
+// fillAssignmentManage adds the counts, the named assignees and whether the
+// caller ticked the answers waiting off their To do.
+func (s *Store) fillAssignmentManage(ctx context.Context, userID string, ids []string, at map[string]int, list []Assignment) error {
 	rows, err := s.pool.Query(ctx, `WITH e AS (`+assigneesSQL+`),
 		l AS (
 			SELECT DISTINCT ON (t.assignment_id, t.user_id) t.assignment_id, t.total, t.waiting_marks, `+attemptMarkSQL+` AS mark
@@ -460,10 +469,16 @@ func (s *Store) fillAssignmentManage(ctx context.Context, ids []string, at map[s
 			WHERE t.submitted_at IS NOT NULL AND t.waiting_answers > 0
 				AND EXISTS (SELECT 1 FROM jsonb_array_elements(q->'parts') p
 					WHERE p->>'pending' = 'true' AND NOT p ? 'aiAwards')
-			GROUP BY 1)
-		SELECT c.assignment_id, c.n, COALESCE(d.n, 0), COALESCE(r.n, 0), r.mean, COALESCE(w.n, 0), COALESCE(u.n, 0)
+			GROUP BY 1),
+		k AS (SELECT x.assignment_id FROM assignment_todo_checks x
+			WHERE x.assignment_id = ANY($1) AND x.user_id=$2 AND x.approvals
+				AND x.checked_at >= COALESCE((SELECT max(t.submitted_at) FROM attempts t
+					WHERE t.assignment_id=x.assignment_id AND t.submitted_at IS NOT NULL AND t.waiting_answers > 0), '-infinity'))
+		SELECT c.assignment_id, c.n, COALESCE(d.n, 0), COALESCE(r.n, 0), r.mean, COALESCE(w.n, 0), COALESCE(u.n, 0),
+			k.assignment_id IS NOT NULL
 		FROM c LEFT JOIN d ON d.assignment_id=c.assignment_id LEFT JOIN r ON r.assignment_id=c.assignment_id
-		LEFT JOIN w ON w.assignment_id=c.assignment_id LEFT JOIN u ON u.assignment_id=c.assignment_id`, ids)
+		LEFT JOIN w ON w.assignment_id=c.assignment_id LEFT JOIN u ON u.assignment_id=c.assignment_id
+		LEFT JOIN k ON k.assignment_id=c.assignment_id`, ids, userID)
 	if err != nil {
 		return err
 	}
@@ -472,11 +487,13 @@ func (s *Store) fillAssignmentManage(ctx context.Context, ids []string, at map[s
 		var id string
 		var assigned, ticked, submitted, waiting, ungraded int
 		var mean *float64
-		if err := rows.Scan(&id, &assigned, &ticked, &submitted, &mean, &waiting, &ungraded); err != nil {
+		var checkedOff bool
+		if err := rows.Scan(&id, &assigned, &ticked, &submitted, &mean, &waiting, &ungraded, &checkedOff); err != nil {
 			return err
 		}
 		m := list[at[id]].Manage
 		m.Assigned, m.Done, m.ToApprove, m.NotGraded = assigned, ticked+submitted, waiting, ungraded
+		m.ApprovalsCheckedOff = checkedOff
 		if submitted >= assignmentAggregateMin {
 			m.Average = mean
 		}
@@ -511,6 +528,7 @@ func (s *Store) fillAssignmentMine(ctx context.Context, userID string, ids []str
 	rows, err := s.pool.Query(ctx, `WITH e AS (`+assigneesSQL+`)
 		SELECT e.assignment_id,
 			(SELECT done_at FROM assignment_done d WHERE d.assignment_id=e.assignment_id AND d.user_id=$2),
+			(SELECT x.checked_at FROM assignment_todo_checks x WHERE x.assignment_id=e.assignment_id AND x.user_id=$2 AND NOT x.approvals),
 			(SELECT t.id FROM attempts t WHERE t.assignment_id=e.assignment_id AND t.user_id=$2 AND t.submitted_at IS NULL),
 			(SELECT count(*) FROM attempts t WHERE t.assignment_id=e.assignment_id AND t.user_id=$2 AND t.submitted_at IS NOT NULL),
 			l.id, l.correct::float8, l.total::float8, COALESCE(l.waiting_marks, 0)::float8, COALESCE(l.waiting_answers, 0), l.submitted_at
@@ -528,7 +546,7 @@ func (s *Store) fillAssignmentMine(ctx context.Context, userID string, ids []str
 		var id string
 		var mine AssignmentMine
 		var submittedAt *time.Time
-		if err := rows.Scan(&id, &mine.DoneAt, &mine.RunningAttemptID, &mine.AttemptsUsed,
+		if err := rows.Scan(&id, &mine.DoneAt, &mine.CheckedAt, &mine.RunningAttemptID, &mine.AttemptsUsed,
 			&mine.CountedAttemptID, &mine.Correct, &mine.Total, &mine.WaitingMarks, &mine.WaitingAnswers, &submittedAt); err != nil {
 			return err
 		}
@@ -552,6 +570,7 @@ func (s *Store) fillAssignmentMine(ctx context.Context, userID string, ids []str
 			mine.LatePenaltyPct = 0
 		}
 		mine.Done = mine.DoneAt != nil
+		mine.CheckedOff = mine.CheckedAt != nil
 		mine.Missing = a.Kind == AssignmentMarked && !mine.Done && a.DueAt != nil && !a.DueAt.After(now)
 		a.Mine = &mine
 	}
@@ -844,6 +863,9 @@ func (s *Store) CreateAssignment(ctx context.Context, actorID, wsID string, form
 		if err := checkAssignmentForm(ctx, tx, wsID, form); err != nil {
 			return err
 		}
+		if err := assertAssignmentRoomTx(ctx, tx, wsID, true, !form.Draft, now); err != nil {
+			return err
+		}
 		if form.Kind == AssignmentMarked {
 			var quiz bool
 			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM materials WHERE id=$1 AND workspace_id=$2 AND kind='quiz'
@@ -1085,6 +1107,9 @@ func (s *Store) PublishAssignment(ctx context.Context, actorID, id string, qs []
 		if kind == AssignmentMarked && qs == nil {
 			return ErrAssignmentQuizGone
 		}
+		if err := assertAssignmentRoomTx(ctx, tx, wsID, false, true, now); err != nil {
+			return err
+		}
 		return s.publishAssignmentTx(ctx, tx, id, wsID, actorID, kind, qs, now)
 	})
 	if err != nil {
@@ -1312,6 +1337,16 @@ func (s *Store) SetAssignmentClosed(ctx context.Context, actorID, id string, clo
 		at := &now
 		if !closed {
 			at = nil
+			// Reopening a closed one takes a place among the open ones.
+			var wasClosed bool
+			if err := tx.QueryRow(ctx, `SELECT closed_at IS NOT NULL FROM assignments WHERE id=$1 AND NOT draft FOR UPDATE`, id).Scan(&wasClosed); err != nil && !isNoRows(err) {
+				return err
+			}
+			if wasClosed {
+				if err := assertAssignmentRoomTx(ctx, tx, wsID, false, true, now); err != nil {
+					return err
+				}
+			}
 		}
 		_, err := tx.Exec(ctx, `UPDATE assignments SET closed_at=$2 WHERE id=$1 AND NOT draft`, id, at)
 		return err

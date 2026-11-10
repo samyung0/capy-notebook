@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SourceFile } from '@/api/types';
-import { fileRowActions } from './Files';
+import { fileRowActions } from './FileItem';
 
 const file = (fields: Partial<SourceFile>) =>
   ({ id: 'f_1', indexed: true, status: 'ready', ...fields }) as SourceFile;

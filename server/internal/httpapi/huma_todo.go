@@ -16,9 +16,7 @@ type todoOutput struct {
 }
 
 type todoDoneInput struct {
-	Sort   string `query:"sort" enum:"done,class" default:"done" doc:"done: the day it was done, or closed if it never was; class: by class name, then done"`
 	Dir    string `query:"dir" enum:"asc,desc" default:"desc"`
-	Class  string `query:"class" doc:"Comma-separated class workspace ids"`
 	Type   string `query:"type" doc:"Comma-separated: quiz, task"`
 	Cursor string `query:"cursor" doc:"Opaque cursor from the previous page"`
 }
@@ -27,11 +25,18 @@ type todoDoneOutput struct {
 	Body store.TodoDonePage
 }
 
+type todoHideInput struct {
+	Body struct {
+		IDs []string `json:"ids" minItems:"1" maxItems:"200" doc:"Assignment ids to take off the caller's Done tab"`
+	}
+}
+
 // todoDonePage is the Done tab's page size.
 const todoDonePage = 30
 
 func (a *api) registerTodo(api huma.API) {
 	reg(api, http.MethodGet, "/api/todo", "getTodo", "Assignments", "The To do page: what each of the caller's classes holds for them", http.StatusOK, a.getTodo)
+	reg(api, http.MethodPost, "/api/todo/done/hide", "hideTodoDone", "Assignments", "Take rows off the caller's Done tab, changing nothing else", http.StatusNoContent, a.hideTodoDone)
 	reg(api, http.MethodGet, "/api/todo/done", "getTodoDone", "Assignments", "The To do page's Done tab: what was given to the caller that they finished or that closed, a page at a time", http.StatusOK, a.getTodoDone)
 }
 
@@ -64,11 +69,23 @@ func (a *api) getTodoDone(ctx context.Context, in *todoDoneInput) (*todoDoneOutp
 		}
 	}
 	res, err := a.s.ListTodoDone(ctx, userID(ctx), time.Now(), store.TodoDoneParams{
-		Sort: in.Sort, Ascending: in.Dir == "asc", Classes: commaValues(in.Class), Kinds: kinds,
+		Ascending: in.Dir == "asc", Kinds: kinds,
 		Offset: offset, Limit: todoDonePage,
 	})
 	if err != nil {
 		return nil, hErr(err)
 	}
 	return &todoDoneOutput{Body: res}, nil
+}
+
+func (a *api) hideTodoDone(ctx context.Context, in *todoHideInput) (*Empty, error) {
+	if err := a.requireAccountMutate(ctx); err != nil {
+		return nil, err
+	}
+	if err := a.s.HideTodoDone(ctx, userID(ctx), in.Body.IDs, time.Now()); err != nil {
+		return nil, hErr(err)
+	}
+	// The caller's other tabs and devices.
+	a.publishTodo(ctx, userID(ctx))
+	return &Empty{}, nil
 }

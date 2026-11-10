@@ -79,7 +79,7 @@ export function invalidateForEffects(
     if (effect.resource.kind === 'material') {
       if (workspaceId)
         void qc.invalidateQueries({ queryKey: qk.materials(workspaceId) });
-      void qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
+      void qc.invalidateQueries({ queryKey: qk.itemsRoot });
       void qc.invalidateQueries({ queryKey: qk.recent });
       if (effect.operation !== 'created') {
         void qc.invalidateQueries({

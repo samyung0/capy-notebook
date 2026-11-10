@@ -102,7 +102,7 @@ test('a paper of two pages reaches Approve and Files › Submissions', async ({
   }, attemptId);
 
   // Both files, each linking to the attempt they were handed in with.
-  await asScenario(page, 'workspace-member', '/files?tab=submissions');
+  await asScenario(page, 'workspace-member', '/files');
   await expect(
     page.locator(`a[href$="/quizzes/attempts/${attemptId}"]`)
   ).toHaveCount(2, { timeout: 30_000 });

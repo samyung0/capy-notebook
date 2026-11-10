@@ -857,6 +857,8 @@ components:
     AssignmentManage:
       additionalProperties: false
       properties:
+        approvalsCheckedOff:
+          type: boolean
         assignAll:
           type: boolean
         assigned:
@@ -917,6 +919,7 @@ components:
         - done
         - toApprove
         - notGraded
+        - approvalsCheckedOff
       type: object
     AssignmentMark:
       additionalProperties: false
@@ -1016,6 +1019,11 @@ components:
         attemptsUsed:
           format: int64
           type: integer
+        checkedAt:
+          format: date-time
+          type: string
+        checkedOff:
+          type: boolean
         correct:
           format: double
           type: number
@@ -1060,6 +1068,7 @@ components:
         - late
         - latePenaltyPct
         - missing
+        - checkedOff
       type: object
     AssignmentPartMark:
       additionalProperties: false
@@ -1157,6 +1166,22 @@ components:
         - questions
         - answers
         - papersToRead
+      type: object
+    AssignmentTodoCheckInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/AssignmentTodoCheckInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        approvals:
+          type: boolean
+        checked:
+          type: boolean
+      required:
+        - checked
       type: object
     AssignmentWrongAnswer:
       additionalProperties: false
@@ -2958,24 +2983,6 @@ components:
         - workspaceName
         - lostAccess
       type: object
-    EditorAssetPage:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/EditorAssetPage.json
-          format: uri
-          readOnly: true
-          type: string
-        items:
-          items:
-            $ref: "#/components/schemas/EditorAssetItem"
-          type: array
-        nextCursor:
-          type: string
-      required:
-        - items
-      type: object
     Envelope:
       additionalProperties: false
       properties:
@@ -3961,6 +3968,27 @@ components:
       required:
         - items
       type: object
+    Item:
+      additionalProperties: false
+      properties:
+        embed:
+          $ref: "#/components/schemas/EditorAssetItem"
+        file:
+          $ref: "#/components/schemas/File"
+        material:
+          $ref: "#/components/schemas/MaterialListItem"
+        submission:
+          $ref: "#/components/schemas/SubmittedPaper"
+        type:
+          enum:
+            - file
+            - submission
+            - material
+            - embed
+          type: string
+      required:
+        - type
+      type: object
     ItemAttempts:
       additionalProperties: false
       properties:
@@ -3981,6 +4009,24 @@ components:
         - size
         - count
         - recent
+      type: object
+    ItemPage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ItemPage.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/Item"
+          type: array
+        nextCursor:
+          type: string
+      required:
+        - items
       type: object
     Label:
       additionalProperties: false
@@ -4524,6 +4570,8 @@ components:
           type: boolean
         id:
           type: string
+        isOwner:
+          type: boolean
         kind:
           $ref: "#/components/schemas/MaterialKind"
         lostAccess:
@@ -7983,32 +8031,6 @@ components:
         - bytes
         - createdAt
       type: object
-    SubmittedPapers:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/SubmittedPapers.json
-          format: uri
-          readOnly: true
-          type: string
-        count:
-          format: int64
-          type: integer
-        items:
-          items:
-            $ref: "#/components/schemas/SubmittedPaper"
-          type: array
-        nextCursor:
-          type: string
-        totalBytes:
-          format: int64
-          type: integer
-      required:
-        - items
-        - count
-        - totalBytes
-      type: object
     SubscriptionBlocker:
       additionalProperties: false
       properties:
@@ -8169,6 +8191,26 @@ components:
           type: array
       required:
         - workspaces
+      type: object
+    TodoHideInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/TodoHideInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        ids:
+          description: Assignment ids to take off the caller's Done tab
+          items:
+            type: string
+          maxItems: 200
+          minItems: 1
+          nullable: true
+          type: array
+      required:
+        - ids
       type: object
     TodoList:
       additionalProperties: false
@@ -10127,6 +10169,33 @@ paths:
       summary: Start an attempt, starting its clock, or return the one running
       tags:
         - Assignments
+  /api/assignments/{id}/todo-check:
+    put:
+      operationId: setAssignmentTodoCheck
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignmentTodoCheckInputBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Tick an assignment, or the answers waiting on it, off the caller's To do without doing it
+      tags:
+        - Assignments
   /api/attempts:
     get:
       operationId: listAttempts
@@ -11313,51 +11382,6 @@ paths:
       summary: Report an editing incident
       tags:
         - Editing
-  /api/editor-assets:
-    get:
-      operationId: listEditorAssets
-      parameters:
-        - description: Only media in notes the caller can no longer open
-          explode: false
-          in: query
-          name: access
-          schema:
-            description: Only media in notes the caller can no longer open
-            enum:
-              - lost
-            type: string
-        - explode: false
-          in: query
-          name: limit
-          schema:
-            default: 40
-            format: int64
-            maximum: 100
-            minimum: 1
-            type: integer
-        - description: Opaque cursor from the previous page
-          explode: false
-          in: query
-          name: cursor
-          schema:
-            description: Opaque cursor from the previous page
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EditorAssetPage"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: List the images and audio the caller pays for, each marked when its note can no longer be opened
-      tags:
-        - Content
   /api/editor-assets/{assetId}:
     delete:
       operationId: deleteEditorAsset
@@ -12452,6 +12476,103 @@ paths:
       summary: Disconnect a provider
       tags:
         - Billing & integrations
+  /api/items:
+    get:
+      operationId: listItems
+      parameters:
+        - description: "Comma-separated kinds: file kinds, note, quiz, flashcards; image and audio also match embedded images and audio"
+          explode: false
+          in: query
+          name: kind
+          schema:
+            description: "Comma-separated kinds: file kinds, note, quiz, flashcards; image and audio also match embedded images and audio"
+            type: string
+        - description: Comma-separated workspace ids; a submission sits in its assignment's workspace
+          explode: false
+          in: query
+          name: workspaceId
+          schema:
+            description: Comma-separated workspace ids; a submission sits in its assignment's workspace
+            type: string
+        - description: "Comma-separated locations: workspace, standalone"
+          explode: false
+          in: query
+          name: location
+          schema:
+            description: "Comma-separated locations: workspace, standalone"
+            type: string
+        - description: Keeps rows whose shown name holds this text, any case
+          explode: false
+          in: query
+          name: q
+          schema:
+            description: Keeps rows whose shown name holds this text, any case
+            maxLength: 120
+            type: string
+        - description: "owned: what the caller pays for, wherever it sits (My files); all: those plus every file and block of its own workspaces and those it is a member of (All files)"
+          explode: false
+          in: query
+          name: scope
+          schema:
+            default: owned
+            description: "owned: what the caller pays for, wherever it sits (My files); all: those plus every file and block of its own workspaces and those it is a member of (All files)"
+            enum:
+              - owned
+              - all
+            type: string
+        - explode: false
+          in: query
+          name: sort
+          schema:
+            default: added
+            enum:
+              - added
+              - name
+              - size
+              - kind
+              - workspace
+            type: string
+        - explode: false
+          in: query
+          name: dir
+          schema:
+            default: desc
+            enum:
+              - asc
+              - desc
+            type: string
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 40
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemPage"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List the caller's files, handed-in submissions it may delete, notes, quizzes, flashcard sets and embedded images and audio as one list (the Files page)
+      tags:
+        - Content
   /api/labels:
     get:
       operationId: listLabels
@@ -13399,60 +13520,6 @@ paths:
       summary: Mark one notification read
       tags:
         - Account
-  /api/papers:
-    delete:
-      operationId: deleteAllPapers
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DrawingsDeletedOutputBody"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Delete every paper file the caller may delete; their marks stay
-      tags:
-        - assignments
-    get:
-      operationId: listPapers
-      parameters:
-        - explode: false
-          in: query
-          name: limit
-          schema:
-            default: 50
-            format: int64
-            maximum: 100
-            minimum: 1
-            type: integer
-        - description: Opaque cursor from the previous page
-          explode: false
-          in: query
-          name: cursor
-          schema:
-            description: Opaque cursor from the previous page
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SubmittedPapers"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: The caller's handed-in paper and hand-in files they may delete, newest first (Files › Submissions)
-      tags:
-        - assignments
   /api/papers/{id}:
     delete:
       operationId: deletePaper
@@ -14514,17 +14581,6 @@ paths:
     get:
       operationId: getTodoDone
       parameters:
-        - description: "done: the day it was done, or closed if it never was; class: by class name, then done"
-          explode: false
-          in: query
-          name: sort
-          schema:
-            default: done
-            description: "done: the day it was done, or closed if it never was; class: by class name, then done"
-            enum:
-              - done
-              - class
-            type: string
         - explode: false
           in: query
           name: dir
@@ -14533,13 +14589,6 @@ paths:
             enum:
               - asc
               - desc
-            type: string
-        - description: Comma-separated class workspace ids
-          explode: false
-          in: query
-          name: class
-          schema:
-            description: Comma-separated class workspace ids
             type: string
         - description: "Comma-separated: quiz, task"
           explode: false
@@ -14569,6 +14618,27 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: "The To do page's Done tab: what was given to the caller that they finished or that closed, a page at a time"
+      tags:
+        - Assignments
+  /api/todo/done/hide:
+    post:
+      operationId: hideTodoDone
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TodoHideInputBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Take rows off the caller's Done tab, changing nothing else
       tags:
         - Assignments
   /api/topics/{id}:

@@ -664,7 +664,7 @@ func TestRemovedUploaderDeletesItsMediaFromTheFilesPage(t *testing.T) {
 	}
 	list := func(user string, access EditorAssetAccess) []EditorAssetItem {
 		t.Helper()
-		page, err := s.ListEditorAssets(ctx, user, access, 0, "")
+		page, err := s.ListEditorAssets(ctx, user, EditorAssetFilter{Access: access})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -801,7 +801,7 @@ func TestEmbedsListPagesWithinTheCallersRows(t *testing.T) {
 	var got []string
 	cursor := ""
 	for page := 0; page < 4; page++ {
-		res, err := s.ListEditorAssets(ctx, owner, "", 1, cursor)
+		res, err := s.ListEditorAssets(ctx, owner, EditorAssetFilter{Limit: 1, Cursor: cursor})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -823,7 +823,7 @@ func TestEmbedsListPagesWithinTheCallersRows(t *testing.T) {
 		encodeListCursor(cursorPrimary(editorAssetSort, time.Now().Add(time.Hour), "", 0), "~"),
 		encodeListCursor(cursorPrimary(editorAssetSort, tie, "", 0), theirs.ID),
 	} {
-		res, err := s.ListEditorAssets(ctx, owner, "", 0, cursor)
+		res, err := s.ListEditorAssets(ctx, owner, EditorAssetFilter{Cursor: cursor})
 		if err != nil {
 			t.Fatal(err)
 		}
