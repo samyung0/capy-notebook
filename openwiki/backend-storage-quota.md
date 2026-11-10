@@ -309,6 +309,22 @@ objects for the reaper.
   image at most `DrawingImageBytes` (300 KiB) and 1,568 px on its longer side.
   A drawn sample answer's board is a quiz `board` editor asset under the same
   board cap (`editor_assets_size_check`, migration 0158).
+- **Pictures on the board (Epo 2026-11-09, migration 0166).** A picture pasted
+  on an answer board goes up with the board at Done or Check, at most
+  `BoardPictures` (10) of `BoardPictureBytes` (1 MiB) each, WebP, JPEG, PNG or
+  GIF within `imagecheck.MaxSide` on either side (`checkedPictures`), and is
+  stored beside the board under the drawing's folder. `drawing_pictures` names each by the id its image block keeps, as a
+  counted blob reference; `drawings.picture_bytes` charges them to the person
+  attempting inside the drawing's own storage delta, under the drawing's gate
+  (an assignment never refused, a practice check refused when storage is full).
+  Every Done replaces them, and they go with the drawing. A quiz check's body
+  may hold one board's pictures at their most on top of its answers
+  (`checkMaxBytes`, about 17 MiB); an assignment's Done about 14 MiB
+  (`drawingMaxBody`); both have 60 s to arrive (`drawingBodyDeadline`). The
+  review and bank checks keep no drawing and stay at 4 MiB. A request that fails
+  after it wrote objects deletes them again (`dropDrawingWrites`), and a Done's
+  two attempt checks read one clock, so its bucket writes don't run a time
+  limit's grace out.
 - **Seen and deleted.** Billing's breakdown shows them as Canvas; Files ›
   Canvas lists the payer's marked drawings to delete, an assignment's once it
   has closed with its grades released.
@@ -321,7 +337,11 @@ one live canvas per member and workspace) paid for by the member, as any
 standalone material is. Its drawing is the material's own `board` editor asset,
 gzipped, replaced on every save and trashed by the pruner as the material's
 `canvas_board` block stops naming it; the block also names the canvas's image
-assets. A canvas's board asset is capped at `CANVAS_BOARD_MAX` (2 MiB before
+assets, each an `image` editor asset of the canvas uploaded at once as a note's
+is (the plan's image cap after compression, listed on the Files page) and
+trashed the same way once a save no longer names it; the canvas route lists the
+ones a save may name (`ownImageAssetIds`, `CanvasImageAssets`), a trashed one
+included, so an undone delete is named again and restored. A canvas's board asset is capped at `CANVAS_BOARD_MAX` (2 MiB before
 gzip, `fieldlimits.CanvasBoardBytes`), checked in the browser before the upload
 and by `validateEditorAssetMetadataFor` with the material's kind; a drawn sample
 answer's board keeps the drawing's 250 KiB. The `editor_assets_size_check` row

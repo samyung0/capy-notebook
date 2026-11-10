@@ -2221,8 +2221,9 @@ type QuizCheck struct {
 
 // QuizDrawing is one drawing part's stored objects for a check.
 type QuizDrawing struct {
-	Board DrawingObject
-	Image *DrawingObject
+	Board    DrawingObject
+	Image    *DrawingObject
+	Pictures []DrawingPicture
 }
 
 // ErrQuestionChecked refuses a second check of a question in one attempt: it

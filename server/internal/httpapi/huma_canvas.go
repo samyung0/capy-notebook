@@ -22,12 +22,15 @@ type canvasInput struct {
 }
 
 type canvasBody struct {
-	ID            string    `json:"id" doc:"The canvas material"`
-	Revision      int64     `json:"revision" doc:"The material's revision; a save sends the one it read"`
-	BoardAssetID  string    `json:"boardAssetId" doc:"The saved board's editor asset (gzipped Yjs update); empty before the first save"`
-	Version       int64     `json:"version" doc:"Counts the saves"`
-	ImageAssetIDs []string  `json:"imageAssetIds" nullable:"false" doc:"The canvas's images, as image editor assets"`
-	UpdatedAt     time.Time `json:"updatedAt"`
+	ID            string   `json:"id" doc:"The canvas material"`
+	Revision      int64    `json:"revision" doc:"The material's revision; a save sends the one it read"`
+	BoardAssetID  string   `json:"boardAssetId" doc:"The saved board's editor asset (gzipped Yjs update); empty before the first save"`
+	Version       int64    `json:"version" doc:"Counts the saves"`
+	ImageAssetIDs []string `json:"imageAssetIds" nullable:"false" doc:"The canvas's images, as image editor assets"`
+	// OwnImageAssetIDs is what the browser names from, so its save is never
+	// refused for an image deleted elsewhere.
+	OwnImageAssetIDs []string  `json:"ownImageAssetIds" nullable:"false" doc:"Every ready image asset of this canvas, one the pruner trashed included: the ids a save may name"`
+	UpdatedAt        time.Time `json:"updatedAt"`
 }
 
 type canvasOutput struct {
@@ -64,14 +67,21 @@ func (a *api) requireWorkspaceMember(ctx context.Context, wsID string) error {
 	return nil
 }
 
-func canvasResponse(mt store.Material) (*canvasOutput, error) {
+func (a *api) canvasResponse(ctx context.Context, mt store.Material) (*canvasOutput, error) {
 	board, err := materialdoc.ReadCanvasBoard(mt.Content)
 	if err != nil {
 		return nil, err
 	}
+	own, err := a.s.CanvasImageAssets(ctx, mt.ID)
+	if err != nil {
+		return nil, err
+	}
+	if own == nil {
+		own = []string{}
+	}
 	return &canvasOutput{Body: canvasBody{
 		ID: mt.ID, Revision: mt.Revision, BoardAssetID: board.BoardAssetID, Version: board.Version,
-		ImageAssetIDs: board.ImageAssetIDs, UpdatedAt: mt.UpdatedAt,
+		ImageAssetIDs: board.ImageAssetIDs, OwnImageAssetIDs: own, UpdatedAt: mt.UpdatedAt,
 	}}, nil
 }
 
@@ -86,7 +96,7 @@ func (a *api) workspaceCanvas(ctx context.Context, in *canvasInput) (*canvasOutp
 	if err != nil {
 		return nil, hErr(err)
 	}
-	out, err := canvasResponse(mt)
+	out, err := a.canvasResponse(ctx, mt)
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -118,7 +128,7 @@ func (a *api) saveWorkspaceCanvas(ctx context.Context, in *saveCanvasInput) (*ca
 	if err != nil {
 		return nil, hErr(err)
 	}
-	out, err := canvasResponse(saved)
+	out, err := a.canvasResponse(ctx, saved)
 	if err != nil {
 		return nil, hErr(err)
 	}

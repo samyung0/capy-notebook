@@ -111,7 +111,8 @@ func classify(method, path string) class {
 	if strings.HasPrefix(path, "/api/files/") && strings.HasSuffix(path, "/thumbnail") {
 		return classThumbnail
 	}
-	// A drawing answer's board and image, up to 550 KB a request (Done).
+	// A drawing answer's board, image and pictures, up to about 11 MiB a
+	// request (Done).
 	if strings.HasPrefix(path, "/api/assignment-attempts/") && strings.Contains(path, "/drawings/") {
 		return classUpload
 	}

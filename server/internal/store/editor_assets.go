@@ -736,8 +736,10 @@ func (s *Store) ListEditorAssets(ctx context.Context, userID string, f EditorAss
 	rows, err := s.pool.Query(ctx, `SELECT a.id, a.name, a.purpose, a.size_bytes, a.created_at,
 			CASE WHEN l.lost THEN '' ELSE top.id END, top.kind,
 			`+workspaceNameSQL("top.workspace_id", "top.title")+`,
-			`+workspaceNameSQL("top.workspace_id", "COALESCE(top.workspace_name,'')")+`,
-			CASE WHEN l.lost THEN '' ELSE COALESCE(top.workspace_id,'') END, l.lost,
+			COALESCE((SELECT cw.name FROM workspaces cw WHERE cw.id=top.canvas_workspace_id),
+				`+workspaceNameSQL("top.workspace_id", "COALESCE(top.workspace_name,'')")+`),
+			-- A canvas's image is filed under the workspace it is the Canvas tab of.
+			CASE WHEN l.lost THEN '' ELSE COALESCE(top.workspace_id, top.canvas_workspace_id, '') END, l.lost,
 			COALESCE(a.thumbnail_key,'')
 		FROM editor_assets a
 		JOIN materials m ON m.id=a.material_id

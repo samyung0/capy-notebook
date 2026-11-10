@@ -409,6 +409,8 @@ function trashIconName(item: TrashItem) {
         return materialIconName('mindmap');
       case 'diagram':
         return materialIconName('diagram');
+      case 'canvas':
+        return materialIconName('canvas');
       default:
         return materialIconName('note');
     }

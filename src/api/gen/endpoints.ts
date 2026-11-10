@@ -596,7 +596,7 @@ export const getSaveAssignmentDrawingUrl = (id: string,
 }
 
 /**
- * @summary Store a drawing part's board (and its marking image) for a running attempt
+ * @summary Store a drawing part's board (its marking image and its pictures) for a running attempt
  */
 export const saveAssignmentDrawing = async (id: string,
     partId: string,

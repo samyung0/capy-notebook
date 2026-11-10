@@ -18,6 +18,7 @@ export type DrawingBoardOptions = {
     ) => Promise<{ id: string; title: string }>;
   };
   fitPadding?: [number, number, number, number];
+  images?: import('./boardImages').BoardImages;
   onChange?: () => void;
   plane?: boolean;
   readOnly?: boolean;
@@ -33,6 +34,10 @@ export function mountDrawingBoard(
   options: DrawingBoardOptions
 ): {
   fit: (padding: [number, number, number, number]) => void;
+  images: () => { file?: Blob; id: string }[];
+  imageFiles: () => Promise<{ file: Blob; id: string }[]>;
+  imagesSettled: () => Promise<void>;
+  reloadImages: () => void;
   save: (options?: { finish?: boolean }) => { bytes: number; doc: string };
   snapshot: () => string;
   putAway: () => void;

@@ -171,6 +171,20 @@ export function addHandInFile(
 
 /** Drawings an assignment's Done stored, by id: their boards. */
 const mockDrawings = new Map<string, string>();
+/** Each stored drawing's pictures, as Done sent them. */
+const mockDrawingPictures = new Map<
+  string,
+  { data: string; sourceId: string }[]
+>();
+/** A picture's type from the start of its base64, as the bucket would serve it. */
+const pictureType = (data: string) =>
+  data.startsWith('iVBOR')
+    ? 'image/png'
+    : data.startsWith('/9j/')
+      ? 'image/jpeg'
+      : data.startsWith('R0lG')
+        ? 'image/gif'
+        : 'image/webp';
 
 /** For a spec: hands the Member scenario's attempts at an assignment to one of
  * the class's members, so the owner's report shows them
@@ -1939,9 +1953,13 @@ export const assignmentHandlers = (viewer: Viewer) => {
             'attempt_finished',
             'This attempt has been submitted.'
           );
-        const body = (await request.json()) as { board: string };
+        const body = (await request.json()) as {
+          board: string;
+          pictures?: { data: string; sourceId: string }[];
+        };
         const id = `dr_${String(params.partId)}_${Date.now()}`;
         mockDrawings.set(id, body.board);
+        mockDrawingPictures.set(id, body.pictures ?? []);
         return HttpResponse.json({ id });
       }
     ),
@@ -1987,6 +2005,13 @@ export const assignmentHandlers = (viewer: Viewer) => {
         bytes: board.length,
         id: params.id,
         partId: '',
+        // Each as a link, as the gateway's presigned ones are.
+        pictures: (mockDrawingPictures.get(String(params.id)) ?? []).map(
+          ({ data, sourceId }) => ({
+            sourceId,
+            url: `data:${pictureType(data)};base64,${data}`,
+          })
+        ),
       });
     }),
     http.delete('/api/assignment-attempts/:id/paper/:fileId', ({ params }) => {

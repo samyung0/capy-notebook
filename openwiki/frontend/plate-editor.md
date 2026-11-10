@@ -4775,8 +4775,77 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     an asset that isn't a ready board or image asset of the canvas is a 400. A canvas opens no room (the collaboration token route refuses
     it); the Canvas tab shows to members only, since a link or public visitor has none.
     Restoring a trashed canvas beside the live one made since is refused (409
-    `canvas_exists`). Images on the canvas are the next piece (`todo-board-images.md`);
-    `imageAssetIds` is empty until then.
+    `canvas_exists`).
+  - **In Files (2026-11-10, a stopgap: Epo plans an account-level canvas page):** the
+    Files page's one list holds a member's own canvases with their blocks (`items.go`:
+    kind `canvas`, only ever through the owner's branch, since a canvas has no
+    `workspace_id`), filed under the workspace each is the Canvas tab of
+    (`canvasWorkspaceId`, the workspace's name and icon, the In a workspace filter)
+    and sized with its board asset, which no row of its own shows. Its card draws the
+    saved board in the browser (`useCanvasDrawing`: the stored preview is
+    `{ kind: 'canvas', boardAssetId }`, the board comes through `boardFromAsset` and
+    `drawBoardPreview(…, 'workspace')`; the icon until then). A canvas has no page of
+    its own, so the row and its Open go to `/workspaces/{id}?panel=canvas`
+    (`blockLink`), as does the row of one of its images; its menu is Open and Delete
+    alone (no rename, share or clone). Delete trashes it as any standalone block, the
+    Canvas tab then makes a fresh one, and Trash lists it with the canvas icon.
+  - **Images (Epo 2026-11-09 and 2026-11-10, `todo-board-images.md`):** an image block
+    keeps only an id (`sourceId`), and the board reads and stores files through its own
+    blob source (`boardBlobs.ts`, `BoardBlobSource`, in place of BlockSuite's in-memory
+    one), which the page feeds through the mount's `images` option (`boardImages.ts`).
+    Every way an image arrives (a paste, a drop, a note's slash menu, Misc's Image tile,
+    which opens the device's file picker for a phone with no paste or drop) goes
+    through BlockSuite's `blobSync.set`, so the source is the one place that sees them.
+    On the workspace canvas (`assetImages` in `boardAsset.ts`) an image is stored at
+    once as the canvas material's own `image` editor asset through `uploadEditorAsset`,
+    as a note's is: compressed in the browser first (`fitImageOffThread`: WebP where the
+    browser encodes it, JPEG or PNG where it doesn't, as Safari), capped at the plan's
+    image cap, refused when storage is full, billed to the member and listed on the
+    Files page. The block lands with BlockSuite's hash and shows the local file with the
+    upload state set (`blobState$`); when the upload completes its `sourceId` becomes
+    the asset id and its `size` the stored size, outside the undo history, and a refused
+    image leaves the board with a toast. An image already stored under its id is never
+    stored again: a copy pasted back hands its file to `set` under that id, which the
+    source leaves alone (`stored`). `GET` and `PUT /api/workspaces/{id}/canvas` answer
+    `ownImageAssetIds`, every ready image asset of the canvas, one the pruner trashed
+    included; a save waits for uploads in flight (at most 20 s, `IMAGE_WAIT_MS`, on
+    leaving the canvas too, since the board's document outlives its unmount) and sends
+    as `imageAssetIds` the ids on the board that are in that list or were uploaded
+    since. The pruner then keeps them, and trashes a removed one at the next save once
+    it is over a minute old. An image deleted on the canvas and brought back by undo is
+    named again and that save restores it (`assertCanvasAssets` takes a trashed image,
+    never a trashed board), after which the board asks for its file again
+    (`reloadImages`). An image deleted for good elsewhere (the Files page) is not in the
+    list, so it is left out; a save refused for what it named (400) reads the list again
+    for the next one. An image pasted from another canvas resolves as another material's
+    and is stored again as this one's, also when the board opens with one. Opened again,
+    an image loads from its asset's link (`assetLink`). A tab closed mid-upload keeps the
+    hash in its device copy and shows an empty frame after a reload.
+    On an **answer board** (`DrawingBoardScreen`) a picture is compressed as it lands
+    (`shrink`: `fitImageOffThread` under `BOARD_IMAGE_MAX`, 1 MiB, from the board
+    catalog) and refused with a toast past `BOARD_IMAGES_MAX` (10, counting the ones of
+    the same drop still being compressed) or when no size fits; its block keeps
+    BlockSuite's hash for good, and the file stays on the board. The device keeps each
+    file once, beside the draft (`drawingPictures` in `localDb.ts`, by draft and id;
+    `syncLocalDrawingPictures` adds the new ones and forgets the ones off the board),
+    so a reload before Done loses none and a stroke rewrites no picture. Done checks the
+    count again, asks the board for every file (`imageFiles`, fetching a stored
+    drawing's not shown yet) and keeps them in the page's memory under the part's key
+    (`holdDrawingPictures`); the value names them by that key (`pictures`), since files
+    don't sit in an answer. An assignment's Done sends them in base64 with the board
+    (`drawingUpload`, `pictures: [{ sourceId, data }]`) and then lets them go
+    (`releaseDrawingPictures`): from there they are read from the stored drawing. A
+    practice Check sends them the same way and keeps them for Check again. A check that
+    keeps no drawing sends none: a shared page's, a quiz inside a note
+    (`embedded`), a review session's and the bank's (those two now send a drawing as
+    its board and image at all, where they sent the page's raw value). Sending a value
+    whose pictures are no longer held throws rather than storing empty frames.
+    `GET /api/drawings/{id}` answers a link per picture (`pictures`), from which a
+    reopened answer and a teacher's read-only board load them (`fetchDrawingPicture`,
+    which asks for the links again once when one has lapsed; a Done forgets the page's
+    copy of its drawing). The marking image draws them as before, and list previews
+    still draw a grey box. A drawn sample answer's board in the quiz editor still keeps
+    pictures on the page only, and an answer board has no file picker (no Misc panel).
 - **Preview (`boardPreview.ts`):** `drawBoardPreview(saved, { width, height }, board)` draws a
   saved board as an SVG string from its data, for lists, results and marking views
   (Epo 2026-11-06: what's on it, not every detail). It never loads the editor: it imports
@@ -4800,7 +4869,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   `drawingBoard.css` over the note's stored style, since AFFiNE's corner field only takes
   0/8/16/24/32; the preview draws it the same. AFFiNE's slash menu is registered, offering
   text styles, lists, alignment, inline styles, Image, dates and the move/copy/delete
-  actions; Image stores its file in the board's blob store, as a pasted image does.
+  actions; Image stores its file through the board's blob source, as a pasted image does.
 - **Theme:** the board follows the app's light or dark. The app's dark themes set
   `data-theme` to a Catppuccin flavour, which AFFiNE's `[data-theme=dark]` never matches,
   so `drawingBoard.ts` puts AFFiNE's dark variables under `html.dark` (on `<html>`, for

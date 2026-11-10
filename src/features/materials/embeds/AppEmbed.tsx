@@ -267,7 +267,12 @@ function QuizView({
   // the page.
   const { mutateAsync: check } = useCheckQuizQuestion({ errorToast: false });
   const control = useMemoryRun(async (questionId, answers) => {
-    const attempt = await check({ answers, questionId, quizId: materialId });
+    const attempt = await check({
+      answers,
+      embedded: true,
+      questionId,
+      quizId: materialId,
+    });
     const [question] = attempt.questions;
     return { correct: attempt.correct, question, total: attempt.total };
   });

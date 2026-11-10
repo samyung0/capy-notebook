@@ -96,8 +96,10 @@ func (s *Store) SaveWorkspaceCanvas(ctx context.Context, userID, materialID, boa
 	})
 }
 
-// assertCanvasAssets checks the save names only this material's ready, untrashed
-// assets: the board a `board` asset, each image an `image` asset.
+// assertCanvasAssets checks the save names only this material's ready assets:
+// the board an untrashed `board` asset, each image an `image` asset. An image
+// the pruner trashed may be named again (its delete undone on the canvas): the
+// save's prune restores it, as a note's does.
 func (s *Store) assertCanvasAssets(ctx context.Context, materialID, boardAssetID string, imageAssetIDs []string) error {
 	want := map[string]string{boardAssetID: "board"}
 	for _, id := range imageAssetIDs {
@@ -107,8 +109,8 @@ func (s *Store) assertCanvasAssets(ctx context.Context, materialID, boardAssetID
 	for id := range want {
 		ids = append(ids, id)
 	}
-	rows, err := s.pool.Query(ctx, `SELECT id, purpose FROM editor_assets
-		WHERE material_id=$1 AND status='ready' AND trashed_at IS NULL AND id = ANY($2::text[])`, materialID, ids)
+	rows, err := s.pool.Query(ctx, `SELECT id, purpose, trashed_at IS NOT NULL FROM editor_assets
+		WHERE material_id=$1 AND status='ready' AND id = ANY($2::text[])`, materialID, ids)
 	if err != nil {
 		return err
 	}
@@ -116,10 +118,11 @@ func (s *Store) assertCanvasAssets(ctx context.Context, materialID, boardAssetID
 	found := 0
 	for rows.Next() {
 		var id, purpose string
-		if err := rows.Scan(&id, &purpose); err != nil {
+		var trashed bool
+		if err := rows.Scan(&id, &purpose, &trashed); err != nil {
 			return err
 		}
-		if want[id] != purpose {
+		if want[id] != purpose || (trashed && purpose == "board") {
 			return fmt.Errorf("%w: asset %s is not a %s of this canvas", materialdoc.ErrInvalid, id, want[id])
 		}
 		found++
@@ -131,6 +134,19 @@ func (s *Store) assertCanvasAssets(ctx context.Context, materialID, boardAssetID
 		return fmt.Errorf("%w: a save names only this canvas's ready assets", materialdoc.ErrInvalid)
 	}
 	return nil
+}
+
+// CanvasImageAssets are the canvas's ready image assets, one the pruner trashed
+// included: the ids a save may name. The browser names from this list, so an
+// image deleted for good (Files › Embeds) is left out of the next save, and one
+// trashed after its delete on the canvas was undone is named again.
+func (s *Store) CanvasImageAssets(ctx context.Context, materialID string) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id FROM editor_assets
+		WHERE material_id=$1 AND purpose='image' AND status='ready' ORDER BY created_at, id`, materialID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
 // dropLeaverCanvasTx deletes the member's canvas in the workspace they leave

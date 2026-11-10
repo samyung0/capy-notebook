@@ -152,6 +152,8 @@ export * from './detail.ts';
 export * from './detailQuestion.ts';
 export * from './discussion.ts';
 export * from './drawingOutputBody.ts';
+export * from './drawingPicture.ts';
+export * from './drawingPictureLink.ts';
 export * from './drawingSavedOutputBody.ts';
 export * from './drawingsDeletedOutputBody.ts';
 export * from './drawingUpload.ts';

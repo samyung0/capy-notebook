@@ -230,7 +230,7 @@ export const DeleteAssignmentDrawingResponse = zod.void()
 
 
 /**
- * @summary Store a drawing part's board (and its marking image) for a running attempt
+ * @summary Store a drawing part's board (its marking image and its pictures) for a running attempt
  */
 export const saveAssignmentDrawingPathIdMax = 64;
 
@@ -251,11 +251,23 @@ export const saveAssignmentDrawingBodyBoardMax = 400000;
 
 export const saveAssignmentDrawingBodyImageMax = 420000;
 
+export const saveAssignmentDrawingBodyPicturesItemDataMax = 1400000;
+
+export const saveAssignmentDrawingBodyPicturesItemSourceIdMax = 128;
+
+
+export const saveAssignmentDrawingBodyPicturesItemSourceIdRegExp = new RegExp('^[A-Za-z0-9_=-]+$');
+export const saveAssignmentDrawingBodyPicturesMax = 10;
+
 
 
 export const SaveAssignmentDrawingBody = zod.object({
   "board": zod.string().max(saveAssignmentDrawingBodyBoardMax).describe('The board\'s saved document, base64'),
-  "image": zod.string().max(saveAssignmentDrawingBodyImageMax).optional().describe('The marking image (WebP, or JPEG or PNG where the browser makes no WebP), base64; left out when nothing will mark it')
+  "image": zod.string().max(saveAssignmentDrawingBodyImageMax).optional().describe('The marking image (WebP, or JPEG or PNG where the browser makes no WebP), base64; left out when nothing will mark it'),
+  "pictures": zod.array(zod.object({
+  "data": zod.string().max(saveAssignmentDrawingBodyPicturesItemDataMax).describe('The picture as the browser compressed it (WebP, JPEG, PNG or GIF), base64'),
+  "sourceId": zod.string().min(1).max(saveAssignmentDrawingBodyPicturesItemSourceIdMax).regex(saveAssignmentDrawingBodyPicturesItemSourceIdRegExp)
+})).max(saveAssignmentDrawingBodyPicturesMax).nullish().describe('The pictures pasted on the board')
 })
 
 export const SaveAssignmentDrawingResponse = zod.object({
@@ -2556,7 +2568,11 @@ export const GetDrawingResponse = zod.object({
   "boardUrl": zod.string().describe('The board\'s saved document, gzipped; the link is the same all hour and lasts two'),
   "bytes": zod.int(),
   "id": zod.string(),
-  "partId": zod.string()
+  "partId": zod.string(),
+  "pictures": zod.array(zod.object({
+  "sourceId": zod.string(),
+  "url": zod.string()
+})).describe('The pictures on the board, each by the id its image block names, as links that last as the board\'s does')
 })
 
 
@@ -4267,7 +4283,7 @@ export const listItemsQueryLimitMax = 100;
 
 
 export const ListItemsQueryParams = zod.object({
-  "kind": zod.string().optional().describe('Comma-separated kinds: file kinds, note, quiz, flashcards; image and audio also match embedded images and audio'),
+  "kind": zod.string().optional().describe('Comma-separated kinds: file kinds, note, quiz, flashcards, canvas; image and audio also match embedded images and audio'),
   "workspaceId": zod.string().optional().describe('Comma-separated workspace ids; a submission sits in its assignment\'s workspace'),
   "location": zod.string().optional().describe('Comma-separated locations: workspace, standalone'),
   "q": zod.string().max(listItemsQueryQMax).optional().describe('Keeps rows whose shown name holds this text, any case'),
@@ -4376,6 +4392,7 @@ export const ListItemsResponse = zod.object({
   "material": zod.object({
   "assigned": zod.boolean().optional(),
   "assignmentId": zod.string().optional(),
+  "canvasWorkspaceId": zod.string().optional(),
   "cardCount": zod.int().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "hidden": zod.boolean().optional(),
@@ -4567,6 +4584,7 @@ export const ListOwnedMaterialsResponse = zod.object({
   "items": zod.array(zod.object({
   "assigned": zod.boolean().optional(),
   "assignmentId": zod.string().optional(),
+  "canvasWorkspaceId": zod.string().optional(),
   "cardCount": zod.int().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "hidden": zod.boolean().optional(),
@@ -6971,6 +6989,7 @@ export const ListRecentResponse = zod.object({
   "material": zod.object({
   "assigned": zod.boolean().optional(),
   "assignmentId": zod.string().optional(),
+  "canvasWorkspaceId": zod.string().optional(),
   "cardCount": zod.int().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "hidden": zod.boolean().optional(),
@@ -8538,6 +8557,7 @@ export const WorkspaceCanvasResponse = zod.object({
   "boardAssetId": zod.string().describe('The saved board\'s editor asset (gzipped Yjs update); empty before the first save'),
   "id": zod.string().describe('The canvas material'),
   "imageAssetIds": zod.array(zod.string()).describe('The canvas\'s images, as image editor assets'),
+  "ownImageAssetIds": zod.array(zod.string()).describe('Every ready image asset of this canvas, one the pruner trashed included: the ids a save may name'),
   "revision": zod.int().describe('The material\'s revision; a save sends the one it read'),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "version": zod.int().describe('Counts the saves')
@@ -8569,6 +8589,7 @@ export const SaveWorkspaceCanvasResponse = zod.object({
   "boardAssetId": zod.string().describe('The saved board\'s editor asset (gzipped Yjs update); empty before the first save'),
   "id": zod.string().describe('The canvas material'),
   "imageAssetIds": zod.array(zod.string()).describe('The canvas\'s images, as image editor assets'),
+  "ownImageAssetIds": zod.array(zod.string()).describe('Every ready image asset of this canvas, one the pruner trashed included: the ids a save may name'),
   "revision": zod.int().describe('The material\'s revision; a save sends the one it read'),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "version": zod.int().describe('Counts the saves')
@@ -9555,6 +9576,7 @@ export const ListWorkspaceRecentResponse = zod.object({
   "materials": zod.array(zod.object({
   "assigned": zod.boolean().optional(),
   "assignmentId": zod.string().optional(),
+  "canvasWorkspaceId": zod.string().optional(),
   "cardCount": zod.int().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "hidden": zod.boolean().optional(),

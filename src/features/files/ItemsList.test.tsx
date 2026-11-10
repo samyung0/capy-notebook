@@ -93,6 +93,7 @@ vi.mock('@/features/workspace/LazyAddSourceDialog', () => ({
 }));
 
 const { deleteCopy, ItemsList } = await import('./ItemsList');
+const { blockLink } = await import('@/features/materials/useBlockActions');
 
 const at = new Date().toISOString();
 const block = (fields: Partial<MaterialListItem>): Item => ({
@@ -196,6 +197,31 @@ it("offers another member's block only what the caller may do", () => {
   expect(theirs).toContain(`data-menu="${m.action_clone_to()}"`);
   expect(theirs).not.toContain(`data-menu="${m.action_rename()}"`);
   expect(theirs).not.toContain(`data-menu="${m.action_delete()}"`);
+});
+
+// A member's workspace canvas lists with their blocks (Epo 2026-11-09): it
+// opens its workspace's Canvas tab or is deleted, and is never shared, cloned
+// or renamed.
+it('offers a canvas its workspace and Delete, and nothing else', () => {
+  list.items = [
+    block({ canvasWorkspaceId: 'ws_1', kind: 'canvas', title: 'Biology 101' }),
+  ];
+  const html = render();
+  expect(html).toContain(`data-menu="${m.action_open()}"`);
+  expect(html).toContain(`data-menu="${m.action_delete()}"`);
+  expect(html).not.toContain(`data-menu="${m.action_clone_to()}"`);
+  expect(html).not.toContain(`data-menu="${m.action_rename()}"`);
+  expect(
+    blockLink({
+      canvasWorkspaceId: 'ws_1',
+      id: 'cv_1',
+      kind: 'canvas',
+    } as MaterialListItem)
+  ).toMatchObject({
+    params: { workspaceId: 'ws_1' },
+    search: { panel: 'canvas' },
+    to: '/workspaces/$workspaceId',
+  });
 });
 
 // A hidden quiz assigned to the viewer lists in All files as in Recent, and

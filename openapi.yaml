@@ -1856,6 +1856,11 @@ components:
           items:
             type: string
           type: array
+        ownImageAssetIds:
+          description: "Every ready image asset of this canvas, one the pruner trashed included: the ids a save may name"
+          items:
+            type: string
+          type: array
         revision:
           description: The material's revision; a save sends the one it read
           format: int64
@@ -1873,6 +1878,7 @@ components:
         - boardAssetId
         - version
         - imageAssetIds
+        - ownImageAssetIds
         - updatedAt
       type: object
     Card:
@@ -2881,11 +2887,45 @@ components:
           type: string
         partId:
           type: string
+        pictures:
+          description: The pictures on the board, each by the id its image block names, as links that last as the board's does
+          items:
+            $ref: "#/components/schemas/DrawingPictureLink"
+          type: array
       required:
         - id
         - partId
         - boardUrl
         - bytes
+        - pictures
+      type: object
+    DrawingPicture:
+      additionalProperties: false
+      properties:
+        data:
+          description: The picture as the browser compressed it (WebP, JPEG, PNG or GIF), base64
+          format: base64
+          maxLength: 1400000
+          type: string
+        sourceId:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9_=-]+$
+          type: string
+      required:
+        - sourceId
+        - data
+      type: object
+    DrawingPictureLink:
+      additionalProperties: false
+      properties:
+        sourceId:
+          type: string
+        url:
+          type: string
+      required:
+        - sourceId
+        - url
       type: object
     DrawingSavedOutputBody:
       additionalProperties: false
@@ -2921,6 +2961,13 @@ components:
           format: base64
           maxLength: 420000
           type: string
+        pictures:
+          description: The pictures pasted on the board
+          items:
+            $ref: "#/components/schemas/DrawingPicture"
+          maxItems: 10
+          nullable: true
+          type: array
       required:
         - board
       type: object
@@ -4559,6 +4606,8 @@ components:
         assigned:
           type: boolean
         assignmentId:
+          type: string
+        canvasWorkspaceId:
           type: string
         cardCount:
           format: int64
@@ -9636,7 +9685,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Store a drawing part's board (and its marking image) for a running attempt
+      summary: Store a drawing part's board (its marking image and its pictures) for a running attempt
       tags:
         - assignments
   /api/assignment-attempts/{id}/marks:
@@ -12480,12 +12529,12 @@ paths:
     get:
       operationId: listItems
       parameters:
-        - description: "Comma-separated kinds: file kinds, note, quiz, flashcards; image and audio also match embedded images and audio"
+        - description: "Comma-separated kinds: file kinds, note, quiz, flashcards, canvas; image and audio also match embedded images and audio"
           explode: false
           in: query
           name: kind
           schema:
-            description: "Comma-separated kinds: file kinds, note, quiz, flashcards; image and audio also match embedded images and audio"
+            description: "Comma-separated kinds: file kinds, note, quiz, flashcards, canvas; image and audio also match embedded images and audio"
             type: string
         - description: Comma-separated workspace ids; a submission sits in its assignment's workspace
           explode: false

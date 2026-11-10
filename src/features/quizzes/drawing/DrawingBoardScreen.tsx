@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
@@ -8,17 +8,25 @@ import { userToast } from '@/components/ui/userToast';
 import { mountDrawingBoard } from '@/features/blocksuite/drawingBoard';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { errorCopy } from '@/lib/errors';
+import { CopyError, errorCopy } from '@/lib/errors';
+import { fitImageOffThread } from '@/lib/fitImageOffThread';
 import {
   deleteLocalDrawingDraft,
   localDrawingDraft,
+  localDrawingPictures,
   saveLocalDrawingDraft,
+  syncLocalDrawingPictures,
 } from '@/lib/localDb';
 import { whenIdle } from './boardPrefetch';
 import {
+  BOARD_IMAGE_MAX,
+  BOARD_IMAGES_MAX,
   DRAWING_BOARD_MAX,
+  type DrawingPicture,
   type DrawingValue,
+  holdDrawingPictures,
   holdOpenDrawing,
+  releaseDrawingPictures,
 } from './drawingValue';
 
 type Board = ReturnType<typeof mountDrawingBoard>;
@@ -68,13 +76,16 @@ const UNDER_CARD =
  * question pinned at the top left, folded to one line on a phone, and Done at the
  * top right. Taking an answer, the board is kept on this device as it changes
  * (`draft`) and Done hands back its document and marking image, or null for an
- * empty board; read only, Done is Close.
+ * empty board; read only, Done is Close. A pasted picture is compressed at once,
+ * kept with the draft, and handed back with Done (Epo 2026-11-09 and
+ * 2026-11-10); `pictures` are the ones of the board it opens.
  */
 export default function DrawingBoardScreen({
   draft,
   hidden = false,
   onClose,
   onDone,
+  pictures,
   pinned,
   readOnly = false,
   saved,
@@ -93,6 +104,12 @@ export default function DrawingBoardScreen({
    * forgets it when emptied (null); a refusal (too big, storage full, offline)
    * keeps it open with nothing lost. */
   store?: (value: DrawingValue | null) => Promise<string | null>;
+  /** The opened board's pictures: the ones the page holds (a Done not sent
+   * yet), and where a stored drawing's are fetched from. */
+  pictures?: {
+    held?: DrawingPicture[];
+    load?: (id: string) => Promise<Blob | null>;
+  };
   pinned: PinnedQuestion;
   readOnly?: boolean;
   saved?: string;
@@ -100,12 +117,16 @@ export default function DrawingBoardScreen({
   withImage?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  /** Names this board's pictures in the page's memory where no draft does. */
+  const screen = useId();
   // The board mounts once; closing reads the latest handler.
   const close = useRef(onClose);
   close.current = onClose;
   // Read by the mount and the draft, which outlive a render.
   const hiddenNow = useRef(hidden);
   hiddenNow.current = hidden;
+  const opened = useRef(pictures);
+  opened.current = pictures;
   /** A mount waiting for idle time, or a hidden mount that failed: Draw runs it. */
   const mountNow = useRef<(() => void) | null>(null);
   /** Writes the device draft at once if a write is waiting. */
@@ -128,6 +149,12 @@ export default function DrawingBoardScreen({
     let timer: ReturnType<typeof setTimeout> | undefined;
     let pending = false;
     let cancelIdle: (() => void) | undefined;
+    /** The pictures already on the device with this draft: each is written
+     * once, not with every write of the board. */
+    const onDevice = new Set<string>();
+    /** Pictures being compressed, not on the board yet: several dropped at
+     * once are counted before any lands. */
+    let landing = 0;
     setFailed(null);
     setReady(false);
     const write = async () => {
@@ -135,17 +162,33 @@ export default function DrawingBoardScreen({
       pending = false;
       const current = board.current;
       if (!(current && draft)) return;
-      await saveLocalDrawingDraft({
-        doc: current.snapshot(),
-        key: draft,
-        savedAt: new Date().toISOString(),
-      }).catch(() => {
+      // The files the board holds; a stored drawing's not shown yet are still
+      // fetched from it after a reload.
+      const images = current.images();
+      const added = images.flatMap(({ file, id }) =>
+        file && !onDevice.has(id) ? [{ file, id }] : []
+      );
+      try {
+        await saveLocalDrawingDraft({
+          doc: current.snapshot(),
+          key: draft,
+          savedAt: new Date().toISOString(),
+        });
+        await syncLocalDrawingPictures(
+          draft,
+          added,
+          images.map(({ id }) => id)
+        );
+        for (const { id } of added) onDevice.add(id);
+      } catch {
         // A browser without IndexedDB keeps the board on the page only.
-      });
+      }
     };
     // Out of sight it keeps nothing: what changes then (a note's height settling)
     // isn't the student's.
     const keep = () => {
+      // Whatever was being added has landed, or been refused.
+      landing = 0;
       if (!draft || hiddenNow.current) return;
       pending = true;
       clearTimeout(timer);
@@ -158,6 +201,9 @@ export default function DrawingBoardScreen({
         draft && !readOnly
           ? await localDrawingDraft(draft).catch(() => undefined)
           : undefined;
+      const keptPictures =
+        draft && kept ? await localDrawingPictures(draft).catch(() => []) : [];
+      for (const { id } of keptPictures) onDevice.add(id);
       if (cancelled) return;
       const mount = () => {
         mountNow.current = null;
@@ -168,6 +214,34 @@ export default function DrawingBoardScreen({
             answerArea: { label: m.drawing_answer_area() },
             board: 'question',
             fitPadding: fitPadding(readOnly),
+            images: {
+              held: new Map(
+                [...(opened.current?.held ?? []), ...keptPictures].map(
+                  ({ file, id }) => [id, file]
+                )
+              ),
+              load: async (id) => {
+                const file = await opened.current?.load?.(id);
+                return file ? { file } : null;
+              },
+              onRefused: (error) =>
+                userToast({
+                  description: errorCopy(error, m.drawing_picture_refused()),
+                  title: m.drawing_picture_refused(),
+                  variant: 'error',
+                }),
+              // Compressed as it lands, under the answer board's cap, and
+              // refused past the board's count.
+              shrink: (file) => {
+                const held = (board.current?.images().length ?? 0) + landing;
+                if (held >= BOARD_IMAGES_MAX)
+                  throw new CopyError(
+                    m.drawing_pictures_too_many({ max: BOARD_IMAGES_MAX })
+                  );
+                landing += 1;
+                return fitImageOffThread(file, BOARD_IMAGE_MAX);
+              },
+            },
             onChange: readOnly ? undefined : keep,
             readOnly,
             saved: kept?.doc ?? saved,
@@ -253,6 +327,14 @@ export default function DrawingBoardScreen({
       userToast({ title: m.drawing_answer_too_big(), variant: 'error' });
       return;
     }
+    // A board opened from an older draft may hold more than a paste allows.
+    if (current.images().length > BOARD_IMAGES_MAX) {
+      userToast({
+        title: m.drawing_pictures_too_many({ max: BOARD_IMAGES_MAX }),
+        variant: 'error',
+      });
+      return;
+    }
     setBusy(true);
     try {
       // The board as Done leaves it is on the device first: practice opens it
@@ -263,8 +345,15 @@ export default function DrawingBoardScreen({
         value = {
           board: saved.doc,
           image: withImage ? await readAsDataUrl(await current.toImage()) : '',
+          // Kept in the page's memory under the part's own key, for the store
+          // or the check that sends them.
+          pictures: holdDrawingPictures(
+            draft ?? screen,
+            await current.imageFiles()
+          ),
         };
         if (store) value.drawing = (await store(value)) ?? undefined;
+        if (value.drawing) releaseDrawingPictures(value);
       } else if (store) await store(null);
       // Stored, the board has left the device; practice keeps its draft until
       // Check sends it (Epo 2026-11-06).

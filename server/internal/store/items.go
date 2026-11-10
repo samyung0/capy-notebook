@@ -39,7 +39,7 @@ type ItemPage struct {
 
 // ItemListFilter narrows the list; empty slices mean no filter.
 type ItemListFilter struct {
-	// Kinds are file kinds, material kinds (note, quiz, flashcards) and an
+	// Kinds are file kinds, material kinds (note, quiz, flashcards, canvas) and an
 	// embed's image or audio, which match image and audio files too.
 	Kinds        []string
 	WorkspaceIDs []string
@@ -59,8 +59,9 @@ type ItemListFilter struct {
 	Cursor    string
 }
 
-// itemMaterialKinds are the blocks the list holds.
-var itemMaterialKinds = []string{"note", "quiz", "flashcards"}
+// itemMaterialKinds are the blocks the list holds. A canvas is its owner's
+// alone: it has no workspace_id, so only the owner's own branch finds it.
+var itemMaterialKinds = []string{"note", "quiz", "flashcards", "canvas"}
 
 // Every branch yields the same columns: the row's type and id, a key unique
 // across tables for the cursor, then the sort and filter values as shown.
@@ -90,10 +91,10 @@ func itemUnionSQL(all bool) string {
 	}
 	materialBranch := func(scope string) string {
 		return `SELECT 'material', m.id, 'material:' || m.id, m.created_at, lower(m.title),
-			m.size_bytes, m.kind::text, lower(` + materialWorkspaceNameSQL + `), NULLIF(m.workspace_id, '')
+			` + materialListSizeSQL + `, m.kind::text, lower(` + materialListWorkspaceNameSQL + `), ` + materialListWorkspaceIDSQL + `
 		FROM materials m
 		WHERE ` + scope + ` AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
-			AND m.kind IN ('note','quiz','flashcards')`
+			AND m.kind IN ('note','quiz','flashcards','canvas')`
 	}
 	files := fileBranch(`f.user_id=$1`)
 	materials := materialBranch(`m.owner_user_id=$1`)
@@ -119,13 +120,14 @@ func itemUnionSQL(all bool) string {
 	` + materials + `
 	UNION ALL
 	SELECT 'embed', a.id, 'embed:' || a.id, a.created_at, lower(` + workspaceNameSQL("top.workspace_id", "top.title") + `),
-			a.size_bytes, a.purpose::text, lower(` + workspaceNameSQL("top.workspace_id", "COALESCE(top.workspace_name,'')") + `),
-			NULLIF(top.workspace_id, '')
+			a.size_bytes, a.purpose::text, lower(COALESCE((SELECT cw.name FROM workspaces cw WHERE cw.id=top.canvas_workspace_id),
+				` + workspaceNameSQL("top.workspace_id", "COALESCE(top.workspace_name,'')") + `)),
+			COALESCE(NULLIF(top.workspace_id, ''), top.canvas_workspace_id)
 		FROM editor_assets a
 		-- Each asset's note by its key; as plain joins the planner hashes
 		-- the whole materials table twice (OFFSET 0 keeps the lookup per row).
 		CROSS JOIN LATERAL (SELECT m.trashed_at AS asset_trashed_at, top.title, top.workspace_id,
-				top.workspace_name, top.trashed_at
+				top.workspace_name, top.trashed_at, top.canvas_workspace_id
 			FROM materials m JOIN materials top ON top.id=COALESCE(m.parent_material_id, m.id)
 			WHERE m.id=a.material_id OFFSET 0) top
 		WHERE a.user_id=$1 AND a.status='ready' AND a.trashed_at IS NULL AND a.purpose IN ('image','audio')

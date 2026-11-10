@@ -10,6 +10,7 @@ import type {
 import { Button } from '@/components/ui/Button';
 import { userToast } from '@/components/ui/userToast';
 import type { Question } from '@/features/questions/types';
+import { answersForCheck } from '@/features/quizzes/drawing/drawingValue';
 import type { Answers } from '@/features/quizzes/grade';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import { m } from '@/i18n';
@@ -50,9 +51,11 @@ export function QuestionItem({
   const [answers, setAnswers] = useState<Answers>({});
   const { isPending: grading, mutate } = useMutation({
     meta: { errorToast: false },
-    mutationFn: () =>
+    // A drawing goes as its board and image, as a check reads it; a review
+    // keeps no drawing, so no pictures.
+    mutationFn: async () =>
       api.post<GradedQuestion>('/review/check', {
-        answers,
+        answers: await answersForCheck(answers, false),
         itemId: item.itemId,
         materialId: item.materialId,
         session,
