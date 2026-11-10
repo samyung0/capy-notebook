@@ -10,4 +10,13 @@ export type ListConversationsParams = {
  * true lists the archived threads instead of the live list
  */
 archived?: boolean;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+/**
+ * Opaque cursor from the previous page
+ */
+cursor?: string;
 };

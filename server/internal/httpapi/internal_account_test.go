@@ -104,11 +104,12 @@ func TestAccountChatStreamSendsItsScope(t *testing.T) {
 		t.Fatalf("workspace scope = %+v", scope)
 	}
 
-	var listed []store.Conversation
+	var page store.ConversationPage
 	rec = doAsUser(t, h, http.MethodGet, "/api/conversations", "u_editor", nil)
-	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil || rec.Code != http.StatusOK {
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil || rec.Code != http.StatusOK {
 		t.Fatalf("account list: %d %s", rec.Code, rec.Body.String())
 	}
+	listed := page.Items
 	at := slices.IndexFunc(listed, func(c store.Conversation) bool { return c.Title == "teach me across my files" })
 	if at < 0 || listed[at].WorkspaceID != "" {
 		t.Fatalf("account list = %+v", listed)
@@ -117,6 +118,13 @@ func TestAccountChatStreamSendsItsScope(t *testing.T) {
 	rec = doAsUser(t, h, http.MethodGet, "/api/conversations", "u_viewer", nil)
 	if strings.Contains(rec.Body.String(), convID) {
 		t.Fatal("another user lists the account conversation")
+	}
+	// The open chat's title, read by id when its list page is not loaded.
+	if rec := doAsUser(t, h, http.MethodGet, "/api/conversations/"+convID, "u_editor", nil); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "teach me across my files") {
+		t.Fatalf("owner's conversation by id: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := doAsUser(t, h, http.MethodGet, "/api/conversations/"+convID, "u_viewer", nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("another user's conversation by id: status = %d", rec.Code)
 	}
 	if rec := doAsUser(t, h, http.MethodGet, "/api/conversations/"+convID+"/messages", "u_viewer", nil); rec.Code != http.StatusNotFound {
 		t.Fatalf("another user's messages: status = %d", rec.Code)

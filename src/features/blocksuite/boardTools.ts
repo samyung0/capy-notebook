@@ -2676,17 +2676,30 @@ const miscTool = seniorTool(
  * holds the charts, and on each board only what it may hold. */
 export const sheetTools = [graphsTool, formulasTool, miscTool];
 
-const boardKinds = new WeakMap<BlockStdScope, BoardKind>();
-/** Says which board a mounted editor is, for what its Misc panel offers. */
-export const markBoard = (std: BlockStdScope, board: BoardKind) =>
-  boardKinds.set(std, board);
+const boardKinds = new WeakMap<
+  BlockStdScope,
+  { board: BoardKind; images: boolean }
+>();
+/** Says which board a mounted editor is and whether it takes images, for what
+ * its Misc panel offers. */
+export const markBoard = (
+  std: BlockStdScope,
+  board: BoardKind,
+  images: boolean
+) => boardKinds.set(std, { board, images });
 
 /** Whether a Misc tile is for this board (board catalog): an answer board holds
  * the charts and images; the mind map, the other pictures, links and the
  * workspace's quizzes and sets are the workspace canvas's. */
-const tileFits = (tile: MiscTile, board: BoardKind | undefined) =>
-  board === 'workspace' ||
-  ('piece' in tile ? tile.piece.kind !== 'mindmap' : 'pick' in tile);
+const tileFits = (
+  tile: MiscTile,
+  { board, images }: { board?: BoardKind; images?: boolean } = {}
+) => {
+  if ('pick' in tile) return !!images;
+  return (
+    board === 'workspace' || ('piece' in tile && tile.piece.kind !== 'mindmap')
+  );
+};
 
 for (const [tag, element] of [
   ['capy-shape-panel', CapyShapePanel],

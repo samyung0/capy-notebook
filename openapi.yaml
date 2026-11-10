@@ -1906,12 +1906,12 @@ components:
         - title
         - updatedAt
       type: object
-    CanvasListOutputBody:
+    CanvasPage:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/CanvasListOutputBody.json
+          example: https://example.com/schemas/CanvasPage.json
           format: uri
           readOnly: true
           type: string
@@ -1919,6 +1919,9 @@ components:
           items:
             $ref: "#/components/schemas/CanvasListItem"
           type: array
+        nextCursor:
+          description: Absent on the last page
+          type: string
       required:
         - items
       type: object
@@ -2335,6 +2338,25 @@ components:
         - createdAt
         - updatedAt
         - running
+      type: object
+    ConversationPage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ConversationPage.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/Conversation"
+          type: array
+        nextCursor:
+          description: Absent on the last page
+          type: string
+      required:
+        - items
       type: object
     Cover:
       additionalProperties: false
@@ -11063,12 +11085,29 @@ paths:
   /api/canvases:
     get:
       operationId: listCanvases
+      parameters:
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CanvasListOutputBody"
+                $ref: "#/components/schemas/CanvasPage"
           description: OK
         default:
           content:
@@ -11076,7 +11115,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: "Every canvas the caller owns: their own and their workspaces', latest saved first"
+      summary: "The caller's canvases a page at a time: their own, latest saved first, then their workspaces'"
       tags:
         - materials
     post:
@@ -11257,14 +11296,28 @@ paths:
           schema:
             description: true lists the archived threads instead of the live list
             type: boolean
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
       responses:
         "200":
           content:
             application/json:
               schema:
-                items:
-                  $ref: "#/components/schemas/Conversation"
-                type: array
+                $ref: "#/components/schemas/ConversationPage"
           description: OK
         default:
           content:
@@ -11350,6 +11403,32 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Delete a conversation
+      tags:
+        - Chat
+    get:
+      operationId: getConversation
+      parameters:
+        - description: Conversation id
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Conversation id
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conversation"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "One of the caller's conversations: the open chat's title when its list page is not loaded"
       tags:
         - Chat
     patch:
@@ -15551,14 +15630,28 @@ paths:
           schema:
             description: true lists the archived threads instead of the live list
             type: boolean
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
       responses:
         "200":
           content:
             application/json:
               schema:
-                items:
-                  $ref: "#/components/schemas/Conversation"
-                type: array
+                $ref: "#/components/schemas/ConversationPage"
           description: OK
         default:
           content:

@@ -4793,10 +4793,15 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     canvases: a workspace's opens and saves through its workspace, whose membership it
     follows. A frozen account draws on what it has and is offered neither New canvas
     nor Rename. The panel at the top left (`CanvasSwitcher`)
-    lists every canvas there is (`GET /api/canvases`: their own, then each workspace's
-    under its icon and name, latest saved first, leaving out a workspace whose owner's
-    account is no longer live), makes a new one ("Untitled canvas",
-    numbered when taken), and renames or deletes the one shown, as a standalone
+    lists every canvas there is (`GET /api/canvases`: their own, latest saved first,
+    then each workspace's under its icon and name, leaving out a workspace whose owner's
+    account is no longer live), a page of 50 at a time as the menu is scrolled (Epo
+    2026-11-10: `cursor` and `nextCursor`, `canvasesQuery` is an infinite query ending
+    in `ListEnd`; there is no cap on how many a person makes). Their own come first so
+    that a first page without one means they have none, and a canvas the URL names on a
+    page not loaded yet has the pages load until it shows or they end. The panel makes
+    a new one ("Untitled canvas", numbered when a loaded one has the name), and renames
+    or deletes the one shown, as a standalone
     material (`PATCH /api/materials/{id}/metadata`, which leaves the revision alone, and
     the trash; a deleted canvas's board saves and keeps nothing more, `gone`). A
     workspace's canvas opens in its workspace, where its quiz and flashcard cards work.
@@ -4860,10 +4865,13 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     reopened answer and a teacher's read-only board load them (`fetchDrawingPicture`,
     which asks for the links again once when one has lapsed; a Done forgets the page's
     copy of its drawing). The marking image draws them as before, and list previews
-    still draw a grey box. A drawn sample answer's board in the quiz editor still keeps
-    pictures on the page only (a decision for Epo: the quiz would have to name them, in the
-    shared question format). An answer board's Misc has the same Image tile as the
-    canvas's.
+    still draw a grey box. A drawn sample answer's board in the quiz editor takes no
+    pictures (Epo 2026-11-10: the quiz would have to name them in the shared question
+    format, which Go and the collaboration server both check): `DrawnSampleField` opens
+    the board with `noPictures`, so its Misc has the charts and no Image tile
+    (`BoardImages.none`, `markBoard`) and a pasted or dropped picture is refused and
+    said ("A sample answer can't hold pictures."). An answer board's Misc has the same
+    Image tile as the canvas's.
 - **Preview (`boardPreview.ts`):** `drawBoardPreview(saved, { width, height }, board)` draws a
   saved board as an SVG string from its data, for lists, results and marking views
   (Epo 2026-11-06: what's on it, not every detail). It never loads the editor: it imports

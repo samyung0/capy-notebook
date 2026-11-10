@@ -298,7 +298,7 @@ const appRoutes = [
       qc.prefetchQuery(topicsQuery(id));
       qc.prefetchQuery(filesQuery(id));
       qc.prefetchQuery(materialsQuery(id));
-      qc.prefetchQuery(conversationsQuery(id));
+      qc.prefetchInfiniteQuery(conversationsQuery(id));
       // The open file rides the first wave instead of waiting for the page to
       // render. An open material is left out on purpose: its body is the
       // document itself, and the heavy-document gate must see the list first.
@@ -349,7 +349,7 @@ const appRoutes = [
     component: lazyPage(() => import('@/routes/AccountChat')),
     getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
-      qc.prefetchQuery(conversationsQuery(null));
+      qc.prefetchInfiniteQuery(conversationsQuery(null));
       // Citations show their workspace's icon.
       qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
     },

@@ -165,9 +165,21 @@ func TestCanvasesOfOnesOwnListWithTheWorkspaces(t *testing.T) {
 		t.Fatalf("someone else opened it: %v", err)
 	}
 
-	list, err := f.s.ListCanvases(ctx, f.user)
-	if err != nil || len(list) != 3 {
-		t.Fatalf("the canvases = %+v, err %v", list, err)
+	// A page at a time: one's own first, latest saved first, then the workspace's.
+	var list []CanvasListItem
+	cursor := ""
+	for {
+		page, err := f.s.ListCanvases(ctx, f.user, 2, cursor)
+		if err != nil || len(page.Items) > 2 {
+			t.Fatalf("a page of canvases = %+v, err %v", page, err)
+		}
+		list = append(list, page.Items...)
+		if cursor = page.NextCursor; cursor == "" {
+			break
+		}
+	}
+	if len(list) != 3 || list[0].ID != first.ID || list[1].ID != second.ID || list[2].ID != inWorkspace.ID {
+		t.Fatalf("the canvases = %+v", list)
 	}
 	byID := map[string]CanvasListItem{}
 	for _, item := range list {

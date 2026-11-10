@@ -174,7 +174,10 @@ policy. The Files preview dialog handles its detail-query failure inline with
 
 Paged page lists (Files, Blocks, Trash, Learning's Past reviews and All
 results) end with `ListEnd` (`src/components/app/ListEnd.tsx`): the next page
-loads once the end is within 800px of the page panel's bottom. A page that
+loads once the end is within 800px of the page panel's bottom. A list that
+scrolls by itself passes its own scroller as `root` (the chat list in a side
+panel), or a ref holding nothing to watch the screen (the archived chats dialog,
+the Canvas page's menu). A page that
 still fails after the default query retries stops loading there, with Load more
 as the manual retry; the rows already loaded stay.
 

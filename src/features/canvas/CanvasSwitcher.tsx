@@ -1,4 +1,6 @@
+import type { ComponentProps } from 'react';
 import type { CanvasListItem } from '@/api/canvas';
+import { ListEnd, ON_SCREEN } from '@/components/app/ListEnd';
 import { Button } from '@/components/ui/Button';
 import {
   DropdownMenu,
@@ -20,7 +22,7 @@ import { iconUrl } from '@/lib/icon-catalog';
  * B): every canvas there is, the person's own first, then each workspace's
  * under its icon and name, then New canvas, and the shown one's Rename and
  * Delete (not in the mock's first round: a canvas of one's own has no other
- * place for them). */
+ * place for them). The list comes a page at a time as it is scrolled. */
 export function CanvasSwitcher({
   canvases,
   current,
@@ -30,6 +32,7 @@ export function CanvasSwitcher({
   onOpen,
   onOpenChange,
   onRename,
+  paging,
 }: {
   canvases: CanvasListItem[];
   /** The one of the person's own that the page shows. */
@@ -41,6 +44,8 @@ export function CanvasSwitcher({
   onOpen: (canvas: CanvasListItem) => void;
   onOpenChange: (open: boolean) => void;
   onRename: () => void;
+  /** The list's next page, loaded as its end comes on screen. */
+  paging: Omit<ComponentProps<typeof ListEnd>, 'className' | 'root'>;
 }) {
   const own = canvases.filter(({ workspaceId }) => !workspaceId);
   const shared = canvases.filter(({ workspaceId }) => workspaceId);
@@ -96,6 +101,7 @@ export function CanvasSwitcher({
           </DropdownMenuLabel>
         )}
         {shared.map(row)}
+        <ListEnd {...paging} root={ON_SCREEN} />
         {!(frozen && !current) && <DropdownMenuSeparator />}
         {!frozen && (
           <DropdownMenuItem

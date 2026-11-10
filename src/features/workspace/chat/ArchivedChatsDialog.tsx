@@ -6,6 +6,7 @@ import {
   useUpdateConversation,
 } from '@/api/hooks';
 import type { Conversation } from '@/api/types';
+import { ListEnd, ON_SCREEN } from '@/components/app/ListEnd';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
 import { SkeletonList } from '@/components/ui/feedback';
@@ -26,9 +27,13 @@ export function ArchivedChatsDialog({
   open: boolean;
   onClose: () => void;
 }) {
-  const { data: archived } = useArchivedConversations(workspaceId, open, {
-    errorBoundary: false,
-  });
+  const {
+    data: archived,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+  } = useArchivedConversations(workspaceId, open, { errorBoundary: false });
   const { mutate: update } = useUpdateConversation(workspaceId);
   const { mutate: remove } = useDeleteConversation(workspaceId);
   const { mutate: all, isPending } =
@@ -124,6 +129,13 @@ export function ArchivedChatsDialog({
             ))}
           </div>
         )}
+        <ListEnd
+          fetchNextPage={fetchNextPage}
+          hasNextPage={hasNextPage}
+          isFetchingNextPage={isFetchingNextPage}
+          isFetchNextPageError={isFetchNextPageError}
+          root={ON_SCREEN}
+        />
       </SimpleDialog>
       <ConfirmDialog
         body={m.chat_delete_body()}
@@ -141,9 +153,12 @@ export function ArchivedChatsDialog({
         onClose={() => setConfirmDelete(false)}
         onConfirm={() => all('delete')}
         open={confirmDelete}
-        title={m.chat_delete_all_title({
-          count: String(archived?.length ?? 0),
-        })}
+        title={
+          // Pages still to come are deleted too, and are not counted here.
+          hasNextPage
+            ? m.chat_delete_all_title_every()
+            : m.chat_delete_all_title({ count: String(archived?.length ?? 0) })
+        }
       />
     </>
   );

@@ -83,6 +83,7 @@ const UNDER_CARD =
 export default function DrawingBoardScreen({
   draft,
   hidden = false,
+  noPictures = false,
   onClose,
   onDone,
   pictures,
@@ -98,6 +99,8 @@ export default function DrawingBoardScreen({
    * takes a stroke at once (fix 4, Epo 2026-11-07): no focus, no pointer, no
    * draft, no time-limit Done. */
   hidden?: boolean;
+  /** The board takes no pictures: a drawn sample answer (Epo 2026-11-10). */
+  noPictures?: boolean;
   onClose: () => void;
   onDone?: (value: DrawingValue | null) => void;
   /** An assignment's Done stores the drawing before the board closes, or
@@ -224,6 +227,7 @@ export default function DrawingBoardScreen({
                 const file = await opened.current?.load?.(id);
                 return file ? { file } : null;
               },
+              none: noPictures,
               onRefused: (error) =>
                 userToast({
                   description: errorCopy(error, m.drawing_picture_refused()),
@@ -233,6 +237,8 @@ export default function DrawingBoardScreen({
               // Compressed as it lands, under the answer board's cap, and
               // refused past the board's count.
               shrink: (file) => {
+                if (noPictures)
+                  throw new CopyError(m.drawing_sample_no_pictures());
                 const held = (board.current?.images().length ?? 0) + landing;
                 if (held >= BOARD_IMAGES_MAX)
                   throw new CopyError(
@@ -270,7 +276,7 @@ export default function DrawingBoardScreen({
       board.current?.unmount();
       board.current = null;
     };
-  }, [draft, readOnly, saved]);
+  }, [draft, noPictures, readOnly, saved]);
   useEffect(() => {
     if (!failed) return;
     userToast({

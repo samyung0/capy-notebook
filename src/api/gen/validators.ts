@@ -2119,8 +2119,18 @@ export const BillingTopUpResponse = zod.object({
 
 
 /**
- * @summary Every canvas the caller owns: their own and their workspaces', latest saved first
+ * @summary The caller's canvases a page at a time: their own, latest saved first, then their workspaces'
  */
+export const listCanvasesQueryLimitDefault = 50;
+export const listCanvasesQueryLimitMax = 100;
+
+
+
+export const ListCanvasesQueryParams = zod.object({
+  "limit": zod.int().min(1).max(listCanvasesQueryLimitMax).default(listCanvasesQueryLimitDefault),
+  "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
+})
+
 export const ListCanvasesResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "items": zod.array(zod.object({
@@ -2130,7 +2140,8 @@ export const ListCanvasesResponse = zod.object({
   "workspaceIconId": zod.string().optional(),
   "workspaceId": zod.string().optional().describe('The workspace whose Canvas tab this is; none for a canvas of the caller\'s own'),
   "workspaceName": zod.string().optional()
-}))
+})),
+  "nextCursor": zod.string().optional().describe('Absent on the last page')
 })
 
 
@@ -2353,11 +2364,20 @@ export const UpdateMaterialCommentResponse = zod.object({
 /**
  * @summary List the caller's account chat conversations
  */
+export const listAccountConversationsQueryLimitDefault = 50;
+export const listAccountConversationsQueryLimitMax = 100;
+
+
+
 export const ListAccountConversationsQueryParams = zod.object({
-  "archived": zod.boolean().optional().describe('true lists the archived threads instead of the live list')
+  "archived": zod.boolean().optional().describe('true lists the archived threads instead of the live list'),
+  "limit": zod.int().min(1).max(listAccountConversationsQueryLimitMax).default(listAccountConversationsQueryLimitDefault),
+  "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
 })
 
-export const ListAccountConversationsResponseItem = zod.object({
+export const ListAccountConversationsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "archivedAt": zod.iso.datetime({"offset":true}).optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
@@ -2367,8 +2387,9 @@ export const ListAccountConversationsResponseItem = zod.object({
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string().describe('Empty for an account conversation')
+})),
+  "nextCursor": zod.string().optional().describe('Absent on the last page')
 })
-export const ListAccountConversationsResponse = zod.array(ListAccountConversationsResponseItem)
 
 
 /**
@@ -2415,6 +2436,26 @@ export const DeleteConversationParams = zod.object({
 })
 
 export const DeleteConversationResponse = zod.void()
+
+
+/**
+ * @summary One of the caller's conversations: the open chat's title when its list page is not loaded
+ */
+export const GetConversationParams = zod.object({
+  "id": zod.string().describe('Conversation id')
+})
+
+export const GetConversationResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "archivedAt": zod.iso.datetime({"offset":true}).optional(),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "pinnedAt": zod.iso.datetime({"offset":true}).optional(),
+  "running": zod.boolean(),
+  "title": zod.string(),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "workspaceId": zod.string().describe('Empty for an account conversation')
+})
 
 
 /**
@@ -8842,11 +8883,20 @@ export const ListConversationsParams = zod.object({
   "id": zod.string().describe('Workspace id')
 })
 
+export const listConversationsQueryLimitDefault = 50;
+export const listConversationsQueryLimitMax = 100;
+
+
+
 export const ListConversationsQueryParams = zod.object({
-  "archived": zod.boolean().optional().describe('true lists the archived threads instead of the live list')
+  "archived": zod.boolean().optional().describe('true lists the archived threads instead of the live list'),
+  "limit": zod.int().min(1).max(listConversationsQueryLimitMax).default(listConversationsQueryLimitDefault),
+  "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
 })
 
-export const ListConversationsResponseItem = zod.object({
+export const ListConversationsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "archivedAt": zod.iso.datetime({"offset":true}).optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
@@ -8856,8 +8906,9 @@ export const ListConversationsResponseItem = zod.object({
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string().describe('Empty for an account conversation')
+})),
+  "nextCursor": zod.string().optional().describe('Absent on the last page')
 })
-export const ListConversationsResponse = zod.array(ListConversationsResponseItem)
 
 
 /**

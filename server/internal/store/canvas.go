@@ -72,24 +72,61 @@ type CanvasListItem struct {
 	UpdatedAt       time.Time `json:"updatedAt"`
 }
 
-// ListCanvases are every canvas the caller owns, latest saved first: their own
-// and the ones of their workspaces (Epo 2026-11-10: the account's Canvas page
-// shows all there are). A workspace whose owner's account is no longer live is
-// left out, like every other read of that workspace.
-func (s *Store) ListCanvases(ctx context.Context, userID string) ([]CanvasListItem, error) {
+// CanvasPage is one page of a person's canvases.
+type CanvasPage struct {
+	Items      []CanvasListItem `json:"items" nullable:"false"`
+	NextCursor string           `json:"nextCursor,omitempty" doc:"Absent on the last page"`
+}
+
+// A person's own canvases come first, latest saved first, then the ones of
+// their workspaces: an own canvas sorts a thousand years ahead of any save.
+var canvasSort = listSort{
+	column: "(CASE WHEN m.canvas_workspace_id IS NULL THEN m.updated_at + interval '1000 years' ELSE m.updated_at END)",
+	kind:   "time",
+}
+
+// ListCanvases pages through every canvas the caller owns: their own, latest
+// saved first, then the ones of their workspaces (Epo 2026-11-10: the account's
+// Canvas page shows all there are, a page at a time). A workspace whose owner's
+// account is no longer live is left out, like every other read of that
+// workspace.
+func (s *Store) ListCanvases(ctx context.Context, userID string, limit int, cursor string) (CanvasPage, error) {
+	if limit <= 0 || limit > listPageMax {
+		limit = listPageMax
+	}
+	args := []any{userID}
+	clause, cursorArgs, err := cursorClause(canvasSort, "m.id", false, cursor, len(args)+1)
+	if err != nil {
+		return CanvasPage{}, err
+	}
+	args = append(args, cursorArgs...)
+	args = append(args, limit+1)
 	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, COALESCE(m.canvas_workspace_id, ''),
-			COALESCE(w.name, ''), COALESCE(w.icon_id, ''), m.updated_at
+			COALESCE(w.name, ''), COALESCE(w.icon_id, ''), m.updated_at, `+canvasSort.column+`
 		FROM materials m LEFT JOIN workspaces w ON w.id = m.canvas_workspace_id
 		WHERE m.kind='canvas' AND m.owner_user_id=$1 AND m.trashed_at IS NULL
-			AND (m.canvas_workspace_id IS NULL OR `+liveWorkspaceSQL("m.canvas_workspace_id")+`)
-		ORDER BY m.updated_at DESC, m.id`, userID)
+			AND (m.canvas_workspace_id IS NULL OR `+liveWorkspaceSQL("m.canvas_workspace_id")+`)`+
+		clause+orderClause(canvasSort, "m.id", false)+fmt.Sprintf(` LIMIT $%d`, len(args)), args...)
 	if err != nil {
-		return nil, err
+		return CanvasPage{}, err
 	}
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (CanvasListItem, error) {
+	var keys []time.Time
+	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (CanvasListItem, error) {
 		var item CanvasListItem
-		return item, row.Scan(&item.ID, &item.Title, &item.WorkspaceID, &item.WorkspaceName, &item.WorkspaceIconID, &item.UpdatedAt)
+		var key time.Time
+		err := row.Scan(&item.ID, &item.Title, &item.WorkspaceID, &item.WorkspaceName, &item.WorkspaceIconID, &item.UpdatedAt, &key)
+		keys = append(keys, key)
+		return item, err
 	})
+	if err != nil {
+		return CanvasPage{}, err
+	}
+	page := CanvasPage{Items: items}
+	if len(items) > limit {
+		page.Items = items[:limit]
+		page.NextCursor = encodeListCursor(cursorPrimary(canvasSort, keys[limit-1], "", 0), items[limit-1].ID)
+	}
+	return page, nil
 }
 
 // CreateCanvas makes a canvas of the caller's own, in no workspace.

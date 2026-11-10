@@ -32,11 +32,11 @@ func TestAccountArchivedConversationsStayInTheirScope(t *testing.T) {
 	if err := s.UnarchiveConversations(ctx, owner, ""); err != nil {
 		t.Fatal(err)
 	}
-	live, err := s.ListConversations(ctx, owner, "", false)
+	live, err := listedConversations(ctx, s, owner, "", false)
 	if err != nil || len(live) != 1 || live[0].ID != account.ID {
 		t.Fatalf("account list after unarchive = %+v, %v", live, err)
 	}
-	stillArchived, err := s.ListConversations(ctx, owner, ws.ID, true)
+	stillArchived, err := listedConversations(ctx, s, owner, ws.ID, true)
 	if err != nil || len(stillArchived) != 1 {
 		t.Fatalf("workspace archive changed: %+v, %v", stillArchived, err)
 	}
@@ -46,10 +46,10 @@ func TestAccountArchivedConversationsStayInTheirScope(t *testing.T) {
 	if err := s.DeleteArchivedConversations(ctx, owner, ""); err != nil {
 		t.Fatal(err)
 	}
-	if left, _ := s.ListConversations(ctx, owner, "", true); len(left) != 0 {
+	if left, _ := listedConversations(ctx, s, owner, "", true); len(left) != 0 {
 		t.Fatalf("archived account conversations left: %+v", left)
 	}
-	if kept, _ := s.ListConversations(ctx, owner, ws.ID, true); len(kept) != 1 {
+	if kept, _ := listedConversations(ctx, s, owner, ws.ID, true); len(kept) != 1 {
 		t.Fatalf("workspace archive deleted: %+v", kept)
 	}
 }

@@ -1,4 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -8,8 +12,10 @@ import {
   createCanvas,
   saveCanvas,
 } from '@/api/canvas';
+import { qk } from '@/api/client';
 import { updateMaterialBodyTitleMax } from '@/api/gen/validators';
 import { useDeleteMaterial, useUpdateMaterial } from '@/api/hooks';
+import { pagedRows } from '@/api/paged';
 import { MobileNavDrawer } from '@/components/app/Sidebar';
 import { TrashConfirmDialog } from '@/components/app/TrashConfirmDialog';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
@@ -69,15 +75,37 @@ export default function CanvasPage() {
   const qc = useQueryClient();
   const frozen = useAccountFrozen();
   // A list that can't be read goes to the page's error boundary, as any does.
-  const { data: canvases, refetch } = useQuery(canvasesQuery());
+  // It comes a page at a time, the person's own canvases first.
+  const {
+    data: canvases,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+    refetch,
+  } = useInfiniteQuery({ ...canvasesQuery(), select: pagedRows });
   const own = useMemo(
     () => canvases?.filter(({ workspaceId }) => !workspaceId),
     [canvases]
   );
   /** The canvas shown last: a link without `c` keeps it on the page. */
-  const shown = useRef<string | undefined>(undefined);
-  const current = own?.find(({ id }) => id === (c ?? shown.current));
-  if (current) shown.current = current.id;
+  const shown = useRef<CanvasListItem | undefined>(undefined);
+  /** A canvas just deleted: not shown again, though the list may hold it yet. */
+  const [removed, setRemoved] = useState<string>();
+  const asked = c ?? shown.current?.id;
+  const wanted = asked === removed ? undefined : asked;
+  const listed = own?.find(({ id }) => id === wanted);
+  // The pages loaded may not reach the wanted canvas (newer ones pushed it down
+  // the list, or a link names an old one): they load on until it shows or they
+  // end, and the one already on the page stays there meanwhile. A page that
+  // fails stops the loading and changes nothing shown: the menu's Load more, or
+  // its next open, tries again.
+  const unlisted = !!wanted && !listed && hasNextPage;
+  const seeking = unlisted && !isFetchNextPageError;
+  const current =
+    listed ??
+    (unlisted && shown.current?.id === wanted ? shown.current : undefined);
+  if (current) shown.current = current;
   /** The canvas being deleted: its board saves and keeps nothing more. */
   const deleted = useRef<string | null>(null);
   const { mutateAsync: create } = useMutation({ mutationFn: createCanvas });
@@ -85,7 +113,7 @@ export default function CanvasPage() {
   const { mutateAsync: remove } = useDeleteMaterial('');
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const relist = () => qc.invalidateQueries(canvasesQuery());
+  const relist = () => qc.invalidateQueries({ queryKey: qk.canvases });
   const show = (id: string, replace = false) =>
     navigate({ replace, search: { c: id }, to: '/canvas' });
   // A refusal is said by the mutation's own toast.
@@ -100,20 +128,28 @@ export default function CanvasPage() {
   const making = useRef(false);
   useEffect(() => {
     if (!own) return;
+    if (seeking) {
+      if (!isFetchingNextPage) void fetchNextPage();
+      return;
+    }
     if (current) {
       making.current = false;
       // The URL names what is shown, so a reload and a shared tab open it.
       if (c !== current.id) void show(current.id, true);
       return;
     }
-    if (own.length) void show(own[0].id, true);
+    // A link's canvas not found yet, behind a page that failed: the link stays.
+    if (unlisted) return;
+    // Their own come first, so a first page without one means they have none.
+    const first = own.find(({ id }) => id !== removed);
+    if (first) void show(first.id, true);
     else if (!(making.current || frozen)) {
       making.current = true;
       void add(m.canvas_first_title(), true);
     }
-    // `show` and `add` are this render's; the list, the canvas shown and the
-    // URL's are what it follows.
-  }, [own, current, c, frozen]);
+    // `show`, `add` and `fetchNextPage` are this render's; the list, its
+    // paging, the canvas shown and the URL's are what it follows.
+  }, [own, current, c, frozen, seeking, unlisted, isFetchingNextPage, removed]);
 
   const open = (canvas: CanvasListItem) =>
     canvas.workspaceId
@@ -154,6 +190,12 @@ export default function CanvasPage() {
               if (opened) void refetch();
             }}
             onRename={() => setRenaming(true)}
+            paging={{
+              fetchNextPage,
+              hasNextPage,
+              isFetchingNextPage,
+              isFetchNextPageError,
+            }}
           />
         </div>
       )}
@@ -178,9 +220,13 @@ export default function CanvasPage() {
         onConfirm={() => {
           setDeleting(false);
           if (!current) return;
-          deleted.current = current.id;
-          remove(current.id)
-            .then(relist)
+          const { id } = current;
+          deleted.current = id;
+          remove(id)
+            .then(() => {
+              setRemoved(id);
+              return relist();
+            })
             // Refused: the canvas is still there and saves again.
             .catch(() => {
               deleted.current = null;

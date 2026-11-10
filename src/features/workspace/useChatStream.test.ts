@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { type ChatStreamHandlers, streamChat } from '@/api/chatStream';
 import { ApiError, qk } from '@/api/client';
+import type { ConversationCache } from '@/api/hooks';
 import type { Conversation } from '@/api/types';
 import { m } from '@/i18n';
 import {
@@ -103,11 +104,17 @@ describe('a sent turn lists its conversation before its stream ends', () => {
   ])('%s', async (_, started, ids) => {
     const qc = new QueryClient();
     const key = qk.conversations('ws');
-    qc.setQueryData(key, [
-      row('pinned', '2026-10-02T00:00:00Z'),
-      row('a'),
-      row('b'),
-    ]);
+    // Two pages loaded: the moved row leaves the second for the first.
+    qc.setQueryData<ConversationCache>(key, {
+      pageParams: ['', 'next'],
+      pages: [
+        {
+          items: [row('pinned', '2026-10-02T00:00:00Z'), row('a')],
+          nextCursor: 'next',
+        },
+        { items: [row('b')] },
+      ],
+    });
     let end!: () => void;
     vi.mocked(streamChat).mockImplementation(
       async (_ws, _body, handlers: ChatStreamHandlers) => {
@@ -128,7 +135,8 @@ describe('a sent turn lists its conversation before its stream ends', () => {
     );
     const turn = send('Explain\nmitosis', { workspaceOnly: false });
     await vi.waitFor(() => expect(end).toBeDefined());
-    const list = qc.getQueryData<Conversation[]>(key);
+    const cache = qc.getQueryData<ConversationCache>(key);
+    const list = cache?.pages.flatMap((page) => page.items);
     expect(list?.map((c) => c.id)).toEqual(ids);
     if (started === 'new') {
       expect(list?.[0]).toMatchObject({

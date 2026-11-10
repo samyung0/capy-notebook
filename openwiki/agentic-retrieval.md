@@ -3439,6 +3439,26 @@ connection.
   `chat_turn` events in every cached list; a turn in a conversation no list
   holds yet refetches them, and every events-stream connect refetches them
   too.
+- The conversation lists come a page at a time (Epo 2026-11-10: a chat list
+  grows fast): `GET /api/workspaces/{id}/conversations` and
+  `GET /api/conversations` take `limit` (50, at most 100) and `cursor` and
+  answer `{items, nextCursor}`, the live list pinned first then latest
+  activity, `?archived=true` latest archived first (`ListConversations`, the
+  shared keyset helpers in `store/listing.go`; a pinned thread sorts a
+  thousand years ahead of any activity, so one cursor covers both groups).
+  The browser reads them as infinite queries (`conversationsQuery`,
+  `useConversations` and `useArchivedConversations`, each selecting its loaded
+  pages as one list, `pagedRows`), the live one stored for a reopened panel;
+  `ConversationList` and the archived dialog end in `ListEnd`. The title
+  search filters the loaded rows, and since a short result brings the list's
+  end into view it goes on loading pages until it has looked at them all;
+  "No matches" waits for the last page. Cache writes go through the pages
+  (`mapConversations`; a started turn's row goes first on the first page and
+  leaves any later one). The open chat's title comes from the list, or, for
+  a chat on a page not loaded (a link to an old one), from
+  `GET /api/conversations/{id}` (`useConversation`). Delete all in the
+  archived dialog counts its rows only once every page is loaded, and
+  otherwise asks about every archived chat.
 
 ### Chat below lg
 

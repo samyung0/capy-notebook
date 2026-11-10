@@ -51,7 +51,7 @@ vi.mock('@/api/hooks', () => ({
     isFetching: false,
   }),
 }));
-vi.mock('@/components/app/layout', () => ({
+vi.mock('@/components/app/layout', async () => ({
   PagePanel: ({
     children,
     header,
@@ -64,6 +64,7 @@ vi.mock('@/components/app/layout', () => ({
       {children}
     </>
   ),
+  PanelScrollRoot: (await import('react')).createContext(null),
 }));
 
 const { ConversationList } = await import(

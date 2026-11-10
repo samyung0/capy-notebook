@@ -348,6 +348,8 @@ export const qk = {
   canvases: ['canvases'] as const,
   cards: (flashcardSetId: string) =>
     ['flashcardSet', flashcardSetId, 'cards'] as const,
+  /** One conversation's row, read by id when its list page is not loaded. */
+  conversation: (convId: string) => ['conversation', convId, 'row'] as const,
   /** One workspace's chats, or with null the account chat's. */
   conversations: (wsId: string | null) =>
     wsId

@@ -95,6 +95,7 @@ import { uid } from './db';
 import { editorAssetHandlers, embeds } from './editorAssets';
 import { extractionHandlers, seedExtractionFiles } from './extraction';
 import { membersHandlers } from './members';
+import { mockPage } from './paging';
 import { questionBankHandlers } from './questionBank';
 import {
   blankOffice,
@@ -2891,7 +2892,16 @@ export const handlers = [
           : time(b.pinnedAt) - time(a.pinnedAt) ||
             time(b.updatedAt) - time(a.updatedAt)
       );
-    return HttpResponse.json(list.map(db.listedConversation));
+    return HttpResponse.json(
+      mockPage(list.map(db.listedConversation), request)
+    );
+  }),
+  // One conversation by id: the open chat's title off the loaded pages.
+  http.get('/api/conversations/:id', ({ params }) => {
+    const conv = db.conversations.find((c) => c.id === params.id);
+    return conv
+      ? HttpResponse.json(db.listedConversation(conv))
+      : new HttpResponse(null, { status: 404 });
   }),
   // Archiving drops the pin, as on the server.
   http.patch('/api/conversations/:id', async ({ params, request }) => {

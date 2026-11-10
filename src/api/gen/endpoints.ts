@@ -46,7 +46,7 @@ import type {
   BootstrapSourceDocumentParams,
   BrowserSourceSession,
   CanvasBody,
-  CanvasListOutputBody,
+  CanvasPage,
   CheckBankQuestionReq,
   CheckQuizQuestionReq,
   CheckReviewItemReq,
@@ -61,6 +61,7 @@ import type {
   ComputationCheckResp,
   ConfirmExtractionReq,
   Conversation,
+  ConversationPage,
   CreateBlankFileReq,
   CreateCanvasInputBody,
   CreateCommentReq,
@@ -120,6 +121,7 @@ import type {
   LibraryFigure,
   ListAccountConversationsParams,
   ListAttemptsParams,
+  ListCanvasesParams,
   ListConversationsParams,
   ListDrawingsParams,
   ListItemsParams,
@@ -3238,7 +3240,7 @@ const res = await fetch(getBillingTopUpUrl(),
 
 
 export type listCanvasesResponse200 = {
-  data: CanvasListOutputBody
+  data: CanvasPage
   status: 200
 }
 
@@ -3256,20 +3258,27 @@ export type listCanvasesResponseError = (listCanvasesResponseDefault) & {
 
 export type listCanvasesResponse = (listCanvasesResponseSuccess | listCanvasesResponseError)
 
-export const getListCanvasesUrl = () => {
+export const getListCanvasesUrl = (params?: ListCanvasesParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/canvases`
+  return stringifiedParams.length > 0 ? `/api/canvases?${stringifiedParams}` : `/api/canvases`
 }
 
 /**
- * @summary Every canvas the caller owns: their own and their workspaces', latest saved first
+ * @summary The caller's canvases a page at a time: their own, latest saved first, then their workspaces'
  */
-export const listCanvases = async ( options?: RequestInit): Promise<listCanvasesResponse> => {
+export const listCanvases = async (params?: ListCanvasesParams, options?: RequestInit): Promise<listCanvasesResponse> => {
 
-  const res = await fetch(getListCanvasesUrl(),
+  const res = await fetch(getListCanvasesUrl(params),
   {
     ...options,
     method: 'GET'
@@ -3647,7 +3656,7 @@ const res = await fetch(getUpdateMaterialCommentUrl(id),
 
 
 export type listAccountConversationsResponse200 = {
-  data: Conversation[]
+  data: ConversationPage
   status: 200
 }
 
@@ -3913,6 +3922,56 @@ export const deleteConversation = async (id: string, options?: RequestInit): Pro
 
   const data: deleteConversationResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as deleteConversationResponse
+}
+
+
+
+export type getConversationResponse200 = {
+  data: Conversation
+  status: 200
+}
+
+export type getConversationResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getConversationResponseSuccess = (getConversationResponse200) & {
+  headers: Headers;
+};
+export type getConversationResponseError = (getConversationResponseDefault) & {
+  headers: Headers;
+};
+
+export type getConversationResponse = (getConversationResponseSuccess | getConversationResponseError)
+
+export const getGetConversationUrl = (id: string,) => {
+
+
+
+
+  return `/api/conversations/${id}`
+}
+
+/**
+ * @summary One of the caller's conversations: the open chat's title when its list page is not loaded
+ */
+export const getConversation = async (id: string, options?: RequestInit): Promise<getConversationResponse> => {
+
+  const res = await fetch(getGetConversationUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getConversationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getConversationResponse
 }
 
 
@@ -12263,7 +12322,7 @@ const res = await fetch(getReorderContentUrl(id),
 
 
 export type listConversationsResponse200 = {
-  data: Conversation[]
+  data: ConversationPage
   status: 200
 }
 

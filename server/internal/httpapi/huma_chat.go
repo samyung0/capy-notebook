@@ -17,12 +17,16 @@ import (
 type wsConversationsInput struct {
 	ID string `path:"id" doc:"Workspace id"`
 }
+type listAccountConversationsInput struct {
+	Archived bool   `query:"archived" doc:"true lists the archived threads instead of the live list"`
+	Limit    int    `query:"limit" minimum:"1" maximum:"100" default:"50"`
+	Cursor   string `query:"cursor" doc:"Opaque cursor from the previous page"`
+}
 type listConversationsInput struct {
 	ID       string `path:"id" doc:"Workspace id"`
 	Archived bool   `query:"archived" doc:"true lists the archived threads instead of the live list"`
-}
-type listAccountConversationsInput struct {
-	Archived bool `query:"archived" doc:"true lists the archived threads instead of the live list"`
+	Limit    int    `query:"limit" minimum:"1" maximum:"100" default:"50"`
+	Cursor   string `query:"cursor" doc:"Opaque cursor from the previous page"`
 }
 type createAccountConversationInput struct {
 	Body apimodel.CreateConversationReq
@@ -40,7 +44,7 @@ type conversationIDInput struct {
 }
 
 type conversationsOutput struct {
-	Body []apimodel.Conversation `nullable:"false"`
+	Body apimodel.ConversationPage
 }
 type conversationOutput struct {
 	Body apimodel.Conversation
@@ -57,6 +61,7 @@ func (a *api) registerChat(api huma.API) {
 	// workspace; the per-conversation routes below serve them to their owner.
 	reg(api, http.MethodGet, "/api/conversations", "listAccountConversations", tag, "List the caller's account chat conversations", http.StatusOK, a.listAccountConversations)
 	reg(api, http.MethodPost, "/api/conversations", "createAccountConversation", tag, "Start a new account chat conversation", http.StatusCreated, a.createAccountConversation)
+	reg(api, http.MethodGet, "/api/conversations/{id}", "getConversation", tag, "One of the caller's conversations: the open chat's title when its list page is not loaded", http.StatusOK, a.getConversation)
 	reg(api, http.MethodGet, "/api/conversations/{id}/messages", "listMessages", tag, "Load a conversation's message history", http.StatusOK, a.listMessages)
 	reg(api, http.MethodPost, "/api/conversations/{id}/messages/{messageId}/stop", "stopChatTurn", tag, "Stop a conversation's running turn", http.StatusNoContent, a.stopTurn)
 	reg(api, http.MethodPatch, "/api/conversations/{id}", "updateConversation", tag, "Rename, pin or archive a conversation", http.StatusOK, a.updateConversation)
@@ -74,7 +79,7 @@ func (a *api) registerChat(api huma.API) {
 }
 
 func (a *api) listConversations(ctx context.Context, in *listConversationsInput) (*conversationsOutput, error) {
-	res, err := a.s.ListConversations(ctx, userID(ctx), in.ID, in.Archived)
+	res, err := a.s.ListConversations(ctx, userID(ctx), in.ID, in.Archived, in.Limit, in.Cursor)
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -90,7 +95,7 @@ func (a *api) createConversation(ctx context.Context, in *createConversationInpu
 }
 
 func (a *api) listAccountConversations(ctx context.Context, in *listAccountConversationsInput) (*conversationsOutput, error) {
-	res, err := a.s.ListConversations(ctx, userID(ctx), "", in.Archived)
+	res, err := a.s.ListConversations(ctx, userID(ctx), "", in.Archived, in.Limit, in.Cursor)
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -118,6 +123,14 @@ func (a *api) deleteConversation(ctx context.Context, in *conversationIDInput) (
 		return nil, hErr(err)
 	}
 	return &Empty{}, nil
+}
+
+func (a *api) getConversation(ctx context.Context, in *conversationIDInput) (*conversationOutput, error) {
+	res, err := a.s.GetConversation(ctx, userID(ctx), in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &conversationOutput{Body: res}, nil
 }
 
 func (a *api) updateConversation(ctx context.Context, in *updateConversationInput) (*conversationOutput, error) {

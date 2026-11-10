@@ -1,6 +1,7 @@
 import { HttpResponse, http } from 'msw';
 import type { CanvasBody, CanvasListItem } from '@/api/gen/model';
 import { mockImageAssets } from './editorAssets';
+import { mockPage } from './paging';
 
 /** A person's canvases (Epo 2026-11-09 and 2026-11-10): one per workspace, made
  * on its first open, and any number of their own, made on the Canvas page. A
@@ -96,25 +97,33 @@ export const canvasHandlers = (
     http.put('/api/workspaces/:id/canvas', ({ params, request }) =>
       save(ofWorkspace(String(params.id)), request)
     ),
-    http.get('/api/canvases', () =>
-      HttpResponse.json({
-        items: [...canvases.values()]
-          .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-          .map(
-            ({ id, title, updatedAt, workspaceId }): CanvasListItem => ({
-              id,
-              title,
-              updatedAt,
-              ...(workspaceId
-                ? {
-                    workspaceIconId: workspaces(workspaceId)?.iconId,
-                    workspaceId,
-                    workspaceName: workspaces(workspaceId)?.name,
-                  }
-                : {}),
-            })
-          ),
-      })
+    // One's own first, latest saved first, then the workspaces', a page at a time.
+    http.get('/api/canvases', ({ request }) =>
+      HttpResponse.json(
+        mockPage(
+          [...canvases.values()]
+            .sort(
+              (a, b) =>
+                Number(!!a.workspaceId) - Number(!!b.workspaceId) ||
+                b.updatedAt.localeCompare(a.updatedAt)
+            )
+            .map(
+              ({ id, title, updatedAt, workspaceId }): CanvasListItem => ({
+                id,
+                title,
+                updatedAt,
+                ...(workspaceId
+                  ? {
+                      workspaceIconId: workspaces(workspaceId)?.iconId,
+                      workspaceId,
+                      workspaceName: workspaces(workspaceId)?.name,
+                    }
+                  : {}),
+              })
+            ),
+          request
+        )
+      )
     ),
     http.post('/api/canvases', async ({ request }) => {
       const { title } = (await request.json()) as { title: string };

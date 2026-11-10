@@ -160,14 +160,13 @@ timing (upload at once).
   compression, so the worst case needs ten photos near the cap. The alternative is
   one upload per picture before Done or Check, which needs a place to hold a
   practice picture before its attempt exists.
-- **A sample-answer board's images (§3)** need the quiz's document to name them, as
-  the canvas block names its images, or the pruner trashes them a minute after the
-  quiz's next save. That means a new `pictures` list on a drawing part's `sample` in
-  the shared question format: Go (`questions.go` checks its keys), the collaboration
-  server's Rust (`items/src/quiz.rs`, `notes/src/questions.rs`), the browser types, the
-  clone's asset id map, and the board asset itself, whose saved document names the
-  pictures by asset id and would point at the original's after a clone. Until then a
-  sample board's pictures show in its stored image and are empty frames when the
-  author edits it again. The alternative is to refuse pictures on a sample board.
+- **A sample-answer board's images (§3): refused (Epo 2026-11-10).** The board
+  opens with `noPictures`: no Image tile in Misc, and a pasted or dropped picture
+  is turned away with a message. Keeping them would take a `pictures` list on a
+  drawing part's `sample` in the shared question format: Go (`questions.go` checks
+  its keys), the collaboration server's Rust (`items/src/quiz.rs`,
+  `notes/src/questions.rs`), the browser types, the clone's asset id map, and the
+  board asset itself, whose saved document names the pictures by asset id and
+  would point at the original's after a clone.
 - **Picking a file on an answer board: built 2026-11-10.** The answer board has the
   Misc panel too (Epo 2026-11-10), with the charts and the Image tile.

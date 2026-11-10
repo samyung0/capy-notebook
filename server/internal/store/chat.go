@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -216,45 +217,74 @@ type msgMetadata struct {
 
 /* --------------------------------------------------------- conversations */
 
-// ListConversations returns a user's conversations in a workspace, or with
-// wsID "" their account conversations: the live list (pinned first, then
-// newest activity) or, with archived, the archived ones, most recently
-// archived first. Ownership is enforced via user_id. Workspace chat is open to
-// any effective role (membership raised by link/public privacy), so shared
-// viewers get their own private threads.
-func (s *Store) ListConversations(ctx context.Context, userID, wsID string, archived bool) ([]Conversation, error) {
+// ConversationPage is one page of a conversation list.
+type ConversationPage struct {
+	Items      []Conversation `json:"items" nullable:"false"`
+	NextCursor string         `json:"nextCursor,omitempty" doc:"Absent on the last page"`
+}
+
+// The live list pages pinned threads first, latest pinned first, then the rest
+// by latest activity: a pinned thread sorts a thousand years ahead of any
+// activity. The archived list pages by when each was archived.
+var (
+	conversationLiveSort     = listSort{column: "COALESCE(pinned_at + interval '1000 years', updated_at)", kind: "time"}
+	conversationArchivedSort = listSort{column: "archived_at", kind: "time"}
+)
+
+// ListConversations pages through a user's conversations in a workspace, or
+// with wsID "" their account conversations (Epo 2026-11-10: a chat list grows
+// fast): the live list (pinned first, then newest activity) or, with archived,
+// the archived ones, most recently archived first. Ownership is enforced via
+// user_id. Workspace chat is open to any effective role (membership raised by
+// link/public privacy), so shared viewers get their own private threads.
+func (s *Store) ListConversations(ctx context.Context, userID, wsID string, archived bool, limit int, cursor string) (ConversationPage, error) {
+	page := ConversationPage{Items: []Conversation{}}
 	if userID == "" {
-		return nil, ErrNotFound
+		return page, ErrNotFound
+	}
+	if limit <= 0 || limit > listPageMax {
+		limit = listPageMax
 	}
 	where, args := `user_id=$1 AND workspace_id IS NULL`, []any{userID}
 	if wsID != "" {
 		if _, err := s.WorkspaceEffectiveRole(ctx, userID, wsID); err != nil {
-			return nil, err
+			return page, err
 		}
 		where, args = `user_id=$1 AND workspace_id=$2`, []any{userID, wsID}
 	}
-	query := `SELECT ` + conversationCols + ` FROM conversations
-		WHERE ` + where + ` AND archived_at IS NULL
-		ORDER BY pinned_at DESC NULLS LAST, updated_at DESC`
+	sort, state := conversationLiveSort, `archived_at IS NULL`
 	if archived {
-		query = `SELECT ` + conversationCols + ` FROM conversations
-			WHERE ` + where + ` AND archived_at IS NOT NULL
-			ORDER BY archived_at DESC`
+		sort, state = conversationArchivedSort, `archived_at IS NOT NULL`
 	}
-	rows, err := s.pool.Query(ctx, query, args...)
+	clause, cursorArgs, err := cursorClause(sort, "id", false, cursor, len(args)+1)
 	if err != nil {
-		return nil, err
+		return page, err
+	}
+	args = append(args, cursorArgs...)
+	args = append(args, limit+1)
+	rows, err := s.pool.Query(ctx, `SELECT `+conversationCols+`, `+sort.column+` FROM conversations
+		WHERE `+where+` AND `+state+clause+orderClause(sort, "id", false)+fmt.Sprintf(` LIMIT $%d`, len(args)), args...)
+	if err != nil {
+		return page, err
 	}
 	defer rows.Close()
-	out := make([]Conversation, 0)
+	var keys []time.Time
 	for rows.Next() {
-		c, err := scanConversation(rows)
+		var key time.Time
+		c, err := scanConversation(withExtra{row: rows, extra: []any{&key}})
 		if err != nil {
-			return nil, err
+			return page, err
 		}
-		out = append(out, c)
+		page.Items, keys = append(page.Items, c), append(keys, key)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return page, err
+	}
+	if len(page.Items) > limit {
+		page.Items = page.Items[:limit]
+		page.NextCursor = encodeListCursor(cursorPrimary(sort, keys[limit-1], "", 0), page.Items[limit-1].ID)
+	}
+	return page, nil
 }
 
 // CreateConversation opens a new thread in a workspace where the user holds
