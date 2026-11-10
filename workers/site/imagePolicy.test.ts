@@ -105,6 +105,13 @@ describe('image-source policy', () => {
     expect(policy['img-src']).not.toContain('https://f003.backblazeb2.com');
   });
 
+  it("names KLIPY's GIF hosts when the build has a KLIPY key", () => {
+    const policy = directives(
+      imagePolicy({ ...DEPLOYED, VITE_KLIPY_KEY: 'key' })
+    );
+    expect(policy['img-src']).toContain('https://*.klipy.com');
+  });
+
   it('fails a deployed build that misses its bucket or report endpoint', () => {
     for (const environment of ['uat', 'production'])
       for (const key of ['B2_BUCKET', 'B2_ENDPOINT', 'VITE_SENTRY_DSN'])

@@ -491,6 +491,10 @@ func (s *Store) restoreTrashedTx(ctx context.Context, tx pgx.Tx, ownerID string,
 				RETURNING title, kind`
 		}
 		if err := tx.QueryRow(ctx, query, id, episodeID).Scan(&title, &subKind); err != nil {
+			// A canvas restored beside the live one its owner made since.
+			if uniqueConstraintName(err) == "materials_canvas_per_member" {
+				return nil, ErrCanvasExists
+			}
 			if !isNoRows(err) {
 				return nil, err
 			}

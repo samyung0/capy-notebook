@@ -12,8 +12,8 @@ import (
 
 // Papers: an assignment answered on paper (todo-file-submissions.md 5a). Its
 // files arrive through the source upload with attemptId; these routes order and
-// remove them while the attempt runs, sign their links for the member and the
-// class's staff, and list them in Files › Submissions once deletable.
+// remove them while the attempt runs and sign their links for the member and
+// the class's staff; once deletable they list on the Files page (listItems).
 func (a *api) registerPapers(api huma.API) {
 	reg(api, "DELETE", "/api/assignment-attempts/{id}/paper/{fileId}", "removePaperFile", "assignments",
 		"Remove a file from a running attempt's paper", 204, a.removePaperFile)
@@ -27,12 +27,8 @@ func (a *api) registerPapers(api huma.API) {
 		"Remove a file from the caller's open hand-in", 204, a.removeHandInFile)
 	reg(api, "GET", "/api/assignments/{id}/hand-in/{fileId}/links", "getHandInFileLinks", "assignments",
 		"A hand-in file's presigned reads, for its member or, once handed in, the class's staff", 200, a.getHandInFileLinks)
-	reg(api, "GET", "/api/papers", "listPapers", "assignments",
-		"The caller's handed-in paper and hand-in files they may delete, newest first (Files › Submissions)", 200, a.listPapers)
 	reg(api, "DELETE", "/api/papers/{id}", "deletePaper", "assignments",
 		"Delete one of the caller's deletable paper files; its marks stay", 200, a.deletePaper)
-	reg(api, "DELETE", "/api/papers", "deleteAllPapers", "assignments",
-		"Delete every paper file the caller may delete; their marks stay", 200, a.deleteAllPapers)
 }
 
 type paperFileInput struct {
@@ -107,18 +103,6 @@ func (a *api) submissionFileLinks(ctx context.Context, source, kind string) (*fi
 	return &fileLinksOutput{Body: out}, nil
 }
 
-type paperListOutput struct {
-	Body store.SubmittedPapers
-}
-
-func (a *api) listPapers(ctx context.Context, in *drawingListInput) (*paperListOutput, error) {
-	page, err := a.s.ListSubmittedPapers(ctx, userID(ctx), in.Cursor, in.Limit)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	return &paperListOutput{Body: page}, nil
-}
-
 func (a *api) deletePaper(ctx context.Context, in *drawingIDInput) (*drawingsDeletedOutput, error) {
 	n, err := a.s.DeleteSubmittedPapers(ctx, userID(ctx), []string{in.ID})
 	if err != nil {
@@ -126,16 +110,6 @@ func (a *api) deletePaper(ctx context.Context, in *drawingIDInput) (*drawingsDel
 	}
 	if n == 0 {
 		return nil, hErr(store.ErrNotFound)
-	}
-	out := &drawingsDeletedOutput{}
-	out.Body.Deleted = n
-	return out, nil
-}
-
-func (a *api) deleteAllPapers(ctx context.Context, _ *struct{}) (*drawingsDeletedOutput, error) {
-	n, err := a.s.DeleteSubmittedPapers(ctx, userID(ctx), nil)
-	if err != nil {
-		return nil, hErr(err)
 	}
 	out := &drawingsDeletedOutput{}
 	out.Body.Deleted = n

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -19,12 +20,22 @@ const (
 	AnnotationsPerFile = 2_000
 	// EventsPerUser counts a user's schedule events.
 	EventsPerUser = 5_000
+	// AssignmentsPerClass counts every assignment a class holds, drafts and
+	// closed ones included: its Assignments page reads them all in one request
+	// (Epo 2026-11-10).
+	AssignmentsPerClass = 500
+	// OpenAssignmentsPerClass counts the published ones that have not closed,
+	// which each member's To do reads across their classes in one request.
+	OpenAssignmentsPerClass = 100
 )
 
 var (
 	ErrTooManyComments    = errors.New("this note holds the most comments it can")
 	ErrTooManyAnnotations = errors.New("this file holds the most annotations it can")
 	ErrTooManyEvents      = errors.New("the schedule holds the most events it can")
+	// Deleting one makes room under both; closing one, under the open cap.
+	ErrTooManyAssignments     = errors.New("this class holds the most assignments it can")
+	ErrTooManyOpenAssignments = errors.New("this class has the most open assignments it can")
 )
 
 // assertCommentRoomTx refuses a new comment on a note at CommentsPerNote. The
@@ -68,6 +79,30 @@ func assertEventRoomTx(ctx context.Context, tx pgx.Tx, userID string) error {
 	}
 	if n >= EventsPerUser {
 		return ErrTooManyEvents
+	}
+	return nil
+}
+
+// assertAssignmentRoomTx refuses one more assignment in a class at
+// AssignmentsPerClass (adding), and one more open one at
+// OpenAssignmentsPerClass (opening: made published, a draft published, a closed
+// one reopened). An assignment that closed itself at its due date is not open.
+// The lock serializes the counts per class.
+func assertAssignmentRoomTx(ctx context.Context, tx pgx.Tx, wsID string, adding, opening bool, now time.Time) error {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('class-assignments:' || $1))`, wsID); err != nil {
+		return err
+	}
+	var all, open int
+	if err := tx.QueryRow(ctx, `SELECT count(*),
+			count(*) FILTER (WHERE NOT draft AND closed_at IS NULL AND NOT (no_late AND due_at IS NOT NULL AND due_at <= $2))
+		FROM assignments WHERE workspace_id=$1`, wsID, now).Scan(&all, &open); err != nil {
+		return err
+	}
+	if adding && all >= AssignmentsPerClass {
+		return ErrTooManyAssignments
+	}
+	if opening && open >= OpenAssignmentsPerClass {
+		return ErrTooManyOpenAssignments
 	}
 	return nil
 }

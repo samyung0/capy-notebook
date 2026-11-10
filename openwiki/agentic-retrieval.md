@@ -212,8 +212,9 @@ The lexical half of hybrid search (`text`, `indexed_text`, `search`,
 `(provider_slug, model_slug, version)` to a table name from a fixed allowlist, because
 that name is interpolated into SQL. Both legs of a workspace search filter
 on `content_id = ANY(ARRAY(SELECT content_id FROM scoped_files))`, so each
-reads its content index; the knowledge library, whose mirror still tags
-passages and vectors with its workspace, filters on that instead.
+reads its content index. The knowledge library's keyword leg does the same;
+its vector rows are picked by the library's workspace id, which its mirror
+still stores on them, and then checked against the content scope.
 
 Adding a model means a new vector table (in `0001_init.sql` until the first
 kept database exists, then a new numbered migration), a new allowlist
@@ -2215,8 +2216,18 @@ always point at document passages.
    row ingest used). When that pin is Qwen3-Embedding, the query is sent as
    `Instruct: …\nQuery:…`; documents stay raw. Lexical terms use the
    unprefixed query. Other embedding pins get the query unchanged.
-2. One SQL statement runs vector (cosine / HNSW) and lexical (`tsvector`)
-   candidates, fused with reciprocal rank fusion (RRF). Ranks are fused rather
+2. One SQL statement runs vector (cosine) and lexical (`tsvector`)
+   candidates, fused with reciprocal rank fusion (RRF). The vector leg is an
+   exact scan: its ordering ends on the chunk id, which the HNSW index cannot
+   serve, so Postgres reads the scope's vectors by content id and sorts them.
+   A workspace's results are exact and time grows with the scope (the
+   knowledge library ranks a shortlist when a search has no subject or
+   role, see its section below); no search reads
+   `rag_chunk_vectors_2560_embedding_idx`. A workspace's vector leg reads the
+   vector table alone, neither of its legs joins `scoped_files`, and `q` is
+   `MATERIALIZED` so each language's query is parsed once instead of once per
+   matched passage (2026-11-10: the whole statement fell from about 170-250 ms
+   to 85 ms at 12,000 synthetic passages, with identical rows). Ranks are fused rather
    than scores because cosine distance and `ts_rank_cd` share no unit. The
    lexical query is parsed once per language configuration
    (`unnest` over `lang.TS_CONFIG`) and each parse is matched only against
@@ -2347,10 +2358,58 @@ loader (`bench/rag/scripts/knowledge_base_library.py`) and the tests create
 exactly that schema. The index tables mirror the workspace ones (`workspaces`,
 `files`, `rag_contents`, `rag_file_contents`, `library_chunks` behind the
 `rag_chunks` view, `rag_chunk_vectors_2560`), so `store.hybrid_search` runs its
-one statement unchanged against the library connection with a `chunk_filter`
-predicate. That statement ranks note chunks in the same pool as file chunks,
-so the mirror also carries empty `materials` and `rag_material_contents`
-tables: notes never enter the library, and the statement still runs unchanged.
+statement against the library connection. That statement ranks note chunks in
+the same pool as file chunks, so the mirror also carries empty `materials` and
+`rag_material_contents` tables: notes never enter the library.
+The library is one scope of every book, so its searches take two shapes of
+their own (`library._facets`, Epo 2026-11-10):
+
+- **With a subject or roles**, the passages those facets allow are listed
+  once (`allowed`, a materialized CTE read from the verified excerpts with
+  that subject and those roles) and
+  both legs run on them, exactly: the vector leg ranks their vectors and the
+  keyword leg reads them by key, each against its own language's query.
+  Before, Postgres matched the keywords library-wide and checked the facets
+  per match, about 1.3 s in the database for a 113-passage subject. Measured
+  on the live library (identical rows in every column, 11 of 11 cases):
+  subjects fell from 0.9-1.6 s to 80-560 ms; role-only searches from
+  0.8-3.8 s to 0.3-2.4 s for the four narrower roles, while the two broadest
+  roles stayed at 5 to 7 s.
+- **With neither**, the vector leg does not rank every vector. Each library
+  vector row stores `bits`, the sign of every dimension (a generated column,
+  320 bytes against a 5 KB vector). The leg orders the passages by Hamming
+  distance on `bits`, walks them in that order until 800 pass the tag filter
+  (`_LIBRARY_SHORTLIST`, 20 times the candidates) and ranks only those by
+  their full vectors. Ranked exactly, a search read the whole vector table
+  (2.4 GB at 206,776 passages, against a 768 MB database cache), about 1.1 s,
+  and pushed the keyword leg's pages out of the cache (about 4.5 s instead of
+  1.2 s): 5.4 to 6.4 s in the database. The shortlist is approximate in
+  principle; measured, it returned every exact top-40 passage: 24 of 24
+  searches identical in every column on a 45,005-passage copy of real books,
+  and 20 of 20 on all 206,776 vectors without the tag filter, where it touched
+  about 110 MB of pages against 7.5 GB. At 5 times the candidates it kept 92
+  to 99%, at 10 times 97.5 to 99.8%. An HNSW index on the codes was rejected:
+  the tag filter runs after the index has cut its list, so it kept 94 to 98%
+  with single searches as low as 5%. On the live library (column added
+  2026-11-10) 18 of 18 searches returned rows identical in every column to
+  the exact statement, 12 of them with real question embeddings and 6 with
+  stored passage vectors. Through the developer tunnel a search fell from a
+  median 7.0 s to 3.5 s; in the database two plans took 0.9 and 1.9 s, the
+  vector leg about 0.18 s of each. The keyword leg was the rest, and it has
+  its own shape here too (`_LIBRARY_LEX`). An everyday question matches about
+  a quarter of the library (54,041 passages for one), and the shared leg paid
+  for that twice: each of the eight languages' queries read its own matches,
+  mostly English passages that seven of them dropped, and the tag filter was
+  checked on every match before any was ranked. Now one index scan takes the
+  passages matching any language's query, each is matched and ranked against
+  its own language's, and the tag filter is checked in rank order until the
+  candidate count pass. This is exact: 18 of 18 live searches identical in
+  every column, median database time 1.5 s to 0.8 s. What is left is ranking
+  every match (`ts_rank_cd` on about 54,000 passages).
+
+The loader's `schema` command adds `bits` by rewriting the vector table once;
+a pipeline that reads it must not be released before that
+([deployment-runbook.md](deployment-runbook.md) §7.3).
 The library-owned tables carry books, subjects, topics, excerpts with tag
 outcomes, figures and model-run receipts.
 
@@ -5604,7 +5663,10 @@ for life so the provider prompt cache holds.
 - **`_` arguments.** Keys starting with `_` are the pipeline's own; the agent
   loop drops any the model sends before adding `_tool_call_id` (review r1 S2).
 - **Search.** `search_files_summary` is one scoped Postgres query over names
-  and the summaries' `search` column (option B); `search_files_content` runs
+  and the summaries' `search` column (option B; its per-language query is
+  `MATERIALIZED`, parsed once instead of once per item: at 7,000 items a
+  sentence fell from 321 ms to 151 ms with identical rows, 2026-11-10);
+  `search_files_content` runs
   one hybrid search per embedding space over the scope's workspace files and
   the caller's no-workspace files, labelling each passage with its workspace,
   topic and whether the user can edit it (a PDF passage reads view only),
@@ -5764,7 +5826,12 @@ job. The screens (boards X0a, X0b, X1, X2) are in
      request a page to the layout service (`CAPY_LAYOUT_URL`, one pool on the
      ingest host, runbook §7.6), at most 3 in flight a run, with the page image
      (long side 1,568 px). The answer is every region PP-DocLayout_plus-L
-     finds. A 429 waits about 2 s and tries again, 4 tries in all; a request has
+     finds; the service runs it with its convolutions in int8, which its image's
+     build makes from the float export and committed calibration ranges
+     (`layout/quantise.py`, Epo 2026-11-10; about half the CPU a page and the
+     same scores on the gold figures,
+     [`2026-11-10-layout-int8.md`](../bench/extraction/reports/2026-11-10-layout-int8.md)).
+     A 429 waits about 2 s and tries again, 4 tries in all; a request has
      30 s and all the run's pages 90 s. A page whose request fails, stays busy or
      runs out of time has no regions, and the run goes on. With no
      `CAPY_LAYOUT_URL` no page has regions, so every figure takes the box call.

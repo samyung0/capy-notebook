@@ -70,15 +70,10 @@ export async function uploadPaper(page: Page, name: string, buffer: Buffer) {
   });
 }
 
-/** Continue on a file still being read: the dialog gives way to the upload panel,
- * whose row is the upload's while it reads. */
-export async function continueWhileReading(page: Page, name: string) {
-  const next = quizDialog(page).getByRole('button', {
-    name: m.action_continue(),
-  });
-  await expect(next).toBeEnabled({ timeout: 60_000 });
-  await next.click();
-  await expect(quizDialog(page)).toHaveCount(0);
+/** An upload closes the dialog by itself once it has started: the upload panel takes
+ * over, and its row is the upload's while it reads. */
+export async function panelTakesUpload(page: Page, name: string) {
+  await expect(quizDialog(page)).toHaveCount(0, { timeout: 60_000 });
   const panel = quizPanel(page);
   await expect(panel.getByText(name)).toBeVisible();
   await expect(panel.locator('[data-quiz-wait]')).toHaveCount(0);

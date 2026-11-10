@@ -62,14 +62,24 @@ function unknownKind(refKind: never): never {
   throw new Error(`No embed for the material kind ${String(refKind)}`);
 }
 
-export function AppEmbedView({ materialId, refKind, ownerId }: OwnedProps) {
+/** `live` off (the workspace canvas, Epo 2026-11-09): the quiz or set is drawn
+ * from its fetched snapshot and never joins its room, refetched when the block
+ * comes into view instead; a note's embed keeps its room while near the screen. */
+export function AppEmbedView({
+  materialId,
+  refKind,
+  ownerId,
+  live = true,
+}: OwnedProps & { live?: boolean }) {
   switch (refKind) {
     case 'quiz':
-      return <QuizView materialId={materialId} ownerId={ownerId} />;
+      return <QuizView live={live} materialId={materialId} ownerId={ownerId} />;
     case 'flashcards':
       return (
         <SetGate materialId={materialId} ownerId={ownerId}>
-          {(material) => <LiveSetStudy material={material} />}
+          {(material, refresh) => (
+            <LiveSetStudy live={live} material={material} refresh={refresh} />
+          )}
         </SetGate>
       );
     default:
@@ -79,14 +89,23 @@ export function AppEmbedView({ materialId, refKind, ownerId }: OwnedProps) {
 
 /** A set in a note's View: its room joins while the block is near the
  * screen, as in Edit (REVIEW5 S5). */
-function LiveSetStudy({ material }: { material: Material }) {
+function LiveSetStudy({
+  material,
+  live = true,
+  refresh,
+}: {
+  material: Material;
+  live?: boolean;
+  refresh?: () => unknown;
+}) {
   const box = useRef<HTMLDivElement>(null);
   const { near, entered } = useNearScreen(box);
   const inside = useContext(NoteSeatContext);
-  const cards = useLiveSetCards(material.id, setCards(material), near, {
+  const cards = useLiveSetCards(material.id, setCards(material), live && near, {
     inside,
     wake: entered,
   });
+  useRefreshOnEnter(live, entered, refresh);
   return (
     <div ref={box}>
       <StudyBody
@@ -173,7 +192,8 @@ function QuizGate({
   materialId: string;
   ownerId?: string;
   children: (
-    quiz: NonNullable<ReturnType<typeof useQuiz>['data']>
+    quiz: NonNullable<ReturnType<typeof useQuiz>['data']>,
+    refresh: () => unknown
   ) => React.ReactNode;
 }) {
   const { data, isPending, isError, refetch } = useQuiz(materialId, {
@@ -185,7 +205,7 @@ function QuizGate({
   if (isPending || !data) return <EmbedLoading />;
   return (
     <RemovedAssetsContext.Provider value={removed}>
-      {children(data)}
+      {children(data, refetch)}
     </RemovedAssetsContext.Provider>
   );
 }
@@ -197,7 +217,7 @@ function SetGate({
 }: {
   materialId: string;
   ownerId?: string;
-  children: (material: Material) => React.ReactNode;
+  children: (material: Material, refresh: () => unknown) => React.ReactNode;
 }) {
   const { data, isPending, isError, refetch } = useMaterial(materialId, {
     errorBoundary: false,
@@ -208,29 +228,64 @@ function SetGate({
   if (isPending || !data) return <EmbedLoading />;
   return (
     <RemovedAssetsContext.Provider value={removed}>
-      {children(data)}
+      {children(data, refetch)}
     </RemovedAssetsContext.Provider>
   );
+}
+
+/** A snapshot embed (`live` off) refetches when its block comes back into view and
+ * when the window regains focus (the app's queries never refetch on focus by
+ * themselves). The observer's first call counts the mount's own entry, which the gate
+ * has just read, so refetching starts from the second. */
+function useRefreshOnEnter(
+  live: boolean,
+  entered: number,
+  refresh?: () => unknown
+) {
+  useEffect(() => {
+    if (live || !refresh || entered <= 1) return;
+    void refresh();
+  }, [entered, live, refresh]);
+  useEffect(() => {
+    if (live || !refresh) return;
+    const focused = () => void refresh();
+    window.addEventListener('focus', focused);
+    return () => window.removeEventListener('focus', focused);
+  }, [live, refresh]);
 }
 
 function QuizView({
   materialId,
   ownerId,
+  live = true,
 }: {
   materialId: string;
   ownerId?: string;
+  live?: boolean;
 }) {
   // An embedded quiz is graded and records nothing: its try lives only on
   // the page.
   const { mutateAsync: check } = useCheckQuizQuestion({ errorToast: false });
   const control = useMemoryRun(async (questionId, answers) => {
-    const attempt = await check({ answers, questionId, quizId: materialId });
+    const attempt = await check({
+      answers,
+      embedded: true,
+      questionId,
+      quizId: materialId,
+    });
     const [question] = attempt.questions;
     return { correct: attempt.correct, question, total: attempt.total };
   });
   return (
     <QuizGate materialId={materialId} ownerId={ownerId}>
-      {(quiz) => <LiveQuizStudy control={control} quiz={quiz} />}
+      {(quiz, refresh) => (
+        <LiveQuizStudy
+          control={control}
+          live={live}
+          quiz={quiz}
+          refresh={refresh}
+        />
+      )}
     </QuizGate>
   );
 }
@@ -240,17 +295,24 @@ function QuizView({
 function LiveQuizStudy({
   quiz,
   control,
+  live = true,
+  refresh,
 }: {
   quiz: NonNullable<ReturnType<typeof useQuiz>['data']>;
   control: QuizRunControl;
+  live?: boolean;
+  refresh?: () => unknown;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const { near, entered } = useNearScreen(box);
   const inside = useContext(NoteSeatContext);
-  const questions = useLiveQuizQuestions(quiz.id, quiz.questions, near, {
-    inside,
-    wake: entered,
-  });
+  const questions = useLiveQuizQuestions(
+    quiz.id,
+    quiz.questions,
+    live && near,
+    { inside, wake: entered }
+  );
+  useRefreshOnEnter(live, entered, refresh);
   return (
     <div ref={box}>
       <AttemptBody

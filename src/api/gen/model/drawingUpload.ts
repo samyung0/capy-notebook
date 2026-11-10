@@ -4,6 +4,7 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { DrawingPicture } from './drawingPicture.ts';
 
 export interface DrawingUpload {
   /** A URL to the JSON Schema for this object. */
@@ -18,4 +19,10 @@ export interface DrawingUpload {
      * @maxLength 420000
      */
   image?: string;
+  /**
+     * The pictures pasted on the board
+     * @maxItems 10
+     * @nullable
+     */
+  pictures?: DrawingPicture[] | null;
 }

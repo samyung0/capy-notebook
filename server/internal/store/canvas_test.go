@@ -1,0 +1,177 @@
+package store
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"testing"
+
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
+)
+
+// readyAsset is one ready editor asset of the material, for a canvas save to name.
+func readyAsset(t *testing.T, s *Store, materialID, userID, purpose string) string {
+	t.Helper()
+	id := uid("asset")
+	if _, err := s.pool.Exec(context.Background(), `INSERT INTO editor_assets
+		(id, material_id, user_id, created_by, name, purpose, object_path, content_type, size_bytes, status, completed_at)
+		VALUES ($1,$2,$3,$3,'canvas.ydoc.gz',$4,$5,'application/gzip',10,'ready',now())`,
+		id, materialID, userID, purpose, "editor-assets/canvas/"+uid("blob")); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// A member's canvas is their own: made on first open as a standalone material
+// linked to the workspace, one per member, saved with a revision check and only
+// its own ready assets, never shared or copied, and gone when they leave
+// (Epo 2026-11-09).
+func TestWorkspaceCanvasIsPersonalAndGoesWithTheMembership(t *testing.T) {
+	f := newStudyFixture(t, "canvas")
+	ctx := context.Background()
+	member := newBlobTestUser(t, f.s, "canvas-member")
+	if _, err := f.s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role)
+		VALUES ($1,$2,'viewer')`, f.ws.ID, member); err != nil {
+		t.Fatal(err)
+	}
+
+	mine, err := f.s.WorkspaceCanvas(ctx, f.user, f.ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mine.Kind != MaterialCanvas || mine.CanvasWorkspaceID != f.ws.ID || mine.WorkspaceID != "" ||
+		mine.OwnerUserID != f.user || mine.Title != f.ws.Name || mine.Privacy != "private" {
+		t.Fatalf("the canvas = %+v", mine)
+	}
+	again, err := f.s.WorkspaceCanvas(ctx, f.user, f.ws.ID)
+	if err != nil || again.ID != mine.ID {
+		t.Fatalf("a second open made another canvas: %v %v", again.ID, err)
+	}
+	theirs, err := f.s.WorkspaceCanvas(ctx, member, f.ws.ID)
+	if err != nil || theirs.ID == mine.ID {
+		t.Fatalf("the member's canvas = %v, err %v", theirs.ID, err)
+	}
+	board, err := materialdoc.ReadCanvasBoard(mine.Content)
+	if err != nil || board.BoardAssetID != "" || board.Version != 0 || len(board.ImageAssetIDs) != 0 {
+		t.Fatalf("a fresh canvas's block = %+v, err %v", board, err)
+	}
+
+	// A save records the board asset and the images, both this canvas's own
+	// ready assets, and counts the version; it lands at the revision the browser
+	// read, and a stale revision is refused.
+	boardAsset := readyAsset(t, f.s, mine.ID, f.user, "board")
+	image := readyAsset(t, f.s, mine.ID, f.user, "image")
+	saved, err := f.s.SaveWorkspaceCanvas(ctx, f.user, mine.ID, boardAsset, []string{image}, mine.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	board, err = materialdoc.ReadCanvasBoard(saved.Content)
+	if err != nil || board.BoardAssetID != boardAsset || board.Version != 1 || len(board.ImageAssetIDs) != 1 {
+		t.Fatalf("the saved block = %+v, err %v", board, err)
+	}
+	// The pruner keeps what the block names: both assets stay ready.
+	var trashed int
+	if err := f.s.pool.QueryRow(ctx, `SELECT count(*) FROM editor_assets WHERE material_id=$1 AND trashed_at IS NOT NULL`, mine.ID).Scan(&trashed); err != nil {
+		t.Fatal(err)
+	}
+	if trashed != 0 {
+		t.Fatalf("%d of the canvas's named assets were trashed", trashed)
+	}
+	next := readyAsset(t, f.s, mine.ID, f.user, "board")
+	if _, err := f.s.SaveWorkspaceCanvas(ctx, f.user, mine.ID, next, []string{}, mine.Revision); !errors.Is(err, ErrConflict) {
+		t.Fatalf("a stale save was taken: %v", err)
+	}
+	if _, err := f.s.SaveWorkspaceCanvas(ctx, member, mine.ID, next, []string{}, saved.Revision); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("another member saved my canvas: %v", err)
+	}
+	// Another material's asset, or an image where the board goes, is refused.
+	foreign := readyAsset(t, f.s, theirs.ID, member, "board")
+	if _, err := f.s.SaveWorkspaceCanvas(ctx, f.user, mine.ID, foreign, []string{}, saved.Revision); !errors.Is(err, materialdoc.ErrInvalid) {
+		t.Fatalf("another canvas's asset was taken: %v", err)
+	}
+	if _, err := f.s.SaveWorkspaceCanvas(ctx, f.user, mine.ID, image, []string{}, saved.Revision); !errors.Is(err, materialdoc.ErrInvalid) {
+		t.Fatalf("an image was taken as the board: %v", err)
+	}
+	// An image the pruner trashed is named again (its delete undone on the
+	// canvas): the save takes it and its prune restores it.
+	if _, err := f.s.pool.Exec(ctx, `UPDATE editor_assets SET trashed_at=now() WHERE id=$1`, image); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.SaveWorkspaceCanvas(ctx, f.user, mine.ID, next, []string{image}, saved.Revision); err != nil {
+		t.Fatalf("a save naming a trashed image again: %v", err)
+	}
+	if err := f.s.pool.QueryRow(ctx, `SELECT count(*) FROM editor_assets WHERE id=$1 AND trashed_at IS NOT NULL`, image).Scan(&trashed); err != nil {
+		t.Fatal(err)
+	}
+	if trashed != 0 {
+		t.Fatal("the image named again stayed trashed")
+	}
+	// The ids a save may name: the canvas's image assets, a trashed one too,
+	// and never its board.
+	if _, err := f.s.pool.Exec(ctx, `UPDATE editor_assets SET trashed_at=now() WHERE id=$1`, image); err != nil {
+		t.Fatal(err)
+	}
+	if own, err := f.s.CanvasImageAssets(ctx, mine.ID); err != nil || len(own) != 1 || own[0] != image {
+		t.Fatalf("the canvas's image assets = %v, err %v", own, err)
+	}
+
+	// Never shared, never copied.
+	if _, err := f.s.UpdateStandaloneMaterialPrivacy(ctx, f.user, mine.ID, "", "link"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("a canvas was shared: %v", err)
+	}
+	if _, err := f.s.CloneMaterial(ctx, member, mine.ID, CloneTarget{}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a canvas was cloned: %v", err)
+	}
+
+	// Leaving takes the member's canvas; the owner's stays.
+	if _, _, err := f.s.RemoveWorkspaceMemberWithResult(ctx, member, f.ws.ID, member); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.GetMaterial(ctx, theirs.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("the leaver's canvas stayed: %v", err)
+	}
+	if _, err := f.s.GetMaterial(ctx, mine.ID); err != nil {
+		t.Fatalf("the owner's canvas went: %v", err)
+	}
+}
+
+// The Files page lists a member's canvas with their blocks (Epo 2026-11-09):
+// under the workspace it is the Canvas tab of, with its board's size and a
+// preview naming the board, and never to another member.
+func TestACanvasIsListedInFilesUnderItsWorkspace(t *testing.T) {
+	f := newStudyFixture(t, "canvas-files")
+	ctx := context.Background()
+	member := newBlobTestUser(t, f.s, "canvas-files-member")
+	if _, err := f.s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role)
+		VALUES ($1,$2,'viewer')`, f.ws.ID, member); err != nil {
+		t.Fatal(err)
+	}
+	mine, err := f.s.WorkspaceCanvas(ctx, f.user, f.ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.WorkspaceCanvas(ctx, member, f.ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	board := readyAsset(t, f.s, mine.ID, f.user, "board")
+	saved, err := f.s.SaveWorkspaceCanvas(ctx, f.user, mine.ID, board, []string{}, mine.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := f.s.ListItems(ctx, f.user, ItemListFilter{
+		Kinds: []string{"canvas"}, Locations: []string{"workspace"}, WorkspaceIDs: []string{f.ws.ID}, All: true,
+	})
+	if err != nil || len(page.Items) != 1 || page.Items[0].Material == nil {
+		t.Fatalf("the owner's canvas rows = %+v, err %v", page.Items, err)
+	}
+	row := page.Items[0].Material
+	if row.ID != mine.ID || row.CanvasWorkspaceID != f.ws.ID || row.WorkspaceName != f.ws.Name ||
+		row.SizeBytes != saved.SizeBytes+10 || !row.IsOwner {
+		t.Fatalf("the canvas row = %+v", row)
+	}
+	var preview struct{ Kind, BoardAssetID string }
+	if err := json.Unmarshal(row.Preview, &preview); err != nil || preview.Kind != "canvas" || preview.BoardAssetID != board {
+		t.Fatalf("the canvas preview = %s, err %v", row.Preview, err)
+	}
+}

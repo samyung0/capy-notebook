@@ -64,7 +64,7 @@ async function sharePath(
 }
 
 test('New quiz opens an editable draft', async ({ ownerApi, ownerPage }) => {
-  await ownerPage.goto('/files?tab=blocks');
+  await ownerPage.goto('/files');
   const created = waitForApi(ownerPage, apiEndsWith('/api/quizzes', 'POST'));
   await ownerPage
     .getByRole('button', { exact: true, name: m.files_new_block() })

@@ -1,17 +1,42 @@
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import { fromBase64 } from './base64';
-import { SAVED, withElement } from './boardFixture';
-import { BoardLoadError, checkSavedBoard } from './boardLoad';
+import {
+  SAVED,
+  withCanvasBlock,
+  withElement,
+  withElements,
+} from './boardFixture';
+import {
+  addedElementFits,
+  BoardLoadError,
+  checkSavedBoard,
+  embedFits,
+} from './boardLoad';
 
 const reason = (update: Uint8Array) => {
   try {
-    checkSavedBoard(update);
+    checkSavedBoard(update, 'question');
     return null;
   } catch (error) {
     return error instanceof BoardLoadError ? error.reason : String(error);
   }
 };
+
+/** A topic and one idea, as the workspace canvas's mind map saves them. */
+const MIND_MAP = [
+  { id: 'topic', type: 'shape', xywh: '[0,0,120,40]' },
+  { id: 'idea', type: 'shape', xywh: '[200,0,120,40]' },
+  {
+    children: {
+      idea: { index: 'a0', parent: 'topic' },
+      topic: { index: 'a0' },
+    },
+    layoutType: 0,
+    style: 1,
+    type: 'mindmap',
+  },
+];
 
 describe('checkSavedBoard', () => {
   it('opens what the board saved', () => {
@@ -98,5 +123,139 @@ describe('checkSavedBoard', () => {
         })
       )
     ).toBe('chart fields');
+  });
+
+  it('holds what the catalog lists for each board', () => {
+    const mindmap = withElements(...MIND_MAP);
+    expect(() => checkSavedBoard(mindmap, 'workspace')).not.toThrow();
+    expect(reason(mindmap)).toBe('element type mindmap');
+  });
+
+  it("checks a mind map's nodes against the canvas", () => {
+    const nodes = (children: Record<string, unknown>) => {
+      try {
+        checkSavedBoard(
+          withElements(MIND_MAP[0], MIND_MAP[1], { ...MIND_MAP[2], children }),
+          'workspace'
+        );
+        return null;
+      } catch (error) {
+        return error instanceof BoardLoadError ? error.reason : String(error);
+      }
+    };
+    expect(
+      nodes({ idea: { index: 'a0', parent: 'topic' }, topic: { index: 'a0' } })
+    ).toBeNull();
+    expect(nodes({ gone: { index: 'a0' } })).toBe('mindmap nodes');
+    expect(
+      nodes({
+        idea: { index: 'a0', parent: 'topic' },
+        topic: { index: 'a0', parent: 'idea' },
+      })
+    ).toBe('mindmap nodes');
+    expect(
+      nodes({
+        idea: { index: 'a0', parent: 'toString' },
+        topic: { index: 'a0' },
+      })
+    ).toBe('mindmap nodes');
+  });
+
+  it('refuses a board whose JSON would hide an element', () => {
+    const hidden = withElements({
+      id: '__proto__',
+      latex: 'x'.repeat(5000),
+      type: 'formula',
+      xywh: '[0,0,9,9]',
+    });
+    expect(reason(hidden)).toBe('hidden key');
+  });
+
+  it('takes an added element only as the load check would', () => {
+    const kinds = new Set(['shape', 'mindmap', 'chart']);
+    const [topic, idea, map] = MIND_MAP;
+    const all = { idea, map, topic } as Record<string, Record<string, unknown>>;
+    expect(addedElementFits('map', all, kinds)).toBe(true);
+    expect(
+      addedElementFits(
+        'map',
+        {
+          ...all,
+          map: {
+            ...map,
+            children: {
+              idea: { index: 'a0', parent: 'topic' },
+              topic: { index: 'a0', parent: 'idea' },
+            },
+          },
+        },
+        kinds
+      )
+    ).toBe(false);
+  });
+
+  it('takes a pasted emoji, GIF or card only as the load check would', () => {
+    const place = { rotate: 0, xywh: '[0,0,96,96]' };
+    expect(
+      embedFits('affine:embed-capy-picture', {
+        ...place,
+        kind: 'emoji',
+        label: '🧠',
+        ref: '1f9e0',
+      })
+    ).toBe(true);
+    expect(
+      embedFits('affine:embed-capy-link', {
+        ...place,
+        url: 'javascript:alert(1)',
+        videoId: '',
+      })
+    ).toBe(false);
+  });
+
+  it('opens the workspace canvas pictures and cards it can show', () => {
+    const opens = (flavour: string, props: Record<string, unknown>) => {
+      try {
+        checkSavedBoard(withCanvasBlock(flavour, props), 'workspace');
+        return null;
+      } catch (error) {
+        return error instanceof BoardLoadError ? error.reason : String(error);
+      }
+    };
+    const picture = 'affine:embed-capy-picture';
+    expect(
+      opens(picture, { kind: 'emoji', label: '🧠', ref: '1f9e0' })
+    ).toBeNull();
+    expect(
+      opens(picture, {
+        kind: 'klipy',
+        label: 'Hello',
+        ref: 'https://static.klipy.com/ii/a/b.webp',
+      })
+    ).toBeNull();
+    expect(
+      opens(picture, {
+        kind: 'klipy',
+        label: '',
+        ref: 'https://example.com/a.webp',
+      })
+    ).toBe('picture fields');
+    const link = 'affine:embed-capy-link';
+    expect(
+      opens(link, {
+        url: 'https://youtu.be/dQw4w9WgXcQ',
+        videoId: 'dQw4w9WgXcQ',
+      })
+    ).toBeNull();
+    expect(opens(link, { url: 'javascript:alert(1)', videoId: '' })).toBe(
+      'link fields'
+    );
+    expect(
+      opens('affine:embed-capy-material', {
+        kind: 'quiz',
+        materialId: 'qz_2',
+        title: 'Genetics check-in',
+      })
+    ).toBeNull();
   });
 });

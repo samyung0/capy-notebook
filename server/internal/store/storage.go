@@ -681,7 +681,7 @@ const storageRecountSQL = `SELECT
 		WHERE owner_user_id=$1), 0)
 	+ COALESCE((SELECT sum(frozen_bytes) FROM assignments
 		WHERE frozen_by=$1), 0)
-	+ COALESCE((SELECT sum(board_bytes + image_bytes) FROM drawings
+	+ COALESCE((SELECT sum(board_bytes + image_bytes + picture_bytes) FROM drawings
 		WHERE user_id=$1), 0),
 	COALESCE((SELECT sum(COALESCE(reserved_size, declared_size)) FROM upload_sessions
 		WHERE user_id=$1 AND status='pending' AND expires_at > now()), 0)`
@@ -786,7 +786,7 @@ func (s *Store) storageBreakdown(ctx context.Context, userID string) (StorageBre
 	err := s.pool.QueryRow(ctx, `SELECT
 		COALESCE((SELECT sum(size_bytes) FROM files WHERE user_id=$1), 0)
 		+ COALESCE((SELECT sum(storage_bytes) FROM source_documents WHERE user_id=$1), 0),
-		COALESCE((SELECT sum(board_bytes + image_bytes) FROM drawings WHERE user_id=$1), 0),
+		COALESCE((SELECT sum(board_bytes + image_bytes + picture_bytes) FROM drawings WHERE user_id=$1), 0),
 		COALESCE((SELECT sum(size_bytes) FROM editor_assets WHERE user_id=$1 AND status='ready'), 0)
 		+ COALESCE((SELECT sum(size_bytes) FROM materials WHERE owner_user_id=$1), 0)
 		+ COALESCE((SELECT sum(frozen_bytes) FROM assignments WHERE frozen_by=$1), 0)`, userID).

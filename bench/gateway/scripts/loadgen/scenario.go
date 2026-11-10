@@ -372,18 +372,15 @@ func (u *user) scrollOffset(ctx context.Context, path, label string, first, page
 	}
 }
 
-// fileListPaths are the Files page's lists as its tabs send them: files by
-// each sort (name and workspace ascending first), Blocks by its default
-// sort, Embeds and Trash.
+// fileListPaths are the Files page's lists as it sends them: its one list
+// (files, submissions, blocks, embeds) by each sort (name and workspace
+// ascending first), All files, and Trash.
 var fileListPaths = []struct{ path, label string }{
-	{"/api/files?dir=desc&sort=added", "/api/files sort=added"},
-	{"/api/files?dir=asc&sort=name", "/api/files sort=name"},
-	{"/api/files?dir=asc&sort=workspace", "/api/files sort=workspace"},
-	{"/api/files?dir=desc&sort=size", "/api/files sort=size"},
-	{"/api/materials?dir=desc&sort=updated", "/api/materials sort=updated"},
-	{"/api/materials?dir=asc&sort=title", "/api/materials sort=title"},
-	{"/api/materials?dir=asc&sort=workspace", "/api/materials sort=workspace"},
-	{"/api/editor-assets", "/api/editor-assets"},
+	{"/api/items?dir=desc&sort=added", "/api/items sort=added"},
+	{"/api/items?dir=asc&sort=name", "/api/items sort=name"},
+	{"/api/items?dir=asc&sort=workspace", "/api/items sort=workspace"},
+	{"/api/items?dir=desc&sort=size", "/api/items sort=size"},
+	{"/api/items?dir=desc&scope=all&sort=added", "/api/items scope=all"},
 	{"/api/trash", "/api/trash"},
 }
 

@@ -22,11 +22,23 @@ const assets: Record<string, { name: string; url: string }> = {
 };
 
 // Uploads keep their bytes as an object URL so resolve serves them back.
-const uploads = new Map<string, { contentType: string; name: string }>();
+const uploads = new Map<
+  string,
+  { contentType: string; materialId: string; name: string; purpose: string }
+>();
 
-/** The viewer's images and audio (M16): one in a set it can open, one in a
- * note it can no longer open. */
-const embeds: EditorAssetItem[] = [
+/** A material's uploaded image assets: what a canvas save may name. */
+export const mockImageAssets = (materialId: string) =>
+  [...uploads]
+    .filter(
+      ([, upload]) =>
+        upload.materialId === materialId && upload.purpose === 'image'
+    )
+    .map(([id]) => id);
+
+/** The viewer's images and audio (M16) as GET /api/items lists them: one in a
+ * set it can open, one in a note it can no longer open. Deletes splice it. */
+export const embeds: EditorAssetItem[] = [
   {
     assetId: 'asset_mock_cell_diagram',
     createdAt: new Date(Date.now() - 3 * 86_400_000).toISOString(),
@@ -65,42 +77,37 @@ export const editorAssetHandlers = [
     HttpResponse.json({ position: 0, ticketId: 'utk_mock' }, { status: 201 })
   ),
   // Mirrors the streamed upload: one multipart request, metadata then file.
-  http.post('/api/materials/:id/editor-assets/uploads', async ({ request }) => {
-    const form = await request.formData();
-    const body = JSON.parse(String(form.get('metadata'))) as {
-      contentType: string;
-      name: string;
-      purpose: 'image' | 'audio' | 'board';
-    };
-    const bytes = form.get('file');
-    if (!(bytes instanceof Blob))
-      return new HttpResponse(null, { status: 400 });
-    const id = `asset_mock_${crypto.randomUUID()}`;
-    uploads.set(id, body);
-    assets[id] = { name: body.name, url: URL.createObjectURL(bytes) };
-    return HttpResponse.json(
-      {
-        assetId: id,
-        completedAt: new Date().toISOString(),
-        contentType: body.contentType,
-        createdAt: new Date().toISOString(),
-        name: body.name,
-        purpose: body.purpose,
-        sizeBytes: bytes.size,
-        status: 'ready',
-        workspaceId: '',
-      },
-      { status: 201 }
-    );
-  }),
-  http.get('/api/editor-assets', ({ request }) => {
-    const access = new URL(request.url).searchParams.get('access');
-    return HttpResponse.json({
-      items: embeds.filter(
-        (item) => !access || item.lostAccess === (access === 'lost')
-      ),
-    });
-  }),
+  http.post(
+    '/api/materials/:id/editor-assets/uploads',
+    async ({ params, request }) => {
+      const form = await request.formData();
+      const body = JSON.parse(String(form.get('metadata'))) as {
+        contentType: string;
+        name: string;
+        purpose: 'image' | 'audio' | 'board';
+      };
+      const bytes = form.get('file');
+      if (!(bytes instanceof Blob))
+        return new HttpResponse(null, { status: 400 });
+      const id = `asset_mock_${crypto.randomUUID()}`;
+      uploads.set(id, { ...body, materialId: String(params.id) });
+      assets[id] = { name: body.name, url: URL.createObjectURL(bytes) };
+      return HttpResponse.json(
+        {
+          assetId: id,
+          completedAt: new Date().toISOString(),
+          contentType: body.contentType,
+          createdAt: new Date().toISOString(),
+          name: body.name,
+          purpose: body.purpose,
+          sizeBytes: bytes.size,
+          status: 'ready',
+          workspaceId: '',
+        },
+        { status: 201 }
+      );
+    }
+  ),
   http.delete('/api/editor-assets/:id', ({ params }) => {
     const i = embeds.findIndex((item) => item.assetId === params.id);
     if (i < 0) return new HttpResponse(null, { status: 404 });
@@ -115,8 +122,9 @@ export const editorAssetHandlers = [
       assetId: id,
       contentType: uploads.get(id)?.contentType ?? 'image/svg+xml',
       expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      materialId: uploads.get(id)?.materialId,
       name: asset.name,
-      purpose: 'image',
+      purpose: uploads.get(id)?.purpose ?? 'image',
       sizeBytes: asset.url.length,
       url: asset.url,
     });

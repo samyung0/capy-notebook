@@ -195,7 +195,7 @@ func (a *api) adoptMaterialChildren(ctx context.Context, in *materialChildrenInp
 	out.Body.Assets = []adoptedMaterialChild{}
 	out.Body.Materials = []adoptedMaterialChild{}
 	// The actor pays for the images it pastes, under its plan caps (M16).
-	workspaceID, limits, err := a.s.EditorAssetMaterial(ctx, in.ID, actor)
+	workspaceID, _, limits, err := a.s.EditorAssetMaterial(ctx, in.ID, actor)
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -283,6 +283,10 @@ func (a *api) createMaterialCollaborationToken(
 	role, err := a.s.MaterialEffectiveRole(ctx, uid, in.ID)
 	if err != nil {
 		return nil, collaborationError(err)
+	}
+	// A personal canvas opens no room (Epo 2026-11-09): its board is an asset.
+	if mt, err := a.s.GetMaterial(ctx, in.ID); err == nil && mt.Kind == store.MaterialCanvas {
+		return nil, huma.Error404NotFound("not found")
 	}
 	access := "write"
 	if !store.RoleCanEdit(role) {

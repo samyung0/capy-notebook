@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/blob"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 // drawingQuestion is one question whose one part, draw-a, is drawn; sample is
@@ -234,6 +235,29 @@ func TestDrawnSampleOfAnotherMaterialIsNeverSent(t *testing.T) {
 	}
 }
 
+// fillStorageToLimit puts userID exactly at their storage limit as the gate
+// reads it (the counter plus the pending deltas earlier tests left), restoring
+// the counter afterwards.
+func fillStorageToLimit(t *testing.T, st *store.Store, userID string) store.StorageUsage {
+	t.Helper()
+	ctx := context.Background()
+	usage, err := st.StorageUsage(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var held int64
+	_ = st.Pool().QueryRow(ctx, `SELECT used_bytes FROM user_storage WHERE user_id=$1`, userID).Scan(&held)
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO user_storage (user_id, used_bytes) VALUES ($1,$2)
+		ON CONFLICT (user_id) DO UPDATE SET used_bytes=EXCLUDED.used_bytes`,
+		userID, held+usage.LimitBytes-usage.UsedBytes); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = st.Pool().Exec(context.Background(), `UPDATE user_storage SET used_bytes=$1 WHERE user_id=$2`, held, userID)
+	})
+	return usage
+}
+
 // TestAssignmentDrawingSavesPastStorage (Epo 2026-11-08, superseding Q693's
 // refusal): storage never blocks an assignment, so a member at their limit saves
 // a drawing all the same and goes over it, the bytes charged to them.
@@ -242,19 +266,7 @@ func TestAssignmentDrawingSavesPastStorage(t *testing.T) {
 	ctx := context.Background()
 	id := drawingAssignment(t, h, "ai_approve")
 	attempt := startDrawingAttempt(t, h, id, "u_viewer")
-	usage, err := st.StorageUsage(ctx, "u_viewer")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var held int64
-	_ = st.Pool().QueryRow(ctx, `SELECT used_bytes FROM user_storage WHERE user_id='u_viewer'`).Scan(&held)
-	if _, err := st.Pool().Exec(ctx, `INSERT INTO user_storage (user_id, used_bytes) VALUES ('u_viewer',$1)
-		ON CONFLICT (user_id) DO UPDATE SET used_bytes=EXCLUDED.used_bytes`, usage.LimitBytes); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_, _ = st.Pool().Exec(context.Background(), `UPDATE user_storage SET used_bytes=$1 WHERE user_id='u_viewer'`, held)
-	})
+	usage := fillStorageToLimit(t, st, "u_viewer")
 	expectStatus(t, doReq(t, h, http.MethodPut, "/api/assignment-attempts/"+attempt+"/drawings/draw-a", "u_viewer", drawingDone(t)), http.StatusOK, "Done at the limit")
 	after, err := st.StorageUsage(ctx, "u_viewer")
 	if err != nil {
@@ -270,21 +282,8 @@ func TestAssignmentDrawingSavesPastStorage(t *testing.T) {
 // storage message before any marking is paid for.
 func TestPracticeDrawingCheckOverStorageCallsNoModel(t *testing.T) {
 	h, st, calls := openGradingAPI(t, "full")
-	ctx := context.Background()
 	quiz := drawingQuiz(t, h, nil)
-	usage, err := st.StorageUsage(ctx, "u_owner")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var held int64
-	_ = st.Pool().QueryRow(ctx, `SELECT used_bytes FROM user_storage WHERE user_id='u_owner'`).Scan(&held)
-	if _, err := st.Pool().Exec(ctx, `INSERT INTO user_storage (user_id, used_bytes) VALUES ('u_owner',$1)
-		ON CONFLICT (user_id) DO UPDATE SET used_bytes=EXCLUDED.used_bytes`, usage.LimitBytes); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_, _ = st.Pool().Exec(context.Background(), `UPDATE user_storage SET used_bytes=$1 WHERE user_id='u_owner'`, held)
-	})
+	fillStorageToLimit(t, st, "u_owner")
 	before := calls.Load()
 	rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+quiz+"/check", "u_owner", map[string]any{
 		"questionId": "q1", "answers": map[string]any{"draw-a": drawingDone(t)},
@@ -354,5 +353,64 @@ func TestAnUnreadableKeptImageLeavesThePartNotMarked(t *testing.T) {
 	}
 	if sent := gradedImages.Load() - before; sent != 0 {
 		t.Fatalf("%d grading calls without an image to send", sent)
+	}
+}
+
+// TestABoardsPicturesAreStoredWithItAndReadByItsLinks (Epo 2026-11-09): the
+// pictures pasted on an answer board go up with it at Done and at Check, are
+// stored beside the board, and come back as links under the ids their image
+// blocks name; too many, or one that is no image, is refused with nothing
+// written.
+func TestABoardsPicturesAreStoredWithItAndReadByItsLinks(t *testing.T) {
+	h, st, _, mem := openGradingAPIWithBlob(t, "full")
+	ctx := context.Background()
+	attempt := startDrawingAttempt(t, h, drawingAssignment(t, h, "ai_approve"), "u_viewer")
+	path := "/api/assignment-attempts/" + attempt + "/drawings/draw-a"
+	done := drawingDone(t)
+	picture := func(id string) map[string]any {
+		return map[string]any{"sourceId": id, "data": done["image"]}
+	}
+	with := func(pictures ...map[string]any) map[string]any {
+		return map[string]any{"board": done["board"], "image": done["image"], "pictures": pictures}
+	}
+	many := make([]map[string]any, 11)
+	for i := range many {
+		many[i] = picture("hash" + string(rune('a'+i)))
+	}
+	expectStatus(t, doReq(t, h, http.MethodPut, path, "u_viewer", with(many...)), http.StatusUnprocessableEntity, "eleven pictures")
+	expectStatus(t, doReq(t, h, http.MethodPut, path, "u_viewer", with(map[string]any{
+		"sourceId": "hashA", "data": base64.StdEncoding.EncodeToString([]byte("not an image")),
+	})), http.StatusBadRequest, "a picture that is no image")
+	if keys := bucketKeys(t, mem, "drawings/"); len(keys) != 0 {
+		t.Fatalf("refused pictures left %v in the bucket", keys)
+	}
+
+	rec := doReq(t, h, http.MethodPut, path, "u_viewer", with(picture("hashA"), picture("hashB")))
+	expectStatus(t, rec, http.StatusOK, "Done with two pictures")
+	var saved struct{ ID string }
+	_ = json.Unmarshal(rec.Body.Bytes(), &saved)
+	if keys := bucketKeys(t, mem, "drawings/"+attempt+"/"); len(keys) != 4 {
+		t.Fatalf("Done wrote %v, want a board, an image and two pictures", keys)
+	}
+	read := doReq(t, h, http.MethodGet, "/api/drawings/"+saved.ID, "u_viewer", nil)
+	expectStatus(t, read, http.StatusOK, "the drawer's read")
+	var drawing struct {
+		Pictures []struct{ SourceID, URL string }
+	}
+	_ = json.Unmarshal(read.Body.Bytes(), &drawing)
+	if len(drawing.Pictures) != 2 || drawing.Pictures[0].SourceID != "hashA" || drawing.Pictures[0].URL == "" {
+		t.Fatalf("the drawing's pictures = %+v", drawing.Pictures)
+	}
+
+	// A practice check keeps them with the attempt it makes.
+	quiz := drawingQuiz(t, h, nil)
+	check := doReq(t, h, http.MethodPost, "/api/quizzes/"+quiz+"/check", "u_owner", map[string]any{
+		"questionId": "q1", "answers": map[string]any{"draw-a": with(picture("hashA"))},
+	})
+	expectStatus(t, check, http.StatusOK, "a check with a picture")
+	var kept int
+	if err := st.Pool().QueryRow(ctx, `SELECT count(*) FROM drawing_pictures p JOIN drawings d ON d.id=p.drawing_id
+		JOIN attempts t ON t.id=d.attempt_id WHERE t.material_id=$1 AND d.user_id='u_owner'`, quiz).Scan(&kept); err != nil || kept != 1 {
+		t.Fatalf("the check kept %d pictures, err %v", kept, err)
 	}
 }

@@ -78,10 +78,10 @@ func TestAssignmentDrawingIsChargedToTheMemberAndGoesWithTheAssignment(t *testin
 	before, owner := used(f.viewer), used(f.user)
 	board := DrawingObject{Key: "drawings/" + run.ID + "/board_1.ydoc", Bytes: 1000, Type: "application/octet-stream"}
 	image := &DrawingObject{Key: "drawings/" + run.ID + "/image_1.webp", Bytes: 500, Type: "image/webp"}
-	if _, err := f.s.SaveAssignmentDrawing(ctx, f.viewer, run.ID, "p2", board, image, now); !errors.Is(err, ErrNotDrawingPart) {
+	if _, err := f.s.SaveAssignmentDrawing(ctx, f.viewer, run.ID, "p2", board, image, nil, now); !errors.Is(err, ErrNotDrawingPart) {
 		t.Fatalf("a short-answer part took a drawing: %v", err)
 	}
-	saved, err := f.s.SaveAssignmentDrawing(ctx, f.viewer, run.ID, "p4", board, image, now)
+	saved, err := f.s.SaveAssignmentDrawing(ctx, f.viewer, run.ID, "p4", board, image, nil, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,12 +93,35 @@ func TestAssignmentDrawingIsChargedToTheMemberAndGoesWithTheAssignment(t *testin
 	}
 	// Done again replaces it: the meter follows the new board alone.
 	board.Key, board.Bytes = "drawings/"+run.ID+"/board_2.ydoc", 800
-	again, err := f.s.SaveAssignmentDrawing(ctx, f.viewer, run.ID, "p4", board, nil, now)
+	again, err := f.s.SaveAssignmentDrawing(ctx, f.viewer, run.ID, "p4", board, nil, nil, now)
 	if err != nil || again.ID != saved.ID {
 		t.Fatalf("the second Done = %+v, err %v", again, err)
 	}
 	if got := used(f.viewer); got != before+800 {
 		t.Fatalf("after replacing, the meter = %d, want %d", got, before+800)
+	}
+	// The board's pictures are stored and charged with it, and each Done
+	// replaces them with the ones it sends.
+	picture := func(id string, size int64) DrawingPicture {
+		return DrawingPicture{SourceID: id, Object: DrawingObject{Key: "drawings/" + run.ID + "/img_" + id + ".webp", Bytes: size, Type: "image/webp"}}
+	}
+	if _, err := f.s.SaveAssignmentDrawing(ctx, f.viewer, run.ID, "p4", board, nil,
+		[]DrawingPicture{picture("a", 300), picture("b", 200)}, now); err != nil {
+		t.Fatal(err)
+	}
+	if got := used(f.viewer); got != before+1300 {
+		t.Fatalf("with two pictures, the meter = %d, want %d", got, before+1300)
+	}
+	if _, err := f.s.SaveAssignmentDrawing(ctx, f.viewer, run.ID, "p4", board, nil,
+		[]DrawingPicture{picture("b", 200)}, now); err != nil {
+		t.Fatal(err)
+	}
+	pictures, err := f.s.DrawingPictures(ctx, saved.ID)
+	if err != nil || len(pictures) != 1 || pictures[0].SourceID != "b" || pictures[0].Object.Bytes != 200 {
+		t.Fatalf("the drawing's pictures = %+v, err %v", pictures, err)
+	}
+	if got := used(f.viewer); got != before+1000 {
+		t.Fatalf("with one picture left, the meter = %d, want %d", got, before+1000)
 	}
 	done, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.ID, map[string]any{
 		"p4": map[string]any{"drawing": "dr_forged"},
@@ -140,7 +163,7 @@ func TestMarkedDrawingsListAndDeleteForTheirPayer(t *testing.T) {
 		t.Fatal(err)
 	}
 	board := DrawingObject{Key: "drawings/" + run.ID + "/board_1.ydoc", Bytes: 1000, Type: "application/octet-stream"}
-	saved, err := f.s.SaveAssignmentDrawing(ctx, f.viewer, run.ID, "p4", board, nil, now)
+	saved, err := f.s.SaveAssignmentDrawing(ctx, f.viewer, run.ID, "p4", board, nil, nil, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +222,7 @@ func TestAnEmptiedDrawingIsForgotten(t *testing.T) {
 		t.Fatal(err)
 	}
 	board := DrawingObject{Key: "drawings/" + run.ID + "/board_1.ydoc.gz", Bytes: 1000, Type: "application/gzip"}
-	if _, err := f.s.SaveAssignmentDrawing(ctx, f.viewer, run.ID, "p4", board, nil, now); err != nil {
+	if _, err := f.s.SaveAssignmentDrawing(ctx, f.viewer, run.ID, "p4", board, nil, nil, now); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.s.DeleteAssignmentDrawing(ctx, f.viewer, run.ID, "p4", now); err != nil {
@@ -237,7 +260,7 @@ func drawIn(t *testing.T, f assignmentFixture, created Assignment, member string
 	}
 	board := DrawingObject{Key: "drawings/" + run.ID + "/board.ydoc.gz", Bytes: 1000, Type: "application/gzip"}
 	image := &DrawingObject{Key: "drawings/" + run.ID + "/image.webp", Bytes: 500, Type: "image/webp"}
-	if _, err := f.s.SaveAssignmentDrawing(ctx, member, run.ID, "p4", board, image, now); err != nil {
+	if _, err := f.s.SaveAssignmentDrawing(ctx, member, run.ID, "p4", board, image, nil, now); err != nil {
 		t.Fatal(err)
 	}
 	return run

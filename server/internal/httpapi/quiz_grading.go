@@ -39,6 +39,11 @@ import (
 // 150-part quiz.
 const answersMaxBytes = 4 << 20
 
+// checkMaxBytes bounds a quiz check, whose drawing answers come with their
+// boards' pictures: together, one board's pictures at their most. The review
+// and bank checks keep no drawing, so no pictures are sent to them.
+const checkMaxBytes = answersMaxBytes + picturesMaxBody
+
 var errGradeRequest = errors.New("answers must name parts of these questions, give every ordering part an order, and keep an open answer to text of at most 5,000 characters")
 
 type openPart struct {
@@ -68,6 +73,8 @@ type gradePlan struct {
 	answers   map[string]any
 	open      map[string]openPart
 	drawings  map[string]drawingUpload
+	// pictureTypes are each drawing's pictures' content types, as checked.
+	pictureTypes map[string][]string
 }
 
 // planGrading refuses answers to parts the questions do not have, ordering
@@ -75,7 +82,7 @@ type gradePlan struct {
 // it), and open answers that are not text or are too long. Blank open answers
 // earn 0 without a model call.
 func planGrading(qs []map[string]any, answers map[string]any, owner sampleOwner) (gradePlan, error) {
-	plan := gradePlan{questions: qs, answers: answers, open: map[string]openPart{}, drawings: map[string]drawingUpload{}}
+	plan := gradePlan{questions: qs, answers: answers, open: map[string]openPart{}, drawings: map[string]drawingUpload{}, pictureTypes: map[string][]string{}}
 	known := map[string]bool{}
 	for _, q := range qs {
 		parts, _ := q["parts"].([]any)
@@ -88,11 +95,12 @@ func planGrading(qs []map[string]any, answers map[string]any, owner sampleOwner)
 				return gradePlan{}, errGradeRequest
 			}
 			if a["type"] == "drawing" && answers[id] != nil {
-				drawing, imageType, err := sentDrawing(answers[id])
+				drawing, imageType, pictureTypes, err := sentDrawing(answers[id])
 				if err != nil {
 					return gradePlan{}, err
 				}
 				plan.drawings[id] = drawing
+				plan.pictureTypes[id] = pictureTypes
 				// Stored as the drawing's id once kept (store.withDrawingAnswers).
 				answers[id] = map[string]any{"drawing": ""}
 				if imageType != "" {
@@ -128,28 +136,48 @@ func planGrading(qs []map[string]any, answers map[string]any, owner sampleOwner)
 }
 
 // sentDrawing reads a drawing part's answer as a check sends it, {board,
-// image} in base64, and checks both before anything is stored or marked.
-func sentDrawing(value any) (drawingUpload, string, error) {
+// image, pictures} in base64, and checks all of it before anything is stored
+// or marked.
+func sentDrawing(value any) (drawingUpload, string, []string, error) {
 	m, ok := value.(map[string]any)
 	if !ok {
-		return drawingUpload{}, "", errGradeRequest
+		return drawingUpload{}, "", nil, errGradeRequest
 	}
-	decode := func(key string) ([]byte, bool) {
-		text, isText := m[key].(string)
+	decode := func(from map[string]any, key string) ([]byte, bool) {
+		text, isText := from[key].(string)
 		if !isText {
-			return nil, m[key] == nil
+			return nil, from[key] == nil
 		}
 		b, err := base64.StdEncoding.DecodeString(text)
 		return b, err == nil
 	}
-	board, okBoard := decode("board")
-	image, okImage := decode("image")
+	board, okBoard := decode(m, "board")
+	image, okImage := decode(m, "image")
 	if !okBoard || !okImage || len(board) == 0 {
-		return drawingUpload{}, "", errGradeRequest
+		return drawingUpload{}, "", nil, errGradeRequest
 	}
 	upload := drawingUpload{Board: board, Image: image}
+	if sent, given := m["pictures"]; given && sent != nil {
+		list, isList := sent.([]any)
+		if !isList || len(list) > fieldlimits.BoardPictures {
+			return drawingUpload{}, "", nil, errGradeRequest
+		}
+		for _, raw := range list {
+			picture, _ := raw.(map[string]any)
+			id, _ := picture["sourceId"].(string)
+			data, okData := decode(picture, "data")
+			if !okData {
+				return drawingUpload{}, "", nil, errGradeRequest
+			}
+			upload.Pictures = append(upload.Pictures, drawingPicture{SourceID: id, Data: data})
+		}
+	}
 	imageType, err := checkedDrawing(upload)
-	return upload, imageType, err
+	if err != nil {
+		return drawingUpload{}, "", nil, err
+	}
+	pictureTypes, err := checkedPictures(upload.Pictures)
+	return upload, imageType, pictureTypes, err
 }
 
 // gradeRequestError answers a refused plan with 422 and passes others on.

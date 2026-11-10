@@ -1,3 +1,4 @@
+import { BOARD_CATALOG } from '@/api/board.generated';
 import { type Box, smoothThrough, tidy, type Vec } from './boardGeometry';
 
 /** What a saved board's cards hold, and their limits, apart from the editor: the
@@ -90,11 +91,11 @@ export function pathOf(
   });
 }
 
-/** Most marks one plane holds. */
-export const MARKS_MAX = 500;
+/** Most marks one plane holds (the board catalog's, as every limit here). */
+export const { MARKS_MAX } = BOARD_CATALOG.limits;
 
 /** Longest formula a member can type; the renderer draws nothing past it. */
-export const LATEX_MAX = 2000;
+export const { LATEX_MAX } = BOARD_CATALOG.limits;
 
 /** A bar or pie chart is a card of its own: a coordinate means nothing on either (Epo
  * 2026-11-06). The student reads the table and builds it by hand. */
@@ -120,11 +121,8 @@ export type ChartData = {
   spokes: number[];
 };
 
-export const BARS_MAX = 24;
-export const SPOKES_MAX = 60;
-export const LABELS_MAX = 60;
-export const LABEL_LENGTH_MAX = 24;
-export const AXIS_MAX = 1e9;
+export const { AXIS_MAX, BARS_MAX, LABEL_LENGTH_MAX, LABELS_MAX, SPOKES_MAX } =
+  BOARD_CATALOG.limits;
 
 /** Room around the chart, as a card and in the editor. */
 export type Pads = { bottom: number; left: number; right: number; top: number };

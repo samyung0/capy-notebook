@@ -1430,6 +1430,21 @@ func editorAssetIDs(nodes []map[string]any) []string {
 				seen[image.AssetID] = struct{}{}
 			}
 		}
+		// A canvas's board and images (the catalog's boardAssetId, images[].assetId).
+		if node["type"] == CanvasBoardType {
+			if board, ok := node["boardAssetId"].(string); ok && board != "" {
+				seen[board] = struct{}{}
+			}
+			if images, ok := node["images"].([]any); ok {
+				for _, image := range images {
+					if m, ok := image.(map[string]any); ok {
+						if id, ok := m["assetId"].(string); ok && id != "" {
+							seen[id] = struct{}{}
+						}
+					}
+				}
+			}
+		}
 		for _, child := range children(node) {
 			collect(child)
 		}

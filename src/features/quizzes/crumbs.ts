@@ -16,6 +16,6 @@ export const blockHomeCrumb = (block: {
         }),
       }
     : {
-        label: m.files_tab_blocks(),
-        link: linkOptions({ search: { tab: 'blocks' }, to: '/files' }),
+        label: m.nav_files(),
+        link: linkOptions({ to: '/files' }),
       };

@@ -17,6 +17,7 @@ import type {
   FlashcardSet,
   GenerateOptions,
   HiddenBody,
+  Item,
   Material,
   MaterialDiscussion,
   ModelRef,
@@ -73,8 +74,10 @@ import {
   assignmentHandlers,
   quizAssignmentFields,
   recentFor,
+  submittedPapers,
   workspaceMaterialRefs,
 } from './assignments';
+import { canvasHandlers, mockCanvasRows } from './canvas';
 import { mockResumeStream } from './chatResume';
 import { mockChatStream } from './chatStream';
 import { mockUndo } from './chatUndo';
@@ -89,7 +92,7 @@ import {
 } from './collaboration';
 import * as db from './db';
 import { uid } from './db';
-import { editorAssetHandlers } from './editorAssets';
+import { editorAssetHandlers, embeds } from './editorAssets';
 import { extractionHandlers, seedExtractionFiles } from './extraction';
 import { membersHandlers } from './members';
 import { questionBankHandlers } from './questionBank';
@@ -127,6 +130,51 @@ function sortBy<T>(key: (row: T) => string | number, asc: boolean) {
     return asc ? cmp : -cmp;
   };
 }
+
+/** The Files page's filters (kind, workspaceId, location, q), shared by the
+ * list mocks; empty means no filter. */
+function listFilter(href: string) {
+  const { list, param } = listParams(href);
+  return {
+    kinds: list('kind'),
+    locations: list('location'),
+    q: param('q').toLowerCase(),
+    wsIds: list('workspaceId'),
+  };
+}
+
+function matchesFilter(
+  filter: ReturnType<typeof listFilter>,
+  row: { kind: string; name: string; workspaceId?: string }
+) {
+  const { kinds, locations, q, wsIds } = filter;
+  const location = row.workspaceId ? 'workspace' : 'standalone';
+  return (
+    (!q || row.name.toLowerCase().includes(q)) &&
+    (!kinds.length || kinds.includes(row.kind)) &&
+    (!wsIds.length || wsIds.includes(row.workspaceId ?? '')) &&
+    (!locations.length || locations.includes(location))
+  );
+}
+
+const workspaceNameOf = (id?: string) =>
+  db.workspaces.find((ws) => ws.id === id)?.name ?? '';
+
+// The mock user owns every mock workspace, so each row allows everything.
+const fileListRow = (f: SourceFile) => ({
+  ...f,
+  rights: { clone: true, move: true, rename: true, trash: true },
+});
+
+/** A material the lists show: one of these kinds and not embedded in a note
+ * (an embedded item lives only inside its note). */
+const listedMaterial = (mt: Material, kinds: string[]) =>
+  kinds.includes(mt.kind) && !mt.parentMaterialId;
+
+const materialListRow = (mt: Material) => ({
+  ...db.materialListItem(mt),
+  ...quizAssignmentFields(mt.id, 'owner'),
+});
 
 import { dialogFiles } from './dialogFiles';
 import { errorMaterials } from './errorMaterials';
@@ -706,6 +754,7 @@ export const handlers = [
   ),
   ...questionBankHandlers,
   ...editorAssetHandlers,
+  ...canvasHandlers,
   ...voiceInputHandlers,
   http.get('/api/files/:id/annotations', ({ params }) =>
     params.id === 'mock-preview-annotations'
@@ -1951,20 +2000,10 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 });
   }),
   http.get('/api/files', async ({ request }) => {
-    const { asc, limit, list, offset, sort } = listParams(request.url);
-    const kinds = list('kind');
-    const wsIds = list('workspaceId');
-    const locations = list('location');
-    const q = new URL(request.url).searchParams.get('q')?.toLowerCase() ?? '';
+    const { asc, limit, offset, sort } = listParams(request.url);
+    const filter = listFilter(request.url);
     const rows = db.files
-      .filter(
-        (f) =>
-          (!q || f.name.toLowerCase().includes(q)) &&
-          (!kinds.length || kinds.includes(f.kind)) &&
-          (!wsIds.length || wsIds.includes(f.workspaceId)) &&
-          (!locations.length ||
-            locations.includes(f.workspaceId ? 'workspace' : 'standalone'))
-      )
+      .filter((f) => matchesFilter(filter, f))
       .sort(
         sortBy(
           (f) =>
@@ -1975,21 +2014,118 @@ export const handlers = [
                 : sort === 'kind'
                   ? f.kind
                   : sort === 'workspace'
-                    ? (db.workspaces
-                        .find((ws) => ws.id === f.workspaceId)
-                        ?.name.toLowerCase() ?? '')
+                    ? workspaceNameOf(f.workspaceId).toLowerCase()
                     : f.addedAt,
           asc
         )
       );
-    // The mock user owns every mock workspace, so each row allows everything.
     return HttpResponse.json({
-      items: rows.slice(offset, offset + limit).map((f) => ({
-        ...f,
-        rights: { clone: true, move: true, rename: true, trash: true },
-      })),
+      items: rows.slice(offset, offset + limit).map(fileListRow),
       nextCursor:
         offset + limit < rows.length ? String(offset + limit) : undefined,
+    });
+  }),
+  // The Files page's one list: files, submissions, blocks and embeds paged
+  // together by one sort key, ties by `type:id`. The mock user owns every
+  // workspace, so scope=all lists what owned does, as /api/files does.
+  http.get('/api/items', async ({ request }) => {
+    const { asc, limit, offset, sort } = listParams(request.url);
+    const filter = listFilter(request.url);
+    type Row = {
+      at: string;
+      id: string;
+      item: Item;
+      kind: string;
+      name: string;
+      size: number;
+      workspace: string;
+      workspaceId?: string;
+    };
+    const rows: Row[] = [
+      ...db.files.map(
+        (f): Row => ({
+          at: f.addedAt,
+          id: f.id,
+          item: { file: fileListRow(f), type: 'file' },
+          kind: f.kind,
+          name: f.name,
+          size: f.sizeBytes,
+          workspace: workspaceNameOf(f.workspaceId),
+          workspaceId: f.workspaceId,
+        })
+      ),
+      ...submittedPapers().map(
+        (p): Row => ({
+          at: p.createdAt,
+          id: p.id,
+          item: { submission: p, type: 'submission' },
+          kind: p.kind,
+          name: p.name,
+          size: p.bytes,
+          workspace: p.workspaceName,
+          workspaceId: p.workspaceId,
+        })
+      ),
+      ...db.materials
+        .filter((mt) => listedMaterial(mt, ['note', 'quiz', 'flashcards']))
+        .map((mt): Row => {
+          const material = materialListRow(mt);
+          return {
+            at: mt.createdAt,
+            id: mt.id,
+            item: { material, type: 'material' },
+            kind: mt.kind,
+            name: mt.title,
+            size: material.sizeBytes,
+            workspace: mt.workspaceName,
+            workspaceId: mt.workspaceId,
+          };
+        }),
+      ...mockCanvasRows((id) => workspaceNameOf(id)).map(
+        (material): Row => ({
+          at: material.createdAt,
+          id: material.id,
+          item: { material, type: 'material' },
+          kind: material.kind,
+          name: material.title,
+          size: material.sizeBytes,
+          workspace: material.workspaceName,
+          workspaceId: material.canvasWorkspaceId,
+        })
+      ),
+      ...embeds.map(
+        (e): Row => ({
+          at: e.createdAt,
+          id: e.assetId,
+          item: { embed: e, type: 'embed' },
+          kind: e.purpose,
+          name: e.materialTitle,
+          size: e.sizeBytes,
+          workspace: e.workspaceName,
+          workspaceId: e.workspaceId,
+        })
+      ),
+    ];
+    const keyOf = (row: Row) =>
+      sort === 'name'
+        ? row.name.toLowerCase()
+        : sort === 'size'
+          ? row.size
+          : sort === 'kind'
+            ? row.kind
+            : sort === 'workspace'
+              ? row.workspace.toLowerCase()
+              : row.at;
+    const tie = (row: Row) => `${row.item.type}:${row.id}`;
+    const byKey = sortBy(keyOf, asc);
+    const byTie = sortBy(tie, asc);
+    const page = rows
+      .filter((row) => matchesFilter(filter, row))
+      .sort((a, b) => byKey(a, b) || byTie(a, b));
+    return HttpResponse.json({
+      items: page.slice(offset, offset + limit).map((row) => row.item),
+      nextCursor:
+        offset + limit < page.length ? String(offset + limit) : undefined,
     });
   }),
   http.get('/api/recent', async ({ request }) =>
@@ -2208,20 +2344,17 @@ export const handlers = [
   }),
   /* ---------------- study materials ---------------- */
   http.get('/api/materials', async ({ request }) => {
-    const { asc, limit, list, offset, sort } = listParams(request.url);
-    const kinds = list('kind');
-    const wsIds = list('workspaceId');
-    const locations = list('location');
-    const allowed = kinds.length ? kinds : ['note', 'quiz', 'flashcards'];
+    const { asc, limit, offset, sort } = listParams(request.url);
+    const filter = { ...listFilter(request.url), q: '' };
+    const allowed = filter.kinds.length
+      ? filter.kinds
+      : ['note', 'quiz', 'flashcards'];
     const rows = db.materials
-      .filter((mt) => {
-        if (!allowed.includes(mt.kind)) return false;
-        if (wsIds.length && !wsIds.includes(mt.workspaceId)) return false;
-        // Embedded items live only inside their note.
-        if (mt.parentMaterialId) return false;
-        const location = mt.workspaceId ? 'workspace' : 'standalone';
-        return !locations.length || locations.includes(location);
-      })
+      .filter(
+        (mt) =>
+          listedMaterial(mt, allowed) &&
+          matchesFilter(filter, { ...mt, name: mt.title })
+      )
       .sort(
         sortBy(
           (mt) =>
@@ -2238,10 +2371,7 @@ export const handlers = [
         )
       );
     return HttpResponse.json({
-      items: rows.slice(offset, offset + limit).map((mt) => ({
-        ...db.materialListItem(mt),
-        ...quizAssignmentFields(mt.id, 'owner'),
-      })),
+      items: rows.slice(offset, offset + limit).map(materialListRow),
       nextCursor:
         offset + limit < rows.length ? String(offset + limit) : undefined,
     });

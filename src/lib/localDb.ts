@@ -58,12 +58,26 @@ export interface LocalUndoPayload extends UndoPayload {
 export interface LocalDrawingDraft {
   /** The board's saved document (base64). */
   doc: string;
-  /** Where the answer is: the attempt or quiz, then the part. */
+  /** Where the answer is: the attempt or quiz, then the part; a workspace
+   * canvas's is `canvas:<material>`. */
   key: string;
+  /** A canvas copy: the material revision it was taken at, so a copy from
+   * before another tab's save is left alone (Epo 2026-11-09). */
+  revision?: number;
   savedAt: string;
 }
 
-const VERSION = 5;
+/** A picture pasted on an answer board being drawn, by its draft and the id
+ * its image block names: it goes up with the board at Done or Check (Epo
+ * 2026-11-09). Kept apart from the draft, which is rewritten at every pause
+ * in drawing. */
+export interface LocalDrawingPicture {
+  draft: string;
+  file: Blob;
+  id: string;
+}
+
+const VERSION = 6;
 
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -102,6 +116,10 @@ function open(): Promise<IDBDatabase> {
       }
       if (oldVersion < 5)
         database.createObjectStore('drawingDrafts', { keyPath: 'key' });
+      if (oldVersion < 6)
+        database
+          .createObjectStore('drawingPictures', { keyPath: ['draft', 'id'] })
+          .createIndex('draft', 'draft');
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -250,9 +268,51 @@ export function saveLocalDrawingDraft(draft: LocalDrawingDraft): Promise<void> {
   });
 }
 
+/** Deletes each of a draft's pictures the `keep` test doesn't spare. */
+function prunePictures(
+  transaction: IDBTransaction,
+  draft: string,
+  keep: (id: string) => boolean
+) {
+  const store = transaction.objectStore('drawingPictures');
+  store.index('draft').openKeyCursor(IDBKeyRange.only(draft)).onsuccess = (
+    event
+  ) => {
+    const cursor = (event.target as IDBRequest<IDBCursor | null>).result;
+    if (!cursor) return;
+    const [, id] = cursor.primaryKey as [string, string];
+    if (!keep(id)) store.delete(cursor.primaryKey);
+    cursor.continue();
+  };
+}
+
 export function deleteLocalDrawingDraft(key: string): Promise<void> {
-  return run(['drawingDrafts'], 'readwrite', (transaction) => {
-    transaction.objectStore('drawingDrafts').delete(key);
+  return run(['drawingDrafts', 'drawingPictures'], 'readwrite', (t) => {
+    t.objectStore('drawingDrafts').delete(key);
+    prunePictures(t, key, () => false);
+  });
+}
+
+export function localDrawingPictures(
+  draft: string
+): Promise<LocalDrawingPicture[]> {
+  return run(['drawingPictures'], 'readonly', (transaction) =>
+    transaction.objectStore('drawingPictures').index('draft').getAll(draft)
+  );
+}
+
+/** Writes a draft's new pictures, each once, and forgets the ones no longer
+ * on its board (`onBoard`: every picture id there now). */
+export function syncLocalDrawingPictures(
+  draft: string,
+  added: { file: Blob; id: string }[],
+  onBoard: string[]
+): Promise<void> {
+  return run(['drawingPictures'], 'readwrite', (transaction) => {
+    const store = transaction.objectStore('drawingPictures');
+    for (const { file, id } of added) store.put({ draft, file, id });
+    const kept = new Set(onBoard);
+    prunePictures(transaction, draft, (id) => kept.has(id));
   });
 }
 
@@ -260,11 +320,12 @@ export function deleteLocalDrawingDraft(key: string): Promise<void> {
  * or anyone's once signed out, are deleted first, in one transaction. A
  * draft holds a student's answer, so it never outlives its account here. */
 export function claimLocalDrawingDrafts(owner: string | null): Promise<void> {
-  return run(['meta', 'drawingDrafts'], 'readwrite', (t) => {
+  return run(['meta', 'drawingDrafts', 'drawingPictures'], 'readwrite', (t) => {
     const meta = t.objectStore('meta');
     meta.get('drawingDraftsOwner').onsuccess = (event) => {
       if (owner && (event.target as IDBRequest).result === owner) return;
       t.objectStore('drawingDrafts').clear();
+      t.objectStore('drawingPictures').clear();
       if (owner) meta.put(owner, 'drawingDraftsOwner');
       else meta.delete('drawingDraftsOwner');
     };

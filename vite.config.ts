@@ -43,7 +43,7 @@ const DEV_ENV_FILE = /^deploy\/\.env(?:\.[^/]+)?$/;
  * a build gets an empty module instead. The editor benches build with MSW on
  * (`--mode development`) and keep them. */
 const MSW_ENTRIES =
-  /\/mocks\/(browser|collaboration)$|\/dev\/MockScenarioPanel$|\/routes\/Dev(DrawingBoard|WorkspaceCanvas)$/;
+  /\/mocks\/(browser|collaboration)$|\/dev\/MockScenarioPanel$|\/routes\/DevDrawingBoard$/;
 const BOARD_IMPORT = /'(@blocksuite\/affine\/[^']+)'/g;
 const CSS_TS = /\.css\.ts$/;
 

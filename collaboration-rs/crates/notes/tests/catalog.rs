@@ -36,7 +36,7 @@ fn leaf() -> Value {
 /// type the catalog lists (Go's `catalogDocuments`): the every-block note
 /// shared with Go and the UAT journey, its imported fences named as rows,
 /// plus the transient and newer elements it does not carry; a
-/// quiz, a card set and a mindmap.
+/// quiz, a card set, a mindmap and a canvas.
 fn documents() -> BTreeMap<&'static str, Vec<Value>> {
     let fixture = read_json("server/internal/materialdoc/testdata/every-block-note.json");
     let mut note = fixture["value"].as_array().unwrap().clone();
@@ -78,12 +78,17 @@ fn documents() -> BTreeMap<&'static str, Vec<Value>> {
         { "type": "mermaid_caption", "children": [{ "text": "Cells" }] },
     ] }),
     ];
+    let canvas = vec![
+        json!({ "type": "canvas_board", "id": "canvas", "boardAssetId": "asset_board",
+        "version": 1, "images": [{ "assetId": "asset_2" }], "children": leaf() }),
+    ];
     BTreeMap::from([
         ("note", note),
         ("quiz", quiz),
         ("flashcards", cards),
         ("mindmap", mindmap.clone()),
         ("diagram", mindmap),
+        ("canvas", canvas),
     ])
 }
 
@@ -686,6 +691,43 @@ fn admission_checks_placement_values_and_the_embed_count() {
             "a {name}'s {key} {value:?}"
         );
     }
+
+    // A canvas's block names its board by a string, counts whole saves and
+    // lists its images by asset id.
+    let canvas = self::room(&docs["canvas"]);
+    let board = |key: &'static str, value: Value| {
+        let update = edit(&canvas, 13, |peer| {
+            let block = XmlTextRef::from(element_at(&peer.transact(), &[0]));
+            block.insert_attribute(
+                &mut peer.transact_mut(),
+                key,
+                notes::json::value_to_any(&value),
+            );
+        });
+        Validator::new("canvas").admit(&canvas, &Update::decode_v1(&update).unwrap())
+    };
+    for (key, value) in [
+        ("boardAssetId", json!(1)),
+        ("version", json!(-1)),
+        ("version", json!(1.5)),
+        ("images", json!("asset_2")),
+        ("images", json!([{ "assetId": 2 }])),
+    ] {
+        assert!(
+            refused_as(board(key, value.clone()), limits::BAD_VALUE),
+            "a canvas_board's {key} {value}"
+        );
+    }
+    for (key, value) in [
+        ("boardAssetId", json!("")),
+        ("version", json!(2)),
+        ("images", json!([{ "assetId": "asset_3" }])),
+    ] {
+        assert!(
+            board(key, value.clone()).is_ok(),
+            "a canvas_board's {key} {value}"
+        );
+    }
 }
 
 /// Any block's indent stops at the catalog's `LIST_INDENT_MAX` in the
@@ -840,13 +882,19 @@ fn reference_kinds_are_the_catalogs_items() {
 }
 
 /// Each material kind holds the element the catalog requires of it (a
-/// mermaid for a mindmap or diagram); a kind it does not list is refused.
+/// mermaid for a mindmap or diagram); a kind it does not list is refused. A
+/// kind that holds no paragraph (a canvas) refuses it as misplaced first, as
+/// Go's `validateKind` does.
 #[test]
 fn each_material_kind_holds_what_the_catalog_requires() {
     let paragraph = [json!({ "type": "p", "id": "p", "children": [{ "text": "x" }] })];
     for material in catalog::MATERIAL_KINDS {
         let stored = material::assert_canonical(&paragraph, material.kind);
         match material.requires {
+            Some(_) if !limits::may_hold(material.kind, "p") => assert_eq!(
+                stored.unwrap_err().0,
+                format!("a {} cannot hold a p block", material.kind)
+            ),
             Some(_) => assert_eq!(
                 stored.unwrap_err().0,
                 format!("{} element is required", material.kind)

@@ -28,9 +28,12 @@ it('keeps a file by its id once its upload row has gone, as after a reload', () 
   expect(waitingFileState({}, undefined, [])).toBe('gone');
 });
 
-it('ends the wait on any file that fails, reading or not', () => {
+// Epo 2026-11-09: a failed file no longer ends the wait; the quiz goes on with the
+// files read, and only every file failing fails it.
+it('waits for every file, then goes on with those read', () => {
   expect(quizWaitStatus(['read', 'reading'])).toBe('reading');
+  expect(quizWaitStatus(['reading', 'failed'])).toBe('reading');
   expect(quizWaitStatus(['read', 'read'])).toBe('ready');
-  expect(quizWaitStatus(['reading', 'failed'])).toBe('failed');
-  expect(quizWaitStatus(['read', 'gone'])).toBe('failed');
+  expect(quizWaitStatus(['read', 'gone'])).toBe('ready');
+  expect(quizWaitStatus(['failed', 'gone'])).toBe('failed');
 });

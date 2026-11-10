@@ -49,10 +49,11 @@ export function drawingPreviewUrl(
   inset = 0
 ) {
   try {
-    let svg = drawBoardPreview(board, {
-      height: height - inset * 2,
-      width: width - inset * 2,
-    });
+    let svg = drawBoardPreview(
+      board,
+      { height: height - inset * 2, width: width - inset * 2 },
+      'question'
+    );
     if (inset)
       svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">${svg.replace('<svg ', `<svg x="${inset}" y="${inset}" `)}</svg>`;
     return `data:image/svg+xml,${encodeURIComponent(svg)}`;

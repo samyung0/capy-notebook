@@ -289,13 +289,9 @@ test('an uploaded paper is read first, and saved to Files hidden from members', 
     mimeType: 'application/pdf',
     name: 'new paper.pdf',
   });
-  const next = dialog(page).getByRole('button', {
-    name: m.action_continue(),
-  });
-  await expect(next).toBeEnabled({ timeout: 30_000 });
-  // Still reading: the dialog gives way to the panel until the pages can open.
-  await next.click();
-  await expect(dialog(page)).toHaveCount(0);
+  // The upload closes the dialog by itself: the panel follows it until the pages
+  // can open.
+  await expect(dialog(page)).toHaveCount(0, { timeout: 30_000 });
   // One row at a time: the upload's while it reads, then the quiz's.
   const panel = page.getByTestId('source-transfer-panel');
   await expect(panel.getByText('new paper.pdf')).toBeVisible();
@@ -314,7 +310,7 @@ test('an uploaded paper is read first, and saved to Files hidden from members', 
   expect(saved).toMatchObject({ hidden: true, topicId: null });
 });
 
-test('a reload finds the waiting files, and one that never finished sending offers Try again', async ({
+test('a reload finds the waiting files, and Make quiz names one that never finished sending', async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -348,35 +344,35 @@ test('a reload finds the waiting files, and one that never finished sending offe
     );
   });
   await page.goto('/workspaces/ws_bio');
-  const panel = page.getByTestId('source-transfer-panel');
-  await expect(
-    panel.locator('[data-quiz-wait=ready]').getByRole('button', {
-      name: m.make_quiz_make_action(),
-    })
-  ).toBeVisible({ timeout: 30_000 });
-  await expect(
-    panel
-      .locator('[data-quiz-wait=ready]')
-      .getByText(m.source_transfer_not_added())
-  ).toHaveCount(0);
-  const failed = panel.locator('[data-quiz-wait=failed]');
-  await expect(
-    failed.getByText(
-      m.source_import_file_error({
-        name: 'lost.pdf',
-        reason: m.source_transfer_not_added(),
-      })
-    )
-  ).toBeVisible();
-  await failed.getByRole('button', { name: m.make_quiz_try_again() }).click();
+  // Both waits are through: the one that lost a file goes on with the file it read.
+  const waits = page
+    .getByTestId('source-transfer-panel')
+    .locator('[data-quiz-wait=ready]');
+  await expect(waits).toHaveCount(2, { timeout: 30_000 });
+  const lost = m.source_import_file_error({
+    name: 'lost.pdf',
+    reason: m.source_transfer_not_added(),
+  });
+  await expect(waits.filter({ hasText: 'All read' })).not.toContainText(lost);
+  const short = waits.filter({ hasText: 'Cut short' });
+  await expect(short).toContainText(lost);
+  await short.getByRole('button', { name: m.make_quiz_make_action() }).click();
+  // Back on the files with the one still good, and the lost one named.
   await expect(page).toHaveURL(/make=files/);
   await expect(dialog(page).getByText(/mark scheme/)).toBeVisible({
     timeout: 30_000,
   });
   await expect(
+    dialog(page).getByText(
+      m.make_quiz_some_files_failed({
+        names: `lost.pdf (${m.source_transfer_not_added()})`,
+      })
+    )
+  ).toBeVisible();
+  await expect(
     dialog(page).getByRole('button', { name: m.action_continue() })
   ).toBeDisabled();
-  await expect(panel.locator('[data-quiz-wait=failed]')).toHaveCount(0);
+  await expect(waits).toHaveCount(1);
 });
 
 test('a reload finds the runs the panel follows, and forgets one the server no longer has', async ({

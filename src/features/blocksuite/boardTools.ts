@@ -1,11 +1,15 @@
-import { DefaultTool } from '@blocksuite/affine/blocks/surface';
+import { addImages } from '@blocksuite/affine/blocks/image';
+import {
+  DefaultTool,
+  EdgelessCRUDIdentifier,
+} from '@blocksuite/affine/blocks/surface';
 import { ConnectorTool } from '@blocksuite/affine/gfx/connector';
 import {
   EdgelessShapeToolButton,
   ShapeTool,
 } from '@blocksuite/affine/gfx/shape';
 import { Bound } from '@blocksuite/affine/global/gfx';
-import { SignalWatcher } from '@blocksuite/affine/global/lit';
+import { SignalWatcher, WithDisposable } from '@blocksuite/affine/global/lit';
 import { LatexExtension } from '@blocksuite/affine/inlines/latex';
 import {
   type Color,
@@ -13,6 +17,8 @@ import {
   DEFAULT_CONNECTOR_MODE,
   DefaultTheme,
   isTransparent,
+  MAX_IMAGE_WIDTH,
+  MindmapStyle,
   PointStyle,
   type ShapeName,
   ShapeType,
@@ -41,15 +47,64 @@ import {
   EdgelessToolbarToolMixin,
   SeniorToolIdentifier,
 } from '@blocksuite/affine/widgets/edgeless-toolbar';
-import { Pen01Icon } from '@hugeicons/core-free-icons';
-import { css, html, LitElement, nothing, svg, type TemplateResult } from 'lit';
+import {
+  ArrowLeft04Icon,
+  Cancel01Icon,
+  Pen01Icon,
+  PlusSignIcon,
+} from '@hugeicons/core-free-icons';
+import {
+  css,
+  html,
+  LitElement,
+  nothing,
+  svg,
+  type TemplateResult,
+  unsafeCSS,
+} from 'lit';
 import { property, state } from 'lit/decorators.js';
 import { classMap } from 'lit/directives/class-map.js';
 import { styleMap } from 'lit/directives/style-map.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import * as Y from 'yjs';
+import { BOARD_CATALOG } from '@/api/board.generated';
+import type { MaterialPreview, QuizPreviewQuestion } from '@/api/types';
+import { userToast } from '@/components/ui/userToast';
+import {
+  cardCountLabel,
+  questionCountLabel,
+} from '@/features/materials/countLabels';
+import {
+  youtubeVideoId,
+  youtubeWatchUrl,
+} from '@/features/materials/youtubeUrl';
 import { m } from '@/i18n';
+import { errorCopy } from '@/lib/errors';
+import { IMAGE_ACCEPT } from '@/lib/fitImage';
+import {
+  addCard,
+  type CardMaterialKind,
+  LINK_FLAVOUR,
+  MATERIAL_CARD_SIZE,
+  MATERIAL_FLAVOUR,
+  workspaceOf,
+} from './boardCards';
 import { addChart, type ChartElementModel, openChart } from './boardChart';
+import {
+  type KlipyGif,
+  type KlipyKind,
+  klipyEnabled,
+  klipyMedia,
+} from './boardKlipy';
+import type { BoardKind } from './boardLoad';
+import { addPicture } from './boardPicture';
+import {
+  EMOJI,
+  emojiStillUrl,
+  emojiText,
+  isWebAddress,
+  type PictureKind,
+} from './boardPictureData';
 import {
   addPlane,
   fitCard,
@@ -708,9 +763,11 @@ function openPopper(
   button: PopperButton,
   tag: string,
   height: number,
-  style: Partial<CSSStyleDeclaration>
+  style: Partial<CSSStyleDeclaration>,
+  onDispose?: () => void
 ) {
   const popper = button.createPopper(tag as 'div', button, {
+    onDispose,
     setProps: (element: HTMLElement & { edgeless?: unknown }) => {
       element.edgeless = button.edgeless;
     },
@@ -719,6 +776,7 @@ function openPopper(
   const clip = element.parentElement;
   if (clip) clip.style.height = `${height}px`;
   Object.assign(element.style, style);
+  return element;
 }
 
 /** Leaving the tool closes its menu. Forgetting it at once lets a quick click open
@@ -982,6 +1040,7 @@ type PieceKind =
   | 'cart'
   | 'deriv'
   | 'int'
+  | 'mindmap'
   | 'pie'
   | 'polar'
   | 'sqrt'
@@ -1010,6 +1069,7 @@ const PIECE_TIPS: Record<PieceKind, { key?: string; tip: () => string }> = {
   cart: { key: 'G', tip: m.drawing_board_coordinate_plane },
   deriv: { tip: m.drawing_board_derivative },
   int: { tip: m.drawing_board_integral },
+  mindmap: { tip: m.drawing_board_mind_map },
   pie: { key: '⇧ B', tip: m.drawing_board_pie_chart },
   polar: { key: '⇧ G', tip: m.drawing_board_polar_plane },
   sqrt: { tip: m.drawing_board_square_root },
@@ -1141,6 +1201,38 @@ const pieceArt = (piece: Piece) =>
     )}</svg>`
   );
 
+/** AFFiNE's starting mind map, a topic and three ideas, centred on a point; its own
+ * layout places the ideas. */
+function addMindmap(gfx: GfxController, [cx, cy]: Vec) {
+  const root = { h: 50, w: 145 };
+  const idea = { h: 35, w: 80 };
+  const left = cx - (root.w + 120 + idea.w) / 2;
+  return gfx.std.get(EdgelessCRUDIdentifier).addElement('mindmap', {
+    children: {
+      children: [0, 1, 2].map((i) => ({
+        children: [],
+        text: m.drawing_board_mind_map_idea(),
+        xywh: `[${left + root.w + 120},${cy - idea.h / 2 + (i - 1) * 50},${idea.w},${idea.h}]`,
+      })),
+      text: m.drawing_board_mind_map_topic(),
+      xywh: `[${left},${cy - root.h / 2},${root.w},${root.h}]`,
+    },
+    style: MindmapStyle.ONE,
+  }) as string;
+}
+
+const MINDMAP_PIECE: Piece = {
+  body: `<path d="M17 20C22 20 22 8 28 8M17 20h11M17 20c5 0 5 12 11 12" fill="none" stroke="#173654" stroke-width="2"/><rect x="1" y="14" width="18" height="12" rx="3" fill="#1e96eb"/><rect x="27" y="3" width="13" height="9" rx="2.5" fill="#f6c343"/><rect x="27" y="15.5" width="13" height="9" rx="2.5" fill="#f6c343"/><rect x="27" y="28" width="13" height="9" rx="2.5" fill="#f6c343"/>`,
+  dy: -8,
+  h: 40,
+  kind: 'mindmap',
+  r: 0,
+  viewBox: '0 0 41 40',
+  w: 41,
+  x: 28,
+  y: 20,
+};
+
 /** Puts down the card a piece stands for, centred where it was dropped. */
 export function placePiece(gfx: GfxController, kind: PieceKind, [cx, cy]: Vec) {
   const centred = (w: number, h: number) =>
@@ -1151,6 +1243,8 @@ export function placePiece(gfx: GfxController, kind: PieceKind, [cx, cy]: Vec) {
   } else if (kind === 'bar' || kind === 'pie') {
     const { h, w } = NEW_CHART[kind];
     finishPlacing(gfx, addChart(gfx, centred(w, h), kind));
+  } else if (kind === 'mindmap') {
+    finishPlacing(gfx, addMindmap(gfx, [cx, cy]));
   } else {
     const latex = FORMULA_STARTS[kind];
     if (latex) openFormula(gfx, { at: [cx, cy], latex });
@@ -1372,6 +1466,1147 @@ class CapyFormulaSlot extends CapyPieceSlot {
   protected slotTip = { key: 'M', tip: m.drawing_board_formulas };
 }
 
+/** The workspace canvas's Misc panel (Epo 2026-11-09, A): tiles in groups, each a card
+ * picked up and dropped like a slot's piece; a finger's tap puts it in the view's
+ * middle. Groups join as their kinds land (board catalog). */
+type MiscView = 'emoji' | 'klipy' | 'link' | 'quiz' | 'flashcards';
+/** A tile: a card picked up like a slot's piece, or a picker it opens (KLIPY's on
+ * one of its two tabs). */
+type MiscTile =
+  | { piece: Piece }
+  /** Picks image files from the device, for a phone's lack of paste and drop. */
+  | { art: TemplateResult; label: () => string; pick: 'image' }
+  | {
+      art: TemplateResult;
+      klipy?: KlipyKind;
+      label: () => string;
+      view: MiscView;
+    };
+const MISC_GROUPS: { label: () => string; tiles: MiscTile[] }[] = [
+  {
+    label: m.drawing_board_diagrams,
+    tiles: [...CHART_PIECES]
+      .reverse()
+      .concat(MINDMAP_PIECE)
+      .map((piece) => ({ piece })),
+  },
+  {
+    label: m.drawing_board_media,
+    tiles: [
+      {
+        art: svg`<svg width="36" height="32" viewBox="0 0 36 32" aria-hidden="true"><rect x="2" y="3" width="32" height="26" rx="4" fill="#dcebfb"/><circle cx="12" cy="12" r="3.5" fill="#f2c94c"/><path d="M4 26.5 13.5 17l5.5 5.5 5-5L32 25.5V25a4 4 0 0 1-4 4H8a4 4 0 0 1-4-2.5Z" fill="#1e96eb"/></svg>`,
+        label: m.drawing_board_image,
+        pick: 'image',
+      },
+      {
+        art: html`<img
+          alt=""
+          height="40"
+          src=${emojiStillUrl('1f600')}
+          width="40"
+        />`,
+        label: m.drawing_board_emoji,
+        view: 'emoji',
+      },
+      {
+        art: svg`<svg width="40" height="32" viewBox="0 0 40 32" aria-hidden="true"><rect x="2" y="2" width="36" height="28" rx="4" fill="#7f5fd6"/><text x="9" y="21" font-size="11" font-weight="700" font-family="monospace" fill="#fff">GIF</text></svg>`,
+        klipy: 'gifs',
+        label: m.drawing_board_gif,
+        view: 'klipy',
+      },
+      {
+        art: svg`<svg width="34" height="34" viewBox="0 0 28 28" aria-hidden="true"><path d="M4 6a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v9l-9 9H7a3 3 0 0 1-3-3Z" fill="#f2c94c"/><path d="M24 15l-9 9v-6a3 3 0 0 1 3-3Z" fill="#e0b335"/></svg>`,
+        klipy: 'stickers',
+        label: m.drawing_board_sticker,
+        view: 'klipy',
+      },
+      {
+        art: svg`<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#173654" stroke-width="1.6" stroke-linecap="round" aria-hidden="true" style="stroke:var(--capy-navy, #173654)"><path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/></svg>`,
+        label: m.drawing_board_link,
+        view: 'link',
+      },
+    ],
+  },
+  {
+    label: m.drawing_board_from_workspace,
+    tiles: [
+      {
+        art: svg`<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#1e96eb" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6L13 3Z"/></svg>`,
+        label: m.drawing_board_quiz,
+        view: 'quiz',
+      },
+      {
+        art: svg`<svg width="38" height="34" viewBox="0 0 32 30" aria-hidden="true"><rect x="9" y="3" width="20" height="14" rx="2" fill="#fff" stroke="#c9ccd2" transform="rotate(8 19 10)"/><rect x="4" y="9" width="20" height="14" rx="2" fill="#e8798f"/></svg>`,
+        label: m.drawing_board_flashcards,
+        view: 'flashcards',
+      },
+    ],
+  },
+];
+
+/** The panel's one frame (Epo 2026-11-09, Misc round 2): the same size in every
+ * view, so switching views moves nothing. */
+const PANEL_WIDTH = 360;
+const PANEL_HEIGHT = 440;
+/** The grid shows a filter field from this many quizzes or sets. */
+const FILTER_FROM = 6;
+
+/** The Misc panel: the chart and mind map pieces, picked up like a slot's piece,
+ * and the pickers (Epo 2026-11-09): Emoji, GIF and Sticker (KLIPY, one search with
+ * two tabs), Link, and the workspace's quizzes and sets as thumbnail grids with a
+ * New tile first. One 360 × 440 frame: Back, the title, a close; the body scrolls.
+ * While KLIPY loads, a shimmer grid of the final shape stands in. */
+/** A quiz tile's pill: its first question's answer type. */
+function questionTypeLabel(type: QuizPreviewQuestion['type']) {
+  switch (type) {
+    case 'mcq':
+      return m.question_ui_multiple_choice();
+    case 'boolean':
+      return m.question_ui_true_false();
+    case 'short':
+      return m.question_ui_short_answer();
+    case 'matching':
+      return m.question_ui_matching();
+    case 'ordering':
+      return m.question_ui_ordering();
+    case 'open':
+      return m.question_ui_open_answer();
+    case 'gaps':
+      return m.question_ui_fill_in_the_gaps();
+    case 'drawing':
+      return m.question_ui_drawing();
+  }
+}
+
+class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
+  static override styles = [
+    POPPER_STYLES,
+    css`
+      :host {
+        display: flex;
+        flex-direction: column;
+        width: ${PANEL_WIDTH}px;
+        height: ${PANEL_HEIGHT}px;
+        max-width: 100vw;
+        box-sizing: border-box;
+        padding: 10px 10px 8px;
+        background: var(--affine-background-overlay-panel-color);
+        border: 1px solid var(--affine-border-color);
+        border-bottom: 0;
+        border-radius: 10px 10px 0 0;
+        box-shadow: 0 -6px 20px rgb(0 0 0 / 6%);
+        color: var(--affine-text-primary-color);
+      }
+      h3 {
+        margin: 0 0 4px 4px;
+        color: var(--affine-text-secondary-color);
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .body {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+      }
+      .group + .group {
+        margin-top: 8px;
+      }
+      .tiles {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 4px;
+      }
+      .tile {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        height: 76px;
+        border-radius: 8px;
+        color: var(--affine-text-secondary-color);
+        font-size: 11.5px;
+        cursor: grab;
+      }
+      button.tile {
+        cursor: pointer;
+      }
+      .tile:hover {
+        background: var(--affine-hover-color);
+        color: var(--affine-text-primary-color);
+      }
+      .art {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 36px;
+      }
+      .tile[data-kind] .art {
+        filter: ${unsafeCSS(PIECE_SHADOW)};
+      }
+      .head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 32px;
+        margin-bottom: 6px;
+      }
+      .head button {
+        width: 32px;
+        height: 32px;
+        flex: none;
+      }
+      .head .title {
+        flex: 1;
+        min-width: 0;
+        margin: 0;
+        overflow: hidden;
+        color: var(--affine-text-primary-color);
+        font-size: 13px;
+        font-weight: 600;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .head input,
+      .filter {
+        flex: 1;
+        min-width: 0;
+        height: 32px;
+        padding: 0 10px;
+        border: 1px solid var(--affine-border-color);
+        border-radius: 6px;
+        background: transparent;
+        color: var(--affine-text-primary-color);
+        font: inherit;
+        font-size: 13px;
+        outline: none;
+      }
+      .head input:focus,
+      .filter:focus {
+        border-color: var(--affine-primary-color);
+      }
+      .filter {
+        width: 100%;
+        box-sizing: border-box;
+        margin-bottom: 8px;
+      }
+      .tabs {
+        display: flex;
+        gap: 2px;
+        margin: 0 0 8px;
+        border-bottom: 1px solid var(--affine-border-color);
+      }
+      .tabs button {
+        width: auto;
+        height: auto;
+        margin-bottom: -1px;
+        padding: 6px 10px 7px;
+        border-bottom: 2px solid transparent;
+        border-radius: 0;
+        color: var(--affine-text-secondary-color);
+        font-size: 12.5px;
+        font-weight: 600;
+      }
+      .tabs button[aria-selected='true'] {
+        border-bottom-color: var(--affine-primary-color);
+        color: var(--affine-text-primary-color);
+      }
+      .emoji {
+        display: grid;
+        grid-template-columns: repeat(8, 1fr);
+        gap: 2px;
+      }
+      .emoji button {
+        width: 100%;
+        aspect-ratio: 1;
+      }
+      .emoji img {
+        width: 30px;
+        height: 30px;
+      }
+      .cells {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+        align-content: start;
+      }
+      .cells > * {
+        width: 100%;
+        aspect-ratio: 16 / 10;
+        padding: 0;
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      .cells.stickers > * {
+        aspect-ratio: 1;
+      }
+      .cells img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .cells.stickers img {
+        object-fit: contain;
+      }
+      .cells.stickers button {
+        background-color: var(--affine-background-primary-color);
+        background-image:
+          linear-gradient(45deg, var(--affine-hover-color) 25%, transparent 25%),
+          linear-gradient(-45deg, var(--affine-hover-color) 25%, transparent 25%),
+          linear-gradient(45deg, transparent 75%, var(--affine-hover-color) 75%),
+          linear-gradient(-45deg, transparent 75%, var(--affine-hover-color) 75%);
+        background-size: 12px 12px;
+        background-position:
+          0 0,
+          0 6px,
+          6px -6px,
+          -6px 0;
+      }
+      .skeleton {
+        background: linear-gradient(
+          100deg,
+          var(--affine-hover-color) 30%,
+          var(--affine-background-overlay-panel-color) 50%,
+          var(--affine-hover-color) 70%
+        );
+        background-size: 200% 100%;
+        animation: shine 1.4s infinite;
+      }
+      @keyframes shine {
+        to {
+          background-position: -200% 0;
+        }
+      }
+      .note {
+        padding: 28px 10px;
+        color: var(--affine-text-secondary-color);
+        font-size: 12.5px;
+        text-align: center;
+      }
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+        align-content: start;
+      }
+      .cards > * {
+        min-width: 0;
+      }
+      .card {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 4px;
+        width: 100%;
+        /* Not the toolbar's 36px button: its content sets the height. */
+        height: auto;
+        min-height: 96px;
+        padding: 8px 10px 9px;
+        border: 1px solid var(--affine-border-color);
+        border-radius: 8px;
+        background: var(--affine-background-primary-color);
+        color: var(--affine-text-primary-color);
+        text-align: left;
+      }
+      .card:hover {
+        background: var(--affine-hover-color);
+      }
+      .card .pill {
+        align-self: flex-start;
+        padding: 3px 6px;
+        border-radius: 4px;
+        background: var(--affine-hover-color);
+        color: var(--affine-primary-color);
+        font-size: 10px;
+        font-weight: 500;
+        line-height: 1;
+      }
+      .card .t {
+        overflow: hidden;
+        font-size: 12.5px;
+        font-weight: 600;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .card .q {
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        overflow: hidden;
+        font-size: 11.5px;
+        line-height: 1.4;
+      }
+      .card .n {
+        margin-top: auto;
+        color: var(--affine-text-secondary-color);
+        font-size: 11px;
+      }
+      .card.new {
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        border-style: dashed;
+        color: var(--affine-text-secondary-color);
+        font-size: 12px;
+      }
+      .card.new .plus {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: var(--affine-hover-color);
+        color: var(--affine-primary-color);
+      }
+      .fc {
+        position: relative;
+        height: 48px;
+      }
+      .fc span {
+        position: absolute;
+        inset: 0;
+        padding: 6px 8px;
+        border: 1px solid var(--affine-border-color);
+        border-radius: 6px;
+        background: var(--affine-background-overlay-panel-color);
+        font-size: 11.5px;
+        line-height: 1.35;
+        overflow: hidden;
+      }
+      .fc span.back {
+        z-index: 0;
+        border-color: #e8798f;
+        background: #e8798f;
+        opacity: 0.55;
+        transform: translate(5px, -5px) rotate(3deg);
+      }
+      .fc span.front {
+        z-index: 1;
+      }
+      form.link {
+        display: flex;
+        gap: 6px;
+      }
+      form.link input {
+        flex: 1;
+        min-width: 0;
+        height: 32px;
+        padding: 0 10px;
+        border: 1px solid var(--affine-border-color);
+        border-radius: 6px;
+        background: transparent;
+        color: var(--affine-text-primary-color);
+        font: inherit;
+        font-size: 13px;
+        outline: none;
+      }
+      form.link input:focus {
+        border-color: var(--affine-primary-color);
+      }
+      form.link button {
+        width: auto;
+        height: 32px;
+        padding: 0 12px;
+        border: 1px solid var(--affine-border-color);
+        color: var(--affine-text-primary-color);
+        font-size: 13px;
+      }
+      .error {
+        margin: 6px 2px 0;
+        color: var(--affine-error-color);
+        font-size: 12px;
+      }
+      .credit {
+        margin-top: 6px;
+        text-align: right;
+        color: var(--affine-text-secondary-color);
+        font-size: 11px;
+      }
+    `,
+  ];
+
+  @property({ attribute: false })
+  accessor edgeless!: BlockComponent;
+
+  @state()
+  private accessor view: MiscView | null = null;
+  @state()
+  private accessor klipyKind: KlipyKind = 'gifs';
+  @state()
+  private accessor found: KlipyGif[] | 'loading' | 'failed' = 'loading';
+  @state()
+  private accessor linkError = false;
+  @state()
+  private accessor filter = '';
+  @state()
+  private accessor creating = false;
+
+  private drag: EdgelessDraggableElementController<Piece> | undefined;
+  private touch: EdgelessDraggableElementController<Piece> | undefined;
+  private search: AbortController | undefined;
+  private searchTimer: ReturnType<typeof setTimeout> | undefined;
+  private query = '';
+
+  private get gfx() {
+    return this.edgeless.std.get(GfxControllerIdentifier);
+  }
+
+  /** Once something is down, the panel goes, as AFFiNE's template panel does. */
+  private placed() {
+    this.dispatchEvent(new Event('placed', { bubbles: true, composed: true }));
+  }
+
+  override firstUpdated() {
+    const { gfx } = this;
+    const place = (kind: PieceKind, at: Vec) => {
+      placePiece(gfx, kind, at);
+      this.placed();
+    };
+    const options = (clickToDrag: boolean) => ({
+      clickToDrag,
+      edgeless: this.edgeless,
+      onDrop: (element: { data: Piece }, bound: Bound) =>
+        place(element.data.kind, [
+          bound.x + bound.w / 2,
+          bound.y + bound.h / 2,
+        ]),
+      onEnterOrLeaveScope: (overlay: OverlayLayer, isOutside?: boolean) => {
+        overlay.element.style.filter = isOutside ? 'none' : PIECE_SHADOW;
+      },
+      onOverlayCreated: (overlay: OverlayLayer) => {
+        overlay.element.style.filter = PIECE_SHADOW;
+      },
+      scopeElement: this,
+    });
+    this.drag = new EdgelessDraggableElementController(this, options(true));
+    this.touch = new EdgelessDraggableElementController(this, {
+      ...options(false),
+      onElementClick: ({ data }) =>
+        place(data.kind, [gfx.viewport.centerX, gfx.viewport.centerY]),
+    });
+  }
+
+  override disconnectedCallback() {
+    super.disconnectedCallback();
+    this.search?.abort();
+    clearTimeout(this.searchTimer);
+  }
+
+  /** A picture in the view's middle, `side` screen pixels on its longer side. */
+  private placePicture(
+    picture: { kind: PictureKind; label: string; ref: string },
+    [w, h]: [number, number],
+    side: number
+  ) {
+    const { viewport } = this.gfx;
+    const scale = side / Math.max(w, h) / viewport.zoom;
+    addPicture(
+      this.gfx,
+      new Bound(
+        viewport.centerX - (w * scale) / 2,
+        viewport.centerY - (h * scale) / 2,
+        w * scale,
+        h * scale
+      ),
+      picture
+    );
+    this.placed();
+  }
+
+  /** Image files picked from the device land as pasted ones do, through the
+   * board's blob source: stored at once on the workspace canvas. */
+  private pickImages() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = IMAGE_ACCEPT;
+    input.multiple = true;
+    input.addEventListener('change', () => {
+      const files = [...(input.files ?? [])];
+      if (!files.length) return;
+      // A file the board can't read is said by BlockSuite's own notice.
+      addImages(this.edgeless.std, files, { maxWidth: MAX_IMAGE_WIDTH }).catch(
+        () => undefined
+      );
+      this.placed();
+    });
+    input.click();
+  }
+
+  private placingGif = false;
+
+  /** A GIF or sticker at KLIPY's size for it, or the file's own when KLIPY gives
+   * none. A link past what a board stores can't be placed; the picker still shows
+   * it (KLIPY's terms: no result removed). */
+  private async placeGif(gif: KlipyGif) {
+    // One at a time: a size-less GIF waits for its file, and a second click then
+    // would place it twice.
+    if (this.placingGif) return;
+    const ref = gif.media.url;
+    if (ref.length > BOARD_CATALOG.limits.PICTURE_REF_MAX) {
+      userToast({ title: m.drawing_board_gif_unplaceable() });
+      return;
+    }
+    let { height = 0, width = 0 } = gif.media;
+    if (
+      !(
+        Number.isFinite(width) &&
+        width > 0 &&
+        Number.isFinite(height) &&
+        height > 0
+      )
+    ) {
+      const image = new Image();
+      image.referrerPolicy = 'no-referrer';
+      image.src = ref;
+      this.placingGif = true;
+      try {
+        await image.decode();
+      } catch {
+        userToast({ title: m.drawing_board_gif_unplaceable() });
+        return;
+      } finally {
+        this.placingGif = false;
+      }
+      // The panel (and maybe the board) may have gone while it loaded.
+      if (!this.isConnected) return;
+      ({ naturalHeight: height, naturalWidth: width } = image);
+    }
+    this.placePicture(
+      {
+        kind: 'klipy',
+        label: gif.title.slice(0, BOARD_CATALOG.limits.PICTURE_LABEL_MAX),
+        ref,
+      },
+      [width, height],
+      this.klipyKind === 'stickers' ? 160 : 240
+    );
+  }
+
+  private open(view: MiscView, klipy?: KlipyKind) {
+    this.view = view;
+    this.linkError = false;
+    this.filter = '';
+    if (view === 'klipy') {
+      this.klipyKind = klipy ?? 'gifs';
+      this.query = '';
+      this.find('');
+    }
+  }
+
+  private pick(kind: KlipyKind) {
+    if (this.klipyKind === kind) return;
+    this.klipyKind = kind;
+    this.find(this.query, true);
+  }
+
+  private find(query: string, now = false) {
+    this.query = query;
+    clearTimeout(this.searchTimer);
+    this.searchTimer = setTimeout(
+      () => {
+        this.search?.abort();
+        const search = new AbortController();
+        this.search = search;
+        this.found = 'loading';
+        klipyMedia(this.klipyKind, query, search.signal).then(
+          (found) => {
+            if (!search.signal.aborted) this.found = found;
+          },
+          () => {
+            if (!search.signal.aborted) this.found = 'failed';
+          }
+        );
+      },
+      query && !now ? 300 : 0
+    );
+  }
+
+  private renderTile(tile: MiscTile) {
+    if ('piece' in tile) {
+      const { piece } = tile;
+      return html`<div
+        class="tile"
+        data-kind=${piece.kind}
+        role="button"
+        @mousedown=${(event: MouseEvent) =>
+          this.drag?.onMouseDown(event, {
+            data: piece,
+            preview: html`${pieceArt(piece)}`,
+          })}
+        @touchstart=${(event: TouchEvent) => {
+          event.preventDefault();
+          this.touch?.onTouchStart(event, {
+            data: piece,
+            preview: html`${pieceArt(piece)}`,
+          });
+        }}
+      >
+        <span class="art">${pieceArt(piece)}</span>
+        ${PIECE_TIPS[piece.kind].tip()}
+      </div>`;
+    }
+    if ('pick' in tile)
+      return html`<button
+        class="tile"
+        data-pick=${tile.pick}
+        type="button"
+        @click=${() => this.pickImages()}
+      >
+        <span class="art">${tile.art}</span>
+        ${tile.label()}
+      </button>`;
+    return html`<button
+      class="tile"
+      data-view=${tile.klipy ?? tile.view}
+      type="button"
+      @click=${() => this.open(tile.view, tile.klipy)}
+    >
+      <span class="art">${tile.art}</span>
+      ${tile.label()}
+    </button>`;
+  }
+
+  /** Every view's header: Back, the title or KLIPY's search, and a close. */
+  private head(title: () => string, search?: boolean) {
+    return html`<div class="head">
+      <button
+        aria-label=${m.drawing_board_back()}
+        title=${m.drawing_board_back()}
+        type="button"
+        @click=${() => {
+          this.view = null;
+        }}
+      >
+        ${hugeIcon(ArrowLeft04Icon)}
+      </button>
+      ${
+        search
+          ? html`<input
+              aria-label=${m.drawing_board_gif_search()}
+              placeholder=${m.drawing_board_gif_search()}
+              type="search"
+              .value=${this.query}
+              @input=${(event: Event) =>
+                this.find((event.target as HTMLInputElement).value)}
+            />`
+          : html`<h3 class="title">${title()}</h3>`
+      }
+      ${this.closeButton()}
+    </div>`;
+  }
+
+  private closeButton() {
+    return html`<button
+      aria-label=${m.drawing_board_close()}
+      title=${m.drawing_board_close()}
+      type="button"
+      @click=${() =>
+        this.dispatchEvent(
+          new Event('closed', { bubbles: true, composed: true })
+        )}
+    >
+      ${hugeIcon(Cancel01Icon)}
+    </button>`;
+  }
+
+  private renderKlipy() {
+    const stickers = this.klipyKind === 'stickers';
+    const tabs = html`<div class="tabs" role="tablist">
+      ${(['gifs', 'stickers'] as const).map(
+        (kind) =>
+          html`<button
+            aria-selected=${this.klipyKind === kind}
+            role="tab"
+            type="button"
+            @click=${() => this.pick(kind)}
+          >
+            ${kind === 'gifs' ? m.drawing_board_gifs_tab() : m.drawing_board_stickers_tab()}
+          </button>`
+      )}
+    </div>`;
+    if (!klipyEnabled())
+      return html`${tabs}
+        <div class="body"><p class="note">${m.drawing_board_gif_off()}</p></div>`;
+    const found = this.found;
+    const cells = classMap({ cells: true, stickers });
+    return html`${tabs}
+      <div class="body">
+        ${
+          found === 'loading'
+            ? html`<div class=${cells} aria-busy="true">
+                ${Array.from({ length: 9 }, () => html`<div class="skeleton"></div>`)}
+              </div>`
+            : found === 'failed'
+              ? html`<p class="note">${m.drawing_board_gif_failed()}</p>`
+              : found.length
+                ? html`<div class=${cells}>
+                    ${found.map(
+                      (gif) =>
+                        html`<button
+                          aria-label=${gif.title}
+                          title=${gif.title}
+                          type="button"
+                          @click=${() => this.placeGif(gif)}
+                        >
+                          <img
+                            alt=""
+                            loading="lazy"
+                            referrerpolicy="no-referrer"
+                            src=${gif.preview.url}
+                          />
+                        </button>`
+                    )}
+                  </div>`
+                : html`<p class="note">
+                    ${stickers ? m.drawing_board_sticker_none() : m.drawing_board_gif_none()}
+                  </p>`
+        }
+      </div>
+      <div class="credit">${m.drawing_board_gif_credit()}</div>`;
+  }
+
+  /** A link card: a YouTube video shows its poster; any other address its host. */
+  private addLink(value: string) {
+    const typed = value.trim();
+    let url: URL | null = null;
+    for (const candidate of [typed, `https://${typed}`])
+      try {
+        url = new URL(candidate);
+        break;
+      } catch {
+        // The next spelling.
+      }
+    // Only an address is a video: a bare 11-letter word is a typo, not an id.
+    const videoId = url && youtubeVideoId(url.href);
+    if (videoId) {
+      addCard(
+        this.gfx,
+        LINK_FLAVOUR,
+        { url: youtubeWatchUrl(videoId), videoId },
+        [320, 180]
+      );
+      this.placed();
+      return;
+    }
+    if (
+      !(url && isWebAddress(url.href) && url.hostname.includes('.')) ||
+      url.href.length > BOARD_CATALOG.limits.LINK_URL_MAX
+    ) {
+      this.linkError = true;
+      return;
+    }
+    addCard(this.gfx, LINK_FLAVOUR, { url: url.href, videoId: '' }, [280, 76]);
+    this.placed();
+  }
+
+  private renderLink() {
+    return html`<div class="body">
+      <form
+        class="link"
+        @submit=${(event: SubmitEvent) => {
+          event.preventDefault();
+          const input = (event.target as HTMLFormElement).querySelector(
+            'input'
+          );
+          if (input) this.addLink(input.value);
+        }}
+      >
+        <input
+          aria-label=${m.drawing_board_link_address()}
+          maxlength=${BOARD_CATALOG.limits.LINK_URL_MAX}
+          placeholder=${m.drawing_board_link_address()}
+          type="text"
+          @input=${() => {
+            this.linkError = false;
+          }}
+        />
+        <button type="submit">${m.drawing_board_link_add()}</button>
+      </form>
+      ${
+        this.linkError
+          ? html`<p class="error">${m.drawing_board_link_invalid()}</p>`
+          : nothing
+      }
+    </div>`;
+  }
+
+  /** A quiz or set card at the view's middle, then the panel goes. */
+  private placeMaterial(kind: CardMaterialKind, id: string, title: string) {
+    addCard(
+      this.gfx,
+      MATERIAL_FLAVOUR,
+      {
+        kind,
+        materialId: id,
+        title: title.slice(0, BOARD_CATALOG.limits.CARD_TITLE_MAX),
+      },
+      MATERIAL_CARD_SIZE[kind]
+    );
+    this.placed();
+  }
+
+  /** The New tile: the workspace makes one, the card lands, its editor opens (also
+   * when the panel closed while the create was in flight: nothing made is left
+   * unplaced and unsaid). */
+  private async createMaterial(kind: CardMaterialKind) {
+    const workspace = workspaceOf(this.edgeless.std);
+    if (!workspace || this.creating) return;
+    this.creating = true;
+    try {
+      const made = await workspace.create(kind);
+      this.placeMaterial(kind, made.id, made.title);
+      workspace.open(made.id);
+    } catch (error) {
+      const failed =
+        kind === 'quiz'
+          ? m.drawing_board_create_failed()
+          : m.drawing_board_create_set_failed();
+      userToast({
+        description: errorCopy(error, failed),
+        title: failed,
+        variant: 'error',
+      });
+    } finally {
+      this.creating = false;
+    }
+  }
+
+  private renderMaterials(kind: CardMaterialKind) {
+    // Unknown while the workspace's list loads: the New tile alone, no "none yet".
+    const loaded = workspaceOf(this.edgeless.std)?.materials();
+    const all = loaded?.filter((material) => material.kind === kind) ?? [];
+    const needle = this.filter.trim().toLowerCase();
+    const listed = needle
+      ? all.filter(({ title }) => title.toLowerCase().includes(needle))
+      : all;
+    const newTile = html`<button
+      class="card new"
+      ?disabled=${this.creating}
+      type="button"
+      @click=${() => this.createMaterial(kind)}
+    >
+      <span class="plus">${hugeIcon(PlusSignIcon)}</span>
+      ${kind === 'quiz' ? m.drawing_board_new_quiz() : m.drawing_board_new_set()}
+    </button>`;
+    return html`<div class="body">
+      ${
+        all.length >= FILTER_FROM
+          ? html`<input
+              aria-label=${m.drawing_board_filter()}
+              class="filter"
+              placeholder=${m.drawing_board_filter()}
+              type="search"
+              .value=${this.filter}
+              @input=${(event: Event) => {
+                this.filter = (event.target as HTMLInputElement).value;
+              }}
+            />`
+          : nothing
+      }
+      <div class="cards">
+        ${newTile}
+        ${listed.map(
+          ({ id, preview, title }) =>
+            html`<button
+              class="card"
+              title=${title}
+              type="button"
+              @click=${() => this.placeMaterial(kind, id, title)}
+            >
+              ${this.thumbnail(kind, title, preview)}
+              <span class="n">${this.count(kind, preview)}</span>
+            </button>`
+        )}
+      </div>
+      ${
+        loaded && all.length === 0
+          ? html`<p class="note">
+              ${kind === 'quiz' ? m.drawing_board_no_quizzes() : m.drawing_board_no_flashcards()}
+            </p>`
+          : nothing
+      }
+    </div>`;
+  }
+
+  /** A quiz tile's top, as the mock orders it: the stored preview's first question
+   * type as a pill, the title, then the stem; a set's: the stacked pair with the
+   * first card's front, then the title. */
+  private thumbnail(
+    kind: CardMaterialKind,
+    title: string,
+    preview?: MaterialPreview
+  ) {
+    const name = html`<span class="t">${title}</span>`;
+    if (kind === 'quiz') {
+      const first = preview?.kind === 'quiz' ? preview.first : undefined;
+      return first
+        ? html`<span class="pill">${questionTypeLabel(first.type)}</span>${name}
+            <span class="q">${first.stem}</span>`
+        : name;
+    }
+    const front =
+      preview?.kind === 'flashcards' && preview.first
+        ? preview.first.front
+        : m.drawing_board_card_front();
+    return html`<span class="fc">
+        <span class="back"></span>
+        <span class="front">${front}</span>
+      </span>
+      ${name}`;
+  }
+
+  private count(kind: CardMaterialKind, preview?: MaterialPreview) {
+    if (kind === 'quiz')
+      return questionCountLabel(
+        preview?.kind === 'quiz' ? preview.questionCount : 0
+      );
+    return cardCountLabel(
+      preview?.kind === 'flashcards' ? preview.cardCount : 0
+    );
+  }
+
+  override render() {
+    if (this.view === 'emoji')
+      return html`${this.head(m.drawing_board_emoji)}
+        <div class="body">
+          <div class="emoji">
+            ${EMOJI.map(
+              (code) =>
+                html`<button
+                  aria-label=${emojiText(code)}
+                  type="button"
+                  @click=${() =>
+                    this.placePicture(
+                      { kind: 'emoji', label: emojiText(code), ref: code },
+                      [1, 1],
+                      96
+                    )}
+                >
+                  <img alt="" loading="lazy" src=${emojiStillUrl(code)} />
+                </button>`
+            )}
+          </div>
+        </div>`;
+    if (this.view === 'klipy')
+      return html`${this.head(m.drawing_board_gif, true)}${this.renderKlipy()}`;
+    if (this.view === 'link')
+      return html`${this.head(m.drawing_board_link)}${this.renderLink()}`;
+    if (this.view === 'quiz' || this.view === 'flashcards')
+      return html`${this.head(
+        this.view === 'quiz' ? m.drawing_board_quiz : m.drawing_board_flashcards
+      )}${this.renderMaterials(this.view)}`;
+    const workspace = workspaceOf(this.edgeless.std);
+    return html`<div class="head">
+        <h3 class="title">${m.drawing_board_misc()}</h3>
+        ${this.closeButton()}
+      </div>
+      <div class="body">
+        ${MISC_GROUPS.filter(
+          ({ tiles }) =>
+            workspace ||
+            !tiles.some(
+              (tile) =>
+                'view' in tile &&
+                (tile.view === 'quiz' || tile.view === 'flashcards')
+            )
+        ).map(
+          ({ label, tiles }) =>
+            html`<div class="group">
+              <h3>${label()}</h3>
+              <div class="tiles">
+                ${tiles.map((tile) => this.renderTile(tile))}
+              </div>
+            </div>`
+        )}
+      </div>`;
+  }
+}
+
+/** Misc's toolbar button: four small pieces, opening its panel above the toolbar. */
+class CapyMiscButton extends EdgelessToolbarToolMixin(
+  SignalWatcher(LitElement)
+) {
+  static override styles = css`
+    :host {
+      display: block;
+      width: 56px;
+      height: 64px;
+    }
+    edgeless-toolbar-button {
+      display: block;
+      width: 100%;
+      height: 64px;
+    }
+    .box {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 64px;
+    }
+  `;
+
+  // Not a tool: it opens a panel.
+  override type = DefaultTool as never;
+
+  // @ts-expect-error the mixin defines it as a getter, typed as a property.
+  override get active() {
+    return !!this.popper;
+  }
+
+  private toggle() {
+    if (this.popper) {
+      closePopper(this);
+      this.requestUpdate();
+      return;
+    }
+    // However it goes (the toolbar closes it for another panel), the button redraws.
+    const panel = openPopper(
+      this,
+      'capy-misc-panel',
+      PANEL_HEIGHT,
+      {
+        marginLeft: 'auto',
+        marginRight: '0',
+        maxWidth: '100%',
+        width: `${PANEL_WIDTH}px`,
+      },
+      () => this.requestUpdate()
+    );
+    for (const done of ['placed', 'closed'])
+      panel.addEventListener(done, () => {
+        closePopper(this);
+        this.requestUpdate();
+      });
+    this.requestUpdate();
+  }
+
+  override render() {
+    return html`<edgeless-toolbar-button
+      .active=${this.active}
+      .tooltip=${m.drawing_board_misc()}
+      .tooltipOffset=${5}
+      @click=${() => this.toggle()}
+    >
+      <div class="box">
+        <svg width="34" height="34" viewBox="0 0 40 40" aria-hidden="true">
+          <rect x="5" y="9" width="12" height="12" rx="2" fill="#1e96eb" />
+          <circle cx="29" cy="15" r="6.5" fill="#f6c343" />
+          <rect x="5" y="25" width="12" height="12" rx="2" fill="#e8798f" />
+          <rect
+            x="23"
+            y="25"
+            width="12"
+            height="12"
+            rx="2"
+            style="fill:var(--capy-navy, #173654)"
+          />
+        </svg>
+      </div>
+    </edgeless-toolbar-button>`;
+  }
+}
+
 const NEVER_MATCHES = /(?!)/;
 
 /** Note cards keep AFFiNE's inline LaTeX spec, which paragraphs read as they render,
@@ -1409,37 +2644,50 @@ const seniorTool = (
   },
 });
 
-/** The toolbar's slots, after the shapes. */
-export const sheetTools = [
-  seniorTool(
-    'capy-graphs',
-    m.drawing_board_graphs,
-    (block, toolbar) =>
-      html`<capy-graph-slot
-        .edgeless=${block}
-        .toolbarContainer=${toolbar}
-      ></capy-graph-slot>`
-  ),
-  seniorTool(
-    'capy-charts',
-    m.drawing_board_charts,
-    (block, toolbar) =>
-      html`<capy-chart-slot
-        data-own-width
-        .edgeless=${block}
-        .toolbarContainer=${toolbar}
-      ></capy-chart-slot>`
-  ),
-  seniorTool(
-    'capy-formulas',
-    m.drawing_board_formulas,
-    (block, toolbar) =>
-      html`<capy-formula-slot
-        .edgeless=${block}
-        .toolbarContainer=${toolbar}
-      ></capy-formula-slot>`
-  ),
-];
+const graphsTool = seniorTool(
+  'capy-graphs',
+  m.drawing_board_graphs,
+  (block, toolbar) =>
+    html`<capy-graph-slot
+      .edgeless=${block}
+      .toolbarContainer=${toolbar}
+    ></capy-graph-slot>`
+);
+const chartsTool = seniorTool(
+  'capy-charts',
+  m.drawing_board_charts,
+  (block, toolbar) =>
+    html`<capy-chart-slot
+      data-own-width
+      .edgeless=${block}
+      .toolbarContainer=${toolbar}
+    ></capy-chart-slot>`
+);
+const formulasTool = seniorTool(
+  'capy-formulas',
+  m.drawing_board_formulas,
+  (block, toolbar) =>
+    html`<capy-formula-slot
+      .edgeless=${block}
+      .toolbarContainer=${toolbar}
+    ></capy-formula-slot>`
+);
+const miscTool = seniorTool(
+  'capy-misc',
+  m.drawing_board_misc,
+  (block, toolbar) =>
+    html`<capy-misc-button
+      .edgeless=${block}
+      .toolbarContainer=${toolbar}
+    ></capy-misc-button>`
+);
+
+/** The toolbar's slots after the shapes: the question board keeps Charts as its own
+ * slot; the workspace canvas has them in Misc (Epo 2026-11-09). */
+export const sheetTools = (board: BoardKind) =>
+  board === 'question'
+    ? [graphsTool, chartsTool, formulasTool]
+    : [graphsTool, formulasTool, miscTool];
 
 for (const [tag, element] of [
   ['capy-shape-panel', CapyShapePanel],
@@ -1447,5 +2695,7 @@ for (const [tag, element] of [
   ['capy-graph-slot', CapyGraphSlot],
   ['capy-chart-slot', CapyChartSlot],
   ['capy-formula-slot', CapyFormulaSlot],
+  ['capy-misc-panel', CapyMiscPanel],
+  ['capy-misc-button', CapyMiscButton],
 ] as const)
   if (!customElements.get(tag)) customElements.define(tag, element);
