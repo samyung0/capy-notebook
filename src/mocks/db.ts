@@ -2799,6 +2799,8 @@ export const publicWorkspaces: PublicWorkspace[] = [
     clones: 860,
     id: 'pub_ws_2',
     isOwner: false,
+    // Someone else's personal workspace, though it borrows a class's rows.
+    kind: 'personal',
     name: 'Modern World History',
     privacy: 'public',
     role: undefined,

@@ -30,7 +30,10 @@ test('a page whose code is not loaded shows the offline state in the same page, 
     (window as unknown as { samePage: boolean }).samePage = true;
   });
   await setOnline(page, false);
-  await page.getByRole('link', { exact: true, name: m.nav_todo() }).click();
+  // Its name gains the open count once To do has loaded ("To do, 3 open").
+  await page
+    .getByRole('link', { name: new RegExp(`^${m.nav_todo()}`) })
+    .click();
   const offline = page
     .getByRole('alert')
     .getByText(m.error_offline_title(), { exact: true });
