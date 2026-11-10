@@ -150,8 +150,8 @@ timing (upload at once).
 
 ## Still open
 
-- **How an answer board's pictures travel: built as §2 says, in the board's own
-  request, for Epo to confirm.** Each is base64 inside the JSON of Done or Check. An
+- **How an answer board's pictures travel: in the board's own request, as §2 says
+  (Epo confirmed 2026-11-10).** Each is base64 inside the JSON of Done or Check. An
   assignment's Done may reach about 14 MB; a practice check's cap rose from 4 MiB to
   about 17 MiB (`checkMaxBytes`: its answers plus one board's pictures at their
   most), shared by the quiz, review and bank check routes. A question whose drawing
