@@ -3343,6 +3343,7 @@
   "member_submitted_work": "Submitted {title}",
   "member_marks_waiting": "{marks} to mark",
   "note_info": "Info",
+  "note_info_updated": "Updated",
   "note_info_words": "Words",
   "note_title_placeholder": "Untitled",
   "chrome_align_left": "Align left",

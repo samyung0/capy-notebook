@@ -3343,6 +3343,7 @@
   "member_submitted_work": "提交了{title}",
   "member_marks_waiting": "{marks} 分待批改",
   "note_info": "信息",
+  "note_info_updated": "更新时间",
   "note_info_words": "字数",
   "note_title_placeholder": "无标题",
   "chrome_align_left": "左对齐",

@@ -322,7 +322,7 @@ function NoteInfo({
           </dd>
           <dt className="text-fg-secondary">{m.common_created()}</dt>
           <dd>{new Date(material.createdAt).toLocaleDateString()}</dd>
-          <dt className="text-fg-secondary">{m.list_col_updated()}</dt>
+          <dt className="text-fg-secondary">{m.note_info_updated()}</dt>
           <dd>{new Date(material.updatedAt).toLocaleString()}</dd>
           <dt className="text-fg-secondary">{m.note_info_words()}</dt>
           <dd>{count.toLocaleString()}</dd>
