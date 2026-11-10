@@ -349,7 +349,8 @@ Outside this directory, for BlockSuite:
     phone keeps every control), and the slash menu and the context `icon-button` use
     the app's font. Icons drawn at AFFiNE's 20px (`svg[width='20']` slotted into
     `icon-button.ts` and `menu-button.ts`, and the two duotone icons of
-    `highlight-dropdown-menu/`) take the bar's icon size, so every bar icon is 18px.
+    `highlight-dropdown-menu/`) take the button's icon size: 18px in a bar, and 16px
+    in the inner bars that set `iconSize` to 16px (the code block's bar).
 35. Slash menu rows (`widgets/slash-menu` `slash-menu-popover.ts` and `styles.ts`,
     marked `Capy (local change 35)`; Epo 2026-11-10, mock M1): 28px rows in a 240px
     panel with an 18px icon, the name and its Markdown shortcut at the right (a small
@@ -367,10 +368,12 @@ Outside this directory, for BlockSuite:
     (`src/features/blocksuite/blockMenu.ts`); `sideSubMenuMiddleware` places a submenu
     beside its row for it. A click on + is not a grip click (the watcher checks the
     event's path), and the grip stays where it is while hovered in a note (upstream
-    slides it 2px). + adds a line below and opens the slash menu on it: the slash
-    widget's `openOn(inlineEditor)` types the slash and opens the menu once the
-    browser's caret stands after it (`selectionchange`, since a note's caret is moved by
-    the host a moment after the inline range is set).
+    re-pads its container to 8px and narrows its bar to 2px there). + adds a line
+    below and opens the slash menu on it: the slash widget's `openOn(inlineEditor)`
+    types the slash and opens the menu on the first `selectionchange` that finds the
+    inline range after the slash and the browser's caret inside that line (a note's
+    caret is moved by the host a moment after the inline range is set). A menu
+    dismissed without a pick leaves the slash on the line, as a typed one does.
 37. Labels through one hook (`shared` `src/utils/label.ts`, new, exported from
     `utils/index.ts`; marked `Capy (local change 37)`; Epo 2026-11-10): `tr(label)`
     returns the app's translation of an English label, set once with
@@ -393,11 +396,13 @@ Outside this directory, for BlockSuite:
     `data-variant` from the block's `variant` (none reads as info), draws that kind's
     icon in place of the emoji with no icon picker, and leaves its background to the
     app's styles (`src/features/blocksuite/calloutLook.ts`, `pageEditor.css`).
-    Callout's row in the slash menu and in Turn into (`configs/slash-menu.ts`,
-    `rich-text` `conversion.ts`) shows the information icon, where upstream reuses
-    Text's.
+    Callout's row in the slash menu, in Turn into and in the phone keyboard toolbar
+    (`configs/slash-menu.ts`, `rich-text` `conversion.ts`, `widgets/keyboard-toolbar`
+    `config.ts`) shows the information icon, where upstream reuses Text's.
 
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
-replaces about ninety names with the app's Hugeicons, so no vendored file was edited
-for icons.
+replaces about ninety names with the app's Hugeicons, so the swap itself edits no
+vendored file. The two duotone highlight icons keep AFFiNE's drawing (their first
+path takes the picked colour); the icon edits that are in vendored files are the
+sizes of local change 34 and the Callout rows of 39.

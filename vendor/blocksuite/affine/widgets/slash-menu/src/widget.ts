@@ -189,6 +189,8 @@ export class AffineSlashMenuWidget extends WidgetComponent {
     const opened = new AbortController();
     const open = () => {
       if (inlineEditor.getInlineRange()?.index !== 1) return;
+      const caret = document.getSelection()?.anchorNode ?? null;
+      if (!inlineEditor.rootElement?.contains(caret)) return;
       opened.abort();
       this._handleInput(inlineEditor, true);
     };

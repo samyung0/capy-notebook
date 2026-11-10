@@ -16,6 +16,13 @@ const titleSchema = z.object({
 type TitleFields = z.infer<typeof titleSchema>;
 const LINE_BREAKS = /\s*[\r\n]+\s*/g;
 
+/** A title field is as tall as its text. */
+const autosize = (element: HTMLTextAreaElement | null) => {
+  if (!element) return;
+  element.style.height = 'auto';
+  element.style.height = `${element.scrollHeight}px`;
+};
+
 /**
  * The top of a note's body (Epo 2026-11-10, mocks P1 and I1): the file's name
  * as the title, and a collapsed Info row with what the file carries.
@@ -75,22 +82,17 @@ function NoteTitle({
   // Whether this field was typed in since it last showed the file's name: only
   // then does leaving it rename, so a rename from elsewhere is never undone.
   const typed = useRef(false);
-  const grow = () => {
-    const element = field.current;
-    if (!element) return;
-    element.style.height = 'auto';
-    element.style.height = `${element.scrollHeight}px`;
-  };
   const show = (title: string) => {
     typed.current = false;
     reset({ title });
-    grow();
   };
   // A rename from elsewhere shows here, unless this field is being typed in.
   useEffect(() => {
     if (!typed.current) show(material.title);
   }, [material.title]);
-  // The title wraps anew when its column's width changes.
+  // The field's height follows its text: after every render (a reset writes the
+  // field on the render after it) and when its column's width changes.
+  useEffect(() => autosize(field.current));
   useEffect(() => {
     const element = field.current;
     if (!element) return;
@@ -98,11 +100,11 @@ function NoteTitle({
     const observer = new ResizeObserver(() => {
       if (element.clientWidth === width) return;
       width = element.clientWidth;
-      grow();
+      autosize(element);
     });
     observer.observe(element);
     return () => observer.disconnect();
-  });
+  }, []);
 
   const save = async () => {
     if (!typed.current) return;
@@ -116,8 +118,13 @@ function NoteTitle({
     if (title === material.title) return;
     update(
       { id: material.id, patch: { title } },
-      // A rename that fails shows the file's name again, not the one refused.
-      { onError: () => show(material.title) }
+      // A rename that fails shows the file's name again, not the one refused,
+      // unless the field is being typed in again by then.
+      {
+        onError: () => {
+          if (!typed.current) show(material.title);
+        },
+      }
     );
   };
 
@@ -136,7 +143,7 @@ function NoteTitle({
         const { value } = event.currentTarget;
         if (LINE_BREAKS.test(value))
           setValue('title', value.replace(LINE_BREAKS, ' '));
-        grow();
+        autosize(event.currentTarget);
       }}
       onKeyDown={(event) => {
         if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;

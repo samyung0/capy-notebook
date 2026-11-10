@@ -4449,7 +4449,8 @@ everything that floats, and the note body takes the Notion look in every style.
   `--capy-toolbar-*` properties in `chrome.css`; corners are the style's
   `--radius-toolbar` and `--radius-toolbar-button`. The bar lives in a shadow root,
   so the vendored parts read those properties (vendor README local change 34).
-  Every icon in a bar is 18px, AFFiNE's fixed 20px ones included.
+  Every icon in a bar is 18px, AFFiNE's fixed 20px ones included (16px in the
+  small inner bars, such as the code block's).
   The board's own panels (the ☰ button and list, an open card's tools, the
   formula card) take the same corner and shadow; its bottom toolbar keeps
   AFFiNE's 64px height and corner, which its pieces are fitted to.
@@ -4457,14 +4458,16 @@ everything that floats, and the note body takes the Notion look in every style.
   `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
   replaces about ninety names with Hugeicons in the app's 1.8 stroke, in the
   vendored code and ours alike. A name not listed there keeps AFFiNE's drawing
-  (connector ends, line and shape styles, list markers, file types).
+  (connector ends, line and shape styles, list markers, file types, and the two
+  highlight icons, whose first path takes the picked colour).
 - **Labels:** BlockSuite's English labels pass through `tr()` where they are drawn
   (local change 37) and `chromeLabels.ts` answers with paraglide messages (existing
   `editor_*` and `action_*` keys where one says it, `chrome_*` otherwise). A label
   not in the table, or one written straight into a template the hook does not
   cover, stays English.
 - **Note body** (`pageEditor.css`): a 720px column with 96px margins (912px
-  editor width; the 16px gutter under 640px; no cap at the note's Full width
+  editor width; the 16px gutter once the note's box is 640px or narrower; no cap
+  at the note's Full width
   setting, read in `BlockSuiteNote.tsx`), 16px/1.5 text in blocks padded 3px 2px,
   headings 30, 24 and 20px at 600 with 32, 22 and 16px above. Sizes above 16px
   shrink on narrow screens as `note-fs` does. Code blocks take the dim fill. The
@@ -4479,7 +4482,8 @@ everything that floats, and the note body takes the Notion look in every style.
 - **Gutter handle and block menu** (local change 36, `blockMenu.ts`): a hovered
   block shows + and a six-dot grip, centred on its first line. + adds a line
   below and opens the slash menu on it (the slash is typed there, so a search
-  can follow). A click on the grip selects the block and opens a vertical menu
+  can follow; dismissing the menu without a pick leaves the slash, as a typed
+  one does). A click on the grip selects the block and opens a vertical menu
   beside it: Turn into (a side submenu, text blocks only), Copy, Duplicate,
   Delete. The floating bar stays away while it is open, and closing it lets the
   block go; the menu closes with its editor.
@@ -4494,7 +4498,10 @@ everything that floats, and the note body takes the Notion look in every style.
   the first row's `header` prop, drawn semibold on the dim fill (local change 38).
   The header belongs to the table's first row, whichever row that is: adding,
   moving, copying or deleting rows keeps it there (`keepHeaderFirst` in the
-  vendored `table-data-manager.ts`).
+  vendored `table-data-manager.ts`). The rule runs with each local row change,
+  so a `header` flag that arrives lower down (two people moving rows at once, a
+  converted table with a second header row) is drawn until the next row change
+  or press of Header row clears it.
 - **Title and Info** (`src/features/notes/blocksuite/NoteHeading.tsx`): the top
   of the body shows the file's name as a 40px title. It is the material's
   `title`, not text in the note: leaving the field or pressing Enter renames the
