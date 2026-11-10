@@ -85,7 +85,9 @@ export class AffineSlashMenuWidget extends WidgetComponent {
 
   private readonly _handleInput = (
     inlineEditor: InlineEditor,
-    isCompositionEnd: boolean
+    isCompositionEnd: boolean,
+    // Capy (local change 36): the caller's handle on the menu it opens.
+    abortController?: AbortController
   ) => {
     const inlineRangeApplyCallback = (callback: () => void) => {
       // the inline ranged updated in compositionEnd event before this event callback
@@ -138,6 +140,7 @@ export class AffineSlashMenuWidget extends WidgetComponent {
         },
         config: this.config,
         configItemTransform: this.configItemTransform,
+        abortController,
       });
     });
   };
@@ -192,7 +195,16 @@ export class AffineSlashMenuWidget extends WidgetComponent {
       const caret = document.getSelection()?.anchorNode ?? null;
       if (!inlineEditor.rootElement?.contains(caret)) return;
       opened.abort();
-      this._handleInput(inlineEditor, true);
+      // A menu left without a pick takes its slash with it (Epo 2026-11-10): the
+      // line is empty again, unless a search was typed after the slash.
+      const menu = new AbortController();
+      menu.signal.addEventListener('abort', () => {
+        if (!inlineEditor.mounted) return;
+        if (inlineEditor.yTextString !== AFFINE_SLASH_MENU_TRIGGER_KEY) return;
+        inlineEditor.deleteText({ index: 0, length: 1 });
+        inlineEditor.setInlineRange({ index: 0, length: 0 });
+      });
+      this._handleInput(inlineEditor, true, menu);
     };
     document.addEventListener('selectionchange', open, {
       signal: opened.signal,

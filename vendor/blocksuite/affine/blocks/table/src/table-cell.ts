@@ -535,8 +535,12 @@ export class TableCell extends SignalWatcher(
   tdStyle() {
     const columnWidth = this.virtualWidth$.value ?? this.column?.width;
     // Capy (local change 38): a header row (`rows.<id>.header`, the note layout's
-    // own prop) draws semibold on the dim fill unless a colour was picked.
-    const header = (this.row as { header?: boolean } | undefined)?.header;
+    // own prop) draws semibold on the dim fill unless a colour was picked. Only
+    // the first row can be one: a flag lower down (two people moving rows at
+    // once, a converted table) draws nothing.
+    const header =
+      this.rowIndex === 0 &&
+      (this.row as { header?: boolean } | undefined)?.header;
     const backgroundColor =
       this.column?.backgroundColor ??
       this.row?.backgroundColor ??

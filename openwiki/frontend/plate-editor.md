@@ -4482,8 +4482,8 @@ everything that floats, and the note body takes the Notion look in every style.
 - **Gutter handle and block menu** (local change 36, `blockMenu.ts`): a hovered
   block shows + and a six-dot grip, centred on its first line. + adds a line
   below and opens the slash menu on it (the slash is typed there, so a search
-  can follow; dismissing the menu without a pick leaves the slash, as a typed
-  one does). A click on the grip selects the block and opens a vertical menu
+  can follow; leaving the menu without a pick removes the slash again, so the
+  line is empty). A click on the grip selects the block and opens a vertical menu
   beside it: Turn into (a side submenu, text blocks only), Copy, Duplicate,
   Delete. The floating bar stays away while it is open, and closing it lets the
   block go; the menu closes with its editor.
@@ -4498,10 +4498,10 @@ everything that floats, and the note body takes the Notion look in every style.
   the first row's `header` prop, drawn semibold on the dim fill (local change 38).
   The header belongs to the table's first row, whichever row that is: adding,
   moving, copying or deleting rows keeps it there (`keepHeaderFirst` in the
-  vendored `table-data-manager.ts`). The rule runs with each local row change,
-  so a `header` flag that arrives lower down (two people moving rows at once, a
-  converted table with a second header row) is drawn until the next row change
-  or press of Header row clears it.
+  vendored `table-data-manager.ts`). Only the first row draws as a header, so a
+  `header` flag that arrives lower down (two people moving rows at once, a
+  converted table with a second header row) shows nothing, and the next row
+  change or press of Header row clears it.
 - **Title and Info** (`src/features/notes/blocksuite/NoteHeading.tsx`): the top
   of the body shows the file's name as a 40px title. It is the material's
   `title`, not text in the note: leaving the field or pressing Enter renames the
