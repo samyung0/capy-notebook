@@ -44,6 +44,7 @@ const KINDS = textConversionConfigs.filter(
  * Returns its removal.
  */
 export function blockMenu(host: HTMLElement, std: BlockStdScope) {
+  let close: (() => void) | undefined;
   const open = (event: Event) => {
     const { block, grip } = (event as BlockMenuEvent).detail;
     if (std.store.readonly || OWN_BAR.has(block.model.flavour)) return;
@@ -54,7 +55,7 @@ export function blockMenu(host: HTMLElement, std: BlockStdScope) {
     // where it was beside the block, and follows the block as the note scrolls.
     const at = grip.getBoundingClientRect();
     const from = block.getBoundingClientRect();
-    popMenu(
+    const handler = popMenu(
       {
         popupStart: () => () => {},
         root: document.body,
@@ -114,7 +115,7 @@ export function blockMenu(host: HTMLElement, std: BlockStdScope) {
               },
             }),
             menu.action({
-              name: m.editor_duplicate(),
+              name: m.chrome_duplicate(),
               prefix: html`${hugeIcon(Copy02Icon)}`,
               select: () => {
                 std.store.captureSync();
@@ -137,6 +138,7 @@ export function blockMenu(host: HTMLElement, std: BlockStdScope) {
             }),
           ],
           onClose: () => {
+            close = undefined;
             host.removeAttribute('data-block-menu');
             std.selection.clear(['block']);
           },
@@ -144,7 +146,12 @@ export function blockMenu(host: HTMLElement, std: BlockStdScope) {
         placement: 'bottom-start',
       }
     );
+    close = () => handler.close();
   };
   host.addEventListener('capy-block-menu', open);
-  return () => host.removeEventListener('capy-block-menu', open);
+  return () => {
+    host.removeEventListener('capy-block-menu', open);
+    // An open menu goes with its editor.
+    close?.();
+  };
 }

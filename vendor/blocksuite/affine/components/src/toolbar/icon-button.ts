@@ -58,6 +58,12 @@ export class EditorIconButton extends LitElement {
       font-size: var(--icon-size, var(--capy-toolbar-icon-size, 20px));
     }
 
+    /* Capy (local change 34): upstream's own 20px icons at the bar's icon size. */
+    ::slotted(svg[width='20']) {
+      width: 1em;
+      height: 1em;
+    }
+
     ::slotted(.label) {
       flex: 1;
       padding: 0 4px;

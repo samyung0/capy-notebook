@@ -56,7 +56,7 @@ const LABELS: Record<string, () => string> = {
   Divider: m.editor_divider,
   Download: m.action_download,
   'Draw connector': m.chrome_draw_connector,
-  Duplicate: m.editor_duplicate,
+  Duplicate: m.chrome_duplicate,
   Elbowed: m.chrome_elbowed,
   Ellipse: m.pdf_ellipse,
   'End point style': m.chrome_end_point_style,
@@ -68,7 +68,7 @@ const LABELS: Record<string, () => string> = {
   General: m.chrome_general,
   Green: m.cover_color_green,
   Grey: m.cover_paper_grey,
-  Group: m.question_ui_group,
+  Group: m.chrome_group,
   'Heading 1': m.editor_heading_1,
   'Heading 2': m.editor_heading_2,
   'Heading 3': m.editor_heading_3,
@@ -92,7 +92,7 @@ const LABELS: Record<string, () => string> = {
   'Move Left': m.chrome_move_left,
   'Move Right': m.chrome_move_right,
   'Move Up': m.question_ui_move_up,
-  Note: m.create_kind_note,
+  Note: m.chrome_note,
   'Note Style': m.chrome_note_style,
   Now: m.schedule_now,
   'Numbered List': m.editor_numbered_list,
@@ -119,7 +119,7 @@ const LABELS: Record<string, () => string> = {
   'Start point style': m.chrome_start_point_style,
   Straight: m.chrome_straight,
   Strikethrough: m.editor_strikethrough,
-  Style: m.common_style,
+  Style: m.chrome_style,
   'Switch shape type': m.chrome_switch_shape,
   Table: m.editor_table,
   Teal: m.chrome_teal,
@@ -130,9 +130,11 @@ const LABELS: Record<string, () => string> = {
   Triangle: m.drawing_board_triangle,
   'Turn into': m.editor_turn_into,
   Underline: m.editor_underline,
-  Ungroup: m.question_ui_ungroup,
+  Ungroup: m.chrome_ungroup,
   Yellow: m.cover_paper_yellow,
   Yesterday: m.notifications_yesterday,
 };
 
-setLabelTranslator((label) => LABELS[label]?.() ?? label);
+setLabelTranslator((label) =>
+  Object.hasOwn(LABELS, label) ? LABELS[label]() : label
+);

@@ -48,14 +48,8 @@ affine-note
   --affine-paragraph-margin: 1px 0;
   --affine-list-margin: 1px 0;
   --affine-editor-width: 912px;
-  --affine-editor-side-padding: 16px;
+  --affine-editor-side-padding: 96px;
   container: viewport / inline-size;
-}
-
-@media (min-width: 640px) {
-  .affine-page-viewport {
-    --affine-editor-side-padding: 96px;
-  }
 }
 
 /* Full width (the note's width setting) keeps the margins and drops the cap. */
@@ -63,7 +57,8 @@ affine-note
   --affine-editor-width: none;
 }
 
-/* BlockSuite's own phone rule pads 24px; ours keeps the app's 16px gutter. */
+/* Once the note's box is 640px or narrower (BlockSuite's own rule, which pads
+   24px), the app's 16px gutter; the title follows the same box (NoteHeading). */
 @container viewport (width <= 640px) {
   .affine-page-viewport .affine-page-root-block-container {
     padding-right: 16px;
@@ -140,7 +135,11 @@ affine-note
 }
 
 /* The icon's box: 20px, centred on the first line (BlockSuite sets a margin inline). */
-.affine-page-viewport affine-callout [contenteditable="false"]:has(> span) {
+.affine-page-viewport
+  affine-callout
+  > .affine-block-component
+  > div
+  > [contenteditable="false"]:first-child {
   width: 20px;
   height: 20px;
   margin-top: 6px !important;
@@ -148,7 +147,12 @@ affine-note
   font-size: 20px;
 }
 
-.affine-page-viewport affine-callout [contenteditable="false"] > span {
+.affine-page-viewport
+  affine-callout
+  > .affine-block-component
+  > div
+  > [contenteditable="false"]:first-child
+  > span {
   cursor: default;
   opacity: 1;
 }
@@ -160,7 +164,8 @@ affine-note
   }
 }
 
-.affine-page-viewport affine-callout[data-variant="info"] {
+/* Info is also what a kind nobody knows draws as. */
+.affine-page-viewport affine-callout[data-variant] {
   --callout-bg: var(--tint-info-bg);
   --callout-fg: var(--tint-info-fg);
   --callout-line: var(--solid-info);
@@ -198,7 +203,12 @@ affine-note
   border-color: color-mix(in srgb, var(--callout-line) 45%, transparent);
 }
 
-.affine-page-viewport affine-callout[data-variant] [contenteditable="false"] {
+/* The icon alone, not the placeholders and list markers inside. */
+.affine-page-viewport
+  affine-callout[data-variant]
+  > .affine-block-component
+  > div
+  > [contenteditable="false"]:first-child {
   color: var(--callout-fg);
 }
 
@@ -222,4 +232,17 @@ affine-note
 /* While the block menu is open the floating bar stays away (blockMenu.ts). */
 [data-block-menu] affine-toolbar-widget {
   display: none;
+}
+
+/* The note's font setting (noteFont.ts, <html data-note-font>), as the Plate note
+   reads it: Fustat by default, the system font on a pick or in the notion style. */
+:root[data-note-font="system"] .blocks-note,
+:root[data-style="notion"]:not([data-note-font="fustat"]) .blocks-note {
+  --affine-font-family: var(--note-font-system);
+  font-family: var(--note-font-system);
+}
+
+:root[data-style="notion"][data-note-font="fustat"] .blocks-note {
+  --affine-font-family: var(--note-font-fustat);
+  font-family: var(--note-font-fustat);
 }

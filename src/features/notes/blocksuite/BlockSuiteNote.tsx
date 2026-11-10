@@ -437,7 +437,7 @@ function BlocksEditor({
     editor.current?.setReadonly(readonly);
   }, [readonly]);
   return (
-    <>
+    <div className="blocks-note">
       <NoteHeading
         fullWidth={displayWidth === 'full'}
         material={material}
@@ -461,7 +461,7 @@ function BlocksEditor({
         ref={container}
       />
       <MaterialRefIslands islands={islands} ownerId={id} readonly={readonly} />
-    </>
+    </div>
   );
 }
 

@@ -347,14 +347,17 @@ Outside this directory, for BlockSuite:
     menu row's corner and height (`--capy-menu-row-height`).
     The bar also takes `--capy-toolbar-max-width` and scrolls sideways past it (a
     phone keeps every control), and the slash menu and the context `icon-button` use
-    the app's font.
+    the app's font. Icons drawn at AFFiNE's 20px (`svg[width='20']` slotted into
+    `icon-button.ts` and `menu-button.ts`, and the two duotone icons of
+    `highlight-dropdown-menu/`) take the bar's icon size, so every bar icon is 18px.
 35. Slash menu rows (`widgets/slash-menu` `slash-menu-popover.ts` and `styles.ts`,
     marked `Capy (local change 35)`; Epo 2026-11-10, mock M1): 28px rows in a 240px
     panel with an 18px icon, the name and its Markdown shortcut at the right (a small
     table of names in the popover), uppercase group labels, and no description line.
 36. Gutter handle (`widgets/drag-handle` `drag-handle.ts`, `styles.ts`, `config.ts`,
     `utils.ts`, `components/add-block-widget.ts`, `watchers/pointer-event-watcher.ts`,
-    and `components` `context-menu/sub-menu.ts`, marked `Capy (local change 36)`; Epo
+    `watchers/handle-event-watcher.ts`, `widgets/slash-menu` `widget.ts`, and
+    `components` `context-menu/sub-menu.ts`, marked `Capy (local change 36)`; Epo
     2026-11-10, mock H1): a note block's handle is the six-dot grip beside a 20 by 24px
     + button (upstream: a 4px bar, the dots on the canvas only), both centred on the
     block's first line; `heightMap` is retuned to the note's own type sizes
@@ -362,7 +365,12 @@ Outside this directory, for BlockSuite:
     click on the grip dispatches `capy-block-menu` (`{ block, grip }`) after selecting
     the block, which the app answers with its block menu
     (`src/features/blocksuite/blockMenu.ts`); `sideSubMenuMiddleware` places a submenu
-    beside its row for it.
+    beside its row for it. A click on + is not a grip click (the watcher checks the
+    event's path), and the grip stays where it is while hovered in a note (upstream
+    slides it 2px). + adds a line below and opens the slash menu on it: the slash
+    widget's `openOn(inlineEditor)` types the slash and opens the menu once the
+    browser's caret stands after it (`selectionchange`, since a note's caret is moved by
+    the host a moment after the inline range is set).
 37. Labels through one hook (`shared` `src/utils/label.ts`, new, exported from
     `utils/index.ts`; marked `Capy (local change 37)`; Epo 2026-11-10): `tr(label)`
     returns the app's translation of an English label, set once with
@@ -373,15 +381,21 @@ Outside this directory, for BlockSuite:
     `context-menu/button.ts`, `sub-menu.ts`), the slash menu's item and group names,
     the Turn into and alignment names (`blocks/root` `configs/toolbar.ts`) and the +
     button's title. Labels written straight into other templates are not covered yet.
-38. Header rows (`blocks/table` `table-cell.ts`, marked `Capy (local change 38)`): a
-    row with `header` (the note layout's own prop) draws semibold on the dim fill
-    unless a colour was picked; the app's table bar toggles it
-    (`src/features/blocksuite/tableBar.ts`).
+38. Header rows (`blocks/table` `table-cell.ts` and `table-data-manager.ts`, marked
+    `Capy (local change 38)`): a row with `header` (the note layout's own prop) draws
+    semibold on the dim fill unless a colour was picked; the app's table bar toggles it
+    (`src/features/blocksuite/tableBar.ts`). A table's header is its first row:
+    `keepHeaderFirst` runs inside the transaction of every row add, delete, move,
+    reorder and duplicate and leaves `header` on the first row alone, and a deleted
+    header row hands it to the next first row.
 39. Callout kinds (`blocks/callout` `callout-block.ts`, marked `Capy (local change
     39)`; Epo 2026-11-10): once the app calls `setCalloutVariantIcon`, a callout sets
     `data-variant` from the block's `variant` (none reads as info), draws that kind's
     icon in place of the emoji with no icon picker, and leaves its background to the
     app's styles (`src/features/blocksuite/calloutLook.ts`, `pageEditor.css`).
+    Callout's row in the slash menu and in Turn into (`configs/slash-menu.ts`,
+    `rich-text` `conversion.ts`) shows the information icon, where upstream reuses
+    Text's.
 
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and

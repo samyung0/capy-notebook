@@ -3331,5 +3331,10 @@
   "chrome_custom_height": "Custom height",
   "chrome_note_style": "Note style",
   "chrome_add_block": "Add a block below",
-  "chrome_tomorrow": "Tomorrow"
+  "chrome_tomorrow": "Tomorrow",
+  "chrome_group": "Group",
+  "chrome_ungroup": "Ungroup",
+  "chrome_duplicate": "Duplicate",
+  "chrome_note": "Note",
+  "chrome_style": "Style"
 }

@@ -226,6 +226,11 @@ export class EditorMenuAction extends LitElement {
       font-size: var(--capy-toolbar-icon-size, 20px);
     }
 
+    ::slotted(svg[width='20']) {
+      width: 1em;
+      height: 1em;
+    }
+
     ::slotted(.label) {
       color: inherit !important;
     }

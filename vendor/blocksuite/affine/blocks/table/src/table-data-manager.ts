@@ -1,4 +1,8 @@
-import type { TableBlockModel, TableCell } from '@blocksuite/affine-model';
+import type {
+  TableBlockModel,
+  TableCell,
+  TableRow,
+} from '@blocksuite/affine-model';
 import { generateFractionalIndexingKeyBetween } from '@blocksuite/affine-shared/utils';
 import { nanoid, Text } from '@blocksuite/store';
 import { computed, type ReadonlySignal, signal } from '@preact/signals-core';
@@ -8,6 +12,27 @@ import { compareByOrder } from './utils';
 
 export class TableDataManager {
   constructor(private readonly model: TableBlockModel) {}
+
+  /** Capy (local change 38): a table's header is its first row. After rows are
+   * added, removed, moved or copied, the `header` prop (the note layout's own) is
+   * kept on the first row alone, if the table has one at all (`had`: the row
+   * just removed was the header, so the next first row takes it over). Called
+   * inside the change's transaction. */
+  private keepHeaderFirst(had = false) {
+    const rows = Object.values(this.model.props.rows) as (TableRow & {
+      header?: boolean;
+    })[];
+    if (!had && !rows.some(row => row.header)) return;
+    const first = [...rows].sort(compareByOrder)[0];
+    for (const row of rows) {
+      const real = this.model.props.rows[row.rowId] as { header?: boolean };
+      if (row === first) {
+        if (!row.header) real.header = true;
+      } else if (row.header) {
+        delete real.header;
+      }
+    }
+  }
   readonly readonly$: ReadonlySignal<boolean> = computed(() => {
     return this.model.store.readonly;
   });
@@ -91,6 +116,7 @@ export class TableDataManager {
           text: new Text(),
         };
       });
+      this.keepHeaderFirst();
     });
     return rowId;
   }
@@ -165,6 +191,10 @@ export class TableDataManager {
   }
 
   deleteRow(rowId: string) {
+    const removed = this.model.props.rows[rowId] as
+      | { header?: boolean }
+      | undefined;
+    const had = Boolean(removed?.header);
     this.model.store.transact(() => {
       Object.keys(this.model.props.rows).forEach(id => {
         if (id === rowId) {
@@ -176,6 +206,7 @@ export class TableDataManager {
           delete this.model.props.cells[id];
         }
       });
+      this.keepHeaderFirst(had);
     });
   }
 
@@ -199,6 +230,7 @@ export class TableDataManager {
       if (this.model.props.rows[rowId]) {
         this.model.props.rows[rowId].order = newOrder;
       }
+      this.keepHeaderFirst();
     });
   }
 
@@ -328,6 +360,7 @@ export class TableDataManager {
       if (realRow) {
         realRow.order = order;
       }
+      this.keepHeaderFirst();
     });
   }
 
@@ -373,6 +406,7 @@ export class TableDataManager {
             ]?.text.clone() ?? new Text(),
         };
       });
+      this.keepHeaderFirst();
     });
     return newRowId;
   }

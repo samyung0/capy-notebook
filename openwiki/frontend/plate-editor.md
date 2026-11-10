@@ -4449,6 +4449,7 @@ everything that floats, and the note body takes the Notion look in every style.
   `--capy-toolbar-*` properties in `chrome.css`; corners are the style's
   `--radius-toolbar` and `--radius-toolbar-button`. The bar lives in a shadow root,
   so the vendored parts read those properties (vendor README local change 34).
+  Every icon in a bar is 18px, AFFiNE's fixed 20px ones included.
   The board's own panels (the ☰ button and list, an open card's tools, the
   formula card) take the same corner and shadow; its bottom toolbar keeps
   AFFiNE's 64px height and corner, which its pieces are fitted to.
@@ -4466,16 +4467,22 @@ everything that floats, and the note body takes the Notion look in every style.
   editor width; the 16px gutter under 640px; no cap at the note's Full width
   setting, read in `BlockSuiteNote.tsx`), 16px/1.5 text in blocks padded 3px 2px,
   headings 30, 24 and 20px at 600 with 32, 22 and 16px above. Sizes above 16px
-  shrink on narrow screens as `note-fs` does. Code blocks take the dim fill.
+  shrink on narrow screens as `note-fs` does. Code blocks take the dim fill. The
+  margins follow the note's own box (a container query), so a note in a narrow
+  pane takes the gutter as a phone does. The note's font setting
+  (`<html data-note-font>`, `noteFont.ts`) applies to the body and the title
+  through `.blocks-note`.
 - **Callouts** keep the app's own look (`calloutLook.ts`, local change 39): the
   five kinds of `richBlockConfig.ts` with their tint, border and icon, from the
   block's `variant` (none reads as info). A selected callout's bar switches its
   kind; BlockSuite's emoji and background pickers are off.
 - **Gutter handle and block menu** (local change 36, `blockMenu.ts`): a hovered
-  block shows + and a six-dot grip, centred on its first line. + adds a paragraph
-  below. A click on the grip selects the block and opens a vertical menu beside
-  it: Turn into (a side submenu, text blocks only), Copy, Duplicate, Delete. The
-  floating bar stays away while it is open, and closing it lets the block go.
+  block shows + and a six-dot grip, centred on its first line. + adds a line
+  below and opens the slash menu on it (the slash is typed there, so a search
+  can follow). A click on the grip selects the block and opens a vertical menu
+  beside it: Turn into (a side submenu, text blocks only), Copy, Duplicate,
+  Delete. The floating bar stays away while it is open, and closing it lets the
+  block go; the menu closes with its editor.
   A table, callout or image has a bar of its own, so its grip only selects it.
   The handle needs the editor to report page mode, which `pageEditor.ts` does
   (`DocModeExtension`); without AFFiNE's app nothing else reports one.
@@ -4485,18 +4492,24 @@ everything that floats, and the note body takes the Notion look in every style.
   + bars at the right and bottom edges, each with its menu). A table selected as
   a block shows Header row, Duplicate and Delete (`tableBar.ts`); a header row is
   the first row's `header` prop, drawn semibold on the dim fill (local change 38).
+  The header belongs to the table's first row, whichever row that is: adding,
+  moving, copying or deleting rows keeps it there (`keepHeaderFirst` in the
+  vendored `table-data-manager.ts`).
 - **Title and Info** (`src/features/notes/blocksuite/NoteHeading.tsx`): the top
   of the body shows the file's name as a 40px title. It is the material's
   `title`, not text in the note: leaving the field or pressing Enter renames the
   file through `PATCH /materials/{id}/metadata` (an empty or too long name is
-  dropped), and a rename from elsewhere shows there. Under it a collapsed Info row
-  opens Topic (a press moves the note to another topic), Created, Updated and
-  Words, counted when it opens. A reader sees the title as text and no Topic
-  button.
+  dropped, and a refused rename shows the file's name again). Only a title that
+  was typed in is saved, so leaving the field never undoes a rename made
+  elsewhere, which shows there. A name is one line: pasted line breaks become
+  spaces, and a long name wraps and re-wraps with the column. Under it a
+  collapsed Info row opens Topic (a press moves the note to another topic),
+  Created, Updated and Words, counted when it opens. A reader, and a note outside
+  a workspace, see Topic as text; a reader's title cannot be typed in.
 
 Not built: the Table view block (AFFiNE's database, mock V2), queued as its own
-step; Copy link and Comment in the block menu (the BlockSuite note has neither
-yet).
+step; Colour, Copy link and Comment in the block menu (the BlockSuite note has
+no block colour, links to a block or comments yet).
 
 ### The board's tools
 

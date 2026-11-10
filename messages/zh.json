@@ -3331,5 +3331,10 @@
   "chrome_custom_height": "自定义高度",
   "chrome_note_style": "便签样式",
   "chrome_add_block": "在下方添加块",
-  "chrome_tomorrow": "明天"
+  "chrome_tomorrow": "明天",
+  "chrome_group": "组合",
+  "chrome_ungroup": "取消组合",
+  "chrome_duplicate": "创建副本",
+  "chrome_note": "便签",
+  "chrome_style": "样式"
 }

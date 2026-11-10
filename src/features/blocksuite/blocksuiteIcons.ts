@@ -4,7 +4,8 @@
    BlockSuite draws it, the note's bars and menus and the board's alike, with no
    edit to the vendored files. A name not listed keeps AFFiNE's drawing: glyphs
    with no Hugeicons counterpart (connector ends, line and shape styles, list
-   markers, file types, the heading 4 to 6 marks) and whatever nothing here shows. */
+   markers, file types, the heading 4 to 6 marks), the two highlight icons, whose
+   paths BlockSuite colours per swatch, and whatever nothing here shows. */
 
 import {
   ArrowDown02Icon,
@@ -38,7 +39,6 @@ import {
   AlignTopIcon as HiAlignTop,
   AlignVerticalCenterIcon as HiAlignVerticalCenter,
   ColorPickerIcon as HiColorPicker,
-  HighlighterIcon,
   MoreHorizontalIcon as HiMoreHorizontal,
   MoreVerticalIcon as HiMoreVertical,
   SmileIcon as HiSmile,
@@ -71,7 +71,6 @@ import {
   SquareUnlock02Icon,
   SubtitleIcon,
   TextBoldIcon,
-  TextColorIcon,
   TextFontIcon,
   TextItalicIcon,
   TextStrikethroughIcon,
@@ -134,8 +133,6 @@ export const UnlinkIcon = hi(Unlink04Icon);
 export const TextAlignLeftIcon = hi(HiTextAlignLeft);
 export const TextAlignCenterIcon = hi(HiTextAlignCenter);
 export const TextAlignRightIcon = hi(HiTextAlignRight);
-export const TextBackgroundDuotoneIcon = hi(TextColorIcon);
-export const HighLightDuotoneIcon = hi(HighlighterIcon);
 
 // Actions.
 export const CopyIcon = hi(Copy01Icon);

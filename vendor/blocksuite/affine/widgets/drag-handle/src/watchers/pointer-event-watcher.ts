@@ -65,6 +65,18 @@ export class PointerEventWatcher {
     const element = captureEventTarget(target);
     const insideDragHandle = !!element?.closest(AFFINE_DRAG_HANDLE_WIDGET);
     if (!insideDragHandle) return;
+    // Capy (local change 36): a click on the + button adds a block and is not a
+    // click on the grip (both sit inside this widget's shadow root).
+    if (
+      state.raw
+        .composedPath()
+        .some(
+          node =>
+            node instanceof HTMLElement &&
+            node.tagName === 'AFFINE-ADD-BLOCK-WIDGET'
+        )
+    )
+      return;
 
     const anchorBlockId = this.widget.anchorBlockId.peek();
 

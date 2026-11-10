@@ -176,6 +176,28 @@ export class AffineSlashMenuWidget extends WidgetComponent {
       .catch(console.error);
   };
 
+  /** Capy (local change 36): opens the menu on a line as if its slash was just
+   * typed there; the gutter's + button does, on the line it adds. */
+  openOn(inlineEditor: InlineEditor) {
+    inlineEditor.insertText(
+      { index: 0, length: 0 },
+      AFFINE_SLASH_MENU_TRIGGER_KEY
+    );
+    inlineEditor.setInlineRange({ index: 1, length: 0 });
+    // The menu places itself on the browser's caret, which the host moves a
+    // moment later: it opens once that caret stands after the slash.
+    const opened = new AbortController();
+    const open = () => {
+      if (inlineEditor.getInlineRange()?.index !== 1) return;
+      opened.abort();
+      this._handleInput(inlineEditor, true);
+    };
+    document.addEventListener('selectionchange', open, {
+      signal: opened.signal,
+    });
+    inlineEditor.disposables.add(() => opened.abort());
+  }
+
   get config() {
     return this.std.get(SlashMenuExtension).config;
   }

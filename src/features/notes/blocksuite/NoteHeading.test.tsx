@@ -17,6 +17,15 @@ Object.assign(globalThis, {
     removeItem: () => undefined,
     setItem: () => undefined,
   },
+  // The title follows its column's width; linkedom lays nothing out.
+  ResizeObserver: class {
+    disconnect() {
+      // Nothing is observed.
+    }
+    observe() {
+      // Nothing is observed.
+    }
+  },
   // React reports a render error here; linkedom's own event dispatch cannot.
   reportError: (error: unknown) => reported.push(error),
   window,
@@ -66,8 +75,8 @@ it('renames the file when the title is changed and left', async () => {
   const field = document.querySelector('textarea') as HTMLTextAreaElement;
   expect(field.value).toBe('Cellular respiration');
   await act(async () => {
-    // The field is read where it stands when it is left.
     field.value = 'Respiration notes';
+    field.dispatchEvent(new window.Event('input', { bubbles: true }));
     field.dispatchEvent(new window.Event('focusout', { bubbles: true }));
   });
   await vi.waitFor(() =>

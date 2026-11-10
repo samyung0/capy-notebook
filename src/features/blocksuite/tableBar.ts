@@ -59,10 +59,13 @@ export const tableBar = ToolbarModuleExtension({
           const row = model && firstRow(model);
           if (!(model && row)) return;
           ctx.store.captureSync();
+          // The first row alone carries it (the table keeps it there as rows
+          // move: vendor README local change 38).
           ctx.store.transact(() => {
             const rows = model.props.rows as Record<string, Row>;
-            if (row.header) delete rows[row.rowId].header;
-            else rows[row.rowId].header = true;
+            const on = !row.header;
+            for (const id of Object.keys(rows)) delete rows[id].header;
+            if (on) rows[row.rowId].header = true;
           });
         },
         showLabel: true,
@@ -71,12 +74,12 @@ export const tableBar = ToolbarModuleExtension({
       {
         icon: html`${hugeIcon(Copy02Icon)}`,
         id: 'b.duplicate',
-        label: m.editor_duplicate(),
+        label: m.chrome_duplicate(),
         run: (ctx: ToolbarContext) => {
           ctx.store.captureSync();
           selected(ctx).pipe(duplicateSelectedModelsCommand).run();
         },
-        tooltip: m.editor_duplicate(),
+        tooltip: m.chrome_duplicate(),
       },
       {
         icon: html`${hugeIcon(Delete02Icon)}`,

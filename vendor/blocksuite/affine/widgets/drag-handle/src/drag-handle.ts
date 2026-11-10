@@ -2,7 +2,10 @@ import './components/add-block-widget.js';
 
 import { EdgelessCRUDIdentifier } from '@blocksuite/affine-block-surface';
 import type { RootBlockModel } from '@blocksuite/affine-model';
-import { focusTextModel } from '@blocksuite/affine-rich-text';
+import {
+  focusTextModel,
+  getInlineEditorByModel,
+} from '@blocksuite/affine-rich-text';
 import { DocModeProvider } from '@blocksuite/affine-shared/services';
 import {
   isInsideEdgelessEditor,
@@ -85,6 +88,13 @@ export class AffineDragHandleWidget extends WidgetComponent<RootBlockModel> {
     this.host.updateComplete
       .then(() => {
         focusTextModel(this.std, newBlockId);
+        // Capy (local change 36, Epo 2026-11-10): + asks what to add, so the
+        // slash menu opens on the new line (its widget types the slash).
+        const editor = getInlineEditorByModel(this.std, newBlockId);
+        const slash = this.host.querySelector('affine-slash-menu-widget') as {
+          openOn?: (editor: unknown) => void;
+        } | null;
+        if (editor) slash?.openOn?.(editor);
       })
       .catch(console.error);
 
