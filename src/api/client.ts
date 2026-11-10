@@ -398,6 +398,11 @@ export const qk = {
   notificationUnread: ['notifications', 'unread-count'] as const,
   ownedFiles: (params?: unknown) => ['files', 'owned', params ?? null] as const,
   ownedFilesRoot: ['files', 'owned'] as const,
+  /** GET /materials: the blocks a member can open, as the workspace canvas
+   * lists a workspace's quizzes and sets. */
+  ownedMaterials: (params?: unknown) =>
+    ['materials', 'owned', params ?? null] as const,
+  ownedMaterialsRoot: ['materials', 'owned'] as const,
   pastReviews: (params?: unknown) =>
     ['review', 'past', params ?? null] as const,
   /** The workspace's Practice page; refreshed with the rest of study. */

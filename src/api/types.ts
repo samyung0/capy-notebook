@@ -48,6 +48,7 @@ import type {
   ItemPage as GenItemPage,
   Material as GenMaterial,
   MaterialListItem as GenMaterialListItem,
+  MaterialPage as GenMaterialPage,
   Message as GenMessage,
   Quiz as GenQuiz,
   ResourceEffectOperation as GenResourceEffectOperation,
@@ -734,6 +735,16 @@ export type FilePage = Omit<GenFilePage, 'items'> & { items: SourceFile[] };
 export type TrashPage = Omit<GenTrashPage, 'items'> & { items: TrashItem[] };
 export type MaterialListKind = 'note' | 'quiz' | 'flashcards';
 export type MaterialListLocation = 'workspace' | 'standalone';
+export type MaterialPage = Omit<GenMaterialPage, 'items'> & {
+  items: MaterialListItem[];
+};
+/** GET /materials. owned: the caller's own blocks; member: every block they
+ * can open, as the workspace canvas reads a workspace's quizzes and sets. */
+export interface MaterialListParams {
+  kinds?: MaterialKind[];
+  scope?: 'owned' | 'member';
+  workspaceIds?: string[];
+}
 export type FileListSort = ListOwnedFilesSort;
 /** A file with no workspace is standalone, its uploader's alone. */
 export type FileListLocation = MaterialListLocation;

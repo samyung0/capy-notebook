@@ -110,6 +110,8 @@ import type {
   MaterialComment,
   MaterialDiscussion,
   MaterialListItem,
+  MaterialListParams,
+  MaterialPage,
   MaterialRef,
   MaterialUpdateResult,
   MemberProfile,
@@ -1211,6 +1213,7 @@ function invalidateVisitLists(qc: QueryClient, visitor: boolean) {
   if (!visitor) return;
   // The owned files' root holds the Files page's list too.
   void qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
+  void qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
   void qc.invalidateQueries({ queryKey: ['search'] });
 }
 
@@ -1737,6 +1740,7 @@ export const useTrash = (wsId: string | undefined, enabled: boolean) =>
 
 function invalidateAfterTrashChange(qc: QueryClient, item: TrashItem) {
   qc.invalidateQueries({ queryKey: qk.trash() });
+  qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
   qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
   qc.invalidateQueries({ queryKey: qk.usage });
   if (item.workspaceId) {
@@ -2317,6 +2321,7 @@ export function useGenerate(wsId: string, options?: MutationUiOptions) {
       await Promise.all([
         qc.invalidateQueries({ queryKey: qk.materials(wsId) }),
         qc.invalidateQueries({ queryKey: qk.itemsRoot }),
+        qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot }),
         qc.invalidateQueries({ queryKey: qk.practice(wsId) }),
       ]);
     },
@@ -2368,9 +2373,31 @@ export const materialWithBodyQuery = (id: string) =>
 export const useMaterial = (id: string | null, options?: QueryUiOptions) =>
   useQuery({ ...materialQuery(id), meta: queryMeta(options) });
 
-/** Blocks list on the Files page. */
+/** The blocks a member can open (GET /materials), every page keyed by its
+ * filters: the workspace canvas reads a workspace's quizzes and sets from it. */
+export const useOwnedMaterials = (params: MaterialListParams = {}) =>
+  useInfiniteQuery({
+    getNextPageParam: (last: MaterialPage) => last.nextCursor || undefined,
+    initialPageParam: '',
+    placeholderData: keepPreviousData,
+    queryFn: ({ pageParam }: { pageParam: string }) =>
+      api.get<MaterialPage>(
+        `/materials${listSearch(
+          {
+            kind: params.kinds,
+            scope: params.scope,
+            workspaceId: params.workspaceIds,
+          },
+          pageParam
+        )}`
+      ),
+    queryKey: qk.ownedMaterials(params),
+  });
+/** A block made, renamed or deleted: the Files page's list and the lists of
+ * blocks alone. */
 function invalidateOwnedMaterials(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: qk.itemsRoot });
+  qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
 }
 
 /** Create a note outside any workspace. */
