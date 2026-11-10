@@ -72,7 +72,7 @@ floating toolbars on e.g. tables and stuff, and affine has a table view as well.
 
 - [x] Compare how Notion and AFFiNE handle tables, with mocks first (mock section T, Epo picked T2)
 - [x] Decide which editor it goes on: BlockSuite (the blocks layout); Plate goes at the cut (`todo-blocksuite-spike.md`)
-- [ ] The look itself, in session `notes-look` on `claude/notion-notes-look-d4d620` (local, 4fd62124e on 2026-11-10: S2, N2, H1, M1, T2, P1, I1, the app's callouts kept, vendored local changes 34–39, a DocModeExtension reporting 'page' so the gutter handle shows; reviewer reading it). Merges into `blocksuite-notes`, rebased onto the reveal fix 93b02d91e first
+- [ ] The look itself, in session `notes-look` on `claude/notion-notes-look-d4d620`. Round 1 merged into `blocksuite-notes` 2026-11-10 at a29aae47d (Epo: "Yes, merge"; fast-forward, CI 42753391245 green on every job): S2, N2, H1, M1, T2, P1, I1, the app's callouts kept, vendored local changes 34–39, review and recheck fixes. Not run: Firefox, Safari, real phones. Still on the session's branch, CI running: 72dc4362f (a dismissed + menu removes its slash; only the first table row draws as a header), ef70ad428 and 14a09170d (the Plate note takes the approved headings, rhythm, column and bar sizes). Open with Epo: whether a first heading repeating the file's name is hidden. Not built: Colour, Copy link and Comment in the block menu (the BlockSuite note lacks them); labels inside BlockSuite templates stay English
 
 ### 2a. Table view block in notes (AFFiNE database, mock V2), after the notes look lands
 
