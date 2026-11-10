@@ -23,7 +23,11 @@ CREATE INDEX IF NOT EXISTS library_chunks_content_idx ON library_chunks (content
 CREATE INDEX IF NOT EXISTS library_chunks_excerpt_idx ON library_chunks (excerpt_id);
 CREATE OR REPLACE VIEW rag_chunks AS SELECT id,workspace_id,content_id,chunk_idx,section_path,text,indexed_text,page_start,page_end,regions,lang,confidence,confidence_reasons,search FROM library_chunks WHERE searchable;
 CREATE TABLE IF NOT EXISTS rag_chunk_vectors_2560 (chunk_id text PRIMARY KEY REFERENCES library_chunks, workspace_id text NOT NULL, embedding halfvec(2560) NOT NULL);
--- ponytail: exact vector scans, matching the pilot; add an HNSW index when the corpus outgrows them.
+-- One bit per dimension (its sign), kept by Postgres beside the vector. Search
+-- orders by Hamming distance on it first and re-scores a shortlist with the
+-- full vectors (store._LIBRARY_VEC_ROWS), so it reads this 320-byte column
+-- rather than every 5 KB vector. Adding it rewrites the table once.
+ALTER TABLE rag_chunk_vectors_2560 ADD COLUMN IF NOT EXISTS bits bit(2560) GENERATED ALWAYS AS (binary_quantize(embedding)::bit(2560)) STORED;
 CREATE TABLE IF NOT EXISTS library_books (
   id text PRIMARY KEY, title text NOT NULL, authors jsonb NOT NULL,
   edition text NOT NULL, source_url text NOT NULL, download_url text NOT NULL, license text NOT NULL, license_url text NOT NULL,

@@ -2432,7 +2432,18 @@ pinned per environment.
    republishing from the book's saved run. There is no migration path: a changed `LIBRARY_SCHEMA`
    means dropping the `library` database, running `schema` again and
    republishing every book. That costs one loader run and no model calls,
-   because the builder's output is on the developer PC.
+   because the builder's output is on the developer PC. Added columns are
+   the exception: `schema` adds them in place. The vector table's generated
+   `bits` code (2026-11-10) rewrites that table once under an exclusive
+   lock, during which library searches wait, and library search orders by
+   it: run `schema` before releasing a pipeline that reads the column, or
+   every library search with no subject or role fails on the missing column.
+   The column needs pgvector 0.7 or later (`binary_quantize`); the library
+   reported 0.8.6 on 2026-11-10, and `CREATE EXTENSION IF NOT EXISTS` never
+   upgrades an installed extension, so check `extversion` first on any
+   other library database. The live library got the column on 2026-11-10:
+   94 seconds for 206,776 vectors, and the rewrite shrank the table from
+   2.4 GB to 1.3 GB.
 
 #### Question bank database and backups
 

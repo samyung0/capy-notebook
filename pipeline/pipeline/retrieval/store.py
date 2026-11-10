@@ -1273,11 +1273,78 @@ _LOOKUP_TERMS = (2, 3)
 # scope and matched against the chunks of that language. A French query
 # against English chunks is parsed by the english stemmer and misses, which is
 # what should happen: the vector leg carries cross-language questions.
+# q is MATERIALIZED so each language's query is parsed once: inlined, Postgres
+# re-parsed it for every matched passage, about half of the library's keyword
+# leg (4.3 s to 2.2 s on 54,041 matches, 2026-11-10).
 # Passages and vectors are reached through their content ids (migration 0126):
-# the array is built once from scoped_files, so both legs read their content
-# index. The knowledge library's schema still tags them with its workspace.
+# the array is built once from scoped_files, so a leg filtered this way reads
+# its content index and does not join scoped_files (joined, the library's
+# keyword leg compared every match with every book).
 _CONTENT_SCOPE = "{alias}.content_id = ANY(ARRAY(SELECT content_id FROM scoped_files))"
-_LIBRARY_SCOPE = "{alias}.workspace_id = %(ws)s"
+# The rows the vector leg ranks. A workspace vector row carries its content id,
+# so the leg reads the vector table alone and ranks the whole scope exactly.
+_VEC_ROWS = "{vector_table} v WHERE " + _CONTENT_SCOPE.format(alias="v")
+# The rows the keyword leg matches: the scope's passages, each against its own
+# language's query.
+_LEX_ROWS = (
+    "rag_chunks c JOIN q ON q.lang = c.lang WHERE "
+    + _CONTENT_SCOPE.format(alias="c")
+    + "{chunk_filter}"
+)
+
+# The knowledge library is one scope of every book, so it takes two other
+# shapes (Epo 2026-11-10). Its vector rows carry the workspace, not a content
+# id, and each also stores `bits`, the sign of every dimension (library.py).
+#
+# With no subject or role, ranking every vector read the whole vector table,
+# which is larger than the database cache, and pushed the keyword leg's pages
+# out of it (5.4 to 6.4 s). So the vector leg orders the passages by Hamming
+# distance on `bits`, walks them in that order until _LIBRARY_SHORTLIST times
+# the candidate count pass chunk_filter, and ranks only those by their full
+# vectors. At 20 times it returned every exact top-40 passage (24 searches on
+# 45,005 library passages with the tag filter, 20 on all 206,776 without).
+# OFFSET 0 keeps the filter a per-row check: joined, Postgres ran it on every
+# passage first (0.7 s against 0.15 s).
+_LIBRARY_SHORTLIST = 20
+_LIBRARY_VEC_ROWS = (
+    """(
+            SELECT v.chunk_id, v.embedding
+              FROM (SELECT chunk_id, embedding,
+                           bits <~> binary_quantize(%(vector)s::halfvec) AS h
+                      FROM {vector_table}
+                     WHERE workspace_id = %(ws)s
+                     ORDER BY h, chunk_id) v
+             WHERE EXISTS (SELECT 1 FROM rag_chunks c
+                            WHERE c.id = v.chunk_id
+                              AND """
+    + _CONTENT_SCOPE.format(alias="c")
+    + """{chunk_filter}
+                           OFFSET 0)
+             ORDER BY v.h, v.chunk_id
+             LIMIT %(shortlist)s
+        ) v"""
+)
+# With a subject or role, Postgres matched the keywords library-wide and
+# checked the facets per match (about 1.3 s for a 113-passage subject). So the
+# passages the facets allow are listed once (`allowed`, library.py) and both
+# legs run on them, exactly: the vector leg ranks their vectors, the keyword
+# leg reads them by key. The fenced LATERAL pairs a passage with its own
+# language's query only; joined plainly, each was matched against all eight.
+_ALLOWED_CTE = """
+allowed AS MATERIALIZED ({allowed}
+),"""
+_ALLOWED_VEC_ROWS = (
+    "{vector_table} v"
+    " JOIN rag_chunks c ON c.id = v.chunk_id"
+    " JOIN scoped_files sf ON sf.content_id = c.content_id"
+    " WHERE v.workspace_id = %(ws)s"
+    " AND c.id = ANY(ARRAY(SELECT id FROM allowed))"
+)
+_ALLOWED_LEX_ROWS = (
+    "allowed a JOIN rag_chunks c ON c.id = a.id"
+    " CROSS JOIN LATERAL (SELECT * FROM q WHERE q.lang = c.lang OFFSET 0) q"
+    " WHERE " + _CONTENT_SCOPE.format(alias="c")
+)
 
 # Files and notes alias the same canonical content and rank in one pool; the
 # scoped resource carries a kind so citations can open the right thing. The
@@ -1306,18 +1373,15 @@ WITH scoped_files AS (
                 AND (%(no_filter)s OR f.id = ANY(%(file_ids)s)){material_scope}
         ) resources
         ORDER BY content_id, ordered_at, file_id
-),
+),{allowed}
 vec AS (
-    SELECT c.id, v.embedding <=> %(vector)s::halfvec AS dist,
-           row_number() OVER (ORDER BY v.embedding <=> %(vector)s::halfvec, c.id) AS rank
-        FROM {vector_table} v
-        JOIN rag_chunks c ON c.id = v.chunk_id
-        JOIN scoped_files sf ON sf.content_id = c.content_id
-        WHERE {vec_scope}{chunk_filter}
-    ORDER BY v.embedding <=> %(vector)s::halfvec, c.id
+    SELECT v.chunk_id AS id, v.embedding <=> %(vector)s::halfvec AS dist,
+           row_number() OVER (ORDER BY v.embedding <=> %(vector)s::halfvec, v.chunk_id) AS rank
+        FROM {vec_rows}
+    ORDER BY v.embedding <=> %(vector)s::halfvec, v.chunk_id
     LIMIT %(candidates)s
 ),
-q AS (
+q AS MATERIALIZED (
     SELECT m.lang,
            websearch_to_tsquery(m.cfg::regconfig, %(any_of)s) AS any_of,
            websearch_to_tsquery(m.cfg::regconfig, %(all_of)s) AS all_of,
@@ -1335,10 +1399,7 @@ lex AS (
                         ts_rank_cd(c.search, q.any_of) DESC, c.id
            ) AS rank,
            (c.search @@ q.all_of AND q.lookup) AS exact
-        FROM rag_chunks c
-        JOIN scoped_files sf ON sf.content_id = c.content_id
-        JOIN q ON q.lang = c.lang
-    WHERE {lex_scope}{chunk_filter}
+        FROM {lex_rows}
       AND c.search @@ q.any_of
     ORDER BY (c.search @@ q.all_of) DESC, ts_rank_cd(c.search, q.any_of) DESC, c.id
     LIMIT %(candidates)s
@@ -1402,6 +1463,7 @@ async def hybrid_search(
     conn: Any | None = None,
     chunk_filter: str = "",
     chunk_filter_params: dict[str, Any] | None = None,
+    allowed: str = "",
     workspace_ids: list[str] | None = None,
     owner_user_id: str | None = None,
 ) -> list[dict[str, Any]]:
@@ -1411,9 +1473,13 @@ async def hybrid_search(
     ``owner_user_id``, that user's standalone content in ``pin``'s space, in
     one statement so both rank in one pool; it needs ``pin``.
 
-    ``pin``, ``conn`` and ``chunk_filter`` exist for the knowledge library,
-    which runs this same statement against its own database with a
-    predicate on excerpt tags; workspace search never sets them.
+    ``pin``, ``conn``, ``chunk_filter`` and ``allowed`` exist for the
+    knowledge library, which runs this statement against its own database;
+    workspace search never sets them. A search with no subject or role passes
+    ``chunk_filter``, a predicate on the passage's excerpt tags, and its
+    vector leg ranks a shortlist picked by the stored 1-bit codes
+    (``_LIBRARY_VEC_ROWS``). A search with one passes ``allowed``, a SELECT
+    of the passage ids its facets allow, and both legs run on those.
 
     RRF rather than a weighted score sum because the two scales are not
     comparable and never will be: cosine distance and ts_rank_cd have no shared
@@ -1444,20 +1510,30 @@ async def hybrid_search(
         in_ws: str | None = "= %(ws)s"
     else:
         in_ws = "= ANY(%(ws)s)" if workspace_ids else None
-    scope = _LIBRARY_SCOPE if conn is not None else _CONTENT_SCOPE
+    library = conn is not None
+    if bool(chunk_filter) + bool(allowed) != library:
+        raise ValueError(
+            "a library search (conn) passes chunk_filter or allowed, exactly"
+            " one; any other search passes neither"
+        )
+    if allowed:
+        vec_rows, lex_rows = _ALLOWED_VEC_ROWS, _ALLOWED_LEX_ROWS
+    else:
+        vec_rows, lex_rows = _LIBRARY_VEC_ROWS if library else _VEC_ROWS, _LEX_ROWS
     sql = _SEARCH_SQL_TEMPLATE.format(
-        vector_table=vector_table_for_pin(pin),
-        chunk_filter=chunk_filter,
+        allowed=_ALLOWED_CTE.format(allowed=allowed) if allowed else "",
+        vec_rows=vec_rows.format(
+            vector_table=vector_table_for_pin(pin), chunk_filter=chunk_filter
+        ),
+        lex_rows=lex_rows.format(chunk_filter=chunk_filter),
         material_scope=""
-        if conn is not None or in_ws is None
+        if library or in_ws is None
         else _MATERIAL_SCOPE_SQL.format(in_ws=in_ws),
         file_scope=_file_scope(in_ws, owned=bool(owner_user_id)),
         # The knowledge library's schema has no hidden flag.
         hidden_files=""
-        if conn is not None
+        if library
         else "\n                AND (NOT f.hidden OR f.workspace_id = ANY(%(hidden_readers)s))",
-        vec_scope=scope.format(alias="v"),
-        lex_scope=scope.format(alias="c"),
     )
     params = dict(chunk_filter_params or {})
     if owner_user_id:
@@ -1485,6 +1561,7 @@ async def hybrid_search(
             "no_filter": not file_ids,
             "hidden_readers": hidden_readers(),
             "candidates": candidates,
+            "shortlist": candidates * _LIBRARY_SHORTLIST,
             "rrf_k": _RRF_K,
             "lex_weight": _LEX_WEIGHT,
         }
@@ -1556,7 +1633,10 @@ _PIN_COLUMNS = (
 # bench/rag/reports/2026-10-28-summary-search-scale.md): the caller's items
 # first (their workspaces', then their own with no workspace), then each
 # item's name and its summary's stored search vector. A name match ranks
-# first; no index covers the summaries, as the scope is small.
+# first; no index covers the summaries, as the scope is small. q is
+# MATERIALIZED for the same reason as in hybrid search: inlined, each language's
+# query was parsed again for every item (7,000 items, 2026-11-10: a sentence
+# 321 ms to 151 ms, one word 47-78 ms to 34-51 ms, identical rows).
 _SUMMARY_SEARCH_SQL = """
 WITH scoped AS (
     SELECT f.id, 'file' AS kind, f.name AS title, f.workspace_id, f.topic_id,
@@ -1581,7 +1661,7 @@ WITH scoped AS (
     WHERE m.workspace_id IS NULL AND m.owner_user_id = %(me)s
       AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
 ),
-q AS (
+q AS MATERIALIZED (
     SELECT m.lang, websearch_to_tsquery(m.cfg::regconfig, %(any_of)s) AS q
     FROM unnest(%(langs)s::text[], %(cfgs)s::text[]) AS m(lang, cfg)
 ),
