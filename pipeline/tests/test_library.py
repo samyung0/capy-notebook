@@ -249,6 +249,64 @@ async def test_search_without_facets_still_requires_verified_tags(library_db):
     assert result.available_roles is None
 
 
+async def test_passages_sharing_a_one_bit_code_rank_by_their_full_vectors(library_db):
+    """The shortlist is ordered by the stored 1-bit codes; the full vectors
+    decide the order inside it."""
+
+    def vector(second: float) -> str:
+        return store.vector_literal([1.0, second] + [0.0] * (cfg.embedding_dim - 2))
+
+    with psycopg.connect(library_db, autocommit=True) as conn:
+        for chunk_id, second in (("c_intro", 0.2), ("c_worked_b", 0.9)):
+            conn.execute(
+                "UPDATE rag_chunk_vectors_2560 SET embedding = %s::halfvec WHERE chunk_id = %s",
+                (vector(second), chunk_id),
+            )
+        codes = conn.execute(
+            "SELECT count(DISTINCT bits) FROM rag_chunk_vectors_2560 "
+            "WHERE chunk_id IN ('c_intro', 'c_worked_b') AND bits = binary_quantize(embedding)"
+        ).fetchone()[0]
+    assert codes == 1, "both passages carry the same code, kept current by Postgres"
+
+    query = [1.0, 0.8] + [0.0] * (cfg.embedding_dim - 2)
+    result = await library.search("zzz", vector=query)
+    assert [e.id for e in result.excerpts] == ["e_worked", "e_intro"]
+    assert result.excerpts[0].hit_chunk_id == "c_worked_b"
+
+
+async def test_the_shortlist_counts_only_passages_the_tag_filter_passes(
+    library_db, monkeypatch
+):
+    """Three passages share the query's code and the retired and unverified
+    ones sort first by id; a shortlist of one still reaches the verified one."""
+    monkeypatch.setattr(store, "_LIBRARY_SHORTLIST", 1)
+    result = await library.search("zzz", candidates=1, vector=_unit_vector(1))
+    assert [e.hit_chunk_id for e in result.excerpts] == ["c_worked_a"]
+
+
+async def test_a_subject_search_ranks_a_keyword_match_over_the_nearest_vector(
+    library_db,
+):
+    """The keyword leg of a subject search reads the allowed passages: the
+    passage holding both words outranks the one the vector is nearest to."""
+    result = await library.search(
+        "extrapolation warning", subject="statistics", vector=_unit_vector(0)
+    )
+    assert [e.id for e in result.excerpts] == ["e_worked", "e_intro"]
+    assert result.excerpts[0].hit_chunk_id == "c_worked_b"
+
+
+def test_schema_adds_the_one_bit_code_to_vectors_already_stored(library_db):
+    with psycopg.connect(library_db, autocommit=True) as conn:
+        conn.execute("ALTER TABLE rag_chunk_vectors_2560 DROP COLUMN bits")
+        conn.execute(library.LIBRARY_SCHEMA)
+        coded, stored = conn.execute(
+            "SELECT count(*) FILTER (WHERE bits = binary_quantize(embedding)), count(*) "
+            "FROM rag_chunk_vectors_2560"
+        ).fetchone()
+    assert coded == stored == 5
+
+
 async def test_a_subject_filter_keeps_the_excerpts_of_its_topics(library_db):
     result = await library.search(
         "regression", subject="statistics", vector=_unit_vector(0)

@@ -2215,8 +2215,18 @@ always point at document passages.
    row ingest used). When that pin is Qwen3-Embedding, the query is sent as
    `Instruct: …\nQuery:…`; documents stay raw. Lexical terms use the
    unprefixed query. Other embedding pins get the query unchanged.
-2. One SQL statement runs vector (cosine / HNSW) and lexical (`tsvector`)
-   candidates, fused with reciprocal rank fusion (RRF). Ranks are fused rather
+2. One SQL statement runs vector (cosine) and lexical (`tsvector`)
+   candidates, fused with reciprocal rank fusion (RRF). The vector leg is an
+   exact scan: its ordering ends on the chunk id, which the HNSW index cannot
+   serve, so Postgres reads the scope's vectors by content id and sorts them.
+   A workspace's results are exact and time grows with the scope (the
+   knowledge library ranks a shortlist when a search has no subject or
+   role, see its section below); no search reads
+   `rag_chunk_vectors_2560_embedding_idx`. A workspace's vector leg reads the
+   vector table alone, neither leg joins `scoped_files`, and `q` is
+   `MATERIALIZED` so each language's query is parsed once instead of once per
+   matched passage (2026-11-10: the whole statement fell from about 170-250 ms
+   to 85 ms at 12,000 synthetic passages, with identical rows). Ranks are fused rather
    than scores because cosine distance and `ts_rank_cd` share no unit. The
    lexical query is parsed once per language configuration
    (`unnest` over `lang.TS_CONFIG`) and each parse is matched only against
@@ -2347,10 +2357,43 @@ loader (`bench/rag/scripts/knowledge_base_library.py`) and the tests create
 exactly that schema. The index tables mirror the workspace ones (`workspaces`,
 `files`, `rag_contents`, `rag_file_contents`, `library_chunks` behind the
 `rag_chunks` view, `rag_chunk_vectors_2560`), so `store.hybrid_search` runs its
-one statement unchanged against the library connection with a `chunk_filter`
-predicate. That statement ranks note chunks in the same pool as file chunks,
-so the mirror also carries empty `materials` and `rag_material_contents`
-tables: notes never enter the library, and the statement still runs unchanged.
+statement against the library connection. That statement ranks note chunks in
+the same pool as file chunks, so the mirror also carries empty `materials` and
+`rag_material_contents` tables: notes never enter the library.
+The library is one scope of every book, so its searches take two shapes of
+their own (`library._facets`, Epo 2026-11-10):
+
+- **With a subject or roles**, the passages those facets allow are listed
+  once (`allowed`, a materialized CTE read from the subject's excerpts) and
+  both legs run on them, exactly: the vector leg ranks their vectors and the
+  keyword leg reads them by key, each against its own language's query.
+  Before, Postgres matched the keywords library-wide and checked the facets
+  per match, about 1.3 s in the database for a 113-passage subject. Measured
+  on the live library (identical rows in every column, 11 of 11 cases):
+  subjects fell from 0.9-1.6 s to 80-560 ms; role-only searches from
+  0.8-3.8 s to 0.3-2.4 s for the four narrower roles, while the two broadest
+  roles stayed at 5 to 7 s.
+- **With neither**, the vector leg does not rank every vector. Each library
+  vector row stores `bits`, the sign of every dimension (a generated column,
+  320 bytes against a 5 KB vector). The leg orders the passages by Hamming
+  distance on `bits`, walks them in that order until 800 pass the tag filter
+  (`_LIBRARY_SHORTLIST`, 20 times the candidates) and ranks only those by
+  their full vectors. Ranked exactly, a search read the whole vector table
+  (2.4 GB at 206,776 passages, against a 768 MB database cache), about 1.1 s,
+  and pushed the keyword leg's pages out of the cache (about 4.5 s instead of
+  1.2 s): 5.4 to 6.4 s in the database. The shortlist is approximate in
+  principle; measured, it returned every exact top-40 passage: 24 of 24
+  searches identical in every column on a 45,005-passage copy of real books,
+  and 20 of 20 on all 206,776 vectors without the tag filter, where it touched
+  about 110 MB of pages against 7.5 GB. At 5 times the candidates it kept 92
+  to 99%, at 10 times 97.5 to 99.8%. An HNSW index on the codes was rejected:
+  the tag filter runs after the index has cut its list, so it kept 94 to 98%
+  with single searches as low as 5%. The full-size time on the live library
+  is unmeasured until the column exists there.
+
+The loader's `schema` command adds `bits` by rewriting the vector table once;
+a pipeline that reads it must not be released before that
+([deployment-runbook.md](deployment-runbook.md) §7.3).
 The library-owned tables carry books, subjects, topics, excerpts with tag
 outcomes, figures and model-run receipts.
 
