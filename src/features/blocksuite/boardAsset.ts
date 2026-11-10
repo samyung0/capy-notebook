@@ -49,7 +49,7 @@ export function boardFromAsset(assetId: string): Promise<string> {
 
 /** A board whose images are its material's `image` editor assets, uploaded at
  * once as a note's are (the workspace canvas, Epo 2026-11-09): the uploader pays,
- * the plan's image cap and a full storage refuse, and Files › Embeds lists them.
+ * the plan's image cap and a full storage refuse, and the Files page lists them.
  * `own` are the material's image assets as the server lists them, a trashed one
  * included: only those are named in a save. An image of another material
  * (pasted from another canvas) is stored again as this one's. */

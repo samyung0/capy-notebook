@@ -39,8 +39,9 @@ import (
 // 150-part quiz.
 const answersMaxBytes = 4 << 20
 
-// checkMaxBytes bounds a check, whose drawing answers come with their boards'
-// pictures: together, one board's pictures at their most.
+// checkMaxBytes bounds a quiz check, whose drawing answers come with their
+// boards' pictures: together, one board's pictures at their most. The review
+// and bank checks keep no drawing, so no pictures are sent to them.
 const checkMaxBytes = answersMaxBytes + picturesMaxBody
 
 var errGradeRequest = errors.New("answers must name parts of these questions, give every ordering part an order, and keep an open answer to text of at most 5,000 characters")

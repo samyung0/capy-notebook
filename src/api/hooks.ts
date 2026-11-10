@@ -3046,10 +3046,15 @@ export function useCheckQuizQuestion(options?: MutationUiOptions) {
   return useMutation({
     meta: mutationMeta(options),
     mutationFn: ({
+      embedded = false,
       quizId,
       ...body
-    }: CheckQuizQuestionReq & { quizId: string }) =>
-      answersForCheck(body.answers as Answers).then((answers) =>
+    }: CheckQuizQuestionReq & {
+      /** A quiz inside a note keeps nothing, so its drawings' pictures stay. */
+      embedded?: boolean;
+      quizId: string;
+    }) =>
+      answersForCheck(body.answers as Answers, !embedded).then((answers) =>
         api.post<AttemptDetail>(`/quizzes/${quizId}/check`, {
           ...body,
           answers,
@@ -3384,7 +3389,11 @@ export const saveAssignmentDrawing = (
         upload
       )
     )
-    .then(({ id }) => id);
+    .then(({ id }) => {
+      // Its id is the same across Dones, its board and picture links are not.
+      forgetDrawingBoards([id]);
+      return id;
+    });
 
 /** Forgets a drawing part's stored drawing (Done on an emptied board). */
 export const deleteAssignmentDrawing = (attemptId: string, partId: string) =>

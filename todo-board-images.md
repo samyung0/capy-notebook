@@ -50,17 +50,19 @@ from the same source, as it does now.
 - **While drawing:** the image's bytes sit in the IndexedDB draft beside the board, under
   the draft's key. A reload keeps them, and nothing is uploaded yet, as the board isn't.
 - **At Done (assignment) or Check (practice):** the board's images are sent with the
-  board and stored under the same `drawings/<folder>/` as `img-<sourceId>.webp`. The
-  drawing row lists them (bytes per image), they count in `drawings_storage_after` and
-  are billed to the person attempting, and they follow the drawing's existing read,
-  delete and storage-full rules.
+  board and stored under the same `drawings/<folder>/`, each under a key of its own.
+  `drawing_pictures` lists them by `sourceId` (bytes per image), they count in
+  `drawings_storage_after` through `drawings.picture_bytes` and are billed to the
+  person attempting, and they follow the drawing's existing read, delete and
+  storage-full rules.
 - **Reading:** `GET /api/drawings/{id}` also returns a link per image (`sourceId` → link),
   under the same access rule as the board. A teacher's view and a reopened answer then
   show the images.
 - **Checks:** the browser's load check takes an `affine:image` whose `sourceId` is a
   BlockSuite hash. The server refuses images over the per-image cap, past the image
-  count, or not WebP/JPEG/PNG (`imagecheck`), and an image block whose file wasn't sent
-  is left as an empty frame.
+  count, wider or taller than 2,400 px, or not WebP, JPEG, PNG or GIF (`imagecheck`;
+  decision 8 keeps an animated GIF), and an image block whose file wasn't sent is left
+  as an empty frame.
 
 ### 3. A teacher's sample-answer board: images are quiz editor assets
 
@@ -80,7 +82,7 @@ warning the quiz board has, and saving the cleaned-up copy (`save()`, not
 ### 5. Limits in the board catalog
 
 New catalog limits, generated to every layer like the others: images per board, bytes
-per image after compression, and a board total across its images. The answer flow
+per image after compression (no board total was decided or built). The answer flow
 refuses past them on Done with a message, as it does for the board's 250 KiB.
 
 ## How Plate handles an image (the model for the workspace canvas)
@@ -114,7 +116,7 @@ refuses past them on Done with a message, as it does for the board's 250 KiB.
    `updateBlock`, as Plate's `setNodes`), and the blob source keeps the file under that id
    for this session. A board saved mid-upload keeps the hash, and that block shows an
    empty frame elsewhere, as D13 had for notes.
-3. The asset is listed on Files › Embeds, named by the canvas, and a removed image is
+3. The asset is listed on the Files page, named by the canvas, and a removed image is
    trashed by the canvas's save the way a note's is.
 4. This needs the canvas stored on the server first: an asset has to name what it belongs
    to, and the canvas today lives only in the browser on a dev page. The canvas's own

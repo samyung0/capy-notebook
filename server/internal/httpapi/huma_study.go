@@ -91,7 +91,7 @@ func (a *api) registerStudy(api huma.API) {
 	reg(api, http.MethodPost, "/api/review/sessions/{id}/finish", "finishReviewSession", tag, "End a review session before its last item", http.StatusNoContent, a.finishReviewSession)
 	reg(api, http.MethodGet, "/api/review/sessions", "listPastReviews", tag, "Finished review sessions with their quiz and flashcard results", http.StatusOK, a.listPastReviews)
 	reg(api, http.MethodPost, "/api/review/ratings", "rateReviewItem", tag, "Record a flashcard's review rating", http.StatusNoContent, a.rateReviewItem)
-	regWithMaxBody(api, http.MethodPost, "/api/review/check", "checkReviewItem", tag, "Grade and rate one question of a review session", http.StatusOK, checkMaxBytes, a.checkReviewItem)
+	regWithMaxBody(api, http.MethodPost, "/api/review/check", "checkReviewItem", tag, "Grade and rate one question of a review session", http.StatusOK, answersMaxBytes, a.checkReviewItem)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/study/question-count", "getStudyQuestionCount", tag, "How many questions a practice group holds, for its start dialog", http.StatusOK, a.getStudyQuestionCount)
 	reg(api, http.MethodGet, "/api/learning/overview", "getLearningOverview", tag, "Learning's Overview: what to do next across workspaces and how each stands", http.StatusOK, a.getLearningOverview)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/study/topics", "getWorkspaceStudyTopics", tag, "Study → Summary: the caller's own standing per topic", http.StatusOK, a.getWorkspaceStudyTopics)

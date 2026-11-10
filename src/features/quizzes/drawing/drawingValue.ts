@@ -23,7 +23,8 @@ export type DrawingPicture = { file: Blob; id: string };
 export const BOARD_IMAGE_MAX = BOARD_CATALOG.limits.BOARD_IMAGE_MAX;
 export const BOARD_IMAGES_MAX = BOARD_CATALOG.limits.BOARD_IMAGES_MAX;
 
-/** The pictures of each part's last Done, until its check or store sends them. */
+/** The pictures of each part's last Done, until a store takes them or the
+ * page goes: a practice check may send them again (Check again). */
 const pictures = new Map<string, DrawingPicture[]>();
 
 /** Keeps a Done's pictures under `key` (the part's draft key, or any other
@@ -38,8 +39,17 @@ export function holdDrawingPictures(key: string, held: DrawingPicture[]) {
   return key;
 }
 
+/** The pictures a value names, to show its board: none once they are gone
+ * from the page's memory (a shared page's attempt read back after a reload). */
 export const heldDrawingPictures = (value: DrawingValue) =>
   (value.pictures && pictures.get(value.pictures)) || [];
+
+/** Lets go of a value's pictures once the server holds them (an assignment's
+ * Done): from then they are read from the stored drawing. */
+export function releaseDrawingPictures(value: DrawingValue) {
+  if (value.pictures) pictures.delete(value.pictures);
+  value.pictures = undefined;
+}
 
 export function isDrawingValue(value: Answer): value is DrawingValue {
   return (
@@ -88,7 +98,10 @@ const DATA_URL_PREFIX = /^data:[^;,]+;base64,/;
 /** A drawing as a check or a Done sends it: the board, the marking image and,
  * where the drawing is stored, the board's pictures, all in base64. */
 export async function drawingUpload(value: DrawingValue, withPictures = true) {
-  const held = withPictures ? heldDrawingPictures(value) : [];
+  const held =
+    withPictures && value.pictures ? pictures.get(value.pictures) : [];
+  // Sent without them, the stored board would hold empty frames for good.
+  if (!held) throw new Error("this drawing's pictures are no longer held");
   const sent = await Promise.all(
     held.map(async ({ file, id }) => ({
       data: toBase64(new Uint8Array(await file.arrayBuffer())),

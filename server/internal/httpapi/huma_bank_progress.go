@@ -74,7 +74,7 @@ type bankCopyOutput struct {
 
 func (a *api) registerBankProgress(api huma.API) {
 	tag := "Question bank"
-	regWithMaxBody(api, http.MethodPost, "/api/bank/questions/{id}/check", "checkBankQuestion", tag, "Grade and record one question's answers", http.StatusOK, checkMaxBytes, a.bankCheck)
+	regWithMaxBody(api, http.MethodPost, "/api/bank/questions/{id}/check", "checkBankQuestion", tag, "Grade and record one question's answers", http.StatusOK, answersMaxBytes, a.bankCheck)
 	reg(api, http.MethodGet, "/api/bank/topics/{topicId}/marks", "bankTopicMarks", tag, "Latest scores for a topic's questions", http.StatusOK, a.bankMarks)
 	reg(api, http.MethodGet, "/api/bank/topics/{topicId}/summary", "bankTopicSummary", tag, "A topic's questions with the learner's latest results, for its summary page", http.StatusOK, a.bankSummary)
 	reg(api, http.MethodGet, "/api/bank/progress", "bankProgress", tag, "Topics the learner has answered questions in", http.StatusOK, a.bankProgress)

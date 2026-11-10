@@ -28,6 +28,29 @@ const picturesMaxBody = fieldlimits.BoardPictures * fieldlimits.BoardPictureByte
 // its pictures as base64.
 const drawingMaxBody = (fieldlimits.DrawingBoardBytes+fieldlimits.DrawingImageBytes)*4/3 + picturesMaxBody + 8<<10
 
+// drawingBodyDeadline gives a board with its pictures time to arrive on a slow
+// uplink: huma's default 5 s fits the 750 KB a board was before pictures.
+func drawingBodyDeadline(op *huma.Operation) {
+	op.BodyReadTimeout = 60 * time.Second
+}
+
+// drawingWrites are the objects a request has put in the bucket so far. One
+// that then fails takes them out again: no row names them, nobody is charged
+// for them, and the bucket sweep only reports.
+type drawingWrites struct{ keys []string }
+
+func (a *api) dropDrawingWrites(ctx context.Context, w *drawingWrites) {
+	if len(w.keys) == 0 {
+		return
+	}
+	// The request may be the thing that failed (a client gone): not its context.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	if _, err := a.blob.DeleteObjects(ctx, w.keys); err != nil {
+		obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz, "stage": "drawing_cleanup"})
+	}
+}
+
 // drawingCache keeps a student's drawing out of shared caches.
 const drawingCache = "private, max-age=3600"
 
@@ -79,7 +102,7 @@ type drawingSavedOutput struct {
 
 func (a *api) registerDrawings(api huma.API) {
 	regWithMaxBody(api, "PUT", "/api/assignment-attempts/{id}/drawings/{partId}", "saveAssignmentDrawing", "assignments",
-		"Store a drawing part's board (its marking image and its pictures) for a running attempt", 200, drawingMaxBody, a.saveAssignmentDrawing)
+		"Store a drawing part's board (its marking image and its pictures) for a running attempt", 200, drawingMaxBody, a.saveAssignmentDrawing, drawingBodyDeadline)
 	reg(api, "DELETE", "/api/assignment-attempts/{id}/drawings/{partId}", "deleteAssignmentDrawing", "assignments",
 		"Forget a drawing part's stored drawing in a running attempt (Done on an emptied board)", 204, a.deleteAssignmentDrawing)
 	reg(api, "GET", "/api/drawings/{id}", "getDrawing", "assignments",
@@ -238,13 +261,18 @@ func checkedPictures(in []drawingPicture) ([]string, error) {
 			return nil, huma.Error400BadRequest("a picture's id is missing, malformed or repeated")
 		}
 		seen[picture.SourceID] = true
-		if len(picture.Data) == 0 || len(picture.Data) > fieldlimits.BoardPictureBytes {
+		if len(picture.Data) > fieldlimits.BoardPictureBytes {
 			return nil, huma.Error422UnprocessableEntity("a picture on this drawing is too big")
 		}
-		format, _, _, err := imagecheck.Size(bytes.NewReader(picture.Data))
+		format, width, height, err := imagecheck.Size(bytes.NewReader(picture.Data))
 		contentType, allowed := drawingPictureTypes[format]
 		if err != nil || !allowed {
 			return nil, huma.Error400BadRequest("a picture on this drawing is not a WebP, JPEG, PNG or GIF")
+		}
+		// The side the browser's compressor keeps every picture within, a GIF
+		// included: a header claiming more would be decoded by whoever opens it.
+		if width > imagecheck.MaxSide || height > imagecheck.MaxSide {
+			return nil, huma.Error422UnprocessableEntity("a picture on this drawing is too big")
 		}
 		types[i] = contentType
 	}
@@ -262,7 +290,7 @@ func pictureBytes(in []drawingPicture) int64 {
 
 // putDrawingPictures writes a board's checked pictures to the bucket under
 // folder, beside its board.
-func (a *api) putDrawingPictures(ctx context.Context, folder string, pictures []drawingPicture, types []string) ([]store.DrawingPicture, error) {
+func (a *api) putDrawingPictures(ctx context.Context, w *drawingWrites, folder string, pictures []drawingPicture, types []string) ([]store.DrawingPicture, error) {
 	out := make([]store.DrawingPicture, 0, len(pictures))
 	for i, picture := range pictures {
 		object := store.DrawingObject{
@@ -273,6 +301,7 @@ func (a *api) putDrawingPictures(ctx context.Context, folder string, pictures []
 		if _, err := a.blob.PutObjectOnce(ctx, object.Key, bytes.NewReader(picture.Data), object.Type, drawingCache); err != nil {
 			return nil, err
 		}
+		w.keys = append(w.keys, object.Key)
 		out = append(out, store.DrawingPicture{SourceID: picture.SourceID, Object: object})
 	}
 	return out, nil
@@ -281,7 +310,7 @@ func (a *api) putDrawingPictures(ctx context.Context, folder string, pictures []
 // putDrawingObjects writes a checked, gzipped board (packed) and the image to
 // the bucket under folder, once the caller is authorized; the drawing row that
 // names them is written after.
-func (a *api) putDrawingObjects(ctx context.Context, folder string, packed, img []byte, imageType string) (store.DrawingObject, *store.DrawingObject, error) {
+func (a *api) putDrawingObjects(ctx context.Context, w *drawingWrites, folder string, packed, img []byte, imageType string) (store.DrawingObject, *store.DrawingObject, error) {
 	if a.blob == nil {
 		return store.DrawingObject{}, nil, errors.New("blob store not configured")
 	}
@@ -293,6 +322,7 @@ func (a *api) putDrawingObjects(ctx context.Context, folder string, packed, img 
 	if _, err := a.blob.PutObjectOnce(ctx, board.Key, bytes.NewReader(packed), board.Type, drawingCache); err != nil {
 		return store.DrawingObject{}, nil, err
 	}
+	w.keys = append(w.keys, board.Key)
 	if imageType == "" {
 		return board, nil, nil
 	}
@@ -304,6 +334,7 @@ func (a *api) putDrawingObjects(ctx context.Context, folder string, packed, img 
 	if _, err := a.blob.PutObjectOnce(ctx, image.Key, bytes.NewReader(img), imageType, drawingCache); err != nil {
 		return store.DrawingObject{}, nil, err
 	}
+	w.keys = append(w.keys, image.Key)
 	return board, image, nil
 }
 
@@ -407,23 +438,30 @@ func (a *api) saveAssignmentDrawing(ctx context.Context, in *assignmentDrawingIn
 	}
 	// Nothing reaches the bucket before the attempt, the part and the payer's
 	// storage pass (Q693); marked by hand, no marking image is written.
-	manual, err := a.s.CheckAssignmentDrawing(ctx, userID(ctx), in.ID, in.PartID, time.Now())
+	// One moment for both checks: a Done that arrived inside a time limit's
+	// grace is not turned away because its bucket writes ran past it.
+	now := time.Now()
+	manual, err := a.s.CheckAssignmentDrawing(ctx, userID(ctx), in.ID, in.PartID, now)
 	if err != nil {
 		return nil, drawingSaveError(err)
 	}
 	if manual {
 		imageType = ""
 	}
-	board, image, err := a.putDrawingObjects(ctx, in.ID, packed, in.Body.Image, imageType)
+	writes := &drawingWrites{}
+	board, image, err := a.putDrawingObjects(ctx, writes, in.ID, packed, in.Body.Image, imageType)
 	if err != nil {
+		a.dropDrawingWrites(ctx, writes)
 		return nil, hErr(err)
 	}
-	pictures, err := a.putDrawingPictures(ctx, in.ID, in.Body.Pictures, pictureTypes)
+	pictures, err := a.putDrawingPictures(ctx, writes, in.ID, in.Body.Pictures, pictureTypes)
 	if err != nil {
+		a.dropDrawingWrites(ctx, writes)
 		return nil, hErr(err)
 	}
-	saved, err := a.s.SaveAssignmentDrawing(ctx, userID(ctx), in.ID, in.PartID, board, image, pictures, time.Now())
+	saved, err := a.s.SaveAssignmentDrawing(ctx, userID(ctx), in.ID, in.PartID, board, image, pictures, now)
 	if err != nil {
+		a.dropDrawingWrites(ctx, writes)
 		return nil, drawingSaveError(err)
 	}
 	out := &drawingSavedOutput{}
@@ -460,7 +498,7 @@ func packedCheckDrawings(plan gradePlan) (map[string][]byte, int64, error) {
 // keepCheckDrawings puts a practice check's boards in the bucket, and the image
 // of a part left Not marked, so Check again can mark it later (Epo 2026-11-06);
 // a marked part's image is dropped.
-func (a *api) keepCheckDrawings(ctx context.Context, plan gradePlan, packed map[string][]byte, graded map[string]any) (map[string]store.QuizDrawing, error) {
+func (a *api) keepCheckDrawings(ctx context.Context, w *drawingWrites, plan gradePlan, packed map[string][]byte, graded map[string]any) (map[string]store.QuizDrawing, error) {
 	if len(plan.drawings) == 0 {
 		return nil, nil
 	}
@@ -479,11 +517,11 @@ func (a *api) keepCheckDrawings(ctx context.Context, plan gradePlan, packed map[
 		if !waiting[partID] {
 			imageType = ""
 		}
-		board, image, err := a.putDrawingObjects(ctx, userID(ctx), packed[partID], drawing.Image, imageType)
+		board, image, err := a.putDrawingObjects(ctx, w, userID(ctx), packed[partID], drawing.Image, imageType)
 		if err != nil {
 			return nil, err
 		}
-		pictures, err := a.putDrawingPictures(ctx, userID(ctx), drawing.Pictures, plan.pictureTypes[partID])
+		pictures, err := a.putDrawingPictures(ctx, w, userID(ctx), drawing.Pictures, plan.pictureTypes[partID])
 		if err != nil {
 			return nil, err
 		}

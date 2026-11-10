@@ -60,11 +60,20 @@ export const fetchDrawingBoard = (id: string) =>
 /** One of a stored drawing's pictures, by the id its image block names: none
  * when the drawing holds no such picture. */
 export async function fetchDrawingPicture(id: string, sourceId: string) {
-  const drawing = await fetchDrawing(id);
-  const url =
-    drawing === DRAWING_DELETED ? null : drawing.pictures.get(sourceId);
-  if (!url) return null;
-  const response = await fetch(url);
+  const read = async () => {
+    const drawing = await fetchDrawing(id);
+    const url =
+      drawing === DRAWING_DELETED ? null : drawing.pictures.get(sourceId);
+    return url ? fetch(url) : null;
+  };
+  let response = await read();
+  // The links last an hour or two and this page's copy of them longer: one
+  // that no longer opens is asked for again, once.
+  if (response && !response.ok) {
+    fetched.delete(id);
+    response = await read();
+  }
+  if (!response) return null;
   if (!response.ok) throw new Error(`picture fetch failed: ${response.status}`);
   return response.blob();
 }

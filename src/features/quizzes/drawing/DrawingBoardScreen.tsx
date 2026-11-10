@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
@@ -13,7 +13,9 @@ import { fitImageOffThread } from '@/lib/fitImageOffThread';
 import {
   deleteLocalDrawingDraft,
   localDrawingDraft,
+  localDrawingPictures,
   saveLocalDrawingDraft,
+  syncLocalDrawingPictures,
 } from '@/lib/localDb';
 import { whenIdle } from './boardPrefetch';
 import {
@@ -24,6 +26,7 @@ import {
   type DrawingValue,
   holdDrawingPictures,
   holdOpenDrawing,
+  releaseDrawingPictures,
 } from './drawingValue';
 
 type Board = ReturnType<typeof mountDrawingBoard>;
@@ -114,6 +117,8 @@ export default function DrawingBoardScreen({
   withImage?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  /** Names this board's pictures in the page's memory where no draft does. */
+  const screen = useId();
   // The board mounts once; closing reads the latest handler.
   const close = useRef(onClose);
   close.current = onClose;
@@ -144,6 +149,12 @@ export default function DrawingBoardScreen({
     let timer: ReturnType<typeof setTimeout> | undefined;
     let pending = false;
     let cancelIdle: (() => void) | undefined;
+    /** The pictures already on the device with this draft: each is written
+     * once, not with every write of the board. */
+    const onDevice = new Set<string>();
+    /** Pictures being compressed, not on the board yet: several dropped at
+     * once are counted before any lands. */
+    let landing = 0;
     setFailed(null);
     setReady(false);
     const write = async () => {
@@ -151,22 +162,33 @@ export default function DrawingBoardScreen({
       pending = false;
       const current = board.current;
       if (!(current && draft)) return;
-      await saveLocalDrawingDraft({
-        doc: current.snapshot(),
-        key: draft,
-        // The files the board holds; a stored drawing's not shown yet are still
-        // fetched from it after a reload.
-        pictures: current
-          .images()
-          .flatMap(({ file, id }) => (file ? [{ file, id }] : [])),
-        savedAt: new Date().toISOString(),
-      }).catch(() => {
+      // The files the board holds; a stored drawing's not shown yet are still
+      // fetched from it after a reload.
+      const images = current.images();
+      const added = images.flatMap(({ file, id }) =>
+        file && !onDevice.has(id) ? [{ file, id }] : []
+      );
+      try {
+        await saveLocalDrawingDraft({
+          doc: current.snapshot(),
+          key: draft,
+          savedAt: new Date().toISOString(),
+        });
+        await syncLocalDrawingPictures(
+          draft,
+          added,
+          images.map(({ id }) => id)
+        );
+        for (const { id } of added) onDevice.add(id);
+      } catch {
         // A browser without IndexedDB keeps the board on the page only.
-      });
+      }
     };
     // Out of sight it keeps nothing: what changes then (a note's height settling)
     // isn't the student's.
     const keep = () => {
+      // Whatever was being added has landed, or been refused.
+      landing = 0;
       if (!draft || hiddenNow.current) return;
       pending = true;
       clearTimeout(timer);
@@ -179,6 +201,9 @@ export default function DrawingBoardScreen({
         draft && !readOnly
           ? await localDrawingDraft(draft).catch(() => undefined)
           : undefined;
+      const keptPictures =
+        draft && kept ? await localDrawingPictures(draft).catch(() => []) : [];
+      for (const { id } of keptPictures) onDevice.add(id);
       if (cancelled) return;
       const mount = () => {
         mountNow.current = null;
@@ -191,10 +216,9 @@ export default function DrawingBoardScreen({
             fitPadding: fitPadding(readOnly),
             images: {
               held: new Map(
-                [
-                  ...(opened.current?.held ?? []),
-                  ...(kept?.pictures ?? []),
-                ].map(({ file, id }) => [id, file])
+                [...(opened.current?.held ?? []), ...keptPictures].map(
+                  ({ file, id }) => [id, file]
+                )
               ),
               load: async (id) => {
                 const file = await opened.current?.load?.(id);
@@ -209,11 +233,12 @@ export default function DrawingBoardScreen({
               // Compressed as it lands, under the answer board's cap, and
               // refused past the board's count.
               shrink: (file) => {
-                const held = board.current?.images().length ?? 0;
+                const held = (board.current?.images().length ?? 0) + landing;
                 if (held >= BOARD_IMAGES_MAX)
                   throw new CopyError(
                     m.drawing_pictures_too_many({ max: BOARD_IMAGES_MAX })
                   );
+                landing += 1;
                 return fitImageOffThread(file, BOARD_IMAGE_MAX);
               },
             },
@@ -323,11 +348,12 @@ export default function DrawingBoardScreen({
           // Kept in the page's memory under the part's own key, for the store
           // or the check that sends them.
           pictures: holdDrawingPictures(
-            draft ?? crypto.randomUUID(),
+            draft ?? screen,
             await current.imageFiles()
           ),
         };
         if (store) value.drawing = (await store(value)) ?? undefined;
+        if (value.drawing) releaseDrawingPictures(value);
       } else if (store) await store(null);
       // Stored, the board has left the device; practice keeps its draft until
       // Check sends it (Epo 2026-11-06).

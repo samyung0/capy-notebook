@@ -4787,8 +4787,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     once as the canvas material's own `image` editor asset through `uploadEditorAsset`,
     as a note's is: compressed in the browser first (`fitImageOffThread`: WebP where the
     browser encodes it, JPEG or PNG where it doesn't, as Safari), capped at the plan's
-    image cap, refused when storage is full, billed to the member and listed on Files ›
-    Embeds. The block lands with BlockSuite's hash and shows the local file with the
+    image cap, refused when storage is full, billed to the member and listed on the
+    Files page. The block lands with BlockSuite's hash and shows the local file with the
     upload state set (`blobState$`); when the upload completes its `sourceId` becomes
     the asset id and its `size` the stored size, outside the undo history, and a refused
     image leaves the board with a toast. An image already stored under its id is never
@@ -4802,7 +4802,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     it is over a minute old. An image deleted on the canvas and brought back by undo is
     named again and that save restores it (`assertCanvasAssets` takes a trashed image,
     never a trashed board), after which the board asks for its file again
-    (`reloadImages`). An image deleted for good elsewhere (Files › Embeds) is not in the
+    (`reloadImages`). An image deleted for good elsewhere (the Files page) is not in the
     list, so it is left out; a save refused for what it named (400) reads the list again
     for the next one. An image pasted from another canvas resolves as another material's
     and is stored again as this one's, also when the board opens with one. Opened again,
@@ -4810,20 +4810,29 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     hash in its device copy and shows an empty frame after a reload.
     On an **answer board** (`DrawingBoardScreen`) a picture is compressed as it lands
     (`shrink`: `fitImageOffThread` under `BOARD_IMAGE_MAX`, 1 MiB, from the board
-    catalog) and refused with a toast past `BOARD_IMAGES_MAX` (10) or when no size
-    fits; its block keeps BlockSuite's hash for good, and the file stays on the board.
-    The device draft keeps the files beside the board (`LocalDrawingDraft.pictures`), so
-    a reload before Done loses none. Done checks the count again, asks the board for
-    every file (`imageFiles`, fetching a stored drawing's not shown yet) and keeps them
-    in the page's memory under the part's key (`holdDrawingPictures`); the value names
-    them by that key (`pictures`), since files don't sit in an answer. A Done's store
-    (assignments) and a Check (practice) send them in base64 with the board
-    (`drawingUpload`, `pictures: [{ sourceId, data }]`); a shared page's check sends
-    none. `GET /api/drawings/{id}` answers a link per picture (`pictures`), from which a
-    reopened answer and a teacher's read-only board load them (`fetchDrawingPicture`).
-    The marking image draws them as before, and list previews still draw a grey box. A
-    drawn sample answer's board in the quiz editor still keeps pictures on the page
-    only, and an answer board has no file picker (no Misc panel).
+    catalog) and refused with a toast past `BOARD_IMAGES_MAX` (10, counting the ones of
+    the same drop still being compressed) or when no size fits; its block keeps
+    BlockSuite's hash for good, and the file stays on the board. The device keeps each
+    file once, beside the draft (`drawingPictures` in `localDb.ts`, by draft and id;
+    `syncLocalDrawingPictures` adds the new ones and forgets the ones off the board),
+    so a reload before Done loses none and a stroke rewrites no picture. Done checks the
+    count again, asks the board for every file (`imageFiles`, fetching a stored
+    drawing's not shown yet) and keeps them in the page's memory under the part's key
+    (`holdDrawingPictures`); the value names them by that key (`pictures`), since files
+    don't sit in an answer. An assignment's Done sends them in base64 with the board
+    (`drawingUpload`, `pictures: [{ sourceId, data }]`) and then lets them go
+    (`releaseDrawingPictures`): from there they are read from the stored drawing. A
+    practice Check sends them the same way and keeps them for Check again. A check that
+    keeps no drawing sends none: a shared page's, a quiz inside a note
+    (`embedded`), a review session's and the bank's (those two now send a drawing as
+    its board and image at all, where they sent the page's raw value). Sending a value
+    whose pictures are no longer held throws rather than storing empty frames.
+    `GET /api/drawings/{id}` answers a link per picture (`pictures`), from which a
+    reopened answer and a teacher's read-only board load them (`fetchDrawingPicture`,
+    which asks for the links again once when one has lapsed; a Done forgets the page's
+    copy of its drawing). The marking image draws them as before, and list previews
+    still draw a grey box. A drawn sample answer's board in the quiz editor still keeps
+    pictures on the page only, and an answer board has no file picker (no Misc panel).
 - **Preview (`boardPreview.ts`):** `drawBoardPreview(saved, { width, height }, board)` draws a
   saved board as an SVG string from its data, for lists, results and marking views
   (Epo 2026-11-06: what's on it, not every detail). It never loads the editor: it imports

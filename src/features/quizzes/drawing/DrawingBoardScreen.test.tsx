@@ -73,10 +73,17 @@ const localDrawingDraft = vi.hoisted(() =>
 const saveLocalDrawingDraft = vi.hoisted(() =>
   vi.fn((_draft: unknown) => Promise.resolve())
 );
+const syncLocalDrawingPictures = vi.hoisted(() =>
+  vi.fn((_draft: string, _added: unknown[], _onBoard: string[]) =>
+    Promise.resolve()
+  )
+);
 vi.mock('@/lib/localDb', () => ({
   deleteLocalDrawingDraft,
   localDrawingDraft,
+  localDrawingPictures: () => Promise.resolve([]),
   saveLocalDrawingDraft,
+  syncLocalDrawingPictures,
 }));
 vi.mock('@/components/ui/Dialog', () => ({
   SimpleDialog: ({
@@ -209,7 +216,7 @@ it('keeps a practice drawing on the device after Done, until Check', async () =>
   await act(async () => root.unmount());
 });
 
-it("Done hands the board's pictures on with its value, and the draft keeps them", async () => {
+it("Done hands the board's pictures on with its value, and the device keeps them beside the draft", async () => {
   const host = document.createElement('div');
   document.body.append(host);
   const root = createRoot(host as never);
@@ -233,12 +240,13 @@ it("Done hands the board's pictures on with its value, and the draft keeps them"
       />
     )
   );
-  // A change writes the draft with the files the board holds.
+  // A change writes the draft, and the files the board holds.
   await act(async () => options?.onChange?.());
   await act(async () => finishOpenDrawing());
-  expect(saveLocalDrawingDraft.mock.calls.at(-1)?.[0]).toMatchObject({
-    pictures: [{ file, id: 'hash1' }],
-  });
+  // The picture's file goes to the device once, beside the draft.
+  expect(syncLocalDrawingPictures.mock.calls).toEqual([
+    ['quiz:qz_1:p', [{ file, id: 'hash1' }], ['hash1']],
+  ]);
   const [value] = onDone.mock.calls[0];
   expect(heldDrawingPictures(value)).toEqual([{ file, id: 'hash1' }]);
   // A check or a store sends them in base64; a shared page's check doesn't.
