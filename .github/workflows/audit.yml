@@ -59,7 +59,8 @@ jobs:
           [ -z "$new$stale" ]
 
   # The pipeline's runtime set from uv.lock (no dev group or test extra, as
-  # the images install it), the parser's and ppt-master's hashed requirements.
+  # the images install it), the parser's, the layout service's (its runtime and
+  # its build stage) and ppt-master's hashed requirements.
   # Ignore list: pip-audit-ignore.txt, one advisory id per line with its reason.
   audit_python:
     runs-on: ubuntu-latest
@@ -72,7 +73,7 @@ jobs:
           set -euo pipefail
           uv export --quiet --frozen --no-hashes --no-dev --no-emit-project --format requirements-txt -o "$RUNNER_TEMP/uv-requirements.txt"
           ignored=$(awk '!/^#/ && NF { print "--ignore-vuln", $1 }' pip-audit-ignore.txt)
-          for file in "$RUNNER_TEMP/uv-requirements.txt" parser/requirements.txt layout/requirements.txt pipeline/ppt-master-requirements.txt; do
+          for file in "$RUNNER_TEMP/uv-requirements.txt" parser/requirements.txt layout/requirements.txt layout/requirements-quantise.txt pipeline/ppt-master-requirements.txt; do
             echo "== $file"
             # shellcheck disable=SC2086 # one flag per listed id
             uvx pip-audit==2.10.1 --no-deps --disable-pip --progress-spinner off $ignored -r "$file"

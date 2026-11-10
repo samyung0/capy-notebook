@@ -12,6 +12,9 @@ answers the counts.
 
 The pre- and post-processing follow the model's own ``inference.yml`` at the
 revision the Dockerfile pins: bench/extraction/reports/2026-11-04-layout-models.md.
+What runs is that export with its convolutions in int8, which the image's build
+makes from it (``layout/quantise.py``): the same inputs and outputs at about half
+the CPU a page, bench/extraction/reports/2026-11-10-layout-int8.md.
 """
 
 from __future__ import annotations

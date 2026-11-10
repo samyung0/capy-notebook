@@ -5764,7 +5764,12 @@ job. The screens (boards X0a, X0b, X1, X2) are in
      request a page to the layout service (`CAPY_LAYOUT_URL`, one pool on the
      ingest host, runbook §7.6), at most 3 in flight a run, with the page image
      (long side 1,568 px). The answer is every region PP-DocLayout_plus-L
-     finds. A 429 waits about 2 s and tries again, 4 tries in all; a request has
+     finds; the service runs it with its convolutions in int8, which its image's
+     build makes from the float export and committed calibration ranges
+     (`layout/quantise.py`, Epo 2026-11-10; about half the CPU a page and the
+     same scores on the gold figures,
+     [`2026-11-10-layout-int8.md`](../bench/extraction/reports/2026-11-10-layout-int8.md)).
+     A 429 waits about 2 s and tries again, 4 tries in all; a request has
      30 s and all the run's pages 90 s. A page whose request fails, stays busy or
      runs out of time has no regions, and the run goes on. With no
      `CAPY_LAYOUT_URL` no page has regions, so every figure takes the box call.

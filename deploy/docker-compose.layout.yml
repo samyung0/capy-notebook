@@ -1,4 +1,5 @@
-# The layout model for Make a quiz's figure boxes. Runs only on the ingest host,
+# The layout model for Make a quiz's figure boxes, PP-DocLayout_plus-L with int8
+# convolutions (layout/quantise.py at image build). Runs only on the ingest host,
 # as its own compose project outside the release workflows and outside the UAT
 # and production projects: one pool serves both, with no split and no queue of
 # its own (Epo 2026-11-04). Runbook §7.6.
@@ -26,7 +27,10 @@ services:
     environment:
       APP_ENV: production
       CAPY_LAYOUT_TOKEN: ${CAPY_LAYOUT_TOKEN:?set CAPY_LAYOUT_TOKEN}
-      # Threads one inference uses, and inferences at once.
+      # Threads one inference uses, and inferences at once. One thread is the
+      # cheapest a page (528 CPU-ms; two cost the same, four 11% more): more
+      # only shorten one page's wait
+      # (bench/extraction/reports/2026-11-10-layout-int8.md).
       LAYOUT_THREADS: ${LAYOUT_THREADS:?set LAYOUT_THREADS}
       LAYOUT_WORKERS: ${LAYOUT_WORKERS:?set LAYOUT_WORKERS}
       # Requests in the service, running or waiting; one more is answered 429.
