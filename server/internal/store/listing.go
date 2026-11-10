@@ -191,14 +191,6 @@ func cursorPrimary(sort listSort, at time.Time, text string, n int64) string {
 var (
 	lostMaterialSQL          = lostAccessSQL("m.workspace_id", "$1")
 	materialWorkspaceNameSQL = workspaceNameSQL("m.workspace_id", "m.workspace_name")
-	// A member's canvas is a standalone material that is a workspace's Canvas
-	// tab (canvas_workspace_id): lists name that workspace and file it there.
-	materialListWorkspaceIDSQL   = `COALESCE(NULLIF(m.workspace_id, ''), m.canvas_workspace_id)`
-	materialListWorkspaceNameSQL = `COALESCE((SELECT cw.name FROM workspaces cw WHERE cw.id=m.canvas_workspace_id), ` + materialWorkspaceNameSQL + `)`
-	// Its drawing is its board asset, which no list shows on its own: the row
-	// carries it. Its images are rows of their own.
-	materialListSizeSQL = `(m.size_bytes + CASE WHEN m.kind='canvas' THEN COALESCE((SELECT sum(a.size_bytes) FROM editor_assets a
-		WHERE a.material_id=m.id AND a.purpose='board' AND a.status='ready'), 0) ELSE 0 END)`
 )
 
 var materialListSorts = map[string]listSort{
@@ -264,9 +256,6 @@ type MaterialListItem struct {
 	// IsOwner: the caller owns it, so it may rename, share and delete it; All
 	// files also lists other members' blocks.
 	IsOwner bool `json:"isOwner,omitempty"`
-	// CanvasWorkspaceID is the workspace whose Canvas tab a canvas is: it has no
-	// page of its own, so a list opens that tab. WorkspaceName names it.
-	CanvasWorkspaceID string `json:"canvasWorkspaceId,omitempty"`
 }
 
 // forAssignee keeps from a quiz's assignee that it is hidden from others and its
@@ -338,14 +327,13 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 	where += clause
 	args = append(args, cursorArgs...)
 	args = append(args, f.Limit+1)
-	rows, err := s.pool.Query(ctx, `SELECT m.id, m.kind, m.title, COALESCE(m.workspace_id,''), `+materialListWorkspaceNameSQL+`,
+	rows, err := s.pool.Query(ctx, `SELECT m.id, m.kind, m.title, COALESCE(m.workspace_id,''), `+materialWorkspaceNameSQL+`,
 			m.topic_id, COALESCE(c.name,''),
-			m.privacy, m.created_at, m.updated_at, `+materialListSizeSQL+`,
+			m.privacy, m.created_at, m.updated_at, m.size_bytes,
 			CASE WHEN m.kind='quiz' THEN (SELECT (SELECT count(*) FROM jsonb_array_elements(elem->'children') child WHERE child->>'type'='quiz_question')
 				FROM jsonb_array_elements(m.content->'value') elem WHERE elem->>'type'='quiz' LIMIT 1) END,
 			CASE WHEN m.kind='flashcards' THEN (SELECT count(*) FROM flashcard_cards fc WHERE fc.material_id=m.id) END,
-			m.preview, `+lostMaterialSQL+`, m.hidden, `+materialAssignedCols("$1")+`, m.owner_user_id=$1,
-			COALESCE(m.canvas_workspace_id, '')
+			m.preview, `+lostMaterialSQL+`, m.hidden, `+materialAssignedCols("$1")+`, m.owner_user_id=$1
 		FROM materials m
 		LEFT JOIN topics c ON c.id=m.topic_id`+where+
 		orderClause(sort, "m.id", f.Ascending)+fmt.Sprintf(` LIMIT $%d`, len(args)), args...)
@@ -360,7 +348,7 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 			&item.TopicID, &item.TopicName,
 			&item.Privacy, &item.CreatedAt, &item.UpdatedAt, &item.SizeBytes,
 			&item.QuestionCount, &item.CardCount, &item.Preview, &item.LostAccess, &item.Hidden, &item.Assigned, &item.AssignmentID,
-			&item.IsOwner, &item.CanvasWorkspaceID); err != nil {
+			&item.IsOwner); err != nil {
 			return MaterialPage{}, err
 		}
 		item.forAssignee()

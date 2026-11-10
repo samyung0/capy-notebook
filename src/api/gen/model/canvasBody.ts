@@ -18,6 +18,7 @@ export interface CanvasBody {
   ownImageAssetIds: string[];
   /** The material's revision; a save sends the one it read */
   revision: number;
+  title: string;
   updatedAt: string;
   /** Counts the saves */
   version: number;

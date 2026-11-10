@@ -282,9 +282,7 @@ export type MaterialPreview =
       cardCount: number;
       first?: { front: string; hasImage: boolean };
     }
-  | { kind: 'mindmap' | 'diagram'; source: string }
-  /** A member's workspace canvas: its saved board, drawn in the browser. */
-  | { kind: 'canvas'; boardAssetId: string };
+  | { kind: 'mindmap' | 'diagram'; source: string };
 
 /** `ingestPct` is transient upload progress, never persisted.
  * `thumbnailUrl` is an hour-stable presigned page-1 image. */
@@ -773,8 +771,7 @@ export type Item =
   | { type: 'material'; material: MaterialListItem }
   | { type: 'embed'; embed: EditorAssetItem };
 export type ItemPage = Omit<GenItemPage, 'items'> & { items: Item[] };
-/** The Files page lists a member's workspace canvases with their blocks. */
-export type ItemKind = FileKind | MaterialListKind | 'canvas';
+export type ItemKind = FileKind | MaterialListKind;
 export type ItemListSort = ListItemsSort;
 /** owned: what the caller pays for (My files); all: also every file and block
  * of its own and member workspaces (All files). */

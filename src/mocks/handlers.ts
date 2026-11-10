@@ -77,7 +77,7 @@ import {
   submittedPapers,
   workspaceMaterialRefs,
 } from './assignments';
-import { canvasHandlers, mockCanvasRows } from './canvas';
+import { canvasHandlers } from './canvas';
 import { mockResumeStream } from './chatResume';
 import { mockChatStream } from './chatStream';
 import { mockUndo } from './chatUndo';
@@ -754,7 +754,7 @@ export const handlers = [
   ),
   ...questionBankHandlers,
   ...editorAssetHandlers,
-  ...canvasHandlers,
+  ...canvasHandlers((id) => db.workspaces.find((ws) => ws.id === id)),
   ...voiceInputHandlers,
   http.get('/api/files/:id/annotations', ({ params }) =>
     params.id === 'mock-preview-annotations'
@@ -2081,18 +2081,6 @@ export const handlers = [
             workspaceId: mt.workspaceId,
           };
         }),
-      ...mockCanvasRows((id) => workspaceNameOf(id)).map(
-        (material): Row => ({
-          at: material.createdAt,
-          id: material.id,
-          item: { material, type: 'material' },
-          kind: material.kind,
-          name: material.title,
-          size: material.sizeBytes,
-          workspace: material.workspaceName,
-          workspaceId: material.canvasWorkspaceId,
-        })
-      ),
       ...embeds.map(
         (e): Row => ({
           at: e.createdAt,

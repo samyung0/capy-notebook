@@ -259,7 +259,8 @@ func (s *Store) AccountDocuments(ctx context.Context, userID string, place Accou
 			SELECT 1, 'material', m.id, m.title, '', m.kind, m.topic_id, m.workspace_id, m.position,
 				m.created_at, mc.content_id, m.hidden OR (m.kind='quiz' AND `+quizAssignedToSQL("m.id", "$1")+` IS NOT NULL)
 			FROM materials m LEFT JOIN rag_material_contents mc ON mc.material_id=m.id
-			WHERE m.trashed_at IS NULL AND m.parent_material_id IS NULL
+			-- A canvas is a board, not a document the agent reads or files.
+			WHERE m.trashed_at IS NULL AND m.parent_material_id IS NULL AND m.kind <> 'canvas'
 				AND (m.workspace_id IN (SELECT id FROM scope) OR (m.workspace_id IS NULL AND m.owner_user_id=$1))
 		) d
 		LEFT JOIN scope sc ON sc.id=d.ws_id

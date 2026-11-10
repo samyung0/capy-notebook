@@ -1342,6 +1342,49 @@ test('an image pasted or picked on the workspace canvas is stored as its asset a
     .toEqual([assetId, expect.stringMatching(/^asset_mock_/)]);
 });
 
+test("the Canvas page is a board of the person's own, and its panel lists and makes canvases", async ({
+  page,
+}) => {
+  test.slow();
+  // A workspace's canvas exists once its tab was opened.
+  await page.goto('/workspaces/ws_bio');
+  await page.getByRole('button', { name: 'Canvas' }).click();
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  // The account's page, reached within the app: the mocks forget on a reload.
+  await page.evaluate(() => {
+    history.pushState({}, '', '/canvas');
+    dispatchEvent(new PopStateEvent('popstate'));
+  });
+  // With none of their own yet, a first one is made and named in the URL.
+  await expect(page).toHaveURL(/\/canvas\?c=cv_own_1$/);
+  await expect(page.locator('.capy-board')).toHaveCount(1);
+  const panel = page.getByRole('button', { name: 'My canvas' });
+  await panel.click();
+  // Every canvas there is: their own, then the workspace's under its name.
+  await expect(page.getByRole('menuitem', { name: /My canvas/ })).toBeVisible();
+  await expect(
+    page.getByRole('menuitem', { name: /Biology 101/ })
+  ).toBeVisible();
+  await page.getByRole('menuitem', { name: 'New canvas' }).click();
+  await expect(page).toHaveURL(/\/canvas\?c=cv_own_2$/);
+  await expect(
+    page.getByRole('button', { name: 'Untitled canvas' })
+  ).toBeVisible();
+  // Rename starts from the shown canvas's own name, and the panel takes the new one.
+  await page.getByRole('button', { name: 'Untitled canvas' }).click();
+  await page.getByRole('menuitem', { name: 'Rename' }).click();
+  const name = page.getByRole('textbox');
+  await expect(name).toHaveValue('Untitled canvas');
+  await name.fill('Exam plan');
+  await name.press('Enter');
+  // A workspace's canvas opens in its workspace.
+  await page.getByRole('button', { name: 'Exam plan' }).click();
+  await page.getByRole('menuitem', { name: /Biology 101/ }).click();
+  await expect(page).toHaveURL(/\/workspaces\/ws_bio\?panel=canvas/);
+});
+
 test('the workspace canvas stays in the URL at every width', async ({
   page,
 }) => {

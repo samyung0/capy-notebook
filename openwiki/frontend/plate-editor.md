@@ -4780,19 +4780,31 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     it); the Canvas tab shows to members only, since a link or public visitor has none.
     Restoring a trashed canvas beside the live one made since is refused (409
     `canvas_exists`).
-  - **In Files (2026-11-10, a stopgap: Epo plans an account-level canvas page):** the
-    Files page's one list holds a member's own canvases with their blocks (`items.go`:
-    kind `canvas`, only ever through the owner's branch, since a canvas has no
-    `workspace_id`), filed under the workspace each is the Canvas tab of
-    (`canvasWorkspaceId`, the workspace's name and icon, the In a workspace filter)
-    and sized with its board asset, which no row of its own shows. Its card draws the
-    saved board in the browser (`useCanvasDrawing`: the stored preview is
-    `{ kind: 'canvas', boardAssetId }`, the board comes through `boardFromAsset` and
-    `drawBoardPreview(…, 'workspace')`; the icon until then). A canvas has no page of
-    its own, so the row and its Open go to `/workspaces/{id}?panel=canvas`
-    (`blockLink`), as does the row of one of its images; its menu is Open and Delete
-    alone (no rename, share or clone). Delete trashes it as any standalone block, the
-    Canvas tab then makes a fresh one, and Trash lists it with the canvas icon.
+  - **The Canvas page (Epo 2026-11-10, mock KNPB4pYUhSSYUJvuKN1ct7 B):** `/canvas`
+    (`Canvas.tsx`, Canvas under Tools in the sidebar) is a board: one of the person's
+    own canvases, in no workspace. Such a canvas is a standalone `canvas` material with
+    no `canvas_workspace_id` (migration 0167), any number per person, opened and saved
+    exactly as a workspace's is (`useCanvasBoard`, which both pages mount with a
+    `CanvasSource`: `GET` and `PUT /api/canvases/{id}` here, the workspace routes on
+    the Canvas tab), with the same device copy, images and limits, and no workspace
+    cards in Misc. `?c=` names the canvas shown; without one (the sidebar's link) the one
+    already shown stays, else the latest saved of the person's own, and a first one ("My
+    canvas") is made for a person who has none. The id routes serve only a person's own
+    canvases: a workspace's opens and saves through its workspace, whose membership it
+    follows. A frozen account draws on what it has and is offered neither New canvas
+    nor Rename. The panel at the top left (`CanvasSwitcher`)
+    lists every canvas there is (`GET /api/canvases`: their own, then each workspace's
+    under its icon and name, latest saved first, leaving out a workspace whose owner's
+    account is no longer live), makes a new one ("Untitled canvas",
+    numbered when taken), and renames or deletes the one shown, as a standalone
+    material (`PATCH /api/materials/{id}/metadata`, which leaves the revision alone, and
+    the trash; a deleted canvas's board saves and keeps nothing more, `gone`). A
+    workspace's canvas opens in its workspace, where its quiz and flashcard cards work.
+    The account chat's file listing leaves canvases out: a canvas is a board, not a
+    document the agent reads. On a phone the navigation drawer's button sits beside the
+    panel, and the row stops short of the board's own menu. The Files page lists no
+    canvas (the rows of earlier that day are gone); a canvas's images still list there
+    and open the canvas they are on, and Trash shows a deleted canvas with its icon.
   - **Images (Epo 2026-11-09 and 2026-11-10, `todo-board-images.md`):** an image block
     keeps only an id (`sourceId`), and the board reads and stores files through its own
     blob source (`boardBlobs.ts`, `BoardBlobSource`, in place of BlockSuite's in-memory
