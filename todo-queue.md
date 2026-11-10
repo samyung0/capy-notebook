@@ -70,9 +70,23 @@ Started 2026-11-09 in session `notes-look` (Epo: notes follow Notion's style, an
 Epo's words: "note themeing/styling, e.g. copy notion styles so i think we dont have those
 floating toolbars on e.g. tables and stuff, and affine has a table view as well."
 
-- [ ] Compare how Notion and AFFiNE handle tables, with mocks first
-- [ ] Decide which editor it goes on. Plate is nearly frozen and goes at the cut, and new note features were to go on BlockSuite only (`todo-blocksuite-spike.md`)
-- [ ] Table View: AFFiNE's `database` and `table` blocks are vendored; the blocks layout refuses `database` today
+- [x] Compare how Notion and AFFiNE handle tables, with mocks first (mock section T, Epo picked T2)
+- [x] Decide which editor it goes on: BlockSuite (the blocks layout); Plate goes at the cut (`todo-blocksuite-spike.md`)
+- [ ] The look itself, in session `notes-look` on `claude/notion-notes-look-d4d620` (local, 4fd62124e on 2026-11-10: S2, N2, H1, M1, T2, P1, I1, the app's callouts kept, vendored local changes 34–39, a DocModeExtension reporting 'page' so the gutter handle shows; reviewer reading it). Merges into `blocksuite-notes`, rebased onto the reveal fix 93b02d91e first
+
+### 2a. Table view block in notes (AFFiNE database, mock V2), after the notes look lands
+
+Epo picked V2 on 2026-11-10: both the plain table and a Table view block. Epo's words on where it
+goes: "you can build it here ... but queue it if its a separate task that should be done
+afterwards". It is separate. Mock: section V of https://claude.ai/artifact/GDgyxY9JYW73KGmdU6bCVP.
+
+- [ ] `roomStore.ts` REFUSED and `pageEditor.ts` OFF drop `affine:database` and `affine:data-view`
+- [ ] `todo-blocksuite-layout.md` gains the database block: columns, cells per column type, views, filters and sorts, with limits
+- [ ] Converters and checks: TS (`src/features/notes/blocksuite/layout.ts`), Rust (`collaboration-rs/crates/blocks`), Go `materialdoc`
+- [ ] Markdown and agent export: a database exports as a table of its current view
+- [ ] Share page: static table view only
+- [ ] Data-view chrome takes the same token mapping as the rest (`src/features/blocksuite/chrome.css`)
+- Cost measured by notes-look: the views add 140 KB minified, 28 KB gzipped
 - [ ] Revisit D12 (BlockSuite's own widgets, restyled) and the shared floating toolbar decision (PE:24)
 
 ## Queued, no order yet
