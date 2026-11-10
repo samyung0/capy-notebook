@@ -1,16 +1,28 @@
 import type { Assignment, TodoDonePage, TodoWorkspace } from '@/api/types';
 import type { TodoSort, TodoType } from '@/lib/listSearch';
 
+/** Done, or ticked off To do by hand without doing it (Epo 2026-11-10). */
+export const isTicked = (a: Assignment) =>
+  !!(a.mine?.done || a.mine?.checkedOff);
+
+/** A plain task: its tick is its done. A quiz or one handed in with files is
+ * done by submitting or handing in, and a tick by hand only clears To do. */
+export const isPlainTask = (a: Assignment) =>
+  a.kind === 'unmarked' && !a.allowUploads;
+
 /** What a class's To do lists: answers waiting for its staff, and what was given
- * to the viewer and is still open, done or not. */
+ * to the viewer and is still open, ticked or not. `approvedOff` holds the
+ * answers staff ticked off until more come in. */
 export function todoRows(items: Assignment[], manages: boolean) {
   const mine = items.filter((a) => a.mine && !a.draft && !a.closedAt);
+  const waiting = manages
+    ? items.filter((a) => (a.manage?.toApprove ?? 0) > 0)
+    : [];
   return {
-    done: mine.filter((a) => a.mine?.done),
-    open: mine.filter((a) => !a.mine?.done),
-    toApprove: manages
-      ? items.filter((a) => (a.manage?.toApprove ?? 0) > 0)
-      : [],
+    approvedOff: waiting.filter((a) => a.manage?.approvalsCheckedOff),
+    done: mine.filter(isTicked),
+    open: mine.filter((a) => !isTicked(a)),
+    toApprove: waiting.filter((a) => !a.manage?.approvalsCheckedOff),
   };
 }
 
@@ -21,65 +33,89 @@ export const todoCount = (workspaces: TodoWorkspace[]) =>
     return sum + open.length + toApprove.length;
   }, 0);
 
+/** A To do table row: the viewer's own work, or (`approval`) the answers
+ * waiting for them on it. */
+export interface TodoRow {
+  a: Assignment;
+  approval: boolean;
+  ticked: boolean;
+}
+export interface TodoTableSection {
+  /** Rows not ticked; the Done tab leaves it out. */
+  open?: number;
+  rows: TodoRow[];
+  workspace: TodoWorkspace;
+}
+
 export interface TodoView {
-  /** Workspace ids; empty keeps every class. */
-  classes: string[];
-  /** The sort's order turned around. */
-  reversed: boolean;
+  ascending: boolean;
   sort: Exclude<TodoSort, 'done'>;
   types: TodoType[];
 }
 
-const time = (iso: string | undefined, missing: number) =>
-  iso ? Date.parse(iso) : missing;
-/** A row's place, smallest first; work with no date goes last. */
-const KEY: Record<TodoView['sort'], (a: Assignment) => number> = {
-  class: (a) => time(a.dueAt, Number.POSITIVE_INFINITY),
-  due: (a) => time(a.dueAt, Number.POSITIVE_INFINITY),
-  posted: (a) => -Date.parse(a.postedAt),
+const dueKey = (a: Assignment) =>
+  a.dueAt ? Date.parse(a.dueAt) : Number.POSITIVE_INFINITY;
+/** By the sort's column; work with no due date goes last either way. */
+const compareRows = (sort: TodoView['sort'], ascending: boolean) => {
+  const dir = ascending ? 1 : -1;
+  return (x: Assignment, y: Assignment) => {
+    if (sort === 'title')
+      return dir * x.title.localeCompare(y.title, undefined, { numeric: true });
+    const a = dueKey(x);
+    const b = dueKey(y);
+    if (a === b) return 0;
+    if (a === Number.POSITIVE_INFINITY) return 1;
+    if (b === Number.POSITIVE_INFINITY) return -1;
+    return dir * (a - b);
+  };
 };
-const compare = (x: number, y: number) => (x === y ? 0 : x < y ? -1 : 1);
 const typeOf = (a: Assignment): TodoType =>
   a.kind === 'marked' ? 'quiz' : 'task';
 
-/** The To do tab's sections: a class with something to show, its rows in the
- * sort's order. Classes go by their first row; by due, those with answers
- * waiting come first, and Class goes by name. */
-export function todoSections(workspaces: TodoWorkspace[], view: TodoView) {
-  const key = KEY[view.sort];
+/** The To do tab's classes (Epo 2026-11-10, board K): answers waiting first,
+ * then the open rows, in the sort's order. What's done or ticked off has moved
+ * to Done, closed or not (done for them is done). By due, classes with answers
+ * waiting come first, then the one due soonest; by To do, classes go by name. */
+export function todoSections(
+  workspaces: TodoWorkspace[],
+  view: TodoView
+): TodoTableSection[] {
   const keep = (a: Assignment) =>
     view.types.length === 0 || view.types.includes(typeOf(a));
-  const order = (items: Assignment[]) => {
-    const sorted = items.filter(keep).sort((a, b) => compare(key(a), key(b)));
-    return view.reversed ? sorted.reverse() : sorted;
-  };
+  const by = compareRows(view.sort, view.ascending);
+  const order = (items: Assignment[]) => items.filter(keep).sort(by);
+  const rowsOf = (items: Assignment[], approval: boolean, ticked: boolean) =>
+    order(items).map((a) => ({ a, approval, ticked }));
   const sections = workspaces
-    .filter(
-      (w) => view.classes.length === 0 || view.classes.includes(w.workspaceId)
-    )
     .map((workspace) => {
-      const rows = todoRows(workspace.items, workspace.manages);
-      const shown = order(rows.open);
-      const toApprove = order(rows.toApprove);
+      const { open, toApprove } = todoRows(workspace.items, workspace.manages);
+      const rows = [
+        ...rowsOf(toApprove, true, false),
+        ...rowsOf(open, false, false),
+      ];
       return {
-        first: Math.min(...[...toApprove, ...shown].map(key)),
-        shown,
-        toApprove,
+        first: [...order(toApprove), ...order(open)][0],
+        open: rows.length,
+        rows,
+        waiting: rows.some((row) => row.approval),
         workspace,
       };
     })
-    .filter((s) => s.toApprove.length > 0 || s.shown.length > 0)
-    .sort((a, b) => {
-      if (view.sort === 'class')
-        return a.workspace.name.localeCompare(b.workspace.name);
-      if (view.sort === 'due') {
-        const waiting =
-          Number(b.toApprove.length > 0) - Number(a.toApprove.length > 0);
-        if (waiting !== 0) return waiting;
+    .filter((s) => s.rows.length > 0)
+    .sort((x, y) => {
+      if (view.sort === 'title') {
+        const names = x.workspace.name.localeCompare(y.workspace.name);
+        return view.ascending ? names : -names;
       }
-      return compare(a.first, b.first);
+      const waiting = Number(y.waiting) - Number(x.waiting);
+      if (waiting !== 0) return waiting;
+      return x.first && y.first ? by(x.first, y.first) : 0;
     });
-  return view.reversed ? sections.reverse() : sections;
+  return sections.map(({ open, rows, workspace }) => ({
+    open,
+    rows,
+    workspace,
+  }));
 }
 
 /** The Done tab's pages as one list of classes, in the server's order: a class
@@ -103,3 +139,14 @@ export function mergeTodoPages(pages: TodoDonePage[]) {
     }
   return merged;
 }
+
+/** The Done tab's classes: its rows ticked when finished or ticked off by hand. */
+export const doneSections = (pages: TodoDonePage[]): TodoTableSection[] =>
+  mergeTodoPages(pages).map((workspace) => ({
+    rows: workspace.items.map((a) => ({
+      a,
+      approval: false,
+      ticked: isTicked(a),
+    })),
+    workspace,
+  }));

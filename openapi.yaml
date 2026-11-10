@@ -857,6 +857,8 @@ components:
     AssignmentManage:
       additionalProperties: false
       properties:
+        approvalsCheckedOff:
+          type: boolean
         assignAll:
           type: boolean
         assigned:
@@ -917,6 +919,7 @@ components:
         - done
         - toApprove
         - notGraded
+        - approvalsCheckedOff
       type: object
     AssignmentMark:
       additionalProperties: false
@@ -1016,6 +1019,11 @@ components:
         attemptsUsed:
           format: int64
           type: integer
+        checkedAt:
+          format: date-time
+          type: string
+        checkedOff:
+          type: boolean
         correct:
           format: double
           type: number
@@ -1060,6 +1068,7 @@ components:
         - late
         - latePenaltyPct
         - missing
+        - checkedOff
       type: object
     AssignmentPartMark:
       additionalProperties: false
@@ -1157,6 +1166,22 @@ components:
         - questions
         - answers
         - papersToRead
+      type: object
+    AssignmentTodoCheckInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/AssignmentTodoCheckInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        approvals:
+          type: boolean
+        checked:
+          type: boolean
+      required:
+        - checked
       type: object
     AssignmentWrongAnswer:
       additionalProperties: false
@@ -8167,6 +8192,26 @@ components:
       required:
         - workspaces
       type: object
+    TodoHideInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/TodoHideInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        ids:
+          description: Assignment ids to take off the caller's Done tab
+          items:
+            type: string
+          maxItems: 200
+          minItems: 1
+          nullable: true
+          type: array
+      required:
+        - ids
+      type: object
     TodoList:
       additionalProperties: false
       properties:
@@ -10122,6 +10167,33 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Start an attempt, starting its clock, or return the one running
+      tags:
+        - Assignments
+  /api/assignments/{id}/todo-check:
+    put:
+      operationId: setAssignmentTodoCheck
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignmentTodoCheckInputBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Tick an assignment, or the answers waiting on it, off the caller's To do without doing it
       tags:
         - Assignments
   /api/attempts:
@@ -14509,17 +14581,6 @@ paths:
     get:
       operationId: getTodoDone
       parameters:
-        - description: "done: the day it was done, or closed if it never was; class: by class name, then done"
-          explode: false
-          in: query
-          name: sort
-          schema:
-            default: done
-            description: "done: the day it was done, or closed if it never was; class: by class name, then done"
-            enum:
-              - done
-              - class
-            type: string
         - explode: false
           in: query
           name: dir
@@ -14528,13 +14589,6 @@ paths:
             enum:
               - asc
               - desc
-            type: string
-        - description: Comma-separated class workspace ids
-          explode: false
-          in: query
-          name: class
-          schema:
-            description: Comma-separated class workspace ids
             type: string
         - description: "Comma-separated: quiz, task"
           explode: false
@@ -14564,6 +14618,27 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: "The To do page's Done tab: what was given to the caller that they finished or that closed, a page at a time"
+      tags:
+        - Assignments
+  /api/todo/done/hide:
+    post:
+      operationId: hideTodoDone
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TodoHideInputBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Take rows off the caller's Done tab, changing nothing else
       tags:
         - Assignments
   /api/topics/{id}:

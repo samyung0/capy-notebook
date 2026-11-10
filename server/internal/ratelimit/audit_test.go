@@ -266,6 +266,31 @@ func TestBankCommentsStopAfterABurstOf20(t *testing.T) {
 	}
 }
 
+// TestAssignmentPostsStopAfterABurstOf20 (Epo 2026-11-10). Making an
+// assignment and publishing a draft share a per-user class of 60 an hour with
+// a burst of 20, while reading the list and closing one pass.
+func TestAssignmentPostsStopAfterABurstOf20(t *testing.T) {
+	rdb := testRedis(t, "user:base:user:u_staff", "assignment:user:u_staff")
+	handler := passthrough(New(rdb, DefaultConfig()), "u_staff")
+	for i := 1; i <= 19; i++ {
+		if rec := serve(handler, http.MethodPost, "/api/workspaces/ws_1/assignments", nil); rec.Code != http.StatusNoContent {
+			t.Fatalf("assignment %d: status %d", i, rec.Code)
+		}
+	}
+	if rec := serve(handler, http.MethodPost, "/api/assignments/as_1/publish", nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("publish as post 20: status %d", rec.Code)
+	}
+	if rec := serve(handler, http.MethodPost, "/api/workspaces/ws_2/assignments", nil); rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("post 21: status %d, want 429", rec.Code)
+	}
+	if rec := serve(handler, http.MethodGet, "/api/workspaces/ws_1/assignments", nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("reading the list: status %d", rec.Code)
+	}
+	if rec := serve(handler, http.MethodPut, "/api/assignments/as_1/closed", nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("closing one: status %d", rec.Code)
+	}
+}
+
 // TestIntegrationRoutesStopAt30AMinute (security regression: rate-limit audit
 // M12). The Clerk-backed routes share one per-user bucket of 30 a minute.
 func TestIntegrationRoutesStopAt30AMinute(t *testing.T) {

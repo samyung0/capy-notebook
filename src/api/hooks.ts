@@ -3290,6 +3290,61 @@ export function useSetAssignmentDone(workspaceId: string) {
   });
 }
 
+export interface TodoTickReq {
+  /** Staff's tick on the answers waiting, not their own work. */
+  approvals?: boolean;
+  checked: boolean;
+  id: string;
+  /** A plain task: its tick is its done. */
+  task: boolean;
+  workspaceId: string;
+}
+
+/** To do ticks, sent together (Epo 2026-11-10). A plain task's is its done; a
+ * quiz's, a hand-in's, or staff's on the answers waiting (`approvals`) only
+ * takes the row off To do, and nothing is submitted or handed in. Every tick
+ * goes out at once and one refresh follows the lot, so marking several rows
+ * reads To do once. Any failure fails the call (one toast), after the rest
+ * went through. */
+export function useTodoTick() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (ticks: TodoTickReq[]) => {
+      const sent = await Promise.allSettled(
+        ticks.map(({ approvals, checked, id, task }) =>
+          task
+            ? api.put<void>(`/assignments/${id}/done`, { done: checked })
+            : api.put<void>(`/assignments/${id}/todo-check`, {
+                approvals,
+                checked,
+              })
+        )
+      );
+      const failed = sent.find((r) => r.status === 'rejected');
+      if (failed) throw failed.reason;
+    },
+    onSettled: (_data, _error, ticks) =>
+      Promise.all([
+        ...[...new Set(ticks.map((t) => t.workspaceId))].map((ws) =>
+          refreshAssignment(qc, ws)
+        ),
+        ...ticks.map((t) =>
+          qc.invalidateQueries({ queryKey: qk.assignment(t.id) })
+        ),
+      ]),
+  });
+}
+
+/** Takes rows off the caller's Done tab (Epo 2026-11-10), nothing else
+ * changing; resolves once To do has reread, so the rows don't flash back. */
+export function useHideTodoDone() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ids: string[]) => api.post<void>('/todo/done/hide', { ids }),
+    onSettled: () => qc.invalidateQueries({ queryKey: qk.todo }),
+  });
+}
+
 /** Its one caller reports a failure itself: no global toast. */
 export function useStartAssignment(workspaceId: string) {
   const qc = useQueryClient();
@@ -3620,9 +3675,7 @@ export const useTodo = (options?: QueryUiOptions) =>
   useQuery({ ...todoQuery(), meta: queryMeta(options) });
 
 export interface TodoDoneParams {
-  class?: string[];
   dir?: 'asc';
-  sort?: 'done' | 'class';
   type?: string[];
 }
 /** The To do page's Done tab (Epo 2026-11-08): work given to the viewer that

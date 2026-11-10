@@ -33,9 +33,9 @@ entries); mocks: `artifacts/2026-10-20-painted-cards-cursors-mocks.html`.
   there; there is no Home. A workspace's front page, its landing with no file
   open, is its **Dashboard**. **To do** (`/todo`, `src/routes/Todo.tsx`) sits
   under Workspaces in the nav, with the notifications dot while anything is
-  open: every class's Dashboard To do, one section per workspace whose heading
-  opens its Dashboard, at most 860px wide, under tabs To do · Done and the list
-  pages' Sort and Filter.
+  open: a table of what each class holds for the viewer, a folding group per
+  class, the page's full width (Epo 2026-11-10), under tabs To do ·
+  Done and a Type filter (see study-progress.md).
 - **Dashboard (Epo 2026-11-03, boards H1 owner, H2 member, H3):**
   `WorkspaceDashboard.tsx`, the centre with nothing open (from lg without a
   file header; one column keeps it). The workspace's name with "owner · N

@@ -122,6 +122,9 @@ alone, and the store checks each of these itself (`assignmentStaff`,
 | Make, change, publish, close, reopen or delete one | Yes | Yes | No | No | No |
 | Read every assignment, the report, any member's results; change marks | Yes | Yes | No | No | No |
 | See and take it, read own results, tick an unmarked one | If they ticked "You" | If they ticked "You" | No | Yes | No |
+| Tick a quiz or a hand-in off their own To do without doing it (`PUT /api/assignments/{id}/todo-check`) | If they ticked "You" | If they ticked "You" | No | Yes | No |
+| Tick the answers waiting off their own To do (`todo-check` with `approvals`) | Yes | Yes | No | No | No |
+| Delete rows from their own Done tab, changing nothing else (`POST /api/todo/done/hide`; work not given to them is skipped) | If they ticked "You" | If they ticked "You" | No | Yes | No |
 | A running attempt | Only their own | Only their own | No | Their own | No |
 | Study → Members and a member's profile: every viewer member's marks, topic labels, practice counts and full storage | Yes | Yes | No | No | No |
 
@@ -1482,7 +1485,11 @@ lifecycle under the user-row lock in the mutation transaction rather than
 relying only on middleware admission.
 These rows sit outside storage, so their count is capped (rate-limit audit
 M9, `server/internal/store/row_caps.go`): 5,000 schedule events per user
-(409 `event_limit`). The thinking canvas was removed whole (Epo 2026-10-24,
+(409 `event_limit`); and a class holds at most 500 assignments in all, drafts
+and closed ones included (409 `assignment_limit`), 100 of them open (409
+`assignment_open_limit`: making one published, publishing a draft and reopening
+a closed one each need a place; closing or deleting one makes room; Epo
+2026-11-10). The thinking canvas was removed whole (Epo 2026-10-24,
 Q242; migration `0110` drops its table).
 
 Source: [schedule lifecycle gates](../server/internal/httpapi/huma_schedule.go#L47).

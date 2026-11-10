@@ -476,6 +476,7 @@ export const GetAssignmentResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
+  "approvalsCheckedOff": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
@@ -495,6 +496,8 @@ export const GetAssignmentResponse = zod.object({
   "marks": zod.number(),
   "mine": zod.object({
   "attemptsUsed": zod.int(),
+  "checkedAt": zod.iso.datetime({"offset":true}).optional(),
+  "checkedOff": zod.boolean(),
   "correct": zod.number().optional(),
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
@@ -592,6 +595,7 @@ export const UpdateAssignmentResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
+  "approvalsCheckedOff": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
@@ -611,6 +615,8 @@ export const UpdateAssignmentResponse = zod.object({
   "marks": zod.number(),
   "mine": zod.object({
   "attemptsUsed": zod.int(),
+  "checkedAt": zod.iso.datetime({"offset":true}).optional(),
+  "checkedOff": zod.boolean(),
   "correct": zod.number().optional(),
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
@@ -691,6 +697,7 @@ export const SetAssignmentClosedResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
+  "approvalsCheckedOff": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
@@ -710,6 +717,8 @@ export const SetAssignmentClosedResponse = zod.object({
   "marks": zod.number(),
   "mine": zod.object({
   "attemptsUsed": zod.int(),
+  "checkedAt": zod.iso.datetime({"offset":true}).optional(),
+  "checkedOff": zod.boolean(),
   "correct": zod.number().optional(),
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
@@ -836,6 +845,7 @@ export const PublishAssignmentResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
+  "approvalsCheckedOff": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
@@ -855,6 +865,8 @@ export const PublishAssignmentResponse = zod.object({
   "marks": zod.number(),
   "mine": zod.object({
   "attemptsUsed": zod.int(),
+  "checkedAt": zod.iso.datetime({"offset":true}).optional(),
+  "checkedOff": zod.boolean(),
   "correct": zod.number().optional(),
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
@@ -914,6 +926,7 @@ export const ReleaseAssignmentGradesResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
+  "approvalsCheckedOff": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
@@ -933,6 +946,8 @@ export const ReleaseAssignmentGradesResponse = zod.object({
   "marks": zod.number(),
   "mine": zod.object({
   "attemptsUsed": zod.int(),
+  "checkedAt": zod.iso.datetime({"offset":true}).optional(),
+  "checkedOff": zod.boolean(),
   "correct": zod.number().optional(),
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
@@ -1068,6 +1083,7 @@ export const RepublishAssignmentResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
+  "approvalsCheckedOff": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
@@ -1087,6 +1103,8 @@ export const RepublishAssignmentResponse = zod.object({
   "marks": zod.number(),
   "mine": zod.object({
   "attemptsUsed": zod.int(),
+  "checkedAt": zod.iso.datetime({"offset":true}).optional(),
+  "checkedOff": zod.boolean(),
   "correct": zod.number().optional(),
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
@@ -1168,6 +1186,21 @@ export const StartAssignmentResponse = zod.object({
   "waitingAnswers": zod.int(),
   "waitingMarks": zod.number()
 })
+
+
+/**
+ * @summary Tick an assignment, or the answers waiting on it, off the caller's To do without doing it
+ */
+export const SetAssignmentTodoCheckParams = zod.object({
+  "id": zod.string()
+})
+
+export const SetAssignmentTodoCheckBody = zod.object({
+  "approvals": zod.boolean().optional(),
+  "checked": zod.boolean()
+})
+
+export const SetAssignmentTodoCheckResponse = zod.void()
 
 
 /**
@@ -7498,6 +7531,7 @@ export const GetTodoResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
+  "approvalsCheckedOff": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
@@ -7517,6 +7551,8 @@ export const GetTodoResponse = zod.object({
   "marks": zod.number(),
   "mine": zod.object({
   "attemptsUsed": zod.int(),
+  "checkedAt": zod.iso.datetime({"offset":true}).optional(),
+  "checkedOff": zod.boolean(),
   "correct": zod.number().optional(),
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
@@ -7557,13 +7593,10 @@ export const GetTodoResponse = zod.object({
 /**
  * @summary The To do page's Done tab: what was given to the caller that they finished or that closed, a page at a time
  */
-export const getTodoDoneQuerySortDefault = `done`;
 export const getTodoDoneQueryDirDefault = `desc`;
 
 export const GetTodoDoneQueryParams = zod.object({
-  "sort": zod.enum(['done', 'class']).default(getTodoDoneQuerySortDefault).describe('done: the day it was done, or closed if it never was; class: by class name, then done'),
   "dir": zod.enum(['asc', 'desc']).default(getTodoDoneQueryDirDefault),
-  "class": zod.string().optional().describe('Comma-separated class workspace ids'),
   "type": zod.string().optional().describe('Comma-separated: quiz, task'),
   "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
 })
@@ -7593,6 +7626,7 @@ export const GetTodoDoneResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
+  "approvalsCheckedOff": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
@@ -7612,6 +7646,8 @@ export const GetTodoDoneResponse = zod.object({
   "marks": zod.number(),
   "mine": zod.object({
   "attemptsUsed": zod.int(),
+  "checkedAt": zod.iso.datetime({"offset":true}).optional(),
+  "checkedOff": zod.boolean(),
   "correct": zod.number().optional(),
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
@@ -7647,6 +7683,20 @@ export const GetTodoDoneResponse = zod.object({
   "workspaceId": zod.string()
 }))
 })
+
+
+/**
+ * @summary Take rows off the caller's Done tab, changing nothing else
+ */
+export const hideTodoDoneBodyIdsMax = 200;
+
+
+
+export const HideTodoDoneBody = zod.object({
+  "ids": zod.array(zod.string()).min(1).max(hideTodoDoneBodyIdsMax).nullable().describe('Assignment ids to take off the caller\'s Done tab')
+})
+
+export const HideTodoDoneResponse = zod.void()
 
 
 /**
@@ -8301,6 +8351,7 @@ export const ListAssignmentsResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
+  "approvalsCheckedOff": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
@@ -8320,6 +8371,8 @@ export const ListAssignmentsResponse = zod.object({
   "marks": zod.number(),
   "mine": zod.object({
   "attemptsUsed": zod.int(),
+  "checkedAt": zod.iso.datetime({"offset":true}).optional(),
+  "checkedOff": zod.boolean(),
   "correct": zod.number().optional(),
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),
@@ -8419,6 +8472,7 @@ export const CreateAssignmentResponse = zod.object({
   "kind": zod.enum(['marked', 'unmarked']),
   "latePenaltyPct": zod.int(),
   "manage": zod.object({
+  "approvalsCheckedOff": zod.boolean(),
   "assignAll": zod.boolean(),
   "assigned": zod.int(),
   "assignees": zod.array(zod.string()),
@@ -8438,6 +8492,8 @@ export const CreateAssignmentResponse = zod.object({
   "marks": zod.number(),
   "mine": zod.object({
   "attemptsUsed": zod.int(),
+  "checkedAt": zod.iso.datetime({"offset":true}).optional(),
+  "checkedOff": zod.boolean(),
   "correct": zod.number().optional(),
   "countedAttemptId": zod.string().optional(),
   "done": zod.boolean(),

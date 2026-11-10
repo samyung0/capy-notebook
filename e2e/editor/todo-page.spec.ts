@@ -1,29 +1,47 @@
 import { expect, test } from '@playwright/test';
 import { m } from '../i18n';
 
-test('To do lists a class, its heading opens the Dashboard and a row its assignment', async ({
+test('To do groups each class, and a row opens its details', async ({
   page,
 }) => {
   await page.goto('/todo');
   await expect(
     page.getByRole('heading', { exact: true, name: m.nav_todo() })
   ).toBeVisible({ timeout: 30_000 });
-  // The mock's past paper and paper-answered exam both wait for approval.
-  const approve = page
-    .getByRole('link', { name: new RegExp(m.dashboard_approve_on()) })
-    .first();
-  await expect(approve).toBeVisible({ timeout: 30_000 });
-  await expect(approve).toHaveAttribute('href', /tab=approve/);
+  await expect(
+    page.getByRole('button', { name: /Biology 101/ })
+  ).toHaveAttribute('aria-expanded', 'true', { timeout: 30_000 });
+  // The mock's past paper waits for approval: its row's details lead there.
   await page
-    .getByRole('heading', { name: 'Biology 101' })
-    .getByRole('link')
+    .getByRole('button', { name: new RegExp(m.dashboard_approve_on()) })
+    .first()
     .click();
-  await expect(page).toHaveURL(/\/workspaces\/ws_bio\?panel=none$/, {
-    timeout: 30_000,
-  });
-  await page.goto('/todo');
-  await approve.click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: m.todo_approve_marks() })
+    .click();
   await expect(page).toHaveURL(/assignment=.*tab=approve/, { timeout: 30_000 });
+});
+
+// Epo 2026-11-10: a row's box selects it, and the selection bar marks it done;
+// a quiz is done by handing it in, so marking one by hand asks first.
+test('a quiz marked done by hand asks first', async ({ page }) => {
+  await page.goto('/todo');
+  await page
+    .getByRole('checkbox', { name: 'Photosynthesis quiz' })
+    .click({ timeout: 30_000 });
+  await page.getByRole('button', { name: m.assignment_mark_as_done() }).click();
+  const ask = page.getByRole('dialog');
+  await expect(ask).toContainText(m.todo_check_quiz_body());
+  await ask.getByRole('button', { name: m.assignment_mark_as_done() }).click();
+  // Done for them is done: it moves to Done, not handed in.
+  await expect(
+    page.getByRole('checkbox', { name: 'Photosynthesis quiz' })
+  ).toHaveCount(0, { timeout: 30_000 });
+  await page.getByRole('tab', { name: m.todo_tab_done() }).click();
+  await expect(
+    page.getByRole('row', { name: /Photosynthesis quiz/ })
+  ).toContainText(m.todo_not_handed_in(), { timeout: 30_000 });
 });
 
 test("a Dashboard's Recent files opens the item", async ({ page }) => {

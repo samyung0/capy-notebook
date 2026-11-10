@@ -187,6 +187,7 @@ it("lists a class's To do: answers to approve for its owner, nothing when empty"
       kind: 'marked',
       latePenaltyPct: 0,
       manage: {
+        approvalsCheckedOff: false,
         assignAll: true,
         assigned: 6,
         assignees: [],

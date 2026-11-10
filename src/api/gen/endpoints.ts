@@ -24,6 +24,7 @@ import type {
   AssignmentList,
   AssignmentMark,
   AssignmentReportBody,
+  AssignmentTodoCheckInputBody,
   AttemptDetail,
   AttemptsOutputBody,
   AutoReloadReq,
@@ -211,6 +212,7 @@ import type {
   Tag,
   Task,
   TodoDonePage,
+  TodoHideInputBody,
   TodoList,
   TopUpReq,
   Topic,
@@ -1706,6 +1708,71 @@ const res = await fetch(getStartAssignmentUrl(id),
 
   const data: startAssignmentResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as startAssignmentResponse
+}
+
+
+
+export type setAssignmentTodoCheckResponse204 = {
+  data: void
+  status: 204
+}
+
+export type setAssignmentTodoCheckResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type setAssignmentTodoCheckResponseSuccess = (setAssignmentTodoCheckResponse204) & {
+  headers: Headers;
+};
+export type setAssignmentTodoCheckResponseError = (setAssignmentTodoCheckResponseDefault) & {
+  headers: Headers;
+};
+
+export type setAssignmentTodoCheckResponse = (setAssignmentTodoCheckResponseSuccess | setAssignmentTodoCheckResponseError)
+
+export const getSetAssignmentTodoCheckUrl = (id: string,) => {
+
+
+
+
+  return `/api/assignments/${id}/todo-check`
+}
+
+/**
+ * @summary Tick an assignment, or the answers waiting on it, off the caller's To do without doing it
+ */
+export const setAssignmentTodoCheck = async (id: string,
+    assignmentTodoCheckInputBody: NonReadonly<AssignmentTodoCheckInputBody>, options?: RequestInit): Promise<setAssignmentTodoCheckResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getSetAssignmentTodoCheckUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(assignmentTodoCheckInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setAssignmentTodoCheckResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as setAssignmentTodoCheckResponse
 }
 
 
@@ -10678,6 +10745,70 @@ export const getTodoDone = async (params?: GetTodoDoneParams, options?: RequestI
 
   const data: getTodoDoneResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getTodoDoneResponse
+}
+
+
+
+export type hideTodoDoneResponse204 = {
+  data: void
+  status: 204
+}
+
+export type hideTodoDoneResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type hideTodoDoneResponseSuccess = (hideTodoDoneResponse204) & {
+  headers: Headers;
+};
+export type hideTodoDoneResponseError = (hideTodoDoneResponseDefault) & {
+  headers: Headers;
+};
+
+export type hideTodoDoneResponse = (hideTodoDoneResponseSuccess | hideTodoDoneResponseError)
+
+export const getHideTodoDoneUrl = () => {
+
+
+
+
+  return `/api/todo/done/hide`
+}
+
+/**
+ * @summary Take rows off the caller's Done tab, changing nothing else
+ */
+export const hideTodoDone = async (todoHideInputBody: NonReadonly<TodoHideInputBody>, options?: RequestInit): Promise<hideTodoDoneResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getHideTodoDoneUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(todoHideInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: hideTodoDoneResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as hideTodoDoneResponse
 }
 
 

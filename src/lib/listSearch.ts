@@ -172,25 +172,24 @@ export function itemListParams(search: FilesSearch): ItemListParams {
   };
 }
 
-/* The To do page (Epo 2026-11-08): its tab, sort and filters. Each tab has
-   its own sorts; a sort the tab lacks reads as its default. */
-export const TODO_SORTS = ['due', 'posted', 'class', 'done'] as const;
+/* The To do page (Epo 2026-11-08): its tab, sort and filters. To do sorts by
+   Due or To do from the table's headers, Done by its date (Epo 2026-11-10); a
+   sort the tab lacks reads as its default. `dir` is set only when it differs
+   from the column's own order (due and title ascending, done newest first). */
+export const TODO_SORTS = ['due', 'title', 'done'] as const;
 export type TodoSort = (typeof TODO_SORTS)[number];
 export const TODO_TYPES = ['quiz', 'task'] as const;
 export type TodoType = (typeof TODO_TYPES)[number];
 export type TodoSearch = {
   tab?: 'done';
   sort?: TodoSort;
-  dir?: 'asc';
-  /** Workspace ids. */
-  class?: string;
+  dir?: 'asc' | 'desc';
   type?: string;
 };
 export const parseTodoSearch = (
   search: Record<string, unknown>
 ): TodoSearch => ({
-  class: anyList(search.class),
-  dir: dirOf(search.dir),
+  dir: search.dir === 'asc' || search.dir === 'desc' ? search.dir : undefined,
   sort: one(TODO_SORTS, search.sort),
   tab: search.tab === 'done' ? 'done' : undefined,
   type: csv(listOf(TODO_TYPES, search.type)),

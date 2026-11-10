@@ -273,7 +273,8 @@ export const workspaces: Workspace[] = [
     iconId: 'waves-03',
     id: 'ws_hist',
     isOwner: true,
-    kind: 'personal',
+    // A class too, so To do lists more than one (Epo 2026-11-10).
+    kind: 'class',
     name: 'World History',
     privacy: 'link',
     role: 'owner',
@@ -325,7 +326,8 @@ export const workspaces: Workspace[] = [
     iconId: 'waves-05',
     id: 'ws_eng',
     isOwner: true,
-    kind: 'personal',
+    // A class too, so To do lists more than one (Epo 2026-11-10).
+    kind: 'class',
     name: 'English Literature',
     privacy: 'public',
     role: 'owner',

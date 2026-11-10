@@ -9,6 +9,7 @@ import type { AssignmentManageShowAnswers } from './assignmentManageShowAnswers.
 import type { AssignmentManageShowGrades } from './assignmentManageShowGrades.ts';
 
 export interface AssignmentManage {
+  approvalsCheckedOff: boolean;
   assignAll: boolean;
   assigned: number;
   assignees: string[];

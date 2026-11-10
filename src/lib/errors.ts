@@ -334,6 +334,16 @@ function codeCopy(code: string): ErrorDescription | null {
         description: m.error_event_limit_body(),
         title: m.error_event_limit_title(),
       };
+    case 'assignment_limit':
+      return {
+        description: m.error_assignment_limit_body(),
+        title: m.error_assignment_limit_title(),
+      };
+    case 'assignment_open_limit':
+      return {
+        description: m.error_assignment_open_limit_body(),
+        title: m.error_assignment_open_limit_title(),
+      };
     case 'checkout_limit':
       return {
         description: m.error_checkout_limit_body(),

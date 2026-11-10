@@ -1254,22 +1254,68 @@ it. The board's own line about topic labels waits for topic summaries, and its J
 step and "What members see" link for an invite preview and board G5.
 
 **To do page.** `/todo` (`src/routes/Todo.tsx`, `GET /api/todo`,
-`store/assignment_todo.go`) lists each class's Dashboard rows across the classes
-the viewer owns or belongs to, in `TodoRows`, the rows both share. Tabs To do
-(open work and answers waiting, with its count, all of it in one read) and Done
-(`GET /api/todo/done`, `ListTodoDone`, `qk.todoDone` under `qk.todo`, read only
-while the tab is open: what was given to the viewer that they finished, with the
-quiz's mark or "Waiting for marks" then the day, or that closed undone, "Closed"
-with "Not done · Closed {day}"; thirty a page, the next loading near the end as on
-Files, sorted and filtered in SQL with an offset cursor; a row a later page repeats
-is skipped; a closed task has no tick), then the list pages' Sort
-and Filter, all in the URL (`parseTodoSearch`: `tab=done`, `sort`, `dir=asc`,
-`class`, `type=quiz,task`). To do sorts by Due soonest (classes with answers
-waiting first), Recently posted or Class, in the browser; Done by Recently done
-(the day it closed for work never done) or Class, on the server. Class lists every
-class workspace (`useWorkspaces`). A class with nothing to show is left out. Undone
-work past its due date says Overdue, tasks and quizzes alike. The nav's To do row carries the notifications
-dot while `todoCount` (open plus waiting) is above zero (Epo 2026-11-08).
+`store/assignment_todo.go`) lists what the viewer has to do across the classes
+they own or belong to, as a table (`TodoTable`; Epo 2026-11-10, board K at
+Artifact EwrCcGhudqpqvwTYQtqaeJ): Billing's table style with an icon on each
+header, a group per class with its open count that folds, and columns To do,
+Details and Due. Phones stack each row's due date and details under its title.
+Tabs To do (open work and answers waiting, with its count, all of it in one read)
+and Done (`GET /api/todo/done`, `ListTodoDone`, `qk.todoDone` under `qk.todo`,
+read only while the tab is open: what was given to the viewer that they finished
+or ticked off by hand, with the quiz's mark, "Waiting for marks" or "Not handed
+in", or that closed undone, dated by the day it was done, ticked off or closed; thirty a page, the next loading near the end as on
+Files, sorted and filtered in SQL with an offset cursor; a row a later page
+repeats is skipped). The headers sort, all in the URL (`parseTodoSearch`:
+`tab=done`, `sort=title`, `dir` only against the column's own order,
+`type=quiz,task`): To do by Due (classes with answers waiting first) or by To do
+(title, classes by name), in the browser; Done by its date, on the server.
+Neither sorts nor filters by class (Epo 2026-11-10: class against personal stays
+inside the workspace). A class with nothing to show is left out. Due reads
+"Today, 15:40" and "Tomorrow, 09:00" for the next two days, and Overdue past it
+until ticked.
+
+Every row has a checkbox that selects it, and the header's selects them all
+(Epo 2026-11-10); the toolbar then
+turns into the Files page's selection bar with Mark as done and Mark as not done
+(`useTodoTicks`). A plain task's tick is its
+done (`PUT /api/assignments/{id}/done`). A quiz or one handed in with files ticks
+itself once submitted or handed in, and marking one done by hand asks first
+(`TodoCheckDialog`, once for several), then only takes it off To do: `PUT
+/api/assignments/{id}/todo-check` stores the tick in `assignment_todo_checks`
+(migration 0165), read back as `mine.checkedOff` while `mine.done` and Missing
+stay as they were; the row reads Not handed in. Staff tick the answers waiting
+the same way (`approvals`), read as `manage.approvalsCheckedOff` until an answer
+is submitted after it. What's done or ticked off leaves To do for Done at once, closed or not (Epo
+2026-11-10: done for them is done; `todoSections`, `checkedAt` dates it on
+Done), and Done's Mark as not done brings a task's tick or a tick by hand back;
+ticked-off answers waiting leave To do until more come in. A mark shows at once
+and holds until To do has reread: the picked rows' requests go out together
+(`useTodoTick`) and one refresh follows them, and a dialog that marks its row
+closes with it. The tab's count and the empty state follow at once too: the
+header stays and "Nothing to do" shows under it the moment the last rows are
+marked. Its dates carry the year and no weekday ("18 Nov 2026"; Today and
+Tomorrow keep the time). On Done the date column is Done on (the day it was done
+or ticked off, else "Closed" and the day it closed), rows are muted past their box (no
+strike line), and the selection bar adds Delete (danger, after Mark as not done): after
+asking, the rows leave the caller's Done list only (`POST /api/todo/done/hide`,
+`assignment_todo_hidden` in migration 0165), nothing else changing; a row finished
+again after it was deleted shows on Done again. A row opens `TodoDialog` (600px, Epo 2026-11-10 round 6
+option A): the title alone in the header, then facts with an icon each (its
+workspace, answers waiting, the due date with how long is left, the quiz's size,
+time limit and attempts, who posted it) and its files as the workspace panel
+draws them, each opening in its workspace. The shared dialog footer holds the action
+(Epo 2026-11-10; no Cancel, the corner closes): Mark
+as done for a task, Start quiz, Continue quiz or See results for a quiz, Hand in
+or Open for a hand-in, Approve marks for an approval, each of these with Mark as
+done (or Mark as not done on Done) beside it while it can be ticked, which still
+asks first. On phones both buttons follow the content, since a long
+title needs the header's width. The table takes the page's full width; titles stay
+on one line and end in an ellipsis, and a Posted by column shows from xl (1280px). A class holds at most 500 assignments, 100 of them open
+(`row_caps.go`, 409 `assignment_limit` and `assignment_open_limit`, shown in the
+New assignment dialog or as a toast), and making or publishing one is limited
+to 60 an hour per person (authorization-permissions-lifecycles.md,
+observability-metering.md § rate limiting). The nav's To do row carries the notifications dot while `todoCount`
+(open and waiting, not ticked) is above zero (Epo 2026-11-08).
 
 **Keeping To do current** (Epo 2026-11-08). A `todo` event on the user's stream
 (`publishTodo`, after the commit, best effort) asks every open tab to refetch
