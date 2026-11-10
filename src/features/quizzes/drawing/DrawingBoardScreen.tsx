@@ -416,8 +416,10 @@ export default function DrawingBoardScreen({
       // Out of sight by opacity: BlockSuite shows its cards with an inline
       // `visibility: visible`, which beats a hidden parent. `inert` keeps
       // pointers off it.
+      // The board has no ground of its own (drawingBoard.css): the screen's
+      // is the panel's colour, as on the Canvas tab, and hides the page under it.
       className={cn(
-        'answer-board fixed inset-0 z-50 bg-canvas',
+        'answer-board fixed inset-0 z-50 bg-surface',
         hidden && 'opacity-0'
       )}
       inert={hidden}

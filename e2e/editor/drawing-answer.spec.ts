@@ -31,6 +31,10 @@ async function showBoard(page: Page, open: Locator) {
   });
   await open.click();
   await expect(board).not.toHaveAttribute('inert');
+  // Its ground hides the page under it (found see-through on UAT 2026-11-10).
+  expect(
+    await board.evaluate((element) => getComputedStyle(element).backgroundColor)
+  ).not.toBe('rgba(0, 0, 0, 0)');
   await expect(board.locator('edgeless-pen-tool-button').first()).toBeVisible({
     timeout: 60_000,
   });
