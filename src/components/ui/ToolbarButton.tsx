@@ -39,6 +39,7 @@ export function ToolbarButton({
         'disabled:opacity-40',
         !variant &&
           'hover:bg-surface-hover-bg hover:text-fg [[data-floating-toolbar]_&]:hover:bg-overlay-hover',
+        '[[data-floating-toolbar]_&]:rounded-(--radius-toolbar-button)',
         'data-[active=true]:bg-tint-accent-1/50 data-[active=true]:text-tint-accent-1-fg data-[active=true]:hover:bg-tint-accent-1/50',
         variant && buttonVariants({ size: null, variant }),
         dropdown && 'w-fit',

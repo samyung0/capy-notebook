@@ -372,6 +372,21 @@
   line-height: var(--meta-line-height);
 }
 
+/* A note's reading column (Epo 2026-11-10, mock N2), shared by the editor, its
+   painted copy, the preview and their footers: from a box wider than 640px the
+   margins are 96px, which `max-w-[912px]` caps at 720px of text. Padding
+   percentages read the parent's width, so the step needs no container query.
+   A narrower box keeps the Plate note's gutters: 20px, and the editor's 40px
+   on the right for its thread buttons (`note-column-threads`). */
+@utility note-column {
+  margin-inline: auto;
+  width: 100%;
+  padding-inline: clamp(20px, calc((100% - 640px) * 1000), 96px);
+}
+@utility note-column-threads {
+  padding-right: clamp(40px, calc((100% - 640px) * 1000), 96px);
+}
+
 /* A note font size, unitless in --note-fs, that shrinks on narrow screens: at
    360px wide it keeps 16px plus half of what it has above 16px, growing
    linearly to its full size at 768px. Sizes up to 16px render as written. */
@@ -538,11 +553,12 @@ math-field {
 }
 
 @layer components {
-  /* Note text (noteFont.ts): Fustat with roomy block gaps, or the system font
-     with the Plate playground's compact ones (nodeStyles.ts reads the gaps).
-     A pick on <html data-note-font> wins; otherwise notion gets the system
-     font. The roomy gaps sit on :root so note blocks outside .note-editor
-     keep them. The Fustat stack repeats capy.css. */
+  /* Note text (noteFont.ts): Fustat or the system font. A pick on
+     <html data-note-font> wins; otherwise notion gets the system font. A note
+     (.note-editor) keeps Notion's rhythm in either font (Epo 2026-11-10, mock
+     N2): text blocks 8px apart on a 1.5 line (nodeStyles.ts reads the gaps).
+     The roomy gaps sit on :root for note blocks drawn outside a note. The
+     Fustat stack repeats capy.css. */
   :root {
     --note-font-fustat:
       "Fustat Variable", "Fustat", "Fustat Fallback", var(--font-cjk),
@@ -558,6 +574,10 @@ math-field {
 
   .note-editor {
     font-family: var(--font-sans);
+    --note-gap: var(--spacing);
+    --note-p-py: var(--spacing);
+    --note-li-py: var(--spacing);
+    --note-leading: 1.5;
   }
 
   :root[data-style="notion"][data-note-font="fustat"] .note-editor {
@@ -569,10 +589,6 @@ math-field {
     --font-sans: var(--note-font-system);
     /* capy's body weight (500) suits Fustat; system text reads at 400. */
     font-weight: 400;
-    --note-gap: var(--spacing);
-    --note-p-py: var(--spacing);
-    --note-li-py: var(--spacing);
-    --note-leading: 1.5;
   }
 
   /* Taking an assignment on a phone: no workspace header or chat button

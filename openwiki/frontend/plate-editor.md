@@ -3932,7 +3932,9 @@ size as `--note-fs`, and `FONT_SIZE_NODE_PROPS` renders px font-size marks the
 same way in the editor and static views (other units render as written). The
 font-size control reads a heading's authored size, not the rendered one.
 Callout, code block, table cell and column padding also tighten below `sm`.
-Paragraphs are 8px top and bottom (16px apart) while list items keep 6px;
+Inside a note (`.note-editor`) text blocks are 4px top and bottom (8px apart)
+on a 1.5 line in either note font, as the BlockSuite note's are (mock N2);
+note blocks drawn outside one keep 8px (16px apart) with list items at 6px;
 code blocks have 8px margins and block equations 4px.
 
 Tabs and both toolbar scroll containers share `useHorizontalWheelScroll`.
@@ -4015,9 +4017,10 @@ menu body, keeping those reads off the typing path.
 
 Editor settings uses the shared workspace-style tabs: General holds Display
 size and Commands holds toolbar group visibility. Both preferences apply on
-Apply and persist locally in `capy-note-editor-prefs`. Half width retains the
-768px centered reading container; Full width fills the pane. Below `md`, both
-fill the available width. Note previews use the same preference.
+Apply and persist locally in `capy-note-editor-prefs`. Half width caps the
+note's column at 912px (720px of text between 96px margins); Full width keeps
+the margins and drops the cap. In a box of 640px or less both fill the width
+with the note's gutters. Note previews use the same preference.
 
 General also holds Note font: Fustat with roomy block gaps, or the system font
 with the Plate playground's compact ones (paragraphs 4px padding and 1.5 line
@@ -4513,6 +4516,31 @@ everything that floats, and the note body takes the Notion look in every style.
   collapsed Info row opens Topic (a press moves the note to another topic),
   Created, Updated and Words, counted when it opens. A reader, and a note outside
   a workspace, see Topic as text; a reader's title cannot be typed in.
+
+**The Plate note takes the same look** (Epo 2026-11-10: both note engines are
+aligned while Plate stays in the app). Built so far:
+
+- **Headings, quote and divider** (`nodeStyles.ts`, shared with the static
+  renderer, so previews and shared pages follow): 30, 24 and 20px at 600 on a
+  1.3 line with 32, 22 and 16px above; a quote is upright text behind a 3px
+  bar in the text colour; a divider is 1px.
+- **Rhythm** (`tailwind.css`, `.note-editor`): text blocks 8px apart on a 1.5
+  line in either note font; the font setting changes the font and its weight
+  only.
+- **Column** (`note-column` in `tailwind.css`): 96px margins from a box wider
+  than 640px, capped at 912px unless Full width, in the editor
+  (`NoteEditorSurface`), the painted note and the preview (`MaterialPreview`),
+  and their footers. The step is a padding clamp on the parent's width, so no
+  container is declared. A narrower box keeps Plate's gutters (20px, and 40px
+  on the editor's right for its thread buttons) where the BlockSuite note
+  uses 16px.
+- **Floating bars** (`components/ui/BlockToolbar.tsx`, shared by the
+  selection, link, table, column and media bars and the question editors'):
+  36px tall with 28px buttons from `sm`, 32px and 26px on phones, on
+  `--radius-toolbar` with `--radius-toolbar-button` buttons.
+
+Not on the Plate note yet: the title and Info row, the + button beside the
+grip and the vertical block menu, and the table bar.
 
 Not built: the Table view block (AFFiNE's database, mock V2), queued as its own
 step; Colour, Copy link and Comment in the block menu (the BlockSuite note has

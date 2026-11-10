@@ -271,8 +271,8 @@ function DocumentStatsFooter({
     <div
       aria-label={m.editor_doc_stats()}
       className={cn(
-        'mx-auto mb-20 flex w-full gap-3 px-5 pb-4 text-fg-muted text-xs sm:px-10',
-        displayWidth === 'half' && 'md:max-w-3xl'
+        'note-column mb-20 flex gap-3 pb-4 text-fg-muted text-xs',
+        displayWidth === 'half' && 'max-w-[912px]'
       )}
     >
       <span
@@ -337,9 +337,9 @@ const NoteAttribution = memo(function NoteAttribution({
   return (
     <MaterialAttributionFooter
       className={cn(
-        'mx-auto w-full px-5 sm:px-10',
+        'note-column',
         !beforeStats && (overBar ? 'pb-28' : 'pb-12'),
-        displayWidth === 'half' && 'md:max-w-3xl'
+        displayWidth === 'half' && 'max-w-[912px]'
       )}
       inline
       provenance={provenance}
@@ -355,8 +355,8 @@ function NoteEditorSurface({ children, ...props }: ComponentProps<'div'>) {
       {/* The right gutter holds the comment-thread buttons on phones too. */}
       <div
         className={cn(
-          'mx-auto w-full pr-10 pl-5 sm:pl-10',
-          displayWidth === 'half' && 'md:max-w-3xl'
+          'note-column note-column-threads',
+          displayWidth === 'half' && 'max-w-[912px]'
         )}
         data-note-content=""
       >

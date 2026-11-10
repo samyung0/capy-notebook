@@ -159,9 +159,11 @@ export function DocumentAttribution({
   return (
     <MaterialAttributionFooter
       className={cn(
-        'mx-auto w-full px-5 sm:px-10',
-        overBar ? 'pb-28' : 'pb-12',
-        (kind !== 'note' || displayWidth === 'half') && 'md:max-w-3xl'
+        kind === 'note'
+          ? 'note-column'
+          : 'mx-auto w-full px-5 sm:px-10 md:max-w-3xl',
+        kind === 'note' && displayWidth === 'half' && 'max-w-[912px]',
+        overBar ? 'pb-28' : 'pb-12'
       )}
       inline
       provenance={provenance}
