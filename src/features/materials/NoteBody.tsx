@@ -89,10 +89,14 @@ const LazyMaterialPreview = lazy(() =>
 
 /** The skeleton where nothing is stored yet: no words (Epo 2026-11-04). */
 export function NoteSkeleton() {
+  const displayWidth = useNoteEditorPrefs((state) => state.displayWidth);
   return (
     <div
       aria-label={m.a11y_loading()}
-      className="mx-auto flex w-full flex-col gap-2.5 px-5 pt-6 sm:px-10"
+      className={cn(
+        'note-column flex flex-col gap-2.5 pt-6',
+        displayWidth === 'half' && 'max-w-[912px]'
+      )}
       role="status"
     >
       {[45, 100, 85, 92, 65].map((width) => (

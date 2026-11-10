@@ -124,7 +124,7 @@ export function FlashcardsEditor({
   const add = () => setEditing({ added: true, id: addCard(doc) });
   // A card's Edit and Remove, shown on hover.
   const toolbar = (id: string) => (
-    <BlockToolbar className="rounded-md p-0.5 opacity-0 pointer-coarse:opacity-100 transition-opacity group-hover/tile:opacity-100 has-focus-visible:opacity-100">
+    <BlockToolbar className="opacity-0 pointer-coarse:opacity-100 transition-opacity group-hover/tile:opacity-100 has-focus-visible:opacity-100">
       <ToolbarButton
         label={m.action_edit()}
         onClick={() => setEditing({ added: false, id })}

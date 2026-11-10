@@ -23,6 +23,8 @@ export function BlockToolbar({
       {...props}
       className={cn(
         'flex w-fit max-w-[90vw] items-center gap-0 overflow-x-auto rounded-(--radius-toolbar) border border-overlay-line bg-overlay p-0.5 shadow-pop [--toolbar-button:26px] sm:p-[3px] sm:[--toolbar-button:28px]',
+        // Its buttons take the bar's own button corner; a caller's still wins.
+        '[--radius-button:var(--radius-toolbar-button)]',
         '[&_[data-toolbar-group]]:after:hidden',
         className
       )}

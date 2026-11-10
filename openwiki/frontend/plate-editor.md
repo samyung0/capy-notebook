@@ -3934,8 +3934,9 @@ font-size control reads a heading's authored size, not the rendered one.
 Callout, code block, table cell and column padding also tighten below `sm`.
 Inside a note (`.note-editor`) text blocks are 4px top and bottom (8px apart)
 on a 1.5 line in either note font, as the BlockSuite note's are (mock N2);
-note blocks drawn outside one keep 8px (16px apart) with list items at 6px;
-code blocks have 8px margins and block equations 4px.
+note blocks drawn outside one keep 8px (16px apart) with list items at 6px.
+Quotes, code blocks, callouts and columns take the same gap as margins (4px in
+a note, 8px outside); block equations 4px.
 
 Tabs and both toolbar scroll containers share `useHorizontalWheelScroll`.
 Vertical mouse-wheel input scrolls overflowing controls horizontally without
@@ -4532,11 +4533,17 @@ aligned while Plate stays in the app). Built so far:
   than 640px, capped at 912px unless Full width, in the editor
   (`NoteEditorSurface`), the painted note and the preview (`MaterialPreview`),
   and their footers. The step is a padding clamp on the parent's width, so no
-  container is declared. A narrower box keeps Plate's gutters (20px, and 40px
-  on the editor's right for its thread buttons) where the BlockSuite note
-  uses 16px.
+  container is declared. A narrower box keeps Plate's gutters (20px on a
+  phone and 40px from `sm`, and always 40px on the editor's right for its
+  thread buttons) where the BlockSuite note uses 16px. As in the BlockSuite
+  note, a box just over 640px holds less text than one just under it.
+  The same shared classes also restyle what else draws them: `.md` previews,
+  the merge view, and the standalone quiz, flashcard, mindmap and diagram
+  title (`StandaloneMaterialTitle`, now 30px at 600).
 - **Floating bars** (`components/ui/BlockToolbar.tsx`, shared by the
-  selection, link, table, column and media bars and the question editors'):
+  selection, link, table, column and media bars, the flashcard tile and graph
+  editor bars and the question editors'; the study block bar in
+  `notes/blocks/elements.tsx` repeats its box):
   36px tall with 28px buttons from `sm`, 32px and 26px on phones, on
   `--radius-toolbar` with `--radius-toolbar-button` buttons.
 
