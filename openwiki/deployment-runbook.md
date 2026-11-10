@@ -3126,8 +3126,14 @@ yet"; the rest of the canvas works, uploading a GIF included.
    key.
 2. On that key turn ads off and set the strictest content filter. The browser
    also asks for `content_filter=high` on every search.
-3. Ask KLIPY for production access to the key; it grants it on approval. UAT's
-   key was stored on 2026-11-10 before that approval.
+3. Production access waits (Epo 2026-11-10). The key was registered with the
+   UAT site and is a test key: KLIPY's pages (read 2026-11-10) give a test key
+   100 calls a minute, a limit on the key that every student's browser shares,
+   and say production status, after its review, lifts the limit on the key
+   picked in the panel. That same key is expected to serve production once
+   promoted, so `deploy/.env.prod` carries the same value when production is
+   set up. KLIPY's pages do not say outright that the key string stays the
+   same: compare it with the stored variable after promotion.
 4. Set on the SPA build:
 
 ```
