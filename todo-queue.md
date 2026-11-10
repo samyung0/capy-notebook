@@ -13,6 +13,8 @@ quiz Undo fix 779c114fa, canvas-enrich to 2b1fc744f. On the PC's opening train: 
 
 | Item | Where it is | Waiting on |
 |---|---|---|
+| `claude/ui-tweaks` (To do table, class caps, Files one list, Make quiz uploads; migration 0165) | On `main` 7163403f2 since 2026-11-10 (Epo: "sure commit and hand to the open source mindmap session to push/deploy"); CI 42779050551 red: 7 editor e2e tests (make-quiz, make-quiz-office, assignment-paper-flow, offline-tab, scenario-journeys) | The UI changes session's fix from 7163403f2; no UAT deploy until main is green |
+| `claude/layout-int8` 56d80c037 and `claude/library-search` ff5a90add | Merged locally at 7daa7be34 in `.claude/worktrees/land-main` (one conflict, `human/agentic-retrieval.md`, both lines kept); not pushed | The ui-tweaks fix, then one push; library search needs UAT and ingest at one SHA, layout needs no deploy (the host rebuild is Epo's) |
 | Grading off Jev | On `main`, UAT at 8f184f0bb | Done: a real 1017 call in the study journey, through OpenRouter on Wafer, 0.34 credits, one award per marking item |
 | Make a quiz's crash | On `main`, UAT at 8f184f0bb | PowerPoint paper passed the whole journey; Word drew and ran, then failed on a race in the test. Test fixed in 0b45af688, run pending |
 | Layout service on the ingest host | Up, on UAT only; production has no GitHub environment yet | 0b45af688 is the first run with figures going through it |
