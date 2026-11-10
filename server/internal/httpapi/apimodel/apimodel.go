@@ -97,6 +97,7 @@ type (
 	UsageEventPage     = store.UsageEventPage
 	IntegrationsStatus = store.IntegrationsStatus
 	Conversation       = store.Conversation
+	ConversationPage   = store.ConversationPage
 	Message            = store.Message
 	Citation           = store.Citation
 	Region             = store.Region

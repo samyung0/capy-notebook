@@ -6,8 +6,10 @@
  */
 import type { CanvasListItem } from './canvasListItem.ts';
 
-export interface CanvasListOutputBody {
+export interface CanvasPage {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   items: CanvasListItem[];
+  /** Absent on the last page */
+  nextCursor?: string;
 }

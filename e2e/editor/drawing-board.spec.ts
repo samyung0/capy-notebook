@@ -1385,6 +1385,64 @@ test("the Canvas page is a board of the person's own, and its panel lists and ma
   await expect(page).toHaveURL(/\/workspaces\/ws_bio\?panel=canvas/);
 });
 
+test('the Canvas page lists its canvases a page at a time', async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/workspaces/ws_bio');
+  await page.getByRole('button', { name: 'Canvas' }).click({ timeout: 60_000 });
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  // The account's page, reached within the app: the mocks forget on a reload.
+  await page.evaluate(() => {
+    history.pushState({}, '', '/canvas');
+    dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await expect(page).toHaveURL(/\/canvas\?c=cv_own_1$/);
+  const make = (count: number, from: number) =>
+    page.evaluate(
+      ([many, first]) =>
+        Promise.all(
+          Array.from({ length: many }, (_, at) =>
+            fetch('/api/canvases', {
+              body: JSON.stringify({ title: `Canvas ${first + at}` }),
+              headers: { 'content-type': 'application/json' },
+              method: 'POST',
+            })
+          )
+        ).then(() => undefined),
+      [count, from]
+    );
+  // Sixty newer ones put the shown canvas on the list's second page: the panel
+  // loads on until it has it, and the page stays on it.
+  await make(60, 1);
+  await page.getByRole('button', { name: 'My canvas' }).click();
+  const made = page.getByRole('menuitem', { name: /^Canvas \d+/ });
+  await expect(made).toHaveCount(60);
+  await expect(page.getByRole('menuitem', { name: /My canvas/ })).toBeVisible();
+  await expect(page).toHaveURL(/\/canvas\?c=cv_own_1$/);
+  // One on the first page shown, and fifty more made: the two pages loaded are
+  // read again, and the list's end loads the third.
+  await made.first().click();
+  await expect(page).not.toHaveURL(/c=cv_own_1$/);
+  await make(50, 61);
+  await page.getByRole('button', { name: /^Canvas \d+/ }).click();
+  await expect(made).toHaveCount(100);
+  // The list scrolls in a box of its own: the actions under it stay in reach.
+  const create = page.getByRole('menuitem', { name: 'New canvas' });
+  await expect(create).toBeInViewport();
+  await page
+    .getByRole('menu')
+    .locator('> div')
+    .first()
+    .evaluate((element) => element.scrollTo(0, element.scrollHeight));
+  await expect(made).toHaveCount(110);
+  await expect(create).toBeInViewport();
+  // Their own come first, then the workspace's.
+  await expect(page.getByRole('menuitem').nth(111)).toHaveText(/Biology 101/);
+});
+
 test('the workspace canvas stays in the URL at every width', async ({
   page,
 }) => {

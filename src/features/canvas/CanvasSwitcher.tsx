@@ -1,4 +1,6 @@
+import { type ComponentProps, useRef } from 'react';
 import type { CanvasListItem } from '@/api/canvas';
+import { ListEnd } from '@/components/app/ListEnd';
 import { Button } from '@/components/ui/Button';
 import {
   DropdownMenu,
@@ -20,7 +22,8 @@ import { iconUrl } from '@/lib/icon-catalog';
  * B): every canvas there is, the person's own first, then each workspace's
  * under its icon and name, then New canvas, and the shown one's Rename and
  * Delete (not in the mock's first round: a canvas of one's own has no other
- * place for them). */
+ * place for them). The list comes a page at a time as it is scrolled, in a
+ * box of its own above the actions (Epo 2026-11-10). */
 export function CanvasSwitcher({
   canvases,
   current,
@@ -30,6 +33,7 @@ export function CanvasSwitcher({
   onOpen,
   onOpenChange,
   onRename,
+  paging,
 }: {
   canvases: CanvasListItem[];
   /** The one of the person's own that the page shows. */
@@ -41,7 +45,10 @@ export function CanvasSwitcher({
   onOpen: (canvas: CanvasListItem) => void;
   onOpenChange: (open: boolean) => void;
   onRename: () => void;
+  /** The list's next page, loaded as its end comes on screen. */
+  paging: Omit<ComponentProps<typeof ListEnd>, 'className' | 'root'>;
 }) {
+  const list = useRef<HTMLDivElement>(null);
   const own = canvases.filter(({ workspaceId }) => !workspaceId);
   const shared = canvases.filter(({ workspaceId }) => workspaceId);
   const row = (canvas: CanvasListItem) => (
@@ -87,15 +94,20 @@ export function CanvasSwitcher({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        className="max-h-[70dvh] w-(--radix-dropdown-menu-trigger-width) min-w-64 overflow-y-auto p-1.5"
+        className="flex max-h-[70dvh] w-(--radix-dropdown-menu-trigger-width) min-w-64 flex-col p-1.5"
       >
-        {own.map(row)}
-        {shared.length > 0 && (
-          <DropdownMenuLabel className="t-meta px-2 pt-2 pb-0.5 font-normal text-fg-muted">
-            {m.canvas_in_workspaces()}
-          </DropdownMenuLabel>
-        )}
-        {shared.map(row)}
+        {/* The list scrolls by itself, so the actions under it stay in reach
+            however many pages it loads. */}
+        <div className="min-h-0 flex-1 overflow-y-auto" ref={list}>
+          {own.map(row)}
+          {shared.length > 0 && (
+            <DropdownMenuLabel className="t-meta px-2 pt-2 pb-0.5 font-normal text-fg-muted">
+              {m.canvas_in_workspaces()}
+            </DropdownMenuLabel>
+          )}
+          {shared.map(row)}
+          <ListEnd {...paging} root={list} />
+        </div>
         {!(frozen && !current) && <DropdownMenuSeparator />}
         {!frozen && (
           <DropdownMenuItem

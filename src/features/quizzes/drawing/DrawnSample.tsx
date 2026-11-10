@@ -97,6 +97,7 @@ export function DrawnSampleField({
         <Suspense fallback={null}>
           <DrawingBoardScreen
             hidden={!open}
+            noPictures
             onClose={() => setOpen(false)}
             onDone={() => setOpen(false)}
             pinned={{

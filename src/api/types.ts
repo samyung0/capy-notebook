@@ -546,7 +546,12 @@ export type UpdateWorkspaceMemberReq = Omit<
    Message shape with role/status narrowed to unions and an optional client-only
    `pending` flag while a temp (pre-persisted) row streams. */
 /** A shared-library figure a chat answer shows (`figure:<id>`). */
-export type { Conversation, FileLinks, LibraryFigure } from './gen/model';
+export type {
+  Conversation,
+  ConversationPage,
+  FileLinks,
+  LibraryFigure,
+} from './gen/model';
 
 /** `n` is the passage number the answer program cites; its index in the
  * message's citation list is the number the reader sees. An account chat's

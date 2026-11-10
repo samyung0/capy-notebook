@@ -1,8 +1,9 @@
-import { queryOptions } from '@tanstack/react-query';
+import { infiniteQueryOptions } from '@tanstack/react-query';
 import { api, isApiError, qk } from '@/api/client';
 import type {
   CanvasBody,
   CanvasListItem as GenCanvasListItem,
+  CanvasPage as GenCanvasPage,
   SaveCanvasInputBody,
 } from '@/api/gen/model';
 
@@ -33,12 +34,15 @@ export const saveWorkspaceCanvas = (
 export const isCanvasConflict = (error: unknown) =>
   isApiError(error) && error.status === 409;
 
-/** Every canvas the caller has: their own and their workspaces' (Epo
- * 2026-11-10, the account's Canvas page), latest saved first. */
-export const listCanvases = (signal?: AbortSignal) =>
-  api
-    .get<{ items: CanvasListItem[] }>('/canvases', { signal })
-    .then(({ items }) => items);
+export type CanvasPage = GenCanvasPage;
+
+/** The caller's canvases a page at a time (Epo 2026-11-10, the account's
+ * Canvas page): their own, latest saved first, then their workspaces'. */
+export const listCanvases = (cursor: string, signal?: AbortSignal) =>
+  api.get<CanvasPage>(
+    `/canvases${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`,
+    { signal }
+  );
 
 /** A new canvas of the caller's own, in no workspace. */
 export const createCanvas = (title: string) =>
@@ -51,7 +55,9 @@ export const saveCanvas = (id: string, body: SaveCanvasBody) =>
   api.put<WorkspaceCanvas>(`/canvases/${encodeURIComponent(id)}`, body);
 
 export const canvasesQuery = () =>
-  queryOptions({
-    queryFn: ({ signal }) => listCanvases(signal),
+  infiniteQueryOptions({
+    getNextPageParam: (last: CanvasPage) => last.nextCursor || undefined,
+    initialPageParam: '',
+    queryFn: ({ pageParam, signal }) => listCanvases(pageParam, signal),
     queryKey: qk.canvases,
   });

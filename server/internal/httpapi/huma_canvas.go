@@ -58,7 +58,7 @@ func (a *api) registerCanvas(api huma.API) {
 	// The account's Canvas page (Epo 2026-11-10): every canvas the caller has,
 	// and canvases of their own in no workspace, saved as a workspace's is.
 	reg(api, http.MethodGet, "/api/canvases", "listCanvases", tag,
-		"Every canvas the caller owns: their own and their workspaces', latest saved first", http.StatusOK, a.listCanvases)
+		"The caller's canvases a page at a time: their own, latest saved first, then their workspaces'", http.StatusOK, a.listCanvases)
 	reg(api, http.MethodPost, "/api/canvases", "createCanvas", tag,
 		"Make a canvas of the caller's own, in no workspace", http.StatusCreated, a.createCanvas)
 	reg(api, http.MethodGet, "/api/canvases/{id}", "getCanvas", tag,
@@ -67,23 +67,24 @@ func (a *api) registerCanvas(api huma.API) {
 		"Record a save of one of the caller's canvases, as a workspace canvas's", http.StatusOK, a.saveCanvas)
 }
 
-type canvasListOutput struct {
-	Body struct {
-		Items []store.CanvasListItem `json:"items" nullable:"false"`
-	}
+type canvasListInput struct {
+	Limit  int    `query:"limit" minimum:"1" maximum:"100" default:"50"`
+	Cursor string `query:"cursor" doc:"Opaque cursor from the previous page"`
 }
 
-func (a *api) listCanvases(ctx context.Context, _ *struct{}) (*canvasListOutput, error) {
-	items, err := a.s.ListCanvases(ctx, userID(ctx))
+type canvasListOutput struct {
+	Body store.CanvasPage
+}
+
+func (a *api) listCanvases(ctx context.Context, in *canvasListInput) (*canvasListOutput, error) {
+	page, err := a.s.ListCanvases(ctx, userID(ctx), in.Limit, in.Cursor)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	out := &canvasListOutput{}
-	out.Body.Items = items
-	if out.Body.Items == nil {
-		out.Body.Items = []store.CanvasListItem{}
+	if page.Items == nil {
+		page.Items = []store.CanvasListItem{}
 	}
-	return out, nil
+	return &canvasListOutput{Body: page}, nil
 }
 
 type createCanvasInput struct {

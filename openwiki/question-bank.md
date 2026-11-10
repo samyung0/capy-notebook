@@ -226,7 +226,9 @@ copies and freezes with the quiz's other assets; a copy missing either asset
 drops it whole. Authors draw it from "Sample answer (optional)" under the
 marking scheme in the quiz editor and the question dialog (`DrawnSampleField`,
 A1–A3); results show it drawn from its board, and marking sends its image
-before the student's drawing.
+before the student's drawing. Its board takes no pictures (Epo 2026-11-10):
+the sample names only its board and image, so a picture's file would have no
+reference to keep it.
 
 In an assignment, Done on an emptied board deletes the part's stored drawing
 (`DELETE /api/assignment-attempts/{id}/drawings/{partId}`), so it is neither

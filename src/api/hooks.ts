@@ -2,6 +2,7 @@ import type { QueryClient, QueryKey } from '@tanstack/react-query';
 import {
   focusManager,
   type InfiniteData,
+  infiniteQueryOptions,
   keepPreviousData,
   queryOptions,
   useInfiniteQuery,
@@ -46,6 +47,7 @@ import {
   readEventStream,
   type StreamEvent,
 } from './eventStream';
+import { pagedRows } from './paged';
 import { persisted } from './queryPersistence';
 import type {
   AccountStatus,
@@ -72,6 +74,7 @@ import type {
   ConfirmExtractionReq,
   ContentOrderItem,
   Conversation,
+  ConversationPage,
   CreateBlankFileReq,
   CreateCommentReq,
   CreateDiscussionReq,
@@ -558,6 +561,21 @@ export function applyNotificationEvent(
 const isConversationList = (query: { queryKey: QueryKey }) =>
   query.queryKey.includes('conversations');
 
+/** A cached conversation list: its pages as fetched. */
+export type ConversationCache = InfiniteData<ConversationPage, string>;
+
+/** A cached conversation list with each row rewritten. */
+export const mapConversations = (
+  cache: ConversationCache,
+  rewrite: (conversation: Conversation) => Conversation
+): ConversationCache => ({
+  ...cache,
+  pages: cache.pages.map((page) => ({
+    ...page,
+    items: page.items.map(rewrite),
+  })),
+});
+
 /** Marks a conversation running, or not, in every cached conversation list;
  * one no list holds yet (a turn just started elsewhere) refetches them. */
 function applyChatTurn(
@@ -566,12 +584,15 @@ function applyChatTurn(
   status: ChatStatus
 ) {
   let listed = false;
-  qc.setQueriesData<Conversation[]>({ predicate: isConversationList }, (list) =>
-    list?.map((conversation) => {
-      if (conversation.id !== conversationId) return conversation;
-      listed = true;
-      return { ...conversation, running: status === 'streaming' };
-    })
+  qc.setQueriesData<ConversationCache>(
+    { predicate: isConversationList },
+    (cache) =>
+      cache &&
+      mapConversations(cache, (conversation) => {
+        if (conversation.id !== conversationId) return conversation;
+        listed = true;
+        return { ...conversation, running: status === 'streaming' };
+      })
   );
   if (!listed && status === 'streaming')
     void qc.invalidateQueries({ predicate: isConversationList });
@@ -2187,17 +2208,46 @@ function applyIngestEvent(
 export const conversationsPath = (wsId: string | null) =>
   wsId ? `/workspaces/${wsId}/conversations` : '/conversations';
 
-export const conversationsQuery = (wsId: string | null) =>
-  queryOptions({
-    ...persisted,
+/** A chat's list a page at a time (Epo 2026-11-10: a chat list grows fast):
+ * pinned first, then the latest activity; `archived` the archived ones. The
+ * live list is stored, so a reopened chat panel paints at once. */
+export const conversationsQuery = (wsId: string | null, archived = false) =>
+  infiniteQueryOptions({
+    ...(archived ? {} : persisted),
     enabled: wsId !== '',
-    queryFn: () => api.get<Conversation[]>(conversationsPath(wsId)),
-    queryKey: qk.conversations(wsId),
+    getNextPageParam: (last: ConversationPage) => last.nextCursor || undefined,
+    initialPageParam: '',
+    queryFn: ({ pageParam }) =>
+      api.get<ConversationPage>(
+        `${conversationsPath(wsId)}${listSearch({ archived: archived ? 'true' : undefined }, pageParam)}`
+      ),
+    queryKey: archived
+      ? qk.archivedConversations(wsId)
+      : qk.conversations(wsId),
   });
+/** The pages loaded so far as one list, with the paging to load the next. */
 export const useConversations = (
   wsId: string | null,
   options?: QueryUiOptions
-) => useQuery({ ...conversationsQuery(wsId), meta: queryMeta(options) });
+) =>
+  useInfiniteQuery({
+    ...conversationsQuery(wsId),
+    meta: queryMeta(options),
+    select: pagedRows,
+  });
+
+/** One conversation by id: the open chat's title when the list's loaded pages
+ * don't hold it (a link to an old chat). */
+export const useConversation = (
+  convId: string | null,
+  options?: QueryUiOptions
+) =>
+  useQuery({
+    enabled: !!convId,
+    meta: queryMeta(options),
+    queryFn: () => api.get<Conversation>(`/conversations/${convId}`),
+    queryKey: qk.conversation(convId ?? ''),
+  });
 
 /** Stored, so a reopened chat paints at once; every open refetches, since
  * another tab or device may have added turns (Epo 2026-10-29). */
@@ -2232,12 +2282,11 @@ export const useArchivedConversations = (
   enabled: boolean,
   options?: QueryUiOptions
 ) =>
-  useQuery({
+  useInfiniteQuery({
+    ...conversationsQuery(wsId, true),
     enabled: enabled && wsId !== '',
     meta: queryMeta(options),
-    queryFn: () =>
-      api.get<Conversation[]>(`${conversationsPath(wsId)}?archived=true`),
-    queryKey: qk.archivedConversations(wsId),
+    select: pagedRows,
   });
 
 /** Rename, pin or archive one thread; the live and archived lists refetch. */

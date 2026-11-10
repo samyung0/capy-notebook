@@ -518,7 +518,7 @@ export function mountDrawingBoard(
         ],
     store,
   });
-  markBoard(std, options.board);
+  markBoard(std, options.board, !options.images?.none);
   if (options.workspace) lendWorkspace(std, options.workspace);
   render(
     html`<div class="affine-edgeless-viewport capy-board">${std.render()}</div>`,
