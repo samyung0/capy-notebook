@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
@@ -19,6 +21,42 @@ func readyAsset(t *testing.T, s *Store, materialID, userID, purpose string) stri
 		t.Fatal(err)
 	}
 	return id
+}
+
+// Where collaboration is configured (every deployment), a canvas save still
+// writes its document here: a canvas is never a room, so nothing is asked of
+// the collaboration server (found on UAT 2026-11-10: every save was refused,
+// since each writes a whole new block where a content command replaces one).
+func TestCanvasSavesWithoutTheCollaborationServer(t *testing.T) {
+	f := newStudyFixture(t, "canvas-authority")
+	ctx := context.Background()
+	asked := 0
+	sidecar := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		asked++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(sidecar.Close)
+	f.s.ConfigureCollaboration(sidecar.URL, "command-secret")
+	t.Cleanup(func() { f.s.ConfigureCollaboration("", "") })
+
+	canvas, err := f.s.WorkspaceCanvas(ctx, f.user, f.ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for save := 1; save <= 2; save++ {
+		board := readyAsset(t, f.s, canvas.ID, f.user, "board")
+		canvas, err = f.s.SaveWorkspaceCanvas(ctx, f.user, canvas.ID, board, []string{}, canvas.Revision)
+		if err != nil {
+			t.Fatalf("save %d: %v", save, err)
+		}
+		kept, err := materialdoc.ReadCanvasBoard(canvas.Content)
+		if err != nil || kept.BoardAssetID != board || kept.Version != int64(save) {
+			t.Fatalf("save %d kept %+v, err %v", save, kept, err)
+		}
+	}
+	if asked != 0 {
+		t.Fatalf("the collaboration server was asked %d times", asked)
+	}
 }
 
 // A member's canvas is their own: made on first open as a standalone material

@@ -4770,7 +4770,10 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     `CANVAS_BOARD_MAX` (2 MiB before gzip, the board catalog; over it the board says so
     and the last good save stands), then `PUT /api/workspaces/{id}/canvas` with the
     asset and the revision it read; the server checks the asset is a ready `board`
-    asset of the canvas (images likewise) and counts the version. 409 (the same person's
+    asset of the canvas (images likewise) and counts the version. The save writes the
+    document in SQL even where collaboration is configured: a canvas is never a room,
+    so `UpdateMaterial` sends no content command for its kind (each save writes a whole
+    new block, which a replace-block command refuses). 409 (the same person's
     other tab saved first) says so, deletes this tab's copy and stops saving until a
     reload; any other failure waits for the next change or open, the copy holding the
     work (no retry loop), and the board asset uploaded for the failed save is deleted
