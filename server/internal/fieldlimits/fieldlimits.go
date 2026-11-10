@@ -117,6 +117,10 @@ const (
 	DrawingBoardBytes = 250 << 10
 	DrawingImageBytes = 300 << 10
 	DrawingImageSide  = 1_568
+	// A picture pasted on a drawing answer's board, after the browser's
+	// compression, and how many a board holds (Epo 2026-11-09).
+	BoardPictureBytes = 1 << 20
+	BoardPictures     = 10
 	// A workspace canvas's saved board, before gzip (Epo 2026-11-09): the
 	// material's own board asset, a whole personal canvas rather than one
 	// answer.

@@ -24,6 +24,7 @@ import type {
   AssignmentList,
   AssignmentMark,
   AssignmentReportBody,
+  AssignmentTodoCheckInputBody,
   AttemptDetail,
   AttemptsOutputBody,
   AutoReloadReq,
@@ -45,6 +46,7 @@ import type {
   BootstrapSourceDocumentParams,
   BrowserSourceSession,
   CanvasBody,
+  CanvasPage,
   CheckBankQuestionReq,
   CheckQuizQuestionReq,
   CheckReviewItemReq,
@@ -59,7 +61,9 @@ import type {
   ComputationCheckResp,
   ConfirmExtractionReq,
   Conversation,
+  ConversationPage,
   CreateBlankFileReq,
+  CreateCanvasInputBody,
   CreateCommentReq,
   CreateConversationReq,
   CreateDiscussionReq,
@@ -82,7 +86,6 @@ import type {
   DrawingSavedOutputBody,
   DrawingUpload,
   DrawingsDeletedOutputBody,
-  EditorAssetPage,
   ErrorModel,
   Event,
   ExploreFlashcardSetsParams,
@@ -112,19 +115,20 @@ import type {
   InspectSourceImportsResponse,
   IntegrationsStatus,
   InvoiceList,
+  ItemPage,
   Label,
   LearningOverview,
   LibraryFigure,
   ListAccountConversationsParams,
   ListAttemptsParams,
+  ListCanvasesParams,
   ListConversationsParams,
   ListDrawingsParams,
-  ListEditorAssetsParams,
+  ListItemsParams,
   ListModelsParams,
   ListNotificationsParams,
   ListOwnedFilesParams,
   ListOwnedMaterialsParams,
-  ListPapersParams,
   ListPastReviewsParams,
   ListRecentParams,
   ListTagsParams,
@@ -178,6 +182,7 @@ import type {
   ReviewResult,
   ReviewSession,
   SaveCanvasInputBody,
+  SaveOwnCanvasInputBody,
   SearchParams,
   SearchResult,
   SetChatPrefsReq,
@@ -208,11 +213,11 @@ import type {
   StudyQuestionCountOutputBody,
   StudySummary,
   StudyTopics,
-  SubmittedPapers,
   Syllabus,
   Tag,
   Task,
   TodoDonePage,
+  TodoHideInputBody,
   TodoList,
   TopUpReq,
   Topic,
@@ -596,7 +601,7 @@ export const getSaveAssignmentDrawingUrl = (id: string,
 }
 
 /**
- * @summary Store a drawing part's board (and its marking image) for a running attempt
+ * @summary Store a drawing part's board (its marking image and its pictures) for a running attempt
  */
 export const saveAssignmentDrawing = async (id: string,
     partId: string,
@@ -1708,6 +1713,71 @@ const res = await fetch(getStartAssignmentUrl(id),
 
   const data: startAssignmentResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as startAssignmentResponse
+}
+
+
+
+export type setAssignmentTodoCheckResponse204 = {
+  data: void
+  status: 204
+}
+
+export type setAssignmentTodoCheckResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type setAssignmentTodoCheckResponseSuccess = (setAssignmentTodoCheckResponse204) & {
+  headers: Headers;
+};
+export type setAssignmentTodoCheckResponseError = (setAssignmentTodoCheckResponseDefault) & {
+  headers: Headers;
+};
+
+export type setAssignmentTodoCheckResponse = (setAssignmentTodoCheckResponseSuccess | setAssignmentTodoCheckResponseError)
+
+export const getSetAssignmentTodoCheckUrl = (id: string,) => {
+
+
+
+
+  return `/api/assignments/${id}/todo-check`
+}
+
+/**
+ * @summary Tick an assignment, or the answers waiting on it, off the caller's To do without doing it
+ */
+export const setAssignmentTodoCheck = async (id: string,
+    assignmentTodoCheckInputBody: NonReadonly<AssignmentTodoCheckInputBody>, options?: RequestInit): Promise<setAssignmentTodoCheckResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getSetAssignmentTodoCheckUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(assignmentTodoCheckInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setAssignmentTodoCheckResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as setAssignmentTodoCheckResponse
 }
 
 
@@ -3169,6 +3239,242 @@ const res = await fetch(getBillingTopUpUrl(),
 
 
 
+export type listCanvasesResponse200 = {
+  data: CanvasPage
+  status: 200
+}
+
+export type listCanvasesResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listCanvasesResponseSuccess = (listCanvasesResponse200) & {
+  headers: Headers;
+};
+export type listCanvasesResponseError = (listCanvasesResponseDefault) & {
+  headers: Headers;
+};
+
+export type listCanvasesResponse = (listCanvasesResponseSuccess | listCanvasesResponseError)
+
+export const getListCanvasesUrl = (params?: ListCanvasesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/canvases?${stringifiedParams}` : `/api/canvases`
+}
+
+/**
+ * @summary The caller's canvases a page at a time: their own, latest saved first, then their workspaces'
+ */
+export const listCanvases = async (params?: ListCanvasesParams, options?: RequestInit): Promise<listCanvasesResponse> => {
+
+  const res = await fetch(getListCanvasesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listCanvasesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listCanvasesResponse
+}
+
+
+
+export type createCanvasResponse201 = {
+  data: CanvasBody
+  status: 201
+}
+
+export type createCanvasResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type createCanvasResponseSuccess = (createCanvasResponse201) & {
+  headers: Headers;
+};
+export type createCanvasResponseError = (createCanvasResponseDefault) & {
+  headers: Headers;
+};
+
+export type createCanvasResponse = (createCanvasResponseSuccess | createCanvasResponseError)
+
+export const getCreateCanvasUrl = () => {
+
+
+
+
+  return `/api/canvases`
+}
+
+/**
+ * @summary Make a canvas of the caller's own, in no workspace
+ */
+export const createCanvas = async (createCanvasInputBody: NonReadonly<CreateCanvasInputBody>, options?: RequestInit): Promise<createCanvasResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getCreateCanvasUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createCanvasInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createCanvasResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createCanvasResponse
+}
+
+
+
+export type getCanvasResponse200 = {
+  data: CanvasBody
+  status: 200
+}
+
+export type getCanvasResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getCanvasResponseSuccess = (getCanvasResponse200) & {
+  headers: Headers;
+};
+export type getCanvasResponseError = (getCanvasResponseDefault) & {
+  headers: Headers;
+};
+
+export type getCanvasResponse = (getCanvasResponseSuccess | getCanvasResponseError)
+
+export const getGetCanvasUrl = (id: string,) => {
+
+
+
+
+  return `/api/canvases/${id}`
+}
+
+/**
+ * @summary One of the caller's canvases
+ */
+export const getCanvas = async (id: string, options?: RequestInit): Promise<getCanvasResponse> => {
+
+  const res = await fetch(getGetCanvasUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getCanvasResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getCanvasResponse
+}
+
+
+
+export type saveCanvasResponse200 = {
+  data: CanvasBody
+  status: 200
+}
+
+export type saveCanvasResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type saveCanvasResponseSuccess = (saveCanvasResponse200) & {
+  headers: Headers;
+};
+export type saveCanvasResponseError = (saveCanvasResponseDefault) & {
+  headers: Headers;
+};
+
+export type saveCanvasResponse = (saveCanvasResponseSuccess | saveCanvasResponseError)
+
+export const getSaveCanvasUrl = (id: string,) => {
+
+
+
+
+  return `/api/canvases/${id}`
+}
+
+/**
+ * @summary Record a save of one of the caller's canvases, as a workspace canvas's
+ */
+export const saveCanvas = async (id: string,
+    saveOwnCanvasInputBody: NonReadonly<SaveOwnCanvasInputBody>, options?: RequestInit): Promise<saveCanvasResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getSaveCanvasUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(saveOwnCanvasInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: saveCanvasResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as saveCanvasResponse
+}
+
+
+
 export type undoEditOperationResponse200 = {
   data: AgentOperation
   status: 200
@@ -3350,7 +3656,7 @@ const res = await fetch(getUpdateMaterialCommentUrl(id),
 
 
 export type listAccountConversationsResponse200 = {
-  data: Conversation[]
+  data: ConversationPage
   status: 200
 }
 
@@ -3616,6 +3922,56 @@ export const deleteConversation = async (id: string, options?: RequestInit): Pro
 
   const data: deleteConversationResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as deleteConversationResponse
+}
+
+
+
+export type getConversationResponse200 = {
+  data: Conversation
+  status: 200
+}
+
+export type getConversationResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getConversationResponseSuccess = (getConversationResponse200) & {
+  headers: Headers;
+};
+export type getConversationResponseError = (getConversationResponseDefault) & {
+  headers: Headers;
+};
+
+export type getConversationResponse = (getConversationResponseSuccess | getConversationResponseError)
+
+export const getGetConversationUrl = (id: string,) => {
+
+
+
+
+  return `/api/conversations/${id}`
+}
+
+/**
+ * @summary One of the caller's conversations: the open chat's title when its list page is not loaded
+ */
+export const getConversation = async (id: string, options?: RequestInit): Promise<getConversationResponse> => {
+
+  const res = await fetch(getGetConversationUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getConversationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getConversationResponse
 }
 
 
@@ -4169,63 +4525,6 @@ const res = await fetch(getReportEditIncidentUrl(),
 
   const data: reportEditIncidentResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as reportEditIncidentResponse
-}
-
-
-
-export type listEditorAssetsResponse200 = {
-  data: EditorAssetPage
-  status: 200
-}
-
-export type listEditorAssetsResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type listEditorAssetsResponseSuccess = (listEditorAssetsResponse200) & {
-  headers: Headers;
-};
-export type listEditorAssetsResponseError = (listEditorAssetsResponseDefault) & {
-  headers: Headers;
-};
-
-export type listEditorAssetsResponse = (listEditorAssetsResponseSuccess | listEditorAssetsResponseError)
-
-export const getListEditorAssetsUrl = (params?: ListEditorAssetsParams,) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0 ? `/api/editor-assets?${stringifiedParams}` : `/api/editor-assets`
-}
-
-/**
- * @summary List the images and audio the caller pays for, each marked when its note can no longer be opened
- */
-export const listEditorAssets = async (params?: ListEditorAssetsParams, options?: RequestInit): Promise<listEditorAssetsResponse> => {
-
-  const res = await fetch(getListEditorAssetsUrl(params),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: listEditorAssetsResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listEditorAssetsResponse
 }
 
 
@@ -6452,6 +6751,63 @@ export const deleteIntegration = async (provider: string, options?: RequestInit)
 
 
 
+export type listItemsResponse200 = {
+  data: ItemPage
+  status: 200
+}
+
+export type listItemsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listItemsResponseSuccess = (listItemsResponse200) & {
+  headers: Headers;
+};
+export type listItemsResponseError = (listItemsResponseDefault) & {
+  headers: Headers;
+};
+
+export type listItemsResponse = (listItemsResponseSuccess | listItemsResponseError)
+
+export const getListItemsUrl = (params?: ListItemsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/items?${stringifiedParams}` : `/api/items`
+}
+
+/**
+ * @summary List the caller's files, handed-in submissions it may delete, notes, quizzes, flashcard sets and embedded images and audio as one list (the Files page)
+ */
+export const listItems = async (params?: ListItemsParams, options?: RequestInit): Promise<listItemsResponse> => {
+
+  const res = await fetch(getListItemsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listItemsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listItemsResponse
+}
+
+
+
 export type listLabelsResponse200 = {
   data: Label[]
   status: 200
@@ -8533,113 +8889,6 @@ export const readNotification = async (id: string, options?: RequestInit): Promi
 
   const data: readNotificationResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as readNotificationResponse
-}
-
-
-
-export type deleteAllPapersResponse200 = {
-  data: DrawingsDeletedOutputBody
-  status: 200
-}
-
-export type deleteAllPapersResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type deleteAllPapersResponseSuccess = (deleteAllPapersResponse200) & {
-  headers: Headers;
-};
-export type deleteAllPapersResponseError = (deleteAllPapersResponseDefault) & {
-  headers: Headers;
-};
-
-export type deleteAllPapersResponse = (deleteAllPapersResponseSuccess | deleteAllPapersResponseError)
-
-export const getDeleteAllPapersUrl = () => {
-
-
-
-
-  return `/api/papers`
-}
-
-/**
- * @summary Delete every paper file the caller may delete; their marks stay
- */
-export const deleteAllPapers = async ( options?: RequestInit): Promise<deleteAllPapersResponse> => {
-
-  const res = await fetch(getDeleteAllPapersUrl(),
-  {
-    ...options,
-    method: 'DELETE'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: deleteAllPapersResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as deleteAllPapersResponse
-}
-
-
-
-export type listPapersResponse200 = {
-  data: SubmittedPapers
-  status: 200
-}
-
-export type listPapersResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type listPapersResponseSuccess = (listPapersResponse200) & {
-  headers: Headers;
-};
-export type listPapersResponseError = (listPapersResponseDefault) & {
-  headers: Headers;
-};
-
-export type listPapersResponse = (listPapersResponseSuccess | listPapersResponseError)
-
-export const getListPapersUrl = (params?: ListPapersParams,) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0 ? `/api/papers?${stringifiedParams}` : `/api/papers`
-}
-
-/**
- * @summary The caller's handed-in paper and hand-in files they may delete, newest first (Files › Submissions)
- */
-export const listPapers = async (params?: ListPapersParams, options?: RequestInit): Promise<listPapersResponse> => {
-
-  const res = await fetch(getListPapersUrl(params),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: listPapersResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listPapersResponse
 }
 
 
@@ -10791,6 +11040,70 @@ export const getTodoDone = async (params?: GetTodoDoneParams, options?: RequestI
 
 
 
+export type hideTodoDoneResponse204 = {
+  data: void
+  status: 204
+}
+
+export type hideTodoDoneResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type hideTodoDoneResponseSuccess = (hideTodoDoneResponse204) & {
+  headers: Headers;
+};
+export type hideTodoDoneResponseError = (hideTodoDoneResponseDefault) & {
+  headers: Headers;
+};
+
+export type hideTodoDoneResponse = (hideTodoDoneResponseSuccess | hideTodoDoneResponseError)
+
+export const getHideTodoDoneUrl = () => {
+
+
+
+
+  return `/api/todo/done/hide`
+}
+
+/**
+ * @summary Take rows off the caller's Done tab, changing nothing else
+ */
+export const hideTodoDone = async (todoHideInputBody: NonReadonly<TodoHideInputBody>, options?: RequestInit): Promise<hideTodoDoneResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getHideTodoDoneUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(todoHideInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: hideTodoDoneResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as hideTodoDoneResponse
+}
+
+
+
 export type deleteTopicResponse204 = {
   data: void
   status: 204
@@ -12009,7 +12322,7 @@ const res = await fetch(getReorderContentUrl(id),
 
 
 export type listConversationsResponse200 = {
-  data: Conversation[]
+  data: ConversationPage
   status: 200
 }
 

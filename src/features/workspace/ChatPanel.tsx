@@ -11,6 +11,7 @@ import { flushSync } from 'react-dom';
 import { chatTurn, WORKSPACE_ONLY_DEFAULT } from '@/api/chatStream';
 import { isApiError } from '@/api/client';
 import {
+  useConversation,
   useConversations,
   useMe,
   useMessages,
@@ -456,9 +457,8 @@ export function ChatPanel({
     onUndoApplied: applyUndo,
     onUndoRefused: refuseUndo,
   };
-  const { data: conversations } = useConversations(workspaceId, {
-    errorBoundary: false,
-  });
+  const { data: conversations, hasNextPage: moreConversations } =
+    useConversations(workspaceId, { errorBoundary: false });
 
   const [text, setText] = useState('');
   const overLimit = textLength(text) > CHAT_CHARACTER_LIMIT;
@@ -558,6 +558,20 @@ export function ChatPanel({
   // scope it was shown in, which a page switch in place leaves as it was
   // (Epo 2026-10-29, Q576 F1); a new chat clears the panel's own scope.
   const shownId = selectId ?? conversationId;
+  // The list comes a page at a time: a chat on a page not loaded yet (a link
+  // to an old one) is read by id for its title.
+  const { data: unlisted } = useConversation(
+    shownId &&
+      moreConversations &&
+      !conversations?.some((c) => c.id === shownId)
+      ? shownId
+      : null,
+    { errorBoundary: false }
+  );
+  const titleOf = (id: string | null) =>
+    conversations?.find((c) => c.id === id)?.title ||
+    (unlisted?.id === id && unlisted.title) ||
+    m.chat_untitled();
   const [shownIn, setShownIn] = useState({ id: shownId, workspaceId });
   if (shownIn.id !== shownId) setShownIn({ id: shownId, workspaceId });
   useEffect(() => {
@@ -680,9 +694,7 @@ export function ChatPanel({
     label: m.chat_new(),
     onClick: openNew,
   };
-  const title =
-    conversations?.find((c) => c.id === conversationId)?.title ||
-    m.chat_untitled();
+  const title = titleOf(conversationId);
   // The sources switch's narrow side: the workspace's files, or in the
   // account chat the user's own (Epo D4).
   const onlyLabel = workspaceId
@@ -952,13 +964,7 @@ export function ChatPanel({
   if (!dock)
     return (
       <div className="flex h-full flex-col" style={colorVars}>
-        {renderTabRow?.(
-          [newAction],
-          shownId
-            ? conversations?.find((c) => c.id === shownId)?.title ||
-                m.chat_untitled()
-            : m.chat_new()
-        )}
+        {renderTabRow?.([newAction], shownId ? titleOf(shownId) : m.chat_new())}
         {thread}
       </div>
     );

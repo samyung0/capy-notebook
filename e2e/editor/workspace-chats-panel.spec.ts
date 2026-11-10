@@ -366,3 +366,51 @@ test('settings opened by the URL stay open while the panel labels it', async ({
   ).toBeVisible({ timeout: 60_000 });
   await expect(page).toHaveURL(/settings=danger/);
 });
+
+test('the chat list comes a page at a time, and a search looks through every page', async ({
+  page,
+}) => {
+  test.slow();
+  // Short enough that the first page's end is out of reach until scrolled to.
+  await page.setViewportSize({ height: 600, width: 1600 });
+  // A page that reads none of this workspace's chats; the mocks forget on a reload.
+  await page.goto('/files');
+  await expect(page.getByRole('heading', { name: m.nav_files() })).toBeVisible({
+    timeout: 60_000,
+  });
+  const before = await page.evaluate(async () => {
+    const listed = await fetch('/api/workspaces/ws_bio/conversations');
+    await Promise.all(
+      Array.from({ length: 110 }, (_, at) =>
+        fetch('/api/workspaces/ws_bio/conversations', {
+          body: JSON.stringify({ title: `Paged chat ${at + 1}` }),
+          headers: { 'content-type': 'application/json' },
+          method: 'POST',
+        })
+      )
+    );
+    return ((await listed.json()) as { items: unknown[] }).items.length;
+  });
+  await page.evaluate(() => {
+    history.pushState({}, '', '/workspaces/ws_bio');
+    dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await openSection(page, m.workspace_section_agent());
+  // The list's scroller comes before the open chat's.
+  const list = leftPanel(page).locator('.scroll-fade-y').first();
+  const rows = list.locator('.line-clamp-1');
+  await expect(rows).toHaveCount(50, { timeout: 60_000 });
+  // The list's end loads the next page.
+  await list.evaluate((element) => element.scrollTo(0, element.scrollHeight));
+  await expect(rows).toHaveCount(100);
+  // The oldest chat is on the last page, which a search goes on to load.
+  const search = leftPanel(page).getByRole('textbox', {
+    name: m.chat_search(),
+  });
+  await search.fill('What is a cell');
+  await expect(
+    leftPanel(page).getByRole('button', { name: 'What is a cell?' })
+  ).toBeVisible();
+  await search.fill('');
+  await expect(rows).toHaveCount(before + 110);
+});

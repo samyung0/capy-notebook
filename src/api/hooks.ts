@@ -2,6 +2,7 @@ import type { QueryClient, QueryKey } from '@tanstack/react-query';
 import {
   focusManager,
   type InfiniteData,
+  infiniteQueryOptions,
   keepPreviousData,
   queryOptions,
   useInfiniteQuery,
@@ -46,6 +47,7 @@ import {
   readEventStream,
   type StreamEvent,
 } from './eventStream';
+import { pagedRows } from './paged';
 import { persisted } from './queryPersistence';
 import type {
   AccountStatus,
@@ -72,6 +74,7 @@ import type {
   ConfirmExtractionReq,
   ContentOrderItem,
   Conversation,
+  ConversationPage,
   CreateBlankFileReq,
   CreateCommentReq,
   CreateDiscussionReq,
@@ -86,8 +89,6 @@ import type {
   Customization,
   DeletionPreflight,
   EditableQuiz,
-  EditorAssetAccess,
-  EditorAssetPage,
   Extraction,
   FileLinks,
   FileListParams,
@@ -101,6 +102,8 @@ import type {
   InspectSourceImportsResponse,
   IntegrationsStatus,
   InvoiceList,
+  ItemListParams,
+  ItemPage,
   Label,
   LearningOverview,
   LibraryFigure,
@@ -147,7 +150,6 @@ import type {
   SpendingLimitReq,
   StudyPreferences,
   StudyTopics,
-  SubmittedPapers,
   Tag,
   Task,
   TodoDonePage,
@@ -559,6 +561,21 @@ export function applyNotificationEvent(
 const isConversationList = (query: { queryKey: QueryKey }) =>
   query.queryKey.includes('conversations');
 
+/** A cached conversation list: its pages as fetched. */
+export type ConversationCache = InfiniteData<ConversationPage, string>;
+
+/** A cached conversation list with each row rewritten. */
+export const mapConversations = (
+  cache: ConversationCache,
+  rewrite: (conversation: Conversation) => Conversation
+): ConversationCache => ({
+  ...cache,
+  pages: cache.pages.map((page) => ({
+    ...page,
+    items: page.items.map(rewrite),
+  })),
+});
+
 /** Marks a conversation running, or not, in every cached conversation list;
  * one no list holds yet (a turn just started elsewhere) refetches them. */
 function applyChatTurn(
@@ -567,12 +584,15 @@ function applyChatTurn(
   status: ChatStatus
 ) {
   let listed = false;
-  qc.setQueriesData<Conversation[]>({ predicate: isConversationList }, (list) =>
-    list?.map((conversation) => {
-      if (conversation.id !== conversationId) return conversation;
-      listed = true;
-      return { ...conversation, running: status === 'streaming' };
-    })
+  qc.setQueriesData<ConversationCache>(
+    { predicate: isConversationList },
+    (cache) =>
+      cache &&
+      mapConversations(cache, (conversation) => {
+        if (conversation.id !== conversationId) return conversation;
+        listed = true;
+        return { ...conversation, running: status === 'streaming' };
+      })
   );
   if (!listed && status === 'streaming')
     void qc.invalidateQueries({ predicate: isConversationList });
@@ -1212,6 +1232,7 @@ function invalidateVisitLists(qc: QueryClient, visitor: boolean) {
   void qc.invalidateQueries({ queryKey: ['workspaces'] });
   void qc.invalidateQueries({ queryKey: qk.todo });
   if (!visitor) return;
+  // The owned files' root holds the Files page's list too.
   void qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
   void qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
   void qc.invalidateQueries({ queryKey: ['search'] });
@@ -1515,21 +1536,32 @@ export const useOwnedFiles = (params: FileListParams = {}) =>
     placeholderData: keepPreviousData,
   });
 
-/** The images and audio the caller pays for (M16), newest first, each marked
- * when its note can no longer be opened: the Files page's Embeds tab. A new
- * access filter loads afresh, so its notice never sits over the previous
- * filter's rows. */
-export const useEditorAssets = (access?: EditorAssetAccess) =>
+/** The Files page's one list: files, handed-in submissions, blocks and
+ * embedded images and audio, newest first by default (GET /api/items). */
+export const itemsQuery = (params: ItemListParams = {}) => ({
+  getNextPageParam: (last: ItemPage) => last.nextCursor || undefined,
+  initialPageParam: '',
+  queryFn: ({ pageParam }: { pageParam: string }) =>
+    api.get<ItemPage>(
+      `/items${listSearch(
+        {
+          dir: params.dir,
+          kind: params.kinds,
+          location: params.locations,
+          scope: params.scope,
+          sort: params.sort,
+          workspaceId: params.workspaceIds,
+        },
+        pageParam
+      )}`
+    ),
+  queryKey: qk.items(params),
+});
+// Nothing refreshes it when an editor adds an image, so each visit refetches.
+export const useItems = (params: ItemListParams = {}) =>
   useInfiniteQuery({
-    getNextPageParam: (last: EditorAssetPage) => last.nextCursor || undefined,
-    initialPageParam: '',
-    queryFn: ({ pageParam }: { pageParam: string }) =>
-      api.get<EditorAssetPage>(
-        `/editor-assets${listSearch({ access }, pageParam)}`
-      ),
-    queryKey: qk.editorAssets(access),
-    // Nothing invalidates it when an editor adds an image, so each visit
-    // refetches instead of showing the list from up to 5 minutes before.
+    ...itemsQuery(params),
+    placeholderData: keepPreviousData,
     staleTime: 0,
   });
 
@@ -1538,12 +1570,10 @@ export const useEditorAssets = (access?: EditorAssetAccess) =>
 export function useDeleteEditorAsset() {
   const qc = useQueryClient();
   return useMutation({
-    // Its confirmation shows the failure.
-    meta: { errorToast: false },
     mutationFn: (assetId: string) =>
       api.del<void>(`/editor-assets/${encodeURIComponent(assetId)}`),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.editorAssetsRoot });
+      qc.invalidateQueries({ queryKey: qk.itemsRoot });
       qc.invalidateQueries({ queryKey: qk.usage });
     },
   });
@@ -1895,14 +1925,31 @@ function patchFileInCache(
   if (wsId) {
     qc.setQueryData<SourceFile[]>(qk.files(wsId), (prev) => prev?.map(apply));
   } else {
+    // The owned file lists, then the Files page's, whose rows wrap files.
     qc.setQueriesData<InfiniteData<FilePage>>(
-      { queryKey: qk.ownedFilesRoot },
+      {
+        predicate: ({ queryKey }) => queryKey[2] !== qk.itemsRoot[2],
+        queryKey: qk.ownedFilesRoot,
+      },
       (prev) =>
         prev && {
           ...prev,
           pages: prev.pages.map((page) => ({
             ...page,
             items: page.items.map(apply),
+          })),
+        }
+    );
+    qc.setQueriesData<InfiniteData<ItemPage>>(
+      { queryKey: qk.itemsRoot },
+      (prev) =>
+        prev && {
+          ...prev,
+          pages: prev.pages.map((page) => ({
+            ...page,
+            items: page.items.map((item) =>
+              item.type === 'file' ? { ...item, file: apply(item.file) } : item
+            ),
           })),
         }
     );
@@ -2161,17 +2208,46 @@ function applyIngestEvent(
 export const conversationsPath = (wsId: string | null) =>
   wsId ? `/workspaces/${wsId}/conversations` : '/conversations';
 
-export const conversationsQuery = (wsId: string | null) =>
-  queryOptions({
-    ...persisted,
+/** A chat's list a page at a time (Epo 2026-11-10: a chat list grows fast):
+ * pinned first, then the latest activity; `archived` the archived ones. The
+ * live list is stored, so a reopened chat panel paints at once. */
+export const conversationsQuery = (wsId: string | null, archived = false) =>
+  infiniteQueryOptions({
+    ...(archived ? {} : persisted),
     enabled: wsId !== '',
-    queryFn: () => api.get<Conversation[]>(conversationsPath(wsId)),
-    queryKey: qk.conversations(wsId),
+    getNextPageParam: (last: ConversationPage) => last.nextCursor || undefined,
+    initialPageParam: '',
+    queryFn: ({ pageParam }) =>
+      api.get<ConversationPage>(
+        `${conversationsPath(wsId)}${listSearch({ archived: archived ? 'true' : undefined }, pageParam)}`
+      ),
+    queryKey: archived
+      ? qk.archivedConversations(wsId)
+      : qk.conversations(wsId),
   });
+/** The pages loaded so far as one list, with the paging to load the next. */
 export const useConversations = (
   wsId: string | null,
   options?: QueryUiOptions
-) => useQuery({ ...conversationsQuery(wsId), meta: queryMeta(options) });
+) =>
+  useInfiniteQuery({
+    ...conversationsQuery(wsId),
+    meta: queryMeta(options),
+    select: pagedRows,
+  });
+
+/** One conversation by id: the open chat's title when the list's loaded pages
+ * don't hold it (a link to an old chat). */
+export const useConversation = (
+  convId: string | null,
+  options?: QueryUiOptions
+) =>
+  useQuery({
+    enabled: !!convId,
+    meta: queryMeta(options),
+    queryFn: () => api.get<Conversation>(`/conversations/${convId}`),
+    queryKey: qk.conversation(convId ?? ''),
+  });
 
 /** Stored, so a reopened chat paints at once; every open refetches, since
  * another tab or device may have added turns (Epo 2026-10-29). */
@@ -2206,12 +2282,11 @@ export const useArchivedConversations = (
   enabled: boolean,
   options?: QueryUiOptions
 ) =>
-  useQuery({
+  useInfiniteQuery({
+    ...conversationsQuery(wsId, true),
     enabled: enabled && wsId !== '',
     meta: queryMeta(options),
-    queryFn: () =>
-      api.get<Conversation[]>(`${conversationsPath(wsId)}?archived=true`),
-    queryKey: qk.archivedConversations(wsId),
+    select: pagedRows,
   });
 
 /** Rename, pin or archive one thread; the live and archived lists refetch. */
@@ -2294,6 +2369,7 @@ export function useGenerate(wsId: string, options?: MutationUiOptions) {
       track('material_generated', { kind: 'quiz', workspaceId: wsId });
       await Promise.all([
         qc.invalidateQueries({ queryKey: qk.materials(wsId) }),
+        qc.invalidateQueries({ queryKey: qk.itemsRoot }),
         qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot }),
         qc.invalidateQueries({ queryKey: qk.practice(wsId) }),
       ]);
@@ -2346,34 +2422,30 @@ export const materialWithBodyQuery = (id: string) =>
 export const useMaterial = (id: string | null, options?: QueryUiOptions) =>
   useQuery({ ...materialQuery(id), meta: queryMeta(options) });
 
-/** Deleting a material moves it to the trash (see useDeleteFile). */
-export const ownedMaterialsQuery = (params: MaterialListParams = {}) => ({
-  getNextPageParam: (last: MaterialPage) => last.nextCursor || undefined,
-  initialPageParam: '',
-  queryFn: ({ pageParam }: { pageParam: string }) =>
-    api.get<MaterialPage>(
-      `/materials${listSearch(
-        {
-          dir: params.dir,
-          kind: params.kinds,
-          location: params.locations,
-          scope: params.scope,
-          sort: params.sort,
-          workspaceId: params.workspaceIds,
-        },
-        pageParam
-      )}`
-    ),
-  queryKey: qk.ownedMaterials(params),
-});
-/** Notes, quizzes and flashcard sets the caller owns, standalone or in their
- * own workspaces; the Create page's list. */
+/** The blocks a member can open (GET /materials), every page keyed by its
+ * filters: the workspace canvas reads a workspace's quizzes and sets from it. */
 export const useOwnedMaterials = (params: MaterialListParams = {}) =>
   useInfiniteQuery({
-    ...ownedMaterialsQuery(params),
+    getNextPageParam: (last: MaterialPage) => last.nextCursor || undefined,
+    initialPageParam: '',
     placeholderData: keepPreviousData,
+    queryFn: ({ pageParam }: { pageParam: string }) =>
+      api.get<MaterialPage>(
+        `/materials${listSearch(
+          {
+            kind: params.kinds,
+            scope: params.scope,
+            workspaceId: params.workspaceIds,
+          },
+          pageParam
+        )}`
+      ),
+    queryKey: qk.ownedMaterials(params),
   });
+/** A block made, renamed or deleted: the Files page's list and the lists of
+ * blocks alone. */
 function invalidateOwnedMaterials(qc: QueryClient) {
+  qc.invalidateQueries({ queryKey: qk.itemsRoot });
   qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
 }
 
@@ -3023,13 +3095,20 @@ export function useCheckQuizQuestion(options?: MutationUiOptions) {
   return useMutation({
     meta: mutationMeta(options),
     mutationFn: ({
+      embedded = false,
       quizId,
       ...body
-    }: CheckQuizQuestionReq & { quizId: string }) =>
-      api.post<AttemptDetail>(`/quizzes/${quizId}/check`, {
-        ...body,
-        answers: answersForCheck(body.answers as Answers),
-      }),
+    }: CheckQuizQuestionReq & {
+      /** A quiz inside a note keeps nothing, so its drawings' pictures stay. */
+      embedded?: boolean;
+      quizId: string;
+    }) =>
+      answersForCheck(body.answers as Answers, !embedded).then((answers) =>
+        api.post<AttemptDetail>(`/quizzes/${quizId}/check`, {
+          ...body,
+          answers,
+        })
+      ),
     onSuccess: (attempt) => {
       // An embedded quiz records nothing: its attempt comes back without an id.
       if (!attempt.id) return;
@@ -3267,6 +3346,61 @@ export function useSetAssignmentDone(workspaceId: string) {
   });
 }
 
+export interface TodoTickReq {
+  /** Staff's tick on the answers waiting, not their own work. */
+  approvals?: boolean;
+  checked: boolean;
+  id: string;
+  /** A plain task: its tick is its done. */
+  task: boolean;
+  workspaceId: string;
+}
+
+/** To do ticks, sent together (Epo 2026-11-10). A plain task's is its done; a
+ * quiz's, a hand-in's, or staff's on the answers waiting (`approvals`) only
+ * takes the row off To do, and nothing is submitted or handed in. Every tick
+ * goes out at once and one refresh follows the lot, so marking several rows
+ * reads To do once. Any failure fails the call (one toast), after the rest
+ * went through. */
+export function useTodoTick() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (ticks: TodoTickReq[]) => {
+      const sent = await Promise.allSettled(
+        ticks.map(({ approvals, checked, id, task }) =>
+          task
+            ? api.put<void>(`/assignments/${id}/done`, { done: checked })
+            : api.put<void>(`/assignments/${id}/todo-check`, {
+                approvals,
+                checked,
+              })
+        )
+      );
+      const failed = sent.find((r) => r.status === 'rejected');
+      if (failed) throw failed.reason;
+    },
+    onSettled: (_data, _error, ticks) =>
+      Promise.all([
+        ...[...new Set(ticks.map((t) => t.workspaceId))].map((ws) =>
+          refreshAssignment(qc, ws)
+        ),
+        ...ticks.map((t) =>
+          qc.invalidateQueries({ queryKey: qk.assignment(t.id) })
+        ),
+      ]),
+  });
+}
+
+/** Takes rows off the caller's Done tab (Epo 2026-11-10), nothing else
+ * changing; resolves once To do has reread, so the rows don't flash back. */
+export function useHideTodoDone() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ids: string[]) => api.post<void>('/todo/done/hide', { ids }),
+    onSettled: () => qc.invalidateQueries({ queryKey: qk.todo }),
+  });
+}
+
 /** Its one caller reports a failure itself: no global toast. */
 export function useStartAssignment(workspaceId: string) {
   const qc = useQueryClient();
@@ -3297,12 +3431,18 @@ export const saveAssignmentDrawing = (
   partId: string,
   value: DrawingValue
 ) =>
-  api
-    .put<{ id: string }>(
-      `/assignment-attempts/${attemptId}/drawings/${encodeURIComponent(partId)}`,
-      drawingUpload(value)
+  drawingUpload(value)
+    .then((upload) =>
+      api.put<{ id: string }>(
+        `/assignment-attempts/${attemptId}/drawings/${encodeURIComponent(partId)}`,
+        upload
+      )
     )
-    .then(({ id }) => id);
+    .then(({ id }) => {
+      // Its id is the same across Dones, its board and picture links are not.
+      forgetDrawingBoards([id]);
+      return id;
+    });
 
 /** Forgets a drawing part's stored drawing (Done on an emptied board). */
 export const deleteAssignmentDrawing = (attemptId: string, partId: string) =>
@@ -3402,22 +3542,8 @@ export const usePaperFileLinks = (of: SubmissionOf, fileId: string) =>
     staleTime: 30 * 60_000,
   });
 
-/** Files › Submissions: the caller's papers they may delete, newest first. */
-export const useSubmittedPapers = (enabled: boolean) =>
-  useInfiniteQuery({
-    enabled,
-    getNextPageParam: (last: SubmittedPapers) => last.nextCursor || undefined,
-    initialPageParam: '',
-    meta: { errorBoundary: false },
-    queryFn: ({ pageParam }: { pageParam: string }) =>
-      api.get<SubmittedPapers>(
-        `/papers${pageParam ? `?${new URLSearchParams({ cursor: pageParam })}` : ''}`
-      ),
-    queryKey: qk.papers,
-  });
-
 function invalidateAfterPaperDelete(qc: QueryClient) {
-  qc.invalidateQueries({ queryKey: qk.papers });
+  qc.invalidateQueries({ queryKey: qk.itemsRoot });
   qc.invalidateQueries({ queryKey: qk.billing });
 }
 
@@ -3426,15 +3552,6 @@ export function useDeletePaper() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.del<{ deleted: number }>(`/papers/${id}`),
-    onSuccess: () => invalidateAfterPaperDelete(qc),
-  });
-}
-
-/** Delete every handed-in paper file the caller may delete. */
-export function useDeleteAllPapers() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => api.del<{ deleted: number }>('/papers'),
     onSuccess: () => invalidateAfterPaperDelete(qc),
   });
 }
@@ -3620,9 +3737,7 @@ export const useTodo = (options?: QueryUiOptions) =>
   useQuery({ ...todoQuery(), meta: queryMeta(options) });
 
 export interface TodoDoneParams {
-  class?: string[];
   dir?: 'asc';
-  sort?: 'done' | 'class';
   type?: string[];
 }
 /** The To do page's Done tab (Epo 2026-11-08): work given to the viewer that

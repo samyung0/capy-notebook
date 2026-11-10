@@ -26,7 +26,7 @@ async function makeNewest(
   );
 }
 
-/** Files and Blocks cards select on a click and open on a double click. */
+/** Files page cards select on a click and open on a double click. */
 const openItem = (page: Page, name: string) =>
   page
     .getByRole('button', { exact: true, name: m.files_select_item({ name }) })
@@ -41,8 +41,8 @@ async function editPdf(page: Page) {
   ).toBeEnabled();
 }
 
-test('Blocks and Files open the shared document page', async ({ page }) => {
-  await page.goto('/files?tab=blocks');
+test('Files page rows open the shared document page', async ({ page }) => {
+  await page.goto('/files');
   await openItem(page, 'Study journal 001');
   await expect(page).toHaveURL(/\/materials\/mat_pagination_1$/);
   const header = page
@@ -70,9 +70,9 @@ test('Blocks and Files open the shared document page', async ({ page }) => {
   ).toHaveCount(0);
   await page.keyboard.press('Escape');
   await header
-    .getByRole('button', { exact: true, name: m.files_tab_blocks() })
+    .getByRole('button', { exact: true, name: m.nav_files() })
     .click();
-  await expect(page).toHaveURL(/\/files\?tab=blocks$/);
+  await expect(page).toHaveURL(/\/files$/);
 
   // The markdown samples are newer than f_2 and fill the first Files page.
   await makeNewest(page, { files: ['f_2'] });
@@ -627,7 +627,7 @@ test.fixme('workspace links remember each file and material mode independently',
 });
 
 // biome-ignore lint/suspicious/noSkippedTests: needs the PDF's Edit/View switch (ANNOTATION_TOOLS in PdfView.tsx).
-test.fixme('Blocks, Files and recent links use saved modes without reloading the app', async ({
+test.fixme('Files page and recent links use saved modes without reloading the app', async ({
   page,
 }) => {
   test.setTimeout(90_000);
@@ -640,7 +640,7 @@ test.fixme('Blocks, Files and recent links use saved modes without reloading the
       localStorage.setItem(`capy.document.mode.${key}`, 'edit');
     }
   });
-  await page.goto('/files?tab=blocks');
+  await page.goto('/files');
   const origin = await page.evaluate(() => performance.timeOrigin);
   const mode = page
     .getByTestId('content-header')

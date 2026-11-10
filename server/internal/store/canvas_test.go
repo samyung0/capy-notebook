@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
@@ -19,6 +21,42 @@ func readyAsset(t *testing.T, s *Store, materialID, userID, purpose string) stri
 		t.Fatal(err)
 	}
 	return id
+}
+
+// Where collaboration is configured (every deployment), a canvas save still
+// writes its document here: a canvas is never a room, so nothing is asked of
+// the collaboration server (found on UAT 2026-11-10: every save was refused,
+// since each writes a whole new block where a content command replaces one).
+func TestCanvasSavesWithoutTheCollaborationServer(t *testing.T) {
+	f := newStudyFixture(t, "canvas-authority")
+	ctx := context.Background()
+	asked := 0
+	sidecar := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		asked++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(sidecar.Close)
+	f.s.ConfigureCollaboration(sidecar.URL, "command-secret")
+	t.Cleanup(func() { f.s.ConfigureCollaboration("", "") })
+
+	canvas, err := f.s.WorkspaceCanvas(ctx, f.user, f.ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for save := 1; save <= 2; save++ {
+		board := readyAsset(t, f.s, canvas.ID, f.user, "board")
+		canvas, err = f.s.SaveWorkspaceCanvas(ctx, f.user, canvas.ID, board, []string{}, canvas.Revision)
+		if err != nil {
+			t.Fatalf("save %d: %v", save, err)
+		}
+		kept, err := materialdoc.ReadCanvasBoard(canvas.Content)
+		if err != nil || kept.BoardAssetID != board || kept.Version != int64(save) {
+			t.Fatalf("save %d kept %+v, err %v", save, kept, err)
+		}
+	}
+	if asked != 0 {
+		t.Fatalf("the collaboration server was asked %d times", asked)
+	}
 }
 
 // A member's canvas is their own: made on first open as a standalone material
@@ -91,6 +129,28 @@ func TestWorkspaceCanvasIsPersonalAndGoesWithTheMembership(t *testing.T) {
 	if _, err := f.s.SaveWorkspaceCanvas(ctx, f.user, mine.ID, image, []string{}, saved.Revision); !errors.Is(err, materialdoc.ErrInvalid) {
 		t.Fatalf("an image was taken as the board: %v", err)
 	}
+	// An image the pruner trashed is named again (its delete undone on the
+	// canvas): the save takes it and its prune restores it.
+	if _, err := f.s.pool.Exec(ctx, `UPDATE editor_assets SET trashed_at=now() WHERE id=$1`, image); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.SaveWorkspaceCanvas(ctx, f.user, mine.ID, next, []string{image}, saved.Revision); err != nil {
+		t.Fatalf("a save naming a trashed image again: %v", err)
+	}
+	if err := f.s.pool.QueryRow(ctx, `SELECT count(*) FROM editor_assets WHERE id=$1 AND trashed_at IS NOT NULL`, image).Scan(&trashed); err != nil {
+		t.Fatal(err)
+	}
+	if trashed != 0 {
+		t.Fatal("the image named again stayed trashed")
+	}
+	// The ids a save may name: the canvas's image assets, a trashed one too,
+	// and never its board.
+	if _, err := f.s.pool.Exec(ctx, `UPDATE editor_assets SET trashed_at=now() WHERE id=$1`, image); err != nil {
+		t.Fatal(err)
+	}
+	if own, err := f.s.CanvasImageAssets(ctx, mine.ID); err != nil || len(own) != 1 || own[0] != image {
+		t.Fatalf("the canvas's image assets = %v, err %v", own, err)
+	}
 
 	// Never shared, never copied.
 	if _, err := f.s.UpdateStandaloneMaterialPrivacy(ctx, f.user, mine.ID, "", "link"); !errors.Is(err, ErrForbidden) {
@@ -109,5 +169,71 @@ func TestWorkspaceCanvasIsPersonalAndGoesWithTheMembership(t *testing.T) {
 	}
 	if _, err := f.s.GetMaterial(ctx, mine.ID); err != nil {
 		t.Fatalf("the owner's canvas went: %v", err)
+	}
+}
+
+// The account's Canvas page (Epo 2026-11-10): a person makes canvases of their
+// own in no workspace, as many as they like, saved as a workspace canvas is,
+// and lists them with their workspaces' canvases, each of those under its
+// workspace. Nobody else opens one.
+func TestCanvasesOfOnesOwnListWithTheWorkspaces(t *testing.T) {
+	f := newStudyFixture(t, "own-canvases")
+	ctx := context.Background()
+	other := newBlobTestUser(t, f.s, "own-canvases-other")
+	inWorkspace, err := f.s.WorkspaceCanvas(ctx, f.user, f.ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := f.s.CreateCanvas(ctx, f.user, "Exam plan")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := f.s.CreateCanvas(ctx, f.user, "Scratch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.CanvasWorkspaceID != "" || first.WorkspaceID != "" || first.OwnerUserID != f.user || first.Kind != MaterialCanvas {
+		t.Fatalf("a canvas of one's own = %+v", first)
+	}
+	board := readyAsset(t, f.s, first.ID, f.user, "board")
+	if _, err := f.s.SaveWorkspaceCanvas(ctx, f.user, first.ID, board, []string{}, first.Revision); err != nil {
+		t.Fatalf("saving a canvas of one's own: %v", err)
+	}
+	if _, err := f.s.OwnCanvas(ctx, other, first.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("someone else opened it: %v", err)
+	}
+
+	// A page at a time: one's own first, latest saved first, then the workspace's.
+	var list []CanvasListItem
+	cursor := ""
+	for {
+		page, err := f.s.ListCanvases(ctx, f.user, 2, cursor)
+		if err != nil || len(page.Items) > 2 {
+			t.Fatalf("a page of canvases = %+v, err %v", page, err)
+		}
+		list = append(list, page.Items...)
+		if cursor = page.NextCursor; cursor == "" {
+			break
+		}
+	}
+	if len(list) != 3 || list[0].ID != first.ID || list[1].ID != second.ID || list[2].ID != inWorkspace.ID {
+		t.Fatalf("the canvases = %+v", list)
+	}
+	byID := map[string]CanvasListItem{}
+	for _, item := range list {
+		byID[item.ID] = item
+	}
+	if row := byID[inWorkspace.ID]; row.WorkspaceID != f.ws.ID || row.WorkspaceName != f.ws.Name || row.WorkspaceIconID == "" {
+		t.Fatalf("the workspace's canvas row = %+v", row)
+	}
+	if row := byID[first.ID]; row.WorkspaceID != "" || row.Title != "Exam plan" {
+		t.Fatalf("the row of a canvas of one's own = %+v", row)
+	}
+	if _, listed := byID[second.ID]; !listed {
+		t.Fatal("the second canvas of one's own is not listed")
+	}
+	// A workspace's canvas opens through its workspace, not by id.
+	if _, err := f.s.OwnCanvas(ctx, f.user, inWorkspace.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a workspace's canvas opened by id: %v", err)
 	}
 }

@@ -695,41 +695,51 @@ type EditorAssetPage struct {
 }
 
 // EditorAssetAccess narrows ListEditorAssets to media in notes the caller
-// cannot open (the Embeds tab's Private files); empty lists everything.
+// cannot open; empty lists everything.
 type EditorAssetAccess string
 
 const EditorAssetsLost EditorAssetAccess = "lost"
+
+// EditorAssetFilter narrows ListEditorAssets; IDs keeps only those rows.
+type EditorAssetFilter struct {
+	Access EditorAssetAccess
+	IDs    []string
+	Limit  int
+	Cursor string
+}
 
 var editorAssetSort = listSort{column: "a.created_at", kind: "time"}
 
 // ListEditorAssets pages, newest first, through the images and audio the user
 // pays for (editor_assets_payer_idx). Media in a trashed note or set it can
 // still open are left out: they go with that material's trash and purge.
-func (s *Store) ListEditorAssets(
-	ctx context.Context,
-	userID string,
-	access EditorAssetAccess,
-	limit int,
-	cursor string,
-) (EditorAssetPage, error) {
+func (s *Store) ListEditorAssets(ctx context.Context, userID string, f EditorAssetFilter) (EditorAssetPage, error) {
+	limit := f.Limit
 	if limit <= 0 || limit > listPageMax {
 		limit = listPageMax
 	}
 	filter := `(l.lost OR (m.trashed_at IS NULL AND top.trashed_at IS NULL))`
-	if access == EditorAssetsLost {
+	if f.Access == EditorAssetsLost {
 		filter = `l.lost`
 	}
-	clause, cursorArgs, err := cursorClause(editorAssetSort, "a.id", false, cursor, 2)
+	args := []any{userID}
+	if len(f.IDs) > 0 {
+		args = append(args, f.IDs)
+		filter += fmt.Sprintf(` AND a.id = ANY($%d)`, len(args))
+	}
+	clause, cursorArgs, err := cursorClause(editorAssetSort, "a.id", false, f.Cursor, len(args)+1)
 	if err != nil {
 		return EditorAssetPage{}, err
 	}
-	args := append([]any{userID}, cursorArgs...)
+	args = append(args, cursorArgs...)
 	args = append(args, limit+1)
 	rows, err := s.pool.Query(ctx, `SELECT a.id, a.name, a.purpose, a.size_bytes, a.created_at,
 			CASE WHEN l.lost THEN '' ELSE top.id END, top.kind,
 			`+workspaceNameSQL("top.workspace_id", "top.title")+`,
-			`+workspaceNameSQL("top.workspace_id", "COALESCE(top.workspace_name,'')")+`,
-			CASE WHEN l.lost THEN '' ELSE COALESCE(top.workspace_id,'') END, l.lost,
+			COALESCE((SELECT cw.name FROM workspaces cw WHERE cw.id=top.canvas_workspace_id),
+				`+workspaceNameSQL("top.workspace_id", "COALESCE(top.workspace_name,'')")+`),
+			-- A canvas's image is filed under the workspace it is the Canvas tab of.
+			CASE WHEN l.lost THEN '' ELSE COALESCE(top.workspace_id, top.canvas_workspace_id, '') END, l.lost,
 			COALESCE(a.thumbnail_key,'')
 		FROM editor_assets a
 		JOIN materials m ON m.id=a.material_id

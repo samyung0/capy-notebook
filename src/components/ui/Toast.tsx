@@ -6,13 +6,16 @@ import { Icon, type IconName } from './Icon';
 
 type ToastVariant = 'default' | 'error' | 'loading' | 'success' | 'warning';
 
+/** A toast's button; pressing it also closes the toast. */
+interface ToastButton {
+  label: string;
+  onClick: () => void;
+}
+
 /** What a toast says; `userToast` shows it. */
 interface ToastOptions {
-  /** An underlined action after the copy; it also closes the toast. */
-  button?: {
-    label: string;
-    onClick: () => void;
-  };
+  /** The filled action after the copy. */
+  button?: ToastButton;
   /** A second line under the title. */
   description?: string;
   /** A plain toast's icon (Link copied: `link`); other kinds have their own. */
@@ -57,11 +60,17 @@ function Working() {
   );
 }
 
+/* Ding's buttons (Epo 2026-11-09): 30px tall, a 44px tall hit area that
+   never reaches a neighbour 8px away, a press that shrinks them a little. */
+const TOAST_BUTTON =
+  'relative h-7.5 shrink-0 cursor-pointer whitespace-nowrap rounded-full font-semibold text-[13px] transition-[background-color,color,scale] duration-150 ease-out before:absolute before:-inset-x-0.75 before:-inset-y-1.75 focus-visible:outline-2 focus-visible:outline-current focus-visible:outline-offset-2 active:scale-96';
+
 /**
- * The pill: icon, copy, then the count, the action 20px on and the close
- * (errors only) 16px after it. One line is a 44px pill; a description or a
- * title that wraps takes more lines with rounder (18px) corners, as wide as
- * 384px.
+ * The pill: icon, copy and count, then the buttons: the filled action and
+ * the close (errors and working toasts), 7px in from the pill's edge.
+ * One line is a 44px pill; a description or a title that wraps takes more
+ * lines with rounder (18px) corners, as wide as 384px. Copy too wide to sit
+ * beside the buttons puts them on their own row at the right.
  */
 function Toast({
   toast,
@@ -74,25 +83,38 @@ function Toast({
 }) {
   const { button, description, icon, title, variant = 'default' } = toast;
   const pill = useRef<HTMLDivElement>(null);
+  const copy = useRef<HTMLDivElement>(null);
+  const buttons = useRef<HTMLDivElement>(null);
   const [wraps, setWraps] = useState(false);
+  const [stacked, setStacked] = useState(false);
   // A title too long for one line wraps; the pill then rounds less.
   useLayoutEffect(() => {
     const node = pill.current;
     if (!node) return;
-    const measure = () => setWraps(node.offsetHeight > 44);
+    const measure = () => {
+      setWraps(node.offsetHeight > 44);
+      setStacked(
+        !!copy.current &&
+          !!buttons.current &&
+          buttons.current.offsetTop > copy.current.offsetTop
+      );
+    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     return () => observer.disconnect();
   }, []);
   const tall = Boolean(description) || wraps;
+  // Toasts that stay until something happens can be closed.
+  const closes = variant === 'error' || variant === 'loading';
+  const hasButtons = Boolean(button) || closes;
   return (
     <div
       className={cn(
-        'pointer-events-auto flex min-h-11 items-start rounded-[22px] bg-[#222] py-2.5 font-semibold text-sm text-white shadow-[0_8px_24px_rgba(20,22,21,0.18)] dark:bg-overlay dark:text-fg dark:shadow-[inset_0_0_0_1px_var(--border-overlay),0_8px_24px_rgba(0,0,0,0.35)]',
+        'pointer-events-auto flex min-h-11 items-start rounded-[22px] bg-[#222] font-semibold text-sm text-white shadow-[0_8px_24px_rgba(20,22,21,0.18)] dark:bg-overlay dark:text-fg dark:shadow-[inset_0_0_0_1px_var(--border-overlay),0_8px_24px_rgba(0,0,0,0.35)]',
         tall && 'rounded-[18px]',
         // The padding stays put when a title wraps, so it cannot unwrap it.
-        description ? 'pr-4.5' : 'pr-5',
+        hasButtons ? 'pr-1.75' : description ? 'pr-4.5' : 'pr-5',
         description
           ? 'w-[min(384px,calc(100vw-32px))]'
           : 'w-max max-w-[min(384px,calc(100vw-32px))]'
@@ -103,7 +125,7 @@ function Toast({
     >
       <span
         className={cn(
-          'flex h-6 w-11 shrink-0 items-center justify-center',
+          'flex h-11 w-11 shrink-0 items-center justify-center',
           ICON_COLOUR[variant]
         )}
       >
@@ -113,49 +135,68 @@ function Toast({
           <Icon name={icon && variant === 'default' ? icon : ICON[variant]} />
         )}
       </span>
-      {/* A working toast turning into its done toast swaps its copy in place. */}
-      <ContentSwap
-        className={cn('leading-6', tall && 'flex-1')}
-        contentKey={JSON.stringify([title, description])}
-      >
-        <span className="wrap-anywhere block">{title}</span>
-        {description && (
-          <span className="wrap-anywhere mt-0.5 block whitespace-pre-line font-medium text-[13px] text-white/72 leading-[1.45] dark:text-fg-secondary">
-            {description}
-          </span>
-        )}
-      </ContentSwap>
-      {count > 1 && (
-        <span className="mt-px ml-3 inline-flex h-5.5 shrink-0 items-center rounded-[11px] bg-white/16 px-2 font-bold text-[12.5px]">
-          ×{count}
-        </span>
-      )}
-      {button && (
-        <button
-          className="ml-5 h-6 shrink-0 cursor-pointer whitespace-nowrap underline decoration-1 underline-offset-3"
-          onClick={() => {
-            button.onClick();
-            onClose();
-          }}
-          type="button"
-        >
-          {button.label}
-        </button>
-      )}
-      {variant === 'error' && (
-        <button
-          aria-label={m.action_close()}
+      <div className="flex min-w-0 flex-1 flex-wrap items-start">
+        <div
           className={cn(
-            'relative flex h-6 shrink-0 cursor-pointer items-center text-white/70 after:absolute after:-inset-x-2 after:inset-y-0 hover:text-white dark:text-fg-muted dark:hover:text-fg',
-            // 16px after the action (A1, Epo 2026-11-03), else 12px.
-            button ? 'ml-4' : 'ml-3'
+            'flex min-w-0 flex-[1_1_auto] items-start pt-2.5',
+            !stacked && 'pb-2.5'
           )}
-          onClick={onClose}
-          type="button"
+          ref={copy}
         >
-          <Icon name="x" size={16} />
-        </button>
-      )}
+          {/* A working toast turning into its done toast swaps its copy in place. */}
+          <ContentSwap
+            className={cn('min-w-0 leading-6', tall && 'flex-1')}
+            contentKey={JSON.stringify([title, description])}
+          >
+            <span className="wrap-anywhere block">{title}</span>
+            {description && (
+              <span className="wrap-anywhere mt-0.5 block whitespace-pre-line font-medium text-[13px] text-white/72 leading-[1.45] dark:text-fg-secondary">
+                {description}
+              </span>
+            )}
+          </ContentSwap>
+          {count > 1 && (
+            <span className="mt-px ml-3 inline-flex h-5.5 shrink-0 items-center rounded-[11px] bg-white/16 px-2 font-bold text-[12.5px]">
+              ×{count}
+            </span>
+          )}
+        </div>
+        {hasButtons && (
+          <div
+            className="ml-auto flex h-11 shrink-0 items-center gap-2 pl-3"
+            ref={buttons}
+          >
+            {button && (
+              <button
+                className={cn(
+                  TOAST_BUTTON,
+                  'bg-white px-3.5 text-[#222] hover:bg-white/85 dark:bg-fg dark:text-overlay dark:hover:bg-fg/85'
+                )}
+                onClick={() => {
+                  button.onClick();
+                  onClose();
+                }}
+                type="button"
+              >
+                {button.label}
+              </button>
+            )}
+            {closes && (
+              <button
+                aria-label={m.action_close()}
+                className={cn(
+                  TOAST_BUTTON,
+                  'grid size-7.5 place-items-center text-white/65 hover:bg-white/10 hover:text-white dark:text-fg-secondary dark:hover:bg-fg/10 dark:hover:text-fg'
+                )}
+                onClick={onClose}
+                type="button"
+              >
+                <Icon name="x" size={16} />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

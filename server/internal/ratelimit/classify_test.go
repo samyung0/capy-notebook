@@ -67,6 +67,16 @@ func TestClassifyNamesTheLimiterRules(t *testing.T) {
 	if got := classify(http.MethodPatch, "/api/me"); got != classIntegration {
 		t.Errorf("PATCH /api/me = %v, want the integration class", got)
 	}
+	// Making an assignment and publishing a draft (Epo 2026-11-10); reading the
+	// list is not counted.
+	for _, path := range []string{"/api/workspaces/ws_1/assignments", "/api/assignments/as_1/publish"} {
+		if got := classify(http.MethodPost, path); got != classAssignment {
+			t.Errorf("POST %s = %v, want the assignment class", path, got)
+		}
+	}
+	if got := classify(http.MethodGet, "/api/workspaces/ws_1/assignments"); got != classDefault {
+		t.Errorf("GET the assignment list = %v, want the default class", got)
+	}
 }
 
 func TestDefaultConfigRaisesAIAndAddsBurst(t *testing.T) {

@@ -4439,9 +4439,10 @@ The board adds to BlockSuite through its own extensions (`boardTools.ts`, `board
 vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
 
 - **Toolbar:** AFFiNE's shape pieces in the eraser's fixed colours (CSS variables on
-  `.capy-board`), then three slots of pieces drawn like AFFiNE's shapes (Epo 2026-11-08,
-  canvas NsamYcLR4imjm5Xi2fWFj2 "Picked"): Graphs (a polar disc behind a coordinate plane),
-  Charts (a pie behind bars) and Formulas (d/dx, ∫, Σ, √x). `CapyPieceSlot` runs on
+  `.capy-board`), then two slots of pieces drawn like AFFiNE's shapes (Epo 2026-11-08,
+  canvas NsamYcLR4imjm5Xi2fWFj2 "Picked"): Graphs (a polar disc behind a coordinate plane)
+  and Formulas (d/dx, ∫, Σ, √x), then Misc, which holds the charts since 2026-11-10 (the
+  Charts slot is gone; the B and Shift+B keys still place a chart). `CapyPieceSlot` runs on
   BlockSuite's `EdgelessDraggableElementController` as the shape slot does: a piece lifts
   under the pointer, a click or a drag picks it up, it lands where it's dropped and a new
   one rises into the slot once it leaves the toolbar; Escape or the toolbar puts it back.
@@ -4637,9 +4638,12 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     places BlockSuite works out (from the ends, each an element id or a finite point; from
     the children) and never stores. Anything else throws a `BoardLoadError` with a
     `reason`.
-  - **Toolbar per board** (Epo 2026-11-09): the question board has Graphs, Charts and
-    Formulas slots after the shapes; the workspace canvas has Graphs, Formulas and
-    **Misc** (`sheetTools(board)`). Misc's button opens a panel above the toolbar
+  - **One toolbar, Misc per board** (Epo 2026-11-10, superseding the question board's own
+    Charts slot of 2026-11-09): both boards have Graphs, Formulas and **Misc** after the
+    shapes (`sheetTools`). Misc shows each board what it may hold (`tileFits`, by the
+    board `markBoard` names at mount): an answer board the Bar and Pie chart and Image
+    tiles, the workspace canvas also the mind map, emoji, GIFs, stickers, links and the
+    workspace's quizzes and sets. Misc's button opens a panel above the toolbar
     (`capy-misc-panel`, right-aligned, Shapes' look): one 360 × 440 frame in every view
     (Epo 2026-11-09, round 2, mock DVxJzY5A3XiYHKuqQPezST), with Back, the title or
     KLIPY's search, and a close in its header and the body scrolling inside, so
@@ -4770,7 +4774,10 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     `CANVAS_BOARD_MAX` (2 MiB before gzip, the board catalog; over it the board says so
     and the last good save stands), then `PUT /api/workspaces/{id}/canvas` with the
     asset and the revision it read; the server checks the asset is a ready `board`
-    asset of the canvas (images likewise) and counts the version. 409 (the same person's
+    asset of the canvas (images likewise) and counts the version. The save writes the
+    document in SQL even where collaboration is configured: a canvas is never a room,
+    so `UpdateMaterial` sends no content command for its kind (each save writes a whole
+    new block, which a replace-block command refuses). 409 (the same person's
     other tab saved first) says so, deletes this tab's copy and stops saving until a
     reload; any other failure waits for the next change or open, the copy holding the
     work (no retry loop), and the board asset uploaded for the failed save is deleted
@@ -4779,8 +4786,100 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     an asset that isn't a ready board or image asset of the canvas is a 400. A canvas opens no room (the collaboration token route refuses
     it); the Canvas tab shows to members only, since a link or public visitor has none.
     Restoring a trashed canvas beside the live one made since is refused (409
-    `canvas_exists`). Images on the canvas are the next piece (`todo-board-images.md`);
-    `imageAssetIds` is empty until then.
+    `canvas_exists`).
+  - **The Canvas page (Epo 2026-11-10, mock KNPB4pYUhSSYUJvuKN1ct7 B):** `/canvas`
+    (`Canvas.tsx`, Canvas under Tools in the sidebar) is a board: one of the person's
+    own canvases, in no workspace. Such a canvas is a standalone `canvas` material with
+    no `canvas_workspace_id` (migration 0167), any number per person, opened and saved
+    exactly as a workspace's is (`useCanvasBoard`, which both pages mount with a
+    `CanvasSource`: `GET` and `PUT /api/canvases/{id}` here, the workspace routes on
+    the Canvas tab), with the same device copy, images and limits, and no workspace
+    cards in Misc. `?c=` names the canvas shown; without one (the sidebar's link) the one
+    already shown stays, else the latest saved of the person's own, and a first one ("My
+    canvas") is made for a person who has none. The id routes serve only a person's own
+    canvases: a workspace's opens and saves through its workspace, whose membership it
+    follows. A frozen account draws on what it has and is offered neither New canvas
+    nor Rename. The panel at the top left (`CanvasSwitcher`)
+    lists every canvas there is (`GET /api/canvases`: their own, latest saved first,
+    then each workspace's under its icon and name, leaving out a workspace whose owner's
+    account is no longer live), a page of 50 at a time as the menu is scrolled (Epo
+    2026-11-10: `cursor` and `nextCursor`, `canvasesQuery` is an infinite query ending
+    in `ListEnd`; there is no cap on how many a person makes). The list scrolls in a box
+    of its own, so New canvas, Rename and Delete under it stay in reach. Their own come first so
+    that a first page without one means they have none, and a canvas the URL names on a
+    page not loaded yet has the pages load until it shows or they end. The panel makes
+    a new one ("Untitled canvas", numbered when a loaded one has the name), and renames
+    or deletes the one shown, as a standalone
+    material (`PATCH /api/materials/{id}/metadata`, which leaves the revision alone, and
+    the trash; a deleted canvas's board saves and keeps nothing more, `gone`). A
+    workspace's canvas opens in its workspace, where its quiz and flashcard cards work.
+    The account chat's file listing leaves canvases out: a canvas is a board, not a
+    document the agent reads. On a phone the navigation drawer's button sits beside the
+    panel, and the row stops short of the board's own menu. The Files page lists no
+    canvas (the rows of earlier that day are gone); a canvas's images still list there
+    and open the canvas they are on, and Trash shows a deleted canvas with its icon.
+  - **Images (Epo 2026-11-09 and 2026-11-10, `todo-board-images.md`):** an image block
+    keeps only an id (`sourceId`), and the board reads and stores files through its own
+    blob source (`boardBlobs.ts`, `BoardBlobSource`, in place of BlockSuite's in-memory
+    one), which the page feeds through the mount's `images` option (`boardImages.ts`).
+    Every way an image arrives (a paste, a drop, a note's slash menu, Misc's Image tile,
+    which opens the device's file picker for a phone with no paste or drop) goes
+    through BlockSuite's `blobSync.set`, so the source is the one place that sees them.
+    On the workspace canvas (`assetImages` in `boardAsset.ts`) an image is stored at
+    once as the canvas material's own `image` editor asset through `uploadEditorAsset`,
+    as a note's is: compressed in the browser first (`fitImageOffThread`: WebP where the
+    browser encodes it, JPEG or PNG where it doesn't, as Safari), capped at the plan's
+    image cap, refused when storage is full, billed to the member and listed on the
+    Files page. The block lands with BlockSuite's hash and shows the local file with the
+    upload state set (`blobState$`); when the upload completes its `sourceId` becomes
+    the asset id and its `size` the stored size, outside the undo history, and a refused
+    image leaves the board with a toast. An image already stored under its id is never
+    stored again: a copy pasted back hands its file to `set` under that id, which the
+    source leaves alone (`stored`). `GET` and `PUT /api/workspaces/{id}/canvas` answer
+    `ownImageAssetIds`, every ready image asset of the canvas, one the pruner trashed
+    included; a save waits for uploads in flight (at most 20 s, `IMAGE_WAIT_MS`, on
+    leaving the canvas too, since the board's document outlives its unmount) and sends
+    as `imageAssetIds` the ids on the board that are in that list or were uploaded
+    since. The pruner then keeps them, and trashes a removed one at the next save once
+    it is over a minute old. An image deleted on the canvas and brought back by undo is
+    named again and that save restores it (`assertCanvasAssets` takes a trashed image,
+    never a trashed board), after which the board asks for its file again
+    (`reloadImages`). An image deleted for good elsewhere (the Files page) is not in the
+    list, so it is left out; a save refused for what it named (400) reads the list again
+    for the next one. An image pasted from another canvas resolves as another material's
+    and is stored again as this one's, also when the board opens with one. Opened again,
+    an image loads from its asset's link (`assetLink`). A tab closed mid-upload keeps the
+    hash in its device copy and shows an empty frame after a reload.
+    On an **answer board** (`DrawingBoardScreen`) a picture is compressed as it lands
+    (`shrink`: `fitImageOffThread` under `BOARD_IMAGE_MAX`, 1 MiB, from the board
+    catalog) and refused with a toast past `BOARD_IMAGES_MAX` (10, counting the ones of
+    the same drop still being compressed) or when no size fits; its block keeps
+    BlockSuite's hash for good, and the file stays on the board. The device keeps each
+    file once, beside the draft (`drawingPictures` in `localDb.ts`, by draft and id;
+    `syncLocalDrawingPictures` adds the new ones and forgets the ones off the board),
+    so a reload before Done loses none and a stroke rewrites no picture. Done checks the
+    count again, asks the board for every file (`imageFiles`, fetching a stored
+    drawing's not shown yet) and keeps them in the page's memory under the part's key
+    (`holdDrawingPictures`); the value names them by that key (`pictures`), since files
+    don't sit in an answer. An assignment's Done sends them in base64 with the board
+    (`drawingUpload`, `pictures: [{ sourceId, data }]`) and then lets them go
+    (`releaseDrawingPictures`): from there they are read from the stored drawing. A
+    practice Check sends them the same way and keeps them for Check again. A check that
+    keeps no drawing sends none: a shared page's, a quiz inside a note
+    (`embedded`), a review session's and the bank's (those two now send a drawing as
+    its board and image at all, where they sent the page's raw value). Sending a value
+    whose pictures are no longer held throws rather than storing empty frames.
+    `GET /api/drawings/{id}` answers a link per picture (`pictures`), from which a
+    reopened answer and a teacher's read-only board load them (`fetchDrawingPicture`,
+    which asks for the links again once when one has lapsed; a Done forgets the page's
+    copy of its drawing). The marking image draws them as before, and list previews
+    still draw a grey box. A drawn sample answer's board in the quiz editor takes no
+    pictures (Epo 2026-11-10: the quiz would have to name them in the shared question
+    format, which Go and the collaboration server both check): `DrawnSampleField` opens
+    the board with `noPictures`, so its Misc has the charts and no Image tile
+    (`BoardImages.none`, `markBoard`) and a pasted or dropped picture is refused and
+    said ("A sample answer can't hold pictures."). An answer board's Misc has the same
+    Image tile as the canvas's.
 - **Preview (`boardPreview.ts`):** `drawBoardPreview(saved, { width, height }, board)` draws a
   saved board as an SVG string from its data, for lists, results and marking views
   (Epo 2026-11-06: what's on it, not every detail). It never loads the editor: it imports
@@ -4804,7 +4903,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   `drawingBoard.css` over the note's stored style, since AFFiNE's corner field only takes
   0/8/16/24/32; the preview draws it the same. AFFiNE's slash menu is registered, offering
   text styles, lists, alignment, inline styles, Image, dates and the move/copy/delete
-  actions; Image stores its file in the board's blob store, as a pasted image does.
+  actions; Image stores its file through the board's blob source, as a pasted image does.
 - **Theme:** the board follows the app's light or dark. The app's dark themes set
   `data-theme` to a Catppuccin flavour, which AFFiNE's `[data-theme=dark]` never matches,
   so `drawingBoard.ts` puts AFFiNE's dark variables under `html.dark` (on `<html>`, for

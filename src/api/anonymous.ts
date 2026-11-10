@@ -43,19 +43,19 @@ export const anonymousNoteAssetUrl = (token: string, assetId: string) =>
 /** Checks one question of a shared quiz; the result carries its key, so the
  * page shows it and keeps it in this browser. An answered open part comes back
  * Not marked. */
-export const gradeAnonymousQuiz = (
+export const gradeAnonymousQuiz = async (
   token: string,
   body: GradeAnonymousQuizReq
 ) =>
   publicJson<GradedQuestion>(`/api/public/quizzes/${token}/grade`, {
-    body: JSON.stringify(withDrawingsSent(body)),
+    body: JSON.stringify(await withDrawingsSent(body)),
     headers: { 'Content-Type': 'application/json' },
     method: 'POST',
   });
 
 /** The same for a quiz embedded in a shared note, through the note's link (the
  * quiz has none of its own); it stores nothing. */
-export const gradeAnonymousNoteQuiz = (
+export const gradeAnonymousNoteQuiz = async (
   token: string,
   quizId: string,
   body: GradeAnonymousQuizReq
@@ -63,14 +63,15 @@ export const gradeAnonymousNoteQuiz = (
   publicJson<GradedQuestion>(
     `/api/public/notes/${token}/quizzes/${quizId}/grade`,
     {
-      body: JSON.stringify(withDrawingsSent(body)),
+      body: JSON.stringify(await withDrawingsSent(body)),
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
     }
   );
 
-/** A drawing goes as its board and image; a shared page never marks it. */
-const withDrawingsSent = (body: GradeAnonymousQuizReq) => ({
+/** A drawing goes as its board and image, without its pictures: a shared page
+ * never marks it or stores it. */
+const withDrawingsSent = async (body: GradeAnonymousQuizReq) => ({
   ...body,
-  answers: answersForCheck(body.answers as Answers),
+  answers: await answersForCheck(body.answers as Answers, false),
 });

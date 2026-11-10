@@ -10,7 +10,13 @@ import {
 } from '@/api/chatStream';
 import { isApiError, qk } from '@/api/client';
 import { updateConversationBodyTitleMax } from '@/api/gen/validators';
-import { messagesQuery, useStopChatTurn } from '@/api/hooks';
+import {
+  type ConversationCache,
+  mapConversations,
+  messagesQuery,
+  useStopChatTurn,
+} from '@/api/hooks';
+import { pagedRows } from '@/api/paged';
 import type {
   ActivityBlock,
   ChatMessage,
@@ -79,7 +85,7 @@ export function invalidateForEffects(
     if (effect.resource.kind === 'material') {
       if (workspaceId)
         void qc.invalidateQueries({ queryKey: qk.materials(workspaceId) });
-      void qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
+      void qc.invalidateQueries({ queryKey: qk.itemsRoot });
       void qc.invalidateQueries({ queryKey: qk.recent });
       if (effect.operation !== 'created') {
         void qc.invalidateQueries({
@@ -118,18 +124,20 @@ function titleFrom(text: string) {
 
 /** Lists a started turn's conversation where the server now has it: first
  * among the unpinned (pinned ones sort by pin time and keep their place), a
- * new one (`title` given) added. One missing from the live list (archived)
- * stays out. The list refetches when the turn settles. */
+ * new one (`title` given) added. One missing from the pages loaded (archived,
+ * or on a later page) stays out here: the turn's stream event refetches the
+ * lists for a conversation none holds, and the list refetches when the turn
+ * settles. */
 function listTurn(
   qc: QueryClient,
   workspaceId: string | null,
   id: string,
   title: string | undefined
 ) {
-  qc.setQueryData<Conversation[]>(qk.conversations(workspaceId), (list) => {
-    if (!list) return list;
+  qc.setQueryData<ConversationCache>(qk.conversations(workspaceId), (cache) => {
+    if (!cache) return cache;
     const now = new Date().toISOString();
-    const found = list.find((c) => c.id === id);
+    const found = pagedRows(cache).find((c) => c.id === id);
     // An account conversation's workspaceId is "".
     const row: Conversation | undefined = found
       ? { ...found, updatedAt: now }
@@ -143,9 +151,20 @@ function listTurn(
             updatedAt: now,
             workspaceId: workspaceId ?? '',
           };
-    if (!row) return list;
-    if (row.pinnedAt) return list.map((c) => (c.id === id ? row : c));
-    return [row, ...list.filter((c) => c.id !== id)];
+    if (!row) return cache;
+    if (row.pinnedAt)
+      return mapConversations(cache, (c) => (c.id === id ? row : c));
+    // First on the first page, and on no page after it.
+    return {
+      ...cache,
+      pages: cache.pages.map((page, at) => ({
+        ...page,
+        items: [
+          ...(at === 0 ? [row] : []),
+          ...page.items.filter((c) => c.id !== id),
+        ],
+      })),
+    };
   });
 }
 

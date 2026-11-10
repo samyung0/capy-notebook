@@ -33,9 +33,9 @@ entries); mocks: `artifacts/2026-10-20-painted-cards-cursors-mocks.html`.
   there; there is no Home. A workspace's front page, its landing with no file
   open, is its **Dashboard**. **To do** (`/todo`, `src/routes/Todo.tsx`) sits
   under Workspaces in the nav, with the notifications dot while anything is
-  open: every class's Dashboard To do, one section per workspace whose heading
-  opens its Dashboard, at most 860px wide, under tabs To do · Done and the list
-  pages' Sort and Filter.
+  open: a table of what each class holds for the viewer, a folding group per
+  class, the page's full width (Epo 2026-11-10), under tabs To do ·
+  Done and a Type filter (see study-progress.md).
 - **Dashboard (Epo 2026-11-03, boards H1 owner, H2 member, H3):**
   `WorkspaceDashboard.tsx`, the centre with nothing open (from lg without a
   file header; one column keeps it). The workspace's name with "owner · N
@@ -172,10 +172,14 @@ to Epo as visual options, not a call made in code.
   icon slot, 22px corners, 20px right padding, `0 8px 24px` shadow. Only the
   icon and its colour change: done is a check (`#86d6a8`), plain is info or
   the caller's `icon` (white, I1), working a ring spinner (white, S1),
-  warning a triangle (`#f2c46d`), error a circled ! (`#ff9b9b`). An action
-  is an underlined link 20px after the copy; errors end with a 16px × (Z1),
-  16px after the action (A1) or 12px after the copy; a repeat shows `×2` in
-  a white 16% capsule. An open error sits at the bottom with the other toast
+  warning a triangle (`#f2c46d`), error a circled ! (`#ff9b9b`). Buttons
+  follow the ding library (Epo 2026-11-09): 30px tall, 8px apart, 7px in
+  from the pill's edge, 13px semibold, each with a 44px tall hit area: the
+  action (`button`) a white capsule with `#222` text, and on errors and
+  working toasts a round 30px close with a 16px × in white 65%, which hovers
+  with a white 10% wash. Copy too wide to sit
+  beside them puts the buttons on their own row at the right. A repeat
+  shows `×2` in a white 16% capsule. An open error sits at the bottom with the other toast
   8px above it (E2), centred on phones too and drawn over the chat button
   (P3). A description or a title that wraps takes more
   lines in the same pill, 384px wide (less on phones), with 18px corners and

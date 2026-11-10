@@ -1,25 +1,25 @@
-import { Link, useNavigate, useSearch } from '@tanstack/react-router';
-import { useTodo, useTodoDone, useWorkspaces } from '@/api/hooks';
+import { useNavigate, useSearch } from '@tanstack/react-router';
+import { useTodo, useTodoDone } from '@/api/hooks';
 import { InlineErrorState } from '@/components/app/ErrorState';
 import { ListEnd } from '@/components/app/ListEnd';
-import {
-  ListToolbar,
-  type SortOption,
-  toggleValue,
-} from '@/components/app/ListToolbar';
+import { ListToolbar, toggleValue } from '@/components/app/ListToolbar';
 import { PageBody, PageHeader, PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
+import type { ColumnSort } from '@/components/app/SortHeader';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Tabs } from '@/components/ui/Tabs';
-import { TodoRows } from '@/features/study/assignments/TodoSection';
+import { SelectionAction, SelectionBar } from '@/features/files/SelectionBar';
 import {
-  mergeTodoPages,
+  TodoTable,
+  useTodoTicks,
+} from '@/features/study/assignments/TodoTable';
+import {
+  doneSections,
   todoCount,
   todoSections,
 } from '@/features/study/assignments/todoRows';
 import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
-import { iconUrl } from '@/lib/icon-catalog';
 import {
   commaList,
   csv,
@@ -30,14 +30,19 @@ import {
 } from '@/lib/listSearch';
 import { waitsForConnection } from '@/lib/online';
 
-/** To do (canvas NzaizrnumE4jtTtm4p3BYT, board A; Epo 2026-11-08): tabs To do ·
- * Done, the list pages' Sort and Filter, then each class's rows in a section
- * whose heading opens its Dashboard. Approvals stay in the To do tab; Done
- * reads its own list, closed work included. Items stop at 860px, left aligned
- * (Epo 2026-11-05). */
+/** Due and To do read ascending first; Done's date newest first. */
+const ascendsFirst = (sort: TodoSort) => sort !== 'done';
+
+/** To do (Epo 2026-11-08; the table, 2026-11-10 board K): tabs To do · Done,
+ * a Type filter, then a table grouped by class whose Due and To do headers
+ * sort it. Selected rows turn the toolbar into a selection bar with Mark as
+ * done and Mark as not done (Epo 2026-11-10), and Delete on Done. Approvals
+ * stay in the To do tab; Done reads its own list, closed work included. The
+ * table takes the page's full width (Epo 2026-11-10). */
 export default function Todo() {
   const search = useSearch({ from: '/auth-shell/todo' });
   const tab = search.tab ?? 'todo';
+  const onDone = tab === 'done';
   const {
     data: todo,
     error: todoError,
@@ -49,20 +54,22 @@ export default function Todo() {
   const setSearch = (patch: TodoSearch) =>
     void navigate({ replace: true, search: (prev) => ({ ...prev, ...patch }) });
 
-  const sorts: SortOption<TodoSort>[] =
-    tab === 'done'
-      ? [
-          { icon: 'clock', label: m.todo_sort_done(), value: 'done' },
-          { icon: 'workspaces', label: m.todo_sort_class(), value: 'class' },
-        ]
-      : [
-          { icon: 'schedule', label: m.todo_sort_due(), value: 'due' },
-          { icon: 'clock', label: m.todo_sort_posted(), value: 'posted' },
-          { icon: 'workspaces', label: m.todo_sort_class(), value: 'class' },
-        ];
-  const sort =
-    sorts.find((s) => s.value === search.sort)?.value ?? sorts[0].value;
-  const classes = commaList(search.class);
+  const sort: TodoSort = onDone
+    ? 'done'
+    : search.sort === 'title'
+      ? 'title'
+      : 'due';
+  const ascending = search.dir ? search.dir === 'asc' : ascendsFirst(sort);
+  const sorting: ColumnSort<TodoSort> = {
+    ascending,
+    ascendingFirst: ['due', 'title'],
+    onSortChange: (next, asc) =>
+      setSearch({
+        dir: asc === ascendsFirst(next) ? undefined : asc ? 'asc' : 'desc',
+        sort: next === 'due' || next === 'done' ? undefined : next,
+      }),
+    sort,
+  };
   const types = commaList(search.type) as TodoType[];
   // Done is paged, sorted and filtered by the server (Epo 2026-11-08).
   const {
@@ -76,49 +83,39 @@ export default function Todo() {
     isLoading: doneLoading,
     refetch: doneRefetch,
   } = useTodoDone(
-    {
-      class: classes,
-      dir: search.dir,
-      sort: sort === 'class' ? 'class' : undefined,
-      type: types,
-    },
-    tab === 'done'
+    { dir: onDone && ascending ? 'asc' : undefined, type: types },
+    onDone
   );
-  const { data: allWorkspaces } = useWorkspaces({}, { errorBoundary: false });
-  const classOptions = (allWorkspaces ?? [])
-    .filter((w) => w.kind === 'class')
-    .map((w) => ({ label: w.name, value: w.id }));
-  const onDone = tab === 'done';
   const data = onDone ? done : todo;
   const error = onDone ? doneError : todoError;
   const fetchStatus = onDone ? doneFetch : todoFetch;
   const isLoading = onDone ? doneLoading : todoLoading;
   const refetch = onDone ? doneRefetch : todoRefetch;
   const sections = onDone
-    ? mergeTodoPages(done?.pages ?? []).map((workspace) => ({
-        shown: workspace.items,
-        toApprove: [],
-        workspace,
-      }))
+    ? doneSections(done?.pages ?? [])
     : todoSections(todo?.workspaces ?? [], {
-        classes,
-        reversed: search.dir === 'asc',
-        sort: sort === 'done' ? 'due' : sort,
+        ascending,
+        sort: sort === 'title' ? 'title' : 'due',
         types,
       });
-  const open = todoCount(todo?.workspaces ?? []);
+  const ticks = useTodoTicks(sections, onDone);
+  // Rows marked here move tabs at once, and the count with them.
+  const open =
+    todoCount(todo?.workspaces ?? []) +
+    (onDone ? ticks.leaving : -ticks.leaving);
 
   return (
     <PagePanel header={<PageHeader title={m.nav_todo()} />}>
       <Tabs
         className="page-tabs-px"
-        onChange={(next) =>
+        onChange={(next) => {
+          ticks.clear();
           setSearch({
             dir: undefined,
             sort: undefined,
             tab: next === 'done' ? 'done' : undefined,
-          })
-        }
+          });
+        }}
         tabs={[
           {
             label: (
@@ -140,14 +137,6 @@ export default function Todo() {
       <ListToolbar
         filters={[
           {
-            key: 'class',
-            label: m.todo_filter_class(),
-            onToggle: (value) =>
-              setSearch({ class: csv(toggleValue(classes, value)) }),
-            options: classOptions,
-            selected: classes,
-          },
-          {
             key: 'type',
             label: m.todo_filter_type(),
             onToggle: (value) =>
@@ -159,20 +148,44 @@ export default function Todo() {
             selected: types,
           },
         ]}
-        onResetFilters={() => setSearch({ class: undefined, type: undefined })}
-        sortMenu={{
-          ascending: search.dir === 'asc',
-          onSortChange: (next, ascending) =>
-            setSearch({
-              dir: ascending ? 'asc' : undefined,
-              sort: next === sorts[0].value ? undefined : next,
-            }),
-          sort,
-          sorts,
-        }}
+        onResetFilters={() => setSearch({ type: undefined })}
+        selection={
+          ticks.count > 0 && (
+            <SelectionBar
+              allSelected={ticks.allSelected}
+              busy={false}
+              count={ticks.count}
+              onClear={ticks.clear}
+              onSelectAll={ticks.selectAll}
+            >
+              {ticks.toDone.length > 0 && (
+                <SelectionAction
+                  icon="check"
+                  label={m.assignment_mark_as_done()}
+                  onClick={() => ticks.markDone(ticks.toDone)}
+                />
+              )}
+              {ticks.toUndo.length > 0 && (
+                <SelectionAction
+                  icon="undo"
+                  label={m.assignment_mark_not_done()}
+                  onClick={() => ticks.markNotDone(ticks.toUndo)}
+                />
+              )}
+              {onDone && (
+                <SelectionAction
+                  danger
+                  icon="trash"
+                  label={m.action_delete()}
+                  onClick={ticks.remove}
+                />
+              )}
+            </SelectionBar>
+          )
+        }
       />
       <PageBody belowToolbar>
-        <div className="flex max-w-[860px] flex-col gap-5.5">
+        <div>
           {waitsForConnection(fetchStatus, data) ? (
             <QueryPausedState />
           ) : isLoading ? (
@@ -183,36 +196,14 @@ export default function Todo() {
               message={m.todo_error()}
               onRetry={() => void refetch()}
             />
-          ) : (
-            sections.map(({ shown, toApprove, workspace }) => (
-              <section className="flex flex-col" key={workspace.workspaceId}>
-                <h2 className="mb-1.5">
-                  <Link
-                    className="t-subtitle inline-flex min-h-7 max-w-full items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action"
-                    params={{ workspaceId: workspace.workspaceId }}
-                    preload="intent"
-                    to="/workspaces/$workspaceId"
-                  >
-                    <img
-                      alt=""
-                      className="size-6 shrink-0 rounded-[5px]"
-                      height={24}
-                      src={iconUrl(workspace.iconId)}
-                      width={24}
-                    />
-                    <span className="truncate">{workspace.name}</span>
-                  </Link>
-                </h2>
-                <TodoRows
-                  doneTab={tab === 'done'}
-                  manages={workspace.manages}
-                  shown={shown}
-                  toApprove={toApprove}
-                  workspaceId={workspace.workspaceId}
-                />
-              </section>
-            ))
-          )}
+          ) : data ? (
+            <TodoTable
+              doneTab={onDone}
+              sections={sections}
+              sorting={sorting}
+              ticks={ticks}
+            />
+          ) : null}
         </div>
         {onDone && (
           <ListEnd
@@ -221,11 +212,6 @@ export default function Todo() {
             isFetchingNextPage={isFetchingNextPage}
             isFetchNextPageError={isFetchNextPageError}
           />
-        )}
-        {!!data && sections.length === 0 && (
-          <p className="t-subtitle py-20 text-center font-normal text-fg-muted">
-            {tab === 'done' ? m.todo_done_empty() : m.todo_empty()}
-          </p>
         )}
       </PageBody>
     </PagePanel>

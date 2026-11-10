@@ -1,6 +1,11 @@
 # Images on the drawing board
 
-Status: plan only (2026-11-09). Nothing built. Decisions for Epo are at the end.
+Status: built 2026-11-10: the blob source (§1), the workspace canvas half
+(`boardBlobs.ts`, `boardImages.ts`, `assetImages` in `boardAsset.ts`,
+`WorkspaceCanvas.tsx`), answer-board pictures stored with the drawing (§2, migration
+0166 `drawing_pictures`, `drawings.go`, `DrawingBoardScreen.tsx`, `drawingValue.ts`)
+and the catalog limits (§5, `BOARD_IMAGE_MAX`, `BOARD_IMAGES_MAX`). Not built: the
+sample-answer board's images (§3).
 
 ## The problem
 
@@ -45,17 +50,19 @@ from the same source, as it does now.
 - **While drawing:** the image's bytes sit in the IndexedDB draft beside the board, under
   the draft's key. A reload keeps them, and nothing is uploaded yet, as the board isn't.
 - **At Done (assignment) or Check (practice):** the board's images are sent with the
-  board and stored under the same `drawings/<folder>/` as `img-<sourceId>.webp`. The
-  drawing row lists them (bytes per image), they count in `drawings_storage_after` and
-  are billed to the person attempting, and they follow the drawing's existing read,
-  delete and storage-full rules.
+  board and stored under the same `drawings/<folder>/`, each under a key of its own.
+  `drawing_pictures` lists them by `sourceId` (bytes per image), they count in
+  `drawings_storage_after` through `drawings.picture_bytes` and are billed to the
+  person attempting, and they follow the drawing's existing read, delete and
+  storage-full rules.
 - **Reading:** `GET /api/drawings/{id}` also returns a link per image (`sourceId` → link),
   under the same access rule as the board. A teacher's view and a reopened answer then
   show the images.
 - **Checks:** the browser's load check takes an `affine:image` whose `sourceId` is a
   BlockSuite hash. The server refuses images over the per-image cap, past the image
-  count, or not WebP/JPEG/PNG (`imagecheck`), and an image block whose file wasn't sent
-  is left as an empty frame.
+  count, wider or taller than 2,400 px, or not WebP, JPEG, PNG or GIF (`imagecheck`;
+  decision 8 keeps an animated GIF), and an image block whose file wasn't sent is left
+  as an empty frame.
 
 ### 3. A teacher's sample-answer board: images are quiz editor assets
 
@@ -75,7 +82,7 @@ warning the quiz board has, and saving the cleaned-up copy (`save()`, not
 ### 5. Limits in the board catalog
 
 New catalog limits, generated to every layer like the others: images per board, bytes
-per image after compression, and a board total across its images. The answer flow
+per image after compression (no board total was decided or built). The answer flow
 refuses past them on Done with a message, as it does for the board's 250 KiB.
 
 ## How Plate handles an image (the model for the workspace canvas)
@@ -109,7 +116,7 @@ refuses past them on Done with a message, as it does for the board's 250 KiB.
    `updateBlock`, as Plate's `setNodes`), and the blob source keeps the file under that id
    for this session. A board saved mid-upload keeps the hash, and that block shows an
    empty frame elsewhere, as D13 had for notes.
-3. The asset is listed on Files › Embeds, named by the canvas, and a removed image is
+3. The asset is listed on the Files page, named by the canvas, and a removed image is
    trashed by the canvas's save the way a note's is.
 4. This needs the canvas stored on the server first: an asset has to name what it belongs
    to, and the canvas today lives only in the browser on a dev page. The canvas's own
@@ -143,5 +150,23 @@ timing (upload at once).
 
 ## Still open
 
-- Nothing: the workspace canvas's server storage is `todo-workspace-canvas-storage.md`
-  (Epo 2026-11-09: a material of kind `canvas`).
+- **How an answer board's pictures travel: in the board's own request, as §2 says
+  (Epo confirmed 2026-11-10).** Each is base64 inside the JSON of Done or Check. An
+  assignment's Done may reach about 14 MB; a practice check's cap rose from 4 MiB to
+  about 17 MiB (`checkMaxBytes`: its answers plus one board's pictures at their
+  most), shared by the quiz, review and bank check routes. A question whose drawing
+  parts together hold more than about 10 MiB of pictures is refused as too large,
+  with the page's general error. Typical pictures are a few hundred KB after
+  compression, so the worst case needs ten photos near the cap. The alternative is
+  one upload per picture before Done or Check, which needs a place to hold a
+  practice picture before its attempt exists.
+- **A sample-answer board's images (§3): refused (Epo 2026-11-10).** The board
+  opens with `noPictures`: no Image tile in Misc, and a pasted or dropped picture
+  is turned away with a message. Keeping them would take a `pictures` list on a
+  drawing part's `sample` in the shared question format: Go (`questions.go` checks
+  its keys), the collaboration server's Rust (`items/src/quiz.rs`,
+  `notes/src/questions.rs`), the browser types, the clone's asset id map, and the
+  board asset itself, whose saved document names the pictures by asset id and
+  would point at the original's after a clone.
+- **Picking a file on an answer board: built 2026-11-10.** The answer board has the
+  Misc panel too (Epo 2026-11-10), with the charts and the Image tile.

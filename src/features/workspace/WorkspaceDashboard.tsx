@@ -21,6 +21,7 @@ import { TodoSection } from '@/features/study/assignments/TodoSection';
 import { SuggestedList } from '@/features/study/practice/SuggestedList';
 import { studyView } from '@/features/study/practice/studyView';
 import { getLocale, m } from '@/i18n';
+import { iconUrl } from '@/lib/icon-catalog';
 import { isWorkspaceReadOnly } from './access';
 import { HiddenMark } from './HiddenChip';
 import { addSourceIntent } from './LazyAddSourceDialog';
@@ -30,7 +31,7 @@ import { WorkspaceEmpty } from './WorkspaceEmpty';
 const RECENT = 4;
 
 /** The workspace's front page (Epo 2026-11-02, boards H1 owner, H2 member):
- * its name with the owner and member count, Upload and Make a quiz from a
+ * its icon, name, owner and member count, Upload and Make a quiz from a
  * file for those who may add, To do in a class, What to practise next for
  * whoever practises here (board U3), then Recent files and Activity: with nothing
  * in it, a section is not shown (Epo 2026-11-02). */
@@ -41,7 +42,10 @@ export function WorkspaceDashboard({
 }: {
   onMakeQuiz: () => void;
   onUpload: () => void;
-  workspace: Pick<Workspace, 'capabilities' | 'id' | 'kind' | 'name' | 'role'>;
+  workspace: Pick<
+    Workspace,
+    'capabilities' | 'iconId' | 'id' | 'kind' | 'name' | 'role'
+  >;
 }) {
   const { data } = useWorkspaceDashboard(workspace.id);
   const { data: recent } = useWorkspaceRecent(workspace.id);
@@ -76,9 +80,19 @@ export function WorkspaceDashboard({
           margins give that whatever the width: on one line the name's height
           decides, so they cancel out. */}
       <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-6">
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <h1 className="t-page-title truncate">{workspace.name}</h1>
-          <span className="t-meta min-h-[1lh] text-fg-muted">{meta}</span>
+        <div className="flex min-w-0 items-center gap-5">
+          {/* Phones show it in the top bar already. */}
+          <img
+            alt=""
+            className="hidden size-12 shrink-0 rounded-[12px] md:block"
+            height={48}
+            src={iconUrl(workspace.iconId)}
+            width={48}
+          />
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <h1 className="t-page-title truncate">{workspace.name}</h1>
+            <span className="t-meta min-h-[1lh] text-fg-muted">{meta}</span>
+          </div>
         </div>
         {canAdd && !empty && (
           <div className="-mt-2.5 -mb-1 flex flex-wrap items-center gap-2">

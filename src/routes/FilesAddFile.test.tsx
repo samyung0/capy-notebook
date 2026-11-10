@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import type { Workspace } from '@/api/types';
 import { getLocale, m } from '@/i18n';
 
-// The locale resolves before a window exists (see EmbedsTab.test.tsx), then
+// The locale resolves before a window exists (see ItemsList.test.tsx), then
 // linkedom's document goes in before react-dom/client loads.
 getLocale();
 const { document, window } = parseHTML(
@@ -17,8 +17,11 @@ const state = vi.hoisted(() => ({
   workspaces: [] as Partial<Workspace>[],
 }));
 vi.mock('@/api/hooks', () => ({
+  useDeleteEditorAsset: () => ({ mutateAsync: vi.fn() }),
   useDeleteOwnedFile: () => ({ mutateAsync: vi.fn() }),
-  useOwnedFiles: () => ({
+  useDeleteOwnedMaterial: () => ({ mutateAsync: vi.fn() }),
+  useDeletePaper: () => ({ mutateAsync: vi.fn() }),
+  useItems: () => ({
     data: { pages: [{ items: [] }] },
     fetchStatus: 'idle',
     hasNextPage: false,
@@ -87,11 +90,15 @@ vi.mock('@/components/app/ListToolbar', async (original) => ({
   ListToolbar: ({ action }: { action: ReactNode }) => action,
 }));
 vi.mock('@/components/ui/Tabs', () => ({ Tabs: () => null }));
-vi.mock('@/features/materials/MaterialsTab', () => ({
-  locationLabel: (value: string) => value,
-  MaterialsTab: () => null,
+vi.mock('@/features/materials/useBlockActions', () => ({
+  blockLink: () => ({}),
+  useBlockActions: () => ({
+    dialogs: null,
+    frozen: false,
+    menuFor: () => [],
+    newMenu: [],
+  }),
 }));
-vi.mock('@/features/files/EmbedsTab', () => ({ EmbedsTab: () => null }));
 vi.mock('@/features/workspace/WorkspaceHealth', () => ({
   AccountStatusButton: () => null,
   useAccountFrozen: () => false,

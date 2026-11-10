@@ -14,8 +14,11 @@ export interface CanvasBody {
   id: string;
   /** The canvas's images, as image editor assets */
   imageAssetIds: string[];
+  /** Every ready image asset of this canvas, one the pruner trashed included: the ids a save may name */
+  ownImageAssetIds: string[];
   /** The material's revision; a save sends the one it read */
   revision: number;
+  title: string;
   updatedAt: string;
   /** Counts the saves */
   version: number;

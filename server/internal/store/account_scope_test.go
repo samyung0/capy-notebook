@@ -207,21 +207,21 @@ func TestAccountConversationsAreTheOwnersAlone(t *testing.T) {
 	if conv.WorkspaceID != "" {
 		t.Fatalf("account conversation workspace = %q", conv.WorkspaceID)
 	}
-	mine, err := s.ListConversations(ctx, f.me, "", false)
+	mine, err := listedConversations(ctx, s, f.me, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(mine) != 1 || mine[0].ID != conv.ID {
 		t.Fatalf("account list = %+v, want only the account conversation", mine)
 	}
-	workspaceList, err := s.ListConversations(ctx, f.me, f.owned, false)
+	workspaceList, err := listedConversations(ctx, s, f.me, f.owned, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(workspaceList) != 1 || workspaceList[0].ID != inWorkspace.ID {
 		t.Fatalf("workspace list = %+v", workspaceList)
 	}
-	if theirs, err := s.ListConversations(ctx, f.stranger, "", false); err != nil || len(theirs) != 0 {
+	if theirs, err := listedConversations(ctx, s, f.stranger, "", false); err != nil || len(theirs) != 0 {
 		t.Fatalf("stranger's account list = %+v, %v", theirs, err)
 	}
 	if _, err := s.GetConversation(ctx, f.me, conv.ID); err != nil {
@@ -461,7 +461,7 @@ func TestAccountThreadStaysReadableAfterLosingAWorkspace(t *testing.T) {
 	if _, err := s.GetConversation(ctx, f.me, conv.ID); err != nil {
 		t.Fatalf("owner get = %v", err)
 	}
-	if listed, err := s.ListConversations(ctx, f.me, "", false); err != nil || len(listed) != 1 || listed[0].ID != conv.ID {
+	if listed, err := listedConversations(ctx, s, f.me, "", false); err != nil || len(listed) != 1 || listed[0].ID != conv.ID {
 		t.Fatalf("owner list = %+v, %v", listed, err)
 	}
 	msgs, err := s.ListMessages(ctx, f.me, conv.ID)

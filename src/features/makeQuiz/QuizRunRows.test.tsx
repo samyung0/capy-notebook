@@ -46,7 +46,9 @@ const report = {
 };
 const rows = () => renderToStaticMarkup(<QuizRunRows waits={[]} />);
 
-it('names the file a quiz stopped for and offers another try', () => {
+// Epo 2026-11-09: a lost file is named, and the quiz goes on with the files read; a
+// wait with every file lost leaves the panel for a toast, so it is never drawn.
+it('names the file a quiz lost and goes on with the rest', () => {
   read.value = { data: run({}) };
   const html = renderToStaticMarkup(
     <QuizRunRows
@@ -54,8 +56,8 @@ it('names the file a quiz stopped for and offers another try', () => {
         {
           answers: [],
           failures: [{ key: 'k', name: 'scan.pdf', reason: 'Not added' }],
-          paper: [],
-          status: 'failed',
+          paper: ['f_1'],
+          status: 'ready',
           wait: {
             announced: false,
             answers: [],
@@ -72,7 +74,8 @@ it('names the file a quiz stopped for and offers another try', () => {
   expect(html).toContain(
     m.source_import_file_error({ name: 'scan.pdf', reason: 'Not added' })
   );
-  expect(html).toContain(m.make_quiz_try_again());
+  expect(html).toContain(m.make_quiz_make_action());
+  expect(html).not.toContain(m.make_quiz_try_again());
 });
 
 it('shows a running run with how far it has got', () => {

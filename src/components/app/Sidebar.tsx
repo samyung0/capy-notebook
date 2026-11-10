@@ -97,6 +97,8 @@ function tools(): NavItem[] {
   return [
     // Chat across all the user's files (Epo 2026-10-27).
     { icon: 'ai', label: m.nav_chat(), to: '/chat' },
+    // Canvases of one's own, and every workspace's (Epo 2026-11-10).
+    { icon: 'shape', label: m.workspace_section_canvas(), to: '/canvas' },
     { icon: 'filesNav', label: m.nav_files(), to: '/files' },
     ...(features.tasks
       ? [{ icon: 'todo' as IconName, label: m.nav_tasks(), to: '/tasks' }]
@@ -119,6 +121,8 @@ const ROW_CLASS =
 const RAIL_LABELS =
   '[&_[data-label]]:opacity-0 [&_[data-label]]:transition-opacity [&_[data-label]]:duration-(--motion-duration-fast) rail-open:[&_[data-label]]:opacity-100 group-hover/rail:[&_[data-label]]:delay-100';
 const ROW_IDLE = 'font-medium text-fg hover:bg-page-hover';
+// The rail spaces its icons out; the full sidebar keeps its rows close.
+const rowGap = (rail: boolean) => (rail ? 'gap-2' : 'gap-1 sm:gap-0.5');
 
 function Row({
   item,
@@ -234,7 +238,7 @@ export function Sidebar({
         // The logo smokes out as the rail widens and the app name fades in
         // in line with the row icons, as on the full sidebar; narrowing drops
         // the name at once and the logo fades back.
-        <div className="relative flex items-center px-0.75 pb-1">
+        <div className="relative flex items-center px-0.75 pb-3">
           <span className="motion-smoke rail-open:motion-smoked shrink-0 group-hover/rail:delay-100">
             <LogoMark size={36} />
           </span>
@@ -265,10 +269,7 @@ export function Sidebar({
 
       {withAccount && (
         <div
-          className={cn(
-            'flex flex-col gap-1 sm:gap-0.5',
-            rail ? 'mb-0.5' : 'mb-4'
-          )}
+          className={cn('flex flex-col', rowGap(rail), rail ? 'mb-2' : 'mb-4')}
         >
           <SearchRow />
           <Row
@@ -286,7 +287,7 @@ export function Sidebar({
       )}
 
       {rail ? (
-        <div className="flex flex-col gap-1 sm:gap-0.5">
+        <div className={cn('flex flex-col', rowGap(true))}>
           {nav.sections.flatMap((section) =>
             section.items.map((i) => (
               <Row
@@ -326,7 +327,12 @@ export function Sidebar({
 
       <div className="mt-auto" />
       {withAccount && <VoiceCard onOpen={onNavigate} />}
-      <div className="mt-3 flex flex-col gap-1 border-divider border-t pt-2 sm:gap-0.5">
+      <div
+        className={cn(
+          'mt-3 flex flex-col border-divider border-t pt-2',
+          rowGap(rail)
+        )}
+      >
         {withAccount && (
           <GettingStartedRow
             className={cn(BASE_BUTTON_STYLE, ROW_CLASS, ROW_IDLE)}

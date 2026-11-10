@@ -31,6 +31,10 @@ async function showBoard(page: Page, open: Locator) {
   });
   await open.click();
   await expect(board).not.toHaveAttribute('inert');
+  // Its ground hides the page under it (found see-through on UAT 2026-11-10).
+  expect(
+    await board.evaluate((element) => getComputedStyle(element).backgroundColor)
+  ).not.toBe('rgba(0, 0, 0, 0)');
   await expect(board.locator('edgeless-pen-tool-button').first()).toBeVisible({
     timeout: 60_000,
   });
@@ -326,8 +330,8 @@ type Gfx = {
 };
 
 /** A note card and a pasted image on the open board, in its answer area. */
-const addCardAndImage = (page: Page) =>
-  page.evaluate(async () => {
+const addCardAndImage = (page: Page, image = true) =>
+  page.evaluate(async (withImage) => {
     const { gfx } = document.querySelector(
       '.answer-board affine-edgeless-root'
     ) as unknown as { gfx: Gfx };
@@ -339,6 +343,7 @@ const addCardAndImage = (page: Page) =>
     );
     const paragraph = doc.addBlock('affine:paragraph', {}, note);
     doc.getModelById(paragraph).text.insert('Offspring: AA, Aa, aa', 0);
+    if (!withImage) return;
     const sourceId = await doc.blobSync.set(
       new Blob(
         [
@@ -352,7 +357,7 @@ const addCardAndImage = (page: Page) =>
       { index: gfx.layer.generateIndex(), sourceId, xywh: '[700,200,200,120]' },
       gfx.surface.id
     );
-  });
+  }, image);
 
 const CARDS = '.answer-board :is(affine-edgeless-note, affine-edgeless-image)';
 
@@ -383,7 +388,7 @@ const boardSeen = (page: Page) =>
 
 /** Put away and mounted again from what Done saved: its card and image are drawn,
  * BlockSuite giving each an inline `visibility: visible`, and none of it shows. */
-async function expectCardsUnseen(page: Page) {
+async function expectCardsUnseen(page: Page, placed = 2) {
   await putAway(page);
   await expect
     .poll(
@@ -397,10 +402,10 @@ async function expectCardsUnseen(page: Page) {
         ),
       { timeout: 60_000 }
     )
-    .toBe(2);
+    .toBe(placed);
   expect(await boardSeen(page)).toEqual({
     cardsShown: 0,
-    hits: [false, false],
+    hits: new Array(placed).fill(false),
     shown: 0,
   });
 }
@@ -426,7 +431,44 @@ test('a board put away shows none of its note card or image, and Draw shows them
   await expect.poll(async () => (await boardSeen(page)).cardsShown).toBe(2);
 });
 
-test('a drawn sample put away in the quiz editor shows none of its note card or image', async ({
+test("a picture on an answer board is kept with the device's draft through Done and a reload", async ({
+  page,
+}) => {
+  test.slow();
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await page.goto('/quizzes/qz_2/attempt');
+  await hideMockPanel(page);
+  let question = await openQuestion(page);
+  await showBoard(
+    page,
+    question.getByRole('button', { name: m.drawing_answer_draw() })
+  );
+  await addCardAndImage(page);
+  await pressDone(page);
+  await putAway(page);
+
+  // Practice keeps the board on the device until Check: after a reload the
+  // draft opens with the picture's file, which no server holds yet.
+  await page.reload();
+  await hideMockPanel(page);
+  question = await openQuestion(page);
+  await showBoard(
+    page,
+    question.getByRole('button', { name: m.drawing_answer_draw() })
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document.querySelector<HTMLImageElement>(
+            '.answer-board affine-edgeless-image img'
+          )?.naturalWidth ?? 0
+      )
+    )
+    .toBeGreaterThan(0);
+});
+
+test('a drawn sample put away in the quiz editor shows none of its note card, and takes no picture', async ({
   page,
 }) => {
   test.slow();
@@ -441,15 +483,58 @@ test('a drawn sample put away in the quiz editor shows none of its note card or 
     page,
     page.getByRole('button', { name: m.drawing_sample_draw() })
   );
-  await addCardAndImage(page);
+  // A sample answer holds no pictures (Epo 2026-11-10): Misc has its charts and
+  // no Image tile, and a pasted picture is turned away and said.
+  await page.locator('.answer-board capy-misc-button').click();
+  await expect(
+    page.locator('.answer-board capy-misc-panel .tile[data-kind="bar"]')
+  ).toBeVisible();
+  await expect(
+    page.locator('.answer-board capy-misc-panel .tile[data-pick="image"]')
+  ).toHaveCount(0);
+  await page
+    .locator('.answer-board capy-misc-panel')
+    .getByRole('button', { name: m.drawing_board_close() })
+    .click();
+  await page.evaluate(() => {
+    const clipboard = new DataTransfer();
+    clipboard.items.add(
+      new File(
+        [
+          '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="120"><rect width="200" height="120" fill="#4dabf7"/></svg>',
+        ],
+        'pasted.svg',
+        { type: 'image/svg+xml' }
+      )
+    );
+    document.querySelector('.answer-board editor-host')?.dispatchEvent(
+      new ClipboardEvent('paste', {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: clipboard,
+        composed: true,
+      })
+    );
+  });
+  const refusal = page.locator('[data-state="open"]', {
+    hasText: m.drawing_sample_no_pictures(),
+  });
+  await expect(refusal).toBeVisible();
+  await refusal.getByRole('button').click();
+  await expect(refusal).toHaveCount(0);
+  await expect(page.locator('.answer-board affine-edgeless-image')).toHaveCount(
+    0
+  );
+
+  await addCardAndImage(page, false);
   await pressDone(page);
   const edit = page.getByRole('button', { name: m.drawing_sample_edit() });
   await expect(edit).toBeEnabled({ timeout: 30_000 });
-  await expectCardsUnseen(page);
+  await expectCardsUnseen(page, 1);
 
   await edit.click();
   await expect(page.locator('.answer-board')).not.toHaveAttribute('inert');
-  await expect.poll(async () => (await boardSeen(page)).cardsShown).toBe(2);
+  await expect.poll(async () => (await boardSeen(page)).cardsShown).toBe(1);
 });
 
 /** The strokes the answer's drawing shows: one path each. */

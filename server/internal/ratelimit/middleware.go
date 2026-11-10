@@ -37,6 +37,7 @@ const (
 	classVoice
 	classReview
 	classBankComment
+	classAssignment
 )
 
 // aiSuffixes are the model-backed routes. Matching by suffix rather than exact
@@ -110,7 +111,8 @@ func classify(method, path string) class {
 	if strings.HasPrefix(path, "/api/files/") && strings.HasSuffix(path, "/thumbnail") {
 		return classThumbnail
 	}
-	// A drawing answer's board and image, up to 550 KB a request (Done).
+	// A drawing answer's board, image and pictures, up to about 11 MiB a
+	// request (Done).
 	if strings.HasPrefix(path, "/api/assignment-attempts/") && strings.Contains(path, "/drawings/") {
 		return classUpload
 	}
@@ -133,6 +135,13 @@ func classify(method, path string) class {
 	}
 	if method == http.MethodPost && strings.HasPrefix(path, "/api/bank/questions/") && strings.HasSuffix(path, "/comments") {
 		return classBankComment
+	}
+	// Making an assignment and publishing a draft: each reaches every member's
+	// To do.
+	if method == http.MethodPost &&
+		((strings.HasPrefix(path, "/api/workspaces/") && strings.HasSuffix(path, "/assignments")) ||
+			(strings.HasPrefix(path, "/api/assignments/") && strings.HasSuffix(path, "/publish"))) {
+		return classAssignment
 	}
 	for _, suffix := range editorSuffixes {
 		if strings.HasSuffix(path, suffix) {
@@ -346,6 +355,8 @@ func (l *Limiter) classBuckets(routeClass class, subject string) []bucket {
 		return []bucket{{key: "review:" + subject, rule: l.cfg.Review, code: "rate_limited"}}
 	case classBankComment:
 		return []bucket{{key: "bank-comment:" + subject, rule: l.cfg.BankComment, code: "rate_limited"}}
+	case classAssignment:
+		return []bucket{{key: "assignment:" + subject, rule: l.cfg.Assignment, code: "rate_limited"}}
 	}
 	return nil
 }

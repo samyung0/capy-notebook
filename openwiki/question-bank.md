@@ -226,7 +226,9 @@ copies and freezes with the quiz's other assets; a copy missing either asset
 drops it whole. Authors draw it from "Sample answer (optional)" under the
 marking scheme in the quiz editor and the question dialog (`DrawnSampleField`,
 A1–A3); results show it drawn from its board, and marking sends its image
-before the student's drawing.
+before the student's drawing. Its board takes no pictures (Epo 2026-11-10):
+the sample names only its board and image, so a picture's file would have no
+reference to keep it.
 
 In an assignment, Done on an emptied board deletes the part's stored drawing
 (`DELETE /api/assignment-attempts/{id}/drawings/{partId}`), so it is neither
@@ -344,16 +346,22 @@ step is an address, `?make=files`, `?make=pages&paper=…&answers=…&quizFile=�
   A row names the file, with no page count: reading one would download a Word or PowerPoint
   file just to show it (Epo 2026-11-06).
   An upload takes the normal path (`useQuizUpload`, `startSourceTransfer`), hidden from
-  members and in no topic, and shows "Reading pages" until it is indexed. Continue waits for
-  each upload to have started, since the browser's page count happens in the dialog, and for
-  no file to have failed; one that failed or was stored without parsing holds it until
+  members and in no topic. The upload panel sits under the dialog, so an upload from the
+  dialog closes it (Epo 2026-11-09) once every file picked has started, since the browser's
+  page count happens in the dialog, and the panel follows the files as below; so does
+  picking a file from Files that is still being read (Epo 2026-11-09), rather than holding
+  the dialog on "Reading pages" (which a file still reading when the step opens from a link
+  still shows). Continue waits for no file to have failed; one that failed or was stored without parsing holds it until
   removed. With every file read it goes on to the pages. With any still reading (Epo
   2026-11-05, "upload might take a while") the dialog closes and the upload panel follows
   them (`quizWaits.ts`), one row at a time: the files' upload rows while they read, then the
-  quiz's row, and a toast with it, offering Make quiz, which opens the pages, anywhere in the app. Any file that
-  fails ends the wait: its reason goes on the quiz's row, with no upload toast, and Try again
-  reopens the files step with those still good. The panel's close hides a wait while it
-  reads; its row comes back when it ends. A toast's Make quiz with another Make a quiz dialog
+  quiz's row, and a toast with it, offering Make quiz, which opens the pages, anywhere in the app. A file that
+  fails no longer ends the wait (Epo 2026-11-09): once every file is through, the quiz's
+  row names the lost ones and Make quiz opens the files step with those still good and a
+  banner naming the lost (`useQuizNotice`); with every file failed the wait leaves the
+  panel and an error toast offers Try again, which opens the files step empty. A failed
+  upload row shows its failure as any upload's, with no Try again. The panel's close hides
+  a wait while it reads; its row comes back when it ends. A toast's Make quiz with another Make a quiz dialog
   open starts that dialog again on the new files (`useQuizDialogKey`); the panel's own button
   sits under the dialog's overlay. The wait's file names and ids stay in `localStorage`
   (`capy.quiz.waits`, with the account they belong to, dropped when another signs in), so a

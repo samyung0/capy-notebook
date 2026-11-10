@@ -19,6 +19,7 @@ import {
   fileQuery,
   filesQuery,
   flashcardSetQuery,
+  itemsQuery,
   labelsQuery,
   learningOverviewQuery,
   materialQuery,
@@ -26,8 +27,6 @@ import {
   meQuery,
   modelsQuery,
   notificationPrefsQuery,
-  ownedFilesQuery,
-  ownedMaterialsQuery,
   quizQuery,
   tasksQuery,
   todoQuery,
@@ -62,12 +61,9 @@ import { checkReleaseOnFocus, loadUpdateOnPathChange } from '@/lib/appRelease';
 import { OfflineError } from '@/lib/errors';
 import { features } from '@/lib/features';
 import {
-  FILE_SORT_DEFAULT,
-  FILE_SORTS,
-  fileListParams,
-  MATERIAL_SORT_DEFAULT,
-  MATERIAL_SORTS,
-  materialListParams,
+  ITEM_SORT_DEFAULT,
+  ITEM_SORTS,
+  itemListParams,
   parseFilesSearch,
   parseTodoSearch,
   parseWorkspacesSearch,
@@ -218,13 +214,12 @@ const bankChild = <const T extends string>(path: T) =>
   createRoute({ getParentRoute: () => bankRoute, path });
 
 // The old Create, Quizzes and Flashcards list pages now live in the Files
-// page's Blocks tab.
+// page's list.
 const blocksRedirect = <const T extends string>(path: T) =>
   createRoute({
     beforeLoad: () => {
       throw redirect({
         replace: true,
-        search: { tab: 'blocks' },
         to: '/files',
       });
     },
@@ -303,7 +298,7 @@ const appRoutes = [
       qc.prefetchQuery(topicsQuery(id));
       qc.prefetchQuery(filesQuery(id));
       qc.prefetchQuery(materialsQuery(id));
-      qc.prefetchQuery(conversationsQuery(id));
+      qc.prefetchInfiniteQuery(conversationsQuery(id));
       // The open file rides the first wave instead of waiting for the page to
       // render. An open material is left out on purpose: its body is the
       // document itself, and the heavy-document gate must see the list first.
@@ -339,13 +334,22 @@ const appRoutes = [
     getParentRoute: () => authShellRoute,
     path: '/workspaces/$workspaceId/study/assignments/$assignmentId',
   }),
+  // The account's Canvas page: `c` names the canvas of the person's own shown.
+  createRoute({
+    component: lazyPage(() => import('@/routes/Canvas')),
+    getParentRoute: () => authShellRoute,
+    path: '/canvas',
+    validateSearch: (search: Record<string, unknown>): { c?: string } => ({
+      c: typeof search.c === 'string' ? search.c : undefined,
+    }),
+  }),
   // Chat across all the user's files; the optional id keeps the page mounted
   // (and its streams running) while the shown conversation changes.
   createRoute({
     component: lazyPage(() => import('@/routes/AccountChat')),
     getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
-      qc.prefetchQuery(conversationsQuery(null));
+      qc.prefetchInfiniteQuery(conversationsQuery(null));
       // Citations show their workspace's icon.
       qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
     },
@@ -488,12 +492,9 @@ const appRoutes = [
   // biome-ignore assist/source/useSortedKeys: TanStack types `deps` in the loader from `loaderDeps`, which must come first.
   createRoute({
     beforeLoad: ({ search }) => {
-      const saved =
-        search.tab === 'blocks'
-          ? savedSort('blocks', MATERIAL_SORTS, MATERIAL_SORT_DEFAULT, search)
-          : search.tab === 'trash'
-            ? undefined
-            : savedSort('files', FILE_SORTS, FILE_SORT_DEFAULT, search);
+      const saved = search.tab
+        ? undefined
+        : savedSort('files', ITEM_SORTS, ITEM_SORT_DEFAULT, search);
       if (saved)
         throw redirect({
           replace: true,
@@ -505,11 +506,7 @@ const appRoutes = [
     getParentRoute: () => authShellRoute,
     loaderDeps: ({ search }) => search,
     loader: ({ context: { queryClient: qc }, deps }) => {
-      if (deps.tab === 'blocks') {
-        qc.prefetchInfiniteQuery(ownedMaterialsQuery(materialListParams(deps)));
-      } else if (deps.tab !== 'trash') {
-        qc.prefetchInfiniteQuery(ownedFilesQuery(fileListParams(deps)));
-      }
+      if (!deps.tab) qc.prefetchInfiniteQuery(itemsQuery(itemListParams(deps)));
     },
     path: '/files',
     validateSearch: parseFilesSearch,

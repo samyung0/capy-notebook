@@ -1,3 +1,4 @@
+import { addImages } from '@blocksuite/affine/blocks/image';
 import {
   DefaultTool,
   EdgelessCRUDIdentifier,
@@ -16,6 +17,7 @@ import {
   DEFAULT_CONNECTOR_MODE,
   DefaultTheme,
   isTransparent,
+  MAX_IMAGE_WIDTH,
   MindmapStyle,
   PointStyle,
   type ShapeName,
@@ -32,6 +34,7 @@ import {
 import {
   type BlockComponent,
   BlockFlavourIdentifier,
+  type BlockStdScope,
   type PointerEventState,
 } from '@blocksuite/affine/std';
 import {
@@ -78,6 +81,7 @@ import {
 } from '@/features/materials/youtubeUrl';
 import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
+import { IMAGE_ACCEPT } from '@/lib/fitImage';
 import {
   addCard,
   type CardMaterialKind,
@@ -1453,24 +1457,21 @@ class CapyGraphSlot extends CapyPieceSlot {
   protected slotTip = { key: 'G', tip: m.drawing_board_graphs };
 }
 
-class CapyChartSlot extends CapyPieceSlot {
-  protected pieces = CHART_PIECES;
-  protected slotTip = { key: 'B', tip: m.drawing_board_charts };
-}
-
 class CapyFormulaSlot extends CapyPieceSlot {
   protected pieces = FORMULA_PIECES;
   protected slotTip = { key: 'M', tip: m.drawing_board_formulas };
 }
 
-/** The workspace canvas's Misc panel (Epo 2026-11-09, A): tiles in groups, each a card
- * picked up and dropped like a slot's piece; a finger's tap puts it in the view's
- * middle. Groups join as their kinds land (board catalog). */
+/** The Misc panel (Epo 2026-11-09, A; on the answer board too since 2026-11-10):
+ * tiles in groups, each a card picked up and dropped like a slot's piece; a finger's
+ * tap puts it in the view's middle. Each board shows what it may hold (`tileFits`). */
 type MiscView = 'emoji' | 'klipy' | 'link' | 'quiz' | 'flashcards';
 /** A tile: a card picked up like a slot's piece, or a picker it opens (KLIPY's on
  * one of its two tabs). */
 type MiscTile =
   | { piece: Piece }
+  /** Picks image files from the device, for a phone's lack of paste and drop. */
+  | { art: TemplateResult; label: () => string; pick: 'image' }
   | {
       art: TemplateResult;
       klipy?: KlipyKind;
@@ -1488,6 +1489,11 @@ const MISC_GROUPS: { label: () => string; tiles: MiscTile[] }[] = [
   {
     label: m.drawing_board_media,
     tiles: [
+      {
+        art: svg`<svg width="36" height="32" viewBox="0 0 36 32" aria-hidden="true"><rect x="2" y="3" width="32" height="26" rx="4" fill="#dcebfb"/><circle cx="12" cy="12" r="3.5" fill="#f2c94c"/><path d="M4 26.5 13.5 17l5.5 5.5 5-5L32 25.5V25a4 4 0 0 1-4 4H8a4 4 0 0 1-4-2.5Z" fill="#1e96eb"/></svg>`,
+        label: m.drawing_board_image,
+        pick: 'image',
+      },
       {
         art: html`<img
           alt=""
@@ -2004,6 +2010,25 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
     this.placed();
   }
 
+  /** Image files picked from the device land as pasted ones do, through the
+   * board's blob source: stored at once on the workspace canvas. */
+  private pickImages() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = IMAGE_ACCEPT;
+    input.multiple = true;
+    input.addEventListener('change', () => {
+      const files = [...(input.files ?? [])];
+      if (!files.length) return;
+      // A file the board can't read is said by BlockSuite's own notice.
+      addImages(this.edgeless.std, files, { maxWidth: MAX_IMAGE_WIDTH }).catch(
+        () => undefined
+      );
+      this.placed();
+    });
+    input.click();
+  }
+
   private placingGif = false;
 
   /** A GIF or sticker at KLIPY's size for it, or the file's own when KLIPY gives
@@ -2117,6 +2142,16 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         ${PIECE_TIPS[piece.kind].tip()}
       </div>`;
     }
+    if ('pick' in tile)
+      return html`<button
+        class="tile"
+        data-pick=${tile.pick}
+        type="button"
+        @click=${() => this.pickImages()}
+      >
+        <span class="art">${tile.art}</span>
+        ${tile.label()}
+      </button>`;
     return html`<button
       class="tile"
       data-view=${tile.klipy ?? tile.view}
@@ -2463,23 +2498,27 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         ${this.closeButton()}
       </div>
       <div class="body">
-        ${MISC_GROUPS.filter(
-          ({ tiles }) =>
-            workspace ||
-            !tiles.some(
-              (tile) =>
-                'view' in tile &&
-                (tile.view === 'quiz' || tile.view === 'flashcards')
-            )
-        ).map(
-          ({ label, tiles }) =>
-            html`<div class="group">
+        ${MISC_GROUPS.map(({ label, tiles }) => ({
+          label,
+          tiles: tiles.filter(
+            (tile) =>
+              tileFits(tile, boardKinds.get(this.edgeless.std)) &&
+              // The workspace's quizzes and sets need a workspace lent.
+              (workspace ||
+                !('view' in tile) ||
+                (tile.view !== 'quiz' && tile.view !== 'flashcards'))
+          ),
+        }))
+          .filter(({ tiles }) => tiles.length)
+          .map(
+            ({ label, tiles }) =>
+              html`<div class="group">
               <h3>${label()}</h3>
               <div class="tiles">
                 ${tiles.map((tile) => this.renderTile(tile))}
               </div>
             </div>`
-        )}
+          )}
       </div>`;
   }
 }
@@ -2614,16 +2653,6 @@ const graphsTool = seniorTool(
       .toolbarContainer=${toolbar}
     ></capy-graph-slot>`
 );
-const chartsTool = seniorTool(
-  'capy-charts',
-  m.drawing_board_charts,
-  (block, toolbar) =>
-    html`<capy-chart-slot
-      data-own-width
-      .edgeless=${block}
-      .toolbarContainer=${toolbar}
-    ></capy-chart-slot>`
-);
 const formulasTool = seniorTool(
   'capy-formulas',
   m.drawing_board_formulas,
@@ -2643,18 +2672,39 @@ const miscTool = seniorTool(
     ></capy-misc-button>`
 );
 
-/** The toolbar's slots after the shapes: the question board keeps Charts as its own
- * slot; the workspace canvas has them in Misc (Epo 2026-11-09). */
-export const sheetTools = (board: BoardKind) =>
-  board === 'question'
-    ? [graphsTool, chartsTool, formulasTool]
-    : [graphsTool, formulasTool, miscTool];
+/** The toolbar's slots after the shapes, on both boards (Epo 2026-11-10): Misc
+ * holds the charts, and on each board only what it may hold. */
+export const sheetTools = [graphsTool, formulasTool, miscTool];
+
+const boardKinds = new WeakMap<
+  BlockStdScope,
+  { board: BoardKind; images: boolean }
+>();
+/** Says which board a mounted editor is and whether it takes images, for what
+ * its Misc panel offers. */
+export const markBoard = (
+  std: BlockStdScope,
+  board: BoardKind,
+  images: boolean
+) => boardKinds.set(std, { board, images });
+
+/** Whether a Misc tile is for this board (board catalog): an answer board holds
+ * the charts and images; the mind map, the other pictures, links and the
+ * workspace's quizzes and sets are the workspace canvas's. */
+const tileFits = (
+  tile: MiscTile,
+  { board, images }: { board?: BoardKind; images?: boolean } = {}
+) => {
+  if ('pick' in tile) return !!images;
+  return (
+    board === 'workspace' || ('piece' in tile && tile.piece.kind !== 'mindmap')
+  );
+};
 
 for (const [tag, element] of [
   ['capy-shape-panel', CapyShapePanel],
   ['capy-shape-button', CapyShapeButton],
   ['capy-graph-slot', CapyGraphSlot],
-  ['capy-chart-slot', CapyChartSlot],
   ['capy-formula-slot', CapyFormulaSlot],
   ['capy-misc-panel', CapyMiscPanel],
   ['capy-misc-button', CapyMiscButton],

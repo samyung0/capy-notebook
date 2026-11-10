@@ -174,8 +174,10 @@ def test_the_ingest_host_lets_a_process_trace_only_its_descendants() -> None:
 
 def test_the_layout_service_runs_unprivileged_outside_the_release_stacks() -> None:
     """It decodes JPEGs sent over the network: no capabilities, no privilege
-    gain, a read-only root and a process limit, on the WireGuard address, and
-    its model comes in at build from a pinned revision and SHA-256."""
+    gain, a read-only root and a process limit, on the WireGuard address. Its
+    model comes in at build from a pinned revision and SHA-256, and the
+    onnxruntime that runs it makes it int8 in a stage the image keeps only the
+    model from."""
     compose = yaml.safe_load((DEPLOY / "docker-compose.layout.yml").read_text())
     layout = compose["services"]["layout"]
     assert list(compose["services"]) == ["layout"]
@@ -193,5 +195,16 @@ def test_the_layout_service_runs_unprivileged_outside_the_release_stacks() -> No
     assert re.search(r"--checksum=sha256:[0-9a-f]{64}", dockerfile)
     assert re.search(r"/resolve/[0-9a-f]{40}/inference\.onnx", dockerfile)
     assert "USER layout" in dockerfile
+    assert "COPY --from=model" in dockerfile
+
+    def onnxruntime_pin(name: str) -> str:
+        lines = (ROOT / "layout" / name).read_text().splitlines()
+        return next(
+            line.split()[0] for line in lines if line.startswith("onnxruntime==")
+        )
+
+    assert onnxruntime_pin("requirements-quantise.txt") == onnxruntime_pin(
+        "requirements.txt"
+    )
     for name in ("docker-compose.ingest-host.yml", "docker-compose.prod.yml"):
         assert "capy-layout" not in (DEPLOY / name).read_text()

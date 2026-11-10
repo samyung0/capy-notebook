@@ -11,12 +11,13 @@ import {
   storedDrawingId,
   useDrawingBoard,
 } from './DrawingPreview';
-import { DRAWING_DELETED } from './drawingBoards';
+import { DRAWING_DELETED, fetchDrawingPicture } from './drawingBoards';
 import {
   DrawingDraftScope,
   DrawingUploader,
   type DrawingValue,
   drawingDraftKey,
+  heldDrawingPictures,
   isDrawingValue,
 } from './drawingValue';
 
@@ -53,7 +54,8 @@ export function DrawingAnswer({
   const fetched = useDrawingBoard(value);
   const deleted = fetched === DRAWING_DELETED;
   const board = deleted ? null : fetched;
-  const answered = isDrawingValue(value) || storedDrawingId(value) !== null;
+  const storedId = storedDrawingId(value);
+  const answered = isDrawingValue(value) || storedId !== null;
   const taking = !(review || disabled);
   const ahead = useBoardAhead(taking);
   const close = () => setOpen(false);
@@ -111,6 +113,14 @@ export function DrawingAnswer({
             hidden={!open}
             onClose={close}
             onDone={taking ? done : undefined}
+            pictures={{
+              held: isDrawingValue(value)
+                ? heldDrawingPictures(value)
+                : undefined,
+              load: storedId
+                ? (id) => fetchDrawingPicture(storedId, id)
+                : undefined,
+            }}
             pinned={pinned}
             readOnly={!taking}
             saved={board ?? undefined}

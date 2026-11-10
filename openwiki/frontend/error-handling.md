@@ -174,7 +174,12 @@ policy. The Files preview dialog handles its detail-query failure inline with
 
 Paged page lists (Files, Blocks, Trash, Learning's Past reviews and All
 results) end with `ListEnd` (`src/components/app/ListEnd.tsx`): the next page
-loads once the end is within 800px of the page panel's bottom. A page that
+loads once the end is within 800px of the page panel's bottom. A list that
+scrolls by itself passes its own scroller as `root`: the chat list in a side
+panel, and the archived chats dialog's and the Canvas page's menu's lists, each
+a box of its own above actions that stay in reach (Epo 2026-11-10). An ask made
+while the list is being read again joins that read and gets no page, so
+`ListEnd` asks again when it ends. A page that
 still fails after the default query retries stops loading there, with Load more
 as the manual retry; the rows already loaded stay.
 
@@ -238,9 +243,13 @@ dialogs, drawers and the phone chat button (S1, E2 and P3, Epo 2026-11-03):
   on the shown or waiting toast (×2, ×3) and restarts its timer. A new copy
   under the same id replaces it in place, so a working toast
   (`variant: 'loading'`) turns into its done toast.
-- Errors stay until closed with their ×. Warnings last twelve seconds, other
+- Errors stay until closed with their × or swiped away. Warnings last twelve seconds, other
   toasts with a button seven, the rest four, and a working toast until it is
-  updated. Timers pause while the toast is hovered or the tab is hidden.
+  updated or closed. Timers pause while the toast is hovered or the tab is hidden.
+- A drag moves a toast (up into the screen only a fifth as far). Released
+  past 40px down or 80px sideways, or flicked, it flies on the way it was
+  thrown and closes; otherwise it springs back (ding's swipe, Epo
+  2026-11-09). A drag never starts on a button.
 - Its look (board K2) is in `appearance.md` § Shared pieces.
 
 ## Persisted query cache

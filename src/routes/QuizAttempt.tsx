@@ -135,12 +135,7 @@ function Attempt({ quizId }: { quizId: string }) {
           }
           control={control}
           emptyAction={
-            <Link
-              className="mt-6 inline-flex"
-              preload="intent"
-              search={{ tab: 'blocks' }}
-              to="/files"
-            >
+            <Link className="mt-6 inline-flex" preload="intent" to="/files">
               <Button iconLeft="navigationBack" rounded="large">
                 {m.quiz_back()}
               </Button>
@@ -150,9 +145,7 @@ function Attempt({ quizId }: { quizId: string }) {
           inApp
           name={quiz.name}
           onBack={() =>
-            canGoBack
-              ? router.history.back()
-              : void navigate({ search: { tab: 'blocks' }, to: '/files' })
+            canGoBack ? router.history.back() : void navigate({ to: '/files' })
           }
           provenance={quiz.provenance}
           questions={questions}

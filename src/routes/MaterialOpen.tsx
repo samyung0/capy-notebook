@@ -32,8 +32,7 @@ export default function MaterialOpen() {
   const fileReadOnly = workspaceId
     ? workspace?.capabilities.canEdit !== true
     : frozen;
-  const back = () =>
-    navigate({ search: fileId ? {} : { tab: 'blocks' }, to: '/files' });
+  const back = () => navigate({ to: '/files' });
   const item = fileId
     ? { id: fileId, kind: 'file' as const }
     : materialId
@@ -61,7 +60,7 @@ export default function MaterialOpen() {
               <IconButton
                 icon="navigationBack"
                 iconClassName="-translate-y-px"
-                label={fileId ? m.nav_files() : m.files_tab_blocks()}
+                label={m.nav_files()}
                 onClick={back}
                 size="sm"
                 tooltip
