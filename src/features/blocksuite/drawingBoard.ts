@@ -1,4 +1,5 @@
 import '@toeverything/theme/style.css';
+import './chrome.css';
 import './drawingBoard.css';
 import { ImageStoreExtension } from '@blocksuite/affine/blocks/image/store';
 import { ImageViewExtension } from '@blocksuite/affine/blocks/image/view';

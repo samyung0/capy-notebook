@@ -35,6 +35,7 @@ import {
 } from '@/features/materials/embeds/AppEmbed';
 import { EmbedLoading } from '@/features/materials/embeds/EmbedView';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
+import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
 import { cn } from '@/lib/cn';
 import { type BlocksRoom, createBlocksRoom } from './blocksRoom';
 import { BlockIslands } from './islands';
@@ -374,6 +375,7 @@ function BlocksEditor({
   onPainted: () => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
+  const displayWidth = useNoteEditorPrefs((state) => state.displayWidth);
   const [islands] = useState(() => new BlockIslands());
   const editor = useRef<{
     setReadonly: (readonly: boolean) => void;
@@ -415,8 +417,10 @@ function BlocksEditor({
   }, [readonly]);
   return (
     <>
+      {/* The column's width and gutters are the editor's own (pageEditor.css). */}
       <div
-        className="mx-auto w-full max-w-[768px] px-4 pt-6 pb-24"
+        className="w-full pt-6 pb-24"
+        data-note-width={displayWidth}
         ref={container}
       />
       <MaterialRefIslands islands={islands} ownerId={id} readonly={readonly} />

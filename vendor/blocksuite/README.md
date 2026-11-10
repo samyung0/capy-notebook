@@ -333,3 +333,15 @@ Outside this directory, for BlockSuite:
   patch for that package, as a pnpm patch.
 - Upstream's yarn patch for `yjs` 13.6.21 (53-bit client ids) is **not**
   carried: our rooms assign client ids.
+34. Chrome on the app's tokens (`affine/components` `src/toolbar/{styles,toolbar,icon-button,separator,menu-button}.ts`
+    and `affine/shared` `src/styles/panel.ts`, marked `Capy (local change 34)`; Epo
+    2026-11-10, mock S2): the floating bar and its menus live in shadow roots, so page
+    CSS cannot restyle them. `styles.ts` no longer pins AFFiNE's light or dark palette
+    on a bar (its two functions return nothing), so bars read the variables the app maps
+    onto its tokens in `src/features/blocksuite/chrome.css`. The rest read custom
+    properties set there, each falling back to upstream's value: a panel's corner
+    (`--radius-toolbar`) with a 1px border, a bar's height, gap and padding
+    (`--capy-toolbar-height`, `-gap`, `-padding`), a button's least size, corner and
+    icon size (`--capy-toolbar-button-size`, `-button-justify`, `-button-radius`,
+    `-icon-size`), a separator's width and line (`--capy-toolbar-separator-*`), and a
+    menu row's corner and height (`--capy-menu-row-height`).

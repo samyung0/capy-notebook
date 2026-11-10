@@ -1,0 +1,97 @@
+/* BlockSuite's chrome on our tokens (Epo 2026-11-10, mock S2 and N2): the note
+   and the drawing board share one opaque overlay panel for every floating bar
+   and menu. BlockSuite's parts read AFFiNE's variables, many from inside shadow
+   roots and from popups under <body>, so they are mapped at the root, over the
+   theme sheet's own values and the board's dark palette (drawingBoard.ts).
+   The marking image is drawn in AFFiNE's light values ([data-board-light]). */
+:root:root:root:not([data-board-light]) {
+  --affine-font-family: var(--font-sans);
+  --affine-font-sans-family: var(--font-sans);
+
+  --affine-text-primary-color: var(--text-primary);
+  --affine-text-secondary-color: var(--text-secondary);
+  --affine-text-disable-color: var(--text-placeholder);
+  --affine-placeholder-color: var(--text-placeholder);
+  --affine-icon-color: var(--text-secondary);
+  --affine-icon-secondary: var(--text-muted);
+  --affine-link-color: var(--text-link);
+  --affine-primary-color: var(--action-accent-bg);
+  --affine-brand-color: var(--action-accent-bg);
+  --affine-v2-text-primary: var(--text-primary);
+  --affine-v2-text-secondary: var(--text-secondary);
+  --affine-v2-text-tertiary: var(--text-muted);
+  --affine-v2-text-placeholder: var(--text-placeholder);
+  --affine-v2-text-disable: var(--text-placeholder);
+  --affine-v2-text-link: var(--text-link);
+  --affine-v2-icon-primary: var(--text-secondary);
+  --affine-v2-icon-secondary: var(--text-muted);
+  --affine-v2-icon-tertiary: var(--text-placeholder);
+  --affine-v2-icon-activated: var(--action-accent-bg);
+  --affine-v2-button-primary: var(--action-accent-bg);
+
+  --affine-background-primary-color: var(--surface-card-bg);
+  --affine-background-secondary-color: var(--surface-card-dark-bg);
+  --affine-background-tertiary-color: var(--surface-card-dark-bg);
+  --affine-background-overlay-panel-color: var(--surface-overlay-bg);
+  --affine-background-code-block: var(--surface-card-dark-bg);
+  --affine-v2-layer-background-primary: var(--surface-card-bg);
+  --affine-v2-layer-background-secondary: var(--surface-card-dark-bg);
+  --affine-v2-layer-background-tertiary: var(--surface-card-dark-bg);
+  --affine-v2-layer-background-overlayPanel: var(--surface-overlay-bg);
+  --affine-v2-layer-background-codeBlock: var(--surface-card-dark-bg);
+  --affine-v2-block-callout-background-grey: var(--surface-card-dark-bg);
+  --affine-v2-table-headerBackground-default: var(--surface-overlay-bg);
+
+  /* A wash of the text colour, so a hover reads on the panel, the page and paint. */
+  --affine-hover-color: color-mix(in srgb, var(--text-primary) 7%, transparent);
+  --affine-hover-color-filled: var(--surface-overlay-hover-bg);
+  --affine-v2-layer-background-hoverOverlay: color-mix(
+    in srgb,
+    var(--text-primary) 7%,
+    transparent
+  );
+
+  --affine-border-color: var(--border-overlay);
+  --affine-divider-color: var(--divider);
+  --affine-quote-color: var(--border-strong);
+  --affine-v2-layer-insideBorder-border: var(--border-overlay);
+  --affine-v2-layer-insideBorder-blackBorder: var(--border-overlay);
+  --affine-v2-block-divider-divider: var(--divider);
+  --affine-v2-table-border: var(--border-default);
+  --affine-v2-table-indicator-activated: var(--action-accent-bg);
+
+  --affine-overlay-shadow: var(--shadow-pop);
+  --affine-overlay-panel-shadow: var(--shadow-pop);
+  --affine-menu-shadow: var(--shadow-pop);
+  --affine-popover-shadow: var(--shadow-pop);
+  --affine-toolbar-shadow: var(--shadow-pop);
+  --affine-float-button-shadow: var(--shadow-raised);
+  --affine-button-shadow: var(--shadow-raised);
+  --affine-popover-radius: var(--radius-toolbar);
+}
+
+/* The one floating bar (text selection, block, table, media and link in a note; a
+   selected element or several on the board) and its menus: 36px tall from sm with
+   28px buttons and 18px icons, 32px and 26px on phones. They live in shadow roots, so
+   the vendored parts read these properties (vendor README local change 34). */
+:root {
+  --capy-toolbar-height: 30px;
+  --capy-toolbar-gap: 0;
+  --capy-toolbar-padding: 0 3px;
+  --capy-toolbar-button-size: 26px;
+  --capy-toolbar-button-justify: center;
+  --capy-toolbar-button-radius: var(--radius-toolbar-button);
+  --capy-toolbar-icon-size: 18px;
+  --capy-toolbar-separator-width: 7px;
+  --capy-toolbar-separator-line: 1px;
+  --capy-toolbar-separator-height: 18px;
+  --capy-menu-row-height: 28px;
+}
+
+@media (min-width: 640px) {
+  :root {
+    --capy-toolbar-height: 34px;
+    --capy-toolbar-padding: 0 4px;
+    --capy-toolbar-button-size: 28px;
+  }
+}

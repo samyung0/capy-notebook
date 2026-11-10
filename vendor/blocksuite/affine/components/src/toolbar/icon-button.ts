@@ -21,13 +21,17 @@ export class EditorIconButton extends LitElement {
       align-items: center;
       padding: var(--icon-container-padding);
       color: ${unsafeCSSVarV2('icon/primary')};
-      border-radius: 4px;
+      /* Capy (local change 34): the app's style sets a bar's button corners. */
+      border-radius: var(--capy-toolbar-button-radius, 4px);
       cursor: pointer;
       white-space: nowrap;
       box-sizing: border-box;
       width: var(--icon-container-width, unset);
       height: var(--icon-container-height, unset);
-      justify-content: var(--justify, unset);
+      /* Capy (local change 34): the app sets a least size, with the icon centred. */
+      min-width: var(--capy-toolbar-button-size, 0);
+      min-height: var(--capy-toolbar-button-size, 0);
+      justify-content: var(--justify, var(--capy-toolbar-button-justify, unset));
       user-select: none;
     }
 
@@ -50,7 +54,7 @@ export class EditorIconButton extends LitElement {
 
     ::slotted(svg) {
       flex-shrink: 0;
-      font-size: var(--icon-size, 20px);
+      font-size: var(--icon-size, var(--capy-toolbar-icon-size, 20px));
     }
 
     ::slotted(.label) {
@@ -79,7 +83,7 @@ export class EditorIconButton extends LitElement {
       height: 100%;
       top: 0;
       left: 0;
-      border-radius: 4px;
+      border-radius: var(--capy-toolbar-button-radius, 4px);
     }
   `;
 

@@ -22,3 +22,127 @@ affine-note
 .affine-note-chunk > [data-block-id] {
   display: flow-root;
 }
+
+/* The note body in the Notion look, in every style (Epo 2026-11-10, mock N2):
+   a 720px column with 96px margins (16px on phones), 16px/1.5 text in blocks
+   padded 3px 2px, headings 30, 24 and 20px at 600. A style changes only the
+   font and the chrome's corners. Sizes above 16px shrink on narrow screens as
+   the note-fs rule does: 16px plus half the excess at 360px, full at 768px. */
+.affine-page-viewport {
+  --affine-font-base: 16px;
+  --affine-font-sm: 14px;
+  --affine-font-xs: 13.6px;
+  --affine-line-height: 1.5;
+  --affine-font-title: clamp(
+    28px,
+    calc(28px + 12 * (100vw - 360px) / 408),
+    40px
+  );
+  --affine-font-h-1: clamp(23px, calc(23px + 7 * (100vw - 360px) / 408), 30px);
+  --affine-font-h-2: clamp(20px, calc(20px + 4 * (100vw - 360px) / 408), 24px);
+  --affine-font-h-3: clamp(18px, calc(18px + 2 * (100vw - 360px) / 408), 20px);
+  --affine-font-h-4: clamp(17px, calc(17px + 1 * (100vw - 360px) / 408), 18px);
+  --affine-font-h-5: 16px;
+  --affine-font-h-6: 16px;
+  --affine-paragraph-space: 1px;
+  --affine-paragraph-margin: 1px 0;
+  --affine-list-margin: 1px 0;
+  --affine-editor-width: 912px;
+  --affine-editor-side-padding: 16px;
+  container: viewport / inline-size;
+}
+
+@media (min-width: 640px) {
+  .affine-page-viewport {
+    --affine-editor-side-padding: 96px;
+  }
+}
+
+/* Full width (the note's width setting) keeps the margins and drops the cap. */
+[data-note-width="full"] > .affine-page-viewport {
+  --affine-editor-width: none;
+}
+
+/* BlockSuite's own phone rule pads 24px; ours keeps the app's 16px gutter. */
+@container viewport (width <= 640px) {
+  .affine-page-viewport .affine-page-root-block-container {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+}
+
+.affine-page-viewport .affine-page-root-block-container {
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+.affine-page-viewport .affine-paragraph-block-container,
+.affine-page-viewport .affine-list-block-container {
+  padding: 3px 2px;
+}
+
+.affine-page-viewport :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: normal;
+}
+
+.affine-page-viewport .h1 {
+  margin-top: 32px;
+  margin-bottom: 4px;
+}
+
+.affine-page-viewport .h2 {
+  margin-top: 22px;
+  margin-bottom: 1px;
+}
+
+.affine-page-viewport :is(.h3, .h4, .h5, .h6) {
+  margin-top: 16px;
+  margin-bottom: 1px;
+}
+
+.affine-page-viewport .quote {
+  padding: 3px 2px 3px 16px;
+  line-height: 1.5;
+}
+
+.affine-page-viewport .quote::after {
+  width: 3px;
+  height: 100%;
+  margin: 0;
+  background: var(--text-primary);
+  border-radius: 0;
+}
+
+/* Bullets and numbers in the text colour, on the first line. */
+.affine-page-viewport .affine-list-block__prefix {
+  font-size: inherit;
+  color: var(--text-primary);
+}
+
+/* Callout and code: the dim fill, 16px inside, the style's small corner. */
+.affine-page-viewport affine-callout {
+  margin: 4px 0;
+}
+
+.affine-page-viewport affine-callout > .affine-block-component > div {
+  padding: 13px 16px 13px 12px;
+  border-radius: var(--radius-toolbar-button);
+}
+
+.affine-page-viewport .affine-code-block-container {
+  padding: 34px 16px 32px 32px;
+  margin: 4px 0;
+  font-size: 85%;
+  border-radius: var(--radius-toolbar-button);
+}
+
+.affine-page-viewport .affine-divider-block-container {
+  padding: 6px 0;
+  margin-top: 1px;
+}
+
+.affine-page-viewport .affine-divider-block-container hr {
+  border-top-color: var(--divider);
+}

@@ -6,8 +6,11 @@ import { css, html, LitElement } from 'lit';
 export class EditorToolbar extends WithDisposable(LitElement) {
   static override styles = css`
     ${panelBaseStyle(':host')}
+    /* Capy (local change 34): the app sets a bar's height, gap and padding. */
     :host {
-      height: 36px;
+      height: var(--capy-toolbar-height, 36px);
+      gap: var(--capy-toolbar-gap, 8px);
+      padding: var(--capy-toolbar-padding, 0 6px);
       box-sizing: content-box;
     }
 

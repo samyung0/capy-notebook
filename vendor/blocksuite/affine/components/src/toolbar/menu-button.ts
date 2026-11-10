@@ -188,14 +188,15 @@ export class EditorMenuAction extends LitElement {
       white-space: nowrap;
       box-sizing: border-box;
       padding: 4px 8px;
-      border-radius: 4px;
+      /* Capy (local change 34): the app sets a row's corner and height. */
+      border-radius: var(--capy-toolbar-button-radius, 4px);
       overflow: hidden;
       text-overflow: ellipsis;
       cursor: pointer;
       gap: 8px;
       color: var(--affine-text-primary-color);
       font-weight: 400;
-      min-height: 30px; // 22 + 8
+      min-height: var(--capy-menu-row-height, 30px); // 22 + 8
       user-select: none;
     }
 
@@ -222,7 +223,7 @@ export class EditorMenuAction extends LitElement {
 
     ::slotted(svg) {
       color: var(--affine-icon-color);
-      font-size: 20px;
+      font-size: var(--capy-toolbar-icon-size, 20px);
     }
 
     ::slotted(.label) {
