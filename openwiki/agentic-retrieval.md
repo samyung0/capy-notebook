@@ -1054,7 +1054,16 @@ constant and refuses to start without.
 The child runs under a 2 GiB soft address-space limit (`RLIMIT_AS`,
 `PARSE_CHILD_MAX_BYTES`), which LibreOffice inherits; Java starts with it lifted,
 its heap bounded by `-Xmx` (decision 2026-10-15) and the rest by a 2 GiB data
-cap. The
+cap. The JVM runs the quick compiler alone (`-XX:TieredStopAtLevel=1`,
+decision 2026-11-11). Measured on the Java run alone over 80 PDFs, the JSON is
+the same; seven at a time on 8 CPUs finish in half the time for 58% less JVM
+CPU; one at a time on 2 CPUs they take 11% less time; and a long PDF alone on
+8 idle CPUs is slower (8 to 10 s at 1,016 pages, 14 to 21 s for a heavy
+1,400-page book). With seven of that heavy book parsing together the Java
+phase took 30 to 32 s for 39 to 44 s and the queue as long (571 s for 566 s).
+The serial collector was tried with it and dropped: at the 1 GiB heap that
+book's Java run alone took 42 s
+([report](../bench/parsers/reports/2026-11-10-jvm-flags.md)). The
 container sets `MALLOC_ARENA_MAX=2` and the parse child starts LibreOffice and
 Java with it too (their sandbox environments name it, decision 2026-10-21), so
 the multithreaded LibreOffice and JVM reserve far less address space:

@@ -9,8 +9,9 @@
 #
 # Optional: DEPTH (8), KEEP (bundle folder) and KEEP_IDS, TMP_TMPFS=1 (the
 # /tmp tmpfs that compose files carried before the decoder sandbox),
-# ABORT_SWAP_GIB (1.0). Every other running container is watched for a
-# restart. Needs python3 and root (the spool and the cgroup belong to root).
+# ABORT_SWAP_GIB (1.0), HEAP (1g, the JVM's heap cap). Every other running
+# container is watched for a restart. Needs python3 and root (the spool and
+# the cgroup belong to root).
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
 : "${IMG:?image}" "${WORKERS:?parse children}" "${MODE:?solo or burst}" "${MANIFEST:?manifest}" "${OUT:?output folder}"
@@ -55,7 +56,7 @@ docker run -d --name "$NAME" -p 127.0.0.1:18090:8090 \
   -e PARSER_BIND_ADDRESS=0.0.0.0 \
   -e CAPY_PARSE_WORKERS="$WORKERS" -e CAPY_PARSE_QUEUE_DEPTH="$DEPTH" \
   -e CAPY_PARSE_DOCUMENT_TIMEOUT=600 -e CAPY_PARSE_OCR_PAGE_CAP=500 -e CAPY_PARSE_MAX_PAGES=1400 \
-  -e CAPY_PARSER_JVM_MAX_HEAP=1g -e MALLOC_ARENA_MAX=2 \
+  -e CAPY_PARSER_JVM_MAX_HEAP="${HEAP:-1g}" -e MALLOC_ARENA_MAX=2 \
   -e CAPY_PARSE_SHARED_DIR=/var/lib/capy-parse -e CAPY_OFFICE_CONVERT_TIMEOUT=180 \
   -e CAPY_OFFICE_PREVIEW_MAX_BYTES=134217728 -e CAPY_PARSE_ARTIFACT_MAX_BYTES=268435456 \
   -e CAPY_PARSE_ARTIFACT_MAX_ENTRY_BYTES=134217728 -e CAPY_PARSE_ARTIFACT_MAX_EXPANDED_BYTES=536870912 \
