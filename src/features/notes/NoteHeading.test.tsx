@@ -37,7 +37,7 @@ vi.mock('@/api/auth', () => ({
 const { act } = await import('react');
 const { createRoot } = await import('react-dom/client');
 const { api } = await import('@/api/client');
-const { NoteHeading } = await import('./NoteHeading');
+const { countWords, NoteHeading, noteText } = await import('./NoteHeading');
 afterEach(() => vi.restoreAllMocks());
 
 const material = {
@@ -50,14 +50,14 @@ const material = {
   workspaceId: 'ws_1',
 } as Material;
 
-async function show() {
+async function show(file: Material | null = material) {
   const root = createRoot(document.getElementById('root') as never);
   await act(async () =>
     root.render(
       <QueryClientProvider client={new QueryClient()}>
         <NoteHeading
           fullWidth={false}
-          material={material}
+          material={file ?? undefined}
           onEnter={() => undefined}
           readonly={false}
           title={material.title}
@@ -100,4 +100,31 @@ it("opens the Info row with the file's own details", async () => {
   expect(text).toContain('412');
   expect(reported).toEqual([]);
   await act(async () => root.unmount());
+});
+
+// A note paints before its read answers (NoteBody): the name alone, read-only,
+// in the same box the editor's title takes.
+it('shows the name read-only until the file is known', async () => {
+  const root = await show(null);
+  const field = document.querySelector('textarea') as HTMLTextAreaElement;
+  expect(field.value).toBe('Cellular respiration');
+  // linkedom keeps React's attribute name as written.
+  expect(field.hasAttribute('readOnly')).toBe(true);
+  expect(reported).toEqual([]);
+  await act(async () => root.unmount());
+});
+
+// Info's Words, from a Plate note's blocks.
+it("counts a note's words block by block", () => {
+  const value = [
+    {
+      children: [{ text: 'Cells make ' }, { bold: true, text: 'ATP' }],
+      type: 'p',
+    },
+    {
+      children: [{ children: [{ text: 'in mitochondria' }], type: 'p' }],
+      type: 'callout',
+    },
+  ];
+  expect(countWords(noteText(value))).toBe(5);
 });

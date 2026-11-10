@@ -4507,7 +4507,8 @@ everything that floats, and the note body takes the Notion look in every style.
   `header` flag that arrives lower down (two people moving rows at once, a
   converted table with a second header row) shows nothing, and the next row
   change or press of Header row clears it.
-- **Title and Info** (`src/features/notes/blocksuite/NoteHeading.tsx`): the top
+- **Title and Info** (`src/features/notes/NoteHeading.tsx`, shared with the
+  Plate note below): the top
   of the body shows the file's name as a 40px title. It is the material's
   `title`, not text in the note: leaving the field or pressing Enter renames the
   file through `PATCH /materials/{id}/metadata` (an empty or too long name is
@@ -4547,8 +4548,39 @@ aligned while Plate stays in the app). Built so far:
   36px tall with 28px buttons from `sm`, 32px and 26px on phones, on
   `--radius-toolbar` with `--radius-toolbar-button` buttons.
 
-Not on the Plate note yet: the title and Info row, the + button beside the
-grip and the vertical block menu, and the table bar.
+- **Title and Info** (`NoteHeading` with `plate`): over the editor
+  (`EditorNoteHeading` in `NoteEditorCore.tsx`, outside the editable), over the
+  painted note, Preview and a reader's note (`PaintedNote` in `NoteBody.tsx`,
+  read-only) and over the late copy, in `note-column` with the title flush to
+  the text. Every view draws it at the same height, so the paint hands over
+  to the editor and Preview opens without a jump (positions are restored
+  block by block). A note painted before its read answers has its name only:
+  the same box, with nothing under Info yet. Enter puts the caret at the
+  note's start; Words counts the blocks' text (`noteText`).
+- **Gutter** (`BlockInteractions.tsx`): from `sm` a + sits left of the grip on
+  a top-level block. It adds a paragraph below and types the slash, so the
+  slash plugin opens its menu; left without a pick or a search, the line
+  stays empty (`gutterSlash.ts` marks the input node, `SlashInput.tsx` skips
+  writing the slash back). A click on the grip opens the block menu under it
+  (the right-click menu: Delete, Duplicate, Turn into, Indent, Outdent,
+  Align) through `BlockMenuOpener`; a drag still moves the block. Neither is
+  offered on a touch device or in a read-only note. The chunk containment
+  margin (`[data-slate-chunk]` in `tailwind.css`) is 44px on the left from
+  `sm` so the + is not clipped.
+- **Tables** (`TableNodes.tsx`): a pill beside the hovered row (it also drags
+  the row) and over the hovered column opens a menu (insert before or after,
+  delete); a + bar along the right edge and one under the last row add a
+  column or a row at the end; they show while the pointer or the caret is in
+  the table. The caret bar holds Merge and Split where they apply, Header
+  row, Duplicate and Delete. A header is the first row's cells as header
+  cells: inserting a row above it or deleting it keeps the header on the
+  first row. `TABLE_WRAP_CLASS` pads the table (8px above, 20px below) in
+  the editor and the static renderer alike, so the pills and the + bar fit
+  inside its scroll box and both draw the same height.
+
+Kept different on the Plate note: on a phone its gutters stay 20px, and 40px
+on the editor's right for the thread buttons, where the approved look has
+16px; rows moved by dragging do not re-place the header.
 
 Not built: the Table view block (AFFiNE's database, mock V2), queued as its own
 step; Colour, Copy link and Comment in the block menu (the BlockSuite note has
