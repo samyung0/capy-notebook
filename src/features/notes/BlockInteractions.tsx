@@ -707,12 +707,12 @@ function useIsTouchDevice() {
 
 // The block menu takes the editor popovers' look (ToolbarPopoverContent and
 // ToolbarPopoverItem: the All blocks menu), not the app's menus.
-const MENU_CONTENT =
+export const BLOCK_MENU_CONTENT =
   'w-auto min-w-48 rounded-lg px-1 py-1.5 font-medium leading-(--body-line-height)';
 const MENU_ROW =
   'h-7.5 gap-2 rounded-lg px-2 py-0 font-medium [&_svg]:-translate-y-px';
 
-function BlockMenuItem({
+export function BlockMenuItem({
   icon,
   label,
   onSelect,
@@ -821,7 +821,7 @@ export function BlockContextMenu({ children }: { children: React.ReactNode }) {
       {isOpen && (
         <DropdownMenuContent
           align="start"
-          className={MENU_CONTENT}
+          className={BLOCK_MENU_CONTENT}
           data-plate-prevent-deselect
           data-slot="context-menu-content"
           // Hidden with its block once that scrolls out of the editor.
@@ -857,7 +857,7 @@ export function BlockContextMenu({ children }: { children: React.ReactNode }) {
               <DropdownMenuSubTrigger className={MENU_ROW}>
                 {m.editor_turn_into()}
               </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className={MENU_CONTENT}>
+              <DropdownMenuSubContent className={BLOCK_MENU_CONTENT}>
                 {TURN_INTO_OPTIONS.map(([type, label]) => (
                   <BlockMenuItem
                     key={type}
@@ -893,7 +893,7 @@ export function BlockContextMenu({ children }: { children: React.ReactNode }) {
                 <EditorIcon name="alignLeft" />
                 {m.editor_align()}
               </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className={MENU_CONTENT}>
+              <DropdownMenuSubContent className={BLOCK_MENU_CONTENT}>
                 <BlockMenuItem
                   icon="alignLeft"
                   label={m.editor_align_left()}
