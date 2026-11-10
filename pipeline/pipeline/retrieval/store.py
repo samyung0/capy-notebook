@@ -1277,9 +1277,9 @@ _LOOKUP_TERMS = (2, 3)
 # re-parsed it for every matched passage, about half of the library's keyword
 # leg (4.3 s to 2.2 s on 54,041 matches, 2026-11-10).
 # Passages and vectors are reached through their content ids (migration 0126):
-# the array is built once from scoped_files, so the legs read their content
-# index and do not join scoped_files (joined, the library's keyword leg
-# compared every match with every book).
+# the array is built once from scoped_files, so a leg filtered this way reads
+# its content index and does not join scoped_files (joined, the library's
+# keyword leg compared every match with every book).
 _CONTENT_SCOPE = "{alias}.content_id = ANY(ARRAY(SELECT content_id FROM scoped_files))"
 # The rows the vector leg ranks. A workspace vector row carries its content id,
 # so the leg reads the vector table alone and ranks the whole scope exactly.
@@ -1633,7 +1633,10 @@ _PIN_COLUMNS = (
 # bench/rag/reports/2026-10-28-summary-search-scale.md): the caller's items
 # first (their workspaces', then their own with no workspace), then each
 # item's name and its summary's stored search vector. A name match ranks
-# first; no index covers the summaries, as the scope is small.
+# first; no index covers the summaries, as the scope is small. q is
+# MATERIALIZED for the same reason as in hybrid search: inlined, each language's
+# query was parsed again for every item (7,000 items, 2026-11-10: a sentence
+# 321 ms to 151 ms, one word 47-78 ms to 34-51 ms, identical rows).
 _SUMMARY_SEARCH_SQL = """
 WITH scoped AS (
     SELECT f.id, 'file' AS kind, f.name AS title, f.workspace_id, f.topic_id,
@@ -1658,7 +1661,7 @@ WITH scoped AS (
     WHERE m.workspace_id IS NULL AND m.owner_user_id = %(me)s
       AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
 ),
-q AS (
+q AS MATERIALIZED (
     SELECT m.lang, websearch_to_tsquery(m.cfg::regconfig, %(any_of)s) AS q
     FROM unnest(%(langs)s::text[], %(cfgs)s::text[]) AS m(lang, cfg)
 ),

@@ -2441,7 +2441,9 @@ pinned per environment.
    The column needs pgvector 0.7 or later (`binary_quantize`); the library
    reported 0.8.6 on 2026-11-10, and `CREATE EXTENSION IF NOT EXISTS` never
    upgrades an installed extension, so check `extversion` first on any
-   other library database.
+   other library database. The live library got the column on 2026-11-10:
+   94 seconds for 206,776 vectors, and the rewrite shrank the table from
+   2.4 GB to 1.3 GB.
 
 #### Question bank database and backups
 

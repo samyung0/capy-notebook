@@ -212,8 +212,9 @@ The lexical half of hybrid search (`text`, `indexed_text`, `search`,
 `(provider_slug, model_slug, version)` to a table name from a fixed allowlist, because
 that name is interpolated into SQL. Both legs of a workspace search filter
 on `content_id = ANY(ARRAY(SELECT content_id FROM scoped_files))`, so each
-reads its content index; the knowledge library, whose mirror still tags
-passages and vectors with its workspace, filters on that instead.
+reads its content index. The knowledge library's keyword leg does the same;
+its vector rows are picked by the library's workspace id, which its mirror
+still stores on them, and then checked against the content scope.
 
 Adding a model means a new vector table (in `0001_init.sql` until the first
 kept database exists, then a new numbered migration), a new allowlist
@@ -2223,7 +2224,7 @@ always point at document passages.
    knowledge library ranks a shortlist when a search has no subject or
    role, see its section below); no search reads
    `rag_chunk_vectors_2560_embedding_idx`. A workspace's vector leg reads the
-   vector table alone, neither leg joins `scoped_files`, and `q` is
+   vector table alone, neither of its legs joins `scoped_files`, and `q` is
    `MATERIALIZED` so each language's query is parsed once instead of once per
    matched passage (2026-11-10: the whole statement fell from about 170-250 ms
    to 85 ms at 12,000 synthetic passages, with identical rows). Ranks are fused rather
@@ -2364,7 +2365,8 @@ The library is one scope of every book, so its searches take two shapes of
 their own (`library._facets`, Epo 2026-11-10):
 
 - **With a subject or roles**, the passages those facets allow are listed
-  once (`allowed`, a materialized CTE read from the subject's excerpts) and
+  once (`allowed`, a materialized CTE read from the verified excerpts with
+  that subject and those roles) and
   both legs run on them, exactly: the vector leg ranks their vectors and the
   keyword leg reads them by key, each against its own language's query.
   Before, Postgres matched the keywords library-wide and checked the facets
@@ -2388,8 +2390,14 @@ their own (`library._facets`, Epo 2026-11-10):
   about 110 MB of pages against 7.5 GB. At 5 times the candidates it kept 92
   to 99%, at 10 times 97.5 to 99.8%. An HNSW index on the codes was rejected:
   the tag filter runs after the index has cut its list, so it kept 94 to 98%
-  with single searches as low as 5%. The full-size time on the live library
-  is unmeasured until the column exists there.
+  with single searches as low as 5%. On the live library (column added
+  2026-11-10) 18 of 18 searches returned rows identical in every column to
+  the exact statement, 12 of them with real question embeddings and 6 with
+  stored passage vectors. Through the developer tunnel a search fell from a
+  median 7.0 s to 3.5 s; in the database two plans took 0.9 and 1.9 s, the
+  vector leg about 0.18 s of each. The keyword leg is the rest: it still
+  matches library-wide (54,041 passages for one question) and checks the tag
+  filter on every match.
 
 The loader's `schema` command adds `bits` by rewriting the vector table once;
 a pipeline that reads it must not be released before that
@@ -5647,7 +5655,10 @@ for life so the provider prompt cache holds.
 - **`_` arguments.** Keys starting with `_` are the pipeline's own; the agent
   loop drops any the model sends before adding `_tool_call_id` (review r1 S2).
 - **Search.** `search_files_summary` is one scoped Postgres query over names
-  and the summaries' `search` column (option B); `search_files_content` runs
+  and the summaries' `search` column (option B; its per-language query is
+  `MATERIALIZED`, parsed once instead of once per item: at 7,000 items a
+  sentence fell from 321 ms to 151 ms with identical rows, 2026-11-10);
+  `search_files_content` runs
   one hybrid search per embedding space over the scope's workspace files and
   the caller's no-workspace files, labelling each passage with its workspace,
   topic and whether the user can edit it (a PDF passage reads view only),
