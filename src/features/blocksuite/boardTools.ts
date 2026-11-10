@@ -1,3 +1,4 @@
+import { addImages } from '@blocksuite/affine/blocks/image';
 import {
   DefaultTool,
   EdgelessCRUDIdentifier,
@@ -16,6 +17,7 @@ import {
   DEFAULT_CONNECTOR_MODE,
   DefaultTheme,
   isTransparent,
+  MAX_IMAGE_WIDTH,
   MindmapStyle,
   PointStyle,
   type ShapeName,
@@ -78,6 +80,7 @@ import {
 } from '@/features/materials/youtubeUrl';
 import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
+import { IMAGE_ACCEPT } from '@/lib/fitImage';
 import {
   addCard,
   type CardMaterialKind,
@@ -1471,6 +1474,8 @@ type MiscView = 'emoji' | 'klipy' | 'link' | 'quiz' | 'flashcards';
  * one of its two tabs). */
 type MiscTile =
   | { piece: Piece }
+  /** Picks image files from the device, for a phone's lack of paste and drop. */
+  | { art: TemplateResult; label: () => string; pick: 'image' }
   | {
       art: TemplateResult;
       klipy?: KlipyKind;
@@ -1488,6 +1493,11 @@ const MISC_GROUPS: { label: () => string; tiles: MiscTile[] }[] = [
   {
     label: m.drawing_board_media,
     tiles: [
+      {
+        art: svg`<svg width="36" height="32" viewBox="0 0 36 32" aria-hidden="true"><rect x="2" y="3" width="32" height="26" rx="4" fill="#dcebfb"/><circle cx="12" cy="12" r="3.5" fill="#f2c94c"/><path d="M4 26.5 13.5 17l5.5 5.5 5-5L32 25.5V25a4 4 0 0 1-4 4H8a4 4 0 0 1-4-2.5Z" fill="#1e96eb"/></svg>`,
+        label: m.drawing_board_image,
+        pick: 'image',
+      },
       {
         art: html`<img
           alt=""
@@ -2004,6 +2014,25 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
     this.placed();
   }
 
+  /** Image files picked from the device land as pasted ones do, through the
+   * board's blob source: stored at once on the workspace canvas. */
+  private pickImages() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = IMAGE_ACCEPT;
+    input.multiple = true;
+    input.addEventListener('change', () => {
+      const files = [...(input.files ?? [])];
+      if (!files.length) return;
+      // A file the board can't read is said by BlockSuite's own notice.
+      addImages(this.edgeless.std, files, { maxWidth: MAX_IMAGE_WIDTH }).catch(
+        () => undefined
+      );
+      this.placed();
+    });
+    input.click();
+  }
+
   private placingGif = false;
 
   /** A GIF or sticker at KLIPY's size for it, or the file's own when KLIPY gives
@@ -2117,6 +2146,16 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         ${PIECE_TIPS[piece.kind].tip()}
       </div>`;
     }
+    if ('pick' in tile)
+      return html`<button
+        class="tile"
+        data-pick=${tile.pick}
+        type="button"
+        @click=${() => this.pickImages()}
+      >
+        <span class="art">${tile.art}</span>
+        ${tile.label()}
+      </button>`;
     return html`<button
       class="tile"
       data-view=${tile.klipy ?? tile.view}

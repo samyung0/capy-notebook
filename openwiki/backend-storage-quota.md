@@ -324,7 +324,9 @@ gzipped, replaced on every save and trashed by the pruner as the material's
 `canvas_board` block stops naming it; the block also names the canvas's image
 assets, each an `image` editor asset of the canvas uploaded at once as a note's
 is (the plan's image cap after compression, listed on Files › Embeds) and
-trashed the same way once a save no longer names it. A canvas's board asset is capped at `CANVAS_BOARD_MAX` (2 MiB before
+trashed the same way once a save no longer names it; the canvas route lists the
+ones a save may name (`ownImageAssetIds`, `CanvasImageAssets`), a trashed one
+included, so an undone delete is named again and restored. A canvas's board asset is capped at `CANVAS_BOARD_MAX` (2 MiB before
 gzip, `fieldlimits.CanvasBoardBytes`), checked in the browser before the upload
 and by `validateEditorAssetMetadataFor` with the material's kind; a drawn sample
 answer's board keeps the drawing's 250 KiB. The `editor_assets_size_check` row

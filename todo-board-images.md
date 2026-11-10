@@ -159,5 +159,6 @@ timing (upload at once).
 - **A sample-answer board's images (§3)** need the quiz's document to name them, as
   the canvas block names its images, or the pruner trashes them a minute after the
   quiz's next save.
-- **No way to pick a file.** A paste, a drop and a note's slash menu add an image; the
-  toolbar has no image button, so a phone has no way in. It needs a mock first.
+- **Picking a file on an answer board.** The workspace canvas has Misc's Image tile
+  (Epo 2026-11-10); an answer board has no Misc panel, so there a paste, a drop and a
+  note's slash menu are still the only ways in.

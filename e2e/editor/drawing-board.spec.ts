@@ -1237,7 +1237,7 @@ test('the workspace canvas keeps its plane on reload', async ({ page }) => {
   await expect.poll(() => marks(page)).toBe(1);
 });
 
-test('a pasted image on the workspace canvas is stored as its asset and opens from it', async ({
+test('an image pasted or picked on the workspace canvas is stored as its asset and opens from it', async ({
   page,
 }) => {
   test.slow();
@@ -1309,6 +1309,27 @@ test('a pasted image on the workspace canvas is stored as its asset and opens fr
     )
     .toBe(320);
   expect(await imageIds()).toEqual([assetId]);
+
+  // Misc's Image tile picks a file from the device, for a phone with no paste
+  // or drop: it lands and is stored the same way.
+  const png = await page.evaluate(() => {
+    const drawn = document.createElement('canvas');
+    drawn.width = 120;
+    drawn.height = 80;
+    drawn.getContext('2d')?.fillRect(0, 0, 120, 80);
+    return drawn.toDataURL('image/png').split(',')[1];
+  });
+  await page.locator('capy-misc-button').click();
+  const chooser = page.waitForEvent('filechooser');
+  await page.locator('capy-misc-panel [data-pick="image"]').click();
+  await (await chooser).setFiles({
+    buffer: Buffer.from(png, 'base64'),
+    mimeType: 'image/png',
+    name: 'picked.png',
+  });
+  await expect
+    .poll(imageIds)
+    .toEqual([assetId, expect.stringMatching(/^asset_mock_/)]);
 });
 
 test('the workspace canvas stays in the URL at every width', async ({

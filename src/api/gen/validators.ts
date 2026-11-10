@@ -8396,6 +8396,7 @@ export const WorkspaceCanvasResponse = zod.object({
   "boardAssetId": zod.string().describe('The saved board\'s editor asset (gzipped Yjs update); empty before the first save'),
   "id": zod.string().describe('The canvas material'),
   "imageAssetIds": zod.array(zod.string()).describe('The canvas\'s images, as image editor assets'),
+  "ownImageAssetIds": zod.array(zod.string()).describe('Every ready image asset of this canvas, one the pruner trashed included: the ids a save may name'),
   "revision": zod.int().describe('The material\'s revision; a save sends the one it read'),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "version": zod.int().describe('Counts the saves')
@@ -8427,6 +8428,7 @@ export const SaveWorkspaceCanvasResponse = zod.object({
   "boardAssetId": zod.string().describe('The saved board\'s editor asset (gzipped Yjs update); empty before the first save'),
   "id": zod.string().describe('The canvas material'),
   "imageAssetIds": zod.array(zod.string()).describe('The canvas\'s images, as image editor assets'),
+  "ownImageAssetIds": zod.array(zod.string()).describe('Every ready image asset of this canvas, one the pruner trashed included: the ids a save may name'),
   "revision": zod.int().describe('The material\'s revision; a save sends the one it read'),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "version": zod.int().describe('Counts the saves')

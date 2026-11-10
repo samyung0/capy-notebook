@@ -11,16 +11,19 @@ const IDLE: BlobState = {
 
 type Watch = (state: BlobState) => void;
 
+const EXTENSION = /\.\w+$/;
+
 /** A file with a name its type fits, as an upload asks: a pasted image has one,
  * one read back from storage doesn't. */
-const asFile = (blob: Blob) =>
-  blob instanceof File
-    ? blob
-    : new File(
-        [blob],
-        `image.${(blob.type.split('/')[1] ?? 'png').replace('jpeg', 'jpg')}`,
-        { type: blob.type }
-      );
+function asFile(blob: Blob) {
+  // A copy read back from the clipboard is a File named "undefined".
+  if (blob instanceof File && EXTENSION.test(blob.name)) return blob;
+  const [, subtype] = blob.type.split('/');
+  if (!subtype) throw new Error('board image without a type');
+  return new File([blob], `image.${subtype.replace('jpeg', 'jpg')}`, {
+    type: blob.type,
+  });
+}
 
 /** The board's file store, in place of BlockSuite's in-memory one: files by the
  * id a block keeps, asked from the page when missing, and stored through the
@@ -63,6 +66,8 @@ export class BoardBlobSource implements BlobSource {
     let asked = this.asked.get(key);
     if (!asked) {
       asked = load(key).then((found) => {
+        // None for now is asked again: a save may bring a trashed image back.
+        if (!found) this.asked.delete(key);
         if (!found) return null;
         this.files.set(key, found.file);
         if (found.foreign) this.fresh.add(key);
@@ -76,7 +81,11 @@ export class BoardBlobSource implements BlobSource {
   }
 
   async set(key: string, value: Blob) {
-    const { shrink, onRefused } = this.images;
+    const { shrink, onRefused, stored } = this.images;
+    // A paste of a copy hands back the file of an image already stored under
+    // this id: nothing new to keep or store.
+    if (stored?.(key) || (this.files.has(key) && !this.fresh.has(key)))
+      return key;
     let file = value;
     if (shrink)
       try {
@@ -107,7 +116,12 @@ export class BoardBlobSource implements BlobSource {
         const set = watchers.get(key) ?? new Set<Watch>();
         watchers.set(key, set);
         set.add(next);
-        next({ ...IDLE, uploading: this.storing.has(key) });
+        // Said again a moment later: the image block clears its state right
+        // after it subscribes, when it first reads its file.
+        const tell = () =>
+          set.has(next) && next({ ...IDLE, uploading: this.storing.has(key) });
+        tell();
+        queueMicrotask(tell);
         return {
           unsubscribe: () => {
             set.delete(next);
@@ -119,19 +133,22 @@ export class BoardBlobSource implements BlobSource {
   }
 
   /** A block landed with this id: one whose image is already stored moves to
-   * the stored id, and one nothing has stored yet is stored now. */
-  async landed(key: string) {
-    const stored = this.moved.get(key);
-    if (stored) return this.onSettled(key, stored);
-    const { store, onRefused } = this.images;
-    if (!store) return;
+   * the stored id, and one nothing has stored yet is stored now. `opened`: the
+   * block was on the board as it opened (another board's image left unstored),
+   * so a refusal leaves it and says nothing. */
+  async landed(key: string, opened = false) {
+    const moved = this.moved.get(key);
+    if (moved) return this.onSettled(key, moved);
+    const { store, onRefused, stored } = this.images;
+    if (!store || stored?.(key)) return;
     const file = await this.get(key).catch(() => null);
     if (!(file && this.fresh.has(key)) || this.storing.has(key)) return;
     const tell = (uploading: boolean) => {
       for (const next of this.watchers.get(key) ?? [])
         next({ ...IDLE, uploading });
     };
-    const storing = store(asFile(file))
+    const storing = Promise.resolve()
+      .then(() => store(asFile(file)))
       .then((to) => {
         this.fresh.delete(key);
         this.moved.set(key, to);
@@ -140,6 +157,7 @@ export class BoardBlobSource implements BlobSource {
         this.onSettled(key, to);
       })
       .catch((error: unknown) => {
+        if (opened) return;
         onRefused?.(error);
         this.onSettled(key);
       })

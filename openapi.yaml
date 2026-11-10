@@ -1831,6 +1831,11 @@ components:
           items:
             type: string
           type: array
+        ownImageAssetIds:
+          description: "Every ready image asset of this canvas, one the pruner trashed included: the ids a save may name"
+          items:
+            type: string
+          type: array
         revision:
           description: The material's revision; a save sends the one it read
           format: int64
@@ -1848,6 +1853,7 @@ components:
         - boardAssetId
         - version
         - imageAssetIds
+        - ownImageAssetIds
         - updatedAt
       type: object
     Card:

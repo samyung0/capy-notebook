@@ -10,6 +10,9 @@ export type BoardImages = {
   load?: (id: string) => Promise<{ file: Blob; foreign?: boolean } | null>;
   /** A new image, or a stored one, the page refused: said to the person. */
   onRefused?: (error: unknown) => void;
+  /** Whether an id is one this board's images are stored under: such an image is
+   * never stored again (a copy pasted back keeps its id). */
+  stored?: (id: string) => boolean;
   /** Stores a new image at once and answers the id its block keeps from then
    * (the workspace canvas: an editor asset, as notes do). Without it the block
    * keeps the hash and the file stays on the board until the page sends it (an

@@ -27,6 +27,15 @@ const uploads = new Map<
   { contentType: string; materialId: string; name: string; purpose: string }
 >();
 
+/** A material's uploaded image assets: what a canvas save may name. */
+export const mockImageAssets = (materialId: string) =>
+  [...uploads]
+    .filter(
+      ([, upload]) =>
+        upload.materialId === materialId && upload.purpose === 'image'
+    )
+    .map(([id]) => id);
+
 /** The viewer's images and audio (M16): one in a set it can open, one in a
  * note it can no longer open. */
 const embeds: EditorAssetItem[] = [

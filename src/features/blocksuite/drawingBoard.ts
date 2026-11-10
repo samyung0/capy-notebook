@@ -482,6 +482,10 @@ export function mountDrawingBoard(
     const id = model?.props.sourceId;
     if (id) void blobs.landed(id);
   });
+  // An image the board opened with under an id that isn't its own (another
+  // canvas's, left before it was stored here) is stored now.
+  for (const id of new Set(imageBlocks().map(({ props }) => props.sourceId)))
+    if (id) void blobs.landed(id, true);
   const drawn = [
     ...formulaExtensions,
     ...planeExtensions,
@@ -824,6 +828,16 @@ export function mountDrawingBoard(
     },
     /** Redraws the quiz and flashcard cards, after the workspace's list changes. */
     refreshCards: refreshMaterialCards,
+    /** Asks again for the images that showed none: a save brought one back. */
+    reloadImages: () => {
+      for (const { id } of imageBlocks()) {
+        const view = std.view.getBlock(id) as {
+          blobUrl?: string | null;
+          refreshData?: () => void;
+        } | null;
+        if (view && !view.blobUrl) view.refreshData?.();
+      }
+    },
     /** The board to store, with no undo history: a fresh document keeps only what's
      * on the board (200 plane clicks were 606 KB live, 7.5 KB this way), rounded
      * (roundPlaces). */

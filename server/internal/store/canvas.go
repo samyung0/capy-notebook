@@ -136,6 +136,19 @@ func (s *Store) assertCanvasAssets(ctx context.Context, materialID, boardAssetID
 	return nil
 }
 
+// CanvasImageAssets are the canvas's ready image assets, one the pruner trashed
+// included: the ids a save may name. The browser names from this list, so an
+// image deleted for good (Files › Embeds) is left out of the next save, and one
+// trashed after its delete on the canvas was undone is named again.
+func (s *Store) CanvasImageAssets(ctx context.Context, materialID string) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id FROM editor_assets
+		WHERE material_id=$1 AND purpose='image' AND status='ready' ORDER BY created_at, id`, materialID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
+}
+
 // dropLeaverCanvasTx deletes the member's canvas in the workspace they leave
 // (or are removed from), its assets with it (Epo 2026-11-09: it goes with the
 // membership, as their marked drawings do).

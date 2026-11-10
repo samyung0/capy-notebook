@@ -21,6 +21,28 @@ describe('BoardBlobSource', () => {
     expect(settled).toHaveBeenCalledTimes(2);
   });
 
+  it('leaves an image already stored under its id alone when a copy is pasted back', async () => {
+    const store = vi.fn(async (_file: File) => ({ bytes: 7, id: 'asset_2' }));
+    const own = new Set(['asset_own']);
+    const source = new BoardBlobSource({
+      store: async (file) => {
+        const stored = await store(file);
+        own.add(stored.id);
+        return stored;
+      },
+      stored: (id) => own.has(id),
+    });
+    // The clipboard hands the file back under the id its block keeps: one the
+    // server lists, and one stored in this session.
+    await source.set('asset_own', png('undefined'));
+    await source.landed('asset_own');
+    await source.set('hash', png());
+    await source.landed('hash');
+    await source.set('asset_2', png('undefined'));
+    await source.landed('asset_2');
+    expect(store).toHaveBeenCalledOnce();
+  });
+
   it('takes a refused image off the board and says why', async () => {
     const refusal = new Error('storage full');
     const onRefused = vi.fn();
@@ -49,6 +71,18 @@ describe('BoardBlobSource', () => {
     expect(store).not.toHaveBeenCalled();
     await source.landed('asset_theirs');
     expect(store).toHaveBeenCalledOnce();
+    // One the board opened with stays when storing it is refused.
+    const settled = vi.fn();
+    const refusing = new BoardBlobSource({
+      load: async () => ({
+        file: new Blob(['x'], { type: 'image/png' }),
+        foreign: true,
+      }),
+      store: () => Promise.reject(new Error('offline')),
+    });
+    refusing.onSettled = settled;
+    await refusing.landed('asset_theirs', true);
+    expect(settled).not.toHaveBeenCalled();
     // Read back from storage it has no name: it goes up with one its type fits.
     expect(store.mock.calls[0]).toEqual([
       expect.objectContaining({ name: 'image.webp' }),

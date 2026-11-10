@@ -6,7 +6,7 @@ import {
   saveWorkspaceCanvas,
   workspaceCanvas,
 } from '@/api/canvas';
-import { qk } from '@/api/client';
+import { isApiError, qk } from '@/api/client';
 import { useCreateMaterial, useOwnedMaterials } from '@/api/hooks';
 import { userToast } from '@/components/ui/userToast';
 import {
@@ -32,6 +32,9 @@ import {
 const SAVE_AFTER_MS = 2000;
 const KEEP_AFTER_MS = 400;
 const CANVAS_BOARD_MAX = BOARD_CATALOG.limits.CANVAS_BOARD_MAX;
+/** How long a save waits for images still going up before it goes as it stands:
+ * a stalled upload must not hold every save. */
+const IMAGE_WAIT_MS = 20_000;
 
 /** A member's own canvas in the workspace (Epo 2026-11-09,
  * todo-workspace-canvas-storage.md): the drawing board over their canvas material.
@@ -44,7 +47,8 @@ const CANVAS_BOARD_MAX = BOARD_CATALOG.limits.CANVAS_BOARD_MAX;
  * follows each change in between. Another tab's save (409) stops saving until a
  * reload; any other failure waits for the next change or open, the copy holding
  * the work. An image uploads at once as the material's own image asset, as a
- * note's does, and a save waits for the ones still going up. Nothing here opens
+ * note's does, and a save waits for the ones still going up, on leaving too.
+ * Nothing here opens
  * a room: the canvas is personal. */
 export default function WorkspaceCanvas({
   onOpenMaterial,
@@ -132,9 +136,9 @@ export default function WorkspaceCanvas({
     /** The board as it was left, once unmounted: what a save still in flight
      * writes the copy from, at the revision it lands on. */
     let leftDoc: string | null = null;
-    /** Which of the board's image ids the save names: this canvas's assets. */
-    let named: (ids: readonly string[]) => Promise<string[]> = () =>
-      Promise.resolve([]);
+    /** The canvas's image assets: which ids a save names, and the server's
+     * list of them again after it refused one. */
+    let assets: ReturnType<typeof assetImages> | null = null;
     const draftKey = () => `canvas:${materialId}`;
 
     /** The device copy: the live snapshot at the revision it was taken on, written
@@ -159,23 +163,29 @@ export default function WorkspaceCanvas({
         // Charged until the next successful save's prune.
       }
     };
-    const flush = async (prepared?: {
-      bytes: number;
-      doc: string;
-      images: string[];
-    }) => {
+    /** The server's list of the canvas's images again. */
+    const relist = async () => {
+      try {
+        const canvas = await workspaceCanvas(workspaceId);
+        assets?.relist(canvas.ownImageAssetIds);
+      } catch {
+        // The next refused save asks again.
+      }
+    };
+    const flush = async () => {
       if (!(board && dirty) || stopped || saving) return;
+      // Read after the page has left too: the board's document outlives its
+      // unmount, and an upload finishing then still moves its block.
       const drawing = board;
       let uploaded: string | null = null;
       saving = (async () => {
-        // An image still going up is in the save once it has its asset id; a
-        // board left mid-upload goes as it stands.
-        if (!prepared) await drawing.imagesSettled();
+        // An image still going up is in the save once it has its asset id.
+        await Promise.race([
+          drawing.imagesSettled(),
+          new Promise((resolve) => setTimeout(resolve, IMAGE_WAIT_MS)),
+        ]);
         dirty = false;
-        const { bytes, doc, images } = prepared ?? {
-          ...drawing.save({ finish: false }),
-          images: drawing.images().map(({ id }) => id),
-        };
+        const { bytes, doc } = drawing.save({ finish: false });
         if (bytes > CANVAS_BOARD_MAX) {
           // The last good save stands; said once until it fits again.
           if (!tooBig)
@@ -187,7 +197,8 @@ export default function WorkspaceCanvas({
           return;
         }
         tooBig = false;
-        const imageAssetIds = await named(images);
+        const imageAssetIds =
+          assets?.named(drawing.images().map(({ id }) => id)) ?? [];
         const { uploadEditorAsset } = await import('@/api/editorAssets');
         const asset = await uploadEditorAsset(
           materialId,
@@ -207,6 +218,8 @@ export default function WorkspaceCanvas({
         // rewritten at the new revision.
         if (dirty) await keep();
         else await forget();
+        // An image trashed after its delete was undone is back with this save.
+        if (assets?.restored()) drawing.reloadImages();
       })()
         .catch((error: unknown) => {
           // A board uploaded for a save that didn't land stops being charged.
@@ -223,6 +236,9 @@ export default function WorkspaceCanvas({
           }
           // The copy holds it; the next change or open tries again (no retry loop).
           dirty = true;
+          // Refused for what it named (an image deleted for good elsewhere): the
+          // next save names from the server's list as it is now.
+          if (isApiError(error) && error.status === 400) void relist();
           userToast({
             description: errorCopy(error, m.workspace_canvas_save_failed()),
             title: m.workspace_canvas_save_failed(),
@@ -271,14 +287,13 @@ export default function WorkspaceCanvas({
           ? await boardFromAsset(canvas.boardAssetId)
           : undefined);
       if (disposed) return;
-      const assets = assetImages(canvas.id, canvas.imageAssetIds, (error) =>
+      assets = assetImages(canvas.id, canvas.ownImageAssetIds, (error) =>
         userToast({
           description: errorCopy(error, m.workspace_canvas_image_refused()),
           title: m.workspace_canvas_image_refused(),
           variant: 'error',
         })
       );
-      named = assets.named;
       board = mountDrawingBoard(host, {
         board: 'workspace',
         images: assets.images,
@@ -328,13 +343,9 @@ export default function WorkspaceCanvas({
       // already in flight rewrites the copy from `leftDoc` at the revision it
       // lands on.
       if (board && dirty) {
-        const finished = {
-          ...board.save(),
-          images: board.images().map(({ id }) => id),
-        };
-        leftDoc = finished.doc;
+        leftDoc = board.save().doc;
         void keep();
-        if (!saving) void flush(finished);
+        if (!saving) void flush();
       }
       mounted.current = null;
       board?.unmount();

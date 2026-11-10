@@ -105,6 +105,14 @@ func TestWorkspaceCanvasIsPersonalAndGoesWithTheMembership(t *testing.T) {
 	if trashed != 0 {
 		t.Fatal("the image named again stayed trashed")
 	}
+	// The ids a save may name: the canvas's image assets, a trashed one too,
+	// and never its board.
+	if _, err := f.s.pool.Exec(ctx, `UPDATE editor_assets SET trashed_at=now() WHERE id=$1`, image); err != nil {
+		t.Fatal(err)
+	}
+	if own, err := f.s.CanvasImageAssets(ctx, mine.ID); err != nil || len(own) != 1 || own[0] != image {
+		t.Fatalf("the canvas's image assets = %v, err %v", own, err)
+	}
 
 	// Never shared, never copied.
 	if _, err := f.s.UpdateStandaloneMaterialPrivacy(ctx, f.user, mine.ID, "", "link"); !errors.Is(err, ErrForbidden) {
