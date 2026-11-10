@@ -10,10 +10,6 @@ import { useNear } from '@/lib/useNear';
 /** Joins a page fetch in flight, e.g. Select all's, instead of restarting it. */
 const joinFetch: FetchNextPageOptions = { cancelRefetch: false };
 
-/** `root` for a list inside a scroller of its own that is not handed over (a
- * dialog's body, a menu): its end is watched on the screen. */
-export const ON_SCREEN: RefObject<Element | null> = { current: null };
-
 /**
  * The end of a paged list. The next page loads once this comes within 800px
  * of the page panel's bottom (the viewport outside a panel), or of `root`'s
@@ -33,8 +29,8 @@ export function ListEnd({
   isFetchNextPageError: boolean;
   fetchNextPage: (options?: FetchNextPageOptions) => Promise<unknown>;
   className?: string;
-  /** The list's own scroller where it is not the page panel's (a side panel),
-   * or `ON_SCREEN`. */
+  /** The list's own scroller where it is not the page panel's (a side panel,
+   * a menu, a dialog's list). */
   root?: RefObject<Element | null>;
 }) {
   const ref = useRef<HTMLDivElement>(null);

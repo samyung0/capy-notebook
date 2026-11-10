@@ -3449,7 +3449,8 @@ connection.
   The browser reads them as infinite queries (`conversationsQuery`,
   `useConversations` and `useArchivedConversations`, each selecting its loaded
   pages as one list, `pagedRows`), the live one stored for a reopened panel;
-  `ConversationList` and the archived dialog end in `ListEnd`. The title
+  `ConversationList` and the archived dialog end in `ListEnd` (the dialog's
+  list scrolls in a box of its own, so its footer's two actions stay in reach). The title
   search filters the loaded rows, and since a short result brings the list's
   end into view it goes on loading pages until it has looked at them all;
   "No matches" waits for the last page. Cache writes go through the pages

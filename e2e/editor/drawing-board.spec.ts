@@ -1429,10 +1429,16 @@ test('the Canvas page lists its canvases a page at a time', async ({
   await make(50, 61);
   await page.getByRole('button', { name: /^Canvas \d+/ }).click();
   await expect(made).toHaveCount(100);
+  // The list scrolls in a box of its own: the actions under it stay in reach.
+  const create = page.getByRole('menuitem', { name: 'New canvas' });
+  await expect(create).toBeInViewport();
   await page
     .getByRole('menu')
+    .locator('> div')
+    .first()
     .evaluate((element) => element.scrollTo(0, element.scrollHeight));
   await expect(made).toHaveCount(110);
+  await expect(create).toBeInViewport();
   // Their own come first, then the workspace's.
   await expect(page.getByRole('menuitem').nth(111)).toHaveText(/Biology 101/);
 });

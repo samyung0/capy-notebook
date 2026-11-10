@@ -4797,7 +4797,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     then each workspace's under its icon and name, leaving out a workspace whose owner's
     account is no longer live), a page of 50 at a time as the menu is scrolled (Epo
     2026-11-10: `cursor` and `nextCursor`, `canvasesQuery` is an infinite query ending
-    in `ListEnd`; there is no cap on how many a person makes). Their own come first so
+    in `ListEnd`; there is no cap on how many a person makes). The list scrolls in a box
+    of its own, so New canvas, Rename and Delete under it stay in reach. Their own come first so
     that a first page without one means they have none, and a canvas the URL names on a
     page not loaded yet has the pages load until it shows or they end. The panel makes
     a new one ("Untitled canvas", numbered when a loaded one has the name), and renames

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   useArchivedConversations,
   useArchivedConversationsAction,
@@ -6,7 +6,7 @@ import {
   useUpdateConversation,
 } from '@/api/hooks';
 import type { Conversation } from '@/api/types';
-import { ListEnd, ON_SCREEN } from '@/components/app/ListEnd';
+import { ListEnd } from '@/components/app/ListEnd';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
 import { SkeletonList } from '@/components/ui/feedback';
@@ -38,6 +38,7 @@ export function ArchivedChatsDialog({
   const { mutate: remove } = useDeleteConversation(workspaceId);
   const { mutate: all, isPending } =
     useArchivedConversationsAction(workspaceId);
+  const list = useRef<HTMLDivElement>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState<Conversation | null>(null);
 
@@ -82,7 +83,12 @@ export function ArchivedChatsDialog({
           <p className="pb-2 text-fg-muted text-sm">{m.chat_no_archived()}</p>
         )}
         {!!archived?.length && (
-          <div className="flex flex-col border-divider border-t">
+          // The list scrolls by itself, so the footer's actions stay in reach
+          // however many pages it loads.
+          <div
+            className="max-h-[60dvh] overflow-y-auto border-divider border-t"
+            ref={list}
+          >
             {archived.map((c) => (
               <div
                 className="flex items-center gap-1 border-divider border-b py-2"
@@ -127,15 +133,15 @@ export function ArchivedChatsDialog({
                 </div>
               </div>
             ))}
+            <ListEnd
+              fetchNextPage={fetchNextPage}
+              hasNextPage={hasNextPage}
+              isFetchingNextPage={isFetchingNextPage}
+              isFetchNextPageError={isFetchNextPageError}
+              root={list}
+            />
           </div>
         )}
-        <ListEnd
-          fetchNextPage={fetchNextPage}
-          hasNextPage={hasNextPage}
-          isFetchingNextPage={isFetchingNextPage}
-          isFetchNextPageError={isFetchNextPageError}
-          root={ON_SCREEN}
-        />
       </SimpleDialog>
       <ConfirmDialog
         body={m.chat_delete_body()}
