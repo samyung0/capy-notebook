@@ -9,9 +9,11 @@
 #
 # Optional: DEPTH (8), KEEP (bundle folder) and KEEP_IDS, TMP_TMPFS=1 (the
 # /tmp tmpfs that compose files carried before the decoder sandbox),
-# ABORT_SWAP_GIB (1.0), HEAP (1g, the JVM's heap cap). Every other running
-# container is watched for a restart. Needs python3 and root (the spool and
-# the cgroup belong to root).
+# ABORT_SWAP_GIB (1.0), HEAP (1g, the JVM's heap cap), MEM (14g), SWAP (18g,
+# memory and swap together) and CPUS (8) for another container shape, GAP
+# (5, seconds between solo documents), CLIENTS (burst: documents in flight
+# at a time). Every other running container is watched for a restart. Needs
+# python3 and root (the spool and the cgroup belong to root).
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
 : "${IMG:?image}" "${WORKERS:?parse children}" "${MODE:?solo or burst}" "${MANIFEST:?manifest}" "${OUT:?output folder}"
@@ -51,7 +53,7 @@ docker run -d --name "$NAME" -p 127.0.0.1:18090:8090 \
   --cap-drop ALL --security-opt no-new-privileges:true --read-only \
   --tmpfs /run/capy-parser/home:noexec,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=0700 "${tmp[@]}" \
   -v "$SPOOL":/var/lib/capy-parse -v "$WORK":/run/capy-parser/work \
-  --memory 14g --memory-swap 18g --cpus 8 --pids-limit 512 \
+  --memory "${MEM:-14g}" --memory-swap "${SWAP:-18g}" --cpus "${CPUS:-8}" --pids-limit 512 \
   -e APP_ENV=production -e RELEASE_SHA="$SHA" -e PARSER_TOKEN="$token" \
   -e PARSER_BIND_ADDRESS=0.0.0.0 \
   -e CAPY_PARSE_WORKERS="$WORKERS" -e CAPY_PARSE_QUEUE_DEPTH="$DEPTH" \
@@ -66,9 +68,10 @@ docker run -d --name "$NAME" -p 127.0.0.1:18090:8090 \
 
 keep=()
 [ -n "${KEEP:-}" ] && keep=(--keep "$KEEP" --keep-ids "${KEEP_IDS:-}")
+[ -n "${CLIENTS:-}" ] && keep+=(--clients "$CLIENTS")
 PARSER_TOKEN="$token" python3 "$here/stress_parser.py" "$MODE" --manifest "$MANIFEST" --out "$OUT" \
   --container "$NAME" --tag "cap-$(basename "$OUT")-$RANDOM" --watch "$watch" \
-  --abort-swap-gib "${ABORT_SWAP_GIB:-1.0}" "${keep[@]}" > "$OUT/driver.log" 2>&1
+  --abort-swap-gib "${ABORT_SWAP_GIB:-1.0}" --gap "${GAP:-5}" "${keep[@]}" > "$OUT/driver.log" 2>&1
 status=$?
 docker inspect -f '{{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} restarts={{.RestartCount}}' "$NAME" > "$OUT/container-state.txt" 2>&1
 docker logs "$NAME" 2>&1 | tail -c 4000000 > "$OUT/parser.log"

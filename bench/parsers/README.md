@@ -625,6 +625,10 @@ free memory and swap, and each process kind's command line and rlimits (a
 parse child's once it has confined itself). Every
 other running container is watched: a restart, or host swap growing past
 `ABORT_SWAP_GIB` (1), kills the throwaway container and ends the pass.
+`MEM`, `SWAP` and `CPUS` give the container another shape (`6g`, `8g` and `2`
+with `WORKERS=1 DEPTH=2` for the nonprod parser). The parser refuses a queue
+depth over 16, so a `burst` of more documents than that needs `CLIENTS=N`,
+which keeps N in flight.
 `--keep` copies bundles out for `bundle_identity.py`, which compares two
 bundles of one document in the pipeline image: bytes, the pages whose blocks
 differ (ODL's element ids aside, since they renumber the rest of a document
