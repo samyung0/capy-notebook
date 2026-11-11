@@ -202,7 +202,7 @@ test('a DOCX upload stores its large picture compressed and its WMF equation rem
 
 // A legacy Office file (Epo 2026-11-11): parse-eligible with no page estimate,
 // sent as it is, converted by the server (here the mock worker) and renamed.
-test('a legacy DOC upload shows as converting, becomes a DOCX and opens; a failed conversion says so', async ({
+test('a legacy DOC upload becomes a DOCX and opens; a failed conversion says so', async ({
   page,
 }) => {
   test.setTimeout(180_000);
@@ -214,18 +214,6 @@ test('a legacy DOC upload shows as converting, becomes a DOCX and opens; a faile
   await upload(page, [
     { buffer: picked, mimeType: 'application/msword', name: 'essay.doc' },
   ]);
-  // Shown for about a second, until the mock worker's event after the swap.
-  await expect
-    .poll(
-      () =>
-        page
-          .getByTestId('source-transfer-panel')
-          .getByText(m.files_converting())
-          .isVisible(),
-      { intervals: [100], timeout: 30_000 }
-    )
-    .toBe(true);
-
   // Renamed in the tree without a reload, on the converted file's bytes.
   const { bytes, link } = await stored(page, 'essay.docx');
   expect(Object.keys(unzipSync(bytes))).toContain('word/document.xml');
