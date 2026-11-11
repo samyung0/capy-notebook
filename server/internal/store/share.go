@@ -232,7 +232,7 @@ func materialEffectiveAccess(
 	err := q.QueryRow(ctx, `
 		SELECT m.owner_user_id, m.privacy, m.workspace_id, w.user_id, w.privacy, w.share_role,
 			COALESCE(wm.role, ''), m.parent_material_id,
-			m.hidden OR (m.kind='quiz' AND `+quizAssignedToSQL("m.id", "$2")+` IS NOT NULL),
+			`+materialHiddenSQL+` OR (m.kind='quiz' AND `+quizAssignedToSQL("m.id", "$2")+` IS NOT NULL),
 			EXISTS(SELECT 1 FROM workspace_link_grants g WHERE g.workspace_id=w.id AND g.user_id=$2)
 				OR EXISTS(SELECT 1 FROM material_link_grants g WHERE g.material_id=m.id AND g.user_id=$2)
 		FROM materials m
@@ -328,7 +328,7 @@ func (s *Store) ReadableMaterialIDs(ctx context.Context, userID string, ids []st
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT wanted.id, m.owner_user_id, m.privacy, m.workspace_id, w.user_id, w.privacy, w.share_role,
-			COALESCE(wm.role, ''), m.hidden OR (m.kind='quiz' AND `+quizAssignedToSQL("m.id", "$2")+` IS NOT NULL),
+			COALESCE(wm.role, ''), `+materialHiddenSQL+` OR (m.kind='quiz' AND `+quizAssignedToSQL("m.id", "$2")+` IS NOT NULL),
 			EXISTS(SELECT 1 FROM workspace_link_grants g WHERE g.workspace_id=w.id AND g.user_id=$2)
 				OR EXISTS(SELECT 1 FROM material_link_grants g WHERE g.material_id=m.id AND g.user_id=$2)
 		FROM materials wanted
@@ -594,7 +594,7 @@ func (s *Store) ListPublicQuizzes(ctx context.Context, userID, cursor string) ([
 		return nil, "", err
 	}
 	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, COALESCE(m.workspace_id,''), (m.preview->>'questionCount')::int, m.created_at,
-			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0), `+exploreCloneCols+`, `+quizAssignmentOpenSQL("m.id")+`
+			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0), `+exploreCloneCols+`, `+quizAssignmentHoldsSQL("m.id")+`
 		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=COALESCE(w.user_id, m.owner_user_id)
 		LEFT JOIN material_clone_counts cc ON cc.material_id=m.id
 		LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1
@@ -1063,7 +1063,7 @@ func (s *Store) snapshotWorkspaceForClone(
 		 WHERE workspace_id=$1 AND status='ready' AND trashed_at IS NULL AND assignment_id IS NULL AND (material_id IS NULL OR EXISTS (
 			SELECT 1 FROM materials m LEFT JOIN materials p ON p.id=m.parent_material_id
 			WHERE m.id=a.material_id AND m.trashed_at IS NULL AND ($2 OR NOT COALESCE(p.hidden, m.hidden))
-				AND ($3 OR NOT `+quizAssignmentOpenSQL("m.id")+`)))
+				AND ($3 OR NOT `+quizAssignmentHoldsSQL("m.id")+`)))
 		 ORDER BY created_at`,
 		workspaceID, seeHidden, takeAssigned,
 	)
@@ -1114,7 +1114,7 @@ func (s *Store) snapshotWorkspaceForClone(
 	if !takeAssigned {
 		if err := tx.QueryRow(ctx, `SELECT count(*) FROM materials m
 			WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND ($2 OR NOT m.hidden)
-				AND `+quizAssignmentOpenSQL("m.id"), workspaceID, seeHidden).Scan(&snapshot.skipped); err != nil {
+				AND `+quizAssignmentHoldsSQL("m.id"), workspaceID, seeHidden).Scan(&snapshot.skipped); err != nil {
 			return workspaceCloneSnapshot{}, err
 		}
 	}
@@ -1122,7 +1122,7 @@ func (s *Store) snapshotWorkspaceForClone(
 		`SELECT `+materialColsM+`
 		 FROM materials m LEFT JOIN materials p ON p.id=m.parent_material_id
 		 WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND ($2 OR NOT COALESCE(p.hidden, m.hidden))
-			AND ($3 OR NOT `+quizAssignmentOpenSQL("m.id")+`)
+			AND ($3 OR NOT `+quizAssignmentHoldsSQL("m.id")+`)
 		 ORDER BY m.created_at`,
 		workspaceID, seeHidden, takeAssigned,
 	)
@@ -2018,7 +2018,7 @@ func assertAssignedQuizCloneTx(ctx context.Context, tx pgx.Tx, userID, workspace
 		return nil
 	}
 	var open bool
-	if err := tx.QueryRow(ctx, `SELECT `+quizAssignmentOpenSQL("$1"), quizID).Scan(&open); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT `+quizAssignmentHoldsSQL("$1"), quizID).Scan(&open); err != nil {
 		return err
 	}
 	if open {

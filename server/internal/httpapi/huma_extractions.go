@@ -324,10 +324,11 @@ func (a *api) createExtraction(ctx context.Context, in *createExtractionInput) (
 	// The run leaves its files' visibility alone (Epo 2026-11-04): a file
 	// picked from the workspace keeps its setting, and one uploaded in the
 	// Make a quiz dialog was uploaded hidden (CreateSourceUploadReq.Hidden),
-	// so a mark scheme never reaches the students. The quiz starts hidden.
+	// so a mark scheme never reaches the students. The quiz starts hidden
+	// unless the dialog's switch said otherwise (Hidden).
 	run, err := a.s.CreateExtraction(runCtx, store.ExtractionStart{
 		ID: runID, WorkspaceID: wsID, UserID: actor, Title: title, SpendSessionID: charge.id, UnreadAnswers: unread,
-		PaperName: paperNames, PaperPages: paperPages, AnswerFiles: len(answers),
+		PaperName: paperNames, PaperPages: paperPages, AnswerFiles: len(answers), Hidden: in.Body.Hidden,
 	})
 	if err != nil {
 		stream.Close()
@@ -522,10 +523,11 @@ func (a *api) finishExtraction(ctx context.Context, run store.Extraction, actor,
 	if err != nil {
 		return fail("quiz_invalid", err.Error())
 	}
-	// The quiz starts hidden from members (Epo 2026-11-03).
+	// The quiz starts hidden from members (Epo 2026-11-03) unless its starter
+	// switched that off (Epo 2026-11-11).
 	draft := store.MaterialDraft{
 		ActorUserID: actor, WorkspaceID: run.WorkspaceID, WorkspaceName: wsName,
-		Kind: store.MaterialQuiz, Title: title, Questions: complete, Assets: assets, Hidden: true,
+		Kind: store.MaterialQuiz, Title: title, Questions: complete, Assets: assets, Hidden: run.Hidden,
 		AllowNoQuestions: len(incomplete) > 0,
 	}
 	mt, err := a.s.CreateMaterialDraft(ctx, draft)

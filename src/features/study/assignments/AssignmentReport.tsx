@@ -1,6 +1,10 @@
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
-import { useAssignmentReport, useReleaseAssignmentGrades } from '@/api/hooks';
+import {
+  useAssignmentReport,
+  useReleaseAssignmentGrades,
+  useTurnAssignmentToPractice,
+} from '@/api/hooks';
 import type {
   Assignment,
   AssignmentMemberRow,
@@ -36,8 +40,10 @@ import { ApproveTab } from './ApproveTab';
 import { BackToAssignments } from './AssignmentAttemptPage';
 import { AssignmentSettingsTab } from './AssignmentSettingsTab';
 import type { AssignmentsSearch, ReportTab } from './AssignmentsPage';
+import { fileLink } from './assignmentPage';
 import {
   dayLabel,
+  holdsQuizPastClose,
   markText,
   percentText,
   takesLateWork,
@@ -171,6 +177,13 @@ export function AssignmentReport({
             className="max-sm:basis-full sm:ml-auto"
           />
         )}
+        {/* Closed under Do not show, its quiz stays held until this. */}
+        {manage?.toPractice && (
+          <TurnToPractice
+            assignment={assignment}
+            className="max-sm:basis-full sm:ml-auto"
+          />
+        )}
       </div>
       {assignment.draft ? (
         <AssignmentSettingsTab assignment={assignment} className="mt-6" />
@@ -287,16 +300,7 @@ function UnmarkedBody({
                   {file.name}
                 </span>
                 <UnderlineLink asChild className="text-fg">
-                  <Link
-                    search={
-                      file.fileId
-                        ? { file: file.fileId }
-                        : { material: file.materialId }
-                    }
-                    to="."
-                  >
-                    {m.assignment_open()}
-                  </Link>
+                  <Link {...fileLink(file)}>{m.assignment_open()}</Link>
                 </UnderlineLink>
               </li>
             ))}
@@ -470,7 +474,11 @@ function MembersTab({
         ))}
       </ul>
       {takesLateWork(assignment) && (
-        <p className="t-meta mt-3 text-fg-muted">{m.assignment_late_note()}</p>
+        <p className="t-meta mt-3 text-fg-muted">
+          {holdsQuizPastClose(assignment)
+            ? m.assignment_late_note_held()
+            : m.assignment_late_note()}
+        </p>
       )}
     </>
   );
@@ -781,6 +789,40 @@ function OptionBars({
         );
       })}
     </ul>
+  );
+}
+
+/** Turn to practice (Epo 2026-11-11): ends the hold on a closed assignment's
+ * quiz whose answers are Do not show, after a confirm. */
+function TurnToPractice({
+  assignment,
+  className,
+}: {
+  assignment: Assignment;
+  className?: string;
+}) {
+  const [asking, setAsking] = useState(false);
+  const { mutate, isPending } = useTurnAssignmentToPractice(
+    assignment.workspaceId,
+    assignment.id
+  );
+  return (
+    <div className={className}>
+      <Button disabled={isPending} onClick={() => setAsking(true)}>
+        {m.assignment_turn_to_practice()}
+      </Button>
+      {asking && (
+        <ConfirmDialog
+          body={m.assignment_turn_to_practice_body()}
+          confirmLabel={m.assignment_turn_to_practice()}
+          danger={false}
+          onClose={() => setAsking(false)}
+          onConfirm={() => mutate()}
+          open
+          title={m.assignment_turn_to_practice_title()}
+        />
+      )}
+    </div>
   );
 }
 

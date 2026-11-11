@@ -440,3 +440,41 @@ func TestARemovedEditorCannotConfirmARun(t *testing.T) {
 		t.Fatalf("after the refusal: %+v, %v", waiting, err)
 	}
 }
+
+// The quiz a run saves starts hidden or not as its starter's switch said (Epo
+// 2026-11-11). Needs Postgres (CI).
+func TestFinishedExtractionHidesItsQuizAsTheStarterChose(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, testdb.URL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(st.Close)
+	if err := st.LoadPlanLimits(ctx); err != nil {
+		t.Fatal(err)
+	}
+	a := &api{s: st, blob: blob.NewMemory()}
+	question := `[{"id":"q1","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"p",` +
+		`"blocks":[{"type":"text","text":"Find x."}],"answer":{"type":"short","accepted":["3"]},"marks":1,"solution":[]}]}]`
+	for _, hidden := range []bool{true, false} {
+		run, err := st.CreateExtraction(ctx, store.ExtractionStart{
+			ID: uuid.NewString(), WorkspaceID: "ws_e2e_private", UserID: "u_editor", Title: "Hidden " + uuid.NewString(), Hidden: hidden,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ended := a.finishExtraction(ctx, run, "u_editor", "E2E Private Workspace", extractionEvent{
+			Type: "done", Questions: json.RawMessage(question), Report: json.RawMessage(`{}`),
+		})
+		if ended.Status != store.ExtractionDone || ended.QuizID == nil {
+			t.Fatalf("run = %+v", ended)
+		}
+		t.Cleanup(func() {
+			_, _ = st.Pool().Exec(context.Background(), `DELETE FROM materials WHERE id=$1`, *ended.QuizID)
+		})
+		quiz, err := st.GetMaterial(ctx, *ended.QuizID)
+		if err != nil || quiz.Hidden != hidden {
+			t.Fatalf("hidden = %v, want %v (%v)", quiz.Hidden, hidden, err)
+		}
+	}
+}

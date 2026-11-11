@@ -579,9 +579,14 @@ func (s *Store) editorAssetReadable(ctx context.Context, q rowQueryer, actorID s
 
 // frozenAssetReadable admits who may read the assignment's questions: its staff,
 // who it went to, and anyone holding an attempt at it (GetAssignmentAttempt), as
-// after being taken off a named list. A personal workspace hides it from all.
+// after being taken off a named list. A personal workspace hides a class's from
+// all; a task's are its maker's.
 func (s *Store) frozenAssetReadable(ctx context.Context, q rowQueryer, actorID string, asset EditorAsset) (bool, error) {
-	staff, err := s.assignmentStaff(ctx, q, actorID, asset.WorkspaceID)
+	row, err := s.taskRow(ctx, q, asset.AssignmentID)
+	if err != nil {
+		return false, err
+	}
+	staff, err := s.staffOf(ctx, q, actorID, row)
 	if err != nil || staff {
 		return staff, err
 	}

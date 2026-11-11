@@ -32,9 +32,11 @@ const RECENT = 4;
 
 /** The workspace's front page (Epo 2026-11-02, boards H1 owner, H2 member):
  * its icon, name, owner and member count, Upload and Make a quiz from a
- * file for those who may add, To do in a class, What to practise next for
- * whoever practises here (board U3), then Recent files and Activity: with nothing
- * in it, a section is not shown (Epo 2026-11-02). */
+ * file for those who may add, To do, What to practise next for whoever
+ * practises here (board U3), then Recent files and Activity. To do stays with
+ * nothing in it and says Nothing to do, and with no files the workspace's empty
+ * state (its art and Add file) stands where Recent files would (Epo
+ * 2026-11-10). The other sections are not shown empty (Epo 2026-11-02). */
 export function WorkspaceDashboard({
   onMakeQuiz,
   onUpload,
@@ -49,7 +51,7 @@ export function WorkspaceDashboard({
 }) {
   const { data } = useWorkspaceDashboard(workspace.id);
   const { data: recent } = useWorkspaceRecent(workspace.id);
-  const { manages, pages } = studyView(workspace);
+  const { manages } = studyView(workspace);
   const practises = !manages;
   const { data: practice } = usePractice(workspace.id, {
     enabled: practises,
@@ -109,10 +111,8 @@ export function WorkspaceDashboard({
         )}
       </header>
       <AccountStatusBanner />
-      {empty && <WorkspaceEmpty onUpload={canAdd ? onUpload : undefined} />}
-      {pages.includes('assignments') && (
-        <TodoSection manages={manages} workspaceId={workspace.id} />
-      )}
+      {/* A class's, and anywhere the tasks its viewer set themself. */}
+      <TodoSection manages={manages} workspace={workspace} />
       {practises &&
         (!!practice?.suggestions.length || !!practice?.quizzes.length) && (
           <section className="flex flex-col">
@@ -145,6 +145,7 @@ export function WorkspaceDashboard({
             />
           </section>
         )}
+      {empty && <WorkspaceEmpty onUpload={canAdd ? onUpload : undefined} />}
       {items.length > 0 && (
         <section className="flex flex-col gap-3">
           <h2 className="t-subtitle">{m.dashboard_recent_files()}</h2>

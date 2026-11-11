@@ -329,7 +329,14 @@ names it (see [agentic-retrieval.md](agentic-retrieval.md), Make a quiz, and
 ### Make a quiz screens
 
 `src/features/makeQuiz`, from the Dashboard's Make a quiz from a file, for those
-who may edit the workspace (a viewer's `?make=` link shows the Dashboard).
+who may edit the workspace (a viewer's `?make=` link shows the Dashboard). Practice's
+Add practice shows the same dialog's files step as its Convert to quiz tab, beside
+Create quiz and Generate quiz (`tabs`, [study progress](study-progress.md)). The files
+step's footer holds a switch, Hide the quiz from members (Epo 2026-11-11), on by
+default and off when the dialog is Add practice's: `CreateExtractionReq.hidden` goes with the run, `question_extractions.hidden`
+(migration 0169) keeps it and the saved quiz takes it. The dialog holds the choice,
+so a reload on a later step starts from its default again. Files uploaded in the dialog stay
+hidden either way, as its first line says.
 
 One dialog (`MakeQuizDialog`, Epo 2026-11-05, "make the select pages from files the same
 dialog rather than inside a page") runs from the files through their pages and the map to
@@ -378,7 +385,7 @@ step is an address, `?make=files`, `?make=pages&paper=…&answers=…&quizFile=�
   image file picks pages, answer files too; an image is picked already, and a text file goes
   whole and counts for none. One click selects a page, up to `EXTRACTION_PAGES_MAX` (40) across
   the files, and Select all takes a whole file up to the cap. The bottom bar holds the total,
-  Change files, Cancel (not on phones) and Extract questions, and sticks on phones. Change
+  Change files, Cancel (not on phones) and Convert to quiz (Extract questions until Epo 2026-11-11), and sticks on phones. Change
   files goes back and keeps the picks of files left in. Extract waits for answer files still
   reading, an answer file with no page picked and Word or PowerPoint pages still drawing. One
   that failed after the dialog says so in the list and doesn't hold the run. A refusal shows

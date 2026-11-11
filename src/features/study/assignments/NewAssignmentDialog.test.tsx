@@ -1,14 +1,20 @@
 import { parseHTML } from 'linkedom';
 import { act, type ReactNode } from 'react';
 import { beforeEach, expect, it, vi } from 'vitest';
-import type { Assignment } from '@/api/types';
+import type { Assignment, Workspace } from '@/api/types';
 import { getLocale, m } from '@/i18n';
 
 getLocale();
 const { document, window } = parseHTML(
   '<!doctype html><html><body><div id="root"></div></body></html>'
 );
-Object.assign(globalThis, { document, IS_REACT_ACT_ENVIRONMENT: true, window });
+// react-hook-form's setValue asks whether a field's ref is an HTMLElement.
+Object.assign(globalThis, {
+  document,
+  HTMLElement: window.HTMLElement,
+  IS_REACT_ACT_ENVIRONMENT: true,
+  window,
+});
 
 const save = vi.hoisted(() => vi.fn());
 const practice = vi.hoisted(() => ({
@@ -18,7 +24,8 @@ const practice = vi.hoisted(() => ({
 const navigate = vi.hoisted(() => vi.fn());
 const frozen = vi.hoisted(() => ({ value: false }));
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }));
-vi.mock('@/features/workspace/access', () => ({
+vi.mock('@/features/workspace/access', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/workspace/access')>()),
   isWorkspaceReadOnly: () => frozen.value,
 }));
 vi.mock('../practice/MakePractice', () => ({
@@ -65,14 +72,42 @@ vi.mock('@/components/ui/Dialog', () => ({
     </header>
   ),
 }));
+// Each select's options, to pick one as its menu would.
+const selects = vi.hoisted(() => new Map<string, (value: string) => void>());
 vi.mock('@/components/ui/Select', () => ({
-  Select: ({ children, value }: { children?: ReactNode; value?: string }) => (
-    <div data-value={value}>{children}</div>
-  ),
+  Select: ({
+    children,
+    onValueChange,
+    value,
+  }: {
+    children?: ReactNode;
+    onValueChange?: (value: string) => void;
+    value?: string;
+  }) => {
+    // Its trigger's label names it; the Workspace field is the first select.
+    if (onValueChange && value !== undefined) selects.set(value, onValueChange);
+    return <div data-value={value}>{children}</div>;
+  },
   SelectContent: pass,
   SelectItem: pass,
   SelectTrigger: pass,
   SelectValue: () => null,
+}));
+vi.mock('./TaskFiles', () => ({
+  FilePicker: ({
+    kinds,
+    onPick,
+  }: {
+    kinds?: string[];
+    onPick: (file: { id: string; name: string }) => void;
+  }) => (
+    <button
+      data-picker={kinds?.join()}
+      onClick={() => onPick({ id: 'qz9', name: 'Mock paper' })}
+      type="button"
+    />
+  ),
+  TaskFilesField: () => <div data-task-files />,
 }));
 vi.mock('@/components/ui/Popover', () => ({
   Popover: pass,
@@ -273,5 +308,141 @@ it("assigns a member's practice to them alone, generating on their topic", async
       .querySelector('[data-make-practice]')
       ?.getAttribute('data-make-practice')
   ).toBe('t1');
+  act(() => root.unmount());
+});
+
+const assignField = () =>
+  host.querySelector(`[aria-label="${m.assignment_field_assign_to()}"]`);
+const pick = (from: string, to: string) =>
+  act(async () => selects.get(from)?.(to));
+
+it('saves a task for its maker alone, with its title, due date and files', async () => {
+  const root = await show({
+    dueAt: '2026-12-01T15:59:00Z',
+    files: [{ fileId: 'f1', kind: 'pdf', name: 'Chapter 4' }],
+    id: 'as1',
+    kind: 'unmarked',
+    noLate: false,
+    own: true,
+    title: 'Read chapter 4',
+  } as unknown as Assignment);
+  // Nothing about who it is for, and files from anywhere.
+  expect(assignField()).toBeNull();
+  expect(host.querySelector('[data-task-files]')).not.toBeNull();
+  expect(host.querySelector('header')?.textContent).toContain(
+    m.todo_edit_task()
+  );
+  await submitForm();
+  expect(save.mock.calls[0][0]).toMatchObject({
+    allowUploads: false,
+    assignAll: false,
+    assignees: ['owner'],
+    draft: false,
+    dueAt: '2026-12-01T15:59:00Z',
+    files: [{ fileId: 'f1' }],
+    kind: 'unmarked',
+    title: 'Read chapter 4',
+  });
+  act(() => root.unmount());
+});
+
+it('gives a task every field but Assign to and a draft, with a quiz from anywhere', async () => {
+  const root = createRoot(host);
+  await act(async () =>
+    root.render(
+      <NewAssignmentDialog
+        onClose={vi.fn()}
+        onDone={vi.fn()}
+        own
+        workspaceId=""
+      />
+    )
+  );
+  // It starts plain, then takes a quiz.
+  expect(host.querySelector('[data-value="unmarked"]')).not.toBeNull();
+  await pick('unmarked', 'marked');
+  const values = [...host.querySelectorAll('[data-value]')].map((select) =>
+    select.getAttribute('data-value')
+  );
+  // Time limit, attempts, marking, grades and answers.
+  expect(values).toEqual(
+    expect.arrayContaining(['none', '1', 'ai_approve', 'automatic', 'closed'])
+  );
+  expect(assignField()).toBeNull();
+  expect(host.textContent).toContain(m.assignment_switch_shuffle());
+  expect(host.textContent).not.toContain(m.assignment_switch_draft());
+  // Its quiz comes from the picker over every quiz, not this workspace's list.
+  expect(searchBox()).toBeNull();
+  await press(
+    host.querySelector(`button[aria-label="${m.assignment_field_quiz()}"]`) ??
+      undefined
+  );
+  await press(host.querySelector('[data-picker="quiz"]') ?? undefined);
+  expect(
+    host.querySelector(`button[aria-label="${m.assignment_field_quiz()}"]`)
+      ?.textContent
+  ).toContain('Mock paper');
+  // A quiz needs its due date, as an assignment's does.
+  await submitForm();
+  expect(save).not.toHaveBeenCalled();
+  expect(host.textContent).toContain(m.assignment_due_required());
+  act(() => root.unmount());
+});
+
+it('saves a task with a quiz for its maker alone', async () => {
+  const root = await show({
+    ...existing,
+    attempts: 2,
+    manage: { ...existing.manage, assignees: ['owner'], marking: 'manual' },
+    own: true,
+  } as Assignment);
+  await submitForm();
+  expect(save.mock.calls[0][0]).toMatchObject({
+    assignAll: false,
+    assignees: ['owner'],
+    attempts: 2,
+    kind: 'marked',
+    marking: 'manual',
+    quizId: 'qz1',
+  });
+  act(() => root.unmount());
+});
+
+it("follows To do's Workspace in place: a task with none, an assignment in a class the caller runs", async () => {
+  const root = createRoot(host);
+  await act(async () =>
+    root.render(
+      <NewAssignmentDialog
+        onClose={vi.fn()}
+        onDone={vi.fn()}
+        title="Add task"
+        workspaceId=""
+        workspaces={
+          [
+            { id: 'mine', kind: 'class', name: 'Mine', role: 'owner' },
+            { id: 'joined', kind: 'class', name: 'Joined', role: 'viewer' },
+          ] as unknown as Workspace[]
+        }
+      />
+    )
+  );
+  const title = () =>
+    host.querySelector<HTMLInputElement>(
+      `[aria-label="${m.assignment_field_title()}"]`
+    );
+  // Opens as a task with no workspace: for nobody else, files from anywhere.
+  expect(host.querySelector('[data-value="none"]')).not.toBeNull();
+  expect(assignField()).toBeNull();
+  expect(host.querySelector('[data-task-files]')).not.toBeNull();
+  const form = host.querySelector('form');
+  await pick('none', 'mine');
+  // The same form, now an assignment's: who it is for, and the class's files.
+  expect(host.querySelector('form')).toBe(form);
+  expect(assignField()).not.toBeNull();
+  expect(host.querySelector('[data-task-files]')).toBeNull();
+  await pick('mine', 'joined');
+  expect(assignField()).toBeNull();
+  expect(host.querySelector('[data-task-files]')).not.toBeNull();
+  expect(title()).not.toBeNull();
   act(() => root.unmount());
 });

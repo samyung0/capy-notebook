@@ -10,14 +10,13 @@ export const isTicked = (a: Assignment) =>
 export const isPlainTask = (a: Assignment) =>
   a.kind === 'unmarked' && !a.allowUploads;
 
-/** What a class's To do lists: answers waiting for its staff, and what was given
- * to the viewer and is still open, ticked or not. `approvedOff` holds the
- * answers staff ticked off until more come in. */
-export function todoRows(items: Assignment[], manages: boolean) {
+/** What a class's To do lists: answers waiting for whoever runs the work (a
+ * class's staff, or the maker of a task they set themself, who alone read its
+ * `manage`), and what was given to the viewer and is still open, ticked or
+ * not. `approvedOff` holds the answers ticked off until more come in. */
+export function todoRows(items: Assignment[]) {
   const mine = items.filter((a) => a.mine && !a.draft && !a.closedAt);
-  const waiting = manages
-    ? items.filter((a) => (a.manage?.toApprove ?? 0) > 0)
-    : [];
+  const waiting = items.filter((a) => (a.manage?.toApprove ?? 0) > 0);
   return {
     approvedOff: waiting.filter((a) => a.manage?.approvalsCheckedOff),
     done: mine.filter(isTicked),
@@ -29,7 +28,7 @@ export function todoRows(items: Assignment[], manages: boolean) {
 /** What the nav's dot and the To do tab count: open work and answers waiting. */
 export const todoCount = (workspaces: TodoWorkspace[]) =>
   workspaces.reduce((sum, w) => {
-    const { open, toApprove } = todoRows(w.items, w.manages);
+    const { open, toApprove } = todoRows(w.items);
     return sum + open.length + toApprove.length;
   }, 0);
 
@@ -75,7 +74,8 @@ const typeOf = (a: Assignment): TodoType =>
 /** The To do tab's classes (Epo 2026-11-10, board K): answers waiting first,
  * then the open rows, in the sort's order. What's done or ticked off has moved
  * to Done, closed or not (done for them is done). By due, classes with answers
- * waiting come first, then the one due soonest; by To do, classes go by name. */
+ * waiting come first, then the one due soonest; by To do, classes go by name.
+ * The tasks with no workspace (an empty id, Epo 2026-11-11) stay first. */
 export function todoSections(
   workspaces: TodoWorkspace[],
   view: TodoView
@@ -88,7 +88,7 @@ export function todoSections(
     order(items).map((a) => ({ a, approval, ticked }));
   const sections = workspaces
     .map((workspace) => {
-      const { open, toApprove } = todoRows(workspace.items, workspace.manages);
+      const { open, toApprove } = todoRows(workspace.items);
       const rows = [
         ...rowsOf(toApprove, true, false),
         ...rowsOf(open, false, false),
@@ -103,6 +103,9 @@ export function todoSections(
     })
     .filter((s) => s.rows.length > 0)
     .sort((x, y) => {
+      const loose =
+        Number(!y.workspace.workspaceId) - Number(!x.workspace.workspaceId);
+      if (loose !== 0) return loose;
       if (view.sort === 'title') {
         const names = x.workspace.name.localeCompare(y.workspace.name);
         return view.ascending ? names : -names;

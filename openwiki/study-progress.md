@@ -11,10 +11,15 @@ Each signed-in user keeps their own progress in each workspace: which
 quizzes and flashcard sets they have practised (started, or done once every
 item is) and an FSRS memory state per quiz question and flashcard. Progress
 always shows: Hide study progress, its switch and the `workspace_study` table
-went on 2026-11-09 (Epo, Q727 A). The workspace's Study section (the rail's Study, its panel listing
-Study's pages) shows Practice: suggested topics, every quiz members can see
-as practice and the learner's own topic reviews, each started as a review
-session in the page's place, and Summary: the learner's label per topic.
+went on 2026-11-09 (Epo, Q727 A). The workspace's rail leads to four pages that
+were Study's until Epo 2026-11-11 gave each its own place: To do (Assignments to
+a class's owner and editors), Practice (suggested topics, every quiz members can
+see as practice and the learner's own topic reviews, each started as a review
+session in the page's place), Members, and Study, which is now only the
+viewer's own marks and mastery (the learner's label per topic; it was Study's
+Summary page) and which a class's owner and editors do not have. Where this file
+says "Study → Practice", "Study → Assignments", "Study → Members" or "Study →
+Summary", read the rail's Practice, To do or Assignments, Members and Study.
 Learning's Overview says what to do next across workspaces and how each stands.
 Read progress (Mark as read, Stop tracking, read marks, "done" counts,
 Learning's Progress tab and its railway map) went on 2026-11-03 (Epo): only
@@ -339,14 +344,28 @@ The page is `src/features/study/practice/PracticePage.tsx`, lazy-loaded into
 the centre while nothing is open and the URL has `study=practice`
 (`parseWorkspaceOpenSearch`). From lg it fills the centre panel without a
 file header (28px 36px padding); one column keeps the header for the Files
-dropdown and ⋮, which with the dropdown's foot lead to Practice, Members,
-Summary and Assignments, each only for whoever has that page. The rail's Study opens it and
-its panel (`StudyPanel.tsx`)
-lists Study's pages: in a class, Members, Assignments and Practice for owner
-and editor members, Summary, Assignments and Practice for others; in a
-personal workspace, Summary and Practice for everyone. All four are built
-([Members](#members), [Assignments](#assignments)). Practice's row is current on the
-page, during a topic session and on its result.
+dropdown and ⋮, which with the dropdown's foot lead to the same pages as the
+rail, each only for whoever has that page. The rail lists them
+(`workspaceSections` in `WorkspaceRail.tsx`, Epo 2026-11-11; the Study panel
+that listed them went): Assignments, Practice and Members for a class's owner
+and editor members; To do, Practice, Members and Study for every other member,
+in a class or a personal workspace; a link or public visitor has no Members,
+as they may not read who the members are. Outside a class's staff Members shows
+no marks (`MembersRoster.tsx`, Epo 2026-11-11, mock C): the people and their
+roles, with the count in its heading. First, in the settings page's order,
+whoever shares the workspace (owner and editors) sets Visibility, what anyone
+with access may do, and copies the link: the Share dialog's controls without
+its own list of people. Under them its owner invites from a row (address, role
+dropdown, Invite), changes a role with the row's dropdown and removes with the
+row's Remove button after a confirmation; pending invitations list under the
+people with Cancel. Roles and buttons keep one width each, so every row ends
+on the same line. It shares its logic
+with the Share dialog's list (`useMemberManager`). A class's owner and teaching
+assistants get the same page as Members' Manage tab, beside Overview (their
+marks). Workspace settings has no Sharing tab (Epo 2026-11-11): the rail
+avatar's Invite member opens Members, on Manage in a class. All four are built
+([Members](#members), [Assignments](#assignments)). Practice is current on the
+rail on the page, during a topic session and on its result.
 
 Data: `GET /api/workspaces/{id}/practice` (`qk.practice`, under the
 workspace's `study` key, so `invalidateStudy` refreshes it) and the topics.
@@ -369,8 +388,19 @@ workspace's `study` key, so `invalidateStudy` refreshes it) and the topics.
   "–" under five tries). No Suggested and no own reviews: their own study
   waits for Summary. A row opens the quiz in the workspace.
 - Add practice (whoever may edit: a class's staff, a personal workspace's owner
-  and editors, whose quiz rows also open the quiz) shows disabled with a "Coming
-  soon" title. Everyone else gets Make my own practice (below).
+  and editors, whose quiz rows also open the quiz; off in a frozen workspace)
+  opens one dialog with three tabs (Epo 2026-11-11, `AddPractice.tsx`, at
+  `?make=files&makeFrom=practice`, so Cancel returns to Practice). **Create
+  quiz** is a gallery like Add file's Create tab: Blank quiz and one template
+  per answer type (`quizTemplates.ts`), each tile picturing its example
+  question; Create makes "{workspace} quiz {n}" holding that one complete
+  question (none for Blank) and opens it to edit. **Generate quiz** is Make my
+  own practice's form (`useMakePractice`) without Mix in, for everyone, and
+  returns to Practice once made. **Convert to quiz** is Make a quiz from a
+  file's files step: the dialog is `MakeQuizDialog` with its `tabs` slot, so
+  Continue goes on to its pages and run. The step's switch, Hide the quiz
+  from members, starts off here, so the quiz lists on members' Practice.
+  Everyone else gets Make my own practice (below).
 - Below md the table becomes one row per item with its facts under the
   title (topic, questions, tried), the score and Practise on the right.
 
@@ -396,8 +426,14 @@ Assignments' overall joins it once they exist. Make my own practice sits at the 
 
 `src/features/study/members/MembersPage.tsx`, `study=members` (boards Main, G4
 and G2 on the study-tracking canvas, Epo 2026-11-02/03; built 2026-11-08), for a
-class's owner and teaching assistants (editor members) only: anyone else is sent
-to Practice, and the routes refuse them. Members never see it. It lists the
+class's owner and teaching assistants (editor members) only: every other member
+gets the people without marks (above), a visitor is sent to Practice, and the
+routes refuse both. Two tabs under one heading (Epo 2026-11-11): **Overview**,
+the marks below, and **Manage** (`manage=true`), the roster page with link
+sharing, the invite row and each person's role and Remove, where a class's
+roles read Member and Teaching assistant and on phones a row's dropdown and
+button go under the name. Overview keeps its view while Manage is open. The
+heading has no New assignment (Epo 2026-11-11): Assignments has it. It lists the
 class's viewer members; `GET /api/workspaces/{id}/study/members`
 (`WorkspaceMembersProgress` in `store/members_progress.go`, `qk.membersProgress`,
 under the workspace's `study` key).
@@ -826,9 +862,10 @@ Work a class's owner and teaching assistants give its members (Epo 2026-11-03,
 `todo-study-tracking.md` §4, §5, §7; boards A0 to A5, W1 to W4, G3, G3m). The
 page is `src/features/study/assignments/AssignmentsPage.tsx`, the centre page
 while the URL has `study=assignments` (`parseAssignments` in `openItem.ts`), and
-`studyView` gates it: only a class lists Assignments, and elsewhere the link
-opens Practice. The Study panel stays beside every view with Assignments current;
-its count is what is left to do for a member and the assignments with answers
+every workspace has it (Epo 2026-11-11): the rail calls it Assignments for a
+class's owner and editors and To do for everyone else, whose page is headed To
+do and says "Nothing to do" when empty, as the To do page does. The rail's
+count is what is left to do for a member and the assignments with answers
 waiting for staff (`useAssignmentCount`, Claude's reading: the boards' counts
 don't follow their rows).
 
@@ -841,11 +878,11 @@ draft or published: a draft is invisible to members, and publishing posts it.
 
 | Table or column | Holds |
 | --- | --- |
-| `assignments` | Kind, title, `source_quiz_id`, the frozen `questions` with their keys, `question_count`, `total_marks`, `due_at`, `time_limit_min`, `attempts_allowed`, `no_late`, `late_penalty_pct`, `assign_all`, `draft`, `marking` (`ai_approve`, `ai` or `manual`, migration 0157), `answers_shown` (`closed`, `submitted` or `never`, migration 0159), `shuffle`, `posted_at`, `closed_at` (closed by hand; a No late submissions one closes from its due date without it), `released_at` (its quiz became practice, once) |
+| `assignments` | `own` (migration 0168: a task a member set themself, its maker's alone, whose `workspace_id` may be null; it takes the rest of this row as a class's assignment does, but for `assign_all` and `draft`). Kind, title, `source_quiz_id`, the frozen `questions` with their keys, `question_count`, `total_marks`, `due_at`, `time_limit_min`, `attempts_allowed`, `no_late`, `late_penalty_pct`, `assign_all`, `draft`, `marking` (`ai_approve`, `ai` or `manual`, migration 0157), `answers_shown` (`closed`, `submitted` or `never`, migration 0159), `shuffle`, `posted_at`, `closed_at` (closed by hand; a No late submissions one closes from its due date without it), `practice_at` (migration 0170: when staff turned its quiz to practice, what ends the hold under Do not show), `released_at` (its quiz became practice, once) |
 | `assignment_assignees` | Picked names and a staff member's own "You" |
 | `assignment_files` | An unmarked assignment's files and materials, in order; a file moved to another workspace leaves (`moveFileTx`) |
 | `assignment_done` | A member's tick |
-| `editor_assets.assignment_id` | A frozen copy's image rows |
+| `editor_assets.assignment_id` | A frozen copy's image rows (an own task's have no `workspace_id` either: migration 0168 lets the assignment alone own a row) |
 | `assignments.frozen_by`, `frozen_bytes` | Who pays for the frozen question JSON and its size (migration `0149_assignment_storage.sql`) |
 | `attempts` (kind `assignment`) | A try: `assignment_id`, `deadline_at`, `submitted_at`, `auto_submitted`, `waiting_marks`, `waiting_answers`, with no `material_id`, so no practice read (best score, tried by, averages, review pool) ever sees it, and `GET /api/attempts` and its list leave it out |
 | `answer_events` | Source `assignment`, grader `owner`: closed parts at submit, open parts when marked; a changed mark is a new row, and the latest per attempt and part stands |
@@ -873,31 +910,56 @@ JSON's charge to whoever republished; an image the assignment already holds keep
 payer (Epo 2026-11-05), so that payer's purge takes it out of the paper. Frozen staff
 still delete an assignment, and Republish, which writes, is refused for them. They resolve for staff, whoever it went to and whoever holds an
 attempt at it (`frozenAssetReadable`), never another member, and they paste for
-nobody (`AdoptEditorAssets`).
+nobody (`AdoptEditorAssets`). An own task's quiz may sit in another workspace or
+none (below), so its image copies name the task alone, with no workspace, and are
+copied from the task's source quiz (`copyFrozenAssetsTx`); only its maker reads them.
 Members are only ever served this copy:
 answer-free while running (`questions.LearnerViews`), with keys after
 submitting only as Show answers allows (below).
 
 **One row** (Epo 2026-11-04). A quiz and its assignment are the same content: lists
-hold one row, and making an assignment changes nothing about the quiz. Whether it
+hold one row, and making an assignment writes nothing to the quiz. Whether it
 is hidden stays the owner's choice, and a draft does nothing at all. While a
 published assignment is open (not closed by hand, not past a No late submissions
-due date):
+due date) the quiz is held from everyone who does not edit the workspace (Epo
+2026-11-11, "auto hides", "without hidden flag"): a member it did not go to
+would otherwise read its answers and pass them on. A marked assignment under
+Show answers Do not show holds it the same way past its close, "as if the
+assignment is still active" (Epo 2026-11-11), until staff turn it to practice
+(below): `quizAssignmentHoldsSQL` reads both.
 
 | Who | Their row | The quiz itself |
 | --- | --- | --- |
 | Owner, teaching assistant | The assignment icon (`assigned`), and it opens their usual view | Theirs as always |
 | A link or public editor | The assignment icon, no Clone | Theirs to read and edit; they can't clone it |
 | A viewer it went to | The icon, listed even if the quiz is hidden, and it opens the assignment (`assignmentId`, the earliest due of several) | Refused: reads, checks, images, its room and the chat agent answer 404 (`materialEffectiveAccess`, `editorAssetReadable`, `live_access`, `AccountDocumentAccess`), a device drops its kept copy (`ReadableMaterialIDs`), and it is off Practice, reviews and new items. New joins and token requests are refused; nothing about an assignment closes a connection (Epo 2026-11-05) |
-| A viewer it did not go to | A normal quiz if it is visible; no row if hidden | As it was, the owner's choice |
+| A viewer it did not go to | No row | Refused the same way while it is open (`materialHiddenSQL`), and back as it was at the close, the owner's choice |
 
 A viewer it went to keeps their row and refusal past the close while a closed
 marked assignment still holds its keys: grades waiting for release under Show
-grades Manual, or Show answers Do not show (`assignmentKeysHeldSQL`; Q714,
-finding 5). The collaboration server's own copy of the rule (`live_access`)
-still ends at the close; Go refuses the room token first.
+grades Manual, or Show answers Do not show and not yet turned to practice
+(`assignmentKeysHeldSQL`; Q714, finding 5). The collaboration server holds the
+same rule (`live_role`'s SQL).
 
-`quizAssignedToSQL` and `quizAssignmentOpenSQL` in `store/assignments.go` are the
+The hold is read, never stored: `materialHiddenSQL` (`m.hidden` or a class's quiz
+with an open assignment) stands where a quiz row's `hidden` gates access and lists
+(`materialEffectiveAccess`, `ReadableMaterialIDs`, the file and item lists, Recent,
+the dashboard, Practice, reviews and new items, the account chat's scope), and
+`live_access` holds the same rule for the room. The `hidden` column is not written,
+so the owner's choice is as it was when the assignment closes or is deleted, and
+the standings, which read the column, still count every member's earlier answers
+on the quiz; its unanswered questions leave a held member's totals while it is
+held, as an assignee's do (`membersStandings`). An unmarked assignment's attached
+quiz and a closed assignment's "Practise this quiz" link follow the hold too
+(`fillAssignmentFiles`, `assignmentCols`). A task someone set themself (`own`)
+holds nothing.
+
+Not covered, by a reviewer's read (2026-11-11): Explore still lists a public
+class's held quiz by title and question count (opening it answers 404), and the
+chat agent's outline still names it to a viewer (the pipeline's own SQL reads
+the column); neither serves a question or a key.
+
+`quizAssignedToSQL` and `quizAssignmentHoldsSQL` in `store/assignments.go` are the
 two reads; `materialIconName(kind, assigned)` is the icon, a quill in the file-icon
 sprite, on the file tree, Recent, the Files page (All files lists an assignee's
 hidden quiz too, opening its assignment) and the open file's header. A direct
@@ -915,8 +977,9 @@ attempt page its opening read). The quiz's page in a workspace stays too: the ne
 refetch of the file list changes nothing while it is open (`alreadyOpen` in
 `CenterContent`). A refused read still ends what shows (Epo 2026-11-05), so a refresh
 of the material answering 404, as when the connection comes back and its last read is
-over 5 seconds old, shows the error page. An unassigned member of a visible quiz keeps normal access with its
-checks. A signed-out browser on a public or link workspace's share page is
+over 5 seconds old, shows the error page. Past the close a member it did not go
+to has the quiz back at once while grades wait under Show grades Manual, when
+those it went to are still refused (Epo answered for Do not show only). A signed-out browser on a public or link workspace's share page is
 nobody in particular, so an assignee could open it there. An attempt made before
 the assignment stays readable by whoever took it.
 
@@ -1197,7 +1260,7 @@ and the Submitted page says who releases it. Answers never show before grades.
 The topic-label read leaves out events of an attempt on such an assignment, and
 the sweep makes its quiz practice, rating what was submitted, only once it has
 closed and its grades are released. After release, later marks show as they
-land. Practise again shows once its quiz is practice, never to members under Show answers Do not show, whose quiz stays refused to them (finding 5). The top right
+land. Practise again shows once its quiz is practice, under Show answers Do not show only after staff turn it to practice, the quiz staying refused to members until then (finding 5, Epo 2026-11-11). The top right
 shows the mark after any late penalty, with the unpenalised mark under it.
 
 **The report** (G3, G3m, A3; `GET /api/assignments/{id}/report`, owner and editor
@@ -1239,6 +1302,28 @@ for that minute. Practice notes "Assignment, closed 24 Oct" (`assignmentClosedAt
 The owner can hide it again from its ⋮, and the sweep leaves that alone. Marked
 answers join reviews at that moment (§11.6): each attempt's fully marked questions
 are rated on the quiz, a later-marked one when it stops waiting.
+
+**Turn to practice** (Epo 2026-11-11). Under Show answers Do not show a class's
+closed assignment is not released by the sweep (`SweepAssignments` skips it;
+a task one set oneself is released as before): its quiz stays held from every
+viewer member, the staff's icon and the clone rule staying too, until an owner
+or teaching assistant presses Turn to practice in the report header, in Release
+grades' place (`POST /api/assignments/{id}/practice`, `TurnAssignmentToPractice`,
+after a confirm that the quiz will be shown to all members, who can check the
+answers themselves: a quiz its owner hid by hand is shown too, as at any
+release, Epo 2026-11-11). The button shows on `manage.toPractice`: closed, Do not show,
+not turned yet, a quiz still there, and its grades showing (under Manual, after
+Release grades). The turn writes `practice_at` (migration 0170), which is what
+ends `assignmentAnswersHeldSQL`, and then releases it as the sweep would
+(`releaseAssignment`; the sweep does it within a minute if a member's write held
+the row): the quiz is practice for members, "Practise this quiz" shows on their
+results, and their answers are rated then. Their results still show no answers.
+An assignment set to Do not show after it closed and was released is held the
+same way, with the button, since the hold reads `practice_at` and not
+`released_at`; one turned, reopened and closed again stays practice. Closing an
+assignment that will be held asks "Close this assignment?" and says the quiz
+stays hidden until it is turned to practice, where others ask "Close and make it
+practice?"; the members list's late note says the same (`holdsQuizPastClose`).
 
 **Sharing notice** (Epo 2026-11-04, board V1). A simple compact dialog, 540px wide
 from `sm` and the width of the page less its gutters on a phone, on a viewer member's
@@ -1310,7 +1395,125 @@ or Open for a hand-in, Approve marks for an approval, each of these with Mark as
 done (or Mark as not done on Done) beside it while it can be ticked, which still
 asks first. On phones both buttons follow the content, since a long
 title needs the header's width. The table takes the page's full width; titles stay
-on one line and end in an ellipsis, and a Posted by column shows from xl (1280px). A class holds at most 500 assignments, 100 of them open
+on one line and end in an ellipsis, and a Posted by column shows from xl (1280px).
+Add task, a dark button, sits at the toolbar's right for everyone
+(`NewAssignmentAnywhere`, Epo 2026-11-10). The form opens at once as a task with no
+workspace, and its first field, Workspace (optional, No workspace then the
+workspaces the caller is a member of), puts it in one (Epo 2026-11-11: "the same
+design as existing one, just with a workspace option"; the step that asked which
+workspace first is gone). It is one dialog (`NewAssignmentDialog`, Epo
+2026-11-11: "dont spwn another dialog, make both dialog the same thing, just
+hide/render the options/inputs that applies"): picking a workspace shows or hides
+fields in place, a class the caller runs giving the assignment's fields and
+anything else or No workspace a task's: every one of those but Assign to and
+Draft only (below). What is typed stays; what belongs to the workspace left
+behind is cleared (its quiz, its people, an assignment's files), while a task's
+quiz and files stay from task to task.
+Outside a workspace the words are
+the same for everyone (Epo 2026-11-10): the button, the dialog and its toast say
+task and workspace, never assignment or class.
+
+**A task with no workspace** (Epo 2026-11-11) is `own` with a null
+`workspace_id` (migration 0168 drops the NOT NULL, with a check that only an own
+task has none). `POST /api/todo/tasks` makes one from the same body, held to a
+task for oneself; its maker alone reads, changes, ticks and deletes it through the
+assignment routes (`lockTaskTx` and `taskRow` take an empty workspace, `ownedSQL`
+stands in for the membership `givenSQL` reads). `GET /api/todo` and
+`/api/todo/done` return these tasks as a section with an empty `workspaceId`, name
+and icon, first on To do; the table shows it first under either sort, under a
+group row reading No workspace with no icon, and the details dialog has no
+Workspace row. The 100-task cap counts them apart from any workspace's, and the
+account purge deletes a person's own tasks, since no workspace's cascade would.
+Its pages (taking its quiz, results, its report and settings) have no workspace
+to sit in, so `/todo/task?assignment=` hosts the same components
+(`routes/TodoTask.tsx`, `assignmentPage` picking between it and
+`/workspaces/{id}`); with no `assignment` it goes back to `/todo`, as the pages'
+own back links do.
+
+**A task's files come from anywhere** (Epo 2026-11-11: "files chosen should have
+nothing to do with which workspace this task belongs to"). For an own task, in a
+workspace or not, the store takes any file or block its maker can open
+(`ownTaskFileSQL`, `ownTaskMaterialSQL`: their own with no workspace, and what a
+workspace they are a member of shows them, a canvas left out; one they only pay
+for in a workspace they left is not theirs to open) and reads each back only while they still can, so one
+they lose leaves the task. `AssignmentFile` carries `workspaceId` and
+`workspaceName`, absent for a file with no workspace. In the form
+(`TaskFilesField` in `TaskFiles.tsx`, which the dialog shows in place of the
+class's `FilesField` for a task of one's own) Add a file opens a picker drawn as Search is:
+a field over `GET /api/items?scope=all&q=`, newest first until something is typed,
+each row with its thumbnail and its workspace's name or No workspace; a row adds
+the file and closes, and files already on the task are left out. A picked row
+names its workspace, and the details dialog opens each file where it sits
+(`/workspaces/{id}?file=`, or `/files/{id}` and `/materials/{id}` with none),
+naming the workspace when it is not the task's own. An assignment's files stay
+its class's, picked from the class (`FilesField`), since members must open them.
+
+Inside a workspace the words follow who gives out work (Epo 2026-11-10): a class's
+owner and editor members see New assignment, and everyone else New task, since a
+viewer gives out no assignments and a personal workspace has none. New task sits
+where New assignment does: the Dashboard's To do section, which a personal workspace
+has too for its members' own tasks, and the top of the workspace's To do page.
+The Dashboard's section stays with nothing in it (Epo 2026-11-10: always show,
+and nothing is hidden that he did not ask to hide): its heading, its button
+(a class's staff with New assignment as much as a member with New task; a
+visitor who is no member has none) and the To do page's "Nothing to do". A
+workspace with no files shows it too, above its empty state.
+
+New task is a task for oneself, the same dialog with `own` set (its heading New
+task; there is no second form), saved as an assignment with `own` set (migration
+0168) that names its maker alone. It takes every option an assignment does but
+Assign to (Epo 2026-11-11: "everything should apply except for the assigning
+members, and maybe filtering files"): Kind, a quiz, time limit, attempts,
+marking, Show grades, Show answers, Allow submission with uploads and Advanced.
+Kind starts at Unmarked, and there is no Draft only, since To do lists no drafts
+and the task would have nowhere to be found.
+Its quiz, like its files (above), comes from anywhere: the Quiz field opens the
+same picker over `GET /api/items?scope=all&kind=quiz`, and the store takes any
+quiz its maker can open (`checkAssignmentQuizTx` with `ownTaskMaterialSQL` and
+`materialEffectiveAccess`), so one a class holds from them is refused: under an
+open assignment unless they are that class's staff, and past its close while
+its keys are held from them; it is checked again on Republish. `POST /api/workspaces/{id}/assignments` takes a task from any
+member who is not a class's staff, and from them only for themself
+(`checkOwnTask`: no draft, nobody else); a class's staff make assignments there
+as before.
+
+An own task is the case of staff who are also the one it went to: its maker
+holds both `manage` and `mine` (`readAssignments`), and every assignment route
+reads standing from the task's row (`taskRow`, `staffOf`, `lockStaffOfTx`)
+instead of the workspace alone, so its maker publishes again, closes, reads the
+report, approves and changes marks, and takes it, in a class, a personal
+workspace or none, while a class's staff and the workspace's owner get 404 on
+all of it (`givenSQL`): they neither list it nor count it (Members, the
+Dashboard's Activity, the `todo` event and the class's caps leave it out). A
+task in a workspace needs its maker still a member; on leaving or removal their
+tasks there move to no workspace with their attempts
+(`RemoveWorkspaceMemberWithResult`), and a workspace that is deleted leaves every
+member's tasks the same way (`deleteWorkspaceWithResultTx`) instead of taking
+them in its cascade. While the workspace's owner is suspended or leaving, a task
+in it is out of reach like everything else there. What it does not do: it never
+hides its quiz or counts as the quiz being assigned (`quizAssignedToSQL`,
+`quizAssignmentHoldsSQL`, the collaboration server's copy in `access.rs`, and
+Practice's closed-assignment note), releasing its grades sends no notification,
+and its answer events log under the quiz's own workspace, as practising the quiz
+does, so that workspace's row is key-shared before the accounts
+(`taskRow.lockQuizWorkspaceTx`). What a
+class gave out still hides while the workspace is personal. The task sits in its
+maker's To do and Done under the workspace's name, in the Dashboard's To do and a
+member's Assignments list; its tick is the plain task's, and it opens To do's
+details dialog wherever it is listed (`OwnTaskDetails`, which ticks as the To do
+page does: a plain task's tick is its done, a quiz's or a hand-in's asks first
+and only clears To do), with Delete and Edit in
+the footer and, for one with a quiz, Start quiz, Continue quiz or See results:
+Edit opens the same form, Delete asks and then deletes the task for good (`DELETE
+/api/assignments/{id}`, its maker only, also while frozen). Its results page
+keeps Attempt again and Practise again for its maker, though they run it too, and
+its back link opens the report, whose Settings tab opens the quiz where it sits
+(`manage.quizWorkspaceId`). A file on its pages opens where the file sits
+(`fileLink`). A member holds at most 100 own tasks in one
+workspace, and 100 with no workspace, done or not (`OwnTasksPerMember`, 409
+`task_limit`).
+
+A class holds at most 500 assignments, 100 of them open
 (`row_caps.go`, 409 `assignment_limit` and `assignment_open_limit`, shown in the
 New assignment dialog or as a toast), and making or publishing one is limited
 to 60 an hour per person (authorization-permissions-lifecycles.md,
@@ -1399,7 +1602,7 @@ Sources: [store](../server/internal/store/assignments.go),
 - `src/features/study/ratings.test.ts`: the review session's rating queue and
   question scoring; `src/features/study/practice/PracticePage.test.tsx`:
   Practice for a member (Suggested, Only you, best scores) and an owner
-  (members, tried by, group average), and the Study panel's rows by role.
+  (members, tried by, group average), and the rail's rows by role.
 - `server/internal/store/practice_test.go`: Learning's Overview for a learner and
   a class's owner; served items' reasons,
   Practice's quizzes, best attempt and the staff counts and average, and the

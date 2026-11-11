@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/Popover';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { selectTriggerVariants } from '@/components/ui/Select';
+import { Switch } from '@/components/ui/Switch';
 import {
   matchesSearch,
   PanelSearchField,
@@ -313,6 +314,7 @@ export function MakeQuizDialog({
   onStarted,
   runId,
   step: stepName,
+  tabs,
   workspaceId,
   workspaceName,
 }: {
@@ -334,6 +336,14 @@ export function MakeQuizDialog({
   runId?: string;
   /** Each step is an address, so the browser's Back walks them. */
   step: 'files' | 'pages' | 'run';
+  /** Add practice: the files step is one tab of a dialog under this title.
+   * `strip` is its tab row and `other` the tab on show when it isn't this one,
+   * in place of the files and their footer. */
+  tabs?: {
+    other?: { body: React.ReactNode; footer: React.ReactNode };
+    strip: React.ReactNode;
+    title: string;
+  };
   workspaceId: string;
   workspaceName: string;
 }) {
@@ -353,6 +363,10 @@ export function MakeQuizDialog({
     fromFiles(initial.answers)
   );
   const onPages = stepName === 'pages';
+  // Hidden unless switched off (Epo 2026-11-03, the switch 2026-11-11), but
+  // shown from Add practice, whose quiz is for the members. A reload on a
+  // later step starts from that again.
+  const [hidden, setHidden] = useState(!tabs);
   // A link opens before the files arrive.
   const seeded = useRef(!!files);
   useEffect(() => {
@@ -511,6 +525,7 @@ export function MakeQuizDialog({
     active: onPages,
     answers: choice.answers,
     file,
+    hidden,
     onCancel: onClose,
     onChangeFiles: () => onShowFiles(choice),
     onFile,
@@ -548,7 +563,7 @@ export function MakeQuizDialog({
       <div className="flex flex-col gap-6 pb-1">
         <div>
           <p className="t-meta text-fg-muted">
-            {m.make_quiz_no_spreadsheets()}
+            {m.make_quiz_no_spreadsheets()} {m.make_quiz_uploads_hidden()}
           </p>
           {lost.length > 0 && (
             <FormAlert
@@ -719,13 +734,15 @@ export function MakeQuizDialog({
         ? pages
         : {
             body: null,
-            closable: false,
-            footer: (
+            closable: !!tabs,
+            footer: tabs?.other ? (
+              tabs.other.footer
+            ) : (
               <>
-                <p className="t-meta mr-auto flex min-w-0 items-center gap-2 self-center text-fg-muted max-sm:w-full">
-                  <Icon className="shrink-0" name="viewOffSlash" size={16} />
-                  {m.make_quiz_hidden_note()}
-                </p>
+                <label className="mr-auto flex min-w-0 items-center gap-2 self-center text-sm max-sm:w-full">
+                  <Switch checked={hidden} onCheckedChange={setHidden} />
+                  {m.make_quiz_hide_quiz()}
+                </label>
                 <span className="contents max-sm:hidden">
                   <DialogCancel />
                 </span>
@@ -754,8 +771,8 @@ export function MakeQuizDialog({
               </>
             ),
             onCloseClick: onClose,
-            title: m.make_quiz_title(),
-            width: 720,
+            title: tabs?.title ?? m.make_quiz_title(),
+            width: tabs ? 600 : 720,
           };
   return (
     <SimpleDialog
@@ -786,7 +803,11 @@ export function MakeQuizDialog({
       width={step.width}
     >
       {/* Kept mounted, so a step's pages aren't read or drawn again on return. */}
-      <div hidden={stepName !== 'files'}>{filesBody}</div>
+      <div hidden={stepName !== 'files'}>
+        {tabs?.strip}
+        <div hidden={!!tabs?.other}>{filesBody}</div>
+        {tabs?.other?.body}
+      </div>
       <div
         className={cn(onPages && 'flex min-h-0 flex-1 flex-col')}
         hidden={!onPages}

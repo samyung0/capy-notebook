@@ -95,12 +95,10 @@ export default function Workspaces() {
       <ListToolbar
         action={
           <Button
-            className="-mx-1 h-fit rounded-card px-2 py-1.5 font-bold text-link sm:mx-0 sm:h-(--control-h) sm:px-5 sm:py-0"
             disabled={frozen}
             iconLeft="plus"
             onClick={() => setCreateOpen(true)}
-            size="md"
-            variant="ghost-hover"
+            size="sm"
           >
             {m.action_new_workspace()}
           </Button>
@@ -151,7 +149,7 @@ export default function Workspaces() {
             ))}
             <Card
               border="dashed"
-              className="min-h-16 cursor-pointer items-center justify-center frosted:bg-transparent p-2 focus-visible:border-0 focus-visible:ring-2 focus-visible:ring-action focus-visible:transition-none sm:min-h-34 sm:p-5.5"
+              className="min-h-23 cursor-pointer items-center justify-center frosted:bg-transparent p-2 focus-visible:border-0 focus-visible:ring-2 focus-visible:ring-action focus-visible:transition-none sm:min-h-34 sm:p-5.5"
               interactive
               onClick={() => setCreateOpen(true)}
               radius="card-lg"

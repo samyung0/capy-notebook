@@ -17,6 +17,7 @@ import type {
   Assignment,
   AssignmentFileRef,
   AssignmentFormReq,
+  Workspace,
   WorkspaceMember,
 } from '@/api/types';
 import { Avatar } from '@/components/ui/Avatar';
@@ -54,6 +55,7 @@ import { errorCopy } from '@/lib/errors';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { MakePractice } from '../practice/MakePractice';
 import { questionsLabel } from '../practice/practiceText';
+import { studyView } from '../practice/studyView';
 import { AdvancedSection } from './AdvancedSection';
 import {
   advancedStartsOpen,
@@ -64,10 +66,14 @@ import {
   minutesText,
 } from './assignmentText';
 import { NoAnswersWarning } from './NoAnswersWarning';
+import { FilePicker, type TaskFile, TaskFilesField } from './TaskFiles';
 
 const TIME_LIMITS = [15, 30, 45, 60, 90, 120, 180];
 const ATTEMPTS = [1, 2, 3, 5];
 const LATE_PENALTIES = [0, 20, 50];
+
+/** The Workspace field's value for a task with no workspace. */
+const NO_WORKSPACE = 'none';
 
 const FIELD_TRIGGER =
   'flex h-(--control-h) w-full items-center gap-2 rounded-input border border-line bg-field px-3.25 text-left text-fg outline-none hover:border-line-strong focus-visible:border-line-strong data-[state=open]:border-line-strong';
@@ -76,43 +82,77 @@ const FIELD_TRIGGER =
  * quiz with its marks rules, or a title with optional files. Editing keeps the
  * kind and the quiz. The Quiz field's last rows make a quiz on the spot, through the
  * dialogs that already do: Add file's Create tab, Make a quiz and generate.
+ *
+ * It is also the form of a task one sets oneself (`own`, Epo 2026-11-10: New
+ * task for anyone in a personal workspace and a class's viewer members), one
+ * dialog showing the fields that apply (Epo 2026-11-11): everything an
+ * assignment has but Assign to, as it is for its maker alone
+ * (`checkOwnTask`), with its quiz and its files from any workspace or none. It
+ * starts as a plain task. To do's Add task passes `workspaces`: Workspace is
+ * then the first field, starting on none, and the fields follow the workspace
+ * picked without the dialog reopening.
  */
 export function NewAssignmentDialog({
   existing,
   onClose,
   onDone,
+  own,
   presetAssignee,
   presetQuizId,
   presetTopicId,
+  title,
   workspaceId,
+  workspaces,
 }: {
   existing?: Assignment;
   onClose: () => void;
   onDone: (assignment: Assignment) => void;
+  /** A new task for oneself, where the page knows the viewer gives out no
+   * assignments here; with `workspaces` the workspace picked decides. */
+  own?: boolean;
   /** Opened from a member's profile (Q721): them as the only assignee. */
   presetAssignee?: string;
   /** Opened from a quiz (A1): its quiz is set and Kind doesn't show. */
   presetQuizId?: string;
   /** The topic Generate questions starts on: the profile card's (Q721). */
   presetTopicId?: string;
+  /** A new one's heading where the page has its own word for it (New task, To
+   * do's Add task); New assignment without. */
+  title?: string;
+  /** Empty for a task with no workspace; with `workspaces`, where it starts. */
   workspaceId: string;
+  /** To do's Add task: the workspaces its Workspace field offers. */
+  workspaces?: Workspace[];
 }) {
+  const [picked, setPicked] = useState(workspaceId);
+  const wsId = workspaces ? picked : workspaceId;
+  const runs = (id: string) =>
+    !!studyView(workspaces?.find((ws) => ws.id === id)).manages;
+  // A task for oneself: only a class's staff give out assignments.
+  const isOwn = existing ? existing.own : workspaces ? !runs(wsId) : !!own;
+  // A task's quiz comes from anywhere: the row picked, for its name.
+  const [taskQuiz, setTaskQuiz] = useState<TaskFile | null>(null);
+  const [pickingQuiz, setPickingQuiz] = useState(false);
+  const [pickedFiles, setPickedFiles] = useState<TaskFile[]>([]);
+  const { data: me } = useMe();
   const manage = existing?.manage;
   const formId = useId();
   const navigate = useNavigate();
-  const { data: ws } = useWorkspace(workspaceId, { errorBoundary: false });
+  const { data: ws } = useWorkspace(wsId, { errorBoundary: false });
   const [generating, setGenerating] = useState(false);
   const {
     data: practice,
     isError: quizzesFailed,
     isPending: quizzesPending,
     refetch: refetchQuizzes,
-  } = usePractice(workspaceId, {
+  } = usePractice(wsId, {
+    enabled: !isOwn,
     errorBoundary: false,
   });
-  const { data: members } = useWorkspaceMembers(workspaceId);
+  const { data: members } = useWorkspaceMembers(wsId, !isOwn);
   const quizzes = practice?.quizzes ?? [];
   const {
+    clearErrors,
     control,
     formState: { errors },
     handleSubmit,
@@ -131,7 +171,8 @@ export function NewAssignmentDialog({
         fileId,
         materialId,
       })),
-      kind: existing?.kind ?? 'marked',
+      // A task one sets oneself starts plain; an assignment with a quiz.
+      kind: existing?.kind ?? (isOwn ? 'unmarked' : 'marked'),
       latePenaltyPct: existing?.latePenaltyPct ?? 0,
       marking: manage?.marking ?? 'ai_approve',
       noLate: existing?.noLate ?? false,
@@ -180,16 +221,31 @@ export function NewAssignmentDialog({
   );
   // No late submissions goes with a due date on either kind (Epo 2026-11-09),
   // the penalty with a marked one's marks; a published one is past being a
-  // draft.
+  // draft, and a task for oneself has none: a draft is an assignment kept
+  // from its members until published.
   const hasPolicy = !!dueAt;
-  const hasDraft = !existing || existing.draft;
+  const hasDraft = !isOwn && (!existing || existing.draft);
   const [titleEdited, setTitleEdited] = useState(!!existing);
-  const { mutate: create, isPending: creating } =
-    useCreateAssignment(workspaceId);
+  const { mutate: create, isPending: creating } = useCreateAssignment(wsId);
   const { mutate: update, isPending: updating } = useUpdateAssignment(
-    workspaceId,
+    wsId,
     existing?.id ?? ''
   );
+  // The Workspace field: what is typed stays, and what belongs to the
+  // workspace left behind goes (its people, an assignment's quiz and files; a
+  // task's come from anywhere, so they stay from task to task).
+  const pickWorkspace = (next: string) => {
+    if (!(isOwn && !runs(next))) {
+      setValue('files', []);
+      setValue('quizId', undefined);
+      setTaskQuiz(null);
+    }
+    setValue('assignAll', true);
+    setValue('assignees', []);
+    if (!runs(next)) setValue('draft', false);
+    clearErrors();
+    setPicked(next);
+  };
   const saving = creating || updating;
   // Opened from a quiz before the list arrived: its name becomes the title.
   const presetTitle = quizzes.find((q) => q.id === presetQuizId)?.title;
@@ -197,13 +253,19 @@ export function NewAssignmentDialog({
     if (presetTitle && !titleEdited) setValue('title', presetTitle);
   }, [presetTitle, setValue, titleEdited]);
   const submit = handleSubmit((values) => {
+    if (isOwn && !me) return;
     const body: AssignmentFormReq = {
       ...values,
       ...latePolicy(values),
-      // Someone who left after this assignment was read can't be assigned.
-      assignees: values.assignees?.filter(
-        (id) => !members || members.some((member) => member.userId === id)
-      ),
+      // A task is for its maker alone. Someone who left after an assignment
+      // was read can't be assigned.
+      ...(isOwn
+        ? { assignAll: false, assignees: me ? [me.id] : [] }
+        : {
+            assignees: values.assignees?.filter(
+              (id) => !members || members.some((member) => member.userId === id)
+            ),
+          }),
       files: kind === 'marked' ? [] : values.files,
       quizId: kind === 'marked' ? values.quizId : undefined,
       timeLimitMin: kind === 'marked' ? values.timeLimitMin : undefined,
@@ -224,7 +286,7 @@ export function NewAssignmentDialog({
   // In the phone header and the form's footer: either one, or Enter in a field,
   // submits the form once.
   const createButton = (
-    <Button disabled={saving} form={formId} type="submit">
+    <Button disabled={saving || (isOwn && !me)} form={formId} type="submit">
       {existing ? m.action_save() : m.assignment_create()}
     </Button>
   );
@@ -237,7 +299,7 @@ export function NewAssignmentDialog({
         onlyYou={false}
         onMade={onClose}
         title={m.assignment_generate_questions()}
-        workspaceId={workspaceId}
+        workspaceId={wsId}
       />
     );
   return (
@@ -249,7 +311,11 @@ export function NewAssignmentDialog({
         showCloseButton={false}
       >
         <DialogTitle action={createButton}>
-          {existing ? m.assignment_edit() : m.assignment_new()}
+          {existing
+            ? isOwn
+              ? m.todo_edit_task()
+              : m.assignment_edit()
+            : (title ?? m.assignment_new())}
         </DialogTitle>
         <form
           className="flex flex-col gap-4 pt-1"
@@ -260,6 +326,33 @@ export function NewAssignmentDialog({
             if (!saving) void submit();
           }}
         >
+          {workspaces && (
+            <Field
+              hint={m.assignment_optional()}
+              label={m.todo_fact_workspace()}
+            >
+              <Select
+                onValueChange={(next) =>
+                  pickWorkspace(next === NO_WORKSPACE ? '' : next)
+                }
+                value={wsId || NO_WORKSPACE}
+              >
+                <SelectTrigger aria-label={m.todo_fact_workspace()}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_WORKSPACE}>
+                    {m.todo_no_workspace()}
+                  </SelectItem>
+                  {workspaces.map((option) => (
+                    <SelectItem key={option.id} value={option.id}>
+                      {option.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
           {!locked && (
             <Field label={m.assignment_field_kind()}>
               <Controller
@@ -301,6 +394,62 @@ export function NewAssignmentDialog({
                   )}
                 </div>
               </Field>
+            ) : isOwn ? (
+              <Field
+                error={errors.quizId?.message}
+                label={m.assignment_field_quiz()}
+              >
+                {/* The quiz field's own trigger, over every quiz its maker
+                    can open: Add a file's picker, on quizzes alone. */}
+                <button
+                  aria-label={m.assignment_field_quiz()}
+                  className={FIELD_TRIGGER}
+                  onClick={() => setPickingQuiz(true)}
+                  type="button"
+                >
+                  {taskQuiz && (
+                    <FileIcon
+                      className="size-4 shrink-0"
+                      name={materialIconName('quiz')}
+                    />
+                  )}
+                  <span
+                    className={cn(
+                      'min-w-0 flex-1 truncate',
+                      !taskQuiz && 'text-placeholder'
+                    )}
+                  >
+                    {taskQuiz?.name ?? m.assignment_choose_quiz()}
+                  </span>
+                  {taskQuiz?.workspaceName && (
+                    <span className="t-meta max-w-[40%] shrink-0 truncate text-fg-muted">
+                      {taskQuiz.workspaceName}
+                    </span>
+                  )}
+                  <Icon
+                    className="shrink-0 text-fg-muted"
+                    name="chevronDown"
+                    size={16}
+                  />
+                </button>
+                {pickingQuiz && (
+                  <FilePicker
+                    empty={m.assignment_no_quizzes_match()}
+                    held={quizId ? [quizId] : []}
+                    kinds={['quiz']}
+                    label={m.assignment_search_quizzes()}
+                    onClose={() => setPickingQuiz(false)}
+                    onPick={(picked) => {
+                      setTaskQuiz(picked);
+                      setValue('quizId', picked.id, { shouldValidate: true });
+                      if (!titleEdited) setValue('title', picked.name);
+                      setPickingQuiz(false);
+                    }}
+                    title={m.assignment_choose_quiz()}
+                  />
+                )}
+                {quizId && <NoAnswersWarning quizId={quizId} />}
+              </Field>
             ) : (
               <Field
                 error={errors.quizId?.message}
@@ -315,6 +464,18 @@ export function NewAssignmentDialog({
                       return;
                     }
                     onClose();
+                    // From To do the class's own page holds these dialogs.
+                    if (workspaces) {
+                      void navigate({
+                        params: { workspaceId: wsId },
+                        search:
+                          how === 'file'
+                            ? { make: 'files' as const }
+                            : { add: 'create' as const },
+                        to: '/workspaces/$workspaceId',
+                      });
+                      return;
+                    }
                     void navigate({
                       search:
                         how === 'file'
@@ -368,9 +529,20 @@ export function NewAssignmentDialog({
               )}
             />
           </Field>
-          <div className="grid gap-4 sm:grid-cols-2">
+          {/* A plain task's due date stands alone: it is for nobody else. */}
+          <div
+            className={cn(
+              'grid gap-4',
+              !(isOwn && kind === 'unmarked') && 'sm:grid-cols-2'
+            )}
+          >
             <Field
               error={errors.dueAt?.message}
+              hint={
+                isOwn && kind === 'unmarked'
+                  ? m.assignment_optional()
+                  : undefined
+              }
               label={m.assignment_field_due()}
             >
               <Controller
@@ -420,7 +592,8 @@ export function NewAssignmentDialog({
                 />
               </Field>
             ) : (
-              <AssignToField control={control} workspaceId={workspaceId} />
+              // A task for oneself is for nobody else.
+              !isOwn && <AssignToField control={control} workspaceId={wsId} />
             )}
             {kind === 'marked' && (
               <>
@@ -454,7 +627,9 @@ export function NewAssignmentDialog({
                     </span>
                   )}
                 </Field>
-                <AssignToField control={control} workspaceId={workspaceId} />
+                {!isOwn && (
+                  <AssignToField control={control} workspaceId={wsId} />
+                )}
               </>
             )}
           </div>
@@ -469,13 +644,27 @@ export function NewAssignmentDialog({
                 <Controller
                   control={control}
                   name="files"
-                  render={({ field }) => (
-                    <FilesField
-                      onChange={field.onChange}
-                      value={field.value}
-                      workspaceId={workspaceId}
-                    />
-                  )}
+                  render={({ field }) =>
+                    // A task's files come from anywhere (Epo 2026-11-11); an
+                    // assignment's are its class's, for its members to open.
+                    isOwn ? (
+                      <TaskFilesField
+                        onChange={field.onChange}
+                        onPicked={(file) =>
+                          setPickedFiles((rows) => [...rows, file])
+                        }
+                        picked={pickedFiles}
+                        saved={existing?.files ?? []}
+                        value={field.value}
+                      />
+                    ) : (
+                      <FilesField
+                        onChange={field.onChange}
+                        value={field.value}
+                        workspaceId={wsId}
+                      />
+                    )
+                  }
                 />
               </Field>
               <SwitchRow
@@ -1009,7 +1198,13 @@ function AssignToField({
                         count: viewers.length,
                       })}
                     />
-                    <div className="my-1 max-h-60 overflow-auto border-divider border-y py-1">
+                    {/* One line with nobody to list: a second would sit right under it. */}
+                    <div
+                      className={cn(
+                        'my-1 max-h-60 overflow-auto border-divider border-t',
+                        viewers.length > 0 && 'border-b py-1'
+                      )}
+                    >
                       {viewers.map((viewer) => (
                         <PersonRow
                           checked={

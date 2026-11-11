@@ -3022,8 +3022,9 @@ async fn refusals_carry_the_reasons_the_editor_acts_on() {
 }
 
 /// A quiz under an open assignment refuses its read room to a viewer it went to,
-/// who would read its stems before their clock starts, while a viewer it did not
-/// go to and the owner keep it; a draft changes nothing and closing gives it back
+/// who would read its stems before their clock starts, and to a viewer it did not
+/// go to, who could pass them on; the owner keeps it; a draft changes nothing and
+/// closing gives it back, under answers Do not show once it is turned to practice
 /// (security regression, study landing item 11). Fails without the assigned rule
 /// in `live_access`.
 #[tokio::test]
@@ -3091,7 +3092,11 @@ async fn a_quiz_assigned_to_a_viewer_refuses_them_its_room() {
     refused.join(&room, &read(&assignee)).await;
     let reason = text_payload(&refused.until(2).await.expect("refused"));
     assert_eq!(reason, "collaboration-forbidden");
-    assert_eq!(joins(&other).await, 0, "a viewer it did not go to");
+    // Open, it is held from a viewer it did not go to as well (Epo 2026-11-11).
+    let mut held = Client::open(server.port).await;
+    held.join(&room, &read(&other)).await;
+    let reason = text_payload(&held.until(2).await.expect("held"));
+    assert_eq!(reason, "collaboration-forbidden");
     let mut staff = Client::open(server.port).await;
     assert_eq!(
         staff.joined(&room, &token(&room, &owner, "write")).await,
@@ -3106,11 +3111,51 @@ async fn a_quiz_assigned_to_a_viewer_refuses_them_its_room() {
         .await
         .expect("close");
     assert_eq!(joins(&assignee).await, 0, "after closing");
+    assert_eq!(joins(&other).await, 0, "a viewer it did not go to");
+    // Closed under Do not show it stays held from both until turned to practice.
+    client
+        .execute(
+            "UPDATE assignments SET answers_shown='never' WHERE id=$1",
+            &[&assignment],
+        )
+        .await
+        .expect("answers never shown");
+    let mut held = Client::open(server.port).await;
+    held.join(&room, &read(&other)).await;
+    let reason = text_payload(&held.until(2).await.expect("held past the close"));
+    assert_eq!(reason, "collaboration-forbidden");
+    client
+        .execute(
+            "UPDATE assignments SET practice_at=now() WHERE id=$1",
+            &[&assignment],
+        )
+        .await
+        .expect("turned to practice");
+    assert_eq!(joins(&other).await, 0, "turned to practice");
+    // A task a member set themself on the quiz (`own`) hides nothing from them.
+    let task = format!("as_it_{}", uuid_like());
+    client
+        .execute(
+            "INSERT INTO assignments (id,workspace_id,created_by,kind,title,source_quiz_id,due_at,assign_all,draft,own,questions)
+             VALUES ($1,$2,$3,'marked','IT',$4,now()+interval '1 hour',false,false,true,'[]')",
+            &[&task, &workspace, &other, &quiz],
+        )
+        .await
+        .expect("own task");
+    client
+        .execute(
+            "INSERT INTO assignment_assignees (assignment_id,user_id) VALUES ($1,$2)",
+            &[&task, &other],
+        )
+        .await
+        .expect("its maker");
+    assert_eq!(joins(&other).await, 0, "the maker of their own task");
 }
 
 /// A closed marked assignment still holding its keys keeps refusing its quiz's
 /// room to a viewer it went to: while its grades are Manual and unreleased,
-/// and while its answers are Do not show (security regression, finding 5,
+/// and while its answers are Do not show until staff turn it to practice
+/// (`practice_at`, Epo 2026-11-11; security regression, finding 5,
 /// Go's assignmentKeysHeldSQL). Fails if `live_access` ends the refusal at the
 /// close.
 #[tokio::test]
@@ -3184,6 +3229,18 @@ async fn a_closed_quiz_holding_its_keys_refuses_its_assignee_its_room() {
         .await
         .expect("answers never shown");
     refused("closed with its answers never shown").await;
+    client
+        .execute(
+            "UPDATE assignments SET practice_at=now() WHERE id=$1",
+            &[&assignment],
+        )
+        .await
+        .expect("turned to practice");
+    assert_eq!(
+        Client::open(server.port).await.joined(&room, &read).await,
+        0,
+        "turned to practice"
+    );
 }
 
 /// The version gate: a JOIN or draft send without the client protocol (a tab

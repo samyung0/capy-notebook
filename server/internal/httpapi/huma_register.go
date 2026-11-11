@@ -113,6 +113,7 @@ func mapHTTPError(err error) error {
 		"event_limit":           store.ErrTooManyEvents,
 		"assignment_limit":      store.ErrTooManyAssignments,
 		"assignment_open_limit": store.ErrTooManyOpenAssignments,
+		"task_limit":            store.ErrTooManyOwnTasks,
 	} {
 		if errors.Is(err, rowCap) {
 			return conflictError(code, rowCap.Error())

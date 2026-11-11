@@ -277,7 +277,7 @@ func TestClosedQuizKeepsItsKeysFromAssignees(t *testing.T) {
 	if _, err := f.s.MaterialEffectiveRole(ctx, f.viewer, f.quiz.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("closed with answers never shown: %v", err)
 	}
-	// Released as practice by the sweep, it offers its assignees no Practise again.
+	// The sweep leaves it held until staff turn it to practice: no Practise again.
 	if _, _, err := f.s.SweepAssignments(ctx, 50, now); err != nil {
 		t.Fatal(err)
 	}

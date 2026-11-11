@@ -428,12 +428,12 @@ test('a failed pending-invite list offers a retry in its section', async ({
   page,
 }) => {
   await launch(page, 'invites-load');
-  const people = page.locator(
-    'section[aria-labelledby="workspace-members-title"]'
-  );
-  await expect(people.getByText(m.members_pending_title())).toBeVisible();
+  const pending = page.getByRole('region', {
+    name: m.members_pending_title(),
+  });
+  await expect(pending).toBeVisible();
   await expect(
-    people
+    pending
       .getByRole('alert')
       .getByRole('button', { name: m.error_action_retry() })
   ).toBeVisible();

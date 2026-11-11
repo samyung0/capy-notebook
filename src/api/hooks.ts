@@ -1527,6 +1527,7 @@ export const itemsQuery = (params: ItemListParams = {}) => ({
           dir: params.dir,
           kind: params.kinds,
           location: params.locations,
+          q: params.q,
           scope: params.scope,
           sort: params.sort,
           workspaceId: params.workspaceIds,
@@ -3205,18 +3206,25 @@ export const useAssignmentAttempt = (
     refetchOnWindowFocus: false,
   });
 
-/** After a write: the workspace's lists, the Dashboard and this assignment. */
+/** After a write: the workspace's lists, the Dashboard and this assignment. A
+ * task with no workspace (an empty id) shows on To do alone. */
 function refreshAssignment(
   qc: ReturnType<typeof useQueryClient>,
   workspaceId: string,
   id?: string
 ) {
   return Promise.all([
-    qc.invalidateQueries({ queryKey: qk.study(workspaceId) }),
-    qc.invalidateQueries({ queryKey: qk.workspaceDashboard(workspaceId) }),
-    // A quiz's row shows its assignment's icon while it is open.
-    qc.invalidateQueries({ queryKey: qk.materials(workspaceId) }),
-    qc.invalidateQueries({ queryKey: qk.recent }),
+    ...(workspaceId
+      ? [
+          qc.invalidateQueries({ queryKey: qk.study(workspaceId) }),
+          qc.invalidateQueries({
+            queryKey: qk.workspaceDashboard(workspaceId),
+          }),
+          // A quiz's row shows its assignment's icon while it is open.
+          qc.invalidateQueries({ queryKey: qk.materials(workspaceId) }),
+          qc.invalidateQueries({ queryKey: qk.recent }),
+        ]
+      : []),
     qc.invalidateQueries({ queryKey: qk.todo }),
     id
       ? qc.invalidateQueries({ queryKey: qk.assignment(id) })
@@ -3224,12 +3232,17 @@ function refreshAssignment(
   ]);
 }
 
+/** Makes an assignment or a task in the workspace, or with no workspace (an
+ * empty id, Epo 2026-11-11) a task that is its maker's alone. */
 export function useCreateAssignment(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({
     meta: { errorToast: false },
     mutationFn: (body: AssignmentFormReq) =>
-      api.post<Assignment>(`/workspaces/${workspaceId}/assignments`, body),
+      api.post<Assignment>(
+        workspaceId ? `/workspaces/${workspaceId}/assignments` : '/todo/tasks',
+        body
+      ),
     onSuccess: () => refreshAssignment(qc, workspaceId),
   });
 }
@@ -3283,6 +3296,15 @@ export function useReleaseAssignmentGrades(workspaceId: string, id: string) {
   return useMutation({
     mutationFn: () =>
       api.post<Assignment>(`/assignments/${id}/release-grades`, {}),
+    onSuccess: () => refreshAssignment(qc, workspaceId, id),
+  });
+}
+
+/** Make a closed assignment's quiz practice when its answers are Do not show. */
+export function useTurnAssignmentToPractice(workspaceId: string, id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<Assignment>(`/assignments/${id}/practice`, {}),
     onSuccess: () => refreshAssignment(qc, workspaceId, id),
   });
 }

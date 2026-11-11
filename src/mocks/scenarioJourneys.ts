@@ -128,8 +128,8 @@ export async function runJourney(
   };
   const share = async () => {
     seedMember();
-    await go(scenarioPath);
-    await dialog('workspace-sharing');
+    // The scenario workspace is a class its viewer owns: Members' Manage tab.
+    await go(`${scenarioPath}?study=members&manage=true`);
   };
   const chat = async () => {
     await go(scenarioPath);
@@ -750,16 +750,16 @@ export async function runJourney(
     case 'member-remove':
       await share();
       fail();
-      ui.activate(
-        await ui.element(
-          id === 'member-remove'
-            ? 'section[aria-labelledby="workspace-members-title"] button[data-variant="danger-light"]'
-            : 'section[aria-labelledby="workspace-members-title"] [role="combobox"]'
-        )
-      );
-      if (id === 'member-save')
+      if (id === 'member-save') {
+        await ui.click(
+          m.members_role_of({ name: 'Morgan Lee' }),
+          '[role="combobox"]'
+        );
         await ui.click(m.role_member(), '[role="option"]');
-      else await ui.click(m.action_remove());
+      } else {
+        await ui.click(m.members_remove_named({ name: 'Morgan Lee' }));
+        await ui.click(m.action_remove(), '[role="dialog"] button');
+      }
       return;
     case 'ownership-transfer':
       seedMember();

@@ -5,22 +5,23 @@ import type {
   MemberProgress,
   MembersProgress,
   SummaryTopic,
+  Workspace,
 } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
-import { userToast } from '@/components/ui/userToast';
+import { Tabs } from '@/components/ui/Tabs';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
 import { percentText } from '../assignments/assignmentText';
-import { NewAssignmentDialog } from '../assignments/LazyNewAssignmentDialog';
 import { PracticeFrame } from '../practice/studyPage';
 import { studyView } from '../practice/studyView';
 import { LabelPill } from '../topicLabels';
 import { MemberProfilePage } from './MemberProfile';
+import { MembersRoster } from './MembersRoster';
 import {
   focusOf,
   type MembersShow,
@@ -33,11 +34,18 @@ import {
 import { StorageFullChip } from './StorageFullChip';
 
 /** Members' URL, under `study=members`: `member` opens one's profile, `show`
- * picks the view. */
-export type MembersSearch = { member?: string; show?: 'topics' };
+ * picks Overview's view, `manage` the Manage tab. */
+export type MembersSearch = {
+  manage?: true;
+  member?: string;
+  show?: 'topics';
+};
 
-/** Study → Members (boards Main, G4, G2), for a class's owner and teaching
- * assistants; anyone else is sent to Practice. */
+/** Members (its own page on the rail since Epo 2026-11-11). A class's owner and
+ * teaching assistants get two tabs (Epo 2026-11-11): Overview, every member's
+ * marks (boards Main, G4, G2), and Manage, the people with sharing and
+ * invitations (`MembersRoster`). Every other member gets that list alone,
+ * without marks. A visitor who is no member is sent to Practice. */
 export function MembersPage({
   search,
   workspaceId,
@@ -48,7 +56,11 @@ export function MembersPage({
   const { data: ws } = useWorkspace(workspaceId);
   if (!ws) return null;
   if (!studyView(ws).manages)
-    return <Navigate replace search={{ study: 'practice' }} to="." />;
+    return ws.role ? (
+      <MembersRoster workspace={ws} />
+    ) : (
+      <Navigate replace search={{ study: 'practice' }} to="." />
+    );
   if (search.member)
     return (
       <MemberProfilePage
@@ -60,30 +72,32 @@ export function MembersPage({
     );
   return (
     <MembersList
+      manage={!!search.manage}
       show={search.show ? 'topics' : 'summary'}
-      workspaceId={workspaceId}
+      workspace={ws}
     />
   );
 }
 
 function MembersList({
+  manage,
   show,
-  workspaceId,
+  workspace,
 }: {
+  manage: boolean;
   show: MembersShow;
-  workspaceId: string;
+  workspace: Workspace;
 }) {
+  const workspaceId = workspace.id;
   const navigate = useNavigate();
-  const { data: ws } = useWorkspace(workspaceId);
   const { data, error, isError, isPending, refetch } = useMembersProgress(
     workspaceId,
     { errorBoundary: false }
   );
   const [sort, setSort] = useState<MembersSort>('attention');
-  const [creating, setCreating] = useState(false);
   const count = data?.members.length;
   const meta = [
-    ws?.name,
+    workspace.name,
     count === undefined
       ? null
       : count === 1
@@ -101,6 +115,17 @@ function MembersList({
       },
       to: '.',
     });
+  // Overview keeps its view while Manage is open.
+  const setTab = (next: string) =>
+    navigate({
+      replace: true,
+      search: {
+        manage: next === 'manage' ? (true as const) : undefined,
+        show: show === 'topics' ? ('topics' as const) : undefined,
+        study: 'members' as const,
+      },
+      to: '.',
+    });
   const open = (member: MemberProgress) =>
     navigate({
       search: {
@@ -114,17 +139,28 @@ function MembersList({
     show === 'topics' ? m.members_show_topics() : m.members_show_summary();
   const sortLabel =
     sort === 'name' ? m.members_sort_name() : m.members_sort_attention();
+  const header = (
+    <>
+      {/* No New assignment here: Assignments has it (Epo 2026-11-11). */}
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3">
+        <h1 className="t-page-title">{m.study_panel_members()}</h1>
+        <span className="t-meta mt-1.5 text-fg-muted">{meta}</span>
+      </div>
+      <Tabs
+        className="mt-2"
+        onChange={(next) => void setTab(next)}
+        tabs={[
+          { label: m.members_tab_overview(), value: 'overview' },
+          { label: m.members_tab_manage(), value: 'manage' },
+        ]}
+        value={manage ? 'manage' : 'overview'}
+      />
+    </>
+  );
+  if (manage) return <MembersRoster header={header} workspace={workspace} />;
   return (
     <PracticeFrame className="@container">
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2.25">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-3">
-          <h1 className="t-page-title">{m.study_panel_members()}</h1>
-          <span className="t-meta mt-1.5 text-fg-muted">{meta}</span>
-        </div>
-        <Button iconLeft="plus" onClick={() => setCreating(true)}>
-          {m.assignment_new()}
-        </Button>
-      </div>
+      {header}
       <div
         className={cn(
           'mt-4 flex flex-wrap items-center gap-2',
@@ -223,16 +259,6 @@ function MembersList({
             onOpen={(mp) => void open(mp)}
           />
         </>
-      )}
-      {creating && (
-        <NewAssignmentDialog
-          onClose={() => setCreating(false)}
-          onDone={() => {
-            setCreating(false);
-            userToast({ title: m.assignment_created(), variant: 'success' });
-          }}
-          workspaceId={workspaceId}
-        />
       )}
     </PracticeFrame>
   );

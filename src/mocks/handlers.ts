@@ -164,6 +164,8 @@ const workspaceNameOf = (id?: string) =>
 const fileListRow = (f: SourceFile) => ({
   ...f,
   rights: { clone: true, move: true, rename: true, trash: true },
+  // As the server's owned-list rows name where each file sits.
+  workspaceName: workspaceNameOf(f.workspaceId) || undefined,
 });
 
 /** A material the lists show: one of these kinds and not embedded in a note
@@ -727,12 +729,12 @@ seedExtractionFiles();
 
 export const handlers = [
   ...extractionHandlers(
-    (workspaceId, title, questions) => {
+    (workspaceId, title, questions, hidden) => {
       const quiz = db.makeMaterial({
         ...ownerMaterialAccess,
         content: quizDocument(questions),
         createdAt: new Date().toISOString(),
-        hidden: true,
+        hidden,
         id: uid('qz'),
         kind: 'quiz',
         privacy: 'private',

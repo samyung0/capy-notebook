@@ -163,7 +163,8 @@ the workspace (`materialEffectiveAccess`, `live_access`).
 An assignment's frozen copy (Epo 2026-11-05) is charged to whoever published it,
 not whoever drafted it. Its images are new `editor_assets` rows of the workspace
 with no material and an `assignment_id`, checked by `gateStorageTx` as a clone's
-are. Its question JSON is `assignments.frozen_bytes`, measured as a material's
+are; a task someone set themself (`assignments.own`) keeps its copies with no
+workspace either, charged to its maker like the rest of it. Its question JSON is `assignments.frozen_bytes`, measured as a material's
 content is and checked by the same gate, so publishing past the limit is refused
 as any creation is, images or not; a trigger moves the charge through the deltas
 (migration `0149_assignment_storage.sql`). Nothing edits a published copy, and the

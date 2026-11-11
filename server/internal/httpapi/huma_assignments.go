@@ -94,6 +94,7 @@ func (a *api) registerAssignments(api huma.API) {
 	reg(api, http.MethodPost, "/api/assignments/{id}/republish", "republishAssignment", tag, "Replace an open assignment's questions with its quiz as it is now", http.StatusOK, a.republishAssignment)
 	reg(api, http.MethodPut, "/api/assignments/{id}/closed", "setAssignmentClosed", tag, "Close an assignment to late submissions, or reopen it", http.StatusOK, a.setAssignmentClosed)
 	reg(api, http.MethodPost, "/api/assignments/{id}/release-grades", "releaseAssignmentGrades", tag, "Show members their grades on an assignment whose grades are released by hand", http.StatusOK, a.releaseAssignmentGrades)
+	reg(api, http.MethodPost, "/api/assignments/{id}/practice", "turnAssignmentToPractice", tag, "Make a closed assignment's quiz practice for members when its answers are not shown", http.StatusOK, a.turnAssignmentToPractice)
 	reg(api, http.MethodPut, "/api/assignments/{id}/done", "setAssignmentDone", tag, "A member's tick on an unmarked assignment", http.StatusNoContent, a.setAssignmentDone)
 	reg(api, http.MethodPut, "/api/assignments/{id}/todo-check", "setAssignmentTodoCheck", tag, "Tick an assignment, or the answers waiting on it, off the caller's To do without doing it", http.StatusNoContent, a.setAssignmentTodoCheck)
 	reg(api, http.MethodPost, "/api/assignments/{id}/start", "startAssignment", tag, "Start an attempt, starting its clock, or return the one running", http.StatusOK, a.startAssignment)
@@ -157,28 +158,43 @@ func assignmentForm(b apimodel.AssignmentFormReq) store.AssignmentForm {
 	}
 }
 
+// formQuiz reads a marked form's quiz to freeze, unless it is a draft. Its
+// maker must be able to open the quiz; the store then holds an assignment to
+// its class's, and a task someone sets themself to any they can open.
+func (a *api) formQuiz(ctx context.Context, form *store.AssignmentForm) error {
+	if form.Kind != store.AssignmentMarked {
+		return nil
+	}
+	if form.QuizID == "" {
+		return huma.Error422UnprocessableEntity("choose a quiz")
+	}
+	if form.Draft {
+		return nil
+	}
+	if _, err := a.materialRead(ctx, form.QuizID); err != nil {
+		return hErr(err)
+	}
+	qs, err := a.quizForFreezing(ctx, form.QuizID)
+	form.Questions = qs
+	return err
+}
+
 func (a *api) createAssignment(ctx context.Context, in *createAssignmentInput) (*assignmentOutput, error) {
 	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
 	}
-	if err := a.s.AssertWorkspaceMemberEditor(ctx, userID(ctx), in.ID); err != nil {
-		if errors.Is(err, store.ErrForbidden) {
-			err = store.ErrNotFound
-		}
+	// Any member: a class's staff make an assignment, anyone else a task for
+	// themself (the store holds it to that).
+	role, err := a.s.WorkspaceRole(ctx, userID(ctx), in.ID)
+	if err != nil {
 		return nil, hErr(err)
 	}
+	if role == "" {
+		return nil, hErr(store.ErrNotFound)
+	}
 	form := assignmentForm(in.Body)
-	if form.Kind == store.AssignmentMarked {
-		if form.QuizID == "" {
-			return nil, huma.Error422UnprocessableEntity("choose a quiz")
-		}
-		if !form.Draft {
-			qs, err := a.quizForFreezing(ctx, form.QuizID)
-			if err != nil {
-				return nil, err
-			}
-			form.Questions = qs
-		}
+	if err := a.formQuiz(ctx, &form); err != nil {
+		return nil, err
 	}
 	res, err := a.s.CreateAssignment(ctx, userID(ctx), in.ID, form, time.Now())
 	if err != nil {
@@ -253,6 +269,14 @@ func (a *api) freezeAssignment(ctx context.Context, id string, freeze func(conte
 	if err != nil {
 		return nil, assignmentError(err)
 	}
+	// A task's maker who can no longer open its quiz has none to freeze.
+	if quizID != "" && current.Own {
+		if _, err := a.materialRead(ctx, quizID); errors.Is(err, store.ErrNotFound) {
+			quizID = ""
+		} else if err != nil {
+			return nil, hErr(err)
+		}
+	}
 	var qs []map[string]any
 	if quizID != "" {
 		if qs, err = a.quizForFreezing(ctx, quizID); err != nil {
@@ -292,6 +316,17 @@ func (a *api) releaseAssignmentGrades(ctx context.Context, in *assignmentIDInput
 	}
 	for i := range sent {
 		a.publishNotificationEvent(ctx, sent[i].UserID, notificationEvent{Type: "created", Notification: &sent[i]})
+	}
+	return &assignmentOutput{Body: res}, nil
+}
+
+func (a *api) turnAssignmentToPractice(ctx context.Context, in *assignmentIDInput) (*assignmentOutput, error) {
+	if err := a.requireAccountEdit(ctx); err != nil {
+		return nil, err
+	}
+	res, err := a.s.TurnAssignmentToPractice(ctx, userID(ctx), in.ID, time.Now())
+	if err != nil {
+		return nil, assignmentError(err)
 	}
 	return &assignmentOutput{Body: res}, nil
 }

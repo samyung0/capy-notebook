@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
-import { openWorkspaceSettings } from '../../helpers/workspace';
+import { openWorkspaceSharing } from '../../helpers/workspace';
 import { m } from '../../i18n';
 import {
   api,
@@ -157,12 +157,8 @@ async function changeMember(
   );
   const page = run.owner.page;
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
-  await openWorkspaceSettings(page);
-  const settings = page.getByRole('dialog', { name: m.workspace_settings() });
-  await settings
-    .getByRole('tab', { exact: true, name: m.workspace_sharing() })
-    .click();
-  const people = settings.getByRole('region', { name: m.members_people() });
+  await openWorkspaceSharing(page);
+  const people = page.getByRole('region', { name: m.members_people() });
   await people.getByText(name, { exact: true }).waitFor();
   const path = `/api/workspaces/${workspaceId}/members/${member.id}`;
   const method = change === 'remove' ? 'DELETE' : 'PATCH';
