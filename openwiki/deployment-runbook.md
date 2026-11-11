@@ -3792,8 +3792,8 @@ or with `exp:YYYY-MM-DD` when an upstream rebuild is expected.
 **Secret rotation.** Which secrets to rotate, how often and in what order:
 `openwiki/secret-rotation.md`.
 
-**Go release.** `server/go.mod`'s `go` line names the exact Go release (1.26.10
-since 2026-10-21). `server/Dockerfile` and `ops/Dockerfile` pin the same
+**Go release.** `server/go.mod`'s `go` line names the exact Go release (1.26.11
+since 2026-11-11). `server/Dockerfile` and `ops/Dockerfile` pin the same
 `golang` Alpine image and the Alpine runtime by version and digest, and both CI
 Go jobs read the version from `go.mod`. A Go upgrade moves the three together;
 the `golang` image sets `GOTOOLCHAIN=local`, so an image older than `go.mod`
