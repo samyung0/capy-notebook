@@ -153,7 +153,7 @@ for (const { screen, width } of SCREENS) {
   }) => {
     test.slow();
     await page.setViewportSize({ height: 800, width });
-    // A class member's page; the mock takes the owner's new assignment all the same.
+    // A class member's page; the class's owner assigns through the mock.
     await page.addInitScript(() =>
       sessionStorage.setItem('capy.scenario.last', 'workspace-member')
     );
@@ -164,28 +164,26 @@ for (const { screen, width } of SCREENS) {
       .getByRole('button', { name: m.sharing_notice_ok() })
       .click({ timeout: 60_000 });
     const assignment = await page.evaluate(async () => {
-      const response = await fetch('/api/workspaces/ws_bio/assignments', {
-        body: JSON.stringify({
-          assignAll: true,
-          assignees: [],
-          attempts: 1,
-          draft: false,
-          dueAt: new Date(Date.now() + 86_400_000).toISOString(),
-          files: [],
-          kind: 'marked',
-          latePenaltyPct: 0,
-          marking: 'ai_approve',
-          noLate: false,
-          quizId: 'qz_2',
-          showAnswers: 'submitted',
-          showGrades: 'automatic',
-          shuffle: false,
-          title: 'Drawn answers',
-        }),
-        headers: { 'Content-Type': 'application/json' },
-        method: 'POST',
-      });
-      return ((await response.json()) as { id: string }).id;
+      const { assignAsMockOwner } = await import(
+        '/src/mocks/assignments.ts' as string
+      );
+      return assignAsMockOwner('ws_bio', {
+        assignAll: true,
+        assignees: [],
+        attempts: 1,
+        draft: false,
+        dueAt: new Date(Date.now() + 86_400_000).toISOString(),
+        files: [],
+        kind: 'marked',
+        latePenaltyPct: 0,
+        marking: 'ai_approve',
+        noLate: false,
+        quizId: 'qz_2',
+        showAnswers: 'submitted',
+        showGrades: 'automatic',
+        shuffle: false,
+        title: 'Drawn answers',
+      }) as string;
     });
 
     // The member draws, and Done stores the drawing at once. With no time
