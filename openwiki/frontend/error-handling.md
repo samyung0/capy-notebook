@@ -572,6 +572,19 @@ retrieval chunks (`indexed: false`, including ingest failure and
 shows a status strip (`[data-testid="file-not-indexed"]`) under the header
 instead of replacing the body with a full-page error.
 
+A legacy Office file (`.doc`, `.xls`, `.ppt`) is converted before it is
+parsed, and the conversion is read from the file's name
+(`legacyOfficeTarget`,
+[office-files.md](office-files.md#legacy-office-files)). While a file still
+named that way is `processing`, the open file's progress line and banner read
+"Converting to a new Office format…" (`files_converting`, through
+`processingMessage`) in place of "Processing {name}…". When it is `failed`,
+its conversion failed: the strip reads `files_convert_failed` ("This file
+could not be converted. Old Office files that are password-protected or
+damaged cannot be read. Save it as .docx, .xlsx or .pptx and upload it
+again.") in place of `files_not_indexed_failed` (`failedNotIndexedMessage`).
+In both states the body is the download-only view.
+
 File and material banners share `FileBanner`: a flat full-width strip with no
 leading icon and `text-fg` on a grey (info, ingest progress, a text source's
 newer version, maintenance pause) or red-tint (error) background, `role="status"` or
@@ -941,6 +954,9 @@ not failed or already has a parse, ingest or source refresh job answers 409, a
 mode the format does not offer 400 (`RetryFileProcessing`). A partial file
 keeps its index and re-runs only its missing parts in its own parse mode (see
 [agentic-retrieval.md](../agentic-retrieval.md), "Parts").
+A failed legacy Office file retries through the same dialog, its row without
+an estimate, and the server queues its conversion again whichever mode is
+sent; the conversion itself is never retried automatically.
 If a published source changes while an answer or generation request gathers
 evidence, `source_changed` asks the user to retry. The Go relay preserves both
 codes for HTTP responses and chat events; neither starts an automatic retry.
@@ -971,6 +987,11 @@ Parsing failed reads "AI won't know about its contents" only for a file without
 an index; a failed file that is still indexed keeps answering search (a partial
 file, or a failed retry over its previous index) and reads "Error processing
 file" (parts design Q1, `transferStatus`).
+A legacy Office file that is `processing` under its uploaded name reads
+"Converting to a new Office format…" on the whole line with no bar (the label
+is too long to sit beside one), then parses under its new name like any
+upload; a failed one's detail is the conversion message
+(`files_convert_failed`).
 Each status label takes its icon's colour. The event stream only follows the open workspace,
 so the panel polls the files list every four seconds for other workspaces with
 unfinished rows, and the runner's wave gate polls every five. Closing the panel
@@ -998,7 +1019,9 @@ stream failures are reported by their owning service. Mutation toasts do not
 report them again.
 
 Biology 101 also exposes file states through ordinary source rows: empty bytes,
-unsupported legacy files, link and PDF/CSV/audio/image errors, Office/text-session
+a legacy file whose conversion failed (`mock-preview-legacy`, "Failed
+conversion.doc"; the mock's Retry processing fails it again), link and
+PDF/CSV/audio/image errors, Office/text-session
 errors, annotation-load failure, and pending/processing/failed/store-only ingest.
 PDF document/page failures use `FileError`; retry reopens the PDF and requests
 fresh links. Annotation tools mount only after a PDF loads. Their separate error

@@ -659,6 +659,28 @@ Expiry marks the session expired and releases the reservation in the same
 transaction before best-effort blob cleanup (cleanup details in the
 authorization doc).
 
+A legacy Office conversion replaces a file's bytes without an upload session
+(`PrepareLegacyConvert`, `CompleteLegacyConvert`;
+[agentic-retrieval.md](agentic-retrieval.md#legacy-office-conversion)). The
+upload is reserved and charged at its uploaded size like any upload, and
+nothing is reserved for the converted size. At the handoff, under the payer's
+storage lock, the payer's per-file cap applies to the converted size under the
+new name (`limits.FileBytes`, refused as `file_too_large`) and only growth
+takes `gateStorageTx` (the converted size minus the uploaded one, when
+positive, refused as `storage_quota_exceeded`; a frozen payer is refused as
+full). A converted file that is no larger passes no gate. Both checks run in
+the fence before the bucket is touched and again in the swap's transaction.
+The swap is one update of the file row, so the existing files triggers book
+the size difference on the payer's counter and queue the uploaded blob for
+the reaper. The gateway names the fresh `sources/blob_…` key before it
+promotes the object and queues that key for the reaper first, with the
+24-hour upload grace: the file taking the key as its blob cancels that
+deletion, and a handoff that fails after the promotion leaves the object to
+the reaper. The coordinator's hand-over object is under
+`incoming/legacy-convert/`: promotion removes it, and one the gateway never
+took goes with the bucket's one-day `incoming/` rule. A refused handoff
+changes nothing, so the file keeps its uploaded bytes and their charge.
+
 A collaborative source is charged its source bytes (`files.size_bytes`) plus
 the generated `source_documents.storage_bytes` (migration 0075, which added
 the unfolded update rows to 0054's rule): its serialized pending effects (an
@@ -1007,6 +1029,18 @@ same sandbox with the same limits, which converts a 12 MP iPhone photo to
 JPEG in about 0.4 s. The image build converts the shared HEIC fixture with
 `heif-dec`, so a packaging slip fails the build. One that still does not
 decode is refused with `image_unreadable`.
+
+**Converted legacy Office files.** The browser sends a `.doc`, `.xls` or
+`.ppt` as picked (`sourceCompression` reads OOXML only), so the dialog's
+per-file cap applies to the picked size. Once the file is converted
+([agentic-retrieval.md](agentic-retrieval.md#legacy-office-conversion)) the
+parse coordinator applies the imported-file rule above to the converted bytes
+(`import_stage.office_pictures`) with the payer's image cap, which the job
+carries as `imageMaxBytes`. The pictures stop at the parse job's time limit
+(`CAPY_PARSE_JOB_TIMEOUT`, 1,500 s) less the same 30 s; running out of time or
+failing the header check fails the file for good. The count of removed
+pictures stays on the conversion job's payload (`removedPictures`) and shows
+no toast.
 
 **Image files the browser cannot decode.** HEIC/HEIF, TIFF and JPEG 2000 go
 through decoders loaded only when such a file is picked (Q294, Q333,

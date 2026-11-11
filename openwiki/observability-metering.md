@@ -1136,8 +1136,10 @@ ingest rows. The ingest hold lasts until settle, fail, or release. It does not u
 no pending or running job pointing at `payload.reservationId`. A live pending
 job is not expired. `GET /api/me/ingest-slots` returns this actor's free/used/
 limit. The 21st enqueue fails with `too_many_ingest_leases`, distinct from
-`too_many_streams` and `llm_credits_exhausted`. Store-only uploads
-(`NeedsIngestJob` false) do not take a lease.
+`too_many_streams` and `llm_credits_exhausted`. Store-only uploads take no
+lease, and neither does a legacy Office file uploaded with parsing off, whose
+conversion job runs on a system session
+([Source refreshes and maintenance republishes](#source-refreshes-and-maintenance-republishes)).
 
 Query embeddings are recorded at zero credits, so those calls cost the actor
 nothing to start. Ingest embeddings still bill through the worker.
@@ -1379,6 +1381,11 @@ in the dialog; the user can still add it store-only, and fast parsing for it
 waits until the estimator learns the format. The estimate is trusted
 because it only decides admission; the parser receipt bills measured pages, so
 an under-estimate lets one job finish past the limit and nothing more.
+A legacy Office file (`.doc`, `.xls`, `.ppt`) is the one fast-parse document
+without an estimate: the browser cannot read it, so its reservation sends no
+estimate and no page count and takes the plain exhaustion check alone. Uploaded
+with parsing off it takes no credit check (`sourceupload.SpendsCredits` is
+false).
 
 Charging happens after the fact because nothing is waiting on an ingest job,
 the file was already accepted, and refusing halfway leaves a half-indexed
@@ -1512,13 +1519,28 @@ retry carries none and pays like an upload.
 `provider_sessions.paid_by` names who pays: `platform` (the actor is charged
 credits; every model session and every ordinary ingest session) and `system`. A maintenance republish opens its ingest session with
 `paid_by='system'` (`beginSystemIngestSessionTx`, reachable only through the
-unexported `requestSourceRefresh` and `reprocessTx`) and its job payload carries
+unexported `requestSourceRefresh`, `reprocessTx` and, for the legacy
+conversion below, `beginFileJobSessionTx`) and its job payload carries
 `paidBy: "system"`. So does the reprocess of an export-only file, a plain parse
 job that also records its pages without the page fee. It gets no credit check
 at admission or claim, no owner storage check at claim and no lease on the
 actor's ingest slots, and `settle_ingest_provider_call` records every provider
 call at zero credits with `metadata.paidBy="system"`. The file owner stays the
 actor, because `usage_events` needs a real actor.
+
+A legacy Office conversion
+([agentic-retrieval.md](agentic-retrieval.md#legacy-office-conversion))
+records no usage and costs nothing: the parser answers a conversion without a
+receipt or measurements, so the coordinator writes no parse event for it, and
+it calls no provider. Uploaded with `fast`, the conversion job holds the
+upload's ordinary ingest reservation (credit check and one ingest lease), and
+the gateway hands that reservation to the parse job of the converted file,
+which pays the page fee like any upload's first parse. Uploaded with parsing
+off, nothing follows the conversion, so its job opens a system session
+instead (`beginFileJobSessionTx`, `ProcessingPlan.SystemPaid`): `paid_by`
+`system`, `paidBy: "system"` on the payload, no credit check and no ingest
+lease. The gateway closes that session when it swaps the file in. Retry
+processing of a failed legacy file opens its session by the same rule.
 
 The persistent parser returns wall time, queue time, shared-spool
 source-read/bundle-write time, and current process/cgroup RSS/PSS and I/O. The
@@ -2210,7 +2232,7 @@ the likelihood grew every time the registry was reconfigured.
 | `CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S` | retrieval | wait for an interactive stream's first event, whole-call bound for non-streaming interactive calls other than query embeddings (30 s, code-only); default 15 |
 | `CAPY_INTERACTIVE_STREAM_IDLE_S` | retrieval | silence allowed once an interactive stream has started; default 120 |
 | `CAPY_INTERACTIVE_STREAM_MAX_S` | retrieval | whole-stream backstop; the interactive receipt window is this plus five minutes; default 600 |
-| `GATEWAY_URL` / `PIPELINE_SECRET` | import worker | the gateway's private URL and shared secret for `/api/internal/import/*`; the gateway's empty `PIPELINE_SECRET` disables Drive imports |
+| `GATEWAY_URL` / `PIPELINE_SECRET` | import worker, parse coordinator | the gateway's private URL and shared secret: `/api/internal/import/*` for the import worker, `/api/internal/files/convert` (a converted legacy Office file's handoff) for the parse coordinator; the gateway's empty `PIPELINE_SECRET` disables Drive imports and refuses the handoff (401), which fails the legacy file |
 | `CAPY_IMPORT_JOB_TIMEOUT` / `CAPY_IMPORT_DOWNLOAD_HOSTS` | import worker | per-attempt transfer budget (600 s) and the provider download host allowlist |
 | `SENTRY_DSN_GATEWAY` / `_RETRIEVAL` / `_WORKER` / `_COLLABORATION` | compose | mapped onto each process's `SENTRY_DSN` |
 | `SENTRY_DSN_OPS` / `VITE_SENTRY_DSN_OPS` | ops | separate operator-service project; empty disables |

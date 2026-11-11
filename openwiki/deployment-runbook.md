@@ -1389,6 +1389,21 @@ infrastructure, so no further gate is added. An empty `PIPELINE_SECRET` on the
 gateway disables new imports with `503` instead of creating stranded
 reservations.
 
+The parse coordinator carries the same two values in every environment, for
+the handoff of a converted legacy Office file
+(`POST /api/internal/files/convert`,
+[agentic-retrieval.md](agentic-retrieval.md#legacy-office-conversion)).
+`deploy/docker-compose.ingest-host.yml` requires both on `parse-coordinator`,
+the nonprod coordinators read them from their environment's queue env file as
+the import workers do, and the local `deploy/docker-compose.yml` sets them on
+its coordinator. The secret is not scoped to that route: it opens every
+`/api/internal/*` route of that environment's gateway (the agent's writes,
+trash, imports, provider-call settlement), and the retrieval service requires
+the same value on its inbound requests. The coordinator calls only the
+conversion route. A coordinator without either value fails every legacy file
+as a terminal conversion failure; production's compose file refuses to start
+it without them.
+
 Every pipeline process (retrieval, the ingest, parse and import workers) refuses
 to start with a `PIPELINE_SECRET` or `PARSER_TOKEN` set shorter than 32
 characters, and the parser with a shorter `PARSER_TOKEN`, unless `APP_ENV` is
@@ -1782,7 +1797,8 @@ production is set up (Q485).
 
 5. **Two lifecycle rules** (Settings → Object lifecycle rules):
    - prefix `incoming/`: delete objects 1 day after upload. These are drive
-     imports that were never promoted.
+     imports that were never promoted, and converted legacy Office files
+     (`incoming/legacy-convert/`) whose handoff the gateway did not take.
    - the whole bucket: abort incomplete multipart uploads after 1 day. Edit
      R2's default rule down from 7 days. An aborted multipart upload is billed
      and never shows in the bucket listing.
@@ -2023,7 +2039,8 @@ those services start.
    derives `DATABASE_URL`, `REDIS_URL`, and `GATEWAY_URL` from that environment's
    `POSTGRES_PASSWORD` and `CAPY_PRIVATE_BIND_ADDRESS`. It supplies `PIPELINE_SECRET`
    to the import
-   worker. The worker also needs `DEEPINFRA_API_KEY` for the seeded Qwen
+   worker and the parse coordinator (§2.2). The worker also needs
+   `DEEPINFRA_API_KEY` for the seeded Qwen
    embedding route, `OPENROUTER_API_KEY` for the file-descriptor pin
    (DeepSeek V4 Flash 0731 on Reka, DigitalOcean or StreamLake), the captioning pin (DeepSeek
    V4.1 Flash 1017 on Wafer's US endpoint, then InferenceNet, then Cloudflare: standalone-image captions
@@ -2544,7 +2561,14 @@ the host:
   deadline. Ingest and
   Drive/OneDrive imports (which reach the parser as ordinary parse jobs) both
   convert through this one function, a PowerPoint file keeping its hidden
-  slides (Q276). It ships with the parser image; nothing to
+  slides (Q276). The conversion of an uploaded `.doc`, `.xls` or `.ppt` to
+  `.docx`, `.xlsx` or `.pptx` (`convert_legacy`,
+  [agentic-retrieval.md](agentic-retrieval.md#legacy-office-conversion)) is
+  the same LibreOffice run under the same fence: the OLE2 check, the suffix's
+  pinned import filter, a fresh profile in the job directory, the sandbox and
+  the 180 s timeout. Only its `--convert-to` value (LibreOffice's OOXML export
+  filter) and its output cap (`CAPY_MAX_SOURCE_BYTES`, 100 MiB) differ. It
+  ships with the parser image; nothing to
   apply by hand.
 - **In the container.** Both ingest compose files run the parser with
   `cap_drop: [ALL]`, `no-new-privileges:true`, Docker's default seccomp
