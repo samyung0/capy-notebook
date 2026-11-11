@@ -528,6 +528,16 @@ describe('office host protocol', () => {
     ])
       expect(isOfficeRuntimeMessage(notice(value))).toBe(true);
     expect(isOfficeRuntimeMessage(notice('anything'))).toBe(false);
+    // An XLSX face that failed is reported, not shown (Q710 C).
+    expect(
+      isOfficeRuntimeMessage({
+        family: 'Calibri',
+        message: 'The bundled face has 0 bytes',
+        revision: 1,
+        type: 'font-failed',
+        version: OFFICE_PROTOCOL_VERSION,
+      })
+    ).toBe(true);
     // A failed render is its own reply, not the runtime's error.
     expect(
       isOfficeRuntimeMessage({

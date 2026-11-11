@@ -344,8 +344,12 @@ export const qk = {
   attempts: (params?: unknown) => ['attempts', params ?? null] as const,
   attemptsRoot: ['attempts'] as const,
   billing: ['billing'] as const,
+  /** The Canvas page's panel: every canvas the caller has. */
+  canvases: ['canvases'] as const,
   cards: (flashcardSetId: string) =>
     ['flashcardSet', flashcardSetId, 'cards'] as const,
+  /** One conversation's row, read by id when its list page is not loaded. */
+  conversation: (convId: string) => ['conversation', convId, 'row'] as const,
   /** One workspace's chats, or with null the account chat's. */
   conversations: (wsId: string | null) =>
     wsId

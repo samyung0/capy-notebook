@@ -75,13 +75,6 @@ type cardPreview struct {
 	HasImage bool   `json:"hasImage"`
 }
 
-// canvasPreview names a canvas's saved board: the browser draws the card from
-// the board asset, which the gateway never opens.
-type canvasPreview struct {
-	Kind         string `json:"kind"`
-	BoardAssetID string `json:"boardAssetId"`
-}
-
 type diagramPreview struct {
 	Kind   string `json:"kind"`
 	Source string `json:"source"`
@@ -113,13 +106,6 @@ func preview(kind string, nodes []map[string]any) (json.RawMessage, error) {
 		value = flashcardsPreviewOf(nodes)
 	case "mindmap", "diagram":
 		value = diagramPreview{Kind: kind, Source: clipLines(diagramSource(nodes), previewSourceBytes)}
-	case "canvas":
-		// Nothing to draw before the first save.
-		id, _ := find(nodes, CanvasBoardType)["boardAssetId"].(string)
-		if id == "" {
-			return nil, nil
-		}
-		value = canvasPreview{Kind: kind, BoardAssetID: id}
 	default:
 		return nil, nil
 	}

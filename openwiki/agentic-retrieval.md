@@ -840,8 +840,15 @@ about 200 MiB, pages are read from MuPDF on each call). `page_dict` and
 `page_words` keeps words the same way, so every stage reads the page without
 MuPDF. Text-less page detection reads plain text only for pages whose kept
 characters fall short of its 40. Only the facts two stages need from the text
-trace are kept; drawings and image placements are still read from MuPDF where
-a stage needs them. `ParseOutput.stages` (the receipt's `_stages`) records
+trace are kept. Drawings are not kept either: `page_drawings` reads them and
+keeps the page's long horizontal strokes (`page_rules`), so table recovery
+reuses the read vector figures make of every page instead of reading drawings
+again; image placements are still read from MuPDF where a stage needs them.
+The session also reads the outline once (`outline`) and hands a stage that
+asks for its block's page the page object it handed out last (`page_at`).
+Span-centre tests against a block's box (heading evidence, glyph repairs)
+answer in plain floats and ask MuPDF's single-precision test only within
+rounding distance of an edge. `ParseOutput.stages` (the receipt's `_stages`) records
 the seconds of each stage. ODL writes JSON only, with no image files (above):
 the figure-heavy textbook's whole parse fell from 189 s to 87 s, its Java step
 from 127 s to 8 s. ODL's `--threads` gave identical output and no speed, so it
@@ -1054,7 +1061,16 @@ constant and refuses to start without.
 The child runs under a 2 GiB soft address-space limit (`RLIMIT_AS`,
 `PARSE_CHILD_MAX_BYTES`), which LibreOffice inherits; Java starts with it lifted,
 its heap bounded by `-Xmx` (decision 2026-10-15) and the rest by a 2 GiB data
-cap. The
+cap. The JVM runs the quick compiler alone (`-XX:TieredStopAtLevel=1`,
+decision 2026-11-11). Measured on the Java run alone over 80 PDFs, the JSON is
+the same; seven at a time on 8 CPUs finish in half the time for 58% less JVM
+CPU; one at a time on 2 CPUs they take 11% less time; and a long PDF alone on
+8 idle CPUs is slower (8 to 10 s at 1,016 pages, 14 to 21 s for a heavy
+1,400-page book). With seven of that heavy book parsing together the Java
+phase took 30 to 32 s for 39 to 44 s and the queue as long (571 s for 566 s).
+The serial collector was tried with it and dropped: at the 1 GiB heap that
+book's Java run alone took 42 s
+([report](../bench/parsers/reports/2026-11-10-jvm-flags.md)). The
 container sets `MALLOC_ARENA_MAX=2` and the parse child starts LibreOffice and
 Java with it too (their sandbox environments name it, decision 2026-10-21), so
 the multithreaded LibreOffice and JVM reserve far less address space:
@@ -3439,6 +3455,27 @@ connection.
   `chat_turn` events in every cached list; a turn in a conversation no list
   holds yet refetches them, and every events-stream connect refetches them
   too.
+- The conversation lists come a page at a time (Epo 2026-11-10: a chat list
+  grows fast): `GET /api/workspaces/{id}/conversations` and
+  `GET /api/conversations` take `limit` (50, at most 100) and `cursor` and
+  answer `{items, nextCursor}`, the live list pinned first then latest
+  activity, `?archived=true` latest archived first (`ListConversations`, the
+  shared keyset helpers in `store/listing.go`; a pinned thread sorts a
+  thousand years ahead of any activity, so one cursor covers both groups).
+  The browser reads them as infinite queries (`conversationsQuery`,
+  `useConversations` and `useArchivedConversations`, each selecting its loaded
+  pages as one list, `pagedRows`), the live one stored for a reopened panel;
+  `ConversationList` and the archived dialog end in `ListEnd` (the dialog's
+  list scrolls in a box of its own, so its footer's two actions stay in reach). The title
+  search filters the loaded rows, and since a short result brings the list's
+  end into view it goes on loading pages until it has looked at them all;
+  "No matches" waits for the last page. Cache writes go through the pages
+  (`mapConversations`; a started turn's row goes first on the first page and
+  leaves any later one). The open chat's title comes from the list, or, for
+  a chat on a page not loaded (a link to an old one), from
+  `GET /api/conversations/{id}` (`useConversation`). Delete all in the
+  archived dialog counts its rows only once every page is loaded, and
+  otherwise asks about every archived chat.
 
 ### Chat below lg
 

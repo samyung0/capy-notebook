@@ -330,7 +330,11 @@ objects for the reaper.
   Canvas lists the payer's marked drawings to delete, an assignment's once it
   has closed with its grades released.
 
-### Workspace canvases
+### Canvases
+
+A canvas of a person's own (Epo 2026-11-10, migration 0167: the account's
+Canvas page) is the same kind of material with no `canvas_workspace_id`; a
+person may have several, each paid for and capped as below.
 
 A member's personal workspace canvas (Epo 2026-11-09, migration 0164) is a
 standalone material of kind `canvas` (`canvas_workspace_id` names its workspace,

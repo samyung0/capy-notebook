@@ -12,6 +12,7 @@ import {
   uid,
   workspaces,
 } from './db';
+import { mockPage } from './paging';
 
 /** An account chat's citations: one Biology 101 file and one standalone file,
  * each naming where it lives as the account tools do. */
@@ -54,7 +55,7 @@ export const accountChatHandlers = [
           : time(b.pinnedAt) - time(a.pinnedAt) ||
             time(b.updatedAt) - time(a.updatedAt)
       );
-    return HttpResponse.json(list.map(listedConversation));
+    return HttpResponse.json(mockPage(list.map(listedConversation), request));
   }),
   http.post('/api/conversations', async ({ request }) => {
     const body = (await request.json().catch(() => ({}))) as {

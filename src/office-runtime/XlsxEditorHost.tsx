@@ -95,6 +95,7 @@ export function XlsxEditorHost({
   onAnalysis,
   onExporter,
   onFlusher,
+  onFontError,
   onMenus,
   onNotice,
   onPositioner,
@@ -121,6 +122,8 @@ export function XlsxEditorHost({
   onAnalysis: (analysis: OfficeAnalysis) => void;
   onExporter: (exporter: OfficeExporter | null) => void;
   onFlusher: (flusher: OfficeFlusher | null) => void;
+  /** A bundled face that failed to load; its text keeps the browser's font. */
+  onFontError: (family: string, error: Error) => void;
   onMenus: OfficeMenuReporter;
   /** An edit past the engine's update cap, or a copy past its ceiling: nothing changed. */
   onNotice: (notice: OfficeNotice) => void;
@@ -304,6 +307,7 @@ export function XlsxEditorHost({
           const info = apiRef.current?.sheetInfo();
           if (info) onAnalysis(analyzeOpenWorkbook({ sheetInfo: () => info }));
         }}
+        onFontError={onFontError}
         onNotice={onNotice}
         onPendingChange={onPendingChange}
         onReady={(api) => {

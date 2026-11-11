@@ -282,9 +282,7 @@ export type MaterialPreview =
       cardCount: number;
       first?: { front: string; hasImage: boolean };
     }
-  | { kind: 'mindmap' | 'diagram'; source: string }
-  /** A member's workspace canvas: its saved board, drawn in the browser. */
-  | { kind: 'canvas'; boardAssetId: string };
+  | { kind: 'mindmap' | 'diagram'; source: string };
 
 /** `ingestPct` is transient upload progress, never persisted.
  * `thumbnailUrl` is an hour-stable presigned page-1 image. */
@@ -548,7 +546,12 @@ export type UpdateWorkspaceMemberReq = Omit<
    Message shape with role/status narrowed to unions and an optional client-only
    `pending` flag while a temp (pre-persisted) row streams. */
 /** A shared-library figure a chat answer shows (`figure:<id>`). */
-export type { Conversation, FileLinks, LibraryFigure } from './gen/model';
+export type {
+  Conversation,
+  ConversationPage,
+  FileLinks,
+  LibraryFigure,
+} from './gen/model';
 
 /** `n` is the passage number the answer program cites; its index in the
  * message's citation list is the number the reader sees. An account chat's
@@ -773,8 +776,7 @@ export type Item =
   | { type: 'material'; material: MaterialListItem }
   | { type: 'embed'; embed: EditorAssetItem };
 export type ItemPage = Omit<GenItemPage, 'items'> & { items: Item[] };
-/** The Files page lists a member's workspace canvases with their blocks. */
-export type ItemKind = FileKind | MaterialListKind | 'canvas';
+export type ItemKind = FileKind | MaterialListKind;
 export type ItemListSort = ListItemsSort;
 /** owned: what the caller pays for (My files); all: also every file and block
  * of its own and member workspaces (All files). */

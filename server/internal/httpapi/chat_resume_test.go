@@ -96,11 +96,11 @@ func expectEvents(t *testing.T, events <-chan sseEvent, end bool, want ...string
 func listedConversation(t *testing.T, r stopTurnRun) store.Conversation {
 	t.Helper()
 	rec := doAsUser(t, r.h, http.MethodGet, "/api/workspaces/ws_e2e_private/conversations", "u_editor", nil)
-	var list []store.Conversation
+	var list store.ConversationPage
 	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
 		t.Fatalf("conversations: %s", rec.Body.String())
 	}
-	for _, c := range list {
+	for _, c := range list.Items {
 		if c.ID == r.convID {
 			return c
 		}

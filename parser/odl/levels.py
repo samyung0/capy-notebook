@@ -26,6 +26,8 @@ from itertools import pairwise
 
 import pymupdf
 
+from . import page_text
+
 
 def _heading(block: dict) -> bool:
     return (
@@ -70,7 +72,9 @@ def _raw_key(text: str) -> str:
 
 def _outline_listed(blocks: list[dict], document: pymupdf.Document) -> set[int]:
     """Headings the PDF outline lists on their page."""
-    toc = [(page - 1, title) for _, title, page in document.get_toc() if page > 0]
+    toc = [
+        (page - 1, title) for _, title, page in page_text.outline(document) if page > 0
+    ]
     keys = {(page, _outline_key(title)) for page, title in toc}
     keys |= {(page, _raw_key(title)) for page, title in toc}
     return {
@@ -472,7 +476,7 @@ def _opener(blocks: list[dict], index: int) -> bool:
 
 def _outline_usable(blocks: list[dict], document: pymupdf.Document) -> bool:
     """Five or more outline entries, 30% of them found as headings on their page."""
-    toc = [(title, page) for _, title, page in document.get_toc() if page > 0]
+    toc = [(title, page) for _, title, page in page_text.outline(document) if page > 0]
     if len(toc) < 5:
         return False
     heads = {(b.get("page_idx"), _outline_key(_text(b))) for b in blocks if _heading(b)}

@@ -186,11 +186,11 @@ def split_headings(blocks: list[dict], document: pymupdf.Document) -> list[dict]
             block.get("type") != "list"
             or len(block.get("bbox") or []) != 4
             or type(page_index) is not int
-            or document[page_index].rotation
+            or page_text.page_at(document, page_index).rotation
         ):
             out.append(block)
             continue
-        page = document[page_index]
+        page = page_text.page_at(document, page_index)
         if page_index not in page_cache:
             lines = [
                 line

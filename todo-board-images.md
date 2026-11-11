@@ -150,8 +150,8 @@ timing (upload at once).
 
 ## Still open
 
-- **How an answer board's pictures travel: built as §2 says, in the board's own
-  request, for Epo to confirm.** Each is base64 inside the JSON of Done or Check. An
+- **How an answer board's pictures travel: in the board's own request, as §2 says
+  (Epo confirmed 2026-11-10).** Each is base64 inside the JSON of Done or Check. An
   assignment's Done may reach about 14 MB; a practice check's cap rose from 4 MiB to
   about 17 MiB (`checkMaxBytes`: its answers plus one board's pictures at their
   most), shared by the quiz, review and bank check routes. A question whose drawing
@@ -160,9 +160,13 @@ timing (upload at once).
   compression, so the worst case needs ten photos near the cap. The alternative is
   one upload per picture before Done or Check, which needs a place to hold a
   practice picture before its attempt exists.
-- **A sample-answer board's images (§3)** need the quiz's document to name them, as
-  the canvas block names its images, or the pruner trashes them a minute after the
-  quiz's next save.
-- **Picking a file on an answer board.** The workspace canvas has Misc's Image tile
-  (Epo 2026-11-10); an answer board has no Misc panel, so there a paste, a drop and a
-  note's slash menu are still the only ways in.
+- **A sample-answer board's images (§3): refused (Epo 2026-11-10).** The board
+  opens with `noPictures`: no Image tile in Misc, and a pasted or dropped picture
+  is turned away with a message. Keeping them would take a `pictures` list on a
+  drawing part's `sample` in the shared question format: Go (`questions.go` checks
+  its keys), the collaboration server's Rust (`items/src/quiz.rs`,
+  `notes/src/questions.rs`), the browser types, the clone's asset id map, and the
+  board asset itself, whose saved document names the pictures by asset id and
+  would point at the original's after a clone.
+- **Picking a file on an answer board: built 2026-11-10.** The answer board has the
+  Misc panel too (Epo 2026-11-10), with the charts and the Image tile.

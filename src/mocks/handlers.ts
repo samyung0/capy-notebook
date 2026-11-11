@@ -77,7 +77,7 @@ import {
   submittedPapers,
   workspaceMaterialRefs,
 } from './assignments';
-import { canvasHandlers, mockCanvasRows } from './canvas';
+import { canvasHandlers } from './canvas';
 import { mockResumeStream } from './chatResume';
 import { mockChatStream } from './chatStream';
 import { mockUndo } from './chatUndo';
@@ -95,6 +95,7 @@ import { uid } from './db';
 import { editorAssetHandlers, embeds } from './editorAssets';
 import { extractionHandlers, seedExtractionFiles } from './extraction';
 import { membersHandlers } from './members';
+import { mockPage } from './paging';
 import { questionBankHandlers } from './questionBank';
 import {
   blankOffice,
@@ -756,7 +757,7 @@ export const handlers = [
   ),
   ...questionBankHandlers,
   ...editorAssetHandlers,
-  ...canvasHandlers,
+  ...canvasHandlers((id) => db.workspaces.find((ws) => ws.id === id)),
   ...voiceInputHandlers,
   http.get('/api/files/:id/annotations', ({ params }) =>
     params.id === 'mock-preview-annotations'
@@ -2083,18 +2084,6 @@ export const handlers = [
             workspaceId: mt.workspaceId,
           };
         }),
-      ...mockCanvasRows((id) => workspaceNameOf(id)).map(
-        (material): Row => ({
-          at: material.createdAt,
-          id: material.id,
-          item: { material, type: 'material' },
-          kind: material.kind,
-          name: material.title,
-          size: material.sizeBytes,
-          workspace: material.workspaceName,
-          workspaceId: material.canvasWorkspaceId,
-        })
-      ),
       ...embeds.map(
         (e): Row => ({
           at: e.createdAt,
@@ -2905,7 +2894,16 @@ export const handlers = [
           : time(b.pinnedAt) - time(a.pinnedAt) ||
             time(b.updatedAt) - time(a.updatedAt)
       );
-    return HttpResponse.json(list.map(db.listedConversation));
+    return HttpResponse.json(
+      mockPage(list.map(db.listedConversation), request)
+    );
+  }),
+  // One conversation by id: the open chat's title off the loaded pages.
+  http.get('/api/conversations/:id', ({ params }) => {
+    const conv = db.conversations.find((c) => c.id === params.id);
+    return conv
+      ? HttpResponse.json(db.listedConversation(conv))
+      : new HttpResponse(null, { status: 404 });
   }),
   // Archiving drops the pin, as on the server.
   http.patch('/api/conversations/:id', async ({ params, request }) => {

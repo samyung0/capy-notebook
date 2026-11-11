@@ -308,9 +308,7 @@ export function ItemsList({
             options: ITEM_KINDS.map((kind) => ({
               label: FILE_KINDS.includes(kind as FileKind)
                 ? fileKindLabel(kind as FileKind)
-                : materialKindLabel(
-                    kind as 'note' | 'quiz' | 'flashcards' | 'canvas'
-                  ),
+                : materialKindLabel(kind as 'note' | 'quiz' | 'flashcards'),
               value: kind,
             })),
             selected: kinds,
@@ -437,10 +435,7 @@ export function ItemsList({
                           pickKey={key}
                           selected={selected}
                           view={view}
-                          workspaceIconId={iconOf(
-                            item.material.canvasWorkspaceId ||
-                              item.material.workspaceId
-                          )}
+                          workspaceIconId={iconOf(item.material.workspaceId)}
                         />
                       );
                     case 'embed':

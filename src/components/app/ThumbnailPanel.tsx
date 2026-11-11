@@ -1,7 +1,6 @@
 import { memo, type ReactNode, useState } from 'react';
 import type { FileKind, FileTextPreview, MaterialPreview } from '@/api/types';
 import { FileIcon, type FileIconName } from '@/components/ui/FileIcon';
-import { useCanvasDrawing } from '@/features/canvas/canvasPreview';
 import {
   CardsLive,
   NoteLive,
@@ -48,11 +47,6 @@ export const ThumbnailPanel = memo(function ThumbnailPanel({
   const mermaid = useMermaidDrawing(
     preview && 'source' in preview && typeof preview.source === 'string'
       ? preview.source
-      : undefined
-  );
-  const canvas = useCanvasDrawing(
-    preview && 'kind' in preview && preview.kind === 'canvas'
-      ? preview.boardAssetId
       : undefined
   );
   const fallback = (
@@ -108,17 +102,6 @@ export const ThumbnailPanel = memo(function ThumbnailPanel({
               count={preview.cardCount}
               front={preview.first.front}
               hasImage={preview.first.hasImage}
-            />
-          );
-        break;
-      case 'canvas':
-        if (canvas)
-          body = (
-            <img
-              alt=""
-              className="size-full object-contain dark:brightness-[.86]"
-              decoding="async"
-              src={canvas}
             />
           );
         break;

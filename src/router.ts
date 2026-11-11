@@ -305,7 +305,7 @@ const appRoutes = [
       qc.prefetchQuery(topicsQuery(id));
       qc.prefetchQuery(filesQuery(id));
       qc.prefetchQuery(materialsQuery(id));
-      qc.prefetchQuery(conversationsQuery(id));
+      qc.prefetchInfiniteQuery(conversationsQuery(id));
       // The open file rides the first wave instead of waiting for the page to
       // render. An open material is left out on purpose: its body is the
       // document itself, and the heavy-document gate must see the list first.
@@ -341,13 +341,22 @@ const appRoutes = [
     getParentRoute: () => authShellRoute,
     path: '/workspaces/$workspaceId/study/assignments/$assignmentId',
   }),
+  // The account's Canvas page: `c` names the canvas of the person's own shown.
+  createRoute({
+    component: lazyPage(() => import('@/routes/Canvas')),
+    getParentRoute: () => authShellRoute,
+    path: '/canvas',
+    validateSearch: (search: Record<string, unknown>): { c?: string } => ({
+      c: typeof search.c === 'string' ? search.c : undefined,
+    }),
+  }),
   // Chat across all the user's files; the optional id keeps the page mounted
   // (and its streams running) while the shown conversation changes.
   createRoute({
     component: lazyPage(() => import('@/routes/AccountChat')),
     getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
-      qc.prefetchQuery(conversationsQuery(null));
+      qc.prefetchInfiniteQuery(conversationsQuery(null));
       // Citations show their workspace's icon.
       qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
     },

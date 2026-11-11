@@ -2276,6 +2276,10 @@ design, option d), and the nudge's release file on 2026-10-17.
   `CLIENT_PROTOCOL` to 27 and `MIN_SOURCE` to 27, so source tabs drawing the old
   header reload; `MIN_MATERIAL` stays 22. Its deploy request names "client
   protocol 26 -> 27, source 26 -> 27".
+  The second upstream sync's pin (2ddee4002: packed fonts, regenerated engine
+  types) raised `CLIENT_PROTOCOL` to 28 and `MIN_SOURCE` to 28; `MIN_MATERIAL`
+  stays 22 and `OFFICE_PROTOCOL_VERSION` stays 14. Its deploy request names
+  "client protocol 27 -> 28, source 27 -> 28".
 
 #### When to bump
 
@@ -4435,9 +4439,10 @@ The board adds to BlockSuite through its own extensions (`boardTools.ts`, `board
 vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
 
 - **Toolbar:** AFFiNE's shape pieces in the eraser's fixed colours (CSS variables on
-  `.capy-board`), then three slots of pieces drawn like AFFiNE's shapes (Epo 2026-11-08,
-  canvas NsamYcLR4imjm5Xi2fWFj2 "Picked"): Graphs (a polar disc behind a coordinate plane),
-  Charts (a pie behind bars) and Formulas (d/dx, ∫, Σ, √x). `CapyPieceSlot` runs on
+  `.capy-board`), then two slots of pieces drawn like AFFiNE's shapes (Epo 2026-11-08,
+  canvas NsamYcLR4imjm5Xi2fWFj2 "Picked"): Graphs (a polar disc behind a coordinate plane)
+  and Formulas (d/dx, ∫, Σ, √x), then Misc, which holds the charts since 2026-11-10 (the
+  Charts slot is gone; the B and Shift+B keys still place a chart). `CapyPieceSlot` runs on
   BlockSuite's `EdgelessDraggableElementController` as the shape slot does: a piece lifts
   under the pointer, a click or a drag picks it up, it lands where it's dropped and a new
   one rises into the slot once it leaves the toolbar; Escape or the toolbar puts it back.
@@ -4633,9 +4638,12 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     places BlockSuite works out (from the ends, each an element id or a finite point; from
     the children) and never stores. Anything else throws a `BoardLoadError` with a
     `reason`.
-  - **Toolbar per board** (Epo 2026-11-09): the question board has Graphs, Charts and
-    Formulas slots after the shapes; the workspace canvas has Graphs, Formulas and
-    **Misc** (`sheetTools(board)`). Misc's button opens a panel above the toolbar
+  - **One toolbar, Misc per board** (Epo 2026-11-10, superseding the question board's own
+    Charts slot of 2026-11-09): both boards have Graphs, Formulas and **Misc** after the
+    shapes (`sheetTools`). Misc shows each board what it may hold (`tileFits`, by the
+    board `markBoard` names at mount): an answer board the Bar and Pie chart and Image
+    tiles, the workspace canvas also the mind map, emoji, GIFs, stickers, links and the
+    workspace's quizzes and sets. Misc's button opens a panel above the toolbar
     (`capy-misc-panel`, right-aligned, Shapes' look): one 360 × 440 frame in every view
     (Epo 2026-11-09, round 2, mock DVxJzY5A3XiYHKuqQPezST), with Back, the title or
     KLIPY's search, and a close in its header and the body scrolling inside, so
@@ -4766,7 +4774,10 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     `CANVAS_BOARD_MAX` (2 MiB before gzip, the board catalog; over it the board says so
     and the last good save stands), then `PUT /api/workspaces/{id}/canvas` with the
     asset and the revision it read; the server checks the asset is a ready `board`
-    asset of the canvas (images likewise) and counts the version. 409 (the same person's
+    asset of the canvas (images likewise) and counts the version. The save writes the
+    document in SQL even where collaboration is configured: a canvas is never a room,
+    so `UpdateMaterial` sends no content command for its kind (each save writes a whole
+    new block, which a replace-block command refuses). 409 (the same person's
     other tab saved first) says so, deletes this tab's copy and stops saving until a
     reload; any other failure waits for the next change or open, the copy holding the
     work (no retry loop), and the board asset uploaded for the failed save is deleted
@@ -4776,19 +4787,37 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     it); the Canvas tab shows to members only, since a link or public visitor has none.
     Restoring a trashed canvas beside the live one made since is refused (409
     `canvas_exists`).
-  - **In Files (2026-11-10, a stopgap: Epo plans an account-level canvas page):** the
-    Files page's one list holds a member's own canvases with their blocks (`items.go`:
-    kind `canvas`, only ever through the owner's branch, since a canvas has no
-    `workspace_id`), filed under the workspace each is the Canvas tab of
-    (`canvasWorkspaceId`, the workspace's name and icon, the In a workspace filter)
-    and sized with its board asset, which no row of its own shows. Its card draws the
-    saved board in the browser (`useCanvasDrawing`: the stored preview is
-    `{ kind: 'canvas', boardAssetId }`, the board comes through `boardFromAsset` and
-    `drawBoardPreview(…, 'workspace')`; the icon until then). A canvas has no page of
-    its own, so the row and its Open go to `/workspaces/{id}?panel=canvas`
-    (`blockLink`), as does the row of one of its images; its menu is Open and Delete
-    alone (no rename, share or clone). Delete trashes it as any standalone block, the
-    Canvas tab then makes a fresh one, and Trash lists it with the canvas icon.
+  - **The Canvas page (Epo 2026-11-10, mock KNPB4pYUhSSYUJvuKN1ct7 B):** `/canvas`
+    (`Canvas.tsx`, Canvas under Tools in the sidebar) is a board: one of the person's
+    own canvases, in no workspace. Such a canvas is a standalone `canvas` material with
+    no `canvas_workspace_id` (migration 0167), any number per person, opened and saved
+    exactly as a workspace's is (`useCanvasBoard`, which both pages mount with a
+    `CanvasSource`: `GET` and `PUT /api/canvases/{id}` here, the workspace routes on
+    the Canvas tab), with the same device copy, images and limits, and no workspace
+    cards in Misc. `?c=` names the canvas shown; without one (the sidebar's link) the one
+    already shown stays, else the latest saved of the person's own, and a first one ("My
+    canvas") is made for a person who has none. The id routes serve only a person's own
+    canvases: a workspace's opens and saves through its workspace, whose membership it
+    follows. A frozen account draws on what it has and is offered neither New canvas
+    nor Rename. The panel at the top left (`CanvasSwitcher`)
+    lists every canvas there is (`GET /api/canvases`: their own, latest saved first,
+    then each workspace's under its icon and name, leaving out a workspace whose owner's
+    account is no longer live), a page of 50 at a time as the menu is scrolled (Epo
+    2026-11-10: `cursor` and `nextCursor`, `canvasesQuery` is an infinite query ending
+    in `ListEnd`; there is no cap on how many a person makes). The list scrolls in a box
+    of its own, so New canvas, Rename and Delete under it stay in reach. Their own come first so
+    that a first page without one means they have none, and a canvas the URL names on a
+    page not loaded yet has the pages load until it shows or they end. The panel makes
+    a new one ("Untitled canvas", numbered when a loaded one has the name), and renames
+    or deletes the one shown, as a standalone
+    material (`PATCH /api/materials/{id}/metadata`, which leaves the revision alone, and
+    the trash; a deleted canvas's board saves and keeps nothing more, `gone`). A
+    workspace's canvas opens in its workspace, where its quiz and flashcard cards work.
+    The account chat's file listing leaves canvases out: a canvas is a board, not a
+    document the agent reads. On a phone the navigation drawer's button sits beside the
+    panel, and the row stops short of the board's own menu. The Files page lists no
+    canvas (the rows of earlier that day are gone); a canvas's images still list there
+    and open the canvas they are on, and Trash shows a deleted canvas with its icon.
   - **Images (Epo 2026-11-09 and 2026-11-10, `todo-board-images.md`):** an image block
     keeps only an id (`sourceId`), and the board reads and stores files through its own
     blob source (`boardBlobs.ts`, `BoardBlobSource`, in place of BlockSuite's in-memory
@@ -4844,8 +4873,13 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     reopened answer and a teacher's read-only board load them (`fetchDrawingPicture`,
     which asks for the links again once when one has lapsed; a Done forgets the page's
     copy of its drawing). The marking image draws them as before, and list previews
-    still draw a grey box. A drawn sample answer's board in the quiz editor still keeps
-    pictures on the page only, and an answer board has no file picker (no Misc panel).
+    still draw a grey box. A drawn sample answer's board in the quiz editor takes no
+    pictures (Epo 2026-11-10: the quiz would have to name them in the shared question
+    format, which Go and the collaboration server both check): `DrawnSampleField` opens
+    the board with `noPictures`, so its Misc has the charts and no Image tile
+    (`BoardImages.none`, `markBoard`) and a pasted or dropped picture is refused and
+    said ("A sample answer can't hold pictures."). An answer board's Misc has the same
+    Image tile as the canvas's.
 - **Preview (`boardPreview.ts`):** `drawBoardPreview(saved, { width, height }, board)` draws a
   saved board as an SVG string from its data, for lists, results and marking views
   (Epo 2026-11-06: what's on it, not every detail). It never loads the editor: it imports

@@ -1,11 +1,98 @@
+import {
+  BASE_LATIN_FAMILY,
+  decodeFontFaceOutsideEngine,
+  resolveBundledFamilyFace,
+  resolveMetricCompatFace,
+} from '@betteroffice/fonts';
 import { expect, onTestFinished, test, vi } from 'vitest';
 import {
+  keepOfficeFontBytes,
   type OfficeFace,
   officeFonts,
+  officeViewerFonts,
+  onOfficeFontFailure,
   paintedFaces,
   paintedFamilies,
   registerOfficeFaces,
+  usedOfficeFaces,
 } from './officeFonts';
+
+const PACKED = /\.ttf\.zst$/;
+
+test('a packed face decodes with the engine decoder, which keeps no decoded copy', async () => {
+  const decoder = vi.fn(decodeFontFaceOutsideEngine);
+  const load = officeFonts
+    .createFontProvider(undefined, { decoder })
+    .resolve('Calibri', false, false);
+  const face = resolveMetricCompatFace('Calibri', false, false);
+  expect(face?.file).toMatch(PACKED);
+  expect((await load?.())?.byteLength).toBe(face?.byteLength);
+  await load?.();
+  // retain: false, so the second load decodes again.
+  expect(decoder).toHaveBeenCalledTimes(2);
+});
+
+test("the DOCX viewer worker decodes packed faces without the engine's decoder", async () => {
+  // The engine hands every provider its decoder, the edit WASM's (13 MB).
+  const engineDecoder = vi.fn(decodeFontFaceOutsideEngine);
+  const viewerFonts: typeof officeFonts = officeViewerFonts;
+  const load = viewerFonts
+    .createFontProvider(undefined, { decoder: engineDecoder })
+    .resolve('Calibri', true, false);
+  const face = resolveMetricCompatFace('Calibri', true, false);
+  expect((await load?.())?.byteLength).toBe(face?.byteLength);
+  expect(engineDecoder).not.toHaveBeenCalled();
+});
+
+test("DOCX's base-Latin backstop loads in the viewer worker and goes to the frame", async () => {
+  keepOfficeFontBytes();
+  const load = officeViewerFonts
+    .createFontProvider()
+    .resolveBaseLatin(false, false);
+  const face = resolveBundledFamilyFace(BASE_LATIN_FAMILY, false, false);
+  expect((await load?.())?.byteLength).toBe(face?.byteLength);
+  const displayList = {
+    pages: [
+      {
+        primitives: [
+          { font: `400 16px "${BASE_LATIN_FAMILY}", sans-serif`, kind: 'text' },
+        ],
+      },
+    ],
+  };
+  expect(usedOfficeFaces(displayList).map((used) => used.face.file)).toEqual([
+    face?.file,
+  ]);
+});
+
+test('a base-Latin backstop face that fails is reported as an error', async () => {
+  const errors: Error[] = [];
+  onTestFinished(onOfficeFontFailure((error) => errors.push(error)));
+  const decoder = vi.fn(() => Promise.reject(new Error('corrupt pack')));
+  const load = officeFonts
+    .createFontProvider(undefined, { decoder })
+    .resolveBaseLatin(true, false);
+  const failure = await load?.().catch((error: unknown) => error);
+  expect(errors).toEqual([failure]);
+  expect(errors[0]?.message).toBe(
+    `The font ${resolveBundledFamilyFace(BASE_LATIN_FAMILY, true, false)?.file} failed to load`
+  );
+});
+
+test('a face whose decode fails is reported as an error', async () => {
+  const errors: Error[] = [];
+  onTestFinished(onOfficeFontFailure((error) => errors.push(error)));
+  const decoder = vi.fn(() => Promise.reject(new Error('corrupt pack')));
+  const load = officeFonts
+    .createFontProvider(undefined, { decoder })
+    .resolve('Cambria', false, false);
+  // The loader rejects with the error its listeners got.
+  const failure = await load?.().catch((error: unknown) => error);
+  expect(errors).toEqual([failure]);
+  expect(errors[0]?.message).toBe(
+    `The font ${resolveMetricCompatFace('Cambria', false, false)?.file} failed to load`
+  );
+});
 
 test('DOCX layout gets the CJK faces it measures and paints with', () => {
   const provider = officeFonts.createFontProvider();

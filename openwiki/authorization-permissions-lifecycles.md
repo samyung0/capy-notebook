@@ -1417,7 +1417,8 @@ Sources: [drawing routes](../server/internal/httpapi/drawings.go) and
   created them, even inside the same workspace, and are never cloned.
   Revoking privacy leaves old threads in place but unreadable. The owner of a
   thread pins, renames or archives it (`PATCH /api/conversations/{id}`;
-  archiving drops the pin), lists archived threads with `?archived=true`, and
+  archiving drops the pin), lists archived threads with `?archived=true`, reads
+  one of their own by id (`GET /api/conversations/{id}`, 404 to anyone else), and
   unarchives or deletes all of them per workspace
   (`POST …/conversations/unarchive`, `DELETE …/conversations/archived`); none
   of these count as activity, so `updated_at` keeps the list order. Chat and generate

@@ -1774,14 +1774,19 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 		if p.ExpectedRevision != nil && (*p.ExpectedRevision < 1 || contentBaseRevision != *p.ExpectedRevision) {
 			return Material{}, ErrConflict
 		}
-		handled, err := s.applyAuthoritativeContentCommand(
-			ctx, id, p.UpdatedBy, currentContent, *p.Content, p.ExpectedRevision,
-		)
-		if err != nil {
-			return Material{}, err
-		}
-		if handled {
-			p.Content = nil
+		// A canvas is never a room (its drawing is its board asset, and its one
+		// block is written whole by each save), so it has no authoritative
+		// Y.Doc to command: its document is written here.
+		if MaterialKind(contentKind) != MaterialCanvas {
+			handled, err := s.applyAuthoritativeContentCommand(
+				ctx, id, p.UpdatedBy, currentContent, *p.Content, p.ExpectedRevision,
+			)
+			if err != nil {
+				return Material{}, err
+			}
+			if handled {
+				p.Content = nil
+			}
 		}
 	}
 	if p.Content != nil {

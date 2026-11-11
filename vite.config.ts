@@ -361,6 +361,15 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
             './vendor/betteroffice/packages/docx/src/core.ts'
           ),
         },
+        // Before the package itself, which would take its subpath. DOCX names
+        // it for sliced faces, which this pin does not load (Q708 A).
+        {
+          find: '@betteroffice/fonts/progressive',
+          replacement: path.resolve(
+            import.meta.dirname,
+            './vendor/betteroffice/packages/fonts/src/progressive-entry.ts'
+          ),
+        },
         {
           find: '@betteroffice/fonts',
           replacement: path.resolve(
@@ -373,6 +382,20 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
           replacement: path.resolve(
             import.meta.dirname,
             './vendor/betteroffice/packages/fonts-cjk/src/index.ts'
+          ),
+        },
+        {
+          find: '@betteroffice/fonts-intl',
+          replacement: path.resolve(
+            import.meta.dirname,
+            './vendor/betteroffice/packages/fonts-intl/src/index.ts'
+          ),
+        },
+        {
+          find: '@betteroffice/fonts-latin',
+          replacement: path.resolve(
+            import.meta.dirname,
+            './vendor/betteroffice/packages/fonts-latin/src/index.ts'
           ),
         },
         {

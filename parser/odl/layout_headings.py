@@ -570,7 +570,7 @@ def recall_headings(
     images: defaultdict[int, list[pymupdf.Rect]] = defaultdict(list)
     for block in blocks:
         if block.get("type") == "image" and len(block.get("bbox") or []) == 4:
-            page = document[block["page_idx"]].rect
+            page = page_text.page_at(document, block["page_idx"]).rect
             x0, y0, x1, y1 = block["bbox"]
             images[block["page_idx"]].append(
                 pymupdf.Rect(x0, y0, x1, y1)
@@ -597,7 +597,7 @@ def recall_headings(
         heading = isinstance(level, int) and level > 0 and type(page_index) is int
         if not heading and (not _eligible(block, document) or page_index < first):
             continue
-        page = document[page_index]
+        page = page_text.page_at(document, page_index)
         if current[0] != page_index:
             current = (page_index, _lines(page), None)
         _, lines, flags = current
@@ -619,7 +619,7 @@ def recall_headings(
         if page_index not in kept or not _eligible(block, document):
             out.append(block)
             continue
-        page = document[page_index]
+        page = page_text.page_at(document, page_index)
         lines, flags = kept[page_index]
         if block["type"] == "list":
             out.extend(_split_list(block, page, lines, flags, facts, levels))
@@ -638,7 +638,7 @@ def _eligible(block: dict, document: pymupdf.Document) -> bool:
         or block.get("_native_type") == "caption"
         or len(block.get("bbox") or []) != 4
         or type(page_index) is not int
-        or document[page_index].rotation
+        or page_text.page_at(document, page_index).rotation
     )
 
 

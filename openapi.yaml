@@ -1879,6 +1879,8 @@ components:
           description: The material's revision; a save sends the one it read
           format: int64
           type: integer
+        title:
+          type: string
         updatedAt:
           format: date-time
           type: string
@@ -1888,12 +1890,54 @@ components:
           type: integer
       required:
         - id
+        - title
         - revision
         - boardAssetId
         - version
         - imageAssetIds
         - ownImageAssetIds
         - updatedAt
+      type: object
+    CanvasListItem:
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+        workspaceIconId:
+          type: string
+        workspaceId:
+          description: The workspace whose Canvas tab this is; none for a canvas of the caller's own
+          type: string
+        workspaceName:
+          type: string
+      required:
+        - id
+        - title
+        - updatedAt
+      type: object
+    CanvasPage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/CanvasPage.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/CanvasListItem"
+          type: array
+        nextCursor:
+          description: Absent on the last page
+          type: string
+      required:
+        - items
       type: object
     Card:
       additionalProperties: false
@@ -2309,6 +2353,25 @@ components:
         - updatedAt
         - running
       type: object
+    ConversationPage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ConversationPage.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/Conversation"
+          type: array
+        nextCursor:
+          description: Absent on the last page
+          type: string
+      required:
+        - items
+      type: object
     Cover:
       additionalProperties: false
       properties:
@@ -2373,6 +2436,22 @@ components:
       required:
         - format
         - name
+      type: object
+    CreateCanvasInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/CreateCanvasInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        title:
+          maxLength: 120
+          minLength: 1
+          type: string
+      required:
+        - title
       type: object
     CreateCommentReq:
       additionalProperties: false
@@ -4623,8 +4702,6 @@ components:
         assigned:
           type: boolean
         assignmentId:
-          type: string
-        canvasWorkspaceId:
           type: string
         cardCount:
           format: int64
@@ -6909,6 +6986,37 @@ components:
         $schema:
           description: A URL to the JSON Schema for this object.
           example: https://example.com/schemas/SaveCanvasInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        boardAssetId:
+          description: "The new board asset, uploaded first: a ready board asset of this canvas"
+          maxLength: 64
+          minLength: 1
+          type: string
+        imageAssetIds:
+          description: "The canvas's images now: ready image assets of this canvas"
+          items:
+            type: string
+          maxItems: 1000
+          nullable: true
+          type: array
+        revision:
+          description: The revision the browser read; another tab's save since is refused (409)
+          format: int64
+          minimum: 1
+          type: integer
+      required:
+        - revision
+        - boardAssetId
+        - imageAssetIds
+      type: object
+    SaveOwnCanvasInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SaveOwnCanvasInputBody.json
           format: uri
           readOnly: true
           type: string
@@ -11016,6 +11124,127 @@ paths:
       summary: Start a credit top-up checkout
       tags:
         - Billing & integrations
+  /api/canvases:
+    get:
+      operationId: listCanvases
+      parameters:
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CanvasPage"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "The caller's canvases a page at a time: their own, latest saved first, then their workspaces'"
+      tags:
+        - materials
+    post:
+      operationId: createCanvas
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCanvasInputBody"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CanvasBody"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Make a canvas of the caller's own, in no workspace
+      tags:
+        - materials
+  /api/canvases/{id}:
+    get:
+      operationId: getCanvas
+      parameters:
+        - description: Canvas material id
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Canvas material id
+            maxLength: 64
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CanvasBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: One of the caller's canvases
+      tags:
+        - materials
+    put:
+      operationId: saveCanvas
+      parameters:
+        - description: Canvas material id
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Canvas material id
+            maxLength: 64
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveOwnCanvasInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CanvasBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Record a save of one of the caller's canvases, as a workspace canvas's
+      tags:
+        - materials
   /api/chat/edit-operations/{operationId}/undo:
     post:
       operationId: undoEditOperation
@@ -11109,14 +11338,28 @@ paths:
           schema:
             description: true lists the archived threads instead of the live list
             type: boolean
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
       responses:
         "200":
           content:
             application/json:
               schema:
-                items:
-                  $ref: "#/components/schemas/Conversation"
-                type: array
+                $ref: "#/components/schemas/ConversationPage"
           description: OK
         default:
           content:
@@ -11202,6 +11445,32 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Delete a conversation
+      tags:
+        - Chat
+    get:
+      operationId: getConversation
+      parameters:
+        - description: Conversation id
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Conversation id
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conversation"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "One of the caller's conversations: the open chat's title when its list page is not loaded"
       tags:
         - Chat
     patch:
@@ -12571,12 +12840,12 @@ paths:
     get:
       operationId: listItems
       parameters:
-        - description: "Comma-separated kinds: file kinds, note, quiz, flashcards, canvas; image and audio also match embedded images and audio"
+        - description: "Comma-separated kinds: file kinds, note, quiz, flashcards; image and audio also match embedded images and audio"
           explode: false
           in: query
           name: kind
           schema:
-            description: "Comma-separated kinds: file kinds, note, quiz, flashcards, canvas; image and audio also match embedded images and audio"
+            description: "Comma-separated kinds: file kinds, note, quiz, flashcards; image and audio also match embedded images and audio"
             type: string
         - description: Comma-separated workspace ids; a submission sits in its assignment's workspace
           explode: false
@@ -15428,14 +15697,28 @@ paths:
           schema:
             description: true lists the archived threads instead of the live list
             type: boolean
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
       responses:
         "200":
           content:
             application/json:
               schema:
-                items:
-                  $ref: "#/components/schemas/Conversation"
-                type: array
+                $ref: "#/components/schemas/ConversationPage"
           description: OK
         default:
           content:

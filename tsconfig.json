@@ -35,8 +35,17 @@
       "@betteroffice/fonts": [
         "./vendor/betteroffice/packages/fonts/src/index.ts"
       ],
+      "@betteroffice/fonts/progressive": [
+        "./vendor/betteroffice/packages/fonts/src/progressive-entry.ts"
+      ],
       "@betteroffice/fonts-cjk": [
         "./vendor/betteroffice/packages/fonts-cjk/src/index.ts"
+      ],
+      "@betteroffice/fonts-intl": [
+        "./vendor/betteroffice/packages/fonts-intl/src/index.ts"
+      ],
+      "@betteroffice/fonts-latin": [
+        "./vendor/betteroffice/packages/fonts-latin/src/index.ts"
       ],
       "@betteroffice/xlsx": [
         "./vendor/betteroffice/packages/xlsx/src/index.ts"

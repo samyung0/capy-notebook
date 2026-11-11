@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { updateConversationBodyTitleMax } from '@/api/gen/validators';
 import {
   useConversations,
@@ -6,6 +6,7 @@ import {
   useUpdateConversation,
 } from '@/api/hooks';
 import type { Conversation } from '@/api/types';
+import { ListEnd } from '@/components/app/ListEnd';
 import { ConfirmDialog } from '@/components/ui/Dialog';
 import { SkeletonList, Spinner } from '@/components/ui/feedback';
 import { HoverActions } from '@/components/ui/HoverActions';
@@ -22,7 +23,8 @@ import { preloadProse } from './blocks/text';
  * A workspace's chats (or with a null `workspaceId` the account chat's) for
  * the left panel and the Chat history dialog: a title search, New chat, then
  * Pinned and Older. Each row's ⋮ pins, renames, archives or deletes it
- * (after a confirm).
+ * (after a confirm). The list comes a page at a time as it is scrolled (Epo
+ * 2026-11-10); a search goes on loading pages until it has looked at them all.
  */
 export function ConversationList({
   workspaceId,
@@ -42,9 +44,14 @@ export function ConversationList({
   onRemoved: (id: string) => void;
   listClassName?: string;
 }) {
-  const { data: conversations } = useConversations(workspaceId, {
-    errorBoundary: false,
-  });
+  const {
+    data: conversations,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+  } = useConversations(workspaceId, { errorBoundary: false });
+  const scroller = useRef<HTMLDivElement>(null);
   const { mutate: update, mutateAsync: rename } =
     useUpdateConversation(workspaceId);
   const { mutate: remove } = useDeleteConversation(workspaceId);
@@ -149,11 +156,14 @@ export function ConversationList({
           'scroll-fade-y min-h-0 flex-1 overflow-auto px-2.5 pt-2 pb-4 [--scroll-fade-bottom-padding:--spacing(4)]',
           listClassName
         )}
+        ref={scroller}
       >
         {!conversations && (
           <SkeletonList className="px-1.5 py-2" count={5} rowHeight={32} />
         )}
         {shown?.length === 0 &&
+          // A search with pages still to come has not looked at them all.
+          !(hasNextPage && conversations?.length) &&
           (sample ? (
             <div className="flex flex-col" inert>
               <div className="t-label px-1.5 py-1.5 text-fg-muted">
@@ -185,6 +195,13 @@ export function ConversationList({
               )
           )}
         </div>
+        <ListEnd
+          fetchNextPage={fetchNextPage}
+          hasNextPage={hasNextPage}
+          isFetchingNextPage={isFetchingNextPage}
+          isFetchNextPageError={isFetchNextPageError}
+          root={scroller}
+        />
       </div>
       {renaming && (
         <NameFormDialog

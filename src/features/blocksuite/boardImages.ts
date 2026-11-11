@@ -2,6 +2,10 @@
  * 2026-11-09). An image block keeps only an id: BlockSuite's hash of the file
  * until the file is stored somewhere, then whatever id that place gave it. */
 export type BoardImages = {
+  /** The board takes no images (a drawn sample answer, Epo 2026-11-10): its
+   * Misc panel has no Image tile. The page's own `shrink` refuses one pasted
+   * or dropped, with its words. */
+  none?: boolean;
   /** Fits a new image before the board takes it (an answer board's cap). A
    * refusal is thrown as its copy and the image never lands. */
   shrink?: (file: File) => Promise<Blob>;

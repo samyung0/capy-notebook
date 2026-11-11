@@ -133,6 +133,7 @@ import { PictureStoreExtension, pictureViews } from './boardPicture';
 import './boardPlaneEditor';
 import {
   boardToolbar,
+  markBoard,
   noLatexMarkdown,
   outlineNewShapes,
   placePiece,
@@ -509,7 +510,7 @@ export function mountDrawingBoard(
             ? [...workspaceViews.get('edgeless'), ...pictureViews, ...cardViews]
             : views.get('edgeless')),
           shapeButtonTool,
-          ...sheetTools(options.board),
+          ...sheetTools,
           StampTool,
           ...drawn,
           noLatexMarkdown,
@@ -517,6 +518,7 @@ export function mountDrawingBoard(
         ],
     store,
   });
+  markBoard(std, options.board, !options.images?.none);
   if (options.workspace) lendWorkspace(std, options.workspace);
   render(
     html`<div class="affine-edgeless-viewport capy-board">${std.render()}</div>`,

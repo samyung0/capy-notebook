@@ -10,7 +10,7 @@ import { epochNow } from '@/lib/officeMarks';
 import {
   keepOfficeFontBytes,
   type OfficeFace,
-  officeFonts,
+  officeViewerFonts,
   onOfficeFontFailure,
   usedOfficeFaces,
 } from './officeFonts';
@@ -31,7 +31,7 @@ type Response =
   | { message: string; type: 'error' };
 
 // The viewer registers the faces the layout requires before laying out.
-configureDefaultFonts({ fonts: officeFonts });
+configureDefaultFonts({ fonts: officeViewerFonts });
 keepOfficeFontBytes();
 let fontFailure: Error | undefined;
 onOfficeFontFailure((error) => {

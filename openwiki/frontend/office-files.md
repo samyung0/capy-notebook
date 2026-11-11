@@ -48,14 +48,16 @@ git submodule update --init vendor/betteroffice
 `prebuild`, `pretypecheck`, and `pretest` run
 `scripts/prepare-betteroffice.mjs`; `pnpm dev` and Playwright's Vite servers do
 not, so run `pnpm office:prepare` first (browser E2E CI does). It installs the fork's locked Bun workspace
-and builds the scoped DOCX stylesheet plus DOCX/XLSX/PPTX viewer/editor WASM artifacts and the headless checkpoint bundle. The fork builder verifies source/output fingerprints before reusing WASM. A cold build
+and builds the scoped DOCX stylesheet plus DOCX/XLSX/PPTX viewer/editor WASM artifacts, the fonts package's `fontpack.wasm` decoder (the fork gitignores it and builds it only with its `scripts/build-fonts-decoder.ts`, which office:prepare runs as `bun run build:fonts-decoder`; without it every packed face fails) and the headless checkpoint bundle. The fork builder verifies source/output fingerprints before reusing WASM; the decoder script always runs and cargo decides what is stale. A cold build
 requires Bun 1.4.3 (CI's), Rust, `wasm-pack` 0.15.0, and `wasm-opt` from Binaryen. Existing,
 intact generated artifacts are reused.
 
 Frontend CI, browser E2E CI, and SPA deployment restore
-`vendor/betteroffice/target/wasm-pack` through
+`vendor/betteroffice/target/wasm-pack` and the decoder's cargo target
+`target/fonts-decoder` through
 `.github/actions/cache-betteroffice`. The cache key uses the fork's
-`scripts/wasm-cache-key.ts` fingerprint plus runner OS and architecture. It
+`scripts/wasm-cache-key.ts` fingerprint plus runner OS and architecture and
+the hash of `scripts/build-fonts-decoder.ts`, which the fingerprint leaves out. It
 covers Rust sources, Cargo configuration, compiler/optimizer versions, build
 flags, and WASM build scripts, so a compiler change can invalidate the cache
 even with an unchanged submodule pin. Preparation still validates cached output
@@ -2194,8 +2196,14 @@ DOCX and PPTX measure and paint with the fork's bundled metric-compatible
 fonts (`@betteroffice/fonts`: Carlito for Calibri, Caladea for Cambria,
 Liberation for Arial, Times New Roman and Courier New). `DocxEditorHost`
 configures them at module scope and the DOCX viewer worker configures them
-before layout. Font bytes stay only in the engines' WASM: the bundled-font
-loader shares a load in flight and keeps nothing once it settles, the DOCX
+before layout. The faces ship packed (`@betteroffice/fonts-latin`,
+`@betteroffice/fonts-intl` and `@betteroffice/fonts-cjk`: woff2 transform plus
+zstd, `.ttf.zst` and `.otf.zst`, emitted as same-origin assets) and decode
+with the engine's own decoder: the DOCX editor's edit WASM, while the DOCX
+viewer worker, whose view WASM links none, uses the fonts package's
+`fontpack.wasm` (`officeViewerFonts`). Font bytes stay only in the engines'
+WASM: the bundled-font loader (`retain: false`) shares a load in flight and
+keeps nothing once it settles, the DOCX
 editing session keeps registration ids rather than bytes, a layout-worker
 bootstrap or restart reads each face back out of the main-thread engine (one
 copy, transferred and dropped once the worker registers it), and the DOCX
@@ -2219,17 +2227,39 @@ loads only what the deck can ask for, read from its XML parts
 face, and Arial bold (tables and chart titles are bold without saying so)
 always; the italics only when some part sets `i`; Cambria only when some part
 names it. The PPTX editor loads every face, since an edit can ask for any
-style or for Cambria. The CJK add-on (`@betteroffice/fonts-cjk`:
-Noto Sans TC, SC, JP, KR and Noto Serif SC, 4.5 to 11.6 MB each) ships as
-same-origin, content-hashed assets that load only when a document's text or
-fonts need that script, so the engine measures CJK text with the face the page
-paints; without them CJK text overlapped in view and vanished in edit. Han text
-without kana or Hangul uses the Simplified bucket, so a Traditional Chinese
-file can load both Chinese faces. The editor's
+style or for Cambria; it still loads the raw TTFs the fork keeps in
+`packages/fonts/assets/` (Q652's per-family faces come later). The CJK add-on
+(`@betteroffice/fonts-cjk`: Noto Sans TC, SC, JP, KR and Noto Serif SC, 3.4
+to 8.7 MB each packed) loads only when a document's text or fonts need that
+script, so the engine measures CJK text with the face the page paints; without
+them CJK text overlapped in view and vanished in edit. A DOCX downloads one
+whole face per script, picked by the document's East Asian language (a
+Japanese file loads Noto Sans JP alone, 3.6 MB packed, where the old rule added
+Noto Sans SC; Epo 2026-11-09, Q708 A); the Unicode-range slices come at a later
+pin. The language is each run's resolved East Asian language: a Japanese file
+whose runs carry none (or one other than Japanese, Korean or Chinese) also
+loads Noto Sans SC for its Han (about 10 MB with JP), and its kanji-only
+paragraphs paint in Simplified Chinese forms, with no error since both faces
+load; a document-level language (`w:themeFontLang`) is for the slices pin. The editor's
 Google Fonts lookup is off (`setGoogleFontsEnabled(false)`), so a document
-font with no bundled face paints with its CSS fallback stack. A face that fails to load
+font with no bundled face paints with its CSS fallback stack. Characters a
+document's face and Liberation lack (unstyled Greek or Cyrillic, general
+punctuation, arrows, shapes, dingbats) measure and paint with the engine's
+backstop, BetterOffice Base Latin, which Capy's provider loads like any other
+face (`resolveBaseLatin`): the viewer worker decodes it with `fontpack.wasm`
+and sends it to the frame. A face that fails to load
 shows an explicit error instead of the fallback layout
 (`src/office-runtime/officeFonts.ts`, `pptxFonts.ts`).
+
+XLSX paints workbook families with the same bundled faces once they land
+(upstream #2064), decoded by `fontpack.wasm`: the fork's `XlsxEditor` loads
+them itself, and Capy's `XlsxViewer` paints its frames through the fork's
+`useDefaultFonts`. A face that fails keeps the sheet drawing with the
+browser's font and shows nothing, since no layout depends on it (Epo
+2026-11-09, Q710 C); the runtime sends `font-failed` with the family and the
+host reports it to Sentry (`reportOfficeFontFailure`, tag `office-font`).
+Thumbnails and page renders (`thumbnail.worker.ts`, `xlsxRender.ts`) still
+paint with the browser's fonts.
 
 A PPTX deck's own fonts (`p:embeddedFontLst`, parts in `ppt/fonts/`, as
 Google Slides and PowerPoint save them) are measured and painted too. Google

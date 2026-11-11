@@ -98,12 +98,12 @@ it('speaks Chinese for zh', () => {
   expect(menus.map((menu) => menu.label)).toEqual([
     '文件',
     '编辑',
-    '查看',
+    '视图',
     '插入',
     '格式',
   ]);
   expect(byId(menus, 'insertRowAbove')?.label).toBe('在上方插入 3 行');
-  expect(byId(menus, 'bold')?.label).toBe('粗体');
+  expect(byId(menus, 'bold')?.label).toBe('加粗');
 });
 
 it('offers view mode only what works there, nothing disabled', () => {

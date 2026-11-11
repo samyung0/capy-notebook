@@ -12,6 +12,7 @@ import {
   type WorkbookViewerHandle,
   zoomedViewport,
 } from '@betteroffice/xlsx/viewer';
+import { useDefaultFonts } from '@betteroffice/xlsx-react';
 import {
   type KeyboardEvent,
   type MouseEvent,
@@ -59,6 +60,7 @@ export function XlsxViewer({
   locale,
   onAnalysis,
   onError,
+  onFontError,
   onMenus,
   onRenderer,
   onZoomChange,
@@ -70,6 +72,8 @@ export function XlsxViewer({
   locale: OfficeLocale;
   onAnalysis: (analysis: WorkbookAnalysis) => void;
   onError: (error: Error) => void;
+  /** A bundled face that failed to load; its text keeps the browser's font. */
+  onFontError: (family: string, error: Error) => void;
   onMenus: OfficeMenuReporter;
   onRenderer: (renderer: OfficeRenderer | null) => void;
   onZoomChange: (zoom: number) => void;
@@ -120,6 +124,17 @@ export function XlsxViewer({
     });
   }, []);
 
+  // Workbook families paint with the bundled faces once they land (#2064),
+  // decoded by the fonts package's own decoder: the view WASM has none.
+  const paintWithDefaultFonts = useDefaultFonts(
+    bytes,
+    null,
+    true,
+    () => paint(),
+    undefined,
+    onFontError
+  );
+
   const paint = useCallback(() => {
     const scroll = scrollRef.current;
     const canvas = canvasRef.current;
@@ -157,35 +172,37 @@ export function XlsxViewer({
       canvas.style.height = `${height}px`;
       const context = canvas.getContext('2d');
       if (context) {
-        paintDisplayList(context, frame, dpr * zoom);
-        const target = highlightRef.current;
-        const rect =
-          target?.sheet === activeSheetRef.current
-            ? cellRect(frame.grid, target.row, target.col)
-            : null;
-        // Sheet pixels, as the frame; the outline stays 2 CSS px wide.
-        context.save();
-        context.setTransform(dpr * zoom, 0, 0, dpr * zoom, 0, 0);
-        if (rect) {
-          context.fillStyle = CITATION_FILL;
-          context.fillRect(rect.x, rect.y, rect.w, rect.h);
-        }
-        const selected = selection.range
-          ? rangeRect(frame.grid, selection.range)
-          : cellRect(frame.grid, selection.cell.row, selection.cell.col);
-        if (selected) {
-          context.fillStyle = SELECTION_FILL;
-          context.fillRect(selected.x, selected.y, selected.w, selected.h);
-          context.strokeStyle = SELECTION_STROKE;
-          context.lineWidth = 2 / zoom;
-          context.strokeRect(
-            selected.x + 1 / zoom,
-            selected.y + 1 / zoom,
-            selected.w - 2 / zoom,
-            selected.h - 2 / zoom
-          );
-        }
-        context.restore();
+        paintWithDefaultFonts(frame, () => {
+          paintDisplayList(context, frame, dpr * zoom);
+          const target = highlightRef.current;
+          const rect =
+            target?.sheet === activeSheetRef.current
+              ? cellRect(frame.grid, target.row, target.col)
+              : null;
+          // Sheet pixels, as the frame; the outline stays 2 CSS px wide.
+          context.save();
+          context.setTransform(dpr * zoom, 0, 0, dpr * zoom, 0, 0);
+          if (rect) {
+            context.fillStyle = CITATION_FILL;
+            context.fillRect(rect.x, rect.y, rect.w, rect.h);
+          }
+          const selected = selection.range
+            ? rangeRect(frame.grid, selection.range)
+            : cellRect(frame.grid, selection.cell.row, selection.cell.col);
+          if (selected) {
+            context.fillStyle = SELECTION_FILL;
+            context.fillRect(selected.x, selected.y, selected.w, selected.h);
+            context.strokeStyle = SELECTION_STROKE;
+            context.lineWidth = 2 / zoom;
+            context.strokeRect(
+              selected.x + 1 / zoom,
+              selected.y + 1 / zoom,
+              selected.w - 2 / zoom,
+              selected.h - 2 / zoom
+            );
+          }
+          context.restore();
+        });
         const analysis = pendingAnalysisRef.current;
         pendingAnalysisRef.current = null;
         if (analysis) onAnalysis(analysis);
@@ -193,7 +210,7 @@ export function XlsxViewer({
     } catch (value) {
       onError(toError(value));
     }
-  }, [onAnalysis, onError]);
+  }, [onAnalysis, onError, paintWithDefaultFonts]);
 
   useEffect(() => {
     let disposed = false;

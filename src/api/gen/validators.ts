@@ -2242,6 +2242,118 @@ export const BillingTopUpResponse = zod.object({
 
 
 /**
+ * @summary The caller's canvases a page at a time: their own, latest saved first, then their workspaces'
+ */
+export const listCanvasesQueryLimitDefault = 50;
+export const listCanvasesQueryLimitMax = 100;
+
+
+
+export const ListCanvasesQueryParams = zod.object({
+  "limit": zod.int().min(1).max(listCanvasesQueryLimitMax).default(listCanvasesQueryLimitDefault),
+  "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
+})
+
+export const ListCanvasesResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "workspaceIconId": zod.string().optional(),
+  "workspaceId": zod.string().optional().describe('The workspace whose Canvas tab this is; none for a canvas of the caller\'s own'),
+  "workspaceName": zod.string().optional()
+})),
+  "nextCursor": zod.string().optional().describe('Absent on the last page')
+})
+
+
+/**
+ * @summary Make a canvas of the caller's own, in no workspace
+ */
+export const createCanvasBodyTitleMax = 120;
+
+
+
+export const CreateCanvasBody = zod.object({
+  "title": zod.string().min(1).max(createCanvasBodyTitleMax)
+})
+
+export const CreateCanvasResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "boardAssetId": zod.string().describe('The saved board\'s editor asset (gzipped Yjs update); empty before the first save'),
+  "id": zod.string().describe('The canvas material'),
+  "imageAssetIds": zod.array(zod.string()).describe('The canvas\'s images, as image editor assets'),
+  "ownImageAssetIds": zod.array(zod.string()).describe('Every ready image asset of this canvas, one the pruner trashed included: the ids a save may name'),
+  "revision": zod.int().describe('The material\'s revision; a save sends the one it read'),
+  "title": zod.string(),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().describe('Counts the saves')
+})
+
+
+/**
+ * @summary One of the caller's canvases
+ */
+export const getCanvasPathIdMax = 64;
+
+
+
+export const GetCanvasParams = zod.object({
+  "id": zod.string().max(getCanvasPathIdMax).describe('Canvas material id')
+})
+
+export const GetCanvasResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "boardAssetId": zod.string().describe('The saved board\'s editor asset (gzipped Yjs update); empty before the first save'),
+  "id": zod.string().describe('The canvas material'),
+  "imageAssetIds": zod.array(zod.string()).describe('The canvas\'s images, as image editor assets'),
+  "ownImageAssetIds": zod.array(zod.string()).describe('Every ready image asset of this canvas, one the pruner trashed included: the ids a save may name'),
+  "revision": zod.int().describe('The material\'s revision; a save sends the one it read'),
+  "title": zod.string(),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().describe('Counts the saves')
+})
+
+
+/**
+ * @summary Record a save of one of the caller's canvases, as a workspace canvas's
+ */
+export const saveCanvasPathIdMax = 64;
+
+
+
+export const SaveCanvasParams = zod.object({
+  "id": zod.string().max(saveCanvasPathIdMax).describe('Canvas material id')
+})
+
+export const saveCanvasBodyBoardAssetIdMax = 64;
+
+export const saveCanvasBodyImageAssetIdsMax = 1000;
+
+
+
+
+export const SaveCanvasBody = zod.object({
+  "boardAssetId": zod.string().min(1).max(saveCanvasBodyBoardAssetIdMax).describe('The new board asset, uploaded first: a ready board asset of this canvas'),
+  "imageAssetIds": zod.array(zod.string()).max(saveCanvasBodyImageAssetIdsMax).nullable().describe('The canvas\'s images now: ready image assets of this canvas'),
+  "revision": zod.int().min(1).describe('The revision the browser read; another tab\'s save since is refused (409)')
+})
+
+export const SaveCanvasResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "boardAssetId": zod.string().describe('The saved board\'s editor asset (gzipped Yjs update); empty before the first save'),
+  "id": zod.string().describe('The canvas material'),
+  "imageAssetIds": zod.array(zod.string()).describe('The canvas\'s images, as image editor assets'),
+  "ownImageAssetIds": zod.array(zod.string()).describe('Every ready image asset of this canvas, one the pruner trashed included: the ids a save may name'),
+  "revision": zod.int().describe('The material\'s revision; a save sends the one it read'),
+  "title": zod.string(),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "version": zod.int().describe('Counts the saves')
+})
+
+
+/**
  * @summary Reverse one direct AI edit
  */
 export const UndoEditOperationParams = zod.object({
@@ -2375,11 +2487,20 @@ export const UpdateMaterialCommentResponse = zod.object({
 /**
  * @summary List the caller's account chat conversations
  */
+export const listAccountConversationsQueryLimitDefault = 50;
+export const listAccountConversationsQueryLimitMax = 100;
+
+
+
 export const ListAccountConversationsQueryParams = zod.object({
-  "archived": zod.boolean().optional().describe('true lists the archived threads instead of the live list')
+  "archived": zod.boolean().optional().describe('true lists the archived threads instead of the live list'),
+  "limit": zod.int().min(1).max(listAccountConversationsQueryLimitMax).default(listAccountConversationsQueryLimitDefault),
+  "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
 })
 
-export const ListAccountConversationsResponseItem = zod.object({
+export const ListAccountConversationsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "archivedAt": zod.iso.datetime({"offset":true}).optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
@@ -2389,8 +2510,9 @@ export const ListAccountConversationsResponseItem = zod.object({
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string().describe('Empty for an account conversation')
+})),
+  "nextCursor": zod.string().optional().describe('Absent on the last page')
 })
-export const ListAccountConversationsResponse = zod.array(ListAccountConversationsResponseItem)
 
 
 /**
@@ -2437,6 +2559,26 @@ export const DeleteConversationParams = zod.object({
 })
 
 export const DeleteConversationResponse = zod.void()
+
+
+/**
+ * @summary One of the caller's conversations: the open chat's title when its list page is not loaded
+ */
+export const GetConversationParams = zod.object({
+  "id": zod.string().describe('Conversation id')
+})
+
+export const GetConversationResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "archivedAt": zod.iso.datetime({"offset":true}).optional(),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "pinnedAt": zod.iso.datetime({"offset":true}).optional(),
+  "running": zod.boolean(),
+  "title": zod.string(),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "workspaceId": zod.string().describe('Empty for an account conversation')
+})
 
 
 /**
@@ -4406,7 +4548,7 @@ export const listItemsQueryLimitMax = 100;
 
 
 export const ListItemsQueryParams = zod.object({
-  "kind": zod.string().optional().describe('Comma-separated kinds: file kinds, note, quiz, flashcards, canvas; image and audio also match embedded images and audio'),
+  "kind": zod.string().optional().describe('Comma-separated kinds: file kinds, note, quiz, flashcards; image and audio also match embedded images and audio'),
   "workspaceId": zod.string().optional().describe('Comma-separated workspace ids; a submission sits in its assignment\'s workspace'),
   "location": zod.string().optional().describe('Comma-separated locations: workspace, standalone'),
   "q": zod.string().max(listItemsQueryQMax).optional().describe('Keeps rows whose shown name holds this text, any case'),
@@ -4515,7 +4657,6 @@ export const ListItemsResponse = zod.object({
   "material": zod.object({
   "assigned": zod.boolean().optional(),
   "assignmentId": zod.string().optional(),
-  "canvasWorkspaceId": zod.string().optional(),
   "cardCount": zod.int().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "hidden": zod.boolean().optional(),
@@ -4707,7 +4848,6 @@ export const ListOwnedMaterialsResponse = zod.object({
   "items": zod.array(zod.object({
   "assigned": zod.boolean().optional(),
   "assignmentId": zod.string().optional(),
-  "canvasWorkspaceId": zod.string().optional(),
   "cardCount": zod.int().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "hidden": zod.boolean().optional(),
@@ -7112,7 +7252,6 @@ export const ListRecentResponse = zod.object({
   "material": zod.object({
   "assigned": zod.boolean().optional(),
   "assignmentId": zod.string().optional(),
-  "canvasWorkspaceId": zod.string().optional(),
   "cardCount": zod.int().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "hidden": zod.boolean().optional(),
@@ -8827,6 +8966,7 @@ export const WorkspaceCanvasResponse = zod.object({
   "imageAssetIds": zod.array(zod.string()).describe('The canvas\'s images, as image editor assets'),
   "ownImageAssetIds": zod.array(zod.string()).describe('Every ready image asset of this canvas, one the pruner trashed included: the ids a save may name'),
   "revision": zod.int().describe('The material\'s revision; a save sends the one it read'),
+  "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "version": zod.int().describe('Counts the saves')
 })
@@ -8859,6 +8999,7 @@ export const SaveWorkspaceCanvasResponse = zod.object({
   "imageAssetIds": zod.array(zod.string()).describe('The canvas\'s images, as image editor assets'),
   "ownImageAssetIds": zod.array(zod.string()).describe('Every ready image asset of this canvas, one the pruner trashed included: the ids a save may name'),
   "revision": zod.int().describe('The material\'s revision; a save sends the one it read'),
+  "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "version": zod.int().describe('Counts the saves')
 })
@@ -9010,11 +9151,20 @@ export const ListConversationsParams = zod.object({
   "id": zod.string().describe('Workspace id')
 })
 
+export const listConversationsQueryLimitDefault = 50;
+export const listConversationsQueryLimitMax = 100;
+
+
+
 export const ListConversationsQueryParams = zod.object({
-  "archived": zod.boolean().optional().describe('true lists the archived threads instead of the live list')
+  "archived": zod.boolean().optional().describe('true lists the archived threads instead of the live list'),
+  "limit": zod.int().min(1).max(listConversationsQueryLimitMax).default(listConversationsQueryLimitDefault),
+  "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
 })
 
-export const ListConversationsResponseItem = zod.object({
+export const ListConversationsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "archivedAt": zod.iso.datetime({"offset":true}).optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
@@ -9024,8 +9174,9 @@ export const ListConversationsResponseItem = zod.object({
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string().describe('Empty for an account conversation')
+})),
+  "nextCursor": zod.string().optional().describe('Absent on the last page')
 })
-export const ListConversationsResponse = zod.array(ListConversationsResponseItem)
 
 
 /**
@@ -9845,7 +9996,6 @@ export const ListWorkspaceRecentResponse = zod.object({
   "materials": zod.array(zod.object({
   "assigned": zod.boolean().optional(),
   "assignmentId": zod.string().optional(),
-  "canvasWorkspaceId": zod.string().optional(),
   "cardCount": zod.int().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "hidden": zod.boolean().optional(),

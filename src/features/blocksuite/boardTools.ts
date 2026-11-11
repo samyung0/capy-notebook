@@ -34,6 +34,7 @@ import {
 import {
   type BlockComponent,
   BlockFlavourIdentifier,
+  type BlockStdScope,
   type PointerEventState,
 } from '@blocksuite/affine/std';
 import {
@@ -1456,19 +1457,14 @@ class CapyGraphSlot extends CapyPieceSlot {
   protected slotTip = { key: 'G', tip: m.drawing_board_graphs };
 }
 
-class CapyChartSlot extends CapyPieceSlot {
-  protected pieces = CHART_PIECES;
-  protected slotTip = { key: 'B', tip: m.drawing_board_charts };
-}
-
 class CapyFormulaSlot extends CapyPieceSlot {
   protected pieces = FORMULA_PIECES;
   protected slotTip = { key: 'M', tip: m.drawing_board_formulas };
 }
 
-/** The workspace canvas's Misc panel (Epo 2026-11-09, A): tiles in groups, each a card
- * picked up and dropped like a slot's piece; a finger's tap puts it in the view's
- * middle. Groups join as their kinds land (board catalog). */
+/** The Misc panel (Epo 2026-11-09, A; on the answer board too since 2026-11-10):
+ * tiles in groups, each a card picked up and dropped like a slot's piece; a finger's
+ * tap puts it in the view's middle. Each board shows what it may hold (`tileFits`). */
 type MiscView = 'emoji' | 'klipy' | 'link' | 'quiz' | 'flashcards';
 /** A tile: a card picked up like a slot's piece, or a picker it opens (KLIPY's on
  * one of its two tabs). */
@@ -2502,23 +2498,27 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         ${this.closeButton()}
       </div>
       <div class="body">
-        ${MISC_GROUPS.filter(
-          ({ tiles }) =>
-            workspace ||
-            !tiles.some(
-              (tile) =>
-                'view' in tile &&
-                (tile.view === 'quiz' || tile.view === 'flashcards')
-            )
-        ).map(
-          ({ label, tiles }) =>
-            html`<div class="group">
+        ${MISC_GROUPS.map(({ label, tiles }) => ({
+          label,
+          tiles: tiles.filter(
+            (tile) =>
+              tileFits(tile, boardKinds.get(this.edgeless.std)) &&
+              // The workspace's quizzes and sets need a workspace lent.
+              (workspace ||
+                !('view' in tile) ||
+                (tile.view !== 'quiz' && tile.view !== 'flashcards'))
+          ),
+        }))
+          .filter(({ tiles }) => tiles.length)
+          .map(
+            ({ label, tiles }) =>
+              html`<div class="group">
               <h3>${label()}</h3>
               <div class="tiles">
                 ${tiles.map((tile) => this.renderTile(tile))}
               </div>
             </div>`
-        )}
+          )}
       </div>`;
   }
 }
@@ -2653,16 +2653,6 @@ const graphsTool = seniorTool(
       .toolbarContainer=${toolbar}
     ></capy-graph-slot>`
 );
-const chartsTool = seniorTool(
-  'capy-charts',
-  m.drawing_board_charts,
-  (block, toolbar) =>
-    html`<capy-chart-slot
-      data-own-width
-      .edgeless=${block}
-      .toolbarContainer=${toolbar}
-    ></capy-chart-slot>`
-);
 const formulasTool = seniorTool(
   'capy-formulas',
   m.drawing_board_formulas,
@@ -2682,18 +2672,39 @@ const miscTool = seniorTool(
     ></capy-misc-button>`
 );
 
-/** The toolbar's slots after the shapes: the question board keeps Charts as its own
- * slot; the workspace canvas has them in Misc (Epo 2026-11-09). */
-export const sheetTools = (board: BoardKind) =>
-  board === 'question'
-    ? [graphsTool, chartsTool, formulasTool]
-    : [graphsTool, formulasTool, miscTool];
+/** The toolbar's slots after the shapes, on both boards (Epo 2026-11-10): Misc
+ * holds the charts, and on each board only what it may hold. */
+export const sheetTools = [graphsTool, formulasTool, miscTool];
+
+const boardKinds = new WeakMap<
+  BlockStdScope,
+  { board: BoardKind; images: boolean }
+>();
+/** Says which board a mounted editor is and whether it takes images, for what
+ * its Misc panel offers. */
+export const markBoard = (
+  std: BlockStdScope,
+  board: BoardKind,
+  images: boolean
+) => boardKinds.set(std, { board, images });
+
+/** Whether a Misc tile is for this board (board catalog): an answer board holds
+ * the charts and images; the mind map, the other pictures, links and the
+ * workspace's quizzes and sets are the workspace canvas's. */
+const tileFits = (
+  tile: MiscTile,
+  { board, images }: { board?: BoardKind; images?: boolean } = {}
+) => {
+  if ('pick' in tile) return !!images;
+  return (
+    board === 'workspace' || ('piece' in tile && tile.piece.kind !== 'mindmap')
+  );
+};
 
 for (const [tag, element] of [
   ['capy-shape-panel', CapyShapePanel],
   ['capy-shape-button', CapyShapeButton],
   ['capy-graph-slot', CapyGraphSlot],
-  ['capy-chart-slot', CapyChartSlot],
   ['capy-formula-slot', CapyFormulaSlot],
   ['capy-misc-panel', CapyMiscPanel],
   ['capy-misc-button', CapyMiscButton],

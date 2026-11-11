@@ -34,6 +34,9 @@ thiserror.workspace = true
 tokio.workspace = true
 tokio-postgres.workspace = true
 unicode-script = "0.5"
+# XLSX effect text shows formulas without storage prefixes (Q706); office-service
+# builds it already.
+xlsx-parse = { package = "betteroffice-xlsx-parse", path = "../../../vendor/betteroffice/crates/xlsx-parse" }
 ydoc.workspace = true
 yrs.workspace = true
 
