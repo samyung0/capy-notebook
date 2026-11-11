@@ -47,6 +47,8 @@ for (const { format, name } of QUIZ_PAPERS) {
     expect(await sentRuns(page)).toEqual([
       {
         answers: [],
+        // The files step's switch, on by default: the quiz starts hidden.
+        hidden: true,
         paper: [{ fileId, images: [drawn[1].base64], pages: [2] }],
         title: 'paper',
       },
