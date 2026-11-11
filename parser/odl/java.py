@@ -34,6 +34,13 @@ ODL_FLAGS = (
     "--include-header-footer",
 )
 JVM_MAX_HEAP = os.environ.get("CAPY_PARSER_JVM_MAX_HEAP", "1g")
+# The quick compiler alone: the optimizing compiler's threads were over half
+# of the JVM's CPU. The JSON is the same, and seven Java runs at a time finish
+# in half the time for 58% less JVM CPU. A long PDF's Java run alone on eight
+# idle cores is slower: 8 to 10 s at 1,016 pages, 14 to 21 s for a heavy
+# 1,400-page book. Not the serial collector: with it too, at the 1 GiB heap,
+# that book's run took 42 s (bench/parsers/reports/2026-11-10-jvm-flags.md).
+JVM_FLAGS = ("-XX:TieredStopAtLevel=1",)
 _CPU_MAX = Path("/sys/fs/cgroup/cpu.max")
 
 
@@ -125,6 +132,7 @@ def run(pdf: Path, out_dir: Path, *, timeout_s: float) -> dict:
         executable,
         f"-Xmx{JVM_MAX_HEAP}",
         f"-XX:ActiveProcessorCount={CPUS}",
+        *JVM_FLAGS,
         "-Djava.awt.headless=true",
         # The JVM ignores TMPDIR: keep its temporary files on the work volume,
         # not the small RAM-backed /tmp.

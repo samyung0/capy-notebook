@@ -625,6 +625,10 @@ free memory and swap, and each process kind's command line and rlimits (a
 parse child's once it has confined itself). Every
 other running container is watched: a restart, or host swap growing past
 `ABORT_SWAP_GIB` (1), kills the throwaway container and ends the pass.
+`MEM`, `SWAP` and `CPUS` give the container another shape (`6g`, `8g` and `2`
+with `WORKERS=1 DEPTH=2` for the nonprod parser). The parser refuses a queue
+depth over 16, so a `burst` of more documents than that needs `CLIENTS=N`,
+which keeps N in flight.
 `--keep` copies bundles out for `bundle_identity.py`, which compares two
 bundles of one document in the pipeline image: bytes, the pages whose blocks
 differ (ODL's element ids aside, since they renumber the rest of a document
@@ -641,6 +645,37 @@ docker run --rm --network none -v "$PWD:/b:ro" capy-ingest-nonprod-pipeline:<sha
 Reports: [v14](reports/2026-10-15-parser-v14-stress.md),
 [v16](reports/2026-10-16-parser-v16-recalibration.md),
 [v19 with the decoder sandbox](reports/2026-10-21-parser-v19-sandbox-stress.md).
+
+## JVM flags for the Java phase
+
+`jvm_flags.py` runs the parser's Java call alone under other JVM flags, in a
+throwaway container from a parser image with the parser's hardening and no
+network. In a folder outside the repository (`$B`, with the script copied to
+`bench/`) it reads `pdfs/<id>.pdf`, works in `work/` and writes rows to
+`results/` (both owned by uid 10001): wall,
+the JVM's CPU and peak memory, and a hash of the JSON, so equal hashes across
+flag sets mean equal output. `each` runs every PDF alone with the flag sets
+side by side; `pass` runs the set once with N JVMs at a time and ends with the
+container's CPU and peak memory. The report's run was `pass` once per flag set
+and then again in reverse order, `each` on 8 CPUs and 10 GiB, and `each` on
+2 CPUs and 6 GiB.
+
+```sh
+run() { cpus=$1; memory=$2; shift 2; docker run --rm --network none --user parser \
+  --cap-drop ALL --security-opt no-new-privileges:true --read-only \
+  --tmpfs /run/capy-parser/home:noexec,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=0700 \
+  -e HOME=/run/capy-parser/home -e MALLOC_ARENA_MAX=2 -e CAPY_PARSER_JVM_MAX_HEAP=1g \
+  -e PYTHONPATH=/app/parser -e PYTHONDONTWRITEBYTECODE=1 -e LANG=C.UTF-8 \
+  -v "$B/pdfs:/pdfs:ro" -v "$B/bench:/bench:ro" -v "$B/work:/work" -v "$B/results:/results" \
+  --cpus "$cpus" --memory "$memory" --memory-swap "$memory" --pids-limit 512 \
+  capy-ingest-nonprod-parser:<sha> python /bench/jvm_flags.py "$@"; }
+for v in default serial c1 serial-c1; do run 8 10g pass p7-r1 "$v" 7; done
+for v in serial-c1 c1 serial default; do run 8 10g pass p7-r2 "$v" 7; done
+run 8 10g each p1 default,serial,c1,serial-c1
+run 2 6g each n1 default,serial,c1,serial-c1
+```
+
+Report: [the quick compiler alone](reports/2026-11-10-jvm-flags.md), which also has a capacity pass on a heavy book.
 
 ## Ingest-worker resource checks
 
