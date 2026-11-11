@@ -1374,16 +1374,27 @@ its answer was lost, the failure handler finds the source superseded and the
 job `done`, closes the attempt record and writes nothing else.
 
 The queue never converts a failed file again. The workspace owner's Retry
-processing (a standalone file's owner) still queues a fresh conversion job
-in either parse mode
-([authorization-permissions-lifecycles.md](authorization-permissions-lifecycles.md));
-the quarantine above refuses bytes that timed out or were OOM-killed.
+processing (a standalone file's owner) does
+([authorization-permissions-lifecycles.md](authorization-permissions-lifecycles.md)).
+On a file still named as legacy (`sourceupload.ConvertsLegacy`),
+`RetryFileProcessing` reruns the upload's own pipeline: it sets the request's
+mode aside for the file's stored `parse_mode`, builds the `legacy_convert`
+plan and queues the conversion job with the payer's picture cap, on the
+owner's ingest reservation when a parse follows and on a system session with
+parsing off. It takes a `failed` file and, for a legacy name only, a `ready`
+one that was stored unconverted, which is what the open file's Convert
+button sends
+([frontend/office-files.md](frontend/office-files.md#legacy-office-files)).
+A hand-in's file (`hand_in_assignment_id` set, stored `ready`) is refused
+with `409 revision_conflict` and keeps its bytes. The quarantine above
+refuses bytes that timed out or were OOM-killed.
 
 Known limits:
 
-- A hand-in's files are stored as uploaded and never converted, and neither
-  is a paper's file its uploader has no credits for
-  (`finalizeUploadSessionTx`, `queueIngestTx`). A file left `ready` under a
+- A hand-in's files are stored as uploaded and never converted. A paper's
+  file its uploader has no credits for is stored the same way at upload
+  (`finalizeUploadSessionTx`, `queueIngestTx`), and its member's Retry
+  processing converts it later. A file left `ready` under a
   legacy name was stored without a conversion; the workspace index counts
   treat it as not indexable, and a converting or failed one as not indexed
   (`workspaceIndexCounts`).
@@ -1393,12 +1404,14 @@ Known limits:
   only, none written by an old Office version
   ([report](../bench/parsers/reports/2026-11-11-legacy-office-conversion.md),
   which also has the sandbox, service and picture-step runs).
-- Open: production's parse-coordinator memory limit. By its own budget it has
-  about 110 MiB to spare, and the picture step of one 20 MiB deck peaked at
-  158 MiB in a container of its own. The limit, or how many conversions run
-  their picture step at once, must be settled before a production stack is
-  deployed. Nonprod (one job at a time, 384 MiB, 117 MiB idle) fits that
-  deck.
+- The picture step runs inside the parse coordinator, whose limits stay as
+  they are (Epo 2026-11-11). Production's coordinator has about 110 MiB of
+  its 1,280 MiB to spare with eight jobs by its own budget, and the picture
+  step of one 20 MiB deck peaked at 158 MiB in a container of its own
+  ([report](../bench/parsers/reports/2026-11-11-legacy-office-conversion.md));
+  what happens past the limit is in
+  [deployment-runbook.md](deployment-runbook.md) §7.2. Nonprod (one job at a
+  time, 384 MiB, 117 MiB idle) fits that deck.
 
 #### Ingest limits
 

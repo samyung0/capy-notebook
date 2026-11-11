@@ -1540,7 +1540,9 @@ off, nothing follows the conversion, so its job opens a system session
 instead (`beginFileJobSessionTx`, `ProcessingPlan.SystemPaid`): `paid_by`
 `system`, `paidBy: "system"` on the payload, no credit check and no ingest
 lease. The gateway closes that session when it swaps the file in. Retry
-processing of a failed legacy file opens its session by the same rule.
+processing of a legacy file, failed or stored unconverted, opens its session
+by the same rule from the file's stored parse mode, whatever mode the
+request names.
 
 The persistent parser returns wall time, queue time, shared-spool
 source-read/bundle-write time, and current process/cgroup RSS/PSS and I/O. The

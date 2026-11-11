@@ -22,6 +22,11 @@ the parser's sandbox, and what the worker's picture step costs in memory.
   pictures. The nonprod coordinator idles at 117 MiB of 384 MiB and takes one
   job at a time. Production's coordinator runs eight jobs inside a limit with
   about 110 MiB to spare, which one such deck passes.
+- **The coordinator's limits stay as they are** (developer's decision,
+  2026-11-11): swap takes a peak and the container restarts if it is killed.
+  The picture step is not a new cost. The import worker has run it on every
+  Office upload inside 256 MiB; about 100 MiB of the peak is one short-lived
+  decoder process.
 
 ## What ran
 
@@ -108,10 +113,14 @@ removed from any of the three.
   holds the converted bytes it read from the spool and the body it puts, which
   the script holds too, but not the coordinator's own 117 MiB or a second job.
   One deck is not a bound: a 100 MiB file with large pictures was not run.
-- **Production's coordinator limit was not changed.** By the compose file's
-  own budget it has about 110 MiB of its 1,280 MiB to spare with eight jobs
-  (and 256 MiB of swap past that); the picture step of one 20 MiB deck needs
-  more. No production stack is deployed.
+- **Production's coordinator was not run.** By the compose file's own budget
+  it has about 110 MiB of its 1,280 MiB to spare with eight jobs, and the
+  picture step of one 20 MiB deck needs more. Past that the container has the
+  256 MiB of swap its own limit allows (`memswap_limit` 1,536 MiB), whatever
+  the host's swap, then the kernel kills a process in it; `restart:
+  unless-stopped` brings the container back if that process is the
+  coordinator itself. Both limits are environment values. No production stack
+  is deployed, so none of this was seen.
 - **The hand-over was not run.** The bucket, the gateway endpoint and the swap
   are covered by the Go and Python tests only.
 

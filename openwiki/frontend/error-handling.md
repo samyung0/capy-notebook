@@ -576,16 +576,18 @@ A legacy Office file (`.doc`, `.xls`, `.ppt`) is converted before it is
 parsed, and the conversion is read from the file's name
 (`legacyOfficeTarget`,
 [office-files.md](office-files.md#legacy-office-files)). While a file still
-named that way is `processing`, the open file's progress line and banner read
-"Converting to a new Office format…" (`files_converting`, through
-`processingMessage`) in place of "Processing {name}…". When it is `failed`,
-its conversion failed: the strip reads `files_convert_failed` ("This file
-could not be converted to a new Office format. If it is password-protected or
-damaged, save it as .docx, .xlsx or .pptx and upload it again.") in place of
+named that way is `pending` or `processing`, the open file's body is the
+loader with "Converting to a new Office format…" (`files_converting`,
+`FileViewerContent`), and the pending or processing banner over the viewer
+stays off for it (`CenterContent`). When it is `failed`, its conversion
+failed: the strip reads `files_convert_failed` ("This file could not be
+converted to a new Office format. If it is password-protected or damaged,
+save it as .docx, .xlsx or .pptx and upload it again.") in place of
 `files_not_indexed_failed` (`failedNotIndexedMessage`). One that is `ready`
-under a legacy name (a hand-in's file, stored and never converted) reads as
-any file without an index. In every one of these states the body is the
-download-only view.
+under a legacy name (stored and never converted) reads as any file without
+an index. A failed or ready one has the download-only body, which offers the
+conversion to whoever may reprocess the file and is the plain cannot-preview
+screen for everyone else.
 
 File and material banners share `FileBanner`: a flat full-width strip with no
 leading icon and `text-fg` on a grey (info, ingest progress, a text source's
@@ -938,7 +940,8 @@ it unless the owner asked), unless it is partial: still `indexed`, with a part
 refresh of an edited source may fill. The file row's menu offers Retry
 processing in the warning tint (`MenuItem.warning`), and the Indexing tab lists
 every failed file under Failed files with the same action. For a file that is
-not indexed both open the upload dialog in a retry mode (`AddSourceDialog`
+not indexed (a legacy Office file apart, below) both open the upload dialog in
+a retry mode (`AddSourceDialog`
 `retryFile`): one fixed row read from the stored bytes through the file's
 presigned link, so the fast-parse check and estimate run as for an upload, then
 `POST /api/files/{id}/retry-processing` with the chosen parse mode. A failed
@@ -952,14 +955,22 @@ keyed per workspace), its settle awaits the files refetch, and
 `useRetryingFileIds` lists the files whose mutation is still pending, so a
 second click never meets the queued job's 409. The server queues the file's processing again on its stored bytes, charged to
 the owner like automatic reprocessing; `none` just stores it, a file that is
-not failed or already has a parse, ingest or source refresh job answers 409, a
+not failed (an unconverted legacy Office file apart, below) or already has a
+parse, ingest or source refresh job answers 409, a
 mode the format does not offer 400 (`RetryFileProcessing`). A partial file
 keeps its index and re-runs only its missing parts in its own parse mode (see
 [agentic-retrieval.md](../agentic-retrieval.md), "Parts").
-A failed legacy Office file retries through the same dialog, its row without
-an estimate, and the server queues a fresh conversion whichever mode is
-sent. The queue itself never asks for a failed conversion again, and bytes
-that hit the parser's hard timeout or an OOM kill fail again on a retry.
+A failed legacy Office file retries in one click too, with no dialog
+(`retryFailedFile`): the mode is no choice for it. The server reruns the
+upload's own pipeline, the conversion and then the file's stored parse mode,
+whatever mode the request names (the click sends `fast`). The open file's
+Convert button sends the same request, and for a legacy file the server
+also takes it while the file is `ready` and unconverted
+([office-files.md](office-files.md#legacy-office-files)). A hand-in's file
+answers 409 `revision_conflict` and keeps its bytes; the refusal shows the
+default mutation error toast. The queue itself never asks for a failed
+conversion again, and bytes that hit the parser's hard timeout or an OOM kill
+fail again on a retry.
 If a published source changes while an answer or generation request gathers
 evidence, `source_changed` asks the user to retry. The Go relay preserves both
 codes for HTTP responses and chat events; neither starts an automatic retry.
@@ -1025,7 +1036,9 @@ report them again.
 
 Biology 101 also exposes file states through ordinary source rows: empty bytes,
 a legacy file whose conversion failed (`mock-preview-legacy`, "Failed
-conversion.doc"; the mock's Retry processing fails it again), link and
+conversion.doc") and one stored unconverted (`mock-preview-legacy-ready`,
+"Not converted.ppt"; the mock's Retry processing converts either, which then
+opens as a converted upload and no longer as a broken fixture), link and
 PDF/CSV/audio/image errors, Office/text-session
 errors, annotation-load failure, and pending/processing/failed/store-only ingest.
 PDF document/page failures use `FileError`; retry reopens the PDF and requests

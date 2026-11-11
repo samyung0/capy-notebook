@@ -2456,12 +2456,47 @@ The conversion is told from the name alone, with no API field
 (`legacyOfficeTarget` in `features/files/fileUtils.ts`): a file still named
 `.doc`, `.xls` or `.ppt` is waiting for its conversion, in it, or failed in
 it. One that is `ready` under a legacy name was stored without a conversion
-(a hand-in's file) and reads as any file without an index. Such a file has
-no Office session and shows the download-only view
-(`UnsupportedPreview`, Download original); its labels and failure message are
-in [error-handling.md](error-handling.md). Once renamed it is an ordinary
-DOCX, XLSX or PPTX: it opens in the Office runtime and is `pending` again for
-its parse, or `ready` when it was uploaded with parsing off.
+(a hand-in's file, or a paper's whose uploader had no credits) and reads as
+any file without an index. Such a file has no Office session; its failure
+message is in [error-handling.md](error-handling.md). Once renamed it is an
+ordinary DOCX, XLSX or PPTX: it opens in the Office runtime and is `pending`
+again for its parse, or `ready` when it was uploaded with parsing off.
+
+What the open file shows under a legacy name (`FileViewerContent`, mock A,
+Epo 2026-11-11):
+
+- `pending` or `processing`: the pane's loader with "Converting to a new
+  Office format…" (`FileLoading`, `files_converting`), for every reader,
+  until the rename.
+- `ready` or `failed`, opened by someone who may reprocess the file
+  (`canConvertLegacy`): the download-only screen in its conversion form
+  (`UnsupportedPreview` with `convertTo`). Its title is "Old Office format"
+  (`files_legacy_title`), its body "{ext} files can't be opened here. Convert
+  this file to {target} to view and edit it." (`files_legacy_body`), and a
+  dark button, "Convert to new Office format" (`files_legacy_convert`, the
+  default `Button` variant), sits over the unchanged Download original.
+- `ready` or `failed`, opened by anyone else: the plain download-only screen
+  (`files_preview_unavailable`, Download original).
+
+`canConvertLegacy` follows who is offered the file's ⋮ Retry processing: the
+workspace's owner while the workspace is not read-only (`isWorkspaceReadOnly`
+on its capabilities), or, for a file outside a workspace, its payer
+(`isPayer`) unless the account is frozen. A workspace file waits on the
+loader until the workspace has loaded. Convert is the file's Retry
+processing (`useRetryFileProcessing`, `fast` sent, the started toast of the
+⋮ Retry); the server reruns the upload's own pipeline whatever mode is sent
+([agentic-retrieval.md](../agentic-retrieval.md#legacy-office-conversion)).
+The button stays disabled while the file's retry is pending
+(`useRetryingFileIds`), and the mutation's settle rereads the open file's
+detail, so the screen turns to the converting pane. On a failed file the
+same button tries again.
+
+A file row carries no hand-in field, so the viewer cannot tell a hand-in's
+file. The submission surfaces open a hand-in with its assignment
+(`SubmissionItem`, `PaperPane`) and never mount this viewer; a hand-in
+opened by a typed `/files/<id>` address shows the button to someone
+`canConvertLegacy` admits, and the server refuses the press (409
+`revision_conflict`, the default mutation error toast).
 
 No event names the rename, so an open file learns it from a reread:
 
@@ -2486,7 +2521,11 @@ and opens in the runtime. The mock then sends the worker's event after the
 swap (`mockConvertedEvent`), named by its workspace or as the owner's
 `ingest` notification for a standalone file, and with parsing on ends the
 parse two seconds later with a done event. The mock policy lists the legacy
-formats under fast parsing as the server's does. Conversion fidelity is
+formats under fast parsing as the server's does. The mock's Retry processing
+converts a legacy file that is failed or `ready` under its legacy name the
+same way, with parsing off (`convertMockLegacyUpload`), and a converted
+dialog fixture stops answering with its broken link and session
+(`isDialogFile`). Conversion fidelity is
 LibreOffice's; what was measured, and on which files, is in the
 [report](../../bench/parsers/reports/2026-11-11-legacy-office-conversion.md).
 

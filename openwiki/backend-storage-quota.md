@@ -1041,9 +1041,10 @@ parse coordinator applies the imported-file rule above to the converted bytes
 carries as `imageMaxBytes`. The pictures stop at the parse job's time limit
 (`CAPY_PARSE_JOB_TIMEOUT`, 1,500 s) less the same 30 s and a further 150 s
 kept for the hand-over; running out of time or failing the header check fails
-the file for good. The step's memory inside the parse coordinator is an open
-item for production
-([report](../bench/parsers/reports/2026-11-11-legacy-office-conversion.md)).
+the file for good. The step runs inside the parse coordinator's memory
+limit, which stays as it is; the measurement is in the
+[report](../bench/parsers/reports/2026-11-11-legacy-office-conversion.md)
+and the limit in [deployment-runbook.md](deployment-runbook.md) §7.2.
 The count of removed pictures stays on the conversion job's payload
 (`removedPictures`) and shows no toast.
 

@@ -2356,14 +2356,21 @@ cgroup's `oom_kill` count rises, the parser writes a `parse_oom` marker for
 that child's document and respawns only that child. Parse children run at
 `oom_score_adj` 1000 and the API at 0, so the kernel picks a parse child first.
 
-Open before a production stack is deployed: by the budget above the
-coordinator has about 110 MiB of its 1,280 MiB to spare with eight jobs, and
-the picture step of a converted legacy Office file runs inside it. For one
-20 MiB deck that step peaked at 158 MiB in a container of its own
+The picture step of a converted legacy Office file runs inside this
+coordinator. By the budget above the coordinator has about 110 MiB of its
+1,280 MiB to spare with eight jobs, and for one 20 MiB deck that step peaked
+at 158 MiB in a container of its own
 ([report](../bench/parsers/reports/2026-11-11-legacy-office-conversion.md)).
-The limit, or how many conversions run their picture step at once, must be
-settled first. The nonprod coordinator (one job at a time, 384 MiB, 117 MiB
-idle) fits that deck.
+The limits stay as they are (Epo 2026-11-11: swap takes the excess, and a
+killed process is restarted). Past 1,280 MiB the container has the 256 MiB
+of swap its memory-plus-swap limit leaves it, whatever swap the host holds.
+Past that the kernel kills a process in the container: the supervisor
+starts a child again within a second (`parse_worker.main`), compose restarts
+the container if the supervisor itself dies (`restart: unless-stopped`), and
+the job is claimed again once its lease expires, under the one-retry rule
+above, converting from the start.
+The nonprod coordinator (one job at a time, 384 MiB, 117 MiB idle) fits that
+deck.
 
 `restart: unless-stopped` recovers PID 1 kills, cgroup OOM kills, a Docker
 daemon restart, and a full VM reboot. Ansible installs

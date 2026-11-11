@@ -703,8 +703,16 @@ Sources: [membership handlers](../server/internal/httpapi/huma_membership.go#L39
   conversion leaves the file `failed` under its uploaded name: the uploaded
   bytes stay stored, charged to their payer and downloadable until the file
   is deleted. The queue never converts it again; Retry processing does, and
-  that is the workspace owner's alone (a standalone file's owner), in either
-  parse mode. Bytes whose conversion hit the parser's hard timeout or an OOM
+  that is the workspace owner's alone (a standalone file's owner). On a
+  legacy name Retry reruns the upload's own pipeline, the conversion and then
+  the file's stored parse mode, whatever mode the request names
+  (`RetryFileProcessing`), so with parsing stored on it takes the credit
+  check and charges its owner as the upload would have. It is also the one
+  Retry taken on a `ready` file: a legacy file stored unconverted. The open
+  file's Convert button is that request, offered to the same people
+  ([frontend/office-files.md](frontend/office-files.md#legacy-office-files)).
+  A hand-in's file is refused (`409 revision_conflict`) and keeps its bytes.
+  Bytes whose conversion hit the parser's hard timeout or an OOM
   kill are refused again on a retry or a new upload, before LibreOffice runs.
   A rename keeps the file's extension, compared under the file's row lock
   (`UpdateFile`, `file_extension_changed`), so it cannot change a legacy
@@ -1386,7 +1394,10 @@ The files go with the assignment (cascade), with the member as they leave the
 class, and list on the Files page once it closes, for the member to
 delete; like a paper's they are read only and out of account chat. They
 are stored as uploaded and never parsed, so a legacy Office file handed in is
-not converted and stays a `.doc`, `.xls` or `.ppt`.
+not converted and stays a `.doc`, `.xls` or `.ppt`: Retry processing refuses
+a hand-in's file (`409 revision_conflict`), which the file viewer's Convert
+button cannot know
+([frontend/office-files.md](frontend/office-files.md#legacy-office-files)).
 
 Sources: [drawing routes](../server/internal/httpapi/drawings.go) and
 [drawing store](../server/internal/store/drawings.go).
