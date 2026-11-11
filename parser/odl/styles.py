@@ -6,6 +6,7 @@ import copy
 
 import pymupdf
 
+from . import page_text
 from .adapter import node_text, nodes
 
 
@@ -27,7 +28,7 @@ def annotate(document: pymupdf.Document, native: dict) -> tuple[dict, int]:
         page_number = cell.get("page number")
         if not isinstance(page_number, int) or not 1 <= page_number <= len(document):
             raise ValueError("table cell has no valid source page")
-        page = document[page_number - 1]
+        page = page_text.page_at(document, page_number - 1)
         # Java boxes assume an ordinary unrotated PDF page.
         if (
             page.rotation
@@ -37,13 +38,16 @@ def annotate(document: pymupdf.Document, native: dict) -> tuple[dict, int]:
         ):
             continue
         if page_number not in page_data:
-            drawings = page.get_drawings()
+            # Few pages paint a cell yellow: only those keep their drawings
+            # (as objects, for the fills below) and words.
             has_yellow = any(
-                color_name(drawing.get("fill") or ()) for drawing in drawings
+                color_name(path.get("fill") or ())
+                for path in page_text.page_drawings(page)
             )
             page_data[page_number] = (
-                drawings,
-                page.get_text("words") if has_yellow else [],
+                (page.get_drawings(), page.get_text("words"))
+                if has_yellow
+                else ([], [])
             )
         drawings, words = page_data[page_number]
         if not words:

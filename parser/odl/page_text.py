@@ -28,6 +28,12 @@ outlives the session.
 The text trace (0.7 GiB for the same book) is never kept: ``trace_facts``
 keeps only what its two readers need, hidden-layer character counts and faint
 rotated runs that may be watermarks.
+
+Drawings are not kept either. ``page_drawings`` reads them and keeps the page's
+long horizontal strokes (``page_rules``): vector figures read every page's
+drawings, and table recovery then needs only those strokes. The session also
+keeps the outline (``outline``) and the last page object it handed out
+(``page_at``), for the stages that look a page up once per block.
 """
 
 from __future__ import annotations
@@ -44,6 +50,8 @@ TEXT_FLAGS = pymupdf.TEXTFLAGS_DICT & ~pymupdf.TEXT_PRESERVE_IMAGES
 # About 35 bytes each with their boxes and spans, so about 200 MiB; the
 # densest book in the corpus would keep about 4M at the 1,400-page cap.
 CHAR_BUDGET = 6_000_000
+# A stroke at least this share of the page width is a rule (geometry.py).
+RULE_WIDTH = 0.35
 # A span's keys between its size and its text, in MuPDF's order.
 STYLE_KEYS = (
     "flags",
@@ -71,6 +79,9 @@ def session(pdf: Path) -> Iterator[None]:
         "words": {},
         "chars": 0,  # kept, against CHAR_BUDGET
         "traces": {},
+        "rules": {},
+        "outlines": {},  # by get_toc's ``simple``
+        "page": None,  # the last (document, number, page) of page_at
     }
     try:
         yield
@@ -301,3 +312,65 @@ def trace_facts(page: pymupdf.Page) -> dict:
     if cached:
         _session["traces"][page.number] = facts
     return facts
+
+
+def page_at(document: pymupdf.Document, number: int) -> pymupdf.Page:
+    """``document[number]``; inside the session the page handed out last is
+    reused, so a stage that asks for its block's page once per block loads
+    each page once."""
+    if _session is None or document.name != _session["name"]:
+        return document[number]
+    last = _session["page"]
+    if last is None or last[0] is not document or last[1] != number:
+        last = _session["page"] = (document, number, document[number])
+    return last[2]
+
+
+def outline(document: pymupdf.Document, simple: bool = True) -> list[list]:
+    """``document.get_toc(simple)``, read once per parse. Not to be edited."""
+    if _session is None or document.name != _session["name"]:
+        return document.get_toc(simple)
+    outlines = _session["outlines"]
+    if simple not in outlines:
+        outlines[simple] = document.get_toc(simple)
+    return outlines[simple]
+
+
+def page_drawings(page: pymupdf.Page) -> list[dict]:
+    """``page.get_cdrawings()``; inside the session the page's rules are kept
+    from it."""
+    paths = page.get_cdrawings()
+    if _session is not None and page.parent.name == _session["name"]:
+        _session["rules"][page.number] = _rules(paths, page.rect.width * RULE_WIDTH)
+    return paths
+
+
+def page_rules(page: pymupdf.Page) -> list[list[float]]:
+    """The page's long horizontal strokes as [x0, y, x1]: lines within a point
+    of level and rectangles at most two points high, at least ``RULE_WIDTH``
+    of the page wide. Read from the drawings once per page inside the session."""
+    if _session is None or page.parent.name != _session["name"]:
+        return _rules(page.get_cdrawings(), page.rect.width * RULE_WIDTH)
+    if page.number not in _session["rules"]:
+        page_drawings(page)
+    return [rule.copy() for rule in _session["rules"][page.number]]
+
+
+def _rules(paths: list[dict], wide: float) -> list[list[float]]:
+    rules = []
+    for path in paths:
+        for item in path["items"]:
+            if item[0] == "l":
+                (ax, ay), (bx, by) = item[1], item[2]
+                if abs(ay - by) <= 1 and abs(ax - bx) >= wide:
+                    rules.append([min(ax, bx), (ay + by) / 2, max(ax, bx)])
+            elif item[0] == "re":
+                # A rectangle as pymupdf.Rect normalizes and measures it.
+                x0, y0, x1, y1 = item[1]
+                if x1 < x0:
+                    x0, x1 = x1, x0
+                if y1 < y0:
+                    y0, y1 = y1, y0
+                if max(0, y1 - y0) <= 2 and max(0, x1 - x0) >= wide:
+                    rules.append([x0, (y0 + y1) / 2, x1])
+    return rules

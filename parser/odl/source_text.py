@@ -64,13 +64,30 @@ def c_center(box) -> tuple[float, float] | None:
     return ctypes.c_float(x).value, ctypes.c_float(y).value
 
 
+def float_slack(*values: float) -> float:
+    """How far apart two of ``values`` must be to compare the same as C floats
+    as they do as doubles: a C float keeps about seven digits, this allows
+    five. At least 1e30 for an infinite value or one near the float range,
+    where ``center_inside`` leaves the answer to the C-float test; a NaN fails
+    every comparison there and reaches that test too."""
+    return 1e-3 + 1e-5 * max(map(abs, values))
+
+
 def center_inside(box, area: pymupdf.Rect) -> bool:
     """``area.contains(Point(centre of box))``: MuPDF's point-in-rect test on
     single-precision floats, without a binding call per glyph (the column
-    repair tests millions)."""
-    x = c_float((box[0] + box[2]) / 2, TypeError)
-    y = c_float((box[1] + box[3]) / 2, TypeError)
-    x0, y0, x1, y1 = (c_float(v, OverflowError) for v in area)
+    repair tests millions). Only a centre within rounding distance of an edge
+    needs the conversion."""
+    x, y = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+    x0, y0, x1, y1 = area.x0, area.y0, area.x1, area.y1
+    slack = float_slack(x, y, x0, y0, x1, y1)
+    if slack < 1e30:
+        if x < x0 - slack or x > x1 + slack or y < y0 - slack or y > y1 + slack:
+            return False
+        if x0 + slack < x < x1 - slack and y0 + slack < y < y1 - slack:
+            return True
+    x, y = c_float(x, TypeError), c_float(y, TypeError)
+    x0, y0, x1, y1 = (c_float(v, OverflowError) for v in (x0, y0, x1, y1))
     return x0 <= x < x1 and y0 <= y < y1
 
 
