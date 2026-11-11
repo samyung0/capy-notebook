@@ -8,7 +8,8 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/icon-catalog';
 
-const ROW = cn(
+/** A workspace to pick: its icon, then its name. */
+export const WORKSPACE_ROW = cn(
   BASE_BUTTON_STYLE,
   'flex items-center gap-3 px-1.5 py-1.5 text-left hover:bg-surface-hover-bg disabled:pointer-events-none disabled:opacity-50'
 );
@@ -47,7 +48,7 @@ export function AddFileDestinationDialog({
       )}
       <div className="-mx-1.5 flex flex-col gap-1">
         <button
-          className={ROW}
+          className={WORKSPACE_ROW}
           disabled={blocked}
           onClick={() => onPick(null)}
           type="button"
@@ -64,7 +65,7 @@ export function AddFileDestinationDialog({
         ) : (
           editable.map((workspace) => (
             <button
-              className={ROW}
+              className={WORKSPACE_ROW}
               disabled={blocked}
               key={workspace.id}
               onClick={() => onPick(workspace.id)}

@@ -3,7 +3,12 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import { type ReactNode, useState } from 'react';
 import { qk } from '@/api/client';
 import { useAssignments, useSetAssignmentDone } from '@/api/hooks';
-import type { Assignment, FileKind, MaterialRefType } from '@/api/types';
+import type {
+  Assignment,
+  FileKind,
+  MaterialRefType,
+  Workspace,
+} from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { FileIcon } from '@/components/ui/FileIcon';
@@ -11,8 +16,10 @@ import { Icon } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
+import { assignmentPage } from './assignmentPage';
 import { dayLabel } from './assignmentText';
 import { NewAssignmentDialog } from './LazyNewAssignmentDialog';
+import { OwnTaskDetails } from './TodoDialog';
 import { isPlainTask, isTicked, todoRows } from './todoRows';
 
 /** A chip naming a quiz: the assignment's quill, tinted (Epo 2026-11-03);
@@ -59,24 +66,31 @@ function FileChip({ file }: { file: Assignment['files'][number] }) {
 }
 
 /** The Dashboard's To do (boards H1, H2, H2b; Epo 2026-11-03). A member's holds
- * what is assigned to them: quizzes, and the rest with a tick. Staff's holds
- * what is for them: answers to approve and anything they assigned themselves,
- * with New assignment at its top right. Done rows leave until Show done brings
- * them back, crossed out. Empty, the section doesn't show. */
+ * what is assigned to them and the tasks they set themself: quizzes, and the
+ * rest with a tick. Staff's holds what is for them: answers to approve and
+ * anything they assigned themselves. At its top right a class's staff have New
+ * assignment and everyone else New task (Epo 2026-11-10: only staff give out
+ * assignments), which is all a personal workspace has. Done rows leave until
+ * Show done brings them back, crossed out. With nothing in it the section
+ * stays and says the To do page's Nothing to do (Epo 2026-11-10: nothing is
+ * hidden that he did not ask to hide); a visitor who is no member has no button. */
 export function TodoSection({
   manages,
-  workspaceId,
+  workspace,
 }: {
   manages: boolean;
-  workspaceId: string;
+  workspace: Pick<Workspace, 'iconId' | 'id' | 'name' | 'role'>;
 }) {
+  const workspaceId = workspace.id;
   const { data } = useAssignments(workspaceId, { errorBoundary: false });
   const [showDone, setShowDone] = useState(false);
   const [creating, setCreating] = useState(false);
-  const { done, open, toApprove } = todoRows(data?.items ?? [], manages);
+  const [openTask, setOpenTask] = useState<string | null>(null);
+  const task = data?.items.find((a) => a.id === openTask);
+  const { done, open, toApprove } = todoRows(data?.items ?? []);
   const shown = showDone ? [...open, ...done] : open;
-  if (toApprove.length === 0 && shown.length === 0 && done.length === 0)
-    return null;
+  // A link or public visitor is no member: nothing is theirs to add.
+  const adds = manages || !!workspace.role;
   return (
     <section className="flex flex-col">
       <div className="mb-1.5 flex min-h-7 items-center justify-between gap-2">
@@ -93,7 +107,7 @@ export function TodoSection({
               {showDone ? m.assignment_hide_done() : m.assignment_show_done()}
             </Button>
           )}
-          {manages && (
+          {adds && (
             <Button
               className="px-2.5"
               iconLeft="plus"
@@ -101,22 +115,42 @@ export function TodoSection({
               size="sm"
               variant="outline"
             >
-              {m.assignment_new()}
+              {manages ? m.assignment_new() : m.todo_new_task()}
             </Button>
           )}
         </div>
       </div>
-      <TodoRows
-        manages={manages}
-        shown={shown}
-        toApprove={toApprove}
-        workspaceId={workspaceId}
-      />
+      {toApprove.length > 0 || shown.length > 0 ? (
+        <TodoRows
+          manages={manages}
+          onOpenTask={setOpenTask}
+          shown={shown}
+          toApprove={toApprove}
+          workspaceId={workspaceId}
+        />
+      ) : (
+        // The To do page's empty line, once the list has loaded.
+        data && (
+          <p className="t-subtitle py-20 text-center font-normal text-fg-muted">
+            {m.todo_empty()}
+          </p>
+        )
+      )}
       {creating && (
         <NewAssignmentDialog
           onClose={() => setCreating(false)}
           onDone={() => setCreating(false)}
+          // Only a class's staff give out assignments (Epo 2026-11-10).
+          own={!manages}
+          title={manages ? undefined : m.todo_new_task()}
           workspaceId={workspaceId}
+        />
+      )}
+      {task && (
+        <OwnTaskDetails
+          onClose={() => setOpenTask(null)}
+          task={task}
+          workspace={workspace}
         />
       )}
     </section>
@@ -133,31 +167,32 @@ export function useOpenAssignment() {
     // (Epo 2026-11-08) while its page says it closed.
     if (a.noLate && a.dueAt && Date.parse(a.dueAt) <= Date.now())
       void qc.invalidateQueries({ queryKey: qk.todo });
-    return navigate({
-      params: { workspaceId: a.workspaceId },
-      search: {
-        assignment: a.id,
+    // Whoever runs it too (a task's maker does) opens the page of the one
+    // it is given to, not its report.
+    return navigate(
+      assignmentPage(a, {
         ...(a.mine?.countedAttemptId && a.kind === 'marked'
           ? { attempt: a.mine.countedAttemptId }
           : {}),
-        ...(manages ? { own: true as const } : {}),
-        study: 'assignments' as const,
-      },
-      to: '/workspaces/$workspaceId',
-    });
+        ...(manages || a.own ? { own: true as const } : {}),
+      })
+    );
   };
 }
 
 /** The Dashboard's To do rows. A row is its own button, with nothing else to
  * press but a tick (Epo 2026-11-05); an assignment's page starts or continues
- * it. Open work past its due date says Overdue. */
+ * it, and a task its viewer set themself opens its details (`onOpenTask`). Open
+ * work past its due date says Overdue. */
 export function TodoRows({
   manages,
+  onOpenTask,
   shown,
   toApprove,
   workspaceId,
 }: {
   manages: boolean;
+  onOpenTask: (id: string) => void;
   shown: Assignment[];
   toApprove: Assignment[];
   workspaceId: string;
@@ -212,7 +247,9 @@ export function TodoRows({
                 'flex min-h-10 min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 px-1.5 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset',
                 crossed && 'text-fg-muted line-through'
               )}
-              onClick={() => void openPage(a, manages)}
+              onClick={() =>
+                a.own ? onOpenTask(a.id) : void openPage(a, manages)
+              }
               type="button"
             >
               {a.kind === 'marked' ? (

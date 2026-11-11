@@ -20,7 +20,7 @@ var ErrHandInClosed = errors.New("this assignment no longer takes your files")
 // lockHandInTx takes the assignment's workspace first, as submitting does, and
 // returns it with whether the assignment takes files.
 func lockHandInTx(ctx context.Context, tx pgx.Tx, assignmentID string) (wsID string, uploads bool, err error) {
-	err = tx.QueryRow(ctx, `SELECT workspace_id, kind='unmarked' AND allow_uploads FROM assignments WHERE id=$1`, assignmentID).
+	err = tx.QueryRow(ctx, `SELECT COALESCE(workspace_id, ''), kind='unmarked' AND allow_uploads FROM assignments WHERE id=$1`, assignmentID).
 		Scan(&wsID, &uploads)
 	if isNoRows(err) {
 		return "", false, ErrNotFound
@@ -28,6 +28,7 @@ func lockHandInTx(ctx context.Context, tx pgx.Tx, assignmentID string) (wsID str
 	if err != nil {
 		return "", false, err
 	}
+	// A task with no workspace has none to hold.
 	return wsID, uploads, lockWorkspaceKeyShareTx(ctx, tx, wsID)
 }
 
@@ -39,19 +40,19 @@ func (s *Store) openHandInTx(ctx context.Context, tx pgx.Tx, assignmentID, userI
 		"hand-in:"+assignmentID+":"+userID); err != nil {
 		return err
 	}
-	var wsID string
+	var row taskRow
 	var draft, uploads, closed, handedIn bool
-	err := tx.QueryRow(ctx, `SELECT workspace_id, draft, kind='unmarked' AND allow_uploads,
+	err := tx.QueryRow(ctx, `SELECT COALESCE(workspace_id, ''), own, created_by, draft, kind='unmarked' AND allow_uploads,
 			closed_at IS NOT NULL OR (no_late AND due_at <= now()),
 			EXISTS (SELECT 1 FROM assignment_done d WHERE d.assignment_id=a.id AND d.user_id=$2)
-		FROM assignments a WHERE id=$1`, assignmentID, userID).Scan(&wsID, &draft, &uploads, &closed, &handedIn)
+		FROM assignments a WHERE id=$1`, assignmentID, userID).Scan(&row.wsID, &row.own, &row.maker, &draft, &uploads, &closed, &handedIn)
 	if isNoRows(err) {
 		return ErrNotFound
 	}
 	if err != nil {
 		return err
 	}
-	if _, err := s.assignmentStaff(ctx, tx, userID, wsID); err != nil {
+	if _, err := s.staffOf(ctx, tx, userID, row); err != nil {
 		return err
 	}
 	assigned, err := assignedTx(ctx, tx, assignmentID, userID)
@@ -183,12 +184,13 @@ func handInFiles(ctx context.Context, q rowsQueryer, assignmentIDs, userIDs []st
 // HandInFileBlob is a hand-in file's stored object for its member, or for
 // staff of the class once it is handed in; anyone else gets ErrNotFound.
 func (s *Store) HandInFileBlob(ctx context.Context, userID, assignmentID, fileID string) (blobPath, kind string, err error) {
-	var owner, wsID string
+	var owner string
+	var row taskRow
 	var handedIn bool
-	err = s.pool.QueryRow(ctx, `SELECT f.user_id, a.workspace_id, COALESCE(f.blob_path, ''), f.kind,
+	err = s.pool.QueryRow(ctx, `SELECT f.user_id, COALESCE(a.workspace_id, ''), a.own, a.created_by, COALESCE(f.blob_path, ''), f.kind,
 			EXISTS (SELECT 1 FROM assignment_done d WHERE d.assignment_id=a.id AND d.user_id=f.user_id)
 		FROM files f JOIN assignments a ON a.id=f.hand_in_assignment_id
-		WHERE f.id=$1 AND f.hand_in_assignment_id=$2`, fileID, assignmentID).Scan(&owner, &wsID, &blobPath, &kind, &handedIn)
+		WHERE f.id=$1 AND f.hand_in_assignment_id=$2`, fileID, assignmentID).Scan(&owner, &row.wsID, &row.own, &row.maker, &blobPath, &kind, &handedIn)
 	if isNoRows(err) {
 		return "", "", ErrNotFound
 	}
@@ -198,7 +200,7 @@ func (s *Store) HandInFileBlob(ctx context.Context, userID, assignmentID, fileID
 	if owner == userID {
 		return blobPath, kind, nil
 	}
-	staff, err := s.assignmentStaff(ctx, s.pool, userID, wsID)
+	staff, err := s.staffOf(ctx, s.pool, userID, row)
 	if err != nil || !staff || !handedIn {
 		return "", "", ErrNotFound
 	}

@@ -125,13 +125,21 @@ describe('Make a quiz', () => {
     const selected = new Set(['a:3', 'a:1', 's:2', 'd:1']);
     const drawn = new Map([['d:1', 'jpeg']]);
     expect(
-      extractionRequest('Paper', ['a'], ['s', 'd', 'notes'], selected, drawn)
+      extractionRequest(
+        'Paper',
+        ['a'],
+        ['s', 'd', 'notes'],
+        selected,
+        false,
+        drawn
+      )
     ).toEqual({
       answers: [
         { fileId: 's', pages: [2] },
         { fileId: 'd', images: ['jpeg'], pages: [1] },
         { fileId: 'notes', pages: [] },
       ],
+      hidden: false,
       paper: [{ fileId: 'a', pages: [1, 3] }],
       title: 'Paper',
     });

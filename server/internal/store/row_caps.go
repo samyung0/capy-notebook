@@ -27,6 +27,10 @@ const (
 	// OpenAssignmentsPerClass counts the published ones that have not closed,
 	// which each member's To do reads across their classes in one request.
 	OpenAssignmentsPerClass = 100
+	// OwnTasksPerMember counts the tasks one member set themself in one
+	// workspace, done or not, apart from the class's own caps: their To do
+	// reads them in the same request.
+	OwnTasksPerMember = 100
 )
 
 var (
@@ -36,6 +40,7 @@ var (
 	// Deleting one makes room under both; closing one, under the open cap.
 	ErrTooManyAssignments     = errors.New("this class holds the most assignments it can")
 	ErrTooManyOpenAssignments = errors.New("this class has the most open assignments it can")
+	ErrTooManyOwnTasks        = errors.New("this workspace holds the most of your tasks it can")
 )
 
 // assertCommentRoomTx refuses a new comment on a note at CommentsPerNote. The
@@ -95,7 +100,7 @@ func assertAssignmentRoomTx(ctx context.Context, tx pgx.Tx, wsID string, adding,
 	var all, open int
 	if err := tx.QueryRow(ctx, `SELECT count(*),
 			count(*) FILTER (WHERE NOT draft AND closed_at IS NULL AND NOT (no_late AND due_at IS NOT NULL AND due_at <= $2))
-		FROM assignments WHERE workspace_id=$1`, wsID, now).Scan(&all, &open); err != nil {
+		FROM assignments WHERE workspace_id=$1 AND NOT own`, wsID, now).Scan(&all, &open); err != nil {
 		return err
 	}
 	if adding && all >= AssignmentsPerClass {
@@ -103,6 +108,24 @@ func assertAssignmentRoomTx(ctx context.Context, tx pgx.Tx, wsID string, adding,
 	}
 	if opening && open >= OpenAssignmentsPerClass {
 		return ErrTooManyOpenAssignments
+	}
+	return nil
+}
+
+// assertOwnTaskRoomTx refuses a member one more task of their own in a
+// workspace, or with none (wsID empty), at OwnTasksPerMember; deleting one
+// makes room. The lock serializes the count per member and workspace.
+func assertOwnTaskRoomTx(ctx context.Context, tx pgx.Tx, wsID, userID string) error {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('own-tasks:' || $1 || ':' || $2))`, wsID, userID); err != nil {
+		return err
+	}
+	var held int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM assignments WHERE workspace_id IS NOT DISTINCT FROM NULLIF($1::text, '') AND own AND created_by=$2`,
+		wsID, userID).Scan(&held); err != nil {
+		return err
+	}
+	if held >= OwnTasksPerMember {
+		return ErrTooManyOwnTasks
 	}
 	return nil
 }

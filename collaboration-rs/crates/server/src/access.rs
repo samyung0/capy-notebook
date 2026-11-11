@@ -221,19 +221,28 @@ pub async fn live_role<C: GenericClient>(
     // material read-only (Go's canEditMaterial). `hidden` also holds a quiz under
     // an assignment that went to this viewer, who takes its frozen copy instead:
     // an open one, or a closed marked one still holding its keys, its grades
-    // Manual and unreleased or its answers Do not show (Go's quizAssignedToSQL
-    // and assignmentKeysHeldSQL, finding 5).
+    // Manual and unreleased or its answers Do not show and not yet turned to
+    // practice (Go's quizAssignedToSQL and assignmentKeysHeldSQL, finding 5). A
+    // task its maker set themself (`own`) hides nothing. While a class's
+    // assignment on the quiz is open, or closed with its answers still held, it
+    // is also kept from everyone who does not edit the workspace, whether it
+    // went to them or not (Go's materialHiddenSQL and quizAssignmentHoldsSQL).
     let sql = format!(
         "SELECT m.owner_user_id, m.privacy, m.workspace_id,
            m.hidden OR (m.kind='quiz' AND EXISTS (SELECT 1 FROM assignments a
              JOIN workspaces aw ON aw.id=a.workspace_id AND aw.kind='class'
              JOIN workspace_members am ON am.workspace_id=a.workspace_id AND am.user_id=$2 AND am.role='viewer'
-             WHERE a.source_quiz_id=m.id AND NOT a.draft
+             WHERE a.source_quiz_id=m.id AND NOT a.draft AND NOT a.own
                AND ((a.closed_at IS NULL AND NOT (a.no_late AND a.due_at <= now()))
                  OR (a.kind='marked' AND ((a.grades_shown='manual' AND a.grades_released_at IS NULL)
-                   OR a.answers_shown='never')))
+                   OR (a.answers_shown='never' AND a.practice_at IS NULL))))
                AND (a.assign_all OR EXISTS (SELECT 1 FROM assignment_assignees x
-                 WHERE x.assignment_id=a.id AND x.user_id=$2)))) AS hidden,
+                 WHERE x.assignment_id=a.id AND x.user_id=$2))))
+             OR (m.kind='quiz' AND EXISTS (SELECT 1 FROM assignments a
+               JOIN workspaces aw ON aw.id=a.workspace_id AND aw.kind='class'
+               WHERE a.source_quiz_id=m.id AND NOT a.own AND NOT a.draft
+                 AND ((a.closed_at IS NULL AND NOT (a.no_late AND a.due_at <= now()))
+                   OR (a.kind='marked' AND a.answers_shown='never' AND a.practice_at IS NULL)))) AS hidden,
            owner.id AS owner_id,
            (owner.deleted_at IS NOT NULL OR owner.deletion_requested_at IS NOT NULL) AS owner_gone,
            (owner.suspended_at IS NOT NULL) AS owner_suspended,

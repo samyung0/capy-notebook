@@ -775,6 +775,11 @@ func (s *Store) deleteWorkspaceWithResultTx(
 		return nil, err
 	}
 	rows.Close()
+	// The tasks its members set themselves are theirs, not the workspace's:
+	// they stay, in no workspace, as when a member leaves.
+	if _, err := tx.Exec(ctx, `UPDATE assignments SET workspace_id=NULL WHERE workspace_id=$1 AND own`, id); err != nil {
+		return nil, err
+	}
 	if _, err := tx.Exec(ctx, `DELETE FROM workspaces WHERE id=$1`, id); err != nil {
 		return nil, err
 	}
@@ -1121,7 +1126,7 @@ func (s *Store) VisibleSourceItems(ctx context.Context, wsID, viewer string) ([]
 			SELECT 1 FROM rag_material_contents mc JOIN rag_chunks c ON c.content_id=mc.content_id
 			WHERE mc.material_id=m.id), 1, m.position, m.created_at
 		FROM materials m WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
-			AND workspace_item_visible(m.hidden, m.workspace_id, $2)
+			AND workspace_item_visible(`+materialHiddenSQL+`, m.workspace_id, $2)
 	) items ORDER BY src, position, at`, wsID, viewer)
 	if err != nil {
 		return nil, err
@@ -2002,7 +2007,7 @@ func (s *Store) ListMaterialRefs(ctx context.Context, userID, wsID string) ([]Ma
 	rows, err := s.pool.Query(ctx, `SELECT m.id, m.kind, m.title, m.topic_id, m.position, m.created_at, m.size_bytes, m.node_count, m.max_depth,
 			m.provenance, m.hidden, `+materialAssignedCols("$2")+`
 		FROM materials m WHERE m.workspace_id=$1 AND m.parent_material_id IS NULL AND m.trashed_at IS NULL
-			AND (workspace_item_visible(m.hidden, m.workspace_id, $2) OR `+quizAssignedToSQL("m.id", "$2")+` IS NOT NULL)
+			AND (workspace_item_visible(`+materialHiddenSQL+`, m.workspace_id, $2) OR `+quizAssignedToSQL("m.id", "$2")+` IS NOT NULL)
 		ORDER BY m.position, m.created_at DESC`, wsID, userID)
 	if err != nil {
 		return nil, err

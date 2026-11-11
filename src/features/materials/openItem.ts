@@ -37,13 +37,12 @@ export type NoteCitationTarget = OfficeCitation & { blockIds?: string[] };
 
 /** The panel beside the rail, or `none` for no panel. `canvas` is the member's
  * board, which has no panel and fills the centre at every width. */
-export type WorkspacePanel = 'files' | 'agent' | 'study' | 'canvas' | 'none';
+export type WorkspacePanel = 'files' | 'agent' | 'canvas' | 'none';
 
 export function isWorkspacePanel(value: unknown): value is WorkspacePanel {
   return (
     value === 'files' ||
     value === 'agent' ||
-    value === 'study' ||
     value === 'canvas' ||
     value === 'none'
   );
@@ -64,7 +63,8 @@ export type WorkspaceOpenSearch = {
   /** Which panel shows, in the URL so the back gesture steps through them (Epo
    * 2026-11-05). Below the panels, `agent` is the chat page over the viewer. */
   panel?: WorkspacePanel;
-  /** A Study page in the centre while nothing is open. */
+  /** One of the pages that came out of Study (To do or Assignments,
+   * Practice, Members, Study's own summary) in the centre while nothing is open. */
   study?: 'practice' | 'summary' | 'assignments' | 'members';
   /** Assignments' open assignment, and a try at it: running, or results. */
   assignment?: string;
@@ -79,6 +79,8 @@ export type WorkspaceOpenSearch = {
   member?: string;
   /** Members' By topic view (board G4), kept while a profile is open. */
   show?: 'topics';
+  /** A class's Members on its Manage tab: sharing, invitations and roles. */
+  manage?: true;
   /** Assignments' New assignment, opened with this quiz (board A1). */
   newFromQuiz?: string;
   /** Practice's topic session to start: its group, topic and, from a
@@ -92,7 +94,7 @@ export type WorkspaceOpenSearch = {
   make?: 'files' | 'pages' | 'run';
   /** The page Make a quiz opened from, which cancelling returns to; the Dashboard
    * when there's none. */
-  makeFrom?: 'assignments';
+  makeFrom?: 'assignments' | 'practice';
   /** The file whose pages it shows. */
   quizFile?: string;
   /** The question paper's files and the mark scheme or answer files, comma
@@ -172,6 +174,7 @@ export function parseWorkspaceOpenSearch(
     group: undefined,
     make: undefined,
     makeFrom: undefined,
+    manage: undefined,
     member: undefined,
     newFromQuiz: undefined,
     own: undefined,
@@ -236,7 +239,9 @@ function parseMakeQuiz(search: Record<string, unknown>): WorkspaceOpenSearch {
   const answers = text(search.answers);
   const run = text(search.run);
   const makeFrom =
-    search.makeFrom === 'assignments' ? ('assignments' as const) : undefined;
+    search.makeFrom === 'assignments' || search.makeFrom === 'practice'
+      ? search.makeFrom
+      : undefined;
   if (search.make === 'files')
     return { answers, make: 'files', makeFrom, paper };
   if (search.make === 'pages' && paper)
@@ -289,6 +294,10 @@ function parseAssignments(
   };
 }
 
+/** To do's page of a task with no workspace (`/todo/task`): the same keys. */
+export const parseTaskSearch = (search: Record<string, unknown>) =>
+  parseAssignments(search);
+
 /** Members, its By topic view, or a member's profile. */
 function parseMembers(search: Record<string, unknown>): WorkspaceOpenSearch {
   const member = text(search.member);
@@ -296,6 +305,9 @@ function parseMembers(search: Record<string, unknown>): WorkspaceOpenSearch {
     study: 'members',
     ...(member ? { member } : {}),
     ...(search.show === 'topics' ? { show: 'topics' as const } : {}),
+    ...(search.manage === true || search.manage === 'true'
+      ? { manage: true as const }
+      : {}),
   };
 }
 

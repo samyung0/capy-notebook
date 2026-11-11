@@ -24,13 +24,18 @@ export async function openWorkspaceSettings(page: Page) {
     .click();
 }
 
-/** Sharing controls moved into the workspace settings dialog's Sharing tab. */
-export async function openWorkspaceSharing(page: Page) {
-  await openWorkspaceSettings(page);
-  const dialog = page.getByRole('dialog');
-  await dialog
-    .getByRole('tab', { exact: true, name: m.workspace_sharing() })
+/** Sharing and invitations are on the workspace's Members page, from the rail
+ * at lg. A class's owner and teaching assistants find them on its Manage tab
+ * (`manage`). */
+export async function openWorkspaceSharing(page: Page, manage = false) {
+  await page
+    .getByRole('navigation', { name: m.workspace_rail_label() })
+    .getByRole('button', { exact: true, name: m.study_panel_members() })
     .click();
+  if (manage)
+    await page
+      .getByRole('tab', { exact: true, name: m.members_tab_manage() })
+      .click();
 }
 
 /** Signed /w/ summary path, using the secret playwright.config.ts generated. */

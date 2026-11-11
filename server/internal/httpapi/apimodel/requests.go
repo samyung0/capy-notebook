@@ -305,6 +305,8 @@ type CreateExtractionReq struct {
 	Title   MaterialTitle    `json:"title" minLength:"1"`
 	Paper   []ExtractionFile `json:"paper" minItems:"1" nullable:"false"`
 	Answers []ExtractionFile `json:"answers,omitempty" nullable:"false"`
+	// Hidden starts the quiz hidden from members: the dialog's switch (Epo 2026-11-11).
+	Hidden bool `json:"hidden"`
 }
 
 // ConfirmExtractionReq says how many of the questions a paused run found to make, from

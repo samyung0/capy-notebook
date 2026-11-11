@@ -125,6 +125,8 @@ export function extractionRequest(
   paperFileIds: readonly string[],
   answerFileIds: readonly string[],
   selected: ReadonlySet<string>,
+  /** The dialog's switch: the quiz starts hidden from members. */
+  hidden: boolean,
   /** Each browser-drawn page's base64 JPEG, by its page key. */
   drawn: ReadonlyMap<string, string> = new Map()
 ): CreateExtractionReq {
@@ -132,6 +134,7 @@ export function extractionRequest(
     answers: answerFileIds.map((fileId) =>
       extractionFile(fileId, selected, drawn)
     ),
+    hidden,
     paper: paperFileIds.map((fileId) =>
       extractionFile(fileId, selected, drawn)
     ),

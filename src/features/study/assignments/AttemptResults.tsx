@@ -151,6 +151,8 @@ function MarkedResults({
   attempt: AssignmentAttempt;
 }) {
   const staff = !!assignment.manage;
+  // A task's maker runs it and takes it: the attempt here is their own.
+  const taker = !staff || !!assignment.own;
   const { dialog, start, starting } = useAssignmentStart(
     assignment.workspaceId
   );
@@ -170,7 +172,7 @@ function MarkedResults({
   const when = attempt.submittedAt ? dayLabel(attempt.submittedAt) : '';
   const practice = assignment.practiceQuizId;
   const left =
-    !staff &&
+    taker &&
     !assignment.closedAt &&
     assignment.mine &&
     assignment.attempts - assignment.mine.attemptsUsed > 0;
@@ -250,7 +252,7 @@ function MarkedResults({
                 {m.assignment_attempt_again()}
               </Button>
             )}
-            {practice && !staff && (
+            {practice && taker && (
               <Button asChild iconLeft="ai" variant="outline">
                 <Link
                   params={{ quizId: practice }}

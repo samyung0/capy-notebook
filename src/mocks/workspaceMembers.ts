@@ -79,4 +79,20 @@ export const mockWorkspaceMembers: WorkspaceMember[] = [
     userId: 'u_mock_hana',
     workspaceId: 'ws_bio',
   },
+  // A personal workspace's people, for its Members page (no marks).
+  {
+    createdAt: new Date().toISOString(),
+    name: 'Noor Haddad',
+    role: 'editor',
+    userId: 'u_mock_noor',
+    workspaceId: 'ws_calc',
+  },
+  {
+    avatarUrl: '/icons/avataaars-09.svg',
+    createdAt: new Date().toISOString(),
+    name: 'Leo Park',
+    role: 'viewer',
+    userId: 'u_mock_leo',
+    workspaceId: 'ws_calc',
+  },
 ];

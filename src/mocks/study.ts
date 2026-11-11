@@ -21,7 +21,7 @@ import {
 import type { Question } from '@/features/questions/types';
 import type { Answers } from '@/features/quizzes/grade';
 import { gradeQuestions, learnerView } from './answerKeys';
-import { assignmentClosedAt, quizAssignmentFields } from './assignments';
+import { assignmentClosedAt, quizHeldFromMembers } from './assignments';
 import * as db from './db';
 
 /* Study progress and review, per signed-in user (the mock has one). A
@@ -974,9 +974,9 @@ export function practiceBody(wsId: string, staff: boolean): Practice {
     .slice(0, 3);
   const TRIED = [5, 2, 6, 0];
   const AVERAGE = [0.74, 0, 0.81, 0];
-  // A quiz assigned to the member is not their practice until it closes.
+  // A quiz under an open assignment is no member's practice until it closes.
   const practised = groupQuizzes(wsId, 'workspace').filter(
-    (mt) => staff || !quizAssignmentFields(mt.id, 'member').assignmentId
+    (mt) => staff || !quizHeldFromMembers(mt.id)
   );
   const quizzes = practised.map((mt, i) => {
     const best = db.attempts

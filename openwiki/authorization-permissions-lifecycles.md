@@ -98,8 +98,10 @@ at two levels:
   editor grant counts as an editor. `canClone`, Explore's `canClone`, a file row's
   `rights.clone` and `assertCloneSourceTx` agree with it. A personal workspace
   doesn't change, viewers included. A refusal answers the usual non-disclosing 404.
-- **Assignment.** A quiz under a published assignment that hasn't closed is cloned
-  only by the workspace's owner and teaching assistants (`assertAssignedQuizCloneTx`),
+- **Assignment.** A quiz under a published assignment that hasn't closed, or that
+  closed under Show answers Do not show and was not turned to practice, is cloned
+  only by the workspace's owner and teaching assistants (`assertAssignedQuizCloneTx`,
+  `quizAssignmentHoldsSQL`),
   which covers link and public editors too. Their workspace clone leaves that quiz
   out and counts it in the toast, and Explore's row and their item menu drop Clone.
   After closing the normal rules are back. On a quiz's own page Clone still shows
@@ -114,8 +116,10 @@ results", class only) and who pays for AI marking (class: the owner for
 assignments, a member for their own practice; personal: each person).
 
 Assignments ([study-progress.md](study-progress.md#assignments)) are a class's
-alone, and the store checks each of these itself (`assignmentStaff`,
-`lockAssignmentStaffTx`):
+alone, but for the tasks a member sets themself in any workspace (after the
+table), and the store checks each of these itself (`assignmentStaff`, `taskStaff`,
+`lockAssignmentStaffTx`; `staffOf` and `lockStaffOfTx` read the assignment's row
+first, since a task's only staff is its maker):
 
 | Action | Owner | Editor member | Link/public editor | Viewer member it went to | Other viewer member |
 | --- | --- | --- | --- | --- | --- |
@@ -128,8 +132,25 @@ alone, and the store checks each of these itself (`assignmentStaff`,
 | A running attempt | Only their own | Only their own | No | Their own | No |
 | Study → Members and a member's profile: every viewer member's marks, topic labels, practice counts and full storage | Yes | Yes | No | No | No |
 
-Everything else answers 404, as does every route in a personal workspace, where
-they are hidden and not deleted; Members' store refuses a class's own viewer
+Everything else answers 404. A personal workspace hides a class's assignments
+without deleting them. Apart from assignments, any member of a workspace sets
+themself tasks (Epo 2026-11-10, New task: `assignments.own`, naming its maker
+alone and never a draft): a class's viewer members and everyone in a personal
+workspace, while a class's owner and editor members make assignments instead.
+Such a task takes every option an assignment does but who it goes to (Epo
+2026-11-11), and its maker is both its staff and the one it went to: they alone
+read, take, tick, mark, close, republish and delete it and read its report and
+its frozen images, on the same routes, while a class's staff and the workspace's
+owner get 404 on every one and see none of them. In a workspace it needs its
+maker still a member; when they leave or are removed, or the workspace is
+deleted, their tasks there move to no workspace. Such a task need not be in a workspace (Epo 2026-11-11, `POST
+/api/todo/tasks`), and its quiz and files are any its maker can open, from any
+workspace or none (`checkAssignmentQuizTx`, `ownTaskFileSQL`,
+`ownTaskMaterialSQL`): never one hidden from them (a class's quiz under an open
+assignment is held from every viewer member, and one it went to stays refused
+past the close while its keys are held), and a file they later lose access to leaves
+the task, so a task shows its maker nothing they could not open themself;
+in a personal workspace every otherassignment route answers 404; Members' store refuses a class's own viewer
 members with `ErrForbidden` (`membersStaff`), which the API answers as 404 like
 the rest (`TestMembersRoutesAuthorize`). Members shows staff a member's practice
 as counts only, never answers; its Still missing lists prompts from the class's
@@ -448,6 +469,13 @@ unchanged.
   annotations in `sourceActorsAllowed`), the collaboration server in
   `live_access`, and the internal document reads the pipeline uses through
   the same two.
+- **Held by an assignment.** A class's quiz under an open assignment is read as
+  hidden by the same checks without the column being written
+  (`materialHiddenSQL`, Epo 2026-11-11): every viewer member loses it until the
+  assignment closes or is deleted, or under Show answers Do not show until
+  staff turn it to practice after the close, and the one it went to keeps the
+  row that opens the assignment. See
+  [study progress](study-progress.md#assignments), One row.
 - **Switching it.** `PUT /api/files/{id}/hidden` and `PUT
   /api/materials/{id}/hidden` with `{hidden}`, from the item's ⋮ menu ("Hide
   file" / "Unhide file") or its header: a Hide file button on a visible item (from
@@ -487,7 +515,10 @@ unchanged.
   workspace or of one item, copies each item's flag as it is: hidden stays
   hidden and visible stays visible (Epo 2026-11-04). A copy with no workspace
   has no members, so it is not hidden.
-- **Make a quiz.** An extracted quiz starts hidden. Files uploaded in the
+- **Make a quiz.** A converted quiz starts hidden unless its maker turns off
+  the files step's switch, Hide the quiz from members (Epo 2026-11-11; on by
+  default and off from Practice's Add practice, sent as `hidden` with the run
+  and kept on its row). Files uploaded in the
   Make a quiz dialog are uploaded hidden, with the same `hidden` flag, so a
   mark scheme uploaded for the quiz never reaches the students; a file picked
   from the workspace keeps its setting, and the run changes no file's
@@ -520,17 +551,21 @@ Sources: [migration](../server/migrations/0140_hidden_from_members.sql),
   may edit, share-role editors included, can read the collaborator directory
   behind mention autocomplete, which carries only user id, display name, and
   avatar. A user whose display name is empty is shown by user id.
-- **People with access** in Workspace settings → Sharing (Epo 2026-11-04): the
-  owner's row reads Owner; for the owner each other row has its role dropdown,
-  applied at once, and a trash that asks first ("Remove {name}?", staying open
-  if the removal fails), and a role switch sits above the invite's email field
-  and Invite. An editor member sees the list
-  with each role as text, no invite and no pending invitations; they leave from
-  Danger. Viewer members have no Sharing tab.
+- **People with access** on the workspace's Members page (Epo 2026-11-11; a
+  class's owner and teaching assistants find it on Members' Manage tab, and
+  Workspace settings has no Sharing tab): link sharing first, for the owner
+  and editors. The owner's row reads Owner; for the owner each other row has
+  its role dropdown, applied at once, and a Remove button that asks first
+  ("Remove {name}?", staying open if the removal fails), under an invite row
+  of address, role dropdown and Invite. An editor member sees the list with
+  each role as text, no invite and no pending invitations; they leave from
+  Danger. Viewer members see names and roles only. The workspace card's Share
+  dialog keeps its own list (Epo 2026-11-04: a role switch above the invite's
+  field, a trash per row).
 - **Members, and share-role visitors who may clone**, open Workspace
   settings (`hasWorkspaceSettings`); with Hide study progress gone (Q727 A)
   there is no Study tab, so a visitor who may not clone has no entry to it.
-  General, Sharing, Indexing and Statistics are for owners and editors;
+  General, Indexing and Statistics are for owners and editors;
   Others shows with Clone, so not for a class's viewer member; Danger holds
   Delete for the owner and Leave for any other member.
 - **The dialog's layout** (Epo 2026-11-04): the tabs sit in a left column under

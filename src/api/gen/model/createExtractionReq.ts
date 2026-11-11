@@ -10,6 +10,7 @@ export interface CreateExtractionReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   answers?: ExtractionFile[];
+  hidden: boolean;
   /** @minItems 1 */
   paper: ExtractionFile[];
   /**

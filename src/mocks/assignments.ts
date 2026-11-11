@@ -44,6 +44,8 @@ type Viewer = 'owner' | 'member';
 type Row = {
   id: string;
   workspaceId: string;
+  /** A task its maker set themself: nobody else's, staff included. */
+  own?: boolean;
   kind: 'marked' | 'unmarked';
   title: string;
   quizId?: string;
@@ -52,6 +54,8 @@ type Row = {
   postedAt: string;
   closedAt?: string;
   releasedAt?: string;
+  /** When staff turned its quiz to practice (Do not show). */
+  practiceAt?: string;
   timeLimitMin?: number;
   attempts: number;
   noLate: boolean;
@@ -972,9 +976,17 @@ function finish(row: Row, attempt: Attempt, answers: Answers, auto: boolean) {
   }
 }
 
+/** A class has staff; a personal workspace only each person's own tasks. */
+const isClass = (workspaceId: string) =>
+  db.workspaces.find((ws) => ws.id === workspaceId)?.kind === 'class';
+
+/** Whether the viewer runs the row as its staff: a class's owner, or the maker
+ * of a task they set themself, which the mock's viewer always is. */
+const runs = (row: Row, viewer: Viewer) => !!row.own || viewer === 'owner';
+
 function toAssignment(row: Row, viewer: Viewer): Assignment {
   sweep(row);
-  const staff = viewer === 'owner';
+  const staff = row.own || (viewer === 'owner' && isClass(row.workspaceId));
   const questions = row.questions ?? [];
   const marks = questions.reduce(
     (sum, q) => sum + q.parts.reduce((n, p) => n + p.marks, 0),
@@ -1026,8 +1038,29 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
     files: row.files.flatMap((f): Assignment['files'] => {
       const file = db.files.find((x) => x.id === f.fileId);
       const mt = db.materials.find((x) => x.id === f.materialId);
-      if (file) return [{ fileId: file.id, kind: file.kind, name: file.name }];
-      if (mt) return [{ kind: mt.kind, materialId: mt.id, name: mt.title }];
+      // Where each sits: a task's files need not be its own workspace's.
+      const from = (workspaceId?: string) => {
+        const ws = db.workspaces.find((w) => w.id === workspaceId);
+        return ws ? { workspaceId: ws.id, workspaceName: ws.name } : {};
+      };
+      if (file)
+        return [
+          {
+            fileId: file.id,
+            kind: file.kind,
+            name: file.name,
+            ...from(file.workspaceId),
+          },
+        ];
+      if (mt)
+        return [
+          {
+            kind: mt.kind,
+            materialId: mt.id,
+            name: mt.title,
+            ...from(mt.workspaceId),
+          },
+        ];
       return [];
     }),
     gradesHidden,
@@ -1036,8 +1069,11 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
     latePenaltyPct: row.latePenaltyPct,
     marks,
     noLate: row.noLate,
+    own: !!row.own,
     postedAt: row.postedAt,
-    postedBy: POSTERS[row.workspaceId] ?? db.user.name,
+    postedBy: row.own
+      ? db.user.name
+      : (POSTERS[row.workspaceId] ?? db.user.name),
     practiceQuizId: row.releasedAt && !gradesHidden ? row.quizId : undefined,
     questions: questions.length,
     timeLimitMin: row.timeLimitMin,
@@ -1085,14 +1121,22 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
                         ).length,
                       0
                     ),
+            practiceAt: row.practiceAt,
             quizId: row.quizId,
             quizTitle: material?.title,
+            quizWorkspaceId: material?.workspaceId || undefined,
             showAnswers: row.showAnswers,
             showGrades: row.showGrades,
             shuffle: row.shuffle,
             toApprove: assigned
               .flatMap((id) => submissions(row.id, id))
               .reduce((sum, a) => sum + totals(a.graded).waitingAnswers, 0),
+            toPractice:
+              !row.own &&
+              !row.draft &&
+              !!closedAtOf(row) &&
+              !gradesHidden &&
+              answersHeld(row),
           },
         }
       : {}),
@@ -1177,7 +1221,7 @@ function attemptView(attempt: Attempt, row: Row, viewer: Viewer) {
     } satisfies AssignmentAttempt;
   // Show grades Manual: a member reads their answers alone until release.
   if (
-    viewer !== 'owner' &&
+    !runs(row, viewer) &&
     row.showGrades === 'manual' &&
     !row.gradesReleasedAt
   )
@@ -1196,7 +1240,7 @@ function attemptView(attempt: Attempt, row: Row, viewer: Viewer) {
       waitingMarks: 0,
     } satisfies AssignmentAttempt;
   const show =
-    viewer === 'owner' ||
+    runs(row, viewer) ||
     row.showAnswers === 'submitted' ||
     (row.showAnswers === 'closed' && !!closedAtOf(row));
   return {
@@ -1427,14 +1471,19 @@ function freeze(row: Row) {
 /** The Dashboard's "assigned" Activity rows. */
 export function assignmentActivity(workspaceId: string): WorkspaceActivity[] {
   seed();
-  return [...rows.values()]
-    .filter((row) => row.workspaceId === workspaceId && !row.draft)
-    .map((row) => ({
-      assignmentId: row.id,
-      at: row.postedAt,
-      kind: 'assigned' as const,
-      title: row.title,
-    }));
+  return (
+    [...rows.values()]
+      // A member's own task is nobody's news.
+      .filter(
+        (row) => row.workspaceId === workspaceId && !row.draft && !row.own
+      )
+      .map((row) => ({
+        assignmentId: row.id,
+        at: row.postedAt,
+        kind: 'assigned' as const,
+        title: row.title,
+      }))
+  );
 }
 
 /** When the assignment that made this quiz practice closed (board P1). */
@@ -1446,13 +1495,32 @@ export function assignmentClosedAt(quizId: string) {
   return row && (closedAtOf(row) ?? row.releasedAt);
 }
 
+/** Under Show answers Do not show and not yet turned to practice. */
+const answersHeld = (row: Row) =>
+  row.kind === 'marked' && row.showAnswers === 'never' && !row.practiceAt;
+
+/** The assignments holding a quiz: open ones, and closed ones whose answers are
+ * held. A task someone set themself holds no quiz back. */
+function holding(quizId: string) {
+  seed();
+  return [...rows.values()].filter(
+    (r) =>
+      r.quizId === quizId &&
+      !r.own &&
+      !r.draft &&
+      (!closedAtOf(r) || answersHeld(r))
+  );
+}
+
+/** Whether the quiz is kept from a member: while an assignment holds it, it is,
+ * assigned to them or not (the one it went to opens it through their row). */
+export const quizHeldFromMembers = (quizId: string) =>
+  holding(quizId).length > 0;
+
 /** A quiz row's fields for this viewer, as the server's lists read them: the icon
  * while it is under an open assignment, and for an assignee what the row opens. */
 export function quizAssignmentFields(quizId: string, viewer: Viewer) {
-  seed();
-  const open = [...rows.values()].filter(
-    (r) => r.quizId === quizId && !r.draft && !closedAtOf(r)
-  );
+  const open = holding(quizId);
   if (!open.length) return {};
   if (viewer === 'owner') return { assigned: true };
   const mine = open
@@ -1469,22 +1537,31 @@ export function recentFor(url: string, viewer: Viewer) {
   const page = db.listRecent(new URL(url));
   return {
     ...page,
-    items: page.items.map((item) =>
-      item.material
-        ? {
-            ...item,
-            material: {
-              ...item.material,
-              ...quizAssignmentFields(item.material.id, viewer),
-            },
-          }
-        : item
-    ),
+    items: page.items
+      .map((item) =>
+        item.material
+          ? {
+              ...item,
+              material: {
+                ...item.material,
+                ...quizAssignmentFields(item.material.id, viewer),
+              },
+            }
+          : item
+      )
+      // A member's held quiz is listed only as the row that opens its assignment.
+      .filter(
+        (item) =>
+          viewer === 'owner' ||
+          !item.material ||
+          !!item.material.assignmentId ||
+          !quizHeldFromMembers(item.material.id)
+      ),
   };
 }
 
-/** A workspace's rows for this viewer: a member lists a hidden quiz only while it
- * is assigned to them. */
+/** A workspace's rows for this viewer: a member lists a quiz that is hidden, or
+ * held by an open assignment, only while it is assigned to them. */
 export function workspaceMaterialRefs(wsId: string, viewer: Viewer) {
   const refs: MaterialRef[] = db.materials
     .filter((mt) => mt.workspaceId === wsId && !mt.parentMaterialId)
@@ -1501,7 +1578,12 @@ export function workspaceMaterialRefs(wsId: string, viewer: Viewer) {
       type: mt.kind,
       ...quizAssignmentFields(mt.id, viewer),
     }))
-    .filter((ref) => viewer === 'owner' || !ref.hidden || ref.assignmentId)
+    .filter(
+      (ref) =>
+        viewer === 'owner' ||
+        ref.assignmentId ||
+        (!ref.hidden && !quizHeldFromMembers(ref.id))
+    )
     // An assignee isn't told it is hidden from others.
     .map((ref) => (ref.assignmentId ? { ...ref, hidden: false } : ref))
     .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
@@ -1579,8 +1661,12 @@ export const assignmentHandlers = (viewer: Viewer) => {
   return [
     http.get('/api/todo', () => {
       seed();
-      const workspaces = db.workspaces
-        .filter((ws) => ws.kind === 'class')
+      // The viewer's tasks with no workspace come first, as a section with
+      // an empty id.
+      const workspaces = [
+        { iconId: '', id: '', kind: 'personal', name: '' },
+        ...db.workspaces,
+      ]
         .map((ws) => ({
           iconId: ws.iconId,
           items: [...rows.values()]
@@ -1591,7 +1677,7 @@ export const assignmentHandlers = (viewer: Viewer) => {
                 (a.manage?.toApprove ?? 0) > 0 ||
                 (a.mine && !a.draft && !a.closedAt)
             ),
-          manages: viewer === 'owner',
+          manages: viewer === 'owner' && ws.kind === 'class',
           name: ws.name,
           workspaceId: ws.id,
         }))
@@ -1612,7 +1698,6 @@ export const assignmentHandlers = (viewer: Viewer) => {
       const at = (a: Assignment) =>
         Date.parse(a.mine?.doneAt ?? a.mine?.checkedAt ?? a.closedAt ?? '') ||
         0;
-      const named = db.workspaces.filter((ws) => ws.kind === 'class');
       const done = [...rows.values()]
         .map((row) => toAssignment(row, viewer))
         .filter(
@@ -1630,11 +1715,11 @@ export const assignmentHandlers = (viewer: Viewer) => {
       for (const a of page) {
         let ws = workspaces.find((w) => w.workspaceId === a.workspaceId);
         if (!ws) {
-          const source = named.find((w) => w.id === a.workspaceId);
+          const source = db.workspaces.find((w) => w.id === a.workspaceId);
           ws = {
             iconId: source?.iconId ?? '',
             items: [],
-            manages: viewer === 'owner',
+            manages: viewer === 'owner' && source?.kind === 'class',
             name: source?.name ?? '',
             workspaceId: a.workspaceId,
           };
@@ -1649,13 +1734,12 @@ export const assignmentHandlers = (viewer: Viewer) => {
     }),
     http.get('/api/workspaces/:id/assignments', ({ params }) => {
       seed();
-      const ws = db.workspaces.find((w) => w.id === params.id);
-      if (ws?.kind !== 'class') return gone();
+      const staff = viewer === 'owner' && isClass(String(params.id));
       const items = [...rows.values()]
         .filter((row) => row.workspaceId === params.id)
-        .filter((row) => viewer === 'owner' || !row.draft)
+        .filter((row) => staff || !row.draft)
         .map((row) => toAssignment(row, viewer))
-        .filter((a) => viewer === 'owner' || a.mine)
+        .filter((a) => a.manage || a.mine)
         .sort((a, b) => {
           if (a.closed !== b.closed) return a.closed ? 1 : -1;
           if (!a.dueAt) return 1;
@@ -1664,9 +1748,38 @@ export const assignmentHandlers = (viewer: Viewer) => {
         });
       return HttpResponse.json({
         items,
-        members:
-          viewer === 'owner' ? viewers(String(params.id)).length : undefined,
+        members: staff ? viewers(String(params.id)).length : undefined,
       } satisfies AssignmentList);
+    }),
+    // A task with no workspace: its maker's alone.
+    http.post('/api/todo/tasks', async ({ request }) => {
+      seed();
+      const body = (await request.json()) as AssignmentFormReq;
+      const row: Row = {
+        allowUploads: false,
+        assignAll: false,
+        assignees: [],
+        attempts: 1,
+        draft: false,
+        files: [],
+        id: newId('as'),
+        kind: body.kind,
+        latePenaltyPct: 0,
+        marking: 'ai_approve' as const,
+        noLate: false,
+        own: true,
+        postedAt: new Date().toISOString(),
+        quizId: body.quizId,
+        showAnswers: 'closed' as const,
+        showGrades: 'automatic' as const,
+        shuffle: false,
+        title: body.title,
+        workspaceId: '',
+      };
+      applyForm(row, body);
+      if (row.kind === 'marked') freeze(row);
+      rows.set(row.id, row);
+      return HttpResponse.json(toAssignment(row, viewer), { status: 201 });
     }),
     http.post(
       '/api/workspaces/:id/assignments',
@@ -1685,6 +1798,8 @@ export const assignmentHandlers = (viewer: Viewer) => {
           latePenaltyPct: 0,
           marking: 'ai_approve' as const,
           noLate: false,
+          // From anyone but a class's staff it is a task for themself.
+          own: !(viewer === 'owner' && isClass(String(params.id))),
           postedAt: new Date().toISOString(),
           quizId: body.quizId,
           showAnswers: 'closed' as const,
@@ -1717,7 +1832,7 @@ export const assignmentHandlers = (viewer: Viewer) => {
       const row = rowOf(params.id);
       if (!row) return gone();
       const out = toAssignment(row, viewer);
-      return viewer === 'owner' || out.mine ? HttpResponse.json(out) : gone();
+      return runs(row, viewer) || out.mine ? HttpResponse.json(out) : gone();
     }),
     http.put('/api/assignments/:id', async ({ params, request }) => {
       const row = rowOf(params.id);
@@ -1762,7 +1877,9 @@ export const assignmentHandlers = (viewer: Viewer) => {
       if (!row) return gone();
       const { closed } = (await request.json()) as { closed: boolean };
       row.closedAt = closed ? new Date().toISOString() : undefined;
-      if (closed) row.releasedAt ??= new Date().toISOString();
+      // Under Do not show the quiz stays held until staff turn it to practice.
+      if (closed && (row.own || !answersHeld(row)))
+        row.releasedAt ??= new Date().toISOString();
       // The stream's word to whoever is taking it (`publishAssignmentClosed`).
       if (
         closed &&
@@ -1775,6 +1892,18 @@ export const assignmentHandlers = (viewer: Viewer) => {
             detail: { assignmentId: row.id, type: 'assignment_closed' },
           })
         );
+      return HttpResponse.json(toAssignment(row, viewer));
+    }),
+    http.post('/api/assignments/:id/practice', ({ params }) => {
+      const row = rowOf(params.id);
+      if (!row) return gone();
+      if (row.own || !closedAtOf(row) || !answersHeld(row))
+        return HttpResponse.json(
+          { message: "this assignment's quiz is not waiting" },
+          { status: 400 }
+        );
+      row.practiceAt = new Date().toISOString();
+      row.releasedAt ??= row.practiceAt;
       return HttpResponse.json(toAssignment(row, viewer));
     }),
     http.post('/api/assignments/:id/release-grades', ({ params }) => {
@@ -1794,6 +1923,9 @@ export const assignmentHandlers = (viewer: Viewer) => {
           { code: 'assignment_closed', message: 'this assignment is closed' },
           { status: 409 }
         );
+      // A quiz is done when it is submitted.
+      if (row?.kind === 'marked')
+        return new HttpResponse(null, { status: 400 });
       if (row?.allowUploads && row.kind === 'unmarked') {
         const open = body.done ? handInOpen(id) : done.get(id)?.has(db.user.id);
         if (!open || (body.done && !handInOf(id, db.user.id).length))
@@ -1872,7 +2004,8 @@ export const assignmentHandlers = (viewer: Viewer) => {
     }),
     // The AI's mark on every waiting part: full marks on its first point only.
     http.post('/api/assignments/:id/mark-with-ai', ({ params }) => {
-      if (!rowOf(params.id) || viewer !== 'owner') return gone();
+      const row = rowOf(params.id);
+      if (!row || !runs(row, viewer)) return gone();
       let total = 0;
       for (const attempt of attempts.values()) {
         if (attempt.assignmentId !== params.id) continue;
@@ -1892,7 +2025,8 @@ export const assignmentHandlers = (viewer: Viewer) => {
     http.post(
       '/api/assignments/:id/approve-ai-marks',
       async ({ params, request }) => {
-        if (!rowOf(params.id) || viewer !== 'owner') return gone();
+        const row = rowOf(params.id);
+        if (!row || !runs(row, viewer)) return gone();
         const { questionId } = (await request.json()) as {
           questionId: string;
         };
@@ -1919,7 +2053,7 @@ export const assignmentHandlers = (viewer: Viewer) => {
     ),
     http.get('/api/assignments/:id/report', ({ params }) => {
       const row = rowOf(params.id);
-      if (!row || viewer !== 'owner') return gone();
+      if (!row || !runs(row, viewer)) return gone();
       return HttpResponse.json(report(row, viewer));
     }),
     http.get('/api/assignment-attempts/:id', ({ params }) => {
@@ -2088,7 +2222,7 @@ export const assignmentHandlers = (viewer: Viewer) => {
       '/api/assignment-attempts/:id/marks',
       async ({ params, request }) => {
         const found = attemptOf(params.id);
-        if (!found || viewer !== 'owner') return gone();
+        if (!found || !runs(found.row, viewer)) return gone();
         const mark = (await request.json()) as AssignmentMark;
         const question = found.attempt.graded.find(
           (q) => q.id === mark.questionId

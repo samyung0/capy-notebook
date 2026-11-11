@@ -15,6 +15,7 @@ import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { Menu } from '@/components/ui/Menu';
+import { isWorkspaceReadOnly } from '@/features/workspace/access';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
@@ -40,12 +41,12 @@ export type PracticeSearch = {
   review?: string;
 };
 
-/** Study → Practice (Epo 2026-11-03, boards P1 and P2; who sees what, board
- * U3), the workspace's centre page while `study=practice` is in its URL. Whoever
- * practises gets Suggested and every quiz with their best score and Practise;
- * a class's owner and teaching assistants the same list with how members use
- * it. A topic session (F1, F1b) and its result (F4) keep the page's place: the
- * Study panel shows Practice. */
+/** Practice (Epo 2026-11-03, boards P1 and P2; who sees what, board U3; its own
+ * page on the rail since Epo 2026-11-11), the workspace's centre page while
+ * `study=practice` is in its URL. Whoever practises gets Suggested and every
+ * quiz with their best score and Practise; a class's owner and teaching
+ * assistants the same list with how members use it. A topic session (F1, F1b)
+ * and its result (F4) keep the page's place: the rail shows Practice. */
 export function PracticePage({
   search,
   workspaceId,
@@ -107,6 +108,7 @@ function PracticeList({
   );
   const [topic, setTopic] = useState<string | null | undefined>(undefined);
   const [making, setMaking] = useState(false);
+  const navigate = useNavigate();
   const { canEdit, manages: staff } = studyView(ws);
   const suggested = !staff && !!data?.suggestions.length;
   const topicName = (id?: string | null) =>
@@ -140,15 +142,20 @@ function PracticeList({
           <h1 className="t-page-title">{m.study_panel_practice()}</h1>
           <span className="t-meta mt-1.5 text-fg-muted">{meta}</span>
         </div>
-        {/* Not built yet: Add practice (P1). */}
-        <span
-          className={cn(suggested && '-my-2.5')}
-          title={canEdit ? m.study_panel_soon() : undefined}
-        >
+        {/* Whoever may edit adds a quiz for everyone (Add practice's dialog,
+            Make a quiz's address); anyone else makes their own. */}
+        <span className={cn(suggested && '-my-2.5')}>
           <Button
-            disabled={canEdit}
+            disabled={canEdit && isWorkspaceReadOnly(ws?.capabilities)}
             iconLeft="plus"
-            onClick={() => setMaking(true)}
+            onClick={() =>
+              canEdit
+                ? void navigate({
+                    search: { make: 'files', makeFrom: 'practice' },
+                    to: '.',
+                  })
+                : setMaking(true)
+            }
           >
             {canEdit ? m.practice_add() : m.practice_make_own()}
           </Button>

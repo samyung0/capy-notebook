@@ -7,7 +7,6 @@ import {
   useLeaveWorkspace,
   useMe,
   useUpdateWorkspace,
-  useUpdateWorkspaceSharing,
   useWorkspaceStats,
 } from '@/api/hooks';
 import type { Workspace } from '@/api/types';
@@ -29,7 +28,6 @@ import { describeError, unexpectedErrorId } from '@/lib/errors';
 import { canManageWorkspaceSettings, hasWorkspaceSettings } from './access';
 import { CloneWorkspaceDialog } from './CloneWorkspaceDialog';
 import { IndexingTab } from './IndexingTab';
-import { ShareDialog } from './ShareDialog';
 import type { SettingsTab, SettingsView } from './settingsTabs';
 import { WorkspaceFormEditDialog } from './WorkspaceFormEditDialog';
 import { WorkspaceTransferDialog } from './WorkspaceMemberManager';
@@ -109,8 +107,6 @@ export function WorkspaceSettingsDialog({
       onClose();
       qc.removeQueries({ queryKey: qk.workspace(workspace.id) });
     });
-  const { mutateAsync: updateSharing, isPending: sharing } =
-    useUpdateWorkspaceSharing();
   const {
     data: stats,
     isPending,
@@ -145,18 +141,6 @@ export function WorkspaceSettingsDialog({
               m.workspace_kind_class(),
             ],
             value: 'general' as const,
-          },
-          {
-            icon: 'userAdd' as const,
-            label: m.workspace_sharing(),
-            terms: [
-              m.share_visibility(),
-              m.share_anyone_with_access(),
-              m.members_people(),
-              m.members_invite(),
-              m.members_pending_title(),
-            ],
-            value: 'sharing' as const,
           },
           {
             icon: 'database' as const,
@@ -215,26 +199,6 @@ export function WorkspaceSettingsDialog({
           open={open}
           setOpen={onClose}
           workspace={workspace}
-        />
-      )}
-      {tab === 'sharing' && (
-        <ShareDialog
-          canManageMembers={workspace.capabilities.canManageMembers}
-          containerClassName="-mt-3"
-          embedded
-          link={workspace.sharePath}
-          onClose={onClose}
-          onPrivacyChange={(privacy) =>
-            updateSharing({ id: workspace.id, privacy })
-          }
-          onShareRoleChange={(shareRole) =>
-            updateSharing({ id: workspace.id, shareRole })
-          }
-          open={open}
-          privacy={workspace.privacy}
-          saving={sharing}
-          shareRole={workspace.shareRole}
-          workspaceId={workspace.id}
         />
       )}
       {tab === 'statistics' &&

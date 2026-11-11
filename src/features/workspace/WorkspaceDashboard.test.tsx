@@ -6,7 +6,9 @@ import type {
   Assignment,
   WorkspaceDashboard as Dashboard,
   ReviewSuggestion,
+  Workspace,
 } from '@/api/types';
+import { TodoSection } from '@/features/study/assignments/TodoSection';
 import { m } from '@/i18n';
 import { shortTime, WorkspaceDashboard } from './WorkspaceDashboard';
 
@@ -122,11 +124,15 @@ it('marks a hidden item on its activity row', () => {
   expect(render()).toContain(m.content_hidden_from_members());
 });
 
-it('shows an empty workspace its art, a short title and one button', () => {
+// Epo 2026-11-10: To do stays, and the empty state stands where Recent files would.
+it('shows an empty workspace its To do, then its art, a short title and one button', () => {
   page.data = { activity: [], members: 1, ownerName: 'Ms Wong' };
   const html = render();
   expect(html).toContain('Biology 101');
-  expect(html).toContain(m.workspace_empty_title());
+  expect(html).toContain(m.todo_empty());
+  expect(html.indexOf(m.workspace_empty_title())).toBeGreaterThan(
+    html.indexOf(m.todo_empty())
+  );
   expect(html).toContain(m.action_add_file());
   expect(html).not.toContain(m.action_upload());
   expect(html).not.toContain(m.dashboard_make_quiz());
@@ -169,11 +175,12 @@ it('shows What to practise next to whoever practises, not to a class owner', () 
   page.kind = 'personal';
 });
 
-it("lists a class's To do: answers to approve for its owner, nothing when empty", () => {
+it("lists a class's To do: answers to approve for its owner, Nothing to do when empty", () => {
   page.data = { activity: [], members: 7, ownerName: 'Ms Wong' };
   page.kind = 'class';
   page.assignments = [];
-  expect(render()).not.toContain(m.dashboard_todo());
+  expect(render()).toContain(m.todo_empty());
+  expect(render()).toContain(m.assignment_new());
   page.assignments = [
     {
       allowUploads: false,
@@ -201,6 +208,7 @@ it("lists a class's To do: answers to approve for its owner, nothing when empty"
       },
       marks: 40,
       noLate: false,
+      own: false,
       postedAt: '2026-11-03T08:00:00Z',
       postedBy: 'Ms Wong',
       questions: 12,
@@ -214,8 +222,74 @@ it("lists a class's To do: answers to approve for its owner, nothing when empty"
   expect(html).toContain('Past paper');
   expect(html).toContain(m.dashboard_waiting({ count: 5 }));
   expect(html).toContain('tab=approve');
+  expect(html).toContain(m.assignment_new());
   page.assignments = [];
   page.kind = 'personal';
+});
+
+it("lists a personal workspace's To do: the tasks its viewer set themself, under New task", () => {
+  page.data = { activity: [], members: 1, ownerName: 'Kate' };
+  page.assignments = [
+    {
+      allowUploads: false,
+      attempts: 1,
+      closed: false,
+      draft: false,
+      drawingParts: false,
+      files: [],
+      gradesHidden: false,
+      id: 'as_2',
+      kind: 'unmarked',
+      latePenaltyPct: 0,
+      marks: 0,
+      mine: {
+        attemptsUsed: 0,
+        checkedOff: false,
+        done: false,
+        late: false,
+        latePenaltyPct: 0,
+        missing: false,
+        waitingAnswers: 0,
+        waitingMarks: 0,
+      },
+      noLate: false,
+      own: true,
+      postedAt: '2026-11-03T08:00:00Z',
+      postedBy: 'Kate',
+      questions: 0,
+      title: 'Read chapter 4',
+      topicIds: [],
+      workspaceId: 'ws',
+    } as Assignment,
+  ];
+  const html = render();
+  expect(html).toContain('Read chapter 4');
+  expect(html).toContain(m.todo_new_task());
+  expect(html).not.toContain(m.assignment_new());
+  page.assignments = [];
+});
+
+it('keeps an empty To do, with the button of whoever may add', () => {
+  const section = (manages: boolean, role: string) =>
+    renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <TodoSection
+          manages={manages}
+          workspace={{
+            iconId: 'i',
+            id: 'ws',
+            name: 'Notes',
+            role: role as Workspace['role'],
+          }}
+        />
+      </QueryClientProvider>
+    );
+  expect(section(false, 'viewer')).toContain(m.todo_empty());
+  expect(section(false, 'viewer')).toContain(m.todo_new_task());
+  expect(section(true, 'owner')).toContain(m.assignment_new());
+  // A visitor who is no member has nothing to add.
+  expect(section(false, '')).toContain(m.todo_empty());
+  expect(section(false, '')).not.toContain(m.todo_new_task());
 });
 
 it('opens an assigned row on its assignment', () => {

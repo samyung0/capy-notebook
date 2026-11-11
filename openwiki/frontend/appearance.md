@@ -49,10 +49,11 @@ entries); mocks: `artifacts/2026-10-20-painted-cards-cursors-mocks.html`.
   after its name for the owners and editors who get it
   (`GET /api/workspaces/{id}/dashboard`, see
   [study-progress.md](../study-progress.md#endpoints)), each row opening its
-  file or material. An empty section does not show, so To do, assignments and
-  AI marks (not built) never do yet. A workspace with nothing in it shows
-  `WorkspaceEmpty` instead of the actions and sections: the map's ink book, "No
-  files yet" and Add file, which opens the upload dialog, for those who may add.
+  file or material. An empty section does not show, but for To do, which says
+  "Nothing to do" (see [study-progress.md](../study-progress.md)). A workspace
+  with no files shows `WorkspaceEmpty` under To do, instead of the actions and
+  Recent files: the map's ink book, "No files yet" and Add file, which opens the
+  upload dialog, for those who may add.
   Wrapped actions sit 16px from the visible text above and below them, as
   Practice's do: negative margins that a one-line header cancels out. The old
   landing's Add file, Quick open, Workspace settings and Practice cards went.
@@ -65,17 +66,24 @@ From md (768px, so iPads keep it, Epo 2026-11-06) every workspace page leads wit
 through behind it, with
 ← Workspaces (to `/`), the workspace's icon as a 34px badge that only
 says where you are, then Dashboard (Hugeicons' `DashboardSquare01Icon`),
-Files (a folder), Agent (the AI icon), Study (an open book) and, in dev builds only,
+Files (a folder), Agent (the AI icon), then the four pages that were Study's
+until Epo 2026-11-11 gave each its own place (`workspaceSections`, by `studyView`):
+To do, which a class's owner and editors see as Assignments, with the count of
+what waits there by its icon; Practice; Members (every member: a class's owner
+and editors with each member's marks, everyone else the people without marks;
+a link or public visitor has none); and Study (an open book),
+the viewer's own marks and mastery, which a class's owner and editors do not
+have. Last, for members,
 Canvas (the drawing board, `frontend/plate-editor.md`), each icon
 over its 11px label in a 48px-high item, 8px apart, that takes the sidebar's dark
 fill while current. Labels sit on the frame plainly, with no halo (Epo 2026-11-08). The app sidebar's rows are 32px high and 2px apart from `sm` (the
 phone drawer keeps 36px and 4px for touch).
 Your avatar (44px, no ring) sits at its foot and opens the profile menu upwards, headed by
-the workspace's part: Invite member (owners and editors), Workspace
-settings, and Clone for readers who may.
+the workspace's part: Invite member (owners and editors; it opens Members, on
+a class's Manage tab), Workspace settings, and Clone for readers who may.
 
 There is no right panel (Epo 2026-11-04). One panel sits beside the rail for
-every section but the Dashboard: 340px by default, resizable from 220px up to
+Files and Agent, the other sections being pages: 340px by default, resizable from 220px up to
 half the group, so the viewer never drops under its 400px least width. A drag
 past its least width closes it on release. It keeps its width between
 sections and between Agent's history and a chat, and comes back at the width it
@@ -89,16 +97,16 @@ closed at until the page is left:
   on its title row. **The centre keeps what it showed**: a file stays open
   beside the chat, and a citation or resource link opens in the centre with the
   section still on Agent.
-- **Study:** Study's pages (`StudyPanel`), see
-  [study-progress.md](../study-progress.md#practice).
 
-Which panel shows is `panel` in the URL (`files`, `agent`, `study` or `none`, Epo
+Which panel shows is `panel` in the URL (`files`, `agent` or `none`, Epo
 2026-11-05): `section` and `panelOpen` draw it, an effect keeps the URL and
 them, a rail press adds a back step, and back or a link moves the panel. With no
-`panel` in the URL a workspace opens on its Dashboard (Epo 2026-11-05); `panel=study`
-opens Practice. Below lg `panel=agent` is the chat page. Between md and lg the rail
+`panel` in the URL a workspace opens on its Dashboard (Epo 2026-11-05). The pages
+are `study` in the URL (`assignments` for To do, `practice`, `members`, and
+`summary` for Study), which the rail's section follows. Below lg `panel=agent` is
+the chat page. Between md and lg the rail
 sits beside the one-column layout and opens what its menus do: Files the file name's
-dropdown, Agent the chat page, Study Practice, Dashboard the landing. Dev builds also take
+dropdown, Agent the chat page, each page itself, Dashboard the landing. Dev builds also take
 `panel=canvas`, the drawing board in the centre at every width: it has no panel, and
 below md, with no rail, a back button leads to the Dashboard.
 
@@ -110,18 +118,18 @@ shows its end on return. Every way into a chat goes to Agent (`openChat`):
 on screen comes back after a reload or a closed tab (`capy.workspace.chatShown.<id>`,
 kept with the thread in `capy.chat.open.<id>`, T19); leaving the page forgets it.
 
-The section starts from that chat or the URL (a Study page shows Study, an open
-item Files, else the Dashboard). From the Dashboard or Study an item moves it to
-Files; a Study page moves it to Study unless Agent shows; leaving Study for the
-landing shows the Dashboard. Pressing the current section closes or reopens its
-panel; Dashboard opens the landing and Study opens Practice. With the rail the
-centre header has no back arrow or panel toggle; Study's pages fill the centre
+The section starts from that chat or the URL (a page shows its own section, an
+open item Files, else the Dashboard). From the Dashboard or a page an item moves
+it to Files; a page moves it to that page's section unless Agent shows; leaving a
+page for the landing shows the Dashboard. Pressing the current Files or Agent
+closes or reopens its panel; the others open their page. With the rail the
+centre header has no back arrow or panel toggle; the pages fill the centre
 without a header. Below lg the one-column layout stays as before: the header's
 title opens the Files dropdown, its ⋮ (and the dropdown's foot) carry Dashboard,
-Study, the Study pages this person has beside Practice (Summary, Assignments)
+the pages this person has (To do or Assignments, Practice, Members, Study)
 and Workspace settings, and chat is the dock and its chat page.
 
-A page has one `h1`: the Dashboard, Study's pages, a quiz and a flashcards set
+A page has one `h1`: the Dashboard, these pages, a quiz and a flashcards set
 head themselves; with anything else open it is an `sr-only` workspace name.
 
 The AI icon (`ai` in `Icon.tsx`, a curved four-point star stroked like the

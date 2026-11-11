@@ -1,4 +1,4 @@
-import { Navigate, useNavigate } from '@tanstack/react-router';
+import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import {
   useAssignment,
@@ -25,6 +25,7 @@ import { dayLabel, kindLabel, markText, percentText } from './assignmentText';
 import { LateBadge } from './LateBadge';
 import { NewAssignmentDialog } from './LazyNewAssignmentDialog';
 import { MemberAssignment } from './MemberAssignment';
+import { OwnTaskDetails } from './TodoDialog';
 import { useAssignmentStart } from './useAssignmentStart';
 
 export type ReportTab = 'questions' | 'members' | 'approve' | 'settings';
@@ -44,9 +45,9 @@ export type AssignmentsSearch = {
   tab?: ReportTab;
 };
 
-/** Study → Assignments (boards W1, W2 for staff, W3 for members), the
- * workspace's centre page while `study=assignments` is in its URL. Class only
- * (studyView, board U3): anywhere else the link opens Practice. */
+/** The workspace's To do, Assignments to a class's staff (boards W1, W2 for
+ * staff, W3 for members; its own page on the rail since Epo 2026-11-11), the
+ * workspace's centre page while `study=assignments` is in its URL. */
 export function AssignmentsPage({
   search,
   workspaceId,
@@ -56,8 +57,6 @@ export function AssignmentsPage({
 }) {
   const { data: ws } = useWorkspace(workspaceId);
   if (!ws) return null;
-  if (!studyView(ws).pages.includes('assignments'))
-    return <Navigate replace search={{ study: 'practice' }} to="." />;
   if (search.attempt)
     return (
       <AssignmentAttemptPage
@@ -85,7 +84,9 @@ export function AssignmentsPage({
   );
 }
 
-function AssignmentDetail({
+/** One assignment's or task's page: its report to whoever runs it (unless
+ * `own`), else the page of the one it is given to. */
+export function AssignmentDetail({
   id,
   search,
 }: {
@@ -470,10 +471,15 @@ function MemberList({ workspaceId }: { workspaceId: string }) {
     useSetAssignmentDone(workspaceId);
   const { dialog, start, starting } = useAssignmentStart(workspaceId);
   const [showDone, setShowDone] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [openTask, setOpenTask] = useState<string | null>(null);
   const items = data?.items ?? [];
+  const task = items.find((row) => row.id === openTask);
   const rows = items.filter((row) => showDone || !row.mine?.done);
-  const open = (row: Assignment) =>
-    navigate({
+  const open = (row: Assignment) => {
+    // A task they set themself opens its details here.
+    if (row.own) return setOpenTask(row.id);
+    return navigate({
       search: {
         assignment: row.id,
         ...(row.kind === 'marked' && row.mine?.countedAttemptId
@@ -483,6 +489,7 @@ function MemberList({ workspaceId }: { workspaceId: string }) {
       },
       to: '.',
     });
+  };
   const action = (row: Assignment) => {
     const mine = row.mine;
     if (!mine) return null;
@@ -541,9 +548,18 @@ function MemberList({ workspaceId }: { workspaceId: string }) {
   };
   return (
     <PracticeFrame className="@container">
-      <div className="flex min-w-0 flex-wrap items-center gap-x-3">
-        <h1 className="t-page-title">{m.study_panel_assignments()}</h1>
-        <span className="t-meta mt-1.5 text-fg-muted">{ws?.name}</span>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2.25">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3">
+          <h1 className="t-page-title">{m.nav_todo()}</h1>
+          <span className="t-meta mt-1.5 text-fg-muted">{ws?.name}</span>
+        </div>
+        {/* Where staff have New assignment: only they give out assignments
+            (Epo 2026-11-10), so a member's is a task for themself. */}
+        {ws?.role && (
+          <Button iconLeft="plus" onClick={() => setAdding(true)}>
+            {m.todo_new_task()}
+          </Button>
+        )}
       </div>
       <div className="mt-4 mb-1.25 flex items-center gap-2 md:mb-2">
         <Button
@@ -571,10 +587,9 @@ function MemberList({ workspaceId }: { workspaceId: string }) {
           variant="panel"
         />
       ) : rows.length === 0 ? (
-        <p className="t-meta mt-6 text-fg-muted">
-          {items.length === 0
-            ? m.assignment_member_empty()
-            : m.assignment_all_done()}
+        // The To do page's empty line.
+        <p className="t-subtitle py-20 text-center font-normal text-fg-muted">
+          {m.todo_empty()}
         </p>
       ) : (
         <>
@@ -633,6 +648,22 @@ function MemberList({ workspaceId }: { workspaceId: string }) {
         </>
       )}
       {dialog}
+      {adding && (
+        <NewAssignmentDialog
+          onClose={() => setAdding(false)}
+          onDone={() => setAdding(false)}
+          own
+          title={m.todo_new_task()}
+          workspaceId={workspaceId}
+        />
+      )}
+      {task && ws && (
+        <OwnTaskDetails
+          onClose={() => setOpenTask(null)}
+          task={task}
+          workspace={ws}
+        />
+      )}
     </PracticeFrame>
   );
 }

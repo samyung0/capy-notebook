@@ -451,6 +451,8 @@ components:
           $ref: "#/components/schemas/AssignmentMine"
         noLate:
           type: boolean
+        own:
+          type: boolean
         postedAt:
           format: date-time
           type: string
@@ -481,6 +483,7 @@ components:
         - postedBy
         - closed
         - draft
+        - own
         - noLate
         - latePenaltyPct
         - attempts
@@ -713,6 +716,10 @@ components:
           type: string
         name:
           type: string
+        workspaceId:
+          type: string
+        workspaceName:
+          type: string
       required:
         - name
         - kind
@@ -886,12 +893,17 @@ components:
         notGraded:
           format: int64
           type: integer
+        practiceAt:
+          format: date-time
+          type: string
         quizId:
           type: string
         quizTitle:
           type: string
         quizTrashed:
           type: boolean
+        quizWorkspaceId:
+          type: string
         showAnswers:
           enum:
             - closed
@@ -908,6 +920,8 @@ components:
         toApprove:
           format: int64
           type: integer
+        toPractice:
+          type: boolean
       required:
         - assignAll
         - assignees
@@ -2581,6 +2595,8 @@ components:
           items:
             $ref: "#/components/schemas/ExtractionFile"
           type: array
+        hidden:
+          type: boolean
         paper:
           items:
             $ref: "#/components/schemas/ExtractionFile"
@@ -2593,6 +2609,7 @@ components:
       required:
         - title
         - paper
+        - hidden
       type: object
     CreateFlashcardSetReq:
       additionalProperties: false
@@ -10195,6 +10212,31 @@ paths:
       summary: Have the AI mark the answers still waiting, in the background
       tags:
         - Assignments
+  /api/assignments/{id}/practice:
+    post:
+      operationId: turnAssignmentToPractice
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assignment"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Make a closed assignment's quiz practice for members when its answers are not shown
+      tags:
+        - Assignments
   /api/assignments/{id}/publish:
     post:
       operationId: publishAssignment
@@ -14957,6 +14999,31 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Take rows off the caller's Done tab, changing nothing else
+      tags:
+        - Assignments
+  /api/todo/tasks:
+    post:
+      operationId: createTodoTask
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignmentFormReq"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assignment"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Set oneself a task that belongs to no workspace
       tags:
         - Assignments
   /api/topics/{id}:

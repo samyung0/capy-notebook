@@ -96,17 +96,17 @@ func (s *Store) inDrawingAttempt(ctx context.Context, userID, attemptID string, 
 	defer tx.Rollback(ctx)
 	var r attemptRow
 	var d drawingAttempt
-	err = tx.QueryRow(ctx, `SELECT a.workspace_id, t.submitted_at, t.deadline_at, a.closed_at, a.no_late, a.due_at, a.questions, a.marking
+	err = tx.QueryRow(ctx, `SELECT COALESCE(a.workspace_id, ''), a.own, a.created_by, t.submitted_at, t.deadline_at, a.closed_at, a.no_late, a.due_at, a.questions, a.marking
 		FROM attempts t JOIN assignments a ON a.id=t.assignment_id
 		WHERE t.id=$1 AND t.user_id=$2 FOR UPDATE OF t`, attemptID, userID).
-		Scan(&r.wsID, &r.submitted, &r.deadline, &r.closedAt, &r.noLate, &r.dueAt, &d.frozen, &d.marking)
+		Scan(&r.wsID, &r.own, &r.maker, &r.submitted, &r.deadline, &r.closedAt, &r.noLate, &r.dueAt, &d.frozen, &d.marking)
 	if isNoRows(err) {
 		return ErrNotFound
 	}
 	if err != nil {
 		return err
 	}
-	if _, err := s.assignmentStaff(ctx, tx, userID, r.wsID); err != nil {
+	if _, err := s.staffOf(ctx, tx, userID, r.task()); err != nil {
 		return err
 	}
 	if r.submitted != nil {
@@ -374,9 +374,10 @@ func (s *Store) ReadableDrawing(ctx context.Context, userID, drawingID string) (
 	if d.UserID == userID {
 		return d, nil
 	}
+	// A practice drawing, and a task's (whose maker drew it), are their drawer's alone.
 	var wsID *string
 	if err := s.pool.QueryRow(ctx, `SELECT a.workspace_id FROM attempts t
-		JOIN assignments a ON a.id=t.assignment_id WHERE t.id=$1`, d.AttemptID).Scan(&wsID); err != nil && !isNoRows(err) {
+		JOIN assignments a ON a.id=t.assignment_id AND NOT a.own WHERE t.id=$1`, d.AttemptID).Scan(&wsID); err != nil && !isNoRows(err) {
 		return Drawing{}, err
 	}
 	if wsID == nil {

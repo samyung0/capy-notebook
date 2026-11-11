@@ -188,7 +188,7 @@ export function expectRealPages(drawn: DrawnSheet[], format: 'docx' | 'pptx') {
   expect(new Set(drawn.map((page) => page.base64)).size).toBe(drawn.length);
 }
 
-/** Selects `number` alone and presses Extract questions: the sheet says it is picked,
+/** Selects `number` alone and presses Convert to quiz: the sheet says it is picked,
  * the bar counts one, and Extract waits for nothing. Answers the run's id. */
 export async function extractPage(page: Page, number: number) {
   await pageSheet(page, number).click();

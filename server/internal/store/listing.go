@@ -295,10 +295,10 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 	if f.Member {
 		where = ` WHERE m.id IN (SELECT id FROM materials WHERE workspace_id IS NULL AND owner_user_id=$1
 			UNION ALL SELECT id FROM materials WHERE workspace_id IN (` + visibleWorkspacesSQL("$1") + `))
-			AND (workspace_item_visible(m.hidden, m.workspace_id, $1) OR ` + quizAssignedToSQL("m.id", "$1") + ` IS NOT NULL)`
+			AND (workspace_item_visible(` + materialHiddenSQL + `, m.workspace_id, $1) OR ` + quizAssignedToSQL("m.id", "$1") + ` IS NOT NULL)`
 	} else if f.All {
 		where = ` WHERE (m.owner_user_id=$1 OR m.workspace_id IN (` + memberWorkspacesSQL("$1") + `))
-			AND (workspace_item_visible(m.hidden, m.workspace_id, $1) OR ` + quizAssignedToSQL("m.id", "$1") + ` IS NOT NULL)`
+			AND (workspace_item_visible(` + materialHiddenSQL + `, m.workspace_id, $1) OR ` + quizAssignedToSQL("m.id", "$1") + ` IS NOT NULL)`
 	}
 	where += ` AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND m.kind = ANY($2)`
 	if len(f.WorkspaceIDs) > 0 {
@@ -585,7 +585,7 @@ func (s *Store) ListWorkspaceRecent(ctx context.Context, userID, wsID string, li
 			m.topic_id, m.privacy, m.created_at, m.updated_at, m.size_bytes, m.preview, m.hidden, `+materialAssignedCols("$3")+`
 		FROM materials m
 		WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
-			AND (workspace_item_visible(m.hidden, m.workspace_id, $3) OR `+quizAssignedToSQL("m.id", "$3")+` IS NOT NULL)
+			AND (workspace_item_visible(`+materialHiddenSQL+`, m.workspace_id, $3) OR `+quizAssignedToSQL("m.id", "$3")+` IS NOT NULL)
 		ORDER BY m.created_at DESC, m.id LIMIT $2`, wsID, limit, userID)
 	if err != nil {
 		return out, err

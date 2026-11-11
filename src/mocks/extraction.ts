@@ -363,12 +363,13 @@ function withMissingFigure(questions: Question[]): Question[] {
 
 /** A run from start to end, on timers so it goes on with its page closed, and
  * its end on the mock's stand-in for the event stream. `saveQuiz` makes the
- * quiz, hidden from members, and returns its id. */
+ * quiz, hidden from members if the request says so, and returns its id. */
 export function extractionHandlers(
   saveQuiz: (
     workspaceId: string,
     title: string,
-    questions: Question[]
+    questions: Question[],
+    hidden: boolean
   ) => string,
   titleTaken: (workspaceId: string, title: string) => boolean
 ) {
@@ -450,7 +451,12 @@ export function extractionHandlers(
               if (status === 'done') {
                 const chosen = questions.slice(0, confirmed);
                 const kept = leaves ? chosen.slice(0, -1) : chosen;
-                run.quizId = saveQuiz(workspaceId, body.title, kept);
+                run.quizId = saveQuiz(
+                  workspaceId,
+                  body.title,
+                  kept,
+                  body.hidden
+                );
                 draftQuizQuestions.set(run.quizId, withMissingFigure(kept));
                 run.report = reportFor(
                   labels.slice(0, kept.length),

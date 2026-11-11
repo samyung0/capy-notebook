@@ -134,6 +134,18 @@ export const closedItself = (
   now = Date.now()
 ) => noLate && pastDue(dueAt, now);
 
+/** A class's assignment under Show answers Do not show that staff have not
+ * turned to practice: its quiz stays held from members past the close. */
+export const holdsQuizPastClose = ({
+  kind,
+  manage,
+  own,
+}: Pick<Assignment, 'kind' | 'manage' | 'own'>) =>
+  !own &&
+  kind === 'marked' &&
+  manage?.showAnswers === 'never' &&
+  !manage.practiceAt;
+
 /** Past its due date with late work open until an owner or TA closes it. */
 export const takesLateWork = (
   {
