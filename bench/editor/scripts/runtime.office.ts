@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { cpus } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -690,6 +690,200 @@ const growth = (to: Heap, from: Heap) => ({
   workersJsMB: deltaOf(to.workersJsMB, from.workersJsMB),
   workersWasmMB: deltaOf(to.workersWasmMB, from.workersWasmMB),
 });
+
+/** One fetch in some realm, from its resource or navigation timing. */
+interface Download {
+  /** encodedBodySize: the body as encoded, also when none was sent. */
+  encoded: number;
+  initiator: string;
+  name: string;
+  /** Epoch ms the fetch started. */
+  start: number;
+  /** transferSize: on the wire, headers included; 0 from the HTTP cache or
+   * a service worker. */
+  transfer: number;
+}
+
+interface DownloadWatch {
+  entries: Download[];
+  unprobedWorkers: number;
+}
+
+const DOWNLOAD_MARK = '[office-bench download]';
+
+/**
+ * Sends each fetch of this realm to the test as a console message once it
+ * ends, the buffer first raised (the app fills the default 250 before the
+ * first open). Self-contained: it runs as an init script and in workers.
+ */
+function streamDownloads(mark: string) {
+  performance.setResourceTimingBufferSize(100_000);
+  // Workers have no navigation entry.
+  for (const type of ['navigation', 'resource'].filter((name) =>
+    PerformanceObserver.supportedEntryTypes.includes(name)
+  ))
+    new PerformanceObserver((list) => {
+      const entries = (list.getEntries() as PerformanceResourceTiming[]).map(
+        (entry) => ({
+          encoded: entry.encodedBodySize,
+          initiator: entry.initiatorType,
+          name: entry.name,
+          start: performance.timeOrigin + entry.startTime,
+          transfer: entry.transferSize,
+        })
+      );
+      console.debug(mark + JSON.stringify(entries));
+    }).observe({ buffered: true, type });
+}
+
+/**
+ * Every fetch of every realm: the host page, the runtime frames and their
+ * workers. Streamed as they end, since the DOCX viewer worker ends once it
+ * answers and the View's frame goes at View to Edit, before a read at the
+ * end could reach them. Must run before navigation; the list fills as the
+ * test goes. A worker that ends before its probe runs is counted in
+ * `unprobedWorkers` (its fetches are missing).
+ */
+async function watchDownloads(page: Page) {
+  const watch: DownloadWatch = { entries: [], unprobedWorkers: 0 };
+  page.on('console', (message) => {
+    const text = message.text();
+    if (text.startsWith(DOWNLOAD_MARK))
+      watch.entries.push(
+        ...(JSON.parse(text.slice(DOWNLOAD_MARK.length)) as Download[])
+      );
+  });
+  page.on('worker', (worker) => {
+    worker.evaluate(streamDownloads, DOWNLOAD_MARK).catch(() => {
+      watch.unprobedWorkers += 1;
+    });
+  });
+  await page.addInitScript(streamDownloads, DOWNLOAD_MARK);
+  return watch;
+}
+
+/** workers/office/stage.mjs's copy of the build (office-server.mjs). */
+const STAGE_DIR = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '.results',
+  'office-stage'
+);
+const storedBrotli = new Map<string, number | null>();
+
+/** The `.br` the Office Worker serves a file as, if it stores one. */
+function storedBrotliBytes(url: URL) {
+  const file = path.join(STAGE_DIR, `${decodeURIComponent(url.pathname)}.br`);
+  if (!storedBrotli.has(file))
+    storedBrotli.set(file, existsSync(file) ? statSync(file).size : null);
+  return storedBrotli.get(file) ?? null;
+}
+
+const kib = (bytes: number) => Math.round((bytes / 1024) * 10) / 10;
+// A built file's name without Vite's hash: `docx_view_wasm_bg`.
+const HASHED = /-[\w-]{8}$/;
+
+/** A fetch's kind by its file extension; for an engine, its module too. */
+function downloadKind(
+  entry: Download,
+  url: URL,
+  runtimeOrigin: string
+): { kind: string; module?: string } {
+  const file = url.pathname.split('/').at(-1) ?? '';
+  const dot = file.lastIndexOf('.');
+  const extension = dot < 0 ? '' : file.slice(dot + 1);
+  const module = (dot < 0 ? file : file.slice(0, dot)).replace(HASHED, '');
+  if (
+    entry.initiator === 'navigation' ||
+    ['css', 'html', 'js', 'mjs'].includes(extension)
+  )
+    return {
+      kind: url.origin === runtimeOrigin ? 'officeRuntimeJs' : 'appJsCss',
+    };
+  if (extension === 'wasm')
+    return module.startsWith('fontpack')
+      ? { kind: 'fontDecoder' }
+      : { kind: 'engineWasm', module };
+  if (['otf', 'ttf', 'woff', 'woff2', 'zst'].includes(extension))
+    return { kind: 'fonts' };
+  if (['docx', 'pptx', 'xlsx'].includes(extension))
+    return { kind: 'sourceFile' };
+  return { kind: 'other' };
+}
+
+/**
+ * What the fetches that started in [from, to) downloaded, by kind, with the
+ * engine WASM per module. `transferredKiB` is what this bench's server sent
+ * (vite preview, which sends every file as built, uncompressed);
+ * `withStoredBrotliKiB` is the same with each body the Office Worker stores
+ * as a brotli-11 `.br` (WASM, TTF, OTF) at that size, as production serves
+ * it. `bodiesSent` counts the fetches whose body crossed the wire: one
+ * answered by the HTTP cache or by MSW's service worker (the app's origin,
+ * bench only) transfers nothing, a revalidation (vite preview's ETags) only
+ * its headers.
+ */
+function downloadsBetween(
+  watch: DownloadWatch,
+  from: number,
+  to: number,
+  runtimeOrigin: string
+) {
+  const tally = () => ({
+    bodiesSent: 0,
+    encodedKiB: 0,
+    requests: 0,
+    transferredKiB: 0,
+    withStoredBrotliKiB: 0,
+  });
+  type Tally = ReturnType<typeof tally>;
+  const kinds: Record<string, Tally> = {};
+  const modules: Record<string, Tally> = {};
+  const total = tally();
+  const add = (
+    into: Tally,
+    entry: Download,
+    bodySent: boolean,
+    sent: number
+  ) => {
+    into.requests += 1;
+    if (bodySent) into.bodiesSent += 1;
+    into.encodedKiB += entry.encoded;
+    into.transferredKiB += entry.transfer;
+    into.withStoredBrotliKiB += sent;
+  };
+  for (const entry of watch.entries) {
+    // The host's entry for the runtime frame; the frame reports its own.
+    if (entry.start < from || entry.start >= to || entry.initiator === 'iframe')
+      continue;
+    const url = new URL(entry.name);
+    const { kind, module } = downloadKind(entry, url, runtimeOrigin);
+    // More than the headers came (a revalidation may report no body size).
+    const bodySent = entry.encoded > 0 && entry.transfer > entry.encoded;
+    const stored = bodySent ? storedBrotliBytes(url) : null;
+    const sent =
+      stored === null
+        ? entry.transfer
+        : entry.transfer - entry.encoded + stored;
+    add((kinds[kind] ??= tally()), entry, bodySent, sent);
+    add(total, entry, bodySent, sent);
+    if (module) add((modules[module] ??= tally()), entry, bodySent, sent);
+  }
+  const inKiB = (into: Tally) => ({
+    ...into,
+    encodedKiB: kib(into.encodedKiB),
+    transferredKiB: kib(into.transferredKiB),
+    withStoredBrotliKiB: kib(into.withStoredBrotliKiB),
+  });
+  return {
+    engineWasmModules: Object.fromEntries(
+      Object.entries(modules).map(([name, into]) => [name, inKiB(into)])
+    ),
+    kinds: Object.fromEntries(
+      Object.entries(kinds).map(([name, into]) => [name, inKiB(into)])
+    ),
+    total: inKiB(total),
+  };
+}
 
 async function openWorkspace(page: Page) {
   await installHostProbe(page);
@@ -1567,6 +1761,10 @@ for (const fixture of FIXTURES) {
     page.on('console', (message) => {
       if (FALLBACK.test(message.text())) fallbacks.push(message.text());
     });
+    // Report-only: the open from the workspace's load to the Edit click, the
+    // edit from that click to the end of its settle (late fonts included).
+    const fetches = await watchDownloads(page);
+    const openFrom = Date.now();
 
     const open = await openInView(page, fixture);
     await page.waitForTimeout(2000);
@@ -1575,6 +1773,7 @@ for (const fixture of FIXTURES) {
 
     const mode = page.getByRole('button', { name: m.material_mode() });
     await expect(mode).toBeEnabled({ timeout: 60_000 });
+    const editFrom = Date.now();
     // `ready` is the edit frame's first paint; XLSX/PPTX budgets stay on
     // `collaboration-ready` until recalibrated.
     const [painted, replica = painted] = await clickUntil(
@@ -1585,6 +1784,7 @@ for (const fixture of FIXTURES) {
     const edit = { ...replica, firstPaintMs: painted.ms };
     // Let the edit frame's idle work (mirror, glyph cache) settle first.
     await page.waitForTimeout(5000);
+    const editTo = Date.now();
     const editHeap = await heap(page, { workers: false });
     const typing = await typeAndTime(page, fixture);
     await page.waitForTimeout(2000);
@@ -1596,6 +1796,7 @@ for (const fixture of FIXTURES) {
     const typingEnd = await timeKeys(page, frame, fixture);
     await page.waitForTimeout(2000);
     const typingEndHeap = await heap(page);
+    const runtimeOrigin = new URL(frame.url()).origin;
 
     const budget = budgetOf(MEDIANS[fixture.id]);
     await reportMetrics(
@@ -1604,9 +1805,15 @@ for (const fixture of FIXTURES) {
       {
         budget: {
           ...budget,
+          downloads: 'report-only',
           editFirstPaintMs:
             fixture.format === 'docx' ? budget.editReadyMs : 'report-only',
           heap: 'report-only',
+        },
+        downloads: {
+          edit: downloadsBetween(fetches, editFrom, editTo, runtimeOrigin),
+          open: downloadsBetween(fetches, openFrom, editFrom, runtimeOrigin),
+          unprobedWorkers: fetches.unprobedWorkers,
         },
         edit: {
           firstPaintMs: edit.firstPaintMs,

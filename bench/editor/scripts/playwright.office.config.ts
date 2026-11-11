@@ -23,6 +23,8 @@ const root = path.resolve(perfDir, '..', '..', '..');
 const port = Number(process.env.PERF_OFFICE_PORT ?? 4518);
 const runtimePort = port + 1;
 const outDir = path.join(perfDir, '..', '.results', 'office-dist');
+// The Office Worker's copy, for the stored `.br` sizes (runtime.office.ts).
+const stageDir = path.join(perfDir, '..', '.results', 'office-stage');
 
 export default defineConfig({
   fullyParallel: false,
@@ -40,9 +42,9 @@ export default defineConfig({
     viewport: { height: 800, width: 1280 },
   },
   webServer: {
-    // One build, then the runtime's server and the app's (whose URL
-    // Playwright waits for); both stop with the command.
-    command: `node bench/editor/scripts/office-server.mjs "${outDir}" ${port}`,
+    // One build and its staged copy, then the runtime's server and the
+    // app's (whose URL Playwright waits for); both stop with the command.
+    command: `node bench/editor/scripts/office-server.mjs "${outDir}" ${port} "${stageDir}"`,
     cwd: root,
     env: {
       ...process.env,
