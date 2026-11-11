@@ -79,7 +79,9 @@ builds with `NODE_ENV=production`, MSW and `VITE_LOAD_TEST_SEED`, then serves it
 with the runtime on the next port of `localhost`: another origin on the same
 site, as `office.capynotebook.com` is to the app, so the iframe is cross-origin
 and shares the app's renderer process as in production). The build takes a few
-minutes. It covers one small and one large file per format:
+minutes. Its web server, [`office-server.mjs`](../bench/editor/scripts/office-server.mjs),
+is a Node script so the bench starts on Windows as on Linux. It covers one small
+and one large file per format:
 
 | Format | Small | Large |
 | --- | --- | --- |

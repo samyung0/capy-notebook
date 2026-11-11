@@ -40,11 +40,9 @@ export default defineConfig({
     viewport: { height: 800, width: 1280 },
   },
   webServer: {
-    // MSW needs the development mode; NODE_ENV=production keeps React and
-    // the bundle production. The heap flag is the one `pnpm build` uses.
-    // One build, then the runtime's server in the background and the app's
-    // (whose URL Playwright waits for) in front; both stop with the command.
-    command: `node --max-old-space-size=8192 node_modules/vite/bin/vite.js build --mode development --outDir ${outDir} --emptyOutDir && { node node_modules/vite/bin/vite.js preview --mode development --outDir ${outDir} --host 127.0.0.1 --port ${runtimePort} --strictPort & node node_modules/vite/bin/vite.js preview --mode development --outDir ${outDir} --host 127.0.0.1 --port ${port} --strictPort; }`,
+    // One build, then the runtime's server and the app's (whose URL
+    // Playwright waits for); both stop with the command.
+    command: `node bench/editor/scripts/office-server.mjs "${outDir}" ${port}`,
     cwd: root,
     env: {
       ...process.env,
