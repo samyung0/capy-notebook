@@ -517,8 +517,9 @@ function ResolvedFileView({
     return <UnsupportedPreview file={file} />;
   }
 
-  // PPTX opens in OfficeFileView; legacy binary .ppt (and .doc) stays
-  // downloadable.
+  // PPTX opens in OfficeFileView. A legacy .ppt (or .doc, .xls) is renamed
+  // once converted and opens there too; until then, or when its conversion
+  // failed, it stays downloadable.
   if (file.kind === 'slides') return <UnsupportedPreview file={file} />;
 
   const isMarkdown = file.kind === 'md' || ext === 'md' || ext === 'markdown';

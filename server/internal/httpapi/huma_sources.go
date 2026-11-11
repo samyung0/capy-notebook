@@ -478,7 +478,7 @@ func (a *api) checkSourceUpload(
 	}
 	// Credits never block handing in a paper (Epo 2026-11-08): its parse may then
 	// fail, and its answers wait as No credits.
-	if sourceupload.NeedsIngestJob(name, body.Kind, body.ParseMode) && !submission {
+	if sourceupload.SpendsCredits(name, body.Kind, body.ParseMode) && !submission {
 		if err := a.s.AssertCreditsForEstimate(ctx, userID(ctx), body.EstimatedCreditMicros); err != nil {
 			return "", "", err
 		}
@@ -536,6 +536,12 @@ func storedSourceSHA256(ctx context.Context, objects blob.Store, name, kind, pat
 	if store.SourceEditFormat(name, kind) == "" {
 		return "", nil
 	}
+	return objectSHA256(ctx, objects, path, size)
+}
+
+// objectSHA256 hashes a stored object of size bytes; one of another length
+// answers errStoredSourceChanged.
+func objectSHA256(ctx context.Context, objects blob.Store, path string, size int64) (string, error) {
 	body, err := objects.Open(ctx, path)
 	if err != nil {
 		return "", err
@@ -795,7 +801,7 @@ func (a *api) queueSourceImports(ctx context.Context, in *importSourcesInput) (*
 			strings.ContainsAny(contentType, "\r\n") {
 			contentType = "application/octet-stream"
 		}
-		if sourceupload.NeedsIngestJob(meta.Name, kind, mode) {
+		if sourceupload.SpendsCredits(meta.Name, kind, mode) {
 			needsCredits = true
 		}
 

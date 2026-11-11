@@ -12,6 +12,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef } from 'react';
+import { legacyOfficeTarget } from '@/features/files/fileUtils';
 import { forgetDrawingBoards } from '@/features/quizzes/drawing/drawingBoards';
 import {
   answersForCheck,
@@ -1369,17 +1370,22 @@ export const filesQuery = (wsId: string) =>
           ?.map((file) => [file.id, file.ingestPct])
       );
       for (const file of files) {
-        if (file.status === 'pending' || file.status === 'processing') {
-          file.ingestPct = previous.get(file.id);
-          continue;
-        }
-        // A terminal event may have been missed before subscribing or while
-        // disconnected. Refresh the body too when a list read finds completion.
+        const ingesting =
+          file.status === 'pending' || file.status === 'processing';
+        if (ingesting) file.ingestPct = previous.get(file.id);
         const queryKey = qk.file(file.id);
         const cached = client.getQueryData<SourceFile>(queryKey);
-        if (cached?.status === 'pending' || cached?.status === 'processing') {
-          void client.invalidateQueries({ queryKey });
-        }
+        if (!cached) continue;
+        // A terminal event may have been missed before subscribing or while
+        // disconnected. Refresh the body too when a list read finds completion.
+        const finished =
+          !ingesting &&
+          (cached.status === 'pending' || cached.status === 'processing');
+        // A legacy Office file's conversion renamed it, with the parse of the
+        // new file still to come: the open file reads its new name now.
+        const converted =
+          !!legacyOfficeTarget(cached.name) && cached.name !== file.name;
+        if (finished || converted) void client.invalidateQueries({ queryKey });
       }
       return files;
     },
@@ -2186,6 +2192,14 @@ function applyIngestEvent(
     ingestTracker.markStart(fileId);
   }
   patchFileInCache(qc, wsId, fileId, patch);
+  // No event names a converted legacy Office file. A standalone one has no
+  // tree event either, so each event rereads a detail still named as legacy.
+  if (
+    !wsId &&
+    legacyOfficeTarget(qc.getQueryData<SourceFile>(qk.file(fileId))?.name ?? '')
+  ) {
+    void qc.invalidateQueries({ queryKey: qk.file(fileId) });
+  }
   if (status === 'ready' || status === 'failed') {
     trackIngestTerminal(qc, wsId, fileId, status, value.stage);
     // The refetch brings the thumbnail.

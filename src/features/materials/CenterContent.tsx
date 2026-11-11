@@ -76,7 +76,11 @@ import {
   FileModeContext,
   PresenceContext,
 } from '@/features/files/fileModeContext';
-import { fileIsIngesting, IMAGE_MIN_ZOOM } from '@/features/files/fileUtils';
+import {
+  fileIsIngesting,
+  IMAGE_MIN_ZOOM,
+  processingMessage,
+} from '@/features/files/fileUtils';
 import type { OfficeCitation } from '@/features/files/officeProtocol';
 import { FlashcardGrid } from '@/features/flashcards/FlashcardGrid';
 import { LiveFlashcards } from '@/features/flashcards/LiveFlashcards';
@@ -1103,7 +1107,7 @@ function FileBody({
           <p>
             {waiting
               ? m.files_pending_named({ name: file.name })
-              : m.files_processing_named({ name: file.name })}
+              : processingMessage(file)}
           </p>
           <ProgressBar
             className="w-full"
@@ -1122,7 +1126,7 @@ function FileBody({
           message={
             file.status === 'pending'
               ? m.files_pending_named({ name: file.name })
-              : m.files_processing_named({ name: file.name })
+              : processingMessage(file)
           }
         />
       )}

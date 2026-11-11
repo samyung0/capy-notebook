@@ -200,6 +200,57 @@ test('a DOCX upload stores its large picture compressed and its WMF equation rem
   ).toBeAttached();
 });
 
+// A legacy Office file (Epo 2026-11-11): parse-eligible with no page estimate,
+// sent as it is, converted by the server (here the mock worker) and renamed.
+test('a legacy DOC upload shows as converting, becomes a DOCX and opens; a failed conversion says so', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  // The OLE2 signature and padding: nothing in the browser reads it.
+  const picked = Buffer.concat([
+    Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]),
+    Buffer.alloc(4096),
+  ]);
+  await upload(page, [
+    { buffer: picked, mimeType: 'application/msword', name: 'essay.doc' },
+  ]);
+  await expect(
+    page.getByTestId('source-transfer-panel').getByText(m.files_converting())
+  ).toBeVisible({ timeout: 30_000 });
+
+  // Renamed in the tree without a reload, on the converted file's bytes.
+  const { bytes, link } = await stored(page, 'essay.docx');
+  expect(Object.keys(unzipSync(bytes))).toContain('word/document.xml');
+  await expect(
+    page
+      .locator('[data-workspace-file-tree]')
+      .getByRole('link', { exact: true, name: 'essay.doc' })
+  ).toHaveCount(0);
+
+  // It opens in the Office viewer, not the download-only view.
+  await link.focus();
+  await page.keyboard.press('Enter');
+  await expect(
+    page.getByRole('heading', { exact: true, name: 'essay.docx' })
+  ).toBeVisible();
+  await expect(
+    page.frameLocator('iframe[src*="office-runtime"]').locator('canvas').first()
+  ).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(m.files_preview_unavailable())).toHaveCount(0);
+
+  // A failed file still named .doc failed in its conversion: it says so and
+  // stays downloadable.
+  await page.goto('/workspaces/ws_bio?file=mock-preview-legacy');
+  await expect(page.getByTestId('file-not-indexed')).toContainText(
+    m.files_convert_failed()
+  );
+  await expect(
+    page.getByRole('button', {
+      name: m.files_download_original({ name: 'Failed conversion.doc' }),
+    })
+  ).toBeVisible();
+});
+
 test('an image source arrives at 5 megapixels at most, HEIC, TIFF and JPEG 2000 through their decoders and saved as JPEG even when small, an SVG as PNG, and a corrupt HEIC is refused', async ({
   page,
 }) => {

@@ -4,6 +4,9 @@ Claims one selected stage from the Postgres queue and executes the server-owned
 processing plan attached at enqueue time. File-category checks do not select
 the pipeline. Parse coordinators download the B2 source into the ingest host's
 shared spool and hand an immutable local bundle to an ingest continuation.
+A legacy Office upload (.doc, .xls, .ppt) is a parse coordinator's job too
+(route ``legacy_convert``): the parser converts it and the gateway swaps the
+converted file in, finishes the job and queues the ordinary parse.
 
 The parse returns a bundle — a ``content_list.json`` carrying a page index and
 bounding box per block, plus the extracted images — so citations a reader can
@@ -44,7 +47,7 @@ from .. import (
     registry,
     use_compatible_event_loop,
 )
-from ..config import cfg, require_parse_timeouts
+from ..config import IMPORT_PICTURE_MARGIN_S, cfg, require_parse_timeouts
 from ..jobs import (
     CONTENT_CLAIM_STALE_S,
     CONTENT_CLAIM_WAIT_S,
@@ -72,7 +75,17 @@ from ..retrieval.confidence import VLM_RECOVERY, score_chunks, vlm_pages
 from ..retrieval.headings import retain_headings
 from ..retrieval.packing import pack_blocks
 from ..store import blobstore, db
-from . import capacity, decode, import_stage, source_text, telemetry, thumbnail, uat
+from . import (
+    capacity,
+    decode,
+    image_check,
+    images,
+    import_stage,
+    source_text,
+    telemetry,
+    thumbnail,
+    uat,
+)
 from . import plan as ingest_plan
 
 log = logging.getLogger("capy.worker")
@@ -98,6 +111,12 @@ _resource_rates: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
 
 _PARSE_ROUTES = {
     "fast": parser_client.ROUTE_FAST,
+}
+# The stored type of a converted legacy Office file, by its new format.
+_OOXML_TYPES = {
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 }
 
 
@@ -1574,6 +1593,137 @@ async def _ensure_document_artifact(
     return artifact
 
 
+def _close_converted(job_id: str) -> bool:
+    """True once the gateway's conversion handoff finished this job (the only
+    way a legacy conversion ends done), closing this run's attempt record.
+    From then on the file, its reservation and the ordinary parse are the
+    gateway's: this run writes nothing else."""
+    with db.connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM jobs WHERE id=%s AND status='done'", (job_id,))
+        if cur.fetchone() is None:
+            return False
+        db.finish_job_attempt(
+            cur,
+            attempt_id=telemetry.current_attempt_id(),
+            outcome="succeeded",
+            snapshot=telemetry.snapshot(),
+        )
+        conn.commit()
+    return True
+
+
+async def _convert_legacy(
+    *,
+    job: dict,
+    payload: dict,
+    name: str,
+    processing_plan: ingest_plan.ProcessingPlan,
+    source_key: str,
+    source_sha256: str,
+    scope: db.Scope,
+    file_id: str,
+    picture_deadline: float,
+) -> bool:
+    """A legacy Office upload's whole job: the parser converts it, the
+    converted file gets an imported Office file's picture rule, and the
+    gateway swaps it in for the uploaded bytes, finishes this job and queues
+    what follows. False when the gateway found the claim lost: nothing more
+    is written. A conversion, picture or gateway refusal is final."""
+    convert_to = processing_plan.convert_to
+    image_max_bytes = payload.get("imageMaxBytes")
+    if type(image_max_bytes) is not int or image_max_bytes <= 0:
+        raise TerminalError("legacy conversion payload names no picture cap")
+    if not cfg.gateway_url or not cfg.pipeline_secret:
+        raise TerminalError(
+            "GATEWAY_URL and PIPELINE_SECRET are required to convert legacy "
+            "Office files"
+        )
+    await asyncio.to_thread(
+        _set_file_status,
+        file_id,
+        "processing",
+        int(payload["sourceRevision"]),
+        str(payload.get("sourceETag") or ""),
+        str(payload.get("actorUserId") or ""),
+    )
+    _publish_progress(scope, file_id, "converting", 15, status="processing")
+    _set_stage("convert_legacy")
+    try:
+        converted = await asyncio.to_thread(
+            parser_client.convert_legacy,
+            source_key=source_key,
+            source_sha256=source_sha256,
+            upload_name=name,
+            convert_to=convert_to,
+            request_id=job["id"],
+        )
+    except parser_client.ParserTerminalResourceError as exc:
+        raise TerminalError(
+            "this file hit a terminal parser resource limit while converting"
+        ) from exc
+    except parser_client.ParserFormatMismatchError as exc:
+        raise TerminalError(str(exc)) from exc
+    except parser_client.ParserUnreadableError as exc:
+        raise TerminalError(f"this file cannot be converted: {exc}") from exc
+    except parser_client.ParserCapacityError as exc:
+        # As for a parse: the job re-pends without spending an attempt.
+        raise CapacityWait(processing_plan.route) from exc
+
+    _set_stage("convert_pictures")
+    try:
+        stored, removed = await asyncio.to_thread(
+            import_stage.office_pictures, converted, image_max_bytes, picture_deadline
+        )
+    except images.OutOfTime as exc:
+        raise TerminalError(
+            f"the converted file's pictures took too long: {exc}"
+        ) from exc
+    except image_check.Refused as exc:
+        raise TerminalError(f"the converted file was refused: {exc}") from exc
+
+    _set_stage("replace_source")
+    # Where an upload may land: the incoming/ prefix (one-day lifecycle).
+    incoming_key = f"incoming/legacy-convert/{job['id']}.{convert_to}"
+    try:
+        await asyncio.to_thread(
+            blobstore.write_bytes, incoming_key, stored, _OOXML_TYPES[convert_to]
+        )
+    except Exception as exc:
+        raise RetryableError(f"B2 upload failed: {exc}") from exc
+    telemetry.record(artifact_bytes=len(stored))
+    status, answer = await asyncio.to_thread(
+        import_stage.gateway_post,
+        "/api/internal/files/convert",
+        {
+            "jobId": job["id"],
+            "attempt": int(job.get("attempts") or 1),
+            "fileId": file_id,
+            "incomingKey": incoming_key,
+            "actualSize": len(stored),
+            "sha256": hashlib.sha256(stored).hexdigest(),
+            "removedPictures": removed,
+        },
+    )
+    if status == 200:
+        log.info(
+            "converted %s to %s (parse job %s)",
+            name,
+            answer.get("name"),
+            answer.get("parseJobId"),
+        )
+        return True
+    if status == 409:
+        log.warning(
+            "job %s lost its claim before the conversion handoff; discarding outcome",
+            job["id"],
+        )
+        return False
+    refusal = f"{status} {answer.get('code') or ''}".strip()
+    if status >= 500 or status == 429:
+        raise RetryableError(f"conversion handoff gateway returned {refusal}")
+    raise TerminalError(f"the converted file was refused: {refusal}")
+
+
 # ------------------------------------------------------------------ parsing
 
 
@@ -1930,8 +2080,13 @@ async def _process_ingest_job_bound(job: dict) -> None:
     kind = str(payload["kind"]).lower()
     processing_plan = ingest_plan.require(payload.get("processingPlan"))
     job_type = str(job.get("type") or "ingest")
-    if job_type == "parse" and processing_plan.route != ingest_plan.DOCUMENT_PARSE:
+    legacy = processing_plan.route == ingest_plan.LEGACY_CONVERT
+    if job_type == "parse" and not (
+        legacy or processing_plan.route == ingest_plan.DOCUMENT_PARSE
+    ):
         raise TerminalError("parse job does not select document parsing")
+    if job_type == "ingest" and legacy:
+        raise TerminalError("a legacy conversion is a parse job")
     if (
         job_type == "ingest"
         and processing_plan.route == ingest_plan.DOCUMENT_PARSE
@@ -2477,6 +2632,11 @@ async def _process_ingest_job(
     processing_plan: ingest_plan.ProcessingPlan,
 ) -> None:
     _set_stage("validating_source")
+    # A legacy conversion's pictures stop a margin before the job's time
+    # limit, which runs from about now.
+    picture_deadline = (
+        time.monotonic() + cfg.parse_job_timeout - IMPORT_PICTURE_MARGIN_S
+    )
     job_type = str(job.get("type") or "ingest")
     attempt = int(job.get("attempts") or 1)
     source_revision = int(payload["sourceRevision"])
@@ -2571,6 +2731,29 @@ async def _process_ingest_job(
         source_etag,
         str(payload.get("actorUserId") or ""),
     )
+    if processing_plan.route == ingest_plan.LEGACY_CONVERT:
+        # Nothing is parsed or indexed here: the converted file's own parse
+        # job, queued by the gateway, does that.
+        if not local_path or not source_key:
+            raise RetryableError("local document source is missing")
+        if await _convert_legacy(
+            job=job,
+            payload=payload,
+            name=name,
+            processing_plan=processing_plan,
+            source_key=source_key,
+            source_sha256=source_sha256,
+            scope=scope,
+            file_id=file_id,
+            picture_deadline=picture_deadline,
+        ):
+            # The job is done and the gateway's: nothing here may fail it.
+            try:
+                await asyncio.to_thread(_close_converted, job["id"])
+                await asyncio.to_thread(cleanup_source)
+            except Exception:
+                log.warning("could not tidy up a converted job", exc_info=True)
+        return
     identity = _pipeline_identity(processing_plan)
     _set_stage("donor_lookup")
     pin = await _embedding_pin(scope)
@@ -3061,6 +3244,15 @@ async def _handle_job_failure_bound(job: dict, exc: BaseException) -> None:
                 str(payload.get("sourceETag") or ""),
             )
         except db.SourceSupersededError as superseded:
+            route = (payload.get("processingPlan") or {}).get("route")
+            # A legacy conversion moves the source itself. When its answer
+            # was lost on the way back the gateway has still finished the job
+            # and handed its reservation on, so nothing is written for it.
+            if route == ingest_plan.LEGACY_CONVERT and await asyncio.to_thread(
+                _close_converted, job["id"]
+            ):
+                await asyncio.to_thread(_cleanup_payload_source, payload)
+                return
             # Any error after a publish is terminal for the old source, even
             # if the original error would normally retry. Never re-pend A once
             # the logical file points at B.

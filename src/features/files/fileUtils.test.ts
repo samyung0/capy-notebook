@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { m } from '@/i18n';
 import {
+  failedNotIndexedMessage,
   fileCanClone,
   fileCanMoveTo,
   fileIsIngesting,
+  legacyOfficeTarget,
   notIndexedMessage,
+  processingMessage,
 } from './fileUtils';
 
 describe('fileIsIngesting', () => {
@@ -49,6 +52,34 @@ describe('notIndexedMessage', () => {
     );
     expect(notIndexedMessage({ indexLimit: undefined })).toBe(
       m.files_not_indexed()
+    );
+  });
+});
+
+// A legacy Office upload is converted and renamed by the server (Epo
+// 2026-11-11), so a legacy name means the conversion has not finished.
+describe('legacy Office files', () => {
+  it('names the format each legacy ending is converted to', () => {
+    expect(legacyOfficeTarget('Essay.DOC')).toBe('docx');
+    expect(legacyOfficeTarget('grades.xls')).toBe('xlsx');
+    expect(legacyOfficeTarget('talk.v2.ppt')).toBe('pptx');
+    expect(legacyOfficeTarget('essay.docx')).toBe(null);
+    expect(legacyOfficeTarget('doc')).toBe(null);
+  });
+
+  it('says a processing legacy file is being converted', () => {
+    expect(processingMessage({ name: 'essay.doc' })).toBe(m.files_converting());
+    expect(processingMessage({ name: 'essay.docx' })).toBe(
+      m.files_processing_named({ name: 'essay.docx' })
+    );
+  });
+
+  it('says a failed legacy file could not be converted', () => {
+    expect(failedNotIndexedMessage({ name: 'grades.xls' })).toBe(
+      m.files_convert_failed()
+    );
+    expect(failedNotIndexedMessage({ name: 'grades.xlsx' })).toBe(
+      m.files_not_indexed_failed()
     );
   });
 });

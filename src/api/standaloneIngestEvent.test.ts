@@ -54,4 +54,30 @@ describe('standalone ingest event', () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: qk.ownedFilesRoot });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: qk.file(file.id) });
   });
+
+  // A standalone file has no tree event, and no event names a converted
+  // legacy Office file: each event rereads a detail still named as legacy.
+  it('rereads a legacy Office file until it is renamed', () => {
+    const qc = new QueryClient();
+    const legacy = { ...file, id: 'f_legacy', name: 'essay.doc' };
+    qc.setQueryData(qk.file(legacy.id), legacy);
+    qc.setQueryData(qk.file(file.id), file);
+    const invalidate = vi.spyOn(qc, 'invalidateQueries');
+
+    applyNotificationEvent(qc, {
+      fileId: legacy.id,
+      pct: 0,
+      status: 'pending',
+      type: 'ingest',
+    });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: qk.file(legacy.id) });
+
+    applyNotificationEvent(qc, {
+      fileId: file.id,
+      pct: 40,
+      status: 'processing',
+      type: 'ingest',
+    });
+    expect(invalidate).toHaveBeenCalledTimes(1);
+  });
 });

@@ -19,11 +19,12 @@ export const dialogFiles = [
     kind: 'txt',
     name: 'No stored bytes.txt',
   },
+  // Failed and still named as legacy Office: its conversion failed.
   {
     hasBytes: true,
     id: 'mock-preview-legacy',
     kind: 'doc',
-    name: 'Legacy document.doc',
+    name: 'Failed conversion.doc',
   },
   {
     hasBytes: true,

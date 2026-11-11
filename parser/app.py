@@ -12,6 +12,9 @@ without a text layer go into the bundle as grey JPEG renders
 (``vlm/<page>.jpg``), at most CAPY_PARSE_OCR_PAGE_CAP per document, and the
 ingest worker reads them with the VLM. A document past its parse deadline or
 OOM-killed is quarantined by fingerprint and only its parse child is replaced.
+A request with ``convert_to`` takes the same queue and children, but its child
+converts a legacy Office file to its OOXML twin instead of parsing it: that
+file is the artifact, and no bundle cache is read or written for it.
 
 The API process opens no source with MuPDF: the parse children count a
 document's pages and parse it. Children answer in JSON and plain files,
@@ -102,6 +105,8 @@ def _dependency_versions() -> dict[str, str]:
 
 PARSER_DEPENDENCIES = _dependency_versions()
 MAX_SOURCE_BYTES = int(os.environ.get("CAPY_MAX_SOURCE_BYTES", str(100 << 20)))
+# What ``convert_to`` may name: a legacy Office file's OOXML twin.
+CONVERT_TARGETS = frozenset({"docx", "xlsx", "pptx"})
 MAX_ARTIFACT_BYTES = int(
     os.environ.get("CAPY_PARSE_ARTIFACT_MAX_BYTES", str(256 << 20))
 )
@@ -176,6 +181,9 @@ class Document:
     data: bytes
     name: str
     fingerprint: str = ""
+    # A legacy Office file's OOXML target (docx, xlsx, pptx): the parse child
+    # converts the file instead of parsing it.
+    convert_to: str = ""
 
 
 class ParseHardTimeout(RuntimeError):
@@ -331,6 +339,23 @@ def run_document(document: Document) -> dict[str, Any]:
     return result
 
 
+def convert_document(document: Document) -> dict[str, Any]:
+    """Convert one legacy Office file to its OOXML twin inside the parse
+    child; the output is capped like a source."""
+    from odl.document import convert_legacy
+
+    WORK_DIR.mkdir(parents=True, exist_ok=True)
+    return {
+        "_converted": convert_legacy(
+            document.data,
+            document.name,
+            document.convert_to,
+            WORK_DIR,
+            MAX_SOURCE_BYTES,
+        )
+    }
+
+
 def _set_oom_score_adj(value: int) -> None:
     try:
         Path("/proc/self/oom_score_adj").write_text(str(value), encoding="ascii")
@@ -411,12 +436,16 @@ def _parse_worker_main(
             return
         if request is None:
             return
-        source_path, result_path, name, fingerprint = request
+        source_path, result_path, name, fingerprint, convert_to = request
         document = None
         result = None
         try:
-            document = Document(Path(source_path).read_bytes(), name, fingerprint)
-            result = run_document(document)
+            document = Document(
+                Path(source_path).read_bytes(), name, fingerprint, convert_to
+            )
+            result = (
+                convert_document(document) if convert_to else run_document(document)
+            )
             _write_worker_result(Path(result_path), result)
             _send(responses, "ok", None)
         except Exception as exc:  # noqa: BLE001 - returned to API supervisor
@@ -597,7 +626,7 @@ class _ParseWorkerProcess(_Child):
         super().start()
 
     async def run(self, document: Document, result_path: Path) -> None:
-        """Parse into ``result_path``."""
+        """Parse, or convert, into ``result_path``."""
         if not self.alive:
             raise ParserRuntimeFailure(f"{self._name} is not running")
         source, source_path = _temporary_file(self.work_dir, ".source")  # see _run_slot
@@ -610,6 +639,7 @@ class _ParseWorkerProcess(_Child):
                     str(result_path),
                     document.name,
                     document.fingerprint,
+                    document.convert_to,
                 )
             )
             _unwrap(await self.recv())
@@ -629,9 +659,9 @@ def _unlink(*paths: Path) -> None:
 
 
 # A parse child's result file: the result as JSON, then these byte values
-# (empty when absent), then one JPEG per ``_vlm_pages`` entry, each part
-# preceded by its 8-byte length.
-_RESULT_BYTES = ("_parsed_pdf", "_page_image")
+# (empty when absent; ``_converted`` is a conversion's whole result), then one
+# JPEG per ``_vlm_pages`` entry, each part preceded by its 8-byte length.
+_RESULT_BYTES = ("_parsed_pdf", "_page_image", "_converted")
 
 
 def _write_worker_result(path: Path, result: dict[str, Any]) -> None:
@@ -1535,6 +1565,9 @@ async def _artifact_parse(body: dict[str, Any]) -> JSONResponse:
     output_key = str(body.get("output_key") or "")
     fingerprint = str(body.get("source_fingerprint") or "")
     request_id = str(body.get("request_id") or "")
+    # With ``convert_to`` the artifact is the converted file, named by its
+    # format, so it never shares a key with a parse bundle.
+    convert_to = str(body.get("convert_to") or "")
     if (
         body.get("artifact_schema") != ARTIFACT_SCHEMA
         or body.get("parser_version") != PARSER_VERSION
@@ -1543,13 +1576,17 @@ async def _artifact_parse(body: dict[str, Any]) -> JSONResponse:
         or not output_key
         or not fingerprint
         or not request_id
-        or output_key != f"artifacts/{fingerprint}.zip"
+        or (convert_to and convert_to not in CONVERT_TARGETS)
+        or output_key != f"artifacts/{fingerprint}.{convert_to or 'zip'}"
     ):
         return JSONResponse({"detail": "invalid artifact request"}, status_code=400)
 
     try:
-        if cached := await asyncio.to_thread(
-            _artifact_descriptor, output_key, fingerprint
+        # A conversion is never served from the bundle cache.
+        if not convert_to and (
+            cached := await asyncio.to_thread(
+                _artifact_descriptor, output_key, fingerprint
+            )
         ):
             receipt = _artifact_receipt(fingerprint, request_id)
             return JSONResponse({"artifact": cached, **receipt}, status_code=200)
@@ -1595,7 +1632,8 @@ async def _artifact_parse(body: dict[str, Any]) -> JSONResponse:
     # waiter could win the billing transaction for somebody else's parse.
     payload = dict(task_payload)
     receipt_request_id = str(payload.pop("_receipt_request_id", ""))
-    if status_code < 300 and receipt_request_id != request_id:
+    # A conversion carries no receipt.
+    if status_code < 300 and not convert_to and receipt_request_id != request_id:
         payload = {"artifact": payload["artifact"]}
     return JSONResponse(payload, status_code=status_code)
 
@@ -1606,7 +1644,8 @@ async def _artifact_task(
     source: bytes,
     source_read_ms: int,
 ) -> asyncio.Task[tuple[dict[str, Any], int]]:
-    """Share one parse/write across client timeouts and their retries."""
+    """Share one parse (or conversion) and its write across client timeouts
+    and their retries."""
     async with _artifact_tasks_lock:
         task = _artifact_tasks.get(fingerprint)
         if task is None:
@@ -1637,27 +1676,37 @@ async def _produce_artifact(
     name = str(body.get("filename") or "document")
     fingerprint = str(body["source_fingerprint"])
     request_id = str(body["request_id"])
+    convert_to = str(body.get("convert_to") or "")
 
     measurements: dict[str, Any] = {}
     write_ms = 0
     try:
-        result, measurements = await _run(Document(source, name, fingerprint))
-        measurements["_download_ms"] = max(0, source_read_ms)
-        # The bundle must carry the receipt before its atomic publication.
-        # Bundle-write time is response-only telemetry because it is not known
-        # until after the immutable ZIP has been written.
-        measurements["_upload_ms"] = 0
-        bundle = await asyncio.to_thread(
-            _bundle_bytes,
-            result,
-            fingerprint,
-            str(body["source_sha256"]),
-            request_id,
-            measurements,
-        )
-        digest = hashlib.sha256(bundle).hexdigest()
-        # Recorded first: a request seeing the file sees its record too.
-        _record_bundle(fingerprint, digest, request_id, measurements)
+        if convert_to:
+            # The converted file itself, with no receipt and no bundle
+            # record: nothing serves it again.
+            result, _ = await runtime.parse(
+                Document(source, name, fingerprint, convert_to)
+            )
+            bundle = result["_converted"]
+            digest = hashlib.sha256(bundle).hexdigest()
+        else:
+            result, measurements = await _run(Document(source, name, fingerprint))
+            measurements["_download_ms"] = max(0, source_read_ms)
+            # The bundle must carry the receipt before its atomic publication.
+            # Bundle-write time is response-only telemetry because it is not
+            # known until after the immutable ZIP has been written.
+            measurements["_upload_ms"] = 0
+            bundle = await asyncio.to_thread(
+                _bundle_bytes,
+                result,
+                fingerprint,
+                str(body["source_sha256"]),
+                request_id,
+                measurements,
+            )
+            digest = hashlib.sha256(bundle).hexdigest()
+            # Recorded first: a request seeing the file sees its record too.
+            _record_bundle(fingerprint, digest, request_id, measurements)
         started = time.perf_counter()
         await asyncio.to_thread(_write_artifact, output_key, bundle)
         write_ms = round((time.perf_counter() - started) * 1000)
@@ -1740,19 +1789,22 @@ async def _produce_artifact(
         )
     except Exception as exc:  # noqa: BLE001 - API returns a bounded diagnostic
         return {"detail": f"remote parse failed: {exc}", **measurements}, 500
+    artifact = {
+        "key": output_key,
+        "size": len(bundle),
+        "sha256": digest,
+        "parser_version": PARSER_VERSION,
+        "source_fingerprint": fingerprint,
+        "cached": False,
+    }
+    if convert_to:
+        return {"artifact": artifact, "converted": True}, 200
     # Keep the existing metering field names until the usage-event schema is
     # renamed. They now measure local spool read/write time, not B2 transfers.
     measurements["_upload_ms"] = max(0, write_ms)
     return (
         {
-            "artifact": {
-                "key": output_key,
-                "size": len(bundle),
-                "sha256": digest,
-                "parser_version": PARSER_VERSION,
-                "source_fingerprint": fingerprint,
-                "cached": False,
-            },
+            "artifact": artifact,
             "_receipt_request_id": request_id,
             "_receipt_id": fingerprint,
             "_server_parse_s": round(measurements["_server_parse_ms"] / 1000, 3),

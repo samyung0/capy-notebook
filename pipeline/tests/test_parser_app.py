@@ -1,7 +1,8 @@
 """Offline tests for the parser service runtime: parse slots over one bounded
 FIFO, per-slot deadline/OOM isolation and quarantine, the page renders for the
-ingest worker's VLM, the receipt keys the worker bills from, and the bundle
-contract."""
+ingest worker's VLM, the receipt keys the worker bills from, the bundle
+contract, and the ``convert_to`` request that converts a legacy Office file
+instead of parsing it."""
 
 from __future__ import annotations
 
@@ -837,10 +838,42 @@ def test_a_parse_past_the_address_space_answers_parse_oom(
     responses, child_responses = multiprocessing.Pipe(duplex=False)
     source = tmp_path / "a.pdf"
     source.write_bytes(b"%PDF")
-    requests.send((str(source), str(tmp_path / "a.result"), "a.pdf", "fp"))
+    requests.send((str(source), str(tmp_path / "a.result"), "a.pdf", "fp", ""))
     requests.send(None)
     parser_app._parse_worker_main(child_requests, child_responses, str(tmp_path))
     assert json.loads(responses.recv_bytes())[1][0] == kind
+
+
+def test_the_parse_child_converts_a_document_that_names_a_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The target reaches the child with the document: it converts instead of
+    parsing, and the converted file is its whole result."""
+
+    def parsed(_document):
+        raise AssertionError("the document was parsed")
+
+    def converted(document):
+        assert (document.data, document.name) == (b"legacy", "old.doc")
+        assert (document.fingerprint, document.convert_to) == ("fp", "docx")
+        return {"_converted": b"PK converted"}
+
+    monkeypatch.setattr(parser_app, "run_document", parsed)
+    monkeypatch.setattr(parser_app, "convert_document", converted)
+    # Not this test process's own limits.
+    monkeypatch.setattr(parser_app, "_limit_address_space", lambda _limit: None)
+    monkeypatch.setattr(parser_app, "_set_oom_score_adj", lambda _value: None)
+    monkeypatch.setattr(parser_app, "_sandbox_parse_child", lambda _work_dir: None)
+    monkeypatch.setattr(parser_app.os, "setsid", lambda: None, raising=False)
+    child_requests, requests = multiprocessing.Pipe(duplex=False)
+    responses, child_responses = multiprocessing.Pipe(duplex=False)
+    source, result = tmp_path / "old.source", tmp_path / "old.result"
+    source.write_bytes(b"legacy")
+    requests.send((str(source), str(result), "old.doc", "fp", "docx"))
+    requests.send(None)
+    parser_app._parse_worker_main(child_requests, child_responses, str(tmp_path))
+    assert json.loads(responses.recv_bytes()) == ["ok", None]
+    assert parser_app._read_worker_result(result) == {"_converted": b"PK converted"}
 
 
 @pytest.mark.asyncio
@@ -1257,6 +1290,152 @@ async def test_terminal_failures_answer_422_with_their_code(
     # The multipart route answers the same.
     response = parser_app._failure_response(error)
     assert (response.status_code, json.loads(response.body)["code"]) == (422, code)
+
+
+def _convert_request(tmp_path: Path, monkeypatch, **overrides) -> dict:
+    """A ``convert_to`` request for a .doc source in a spool under tmp_path."""
+    monkeypatch.setattr(parser_app, "SHARED_DIR", tmp_path)
+    source = tmp_path / "sources" / "source-1"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"legacy bytes")
+    return {
+        "source_key": "sources/source-1",
+        "source_sha256": hashlib.sha256(b"legacy bytes").hexdigest(),
+        "output_key": "artifacts/fp.docx",
+        "filename": "notes.doc",
+        "source_fingerprint": "fp",
+        "request_id": "job-1",
+        "artifact_schema": parser_app.ARTIFACT_SCHEMA,
+        "parser_version": parser_app.PARSER_VERSION,
+        "convert_to": "docx",
+        **overrides,
+    }
+
+
+def _no_cache(*_args):
+    raise AssertionError("a conversion touched the bundle cache")
+
+
+@pytest.mark.asyncio
+async def test_a_convert_request_publishes_the_converted_file_itself(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With ``convert_to`` the parse child converts instead of parsing, and
+    the converted file (no bundle, no receipt) is the artifact at
+    ``output_key``; the bundle cache is neither read nor written."""
+    converted = b"PK\x03\x04 the converted document"
+
+    async def convert(document):
+        assert (document.name, document.convert_to) == ("notes.doc", "docx")
+        assert document.data == b"legacy bytes"
+        return {"_converted": converted}
+
+    monkeypatch.setattr(parser_app, "_artifact_descriptor", _no_cache)
+    monkeypatch.setattr(parser_app, "_record_bundle", _no_cache)
+    monkeypatch.setattr(parser_app, "_published", {})
+    runtime, _ = _runtime(monkeypatch, convert)
+    monkeypatch.setattr(parser_app, "runtime", runtime)
+    await runtime.start()
+    try:
+        response = await parser_app._artifact_parse(
+            _convert_request(tmp_path, monkeypatch)
+        )
+    finally:
+        await runtime.close()
+
+    assert response.status_code == 200
+    assert json.loads(response.body) == {
+        "artifact": {
+            "key": "artifacts/fp.docx",
+            "size": len(converted),
+            "sha256": hashlib.sha256(converted).hexdigest(),
+            "parser_version": parser_app.PARSER_VERSION,
+            "source_fingerprint": "fp",
+            "cached": False,
+        },
+        "converted": True,
+    }
+    assert (tmp_path / "artifacts" / "fp.docx").read_bytes() == converted
+    assert parser_app._published == {}
+
+
+@pytest.mark.parametrize(
+    ("error", "code"),
+    [
+        (parser_app.OfficeFormatMismatch("not a .doc"), "parse_format_mismatch"),
+        (parser_app.OfficeConversionFailed("refused"), "parse_unreadable"),
+        # Output over the source cap.
+        (parser_app.SourceUnreadable("exceeds the limit"), "parse_unreadable"),
+        (parser_app.OfficeConversionTimeout("too slow"), "parse_hard_timeout"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_a_failed_conversion_answers_the_pdf_conversions_terminal_codes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: Exception, code: str
+) -> None:
+    async def convert(_document):
+        raise error
+
+    runtime, _ = _runtime(monkeypatch, convert)
+    monkeypatch.setattr(parser_app, "runtime", runtime)
+    await runtime.start()
+    try:
+        response = await parser_app._artifact_parse(
+            _convert_request(tmp_path, monkeypatch)
+        )
+    finally:
+        await runtime.close()
+
+    assert (response.status_code, json.loads(response.body)["code"]) == (422, code)
+    assert not (tmp_path / "artifacts" / "fp.docx").exists()
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"convert_to": "pdf"},
+        # A conversion's artifact is named by its format, never as a bundle.
+        {"output_key": "artifacts/fp.zip"},
+        {"convert_to": "xlsx"},
+    ],
+)
+@pytest.mark.asyncio
+async def test_a_convert_request_must_name_an_ooxml_target_and_its_own_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, overrides: dict
+) -> None:
+    response = await parser_app._artifact_parse(
+        _convert_request(tmp_path, monkeypatch, **overrides)
+    )
+    assert response.status_code == 400
+
+
+def test_the_parse_child_converts_under_the_source_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from odl import document as odl_document
+
+    calls = []
+
+    def convert(*args):
+        calls.append(args)
+        return b"PK converted"
+
+    monkeypatch.setattr(odl_document, "convert_legacy", convert)
+
+    result = parser_app.convert_document(
+        parser_app.Document(b"legacy", "old.xls", "fp", "xlsx")
+    )
+
+    assert result == {"_converted": b"PK converted"}
+    assert calls == [
+        (
+            b"legacy",
+            "old.xls",
+            "xlsx",
+            parser_app.WORK_DIR,
+            parser_app.MAX_SOURCE_BYTES,
+        )
+    ]
 
 
 @pytest.mark.asyncio

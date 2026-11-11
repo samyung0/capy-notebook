@@ -1,5 +1,7 @@
 """Source normalisation: PDFs pass through, Office files become the exact
-LibreOffice PDF that is both parsed and published as the citation preview."""
+LibreOffice PDF that is both parsed and published as the citation preview.
+A legacy Office file is converted to its OOXML twin by the same LibreOffice
+run (``convert_legacy``)."""
 
 from __future__ import annotations
 
@@ -33,6 +35,12 @@ _HIDDEN_SLIDES = (
     'pdf:impress_pdf_Export:{"ExportHiddenSlides":{"type":"boolean","value":"true"}}'
 )
 _PDF_EXPORT = {".pptx": _HIDDEN_SLIDES, ".ppt": _HIDDEN_SLIDES}
+# A legacy suffix's OOXML twin and LibreOffice's export filter for it.
+_LEGACY_EXPORT = {
+    ".doc": ("docx", "MS Word 2007 XML"),
+    ".xls": ("xlsx", "Calc MS Excel 2007 XML"),
+    ".ppt": ("pptx", "Impress MS PowerPoint 2007 XML"),
+}
 OFFICE_PREVIEW_MAX_BYTES = int(
     os.environ.get("CAPY_OFFICE_PREVIEW_MAX_BYTES", str(128 << 20))
 )
@@ -97,12 +105,13 @@ class SourceUnreadable(ValueError):
 
 
 class OfficeFormatMismatch(ValueError):
-    """The bytes are not the container the file's suffix names."""
+    """The bytes are not the container the file's suffix names, or the suffix
+    is not the legacy one a conversion's target names."""
 
 
 class OfficeConversionFailed(SourceUnreadable):
-    """LibreOffice ended without a PDF (the parse supervisor counts it as an OOM
-    kill when the cgroup's ``oom_kill`` count rose meanwhile)."""
+    """LibreOffice ended without its output (the parse supervisor counts it as
+    an OOM kill when the cgroup's ``oom_kill`` count rose meanwhile)."""
 
 
 class OfficeConversionTimeout(RuntimeError):
@@ -131,6 +140,50 @@ def normalize_document(data: bytes, name: str, work_dir: Path) -> NormalizedDocu
         return NormalizedDocument(data, name or "document.pdf", "pdf")
     if suffix not in _IMPORTS:
         raise SourceUnreadable("document parsing supports PDF and Office files")
+    pdf = _libreoffice(
+        data,
+        suffix,
+        _PDF_EXPORT.get(suffix, "pdf"),
+        "pdf",
+        OFFICE_PREVIEW_MAX_BYTES,
+        work_dir,
+    )
+    return NormalizedDocument(
+        pdf,
+        f"{Path(name).stem or 'document'}.pdf",
+        suffix.lstrip("."),
+        preview_pdf=pdf,
+    )
+
+
+def convert_legacy(
+    data: bytes, name: str, convert_to: str, work_dir: Path, max_bytes: int
+) -> bytes:
+    """A legacy Office file (.doc, .xls, .ppt) as its OOXML twin
+    (``convert_to``: docx, xlsx, pptx), at most ``max_bytes`` long, under the
+    PDF conversion's sandbox, profile, limits and timeout."""
+    suffix = Path(name).suffix.lower()
+    twin, export_filter = _LEGACY_EXPORT.get(suffix, ("", ""))
+    if twin != convert_to:
+        raise OfficeFormatMismatch(
+            f"a {suffix or 'nameless'} file does not convert to .{convert_to}"
+        )
+    return _libreoffice(
+        data, suffix, f"{twin}:{export_filter}", twin, max_bytes, work_dir
+    )
+
+
+def _libreoffice(
+    data: bytes,
+    suffix: str,
+    convert_to: str,
+    extension: str,
+    max_bytes: int,
+    work_dir: Path,
+) -> bytes:
+    """One LibreOffice conversion of an Office file (``suffix``, read through
+    its pinned import filter) to ``convert_to`` (the ``--convert-to`` value);
+    returns the ``extension`` file it leaves, at most ``max_bytes`` long."""
     magic, import_filter = _IMPORTS[suffix]
     if not data.startswith(magic):
         detail = f"the file's contents are not a {suffix} document"
@@ -162,7 +215,7 @@ def normalize_document(data: bytes, name: str, work_dir: Path) -> NormalizedDocu
             "--nofirststartwizard",
             f"--infilter={import_filter}",
             "--convert-to",
-            _PDF_EXPORT.get(suffix, "pdf"),
+            convert_to,
             "--outdir",
             str(tmp),
             str(source),
@@ -176,7 +229,7 @@ def normalize_document(data: bytes, name: str, work_dir: Path) -> NormalizedDocu
             raise OfficeConversionTimeout(
                 f"LibreOffice conversion exceeded {OFFICE_CONVERT_TIMEOUT_S} seconds"
             ) from None
-        rendered = tmp / "source.pdf"
+        rendered = tmp / f"source.{extension}"
         if completed.returncode != 0 or not rendered.is_file():
             detail = (
                 (completed.stderr or completed.stdout or b"conversion failed")
@@ -186,18 +239,11 @@ def normalize_document(data: bytes, name: str, work_dir: Path) -> NormalizedDocu
             raise OfficeConversionFailed(
                 f"LibreOffice could not convert {suffix}: {detail[:500]}"
             )
-        if rendered.stat().st_size > OFFICE_PREVIEW_MAX_BYTES:
+        if rendered.stat().st_size > max_bytes:
             raise SourceUnreadable(
-                "LibreOffice PDF exceeds the "
-                f"{OFFICE_PREVIEW_MAX_BYTES}-byte preview limit"
+                f"LibreOffice {extension.upper()} exceeds the {max_bytes}-byte limit"
             )
-        pdf = rendered.read_bytes()
-    return NormalizedDocument(
-        pdf,
-        f"{Path(name).stem or 'document'}.pdf",
-        suffix.lstrip("."),
-        preview_pdf=pdf,
-    )
+        return rendered.read_bytes()
 
 
 def check_pipe_path(work_dir: Path) -> None:

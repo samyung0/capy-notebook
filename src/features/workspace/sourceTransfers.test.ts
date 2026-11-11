@@ -550,7 +550,7 @@ describe('transfer status', () => {
     workspaceId: 'ws_1',
   };
   const file = (fields: Partial<SourceFile>) =>
-    ({ id: 'f_1', indexed: true, ...fields }) as SourceFile;
+    ({ id: 'f_1', indexed: true, name: 'paper.pdf', ...fields }) as SourceFile;
 
   it("labels a clone's background index copy", () => {
     expect(
@@ -614,6 +614,30 @@ describe('transfer status', () => {
     expect(
       transferStatus(transfer, file({ indexed: true, status: 'failed' }))
     ).toMatchObject({ detail: m.files_processing_error(), kind: 'error' });
+  });
+
+  // A legacy Office file keeps its name until its conversion renames it.
+  it('labels a legacy Office file converting, and says so when that failed', () => {
+    const legacy = (fields: Partial<SourceFile>) =>
+      file({ indexed: false, name: 'essay.doc', ...fields });
+    expect(
+      transferStatus(transfer, legacy({ status: 'pending' }))
+    ).toMatchObject({ kind: 'progress', label: m.source_transfer_queued() });
+    // Too long for the label beside a bar: it takes the whole line.
+    expect(transferStatus(transfer, legacy({ status: 'processing' }))).toEqual({
+      kind: 'queued',
+      label: m.files_converting(),
+    });
+    expect(
+      transferStatus(transfer, legacy({ status: 'failed' }))
+    ).toMatchObject({ detail: m.files_convert_failed(), kind: 'error' });
+    // Converted: the new name parses like any upload.
+    expect(
+      transferStatus(
+        transfer,
+        legacy({ ingestPct: 20, name: 'essay.docx', status: 'processing' })
+      )
+    ).toMatchObject({ kind: 'progress', label: m.source_transfer_parsing() });
   });
 
   it('shows the transfer stage before the file exists', () => {

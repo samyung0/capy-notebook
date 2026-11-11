@@ -68,6 +68,8 @@ func TestValidate(t *testing.T) {
 		{name: "notes.pdf", kind: "pdf", mode: ParseModeFast, size: testProSourceBytes, maxBytes: testProSourceBytes},
 		{name: "notes.md", kind: "md", mode: ParseModeNone, size: 2<<20 + 1, maxBytes: 2 << 20, wantError: "text files can be at most 2 MB"},
 		{name: "song.mp3", kind: "audio", mode: ParseModeFast, size: 1, wantError: "does not support"},
+		{name: "legacy.doc", kind: "doc", mode: ParseModeFast, size: 1},
+		{name: "legacy.xls", kind: "sheet", mode: ParseModeNone, size: 1},
 		{name: "notes.pdf", kind: "txt", mode: ParseModeFast, size: 1, wantError: "does not match"},
 		{name: "archive.zip", kind: "unknown", mode: ParseModeNone, size: 1},
 		{name: "no-extension", kind: "unknown", mode: ParseModeNone, size: 1},
@@ -97,6 +99,7 @@ func TestDefaultParseMode(t *testing.T) {
 	tests := map[string]string{
 		"notes.pdf":    ParseModeFast,
 		"slides.pptx":  ParseModeFast,
+		"legacy.ppt":   ParseModeFast,
 		"readme.md":    ParseModeNone,
 		"script.py":    ParseModeNone,
 		"song.mp3":     ParseModeNone,
@@ -111,7 +114,7 @@ func TestDefaultParseMode(t *testing.T) {
 	}
 }
 
-func TestNeedsIngestJob(t *testing.T) {
+func TestSpendsCredits(t *testing.T) {
 	tests := []struct {
 		name, kind, mode string
 		want             bool
@@ -125,12 +128,14 @@ func TestNeedsIngestJob(t *testing.T) {
 		{name: "scan.svg", kind: "image", mode: ParseModeNone, want: true},
 		{name: "data.csv", kind: "sheet", mode: ParseModeNone, want: true},
 		{name: "data.tsv", kind: "sheet", mode: ParseModeNone, want: true},
+		// A legacy file is parsed after its conversion only with parsing on.
+		{name: "legacy.xls", kind: "sheet", mode: ParseModeFast, want: true},
 		{name: "legacy.xls", kind: "sheet", mode: ParseModeNone, want: false},
 		{name: "archive.zip", kind: "unknown", mode: ParseModeNone, want: false},
 	}
 	for _, test := range tests {
-		if got := NeedsIngestJob(test.name, test.kind, test.mode); got != test.want {
-			t.Errorf("NeedsIngestJob(%q, %q, %q) = %t, want %t",
+		if got := SpendsCredits(test.name, test.kind, test.mode); got != test.want {
+			t.Errorf("SpendsCredits(%q, %q, %q) = %t, want %t",
 				test.name, test.kind, test.mode, got, test.want)
 		}
 	}
@@ -152,7 +157,7 @@ func TestBuildProcessingPlan(t *testing.T) {
 		{name: "lecture.mp3", kind: "audio", mode: ParseModeNone, wantRoute: RouteAudioTranscript, wantCaption: CaptionNone, wantStages: []string{"fetch_source", "transcribe_audio", "persist_derived_text", "chunk", "index", "generate_derivatives"}},
 		{name: "paper.pdf", kind: "pdf", mode: ParseModeFast, wantRoute: RouteDocumentParse, wantCaption: CaptionNone, wantParser: ParseModeFast, wantStages: []string{"fetch_source", "parse_document", "chunk", "index", "generate_derivatives"}},
 		{name: "book.xlsx", kind: "sheet", mode: ParseModeFast, wantRoute: RouteDocumentParse, wantCaption: CaptionNone, wantParser: ParseModeFast, wantPreview: true, wantStages: []string{"fetch_source", "parse_document", "chunk", "index", "generate_derivatives"}},
-		{name: "legacy.xls", kind: "sheet", mode: ParseModeNone, wantRoute: RouteStoreOnly, wantCaption: CaptionNone},
+		{name: "report.docx", kind: "doc", mode: ParseModeNone, wantRoute: RouteStoreOnly, wantCaption: CaptionNone},
 		{name: "archive.zip", kind: "unknown", mode: ParseModeNone, wantRoute: RouteStoreOnly, wantCaption: CaptionNone},
 	}
 	for _, test := range tests {
@@ -168,6 +173,43 @@ func TestBuildProcessingPlan(t *testing.T) {
 				t.Fatalf("BuildProcessingPlan(%q).Stages = %v, want %v", test.name, plan.Stages, test.wantStages)
 			}
 		})
+	}
+}
+
+// A legacy Office file gets the conversion plan whatever its parse mode, in
+// the exact JSON the worker validates; no other route names a target.
+func TestBuildProcessingPlanConvertsLegacyOffice(t *testing.T) {
+	for name, pair := range map[string][3]string{
+		"legacy.doc": {"doc", "doc", "docx"},
+		"legacy.XLS": {"sheet", "xls", "xlsx"},
+		"legacy.ppt": {"slides", "ppt", "pptx"},
+	} {
+		for _, mode := range []string{ParseModeNone, ParseModeFast} {
+			plan, err := BuildProcessingPlan(name, pair[0], mode)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := json.Marshal(plan)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := `{"version":2,"format":"` + pair[1] + `","route":"legacy_convert","convertTo":"` + pair[2] +
+				`","captionMode":"none","office":true,"stages":["fetch_source","convert_legacy","replace_source"],` +
+				`"resources":["object_storage_read","object_storage_write","document_parser","shared_parse_spool"]}`
+			if string(got) != want {
+				t.Errorf("BuildProcessingPlan(%q, %q) = %s, want %s", name, mode, got, want)
+			}
+			if plan.SystemPaid(mode) != (mode == ParseModeNone) {
+				t.Errorf("SystemPaid(%q) = %t", mode, plan.SystemPaid(mode))
+			}
+		}
+	}
+	plan, err := BuildProcessingPlan("report.docx", "doc", ParseModeFast)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := json.Marshal(plan); strings.Contains(string(got), "convertTo") {
+		t.Errorf("a parse plan names a conversion target: %s", got)
 	}
 }
 
@@ -187,8 +229,8 @@ func TestParsePolicyLists(t *testing.T) {
 		t.Fatalf("fast policy is missing expected extensions: %v", fast)
 	}
 	for _, legacy := range []string{".doc", ".xls", ".ppt"} {
-		if contains(fast, legacy) || !contains(supported, legacy) {
-			t.Fatalf("legacy Office extension %s must be store-only", legacy)
+		if !contains(fast, legacy) || !contains(supported, legacy) {
+			t.Fatalf("legacy Office extension %s must be parse-eligible", legacy)
 		}
 	}
 	if contains(ParseExtensions(ParseModeNone), ".pdf") {

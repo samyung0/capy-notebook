@@ -72,6 +72,26 @@ export function officeFormatOf(
   return ext === 'docx' || ext === 'xlsx' || ext === 'pptx' ? ext : null;
 }
 
+/** The legacy Office formats and what the server converts an upload of each
+ * to (`legacyConvertTo` in sourceupload/rules.go). */
+const LEGACY_OFFICE_TARGETS = {
+  doc: 'docx',
+  ppt: 'pptx',
+  xls: 'xlsx',
+} as const;
+
+/** The format a legacy Office name (.doc, .xls, .ppt) is converted to, else
+ * null. The conversion renames the file, so one still named this way is
+ * waiting for it, in it, or failed in it. */
+export function legacyOfficeTarget(
+  name: string
+): 'docx' | 'xlsx' | 'pptx' | null {
+  const ext = fileExt(name);
+  return Object.hasOwn(LEGACY_OFFICE_TARGETS, ext)
+    ? LEGACY_OFFICE_TARGETS[ext as keyof typeof LEGACY_OFFICE_TARGETS]
+    : null;
+}
+
 export function isImageFile(file: Pick<SourceFile, 'kind' | 'name'>) {
   return file.kind === 'image' || IMAGE_EXTS.has(fileExt(file.name));
 }
@@ -114,6 +134,22 @@ export function fileCanMoveTo(
   workspace: { isOwner: boolean } | undefined
 ) {
   return file.isPayer || !!workspace?.isOwner;
+}
+
+/** What an open file says while its processing runs: a legacy Office file is
+ * being converted, anything else parsed. */
+export function processingMessage(file: Pick<SourceFile, 'name'>) {
+  return legacyOfficeTarget(file.name)
+    ? m.files_converting()
+    : m.files_processing_named({ name: file.name });
+}
+
+/** Why a failed file has no index: a legacy Office file failed in its
+ * conversion, anything else in its parse or indexing. */
+export function failedNotIndexedMessage(file: Pick<SourceFile, 'name'>) {
+  return legacyOfficeTarget(file.name)
+    ? m.files_convert_failed()
+    : m.files_not_indexed_failed();
 }
 
 /** Why a ready file is not searchable: its content is over an ingest limit,

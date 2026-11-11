@@ -55,7 +55,8 @@ export type SourceCompression = 'office' | 'image';
 
 /** The compression a picked file gets, if any; an SVG image is drawn as a
  * PNG first (Q364). Such a file's per-file cap applies once it is
- * compressed. */
+ * compressed. A legacy Office file (.doc, .xls, .ppt) goes as it is: the
+ * browser reads OOXML only, and the server compresses the converted file. */
 export function sourceCompression(
   name: string,
   kind: FileKind

@@ -42,6 +42,7 @@ import type {
   WorkspaceMember,
 } from '@/api/types';
 import { PLAN_LIMITS } from '@/features/billing/planLimits';
+import { legacyOfficeTarget } from '@/features/files/fileUtils';
 import { parseFlashcardsBlock } from '@/features/materials/blocks';
 import {
   createMaterialDocument,
@@ -95,6 +96,7 @@ import { uid } from './db';
 import { editorAssetHandlers, embeds } from './editorAssets';
 import { extractionHandlers, seedExtractionFiles } from './extraction';
 import { membersHandlers } from './members';
+import { convertMockLegacyFile } from './officeFixtures';
 import { mockPage } from './paging';
 import { questionBankHandlers } from './questionBank';
 import {
@@ -1292,7 +1294,8 @@ export const handlers = [
     return new HttpResponse(null, { status: 202 });
   }),
   // Retry processing: the owner reruns a failed file on its stored bytes; the
-  // mock worker finishes it like an upload ('none' just stores it).
+  // mock worker finishes it like an upload ('none' just stores it). A file
+  // still named as legacy Office failed in its conversion and fails again.
   http.post('/api/files/:id/retry-processing', async ({ params, request }) => {
     const file = db.files.find((item) => item.id === params.id);
     if (!file) return new HttpResponse(null, { status: 404 });
@@ -1302,6 +1305,10 @@ export const handlers = [
     // The server sends an error id on failed files only.
     delete file.errorId;
     setTimeout(() => {
+      if (legacyOfficeTarget(file.name)) {
+        file.status = 'failed';
+        return;
+      }
       file.status = 'ready';
       file.indexed = parseMode !== 'none' && file.kind !== 'audio';
     }, 2000);
@@ -2868,8 +2875,15 @@ export const handlers = [
       if (f.topicId)
         db.topics.find((c) => c.id === f.topicId)?.fileIds.push(f.id);
       // Finish the ingest before the client's animation (5 × 450 ms) refetches
-      // the list; scenarios can rewrite the outcome on that read.
+      // the list; scenarios can rewrite the outcome on that read. A legacy
+      // Office upload is converted first, and opens as its new format.
       setTimeout(() => {
+        const convertTo = legacyOfficeTarget(f.name);
+        if (convertTo) {
+          const url = convertMockLegacyFile(f, convertTo);
+          db.fileLinks[f.id] = { url };
+          seedUploadedOffice(f.id, convertTo, url);
+        }
         f.status = 'ready';
         f.indexed = f.kind !== 'audio';
       }, 2000);

@@ -1,4 +1,5 @@
-"""Offline tests for the parser client's shared-spool trust boundary."""
+"""Offline tests for the parser client's shared-spool trust boundary, and the
+legacy Office conversion that goes through the same request."""
 
 from __future__ import annotations
 
@@ -405,6 +406,113 @@ def test_parser_capacity_response_is_classified_without_becoming_terminal(
     )
     with pytest.raises(parser_client.ParserCapacityError, match="queue is full"):
         parser_client._request_artifact(_descriptor(), "doc.pdf", "job-1")
+
+
+def _convert(request_id: str = "job-1") -> bytes:
+    return parser_client.convert_legacy(
+        source_key="sources/source-1",
+        source_sha256=SOURCE_SHA256,
+        upload_name="notes.doc",
+        convert_to="docx",
+        request_id=request_id,
+    )
+
+
+def _converting_parser(monkeypatch, tmp_path: Path, blob: bytes, **answer):
+    """A parser that leaves ``blob`` at the request's output key."""
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
+    bodies: list[dict] = []
+
+    def post(url, **kwargs):
+        body = kwargs["json"]
+        bodies.append(body)
+        path = parser_client._shared_path(body["output_key"])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(blob)
+        return _Resp(
+            200,
+            {
+                "artifact": {
+                    "key": body["output_key"],
+                    "size": len(blob),
+                    "sha256": hashlib.sha256(blob).hexdigest(),
+                    "cached": False,
+                },
+                "converted": True,
+                **answer,
+            },
+        )
+
+    monkeypatch.setattr(parser_client.requests, "post", post)
+    return bodies
+
+
+def test_a_legacy_conversion_returns_the_parsers_file_and_clears_the_spool(
+    tmp_path: Path, monkeypatch, parser_url
+):
+    """The parse request plus ``convert_to``, under an identity that is this
+    job's own and never a bundle's; the converted bytes come from the verified
+    private copy and the spool file is removed."""
+    bodies = _converting_parser(monkeypatch, tmp_path, b"PK converted")
+
+    assert _convert() == b"PK converted"
+    assert _convert("job-2") == b"PK converted"
+
+    first, second = bodies
+    fingerprint = first["source_fingerprint"]
+    assert first == {
+        "source_key": "sources/source-1",
+        "source_sha256": SOURCE_SHA256,
+        "output_key": f"artifacts/{fingerprint}.docx",
+        "filename": "notes.doc",
+        "artifact_schema": parser_client.ARTIFACT_SCHEMA,
+        "parser_version": FAST_VERSION,
+        "source_fingerprint": fingerprint,
+        "request_id": "job-1",
+        "convert_to": "docx",
+    }
+    _, parse_fingerprint = parser_client.artifact_identity(_descriptor())
+    assert len({fingerprint, second["source_fingerprint"], parse_fingerprint}) == 3
+    assert list((tmp_path / "artifacts").iterdir()) == []
+
+
+def test_a_conversion_answer_must_say_converted_and_match_its_file(
+    tmp_path: Path, monkeypatch, parser_url
+):
+    _converting_parser(monkeypatch, tmp_path, b"PK converted", converted=False)
+    with pytest.raises(parser_client.ParserClientError, match="without converting"):
+        _convert()
+
+    bodies = _converting_parser(monkeypatch, tmp_path, b"PK converted")
+    copy = parser_client._private_copy
+
+    def swapped(artifact):
+        parser_client._shared_path(artifact["key"]).write_bytes(b"PK swapped!!")
+        return copy(artifact)
+
+    monkeypatch.setattr(parser_client, "_private_copy", swapped)
+    with pytest.raises(parser_client.ParserClientError, match="checksum mismatch"):
+        _convert()
+    assert not parser_client._shared_path(bodies[0]["output_key"]).exists()
+
+
+@pytest.mark.parametrize(
+    ("status", "code", "error"),
+    [
+        (422, "parse_format_mismatch", "ParserFormatMismatchError"),
+        (422, "parse_unreadable", "ParserUnreadableError"),
+        (422, "parse_hard_timeout", "ParserHardTimeoutError"),
+        (422, "parse_oom", "ParserOOMError"),
+        (429, "parser_capacity", "ParserCapacityError"),
+    ],
+)
+def test_a_refused_conversion_raises_the_parse_errors(
+    tmp_path: Path, monkeypatch, parser_url, status, code, error
+):
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
+    _stub_request(monkeypatch, _Resp(status, {"code": code, "detail": "no"}))
+    with pytest.raises(getattr(parser_client, error), match="no"):
+        _convert()
 
 
 def test_success_and_failure_both_record_parser_measurements(monkeypatch, parser_url):

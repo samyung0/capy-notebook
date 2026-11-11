@@ -22,6 +22,11 @@ answered, never the spool file, and uses it only when its manifest names the
 SHA-256 of the source this job sent; otherwise the ZIP counts as missing.
 Database donors independently reuse indexed content; otherwise the retained
 source is parsed again.
+
+A legacy Office file (.doc, .xls, .ppt) is converted by the same route
+(``convert_legacy``): the request names ``convert_to``, the parser leaves the
+converted file itself in the spool under an identity that is this job's own,
+and this client reads its verified private copy and removes the spool file.
 """
 
 from __future__ import annotations
@@ -176,8 +181,13 @@ def artifact_identity(descriptor: Mapping[str, Any]) -> tuple[str, str]:
     version = parser_version(route)
     source_sha256 = str(descriptor.get("source_sha256") or "")
     identity = f"{source_sha256}:{route}:{version}:{ARTIFACT_SCHEMA}"
+    extension = "zip"
+    if convert_to := str(descriptor.get("convert_to") or ""):
+        # A conversion's output is one job's own file, never a shared bundle.
+        identity += f":{convert_to}:{descriptor['request_id']}"
+        extension = convert_to
     fingerprint = hashlib.sha256(identity.encode()).hexdigest()
-    return f"artifacts/{fingerprint}.zip", fingerprint
+    return f"artifacts/{fingerprint}.{extension}", fingerprint
 
 
 def _shared_path(key: str) -> Path:
@@ -284,6 +294,9 @@ def _request_artifact(
         "source_fingerprint": fingerprint,
         "request_id": request_id,
     }
+    convert_to = str(descriptor.get("convert_to") or "")
+    if convert_to:
+        request["convert_to"] = convert_to
     try:
         try:
             resp = requests.post(
@@ -332,6 +345,8 @@ def _request_artifact(
         raise ParserClientError(f"remote parse {resp.status_code}: {detail}")
     if not isinstance(payload, dict):
         raise ParserClientError("parser returned an invalid JSON response")
+    if convert_to and payload.get("converted") is not True:
+        raise ParserClientError("parser answered a conversion without converting")
     artifact = payload.get("artifact") or {}
     if artifact.get("key") != artifact_key:
         raise ParserClientError("parser returned an unexpected artifact key")
@@ -546,6 +561,39 @@ def _extract(
         with zipfile.ZipFile(bundle) as archive:
             for info in _validated_entries(archive):
                 _read_entry(archive, info, raw_dir / info.filename)
+
+
+def convert_legacy(
+    *,
+    source_key: str,
+    source_sha256: str,
+    upload_name: str,
+    convert_to: str,
+    request_id: str,
+) -> bytes:
+    """A legacy Office source converted by the parser to ``convert_to`` (docx,
+    xlsx, pptx): the bytes of the file it left in the spool, which is removed.
+
+    Blocking (requests + file IO); call via ``asyncio.to_thread``.
+    """
+    if not request_id:
+        raise ParserClientError("parser request id is required")
+    descriptor = {
+        **source_descriptor(
+            source_key=source_key, source_sha256=source_sha256, route=ROUTE_FAST
+        ),
+        "convert_to": convert_to,
+        "request_id": request_id,
+    }
+    artifact = _request_artifact(descriptor, upload_name, request_id)
+    try:
+        with _private_copy(artifact) as converted:
+            return converted.read_bytes()
+    finally:
+        try:
+            _shared_path(str(artifact["key"])).unlink()
+        except FileNotFoundError:
+            pass
 
 
 def ensure_artifact(
