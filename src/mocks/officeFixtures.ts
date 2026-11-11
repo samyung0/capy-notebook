@@ -1,3 +1,4 @@
+import type { SourceFile } from '@/api/types';
 import longXlsxURL from '../../bench/editor/fixtures/office/large-gradebook.xlsx?url';
 import longDocxURL from '../../bench/editor/fixtures/office/long-handbook.docx?url';
 import rowsXlsxURL from '../../bench/editor/fixtures/office/rows-50k.xlsx?url';
@@ -95,3 +96,36 @@ export const standaloneOfficeFixtures = [
     name: 'Internship application.docx',
   },
 ] as const;
+
+/** The mock worker's legacy Office conversion, as the server completes one
+ * (`CompleteLegacyConvert`): the file takes its new format's name and a
+ * revision. A fixture stands in for the converted bytes; its link is
+ * returned. */
+export function convertMockLegacyFile(
+  file: Pick<SourceFile, 'name' | 'revision' | 'sizeBytes'>,
+  convertTo: 'docx' | 'xlsx' | 'pptx'
+): string {
+  const fixture = biologyOfficeFixtures.find(
+    ({ format }) => format === convertTo
+  );
+  if (!fixture) throw new Error(`No ${convertTo} fixture`);
+  file.name = file.name.replace(/[^.]+$/, convertTo);
+  file.revision += 1;
+  file.sizeBytes = fixture.sizeBytes;
+  return fixture.sourceURL;
+}
+
+/** The worker's one ingest event after that swap (`_publish_converted` in
+ * pipeline/ingest/worker.py): waiting for the parse the gateway queued, or
+ * with parsing off stored as it is. */
+export function mockConvertedEvent(name: string, parseMode: string) {
+  return parseMode === 'none'
+    ? {
+        indexed: false,
+        message: `${name}: stored without parsing (not indexed for retrieval).`,
+        pct: 100,
+        stage: 'done',
+        status: 'ready' as const,
+      }
+    : { message: '', pct: 5, stage: 'queued', status: 'pending' as const };
+}

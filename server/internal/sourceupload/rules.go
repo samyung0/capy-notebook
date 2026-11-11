@@ -25,6 +25,10 @@ const (
 	RouteImageCaption    = "image_caption"
 	RouteAudioTranscript = "audio_transcription"
 	RouteDocumentParse   = "document_parse"
+	// RouteLegacyConvert converts a legacy Office upload (.doc, .xls, .ppt) to
+	// its OOXML format; the converted file replaces the upload and is then
+	// planned again under its new name (Epo 2026-11-11).
+	RouteLegacyConvert = "legacy_convert"
 
 	// AudioMaxDurationSeconds is the longest audio upload, the provider's
 	// limit with speaker labels on. The browser and the upload request check
@@ -43,10 +47,13 @@ const (
 // and resources are declarative: the worker still owns retries, telemetry, and
 // the implementation of each stage.
 type ProcessingPlan struct {
-	Version     int      `json:"version"`
-	Format      string   `json:"format"`
-	Route       string   `json:"route"`
-	ParserRoute string   `json:"parserRoute,omitempty"`
+	Version     int    `json:"version"`
+	Format      string `json:"format"`
+	Route       string `json:"route"`
+	ParserRoute string `json:"parserRoute,omitempty"`
+	// ConvertTo is the format a legacy_convert plan converts to; no other
+	// route carries it.
+	ConvertTo   string   `json:"convertTo,omitempty"`
 	CaptionMode string   `json:"captionMode"`
 	Office      bool     `json:"office"`
 	Stages      []string `json:"stages"`
@@ -394,10 +401,10 @@ func IsTextFile(name string) bool {
 func DefaultParseMode(name, kind string) string {
 	if IsTextKind(kind) {
 		// Text is never sent to the document parser. The worker reads the bytes and
-		// chunks them; parseMode=none still enqueues that job (see NeedsIngestJob).
+		// chunks them; parseMode=none still enqueues that job.
 		return ParseModeNone
 	}
-	if parseExtensions[extensionKey(name)] {
+	if parseEligible(extensionKey(name)) {
 		return ParseModeFast
 	}
 	return ParseModeNone
@@ -405,8 +412,9 @@ func DefaultParseMode(name, kind string) string {
 
 // BuildProcessingPlan resolves a file into one ingest route. It deliberately
 // keys the exceptional routes by normalized format instead of broad category:
-// CSV/TSV are normalized as delimited text, while legacy Office files remain
-// store-only even though they share a category with supported OOXML files.
+// CSV/TSV are normalized as delimited text, and a legacy Office file is
+// converted whatever its parse mode. Only an unrecognized format, or a parsed
+// format with parsing off, is store-only.
 func BuildProcessingPlan(name, kind, mode string) (ProcessingPlan, error) {
 	ext := extensionKey(name)
 	expectedKind := KindFromName(name)
@@ -449,6 +457,12 @@ func BuildProcessingPlan(name, kind, mode string) (ProcessingPlan, error) {
 		plan.Route = RouteAudioTranscript
 		plan.Stages = []string{"fetch_source", "transcribe_audio", "persist_derived_text", "chunk", "index", "generate_derivatives"}
 		plan.Resources = appendResource(directResources, "audio_transcription", "object_storage_write")
+	case legacyConvertTo[ext] != "":
+		plan.Route = RouteLegacyConvert
+		plan.ConvertTo = legacyConvertTo[ext]
+		plan.Office = true
+		plan.Stages = []string{"fetch_source", "convert_legacy", "replace_source"}
+		plan.Resources = []string{"object_storage_read", "object_storage_write", "document_parser", "shared_parse_spool"}
 	case mode == ParseModeFast && parseExtensions[ext]:
 		plan.Route = RouteDocumentParse
 		plan.ParserRoute = ParseModeFast
@@ -483,13 +497,20 @@ func appendResource(resources []string, values ...string) []string {
 	return out
 }
 
-// NeedsIngestJob is whether an upload should be queued for searchable derived
-// content. This is deliberately separate from parse mode: images are
-// captioned, audio is transcribed, and CSV/TSV is normalized without using the
-// document parser.
-func NeedsIngestJob(name, kind, mode string) bool {
+// SpendsCredits is whether an upload queues a job charged to its uploader,
+// so the upload takes the credit check. This is deliberately separate from
+// parse mode: images are captioned, audio is transcribed and CSV/TSV is
+// normalized without the document parser. A legacy Office file uploaded with
+// parsing off is only converted, which costs nothing.
+func SpendsCredits(name, kind, mode string) bool {
 	plan, err := BuildProcessingPlan(name, kind, mode)
-	return err == nil && plan.Route != RouteStoreOnly
+	return err == nil && plan.Route != RouteStoreOnly && !plan.SystemPaid(mode)
+}
+
+// SystemPaid is whether the plan's job runs on a system ingest session (no
+// credit check, no ingest lease): a conversion nothing parses afterwards.
+func (p ProcessingPlan) SystemPaid(mode string) bool {
+	return p.Route == RouteLegacyConvert && mode == ParseModeNone
 }
 
 func Validate(name, kind, mode string, size, maxBytes int64) error {
@@ -521,7 +542,7 @@ func Validate(name, kind, mode string, size, maxBytes int64) error {
 
 	switch strings.ToLower(mode) {
 	case ParseModeFast:
-		if !parseExtensions[extensionKey(name)] {
+		if !parseEligible(extensionKey(name)) {
 			return fmt.Errorf("parsing does not support %s files", Extension(name))
 		}
 	case ParseModeNone:
@@ -535,6 +556,22 @@ func Validate(name, kind, mode string, size, maxBytes int64) error {
 var parseExtensions = map[string]bool{
 	"pdf": true, "docx": true, "pptx": true,
 	"xlsx": true,
+}
+
+// legacyConvertTo maps a legacy Office format to the format its upload is
+// converted to.
+var legacyConvertTo = map[string]string{"doc": "docx", "xls": "xlsx", "ppt": "pptx"}
+
+// ConvertsLegacy is whether a file of this name is a legacy Office one that
+// is converted to its current format.
+func ConvertsLegacy(name string) bool {
+	return legacyConvertTo[extensionKey(name)] != ""
+}
+
+// parseEligible is whether an upload of the format may ask for parse mode
+// fast: the parser's formats, and the legacy ones parsed once converted.
+func parseEligible(ext string) bool {
+	return parseExtensions[ext] || legacyConvertTo[ext] != ""
 }
 
 func ExtensionsByKind() map[string][]string {
@@ -552,8 +589,11 @@ func ParseExtensions(mode string) []string {
 	if strings.ToLower(mode) != ParseModeFast {
 		return []string{}
 	}
-	out := make([]string, 0, len(parseExtensions))
+	out := make([]string, 0, len(parseExtensions)+len(legacyConvertTo))
 	for ext := range parseExtensions {
+		out = append(out, "."+ext)
+	}
+	for ext := range legacyConvertTo {
 		out = append(out, "."+ext)
 	}
 	sort.Strings(out)

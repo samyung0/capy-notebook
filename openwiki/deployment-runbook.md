@@ -1389,6 +1389,34 @@ infrastructure, so no further gate is added. An empty `PIPELINE_SECRET` on the
 gateway disables new imports with `503` instead of creating stranded
 reservations.
 
+The parse coordinator carries the same two values in every environment, for
+the handoff of a converted legacy Office file
+(`POST /api/internal/files/convert`,
+[agentic-retrieval.md](agentic-retrieval.md#legacy-office-conversion)).
+`deploy/docker-compose.ingest-host.yml` requires both on `parse-coordinator`,
+the nonprod coordinators read them from their environment's queue env file as
+the import workers do, and the local `deploy/docker-compose.yml` sets them on
+its coordinator. The secret is not scoped to that route: it opens every
+`/api/internal/*` route of that environment's gateway (the agent's writes,
+trash, imports, provider-call settlement), and the retrieval service requires
+the same value on its inbound requests. The coordinator calls only the
+conversion route. A coordinator without either value converts nothing: each
+attempt fails as a retryable fault before LibreOffice runs, so a legacy file
+ends `failed` once the parse job's two attempts are spent and waits for its
+owner's Retry processing. Production's compose file refuses to start the
+coordinator without them.
+
+Deployment order for this change: the ingest host goes before the gateway. A
+gateway with the conversion route queues `legacy_convert` jobs, and a
+coordinator from before the change refuses that plan as unknown, which fails
+every legacy upload for good. A new coordinator in front of an old gateway is
+harmless, since the old gateway queues no such job. **Deploy ingest** deploys
+only the revision the backend already serves (it verifies the running
+backend), so where the workflows are used, stop the environment's parse
+coordinator before the app deploy and keep it stopped until **Deploy ingest**
+activates the matching release, as §4 does for migration `0038`; parse jobs
+queued meanwhile wait as pending.
+
 Every pipeline process (retrieval, the ingest, parse and import workers) refuses
 to start with a `PIPELINE_SECRET` or `PARSER_TOKEN` set shorter than 32
 characters, and the parser with a shorter `PARSER_TOKEN`, unless `APP_ENV` is
@@ -1782,7 +1810,8 @@ production is set up (Q485).
 
 5. **Two lifecycle rules** (Settings → Object lifecycle rules):
    - prefix `incoming/`: delete objects 1 day after upload. These are drive
-     imports that were never promoted.
+     imports that were never promoted, and converted legacy Office files
+     (`incoming/legacy-convert/`) whose handoff the gateway did not take.
    - the whole bucket: abort incomplete multipart uploads after 1 day. Edit
      R2's default rule down from 7 days. An aborted multipart upload is billed
      and never shows in the bucket listing.
@@ -2023,7 +2052,8 @@ those services start.
    derives `DATABASE_URL`, `REDIS_URL`, and `GATEWAY_URL` from that environment's
    `POSTGRES_PASSWORD` and `CAPY_PRIVATE_BIND_ADDRESS`. It supplies `PIPELINE_SECRET`
    to the import
-   worker. The worker also needs `DEEPINFRA_API_KEY` for the seeded Qwen
+   worker and the parse coordinator (§2.2). The worker also needs
+   `DEEPINFRA_API_KEY` for the seeded Qwen
    embedding route, `OPENROUTER_API_KEY` for the file-descriptor pin
    (DeepSeek V4 Flash 0731 on Reka, DigitalOcean or StreamLake), the captioning pin (DeepSeek
    V4.1 Flash 1017 on Wafer's US endpoint, then InferenceNet, then Cloudflare: standalone-image captions
@@ -2326,6 +2356,22 @@ cgroup's `oom_kill` count rises, the parser writes a `parse_oom` marker for
 that child's document and respawns only that child. Parse children run at
 `oom_score_adj` 1000 and the API at 0, so the kernel picks a parse child first.
 
+The picture step of a converted legacy Office file runs inside this
+coordinator. By the budget above the coordinator has about 110 MiB of its
+1,280 MiB to spare with eight jobs, and for one 20 MiB deck that step peaked
+at 158 MiB in a container of its own
+([report](../bench/parsers/reports/2026-11-11-legacy-office-conversion.md)).
+The limits stay as they are (Epo 2026-11-11: swap takes the excess, and a
+killed process is restarted). Past 1,280 MiB the container has the 256 MiB
+of swap its memory-plus-swap limit leaves it, whatever swap the host holds.
+Past that the kernel kills a process in the container: the supervisor
+starts a child again within a second (`parse_worker.main`), compose restarts
+the container if the supervisor itself dies (`restart: unless-stopped`), and
+the job is claimed again once its lease expires, under the one-retry rule
+above, converting from the start.
+The nonprod coordinator (one job at a time, 384 MiB, 117 MiB idle) fits that
+deck.
+
 `restart: unless-stopped` recovers PID 1 kills, cgroup OOM kills, a Docker
 daemon restart, and a full VM reboot. Ansible installs
 `capy-ingest-watchdog@.service` for explicitly selected stacks. It restarts an
@@ -2544,7 +2590,14 @@ the host:
   deadline. Ingest and
   Drive/OneDrive imports (which reach the parser as ordinary parse jobs) both
   convert through this one function, a PowerPoint file keeping its hidden
-  slides (Q276). It ships with the parser image; nothing to
+  slides (Q276). The conversion of an uploaded `.doc`, `.xls` or `.ppt` to
+  `.docx`, `.xlsx` or `.pptx` (`convert_legacy`,
+  [agentic-retrieval.md](agentic-retrieval.md#legacy-office-conversion)) is
+  the same LibreOffice run under the same fence: the OLE2 check, the suffix's
+  pinned import filter, a fresh profile in the job directory, the sandbox and
+  the 180 s timeout. Only its `--convert-to` value (LibreOffice's OOXML export
+  filter) and its output cap (`CAPY_MAX_SOURCE_BYTES`, 100 MiB) differ. It
+  ships with the parser image; nothing to
   apply by hand.
 - **In the container.** Both ingest compose files run the parser with
   `cap_drop: [ALL]`, `no-new-privileges:true`, Docker's default seccomp

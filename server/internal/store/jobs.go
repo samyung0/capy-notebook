@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
+	"github.com/samyung0/capy-notebook/server/internal/models"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 )
@@ -24,7 +25,8 @@ import (
 // from; the quota gate counts that record with the bytes, as for a material.
 func (s *Store) createSourceWithJobTx(ctx context.Context, tx pgx.Tx, wsID, createdBy, name, kind string, topicID *string, topicName string, sizeBytes int64, blobPath, parser, parseMode string, provenance *Provenance) (File, string, error) {
 	processingPlan, err := sourceupload.BuildProcessingPlan(name, kind, parseMode)
-	if err != nil || processingPlan.Route == sourceupload.RouteStoreOnly {
+	// Only an upload is converted: a legacy name has no route here, as before.
+	if err != nil || processingPlan.Route == sourceupload.RouteStoreOnly || processingPlan.Route == sourceupload.RouteLegacyConvert {
 		if err == nil {
 			err = fmt.Errorf("file %q does not have an ingest route", name)
 		}
@@ -160,11 +162,82 @@ func (s *Store) CreateAgentFileOperation(ctx context.Context, draft AgentFileDra
 	return op, true, nil
 }
 
+// initialPipelineJobType: the parse coordinator claims the routes that call
+// the parser (a parse, a legacy conversion); the ingest worker the rest.
 func initialPipelineJobType(plan sourceupload.ProcessingPlan) string {
-	if plan.Route == sourceupload.RouteDocumentParse {
+	if plan.Route == sourceupload.RouteDocumentParse || plan.Route == sourceupload.RouteLegacyConvert {
 		return "parse"
 	}
 	return "ingest"
+}
+
+// beginFileJobSessionTx opens the session a file's first job spends on: the
+// actor's ingest reservation, or, for a legacy conversion nothing parses
+// afterwards (parsing off), a system session with no credit check and no
+// ingest lease.
+func (s *Store) beginFileJobSessionTx(ctx context.Context, tx pgx.Tx, actorID, workspaceID string, plan sourceupload.ProcessingPlan, parseMode string) (string, error) {
+	if plan.SystemPaid(parseMode) {
+		return beginSystemIngestSessionTx(ctx, tx, actorID, workspaceID)
+	}
+	return s.beginIngestSpendTx(ctx, tx, actorID, workspaceID)
+}
+
+// legacyConvertFields adds what a conversion job carries beyond a parse job:
+// its payer's Office picture cap, which the worker applies to the converted
+// file as an import does (imageMaxBytes), and, on a system session, the
+// marker that goes with one.
+func (s *Store) legacyConvertFields(ctx context.Context, q rowQueryer, base map[string]any, plan sourceupload.ProcessingPlan, parseMode, payerID string) error {
+	if plan.Route != sourceupload.RouteLegacyConvert {
+		return nil
+	}
+	tier, err := s.effectivePlanTierForUser(ctx, q, payerID)
+	if err != nil {
+		return err
+	}
+	limits, err := s.PlanLimits(tier)
+	if err != nil {
+		return err
+	}
+	base["imageMaxBytes"] = limits.ImageBytes
+	if plan.SystemPaid(parseMode) {
+		base["paidBy"] = models.PaidBySystem
+	}
+	return nil
+}
+
+// fileJob names the stored bytes a file's pipeline job runs on, the open
+// session it spends on, who it is billed to (actor) and who pays for the
+// file's storage (payer).
+type fileJob struct {
+	actorID, payerID, workspaceID, fileID string
+	blobPath, kind, parser, parseMode     string
+	sourceETag, reservationID             string
+	sourceRevision                        int64
+}
+
+// enqueueFileJobTx queues the job plan names for a file: a finalized upload's
+// first job, and the parse that follows a legacy conversion.
+func (s *Store) enqueueFileJobTx(ctx context.Context, tx pgx.Tx, j fileJob, plan sourceupload.ProcessingPlan) (string, error) {
+	base := map[string]any{
+		"fileId": j.fileID, "workspaceId": j.workspaceID, "blobPath": j.blobPath,
+		"kind": j.kind, "parser": j.parser,
+		"parseMode":      j.parseMode,
+		"processingPlan": plan,
+		"sourceETag":     j.sourceETag,
+		"sourceRevision": j.sourceRevision,
+		"reservationId":  j.reservationID,
+	}
+	if err := s.legacyConvertFields(ctx, tx, base, plan, j.parseMode, j.payerID); err != nil {
+		return "", err
+	}
+	payload, err := s.ingestJobPayload(ctx, tx, j.actorID, base)
+	if err != nil {
+		return "", err
+	}
+	jobID := uid("job")
+	_, err = tx.Exec(ctx, `INSERT INTO jobs (id, type, payload) VALUES ($1,$2,$3)`,
+		jobID, initialPipelineJobType(plan), payload)
+	return jobID, err
 }
 
 // FileBlobPaths returns the source and the same object as a preview for PDFs.
@@ -266,6 +339,13 @@ func (s *Store) ingestJobPayload(ctx context.Context, q rowsQueryer, actorUserID
 // has no bytes or already has a parse, ingest or source refresh job queued or
 // running answers ErrConflict.
 //
+// A legacy Office file (.doc, .xls, .ppt) reruns its upload's own pipeline:
+// the conversion, then its stored parse mode, whatever mode is asked. That
+// holds for a failed one (its conversion failed, so it kept its name and
+// bytes) and for the one ready file retried, a legacy file stored as uploaded
+// (Convert to new Office format, Epo 2026-11-11). A ready hand-in is not: it
+// keeps the bytes it was handed in with.
+//
 // A partial file (parts design Q1: failed and indexed, its alias on ready
 // content of its current revision built on its own parse_mode's route) keeps
 // its index and re-runs only its missing parts in that mode (Q8): unread pages
@@ -297,26 +377,35 @@ func (s *Store) RetryFileProcessing(ctx context.Context, actorID, fileID, parseM
 	}
 	var name, kind, status, blobPath, etag, mode string
 	var revision int64
-	var queued, indexed, ever, current, summarized bool
+	var queued, indexed, ever, current, summarized, handIn bool
 	var identity *string
 	// Read under the file lock, so the job names the revision it runs on.
 	// current: the alias serves ready content of the file's revision (every
 	// revision bump drops or moves the alias and resets content_hash).
 	err = tx.QueryRow(ctx, `SELECT f.name,f.kind,f.status,COALESCE(f.blob_path,''),COALESCE(f.source_etag,''),f.revision,f.indexed,f.parse_mode,f.ever_parsed_successfully,
 		EXISTS(SELECT 1 FROM jobs WHERE payload->>'fileId'=$1 AND type IN ('parse','ingest','source_refresh') AND status IN ('pending','running')),
-		rc.id IS NOT NULL,rc.pipeline_identity,EXISTS(SELECT 1 FROM rag_content_summaries s WHERE s.content_id=rc.id)
+		rc.id IS NOT NULL,rc.pipeline_identity,EXISTS(SELECT 1 FROM rag_content_summaries s WHERE s.content_id=rc.id),
+		f.hand_in_assignment_id IS NOT NULL
 		FROM files f
 		LEFT JOIN rag_file_contents fc ON fc.file_id=f.id
 		LEFT JOIN rag_contents rc ON rc.id=fc.content_id AND rc.status='ready' AND rc.content_hash=f.content_hash
-		WHERE f.id=$1 AND f.trashed_at IS NULL FOR UPDATE OF f`, fileID).Scan(&name, &kind, &status, &blobPath, &etag, &revision, &indexed, &mode, &ever, &queued, &current, &identity, &summarized)
+		WHERE f.id=$1 AND f.trashed_at IS NULL FOR UPDATE OF f`, fileID).Scan(&name, &kind, &status, &blobPath, &etag, &revision, &indexed, &mode, &ever, &queued, &current, &identity, &summarized, &handIn)
 	if isNoRows(err) {
 		return ErrNotFound
 	}
 	if err != nil {
 		return err
 	}
-	if status != string(FileFailed) || blobPath == "" || queued {
+	// The one ready file retried: an unconverted legacy Office file that is
+	// no hand-in.
+	legacy := sourceupload.ConvertsLegacy(name)
+	convert := status == string(FileReady) && legacy && !handIn
+	if (status != string(FileFailed) && !convert) || blobPath == "" || queued {
 		return ErrConflict
+	}
+	// The requested mode is no choice for a legacy file.
+	if legacy {
+		parseMode = mode
 	}
 	plan, err := sourceupload.BuildProcessingPlan(name, kind, parseMode)
 	if err != nil {
@@ -358,11 +447,14 @@ func (s *Store) RetryFileProcessing(ctx context.Context, actorID, fileID, parseM
 			jobType = "ingest"
 		}
 	}
-	reservation, err := s.beginIngestSpendTx(ctx, tx, ownerID, wsID)
+	reservation, err := s.beginFileJobSessionTx(ctx, tx, ownerID, wsID, plan, parseMode)
 	if err != nil {
 		return err
 	}
 	base["reservationId"] = reservation
+	if err := s.legacyConvertFields(ctx, tx, base, plan, parseMode, payerID); err != nil {
+		return err
+	}
 	payload, err := s.ingestJobPayload(ctx, tx, ownerID, base)
 	if err != nil {
 		return err

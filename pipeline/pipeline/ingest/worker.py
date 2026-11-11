@@ -4,6 +4,9 @@ Claims one selected stage from the Postgres queue and executes the server-owned
 processing plan attached at enqueue time. File-category checks do not select
 the pipeline. Parse coordinators download the B2 source into the ingest host's
 shared spool and hand an immutable local bundle to an ingest continuation.
+A legacy Office upload (.doc, .xls, .ppt) is a parse coordinator's job too
+(route ``legacy_convert``): the parser converts it and the gateway swaps the
+converted file in, finishes the job and queues the ordinary parse.
 
 The parse returns a bundle — a ``content_list.json`` carrying a page index and
 bounding box per block, plus the extracted images — so citations a reader can
@@ -44,7 +47,7 @@ from .. import (
     registry,
     use_compatible_event_loop,
 )
-from ..config import cfg, require_parse_timeouts
+from ..config import IMPORT_PICTURE_MARGIN_S, cfg, require_parse_timeouts
 from ..jobs import (
     CONTENT_CLAIM_STALE_S,
     CONTENT_CLAIM_WAIT_S,
@@ -72,7 +75,17 @@ from ..retrieval.confidence import VLM_RECOVERY, score_chunks, vlm_pages
 from ..retrieval.headings import retain_headings
 from ..retrieval.packing import pack_blocks
 from ..store import blobstore, db
-from . import capacity, decode, import_stage, source_text, telemetry, thumbnail, uat
+from . import (
+    capacity,
+    decode,
+    image_check,
+    images,
+    import_stage,
+    source_text,
+    telemetry,
+    thumbnail,
+    uat,
+)
 from . import plan as ingest_plan
 
 log = logging.getLogger("capy.worker")
@@ -95,9 +108,23 @@ _SOURCE_PUBLISH_TIMEOUT_S = 210
 _resource_rates: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
     "ingest_resource_rates", default=None
 )
+# The claimed job's heartbeat stop, for the one job that ends on the gateway.
+_heartbeat_stop: contextvars.ContextVar[threading.Event] = contextvars.ContextVar(
+    "job_heartbeat_stop"
+)
+# What a legacy conversion's pictures leave of the job's time limit, on top of
+# the picture margin: the source fetch already spent, the converted file's PUT
+# and the gateway's 30 s answer.
+_LEGACY_HANDOFF_ALLOWANCE_S = 150
 
 _PARSE_ROUTES = {
     "fast": parser_client.ROUTE_FAST,
+}
+# The stored type of a converted legacy Office file, by its new format.
+_OOXML_TYPES = {
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 }
 
 
@@ -262,7 +289,8 @@ def _heartbeat_loop(
                 claim_is_live = db.heartbeat_job(cur, job_id, lease_s, attempt)
                 conn.commit()
             if not claim_is_live:
-                if cancel_job is not None:
+                # A stopped heartbeat's job has ended, or ends on the gateway.
+                if cancel_job is not None and not stop.is_set():
                     cancel_job()
                 return
         except Exception:
@@ -1574,6 +1602,191 @@ async def _ensure_document_artifact(
     return artifact
 
 
+def _close_converted(job_id: str) -> bool:
+    """True once the gateway's conversion handoff finished this job (the only
+    way a legacy conversion ends done), closing this run's attempt record.
+    From then on the file, its reservation and the ordinary parse are the
+    gateway's: this run writes nothing else."""
+    with db.connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM jobs WHERE id=%s AND status='done'", (job_id,))
+        if cur.fetchone() is None:
+            return False
+        db.finish_job_attempt(
+            cur,
+            attempt_id=telemetry.current_attempt_id(),
+            outcome="succeeded",
+            snapshot=telemetry.snapshot(),
+        )
+        conn.commit()
+    return True
+
+
+def _stop_heartbeat() -> None:
+    """The gateway finishes a conversion's job inside the hand-over, which a
+    heartbeat would read as a lost claim and restart this worker. The request
+    is bounded far inside the lease the last beat left."""
+    _heartbeat_stop.get().set()
+
+
+def _close_lost_conversion(job_id: str, attempt: int, payload: dict) -> bool:
+    """After the gateway refused the hand-over as a lost claim: True once this
+    run's own check agrees (it cancels a job whose boundary closed) and has
+    closed this run's attempt record."""
+    with db.connect() as conn, conn.cursor() as cur:
+        if not _lost_claim(cur, job_id, attempt, payload):
+            return False
+        db.finish_job_attempt(
+            cur,
+            attempt_id=telemetry.current_attempt_id(),
+            outcome="superseded",
+            snapshot=telemetry.snapshot(),
+            error_category="superseded",
+            error_code="convert_claim_lost",
+        )
+        conn.commit()
+    return True
+
+
+def _publish_converted(scope: db.Scope, file_id: str, answer: dict) -> None:
+    """The one event after the swap, so the list shows the converted file at
+    once: waiting for the parse the gateway queued, or stored as it is."""
+    if answer.get("parseJobId"):
+        _publish_progress(scope, file_id, "queued", 5, status="pending")
+        return
+    note = f"{answer.get('name')}: stored without parsing (not indexed for retrieval)."
+    _publish_progress(
+        scope, file_id, "done", 100, status="ready", message=note, indexed=False
+    )
+
+
+async def _convert_legacy(
+    *,
+    job: dict,
+    payload: dict,
+    name: str,
+    processing_plan: ingest_plan.ProcessingPlan,
+    source_key: str,
+    source_sha256: str,
+    scope: db.Scope,
+    file_id: str,
+) -> dict | None:
+    """A legacy Office upload's whole job: the parser converts it, the
+    converted file gets an imported Office file's picture rule, and the
+    gateway swaps it in for the uploaded bytes, finishes this job and queues
+    what follows. Returns the gateway's answer, or None when the claim was
+    lost and closed. A conversion that started and left no file is final, as
+    is a picture or gateway refusal: only a parser that never took the request
+    and a bucket or gateway fault leave the job its retry."""
+    convert_to = processing_plan.convert_to
+    # The pictures stop early enough to leave the hand-over its time.
+    picture_deadline = (
+        time.monotonic()
+        + cfg.parse_job_timeout
+        - IMPORT_PICTURE_MARGIN_S
+        - _LEGACY_HANDOFF_ALLOWANCE_S
+    )
+    image_max_bytes = payload.get("imageMaxBytes")
+    if type(image_max_bytes) is not int or image_max_bytes <= 0:
+        raise TerminalError("legacy conversion payload names no picture cap")
+    if not cfg.gateway_url or not cfg.pipeline_secret:
+        # This worker's fault, found before LibreOffice runs for nothing.
+        raise RetryableError(
+            "GATEWAY_URL and PIPELINE_SECRET are not configured for the "
+            "conversion hand-over"
+        )
+    await asyncio.to_thread(
+        _set_file_status,
+        file_id,
+        "processing",
+        int(payload["sourceRevision"]),
+        str(payload.get("sourceETag") or ""),
+        str(payload.get("actorUserId") or ""),
+    )
+    _publish_progress(scope, file_id, "converting", 15, status="processing")
+    _set_stage("convert_legacy")
+    try:
+        converted = await asyncio.to_thread(
+            parser_client.convert_legacy,
+            source_key=source_key,
+            source_sha256=source_sha256,
+            upload_name=name,
+            convert_to=convert_to,
+            request_id=job["id"],
+        )
+    except parser_client.ParserTerminalResourceError as exc:
+        raise TerminalError(
+            "this file hit a terminal parser resource limit while converting"
+        ) from exc
+    except parser_client.ParserFormatMismatchError as exc:
+        raise TerminalError(str(exc)) from exc
+    except parser_client.ParserUnreadableError as exc:
+        raise TerminalError(f"this file cannot be converted: {exc}") from exc
+    except parser_client.ParserConversionError as exc:
+        # Never converted twice: the file may be what broke the conversion.
+        raise TerminalError(f"this file's conversion failed: {exc}") from exc
+    except parser_client.ParserCapacityError as exc:
+        # As for a parse: the job re-pends without spending an attempt.
+        raise CapacityWait(processing_plan.route) from exc
+
+    _set_stage("convert_pictures")
+    try:
+        stored, removed = await asyncio.to_thread(
+            import_stage.office_pictures, converted, image_max_bytes, picture_deadline
+        )
+    except images.OutOfTime as exc:
+        raise TerminalError(
+            f"the converted file's pictures took too long: {exc}"
+        ) from exc
+    except image_check.Refused as exc:
+        raise TerminalError(f"the converted file was refused: {exc}") from exc
+
+    _set_stage("replace_source")
+    # Where an upload may land: the incoming/ prefix (one-day lifecycle).
+    incoming_key = f"incoming/legacy-convert/{job['id']}.{convert_to}"
+    try:
+        await asyncio.to_thread(
+            blobstore.write_bytes, incoming_key, stored, _OOXML_TYPES[convert_to]
+        )
+    except Exception as exc:
+        raise RetryableError(f"B2 upload failed: {exc}") from exc
+    telemetry.record(artifact_bytes=len(stored))
+    attempt = int(job.get("attempts") or 1)
+    _stop_heartbeat()
+    status, answer = await asyncio.to_thread(
+        import_stage.gateway_post,
+        "/api/internal/files/convert",
+        {
+            "jobId": job["id"],
+            "attempt": attempt,
+            "fileId": file_id,
+            "incomingKey": incoming_key,
+            "actualSize": len(stored),
+            "sha256": hashlib.sha256(stored).hexdigest(),
+            "removedPictures": removed,
+        },
+    )
+    if status == 200:
+        log.info(
+            "converted %s to %s (parse job %s)",
+            name,
+            answer.get("name"),
+            answer.get("parseJobId"),
+        )
+        return answer
+    if status == 409:
+        if await asyncio.to_thread(_close_lost_conversion, job["id"], attempt, payload):
+            return None
+        raise RetryableError(
+            "the gateway refused the conversion hand-over of a claim this run "
+            "still holds"
+        )
+    refusal = f"{status} {answer.get('code') or ''}".strip()
+    # 401 is our secret out of step with the gateway's, not the file's fault.
+    if status >= 500 or status in (401, 429):
+        raise RetryableError(f"conversion handoff gateway returned {refusal}")
+    raise TerminalError(f"the converted file was refused: {refusal}")
+
+
 # ------------------------------------------------------------------ parsing
 
 
@@ -1930,8 +2143,13 @@ async def _process_ingest_job_bound(job: dict) -> None:
     kind = str(payload["kind"]).lower()
     processing_plan = ingest_plan.require(payload.get("processingPlan"))
     job_type = str(job.get("type") or "ingest")
-    if job_type == "parse" and processing_plan.route != ingest_plan.DOCUMENT_PARSE:
+    legacy = processing_plan.route == ingest_plan.LEGACY_CONVERT
+    if job_type == "parse" and not (
+        legacy or processing_plan.route == ingest_plan.DOCUMENT_PARSE
+    ):
         raise TerminalError("parse job does not select document parsing")
+    if job_type == "ingest" and legacy:
+        raise TerminalError("a legacy conversion is a parse job")
     if (
         job_type == "ingest"
         and processing_plan.route == ingest_plan.DOCUMENT_PARSE
@@ -2571,6 +2789,31 @@ async def _process_ingest_job(
         source_etag,
         str(payload.get("actorUserId") or ""),
     )
+    if processing_plan.route == ingest_plan.LEGACY_CONVERT:
+        # Nothing is parsed or indexed here: the converted file's own parse
+        # job, queued by the gateway, does that.
+        if not local_path or not source_key:
+            raise RetryableError("local document source is missing")
+        answer = await _convert_legacy(
+            job=job,
+            payload=payload,
+            name=name,
+            processing_plan=processing_plan,
+            source_key=source_key,
+            source_sha256=source_sha256,
+            scope=scope,
+            file_id=file_id,
+        )
+        # Converted, the job is done and the gateway's; a lost claim is
+        # closed too. Nothing here may fail either.
+        try:
+            if answer is not None:
+                await asyncio.to_thread(_close_converted, job["id"])
+                _publish_converted(scope, file_id, answer)
+            await asyncio.to_thread(cleanup_source)
+        except Exception:
+            log.warning("could not tidy up a conversion job", exc_info=True)
+        return
     identity = _pipeline_identity(processing_plan)
     _set_stage("donor_lookup")
     pin = await _embedding_pin(scope)
@@ -2954,6 +3197,7 @@ async def main_async(job_type: str = "ingest") -> None:
                         telemetry.reset_job(job_telemetry_token)
                     continue
                 stop = threading.Event()
+                _heartbeat_stop.set(stop)
                 claim_lost = threading.Event()
                 loop = asyncio.get_running_loop()
                 job_task = asyncio.create_task(process_job(job))
@@ -3061,6 +3305,15 @@ async def _handle_job_failure_bound(job: dict, exc: BaseException) -> None:
                 str(payload.get("sourceETag") or ""),
             )
         except db.SourceSupersededError as superseded:
+            route = (payload.get("processingPlan") or {}).get("route")
+            # A legacy conversion moves the source itself. When its answer
+            # was lost on the way back the gateway has still finished the job
+            # and handed its reservation on, so nothing is written for it.
+            if route == ingest_plan.LEGACY_CONVERT and await asyncio.to_thread(
+                _close_converted, job["id"]
+            ):
+                await asyncio.to_thread(_cleanup_payload_source, payload)
+                return
             # Any error after a publish is terminal for the old source, even
             # if the original error would normally retry. Never re-pend A once
             # the logical file points at B.

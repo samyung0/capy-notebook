@@ -12,6 +12,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef } from 'react';
+import { legacyOfficeTarget } from '@/features/files/fileUtils';
 import { forgetDrawingBoards } from '@/features/quizzes/drawing/drawingBoards';
 import {
   answersForCheck,
@@ -608,12 +609,17 @@ export function useEventStream(wsId: string) {
   const qc = useQueryClient();
   useEffect(() => {
     if (USE_MSW) {
-      // The mock's stand-in for the stream, for what a mock run reports.
-      const heard = (event: Event) =>
-        applyNotificationEvent(
-          qc,
-          (event as CustomEvent<NotificationStreamEvent>).detail
-        );
+      // The mock's stand-in for the stream, for what a mock run reports. An
+      // ingest event names its workspace as the worker's does, and reaches
+      // the tab viewing that workspace.
+      const heard = (event: Event) => {
+        const { detail } = event as CustomEvent<
+          NotificationStreamEvent | (IngestEvent & { workspaceId: string })
+        >;
+        if (!('workspaceId' in detail)) applyNotificationEvent(qc, detail);
+        else if (detail.workspaceId === wsId)
+          applyIngestEvent(qc, wsId, detail);
+      };
       window.addEventListener('capy:mock-stream', heard);
       return () => window.removeEventListener('capy:mock-stream', heard);
     }
@@ -1369,17 +1375,25 @@ export const filesQuery = (wsId: string) =>
           ?.map((file) => [file.id, file.ingestPct])
       );
       for (const file of files) {
-        if (file.status === 'pending' || file.status === 'processing') {
-          file.ingestPct = previous.get(file.id);
-          continue;
-        }
-        // A terminal event may have been missed before subscribing or while
-        // disconnected. Refresh the body too when a list read finds completion.
+        const ingesting =
+          file.status === 'pending' || file.status === 'processing';
+        if (ingesting) file.ingestPct = previous.get(file.id);
         const queryKey = qk.file(file.id);
         const cached = client.getQueryData<SourceFile>(queryKey);
-        if (cached?.status === 'pending' || cached?.status === 'processing') {
-          void client.invalidateQueries({ queryKey });
-        }
+        if (!cached) continue;
+        // A terminal event may have been missed before subscribing or while
+        // disconnected. Refresh the body too when a list read finds completion.
+        const finished =
+          !ingesting &&
+          (cached.status === 'pending' || cached.status === 'processing');
+        // A legacy Office file's conversion renamed it, with the parse of the
+        // new file still to come: the open file reads its new name now.
+        const converted =
+          !!legacyOfficeTarget(cached.name) && cached.name !== file.name;
+        if (finished) void client.invalidateQueries({ queryKey });
+        // The ingest event that follows the swap may be rereading it already.
+        else if (converted)
+          void client.invalidateQueries({ queryKey }, { cancelRefetch: false });
       }
       return files;
     },
@@ -1663,7 +1677,8 @@ const retryProcessingKey = (wsId: string | null) =>
   ['retryProcessing', wsId ?? ''] as const;
 
 /** Process a failed file again on its stored bytes (owner only, charged like
- * automatic reprocessing). The file list shows it pending once it lands. */
+ * automatic reprocessing); an old Office file that is not converted, failed
+ * or ready, reruns its upload. The file list shows it pending once it lands. */
 export function useRetryFileProcessing(wsId: string | null) {
   const qc = useQueryClient();
   return useMutation({
@@ -1675,18 +1690,17 @@ export function useRetryFileProcessing(wsId: string | null) {
     // Awaited, so the retry stays pending until the refetched list shows the
     // file out of `failed` (useRetryingFileIds).
     onSettled: (_data, _error, { id }) =>
-      Promise.all(
-        wsId
+      Promise.all([
+        // The open file: its Convert screen turns to converting.
+        qc.invalidateQueries({ queryKey: qk.file(id) }),
+        ...(wsId
           ? [
               qc.invalidateQueries({ queryKey: qk.files(wsId) }),
               qc.invalidateQueries({ queryKey: qk.workspaceStats(wsId) }),
             ]
-          : // A standalone file: the Files page's list and its own query.
-            [
-              qc.invalidateQueries({ queryKey: qk.ownedFilesRoot }),
-              qc.invalidateQueries({ queryKey: qk.file(id) }),
-            ]
-      ),
+          : // A standalone file: the Files page's list.
+            [qc.invalidateQueries({ queryKey: qk.ownedFilesRoot })]),
+      ]),
   });
 }
 
@@ -1915,14 +1929,21 @@ export function useDeleteTopic(wsId: string) {
   });
 }
 /** Patch a single file across its list cache (the workspace's, or the owned
- * files lists for a standalone file) and its detail cache. */
+ * files lists for a standalone file) and its detail cache. Returns whether a
+ * patched copy is still named as legacy Office (not converted, as far as
+ * this tab knows). */
 function patchFileInCache(
   qc: QueryClient,
   wsId: string | null,
   fileId: string,
   patch: Partial<SourceFile>
 ) {
-  const apply = (f: SourceFile) => (f.id === fileId ? { ...f, ...patch } : f);
+  let legacyNamed = false;
+  const apply = (f: SourceFile) => {
+    if (f.id !== fileId) return f;
+    legacyNamed ||= !!legacyOfficeTarget(f.name);
+    return { ...f, ...patch };
+  };
   if (wsId) {
     qc.setQueryData<SourceFile[]>(qk.files(wsId), (prev) => prev?.map(apply));
   } else {
@@ -1955,9 +1976,8 @@ function patchFileInCache(
         }
     );
   }
-  qc.setQueryData<SourceFile>(qk.file(fileId), (prev) =>
-    prev ? { ...prev, ...patch } : prev
-  );
+  qc.setQueryData<SourceFile>(qk.file(fileId), (prev) => prev && apply(prev));
+  return legacyNamed;
 }
 
 // MSW has no SSE channel, so fake the progress animation client-side in dev.
@@ -2186,14 +2206,20 @@ function applyIngestEvent(
   if (status === 'pending' || status === 'processing') {
     ingestTracker.markStart(fileId);
   }
-  patchFileInCache(qc, wsId, fileId, patch);
-  if (status === 'ready' || status === 'failed') {
-    trackIngestTerminal(qc, wsId, fileId, status, value.stage);
-    // The refetch brings the thumbnail.
+  const legacyNamed = patchFileInCache(qc, wsId, fileId, patch);
+  const ended = status === 'ready' || status === 'failed';
+  if (ended) trackIngestTerminal(qc, wsId, fileId, status, value.stage);
+  // The end's refetch brings the thumbnail. A converted legacy Office file is
+  // renamed, which no event says and, for a standalone file, no tree event
+  // either: the worker's event after the swap (pending for the parse, or
+  // ready) rereads the list and the detail still named as legacy.
+  if (ended || (!wsId && legacyNamed)) {
     qc.invalidateQueries({
       queryKey: wsId ? qk.files(wsId) : qk.ownedFilesRoot,
     });
     qc.invalidateQueries({ queryKey: qk.file(fileId) });
+  }
+  if (ended) {
     // A ready file has downloadable source bytes; refresh pending links.
     qc.invalidateQueries({
       queryKey: qk.fileLinks(fileId),
