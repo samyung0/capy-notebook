@@ -1400,9 +1400,22 @@ its coordinator. The secret is not scoped to that route: it opens every
 `/api/internal/*` route of that environment's gateway (the agent's writes,
 trash, imports, provider-call settlement), and the retrieval service requires
 the same value on its inbound requests. The coordinator calls only the
-conversion route. A coordinator without either value fails every legacy file
-as a terminal conversion failure; production's compose file refuses to start
-it without them.
+conversion route. A coordinator without either value converts nothing: each
+attempt fails as a retryable fault before LibreOffice runs, so a legacy file
+ends `failed` once the parse job's two attempts are spent and waits for its
+owner's Retry processing. Production's compose file refuses to start the
+coordinator without them.
+
+Deployment order for this change: the ingest host goes before the gateway. A
+gateway with the conversion route queues `legacy_convert` jobs, and a
+coordinator from before the change refuses that plan as unknown, which fails
+every legacy upload for good. A new coordinator in front of an old gateway is
+harmless, since the old gateway queues no such job. **Deploy ingest** deploys
+only the revision the backend already serves (it verifies the running
+backend), so where the workflows are used, stop the environment's parse
+coordinator before the app deploy and keep it stopped until **Deploy ingest**
+activates the matching release, as §4 does for migration `0038`; parse jobs
+queued meanwhile wait as pending.
 
 Every pipeline process (retrieval, the ingest, parse and import workers) refuses
 to start with a `PIPELINE_SECRET` or `PARSER_TOKEN` set shorter than 32
@@ -2342,6 +2355,15 @@ its JVM dies by SIGKILL, or its LibreOffice conversion fails, while the parser
 cgroup's `oom_kill` count rises, the parser writes a `parse_oom` marker for
 that child's document and respawns only that child. Parse children run at
 `oom_score_adj` 1000 and the API at 0, so the kernel picks a parse child first.
+
+Open before a production stack is deployed: by the budget above the
+coordinator has about 110 MiB of its 1,280 MiB to spare with eight jobs, and
+the picture step of a converted legacy Office file runs inside it. For one
+20 MiB deck that step peaked at 158 MiB in a container of its own
+([report](../bench/parsers/reports/2026-11-11-legacy-office-conversion.md)).
+The limit, or how many conversions run their picture step at once, must be
+settled first. The nonprod coordinator (one job at a time, 384 MiB, 117 MiB
+idle) fits that deck.
 
 `restart: unless-stopped` recovers PID 1 kills, cgroup OOM kills, a Docker
 daemon restart, and a full VM reboot. Ansible installs

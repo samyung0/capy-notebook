@@ -114,3 +114,18 @@ export function convertMockLegacyFile(
   file.sizeBytes = fixture.sizeBytes;
   return fixture.sourceURL;
 }
+
+/** The worker's one ingest event after that swap (`_publish_converted` in
+ * pipeline/ingest/worker.py): waiting for the parse the gateway queued, or
+ * with parsing off stored as it is. */
+export function mockConvertedEvent(name: string, parseMode: string) {
+  return parseMode === 'none'
+    ? {
+        indexed: false,
+        message: `${name}: stored without parsing (not indexed for retrieval).`,
+        pct: 100,
+        stage: 'done',
+        status: 'ready' as const,
+      }
+    : { message: '', pct: 5, stage: 'queued', status: 'pending' as const };
+}

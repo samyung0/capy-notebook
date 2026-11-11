@@ -676,7 +676,9 @@ the reaper. The gateway names the fresh `sources/blob_…` key before it
 promotes the object and queues that key for the reaper first, with the
 24-hour upload grace: the file taking the key as its blob cancels that
 deletion, and a handoff that fails after the promotion leaves the object to
-the reaper. The coordinator's hand-over object is under
+the reaper. The gateway hashes the promoted object, the bytes that become the
+file, and takes it only with the ZIP signature and the SHA-256 the worker
+named; one it refuses stays queued. The coordinator's hand-over object is under
 `incoming/legacy-convert/`: promotion removes it, and one the gateway never
 took goes with the bucket's one-day `incoming/` rule. A refused handoff
 changes nothing, so the file keeps its uploaded bytes and their charge.
@@ -1037,10 +1039,13 @@ per-file cap applies to the picked size. Once the file is converted
 parse coordinator applies the imported-file rule above to the converted bytes
 (`import_stage.office_pictures`) with the payer's image cap, which the job
 carries as `imageMaxBytes`. The pictures stop at the parse job's time limit
-(`CAPY_PARSE_JOB_TIMEOUT`, 1,500 s) less the same 30 s; running out of time or
-failing the header check fails the file for good. The count of removed
-pictures stays on the conversion job's payload (`removedPictures`) and shows
-no toast.
+(`CAPY_PARSE_JOB_TIMEOUT`, 1,500 s) less the same 30 s and a further 150 s
+kept for the hand-over; running out of time or failing the header check fails
+the file for good. The step's memory inside the parse coordinator is an open
+item for production
+([report](../bench/parsers/reports/2026-11-11-legacy-office-conversion.md)).
+The count of removed pictures stays on the conversion job's payload
+(`removedPictures`) and shows no toast.
 
 **Image files the browser cannot decode.** HEIC/HEIF, TIFF and JPEG 2000 go
 through decoders loaded only when such a file is picked (Q294, Q333,

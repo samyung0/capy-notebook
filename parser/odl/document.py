@@ -146,6 +146,7 @@ def normalize_document(data: bytes, name: str, work_dir: Path) -> NormalizedDocu
         _PDF_EXPORT.get(suffix, "pdf"),
         "pdf",
         OFFICE_PREVIEW_MAX_BYTES,
+        f"LibreOffice PDF exceeds the {OFFICE_PREVIEW_MAX_BYTES}-byte preview limit",
         work_dir,
     )
     return NormalizedDocument(
@@ -169,7 +170,13 @@ def convert_legacy(
             f"a {suffix or 'nameless'} file does not convert to .{convert_to}"
         )
     return _libreoffice(
-        data, suffix, f"{twin}:{export_filter}", twin, max_bytes, work_dir
+        data,
+        suffix,
+        f"{twin}:{export_filter}",
+        twin,
+        max_bytes,
+        f"the converted file exceeds the {max_bytes}-byte limit",
+        work_dir,
     )
 
 
@@ -179,11 +186,13 @@ def _libreoffice(
     convert_to: str,
     extension: str,
     max_bytes: int,
+    too_large: str,
     work_dir: Path,
 ) -> bytes:
     """One LibreOffice conversion of an Office file (``suffix``, read through
     its pinned import filter) to ``convert_to`` (the ``--convert-to`` value);
-    returns the ``extension`` file it leaves, at most ``max_bytes`` long."""
+    returns the ``extension`` file it leaves, which must hold something and at
+    most ``max_bytes`` (else ``too_large`` is the refusal)."""
     magic, import_filter = _IMPORTS[suffix]
     if not data.startswith(magic):
         detail = f"the file's contents are not a {suffix} document"
@@ -230,7 +239,8 @@ def _libreoffice(
                 f"LibreOffice conversion exceeded {OFFICE_CONVERT_TIMEOUT_S} seconds"
             ) from None
         rendered = tmp / f"source.{extension}"
-        if completed.returncode != 0 or not rendered.is_file():
+        size = rendered.stat().st_size if rendered.is_file() else 0
+        if completed.returncode != 0 or not size:
             detail = (
                 (completed.stderr or completed.stdout or b"conversion failed")
                 .decode(errors="replace")
@@ -239,10 +249,8 @@ def _libreoffice(
             raise OfficeConversionFailed(
                 f"LibreOffice could not convert {suffix}: {detail[:500]}"
             )
-        if rendered.stat().st_size > max_bytes:
-            raise SourceUnreadable(
-                f"LibreOffice {extension.upper()} exceeds the {max_bytes}-byte limit"
-            )
+        if size > max_bytes:
+            raise SourceUnreadable(too_large)
         return rendered.read_bytes()
 
 

@@ -12,8 +12,10 @@
 # ABORT_SWAP_GIB (1.0), HEAP (1g, the JVM's heap cap), MEM (14g), SWAP (18g,
 # memory and swap together) and CPUS (8) for another container shape, GAP
 # (5, seconds between solo documents), CLIENTS (burst: documents in flight
-# at a time). Every other running container is watched for a restart. Needs
-# python3 and root (the spool and the cgroup belong to root).
+# at a time), DRIVER (another script of this folder that takes
+# stress_parser.py's arguments, such as legacy_convert_probe.py). Every other
+# running container is watched for a restart. Needs python3 and root (the
+# spool and the cgroup belong to root).
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
 : "${IMG:?image}" "${WORKERS:?parse children}" "${MODE:?solo or burst}" "${MANIFEST:?manifest}" "${OUT:?output folder}"
@@ -69,7 +71,7 @@ docker run -d --name "$NAME" -p 127.0.0.1:18090:8090 \
 keep=()
 [ -n "${KEEP:-}" ] && keep=(--keep "$KEEP" --keep-ids "${KEEP_IDS:-}")
 [ -n "${CLIENTS:-}" ] && keep+=(--clients "$CLIENTS")
-PARSER_TOKEN="$token" python3 "$here/stress_parser.py" "$MODE" --manifest "$MANIFEST" --out "$OUT" \
+PARSER_TOKEN="$token" python3 "$here/${DRIVER:-stress_parser.py}" "$MODE" --manifest "$MANIFEST" --out "$OUT" \
   --container "$NAME" --tag "cap-$(basename "$OUT")-$RANDOM" --watch "$watch" \
   --abort-swap-gib "${ABORT_SWAP_GIB:-1.0}" --gap "${GAP:-5}" "${keep[@]}" > "$OUT/driver.log" 2>&1
 status=$?

@@ -107,6 +107,8 @@ PARSER_DEPENDENCIES = _dependency_versions()
 MAX_SOURCE_BYTES = int(os.environ.get("CAPY_MAX_SOURCE_BYTES", str(100 << 20)))
 # What ``convert_to`` may name: a legacy Office file's OOXML twin.
 CONVERT_TARGETS = frozenset({"docx", "xlsx", "pptx"})
+# A conversion's ``request_id`` is part of its output file's name.
+_JOB_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
 MAX_ARTIFACT_BYTES = int(
     os.environ.get("CAPY_PARSE_ARTIFACT_MAX_BYTES", str(256 << 20))
 )
@@ -1565,9 +1567,15 @@ async def _artifact_parse(body: dict[str, Any]) -> JSONResponse:
     output_key = str(body.get("output_key") or "")
     fingerprint = str(body.get("source_fingerprint") or "")
     request_id = str(body.get("request_id") or "")
-    # With ``convert_to`` the artifact is the converted file, named by its
-    # format, so it never shares a key with a parse bundle.
+    # With ``convert_to`` the artifact is the converted file, named by its job
+    # (``request_id``) and format: it shares a key with no bundle and no other
+    # job, while the fingerprint (the quarantine's identity) is the bytes'.
     convert_to = str(body.get("convert_to") or "")
+    expected_key = (
+        f"artifacts/{fingerprint}.{request_id}.{convert_to}"
+        if convert_to
+        else f"artifacts/{fingerprint}.zip"
+    )
     if (
         body.get("artifact_schema") != ARTIFACT_SCHEMA
         or body.get("parser_version") != PARSER_VERSION
@@ -1576,8 +1584,11 @@ async def _artifact_parse(body: dict[str, Any]) -> JSONResponse:
         or not output_key
         or not fingerprint
         or not request_id
-        or (convert_to and convert_to not in CONVERT_TARGETS)
-        or output_key != f"artifacts/{fingerprint}.{convert_to or 'zip'}"
+        or (
+            convert_to
+            and (convert_to not in CONVERT_TARGETS or not _JOB_ID.fullmatch(request_id))
+        )
+        or output_key != expected_key
     ):
         return JSONResponse({"detail": "invalid artifact request"}, status_code=400)
 
@@ -1625,7 +1636,10 @@ async def _artifact_parse(body: dict[str, Any]) -> JSONResponse:
             {"detail": f"invalid shared source: {exc}"}, status_code=400
         )
 
-    task = await _artifact_task(fingerprint, body, source, source_read_ms)
+    # One conversion per job; one parse per fingerprint.
+    task = await _artifact_task(
+        output_key if convert_to else fingerprint, body, source, source_read_ms
+    )
     task_payload, status_code = await asyncio.shield(task)
     # Every waiter receives the immutable artifact, but only the job that
     # created it receives the parse receipt. Otherwise a concurrent cache
@@ -1639,34 +1653,34 @@ async def _artifact_parse(body: dict[str, Any]) -> JSONResponse:
 
 
 async def _artifact_task(
-    fingerprint: str,
+    key: str,
     body: dict[str, Any],
     source: bytes,
     source_read_ms: int,
 ) -> asyncio.Task[tuple[dict[str, Any], int]]:
-    """Share one parse (or conversion) and its write across client timeouts
-    and their retries."""
+    """Share one parse (``key``: its fingerprint) or one job's conversion (its
+    output key) and its write across client timeouts and their retries."""
     async with _artifact_tasks_lock:
-        task = _artifact_tasks.get(fingerprint)
+        task = _artifact_tasks.get(key)
         if task is None:
             task = asyncio.create_task(
                 _produce_artifact(dict(body), source, source_read_ms)
             )
-            _artifact_tasks[fingerprint] = task
+            _artifact_tasks[key] = task
             task.add_done_callback(
                 lambda finished: asyncio.create_task(
-                    _forget_artifact_task(fingerprint, finished)
+                    _forget_artifact_task(key, finished)
                 )
             )
         return task
 
 
 async def _forget_artifact_task(
-    fingerprint: str, task: asyncio.Task[tuple[dict[str, Any], int]]
+    key: str, task: asyncio.Task[tuple[dict[str, Any], int]]
 ) -> None:
     async with _artifact_tasks_lock:
-        if _artifact_tasks.get(fingerprint) is task:
-            _artifact_tasks.pop(fingerprint, None)
+        if _artifact_tasks.get(key) is task:
+            _artifact_tasks.pop(key, None)
 
 
 async def _produce_artifact(

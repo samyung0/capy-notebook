@@ -628,9 +628,19 @@ describe('transfer status', () => {
       kind: 'queued',
       label: m.files_converting(),
     });
-    expect(
-      transferStatus(transfer, legacy({ status: 'failed' }))
-    ).toMatchObject({ detail: m.files_convert_failed(), kind: 'error' });
+    // Nothing was parsed: the label is the file tree's, not "Parsing failed".
+    expect(transferStatus(transfer, legacy({ status: 'failed' }))).toEqual({
+      detail: m.files_convert_failed(),
+      kind: 'error',
+      label: m.files_processing_error(),
+    });
+    // Ready and still .doc (a hand-in's file is stored, never converted):
+    // plainly not indexed.
+    expect(transferStatus(transfer, legacy({ status: 'ready' }))).toEqual({
+      detail: m.files_not_indexed(),
+      kind: 'info',
+      label: m.source_transfer_not_searchable(),
+    });
     // Converted: the new name parses like any upload.
     expect(
       transferStatus(

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -24,9 +25,16 @@ type legacyUpload struct {
 	userID, fileID, jobID, reservationID, uploadedPath string
 }
 
-// newLegacyUpload uploads a 100-byte legacy file as a new Free user into a
-// new workspace and claims its conversion job.
-func newLegacyUpload(t *testing.T, st *store.Store, name, kind, mode string) legacyUpload {
+const docxType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+// zipBytes is a stand-in converted file of n bytes: the ZIP signature, padded.
+func zipBytes(n int) []byte {
+	return append([]byte("PK\x03\x04"), bytes.Repeat([]byte("x"), n-4)...)
+}
+
+// newLegacyUpload uploads a 100-byte legacy file as a new Free user, into a
+// new workspace or (standalone) into none, and claims its conversion job.
+func newLegacyUpload(t *testing.T, st *store.Store, name, kind, mode string, standalone bool) legacyUpload {
 	t.Helper()
 	ctx := context.Background()
 	suffix := strconv.FormatInt(time.Now().UnixNano(), 10)
@@ -38,12 +46,16 @@ func newLegacyUpload(t *testing.T, st *store.Store, name, kind, mode string) leg
 	t.Cleanup(func() {
 		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM users WHERE id=$1`, up.userID)
 	})
-	ws, err := st.CreateWorkspace(ctx, up.userID, store.WorkspaceCreate{Name: "Legacy", Tags: nil})
-	if err != nil {
-		t.Fatal(err)
+	wsID := ""
+	if !standalone {
+		ws, err := st.CreateWorkspace(ctx, up.userID, store.WorkspaceCreate{Name: "Legacy", Tags: nil})
+		if err != nil {
+			t.Fatal(err)
+		}
+		wsID = ws.ID
 	}
 	session, err := st.CreateUploadSession(ctx, store.NewUploadSession{
-		ID: "up_legacy_" + suffix, WorkspaceID: ws.ID, CreatedBy: up.userID,
+		ID: "up_legacy_" + suffix, WorkspaceID: wsID, CreatedBy: up.userID,
 		ObjectPath: "incoming/up_legacy_" + suffix, FinalPath: up.uploadedPath,
 		Name: name, Kind: kind, ContentType: "application/octet-stream",
 		DeclaredSize: 100, ParseMode: mode, ExpiresAt: time.Now().Add(time.Hour),
@@ -65,23 +77,30 @@ func newLegacyUpload(t *testing.T, st *store.Store, name, kind, mode string) leg
 	return up
 }
 
-// handOver puts converted at the job's incoming key and posts the hand-over,
-// with override replacing request fields.
-func (up legacyUpload) handOver(t *testing.T, h http.Handler, mem *blob.Memory, convertTo string, converted []byte, override map[string]any) *httptest.ResponseRecorder {
-	t.Helper()
-	key := "incoming/legacy-convert/" + up.jobID + "." + convertTo
-	if _, _, err := mem.Put(key, bytes.NewReader(converted)); err != nil {
-		t.Fatal(err)
-	}
+// request is the hand-over of converted as the job's first attempt, with
+// override replacing fields.
+func (up legacyUpload) request(convertTo string, converted []byte, override map[string]any) map[string]any {
 	sum := sha256.Sum256(converted)
 	body := map[string]any{
-		"jobId": up.jobID, "attempt": 1, "fileId": up.fileID, "incomingKey": key,
-		"actualSize": len(converted), "sha256": hex.EncodeToString(sum[:]), "removedPictures": 2,
+		"jobId": up.jobID, "attempt": 1, "fileId": up.fileID,
+		"incomingKey": "incoming/legacy-convert/" + up.jobID + "." + convertTo,
+		"actualSize":  len(converted), "sha256": hex.EncodeToString(sum[:]), "removedPictures": 2,
 	}
 	for field, value := range override {
 		body[field] = value
 	}
-	return doInternal(t, h, http.MethodPost, "/api/internal/files/convert", pipeSecret, body)
+	return body
+}
+
+// handOver puts converted at the job's incoming key as contentType and posts
+// its hand-over.
+func (up legacyUpload) handOver(t *testing.T, h http.Handler, mem *blob.Memory, convertTo, contentType string, converted []byte, override map[string]any) *httptest.ResponseRecorder {
+	t.Helper()
+	key := "incoming/legacy-convert/" + up.jobID + "." + convertTo
+	if _, err := mem.PutObjectOnce(context.Background(), key, bytes.NewReader(converted), contentType, ""); err != nil {
+		t.Fatal(err)
+	}
+	return doInternal(t, h, http.MethodPost, "/api/internal/files/convert", pipeSecret, up.request(convertTo, converted, override))
 }
 
 type convertedFile struct {
@@ -106,14 +125,14 @@ func readConvertedFile(t *testing.T, st *store.Store, fileID string) convertedFi
 func TestLegacyConvertSwapsTheFileAndQueuesItsParse(t *testing.T) {
 	h, st, mem := openInternalHTTPWithBlob(t)
 	ctx := context.Background()
-	up := newLegacyUpload(t, st, "old report.doc", "doc", "fast")
-	converted := bytes.Repeat([]byte("docx"), 40) // 160 bytes: 60 more than uploaded
+	up := newLegacyUpload(t, st, "old report.doc", "doc", "fast", false)
+	converted := zipBytes(160) // 60 bytes more than uploaded
 
 	unauthorized := doInternal(t, h, http.MethodPost, "/api/internal/files/convert", "", map[string]any{"jobId": up.jobID})
 	if unauthorized.Code != http.StatusUnauthorized {
 		t.Fatalf("hand-over without the secret: status=%d", unauthorized.Code)
 	}
-	ok := up.handOver(t, h, mem, "docx", converted, nil)
+	ok := up.handOver(t, h, mem, "docx", docxType, converted, nil)
 	if ok.Code != http.StatusOK {
 		t.Fatalf("hand-over status=%d body=%s", ok.Code, ok.Body.String())
 	}
@@ -171,24 +190,34 @@ func TestLegacyConvertSwapsTheFileAndQueuesItsParse(t *testing.T) {
 			parseType, parseStatus, route, blobPath, revision, reservation, hasCap)
 	}
 
-	again := up.handOver(t, h, mem, "docx", converted, nil)
+	again := up.handOver(t, h, mem, "docx", docxType, converted, nil)
 	if again.Code != http.StatusOK || again.Body.String() != ok.Body.String() {
 		t.Fatalf("repeat status=%d body=%s; first=%s", again.Code, again.Body.String(), ok.Body.String())
 	}
 	if after := readConvertedFile(t, st, up.fileID); after != file {
 		t.Fatalf("repeat changed the file: %+v", after)
 	}
+	// A rename sent with the uploaded ending after the swap is refused.
+	stale := "renamed.doc"
+	if _, err := st.UpdateFile(ctx, up.userID, up.fileID, store.FilePatch{Name: &stale}); !errors.Is(err, store.ErrFileExtensionChanged) {
+		t.Fatalf("rename to the legacy ending = %v, want extension changed", err)
+	}
 }
 
 // With parsing off the converted file is ready as a new-format upload with
 // parsing off is, with no job and its system session closed. A name at the
-// 120-character cap loses the end of its stem to the longer ending.
+// 120-character cap loses the end of its stem to the longer ending. A file
+// that shrinks takes no storage gate, so a full account's converts too.
 func TestLegacyConvertWithParsingOffLeavesTheFileReady(t *testing.T) {
 	h, st, mem := openInternalHTTPWithBlob(t)
 	ctx := context.Background()
-	up := newLegacyUpload(t, st, strings.Repeat("é", 116)+".xls", "sheet", "none")
+	up := newLegacyUpload(t, st, strings.Repeat("é", 116)+".xls", "sheet", "none", false)
+	if _, err := st.Pool().Exec(ctx, `UPDATE user_storage SET used_bytes=100000000 WHERE user_id=$1`, up.userID); err != nil {
+		t.Fatal(err)
+	}
 
-	ok := up.handOver(t, h, mem, "xlsx", []byte("smaller"), nil)
+	// No content type on the object: only one it carries is checked.
+	ok := up.handOver(t, h, mem, "xlsx", "", zipBytes(7), nil)
 	if ok.Code != http.StatusOK || !strings.Contains(ok.Body.String(), `"parseJobId":null`) {
 		t.Fatalf("hand-over status=%d body=%s", ok.Code, ok.Body.String())
 	}
@@ -209,49 +238,98 @@ func TestLegacyConvertWithParsingOffLeavesTheFileReady(t *testing.T) {
 	}
 }
 
-// A hand-over that is not the job's live attempt is a lost claim; one that
-// does not match its job and bytes, is over the per-file cap or grows a full
-// account is refused for good. The file keeps its uploaded name and bytes.
+// A file outside any workspace converts the same way, for its owner alone.
+func TestLegacyConvertOfAStandaloneFile(t *testing.T) {
+	h, st, mem := openInternalHTTPWithBlob(t)
+	up := newLegacyUpload(t, st, "essay.doc", "doc", "fast", true)
+	ok := up.handOver(t, h, mem, "docx", docxType, zipBytes(120), nil)
+	if ok.Code != http.StatusOK || strings.Contains(ok.Body.String(), `"parseJobId":null`) {
+		t.Fatalf("hand-over status=%d body=%s", ok.Code, ok.Body.String())
+	}
+	if file := readConvertedFile(t, st, up.fileID); file.name != "essay.docx" || file.status != "pending" || file.revision != 2 {
+		t.Fatalf("converted file = %+v", file)
+	}
+}
+
+// A hand-over that is not the job's live attempt, or whose file was trashed
+// or moved to another revision, is a lost claim; a missing object is a fault
+// to retry; one that does not match its job and bytes, is no OOXML file, is
+// over the per-file cap or grows a full account is refused for good. The file
+// keeps its uploaded name and bytes.
 func TestLegacyConvertRefusals(t *testing.T) {
 	h, st, mem := openInternalHTTPWithBlob(t)
 	ctx := context.Background()
+	exec := func(query string, args ...any) {
+		t.Helper()
+		if _, err := st.Pool().Exec(ctx, query, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	converted := zipBytes(101) // one byte more than uploaded: takes the storage gate
 	for _, tc := range []struct {
-		name     string
-		override func(up legacyUpload) map[string]any
-		setup    string
-		status   int
-		code     string
+		name        string
+		setup       func(up legacyUpload)
+		override    func(up legacyUpload) map[string]any
+		converted   []byte
+		contentType string
+		missing     bool
+		status      int
+		code        string
 	}{
 		{name: "superseded attempt", override: func(legacyUpload) map[string]any { return map[string]any{"attempt": 2} },
 			status: http.StatusConflict, code: "convert_claim_lost"},
+		{name: "trashed file", setup: func(up legacyUpload) {
+			if _, err := st.TrashFile(ctx, up.userID, up.fileID, store.AgentOperation{}); err != nil {
+				t.Fatal(err)
+			}
+		}, status: http.StatusConflict, code: "convert_claim_lost"},
+		{name: "revision moved", setup: func(up legacyUpload) { exec(`UPDATE files SET revision=revision+1 WHERE id=$1`, up.fileID) },
+			status: http.StatusConflict, code: "convert_claim_lost"},
+		{name: "missing object", missing: true, status: http.StatusServiceUnavailable, code: "object_unavailable"},
+		{name: "not a conversion job", setup: func(up legacyUpload) {
+			exec(`UPDATE jobs SET payload=jsonb_set(payload,'{processingPlan,route}','"document_parse"') WHERE id=$1`, up.jobID)
+		}, status: http.StatusUnprocessableEntity, code: "convert_invalid"},
 		{name: "wrong key", override: func(up legacyUpload) map[string]any {
 			return map[string]any{"incomingKey": "incoming/legacy-convert/" + up.jobID + ".xlsx"}
 		}, status: http.StatusUnprocessableEntity, code: "convert_invalid"},
 		{name: "wrong hash", override: func(legacyUpload) map[string]any { return map[string]any{"sha256": strings.Repeat("b", 64)} },
 			status: http.StatusUnprocessableEntity, code: "convert_invalid"},
+		{name: "not a ZIP", converted: bytes.Repeat([]byte("x"), 101),
+			status: http.StatusUnprocessableEntity, code: "convert_invalid"},
+		{name: "wrong content type", contentType: "application/msword",
+			status: http.StatusUnprocessableEntity, code: "convert_invalid"},
 		{name: "over the file cap", override: func(legacyUpload) map[string]any { return map[string]any{"actualSize": 10<<20 + 1} },
 			status: http.StatusRequestEntityTooLarge, code: "file_too_large"},
-		{name: "storage full", setup: `UPDATE user_storage SET used_bytes=100000000 WHERE user_id=$1`,
-			status: http.StatusUnprocessableEntity, code: "storage_quota_exceeded"},
+		{name: "storage full", setup: func(up legacyUpload) {
+			exec(`UPDATE user_storage SET used_bytes=100000000 WHERE user_id=$1`, up.userID)
+		}, status: http.StatusUnprocessableEntity, code: "storage_quota_exceeded"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			up := newLegacyUpload(t, st, "old report.doc", "doc", "fast")
-			if tc.setup != "" {
-				if _, err := st.Pool().Exec(ctx, tc.setup, up.userID); err != nil {
-					t.Fatal(err)
-				}
+			up := newLegacyUpload(t, st, "old report.doc", "doc", "fast", false)
+			if tc.setup != nil {
+				tc.setup(up)
 			}
 			var override map[string]any
 			if tc.override != nil {
 				override = tc.override(up)
 			}
-			// 101 bytes: one more than uploaded, so it takes the storage gate.
-			rec := up.handOver(t, h, mem, "docx", bytes.Repeat([]byte("x"), 101), override)
+			body, contentType := converted, docxType
+			if tc.converted != nil {
+				body = tc.converted
+			}
+			if tc.contentType != "" {
+				contentType = tc.contentType
+			}
+			var rec *httptest.ResponseRecorder
+			if tc.missing {
+				rec = doInternal(t, h, http.MethodPost, "/api/internal/files/convert", pipeSecret, up.request("docx", body, nil))
+			} else {
+				rec = up.handOver(t, h, mem, "docx", contentType, body, override)
+			}
 			if rec.Code != tc.status || !strings.Contains(rec.Body.String(), `"code":"`+tc.code+`"`) {
 				t.Fatalf("status=%d body=%s, want %d %s", rec.Code, rec.Body.String(), tc.status, tc.code)
 			}
-			file := readConvertedFile(t, st, up.fileID)
-			if file.name != "old report.doc" || file.blobPath != up.uploadedPath || file.revision != 1 {
+			if file := readConvertedFile(t, st, up.fileID); file.name != "old report.doc" || file.blobPath != up.uploadedPath {
 				t.Fatalf("refused hand-over changed the file: %+v", file)
 			}
 		})

@@ -214,9 +214,17 @@ test('a legacy DOC upload shows as converting, becomes a DOCX and opens; a faile
   await upload(page, [
     { buffer: picked, mimeType: 'application/msword', name: 'essay.doc' },
   ]);
-  await expect(
-    page.getByTestId('source-transfer-panel').getByText(m.files_converting())
-  ).toBeVisible({ timeout: 30_000 });
+  // Shown for about a second, until the mock worker's event after the swap.
+  await expect
+    .poll(
+      () =>
+        page
+          .getByTestId('source-transfer-panel')
+          .getByText(m.files_converting())
+          .isVisible(),
+      { intervals: [100], timeout: 30_000 }
+    )
+    .toBe(true);
 
   // Renamed in the tree without a reload, on the converted file's bytes.
   const { bytes, link } = await stored(page, 'essay.docx');

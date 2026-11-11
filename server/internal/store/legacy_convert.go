@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 
@@ -56,15 +55,10 @@ func LegacyConvertIncomingKey(jobID, convertTo string) string {
 }
 
 // legacyConvertedName swaps the legacy ending for the converted format's. The
-// new ending is a character longer, so a stem that would push the name past
-// the files.name cap loses characters from its end.
+// new ending is a character longer, so a name at the files.name cap loses the
+// end of its stem.
 func legacyConvertedName(name, convertTo string) string {
-	stem := []rune(strings.TrimSuffix(name, filepath.Ext(name)))
-	ending := "." + convertTo
-	if room := fieldlimits.FileName - utf8.RuneCountInString(ending); len(stem) > room {
-		stem = stem[:room]
-	}
-	return string(stem) + ending
+	return fieldlimits.ClampFileName(strings.TrimSuffix(name, filepath.Ext(name)) + "." + convertTo)
 }
 
 // legacyConvertFence is what a hand-over's fence read under its locks.
@@ -81,8 +75,8 @@ type legacyConvertFence struct {
 // legacyConvertFenceTx locks a hand-over's file and job and checks them, in
 // the worker's own order (db.lock_pipeline_claim_boundary in the pipeline):
 // workspace, accounts, membership, file, then the job. The job must be this
-// running attempt with a live lease, and the file the revision it was queued
-// for, not trashed and still legacy; the converted size must fit the payer's
+// running attempt of a conversion with a live lease, and the file the revision
+// it was queued for, not trashed and still legacy; the converted size must fit the payer's
 // per-file cap and, where it grows the file, its storage.
 func (s *Store) legacyConvertFenceTx(ctx context.Context, tx pgx.Tx, in LegacyConvert) (legacyConvertFence, error) {
 	var f legacyConvertFence
@@ -132,7 +126,7 @@ func (s *Store) legacyConvertFenceTx(ctx context.Context, tx pgx.Tx, in LegacyCo
 
 	var name, etag string
 	var size int64
-	fileErr := tx.QueryRow(ctx, `SELECT name, kind, parse_mode, COALESCE(parser,''), size_bytes, revision, source_etag
+	fileErr := tx.QueryRow(ctx, `SELECT name, kind, parse_mode, COALESCE(parser,''), size_bytes, revision, COALESCE(source_etag,'')
 		FROM files WHERE id=$1 AND trashed_at IS NULL AND COALESCE(workspace_id,'')=$2 FOR UPDATE`,
 		in.FileID, f.workspaceID).Scan(&name, &f.kind, &f.parseMode, &f.parser, &size, &f.revision, &etag)
 	if fileErr != nil && !isNoRows(fileErr) {
@@ -147,6 +141,9 @@ func (s *Store) legacyConvertFenceTx(ctx context.Context, tx pgx.Tx, in LegacyCo
 		return f, err
 	}
 	var job struct {
+		ProcessingPlan struct {
+			Route string `json:"route"`
+		} `json:"processingPlan"`
 		ReservationID  string  `json:"reservationId"`
 		SourceETag     string  `json:"sourceETag"`
 		SourceRevision int64   `json:"sourceRevision"`
@@ -155,6 +152,9 @@ func (s *Store) legacyConvertFenceTx(ctx context.Context, tx pgx.Tx, in LegacyCo
 	}
 	if err := json.Unmarshal(payload, &job); err != nil {
 		return f, err
+	}
+	if job.ProcessingPlan.Route != sourceupload.RouteLegacyConvert {
+		return f, ErrConvertInvalid
 	}
 	if status == "done" && job.ConvertedName != "" {
 		f.done = &LegacyConvertResult{FileID: in.FileID, Name: job.ConvertedName, ParseJobID: job.ParseJobID}
@@ -199,30 +199,39 @@ func (s *Store) legacyConvertFenceTx(ctx context.Context, tx pgx.Tx, in LegacyCo
 	return f, nil
 }
 
+// LegacyConvertTarget is a fenced hand-over's next step: Done when its job
+// already finished, else the fresh key its object is promoted to and the
+// format the object must be.
+type LegacyConvertTarget struct {
+	Done                 *LegacyConvertResult
+	FinalPath, ConvertTo string
+}
+
 // PrepareLegacyConvert fences a hand-over before the gateway touches the
 // bucket. A job that already finished answers its recorded result. Otherwise
 // it names the fresh key the converted object is promoted to, queued for the
 // reaper first: taking it as the file's blob cancels that, and a hand-over
 // that fails after the promotion leaves nothing behind.
-func (s *Store) PrepareLegacyConvert(ctx context.Context, in LegacyConvert) (*LegacyConvertResult, string, error) {
+func (s *Store) PrepareLegacyConvert(ctx context.Context, in LegacyConvert) (LegacyConvertTarget, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return nil, "", err
+		return LegacyConvertTarget{}, err
 	}
 	defer tx.Rollback(ctx)
 	f, err := s.legacyConvertFenceTx(ctx, tx, in)
 	if err != nil || f.done != nil {
-		return f.done, "", err
+		return LegacyConvertTarget{Done: f.done}, err
 	}
-	finalPath := "sources/" + ObjectKeyID("blob") + "." + f.convertTo
-	if err := s.EnqueueBlobDeletionTx(ctx, tx, uploadPresignGrace, finalPath); err != nil {
-		return nil, "", err
+	target := LegacyConvertTarget{FinalPath: "sources/" + ObjectKeyID("blob") + "." + f.convertTo, ConvertTo: f.convertTo}
+	if err := s.EnqueueBlobDeletionTx(ctx, tx, uploadPresignGrace, target.FinalPath); err != nil {
+		return LegacyConvertTarget{}, err
 	}
-	return nil, finalPath, tx.Commit(ctx)
+	return target, tx.Commit(ctx)
 }
 
-// CompleteLegacyConvert makes the converted object at finalPath (checked and
-// promoted by the gateway) the file's bytes, in one transaction with the
+// CompleteLegacyConvert makes the converted object at finalPath (promoted and
+// checked by the gateway; in.ActualSize and in.SHA256 are that object's) the
+// file's bytes, in one transaction with the
 // fence: the file takes its new name, blob, size, hash, ETag and revision,
 // and the files triggers charge the size change, release the uploaded blob
 // and send the tree event. The file then continues as the plan of its new

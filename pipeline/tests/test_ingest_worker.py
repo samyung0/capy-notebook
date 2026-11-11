@@ -57,7 +57,10 @@ def test_source_refresh_publishes_only_its_ready_event(monkeypatch):
     assert events == ["ready", "processing"]
 
 
-def test_heartbeat_cancels_work_when_the_exact_claim_is_gone(monkeypatch):
+@pytest.mark.parametrize("stopped", [False, True])
+def test_heartbeat_cancels_work_when_the_exact_claim_is_gone(monkeypatch, stopped):
+    """A heartbeat stopped for a conversion's hand-over reads the job the
+    gateway finished as no claim, and leaves the worker alone."""
     cancelled: list[str] = []
     heartbeats: list[tuple[str, int, int]] = []
 
@@ -78,6 +81,9 @@ def test_heartbeat_cancels_work_when_the_exact_claim_is_gone(monkeypatch):
         def wait(self, _timeout):
             return False
 
+        def is_set(self):
+            return stopped
+
     monkeypatch.setattr(worker.db, "connect", Connection)
 
     def heartbeat(_cur, job_id, lease_s, attempt):
@@ -95,7 +101,7 @@ def test_heartbeat_cancels_work_when_the_exact_claim_is_gone(monkeypatch):
     )
 
     assert heartbeats == [("job_1", 180, 2)]
-    assert cancelled == ["cancel"]
+    assert cancelled == ([] if stopped else ["cancel"])
 
 
 @pytest.mark.parametrize(
@@ -2892,13 +2898,23 @@ def legacy(monkeypatch):
                 "parseJobId": "job_next",
             },
         ),
+        "claim_lost": True,
         "converted": [],
         "pictures": [],
         "puts": [],
         "posts": [],
+        "heartbeat_stopped_after_posts": [],
+        "events": [],
+        "lost": [],
         "closed": [],
         "cleaned": [],
     }
+
+    class _Redis:
+        def publish(self, _channel, event):
+            # Only what is published once the gateway has answered.
+            if state["posts"]:
+                state["events"].append(json.loads(event))
 
     async def _pin(_ws):
         return object()
@@ -2919,6 +2935,10 @@ def legacy(monkeypatch):
         state["posts"].append((path, body))
         return state["answer"]
 
+    def _lost(job_id, attempt, _payload):
+        state["lost"].append((job_id, attempt))
+        return state["claim_lost"]
+
     monkeypatch.setattr(worker, "_workspace_embedding_spec", _pin)
     monkeypatch.setattr(
         worker.registry, "pins_from_payload", lambda *_a, **_k: object()
@@ -2930,7 +2950,7 @@ def legacy(monkeypatch):
     monkeypatch.setattr(worker, "_record_source_sha", lambda *_a: None)
     monkeypatch.setattr(worker, "_require_current_source", lambda *_a: None)
     monkeypatch.setattr(worker, "_set_file_status", lambda *_a: None)
-    monkeypatch.setattr(worker.progress, "publish", lambda *_a, **_k: None)
+    monkeypatch.setattr(worker.progress, "_redis", _Redis)
     monkeypatch.setattr(
         worker,
         "_acquire_local_source",
@@ -2950,6 +2970,12 @@ def legacy(monkeypatch):
     )
     monkeypatch.setattr(worker.import_stage, "gateway_post", _post)
     monkeypatch.setattr(
+        worker,
+        "_stop_heartbeat",
+        lambda: state["heartbeat_stopped_after_posts"].append(len(state["posts"])),
+    )
+    monkeypatch.setattr(worker, "_close_lost_conversion", _lost)
+    monkeypatch.setattr(
         worker, "_close_converted", lambda job_id: state["closed"].append(job_id)
     )
     for name in ("_finish_ok", "_finish_job_ok", "_handoff_parsed_artifact"):
@@ -2962,7 +2988,9 @@ def legacy(monkeypatch):
 async def test_a_legacy_office_job_converts_and_hands_the_file_to_the_gateway(legacy):
     """Fetched as a parse, converted by the parser, given an imported Office
     file's picture rule, put under incoming/ and handed to the gateway, which
-    finishes the job: the worker only closes its own attempt record."""
+    finishes the job: the worker stops its heartbeat before asking, closes
+    only its own attempt record and tells the list the file now waits for
+    its parse."""
     await worker.process_ingest_job(_legacy_job())
 
     assert legacy["converted"] == [
@@ -2996,16 +3024,145 @@ async def test_a_legacy_office_job_converts_and_hands_the_file_to_the_gateway(le
             },
         )
     ]
+    assert legacy["heartbeat_stopped_after_posts"] == [0]
     assert legacy["closed"] == ["job_convert"] and legacy["cleaned"] == [True]
+    assert legacy["events"] == [
+        {
+            "fileId": "f_1",
+            "workspaceId": "ws_1",
+            "stage": "queued",
+            "pct": 5,
+            "status": "pending",
+            "message": "",
+        }
+    ]
 
 
-async def test_a_lost_conversion_claim_stops_without_writing(legacy):
+async def test_a_file_converted_with_parsing_off_is_announced_ready(legacy):
+    legacy["answer"][1]["parseJobId"] = None
+
+    await worker.process_ingest_job(_legacy_job())
+
+    assert legacy["events"] == [
+        {
+            "fileId": "f_1",
+            "workspaceId": "ws_1",
+            "stage": "done",
+            "pct": 100,
+            "status": "ready",
+            "message": "notes.docx: stored without parsing (not indexed for retrieval).",
+            "indexed": False,
+        }
+    ]
+
+
+async def test_a_lost_conversion_claim_is_closed_and_leaves_no_source(legacy):
+    """The gateway's 409: the worker's own check closes the claim (and its
+    attempt record) at once, the spool source goes, and nothing is announced
+    or closed as converted."""
     legacy["answer"] = (409, {"code": "convert_claim_lost"})
 
     await worker.process_ingest_job(_legacy_job())
 
     assert len(legacy["posts"]) == 1
+    assert legacy["lost"] == [("job_convert", 2)]
+    assert legacy["cleaned"] == [True]
+    assert legacy["closed"] == [] and legacy["events"] == []
+
+
+async def test_a_refused_claim_this_run_still_holds_is_left_to_the_retry(legacy):
+    from pipeline.jobs import RetryableError
+
+    legacy["answer"] = (409, {"code": "convert_claim_lost"})
+    legacy["claim_lost"] = False
+
+    with pytest.raises(RetryableError, match="still holds"):
+        await worker.process_ingest_job(_legacy_job())
     assert legacy["closed"] == [] and legacy["cleaned"] == []
+
+
+@pytest.mark.parametrize("lost", [True, False])
+def test_a_lost_conversion_claim_closes_this_runs_attempt_record(monkeypatch, lost):
+    checked: list[tuple] = []
+    closed: list[dict] = []
+    payload = _legacy_job()["payload"]
+
+    def claim(_cur, *args):
+        checked.append(args)
+        return lost
+
+    monkeypatch.setattr(worker.db, "connect", _Conn)
+    monkeypatch.setattr(worker, "_lost_claim", claim)
+    monkeypatch.setattr(
+        worker.db, "finish_job_attempt", lambda _cur, **kwargs: closed.append(kwargs)
+    )
+    monkeypatch.setattr(worker.telemetry, "current_attempt_id", lambda: 41)
+
+    assert worker._close_lost_conversion("job_convert", 2, payload) is lost
+    assert checked == [("job_convert", 2, payload)]
+    assert [(c["attempt_id"], c["outcome"], c["error_code"]) for c in closed] == (
+        [(41, "superseded", "convert_claim_lost")] if lost else []
+    )
+
+
+def test_the_handover_stops_the_claimed_jobs_heartbeat():
+    stop = worker.threading.Event()
+    worker._heartbeat_stop.set(stop)
+
+    worker._stop_heartbeat()
+
+    assert stop.is_set()
+
+
+async def test_a_failed_put_is_retried_and_hands_nothing_over(legacy, monkeypatch):
+    from pipeline.jobs import RetryableError
+
+    def unreachable(*_a):
+        raise OSError("bucket unreachable")
+
+    monkeypatch.setattr(worker.blobstore, "write_bytes", unreachable)
+
+    with pytest.raises(RetryableError, match="B2 upload failed"):
+        await worker.process_ingest_job(_legacy_job())
+    assert legacy["posts"] == [] and legacy["heartbeat_stopped_after_posts"] == []
+
+
+async def test_a_coordinator_without_a_gateway_fails_no_file_for_good(
+    legacy, monkeypatch
+):
+    from pipeline.jobs import RetryableError
+
+    monkeypatch.setattr(worker.cfg, "pipeline_secret", "")
+
+    with pytest.raises(RetryableError, match="PIPELINE_SECRET"):
+        await worker.process_ingest_job(_legacy_job())
+    assert legacy["converted"] == []
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        parser_client.ParserClientError("remote parse 400: bad request"),
+        parser_client.requests.ConnectionError("connection refused"),
+        parser_client.requests.ConnectTimeout("no route"),
+    ],
+)
+async def test_a_parser_that_never_took_the_conversion_leaves_the_retry(
+    legacy, monkeypatch, failure
+):
+    """Only these keep the job's second attempt: every answer that may mean
+    the conversion ran is a TerminalError (the test after this one)."""
+    from pipeline import jobs
+
+    def fails(**_kwargs):
+        raise failure
+
+    monkeypatch.setattr(worker.parser_client, "convert_legacy", fails)
+
+    with pytest.raises(type(failure)) as raised:
+        await worker.process_ingest_job(_legacy_job())
+    assert jobs.is_retryable(raised.value)
+    assert legacy["puts"] == [] and legacy["posts"] == []
 
 
 @pytest.mark.parametrize(
@@ -3014,6 +3171,7 @@ async def test_a_lost_conversion_claim_stops_without_writing(legacy):
         (413, "file_too_large", "TerminalError"),
         (422, "storage_quota_exceeded", "TerminalError"),
         (422, "convert_invalid", "TerminalError"),
+        (401, "", "RetryableError"),
         (500, "", "RetryableError"),
         (503, "object_unavailable", "RetryableError"),
     ],
@@ -3055,6 +3213,17 @@ def _refused(*_a):
             "parser_client.convert_legacy",
             parser_client.ParserHardTimeoutError("too slow"),
             "terminal parser resource limit",
+        ),
+        (
+            "parser_client.convert_legacy",
+            parser_client.ParserOOMError("out of memory"),
+            "terminal parser resource limit",
+        ),
+        (
+            # A crashed parse child, a 5xx, no answer in time, an empty file.
+            "parser_client.convert_legacy",
+            parser_client.ParserConversionError("remote conversion 503: child died"),
+            "conversion failed: remote conversion 503",
         ),
         ("import_stage.office_pictures", _out_of_time, "took too long"),
         ("import_stage.office_pictures", _refused, "an EMF picture"),

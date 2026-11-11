@@ -108,6 +108,14 @@ _SOURCE_PUBLISH_TIMEOUT_S = 210
 _resource_rates: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
     "ingest_resource_rates", default=None
 )
+# The claimed job's heartbeat stop, for the one job that ends on the gateway.
+_heartbeat_stop: contextvars.ContextVar[threading.Event] = contextvars.ContextVar(
+    "job_heartbeat_stop"
+)
+# What a legacy conversion's pictures leave of the job's time limit, on top of
+# the picture margin: the source fetch already spent, the converted file's PUT
+# and the gateway's 30 s answer.
+_LEGACY_HANDOFF_ALLOWANCE_S = 150
 
 _PARSE_ROUTES = {
     "fast": parser_client.ROUTE_FAST,
@@ -281,7 +289,8 @@ def _heartbeat_loop(
                 claim_is_live = db.heartbeat_job(cur, job_id, lease_s, attempt)
                 conn.commit()
             if not claim_is_live:
-                if cancel_job is not None:
+                # A stopped heartbeat's job has ended, or ends on the gateway.
+                if cancel_job is not None and not stop.is_set():
                     cancel_job()
                 return
         except Exception:
@@ -1612,6 +1621,44 @@ def _close_converted(job_id: str) -> bool:
     return True
 
 
+def _stop_heartbeat() -> None:
+    """The gateway finishes a conversion's job inside the hand-over, which a
+    heartbeat would read as a lost claim and restart this worker. The request
+    is bounded far inside the lease the last beat left."""
+    _heartbeat_stop.get().set()
+
+
+def _close_lost_conversion(job_id: str, attempt: int, payload: dict) -> bool:
+    """After the gateway refused the hand-over as a lost claim: True once this
+    run's own check agrees (it cancels a job whose boundary closed) and has
+    closed this run's attempt record."""
+    with db.connect() as conn, conn.cursor() as cur:
+        if not _lost_claim(cur, job_id, attempt, payload):
+            return False
+        db.finish_job_attempt(
+            cur,
+            attempt_id=telemetry.current_attempt_id(),
+            outcome="superseded",
+            snapshot=telemetry.snapshot(),
+            error_category="superseded",
+            error_code="convert_claim_lost",
+        )
+        conn.commit()
+    return True
+
+
+def _publish_converted(scope: db.Scope, file_id: str, answer: dict) -> None:
+    """The one event after the swap, so the list shows the converted file at
+    once: waiting for the parse the gateway queued, or stored as it is."""
+    if answer.get("parseJobId"):
+        _publish_progress(scope, file_id, "queued", 5, status="pending")
+        return
+    note = f"{answer.get('name')}: stored without parsing (not indexed for retrieval)."
+    _publish_progress(
+        scope, file_id, "done", 100, status="ready", message=note, indexed=False
+    )
+
+
 async def _convert_legacy(
     *,
     job: dict,
@@ -1622,21 +1669,30 @@ async def _convert_legacy(
     source_sha256: str,
     scope: db.Scope,
     file_id: str,
-    picture_deadline: float,
-) -> bool:
+) -> dict | None:
     """A legacy Office upload's whole job: the parser converts it, the
     converted file gets an imported Office file's picture rule, and the
     gateway swaps it in for the uploaded bytes, finishes this job and queues
-    what follows. False when the gateway found the claim lost: nothing more
-    is written. A conversion, picture or gateway refusal is final."""
+    what follows. Returns the gateway's answer, or None when the claim was
+    lost and closed. A conversion that started and left no file is final, as
+    is a picture or gateway refusal: only a parser that never took the request
+    and a bucket or gateway fault leave the job its retry."""
     convert_to = processing_plan.convert_to
+    # The pictures stop early enough to leave the hand-over its time.
+    picture_deadline = (
+        time.monotonic()
+        + cfg.parse_job_timeout
+        - IMPORT_PICTURE_MARGIN_S
+        - _LEGACY_HANDOFF_ALLOWANCE_S
+    )
     image_max_bytes = payload.get("imageMaxBytes")
     if type(image_max_bytes) is not int or image_max_bytes <= 0:
         raise TerminalError("legacy conversion payload names no picture cap")
     if not cfg.gateway_url or not cfg.pipeline_secret:
-        raise TerminalError(
-            "GATEWAY_URL and PIPELINE_SECRET are required to convert legacy "
-            "Office files"
+        # This worker's fault, found before LibreOffice runs for nothing.
+        raise RetryableError(
+            "GATEWAY_URL and PIPELINE_SECRET are not configured for the "
+            "conversion hand-over"
         )
     await asyncio.to_thread(
         _set_file_status,
@@ -1665,6 +1721,9 @@ async def _convert_legacy(
         raise TerminalError(str(exc)) from exc
     except parser_client.ParserUnreadableError as exc:
         raise TerminalError(f"this file cannot be converted: {exc}") from exc
+    except parser_client.ParserConversionError as exc:
+        # Never converted twice: the file may be what broke the conversion.
+        raise TerminalError(f"this file's conversion failed: {exc}") from exc
     except parser_client.ParserCapacityError as exc:
         # As for a parse: the job re-pends without spending an attempt.
         raise CapacityWait(processing_plan.route) from exc
@@ -1691,12 +1750,14 @@ async def _convert_legacy(
     except Exception as exc:
         raise RetryableError(f"B2 upload failed: {exc}") from exc
     telemetry.record(artifact_bytes=len(stored))
+    attempt = int(job.get("attempts") or 1)
+    _stop_heartbeat()
     status, answer = await asyncio.to_thread(
         import_stage.gateway_post,
         "/api/internal/files/convert",
         {
             "jobId": job["id"],
-            "attempt": int(job.get("attempts") or 1),
+            "attempt": attempt,
             "fileId": file_id,
             "incomingKey": incoming_key,
             "actualSize": len(stored),
@@ -1711,15 +1772,17 @@ async def _convert_legacy(
             answer.get("name"),
             answer.get("parseJobId"),
         )
-        return True
+        return answer
     if status == 409:
-        log.warning(
-            "job %s lost its claim before the conversion handoff; discarding outcome",
-            job["id"],
+        if await asyncio.to_thread(_close_lost_conversion, job["id"], attempt, payload):
+            return None
+        raise RetryableError(
+            "the gateway refused the conversion hand-over of a claim this run "
+            "still holds"
         )
-        return False
     refusal = f"{status} {answer.get('code') or ''}".strip()
-    if status >= 500 or status == 429:
+    # 401 is our secret out of step with the gateway's, not the file's fault.
+    if status >= 500 or status in (401, 429):
         raise RetryableError(f"conversion handoff gateway returned {refusal}")
     raise TerminalError(f"the converted file was refused: {refusal}")
 
@@ -2632,11 +2695,6 @@ async def _process_ingest_job(
     processing_plan: ingest_plan.ProcessingPlan,
 ) -> None:
     _set_stage("validating_source")
-    # A legacy conversion's pictures stop a margin before the job's time
-    # limit, which runs from about now.
-    picture_deadline = (
-        time.monotonic() + cfg.parse_job_timeout - IMPORT_PICTURE_MARGIN_S
-    )
     job_type = str(job.get("type") or "ingest")
     attempt = int(job.get("attempts") or 1)
     source_revision = int(payload["sourceRevision"])
@@ -2736,7 +2794,7 @@ async def _process_ingest_job(
         # job, queued by the gateway, does that.
         if not local_path or not source_key:
             raise RetryableError("local document source is missing")
-        if await _convert_legacy(
+        answer = await _convert_legacy(
             job=job,
             payload=payload,
             name=name,
@@ -2745,14 +2803,16 @@ async def _process_ingest_job(
             source_sha256=source_sha256,
             scope=scope,
             file_id=file_id,
-            picture_deadline=picture_deadline,
-        ):
-            # The job is done and the gateway's: nothing here may fail it.
-            try:
+        )
+        # Converted, the job is done and the gateway's; a lost claim is
+        # closed too. Nothing here may fail either.
+        try:
+            if answer is not None:
                 await asyncio.to_thread(_close_converted, job["id"])
-                await asyncio.to_thread(cleanup_source)
-            except Exception:
-                log.warning("could not tidy up a converted job", exc_info=True)
+                _publish_converted(scope, file_id, answer)
+            await asyncio.to_thread(cleanup_source)
+        except Exception:
+            log.warning("could not tidy up a conversion job", exc_info=True)
         return
     identity = _pipeline_identity(processing_plan)
     _set_stage("donor_lookup")
@@ -3137,6 +3197,7 @@ async def main_async(job_type: str = "ingest") -> None:
                         telemetry.reset_job(job_telemetry_token)
                     continue
                 stop = threading.Event()
+                _heartbeat_stop.set(stop)
                 claim_lost = threading.Event()
                 loop = asyncio.get_running_loop()
                 job_task = asyncio.create_task(process_job(job))

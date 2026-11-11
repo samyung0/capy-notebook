@@ -992,7 +992,7 @@
   "files_text_failed": "Couldn't load this file.",
   "files_not_indexed": "This file is not indexed, so AI won't know about its contents.",
   "files_not_indexed_failed": "Indexing failed, so AI won't know about its contents. You can still use the file normally.",
-  "files_convert_failed": "This file could not be converted. Old Office files that are password-protected or damaged cannot be read. Save it as .docx, .xlsx or .pptx and upload it again.",
+  "files_convert_failed": "This file could not be converted to a new Office format. If it is password-protected or damaged, save it as .docx, .xlsx or .pptx and upload it again.",
   "files_not_indexed_too_large": "This file is too large to index, so AI won't know about its contents. You can still use the file normally.",
   "files_not_indexed_too_many_elements": "This file has too many figures or tables to index, so AI won't know about its contents. You can still use the file normally.",
   "files_not_indexed_no_speech": "No speech was found in this recording.",

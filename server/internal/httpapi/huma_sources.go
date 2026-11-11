@@ -536,17 +536,17 @@ func storedSourceSHA256(ctx context.Context, objects blob.Store, name, kind, pat
 	if store.SourceEditFormat(name, kind) == "" {
 		return "", nil
 	}
-	return objectSHA256(ctx, objects, path, size)
-}
-
-// objectSHA256 hashes a stored object of size bytes; one of another length
-// answers errStoredSourceChanged.
-func objectSHA256(ctx context.Context, objects blob.Store, path string, size int64) (string, error) {
 	body, err := objects.Open(ctx, path)
 	if err != nil {
 		return "", err
 	}
 	defer body.Close()
+	return readerSHA256(body, size)
+}
+
+// readerSHA256 hashes a stored object's size bytes; one of another length
+// answers errStoredSourceChanged.
+func readerSHA256(body io.Reader, size int64) (string, error) {
 	hash := sha256.New()
 	read, err := io.Copy(hash, io.LimitReader(body, size+1))
 	if err != nil {

@@ -1296,12 +1296,12 @@ def _convert_request(tmp_path: Path, monkeypatch, **overrides) -> dict:
     """A ``convert_to`` request for a .doc source in a spool under tmp_path."""
     monkeypatch.setattr(parser_app, "SHARED_DIR", tmp_path)
     source = tmp_path / "sources" / "source-1"
-    source.parent.mkdir(parents=True)
+    source.parent.mkdir(parents=True, exist_ok=True)
     source.write_bytes(b"legacy bytes")
     return {
         "source_key": "sources/source-1",
         "source_sha256": hashlib.sha256(b"legacy bytes").hexdigest(),
-        "output_key": "artifacts/fp.docx",
+        "output_key": "artifacts/fp.job-1.docx",
         "filename": "notes.doc",
         "source_fingerprint": "fp",
         "request_id": "job-1",
@@ -1321,8 +1321,8 @@ async def test_a_convert_request_publishes_the_converted_file_itself(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """With ``convert_to`` the parse child converts instead of parsing, and
-    the converted file (no bundle, no receipt) is the artifact at
-    ``output_key``; the bundle cache is neither read nor written."""
+    the converted file (no bundle, no receipt) is the artifact at the job's
+    own ``output_key``; the bundle cache is neither read nor written."""
     converted = b"PK\x03\x04 the converted document"
 
     async def convert(document):
@@ -1346,7 +1346,7 @@ async def test_a_convert_request_publishes_the_converted_file_itself(
     assert response.status_code == 200
     assert json.loads(response.body) == {
         "artifact": {
-            "key": "artifacts/fp.docx",
+            "key": "artifacts/fp.job-1.docx",
             "size": len(converted),
             "sha256": hashlib.sha256(converted).hexdigest(),
             "parser_version": parser_app.PARSER_VERSION,
@@ -1355,7 +1355,7 @@ async def test_a_convert_request_publishes_the_converted_file_itself(
         },
         "converted": True,
     }
-    assert (tmp_path / "artifacts" / "fp.docx").read_bytes() == converted
+    assert (tmp_path / "artifacts" / "fp.job-1.docx").read_bytes() == converted
     assert parser_app._published == {}
 
 
@@ -1387,7 +1387,44 @@ async def test_a_failed_conversion_answers_the_pdf_conversions_terminal_codes(
         await runtime.close()
 
     assert (response.status_code, json.loads(response.body)["code"]) == (422, code)
-    assert not (tmp_path / "artifacts" / "fp.docx").exists()
+    assert not (tmp_path / "artifacts" / "fp.job-1.docx").exists()
+
+
+@pytest.mark.asyncio
+async def test_a_quarantined_conversion_is_refused_for_another_job(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The quarantine is the bytes', not the job's: after one job's conversion
+    ran out of time, a second job for the same bytes is answered from the
+    marker and nothing is converted again."""
+    conversions: list[str] = []
+
+    async def convert(document):
+        conversions.append(document.fingerprint)
+        raise parser_app.OfficeConversionTimeout("LibreOffice exceeded 180 seconds")
+
+    runtime, _ = _runtime(monkeypatch, convert)
+    monkeypatch.setattr(parser_app, "runtime", runtime)
+    await runtime.start()
+    try:
+        first = await parser_app._artifact_parse(
+            _convert_request(tmp_path, monkeypatch)
+        )
+        second = await parser_app._artifact_parse(
+            _convert_request(
+                tmp_path,
+                monkeypatch,
+                request_id="job-2",
+                output_key="artifacts/fp.job-2.docx",
+            )
+        )
+    finally:
+        await runtime.close()
+
+    assert [(r.status_code, json.loads(r.body)["code"]) for r in (first, second)] == [
+        (422, "parse_hard_timeout")
+    ] * 2
+    assert conversions == ["fp"]
 
 
 @pytest.mark.parametrize(
@@ -1397,6 +1434,10 @@ async def test_a_failed_conversion_answers_the_pdf_conversions_terminal_codes(
         # A conversion's artifact is named by its format, never as a bundle.
         {"output_key": "artifacts/fp.zip"},
         {"convert_to": "xlsx"},
+        # The key is the job's own: the bytes' fingerprint, then the job.
+        {"output_key": "artifacts/fp.docx"},
+        {"request_id": "job-2"},
+        {"request_id": "../job", "output_key": "artifacts/fp.../job.docx"},
     ],
 )
 @pytest.mark.asyncio

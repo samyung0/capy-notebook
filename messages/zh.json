@@ -992,7 +992,7 @@
   "files_text_failed": "无法加载此文件。",
   "files_not_indexed": "此文件未建立索引，因此对话和生成无法搜索它。",
   "files_not_indexed_failed": "索引失败，因此对话和生成无法搜索此文件。你仍可以查看或下载。",
-  "files_convert_failed": "无法转换此文件。受密码保护或已损坏的旧版 Office 文件无法读取。请将其另存为 .docx、.xlsx 或 .pptx 后重新上传。",
+  "files_convert_failed": "无法将此文件转换为新版 Office 格式。如果文件受密码保护或已损坏，请将其另存为 .docx、.xlsx 或 .pptx 后重新上传。",
   "files_not_indexed_too_large": "此文件过大，无法建立索引，因此对话和生成无法搜索它。你仍可以查看或下载。",
   "files_not_indexed_too_many_elements": "此文件的图表或表格过多，无法建立索引，AI 将不了解其内容。你仍可正常使用此文件。",
   "files_not_indexed_no_speech": "这段录音中没有检测到语音。",

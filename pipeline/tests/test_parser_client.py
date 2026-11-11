@@ -147,6 +147,20 @@ def _stub_request(monkeypatch, response) -> list[dict]:
     return calls
 
 
+def _failing_request(monkeypatch, answer) -> list[dict]:
+    """A parser that answers ``answer``, or raises it when it is an error."""
+    calls: list[dict] = []
+
+    def _post(url, **kwargs):
+        calls.append({"url": url, **kwargs})
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(parser_client.requests, "post", _post)
+    return calls
+
+
 def _answer(key: str, blob: bytes, **artifact) -> _Resp:
     return _Resp(
         200,
@@ -450,9 +464,10 @@ def _converting_parser(monkeypatch, tmp_path: Path, blob: bytes, **answer):
 def test_a_legacy_conversion_returns_the_parsers_file_and_clears_the_spool(
     tmp_path: Path, monkeypatch, parser_url
 ):
-    """The parse request plus ``convert_to``, under an identity that is this
-    job's own and never a bundle's; the converted bytes come from the verified
-    private copy and the spool file is removed."""
+    """The parse request plus ``convert_to``. The fingerprint is the bytes'
+    for this target (every job's, never a parse's), the output key adds the
+    job; the converted bytes come from the verified private copy and the
+    spool file is removed."""
     bodies = _converting_parser(monkeypatch, tmp_path, b"PK converted")
 
     assert _convert() == b"PK converted"
@@ -463,7 +478,7 @@ def test_a_legacy_conversion_returns_the_parsers_file_and_clears_the_spool(
     assert first == {
         "source_key": "sources/source-1",
         "source_sha256": SOURCE_SHA256,
-        "output_key": f"artifacts/{fingerprint}.docx",
+        "output_key": f"artifacts/{fingerprint}.job-1.docx",
         "filename": "notes.doc",
         "artifact_schema": parser_client.ARTIFACT_SCHEMA,
         "parser_version": FAST_VERSION,
@@ -472,15 +487,46 @@ def test_a_legacy_conversion_returns_the_parsers_file_and_clears_the_spool(
         "convert_to": "docx",
     }
     _, parse_fingerprint = parser_client.artifact_identity(_descriptor())
-    assert len({fingerprint, second["source_fingerprint"], parse_fingerprint}) == 3
+    assert second["source_fingerprint"] == fingerprint != parse_fingerprint
+    assert second["output_key"] == f"artifacts/{fingerprint}.job-2.docx"
     assert list((tmp_path / "artifacts").iterdir()) == []
+
+
+def test_a_quarantined_conversion_is_refused_for_every_later_job(
+    tmp_path: Path, monkeypatch, parser_url
+):
+    """One job's conversion ran out of time: a later job for the same bytes
+    is refused from the marker, and LibreOffice is not asked again."""
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
+    calls = _stub_request(
+        monkeypatch, _Resp(422, {"code": "parse_hard_timeout", "detail": "too slow"})
+    )
+    with pytest.raises(parser_client.ParserHardTimeoutError):
+        _convert("job-1")
+    fingerprint = calls[0]["json"]["source_fingerprint"]
+    marker = tmp_path / "quarantine" / f"{fingerprint}.json"
+    marker.parent.mkdir(parents=True)
+    marker.write_text(
+        json.dumps(
+            {
+                "reason": "parse_hard_timeout",
+                "detail": "too slow",
+                "source_fingerprint": fingerprint,
+                "parser_version": FAST_VERSION,
+            }
+        )
+    )
+
+    with pytest.raises(parser_client.ParserHardTimeoutError, match="too slow"):
+        _convert("job-2")
+    assert len(calls) == 1
 
 
 def test_a_conversion_answer_must_say_converted_and_match_its_file(
     tmp_path: Path, monkeypatch, parser_url
 ):
     _converting_parser(monkeypatch, tmp_path, b"PK converted", converted=False)
-    with pytest.raises(parser_client.ParserClientError, match="without converting"):
+    with pytest.raises(parser_client.ParserConversionError, match="without converting"):
         _convert()
 
     bodies = _converting_parser(monkeypatch, tmp_path, b"PK converted")
@@ -491,7 +537,7 @@ def test_a_conversion_answer_must_say_converted_and_match_its_file(
         return copy(artifact)
 
     monkeypatch.setattr(parser_client, "_private_copy", swapped)
-    with pytest.raises(parser_client.ParserClientError, match="checksum mismatch"):
+    with pytest.raises(parser_client.ParserConversionError, match="checksum mismatch"):
         _convert()
     assert not parser_client._shared_path(bodies[0]["output_key"]).exists()
 
@@ -513,6 +559,54 @@ def test_a_refused_conversion_raises_the_parse_errors(
     _stub_request(monkeypatch, _Resp(status, {"code": code, "detail": "no"}))
     with pytest.raises(getattr(parser_client, error), match="no"):
         _convert()
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        # A parse child that died, an unexpected fault, a failed LibreOffice.
+        _Resp(503, {"code": "parser_runtime_failed", "detail": "child died"}),
+        _Resp(500, {"detail": "internal error"}),
+        _Resp(422, {"detail": "LibreOffice could not convert .doc"}),
+        parser_client.requests.ReadTimeout("no answer"),
+    ],
+)
+def test_a_conversion_that_may_have_started_is_never_asked_again(
+    tmp_path: Path, monkeypatch, parser_url, answer
+):
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
+    calls = _failing_request(monkeypatch, answer)
+    with pytest.raises(parser_client.ParserConversionError):
+        _convert()
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        parser_client.requests.ConnectionError("connection refused"),
+        parser_client.requests.ConnectTimeout("no route to the parser"),
+        _Resp(400, {"detail": "invalid artifact request"}),
+        _Resp(429, {"code": "parser_capacity", "detail": "queue is full"}),
+    ],
+)
+def test_a_conversion_the_parser_never_took_stays_retryable(
+    tmp_path: Path, monkeypatch, parser_url, answer
+):
+    """Asked once all the same: a parse's immediate second request would be
+    a second conversion."""
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
+    calls = _failing_request(monkeypatch, answer)
+    with pytest.raises(Exception) as raised:
+        _convert()
+    assert not isinstance(
+        raised.value,
+        (
+            parser_client.ParserConversionError,
+            parser_client.ParserTerminalResourceError,
+        ),
+    )
+    assert len(calls) == 1
 
 
 def test_success_and_failure_both_record_parser_measurements(monkeypatch, parser_url):

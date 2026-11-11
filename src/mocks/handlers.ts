@@ -1,5 +1,6 @@
 import { zipSync } from 'fflate';
 import { delay, HttpResponse, http } from 'msw';
+import type { IngestEvent } from '@/api/eventStream';
 import {
   createMaterialBodyTitleMax,
   ReportEditIncidentBody,
@@ -96,7 +97,7 @@ import { uid } from './db';
 import { editorAssetHandlers, embeds } from './editorAssets';
 import { extractionHandlers, seedExtractionFiles } from './extraction';
 import { membersHandlers } from './members';
-import { convertMockLegacyFile } from './officeFixtures';
+import { convertMockLegacyFile, mockConvertedEvent } from './officeFixtures';
 import { mockPage } from './paging';
 import { questionBankHandlers } from './questionBank';
 import {
@@ -618,7 +619,56 @@ type SourceUploadMetadata = {
   hidden?: boolean;
   kind: string;
   name: string;
+  parseMode?: string;
 };
+
+/** The mock worker's ingest event, in the worker's shape: named by its
+ * workspace, or `type: 'ingest'` on the owner's notifications for a
+ * standalone file. */
+function publishMockIngest(
+  file: Pick<SourceFile, 'id' | 'workspaceId'>,
+  event: Omit<IngestEvent, 'fileId'>
+) {
+  window.dispatchEvent(
+    new CustomEvent('capy:mock-stream', {
+      detail: {
+        fileId: file.id,
+        ...(file.workspaceId
+          ? { workspaceId: file.workspaceId }
+          : { type: 'ingest' }),
+        ...event,
+      },
+    })
+  );
+}
+
+/** The mock worker's legacy Office job: the file is converted and renamed and
+ * the event after the swap goes out; with parsing on, its parse ends 2 s
+ * later with the worker's done event. */
+function convertMockLegacyUpload(
+  file: SourceFile,
+  convertTo: 'docx' | 'xlsx' | 'pptx',
+  parseMode = 'fast'
+) {
+  const url = convertMockLegacyFile(file, convertTo);
+  db.fileLinks[file.id] = { url };
+  seedUploadedOffice(file.id, convertTo, url);
+  const converted = mockConvertedEvent(file.name, parseMode);
+  file.status = converted.status;
+  publishMockIngest(file, converted);
+  if (converted.status === 'ready') return;
+  setTimeout(() => {
+    file.status = 'ready';
+    file.indexed = true;
+    publishMockIngest(file, {
+      indexed: true,
+      message: '',
+      pct: 100,
+      stage: 'done',
+      status: 'ready',
+    });
+  }, 2000);
+}
 
 /** A clone's topic: the picked one, or one by name (any case), created
  * when missing. */
@@ -2880,9 +2930,8 @@ export const handlers = [
       setTimeout(() => {
         const convertTo = legacyOfficeTarget(f.name);
         if (convertTo) {
-          const url = convertMockLegacyFile(f, convertTo);
-          db.fileLinks[f.id] = { url };
-          seedUploadedOffice(f.id, convertTo, url);
+          convertMockLegacyUpload(f, convertTo, body.parseMode);
+          return;
         }
         f.status = 'ready';
         f.indexed = f.kind !== 'audio';

@@ -534,8 +534,8 @@ def test_a_conversion_of_another_format_is_refused_before_libreoffice(
 def test_a_failed_legacy_conversion_keeps_the_pdf_conversions_failures(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """LibreOffice refusing the file, leaving no output, running past its
-    timeout, or writing more than the cap."""
+    """LibreOffice refusing the file, leaving no output or an empty one,
+    running past its timeout, or writing more than the cap."""
 
     def convert(office) -> bytes:
         monkeypatch.setattr(document.capy_sandbox, "run", office)
@@ -545,6 +545,9 @@ def test_a_failed_legacy_conversion_keeps_the_pdf_conversions_failures(
         convert(_FakeOffice(exit_code=1))
     with pytest.raises(document.OfficeConversionFailed, match="could not convert"):
         convert(_FakeOffice(output=None))
+    # An empty file is no conversion either.
+    with pytest.raises(document.OfficeConversionFailed, match="could not convert"):
+        convert(_FakeOffice(output=b""))
 
     def timed_out(command, policy, *, max_output):
         raise subprocess.TimeoutExpired(command, policy.timeout_s)

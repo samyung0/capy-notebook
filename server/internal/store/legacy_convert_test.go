@@ -90,31 +90,80 @@ func TestFinalizeQueuesTheLegacyConversion(t *testing.T) {
 }
 
 // Retry processing of a legacy file whose conversion failed converts it
-// again, with parsing off too.
+// again in the mode asked: on the owner's reservation with parsing on, on a
+// system session with parsing off.
 func TestRetryConvertsAFailedLegacyFile(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
-	owner := newBlobTestUser(t, s, "legacy_retry")
-	file := legacyTestUpload(t, s, owner, "old deck.ppt", "slides", "fast")
-	if _, err := s.pool.Exec(ctx, `UPDATE jobs SET status='failed' WHERE payload->>'fileId'=$1`, file.ID); err != nil {
+	for _, tc := range []struct {
+		mode   string
+		system bool
+	}{{mode: "fast"}, {mode: "none", system: true}} {
+		t.Run(tc.mode, func(t *testing.T) {
+			owner := newBlobTestUser(t, s, "legacy_retry")
+			file := legacyTestUpload(t, s, owner, "old deck.ppt", "slides", "fast")
+			if _, err := s.pool.Exec(ctx, `UPDATE jobs SET status='failed' WHERE payload->>'fileId'=$1`, file.ID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.pool.Exec(ctx, `UPDATE files SET status='failed' WHERE id=$1`, file.ID); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.RetryFileProcessing(ctx, owner, file.ID, tc.mode, "test"); err != nil {
+				t.Fatal(err)
+			}
+			var status, mode, jobType, route, payloadPaidBy, sessionPaidBy string
+			var hasCap bool
+			if err := s.pool.QueryRow(ctx, `SELECT f.status, f.parse_mode, j.type, j.payload->'processingPlan'->>'route',
+					j.payload ? 'imageMaxBytes', COALESCE(j.payload->>'paidBy',''), ps.paid_by
+				FROM files f JOIN jobs j ON j.payload->>'fileId'=f.id AND j.status='pending'
+				JOIN provider_sessions ps ON ps.id=j.payload->>'reservationId' WHERE f.id=$1`, file.ID).
+				Scan(&status, &mode, &jobType, &route, &hasCap, &payloadPaidBy, &sessionPaidBy); err != nil {
+				t.Fatal(err)
+			}
+			if status != "pending" || mode != tc.mode || jobType != "parse" || route != "legacy_convert" || !hasCap ||
+				(payloadPaidBy == models.PaidBySystem) != tc.system || (sessionPaidBy == models.PaidBySystem) != tc.system {
+				t.Fatalf("after retry: status %q mode %q job %q route %q cap %t paid by %q/%q",
+					status, mode, jobType, route, hasCap, payloadPaidBy, sessionPaidBy)
+			}
+		})
+	}
+}
+
+// A hand-in's legacy file is stored as handed in, and a paper's the uploader
+// has no credits for is kept ready: neither is converted at finalize.
+func TestSubmissionLegacyFilesStayUnconverted(t *testing.T) {
+	f := newAssignmentFixture(t, "legacy-submission")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	if _, err := f.s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, used_micros, reserved_micros, purchased_micros, period_start)
+		VALUES ($1, $2, 0, 0, date_trunc('month', timezone('utc', now()))::date)
+		ON CONFLICT (user_id) DO UPDATE SET used_micros=EXCLUDED.used_micros, reserved_micros=0, purchased_micros=0,
+			period_start=EXCLUDED.period_start`, f.viewer, mustPlanLimits(t, f.s, PlanFree).CreditMicros); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE files SET status='failed' WHERE id=$1`, file.ID); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.RetryFileProcessing(ctx, owner, file.ID, "none", "test"); err != nil {
-		t.Fatal(err)
-	}
-	var status, mode, jobType, route, paidBy string
-	var hasCap bool
-	if err := s.pool.QueryRow(ctx, `SELECT f.status, f.parse_mode, j.type, j.payload->'processingPlan'->>'route',
-			j.payload ? 'imageMaxBytes', COALESCE(j.payload->>'paidBy','')
-		FROM files f JOIN jobs j ON j.payload->>'fileId'=f.id AND j.status='pending' WHERE f.id=$1`, file.ID).
-		Scan(&status, &mode, &jobType, &route, &hasCap, &paidBy); err != nil {
-		t.Fatal(err)
-	}
-	if status != "pending" || mode != "none" || jobType != "parse" || route != "legacy_convert" || !hasCap || paidBy != models.PaidBySystem {
-		t.Fatalf("after retry: status %q mode %q job %q route %q cap %t paidBy %q", status, mode, jobType, route, hasCap, paidBy)
+	for name, in := range map[string]NewUploadSession{
+		"hand-in": {HandInID: unmarkedHandIn(t, f, now).ID, ParseMode: "none"},
+		"paper":   {AttemptID: startPaper(t, f, now, nil).attemptID, ParseMode: "fast"},
+	} {
+		in.ID, in.CreatedBy = uid("up"), f.viewer
+		in.ObjectPath, in.FinalPath = "sources/"+uid("blob"), "sources/"+uid("blob")
+		in.Name, in.Kind, in.ContentType = "answers.doc", "doc", "application/msword"
+		in.DeclaredSize, in.PaperMaxBytes, in.ExpiresAt = 2048, 10<<20, now.Add(time.Hour)
+		upload, err := f.s.CreateUploadSession(ctx, in)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		file, err := f.s.FinalizeUploadSession(ctx, f.viewer, upload.ID, "etag", "", "")
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		var jobs int
+		if err := f.s.pool.QueryRow(ctx, `SELECT count(*) FROM jobs WHERE payload->>'fileId'=$1`, file.ID).Scan(&jobs); err != nil {
+			t.Fatal(err)
+		}
+		if file.Status != FileReady || file.Name != "answers.doc" || jobs != 0 {
+			t.Fatalf("%s: status %q name %q jobs %d", name, file.Status, file.Name, jobs)
+		}
 	}
 }
 

@@ -2455,7 +2455,9 @@ browser reads OOXML only, so it does less for these files:
 The conversion is told from the name alone, with no API field
 (`legacyOfficeTarget` in `features/files/fileUtils.ts`): a file still named
 `.doc`, `.xls` or `.ppt` is waiting for its conversion, in it, or failed in
-it. Such a file has no Office session and shows the download-only view
+it. One that is `ready` under a legacy name was stored without a conversion
+(a hand-in's file) and reads as any file without an index. Such a file has
+no Office session and shows the download-only view
 (`UnsupportedPreview`, Download original); its labels and failure message are
 in [error-handling.md](error-handling.md). Once renamed it is an ordinary
 DOCX, XLSX or PPTX: it opens in the Office runtime and is `pending` again for
@@ -2466,10 +2468,13 @@ No event names the rename, so an open file learns it from a reread:
 - In a workspace the swap sends the tree event, which refetches the files
   list. `filesQuery` then invalidates the cached detail of any file that is
   still named as legacy there while the list row has another name, once (the
-  parse that follows changes no name).
-- A standalone file has no tree event. Each of its `ingest` events
-  invalidates the detail while it is still named as legacy
-  (`applyIngestEvent`).
+  parse that follows changes no name), without cancelling a reread already
+  under way.
+- A standalone file has no tree event. The worker publishes one ingest event
+  after the swap (`pending` when a parse follows, `ready` and not indexed
+  with parsing off), and `applyIngestEvent` rereads the owned-files list and
+  the detail while a cached copy is still named as legacy. Once renamed, the
+  parse's own progress events reread nothing.
 
 The upload panel's row shows the stored name once the file exists, so it
 follows the rename too.
@@ -2477,9 +2482,13 @@ follows the rename too.
 Under MSW the mock worker converts a legacy upload after its two seconds
 (`convertMockLegacyFile` in `src/mocks/officeFixtures.ts`): the file takes the
 new ending, a revision and the Biology fixture of that format as its bytes,
-and opens in the runtime. The mock policy lists the legacy formats under fast
-parsing as the server's does. Conversion fidelity is LibreOffice's and was
-checked on ten fixture-derived files only (see the agentic-retrieval section).
+and opens in the runtime. The mock then sends the worker's event after the
+swap (`mockConvertedEvent`), named by its workspace or as the owner's
+`ingest` notification for a standalone file, and with parsing on ends the
+parse two seconds later with a done event. The mock policy lists the legacy
+formats under fast parsing as the server's does. Conversion fidelity is
+LibreOffice's; what was measured, and on which files, is in the
+[report](../../bench/parsers/reports/2026-11-11-legacy-office-conversion.md).
 
 ## Citation geometry
 

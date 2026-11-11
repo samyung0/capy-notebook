@@ -97,7 +97,10 @@ export function transferStatus(
         ? m.files_processing_error()
         : failedNotIndexedMessage(file),
       kind: 'error',
-      label: m.source_transfer_parse_failed(),
+      // A legacy Office file failed before any parse: the file tree's label.
+      label: legacyOfficeTarget(file.name)
+        ? m.files_processing_error()
+        : m.source_transfer_parse_failed(),
     };
   }
   // Ready, or a file without a status, which the app treats as done. A file

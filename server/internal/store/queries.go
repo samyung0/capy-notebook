@@ -21,6 +21,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 )
 
 /* ------------------------------------------------------------------ patches */
@@ -1164,6 +1165,9 @@ func nextContentPosition(ctx context.Context, q rowQueryer, wsID string, topicID
 	return position, err
 }
 
+// ErrFileExtensionChanged refuses a rename to another extension.
+var ErrFileExtensionChanged = errors.New("a rename keeps the file's extension")
+
 func (s *Store) UpdateFile(ctx context.Context, actorID, id string, p FilePatch) (File, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -1190,8 +1194,22 @@ func (s *Store) UpdateFile(ctx context.Context, actorID, id string, p FilePatch)
 		return File{}, ErrNotFound
 	}
 	if p.Name != nil {
-		if _, err := tx.Exec(ctx, `UPDATE files SET name=$2
-			WHERE id=$1 AND workspace_id IS NOT DISTINCT FROM NULLIF($3, '') AND trashed_at IS NULL`, id, *p.Name, wsID); err != nil {
+		// A rename keeps the file's extension, which names its kind and the
+		// checks its upload passed (Epo 2026-10-24, Q346). It is compared
+		// under the row lock: a legacy conversion changes the ending too.
+		var current string
+		err := tx.QueryRow(ctx, `SELECT name FROM files
+			WHERE id=$1 AND workspace_id IS NOT DISTINCT FROM NULLIF($2, '') AND trashed_at IS NULL FOR UPDATE`, id, wsID).Scan(&current)
+		if isNoRows(err) {
+			return File{}, ErrNotFound
+		}
+		if err != nil {
+			return File{}, err
+		}
+		if sourceupload.Extension(*p.Name) != sourceupload.Extension(current) {
+			return File{}, ErrFileExtensionChanged
+		}
+		if _, err := tx.Exec(ctx, `UPDATE files SET name=$2 WHERE id=$1`, id, *p.Name); err != nil {
 			return File{}, err
 		}
 	}

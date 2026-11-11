@@ -1268,10 +1268,18 @@ The parse coordinator fetches the source as a parse does, sets the file
 
 1. **`convert_legacy`.** `parser_client.convert_legacy` sends the parse
    request (`POST /file_parse` at `PARSER_URL`, same token and body) with
-   `convert_to` (`docx`, `xlsx` or `pptx`). The artifact identity adds the
-   target and the job id to a parse's, and the output key is
-   `artifacts/{fingerprint}.{convert_to}`: the file belongs to this job alone.
-   The parser answers 400 for another target or key. The request takes the
+   `convert_to` (`docx`, `xlsx` or `pptx`) and the job id as `request_id`.
+   The fingerprint is the bytes', not the job's:
+   `sha256("<source_sha256>:fast:<parser_version>:<schema>:<convert_to>")`.
+   Only the output key is the job's own,
+   `artifacts/{fingerprint}.{jobId}.{convert_to}`, so no bundle and no other
+   job shares the file. The parser answers 400 for another target, another
+   key or a `request_id` that is no plain id. Because the quarantine marker
+   is keyed by the fingerprint, bytes whose conversion hit the hard timeout
+   or an OOM kill are refused for every later job (the owner's Retry
+   processing, a new upload of the same bytes) before LibreOffice runs, while
+   that parser version is live. The request is sent once, with no second
+   request after a dropped connection. It takes the
    parser's queue and a parse child like a parse, but the child converts
    instead of parsing (`convert_legacy` in `parser/odl/document.py`): the
    name's suffix must be the target's legacy pair and the bytes OLE2, then one
@@ -1280,7 +1288,8 @@ The parse coordinator fetches the source as a parse does, sets the file
    `Impress MS PowerPoint 2007 XML`), under the PDF conversion's sandbox,
    profile, limits and 180 s timeout
    ([deployment-runbook.md](deployment-runbook.md) §7.4). There is no page
-   count, element check or Java run. The parser writes the converted file
+   count, element check or Java run, and an empty output file counts as no
+   conversion. The parser writes the converted file
    itself at the output key and answers `200` with a parse's `artifact`
    object and `"converted": true`, with no receipt and no measurements. No
    bundle cache is read or written for it. The client reads its own verified
@@ -1290,23 +1299,34 @@ The parse coordinator fetches the source as a parse does, sets the file
    `imageMaxBytes`, the ones nothing can show (EMF, WMF) removed, then the
    header check
    ([backend-storage-quota.md](backend-storage-quota.md#image-compression-and-checks)).
-   The pictures stop 30 s before the parse job's time limit.
+   The pictures must end 180 s short of the parse job's time limit, measured
+   from the start of the conversion: the 30 s picture margin plus 150 s
+   (`_LEGACY_HANDOFF_ALLOWANCE_S`) for the source fetch already spent, the
+   PUT and the gateway's answer.
 3. **`replace_source`.** The coordinator puts the bytes at
    `incoming/legacy-convert/<jobId>.<convertTo>` with its own bucket
-   credentials and posts `/api/internal/files/convert` (`X-Pipeline-Secret`)
-   with `jobId`, `attempt` (the job's `attempts`, its fencing token),
-   `fileId`, `incomingKey`, `actualSize`, `sha256` and `removedPictures`.
+   credentials, stops the job's heartbeat (the gateway finishes the job
+   inside the request, which a heartbeat would read as a lost claim) and
+   posts `/api/internal/files/convert` (`X-Pipeline-Secret`) with `jobId`,
+   `attempt` (the job's `attempts`, its fencing token), `fileId`,
+   `incomingKey`, `actualSize`, `sha256` and `removedPictures`.
 
 The gateway (`internalConvertLegacyFile`, `store/legacy_convert.go`) fences
 the handoff before it touches the bucket: under the worker's own lock order
 (workspace, accounts, membership, file, job) the job must be this running
-attempt with a live lease, the file not trashed, at the revision and ETag the
-job was queued for and still named as legacy, and the key exactly this job's.
-It then reads the object's size by HEAD, hashes the bytes itself, promotes the
-object to a fresh `sources/blob_….<convertTo>` key and, in one transaction
-that repeats the fence, swaps the file: new name (the legacy ending replaced;
-a stem that would push the name past 120 characters loses characters from its
-end), blob, size, SHA-256, ETag and `revision + 1`. The files triggers charge
+attempt of a `legacy_convert` plan with a live lease, the file not trashed,
+at the revision and ETag the job was queued for and still named as legacy,
+and the key exactly this job's. It then reads the object's size and content
+type by HEAD (a type that is present must be the format's own), promotes the
+object to a fresh `sources/blob_….<convertTo>` key, and hashes the promoted
+object itself, the bytes that become the file, which must open with the ZIP
+signature. A promoted object it refuses is left to the reaper the fence
+queued it for. In one transaction
+that repeats the fence it then swaps the file: new name (the legacy ending
+replaced; a name past 120 characters loses the end of its stem,
+`fieldlimits.ClampFileName`), blob, size, SHA-256, ETag and `revision + 1`. A
+user's rename compares the extension under the same row lock (`UpdateFile`),
+so it cannot cross the swap. The files triggers charge
 the size change, release the uploaded blob and send the tree event
 ([backend-storage-quota.md](backend-storage-quota.md#reservations-and-clones)).
 The same transaction plans the new name with the file's stored parse mode.
@@ -1319,43 +1339,66 @@ finished job answers the same `200`.
 
 | Answer | Meaning | Coordinator |
 | --- | --- | --- |
-| `200` `{fileId, name, status: "converted", parseJobId}` | Swapped; `parseJobId` is null with parsing off | Closes its own attempt record and removes its local source. It neither finishes the job nor queues a continuation |
-| `409` `convert_claim_lost` | The attempt, lease, revision or the actor's access is no longer current | Stops and writes nothing |
+| `200` `{fileId, name, status: "converted", parseJobId}` | Swapped; `parseJobId` is null with parsing off | Closes its own attempt record, publishes one progress event (`pending`, queued, when a parse follows; `ready` and not indexed with parsing off) and removes its local source. It neither finishes the job nor queues a continuation |
+| `409` `convert_claim_lost` | The attempt, lease, revision or the actor's access is no longer current | Runs its own lost-claim check, closes its attempt record (`superseded`, `convert_claim_lost`) and removes its local source. If its own check still holds the claim, it retries |
 | `413` `file_too_large` | The converted size is over the payer's per-file cap | Fails the file |
 | `422` `storage_quota_exceeded` | The growth does not fit the payer's storage, or the payer is frozen | Fails the file |
-| `422` `convert_invalid` | Wrong key, size or hash, or the file is no legacy file | Fails the file |
+| `422` `convert_invalid` | Wrong key, size, hash or content type, bytes without the ZIP signature, a job that is no conversion, or a file that is no legacy file | Fails the file |
 | `503` `object_unavailable`, other `5xx`, `429` | The incoming object is missing, or a gateway fault | Retries |
-| `401` | No pipeline secret | Fails the file |
+| `401` | The coordinator's pipeline secret is not the gateway's | Retries |
 
-A conversion the parser refuses is final. `parse_format_mismatch`,
-`parse_unreadable` (LibreOffice exits non-zero or leaves no file, as for a
-password-protected or damaged file, or the output is over
-`CAPY_MAX_SOURCE_BYTES`, 100 MiB), `parse_hard_timeout` and `parse_oom` each
-raise `TerminalError`, as do pictures that run out of time or fail their check
-and a coordinator without `GATEWAY_URL` or `PIPELINE_SECRET`. The file ends
-`failed` with its legacy name and uploaded bytes, and nothing converts it
-again unless the workspace owner (a standalone file's owner) uses Retry
-processing, which queues a new conversion job in either parse mode
-([authorization-permissions-lifecycles.md](authorization-permissions-lifecycles.md)).
-There is no store-only fallback. A full parser queue (`429 parser_capacity`)
-re-pends the job without spending an attempt, as for a parse. Faults outside
-the conversion keep the parse job's retry policy (two attempts): a parser
-`5xx`, `parser_runtime_failed` (a parse child that crashed) included, a
-network error, a failed bucket write, a gateway fault and the job's time
-limit. If the gateway swapped the file but its answer was lost, the failure
-handler finds the source superseded and the job `done`, closes the attempt
-record and writes nothing else.
+A conversion is asked for once. Any answer that means it started, or may
+have, and left no usable file is final (`TerminalError`): the parser's `422`
+codes (`parse_format_mismatch`; `parse_unreadable` when LibreOffice exits
+non-zero or leaves no file or an empty one, as for a password-protected or
+damaged file, or the output is over `CAPY_MAX_SOURCE_BYTES`, 100 MiB;
+`parse_hard_timeout`; `parse_oom`; any other `422`), a parser `5xx`,
+`parser_runtime_failed` (a parse child that died) included, no answer within
+the request's bound, and an answer or spool file that does not check out
+(`ParserConversionError`). Pictures that run out of time or fail their check
+are final too. The file ends `failed` with its legacy name and uploaded
+bytes, and there is no store-only fallback.
+
+Only what shows the conversion never started, or a fault after it succeeded,
+leaves the job its retry: a full parser queue (`429 parser_capacity`, re-pended
+without spending an attempt, as for a parse), a connection error or connect
+timeout, another `4xx` (a request the parser refused unread), a failed bucket
+write, a gateway fault, and a coordinator without `GATEWAY_URL` or
+`PIPELINE_SECRET`, which is found before LibreOffice runs. Three cases stay
+outside what the worker can make final: a coordinator killed mid-conversion
+is re-claimed by the lease reaper and converts again, a connection reset
+before any response is retried, and the job's own time limit
+(`CAPY_PARSE_JOB_TIMEOUT`, which the parser request's shorter `PARSER_TIMEOUT`
+normally precedes) requeues the claim. If the gateway swapped the file but
+its answer was lost, the failure handler finds the source superseded and the
+job `done`, closes the attempt record and writes nothing else.
+
+The queue never converts a failed file again. The workspace owner's Retry
+processing (a standalone file's owner) still queues a fresh conversion job
+in either parse mode
+([authorization-permissions-lifecycles.md](authorization-permissions-lifecycles.md));
+the quarantine above refuses bytes that timed out or were OOM-killed.
 
 Known limits:
 
-- A hand-in's files are stored as uploaded and never converted
-  (`finalizeUploadSessionTx`).
+- A hand-in's files are stored as uploaded and never converted, and neither
+  is a paper's file its uploader has no credits for
+  (`finalizeUploadSessionTx`, `queueIngestTx`). A file left `ready` under a
+  legacy name was stored without a conversion; the workspace index counts
+  treat it as not indexable, and a converting or failed one as not indexed
+  (`workspaceIndexCounts`).
 - Only an upload or import is converted. `createSourceWithJobTx`, the chat
   agent's file path, has no route for a legacy name and refuses it.
-- Fidelity is LibreOffice 7.4's. It was checked on ten fixture-derived files
-  on the ingest host in the live parser image (2026-11-11): all ten converted
-  in 1 to 4 s with equal page counts, except one document one page off. Files
-  written by old Office versions were not checked.
+- Fidelity is LibreOffice 7.4's and was measured on ten fixture-derived files
+  only, none written by an old Office version
+  ([report](../bench/parsers/reports/2026-11-11-legacy-office-conversion.md),
+  which also has the sandbox, service and picture-step runs).
+- Open: production's parse-coordinator memory limit. By its own budget it has
+  about 110 MiB to spare, and the picture step of one 20 MiB deck peaked at
+  158 MiB in a container of its own. The limit, or how many conversions run
+  their picture step at once, must be settled before a production stack is
+  deployed. Nonprod (one job at a time, 384 MiB, 117 MiB idle) fits that
+  deck.
 
 #### Ingest limits
 
@@ -7090,7 +7133,7 @@ chunk, with full coverage in the large-document reduction path.
 
 | Concern | Env | Default / note |
 | --- | --- | --- |
-| Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. The parse coordinator needs both for a legacy Office conversion's handoff: without them the conversion fails terminally. |
+| Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. The parse coordinator needs both for a legacy Office conversion's handoff: without them the job fails as a retryable fault before LibreOffice runs. |
 | Provider keys | `platformEnv` names | Every call uses the platform key named by `platformEnv` in `elitellm_providers.json`; there are no user keys (Q290). |
 | Parse | `PARSER_URL`, `PARSER_TOKEN`, `PARSER_TIMEOUT`, `CAPY_PARSE_COORDINATOR_CONCURRENCY`, `CAPY_PARSE_JOB_TIMEOUT`, `CAPY_OFFICE_PREVIEW_MAX_BYTES`; parser container `CAPY_PARSE_WORKERS`, `CAPY_PARSE_QUEUE_DEPTH`, `CAPY_PARSE_OCR_PAGE_CAP`, `CAPY_PARSE_MAX_PAGES` (both page caps also read by the API, no default), `CAPY_PARSE_DOCUMENT_TIMEOUT`, `CAPY_PARSER_JVM_MAX_HEAP`, `RELEASE_SHA` | OpenDataLoader parser service on the Netcup host. Production defaults to eight coordinator processes, parser depth 8 over `CAPY_PARSE_WORKERS` parse children (required, 5 in production, 1 in the shared non-production compose), 600 s per document, at most 500 text-less pages per document (`CAPY_PARSE_OCR_PAGE_CAP`; the name is older than the VLM read), 1,320 s per request and 1,500 s per parse job (see Parse capacity for the derivation). Route, parser implementation string and artifact schema form the artifact identity; there is no parse method knob. |
 | Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `OPENROUTER_API_KEY` | The ingest queue env carries the `OPENROUTER_API_KEY` chat also uses (GLM) for the descriptor and captioning pins (see VLM page read). Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (three attempts, two minutes) re-pends the job without spending an attempt, at most once per job (`jobs.provider_waits`), then fails the file as `provider_busy` (a part, the descriptor or a VLM page, is left missing instead; see Parts). Ops-managed `model_capacities` caps outbound calls per catalog provider and model across catalog versions, one total shared with every interactive use; past it an ingest call waits its turn in the model's line, round-robin by job and user, within its two-minute budget (Epo 2026-11-04). Every admission reads current DB limits; missing capacity fails explicitly. |

@@ -702,8 +702,13 @@ Sources: [membership handlers](../server/internal/httpapi/huma_membership.go#L39
   (`parseModes[fast].extensions`), beside PDF, DOCX, XLSX and PPTX. A failed
   conversion leaves the file `failed` under its uploaded name: the uploaded
   bytes stay stored, charged to their payer and downloadable until the file
-  is deleted. Only Retry processing converts it again, and that is the
-  workspace owner's alone (a standalone file's owner), in either parse mode.
+  is deleted. The queue never converts it again; Retry processing does, and
+  that is the workspace owner's alone (a standalone file's owner), in either
+  parse mode. Bytes whose conversion hit the parser's hard timeout or an OOM
+  kill are refused again on a retry or a new upload, before LibreOffice runs.
+  A rename keeps the file's extension, compared under the file's row lock
+  (`UpdateFile`, `file_extension_changed`), so it cannot change a legacy
+  ending around the conversion's own rename.
 - The Create tab's Blank DOCX and Blank XLSX
   (`POST /api/workspaces/{id}/files/blank`) take an upload's gates without a
   reservation: an editor whose account may add bytes, the editor's storage
@@ -1980,12 +1985,14 @@ A converted legacy Office file is handed over on
 takes the pipeline secret (`X-Pipeline-Secret`, 401 without it, like every
 `/api/internal/*` route) and no user session; it is outside the OpenAPI spec
 and not rate limited. The secret alone moves nothing. The handoff must name a
-`parse` job running at the attempt it claims with a live lease, that job's
-own file (not trashed, still named as legacy, at the revision and ETag the
-job was queued for) and that job's own key,
-`incoming/legacy-convert/<jobId>.<format>`, whose size and SHA-256 the
-gateway reads from the bucket itself. The job's actor must still be an editor
-of the workspace (the owner of a standalone file), and the workspace
+`parse` job on the `legacy_convert` plan, running at the attempt it claims
+with a live lease, that job's own file (not trashed, still named as legacy,
+at the revision and ETag the job was queued for) and that job's own key,
+`incoming/legacy-convert/<jobId>.<format>`. The gateway reads the object's
+size, content type and SHA-256 from the bucket itself, hashing the promoted
+object, and takes only bytes that open with the ZIP signature. The job's
+actor must still be an editor of the workspace (the owner of a standalone
+file), and the workspace
 owner's, the actor's and the payer's accounts must not be locked; otherwise
 the handoff answers `409 convert_claim_lost` and changes nothing. The parse
 coordinator writes that object with the ingest host's bucket credentials, and

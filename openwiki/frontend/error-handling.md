@@ -580,10 +580,12 @@ named that way is `processing`, the open file's progress line and banner read
 "Converting to a new Office format…" (`files_converting`, through
 `processingMessage`) in place of "Processing {name}…". When it is `failed`,
 its conversion failed: the strip reads `files_convert_failed` ("This file
-could not be converted. Old Office files that are password-protected or
-damaged cannot be read. Save it as .docx, .xlsx or .pptx and upload it
-again.") in place of `files_not_indexed_failed` (`failedNotIndexedMessage`).
-In both states the body is the download-only view.
+could not be converted to a new Office format. If it is password-protected or
+damaged, save it as .docx, .xlsx or .pptx and upload it again.") in place of
+`files_not_indexed_failed` (`failedNotIndexedMessage`). One that is `ready`
+under a legacy name (a hand-in's file, stored and never converted) reads as
+any file without an index. In every one of these states the body is the
+download-only view.
 
 File and material banners share `FileBanner`: a flat full-width strip with no
 leading icon and `text-fg` on a grey (info, ingest progress, a text source's
@@ -955,8 +957,9 @@ mode the format does not offer 400 (`RetryFileProcessing`). A partial file
 keeps its index and re-runs only its missing parts in its own parse mode (see
 [agentic-retrieval.md](../agentic-retrieval.md), "Parts").
 A failed legacy Office file retries through the same dialog, its row without
-an estimate, and the server queues its conversion again whichever mode is
-sent; the conversion itself is never retried automatically.
+an estimate, and the server queues a fresh conversion whichever mode is
+sent. The queue itself never asks for a failed conversion again, and bytes
+that hit the parser's hard timeout or an OOM kill fail again on a retry.
 If a published source changes while an answer or generation request gathers
 evidence, `source_changed` asks the user to retry. The Go relay preserves both
 codes for HTTP responses and chat events; neither starts an automatic retry.
@@ -990,8 +993,10 @@ file" (parts design Q1, `transferStatus`).
 A legacy Office file that is `processing` under its uploaded name reads
 "Converting to a new Office format…" on the whole line with no bar (the label
 is too long to sit beside one), then parses under its new name like any
-upload; a failed one's detail is the conversion message
-(`files_convert_failed`).
+upload. A failed one is labelled "Error processing file"
+(`files_processing_error`, the file tree's label, since nothing was parsed)
+with the conversion message as its detail (`files_convert_failed`), and a
+`ready` one still named as legacy reads "not searchable".
 Each status label takes its icon's colour. The event stream only follows the open workspace,
 so the panel polls the files list every four seconds for other workspaces with
 unfinished rows, and the runner's wave gate polls every five. Closing the panel

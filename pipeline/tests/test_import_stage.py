@@ -181,7 +181,7 @@ def test_resume_complete_skips_download_and_upload(monkeypatch):
         assert body["actualSize"] == 42
         return 200, {"status": "succeeded", "fileId": "f_1"}
 
-    monkeypatch.setattr(import_stage, "gateway_post", gateway)
+    monkeypatch.setattr(import_stage, "_gateway", gateway)
     import_stage._run(
         {"id": "imp_1", "attempts": 1, "payload": {"importJobId": "imp_1"}}
     )
@@ -200,7 +200,7 @@ def test_complete_without_finalized_status_retries(monkeypatch):
             }
         return 200, {}
 
-    monkeypatch.setattr(import_stage, "gateway_post", gateway)
+    monkeypatch.setattr(import_stage, "_gateway", gateway)
     monkeypatch.setattr(import_stage, "_download", lambda *_a: b"hi")
     monkeypatch.setattr(import_stage.blobstore, "write_bytes", lambda *_a: None)
     with pytest.raises(import_stage.ImportRetry):
@@ -228,7 +228,7 @@ def test_run_writes_only_under_incoming(monkeypatch, object_path):
             "download": {"kind": "url", "url": "https://x.sharepoint.com/f"},
         }
 
-    monkeypatch.setattr(import_stage, "gateway_post", gateway)
+    monkeypatch.setattr(import_stage, "_gateway", gateway)
     monkeypatch.setattr(
         import_stage, "_download", lambda *_a: pytest.fail("downloaded")
     )
@@ -320,7 +320,7 @@ def test_run_preserves_provider_fixture_bytes_before_completing(
         )
         events.append("upload")
 
-    monkeypatch.setattr(import_stage, "gateway_post", gateway)
+    monkeypatch.setattr(import_stage, "_gateway", gateway)
     monkeypatch.setattr(import_stage.pinned_http, "open_download", open_download)
     monkeypatch.setattr(import_stage.blobstore, "write_bytes", write)
     job = {"id": "imp_1", "attempts": 1, "payload": {"importJobId": "imp_1"}}
@@ -368,7 +368,7 @@ def test_interrupted_import_never_completes_and_keeps_lease_for_failure_report(
         events.append("upload")
         raise OSError("B2 unavailable")
 
-    monkeypatch.setattr(import_stage, "gateway_post", gateway)
+    monkeypatch.setattr(import_stage, "_gateway", gateway)
     monkeypatch.setattr(import_stage.blobstore, "write_bytes", write)
     job = {"id": "imp_1", "attempts": 1, "payload": {"importJobId": "imp_1"}}
     expected_code = (
@@ -398,7 +398,7 @@ def test_interrupted_import_never_completes_and_keeps_lease_for_failure_report(
 def test_report_skips_retry_without_token_and_sends_terminal(monkeypatch):
     sent: list[dict] = []
     monkeypatch.setattr(
-        import_stage, "gateway_post", lambda _p, body: sent.append(body) or (204, {})
+        import_stage, "_gateway", lambda _p, body: sent.append(body) or (204, {})
     )
     job = {"id": "imp_1", "attempts": 2, "payload": {"importJobId": "imp_1"}}
     import_stage.report(job, import_stage.ImportRetry("provider_network", "x"), True)
@@ -439,7 +439,7 @@ def _image_run(monkeypatch, name, kind, data, *, max_bytes=30 << 20):
         stored["bytes"], stored["type"] = bytes(actual), mime
 
     _open(monkeypatch, _Body(200, chunks=[data]))
-    monkeypatch.setattr(import_stage, "gateway_post", gateway)
+    monkeypatch.setattr(import_stage, "_gateway", gateway)
     monkeypatch.setattr(import_stage.blobstore, "write_bytes", write)
     import_stage._run(
         {"id": "imp_1", "attempts": 1, "payload": {"importJobId": "imp_1"}}

@@ -25,8 +25,12 @@ source is parsed again.
 
 A legacy Office file (.doc, .xls, .ppt) is converted by the same route
 (``convert_legacy``): the request names ``convert_to``, the parser leaves the
-converted file itself in the spool under an identity that is this job's own,
-and this client reads its verified private copy and removes the spool file.
+converted file itself in the spool under a key that is this job's own, and
+this client reads its verified private copy and removes the spool file. The
+conversion's fingerprint is its bytes', so a quarantine holds for every later
+job. A conversion is asked for once: only an answer that shows the parser
+never started it (a full queue, no connection, a request it refused unread)
+leaves the job its retry.
 """
 
 from __future__ import annotations
@@ -109,6 +113,12 @@ class ParserCapacityError(ParserClientError):
     """The parser's bounded local document queue is full."""
 
 
+class ParserConversionError(ParserClientError):
+    """A legacy conversion started, or may have, and left no usable file (a
+    parse child that died, a 5xx, no answer in time, an answer or file that
+    does not check out). It is never asked for again."""
+
+
 def _record_measurement(payload: object) -> None:
     if not isinstance(payload, dict):
         return
@@ -181,13 +191,18 @@ def artifact_identity(descriptor: Mapping[str, Any]) -> tuple[str, str]:
     version = parser_version(route)
     source_sha256 = str(descriptor.get("source_sha256") or "")
     identity = f"{source_sha256}:{route}:{version}:{ARTIFACT_SCHEMA}"
-    extension = "zip"
-    if convert_to := str(descriptor.get("convert_to") or ""):
-        # A conversion's output is one job's own file, never a shared bundle.
-        identity += f":{convert_to}:{descriptor['request_id']}"
-        extension = convert_to
+    convert_to = str(descriptor.get("convert_to") or "")
+    if convert_to:
+        identity += f":{convert_to}"
     fingerprint = hashlib.sha256(identity.encode()).hexdigest()
-    return f"artifacts/{fingerprint}.{extension}", fingerprint
+    if convert_to:
+        # The fingerprint (and so the quarantine) is the bytes'; only the
+        # output file is one job's own, never a shared bundle.
+        return (
+            f"artifacts/{fingerprint}.{descriptor['request_id']}.{convert_to}",
+            fingerprint,
+        )
+    return f"artifacts/{fingerprint}.zip", fingerprint
 
 
 def _shared_path(key: str) -> Path:
@@ -303,16 +318,26 @@ def _request_artifact(
                 endpoint, headers=headers, json=request, timeout=cfg.parser_timeout
             )
         except requests.ConnectionError as exc:
-            if isinstance(exc, requests.Timeout):
+            if convert_to or isinstance(exc, requests.Timeout):
                 raise
             # A lost answer: the same request once more, at once. The parser
             # serves the bundle it published, with its receipt.
             resp = requests.post(
                 endpoint, headers=headers, json=request, timeout=cfg.parser_timeout
             )
-    except requests.RequestException:
+    except requests.RequestException as exc:
         if quarantine := _local_quarantine(fingerprint):
             _raise_quarantine(quarantine)
+        # Past the connection the conversion may be running: only a failure
+        # to connect shows it never started.
+        if (
+            convert_to
+            and isinstance(exc, requests.Timeout)
+            and not isinstance(exc, requests.ConnectTimeout)
+        ):
+            raise ParserConversionError(
+                "the parser did not answer the conversion in time"
+            ) from exc
         raise
     try:
         payload = resp.json()
@@ -342,22 +367,29 @@ def _request_artifact(
             and payload.get("code") == "parser_capacity"
         ):
             raise ParserCapacityError(str(detail))
+        # Any other 4xx refused the request before a child took it.
+        if convert_to and (resp.status_code >= 500 or resp.status_code == 422):
+            raise ParserConversionError(
+                f"remote conversion {resp.status_code}: {detail}"
+            )
         raise ParserClientError(f"remote parse {resp.status_code}: {detail}")
+    # A conversion that answered and cannot be used is over, like a failed one.
+    invalid = ParserConversionError if convert_to else ParserClientError
     if not isinstance(payload, dict):
-        raise ParserClientError("parser returned an invalid JSON response")
+        raise invalid("parser returned an invalid JSON response")
     if convert_to and payload.get("converted") is not True:
-        raise ParserClientError("parser answered a conversion without converting")
+        raise invalid("parser answered a conversion without converting")
     artifact = payload.get("artifact") or {}
     if artifact.get("key") != artifact_key:
-        raise ParserClientError("parser returned an unexpected artifact key")
+        raise invalid("parser returned an unexpected artifact key")
     try:
         artifact_size = int(artifact.get("size") or 0)
     except (TypeError, ValueError) as exc:
-        raise ParserClientError("parser returned an invalid artifact size") from exc
+        raise invalid("parser returned an invalid artifact size") from exc
     if artifact_size <= 0 or artifact_size > cfg.parse_artifact_max_bytes:
-        raise ParserClientError("parser artifact exceeds configured byte limit")
+        raise invalid("parser artifact exceeds configured byte limit")
     if not str(artifact.get("sha256") or ""):
-        raise ParserClientError("parser returned no artifact checksum")
+        raise invalid("parser returned no artifact checksum")
     artifact["fingerprint"] = fingerprint
     artifact["source_sha256"] = source_sha256
     # Wall time remains useful for latency. Page counts, not CPU time, drive the
@@ -573,6 +605,9 @@ def convert_legacy(
 ) -> bytes:
     """A legacy Office source converted by the parser to ``convert_to`` (docx,
     xlsx, pptx): the bytes of the file it left in the spool, which is removed.
+    Raises ParserConversionError (and the parse's terminal errors) for a
+    conversion that must not run again; a ParserCapacityError, a connection
+    error or another ParserClientError means the parser never started it.
 
     Blocking (requests + file IO); call via ``asyncio.to_thread``.
     """
@@ -589,6 +624,8 @@ def convert_legacy(
     try:
         with _private_copy(artifact) as converted:
             return converted.read_bytes()
+    except ParserClientError as exc:
+        raise ParserConversionError(str(exc)) from exc
     finally:
         try:
             _shared_path(str(artifact["key"])).unlink()

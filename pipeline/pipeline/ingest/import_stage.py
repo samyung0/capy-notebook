@@ -72,12 +72,10 @@ class ImportWait(CapacityWait):
 
 def gateway_post(path: str, body: dict) -> tuple[int, dict]:
     """One POST to an internal gateway route: its status and JSON object.
-    The parse coordinator's legacy conversion hands off through it too."""
+    A gateway that is not configured or cannot be reached is the caller's
+    infrastructure fault, whatever the job."""
     if not cfg.gateway_url or not cfg.pipeline_secret:
-        raise ImportFailure(
-            "gateway_unconfigured",
-            "GATEWAY_URL and PIPELINE_SECRET are required for provider imports",
-        )
+        raise RetryableError("GATEWAY_URL and PIPELINE_SECRET are not configured")
     try:
         response = requests.post(
             cfg.gateway_url.rstrip("/") + path,
@@ -86,9 +84,7 @@ def gateway_post(path: str, body: dict) -> tuple[int, dict]:
             timeout=_GATEWAY_TIMEOUT_S,
         )
     except (requests.Timeout, requests.ConnectionError) as exc:
-        raise ImportRetry(
-            "gateway_unreachable", f"gateway request failed: {exc}"
-        ) from exc
+        raise RetryableError(f"gateway request failed: {exc}") from exc
     payload: object = {}
     if response.content:
         try:
@@ -100,6 +96,20 @@ def gateway_post(path: str, body: dict) -> tuple[int, dict]:
     if retry_after.isdigit():
         payload.setdefault("retryAfterSeconds", int(retry_after))
     return response.status_code, payload
+
+
+def _gateway(path: str, body: dict) -> tuple[int, dict]:
+    """``gateway_post`` for an import: an import worker without a gateway is
+    misconfigured for good, and an unreachable one is reported by its code."""
+    if not cfg.gateway_url or not cfg.pipeline_secret:
+        raise ImportFailure(
+            "gateway_unconfigured",
+            "GATEWAY_URL and PIPELINE_SECRET are required for provider imports",
+        )
+    try:
+        return gateway_post(path, body)
+    except RetryableError as exc:
+        raise ImportRetry("gateway_unreachable", str(exc)) from exc
 
 
 def _raise_for_gateway(status: int, payload: dict, what: str) -> None:
@@ -307,9 +317,7 @@ def _run(job: dict) -> None:
         raise ImportFailure("invalid_payload", "import job names no importJobId")
 
     telemetry.stage("acquire")
-    status, acquired = gateway_post(
-        "/api/internal/import/acquire", {"jobId": import_id}
-    )
+    status, acquired = _gateway("/api/internal/import/acquire", {"jobId": import_id})
     if status != 200:
         _raise_for_gateway(status, acquired, "acquire")
     state = str(acquired.get("status") or "")
@@ -357,7 +365,7 @@ def _run(job: dict) -> None:
         telemetry.record(source_bytes=actual)
 
     telemetry.stage("complete")
-    status, completed = gateway_post(
+    status, completed = _gateway(
         "/api/internal/import/complete",
         {"jobId": import_id, "attemptToken": token, "actualSize": actual, **landed},
     )
@@ -427,7 +435,7 @@ def report(job: dict, exc: BaseException, retryable: bool) -> None:
         or ("import_retry" if retryable else "attempts_exhausted")
     )
     try:
-        status, body = gateway_post(
+        status, body = _gateway(
             "/api/internal/import/fail",
             {
                 "jobId": import_id,
