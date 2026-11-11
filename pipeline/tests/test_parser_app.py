@@ -1030,7 +1030,7 @@ async def test_a_parse_child_reads_only_its_slot_and_holds_no_token(
     child.start()
     try:
         await child.send(
-            (str(other), str(child.work_dir / "transfer.result"), "a.pdf", "")
+            (str(other), str(child.work_dir / "transfer.result"), "a.pdf", "", "")
         )
         status, (kind, _detail) = await child.recv()
         pid = child._process.pid
