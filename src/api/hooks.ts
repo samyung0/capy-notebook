@@ -1676,7 +1676,8 @@ const retryProcessingKey = (wsId: string | null) =>
   ['retryProcessing', wsId ?? ''] as const;
 
 /** Process a failed file again on its stored bytes (owner only, charged like
- * automatic reprocessing). The file list shows it pending once it lands. */
+ * automatic reprocessing); an old Office file that is not converted, failed
+ * or ready, reruns its upload. The file list shows it pending once it lands. */
 export function useRetryFileProcessing(wsId: string | null) {
   const qc = useQueryClient();
   return useMutation({
@@ -1688,18 +1689,17 @@ export function useRetryFileProcessing(wsId: string | null) {
     // Awaited, so the retry stays pending until the refetched list shows the
     // file out of `failed` (useRetryingFileIds).
     onSettled: (_data, _error, { id }) =>
-      Promise.all(
-        wsId
+      Promise.all([
+        // The open file: its Convert screen turns to converting.
+        qc.invalidateQueries({ queryKey: qk.file(id) }),
+        ...(wsId
           ? [
               qc.invalidateQueries({ queryKey: qk.files(wsId) }),
               qc.invalidateQueries({ queryKey: qk.workspaceStats(wsId) }),
             ]
-          : // A standalone file: the Files page's list and its own query.
-            [
-              qc.invalidateQueries({ queryKey: qk.ownedFilesRoot }),
-              qc.invalidateQueries({ queryKey: qk.file(id) }),
-            ]
-      ),
+          : // A standalone file: the Files page's list.
+            [qc.invalidateQueries({ queryKey: qk.ownedFilesRoot })]),
+      ]),
   });
 }
 

@@ -8,7 +8,14 @@ import {
   useRef,
   useState,
 } from 'react';
-import { fileLinksQuery, useFileLinks, useMe, useWorkspace } from '@/api/hooks';
+import {
+  fileLinksQuery,
+  useFileLinks,
+  useMe,
+  useRetryFileProcessing,
+  useRetryingFileIds,
+  useWorkspace,
+} from '@/api/hooks';
 import type {
   Region,
   SourceFile,
@@ -22,6 +29,7 @@ import { Icon } from '@/components/ui/Icon';
 import { dismissToast, userToast } from '@/components/ui/userToast';
 import { ImageViewer } from '@/features/files/ImageViewer';
 import { onPhone, tabHidden } from '@/features/notes/roomSwap';
+import { retryStartedToast } from '@/features/workspace/retryProcessing';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -42,9 +50,12 @@ import {
   PresenceContext,
 } from './fileModeContext';
 import {
+  canConvertLegacy,
   fileExt,
+  fileIsIngesting,
   IMAGE_MIN_ZOOM,
   isImageFile,
+  legacyOfficeTarget,
   officeFormatOf,
   SHEET_EXTS,
   TEXT_EXTS,
@@ -118,9 +129,23 @@ function AudioView({
   );
 }
 
-function UnsupportedPreview({ file }: { file: ViewableFile }) {
+/** The download-only screen of a file nothing here opens. With `convertTo`
+ * (an old Office file that is not converted, opened by someone who may
+ * reprocess it; mock A, Epo 2026-11-11) it offers the conversion: the file's
+ * Retry processing, with its toast. */
+function UnsupportedPreview({
+  convertTo,
+  file,
+}: {
+  convertTo?: OfficeFormat;
+  file: Pick<SourceFile, 'id' | 'name' | 'workspaceId'>;
+}) {
   const ext = fileExt(file.name);
   const queryClient = useQueryClient();
+  const workspaceId = file.workspaceId || null;
+  const { mutateAsync: retryProcessing } = useRetryFileProcessing(workspaceId);
+  // Off until the reread file shows as converting, like the ⋮ Retry.
+  const retrying = useRetryingFileIds(workspaceId).includes(file.id);
   // The link is signed when clicked, not when the view opened: open the tab
   // first so the navigation stays inside the click's popup allowance.
   const download = () => {
@@ -133,24 +158,50 @@ function UnsupportedPreview({ file }: { file: ViewableFile }) {
       () => tab?.close()
     );
   };
+  const downloadButton = (
+    <Button
+      iconLeft="download"
+      iconLeftClassName="me-1"
+      onClick={download}
+      variant="ghost-hover"
+    >
+      {m.files_download_original({ name: file.name })}
+    </Button>
+  );
   return (
-    <div className="grid h-full place-items-center">
+    <div className="grid h-full place-items-center px-4">
       <div className="flex max-w-sm flex-col items-center gap-2 text-center">
         <Icon className="non-scaling-svg size-8" name="files" />
-        <p className="t-subtitle">{m.files_preview_unavailable()}</p>
-        <p className="t-meta text-fg-muted">
-          {ext
-            ? m.files_preview_unsupported_body({ ext: `.${ext}` })
-            : m.files_preview_unsupported_body_noext()}
+        <p className="t-subtitle">
+          {convertTo ? m.files_legacy_title() : m.files_preview_unavailable()}
         </p>
-        <Button
-          iconLeft="download"
-          iconLeftClassName="me-1"
-          onClick={download}
-          variant="ghost-hover"
-        >
-          {m.files_download_original({ name: file.name })}
-        </Button>
+        <p className="t-meta text-fg-muted">
+          {convertTo
+            ? m.files_legacy_body({ ext: `.${ext}`, target: `.${convertTo}` })
+            : ext
+              ? m.files_preview_unsupported_body({ ext: `.${ext}` })
+              : m.files_preview_unsupported_body_noext()}
+        </p>
+        {convertTo ? (
+          <div className="mt-1.5 flex max-w-full flex-col items-center gap-0.5">
+            <Button
+              disabled={retrying}
+              // The server reruns the file's own upload (the conversion,
+              // then its stored parse mode); 'fast' only names the route.
+              onClick={() =>
+                void retryProcessing({ id: file.id, parseMode: 'fast' }).then(
+                  retryStartedToast,
+                  () => {}
+                )
+              }
+            >
+              {m.files_legacy_convert()}
+            </Button>
+            {downloadButton}
+          </div>
+        ) : (
+          downloadButton
+        )}
       </div>
     </div>
   );
@@ -239,6 +290,11 @@ function FileViewerContent({
   }
 
   if (!file.hasBytes) return <FileEmpty />;
+  // An old Office file being converted: the loader, until it is renamed and
+  // opens as its new format (mock A's state 2, Epo 2026-11-11).
+  if (fileIsIngesting(file.status) && legacyOfficeTarget(file.name)) {
+    return <FileLoading message={m.files_converting()} />;
+  }
   // A standalone file (no workspace) opens only for its owner, who edits it
   // unless their account is frozen (Epo 2026-10-27): its account state stands
   // in for a workspace's capabilities, so neither allows Edit before it loads.
@@ -257,6 +313,15 @@ function FileViewerContent({
         format={office}
       />
     );
+  }
+  // An old Office file that is not converted offers the conversion to whoever
+  // may reprocess it, which the workspace says.
+  const convertTo = legacyOfficeTarget(file.name);
+  if (convertTo) {
+    if (!standalone && workspacePending) return <FileLoading />;
+    if (canConvertLegacy(file, workspace, frozen)) {
+      return <UnsupportedPreview convertTo={convertTo} file={file} />;
+    }
   }
   if (linksPending) return <FileLoading />;
   if (linksFailed || !links) {

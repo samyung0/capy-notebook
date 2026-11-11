@@ -1,4 +1,5 @@
 import type { SourceFile, Workspace } from '@/api/types';
+import { isWorkspaceReadOnly } from '@/features/workspace/access';
 import { m } from '@/i18n';
 
 const IMAGE_EXTS = new Set([
@@ -136,12 +137,25 @@ export function fileCanMoveTo(
   return file.isPayer || !!workspace?.isOwner;
 }
 
-/** What an open file says while its processing runs: a legacy Office file is
- * being converted, anything else parsed. */
-export function processingMessage(file: Pick<SourceFile, 'name'>) {
-  return legacyOfficeTarget(file.name)
-    ? m.files_converting()
-    : m.files_processing_named({ name: file.name });
+/** Whether the open file offers Convert: an old Office file that is not
+ * converted (ready or failed, still named as legacy), to whoever the file's
+ * ⋮ Retry processing is offered to: its workspace's owner while the workspace
+ * is editable (FilesPanel), or the payer of a file with no workspace
+ * (FileItem), unless their account is frozen, which the server refuses and
+ * a workspace's capabilities already say. A hand-in's file is not told apart
+ * here (a file row has no such field): it is listed as a submission and opens
+ * with its assignment (SubmissionItem, PaperPane), never in the file viewer,
+ * and the server refuses it. */
+export function canConvertLegacy(
+  file: Pick<SourceFile, 'isPayer' | 'name' | 'status' | 'workspaceId'>,
+  workspace: Pick<Workspace, 'capabilities' | 'isOwner'> | undefined,
+  frozen: boolean
+) {
+  if (!legacyOfficeTarget(file.name) || fileIsIngesting(file.status)) {
+    return false;
+  }
+  if (!file.workspaceId) return file.isPayer && !frozen;
+  return !!workspace?.isOwner && !isWorkspaceReadOnly(workspace.capabilities);
 }
 
 /** Why a failed file has no index: a legacy Office file failed in its

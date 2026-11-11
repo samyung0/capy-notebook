@@ -184,6 +184,9 @@ func TestBuildProcessingPlanConvertsLegacyOffice(t *testing.T) {
 		"legacy.XLS": {"sheet", "xls", "xlsx"},
 		"legacy.ppt": {"slides", "ppt", "pptx"},
 	} {
+		if !ConvertsLegacy(name) {
+			t.Fatalf("%s is a legacy Office name", name)
+		}
 		for _, mode := range []string{ParseModeNone, ParseModeFast} {
 			plan, err := BuildProcessingPlan(name, pair[0], mode)
 			if err != nil {

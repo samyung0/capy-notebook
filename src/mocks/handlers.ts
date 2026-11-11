@@ -275,6 +275,16 @@ const mockInviteCandidates: MockInviteCandidate[] = [
 
 const SOURCE_EPOCH = 1;
 
+/** Whether a file answers as a dialog preview fixture, with its broken link
+ * and session. An old Office one stops once converted: it then opens like
+ * any converted upload. */
+function isDialogFile(id: unknown) {
+  const fixture = dialogFiles.find((file) => file.id === id);
+  if (!fixture) return false;
+  const name = db.files.find((file) => file.id === id)?.name ?? fixture.name;
+  return !(legacyOfficeTarget(fixture.name) && !legacyOfficeTarget(name));
+}
+
 /** The plan's workspace cap, owned and joined together, as the gateway
  * enforces it. */
 function atWorkspaceCap() {
@@ -850,7 +860,7 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 });
   }),
   http.get('/api/files/:id/links', ({ params }) => {
-    if (!dialogFiles.some((file) => file.id === params.id)) return;
+    if (!isDialogFile(params.id)) return;
     if (params.id === 'mock-preview-links')
       return new HttpResponse(null, { status: 503 });
     if (params.id === 'mock-preview-annotations')
@@ -884,7 +894,7 @@ export const handlers = [
         format: 'text',
         state: savedSourceState(file.id),
       });
-    if (dialogFiles.some((file) => file.id === params.id)) {
+    if (isDialogFile(params.id)) {
       return HttpResponse.json(
         { detail: 'Mock source session unavailable.', status: 503 },
         { status: 503 }
@@ -1344,19 +1354,24 @@ export const handlers = [
     return new HttpResponse(null, { status: 202 });
   }),
   // Retry processing: the owner reruns a failed file on its stored bytes; the
-  // mock worker finishes it like an upload ('none' just stores it). A file
-  // still named as legacy Office failed in its conversion and fails again.
+  // mock worker finishes it like an upload ('none' just stores it). An old
+  // Office file, failed or ready and never converted, reruns its own upload:
+  // the conversion, then its stored parse mode, whatever mode is sent.
   http.post('/api/files/:id/retry-processing', async ({ params, request }) => {
     const file = db.files.find((item) => item.id === params.id);
     if (!file) return new HttpResponse(null, { status: 404 });
-    if (file.status !== 'failed') return codeError(409, 'conflict');
+    const convertTo = legacyOfficeTarget(file.name);
+    const unconverted = file.status === 'ready' && !!convertTo;
+    if (file.status !== 'failed' && !unconverted)
+      return codeError(409, 'conflict');
     const { parseMode } = (await request.json()) as { parseMode: string };
     file.status = 'pending';
     // The server sends an error id on failed files only.
     delete file.errorId;
     setTimeout(() => {
-      if (legacyOfficeTarget(file.name)) {
-        file.status = 'failed';
+      if (convertTo) {
+        // Its stored parse mode, whatever was sent; the mock keeps none.
+        convertMockLegacyUpload(file, convertTo, 'none');
         return;
       }
       file.status = 'ready';

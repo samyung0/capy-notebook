@@ -245,6 +245,13 @@ test('a legacy DOC upload becomes a DOCX and opens; a failed conversion says so'
       name: m.files_download_original({ name: 'Failed conversion.doc' }),
     })
   ).toBeVisible();
+
+  // Its owner converts it from the screen: the same button tries again, and
+  // the file is renamed.
+  await page.getByRole('button', { name: m.files_legacy_convert() }).click();
+  await expect(
+    page.getByRole('heading', { exact: true, name: 'Failed conversion.docx' })
+  ).toBeVisible({ timeout: 60_000 });
 });
 
 test('an image source arrives at 5 megapixels at most, HEIC, TIFF and JPEG 2000 through their decoders and saved as JPEG even when small, an SVG as PNG, and a corrupt HEIC is refused', async ({

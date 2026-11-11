@@ -79,7 +79,7 @@ import {
 import {
   fileIsIngesting,
   IMAGE_MIN_ZOOM,
-  processingMessage,
+  legacyOfficeTarget,
 } from '@/features/files/fileUtils';
 import type { OfficeCitation } from '@/features/files/officeProtocol';
 import { FlashcardGrid } from '@/features/flashcards/FlashcardGrid';
@@ -1107,7 +1107,7 @@ function FileBody({
           <p>
             {waiting
               ? m.files_pending_named({ name: file.name })
-              : processingMessage(file)}
+              : m.files_processing_named({ name: file.name })}
           </p>
           <ProgressBar
             className="w-full"
@@ -1121,15 +1121,19 @@ function FileBody({
   }
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {file && fileIsIngesting(file.status) && file.hasBytes && (
-        <FileBanner
-          message={
-            file.status === 'pending'
-              ? m.files_pending_named({ name: file.name })
-              : processingMessage(file)
-          }
-        />
-      )}
+      {/* An old Office file being converted says so in its pane instead. */}
+      {file &&
+        fileIsIngesting(file.status) &&
+        file.hasBytes &&
+        !legacyOfficeTarget(file.name) && (
+          <FileBanner
+            message={
+              file.status === 'pending'
+                ? m.files_pending_named({ name: file.name })
+                : m.files_processing_named({ name: file.name })
+            }
+          />
+        )}
       {file && <FileNotIndexedBanner file={file} />}
       <div className="relative min-h-0 flex-1 overflow-auto">
         <FileViewer

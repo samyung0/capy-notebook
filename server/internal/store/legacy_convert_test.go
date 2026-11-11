@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -90,47 +91,77 @@ func TestFinalizeQueuesTheLegacyConversion(t *testing.T) {
 }
 
 // Retry processing of a legacy file whose conversion failed converts it
-// again in the mode asked: on the owner's reservation with parsing on, on a
-// system session with parsing off.
+// again in its stored parse mode, not the mode asked: on the owner's
+// reservation with parsing on, on a system session with parsing off.
 func TestRetryConvertsAFailedLegacyFile(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
-	for _, tc := range []struct {
-		mode   string
-		system bool
-	}{{mode: "fast"}, {mode: "none", system: true}} {
-		t.Run(tc.mode, func(t *testing.T) {
+	for stored, asked := range map[string]string{"fast": "none", "none": "fast"} {
+		t.Run(stored, func(t *testing.T) {
 			owner := newBlobTestUser(t, s, "legacy_retry")
-			file := legacyTestUpload(t, s, owner, "old deck.ppt", "slides", "fast")
+			file := legacyTestUpload(t, s, owner, "old deck.ppt", "slides", stored)
 			if _, err := s.pool.Exec(ctx, `UPDATE jobs SET status='failed' WHERE payload->>'fileId'=$1`, file.ID); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := s.pool.Exec(ctx, `UPDATE files SET status='failed' WHERE id=$1`, file.ID); err != nil {
 				t.Fatal(err)
 			}
-			if err := s.RetryFileProcessing(ctx, owner, file.ID, tc.mode, "test"); err != nil {
+			if err := s.RetryFileProcessing(ctx, owner, file.ID, asked, "test"); err != nil {
 				t.Fatal(err)
 			}
-			var status, mode, jobType, route, payloadPaidBy, sessionPaidBy string
-			var hasCap bool
-			if err := s.pool.QueryRow(ctx, `SELECT f.status, f.parse_mode, j.type, j.payload->'processingPlan'->>'route',
-					j.payload ? 'imageMaxBytes', COALESCE(j.payload->>'paidBy',''), ps.paid_by
-				FROM files f JOIN jobs j ON j.payload->>'fileId'=f.id AND j.status='pending'
-				JOIN provider_sessions ps ON ps.id=j.payload->>'reservationId' WHERE f.id=$1`, file.ID).
-				Scan(&status, &mode, &jobType, &route, &hasCap, &payloadPaidBy, &sessionPaidBy); err != nil {
+			assertLegacyConversionQueued(t, s, file.ID, stored)
+		})
+	}
+}
+
+// assertLegacyConversionQueued checks a Retry left the file pending in mode
+// behind the conversion job a fresh upload gets: the picture cap, and a
+// system session exactly when nothing parses afterwards.
+func assertLegacyConversionQueued(t *testing.T, s *Store, fileID, mode string) {
+	t.Helper()
+	system := mode == "none"
+	var status, stored, jobType, route, payloadPaidBy, sessionPaidBy string
+	var hasCap bool
+	if err := s.pool.QueryRow(context.Background(), `SELECT f.status, f.parse_mode, j.type, j.payload->'processingPlan'->>'route',
+			j.payload ? 'imageMaxBytes', COALESCE(j.payload->>'paidBy',''), ps.paid_by
+		FROM files f JOIN jobs j ON j.payload->>'fileId'=f.id AND j.status='pending'
+		JOIN provider_sessions ps ON ps.id=j.payload->>'reservationId' WHERE f.id=$1`, fileID).
+		Scan(&status, &stored, &jobType, &route, &hasCap, &payloadPaidBy, &sessionPaidBy); err != nil {
+		t.Fatal(err)
+	}
+	if status != "pending" || stored != mode || jobType != "parse" || route != "legacy_convert" || !hasCap ||
+		(payloadPaidBy == models.PaidBySystem) != system || (sessionPaidBy == models.PaidBySystem) != system {
+		t.Fatalf("after retry: status %q mode %q job %q route %q cap %t paid by %q/%q",
+			status, stored, jobType, route, hasCap, payloadPaidBy, sessionPaidBy)
+	}
+}
+
+// Retry converts a ready legacy file that was stored as uploaded (Convert to
+// new Office format): its stored parse mode decides, not the mode asked.
+func TestRetryConvertsAReadyLegacyFile(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	for stored, asked := range map[string]string{"fast": "none", "none": "fast"} {
+		t.Run(stored, func(t *testing.T) {
+			owner := newBlobTestUser(t, s, "legacy_convert_ready")
+			file := legacyTestUpload(t, s, owner, "old report.doc", "doc", stored)
+			if _, err := s.pool.Exec(ctx, `DELETE FROM jobs WHERE payload->>'fileId'=$1`, file.ID); err != nil {
 				t.Fatal(err)
 			}
-			if status != "pending" || mode != tc.mode || jobType != "parse" || route != "legacy_convert" || !hasCap ||
-				(payloadPaidBy == models.PaidBySystem) != tc.system || (sessionPaidBy == models.PaidBySystem) != tc.system {
-				t.Fatalf("after retry: status %q mode %q job %q route %q cap %t paid by %q/%q",
-					status, mode, jobType, route, hasCap, payloadPaidBy, sessionPaidBy)
+			if _, err := s.pool.Exec(ctx, `UPDATE files SET status='ready' WHERE id=$1`, file.ID); err != nil {
+				t.Fatal(err)
 			}
+			if err := s.RetryFileProcessing(ctx, owner, file.ID, asked, "test"); err != nil {
+				t.Fatal(err)
+			}
+			assertLegacyConversionQueued(t, s, file.ID, stored)
 		})
 	}
 }
 
 // A hand-in's legacy file is stored as handed in, and a paper's the uploader
-// has no credits for is kept ready: neither is converted at finalize.
+// has no credits for is kept ready: neither is converted at finalize. Retry
+// then converts the paper's once its member has credits, never the hand-in's.
 func TestSubmissionLegacyFilesStayUnconverted(t *testing.T) {
 	f := newAssignmentFixture(t, "legacy-submission")
 	ctx := context.Background()
@@ -141,6 +172,7 @@ func TestSubmissionLegacyFilesStayUnconverted(t *testing.T) {
 			period_start=EXCLUDED.period_start`, f.viewer, mustPlanLimits(t, f.s, PlanFree).CreditMicros); err != nil {
 		t.Fatal(err)
 	}
+	ids := map[string]string{}
 	for name, in := range map[string]NewUploadSession{
 		"hand-in": {HandInID: unmarkedHandIn(t, f, now).ID, ParseMode: "none"},
 		"paper":   {AttemptID: startPaper(t, f, now, nil).attemptID, ParseMode: "fast"},
@@ -164,7 +196,23 @@ func TestSubmissionLegacyFilesStayUnconverted(t *testing.T) {
 		if file.Status != FileReady || file.Name != "answers.doc" || jobs != 0 {
 			t.Fatalf("%s: status %q name %q jobs %d", name, file.Status, file.Name, jobs)
 		}
+		ids[name] = file.ID
 	}
+	if err := f.s.RetryFileProcessing(ctx, f.viewer, ids["hand-in"], "none", "test"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("retry of a hand-in: %v, want conflict", err)
+	}
+	if _, err := f.s.pool.Exec(ctx, `UPDATE user_credits SET used_micros=0 WHERE user_id=$1`, f.viewer); err != nil {
+		t.Fatal(err)
+	}
+	reg, err := models.New(ctx, f.s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.s.SetModelRegistry(reg)
+	if err := f.s.RetryFileProcessing(ctx, f.viewer, ids["paper"], "fast", "test"); err != nil {
+		t.Fatal(err)
+	}
+	assertLegacyConversionQueued(t, f.s, ids["paper"], "fast")
 }
 
 // The converted file's name swaps the ending and stays within 120 characters.

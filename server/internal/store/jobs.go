@@ -337,8 +337,14 @@ func (s *Store) ingestJobPayload(ctx context.Context, q rowsQueryer, actorUserID
 // automatic scheduler never retries a failed file unless it is partial (still
 // indexed). A file that is not failed,
 // has no bytes or already has a parse, ingest or source refresh job queued or
-// running answers ErrConflict. A failed legacy Office file (its conversion
-// failed, so it kept its name and bytes) is converted again, in either mode.
+// running answers ErrConflict.
+//
+// A legacy Office file (.doc, .xls, .ppt) reruns its upload's own pipeline:
+// the conversion, then its stored parse mode, whatever mode is asked. That
+// holds for a failed one (its conversion failed, so it kept its name and
+// bytes) and for the one ready file retried, a legacy file stored as uploaded
+// (Convert to new Office format, Epo 2026-11-11). A ready hand-in is not: it
+// keeps the bytes it was handed in with.
 //
 // A partial file (parts design Q1: failed and indexed, its alias on ready
 // content of its current revision built on its own parse_mode's route) keeps
@@ -371,26 +377,35 @@ func (s *Store) RetryFileProcessing(ctx context.Context, actorID, fileID, parseM
 	}
 	var name, kind, status, blobPath, etag, mode string
 	var revision int64
-	var queued, indexed, ever, current, summarized bool
+	var queued, indexed, ever, current, summarized, handIn bool
 	var identity *string
 	// Read under the file lock, so the job names the revision it runs on.
 	// current: the alias serves ready content of the file's revision (every
 	// revision bump drops or moves the alias and resets content_hash).
 	err = tx.QueryRow(ctx, `SELECT f.name,f.kind,f.status,COALESCE(f.blob_path,''),COALESCE(f.source_etag,''),f.revision,f.indexed,f.parse_mode,f.ever_parsed_successfully,
 		EXISTS(SELECT 1 FROM jobs WHERE payload->>'fileId'=$1 AND type IN ('parse','ingest','source_refresh') AND status IN ('pending','running')),
-		rc.id IS NOT NULL,rc.pipeline_identity,EXISTS(SELECT 1 FROM rag_content_summaries s WHERE s.content_id=rc.id)
+		rc.id IS NOT NULL,rc.pipeline_identity,EXISTS(SELECT 1 FROM rag_content_summaries s WHERE s.content_id=rc.id),
+		f.hand_in_assignment_id IS NOT NULL
 		FROM files f
 		LEFT JOIN rag_file_contents fc ON fc.file_id=f.id
 		LEFT JOIN rag_contents rc ON rc.id=fc.content_id AND rc.status='ready' AND rc.content_hash=f.content_hash
-		WHERE f.id=$1 AND f.trashed_at IS NULL FOR UPDATE OF f`, fileID).Scan(&name, &kind, &status, &blobPath, &etag, &revision, &indexed, &mode, &ever, &queued, &current, &identity, &summarized)
+		WHERE f.id=$1 AND f.trashed_at IS NULL FOR UPDATE OF f`, fileID).Scan(&name, &kind, &status, &blobPath, &etag, &revision, &indexed, &mode, &ever, &queued, &current, &identity, &summarized, &handIn)
 	if isNoRows(err) {
 		return ErrNotFound
 	}
 	if err != nil {
 		return err
 	}
-	if status != string(FileFailed) || blobPath == "" || queued {
+	// The one ready file retried: an unconverted legacy Office file that is
+	// no hand-in.
+	legacy := sourceupload.ConvertsLegacy(name)
+	convert := status == string(FileReady) && legacy && !handIn
+	if (status != string(FileFailed) && !convert) || blobPath == "" || queued {
 		return ErrConflict
+	}
+	// The requested mode is no choice for a legacy file.
+	if legacy {
+		parseMode = mode
 	}
 	plan, err := sourceupload.BuildProcessingPlan(name, kind, parseMode)
 	if err != nil {

@@ -562,6 +562,12 @@ var parseExtensions = map[string]bool{
 // converted to.
 var legacyConvertTo = map[string]string{"doc": "docx", "xls": "xlsx", "ppt": "pptx"}
 
+// ConvertsLegacy is whether a file of this name is a legacy Office one that
+// is converted to its current format.
+func ConvertsLegacy(name string) bool {
+	return legacyConvertTo[extensionKey(name)] != ""
+}
+
 // parseEligible is whether an upload of the format may ask for parse mode
 // fast: the parser's formats, and the legacy ones parsed once converted.
 func parseEligible(ext string) bool {
