@@ -1,5 +1,11 @@
 import { EMBED_CATALOG } from '@/api/embeds.generated';
 import type { Question, QuestionBlock } from '@/api/types';
+import {
+  isTableViewBlock,
+  TABLE_VIEW_LIMITS,
+  TABLE_VIEW_TYPE,
+  type TableViewElement,
+} from '@/features/notes/tableView/model';
 import { repairFigureBlock } from '@/features/questions/repair';
 import {
   descriptionFits,
@@ -150,7 +156,8 @@ export type CustomMaterialElement =
   | MermaidElement
   | MermaidCaptionElement
   | MaterialRefElement
-  | HtmlEmbedElement;
+  | HtmlEmbedElement
+  | TableViewElement;
 
 export const MATERIAL_REF_TYPE = 'material_ref';
 
@@ -428,6 +435,17 @@ function validateCustomElement(
         isTextNode(element.children[0]) &&
         element.children[0].text === ''
       );
+    // The structural rules every writer keeps; what merges leave (a cell of
+    // a deleted column, a value that no longer fits) passes, for readers to
+    // draw as empty (spec "What a writer must keep").
+    case TABLE_VIEW_TYPE:
+      return (
+        hasId(element) &&
+        isTableViewBlock(element.block) &&
+        element.children.length === 1 &&
+        isTextNode(element.children[0]) &&
+        element.children[0].text === ''
+      );
     case MATERIAL_REF_TYPE: {
       const ref = element as MaterialRefElement;
       const resolved =
@@ -522,10 +540,11 @@ export function isMaterialDocument(
     )
   )
     return false;
+  const count = (type: string) =>
+    (value.value as MaterialValue).filter((node) => node.type === type).length;
   if (
-    (value.value as MaterialValue).filter(
-      (node) => node.type === HTML_EMBED_TYPE
-    ).length > HTML_EMBED_MAX_COUNT
+    count(HTML_EMBED_TYPE) > HTML_EMBED_MAX_COUNT ||
+    count(TABLE_VIEW_TYPE) > TABLE_VIEW_LIMITS.count
   )
     return false;
   const parts = new Set<string>();
