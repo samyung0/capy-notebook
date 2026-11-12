@@ -4883,7 +4883,16 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     `focus` listener, since the app's queries never refetch on focus), and
     `WorkspaceCanvas` invalidates the quiz and material queries of the material the
     item dialog showed when the dialog closes (the dialog's saves go through its live
-    room, not the snapshot query). The block is a BlockSuite block
+    room, not the snapshot query). **Edit on the card** (Epo 2026-11-12): a person who
+    can edit the material (`capabilities.canEdit` from `useMaterial`, read once the
+    card is near) sees Edit at the top of the card's body, which swaps the body for
+    the note embed's editor (`AppEmbedEdit`: per-question Edit and Remove for a quiz,
+    per-card Edit and Add card for a set) on its live rooms; Done swaps back and
+    invalidates the material's quiz and material queries so every card redraws. One
+    card edits at a time (`CanvasMaterialCards`): with no note seat to join inside,
+    each edited card takes its own places among the user's 22 joined documents. The
+    editor gets no `onEmpty`, so the last question or card can't be removed from a
+    card, which isn't the item. The block is a BlockSuite block
     like any other but hosts React: it adopts one `div` per card from the host registry
     (`src/features/canvas/materialCardHosts.ts` — kept out of `src/features/blocksuite`,
     which the app's tsconfig excludes), and `CanvasMaterialCards.tsx`, rendered by
