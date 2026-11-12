@@ -60,6 +60,9 @@ func ExtractNoteBlocks(raw string, items map[string]string) ([]NoteBlock, error)
 			title = field(block, "description")
 		case "mermaid":
 			title = strings.TrimSpace(indexNodeText(node))
+		case TableViewType:
+			block, _ := node["block"].(map[string]any)
+			title = field(block, "title")
 		}
 		if _, seen := byID[id]; !seen {
 			byID[id] = named{kind, title}
@@ -90,15 +93,16 @@ type NoteEffect struct {
 // Office's EFFECT_CONTEXT_CHARS; '…' marks a cut.
 const NoteEffectContext = 40
 
-// NoteDataPlaceholderTokens is the diff past which a chart, plot, graph or
-// Mermaid change becomes a placeholder (Epo 2026-10-17, about 150 tokens).
+// NoteDataPlaceholderTokens is the diff past which a chart, plot, graph,
+// Mermaid or table view change becomes a placeholder (Epo 2026-10-17, about
+// 150 tokens).
 const NoteDataPlaceholderTokens = 150
 
 // dataUnits names what a heavy data block's count counts.
-var dataUnits = map[string]string{"chart": "cells", "plot": "points", "graph": "elements", "mermaid": "lines"}
+var dataUnits = map[string]string{"chart": "cells", "plot": "points", "graph": "elements", "mermaid": "lines", TableViewType: "rows"}
 
 // lineDiffKinds are the embeds whose changes are line diffs within the block.
-var lineDiffKinds = map[string]bool{"chart": true, "plot": true, "graph": true, "mermaid": true, "material_ref": true}
+var lineDiffKinds = map[string]bool{"chart": true, "plot": true, "graph": true, "mermaid": true, "material_ref": true, TableViewType: true}
 
 // lineDiffCells bounds a line diff's work: past this many cells of lines
 // before × lines after (once the common first and last lines are trimmed)
@@ -367,8 +371,8 @@ func lcsKeep(a, b []string) ([]bool, []bool) {
 var plotPoint = regexp.MustCompile(`\([^()]*\)`)
 
 // dataCount is a heavy data change's count: changed units of the block's
-// kind (chart cells, plot points, graph elements, Mermaid lines) and the
-// block's units now (or before, for a removal).
+// kind (chart cells, plot points, graph elements, Mermaid lines, table view
+// rows) and the block's units now (or before, for a removal).
 func dataCount(kind, before, after string) (int, int) {
 	units := func(text string) []string {
 		switch kind {
@@ -382,6 +386,15 @@ func dataCount(kind, before, after string) (int, int) {
 			return cells
 		case "plot":
 			return plotPoint.FindAllString(text, -1)
+		case TableViewType:
+			// Its table's lines: one a record, plus the header and rule.
+			var rows []string
+			for _, line := range splitLines(text) {
+				if strings.HasPrefix(line, "|") {
+					rows = append(rows, line)
+				}
+			}
+			return rows
 		}
 		return splitLines(text)
 	}

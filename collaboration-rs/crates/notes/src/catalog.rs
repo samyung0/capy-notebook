@@ -75,6 +75,7 @@ pub enum Index {
     Mermaid,
     Question,
     Item,
+    TableView,
 }
 
 /// One element type a material document may hold.
@@ -698,7 +699,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "table_view",
-        index: Index::Table_view,
+        index: Index::TableView,
         void: true,
         inline: false,
         top_level: true,

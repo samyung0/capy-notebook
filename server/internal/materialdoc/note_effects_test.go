@@ -217,3 +217,26 @@ func TestExtractNoteBlocksParsesOnce(t *testing.T) {
 			note, index, parse)
 	}
 }
+
+// A table view is named by its title, and a heavy change counts its changed
+// table lines as rows.
+func TestNoteChangesNameATableViewAndCountItsRows(t *testing.T) {
+	table := func(rows int, value func(int) string) map[string]any {
+		block := smallTableView()
+		list := []any{}
+		for i := range rows {
+			list = append(list, map[string]any{"id": fmt.Sprintf("r%d", i), "cells": map[string]any{"c_title": value(i)}})
+		}
+		block["rows"] = list
+		return tableViewNode("tv", block)
+	}
+	before := effectsBlocks(t, effectsDoc(t, table(50, func(i int) string { return fmt.Sprintf("topic %d", i) })))
+	if before[0].Kind != TableViewType || before[0].Title != "Tracker" {
+		t.Fatalf("block = %+v", before[0])
+	}
+	after := effectsBlocks(t, effectsDoc(t, table(50, func(i int) string { return fmt.Sprintf("subject %d", i) })))
+	effects, _ := NoteChanges(before, after)
+	if len(effects) != 1 || effects[0].Label != `table_view "Tracker": 50 of 52 rows changed` {
+		t.Fatalf("effects = %+v", effects)
+	}
+}

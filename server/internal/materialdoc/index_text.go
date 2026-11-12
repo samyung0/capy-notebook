@@ -117,6 +117,10 @@ func writeIndexBlock(node map[string]any, items map[string]string, out *[]string
 		block, _ := node["block"].(map[string]any)
 		add(figureIndexText(block))
 		return
+	case embeds.IndexTableView:
+		block, _ := node["block"].(map[string]any)
+		add(tableViewIndexText(block))
+		return
 	case embeds.IndexMermaid:
 		lines := []string{}
 		if caption := strings.TrimSpace(indexNodeText(node)); caption != "" {
