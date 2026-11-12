@@ -160,6 +160,7 @@ import type {
   TrashActionReq,
   TrashItem,
   TrashPage,
+  TrashPreview,
   UndoEditReq,
   UndoPayload,
   UpdateCommentReq,
@@ -1802,6 +1803,15 @@ export function useRestoreTrashed() {
   });
 }
 
+/** A trashed item opened read-only from the Trash list. */
+export const useTrashPreview = (item: TrashItem) =>
+  useQuery({
+    meta: { errorBoundary: false },
+    queryFn: () =>
+      api.get<TrashPreview>(`/trash/${item.kind}/${item.id}/preview`),
+    queryKey: qk.trashPreview(item.kind, item.id, item.episodeId),
+  });
+
 /** Permanently delete one trash episode. Irreversible. */
 export function usePurgeTrashed() {
   const qc = useQueryClient();
@@ -2531,14 +2541,20 @@ export function useCloneFile(options?: MutationUiOptions) {
 
 /** The Create tab's Blank DOCX and Blank XLSX: a stored, unprocessed file
  * the caller pays for. */
-export function useCreateBlankFile(wsId: string) {
+/** A blank Word or Excel file; null makes it standalone (No workspace). */
+export function useCreateBlankFile(wsId: string | null) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: CreateBlankFileReq) =>
-      api.post<SourceFile>(`/workspaces/${wsId}/files/blank`, body),
+      api.post<SourceFile>(
+        wsId ? `/workspaces/${wsId}/files/blank` : '/files/blank',
+        body
+      ),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.files(wsId) });
+      // Files' lists, the items one included.
       qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
+      if (!wsId) return;
+      qc.invalidateQueries({ queryKey: qk.files(wsId) });
       qc.invalidateQueries({ queryKey: qk.workspace(wsId) });
       qc.invalidateQueries({ queryKey: qk.workspaceStats(wsId) });
     },

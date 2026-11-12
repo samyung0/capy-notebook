@@ -759,6 +759,9 @@ Sources: [membership handlers](../server/internal/httpapi/huma_membership.go#L39
   engine builds the starter and again at the insert. The file is stored ready
   and not processed (parse mode `none`, no credits); the Indexing tab
   processes it like any store-only upload. It is in the upload rate class.
+  `POST /api/files/blank` (Files' Add file on No workspace) makes the same
+  file standalone: the caller's own, no topic (refused with one) and, like a
+  standalone upload, no file-count cap.
 - Direct cloud-source inspection treats DNS and connection failures as
   retryable provider outages. Request cancellation remains cancellation.
 - Short-lived read links (a file's `/links`, an editor asset's resolve, the
@@ -2129,6 +2132,15 @@ source epoch or the material `room_schema` so stale clients cannot resume.
 `GET /api/trash`, `POST /api/trash/{kind}/{id}/restore` and
 `DELETE /api/trash/{kind}/{id}` are owner-only; a background sweep purges rows
 past `purge_after`, which then reaches the blob outbox like any deletion.
+
+`GET /api/trash/{kind}/{id}/preview` opens a trashed item read-only for whoever
+sees it in a Trash list (the payer, unless they lost access to its workspace,
+or the live workspace's owner; Epo 2026-11-12). A file comes with signed reads
+of its bytes, and a text or CSV file with its saved state too, since its saved
+edits may be ahead of its bytes. A material comes with its saved content, and a
+quiz without its keys. Nothing joins a room or edits. A note's embedded quizzes
+and sets stay unreadable, because they are trashed with it. The app shows Office
+files and boards by their thumbnail, because their viewers open only live files.
 
 A note's or quiz's images follow it (their `editor_assets.material_id` names
 it, in a workspace too; an embedded quiz's images name the quiz, not its

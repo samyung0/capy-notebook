@@ -2045,7 +2045,10 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
     if (this.placingGif) return;
     const ref = gif.media.url;
     if (ref.length > BOARD_CATALOG.limits.PICTURE_REF_MAX) {
-      userToast({ title: m.drawing_board_gif_unplaceable() });
+      userToast({
+        title: m.drawing_board_gif_unplaceable(),
+        variant: 'warning',
+      });
       return;
     }
     let { height = 0, width = 0 } = gif.media;
@@ -2064,7 +2067,10 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
       try {
         await image.decode();
       } catch {
-        userToast({ title: m.drawing_board_gif_unplaceable() });
+        userToast({
+          title: m.drawing_board_gif_unplaceable(),
+          variant: 'warning',
+        });
         return;
       } finally {
         this.placingGif = false;

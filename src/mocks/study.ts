@@ -511,6 +511,7 @@ function learningOverview() {
     answered: u.answered,
     at: u.lastAnswerAt,
     group: u.group,
+    iconId: db.workspaces.find((ws) => ws.id === u.workspaceId)?.iconId ?? '',
     kind: 'session' as const,
     sessionId: u.id,
     topicName: u.topicName,
@@ -529,6 +530,7 @@ function learningOverview() {
       ? [
           {
             answered: 0,
+            iconId: ws.iconId,
             kind: 'start' as const,
             materialId: quiz.id,
             materialKind: quiz.kind as 'quiz' | 'flashcards',
@@ -545,6 +547,7 @@ function learningOverview() {
     ...SHOWCASE_SUGGESTIONS,
   ].map((suggestion) => ({
     answered: 0,
+    iconId: suggestion.iconId,
     kind: 'review' as const,
     suggestion,
     total: 0,
@@ -560,14 +563,18 @@ function learningOverview() {
         return {
           iconId: ws?.iconId ?? '',
           items: Math.max(pool(wsId).length, 12),
-          labels: studyTopics(wsId).reduce<
-            { count: number; label: TopicLabel }[]
-          >((all, t) => {
-            const hit = all.find((l) => l.label === t.label);
-            if (hit) hit.count++;
-            else all.push({ count: 1, label: t.label });
-            return all;
-          }, []),
+          labels: studyTopics(wsId)
+            .reduce<{ count: number; label: TopicLabel }[]>((all, t) => {
+              const hit = all.find((l) => l.label === t.label);
+              if (hit) hit.count++;
+              else all.push({ count: 1, label: t.label });
+              return all;
+            }, [])
+            // In the server's order (learning_overview.go).
+            .sort(
+              (a, b) =>
+                LABEL_ORDER.indexOf(a.label) - LABEL_ORDER.indexOf(b.label)
+            ),
           lastPractisedAt: daysAgo(1),
           name: ws?.name ?? wsId,
           tried: pool(wsId).length,
@@ -594,6 +601,14 @@ function learningOverview() {
 }
 
 type TopicLabel = SummaryTopic['label'];
+const LABEL_ORDER: TopicLabel[] = [
+  'needs_practice',
+  'attempted',
+  'familiar',
+  'proficient',
+  'mastered',
+  'not_started',
+];
 
 /** Study → Summary's rows: a fixed spread over the workspace's topics. */
 function studyTopics(wsId: string): SummaryTopic[] {

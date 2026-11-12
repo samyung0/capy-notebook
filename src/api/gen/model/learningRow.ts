@@ -13,6 +13,7 @@ export interface LearningRow {
   answered: number;
   at?: string;
   group?: LearningRowGroup;
+  iconId: string;
   kind: LearningRowKind;
   materialId?: string;
   materialKind?: LearningRowMaterialKind;

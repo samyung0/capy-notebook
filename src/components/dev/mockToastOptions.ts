@@ -216,7 +216,7 @@ export const mockToastOptions: {
     label: 'Files too large',
     toast: () => ({
       description: 'scan.pdf, recording.mp4',
-      title: m.source_files_too_large({ count: 2, limit: '100 MB' }),
+      title: m.source_files_too_large({ mb: 100 }),
       variant: 'error',
     }),
   },

@@ -12,5 +12,6 @@ export function toastSignInRequired(title: string, description: string) {
     },
     description,
     title,
+    variant: 'warning',
   });
 }

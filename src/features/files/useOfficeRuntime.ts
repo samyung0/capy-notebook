@@ -255,7 +255,7 @@ export function useOfficeRuntime({
   // open: the next frame, for View or Edit or after a reload, opens at it.
   const zoomRef = useRef<OfficeZoom | undefined>(undefined);
   const [notices] = useState(() =>
-    officeNotices((title) => userToast({ title }))
+    officeNotices((title) => userToast({ title, variant: 'warning' }))
   );
   const publishedRevision = useRef(revision);
   const initializedFrame = useRef(-1);
@@ -1028,6 +1028,7 @@ export function useOfficeRuntime({
               title: m.files_office_print_truncated({
                 count: String(pages.length),
               }),
+              variant: 'warning',
             });
         } else if (command === 'png') {
           const [image] = (await render('png')).pages;

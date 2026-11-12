@@ -1,4 +1,8 @@
 import { EMBED_CATALOG } from '@/api/embeds.generated';
+import type {
+  MaterialElement,
+  MaterialText,
+} from '@/features/materials/document';
 
 /* A note's table view (Epo 2026-11-12, mock 9nQns9KAvwafQT2LyK7fHt): AFFiNE's
    database look as a Plate block. The element holds its block as a live map
@@ -78,16 +82,30 @@ export type TableViewBlock = {
   views: TableViewView[];
 };
 
-export type TableViewElement = {
-  type: 'table_view';
-  id: string;
+export interface TableViewElement extends MaterialElement {
   block: TableViewBlock;
-  children: [{ text: '' }];
-};
+  children: [MaterialText];
+  id: string;
+  type: 'table_view';
+}
+
+export const TABLE_VIEW_TYPE = 'table_view';
+/** The element's Markdown fence language (the embed catalog's). */
+export const TABLE_VIEW_LANG = 'table-view';
 
 const ID = /^[A-Za-z0-9_-]+$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const DECIMAL = /^-?\d+(\.\d+)?$/;
+/** A number JavaScript writes with an exponent (`1e-7`, `1.5e+21`). */
+const EXPONENT = /^(-?)(\d)(?:\.(\d+))?e([+-]\d+)$/;
+
+/** A real calendar day as `YYYY-MM-DD` (a merge or a hand-written fence may
+ * leave `2026-02-30`, which reads as empty). */
+function isDate(value: string) {
+  if (!DATE.test(value)) return false;
+  const time = Date.parse(`${value}T00:00:00Z`);
+  return !Number.isNaN(time) && new Date(time).toISOString().startsWith(value);
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -230,7 +248,7 @@ export function cellValue(
     case 'title':
     case 'text':
       if (typeof value === 'string') return value;
-      return typeof value === 'number' ? String(value) : undefined;
+      return typeof value === 'number' ? plainNumber(value) : undefined;
     case 'number': {
       if (typeof value === 'number') return value;
       if (typeof value !== 'string' || !DECIMAL.test(value.trim())) return;
@@ -242,7 +260,7 @@ export function cellValue(
         ? value
         : undefined;
     case 'date':
-      return typeof value === 'string' && DATE.test(value) ? value : undefined;
+      return typeof value === 'string' && isDate(value) ? value : undefined;
     case 'checkbox':
       return typeof value === 'boolean' ? value : undefined;
   }
@@ -254,14 +272,42 @@ export const cellOption = (column: TableViewColumn, row: TableViewRow) => {
   return column.options?.find(({ id }) => id === value);
 };
 
+/** A number in plain decimal, the shortest that reads back exactly, never
+ * with an exponent and `-0` as `0` (as the figures' index text writes one:
+ * Go's `FormatFloat(n, 'f', -1, 64)`, Rust's `f64` Display). */
+export function plainNumber(value: number): string {
+  const text = String(value);
+  const match = EXPONENT.exec(text);
+  if (!match) return text;
+  const [, sign, lead, rest = '', exponent] = match;
+  const digits = lead + rest;
+  const point = 1 + Number(exponent);
+  if (point <= 0) return `${sign}0.${'0'.repeat(-point)}${digits}`;
+  return point >= digits.length
+    ? `${sign}${digits}${'0'.repeat(point - digits.length)}`
+    : `${sign}${digits.slice(0, point)}.${digits.slice(point)}`;
+}
+
 /** A cell as plain text (index text, Markdown, exports): option names, ISO
- * dates, ☑/☐ for checkboxes, '' when empty. */
+ * dates, ☑/☐ for checkboxes, numbers in plain decimal, '' when empty. */
 export function cellText(column: TableViewColumn, row: TableViewRow): string {
   const value = cellValue(column, row);
   if (value === undefined) return column.kind === 'checkbox' ? '☐' : '';
   if (column.kind === 'select') return cellOption(column, row)?.name ?? '';
-  if (column.kind === 'checkbox') return value ? '☑' : '☐';
-  return String(value);
+  if (typeof value === 'boolean') return value ? '☑' : '☐';
+  return typeof value === 'number' ? plainNumber(value) : value;
+}
+
+/** Text in code point order, as Go and Rust compare strings, so the index
+ * text sorts the same everywhere (not the reader's locale). */
+function byCodePoint(a: string, b: string) {
+  const x = [...a];
+  const y = [...b];
+  for (let i = 0; i < Math.min(x.length, y.length); i++) {
+    const order = (x[i].codePointAt(0) ?? 0) - (y[i].codePointAt(0) ?? 0);
+    if (order) return order;
+  }
+  return x.length - y.length;
 }
 
 /** The view's sort column, when it still names one. */
@@ -300,7 +346,7 @@ export function sortedRows(
       const order =
         typeof a.rank === 'number' && typeof b.rank === 'number'
           ? a.rank - b.rank
-          : String(a.rank).localeCompare(String(b.rank));
+          : byCodePoint(String(a.rank), String(b.rank));
       return order * dir || a.index - b.index;
     })
     .map(({ row }) => row);
@@ -312,18 +358,27 @@ export const groupColumn = (block: TableViewBlock, view: TableViewView) =>
     ({ id, kind }) => id === view.groupBy && kind === 'select'
   );
 
-const escapeCell = (text: string) =>
-  text.replace(/\r?\n/g, ' ').replace(/\|/g, '\\|');
+/** Text on one line: each line break (`\r\n`, `\r`, `\n`) a space. */
+const oneLine = (text: string) => text.replace(/\r\n|\r|\n/g, ' ');
 
-/** The index text (spec "Index text"): the title as a line, then the first
- * view's rows as a Markdown table. */
+const escapeCell = (text: string) => oneLine(text).replace(/\|/g, '\\|');
+
+/** The rows a static renderer draws (spec "How readers draw it"): the first
+ * view's, in its order, whatever its kind. */
+export const firstViewRows = (block: TableViewBlock) =>
+  block.views[0] ? sortedRows(block, block.views[0]) : block.rows;
+
+/** The index text (spec "Index text"): the title (line breaks as spaces,
+ * trimmed, left out when blank) and a blank line, then the first view's rows
+ * as a Markdown table: a header of column names, a `---` row, one row per
+ * record, `|` escaped and line breaks as spaces in every cell. */
 export function tableViewText(block: TableViewBlock): string {
   const columns = drawnColumns(block);
-  const view = block.views[0];
-  const rows = view ? sortedRows(block, view) : block.rows;
+  const rows = firstViewRows(block);
+  const title = oneLine(block.title).trim();
   const line = (cells: string[]) => `| ${cells.map(escapeCell).join(' | ')} |`;
   return [
-    ...(block.title.trim() ? [block.title.trim(), ''] : []),
+    ...(title ? [title, ''] : []),
     line(columns.map(({ name }) => name)),
     line(columns.map(() => '---')),
     ...rows.map((row) => line(columns.map((column) => cellText(column, row)))),

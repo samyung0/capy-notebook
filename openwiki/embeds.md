@@ -39,9 +39,9 @@ lists to cover are in the central todo list). Decisions: `human/frontend/plate-e
   editor writes on text only; the read-only and editor kits inject them on
   leaves only), `sharedText` keys (held as a Y.Text so typing merges;
   only `mermaid.source`), `sharedMap` keys (held as a Y.Map, each entry
-  replaced whole; a chart's, plot's and graph's `block`) and their
+  replaced whole; a chart's, plot's, graph's and table view's `block`) and their
   `sharedLists` (keys of that value held as a Y.Array of Y.Maps: `series`,
-  graph `elements`), `assets` (paths naming editor assets, `[]` walking a
+  graph `elements`, a table view's `columns`, `rows` and `views`), `assets` (paths naming editor assets, `[]` walking a
   list), `resizable` (a width of `MEDIA_WIDTH_MIN`–`MEDIA_WIDTH_MAX` %),
   fixed `children`, and the `materials` kinds whose documents may hold it.
   A type the catalog does not list is refused by every write: a stored
@@ -133,6 +133,7 @@ lists to cover are in the central todo list). Decisions: `human/frontend/plate-e
   | plot | live_map | `plot` | ```` ```plot ```` JSON | – |
   | graph | live_map | `graph` | ```` ```graph ```` JSON | – |
   | html_embed | value | `html_embed` | ```` ```html-embed ```` YAML | – |
+  | table_view | live_map | `table_view` | ```` ```table-view ```` JSON | – |
   | mermaid | live_source | `mermaid` | ```` ```mermaid ```` source | mindmap, diagram |
   | quiz | item | `material_ref` | ```` ```quiz ```` YAML | quiz |
   | flashcards | item | `material_ref` | ```` ```flashcards ```` YAML | flashcards |
@@ -205,7 +206,7 @@ the golden fixtures in `server/internal/materialdoc/testdata/index_text`
 | `mermaid` | `mermaid` | the caption, then the whole source in a ```` ```mermaid ```` fence |
 | `question` | `quiz_question` | the question, below |
 | `item` | `material_ref` | the referenced quiz's or flashcard set's text, at the reference |
-| `table_view` | `table_view` | its title, then its first view as a Markdown table, below |
+| `table_view` | `table_view` | the title, then its first view as a Markdown table ([Table views](#table-views)) |
 | `none` | `hr`, `toc`, `equation`, `img`, `audio`, `video`, `placeholder`, `html_embed`, and the inline voids `inline_equation`, `mention`, `mention_input`, `slash_input` | nothing: media (and their captions), equations and the table of contents carry no text of their own, an inline void's children are empty (an equation's TeX and a mention's name stay out, as before), the transient elements hold nothing yet, and html_embed is out of the embeds round (Epo 2026-10-17) |
 
 A type the catalog does not list gives its text, as the read-only View shows
@@ -370,31 +371,52 @@ figures).
 
 ## Table views
 
-A note's `table_view` (Epo 2026-11-12, AFFiNE's database look on Plate) holds
-its `block` as a live map whose `columns`, `rows` and `views` merge entry by
-entry. Every writer keeps the same structural rules, and nothing more, so
-what a merge leaves (a cell of a gone column, a value that no longer fits its
-column, a sort or group naming a gone column) stays and reads as empty: the
-four block keys, ids of `[A-Za-z0-9_-]` up to `TABLE_VIEW_ID_MAX` unique per
-list, exactly one `title` column, the counts, lengths (UTF-16 units) and
-kinds, colours and sort directions, cells a string, a number up to
-`TABLE_VIEW_NUMBER_MAX` or a boolean, and at most `TABLE_VIEW_MAX_COUNT` per
-note. Go's `materialdoc.validateTableView` (every write; the count in
-`validate`), the store's `notes::table_view::block` (through
-`assert_canonical`, Go's messages word for word) and room admission (the
-block read whole on a copy of the room when an update writes into its map,
-`BAD_VALUE`, so a merge that would leave two title columns loses the later
-writer's update; a 21st block `TOO_MANY_TABLE_VIEWS`) apply them, as the
-browser's `isTableViewBlock` does. The index text (Go's `tableViewIndexText`,
-`notes::table_view::text`, the browser's `tableViewText`) is the trimmed
-title, a blank line, then the first view's rows whatever its kind: a header
-of column names, the title column first, a `---` row, one row per record in
-the view's sort (empty cells last, ties in list order; text by code point on
-the server where the browser's `localeCompare` follows the locale), cells as
-drawn (option names, ISO dates, `☑`/`☐`, numbers as JavaScript writes them,
-`1e-7` included), `|` as `\|` and line breaks as spaces. The pipeline reads
-it from Go's index text and has no rule of its own. Note effects name a
-table view by its title and count its changed table lines as rows.
+A note's `table_view` (Epo 2026-11-12, mock 9nQns9KAvwafQT2LyK7fHt) is
+AFFiNE's database look as a void, top-level Plate block: its `block` holds a
+title and the lists `columns`, `rows` and `views`, a live map whose list
+entries merge by `id` as graph elements do. Every layer follows one spec;
+the browser's shared model is `src/features/notes/tableView/model.ts`.
+
+- **Writers** keep only the structural rules (`isTableViewBlock`): the four
+  keys, ids of 1–`TABLE_VIEW_ID_MAX` characters from `[A-Za-z0-9_-]` unique
+  in their list, exactly one `title` column, the `TABLE_VIEW_*` counts and
+  lengths, cell values a string, a finite number within
+  `TABLE_VIEW_NUMBER_MAX` or a boolean, the listed kinds, colours and sort
+  directions, closed key sets, and at most `TABLE_VIEW_MAX_COUNT` per note
+  (`createMaterialDocument`). What merges leave is not refused: a cell of a
+  gone column, a value that no longer fits its column, a sort or `groupBy`
+  naming a gone or wrong column.
+- **Readers** draw that as empty, except a number in a text or title column
+  and a decimal text in a number column; an impossible date is empty too.
+  Columns are drawn title first. A static renderer (the View, Preview, share
+  pages in the Worker, exports, index text) draws the **first** view as a
+  table, whatever its kind, its rows in that view's sort (empty cells last,
+  ties in list order). The read-only table (`TableViewTable.tsx`) shows
+  option names in their colour chips (`display.ts`, shared with the editor),
+  dates as `12 Nov` in the reader's locale and checkboxes as boxes, and on a
+  phone scrolls sideways in its own box with the title column sticky.
+- **Text.** The index text (`tableViewText`) is the title (line breaks as
+  spaces, trimmed, left out when blank), a blank line, then a header row of
+  the column names, a `---` row and one row per record: option names, ISO
+  dates, `☑`/`☐`, numbers in plain decimal as figures write them, `|`
+  escaped as `\|` and line breaks as spaces. Note exports write the bold
+  title and the same table (a real table in Word).
+- **Markdown.** The `table-view` fence carries the block as JSON and round
+  trips; a fence that is not JSON or not a block a writer may store stays a
+  code block. Agents write none (`edit.agent` is empty).
+- **Server layers.** Go's `materialdoc.validateTableView` (every write; the
+  count in `validate`), the collaboration store's `notes::table_view::block`
+  (through `assert_canonical`, Go's messages word for word) and room
+  admission keep the writers' rules: admission reads the block whole on a
+  copy of the room when an update writes into its map (`BAD_VALUE`, so a
+  merge that would leave two title columns loses the later writer's update)
+  and refuses a 21st block (`TOO_MANY_TABLE_VIEWS`). Go's
+  `tableViewIndexText` and `notes::table_view::text` give the index text
+  byte for byte as `tableViewText` (golden fixture
+  `testdata/index_text/table-views.json`, made by it), text sorted by code
+  point as `byCodePoint`. The pipeline reads it from Go's index text and has
+  no rule of its own. Note effects name a table view by its title and count
+  its changed table lines as rows.
 
 ## Adding an element or an embed kind
 

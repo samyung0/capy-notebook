@@ -93,7 +93,7 @@ function lazyView(node: ReactNode) {
 /** Seeking past the buffered range re-reads the URL, which may have expired by
  * then; the retry fetches a fresh pair and the new URL remounts this view. A
  * cited transcript passage moves the player to its first sentence. */
-function AudioView({
+export function AudioView({
   file,
   onRetry,
   regions,

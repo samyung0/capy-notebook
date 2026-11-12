@@ -145,8 +145,16 @@ import {
   sheetTools,
 } from './boardTools';
 
-// BlockSuite's notices (a copy, a lock) show in the app's own toast (local change 33).
-setToastHandler((message) => userToast({ title: message }));
+// BlockSuite's notices show in the app's own toast (local change 33). They come
+// as bare English strings, a refusal ("Invalid link", "Import failed") read by
+// its wording as a warning, anything else ("Copied to clipboard") as a check.
+const BLOCKSUITE_REFUSAL = /fail|invalid|can ?not|unable|error/i;
+setToastHandler((message) =>
+  userToast({
+    title: message,
+    variant: BLOCKSUITE_REFUSAL.test(message) ? 'warning' : 'success',
+  })
+);
 
 const stores = new StoreExtensionManager([
   ImageStoreExtension,

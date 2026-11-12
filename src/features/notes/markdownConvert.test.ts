@@ -5,6 +5,7 @@ import { LIST_INDENT_MAX } from '@/features/materials/document';
 import { StaticMaterialKit } from '@/features/materials/staticPlugins';
 import { noteMarkdownPlugin } from './markdown';
 import { convertAgentMarkdown, markdownToDocument } from './markdownConvert';
+import { tracker } from './tableView/testFixtures';
 
 const fence = (lang: string, body: string) => `\`\`\`${lang}\n${body}\n\`\`\``;
 
@@ -114,6 +115,29 @@ describe('markdownToDocument', () => {
     expect(() =>
       convertAgentMarkdown(new Array(11).fill(embed).join('\n\n'))
     ).toThrow('at most 10 html-embed fences');
+  });
+
+  it('reads a table-view fence as its block and writes the same fence back', () => {
+    const block = tracker();
+    const { value } = markdownToDocument(
+      fence('table-view', JSON.stringify(block))
+    );
+    expect(value[0]).toMatchObject({ block, type: 'table_view' });
+    const editor = createSlateEditor({
+      plugins: [...StaticMaterialKit, noteMarkdownPlugin],
+    });
+    const written = serializeMd(editor, { value });
+    expect(written.trim()).toBe(fence('table-view', JSON.stringify(block)));
+    expect(markdownToDocument(written).value[0].block).toEqual(block);
+  });
+
+  it('keeps a table-view fence a writer may not store as code', () => {
+    const twoTitles = tracker();
+    twoTitles.columns.push({ id: 'c_2', kind: 'title', name: 'Again' });
+    for (const body of ['{"title": "cut', JSON.stringify(twoTitles)])
+      expect(
+        markdownToDocument(fence('table-view', body)).value[0]
+      ).toMatchObject({ lang: 'table-view', type: 'code_block' });
   });
 
   // Agent notes are read without MDX: its pass rewrote `class`/`for` and
