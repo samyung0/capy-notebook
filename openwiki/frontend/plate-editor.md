@@ -4441,6 +4441,10 @@ Decisions: `human/frontend/plate-editor.md`, 2026-11-10 (mocks
 `artifacts/2026-11-09-notion-notes-look-mocks.html`). The BlockSuite note
 (`VITE_DOCUMENT_LAYOUT=blocks`) and the drawing board share one look for
 everything that floats, and the note body takes the Notion look in every style.
+Main carries this look for the Plate note and the boards only: there is no cut
+(Epo 2026-11-12), so the BlockSuite note's own files (`pageEditor`, `blockMenu`,
+`tableBar`, `calloutLook`) stay on `blocksuite-notes`, and below they describe
+that branch.
 
 - **Tokens:** `src/features/blocksuite/chrome.css`, imported by `pageEditor.ts`
   and `drawingBoard.ts`, maps AFFiNE's `--affine-*` variables onto the app's tokens
