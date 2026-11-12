@@ -380,6 +380,33 @@
             "text": ""
           }
         ]
+      },
+      {
+        "type": "table_view",
+        "id": "tv_nel",
+        "block": {
+          "title": "Next line",
+          "columns": [
+            {
+              "id": "c_t",
+              "name": "Item",
+              "kind": "title"
+            }
+          ],
+          "rows": [],
+          "views": [
+            {
+              "id": "v1",
+              "name": "Table",
+              "kind": "table"
+            }
+          ]
+        },
+        "children": [
+          {
+            "text": ""
+          }
+        ]
       }
     ]
   },
@@ -408,6 +435,10 @@
     {
       "id": "tv_no_view",
       "text": "No view\n\n| Name | Status |\n| --- | --- |\n| b | A |\n| a |  |"
+    },
+    {
+      "id": "tv_nel",
+      "text": "Next line\n\n| Item |\n| --- |"
     }
   ]
 }

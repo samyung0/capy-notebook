@@ -15,6 +15,7 @@ use crate::catalog::{
     TABLE_VIEW_NUMBER_MAX, TABLE_VIEW_OPTIONS_MAX, TABLE_VIEW_ROWS_MAX, TABLE_VIEW_VIEWS_MAX,
 };
 use crate::plate::utf16_len;
+use crate::questions::js_trim;
 
 /// The element type.
 pub const TYPE: &str = "table_view";
@@ -28,14 +29,23 @@ const COLORS: [&str; 9] = [
 type Node = Map<String, Value>;
 type Check = Result<(), String>;
 
+/// An id starts with a letter or digit, so `__proto__` and friends never
+/// pass (Revision 2).
 fn id_ok(value: Option<&Value>) -> bool {
     value.and_then(Value::as_str).is_some_and(|id| {
-        !id.is_empty()
-            && id.len() <= TABLE_VIEW_ID_MAX
+        id.len() <= TABLE_VIEW_ID_MAX
+            && id.bytes().next().is_some_and(|b| b.is_ascii_alphanumeric())
             && id
                 .bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
     })
+}
+
+/// What an id must be, as Go's messages say it.
+fn id_rule() -> String {
+    format!(
+        "must be 1 to {TABLE_VIEW_ID_MAX} letters, digits, _ or -, starting with a letter or digit"
+    )
 }
 
 fn name_ok(value: Option<&Value>) -> bool {
@@ -75,9 +85,7 @@ fn list<'a>(
                 .as_object()
                 .ok_or_else(|| format!("table view {what} must be an object"))?;
             if !id_ok(item.get("id")) {
-                return Err(format!(
-                    "table view {what} id must be 1 to {TABLE_VIEW_ID_MAX} letters, digits, _ or -"
-                ));
+                return Err(format!("table view {what} id {}", id_rule()));
             }
             let id = item["id"].as_str().unwrap_or_default();
             if !ids.insert(id) {
@@ -114,7 +122,9 @@ pub fn block(block: &Value) -> Check {
     for row in list("row", block.get("rows"), 0, TABLE_VIEW_ROWS_MAX)? {
         validate_row(row)?;
     }
-    for view in list("view", block.get("views"), 1, TABLE_VIEW_VIEWS_MAX)? {
+    // No view is a block too: two writers deleting the last two views at
+    // once must not leave one the room refuses (Revision 2).
+    for view in list("view", block.get("views"), 0, TABLE_VIEW_VIEWS_MAX)? {
         validate_view(view)?;
     }
     Ok(())
@@ -122,6 +132,10 @@ pub fn block(block: &Value) -> Check {
 
 fn validate_column(column: &Node) -> Check {
     keys("column", column, &["id", "name", "kind", "options"])?;
+    // A row keeps its cells beside its own id.
+    if column.get("id").and_then(Value::as_str) == Some("id") {
+        return Err("a table view column id cannot be id".into());
+    }
     if !name_ok(column.get("name")) {
         return Err(format!(
             "table view column name must be a string of at most {TABLE_VIEW_NAME_MAX} characters"
@@ -158,22 +172,17 @@ fn validate_column(column: &Node) -> Check {
     Ok(())
 }
 
+/// A row is flat (Revision 2): its id beside one key a cell, so two writers
+/// editing different cells of a row merge key by key.
 fn validate_row(row: &Node) -> Check {
-    keys("row", row, &["id", "cells"])?;
-    let Some(cells) = row
-        .get("cells")
-        .and_then(Value::as_object)
-        .filter(|cells| cells.len() <= TABLE_VIEW_COLUMNS_MAX)
-    else {
+    if row.len() > TABLE_VIEW_COLUMNS_MAX + 1 {
         return Err(format!(
-            "table view cells must be an object of at most {TABLE_VIEW_COLUMNS_MAX}"
+            "a table view row holds at most {TABLE_VIEW_COLUMNS_MAX} cells"
         ));
-    };
-    for (key, value) in cells {
+    }
+    for (key, value) in row.iter().filter(|(key, _)| *key != "id") {
         if !id_ok(Some(&Value::String(key.clone()))) {
-            return Err(format!(
-                "table view cell key must be 1 to {TABLE_VIEW_ID_MAX} letters, digits, _ or -"
-            ));
+            return Err(format!("table view cell key {}", id_rule()));
         }
         let fits = match value {
             Value::Bool(_) => true,
@@ -238,7 +247,7 @@ enum Cell<'a> {
 }
 
 fn cell<'a>(column: &'a Value, row: &'a Value) -> Option<Cell<'a>> {
-    let value = &row["cells"][column["id"].as_str().unwrap_or_default()];
+    let value = &row[column["id"].as_str().unwrap_or_default()];
     match column["kind"].as_str()? {
         "title" | "text" => match value {
             Value::String(text) => Some(Cell::Text(text)),
@@ -247,8 +256,8 @@ fn cell<'a>(column: &'a Value, row: &'a Value) -> Option<Cell<'a>> {
         },
         "number" => match value {
             Value::Number(n) => n.as_f64().map(Cell::Number),
-            Value::String(text) if decimal(text.trim()) => {
-                text.trim().parse().ok().map(Cell::Number)
+            Value::String(text) if decimal(js_trim(text)) => {
+                js_trim(text).parse().ok().map(Cell::Number)
             }
             _ => None,
         },
@@ -384,16 +393,16 @@ fn escape(text: &str) -> String {
 }
 
 /// A table view's index text (Go's `tableViewIndexText`, the browser's
-/// `tableViewText`): its title as a line, then its first view's rows as a
-/// Markdown table, the title column first, each cell as drawn, `|` escaped
+/// `tableViewText`): its title as a line, then its first view's rows (list
+/// order with no view) as a Markdown table, the title column first, each cell as drawn, `|` escaped
 /// and line breaks as spaces. A stored block passed [block]; anything else
 /// reads as what it holds.
 pub fn text(block: &Value) -> String {
     let mut lines: Vec<String> = Vec::new();
     // The title on one line, left out when blank.
     let title = one_line(block["title"].as_str().unwrap_or_default());
-    if !title.trim().is_empty() {
-        lines.extend([title.trim().to_owned(), String::new()]);
+    if !js_trim(&title).is_empty() {
+        lines.extend([js_trim(&title).to_owned(), String::new()]);
     }
     let all: Vec<Value> = block["columns"]
         .as_array()

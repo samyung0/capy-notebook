@@ -58,7 +58,7 @@ fn documents() -> BTreeMap<&'static str, Vec<Value>> {
                     { "id": "o_1", "name": "Done", "color": "green" },
                 ] },
             ],
-            "rows": [{ "id": "r_1", "cells": { "c_title": "Krebs", "c_status": "o_1" } }],
+            "rows": [{ "id": "r_1", "c_title": "Krebs", "c_status": "o_1" }],
             "views": [{ "id": "v_1", "name": "Table", "kind": "table" }],
         }, "children": leaf() }),
         json!({ "type": "p", "id": "cat_inputs", "children": [

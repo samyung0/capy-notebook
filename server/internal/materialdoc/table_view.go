@@ -12,6 +12,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/samyung0/capy-notebook/server/internal/embeds"
+	"github.com/samyung0/capy-notebook/server/internal/questions"
 )
 
 // A note's table view (Epo 2026-11-12): its block holds columns, rows and
@@ -29,9 +30,11 @@ var (
 	tableViewColumnKinds = []string{"title", "text", "number", "select", "date", "checkbox"}
 	tableViewViewKinds   = []string{"table", "kanban"}
 	tableViewColors      = []string{"gray", "brown", "orange", "yellow", "green", "blue", "purple", "pink", "red"}
-	tableViewID          = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
-	tableViewDate        = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
-	tableViewDecimal     = regexp.MustCompile(`^-?[0-9]+(\.[0-9]+)?$`)
+	// An id starts with a letter or digit, so __proto__ and friends never
+	// pass (Revision 2).
+	tableViewID      = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
+	tableViewDate    = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+	tableViewDecimal = regexp.MustCompile(`^-?[0-9]+(\.[0-9]+)?$`)
 )
 
 // utf16Len counts UTF-16 units, as the browser measures a string.
@@ -63,6 +66,8 @@ func tableViewKeys(what string, value map[string]any, keys ...string) error {
 	return nil
 }
 
+var tableViewIDRule = fmt.Sprintf("must be 1 to %d letters, digits, _ or -, starting with a letter or digit", embeds.TableViewIDMax)
+
 // tableViewList is a list of objects with unique ids, of min to max entries.
 func tableViewList(what string, value any, least, most int) ([]map[string]any, error) {
 	raw, ok := value.([]any)
@@ -77,7 +82,7 @@ func tableViewList(what string, value any, least, most int) ([]map[string]any, e
 			return nil, fmt.Errorf("table view %s must be an object", what)
 		}
 		if !tableViewIDOK(item["id"]) {
-			return nil, fmt.Errorf("table view %s id must be 1 to %d letters, digits, _ or -", what, embeds.TableViewIDMax)
+			return nil, fmt.Errorf("table view %s id %s", what, tableViewIDRule)
 		}
 		id := item["id"].(string)
 		if ids[id] {
@@ -128,7 +133,9 @@ func validateTableView(node map[string]any) error {
 			return err
 		}
 	}
-	views, err := tableViewList("view", block["views"], 1, embeds.TableViewViewsMax)
+	// No view is a block too: two writers deleting the last two views at once
+	// must not leave one the room refuses (Revision 2).
+	views, err := tableViewList("view", block["views"], 0, embeds.TableViewViewsMax)
 	if err != nil {
 		return err
 	}
@@ -143,6 +150,10 @@ func validateTableView(node map[string]any) error {
 func validateTableViewColumn(column map[string]any) error {
 	if err := tableViewKeys("column", column, "id", "name", "kind", "options"); err != nil {
 		return err
+	}
+	// A row keeps its cells beside its own id.
+	if column["id"] == "id" {
+		return errors.New("a table view column id cannot be id")
 	}
 	if !tableViewNameOK(column["name"]) {
 		return fmt.Errorf("table view column name must be a string of at most %d characters", embeds.TableViewNameMax)
@@ -176,17 +187,18 @@ func validateTableViewColumn(column map[string]any) error {
 	return nil
 }
 
+// validateTableViewRow: a row is flat (Revision 2), its id beside one key a
+// cell, so two writers editing different cells of a row merge.
 func validateTableViewRow(row map[string]any) error {
-	if err := tableViewKeys("row", row, "id", "cells"); err != nil {
-		return err
+	if len(row) > embeds.TableViewColumnsMax+1 {
+		return fmt.Errorf("a table view row holds at most %d cells", embeds.TableViewColumnsMax)
 	}
-	cells, ok := row["cells"].(map[string]any)
-	if !ok || len(cells) > embeds.TableViewColumnsMax {
-		return fmt.Errorf("table view cells must be an object of at most %d", embeds.TableViewColumnsMax)
-	}
-	for key, value := range cells {
+	for key, value := range row {
+		if key == "id" {
+			continue
+		}
 		if !tableViewIDOK(key) {
-			return fmt.Errorf("table view cell key must be 1 to %d letters, digits, _ or -", embeds.TableViewIDMax)
+			return fmt.Errorf("table view cell key %s", tableViewIDRule)
 		}
 		if !tableViewCellOK(value) {
 			return fmt.Errorf("table view cell must be a string of at most %d characters, a number of at most %d or a boolean",
@@ -239,14 +251,14 @@ func validateTableViewView(view map[string]any) error {
 }
 
 // tableViewIndexText is a table view's title as a line, then its first
-// view's rows as a Markdown table (model.ts tableViewText): the title column
-// first, each cell as drawn, `|` escaped and line breaks as spaces. A stored
+// view's rows as a Markdown table (model.ts tableViewText), list order with
+// no view: the title column first, each cell as drawn, `|` escaped and line breaks as spaces. A stored
 // block passed the writers' check; anything else reads as what it holds.
 func tableViewIndexText(block map[string]any) string {
 	var lines []string
 	// The title on one line, left out when blank.
 	title, _ := block["title"].(string)
-	if title = strings.TrimSpace(tableViewOneLine.Replace(title)); title != "" {
+	if title = questions.JSTrim(tableViewOneLine.Replace(title)); title != "" {
 		lines = append(lines, title, "")
 	}
 	all := maps(block["columns"])
@@ -292,9 +304,8 @@ var (
 // number shows in a text column, and a decimal number written as text in a
 // number column.
 func tableViewCell(column, row map[string]any) any {
-	cells, _ := row["cells"].(map[string]any)
 	id, _ := column["id"].(string)
-	value := cells[id]
+	value := row[id]
 	switch column["kind"] {
 	case "title", "text":
 		if s, ok := value.(string); ok {
@@ -307,8 +318,8 @@ func tableViewCell(column, row map[string]any) any {
 		if n, ok := number(value); ok {
 			return n
 		}
-		if s, ok := value.(string); ok && tableViewDecimal.MatchString(strings.TrimSpace(s)) {
-			n, _ := strconv.ParseFloat(strings.TrimSpace(s), 64)
+		if s, ok := value.(string); ok && tableViewDecimal.MatchString(questions.JSTrim(s)) {
+			n, _ := strconv.ParseFloat(questions.JSTrim(s), 64)
 			return n
 		}
 	case "select":

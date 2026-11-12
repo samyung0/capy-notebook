@@ -30,13 +30,13 @@ func fullTableView() map[string]any {
 		kinds := []string{"text", "number", "date", "checkbox"}
 		columns = append(columns, map[string]any{"id": id("c", i), "name": name, "kind": kinds[i%4]})
 	}
-	cells := map[string]any{}
-	for i := range embeds.TableViewColumnsMax {
-		cells[id("c", i)] = []any{strings.Repeat("x", embeds.TableViewCellMax), float64(embeds.TableViewNumberMax), -float64(embeds.TableViewNumberMax), true}[i%4]
-	}
 	rows := []any{}
 	for i := range embeds.TableViewRowsMax {
-		rows = append(rows, map[string]any{"id": id("r", i), "cells": cells})
+		row := map[string]any{"id": id("r", i)}
+		for c := range embeds.TableViewColumnsMax {
+			row[id("c", c)] = []any{strings.Repeat("x", embeds.TableViewCellMax), float64(embeds.TableViewNumberMax), -float64(embeds.TableViewNumberMax), true}[c%4]
+		}
+		rows = append(rows, row)
 	}
 	views := []any{}
 	for i := range embeds.TableViewViewsMax {
@@ -62,7 +62,7 @@ func smallTableView() map[string]any {
 				map[string]any{"id": "o_1", "name": "Done", "color": "green"},
 			}},
 		},
-		"rows":  []any{map[string]any{"id": "r_1", "cells": map[string]any{"c_title": "Krebs"}}},
+		"rows":  []any{map[string]any{"id": "r_1", "c_title": "Krebs"}},
 		"views": []any{map[string]any{"id": "v_1", "name": "Table", "kind": "table"}},
 	}
 }
@@ -87,13 +87,18 @@ func TestTableViewAtItsLimitsPasses(t *testing.T) {
 }
 
 // What a merge leaves passes: a cell of a deleted column, a value that does
-// not fit its column, a sort or group naming a gone or wrong column.
+// not fit its column, a sort or group naming a gone or wrong column, and no
+// view at all (two writers deleting the last two, Revision 2).
 func TestTableViewKeepsWhatMergesLeave(t *testing.T) {
 	block := smallTableView()
-	block["rows"] = []any{map[string]any{"id": "r_1", "cells": map[string]any{"c_gone": "x", "c_status": 4.5, "c_title": true}}}
+	block["rows"] = []any{map[string]any{"id": "r_1", "c_gone": "x", "c_status": 4.5, "c_title": true}}
 	block["views"] = []any{map[string]any{"id": "v_1", "name": "Board", "kind": "kanban", "groupBy": "c_title", "sort": map[string]any{"columnId": "c_gone", "dir": "asc"}}}
 	if err := validateAs(embeds.Note, reparse(t, []map[string]any{tableViewNode("tv", block)})); err != nil {
 		t.Fatal(err)
+	}
+	block["views"] = []any{}
+	if err := validateAs(embeds.Note, reparse(t, []map[string]any{tableViewNode("tv", block)})); err != nil {
+		t.Fatalf("a block without views is refused: %v", err)
 	}
 }
 
@@ -106,14 +111,13 @@ func TestTableViewRefusesBrokenStructure(t *testing.T) {
 		"two title columns": func(b map[string]any) { column(b, 1)["kind"] = "title"; delete(column(b, 1), "options") },
 		"no title column":   func(b map[string]any) { column(b, 0)["kind"] = "text" },
 		"a column too many": full("columns", map[string]any{"id": "c_more", "name": "More", "kind": "text"}),
-		"a row too many":    full("rows", map[string]any{"id": "r_more", "cells": map[string]any{}}),
+		"a row too many":    full("rows", map[string]any{"id": "r_more"}),
 		"a view too many":   full("views", map[string]any{"id": "v_more", "name": "More", "kind": "table"}),
 		"an option too many": func(b map[string]any) {
 			b["columns"] = fullTableView()["columns"]
 			select_ := column(b, 1)
 			select_["options"] = append(select_["options"].([]any), map[string]any{"id": "o_more", "name": "More", "color": "red"})
 		},
-		"no views":          func(b map[string]any) { b["views"] = []any{} },
 		"a bad column kind": func(b map[string]any) { column(b, 0)["kind"] = "formula" },
 		"a bad view kind":   func(b map[string]any) { b["views"].([]any)[0].(map[string]any)["kind"] = "calendar" },
 		"a bad colour":      func(b map[string]any) { column(b, 1)["options"].([]any)[0].(map[string]any)["color"] = "teal" },
@@ -124,7 +128,7 @@ func TestTableViewRefusesBrokenStructure(t *testing.T) {
 		"an empty id": func(b map[string]any) { b["rows"].([]any)[0].(map[string]any)["id"] = "" },
 		"a long id":   func(b map[string]any) { column(b, 0)["id"] = strings.Repeat("c", embeds.TableViewIDMax+1) },
 		"a bad cell key": func(b map[string]any) {
-			b["rows"].([]any)[0].(map[string]any)["cells"] = map[string]any{"c.title": "x"}
+			b["rows"].([]any)[0].(map[string]any)["c.title"] = "x"
 		},
 		"a duplicate column id":        func(b map[string]any) { column(b, 1)["id"] = "c_title" },
 		"an unknown block key":         func(b map[string]any) { b["filter"] = "x" },
@@ -134,19 +138,28 @@ func TestTableViewRefusesBrokenStructure(t *testing.T) {
 		"groupBy on a table view":      func(b map[string]any) { b["views"].([]any)[0].(map[string]any)["groupBy"] = "c_status" },
 		"a long name":                  func(b map[string]any) { b["title"] = strings.Repeat("n", embeds.TableViewNameMax-1) + "😀" },
 		"a long cell": func(b map[string]any) {
-			b["rows"].([]any)[0].(map[string]any)["cells"] = map[string]any{"c_title": strings.Repeat("x", embeds.TableViewCellMax+1)}
+			b["rows"].([]any)[0].(map[string]any)["c_title"] = strings.Repeat("x", embeds.TableViewCellMax+1)
 		},
 		"a large number": func(b map[string]any) {
-			b["rows"].([]any)[0].(map[string]any)["cells"] = map[string]any{"c_title": 1e15 + 1}
+			b["rows"].([]any)[0].(map[string]any)["c_title"] = 1e15 + 1
 		},
 		"a null cell": func(b map[string]any) {
-			b["rows"].([]any)[0].(map[string]any)["cells"] = map[string]any{"c_title": nil}
+			b["rows"].([]any)[0].(map[string]any)["c_title"] = nil
 		},
 		"a list cell": func(b map[string]any) {
-			b["rows"].([]any)[0].(map[string]any)["cells"] = map[string]any{"c_title": []any{}}
+			b["rows"].([]any)[0].(map[string]any)["c_title"] = []any{}
 		},
-		"a null title":  func(b map[string]any) { b["title"] = nil },
-		"missing views": func(b map[string]any) { delete(b, "views") },
+		"a null title":   func(b map[string]any) { b["title"] = nil },
+		"missing views":  func(b map[string]any) { delete(b, "views") },
+		"an id led by _": func(b map[string]any) { column(b, 0)["id"] = "__proto__" },
+		"a column id id": func(b map[string]any) { column(b, 0)["id"] = "id" },
+		"a cells key":    func(b map[string]any) { b["rows"].([]any)[0].(map[string]any)["cells"] = map[string]any{} },
+		"a cell too many": func(b map[string]any) {
+			row := b["rows"].([]any)[0].(map[string]any)
+			for i := range embeds.TableViewColumnsMax {
+				row[fmt.Sprintf("c%d", i)] = "x"
+			}
+		},
 	} {
 		block := smallTableView()
 		mutate(block)
