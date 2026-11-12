@@ -499,9 +499,9 @@ mod tests {
     /// as retryable and would loop, so material rooms refuse it as outdated
     /// and it reloads (openwiki plate-editor "Client protocol").
     #[test]
-    fn a_material_tab_from_before_the_late_path_is_outdated() {
-        assert!(outdated(MIN_MATERIAL, Some(21)));
-        assert!(!outdated(MIN_MATERIAL, Some(22)));
+    fn a_material_tab_from_before_the_table_view_is_outdated() {
+        assert!(outdated(MIN_MATERIAL, Some(28)));
+        assert!(!outdated(MIN_MATERIAL, Some(29)));
     }
 
     #[test]
