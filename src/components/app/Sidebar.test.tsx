@@ -44,7 +44,7 @@ vi.mock('./ProfileMenu', () => ({
   ProfileRow: () => null,
 }));
 
-const { PhoneTopRow, Sidebar } = await import('./Sidebar');
+const { Sidebar } = await import('./Sidebar');
 
 /** The nav row linking to `href`. */
 const row = (html: string, href: string) =>
@@ -59,14 +59,6 @@ it('opens the account chat at /chat from its Chat row, active there', () => {
   expect(row(renderToStaticMarkup(<Sidebar account />), '/chat')).toContain(
     'bg-action'
   );
-});
-
-it('puts the mic in the phone top row where the browser can record', () => {
-  const mic = `aria-label="${m.voice_card_title()}"`;
-  expect(renderToStaticMarkup(<PhoneTopRow />)).not.toContain(mic);
-
-  recording.type = 'audio/webm';
-  expect(renderToStaticMarkup(<PhoneTopRow />)).toContain(mic);
 });
 
 it('puts a dot on the To do row while anything is open', () => {

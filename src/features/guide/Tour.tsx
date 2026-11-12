@@ -243,16 +243,15 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
       body: m.tour_done_body,
       go: () => navigate({ to: '/' }),
       optional: true,
-      // The phone's mic scrolls with the page, whose scroller can still hold
-      // the settings step's offset.
+      // A mic in a scrolled page can still sit at the settings step's offset.
       prepare: () => {
         [...document.querySelectorAll('[data-voice-mic]')]
           .find(shown)
           ?.scrollIntoView({ block: 'nearest' });
         return true;
       },
-      // The rail, the full sidebar and the phone top row each have a mic
-      // that opens the account voice overlay; one shows.
+      // The rail and the full sidebar each have a mic that opens the account
+      // voice overlay; one shows, and phones have none, so it is passed over.
       spot: () =>
         [...document.querySelectorAll('[data-voice-mic]')].find(shown),
       title: m.tour_done_title,

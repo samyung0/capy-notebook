@@ -246,7 +246,7 @@ export function CenterContent({
       saveDocumentMode(item, requestedMode);
   }, [item?.kind, item?.id, requestedMode]);
 
-  // Each open orders Recent Files and the quick open (the hook sends at most
+  // Each open orders Recent Files (the hook sends at most
   // one per item per few minutes).
   const recordOpen = useRecordOpen();
   const openKind = item?.kind;

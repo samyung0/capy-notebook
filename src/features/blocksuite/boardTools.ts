@@ -1585,7 +1585,8 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         height: ${PANEL_HEIGHT}px;
         max-width: 100vw;
         box-sizing: border-box;
-        padding: 10px 10px 8px;
+        /* One edge for the title, the group names and the tiles (Epo 2026-11-12). */
+        padding: 12px 12px 8px;
         background: var(--affine-background-overlay-panel-color);
         border: 1px solid var(--affine-border-color);
         border-bottom: 0;
@@ -1594,7 +1595,7 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         color: var(--affine-text-primary-color);
       }
       h3 {
-        margin: 0 0 4px 4px;
+        margin: 0 0 4px;
         color: var(--affine-text-secondary-color);
         font-size: 12px;
         font-weight: 600;
@@ -1605,7 +1606,7 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         overflow-y: auto;
       }
       .group + .group {
-        margin-top: 8px;
+        margin-top: 12px;
       }
       .tiles {
         display: grid;
@@ -1646,12 +1647,16 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         align-items: center;
         gap: 6px;
         min-height: 32px;
-        margin-bottom: 6px;
+        margin-bottom: 8px;
       }
       .head button {
         width: 32px;
         height: 32px;
         flex: none;
+      }
+      /* The close button's icon, not its box, meets the panel's right edge. */
+      .head button:last-child {
+        margin-right: -7px;
       }
       .head .title {
         flex: 1;
@@ -1659,7 +1664,7 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         margin: 0;
         overflow: hidden;
         color: var(--affine-text-primary-color);
-        font-size: 13px;
+        font-size: 14px;
         font-weight: 600;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -2523,7 +2528,8 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
   }
 }
 
-/** Misc's toolbar button: four small pieces, opening its panel above the toolbar. */
+/** Misc's toolbar button: four small pieces as large as the slots' pieces beside
+ * it (Epo 2026-11-12), opening its panel above the toolbar. */
 class CapyMiscButton extends EdgelessToolbarToolMixin(
   SignalWatcher(LitElement)
 ) {
@@ -2589,7 +2595,7 @@ class CapyMiscButton extends EdgelessToolbarToolMixin(
       @click=${() => this.toggle()}
     >
       <div class="box">
-        <svg width="34" height="34" viewBox="0 0 40 40" aria-hidden="true">
+        <svg width="48" height="48" viewBox="0 0 40 40" aria-hidden="true">
           <rect x="5" y="9" width="12" height="12" rx="2" fill="#1e96eb" />
           <circle cx="29" cy="15" r="6.5" fill="#f6c343" />
           <rect x="5" y="25" width="12" height="12" rx="2" fill="#e8798f" />

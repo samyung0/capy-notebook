@@ -147,7 +147,7 @@ function MembersList({
         <span className="t-meta mt-1.5 text-fg-muted">{meta}</span>
       </div>
       <Tabs
-        className="mt-2"
+        className="page-bleed page-tabs-px mt-2 w-auto"
         onChange={(next) => void setTab(next)}
         tabs={[
           { label: m.members_tab_overview(), value: 'overview' },

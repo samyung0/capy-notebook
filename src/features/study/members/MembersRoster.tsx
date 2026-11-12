@@ -97,7 +97,7 @@ export function MembersRoster({
       {/* First, as the settings page has it; a line then parts it from the
           invitation. An editor's list starts with its own top line. */}
       {shares && (
-        <section aria-label={m.workspace_sharing()}>
+        <section aria-label={m.workspace_sharing()} className="tab-body-mt">
           <ShareDialog
             embedded
             link={workspace.sharePath}

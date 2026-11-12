@@ -43,7 +43,7 @@ export default function Explore() {
         />
       }
     >
-      <div className="px-1 sm:px-6">
+      <div className="page-tabs-px">
         <Tabs
           onChange={setTab}
           tabs={[

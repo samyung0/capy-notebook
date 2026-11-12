@@ -20,7 +20,8 @@ entries); mocks: `artifacts/2026-10-20-painted-cards-cursors-mocks.html`.
 - The 640–1023px rail uses the same rows. The phone nav drawer's foot is a
   link to Settings → Account (avatar and name) with a danger-light Log out
   button on its right (`ProfileRow`), no menu. Phones keep the avatar menu in
-  the page's top row (`PhoneTopRow`).
+  the page's top row (`PhoneTopRow`), which holds only the menu button and the
+  avatar (the recent-files arrow and the mic were removed, Epo 2026-11-11).
 - Over a page frame the sidebar's rows hover with a translucent tint
   (`--surface-page-hover` and `--surface-card-hover-bg` are redefined under
   `[data-frosted]`), so the frost shows through. A row's hover ⋮

@@ -282,18 +282,27 @@
   }
 }
 
+/* 16px on phones, 24px from sm, 36px from lg: account pages and the
+ * workspace's Study and Dashboard pages alike (Epo 2026-11-11). */
 @utility page-px {
-  @apply px-4 sm:px-6;
+  @apply px-4 sm:px-6 lg:px-9;
 }
 
 @utility page-bleed {
-  @apply -mx-4 sm:-mx-6;
+  @apply -mx-4 sm:-mx-6 lg:-mx-9;
 }
 
 /* A page's tab strip: each tab's own 12px padding makes up the rest, so the
- * labels line up with page-px. */
+ * first label lines up with page-px. Inside a padded page pair it with
+ * page-bleed and w-auto, so the underline runs edge to edge. */
 @utility page-tabs-px {
-  @apply px-1 sm:px-3;
+  @apply px-1 sm:px-3 lg:px-6;
+}
+
+/* The gap between a page's tab row and a body that starts with text or a
+ * form, as TabContent pads it (Settings). Lists and tables sit closer. */
+@utility tab-body-mt {
+  @apply mt-5 sm:mt-8;
 }
 
 /* A dialog's tab strip: bleeds to the card edges like a page's, with the

@@ -6,20 +6,16 @@ import { Icon, type IconName } from '@/components/ui/Icon';
 import { GettingStartedRow } from '@/features/guide/GettingStartedRow';
 import { todoCount } from '@/features/study/assignments/todoRows';
 import { VoiceCard } from '@/features/voice/VoiceCard';
-import { setAccountVoiceOpen } from '@/features/voice/voiceAsk';
-import { recordingType } from '@/features/workspace/chat/voiceRecording';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { features } from '@/lib/features';
 import { useFrosted } from '@/theme/theme';
 import { BASE_BUTTON_STYLE } from '../ui/Button';
-import { ButtonGroup } from '../ui/ButtonGroup';
 import { Card } from '../ui/Card';
 import { Drawer, DrawerContent, DrawerTrigger } from '../ui/Drawer';
 import { IconButton } from '../ui/IconButton';
 import { LogoMark } from '../ui/Logo';
 import { ProfileMenu, ProfileRow } from './ProfileMenu';
-import { RecentQuickOpen } from './RecentQuickOpen';
 import { SearchDialog } from './SearchDialog';
 
 interface NavItem {
@@ -495,51 +491,23 @@ export function MobileNavDrawer({
 }
 
 /** The phone (below sm) top of a page, scrolling with it: the nav drawer's
- * menu button joined with the arrow that opens the recent files and, where
- * the browser can record, the mic that opens the account voice overlay (the
- * sidebar's voice card); then the profile menu behind an avatar a little
- * larger than it that carries the unread notifications dot; its
- * Notifications item opens the notifications page. */
+ * menu button, then the profile menu behind an avatar a little larger than it
+ * that carries the unread notifications dot; its Notifications item opens the
+ * notifications page. */
 export function PhoneTopRow({ className }: { className?: string }) {
   // Shared with the nav's own query, so this costs no extra request.
   const { data: unread } = useUnreadNotificationCount({
     errorBoundary: false,
   });
-  const [recentOpen, setRecentOpen] = useState(false);
-  const [voice] = useState(() => recordingType() !== null);
   return (
     <div
       className={cn('flex items-center justify-between sm:hidden', className)}
     >
-      {/* Neither half shrinks on press: one scaling alone opens a seam. On a
-          frosted panel both show the frost instead of painting over it. */}
-      <ButtonGroup aria-label={m.a11y_main_navigation()}>
-        <MobileNavDrawer
-          account
-          className="frosted:bg-(--frost-fill) px-3.5 frosted:hover:bg-surface-hover-bg active:scale-100"
-        />
-        <IconButton
-          className="frosted:bg-(--frost-fill) px-3 frosted:hover:bg-surface-hover-bg active:scale-100"
-          icon="navigationForward"
-          label={m.quick_open_title()}
-          onClick={() => setRecentOpen(true)}
-          size="md"
-          variant="outline"
-        />
-        {voice && (
-          <IconButton
-            className="frosted:bg-(--frost-fill) px-3 frosted:hover:bg-surface-hover-bg active:scale-100"
-            // The tour's last step lights it.
-            data-voice-mic
-            icon="microphone"
-            label={m.voice_card_title()}
-            onClick={() => setAccountVoiceOpen(true)}
-            size="md"
-            variant="outline"
-          />
-        )}
-      </ButtonGroup>
-      {recentOpen && <RecentQuickOpen onClose={() => setRecentOpen(false)} />}
+      {/* On a frosted panel it shows the frost instead of painting over it. */}
+      <MobileNavDrawer
+        account
+        className="frosted:bg-(--frost-fill) px-3.5 frosted:hover:bg-surface-hover-bg"
+      />
       <ProfileMenu
         dot={(unread?.count ?? 0) > 0}
         notifications

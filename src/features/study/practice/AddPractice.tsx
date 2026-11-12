@@ -136,7 +136,7 @@ export function AddPracticeDialog({
         other,
         strip: (
           <Tabs
-            className="mb-4"
+            className="dialog-tabs-bleed mb-4 w-auto"
             onChange={(next) => setTab(next as Tab)}
             tabs={[
               { label: m.practice_tab_create(), value: 'create' },

@@ -190,7 +190,7 @@ export function AssignmentReport({
       ) : marked ? (
         <>
           <Tabs
-            className="mt-3.5"
+            className="page-bleed page-tabs-px mt-3.5 w-auto"
             onChange={pickTab}
             tabs={[
               { label: m.assignment_tab_questions(), value: 'questions' },
@@ -207,7 +207,10 @@ export function AssignmentReport({
             value={tab}
           />
           {tab === 'settings' ? (
-            <AssignmentSettingsTab assignment={assignment} className="mt-5" />
+            <AssignmentSettingsTab
+              assignment={assignment}
+              className="tab-body-mt"
+            />
           ) : isPending ? (
             <SkeletonList className="mt-5" count={6} rowHeight={44} />
           ) : isError ? (
@@ -241,7 +244,7 @@ export function AssignmentReport({
       ) : (
         <>
           <Tabs
-            className="mt-3.5"
+            className="page-bleed page-tabs-px mt-3.5 w-auto"
             onChange={pickTab}
             tabs={[
               { label: m.assignment_tab_members(), value: 'members' },
@@ -250,7 +253,10 @@ export function AssignmentReport({
             value={tab === 'settings' ? tab : 'members'}
           />
           {tab === 'settings' ? (
-            <AssignmentSettingsTab assignment={assignment} className="mt-5" />
+            <AssignmentSettingsTab
+              assignment={assignment}
+              className="tab-body-mt"
+            />
           ) : (
             <UnmarkedBody
               assignment={assignment}

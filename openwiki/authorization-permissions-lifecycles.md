@@ -153,7 +153,7 @@ the task, so a task shows its maker nothing they could not open themself;
 in a personal workspace every otherassignment route answers 404; Members' store refuses a class's own viewer
 members with `ErrForbidden` (`membersStaff`), which the API answers as 404 like
 the rest (`TestMembersRoutesAuthorize`). Members shows staff a member's practice
-as counts only, never answers; its Still missing lists prompts from the class's
+as counts only, never answers; its Frequently wrong lists prompts from the class's
 own quizzes only, never from a member's own practice quiz, whose title Recent
 activity hides too (Q723). Who pays and a frozen account: making or marking
 is editing and refused when frozen; a member's own start, save, submit and tick
@@ -780,8 +780,8 @@ the caller can edit) and then opens the same Add file dialog for it.
   standalone again; a workspace file may also be cloned standalone. A copy
   into or out of standalone is ingested in its own scope rather than copying
   the index.
-- The Files page (`location=standalone`), dashboard Recent, the quick open and
-  search list it for its owner; it opens at `/files/{id}`.
+- The Files page (`location=standalone`), dashboard Recent and search list it
+  for its owner; it opens at `/files/{id}`.
 - Account deletion cancels its pending upload (0125 made
   `cancel_user_async_work` find uploads without a workspace), and an owner
   lock evicts its source rooms.
@@ -1815,10 +1815,10 @@ its bottom-right corner; a part under 96px tall goes above or below it
 instead, so the phone mic is not covered. The question step edits the workspace's first quiz,
 else the welcome note's embedded one: its quiz block's Edit opens the same
 dialog. The last step lights the mic that opens the
-account voice overlay: the voice card on the rail or the full sidebar, and on
-phones the mic after the nav and recent-files buttons in the top row (shown
-where the browser can record). A step whose part this width lacks (side panels
-on phones) or whose note is missing is passed over.
+account voice overlay: the voice card on the rail or the full sidebar. A step
+whose part this width lacks (side panels on phones, and this mic, since the
+phone top row has none since Epo 2026-11-11) or whose note is missing is
+passed over.
 
 Where the starter workspace has nothing yet, the tour shows examples
 (`guide/tourSamples.ts`, labelled Example) only while it runs for that
@@ -2179,7 +2179,8 @@ upsert rewrites only rows older than that. The old per-workspace
 `last_accessed_at`, which only the owner's opens moved, is gone; ops reads
 `max(opened_at)` (active workspaces in 7 days, a user's workspaces).
 
-Recent Files and the phone quick open (Epo 2026-10-26) are one list,
+Recent Files (Epo 2026-10-26; the phone quick open that shared it was removed
+with the top row's arrow, Epo 2026-11-11) is one list,
 `GET /api/recent`: the caller's `item_opens` (same migration), newest open
 first, kept to what a Member listing still shows them (untrashed files and
 top-level materials in the workspace list's set, their own standalone
@@ -2190,7 +2191,7 @@ five-minute debounce on both sides; creating an item counts as opening it
 (uploads, source imports, Office blanks, new materials, a single file or
 material copy), while copying a whole workspace marks nothing, so a clone
 never fills Recent. Each row's hint is its open time, relative ("3 hours
-ago"), on the dashboard and in the quick open. A visitor's opens leave Recent with the workspace (Forget,
+ago"), on the dashboard. A visitor's opens leave Recent with the workspace (Forget,
 private, lost link). The gateway's no-database acknowledgement holds only for
 a member's visit: a visitor's visit always re-checks access and writes, so a
 Forget or privacy change handled elsewhere never swallows the reopen. Opens of

@@ -76,7 +76,7 @@ export function WorkspaceDashboard({
 
   return (
     // One column leaves room under the page for the floating chat button.
-    <div className="flex min-h-0 flex-1 flex-col gap-6.5 overflow-auto px-4 pt-5 pb-24 sm:px-6 lg:px-9 lg:pt-7 lg:pb-10">
+    <div className="page-px flex min-h-0 flex-1 flex-col gap-6.5 overflow-auto pt-5 pb-24 lg:pt-7 lg:pb-10">
       {/* Spread apart on one line; wrapped, the actions start their own line
           at the left, 20px from the text above and more from what follows. Their negative
           margins give that whatever the width: on one line the name's height
