@@ -1,5 +1,7 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { linkOptions, useNavigate, useSearch } from '@tanstack/react-router';
 import { memo, useCallback, useContext, useState } from 'react';
+import { qk } from '@/api/client';
 import {
   usePurgeTrashed,
   useRestoreTrashed,
@@ -148,6 +150,22 @@ const TrashCard = memo(function TrashCard({
   workspaceIconId?: string;
 }) {
   const busy = !!useContext(ItemPick)?.busy;
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const link = trashLink(item);
+  // Its reads cached while it was live would paint it live first (a PDF's
+  // marks, a note's room), so it opens on a fresh read.
+  const open = link
+    ? () => {
+        queryClient.removeQueries({
+          queryKey:
+            item.kind === 'source_file'
+              ? qk.file(item.id)
+              : qk.material(item.id),
+        });
+        void navigate(link);
+      }
+    : undefined;
   return (
     <ItemCard
       actions={
@@ -178,9 +196,8 @@ const TrashCard = memo(function TrashCard({
       details={formatFileSize(item.sizeBytes)}
       icon={trashIconName(item)}
       // An item whose workspace the payer left stays shut, as in Files.
-      link={item.lostAccess ? undefined : trashLink(item)}
       meta={formatDate(item.purgeAfter)}
-      onOpen={item.lostAccess ? toastLostAccess : undefined}
+      onOpen={item.lostAccess ? toastLostAccess : open}
       pickKey={`${item.kind}:${item.id}:${item.episodeId}`}
       selected={selected}
       thumbnail={{

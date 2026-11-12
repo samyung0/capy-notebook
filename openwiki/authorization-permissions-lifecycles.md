@@ -2144,9 +2144,12 @@ nothing, these reads fall back to the trash reader rule and answer with a
 (the saved state, which may be ahead of the bytes), `GET /api/materials/{id}`
 (no role, so every capability is off; a quiz without its keys; edits a room
 still holds are projected first) and the editor-asset resolve for the
-material's own images and audio. Every write, room token, record-open and
-annotation read still refuses a trashed row, and the app joins no room for
-it: the page shows a strip with the purge date and Restore, and restoring
+material's own images and audio, and `GET /api/files/{id}/annotations` for
+a PDF (still only the caller's own marks, shown read-only; Epo 2026-11-12,
+"Yes, load them"). Every write (a mark included), room token and record-open
+still refuses a trashed row, and the app joins no room for it. Opening an
+item from the Trash drops its reads cached while it was live, so it never
+paints live first: the page shows a strip with the purge date and Restore, and restoring
 reopens it live. A note's embedded quizzes and sets stay unreadable, because
 they are trashed with it. A board stays shut until restored, since it opens
 only on its workspace. An item whose workspace the payer left stays shut, as

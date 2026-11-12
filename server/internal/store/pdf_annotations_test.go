@@ -92,3 +92,30 @@ func TestPurgeUserDeletesPDFAnnotations(t *testing.T) {
 		t.Fatalf("owner's marks = %+v %v", rows, err)
 	}
 }
+
+// A trashed PDF opened from the Trash shows its reader's own marks, read-only
+// (Epo 2026-11-12): the list reads them, a save still refuses, and anyone who
+// cannot see it in a Trash list reads nothing.
+func TestTrashedPDFAnnotationsReadOnly(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "pdf_trashed_owner")
+	stranger := newBlobTestUser(t, s, "pdf_trashed_stranger")
+	_, file := sourceTestFile(t, s, owner, "trashed.pdf", "pdf")
+	body := PDFAnnotationBody{SourceIdentity: "revision:1", Page: 1, Kind: "pen", Color: "#d94848", Rects: []PDFRect{{X: 10, Y: 20, Width: 200, Height: 50}}, Points: []PDFPoint{{X: 10, Y: 20}, {X: 100, Y: 70}}}
+	if _, err := s.SavePDFAnnotation(ctx, owner, file.ID, "", body); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.TrashFile(ctx, owner, file.ID, AgentOperation{}); err != nil {
+		t.Fatal(err)
+	}
+	if rows, err := s.ListPDFAnnotations(ctx, owner, file.ID); err != nil || len(rows) != 1 {
+		t.Fatalf("owner marks on a trashed PDF = %+v %v", rows, err)
+	}
+	if _, err := s.SavePDFAnnotation(ctx, owner, file.ID, "", body); err == nil {
+		t.Fatal("a trashed PDF took a new mark")
+	}
+	if _, err := s.ListPDFAnnotations(ctx, stranger, file.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("stranger marks on a trashed PDF = %v", err)
+	}
+}

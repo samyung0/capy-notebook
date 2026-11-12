@@ -120,6 +120,25 @@ func (s *Store) annotationLock(ctx context.Context, tx pgx.Tx, actor, file strin
 	return fmt.Sprintf("revision:%d", revision), nil
 }
 
+// trashedAnnotationIdentity is a trashed PDF's source identity for one of its
+// trash readers (trashReaderSQL); anyone else, or a live file, is ErrNotFound.
+func (s *Store) trashedAnnotationIdentity(ctx context.Context, tx pgx.Tx, actor, file string) (string, error) {
+	var kind string
+	var revision int64
+	err := tx.QueryRow(ctx, `SELECT f.kind, f.revision FROM files f
+		WHERE f.id=$1 AND f.trashed_at IS NOT NULL AND `+trashReaderSQL("f.user_id", "f.workspace_id"), file, actor).Scan(&kind, &revision)
+	if isNoRows(err) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	if kind != "pdf" {
+		return "", ErrForbidden
+	}
+	return fmt.Sprintf("revision:%d", revision), nil
+}
+
 const annotationColumns = `id,file_id,author_id,source_identity,page,kind,rects,color,points,text,created_at,updated_at`
 
 func scanAnnotation(row pgx.Row) (PDFAnnotation, error) {
@@ -137,6 +156,9 @@ func scanAnnotation(row pgx.Row) (PDFAnnotation, error) {
 	}
 	return out, err
 }
+
+// ListPDFAnnotations is the caller's own marks on the file's current bytes. A
+// trashed PDF's trash readers read theirs too, read-only (Epo 2026-11-12).
 func (s *Store) ListPDFAnnotations(ctx context.Context, actor, file string) ([]PDFAnnotation, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -144,6 +166,9 @@ func (s *Store) ListPDFAnnotations(ctx context.Context, actor, file string) ([]P
 	}
 	defer tx.Rollback(ctx)
 	identity, err := s.annotationLock(ctx, tx, actor, file, false)
+	if errors.Is(err, ErrNotFound) || isNoRows(err) {
+		identity, err = s.trashedAnnotationIdentity(ctx, tx, actor, file)
+	}
 	if err != nil {
 		return nil, err
 	}
