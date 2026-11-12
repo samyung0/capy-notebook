@@ -2383,6 +2383,20 @@ export const handlers = [
         offset + limit < items.length ? String(offset + limit) : undefined,
     });
   }),
+  http.get('/api/trash/:kind/:id/preview', ({ params }) => {
+    const entry = db.trash.find((row) => row.item.id === params.id);
+    if (!entry) return new HttpResponse(null, { status: 404 });
+    if (entry.material) return HttpResponse.json({ material: entry.material });
+    const links = entry.file && db.fileLinks[entry.file.id];
+    if (!links) return new HttpResponse(null, { status: 404 });
+    return HttpResponse.json({
+      file: entry.file,
+      links: {
+        expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+        ...links,
+      },
+    });
+  }),
   http.post('/api/trash/:kind/:id/restore', async ({ params, request }) => {
     const body = (await request.json()) as { episodeId: string };
     const i = db.trash.findIndex(

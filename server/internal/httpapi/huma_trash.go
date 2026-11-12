@@ -9,6 +9,7 @@ import (
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -36,6 +37,13 @@ type trashPurgeInput struct {
 	EpisodeID string                  `query:"episodeId" minLength:"1"`
 	RequestID string                  `query:"requestId" minLength:"1" maxLength:"64"`
 }
+type trashPreviewInput struct {
+	Kind agenttools.ResourceKind `path:"kind" enum:"source_file,material"`
+	ID   string                  `path:"id"`
+}
+type trashPreviewOutput struct {
+	Body apimodel.TrashPreview
+}
 type operationOutput struct {
 	Body apimodel.OperationReceipt
 }
@@ -45,6 +53,66 @@ func (a *api) registerTrash(api huma.API) {
 	reg(api, http.MethodGet, "/api/trash", "listTrash", tag, "List trashed files and materials the caller pays for, or a workspace's it owns", http.StatusOK, a.listTrash)
 	reg(api, http.MethodPost, "/api/trash/{kind}/{id}/restore", "restoreTrashed", tag, "Restore a trashed file or material", http.StatusOK, a.restoreTrashed)
 	reg(api, http.MethodDelete, "/api/trash/{kind}/{id}", "purgeTrashed", tag, "Permanently delete a trashed file or material", http.StatusOK, a.purgeTrashed)
+	reg(api, http.MethodGet, "/api/trash/{kind}/{id}/preview", "previewTrashed", tag, "Open a trashed file or material read-only", http.StatusOK, a.previewTrashed)
+}
+
+// previewTrashed opens a trashed item read-only for whoever sees its preview
+// in a Trash list (Epo 2026-11-12): nothing joins a room or edits, and every
+// other read still leaves trashed rows out. A note's embedded quizzes and sets
+// stay unreadable, as they are trashed with it.
+func (a *api) previewTrashed(ctx context.Context, in *trashPreviewInput) (*trashPreviewOutput, error) {
+	actor := userID(ctx)
+	if in.Kind == agenttools.KindMaterial {
+		mt, err := a.s.TrashedMaterial(ctx, actor, in.ID)
+		if err != nil {
+			return nil, hErr(err)
+		}
+		// No role: every capability off, so the app shows it read-only.
+		out, err := a.materialResponse(ctx, mt, "", true, false)
+		if err != nil {
+			return nil, err
+		}
+		if mt.Kind == "quiz" {
+			materialdoc.LearnerQuiz(out.Body.Content)
+		}
+		return &trashPreviewOutput{Body: apimodel.TrashPreview{Material: &out.Body}}, nil
+	}
+	file, blobPath, err := a.s.TrashedFile(ctx, actor, in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	if blobPath == "" {
+		return nil, huma.Error404NotFound("no content")
+	}
+	if a.blob == nil {
+		return nil, huma.Error503ServiceUnavailable("blob store not configured")
+	}
+	signed, err := a.blob.PresignGetWithExpiry(ctx, blobPath)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	links := apimodel.FileLinks{URL: signed.URL, ExpiresAt: signed.ExpiresAt}
+	// A ready PDF is its own citation preview (FileBlobPaths); the file's
+	// /preview route answers only untrashed files.
+	if file.PreviewURL != nil {
+		links.PreviewURL = &signed.URL
+		file.PreviewURL = nil
+	}
+	file.IsPayer = file.PayerID == actor
+	body := apimodel.TrashPreview{File: &file, Links: &links}
+	// Office files are not opened here (the app shows their thumbnail): their
+	// viewer reads a live file's session.
+	if store.SourceEditFormat(file.Name, string(file.Kind)) == "text" {
+		session, err := a.s.TrashedSourceSession(ctx, file.ID)
+		if err != nil {
+			return nil, hErr(err)
+		}
+		if err = a.presignSource(ctx, &session); err != nil {
+			return nil, err
+		}
+		body.Source = &session
+	}
+	return &trashPreviewOutput{Body: body}, nil
 }
 
 func (a *api) listTrash(ctx context.Context, in *trashListInput) (*trashPageOutput, error) {

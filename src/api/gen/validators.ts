@@ -8362,6 +8362,264 @@ export const PurgeTrashedResponse = zod.object({
 
 
 /**
+ * @summary Open a trashed file or material read-only
+ */
+export const PreviewTrashedParams = zod.object({
+  "kind": zod.enum(['source_file', 'material']),
+  "id": zod.string()
+})
+
+export const PreviewTrashedResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "file": zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "addedAt": zod.iso.datetime({"offset":true}),
+  "errorId": zod.string().optional(),
+  "hasBytes": zod.boolean(),
+  "hidden": zod.boolean().optional(),
+  "id": zod.string(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
+  "indexed": zod.boolean(),
+  "isPayer": zod.boolean(),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
+  "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
+  "name": zod.string(),
+  "position": zod.int(),
+  "preview": zod.object({
+  "text": zod.string()
+}).optional(),
+  "previewUrl": zod.string().optional(),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "questions": zod.record(zod.string(), zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+})).optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+}).optional(),
+  "revision": zod.int(),
+  "rights": zod.object({
+  "clone": zod.boolean(),
+  "move": zod.boolean(),
+  "rename": zod.boolean(),
+  "trash": zod.boolean()
+}).optional().describe('What the caller may do with the file, read with the page (Files page rows)'),
+  "sizeBytes": zod.int(),
+  "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
+  "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
+  "topicId": zod.string().nullable(),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string().optional()
+}).optional(),
+  "links": zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "expiresAt": zod.iso.datetime({"offset":true}),
+  "previewUrl": zod.string().optional(),
+  "storageFull": zod.enum(['self', 'payer']).optional(),
+  "url": zod.string()
+}).optional(),
+  "material": zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "audioMaxBytes": zod.int(),
+  "capabilities": zod.object({
+  "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
+  "canManageMembers": zod.boolean(),
+  "canView": zod.boolean()
+}),
+  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']).optional(),
+  "content": zod.object({
+  "schemaVersion": zod.int(),
+  "value": zod.array(zod.record(zod.string(), zod.unknown())).nullable()
+}),
+  "contentBytes": zod.int().describe('UTF-8 byte length of persisted content JSON'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "embedCredits": zod.record(zod.string(), zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "questions": zod.record(zod.string(), zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+})).optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+})).optional(),
+  "hidden": zod.boolean().optional(),
+  "id": zod.string(),
+  "imageMaxBytes": zod.int(),
+  "isOwner": zod.boolean(),
+  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']),
+  "maxDepth": zod.int(),
+  "nodeCount": zod.int(),
+  "parentMaterialId": zod.string().optional(),
+  "position": zod.int(),
+  "privacy": zod.enum(['private', 'public', 'link']),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "questions": zod.record(zod.string(), zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+})).optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+}).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
+  "revision": zod.int(),
+  "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
+  "scopeFileNames": zod.array(zod.string()),
+  "scopeTopics": zod.array(zod.string()),
+  "sharePath": zod.string().optional(),
+  "storageFull": zod.enum(['self', 'payer']).optional(),
+  "title": zod.string(),
+  "topicId": zod.string().nullable(),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string()
+}).optional(),
+  "source": zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "access": zod.enum(['write', 'read']),
+  "atSizeLimit": zod.boolean().optional(),
+  "baseRevision": zod.int(),
+  "baseSourceSHA256": zod.string(),
+  "checkpoint": zod.int(),
+  "epoch": zod.int(),
+  "fileId": zod.string(),
+  "format": zod.enum(['docx', 'xlsx', 'pptx', 'text']),
+  "growthBudgetBytes": zod.int().optional(),
+  "imageMaxBytes": zod.int().optional(),
+  "indexedCheckpoint": zod.int(),
+  "netTokens": zod.int(),
+  "publishedSourceSHA256": zod.string().optional(),
+  "publishedSourceURL": zod.string().optional(),
+  "publishedState": zod.string().optional(),
+  "publishedStateSeedSHA256": zod.string().optional(),
+  "rebuildPending": zod.boolean().optional(),
+  "room": zod.string(),
+  "sourceIdentity": zod.string(),
+  "sourceURL": zod.string(),
+  "state": zod.string().nullable(),
+  "stateRows": zod.array(zod.string()).nullish(),
+  "stateSeedSHA256": zod.string().nullable(),
+  "storageFull": zod.enum(['self', 'payer']).optional(),
+  "thumbnailStale": zod.boolean().optional(),
+  "workspaceId": zod.string()
+}).optional()
+})
+
+
+/**
  * @summary Restore a trashed file or material
  */
 export const RestoreTrashedParams = zod.object({

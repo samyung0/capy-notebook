@@ -995,6 +995,8 @@
   "trash_delete_confirm_body": "“{name}”将被永久删除，无法恢复。",
   "trash_kind_source": "源文件",
   "trash_kind_material": "学习材料",
+  "trash_preview_note": "在回收站中，将于 {date} 永久删除。",
+  "trash_preview_restore_to_open": "恢复后才能打开。",
   "files_select_to_read": "选择一个文件在此阅读。",
   "files_docx_failed": "无法加载此文档。",
   "files_pptx_failed": "无法加载此演示文稿。",

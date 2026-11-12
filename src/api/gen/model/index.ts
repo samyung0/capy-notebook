@@ -500,6 +500,7 @@ export * from './trashItem.ts';
 export * from './trashItemKind.ts';
 export * from './trashItemPreview.ts';
 export * from './trashPage.ts';
+export * from './trashPreview.ts';
 export * from './undoEditReq.ts';
 export * from './undoPayload.ts';
 export * from './undoPayloadUpdates.ts';

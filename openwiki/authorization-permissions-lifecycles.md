@@ -2133,6 +2133,15 @@ source epoch or the material `room_schema` so stale clients cannot resume.
 `DELETE /api/trash/{kind}/{id}` are owner-only; a background sweep purges rows
 past `purge_after`, which then reaches the blob outbox like any deletion.
 
+`GET /api/trash/{kind}/{id}/preview` opens a trashed item read-only for whoever
+sees it in a Trash list (the payer, unless they lost access to its workspace,
+or the live workspace's owner; Epo 2026-11-12). A file comes with signed reads
+of its bytes, and a text or CSV file with its saved state too, since its saved
+edits may be ahead of its bytes. A material comes with its saved content, and a
+quiz without its keys. Nothing joins a room or edits. A note's embedded quizzes
+and sets stay unreadable, because they are trashed with it. The app shows Office
+files and boards by their thumbnail, because their viewers open only live files.
+
 A note's or quiz's images follow it (their `editor_assets.material_id` names
 it, in a workspace too; an embedded quiz's images name the quiz, not its
 note): trashing keeps them, still charged, and restore brings them back with

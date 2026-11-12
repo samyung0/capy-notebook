@@ -8686,6 +8686,24 @@ components:
       required:
         - items
       type: object
+    TrashPreview:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/TrashPreview.json
+          format: uri
+          readOnly: true
+          type: string
+        file:
+          $ref: "#/components/schemas/File"
+        links:
+          $ref: "#/components/schemas/FileLinks"
+        material:
+          $ref: "#/components/schemas/Material"
+        source:
+          $ref: "#/components/schemas/BrowserSourceSession"
+      type: object
     URLResp:
       additionalProperties: false
       properties:
@@ -15192,6 +15210,39 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Permanently delete a trashed file or material
+      tags:
+        - Trash
+  /api/trash/{kind}/{id}/preview:
+    get:
+      operationId: previewTrashed
+      parameters:
+        - in: path
+          name: kind
+          required: true
+          schema:
+            enum:
+              - source_file
+              - material
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrashPreview"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Open a trashed file or material read-only
       tags:
         - Trash
   /api/trash/{kind}/{id}/restore:

@@ -166,6 +166,17 @@ type SourceUploadPolicy struct {
 	AudioMaxDurationSeconds      int                           `json:"audioMaxDurationSeconds"`
 }
 
+// TrashPreview is a trashed item opened read-only: a file with signed reads
+// of its bytes, or a material with its saved content (a quiz without keys).
+// A text or CSV file also carries its view session, whose saved edits may be
+// ahead of the bytes.
+type TrashPreview struct {
+	File     *File                       `json:"file,omitempty"`
+	Links    *FileLinks                  `json:"links,omitempty"`
+	Material *Material                   `json:"material,omitempty"`
+	Source   *store.BrowserSourceSession `json:"source,omitempty"`
+}
+
 type Material struct {
 	ID             string                   `json:"id"`
 	WorkspaceID    string                   `json:"workspaceId"`
