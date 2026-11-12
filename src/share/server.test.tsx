@@ -268,9 +268,10 @@ describe('a shared table view', () => {
       cells(row)
     );
     expect(rows).toEqual([
-      ['Topic', 'Status', 'Mark', 'Review on', 'Done'],
-      ['Krebs cycle', 'Revising', '6', '10 Nov', ''],
-      ['Glycolysis | ATP', 'Done', '', '', ''],
+      // The end column fills the rest of the row.
+      ['Topic', 'Status', 'Mark', 'Review on', 'Done', ''],
+      ['Krebs cycle', 'Revising', '6', '10 Nov', '', ''],
+      ['Glycolysis | ATP', 'Done', '', '', '', ''],
     ]);
     // Chips in their colour, boxes drawn, the title column kept in view.
     expect(html).toContain('bg-[#fbefe2]');

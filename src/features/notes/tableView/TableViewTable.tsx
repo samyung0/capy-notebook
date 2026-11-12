@@ -43,6 +43,7 @@ export function TableViewTable({ block }: { block: TableViewBlock }) {
                 style={widthVars(COLUMN_WIDTH[column.kind])}
               />
             ))}
+            <col />
           </colgroup>
           <thead>
             <tr>
@@ -61,6 +62,7 @@ export function TableViewTable({ block }: { block: TableViewBlock }) {
                   </div>
                 </th>
               ))}
+              <th className={cn(CELL_CLASS, DIVIDED_CLASS)} />
             </tr>
           </thead>
           <tbody>
@@ -84,6 +86,7 @@ export function TableViewTable({ block }: { block: TableViewBlock }) {
                     </div>
                   </td>
                 ))}
+                <td className={cn(CELL_CLASS, DIVIDED_CLASS)} />
               </tr>
             ))}
           </tbody>
