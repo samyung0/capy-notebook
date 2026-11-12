@@ -33,8 +33,11 @@ fn small() -> Value {
             ] },
             { "id": "c_mark", "name": "Mark", "kind": "number" },
         ],
-        "rows": [{ "id": "r_1", "cells": { "c_title": "Krebs", "c_mark": 6 } }],
-        "views": [{ "id": "v_1", "name": "Table", "kind": "table" }],
+        "rows": [{ "id": "r_1", "c_title": "Krebs", "c_mark": 6 }],
+        "views": [
+            { "id": "v_1", "name": "Table", "kind": "table" },
+            { "id": "v_2", "name": "Board", "kind": "kanban", "groupBy": "c_status" },
+        ],
     })
 }
 
@@ -59,20 +62,20 @@ fn full() -> Value {
         columns.push(json!({ "id": id("c", i), "name": name, "kind": kind }));
     }
     let number = TABLE_VIEW_NUMBER_MAX as f64;
-    let cells: serde_json::Map<String, Value> = (0..TABLE_VIEW_COLUMNS_MAX)
-        .map(|i| {
-            let value = [
-                json!("x".repeat(TABLE_VIEW_CELL_MAX)),
-                json!(number),
-                json!(-number),
-                json!(true),
-            ][i % 4]
-                .clone();
-            (id("c", i), value)
-        })
-        .collect();
+    let cell = |i: usize| match i % 4 {
+        0 => json!("x".repeat(TABLE_VIEW_CELL_MAX)),
+        1 => json!(number),
+        2 => json!(-number),
+        _ => json!(true),
+    };
     let rows: Vec<Value> = (0..TABLE_VIEW_ROWS_MAX)
-        .map(|i| json!({ "id": id("r", i), "cells": cells }))
+        .map(|r| {
+            let mut row: serde_json::Map<String, Value> = (0..TABLE_VIEW_COLUMNS_MAX)
+                .map(|i| (id("c", i), cell(i)))
+                .collect();
+            row.insert("id".into(), json!(id("r", r)));
+            Value::Object(row)
+        })
         .collect();
     let views: Vec<Value> = (0..TABLE_VIEW_VIEWS_MAX)
         .map(|i| {
@@ -99,9 +102,11 @@ fn stored(block: Value) -> Result<(), String> {
 fn the_store_takes_a_block_at_its_limits_and_what_merges_leave() {
     stored(full()).unwrap();
     let mut merged = small();
-    merged["rows"][0]["cells"] = json!({ "c_gone": "x", "c_status": 4.5, "c_title": true });
+    merged["rows"][0] = json!({ "id": "r_1", "c_gone": "x", "c_status": 4.5, "c_title": true });
     merged["views"][0] = json!({ "id": "v_1", "name": "Board", "kind": "kanban", "groupBy": "c_title",
         "sort": { "columnId": "c_gone", "dir": "asc" } });
+    stored(merged.clone()).unwrap();
+    merged["views"] = json!([]);
     stored(merged).unwrap();
 
     let mut notes: Vec<Value> = (0..TABLE_VIEW_MAX_COUNT)
@@ -119,7 +124,9 @@ fn the_store_takes_a_block_at_its_limits_and_what_merges_leave() {
 /// `TestTableViewRefusesBrokenStructure` gets from Go).
 #[test]
 fn the_store_refuses_a_broken_block_with_gos_messages() {
-    let id_rule = format!("must be 1 to {TABLE_VIEW_ID_MAX} letters, digits, _ or -");
+    let id_rule = format!(
+        "must be 1 to {TABLE_VIEW_ID_MAX} letters, digits, _ or -, starting with a letter or digit"
+    );
     type Case = (&'static str, fn(&mut Value), String);
     let cases: Vec<Case> = vec![
         (
@@ -145,14 +152,39 @@ fn the_store_refuses_a_broken_block_with_gos_messages() {
                 b["rows"]
                     .as_array_mut()
                     .unwrap()
-                    .push(json!({ "id": "r_more", "cells": {} }));
+                    .push(json!({ "id": "r_more" }));
             },
             "table view rows must be a list of 0 to 500".into(),
         ),
         (
-            "no views",
-            |b| b["views"] = json!([]),
-            "table view views must be a list of 1 to 8".into(),
+            "a view too many",
+            |b| {
+                b["views"] = full()["views"].clone();
+                b["views"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!({ "id": "v_more", "name": "More", "kind": "table" }));
+            },
+            "table view views must be a list of 0 to 8".into(),
+        ),
+        (
+            "an id led by _",
+            |b| b["columns"][0]["id"] = json!("__proto__"),
+            format!("table view column id {id_rule}"),
+        ),
+        (
+            "a column id id",
+            |b| b["columns"][0]["id"] = json!("id"),
+            "a table view column id cannot be id".into(),
+        ),
+        (
+            "a cell too many",
+            |b| {
+                for i in 0..TABLE_VIEW_COLUMNS_MAX {
+                    b["rows"][0][format!("c{i}")] = json!("x");
+                }
+            },
+            "a table view row holds at most 20 cells".into(),
         ),
         (
             "a bad column kind",
@@ -179,8 +211,13 @@ fn the_store_refuses_a_broken_block_with_gos_messages() {
         ),
         (
             "a bad cell key",
-            |b| b["rows"][0]["cells"] = json!({ "c.title": "x" }),
+            |b| b["rows"][0]["c.title"] = json!("x"),
             format!("table view cell key {id_rule}"),
+        ),
+        (
+            "an old cells key",
+            |b| b["rows"][0]["cells"] = json!({}),
+            "table view cell must be a string of at most 2000 characters, a number of at most 1000000000000000 or a boolean".into(),
         ),
         (
             "an unknown block key",
@@ -209,12 +246,12 @@ fn the_store_refuses_a_broken_block_with_gos_messages() {
         ),
         (
             "a large number",
-            |b| b["rows"][0]["cells"]["c_mark"] = json!(1e15 + 1.0),
+            |b| b["rows"][0]["c_mark"] = json!(1e15 + 1.0),
             "table view cell must be a string of at most 2000 characters, a number of at most 1000000000000000 or a boolean".into(),
         ),
         (
             "a null cell",
-            |b| b["rows"][0]["cells"]["c_mark"] = Value::Null,
+            |b| b["rows"][0]["c_mark"] = Value::Null,
             "table view cell must be a string of at most 2000 characters, a number of at most 1000000000000000 or a boolean".into(),
         ),
     ];
@@ -294,8 +331,7 @@ fn admission_merges_entries_and_refuses_what_the_store_would() {
     });
     let cell = edit(&room, 4, |peer| {
         let rows = list(peer, 0, "rows");
-        let cells = Any::from(HashMap::from([("c_gone".to_owned(), Any::from("kept"))]));
-        entry(peer, &rows, 0).insert(&mut peer.transact_mut(), "cells", cells);
+        entry(peer, &rows, 0).insert(&mut peer.transact_mut(), "c_gone", "kept");
     });
     // Column `at` becomes the title, the old title column text.
     let retitle = |client: u64, at: u32| {
@@ -320,7 +356,7 @@ fn admission_merges_entries_and_refuses_what_the_store_would() {
         block["columns"][2],
         json!({ "id": "c_mark", "name": "Score", "kind": "number" })
     );
-    assert_eq!(block["rows"][0]["cells"], json!({ "c_gone": "kept" }));
+    assert_eq!(block["rows"][0]["c_gone"], "kept");
     material::assert_canonical(&held, "note").unwrap();
 
     let value: Vec<Value> = (0..TABLE_VIEW_MAX_COUNT)
@@ -338,4 +374,52 @@ fn admission_merges_entries_and_refuses_what_the_store_would() {
         slate_yjs::apply_ops(&mut txn, y_root, &mut root, &[op]).unwrap();
     });
     refused(admit(&full_room, &insert), limits::TOO_MANY_TABLE_VIEWS);
+}
+
+/// A row's cells are its own keys (Revision 2): two writers editing
+/// different cells of one row both keep their edit, merged key by key on the
+/// copy of the room. An old `cells` object on a row is refused.
+#[test]
+fn two_writers_editing_different_cells_of_a_row_both_keep_them() {
+    let room = open(&[node("tv", small())]);
+    let set = |client: u64, key: &'static str, value: Any| {
+        edit(&room, client, move |peer| {
+            let row = entry(peer, &list(peer, 0, "rows"), 0);
+            row.insert(&mut peer.transact_mut(), key, value);
+        })
+    };
+    let (title, mark) = (
+        set(3, "c_title", Any::from("Krebs cycle")),
+        set(4, "c_mark", Any::from(7.0)),
+    );
+    assert_eq!(admit(&room, &title).unwrap(), Admission::Accepted);
+    assert_eq!(admit(&room, &mark).unwrap(), Admission::Accepted);
+    let held = plate::value(&room.transact()).unwrap();
+    assert_eq!(
+        held[0]["block"]["rows"][0],
+        json!({ "id": "r_1", "c_title": "Krebs cycle", "c_mark": 7 })
+    );
+    material::assert_canonical(&held, "note").unwrap();
+    let cells = Any::from(HashMap::from([("c_title".to_owned(), Any::from("x"))]));
+    refused(admit(&room, &set(5, "cells", cells)), limits::BAD_VALUE);
+}
+
+/// Two writers deleting different views, the last two, no longer wedge a
+/// room (Revision 2): both deletions go in and leave a block with no view,
+/// which the store takes.
+#[test]
+fn two_writers_deleting_the_last_two_views_both_go_in() {
+    let room = open(&[node("tv", small())]);
+    let delete = |client: u64, at: u32| {
+        edit(&room, client, move |peer| {
+            let views = list(peer, 0, "views");
+            views.remove(&mut peer.transact_mut(), at);
+        })
+    };
+    let (first, second) = (delete(3, 0), delete(4, 1));
+    assert_eq!(admit(&room, &first).unwrap(), Admission::Accepted);
+    assert_eq!(admit(&room, &second).unwrap(), Admission::Accepted);
+    let held = plate::value(&room.transact()).unwrap();
+    assert_eq!(held[0]["block"]["views"], json!([]));
+    material::assert_canonical(&held, "note").unwrap();
 }

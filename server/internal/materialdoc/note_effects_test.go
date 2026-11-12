@@ -225,7 +225,7 @@ func TestNoteChangesNameATableViewAndCountItsRows(t *testing.T) {
 		block := smallTableView()
 		list := []any{}
 		for i := range rows {
-			list = append(list, map[string]any{"id": fmt.Sprintf("r%d", i), "cells": map[string]any{"c_title": value(i)}})
+			list = append(list, map[string]any{"id": fmt.Sprintf("r%d", i), "c_title": value(i)})
 		}
 		block["rows"] = list
 		return tableViewNode("tv", block)
