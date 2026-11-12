@@ -32,7 +32,8 @@ patchedDependencies:
   "@hocuspocus/provider@3.4.4": patches/@hocuspocus__provider@3.4.4.patch
   # Capy patch (live-items, Epo 2026-10-10): a `mermaid` element's `source` is
   # a nested Y.Text, read as its string in Slate (Mermaid shape A); a chart's,
-  # plot's or graph's `block` is a Y.Map edited entry by entry (Epo 2026-10-17).
+  # plot's or graph's `block` is a Y.Map edited entry by entry (Epo 2026-10-17),
+  # as is a table view's (columns, rows and views, Epo 2026-11-12).
   # A position that falls on an inline element (an inline equation, a link)
   # resolves to the text beside it, so a co-editor's caret there is drawn.
   # History maps the selection onto the room only once the editor is bound
