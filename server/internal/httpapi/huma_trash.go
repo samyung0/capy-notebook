@@ -67,6 +67,12 @@ func (a *api) previewTrashed(ctx context.Context, in *trashPreviewInput) (*trash
 		if err != nil {
 			return nil, hErr(err)
 		}
+		// As getMaterial: edits a room still holds are projected first.
+		if a.projectLive(ctx, mt.ID) {
+			if mt, err = a.s.TrashedMaterial(ctx, actor, in.ID); err != nil {
+				return nil, hErr(err)
+			}
+		}
 		// No role: every capability off, so the app shows it read-only.
 		out, err := a.materialResponse(ctx, mt, "", true, false)
 		if err != nil {
@@ -75,7 +81,13 @@ func (a *api) previewTrashed(ctx context.Context, in *trashPreviewInput) (*trash
 		if mt.Kind == "quiz" {
 			materialdoc.LearnerQuiz(out.Body.Content)
 		}
-		return &trashPreviewOutput{Body: apimodel.TrashPreview{Material: &out.Body}}, nil
+		// The asset resolve refuses a trashed material's images and audio,
+		// so they come signed with it.
+		assets, err := a.trashedMaterialAssets(ctx, mt.ID)
+		if err != nil {
+			return nil, err
+		}
+		return &trashPreviewOutput{Body: apimodel.TrashPreview{Assets: assets, Material: &out.Body}}, nil
 	}
 	file, blobPath, err := a.s.TrashedFile(ctx, actor, in.ID)
 	if err != nil {
@@ -113,6 +125,27 @@ func (a *api) previewTrashed(ctx context.Context, in *trashPreviewInput) (*trash
 		body.Source = &session
 	}
 	return &trashPreviewOutput{Body: body}, nil
+}
+
+// trashedMaterialAssets signs the material's own ready images and audio, by
+// asset id.
+func (a *api) trashedMaterialAssets(ctx context.Context, materialID string) (map[string]string, error) {
+	paths, err := a.s.MaterialAssetPaths(ctx, materialID)
+	if err != nil || len(paths) == 0 {
+		return nil, hErr(err)
+	}
+	if a.blob == nil {
+		return nil, huma.Error503ServiceUnavailable("blob store not configured")
+	}
+	urls := make(map[string]string, len(paths))
+	for id, path := range paths {
+		signed, err := a.blob.PresignGetWithExpiry(ctx, path)
+		if err != nil {
+			return nil, hErr(err)
+		}
+		urls[id] = signed.URL
+	}
+	return urls, nil
 }
 
 func (a *api) listTrash(ctx context.Context, in *trashListInput) (*trashPageOutput, error) {

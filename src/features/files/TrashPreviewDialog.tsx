@@ -3,15 +3,19 @@ import { lazy, type ReactNode, Suspense, useEffect, useState } from 'react';
 import * as Y from 'yjs';
 import { useTrashPreview } from '@/api/hooks';
 import type { Material, TrashItem, TrashPreview } from '@/api/types';
+import { TabContent } from '@/components/app/tabPanel';
 import { Button } from '@/components/ui/Button';
 import { Dialog, DialogContent } from '@/components/ui/Dialog';
 import { FileIcon, type FileIconName } from '@/components/ui/FileIcon';
 import { IconButton } from '@/components/ui/IconButton';
+import { FlashcardGrid } from '@/features/flashcards/FlashcardGrid';
 import {
   EmbedUnavailable,
   EmbedViewContext,
 } from '@/features/materials/embeds/EmbedView';
+import { AssetUrlContext } from '@/features/materials/MediaAssetView';
 import { MermaidMaterialView } from '@/features/materials/MermaidMaterialView';
+import { storedCards, storedQuestions } from '@/features/materials/storedItems';
 import { getLocale, m } from '@/i18n';
 import { describeError, unexpectedErrorId } from '@/lib/errors';
 import { FileError, FileLoading } from './FileStates';
@@ -24,6 +28,11 @@ import { applySavedSource } from './sourceState';
 const PdfView = lazy(() => import('./PdfView'));
 const CsvView = lazy(() => import('./CsvView'));
 const TextView = lazy(() => import('./TextView'));
+const QuizReadSplit = lazy(() =>
+  import('@/features/quizzes/QuizEditor').then((module) => ({
+    default: module.QuizReadSplit,
+  }))
+);
 const MaterialPreview = lazy(() =>
   import('@/features/materials/MaterialPreview').then((module) => ({
     default: module.MaterialPreview,
@@ -78,7 +87,8 @@ function TrashPreviewContent({
   return (
     <DialogContent
       aria-describedby={undefined}
-      cardScrollContainerClassName="h-[88dvh] overflow-hidden p-0 sm:p-0 max-sm:h-dvh max-sm:p-0"
+      // Phones: full screen, clear of the home indicator.
+      cardScrollContainerClassName="h-[88dvh] overflow-hidden p-0 sm:p-0 max-sm:h-dvh max-sm:p-0 max-sm:pb-[env(safe-area-inset-bottom)]"
       className="max-w-5xl"
       showCloseButton={false}
     >
@@ -145,7 +155,9 @@ function TrashPreviewBody({ item }: { item: TrashItem }) {
     );
   }
   if (data.material) {
-    return <MaterialBody item={item} material={data.material} />;
+    return (
+      <MaterialBody assets={data.assets} item={item} material={data.material} />
+    );
   }
   if (data.file && data.links) {
     return <FileBody item={item} onRetry={retry} preview={data} />;
@@ -158,33 +170,53 @@ function EmbedGone() {
   return <EmbedUnavailable />;
 }
 
+/** As the workspace reads each kind without a room: a quiz in its read
+ * split (its learner questions carry no key), a set as its card grid. Images
+ * and audio load from the links the preview signed. */
 function MaterialBody({
+  assets,
   item,
   material,
 }: {
+  assets?: Record<string, string>;
   item: TrashItem;
   material: Material;
 }) {
-  const render = {
-    isStandalone: true,
-    kind: material.kind,
-    title: material.title,
-  };
-  if (material.kind === 'mindmap' || material.kind === 'diagram') {
-    return <MermaidMaterialView content={material.content} material={render} />;
-  }
-  if (material.kind === 'canvas') return <RestoreToOpen item={item} />;
-  return (
-    <EmbedViewContext value={EmbedGone}>
-      <Suspense fallback={<FileLoading />}>
+  const { content, kind, title } = material;
+  let body: ReactNode;
+  if (kind === 'mindmap' || kind === 'diagram') {
+    body = (
+      <MermaidMaterialView
+        content={content}
+        material={{ isStandalone: true, kind, title }}
+      />
+    );
+  } else if (kind === 'quiz') {
+    body = <QuizReadSplit questions={storedQuestions(content)} />;
+  } else if (kind === 'flashcards') {
+    body = (
+      <TabContent>
+        <FlashcardGrid cards={storedCards(content)} title={title} />
+      </TabContent>
+    );
+  } else if (kind === 'canvas') {
+    return <RestoreToOpen item={item} />;
+  } else {
+    body = (
+      <EmbedViewContext value={EmbedGone}>
         <MaterialPreview
-          content={material.content}
+          content={content}
           isStandalone
-          kind={material.kind}
-          title={material.title}
+          kind={kind}
+          title={title}
         />
-      </Suspense>
-    </EmbedViewContext>
+      </EmbedViewContext>
+    );
+  }
+  return (
+    <AssetUrlContext value={(assetId) => assets?.[assetId]}>
+      <Suspense fallback={<FileLoading />}>{body}</Suspense>
+    </AssetUrlContext>
   );
 }
 
@@ -202,6 +234,7 @@ function FileBody({
   const ext = fileExt(file.name);
   const [zoom, setZoom] = useState(1);
   const textURL = useSavedText(preview);
+  if (textURL === null) return <FileLoading />;
   const lazyView = (node: ReactNode) => (
     <Suspense fallback={<FileLoading />}>{node}</Suspense>
   );
@@ -239,31 +272,34 @@ function FileBody({
   return <RestoreToOpen item={item} />;
 }
 
-/** A text file's saved edits ahead of its bytes, as a URL; none when the
- * bytes are current (or the file is not text). */
+/** A text file's saved edits ahead of its bytes, as a URL (undefined when the
+ * bytes are current, or the file is not text); null until the saved state is
+ * read, so the view never fetches the older bytes first. */
 function useSavedText(preview: TrashPreview) {
-  const [url, setURL] = useState<string>();
+  const { source } = preview;
+  const [saved, setSaved] = useState<{ for: typeof source; url?: string }>();
   useEffect(() => {
-    if (!preview.source) return;
+    if (!source) return;
     const doc = new Y.Doc();
-    let next: string | undefined;
-    if (applySavedSource(doc, preview.source)) {
-      next = URL.createObjectURL(
+    let url: string | undefined;
+    if (applySavedSource(doc, source)) {
+      url = URL.createObjectURL(
         new Blob([doc.getText('source').toString()], {
           type: 'text/plain;charset=utf-8',
         })
       );
     }
     doc.destroy();
-    setURL(next);
+    setSaved({ for: source, url });
     return () => {
-      if (next) URL.revokeObjectURL(next);
+      if (url) URL.revokeObjectURL(url);
     };
-  }, [preview.source]);
-  return url;
+  }, [source]);
+  if (!source) return;
+  return saved?.for === source ? saved.url : null;
 }
 
-/** Office files and boards: their thumbnail, and Restore to open them. */
+/** Office files (their thumbnail) and boards: Restore opens them. */
 function RestoreToOpen({ item }: { item: TrashItem }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 p-6">

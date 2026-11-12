@@ -83,7 +83,6 @@ import { LiveFlashcards } from '@/features/flashcards/LiveFlashcards';
 import { useLiveSetCards } from '@/features/flashcards/liveReads';
 import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
-import type { LearnerQuestion } from '@/features/questions/types';
 import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
 import { QuizEditor, QuizReadSplit } from '@/features/quizzes/QuizEditor';
 import {
@@ -104,12 +103,7 @@ import {
   Header,
   type OneColumnChrome,
 } from './CenterContentHeader';
-import {
-  type FlashcardsElement,
-  flashcardsElementToCards,
-  type MaterialDocument,
-  type QuizElement,
-} from './document';
+import type { MaterialDocument } from './document';
 import { HeavyMaterialGate } from './HeavyMaterialGate';
 import { type HeavyMaterialChoice, heavyMaterial } from './heavyDocument';
 import { SourcesLine } from './MaterialAttributionFooter';
@@ -129,6 +123,7 @@ import {
   saveDocumentMode,
 } from './openItem';
 import { forgetAssetLinks } from './resolvedAssetLinks';
+import { storedCards, storedQuestions } from './storedItems';
 
 /* A standalone mindmap's or diagram's live editor: CodeMirror, no Plate. */
 const MermaidMaterialEditor = lazy(
@@ -500,25 +495,6 @@ function MaterialLoading() {
   return online ? <NoteSkeleton /> : <FileLoading />;
 }
 
-const storedCards = (material: Material) =>
-  flashcardsElementToCards(
-    material.content.value.find(
-      (node): node is FlashcardsElement => node.type === 'flashcards'
-    ) ?? { children: [], id: '', type: 'flashcards' }
-  );
-
-/** A quiz's questions as its read stored them: no answer key. */
-const storedQuestions = (content: MaterialDocument) => {
-  const quiz = content.value.find(
-    (node): node is QuizElement => node.type === 'quiz'
-  );
-  return (quiz?.children ?? []).flatMap((node) =>
-    'type' in node && node.type === 'quiz_question'
-      ? [node.question as unknown as LearnerQuestion]
-      : []
-  );
-};
-
 /** A set's View: the stored cards, then the room's as they change. */
 function LiveSetGrid({
   material,
@@ -530,7 +506,7 @@ function LiveSetGrid({
   /** A card to open at once (a link to it). */
   openCardId?: string;
 }) {
-  const cards = useLiveSetCards(material.id, storedCards(material));
+  const cards = useLiveSetCards(material.id, storedCards(material.content));
   return (
     <FlashcardGrid
       action={action}
@@ -787,7 +763,7 @@ function MaterialContentBody({
                 onStatusChange={onEditorStatusChange}
                 openCardId={target}
                 setId={materialId}
-                stored={storedCards(material)}
+                stored={storedCards(material.content)}
                 title={material.title}
               />
             ) : (

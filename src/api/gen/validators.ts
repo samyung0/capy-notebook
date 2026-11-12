@@ -8371,6 +8371,7 @@ export const PreviewTrashedParams = zod.object({
 
 export const PreviewTrashedResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "assets": zod.record(zod.string(), zod.string()).optional(),
   "file": zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),

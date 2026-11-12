@@ -8,10 +8,12 @@ import type { BrowserSourceSession } from './browserSourceSession.ts';
 import type { File } from './file.ts';
 import type { FileLinks } from './fileLinks.ts';
 import type { Material } from './material.ts';
+import type { TrashPreviewAssets } from './trashPreviewAssets.ts';
 
 export interface TrashPreview {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  assets?: TrashPreviewAssets;
   file?: File;
   links?: FileLinks;
   material?: Material;

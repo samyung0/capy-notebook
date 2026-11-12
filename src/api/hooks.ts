@@ -1789,9 +1789,11 @@ export function useRestoreTrashed() {
   });
 }
 
-/** A trashed item opened read-only from the Trash list. */
+/** A trashed item opened read-only from the Trash list. Its signed links
+ * expire, so a closed preview keeps no copy (as fileLinksQuery). */
 export const useTrashPreview = (item: TrashItem) =>
   useQuery({
+    gcTime: 0,
     meta: { errorBoundary: false },
     queryFn: () =>
       api.get<TrashPreview>(`/trash/${item.kind}/${item.id}/preview`),

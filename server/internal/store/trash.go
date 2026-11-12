@@ -803,3 +803,23 @@ func (s *Store) TrashedMaterial(ctx context.Context, actorID, id string) (Materi
 	}
 	return mt, err
 }
+
+// MaterialAssetPaths is the object path of each of the material's own ready
+// images and audio (not one a save left out), by asset id.
+func (s *Store) MaterialAssetPaths(ctx context.Context, materialID string) (map[string]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id, object_path FROM editor_assets
+		WHERE material_id=$1 AND status='ready' AND trashed_at IS NULL`, materialID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	paths := map[string]string{}
+	for rows.Next() {
+		var id, path string
+		if err := rows.Scan(&id, &path); err != nil {
+			return nil, err
+		}
+		paths[id] = path
+	}
+	return paths, rows.Err()
+}

@@ -14,6 +14,7 @@ Object.assign(globalThis, { document, IS_REACT_ACT_ENVIRONMENT: true, window });
 
 const state = vi.hoisted(() => ({
   preview: null as TrashPreview | null,
+  quizQuestions: [] as unknown[][],
   textURLs: [] as string[],
 }));
 vi.mock('@/api/hooks', () => ({
@@ -32,6 +33,12 @@ vi.mock('radix-ui', async (importOriginal) => ({
   ...(await importOriginal<typeof import('radix-ui')>()),
   Dialog: { Title: ({ children }: { children: ReactNode }) => children },
 }));
+vi.mock('@/features/quizzes/QuizEditor', () => ({
+  QuizReadSplit: ({ questions }: { questions: unknown[] }) => {
+    state.quizQuestions.push(questions);
+    return null;
+  },
+}));
 vi.mock('./TextView', () => ({
   default: ({ url }: { url: string }) => {
     state.textURLs.push(url);
@@ -45,6 +52,7 @@ const { default: TrashPreviewDialog } = await import('./TrashPreviewDialog');
 
 afterEach(() => {
   state.preview = null;
+  state.quizQuestions.length = 0;
   state.textURLs.length = 0;
 });
 
@@ -58,7 +66,10 @@ const item = (title: string): TrashItem =>
     title,
   }) as TrashItem;
 
-async function render(opened: TrashItem, onRestore = () => {}) {
+async function render(
+  opened: TrashItem,
+  onRestore: (item: TrashItem) => void = () => undefined
+) {
   document.body.innerHTML = '<div id="root"></div>';
   const root = createRoot(document.getElementById('root') as never);
   await act(async () =>
@@ -112,5 +123,33 @@ it('offers Restore, and only the thumbnail for an Office file', async () => {
   );
   await act(async () => restore?.click());
   expect(restored.map((value) => value.title)).toEqual(['plan.docx']);
+  root.unmount();
+});
+
+// The preview's quiz is learner-shaped (no key): it reads in the quiz's read
+// split, as the workspace shows it, not as an authored document.
+it("shows a trashed quiz's questions in its read split", async () => {
+  const question = { id: 'q1', type: 'mcq' };
+  state.preview = {
+    material: {
+      content: {
+        value: [
+          {
+            children: [
+              { children: [{ text: '' }], question, type: 'quiz_question' },
+            ],
+            type: 'quiz',
+          },
+        ],
+      },
+      kind: 'quiz',
+      title: 'Genetics check-in',
+    },
+  } as unknown as TrashPreview;
+  const root = await render({
+    ...item('Genetics check-in'),
+    kind: 'material',
+  } as TrashItem);
+  expect(state.quizQuestions.at(-1)).toEqual([question]);
   root.unmount();
 });
