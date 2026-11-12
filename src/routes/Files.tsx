@@ -1,5 +1,5 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { memo, useCallback, useContext, useState } from 'react';
+import { lazy, memo, Suspense, useCallback, useContext, useState } from 'react';
 import {
   usePurgeTrashed,
   useRestoreTrashed,
@@ -52,6 +52,10 @@ import { FILE_KINDS } from '@/lib/listSearch';
 import { PREF_KEYS } from '@/lib/localPrefs';
 import { waitsForConnection } from '@/lib/online';
 import type { FilesTab } from '@/lib/tabSearch';
+
+const TrashPreviewDialog = lazy(
+  () => import('@/features/files/TrashPreviewDialog')
+);
 
 export default function Files() {
   const navigate = useNavigate();
@@ -118,6 +122,7 @@ export default function Files() {
 /** One trashed item; memoised like FileItem. */
 const TrashCard = memo(function TrashCard({
   item,
+  onOpen,
   onPurge,
   onRestore,
   selected,
@@ -125,6 +130,8 @@ const TrashCard = memo(function TrashCard({
   workspaceIconId,
 }: {
   item: TrashItem;
+  /** Opens it read-only. */
+  onOpen: (item: TrashItem) => void;
   onPurge: (item: TrashItem) => void;
   onRestore: (item: TrashItem) => void;
   selected: boolean;
@@ -162,6 +169,7 @@ const TrashCard = memo(function TrashCard({
       details={formatFileSize(item.sizeBytes)}
       icon={trashIconName(item)}
       meta={formatDate(item.purgeAfter)}
+      onOpen={() => onOpen(item)}
       pickKey={`${item.kind}:${item.id}:${item.episodeId}`}
       selected={selected}
       thumbnail={{
@@ -185,8 +193,8 @@ function formatDate(iso: string): string {
   );
 }
 
-/** Owner-only bin. Rows are metadata only: a trashed row is never a preview
- * or a download. Restore and permanent deletion are the only actions. */
+/** Owner-only bin. Rows are metadata only; opening one reads it read-only
+ * (TrashPreviewDialog). Restore and permanent deletion are the actions. */
 function TrashTab({
   view,
   onViewChange,
@@ -215,6 +223,7 @@ function TrashTab({
   );
   const { mutateAsync: restore } = useRestoreTrashed();
   const { mutateAsync: purge } = usePurgeTrashed();
+  const [opened, setOpened] = useState<TrashItem | null>(null);
   const [purgeRequest, setPurgeRequest] = useState<{
     items: TrashItem[];
     empty: boolean;
@@ -346,6 +355,7 @@ function TrashTab({
                   <TrashCard
                     item={item}
                     key={`${item.kind}:${item.id}:${item.episodeId}`}
+                    onOpen={setOpened}
                     onPurge={purgeOne}
                     onRestore={restoreOne}
                     selected={selection.isSelected(item)}
@@ -365,6 +375,19 @@ function TrashTab({
             isFetchingNextPage={isFetchingNextPage}
             isFetchNextPageError={isFetchNextPageError}
           />
+          {opened && (
+            <Suspense>
+              <TrashPreviewDialog
+                icon={trashIconName(opened)}
+                item={opened}
+                onClose={() => setOpened(null)}
+                onRestore={(item) => {
+                  setOpened(null);
+                  restoreOne(item);
+                }}
+              />
+            </Suspense>
+          )}
           <ConfirmDialog
             body={
               purgeRequest?.empty

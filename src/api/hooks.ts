@@ -159,6 +159,7 @@ import type {
   TrashActionReq,
   TrashItem,
   TrashPage,
+  TrashPreview,
   UndoEditReq,
   UndoPayload,
   UpdateCommentReq,
@@ -1787,6 +1788,15 @@ export function useRestoreTrashed() {
     onSuccess: (_receipt, item) => invalidateAfterTrashChange(qc, item),
   });
 }
+
+/** A trashed item opened read-only from the Trash list. */
+export const useTrashPreview = (item: TrashItem) =>
+  useQuery({
+    meta: { errorBoundary: false },
+    queryFn: () =>
+      api.get<TrashPreview>(`/trash/${item.kind}/${item.id}/preview`),
+    queryKey: qk.trashPreview(item.kind, item.id, item.episodeId),
+  });
 
 /** Permanently delete one trash episode. Irreversible. */
 export function usePurgeTrashed() {
