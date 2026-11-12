@@ -20,7 +20,12 @@ test('To do groups each class, and a row opens its details', async ({
     .getByRole('dialog')
     .getByRole('button', { name: m.todo_approve_marks() })
     .click();
-  await expect(page).toHaveURL(/assignment=.*tab=approve/, { timeout: 30_000 });
+  await expect(page).toHaveURL(
+    (url) =>
+      url.searchParams.has('assignment') &&
+      url.searchParams.get('tab') === 'approve',
+    { timeout: 30_000 }
+  );
 });
 
 // Epo 2026-11-10: a row's box selects it, and the selection bar marks it done;

@@ -573,22 +573,29 @@ func logRefreshFailure(ctx context.Context, fileID, jobID, detail string) {
 // alias and the canonical upload route, independent of a transient job status.
 // A file over an ingest limit counts as not indexable, like a store-only one.
 func (s *Store) workspaceIndexCounts(ctx context.Context, ws string, stats *WorkspaceStats) error {
-	rows, err := s.pool.Query(ctx, `SELECT f.name,f.kind,EXISTS(SELECT 1 FROM rag_file_contents a JOIN rag_contents c ON c.id=a.content_id WHERE a.file_id=f.id AND c.status='ready'),f.index_limit IS NOT NULL FROM files f WHERE f.workspace_id=$1 AND f.trashed_at IS NULL`, ws)
+	rows, err := s.pool.Query(ctx, `SELECT f.name,f.kind,f.status,EXISTS(SELECT 1 FROM rag_file_contents a JOIN rag_contents c ON c.id=a.content_id WHERE a.file_id=f.id AND c.status='ready'),f.index_limit IS NOT NULL FROM files f WHERE f.workspace_id=$1 AND f.trashed_at IS NULL`, ws)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var name, kind string
+		var name, kind, status string
 		var indexed, overLimit bool
-		if err = rows.Scan(&name, &kind, &indexed, &overLimit); err != nil {
+		if err = rows.Scan(&name, &kind, &status, &indexed, &overLimit); err != nil {
 			return err
 		}
 		plan, e := sourceupload.BuildProcessingPlan(name, kind, "fast")
+		indexable := e == nil && plan.Route != sourceupload.RouteStoreOnly && !overLimit
+		// A legacy Office file is indexed once converted (converting, or failed
+		// and waiting for a retry). One left ready under its legacy name was
+		// stored without a conversion and never is.
+		if plan.Route == sourceupload.RouteLegacyConvert && status == string(FileReady) {
+			indexable = false
+		}
 		switch {
 		case indexed:
 			stats.Indexed++
-		case e == nil && plan.Route != sourceupload.RouteStoreOnly && !overLimit:
+		case indexable:
 			stats.NotIndexed++
 		default:
 			stats.NotIndexable++

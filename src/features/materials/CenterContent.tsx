@@ -76,7 +76,11 @@ import {
   FileModeContext,
   PresenceContext,
 } from '@/features/files/fileModeContext';
-import { fileIsIngesting, IMAGE_MIN_ZOOM } from '@/features/files/fileUtils';
+import {
+  fileIsIngesting,
+  IMAGE_MIN_ZOOM,
+  legacyOfficeTarget,
+} from '@/features/files/fileUtils';
 import type { OfficeCitation } from '@/features/files/officeProtocol';
 import { FlashcardGrid } from '@/features/flashcards/FlashcardGrid';
 import { LiveFlashcards } from '@/features/flashcards/LiveFlashcards';
@@ -1117,15 +1121,19 @@ function FileBody({
   }
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {file && fileIsIngesting(file.status) && file.hasBytes && (
-        <FileBanner
-          message={
-            file.status === 'pending'
-              ? m.files_pending_named({ name: file.name })
-              : m.files_processing_named({ name: file.name })
-          }
-        />
-      )}
+      {/* An old Office file being converted says so in its pane instead. */}
+      {file &&
+        fileIsIngesting(file.status) &&
+        file.hasBytes &&
+        !legacyOfficeTarget(file.name) && (
+          <FileBanner
+            message={
+              file.status === 'pending'
+                ? m.files_pending_named({ name: file.name })
+                : m.files_processing_named({ name: file.name })
+            }
+          />
+        )}
       {file && <FileNotIndexedBanner file={file} />}
       <div className="relative min-h-0 flex-1 overflow-auto">
         <FileViewer

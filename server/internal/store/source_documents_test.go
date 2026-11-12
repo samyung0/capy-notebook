@@ -1702,11 +1702,22 @@ func TestWorkspaceSourceIndexCountsAndSettings(t *testing.T) {
 	if _, err = s.pool.Exec(ctx, `INSERT INTO rag_file_contents(file_id,workspace_id,content_id) VALUES($1,$2,$3)`, file.ID, ws.ID, contentID); err != nil {
 		t.Fatal(err)
 	}
+	// A legacy Office file whose conversion failed is indexable once
+	// converted; one stored ready without a conversion never is.
+	for name, status := range map[string]string{"failed.doc": "failed", "stored.doc": "ready"} {
+		legacy, err := s.createReadyFile(ctx, ws.ID, owner, name, "doc", nil, "", 10, "sources/"+uid("count"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = s.pool.Exec(ctx, `UPDATE files SET status=$2 WHERE id=$1`, legacy.ID, status); err != nil {
+			t.Fatal(err)
+		}
+	}
 	stats, err := s.WorkspaceStats(ctx, owner, ws.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.Indexed != 1 || stats.NotIndexed != 1 || stats.NotIndexable != 2 || len(stats.FileChanges) != 1 || stats.FileChanges[0].FileID != file.ID || stats.FileChanges[0].State != "waiting" {
+	if stats.Indexed != 1 || stats.NotIndexed != 2 || stats.NotIndexable != 3 || len(stats.FileChanges) != 1 || stats.FileChanges[0].FileID != file.ID || stats.FileChanges[0].State != "waiting" {
 		t.Fatalf("wrong partition: %+v", stats)
 	}
 }

@@ -1108,10 +1108,17 @@ func (s *Store) SettleCredits(ctx context.Context, reservationID string) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if err := settleCreditsTx(ctx, tx, reservationID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
 
+// settleCreditsTx is SettleCredits in the caller's transaction.
+func settleCreditsTx(ctx context.Context, tx pgx.Tx, reservationID string) error {
 	var actorUserID string
 	var reservedMicros int64
-	err = tx.QueryRow(ctx, `
+	err := tx.QueryRow(ctx, `
 		UPDATE provider_sessions
 		SET status = 'settled', settled_at = now()
 		WHERE id = $1 AND status = 'open'
@@ -1122,13 +1129,11 @@ func (s *Store) SettleCredits(ctx context.Context, reservationID string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE user_credits
+	_, err = tx.Exec(ctx, `UPDATE user_credits
 		SET reserved_micros = GREATEST(0, reserved_micros - $2),
 		    updated_at = now()
-		WHERE user_id = $1`, actorUserID, reservedMicros); err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
+		WHERE user_id = $1`, actorUserID, reservedMicros)
+	return err
 }
 
 // ReleaseCredits drops a reservation without charging, for a request that

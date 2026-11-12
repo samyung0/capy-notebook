@@ -61,6 +61,62 @@ describe('files list reconciliation', () => {
     }
   );
 
+  // A legacy Office file's conversion renames it and leaves it pending for
+  // its parse: no terminal event yet, so the list read (the tree event's
+  // refetch) is what tells an open file its new name.
+  it('refreshes the detail of a legacy Office file the list shows converted', async () => {
+    const client = new QueryClient();
+    const converting: SourceFile = {
+      addedAt: '2026-11-11T00:00:00Z',
+      hasBytes: true,
+      id: 'f_legacy',
+      indexed: false,
+      isPayer: true,
+      kind: 'doc',
+      name: 'essay.doc',
+      position: 0,
+      revision: 1,
+      sizeBytes: 20,
+      status: 'processing',
+      topicId: null,
+      workspaceId: 'ws_legacy',
+    };
+    const converted: SourceFile = {
+      ...converting,
+      name: 'essay.docx',
+      revision: 2,
+      status: 'pending',
+    };
+    const get = vi
+      .spyOn(api, 'get')
+      .mockImplementation(
+        async <T>(path: string) =>
+          (path === '/files/f_legacy' ? converted : [converted]) as T
+      );
+    client.setQueryData(qk.file(converting.id), converting);
+    const observer = new QueryObserver(client, {
+      queryFn: () => api.get<SourceFile>('/files/f_legacy'),
+      queryKey: qk.file(converting.id),
+      staleTime: Number.POSITIVE_INFINITY,
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    try {
+      await client.fetchQuery(filesQuery('ws_legacy'));
+      await vi.waitFor(() =>
+        expect(client.getQueryData(qk.file(converting.id))).toEqual(converted)
+      );
+      // The new name is read once: the parse that follows changes no name.
+      await client.fetchQuery(filesQuery('ws_legacy'));
+      expect(
+        get.mock.calls.filter(([path]) => path === '/files/f_legacy')
+      ).toHaveLength(1);
+    } finally {
+      unsubscribe();
+      client.clear();
+      get.mockRestore();
+    }
+  });
+
   it('keeps client-only ingest progress across a list read while the file is still ingesting', async () => {
     const client = new QueryClient();
     const processing: SourceFile = {

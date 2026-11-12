@@ -17,6 +17,7 @@ DELIMITED_TEXT = "delimited_text"
 IMAGE_CAPTION = "image_caption"
 AUDIO_TRANSCRIPTION = AUDIO_ROUTE
 DOCUMENT_PARSE = "document_parse"
+LEGACY_CONVERT = "legacy_convert"
 
 ROUTES = frozenset(
     {
@@ -26,12 +27,16 @@ ROUTES = frozenset(
         IMAGE_CAPTION,
         AUDIO_TRANSCRIPTION,
         DOCUMENT_PARSE,
+        LEGACY_CONVERT,
     }
 )
 CAPTION_MODES = frozenset({"none", "standalone"})
 
 _DOCUMENT_FORMATS = frozenset({"pdf", "docx", "pptx", "xlsx"})
 _OFFICE_FORMATS = frozenset({"docx", "pptx", "xlsx"})
+# A legacy Office format and the format its upload is converted to before the
+# ordinary parse (the parse coordinator's legacy_convert route).
+_LEGACY_TARGETS = {"doc": "docx", "xls": "xlsx", "ppt": "pptx"}
 _DELIMITED_FORMATS = frozenset({"csv", "tsv"})
 _IMAGE_FORMATS = frozenset(
     {
@@ -54,14 +59,15 @@ _IMAGE_FORMATS = frozenset(
 _AUDIO_FORMATS = frozenset(
     {"mp3", "wav", "m4a", "ogg", "flac", "aac", "webm", "mp4", "mpeg", "mpga", "opus"}
 )
-# Legacy Office files are kept as uploaded and never ingested.
-_STORE_ONLY_FORMATS = frozenset({"", "doc", "ppt", "xls"})
+# Only a file without a known format is kept as uploaded and never ingested.
+_STORE_ONLY_FORMATS = frozenset({""})
 _RESERVED_FORMATS = (
     _DOCUMENT_FORMATS
     | _DELIMITED_FORMATS
     | _IMAGE_FORMATS
     | _AUDIO_FORMATS
     | _STORE_ONLY_FORMATS
+    | frozenset(_LEGACY_TARGETS)
 )
 
 
@@ -94,6 +100,16 @@ _DIRECT_RESOURCES = ("object_storage_read", "embedding_model", "ingest_model")
 def _expected_contract(route: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
     if route == STORE_ONLY:
         return (), ()
+    if route == LEGACY_CONVERT:
+        return (
+            ("fetch_source", "convert_legacy", "replace_source"),
+            (
+                "object_storage_read",
+                "object_storage_write",
+                "document_parser",
+                "shared_parse_spool",
+            ),
+        )
     if route == RAW_TEXT:
         return (
             ("fetch_source", "chunk", "index", "generate_derivatives"),
@@ -151,6 +167,8 @@ class ProcessingPlan:
     office: bool
     stages: tuple[str, ...]
     resources: tuple[str, ...]
+    # The OOXML format a legacy_convert route converts to; empty elsewhere.
+    convert_to: str = ""
 
 
 def require(value: Any) -> ProcessingPlan:
@@ -162,6 +180,7 @@ def require(value: Any) -> ProcessingPlan:
         format_name = str(value["format"])
         route = str(value["route"])
         parser_route = str(value.get("parserRoute") or "")
+        convert_to = value.get("convertTo")
         caption_mode = str(value["captionMode"])
         office = value["office"]
         stages_value = value["stages"]
@@ -187,8 +206,13 @@ def require(value: Any) -> ProcessingPlan:
         raise TerminalError("document processing plan has no supported parser route")
     if route != DOCUMENT_PARSE and parser_route:
         raise TerminalError("direct processing plan unexpectedly selects a parser")
-    if office and route != DOCUMENT_PARSE:
+    if office and route not in (DOCUMENT_PARSE, LEGACY_CONVERT):
         raise TerminalError("Office requires document parsing")
+    if route == LEGACY_CONVERT:
+        if convert_to is None or _LEGACY_TARGETS.get(format_name) != convert_to:
+            raise TerminalError("legacy conversion plan has an unsupported format pair")
+    elif convert_to is not None:
+        raise TerminalError("processing plan unexpectedly names a conversion target")
     if route == IMAGE_CAPTION and caption_mode != "standalone":
         raise TerminalError("image processing requires standalone captioning")
     if caption_mode == "standalone" and route != IMAGE_CAPTION:
@@ -206,7 +230,7 @@ def require(value: Any) -> ProcessingPlan:
         raise TerminalError("store-only processing plan has an unsupported format")
     if route == RAW_TEXT and format_name not in _RAW_TEXT_FORMATS:
         raise TerminalError("raw-text processing plan has an unsupported format")
-    if office != (format_name in _OFFICE_FORMATS):
+    if office != (format_name in _OFFICE_FORMATS or route == LEGACY_CONVERT):
         raise TerminalError("processing plan has an invalid Office format")
     expected_stages, expected_resources = _expected_contract(route)
     if tuple(stages_value) != expected_stages:
@@ -223,4 +247,5 @@ def require(value: Any) -> ProcessingPlan:
         office=office,
         stages=tuple(stages_value),
         resources=tuple(resources_value),
+        convert_to=convert_to or "",
     )

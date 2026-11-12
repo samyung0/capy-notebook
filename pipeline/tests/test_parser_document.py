@@ -1,4 +1,6 @@
-"""LibreOffice conversion hardening in ``parser/odl/document.py``.
+"""LibreOffice conversion hardening in ``parser/odl/document.py``, and the
+legacy Office conversion (.doc, .xls, .ppt to their OOXML twins) that shares
+its run.
 
 The LibreOffice cases need the parser image (LibreOffice 7.4, its soffice.bin
 under ``/usr/lib/libreoffice``) and skip elsewhere. Run them there against the
@@ -442,6 +444,119 @@ def test_libreoffice_runs_sandboxed_with_only_its_allowlisted_env(
     assert f"-env:OSL_SOCKET_PATH={job}" in report["argv"]
     assert report["job_socket"] == "ok"
     assert report["tmp_socket"] == errno.EACCES
+
+
+class _FakeOffice:
+    """Stands in for ``capy_sandbox.run``: records each soffice.bin run and
+    leaves ``output`` as the converted file beside the source."""
+
+    def __init__(self, output: bytes | None = b"PK converted", exit_code: int = 0):
+        self.output = output
+        self.exit_code = exit_code
+        self.runs: list[tuple[list[str], object]] = []
+
+    def __call__(self, command, policy, *, max_output):
+        self.runs.append((command, policy))
+        job = Path(command[command.index("--outdir") + 1])
+        assert (job / "profile/user/registrymodifications.xcu").is_file()
+        if self.output is not None:
+            target = command[command.index("--convert-to") + 1].split(":")[0]
+            (job / f"source.{target}").write_bytes(self.output)
+        return subprocess.CompletedProcess(command, self.exit_code, b"", b"refused")
+
+
+@pytest.mark.parametrize(
+    ("name", "convert_to", "infilter", "export"),
+    [
+        ("notes.doc", "docx", "MS Word 97", "MS Word 2007 XML"),
+        ("sheet.XLS", "xlsx", "MS Excel 97", "Calc MS Excel 2007 XML"),
+        ("deck.ppt", "pptx", "MS PowerPoint 97", "Impress MS PowerPoint 2007 XML"),
+    ],
+)
+def test_a_legacy_file_converts_to_its_ooxml_twin_under_the_pdf_conversions_rules(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    convert_to: str,
+    infilter: str,
+    export: str,
+) -> None:
+    """The legacy suffix's pinned import filter, LibreOffice's OOXML export
+    filter, and the PDF conversion's sandbox policy, profile and timeout."""
+    office = _FakeOffice()
+    monkeypatch.setattr(document.capy_sandbox, "run", office)
+
+    converted = document.convert_legacy(OLE + b"legacy", name, convert_to, tmp_path, 64)
+
+    assert converted == b"PK converted"
+    ((command, policy),) = office.runs
+    assert command[0] == document.SOFFICE
+    assert f"--infilter={infilter}" in command
+    assert command[command.index("--convert-to") + 1] == f"{convert_to}:{export}"
+    job = Path(command[command.index("--outdir") + 1])
+    assert job.parent == tmp_path and job.name.startswith("lo-")
+    assert command[-1] == str(job / f"source{Path(name).suffix.lower()}")
+    assert policy.limits == document._LIMITS
+    assert policy.blocked == {"setsid", "setpgid", "fork"}
+    assert policy.write == (str(job), "/dev/null")
+    assert policy.env["MALLOC_ARENA_MAX"] == "2"
+    assert policy.timeout_s == document.OFFICE_CONVERT_TIMEOUT_S
+    # The job folder goes with the job.
+    assert not job.exists()
+
+
+@pytest.mark.parametrize(
+    ("name", "data", "convert_to"),
+    [
+        # Not the legacy suffix the target names.
+        ("notes.docx", ZIP, "docx"),
+        ("sheet.xls", OLE, "docx"),
+        ("notes", OLE, "docx"),
+        # Not the OLE2 container the suffix names.
+        ("notes.doc", ZIP + bytes(8), "docx"),
+    ],
+)
+def test_a_conversion_of_another_format_is_refused_before_libreoffice(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    data: bytes,
+    convert_to: str,
+) -> None:
+    office = _FakeOffice()
+    monkeypatch.setattr(document.capy_sandbox, "run", office)
+
+    with pytest.raises(document.OfficeFormatMismatch):
+        document.convert_legacy(data, name, convert_to, tmp_path, 64)
+    assert office.runs == []
+
+
+def test_a_failed_legacy_conversion_keeps_the_pdf_conversions_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """LibreOffice refusing the file, leaving no output or an empty one,
+    running past its timeout, or writing more than the cap."""
+
+    def convert(office) -> bytes:
+        monkeypatch.setattr(document.capy_sandbox, "run", office)
+        return document.convert_legacy(OLE, "notes.doc", "docx", tmp_path, 8)
+
+    with pytest.raises(document.OfficeConversionFailed, match="refused"):
+        convert(_FakeOffice(exit_code=1))
+    with pytest.raises(document.OfficeConversionFailed, match="could not convert"):
+        convert(_FakeOffice(output=None))
+    # An empty file is no conversion either.
+    with pytest.raises(document.OfficeConversionFailed, match="could not convert"):
+        convert(_FakeOffice(output=b""))
+
+    def timed_out(command, policy, *, max_output):
+        raise subprocess.TimeoutExpired(command, policy.timeout_s)
+
+    with pytest.raises(document.OfficeConversionTimeout, match="exceeded"):
+        convert(timed_out)
+    with pytest.raises(document.SourceUnreadable, match="exceeds the 8-byte limit"):
+        convert(_FakeOffice(output=b"nine byte"))
+    assert convert(_FakeOffice(output=b"8 bytes!")) == b"8 bytes!"
 
 
 def test_unreadable_pdfs_are_refused_and_owner_locked_ones_open() -> None:

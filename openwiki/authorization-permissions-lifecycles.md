@@ -728,6 +728,30 @@ Sources: [membership handlers](../server/internal/httpapi/huma_membership.go#L39
 - Upload reservations and finalized bytes are charged to the editor who
   uploaded them (uploader pays), and only that editor completes its
   reservation.
+- A legacy Office upload (`.doc`, `.xls`, `.ppt`) is converted to `.docx`,
+  `.xlsx` or `.pptx` and renamed by the pipeline, with no request of its own:
+  an editor's upload or import of such a file is the only thing that starts a
+  conversion, and its job runs as that editor
+  ([agentic-retrieval.md](agentic-retrieval.md#legacy-office-conversion)).
+  The source upload policy lists the three legacy formats under fast parsing
+  (`parseModes[fast].extensions`), beside PDF, DOCX, XLSX and PPTX. A failed
+  conversion leaves the file `failed` under its uploaded name: the uploaded
+  bytes stay stored, charged to their payer and downloadable until the file
+  is deleted. The queue never converts it again; Retry processing does, and
+  that is the workspace owner's alone (a standalone file's owner). On a
+  legacy name Retry reruns the upload's own pipeline, the conversion and then
+  the file's stored parse mode, whatever mode the request names
+  (`RetryFileProcessing`), so with parsing stored on it takes the credit
+  check and charges its owner as the upload would have. It is also the one
+  Retry taken on a `ready` file: a legacy file stored unconverted. The open
+  file's Convert button is that request, offered to the same people
+  ([frontend/office-files.md](frontend/office-files.md#legacy-office-files)).
+  A hand-in's file is refused (`409 revision_conflict`) and keeps its bytes.
+  Bytes whose conversion hit the parser's hard timeout or an OOM
+  kill are refused again on a retry or a new upload, before LibreOffice runs.
+  A rename keeps the file's extension, compared under the file's row lock
+  (`UpdateFile`, `file_extension_changed`), so it cannot change a legacy
+  ending around the conversion's own rename.
 - The Create tab's Blank DOCX and Blank XLSX
   (`POST /api/workspaces/{id}/files/blank`) take an upload's gates without a
   reservation: an editor whose account may add bytes, the editor's storage
@@ -1403,7 +1427,12 @@ needs a file and locks them; Undo hand in reopens them while it is open.
 and, once handed in, for the class's owners and editors (`HandInFileBlob`).
 The files go with the assignment (cascade), with the member as they leave the
 class, and list on the Files page once it closes, for the member to
-delete; like a paper's they are read only and out of account chat.
+delete; like a paper's they are read only and out of account chat. They
+are stored as uploaded and never parsed, so a legacy Office file handed in is
+not converted and stays a `.doc`, `.xls` or `.ppt`: Retry processing refuses
+a hand-in's file (`409 revision_conflict`), which the file viewer's Convert
+button cannot know
+([frontend/office-files.md](frontend/office-files.md#legacy-office-files)).
 
 Sources: [drawing routes](../server/internal/httpapi/drawings.go) and
 [drawing store](../server/internal/store/drawings.go).
@@ -1962,7 +1991,10 @@ none ([thumbnails.md](thumbnails.md)).
 Workspace file status describes processing after upload finalization:
 `pending` is queued, `processing` is parsing or indexing, `ready` is finished
 (including store-only files with `indexed=false`), and `failed` means processing
-failed. These are separate from the upload session's own status. Once
+failed. A legacy Office file is `pending` or `processing` through its
+conversion and again through the parse of the converted file; one that is
+`failed` and still named `.doc`, `.xls` or `.ppt` failed in its conversion.
+These are separate from the upload session's own status. Once
 `hasBytes=true`, the workspace file list allows opening the original source
 while processing continues; the viewer shows progress above the preview.
 
@@ -1993,6 +2025,26 @@ with source sessions the gateway reads the promoted object back once and
 records its SHA-256 in that transaction; it never takes a hash from the
 browser or the worker, since the collaboration server checks the originals it
 loads against it.
+
+A converted legacy Office file is handed over on
+`POST /api/internal/files/convert` (`internalConvertLegacyFile`). The route
+takes the pipeline secret (`X-Pipeline-Secret`, 401 without it, like every
+`/api/internal/*` route) and no user session; it is outside the OpenAPI spec
+and not rate limited. The secret alone moves nothing. The handoff must name a
+`parse` job on the `legacy_convert` plan, running at the attempt it claims
+with a live lease, that job's own file (not trashed, still named as legacy,
+at the revision and ETag the job was queued for) and that job's own key,
+`incoming/legacy-convert/<jobId>.<format>`. The gateway reads the object's
+size, content type and SHA-256 from the bucket itself, hashing the promoted
+object, and takes only bytes that open with the ZIP signature. The job's
+actor must still be an editor of the workspace (the owner of a standalone
+file), and the workspace
+owner's, the actor's and the payer's accounts must not be locked; otherwise
+the handoff answers `409 convert_claim_lost` and changes nothing. The parse
+coordinator writes that object with the ingest host's bucket credentials, and
+it is the only object a conversion writes; the gateway does the promotion.
+The swap and its storage gate are in
+[backend-storage-quota](backend-storage-quota.md#reservations-and-clones).
 
 The upload sweeper runs once on server startup and every minute afterward. It
 finds pending sessions whose deadline has passed (a drive import's, or a

@@ -307,7 +307,8 @@ type retryProcessingInput struct {
 }
 
 // retryFileProcessing queues a failed file's processing again on its stored
-// bytes; only the owner may, and pays like automatic reprocessing.
+// bytes; only the owner may, and pays like automatic reprocessing. An old
+// Office file that is not converted, failed or ready, reruns its upload.
 func (a *api) retryFileProcessing(ctx context.Context, in *retryProcessingInput) (*struct{}, error) {
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err

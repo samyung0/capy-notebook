@@ -190,6 +190,43 @@ const pictureType = (data: string) =>
         ? 'image/gif'
         : 'image/webp';
 
+/** A new assignment in a workspace, as POST makes it. */
+function addRow(wsId: string, body: AssignmentFormReq, own: boolean) {
+  const row: Row = {
+    allowUploads: false,
+    assignAll: true,
+    assignees: [],
+    attempts: 1,
+    draft: body.draft,
+    files: [],
+    id: newId('as'),
+    kind: body.kind,
+    latePenaltyPct: 0,
+    marking: 'ai_approve' as const,
+    noLate: false,
+    own,
+    postedAt: new Date().toISOString(),
+    quizId: body.quizId,
+    showAnswers: 'closed' as const,
+    showGrades: 'automatic' as const,
+    shuffle: false,
+    title: body.title,
+    workspaceId: wsId,
+  };
+  applyForm(row, body);
+  if (row.kind === 'marked' && !row.draft) freeze(row);
+  rows.set(row.id, row);
+  return row;
+}
+
+/** For a spec: the class's owner assigns, which the Member scenario's viewer
+ * cannot (their New task is a task for themself); returns its id
+ * (e2e/editor/assignment-settings.spec.ts, drawing-answer.spec.ts). */
+export function assignAsMockOwner(wsId: string, body: AssignmentFormReq) {
+  seed();
+  return addRow(wsId, body, false).id;
+}
+
 /** For a spec: hands the Member scenario's attempts at an assignment to one of
  * the class's members, so the owner's report shows them
  * (e2e/editor/drawing-answer.spec.ts). */
@@ -1786,31 +1823,9 @@ export const assignmentHandlers = (viewer: Viewer) => {
       async ({ params, request }) => {
         seed();
         const body = (await request.json()) as AssignmentFormReq;
-        const row: Row = {
-          allowUploads: false,
-          assignAll: true,
-          assignees: [],
-          attempts: 1,
-          draft: body.draft,
-          files: [],
-          id: newId('as'),
-          kind: body.kind,
-          latePenaltyPct: 0,
-          marking: 'ai_approve' as const,
-          noLate: false,
-          // From anyone but a class's staff it is a task for themself.
-          own: !(viewer === 'owner' && isClass(String(params.id))),
-          postedAt: new Date().toISOString(),
-          quizId: body.quizId,
-          showAnswers: 'closed' as const,
-          showGrades: 'automatic' as const,
-          shuffle: false,
-          title: body.title,
-          workspaceId: String(params.id),
-        };
-        applyForm(row, body);
-        if (row.kind === 'marked' && !row.draft) freeze(row);
-        rows.set(row.id, row);
+        const wsId = String(params.id);
+        // From anyone but a class's staff it is a task for themself.
+        const row = addRow(wsId, body, !(viewer === 'owner' && isClass(wsId)));
         return HttpResponse.json(toAssignment(row, viewer), { status: 201 });
       }
     ),

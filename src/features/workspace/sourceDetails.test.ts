@@ -206,6 +206,7 @@ describe('unified source details', () => {
       },
       analysisStatus: 'ready' as const,
       kind: 'pdf' as const,
+      name: 'scan.pdf',
       parseMode: 'fast' as const,
     };
 
@@ -283,6 +284,38 @@ describe('initialAnalysisStatus', () => {
       initialAnalysisStatus('notes.txt', undefined, sourceUploadPolicy)
     ).toBe('idle');
   });
+
+  // The browser cannot read .doc, .xls or .ppt: the row is fast-parsed with
+  // no page estimate, and nothing holds its upload.
+  it('sends a fast-parsed legacy Office file without an estimate', () => {
+    const input = remoteSourceAnalysisInput(
+      {
+        analysisUrl: '/api/workspaces/ws_1/sources/import-content',
+        fileId: 'file_1',
+        name: 'essay.doc',
+        sizeBytes: 2048,
+      },
+      'google',
+      {},
+      'inspection_1',
+      sourceUploadPolicy
+    );
+    expect(input).toBeUndefined();
+    const analysisStatus = initialAnalysisStatus(
+      'essay.doc',
+      input,
+      sourceUploadPolicy
+    );
+    expect(analysisStatus).toBe('idle');
+    const row = {
+      analysisStatus,
+      kind: 'doc' as const,
+      name: 'essay.doc',
+      parseMode: 'fast' as const,
+    };
+    expect(sourceAnalysisBlocksSubmit(row, sourceUploadPolicy)).toBe(false);
+    expect(sourceAnalysisIssue(row, sourceUploadPolicy)).toBe(null);
+  });
 });
 
 describe('fast-parse page limits', () => {
@@ -312,6 +345,7 @@ describe('fast-parse page limits', () => {
     },
     analysisStatus: 'ready' as const,
     kind: 'pdf' as const,
+    name: 'scan.pdf',
     parseMode: 'fast' as const,
   });
 
