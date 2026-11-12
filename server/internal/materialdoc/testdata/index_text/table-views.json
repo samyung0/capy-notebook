@@ -1,0 +1,404 @@
+{
+  "document": {
+    "schemaVersion": 1,
+    "value": [
+      {
+        "type": "p",
+        "id": "intro",
+        "children": [
+          {
+            "text": "Table views"
+          }
+        ]
+      },
+      {
+        "type": "table_view",
+        "id": "tv_tracker",
+        "block": {
+          "title": "  Revision\r\ntracker\rfor\nterm 1 ",
+          "columns": [
+            {
+              "id": "c_status",
+              "name": "Status",
+              "kind": "select",
+              "options": [
+                {
+                  "id": "o_1",
+                  "name": "Not yet",
+                  "color": "gray"
+                },
+                {
+                  "id": "o_2",
+                  "name": "Revising",
+                  "color": "orange"
+                },
+                {
+                  "id": "o_3",
+                  "name": "Done",
+                  "color": "green"
+                }
+              ]
+            },
+            {
+              "id": "c_title",
+              "name": "Topic",
+              "kind": "title"
+            },
+            {
+              "id": "c_mark",
+              "name": "Mark",
+              "kind": "number"
+            },
+            {
+              "id": "c_review",
+              "name": "Review on",
+              "kind": "date"
+            },
+            {
+              "id": "c_done",
+              "name": "Done",
+              "kind": "checkbox"
+            },
+            {
+              "id": "c_notes",
+              "name": "Notes | why",
+              "kind": "text"
+            }
+          ],
+          "rows": [
+            {
+              "id": "r_1",
+              "cells": {
+                "c_title": "Krebs cycle",
+                "c_status": "o_2",
+                "c_mark": 6,
+                "c_review": "2026-11-10",
+                "c_done": false,
+                "c_notes": "ATP | NADH\nyield\r\nper turn"
+              }
+            },
+            {
+              "id": "r_2",
+              "cells": {
+                "c_title": "Glycolysis",
+                "c_status": "o_gone",
+                "c_mark": " 7.50 ",
+                "c_review": "10 Nov",
+                "c_done": true,
+                "c_notes": 42.5
+              }
+            },
+            {
+              "id": "r_3",
+              "cells": {
+                "c_title": "Osmosis",
+                "c_mark": 1e-7,
+                "c_review": "2026-02-30",
+                "c_gone": "left by a merge",
+                "c_notes": -1.5e-10
+              }
+            },
+            {
+              "id": "r_4",
+              "cells": {
+                "c_title": "Diffusion",
+                "c_mark": "n/a",
+                "c_review": "2026-13-01",
+                "c_notes": "lone\rbreak"
+              }
+            },
+            {
+              "id": "r_6",
+              "cells": {
+                "c_title": "Enzymes",
+                "c_mark": "-0",
+                "c_review": "2024-02-29",
+                "c_notes": 0
+              }
+            },
+            {
+              "id": "r_7",
+              "cells": {
+                "c_title": "Photosynthesis",
+                "c_mark": "10000000000000000000000",
+                "c_review": "2100-02-29",
+                "c_notes": 1000000000000000
+              }
+            },
+            {
+              "id": "r_5",
+              "cells": {
+                "c_title": "Respiration",
+                "c_mark": -2,
+                "c_status": "o_3",
+                "c_done": "yes"
+              }
+            }
+          ],
+          "views": [
+            {
+              "id": "v_1",
+              "name": "Table",
+              "kind": "table",
+              "sort": {
+                "columnId": "c_mark",
+                "dir": "desc"
+              }
+            },
+            {
+              "id": "v_2",
+              "name": "Kanban",
+              "kind": "kanban",
+              "groupBy": "c_status"
+            }
+          ]
+        },
+        "children": [
+          {
+            "text": ""
+          }
+        ]
+      },
+      {
+        "type": "table_view",
+        "id": "tv_board",
+        "block": {
+          "title": "\r\n \r",
+          "columns": [
+            {
+              "id": "c_t",
+              "name": "Name",
+              "kind": "title"
+            },
+            {
+              "id": "c_s",
+              "name": "Status",
+              "kind": "select",
+              "options": [
+                {
+                  "id": "o_a",
+                  "name": "A",
+                  "color": "gray"
+                }
+              ]
+            }
+          ],
+          "rows": [
+            {
+              "id": "r_b",
+              "cells": {
+                "c_t": "b",
+                "c_s": "o_a"
+              }
+            },
+            {
+              "id": "r_a",
+              "cells": {
+                "c_t": "a"
+              }
+            }
+          ],
+          "views": [
+            {
+              "id": "v_k",
+              "name": "Board",
+              "kind": "kanban",
+              "groupBy": "c_t",
+              "sort": {
+                "columnId": "c_missing",
+                "dir": "asc"
+              }
+            }
+          ]
+        },
+        "children": [
+          {
+            "text": ""
+          }
+        ]
+      },
+      {
+        "type": "table_view",
+        "id": "tv_priorities",
+        "block": {
+          "title": "Priorities",
+          "columns": [
+            {
+              "id": "c_t",
+              "name": "Task",
+              "kind": "title"
+            },
+            {
+              "id": "c_p",
+              "name": "Priority",
+              "kind": "select",
+              "options": [
+                {
+                  "id": "o_hi",
+                  "name": "High",
+                  "color": "red"
+                },
+                {
+                  "id": "o_lo",
+                  "name": "Low",
+                  "color": "blue"
+                }
+              ]
+            }
+          ],
+          "rows": [
+            {
+              "id": "r1",
+              "cells": {
+                "c_t": "x",
+                "c_p": "o_lo"
+              }
+            },
+            {
+              "id": "r2",
+              "cells": {
+                "c_t": "y"
+              }
+            },
+            {
+              "id": "r3",
+              "cells": {
+                "c_t": "z",
+                "c_p": "o_hi"
+              }
+            }
+          ],
+          "views": [
+            {
+              "id": "v1",
+              "name": "By priority",
+              "kind": "table",
+              "sort": {
+                "columnId": "c_p",
+                "dir": "asc"
+              }
+            }
+          ]
+        },
+        "children": [
+          {
+            "text": ""
+          }
+        ]
+      },
+      {
+        "type": "table_view",
+        "id": "tv_words",
+        "block": {
+          "title": "Words",
+          "columns": [
+            {
+              "id": "c_w",
+              "name": "Word",
+              "kind": "title"
+            },
+            {
+              "id": "c_d",
+              "name": "Seen",
+              "kind": "checkbox"
+            }
+          ],
+          "rows": [
+            {
+              "id": "w1",
+              "cells": {
+                "c_w": "beta",
+                "c_d": true
+              }
+            },
+            {
+              "id": "w2",
+              "cells": {
+                "c_w": "alpha"
+              }
+            },
+            {
+              "id": "w3",
+              "cells": {
+                "c_w": ""
+              }
+            },
+            {
+              "id": "w4",
+              "cells": {
+                "c_w": "gamma",
+                "c_d": false
+              }
+            },
+            {
+              "id": "w5",
+              "cells": {
+                "c_w": "😀 smile"
+              }
+            },
+            {
+              "id": "w6",
+              "cells": {
+                "c_w": "～ tilde"
+              }
+            },
+            {
+              "id": "w7",
+              "cells": {
+                "c_w": "Zeta"
+              }
+            }
+          ],
+          "views": [
+            {
+              "id": "v1",
+              "name": "A to Z",
+              "kind": "table",
+              "sort": {
+                "columnId": "c_w",
+                "dir": "asc"
+              }
+            },
+            {
+              "id": "v2",
+              "name": "Seen",
+              "kind": "table",
+              "sort": {
+                "columnId": "c_d",
+                "dir": "desc"
+              }
+            }
+          ]
+        },
+        "children": [
+          {
+            "text": ""
+          }
+        ]
+      }
+    ]
+  },
+  "items": {},
+  "blocks": [
+    {
+      "id": "intro",
+      "text": "Table views"
+    },
+    {
+      "id": "tv_tracker",
+      "text": "Revision tracker for term 1\n\n| Topic | Status | Mark | Review on | Done | Notes \\| why |\n| --- | --- | --- | --- | --- | --- |\n| Photosynthesis |  | 10000000000000000000000 |  | ☐ | 1000000000000000 |\n| Glycolysis |  | 7.5 |  | ☑ | 42.5 |\n| Krebs cycle | Revising | 6 | 2026-11-10 | ☐ | ATP \\| NADH yield per turn |\n| Osmosis |  | 0.0000001 |  | ☐ | -0.00000000015 |\n| Enzymes |  | 0 | 2024-02-29 | ☐ | 0 |\n| Respiration | Done | -2 |  | ☐ |  |\n| Diffusion |  |  |  | ☐ | lone break |"
+    },
+    {
+      "id": "tv_board",
+      "text": "| Name | Status |\n| --- | --- |\n| b | A |\n| a |  |"
+    },
+    {
+      "id": "tv_priorities",
+      "text": "Priorities\n\n| Task | Priority |\n| --- | --- |\n| z | High |\n| x | Low |\n| y |  |"
+    },
+    {
+      "id": "tv_words",
+      "text": "Words\n\n| Word | Seen |\n| --- | --- |\n| Zeta | ☐ |\n| alpha | ☐ |\n| beta | ☑ |\n| gamma | ☐ |\n| ～ tilde | ☐ |\n| 😀 smile | ☐ |\n|  | ☐ |"
+    }
+  ]
+}

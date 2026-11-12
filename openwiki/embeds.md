@@ -404,6 +404,19 @@ the browser's shared model is `src/features/notes/tableView/model.ts`.
 - **Markdown.** The `table-view` fence carries the block as JSON and round
   trips; a fence that is not JSON or not a block a writer may store stays a
   code block. Agents write none (`edit.agent` is empty).
+- **Server layers.** Go's `materialdoc.validateTableView` (every write; the
+  count in `validate`), the collaboration store's `notes::table_view::block`
+  (through `assert_canonical`, Go's messages word for word) and room
+  admission keep the writers' rules: admission reads the block whole on a
+  copy of the room when an update writes into its map (`BAD_VALUE`, so a
+  merge that would leave two title columns loses the later writer's update)
+  and refuses a 21st block (`TOO_MANY_TABLE_VIEWS`). Go's
+  `tableViewIndexText` and `notes::table_view::text` give the index text
+  byte for byte as `tableViewText` (golden fixture
+  `testdata/index_text/table-views.json`, made by it), text sorted by code
+  point as `byCodePoint`. The pipeline reads it from Go's index text and has
+  no rule of its own. Note effects name a table view by its title and count
+  its changed table lines as rows.
 
 ## Adding an element or an embed kind
 

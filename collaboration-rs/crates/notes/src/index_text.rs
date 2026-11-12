@@ -68,8 +68,8 @@ pub fn content_item_refs(value: &Value) -> Vec<String> {
 }
 
 /// A live note's index text per block, read from its room's content root
-/// under `_txn`: one top-level element at a time, a figure's `block` through
-/// `plate::block_value`.
+/// under `_txn`: one top-level element at a time, a figure's or table view's
+/// `block` through `plate::block_value`.
 pub fn from_doc<T: ReadTxn>(
     _txn: &T,
     root: BranchPtr,
@@ -85,9 +85,17 @@ pub fn from_doc<T: ReadTxn>(
             }
             Insert::Element(element) => {
                 let typ = plate::string_attribute(element, "type");
-                if typ.as_deref().map(rule) == Some(Index::Figure) {
+                let index = typ.as_deref().map(rule);
+                if matches!(index, Some(Index::Figure | Index::TableView)) {
                     if let Some(block) = plate::block_value(element)? {
-                        push(&mut pieces, figure(&block));
+                        push(
+                            &mut pieces,
+                            if index == Some(Index::Figure) {
+                                figure(&block)
+                            } else {
+                                crate::table_view::text(&block)
+                            },
+                        );
                     }
                 } else {
                     write_block(&plate::element(&element)?, items, &mut pieces);
@@ -174,6 +182,7 @@ fn write_block(node: &Value, items: &impl ItemText, out: &mut Vec<String>) {
     match node_rule(node) {
         Index::None => return,
         Index::Figure => return push(out, figure(&node["block"])),
+        Index::TableView => return push(out, crate::table_view::text(&node["block"])),
         Index::Mermaid => {
             let mut lines = Vec::new();
             let caption = node_text(node);
