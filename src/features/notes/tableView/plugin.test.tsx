@@ -1,4 +1,5 @@
-import { createPlateEditor } from 'platejs/react';
+import { createPlateEditor, Plate, PlateContent } from 'platejs/react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { customBlockPlugins } from '../blocks/plugins';
 import { newTableViewBlock } from './model';
@@ -32,5 +33,28 @@ describe('the table view plugin', () => {
     expect(
       editor.children.find(({ type }) => type === 'table_view')
     ).toMatchObject({ id: 'tv_1' });
+  });
+
+  it('draws a read-only note with its view tabs and no edit controls', () => {
+    const editor = createPlateEditor({
+      plugins: customBlockPlugins,
+      value: [
+        {
+          block: { ...block(), title: 'Revision tracker' },
+          children: [{ text: '' }],
+          id: 'tv_1',
+          type: 'table_view',
+        },
+      ],
+    });
+    const html = renderToStaticMarkup(
+      <Plate editor={editor} readOnly>
+        <PlateContent readOnly />
+      </Plate>
+    );
+    expect(html.match(/role="tab"/g)).toHaveLength(2);
+    expect(html).toContain('Revision tracker');
+    expect(html).not.toContain('New record');
+    expect(html).not.toContain('<input');
   });
 });
