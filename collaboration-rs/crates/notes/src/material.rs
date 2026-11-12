@@ -13,6 +13,7 @@ use serde_json::{Map, Value};
 use crate::catalog::{
     self, BLOCK_CAPTION_MAX, CARD_BACK_MAX, CARD_FRONT_MAX, HTML_EMBED_MAX_BYTES,
     HTML_EMBED_MAX_COUNT, LIST_INDENT_MAX, MEDIA_WIDTH_MAX, MEDIA_WIDTH_MIN, MERMAID_SOURCE_MAX,
+    TABLE_VIEW_MAX_COUNT,
 };
 use crate::questions::{self, Policy, js_trim};
 
@@ -422,7 +423,7 @@ fn figure_block_in(kind: &str, block: &Value, live: bool) -> Check {
 fn figures() -> String {
     let names: Vec<&str> = catalog::ELEMENTS
         .iter()
-        .filter(|element| element.required.contains(&"block"))
+        .filter(|element| element.index == catalog::Index::Figure)
         .map(|element| element.name)
         .collect();
     match names.split_last() {
@@ -629,6 +630,11 @@ fn validate_element(node: &Node, kind: &str, depth: usize, policy: &Policy) -> C
         "chart" | "plot" | "graph" => validate_embed(node, kind, depth),
         "quiz_question" => validate_quiz_question(node, policy),
         HTML_EMBED_TYPE => validate_html_embed(node, depth),
+        crate::table_view::TYPE => {
+            require_id(node)?;
+            crate::table_view::block(node.get("block").unwrap_or(&Value::Null))
+                .map_err(ValidationError)
+        }
         _ if TEXT_ELEMENTS.contains(&kind) => validate_text_element(node),
         "flashcards" => validate_flashcards(node),
         "flashcard" => validate_flashcard(node),
@@ -712,13 +718,22 @@ pub fn assert_canonical_with(value: &[Value], kind: &str, policy: &Policy) -> Ch
         validate_node(node, 0, policy)?;
         nodes.push(node);
     }
-    let embeds = nodes
-        .iter()
-        .filter(|n| n.get("type").and_then(Value::as_str) == Some(HTML_EMBED_TYPE))
-        .count();
+    let count = |kind: &str| {
+        nodes
+            .iter()
+            .filter(|n| n.get("type").and_then(Value::as_str) == Some(kind))
+            .count()
+    };
+    let embeds = count(HTML_EMBED_TYPE);
     if embeds > HTML_EMBED_MAX_COUNT {
         return fail(format!(
             "{embeds} interactive blocks over {HTML_EMBED_MAX_COUNT}"
+        ));
+    }
+    let table_views = count(crate::table_view::TYPE);
+    if table_views > TABLE_VIEW_MAX_COUNT {
+        return fail(format!(
+            "{table_views} table views over {TABLE_VIEW_MAX_COUNT}"
         ));
     }
 

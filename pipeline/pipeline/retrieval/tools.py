@@ -3238,8 +3238,9 @@ async def _gateway_read(
 
 
 # How long a chart's, plot's or graph's block an inspection prints as JSON; a
-# longer one is summed up, so inspect pages stay lean (Epo 2026-10-21).
-FIGURE_JSON_CHARS = 1500
+# longer one is summed up, so inspect pages stay lean (Epo 2026-10-21; 5,000
+# from 2026-11-12 so a table view's rows fit).
+FIGURE_JSON_CHARS = 5000
 
 
 def _figure_view(printed: str) -> str:

@@ -41,7 +41,7 @@ export function ToolbarMathMenu({
           </ToolbarButton>
           {MATH_TEMPLATES.map(([glyph, tex, title]) => (
             <ToolbarButton
-              className="w-auto min-w-8 px-1"
+              className="w-auto min-w-(--toolbar-button) px-1"
               key={tex}
               label={title()}
               onClick={() => insertMathTemplate(editor, tex)}

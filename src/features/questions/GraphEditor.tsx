@@ -525,7 +525,6 @@ function GraphStage({
   const tools = (
     <BlockToolbar
       className={cn(
-        'rounded-md p-0.5',
         // In the heading row it is part of the page, not floating over it.
         toolbarTarget ? 'shadow-none!' : 'absolute top-2 right-2 z-10'
       )}

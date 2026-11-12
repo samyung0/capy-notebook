@@ -3,6 +3,8 @@ import {
   customBlockCode,
   customBlockNode,
 } from '@/features/notes/blocks/shared';
+import { TABLE_VIEW_LIMITS } from '@/features/notes/tableView/model';
+import { tracker } from '@/features/notes/tableView/testFixtures';
 import { exampleQuestion } from '@/features/questions/questionFixtures';
 
 import {
@@ -591,5 +593,51 @@ describe('embedded material references', () => {
         false
       );
     }
+  });
+});
+
+describe('table views', () => {
+  const tableView = (id: string, block: unknown = tracker()) => ({
+    block,
+    children: [{ text: '' }],
+    id,
+    type: 'table_view',
+  });
+  const views = (count: number) =>
+    Array.from({ length: count }, (_, i) => tableView(`tv${i}`));
+
+  it('writes and reads back one a writer may store, up to the count', () => {
+    const document = createMaterialDocument(views(TABLE_VIEW_LIMITS.count));
+    expect(parseMaterialDocument(JSON.stringify(document))).toEqual(document);
+  });
+
+  it('refuses a broken block, content in the void and one too many', () => {
+    const twoTitles = tracker();
+    twoTitles.columns.push({ id: 'c_other', kind: 'title', name: 'Other' });
+    expect(() => createMaterialDocument([tableView('a', twoTitles)])).toThrow();
+    expect(() =>
+      createMaterialDocument([
+        { ...tableView('a'), children: [{ text: 'typed' }] },
+      ])
+    ).toThrow();
+    expect(() =>
+      createMaterialDocument(views(TABLE_VIEW_LIMITS.count + 1))
+    ).toThrow();
+    // Top-level only, as every figure.
+    expect(() =>
+      createMaterialDocument([
+        { children: [tableView('a')], id: 'q', type: 'blockquote' },
+      ])
+    ).toThrow();
+  });
+
+  it('reads what a merge leaves', () => {
+    const merged = tracker();
+    merged.rows[0].c_gone = 'left behind';
+    merged.rows[0].c_review = 'soon';
+    const stored = { schemaVersion: 1, value: [tableView('a', merged)] };
+    expect(
+      parseMaterialDocument(JSON.stringify(stored))?.value[0].block
+    ).toEqual(merged);
   });
 });

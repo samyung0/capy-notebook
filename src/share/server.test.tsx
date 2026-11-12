@@ -2,6 +2,9 @@
 import { describe, expect, it } from 'vitest';
 import type { AnonymousNote } from '@/api/types';
 import { parseMaterialDocument } from '@/features/materials/document';
+import { COLUMN_WIDTH, TABLE_CLASS } from '@/features/notes/tableView/display';
+import { drawnColumns } from '@/features/notes/tableView/model';
+import { tracker } from '@/features/notes/tableView/testFixtures';
 import { MATERIAL_SCHEMA_VERSION } from '@/lib/const';
 import everyBlock from '../../server/internal/materialdoc/testdata/every-block-note.json';
 import { renderSharePage, renderSharePagePieces } from './server';
@@ -18,6 +21,7 @@ const EVENT_HANDLER = /<[^>]*\son[a-z]+\s*=/i;
 const JSON_LD = /<script type="application\/ld\+json">(.*?)<\/script>/;
 const IMAGE_PRELOAD = /<link rel="preload" as="image"[^>]*\/>/g;
 const REACT_ID = /_(?:s\d+-)?R_[0-9a-z]+_/g;
+const STICKY_CELL = /<td class="[^"]*sticky left-0/;
 
 const note: AnonymousNote = {
   author: { name: 'Mia' },
@@ -229,5 +233,61 @@ describe('a streamed note', () => {
     expect(comparable(joined)).toBe(comparable(whole.first));
     const ids = [...joined.matchAll(/ id="([^"]+)"/g)].map(([, id]) => id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe('a shared table view', () => {
+  const block = tracker();
+  // The Kanban view first: a static page still draws a table.
+  block.views.reverse();
+  const html = renderSharePage({
+    canonical: 'https://app.example.test/share/notes/mat_note.sig',
+    page: {
+      kind: 'notes',
+      note: {
+        ...note,
+        content: {
+          schemaVersion: MATERIAL_SCHEMA_VERSION,
+          value: [
+            { block, children: [text('')], id: 'tv', type: 'table_view' },
+          ],
+        },
+      },
+      token: 'mat_note.sig',
+    },
+    template: TEMPLATE,
+  });
+  const cells = (row: string) =>
+    Array.from(row.matchAll(/<t[dh][^>]*>(.*?)<\/t[dh]>/g), ([, cell]) =>
+      cell.replace(/<[^>]+>/g, '')
+    );
+
+  it('renders its first view as a table in the Worker', () => {
+    expect(html).toContain('Revision tracker');
+    const rows = Array.from(html.matchAll(/<tr>(.*?)<\/tr>/g), ([, row]) =>
+      cells(row)
+    );
+    expect(rows).toEqual([
+      ['Topic', 'Status', 'Mark', 'Review on', 'Done'],
+      ['Krebs cycle', 'Revising', '6', '10 Nov', ''],
+      ['Glycolysis | ATP', 'Done', '', '', ''],
+    ]);
+    // Chips in their colour, boxes drawn, the title column kept in view.
+    expect(html).toContain('bg-[#fbefe2]');
+    expect(html).toContain('aria-label="Checked"');
+    expect(html).toContain('aria-label="Not checked"');
+    expect(html).toMatch(STICKY_CELL);
+  });
+
+  it('lays its columns out as the editor does', () => {
+    // display.ts widths, phone and wide, in the drawn column order.
+    const widths = Array.from(
+      html.matchAll(/<col [^>]*style="--w-phone:(\d+)px;--w-wide:(\d+)px"/g),
+      ([, phone, wide]) => [Number(phone), Number(wide)]
+    );
+    expect(widths).toEqual(
+      drawnColumns(block).map(({ kind }) => [...COLUMN_WIDTH[kind]])
+    );
+    expect(html).toContain(TABLE_CLASS);
   });
 });

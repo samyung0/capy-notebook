@@ -15,7 +15,6 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/samyung0/capy-notebook/server/internal/embeds"
@@ -336,17 +335,23 @@ func validate(doc Envelope, live bool) error {
 	if len(doc.Value) == 0 {
 		return fmt.Errorf("%w: value must be a non-empty array", ErrInvalid)
 	}
-	embeds := 0
+	interactive, tableViews := 0, 0
 	for i, node := range doc.Value {
 		if err := validateNode(node, 0, live); err != nil {
 			return fmt.Errorf("%w: value[%d]: %v", ErrInvalid, i, err)
 		}
-		if node["type"] == HTMLEmbedType {
-			embeds++
+		switch node["type"] {
+		case HTMLEmbedType:
+			interactive++
+		case TableViewType:
+			tableViews++
 		}
 	}
-	if embeds > HTMLEmbedMaxCount {
-		return fmt.Errorf("%w: %d interactive blocks over %d", ErrInvalid, embeds, HTMLEmbedMaxCount)
+	if interactive > HTMLEmbedMaxCount {
+		return fmt.Errorf("%w: %d interactive blocks over %d", ErrInvalid, interactive, HTMLEmbedMaxCount)
+	}
+	if tableViews > embeds.TableViewMaxCount {
+		return fmt.Errorf("%w: %d table views over %d", ErrInvalid, tableViews, embeds.TableViewMaxCount)
 	}
 	var all []map[string]any
 	var collect func(map[string]any)
@@ -769,6 +774,8 @@ func validateElement(node map[string]any, typ string, depth int, children []any,
 		return nil
 	case HTMLEmbedType:
 		return validateHTMLEmbed(node, depth)
+	case TableViewType:
+		return validateTableView(node)
 
 	case "flashcard_front", "flashcard_back", "mermaid_caption":
 		return validateTextElement(node)
@@ -1062,11 +1069,7 @@ func validateDiagram(node map[string]any) error {
 		return errors.New("source must be a string")
 	}
 	// UTF-16 units, as the browser counts it (Epo 2026-10-22).
-	units := 0
-	for _, r := range source {
-		units += utf16.RuneLen(r)
-	}
-	if units > embeds.MermaidSourceMax {
+	if utf16Len(source) > embeds.MermaidSourceMax {
 		return fmt.Errorf("diagram source is over %d characters", embeds.MermaidSourceMax)
 	}
 	children := node["children"].([]any)

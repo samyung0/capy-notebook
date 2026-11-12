@@ -1092,6 +1092,39 @@ The write is no person's edit (`writeNoEdit`): it starts no checkpoint and bring
 no trailing paragraph, so a co-editor's graph edit adds none from everyone with
 the note open.
 
+A note's table view (`table_view`, Epo 2026-11-12, AFFiNE's database look:
+`src/features/notes/tableView/`) is a top-level void like a figure, edited in
+place rather than in a dialog. `TableViewElement` writes every edit the same
+way a figure's Save does: the pure edit in `edit.ts` runs on the block as the
+editor holds it at that moment and the result goes through one `setNodes` of
+`block`, so only the columns, rows and views it touched change in the room's
+map (an edit that would break `isTableViewBlock` throws; a block a merge left
+past a cap still takes edits). Text, title and number cells write on Enter or
+leaving the field, select and date cells from a popover (`SelectEditor`, the
+schedule's `MiniCalendar`), a checkbox on click; a column header opens
+`ColumnMenu`; the title cell's pill opens the record's menu, whose Open (and a
+Kanban card's click, or a read-only title cell) opens `RecordDialog`: the title
+as a large field, every other column a labelled row with the same editors, and
+Delete record (the app's Dialog, a full-screen page on phones). The editor's
+table and the read-only `TableViewTable` (View, Preview, share pages) share
+their layout through `display.ts` and `cells.tsx`: fixed column widths (the
+title 140px on phones), 36px rows, one-line cells cut with an ellipsis, so a
+note's table keeps its shape between View and the editor. The open view is
+each reader's own state; Sort and Group by are stored on the view. A Kanban
+card drags with its own data type (`application/x-capy-table-view-record`) and
+stops the event, so neither Slate's drop nor the block drag reads it. A
+read-only note draws the same component with only its tabs live. The slash
+menu's Table view (searchable by "database") inserts `newTableViewBlock` with
+translated names, refused past `TABLE_VIEW_MAX_COUNT` with a toast; the
+`table_view` plugin's `insertNodes` and `insertFragment` leave out table views
+past the cap the same way for block Duplicate and paste (`count.ts`). An edit
+that would pass a cap against the block as it is does nothing. The block's
+fields keep their own undo: the wrapper stops React `input` and native
+`beforeinput` from reaching slate-react (which would run `editor.undo()`), and
+`fieldHistory.ts` holds back Cmd+Z in a field once its text is back to what it
+held when focused, since the page's single native undo stack would otherwise
+undo the note's own typing next.
+
 Standalone mindmaps and diagrams render without Plate. View
 (`MermaidMaterialView`) draws the block's `MermaidView` straight from the
 material content, looking as the static renderer did. Edit
@@ -2280,6 +2313,12 @@ design, option d), and the nudge's release file on 2026-10-17.
   types) raised `CLIENT_PROTOCOL` to 28 and `MIN_SOURCE` to 28; `MIN_MATERIAL`
   stays 22 and `OFFICE_PROTOCOL_VERSION` stays 14. Its deploy request names
   "client protocol 27 -> 28, source 27 -> 28".
+  The note's table view (`table_view`, Epo 2026-11-12: a new shared-map element
+  whose `columns`, `rows` and `views` are id-matched shared lists) raised
+  `CLIENT_PROTOCOL` to 29 and `MIN_MATERIAL` to 29, so a note tab from before it
+  reloads instead of writing a table view's block as a plain value;
+  `MIN_SOURCE` stays 28. Its deploy request names "client protocol 28 -> 29,
+  material 22 -> 29".
 
 #### When to bump
 
@@ -3937,8 +3976,11 @@ size as `--note-fs`, and `FONT_SIZE_NODE_PROPS` renders px font-size marks the
 same way in the editor and static views (other units render as written). The
 font-size control reads a heading's authored size, not the rendered one.
 Callout, code block, table cell and column padding also tighten below `sm`.
-Paragraphs are 8px top and bottom (16px apart) while list items keep 6px;
-code blocks have 8px margins and block equations 4px.
+Inside a note (`.note-editor`) text blocks are 4px top and bottom (8px apart)
+on a 1.5 line in either note font, as the BlockSuite note's are (mock N2);
+note blocks drawn outside one keep 8px (16px apart) with list items at 6px.
+Quotes, code blocks, callouts and columns take the same gap as margins (4px in
+a note, 8px outside); block equations 4px.
 
 Tabs and both toolbar scroll containers share `useHorizontalWheelScroll`.
 Vertical mouse-wheel input scrolls overflowing controls horizontally without
@@ -4020,9 +4062,10 @@ menu body, keeping those reads off the typing path.
 
 Editor settings uses the shared workspace-style tabs: General holds Display
 size and Commands holds toolbar group visibility. Both preferences apply on
-Apply and persist locally in `capy-note-editor-prefs`. Half width retains the
-768px centered reading container; Full width fills the pane. Below `md`, both
-fill the available width. Note previews use the same preference.
+Apply and persist locally in `capy-note-editor-prefs`. Half width caps the
+note's column at 912px (720px of text between 96px margins); Full width keeps
+the margins and drops the cap. In a box of 640px or less both fill the width
+with the note's gutters. Note previews use the same preference.
 
 General also holds Note font: Fustat with roomy block gaps, or the system font
 with the Plate playground's compact ones (paragraphs 4px padding and 1.5 line
@@ -4431,6 +4474,181 @@ MSW on still does). Two consequences:
 
 Numbers in [editor-perf.md](../editor-perf.md#drawing-board-in-dev).
 
+### The note's and the board's chrome
+
+Decisions: `human/frontend/plate-editor.md`, 2026-11-10 (mocks
+`artifacts/2026-11-09-notion-notes-look-mocks.html`). The BlockSuite note
+(`VITE_DOCUMENT_LAYOUT=blocks`) and the drawing board share one look for
+everything that floats, and the note body takes the Notion look in every style.
+Main carries this look for the Plate note and the boards only: there is no cut
+(Epo 2026-11-12), so the BlockSuite note's own files (`pageEditor`, `blockMenu`,
+`tableBar`, `calloutLook`) stay on `blocksuite-notes`, and below they describe
+that branch.
+
+- **Tokens:** `src/features/blocksuite/chrome.css`, imported by `drawingBoard.ts` (and `pageEditor.ts` on `blocksuite-notes`),
+  maps AFFiNE's `--affine-*` variables onto the app's tokens
+  at the root (text, icon, panel, border, hover, shadow, font), since BlockSuite's
+  parts read them from inside shadow roots and from popups under `<body>`. It
+  outranks the theme sheet and the board's dark palette, and stands down while the
+  marking image is drawn (`[data-board-light]`). The note's active colour is the
+  app's accent; the board keeps AFFiNE's blue, as its selection frames and pieces
+  are drawn in it (`drawingBoard.css`).
+- **One floating bar:** BlockSuite's `editor-toolbar` draws every bar: a text
+  selection, a selected block (table, callout, image), a link, and on the board a
+  selected element or several (Group, Align, Lock). It is an opaque overlay panel:
+  36px tall from `sm` with 28px buttons and 18px icons, 32px and 26px on phones,
+  where it keeps every control and scrolls sideways inside the screen. Sizes are
+  `--capy-toolbar-*` properties in `chrome.css`; corners are the style's
+  `--radius-toolbar` and `--radius-toolbar-button`. The bar lives in a shadow root,
+  so the vendored parts read those properties (vendor README local change 34).
+  Every icon in a bar is 18px, AFFiNE's fixed 20px ones included (16px in the
+  small inner bars, such as the code block's).
+  The board's own panels (the ☰ button and list, an open card's tools, the
+  formula card) take the same corner and shadow; its bottom toolbar keeps
+  AFFiNE's 64px height and corner, which its pieces are fitted to.
+- **Icons:** `vite.config.ts` aliases `@blocksuite/icons/lit` to
+  `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
+  replaces about ninety names with Hugeicons in the app's 1.8 stroke, in the
+  vendored code and ours alike. A name not listed there keeps AFFiNE's drawing
+  (connector ends, line and shape styles, list markers, file types, and the two
+  highlight icons, whose first path takes the picked colour).
+- **Labels:** BlockSuite's English labels pass through `tr()` where they are drawn
+  (local change 37) and `chromeLabels.ts` answers with paraglide messages (existing
+  `editor_*` and `action_*` keys where one says it, `chrome_*` otherwise). A label
+  not in the table, or one written straight into a template the hook does not
+  cover, stays English.
+- **Note body** (`pageEditor.css`): a 720px column with 96px margins (912px
+  editor width; the 16px gutter once the note's box is 640px or narrower; no cap
+  at the note's Full width
+  setting, read in `BlockSuiteNote.tsx`), 16px/1.5 text in blocks padded 3px 2px,
+  headings 30, 24 and 20px at 600 with 32, 22 and 16px above. Sizes above 16px
+  shrink on narrow screens as `note-fs` does. Code blocks take the dim fill. The
+  margins follow the note's own box (a container query), so a note in a narrow
+  pane takes the gutter as a phone does. The note's font setting
+  (`<html data-note-font>`, `noteFont.ts`) applies to the body and the title
+  through `.blocks-note`.
+- **Callouts** keep the app's own look (`calloutLook.ts`, local change 39): the
+  five kinds of `richBlockConfig.ts` with their tint, border and icon, from the
+  block's `variant` (none reads as info). A selected callout's bar switches its
+  kind; BlockSuite's emoji and background pickers are off.
+- **Gutter handle and block menu** (local change 36, `blockMenu.ts`): a hovered
+  block shows + and a six-dot grip, centred on its first line. + adds a line
+  below and opens the slash menu on it (the slash is typed there, so a search
+  can follow; leaving the menu without a pick removes the slash again, so the
+  line is empty). A click on the grip selects the block and opens a vertical menu
+  beside it: Turn into (a side submenu, text blocks only), Copy, Duplicate,
+  Delete. The floating bar stays away while it is open, and closing it lets the
+  block go; the menu closes with its editor.
+  A table, callout or image has a bar of its own, so its grip only selects it.
+  The handle needs the editor to report page mode, which `pageEditor.ts` does
+  (`DocModeExtension`); without AFFiNE's app nothing else reports one.
+- **Slash menu** (local change 35): 28px rows in a 240px panel, an 18px icon,
+  the name and its Markdown shortcut, uppercase group labels, no descriptions.
+- **Tables** keep BlockSuite's hover handles (⋯ over a column, ⋮ beside a row,
+  + bars at the right and bottom edges, each with its menu). A table selected as
+  a block shows Header row, Duplicate and Delete (`tableBar.ts`); a header row is
+  the first row's `header` prop, drawn semibold on the dim fill (local change 38).
+  The header belongs to the table's first row, whichever row that is: adding,
+  moving, copying or deleting rows keeps it there (`keepHeaderFirst` in the
+  vendored `table-data-manager.ts`). Only the first row draws as a header, so a
+  `header` flag that arrives lower down (two people moving rows at once, a
+  converted table with a second header row) shows nothing, and the next row
+  change or press of Header row clears it.
+- **Title and Info** (`src/features/notes/NoteHeading.tsx`, shared with the
+  Plate note below): the top
+  of the body shows the file's name as a 40px title. It is the material's
+  `title`, not text in the note: leaving the field or pressing Enter renames the
+  file through `PATCH /materials/{id}/metadata` (an empty or too long name is
+  dropped, and a refused rename shows the file's name again). Only a title that
+  was typed in is saved, so leaving the field never undoes a rename made
+  elsewhere, which shows there. A name is one line: pasted line breaks become
+  spaces, and a long name wraps and re-wraps with the column. Under it a
+  collapsed Info row opens Topic (a press moves the note to another topic),
+  Created, Updated and Words, counted when it opens. A reader, and a note outside
+  a workspace, see Topic as text; a reader's title cannot be typed in.
+
+**The Plate note takes the same look** (Epo 2026-11-10: both note engines are
+aligned while Plate stays in the app). Built so far:
+
+- **Headings, quote and divider** (`nodeStyles.ts`, shared with the static
+  renderer, so previews and shared pages follow): 30, 24 and 20px at 600 on a
+  1.3 line with 32, 22 and 16px above; a quote is upright text behind a 3px
+  bar in the text colour; a divider is 1px.
+- **Rhythm** (`tailwind.css`, `.note-editor`): text blocks 8px apart on a 1.5
+  line in either note font; the font setting changes the font and its weight
+  only.
+- **Column** (`note-column` in `tailwind.css`): 96px margins from a box wider
+  than 640px, capped at 912px unless Full width, in the editor
+  (`NoteEditorSurface`), the painted note and the preview (`MaterialPreview`),
+  and their footers. The step is a padding clamp on the parent's width, so no
+  container is declared. A narrower box keeps Plate's gutters (20px on a
+  phone and 40px from `sm`, and always 40px on the editor's right for its
+  thread buttons) where the BlockSuite note uses 16px. As in the BlockSuite
+  note, a box just over 640px holds less text than one just under it.
+  The same shared classes also restyle what else draws them: `.md` previews,
+  the merge view, and the standalone quiz, flashcard, mindmap and diagram
+  title (`StandaloneMaterialTitle`, now 30px at 600).
+- **Floating bars** (`components/ui/BlockToolbar.tsx`, shared by the
+  selection, link, table, column and media bars, the flashcard tile and graph
+  editor bars and the question editors'; the study block bar in
+  `notes/blocks/elements.tsx` repeats its box):
+  36px tall with 28px buttons from `sm`, 32px and 26px on phones, on
+  `--radius-toolbar` with `--radius-toolbar-button` buttons.
+
+- **Title and Info** (`NoteHeading` with `plate`): over the editor
+  (`EditorNoteHeading` in `NoteEditorCore.tsx`, outside the editable), over the
+  painted note, Preview and a reader's note (`PaintedNote` in `NoteBody.tsx`,
+  read-only) and over the late copy, in `note-column` with the title flush to
+  the text. Every view draws it at the same height, so the paint hands over
+  to the editor and Preview opens without a jump (positions are restored
+  block by block). A note painted before its read answers has its name only:
+  the same box, with nothing under Info yet. Enter puts the caret at the
+  note's start; Words counts the blocks' text (`noteText`). Info's open state
+  is kept per note for the session and shared by these views, so opening the
+  editor or Preview does not close it. The editor's title is read-only while
+  the note is locked (lost access, outdated, offline limit, full copy), and
+  the phone's paused copy makes it read-only too (`copyPausedView`). The
+  block lies over the note's corner buttons (`NoteDisplayToggles`) and the top
+  16px of the editable, so only the title and the Info row take the pointer:
+  clicks on its padding go through to what is under it. The space over the
+  title (40px, 64px from a box wider than 640px) is `note-column-head`, the
+  column's padding clamp again and not a container query: with a query
+  container in the note's scroller, WebKit's scroll anchoring stops holding a
+  reader's place while blocks go in above (measured 2026-11-10 on Playwright
+  WebKit 26.5; `e2e/sharing/live-note-view.spec.ts` runs that reader in
+  WebKit). The BlockSuite note's title still declares its container.
+- **Gutter** (`BlockInteractions.tsx`): from `sm` a + sits left of the grip on
+  a top-level block. It adds a paragraph below and types the slash, so the
+  slash plugin opens its menu; left without a pick or a search, the line
+  stays empty (`gutterSlash.ts` marks the input node, `SlashInput.tsx` skips
+  writing the slash back). A click on the grip opens the block menu under it
+  (the right-click menu: Delete, Duplicate, Turn into, Indent, Outdent,
+  Align) through `BlockMenuOpener`; a drag still moves the block. The grip
+  menu is not offered on a touch device; a read-only note has no gutter. The chunk containment
+  margin (`[data-slate-chunk]` in `tailwind.css`) is 44px on the left from
+  `sm` so the + is not clipped.
+- **Tables** (`TableNodes.tsx`): a pill beside the hovered row (it also drags
+  the row) and over the hovered column opens a menu (insert before or after,
+  delete); a + bar along the right edge and one under the last row add a
+  column or a row at the end; they show while the pointer or the caret is in
+  the table. The caret bar holds Merge and Split where they apply, Header
+  row, Duplicate and Delete. A header is the first row's cells as header
+  cells: inserting a row above it or deleting it keeps the header on the
+  first row, and rows added below it or at the end are never header rows.
+  `TABLE_WRAP_CLASS` pads the table (8px above, 20px right and below) in the
+  editor and the static renderer alike, so the pills and the + bars fit
+  inside its scroll box and both draw the same size. A pill acts on its
+  cell's whole span: deleting from a merged cell takes every row or column it
+  covers.
+
+Kept different on the Plate note: on a phone its gutters stay 20px, and 40px
+on the editor's right for the thread buttons, where the approved look has
+16px; rows moved by dragging do not re-place the header.
+
+Not built: the Table view block (AFFiNE's database, mock V2), queued as its own
+step; Colour, Copy link and Comment in the block menu (the BlockSuite note has
+no block colour, links to a block or comments yet).
+
 ### The board's tools
 
 The board adds to BlockSuite through its own extensions (`boardTools.ts`, `boardPlane.ts`,
@@ -4704,7 +4922,19 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     `focus` listener, since the app's queries never refetch on focus), and
     `WorkspaceCanvas` invalidates the quiz and material queries of the material the
     item dialog showed when the dialog closes (the dialog's saves go through its live
-    room, not the snapshot query). The block is a BlockSuite block
+    room, not the snapshot query). **Edit on the card** (Epo 2026-11-12): a person who
+    can edit the material (`capabilities.canEdit` from `useMaterial`, read once the
+    card is near) sees Edit at the top of the card's body, which swaps the body for
+    the note embed's editor (`AppEmbedEdit`: per-question Edit and Remove for a quiz,
+    per-card Edit and Add card for a set) on its live rooms; Done swaps back and
+    invalidates the material's quiz and material queries so every card redraws. One
+    card edits at a time (`CanvasMaterialCards`): with no note seat to join inside,
+    each edited card takes its own places among the user's 22 joined documents. The
+    editor gets no `onEmpty`, so it behaves as the item's own page: a quiz may lose
+    its last question, a set keeps its last card. A card stops editing on Done,
+    another card's Edit or leaving the board, and each of those reads its material
+    again. Edit shows on `canEditContent`, so an owner at their storage limit gets
+    none. The block is a BlockSuite block
     like any other but hosts React: it adopts one `div` per card from the host registry
     (`src/features/canvas/materialCardHosts.ts` — kept out of `src/features/blocksuite`,
     which the app's tsconfig excludes), and `CanvasMaterialCards.tsx`, rendered by

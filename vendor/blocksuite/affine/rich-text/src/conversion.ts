@@ -13,7 +13,7 @@ import {
   QuoteIcon,
   TextIcon,
 } from '@blocksuite/affine-components/icons';
-import { FontIcon, TeXIcon } from '@blocksuite/icons/lit';
+import { InformationIcon, TeXIcon } from '@blocksuite/icons/lit';
 import type { TemplateResult } from 'lit';
 
 /**
@@ -142,7 +142,8 @@ export const textConversionConfigs: TextConversionConfig[] = [
     type: undefined,
     name: 'Callout',
     hotkey: null,
-    icon: FontIcon(),
+    // Capy (local change 39): a callout's own icon, not Text's.
+    icon: InformationIcon(),
   },
   {
     flavour: 'affine:divider',

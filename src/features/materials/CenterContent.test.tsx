@@ -169,7 +169,11 @@ vi.mock('@/api/hooks', async () => {
             isPending: false,
           },
     useMe: () => ({ data: { id: 'u_1' } }),
+    // A note's title and Info row (NoteHeading) over its body.
+    useMoveMaterial: () => ({ mutate: () => undefined }),
     useRestoreTrashed: () => ({ isPending: false, mutate: () => {} }),
+    useTopics: () => ({ data: [] }),
+    useUpdateMaterial: () => ({ mutate: () => undefined }),
   };
 });
 vi.mock('@tanstack/react-router', async (original) => ({

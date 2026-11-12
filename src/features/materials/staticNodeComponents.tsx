@@ -63,6 +63,8 @@ import {
   getCodeBlockLanguageLabel,
   normalizeCalloutVariant,
 } from '@/features/notes/richBlockConfig';
+import type { TableViewElement as TableViewNode } from '@/features/notes/tableView/model';
+import { TableViewTable } from '@/features/notes/tableView/TableViewTable';
 import { QuestionView } from '@/features/questions/QuestionView';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -470,6 +472,20 @@ function QuestionFigure(props: SlateElementProps) {
   );
 }
 
+/** A table view: its first view as a table, drawn on the server too (no
+ * island: it needs no browser). */
+function TableViewElement(props: SlateElementProps) {
+  const { block } = props.element as unknown as TableViewNode;
+  return (
+    <SlateElement {...props} className="my-3">
+      <div contentEditable={false}>
+        <TableViewTable block={block} />
+      </div>
+      {props.children}
+    </SlateElement>
+  );
+}
+
 function QuizQuestionElement(props: SlateElementProps) {
   const node = props.element as unknown as QuizQuestionNode;
   const path = (props as { path?: Path }).path;
@@ -551,6 +567,7 @@ export const staticNoteComponents = {
   subscript: mark('sub'),
   superscript: mark('sup'),
   table: Table,
+  table_view: TableViewElement,
   td: element('td', TD_CLASS),
   th: element('th', TH_CLASS),
   toc: Toc,

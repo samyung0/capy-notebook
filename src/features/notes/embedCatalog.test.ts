@@ -31,6 +31,12 @@ const bodies: Record<string, string> = {
   mermaid: 'flowchart LR\n  A --> B',
   plot: JSON.stringify(question('plot').stem[1]),
   quiz: 'questions: []',
+  table_view: JSON.stringify({
+    columns: [{ id: 'c_title', kind: 'title', name: 'Topic' }],
+    rows: [{ c_title: 'Krebs cycle', id: 'r_1' }],
+    title: 'Revision tracker',
+    views: [{ id: 'v_1', kind: 'table', name: 'Table' }],
+  }),
 };
 
 const flags = (node: { isInline?: boolean; isVoid?: boolean }) =>
@@ -99,7 +105,15 @@ describe('the embed catalog', () => {
   // Go's ExtractIndexText and the collaboration server's index_text read
   // each element's rule (openwiki/embeds.md "Index text").
   it('gives every element an index rule', () => {
-    const rules = ['none', 'text', 'figure', 'mermaid', 'question', 'item'];
+    const rules = [
+      'none',
+      'text',
+      'figure',
+      'mermaid',
+      'question',
+      'item',
+      'table_view',
+    ];
     for (const element of EMBED_CATALOG.elements)
       expect(rules, element.type).toContain(element.index);
   });

@@ -476,7 +476,8 @@ under the workspace's `study` key).
   Done or the due date; a row opens their results, or the report's Members tab
   before a submission) with Overall, and Topics as Summary shows them. On the
   right: the weakest topic needing practice (lowest share right) with "Missed 3
-  of 4 questions" and Assign practice; Still missing
+  of 4 questions" and Assign practice; Frequently wrong (Still missing until
+  Epo 2026-11-11)
   (up to five questions whose latest check was not right, most missed first,
   from the class's own quizzes Summary counts, the prompt from
   `questions.PromptText`; a member's own practice quiz is private and stays
@@ -491,7 +492,12 @@ under the workspace's `study` key).
   member) shows Member not found with nothing to retry. Board G2's Draft a follow-up
   quiz (F3) was removed (Epo 2026-11-08): the labels already show which topics
   to make a quiz on; remaking a quiz from another one is queued instead. The ⋮
-  menu is not built.
+  menu is not built. An empty section keeps its heading with one muted line
+  ("None given to … yet.", "No answers in any topic yet.", "Nothing answered
+  wrong.", "No activity yet."); a member with no assignments, nothing wrong, no
+  activity and no topic answered gets one line for the whole page instead,
+  "… hasn't started here yet" (Epo 2026-11-12, mock B then A). The mocks'
+  Dan Kim, Farah Ali, Gus Ito and Cara Moss show these cases.
 - Phones and narrow panes (below the `@4xl` container, where the table no
   longer fits) get a plain list instead of either view (Epo 2026-11-08): the
   name and any Storage full chip, "3 of 4 done · 2 missing" under it and the

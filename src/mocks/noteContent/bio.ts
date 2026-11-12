@@ -1,5 +1,6 @@
 import { EMBED_CATALOG } from '@/api/embeds.generated';
 import { htmlEmbedNode, mermaidNode } from '@/features/materials/document';
+import type { TableViewElement } from '@/features/notes/tableView/model';
 import type { Question, QuestionAnswer } from '@/features/questions/types';
 import { biologyQuizQuestions, surfaceAreaGraph } from '../biologyQuiz';
 import {
@@ -63,6 +64,72 @@ function cellQuestion(
 }
 
 /** Biology 101 — showcase headings, marks, lists, callouts, media, study blocks. */
+/** The table view mock's "Revision tracker" (Epo 2026-11-12, artboard Main):
+ * typed columns, a Table view sorted by its review date and a Kanban. */
+function revisionTracker(id: string): TableViewElement {
+  const row = (
+    rowId: string,
+    topic: string,
+    status: string,
+    mark: number | undefined,
+    review: string,
+    done: boolean
+  ) => ({
+    c_done: done,
+    c_review: review,
+    c_status: status,
+    c_title: topic,
+    ...(mark === undefined ? {} : { c_mark: mark }),
+    id: rowId,
+  });
+  return {
+    block: {
+      columns: [
+        { id: 'c_title', kind: 'title', name: 'Topic' },
+        {
+          id: 'c_status',
+          kind: 'select',
+          name: 'Status',
+          options: [
+            { color: 'gray', id: 'o_1', name: 'Not yet' },
+            { color: 'orange', id: 'o_2', name: 'Revising' },
+            { color: 'green', id: 'o_3', name: 'Done' },
+          ],
+        },
+        { id: 'c_mark', kind: 'number', name: 'Mark' },
+        { id: 'c_review', kind: 'date', name: 'Review on' },
+        { id: 'c_done', kind: 'checkbox', name: 'Done' },
+      ],
+      rows: [
+        row('r_1', 'Krebs cycle', 'o_2', 6, '2026-11-10', false),
+        row('r_2', 'Glycolysis', 'o_3', 9, '2026-11-12', true),
+        row(
+          'r_3',
+          'Electron transport chain',
+          'o_1',
+          undefined,
+          '2026-11-09',
+          false
+        ),
+        row('r_4', 'Anaerobic pathways', 'o_2', 7, '2026-11-14', false),
+      ],
+      title: 'Revision tracker',
+      views: [
+        {
+          id: 'v_1',
+          kind: 'table',
+          name: 'Table',
+          sort: { columnId: 'c_review', dir: 'asc' },
+        },
+        { groupBy: 'c_status', id: 'v_2', kind: 'kanban', name: 'Kanban' },
+      ],
+    },
+    children: [{ text: '' }],
+    id,
+    type: 'table_view',
+  };
+}
+
 export const bioNotes: SeedNote[] = [
   {
     daysAgo: 0,
@@ -138,6 +205,11 @@ export const bioNotes: SeedNote[] = [
           ),
         ],
       }),
+      heading(2, 'What to revise'),
+      revisionTracker('tv_bio_note_1'),
+      p(
+        'Glycolysis happens in the cytoplasm; the rest happen in the mitochondria.'
+      ),
       heading(2, 'Lab checklist'),
       todo('Sketch a labeled eukaryotic cell', true),
       todo('Compare osmosis vs diffusion in the worksheet'),
@@ -389,6 +461,9 @@ export const bioNotes: SeedNote[] = [
         ]
       ),
 
+      heading(2, 'Table view'),
+      revisionTracker('tv_bio_feature_matrix'),
+
       heading(2, 'Columns'),
       columns(
         ['50%', '50%'],
@@ -507,8 +582,8 @@ export const bioNotes: SeedNote[] = [
     id: 'mat_note_bio_welcome',
     title: 'Welcome to Capy Notebook',
     topicId: null,
+    // As the server's starter note: its name is its title, not a heading.
     value: [
-      heading(1, 'Welcome to Capy Notebook'),
       p(
         'This is a note: write in it like any document, and add study blocks that turn what you read into practice.'
       ),

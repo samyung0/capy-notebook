@@ -412,7 +412,7 @@ export const qk = {
   /** The workspace's Practice page; refreshed with the rest of study. */
   practice: (wsId: string) => ['workspace', wsId, 'study', 'practice'] as const,
   quiz: (id: string) => ['quiz', id] as const,
-  /** GET /recent: Recent Files and the quick open share it. */
+  /** GET /recent: Recent Files. */
   recent: ['recent'] as const,
   reviewResult: (id: string) => ['review', 'result', id] as const,
   /** Everything under Learning, past reviews included. */

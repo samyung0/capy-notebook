@@ -11,6 +11,15 @@ pub const MERMAID_SOURCE_MAX: usize = 50000;
 pub const MEDIA_WIDTH_MIN: usize = 20;
 pub const MEDIA_WIDTH_MAX: usize = 100;
 pub const LIST_INDENT_MAX: usize = 8;
+pub const TABLE_VIEW_ID_MAX: usize = 64;
+pub const TABLE_VIEW_NAME_MAX: usize = 100;
+pub const TABLE_VIEW_CELL_MAX: usize = 2000;
+pub const TABLE_VIEW_NUMBER_MAX: usize = 1000000000000000;
+pub const TABLE_VIEW_COLUMNS_MAX: usize = 20;
+pub const TABLE_VIEW_ROWS_MAX: usize = 500;
+pub const TABLE_VIEW_VIEWS_MAX: usize = 8;
+pub const TABLE_VIEW_OPTIONS_MAX: usize = 50;
+pub const TABLE_VIEW_MAX_COUNT: usize = 20;
 pub const CARD_FRONT_MAX: usize = 200;
 pub const CARD_BACK_MAX: usize = 1000;
 pub const DRAWING_BOARD_MAX: usize = 256000;
@@ -66,6 +75,7 @@ pub enum Index {
     Mermaid,
     Question,
     Item,
+    TableView,
 }
 
 /// One element type a material document may hold.
@@ -688,6 +698,23 @@ pub const ELEMENTS: &[Element] = &[
         materials: &["note", "quiz", "flashcards", "mindmap", "diagram"],
     },
     Element {
+        name: "table_view",
+        index: Index::TableView,
+        void: true,
+        inline: false,
+        top_level: true,
+        required: &["id", "block"],
+        fields: Some(&["type", "id", "block", "children"]),
+        forbidden: &["color", "backgroundColor", "fontSize", "fontFamily"],
+        shared_text: &[],
+        shared_map: &["block"],
+        shared_lists: &["columns", "rows", "views"],
+        assets: &[],
+        resizable: false,
+        children: &[],
+        materials: &["note"],
+    },
+    Element {
         name: "html_embed",
         index: Index::None,
         void: true,
@@ -888,6 +915,16 @@ pub const EMBEDS: &[Embed] = &[
         fence_body: "json",
         materials: &[],
         question_block: true,
+        question_media: false,
+    },
+    Embed {
+        kind: "table_view",
+        class: "live_map",
+        element: "table_view",
+        fence_lang: "table-view",
+        fence_body: "json",
+        materials: &[],
+        question_block: false,
         question_media: false,
     },
     Embed {

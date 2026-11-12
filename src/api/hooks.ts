@@ -1279,10 +1279,10 @@ export function useForgetWorkspace() {
   });
 }
 
-/** How many opens Recent Files and the quick open read (one shared list). */
+/** How many opens Recent Files reads. */
 export const RECENT_LIMIT = 20;
 
-/** The dashboard's Recent Files and the phone quick open: the caller's
+/** The dashboard's Recent Files: the caller's
  * newest opened (or created) files and materials they can still open, in
  * open order, from any device. */
 export const recentQuery = () =>

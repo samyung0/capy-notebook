@@ -78,8 +78,12 @@ export const MaterialPreview = memo(function MaterialPreview({
       <MaterialRenderProvider value={renderContext}>
         <KeyedStatic
           className={cn(
-            'note-editor mx-auto min-h-75 w-full px-5 pt-4 pb-36 text-base outline-none sm:px-10',
-            (kind !== 'note' || displayWidth === 'half') && 'md:max-w-3xl',
+            'note-editor min-h-75 pt-4 pb-36 text-base outline-none',
+            // A note reads in its column; other kinds keep the narrow one.
+            kind === 'note'
+              ? 'note-column'
+              : 'mx-auto w-full px-5 sm:px-10 md:max-w-3xl',
+            kind === 'note' && displayWidth === 'half' && 'max-w-[912px]',
             className
           )}
           editor={editor}

@@ -20,7 +20,8 @@ entries); mocks: `artifacts/2026-10-20-painted-cards-cursors-mocks.html`.
 - The 640–1023px rail uses the same rows. The phone nav drawer's foot is a
   link to Settings → Account (avatar and name) with a danger-light Log out
   button on its right (`ProfileRow`), no menu. Phones keep the avatar menu in
-  the page's top row (`PhoneTopRow`).
+  the page's top row (`PhoneTopRow`), which holds only the menu button and the
+  avatar (the recent-files arrow and the mic were removed, Epo 2026-11-11).
 - Over a page frame the sidebar's rows hover with a translucent tint
   (`--surface-page-hover` and `--surface-card-hover-bg` are redefined under
   `[data-frosted]`), so the frost shows through. A row's hover ⋮
@@ -152,6 +153,11 @@ its light or dark palette. Settings → Customizations → Theme chooses it.
   thumbnail's outer focus ring is 1px more, its image 1px less),
   `--radius-card`, `--radius-card-lg`, `--radius-card-xl` (shell panels),
   `--radius-flashcard` (study and grid flashcards; Capy keeps Fisheye's 24px).
+  `--radius-toolbar` and `--radius-toolbar-button` are every floating bar and
+  its buttons, BlockSuite's and the app's shared `BlockToolbar` alike, and
+  BlockSuite's menus (8 and 5px in Capy and Notion, 14 and 10px in Fisheye);
+  see "The note's and the board's chrome" in
+  [plate-editor.md](plate-editor.md#the-notes-and-the-boards-chrome).
 - Control heights: `--button-h-sm`, `--button-h-lg` and `--control-h`
   (Button, Input and Select `md`, one value so a button beside a field lines
   up), phone values first and the `sm` breakpoint's in a media block.

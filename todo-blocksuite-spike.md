@@ -1,5 +1,12 @@
 # BlockSuite notes: built beside Plate, then a clean cut
 
+> **Superseded (Epo, 2026-11-12): there is no cut.** "we are not doing the cut,
+> i specifically say that old plate and canvas exist together." Plate stays the
+> note editor and BlockSuite serves the canvas and the boards. The approved note
+> look (mocks S2, T2, H1, M1, N2, P1, I1) came to main for the Plate note and the
+> boards on `claude/ui-tweaks-3`; the BlockSuite note editor stays on
+> `blocksuite-notes`, unshipped. The plan below is kept as history.
+
 Status: plan only (2026-10-27), revised after an adversarial review the same day.
 Nothing is built. The direction below is Epo's (2026-10-27). The decisions at the
 end need answers before step 1 starts.

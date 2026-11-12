@@ -682,6 +682,39 @@ export const EMBED_CATALOG = {
       ]
     },
     {
+      "type": "table_view",
+      "index": "table_view",
+      "void": true,
+      "topLevel": true,
+      "required": [
+        "id",
+        "block"
+      ],
+      "fields": [
+        "type",
+        "id",
+        "block",
+        "children"
+      ],
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
+      "sharedMap": [
+        "block"
+      ],
+      "sharedLists": [
+        "columns",
+        "rows",
+        "views"
+      ],
+      "materials": [
+        "note"
+      ]
+    },
+    {
       "type": "html_embed",
       "index": "none",
       "void": true,
@@ -1203,6 +1236,26 @@ export const EMBED_CATALOG = {
       }
     },
     {
+      "kind": "table_view",
+      "class": "live_map",
+      "element": "table_view",
+      "fence": {
+        "lang": "table-view",
+        "body": "json"
+      },
+      "surfaces": [
+        "note",
+        "share",
+        "export"
+      ],
+      "edit": {
+        "user": [
+          "note"
+        ],
+        "agent": []
+      }
+    },
+    {
       "kind": "html_embed",
       "class": "value",
       "element": "html_embed",
@@ -1393,6 +1446,15 @@ export const EMBED_CATALOG = {
     "QUIZ_OPEN_ANSWER_MAX": 5000,
     "QUIZ_OPEN_PARTS_MAX": 100,
     "QUIZ_PARTS_MAX": 150,
-    "QUIZ_QUESTION_PARTS_MAX": 7
+    "QUIZ_QUESTION_PARTS_MAX": 7,
+    "TABLE_VIEW_CELL_MAX": 2000,
+    "TABLE_VIEW_COLUMNS_MAX": 20,
+    "TABLE_VIEW_ID_MAX": 64,
+    "TABLE_VIEW_MAX_COUNT": 20,
+    "TABLE_VIEW_NAME_MAX": 100,
+    "TABLE_VIEW_NUMBER_MAX": 1000000000000000,
+    "TABLE_VIEW_OPTIONS_MAX": 50,
+    "TABLE_VIEW_ROWS_MAX": 500,
+    "TABLE_VIEW_VIEWS_MAX": 8
   }
 } as const;

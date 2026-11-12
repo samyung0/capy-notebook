@@ -22,6 +22,13 @@ export class HandleEventWatcher {
       const block = this.widget.anchorBlockComponent;
       if (!block) return;
 
+      // Capy (local change 36): a note's grip is a fixed 24px button on the block's
+      // first line, so it does not stretch over the block as upstream's bar does.
+      if (this.widget.mode === 'page') {
+        this.widget.isDragHandleHovered = true;
+        return;
+      }
+
       const padding = DRAG_HANDLE_CONTAINER_PADDING * this.widget.scale.peek();
       container.style.paddingTop = `${padding}px`;
       container.style.paddingBottom = `${padding}px`;

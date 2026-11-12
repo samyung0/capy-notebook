@@ -72,7 +72,7 @@ export function recentSearch(item: RecentItem) {
 }
 
 /** The caller's newest opened (or created) files and materials, in open
- * order, once both lists have loaded: Recent Files and the quick open. The
+ * order, once both lists have loaded, for Recent Files. The
  * rows come from the cache first and refetch in the background. */
 export function useRecentItems() {
   const {
