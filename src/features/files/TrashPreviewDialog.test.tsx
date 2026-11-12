@@ -58,7 +58,10 @@ const item = (title: string): TrashItem =>
     title,
   }) as TrashItem;
 
-async function render(opened: TrashItem, onRestore = () => {}) {
+async function render(
+  opened: TrashItem,
+  onRestore: (item: TrashItem) => void = () => undefined
+) {
   document.body.innerHTML = '<div id="root"></div>';
   const root = createRoot(document.getElementById('root') as never);
   await act(async () =>
