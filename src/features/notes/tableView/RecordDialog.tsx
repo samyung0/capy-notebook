@@ -99,7 +99,7 @@ export function RecordDialog({
               onClose();
             }}
             size="sm"
-            variant="danger-outline"
+            variant="danger"
           >
             {m.table_view_delete_record()}
           </Button>
