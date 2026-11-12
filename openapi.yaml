@@ -8695,6 +8695,10 @@ components:
           format: uri
           readOnly: true
           type: string
+        assets:
+          additionalProperties:
+            type: string
+          type: object
         file:
           $ref: "#/components/schemas/File"
         links:

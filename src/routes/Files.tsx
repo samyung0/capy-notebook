@@ -31,6 +31,7 @@ import { Tabs } from '@/components/ui/Tabs';
 import { CanvasTab } from '@/features/files/CanvasTab';
 import { formatFileSize } from '@/features/files/fileUtils';
 import { ItemsList } from '@/features/files/ItemsList';
+import { toastLostAccess } from '@/features/files/lostAccess';
 import {
   clearOnBlank,
   SelectionAction,
@@ -169,7 +170,8 @@ const TrashCard = memo(function TrashCard({
       details={formatFileSize(item.sizeBytes)}
       icon={trashIconName(item)}
       meta={formatDate(item.purgeAfter)}
-      onOpen={() => onOpen(item)}
+      // An item whose workspace the payer left stays shut, as in Files.
+      onOpen={item.lostAccess ? toastLostAccess : () => onOpen(item)}
       pickKey={`${item.kind}:${item.id}:${item.episodeId}`}
       selected={selected}
       thumbnail={{

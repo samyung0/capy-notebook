@@ -378,6 +378,15 @@ func TestTrashedPreviewReaders(t *testing.T) {
 	if err != nil || note.ID != mt.ID || len(note.Content) == 0 {
 		t.Fatalf("owner material preview = %+v %v", note, err)
 	}
+	// Its own ready images come signed with it; one a save left out does not.
+	image := readyAsset(t, s, mt.ID, ownerID, "image")
+	dropped := readyAsset(t, s, mt.ID, ownerID, "image")
+	if _, err := s.pool.Exec(ctx, `UPDATE editor_assets SET trashed_at=now() WHERE id=$1`, dropped); err != nil {
+		t.Fatal(err)
+	}
+	if paths, err := s.MaterialAssetPaths(ctx, mt.ID); err != nil || len(paths) != 1 || paths[image] == "" {
+		t.Fatalf("trashed note assets = %v %v", paths, err)
+	}
 	// The editor pays for its own file, which the owner also reads.
 	if _, _, err := s.TrashedFile(ctx, editorID, editorFile.ID); err != nil {
 		t.Fatalf("payer preview = %v", err)
