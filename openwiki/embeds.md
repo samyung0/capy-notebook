@@ -118,7 +118,7 @@ lists to cover are in the central todo list). Decisions: `human/frontend/plate-e
   whose reference still carries an imported fence body (`pending`, the
   quiz's answer keys) is not served at
   all: its room refuses to load, as Go's reads refuse it (`Model::stored`). Only `mermaid.source` is shared
-  text and only a figure's `block` a shared map: the server reads both from
+  text and only a figure's or table view's `block` a shared map: the server reads both from
   the catalog (`plate::holds_text`, `plate::holds_map`, `plate::lists_of`),
   the browser's live Mermaid from it too (`liveMermaid.ts`), and the
   `@slate-yjs/core` patch holds its own tables, which
@@ -205,6 +205,7 @@ the golden fixtures in `server/internal/materialdoc/testdata/index_text`
 | `mermaid` | `mermaid` | the caption, then the whole source in a ```` ```mermaid ```` fence |
 | `question` | `quiz_question` | the question, below |
 | `item` | `material_ref` | the referenced quiz's or flashcard set's text, at the reference |
+| `table_view` | `table_view` | its title, then its first view as a Markdown table, below |
 | `none` | `hr`, `toc`, `equation`, `img`, `audio`, `video`, `placeholder`, `html_embed`, and the inline voids `inline_equation`, `mention`, `mention_input`, `slash_input` | nothing: media (and their captions), equations and the table of contents carry no text of their own, an inline void's children are empty (an equation's TeX and a mention's name stay out, as before), the transient elements hold nothing yet, and html_embed is out of the embeds round (Epo 2026-10-17) |
 
 A type the catalog does not list gives its text, as the read-only View shows
@@ -366,6 +367,34 @@ figures).
 - **Graph SVG.** Saving draws the graph's SVG; an editor in Edit mode that
   sees a graph's recipe change redraws it once in an idle callback and writes
   `image` only when it differs, outside Undo; readers keep the stored SVG.
+
+## Table views
+
+A note's `table_view` (Epo 2026-11-12, AFFiNE's database look on Plate) holds
+its `block` as a live map whose `columns`, `rows` and `views` merge entry by
+entry. Every writer keeps the same structural rules, and nothing more, so
+what a merge leaves (a cell of a gone column, a value that no longer fits its
+column, a sort or group naming a gone column) stays and reads as empty: the
+four block keys, ids of `[A-Za-z0-9_-]` up to `TABLE_VIEW_ID_MAX` unique per
+list, exactly one `title` column, the counts, lengths (UTF-16 units) and
+kinds, colours and sort directions, cells a string, a number up to
+`TABLE_VIEW_NUMBER_MAX` or a boolean, and at most `TABLE_VIEW_MAX_COUNT` per
+note. Go's `materialdoc.validateTableView` (every write; the count in
+`validate`), the store's `notes::table_view::block` (through
+`assert_canonical`, Go's messages word for word) and room admission (the
+block read whole on a copy of the room when an update writes into its map,
+`BAD_VALUE`, so a merge that would leave two title columns loses the later
+writer's update; a 21st block `TOO_MANY_TABLE_VIEWS`) apply them, as the
+browser's `isTableViewBlock` does. The index text (Go's `tableViewIndexText`,
+`notes::table_view::text`, the browser's `tableViewText`) is the trimmed
+title, a blank line, then the first view's rows whatever its kind: a header
+of column names, the title column first, a `---` row, one row per record in
+the view's sort (empty cells last, ties in list order; text by code point on
+the server where the browser's `localeCompare` follows the locale), cells as
+drawn (option names, ISO dates, `☑`/`☐`, numbers as JavaScript writes them,
+`1e-7` included), `|` as `\|` and line breaks as spaces. The pipeline reads
+it from Go's index text and has no rule of its own. Note effects name a
+table view by its title and count its changed table lines as rows.
 
 ## Adding an element or an embed kind
 
