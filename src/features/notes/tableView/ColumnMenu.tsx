@@ -13,6 +13,7 @@ import { Icon } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { ColumnLabel } from './cells';
 import { keepKeys, useTableView } from './context';
 import { COLUMN_ICON } from './display';
 import {
@@ -33,16 +34,6 @@ import {
   type TableViewColumn,
   type TableViewView,
 } from './model';
-
-/** A column header's label: its type's icon and its name. */
-export function ColumnLabel({ column }: { column: TableViewColumn }) {
-  return (
-    <span className="flex min-w-0 items-center gap-1.5">
-      <Icon className="shrink-0" name={COLUMN_ICON[column.kind]} />
-      <span className="truncate">{column.name}</span>
-    </span>
-  );
-}
 
 /** A click on a column's name opens this (mock ColumnMenu): its name, its
  * type, the view's sort on it, insert, duplicate and delete. The title column

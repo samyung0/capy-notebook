@@ -1419,6 +1419,7 @@
   "table_view_no_group_column": "Add a Select column to group the records.",
   "table_view_no_option": "No {name}",
   "table_view_record": "Record",
+  "table_view_open_record": "Open",
   "table_view_insert_above": "Insert above",
   "table_view_insert_below": "Insert below",
   "table_view_delete_record": "Delete record",

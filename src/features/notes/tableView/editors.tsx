@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/Input';
 import { MiniCalendar } from '@/features/schedule/MiniCalendar';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { OptionChip } from './cells';
 import { keepKeys, useTableView } from './context';
 import {
   addOption,
@@ -20,7 +21,6 @@ import {
   nextColor,
   updateOption,
 } from './edit';
-import { OptionChip } from './fields';
 import { isoDate, OPTION_COLOR_LABEL, parseIsoDate } from './look';
 import {
   OPTION_COLORS,

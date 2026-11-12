@@ -2,6 +2,7 @@ import { createPlateEditor, Plate, PlateContent } from 'platejs/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { customBlockPlugins } from '../blocks/plugins';
+import { COLUMN_WIDTH } from './display';
 import { newTableViewBlock } from './model';
 
 const block = () =>
@@ -56,5 +57,9 @@ describe('the table view plugin', () => {
     expect(html).toContain('Revision tracker');
     expect(html).not.toContain('New record');
     expect(html).not.toContain('<input');
+    // The read-only table's widths (display.ts), so View and editor match.
+    expect(html).toContain(
+      `--w-phone:${COLUMN_WIDTH.title[0]}px;--w-wide:${COLUMN_WIDTH.title[1]}px`
+    );
   });
 });

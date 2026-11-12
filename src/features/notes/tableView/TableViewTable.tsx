@@ -1,82 +1,26 @@
-import { Icon } from '@/components/ui/Icon';
-import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { CellText, ColumnLabel } from './cells';
 import {
-  COLUMN_ICON,
-  OPTION_CHIP_CLASS,
-  OPTION_CHIP_SHAPE,
-  tableViewDate,
+  CELL_CLASS,
+  CELL_CONTENT_CLASS,
+  COLUMN_WIDTH,
+  DIVIDED_CLASS,
+  HEADER_CLASS,
+  STICKY_CLASS,
+  TABLE_CLASS,
+  tableWidth,
+  WIDTH_CLASS,
+  widthVars,
 } from './display';
-import {
-  cellOption,
-  cellValue,
-  drawnColumns,
-  firstViewRows,
-  plainNumber,
-  type TableViewBlock,
-  type TableViewColumn,
-  type TableViewRow,
-} from './model';
+import { drawnColumns, firstViewRows, type TableViewBlock } from './model';
 
 /* A table view as the read-only renderers draw it (a note's View and Preview,
    share pages, which render it in the Worker): its first view as a table,
    whatever its kind (spec "How readers draw it"). Plain markup with no state
-   or browser API. On a phone the table scrolls sideways in its own box with
-   the title column kept in view. */
-
-const CELL = 'h-9 border-line border-b px-2.5 text-left align-middle';
-/** Each cell but a row's first has a line on its left. */
-const DIVIDED = 'border-l';
-/** The title column stays in view while the rest scroll under it, with its
- * own right edge: a collapsed table paints borders where the cell started. */
-const STICKY =
-  'sticky left-0 z-[1] bg-surface shadow-[inset_-1px_0_0_var(--color-line)]';
-
-/** A checkbox cell, drawn as the editor's box. */
-function CheckboxCell({ checked }: { checked: boolean }) {
-  return checked ? (
-    <span
-      aria-label={m.table_view_checked()}
-      className="inline-flex size-4 items-center justify-center rounded bg-fg align-middle text-surface"
-      role="img"
-    >
-      <Icon name="tick" size={12} strokeWidth={3} />
-    </span>
-  ) : (
-    <span
-      aria-label={m.table_view_unchecked()}
-      className="inline-block size-4 rounded border-[1.5px] border-line-strong align-middle"
-      role="img"
-    />
-  );
-}
-
-function Cell({ column, row }: { column: TableViewColumn; row: TableViewRow }) {
-  if (column.kind === 'checkbox')
-    return <CheckboxCell checked={cellValue(column, row) === true} />;
-  if (column.kind === 'select') {
-    const option = cellOption(column, row);
-    return option ? (
-      <span className={cn(OPTION_CHIP_SHAPE, OPTION_CHIP_CLASS[option.color])}>
-        {option.name}
-      </span>
-    ) : null;
-  }
-  const value = cellValue(column, row);
-  if (value === undefined) return null;
-  const text =
-    column.kind === 'date'
-      ? tableViewDate(String(value))
-      : typeof value === 'number'
-        ? plainNumber(value)
-        : String(value);
-  // Long text wraps inside a bounded cell instead of widening the table.
-  return (
-    <div className="max-w-[200px] whitespace-pre-wrap break-words py-1.5 sm:max-w-[320px]">
-      {text}
-    </div>
-  );
-}
+   or browser API, laid out as the editor's table (display.ts: the same fixed
+   column widths, cells and ellipsis), so a note keeps its table's shape when
+   it switches between View and the editor. On a phone the table scrolls
+   sideways in its own box with the title column kept in view. */
 
 export function TableViewTable({ block }: { block: TableViewBlock }) {
   const columns = drawnColumns(block);
@@ -89,24 +33,32 @@ export function TableViewTable({ block }: { block: TableViewBlock }) {
           {title}
         </div>
       )}
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse border-line border-t text-sm">
+      <div className="overflow-x-auto border-line border-t">
+        <table className={TABLE_CLASS} style={widthVars(tableWidth(columns))}>
+          <colgroup>
+            {columns.map((column) => (
+              <col
+                className={WIDTH_CLASS}
+                key={column.id}
+                style={widthVars(COLUMN_WIDTH[column.kind])}
+              />
+            ))}
+          </colgroup>
           <thead>
             <tr>
               {columns.map((column, index) => (
                 <th
                   className={cn(
-                    CELL,
-                    'whitespace-nowrap font-medium text-fg-muted',
-                    index === 0 ? STICKY : DIVIDED
+                    CELL_CLASS,
+                    HEADER_CLASS,
+                    index === 0 ? STICKY_CLASS : DIVIDED_CLASS
                   )}
                   key={column.id}
                   scope="col"
                 >
-                  <span className="inline-flex items-center gap-1.5">
-                    <Icon name={COLUMN_ICON[column.kind]} size={16} />
-                    {column.name}
-                  </span>
+                  <div className={CELL_CONTENT_CLASS}>
+                    <ColumnLabel column={column} />
+                  </div>
                 </th>
               ))}
             </tr>
@@ -117,12 +69,19 @@ export function TableViewTable({ block }: { block: TableViewBlock }) {
                 {columns.map((column, index) => (
                   <td
                     className={cn(
-                      CELL,
-                      index === 0 ? cn(STICKY, 'font-semibold') : DIVIDED
+                      CELL_CLASS,
+                      index === 0 ? STICKY_CLASS : DIVIDED_CLASS
                     )}
                     key={column.id}
                   >
-                    <Cell column={column} row={row} />
+                    <div
+                      className={cn(
+                        CELL_CONTENT_CLASS,
+                        index === 0 && 'font-semibold'
+                      )}
+                    >
+                      <CellText column={column} row={row} />
+                    </div>
                   </td>
                 ))}
               </tr>

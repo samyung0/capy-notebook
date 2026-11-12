@@ -16,7 +16,21 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { sameJson } from '@/lib/sameJson';
 import { ColumnMenu } from './ColumnMenu';
+import { CellText, CheckboxMark, ColumnLabel } from './cells';
 import { type TableViewEdit, useTableView } from './context';
+import {
+  ADD_COLUMN_WIDTH,
+  CELL_CLASS,
+  CELL_CONTENT_CLASS,
+  COLUMN_WIDTH,
+  DIVIDED_CLASS,
+  HEADER_CLASS,
+  STICKY_CLASS,
+  TABLE_CLASS,
+  tableWidth,
+  WIDTH_CLASS,
+  widthVars,
+} from './display';
 import {
   canAddColumn,
   canAddRow,
@@ -29,8 +43,7 @@ import {
   uniqueName,
 } from './edit';
 import { DateEditor, SelectEditor } from './editors';
-import { CellText, CheckboxMark, CommitInput, textCell } from './fields';
-import { COLUMN_WIDTH, widthVars } from './look';
+import { CommitInput, textCell } from './fields';
 import {
   type CellValue,
   cellValue,
@@ -55,18 +68,15 @@ function useStable<T>(value: T): T {
   return held.current;
 }
 
-const CELL = 'h-9 border-line border-b p-0 align-middle';
-/** The title column stays while the rest scroll sideways (mock Phone). */
-const STICKY =
-  'sticky left-0 z-[1] bg-surface shadow-[4px_0_6px_-4px_rgb(0_0_0/0.12)] sm:shadow-none';
-
 /** The record's menu, from a pill at the end of its title cell, in the plain
- * table's style: insert above or below, delete. */
+ * table's style: open, insert above or below, delete. */
 function RowMenu({
+  onOpen,
   room,
   row,
   write,
 }: {
+  onOpen: (rowId: string) => void;
   /** Whether a record can be added (the rows cap). */
   room: boolean;
   row: TableViewRow;
@@ -88,6 +98,11 @@ function RowMenu({
         onCloseAutoFocus={(event) => event.preventDefault()}
         side="right"
       >
+        <DropdownMenuItem onSelect={() => onOpen(row.id)}>
+          <Icon name="maximize" />
+          {m.table_view_open_record()}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         <DropdownMenuItem
           disabled={!room}
           onSelect={() =>
@@ -120,14 +135,16 @@ function RowMenu({
 }
 
 /** A cell that edits in place: text and numbers in a field, select and date
- * in a popover, a checkbox on click. */
-function Cell({
+ * in a popover, a checkbox on click (the table's and the record dialog's). */
+export function EditableCell({
+  className,
   column,
   editing,
   onEdit,
   row,
   write,
 }: {
+  className?: string;
   column: TableViewColumn;
   editing: boolean;
   onEdit: (editing: Editing) => void;
@@ -136,8 +153,9 @@ function Cell({
 }) {
   const title = column.kind === 'title';
   const content = cn(
-    'flex h-9 w-full min-w-0 items-center px-2.5 text-left',
-    title && 'pointer-coarse:pr-8 font-semibold'
+    CELL_CONTENT_CLASS,
+    title && 'pointer-coarse:pr-8 font-semibold',
+    className
   );
   if (!write)
     return (
@@ -258,6 +276,7 @@ const Row = memo(
     columns,
     editing,
     onEdit,
+    onOpen,
     room,
     row,
     write,
@@ -266,6 +285,7 @@ const Row = memo(
     /** The column whose cell is open in this row. */
     editing: string | undefined;
     onEdit: (editing: Editing) => void;
+    onOpen: (rowId: string) => void;
     room: boolean;
     row: TableViewRow;
     write?: Write;
@@ -274,24 +294,38 @@ const Row = memo(
       <tr className="group/row">
         {columns.map((column, at) => (
           <td
-            className={cn(CELL, at === 0 ? STICKY : 'border-l')}
+            className={cn(CELL_CLASS, at === 0 ? STICKY_CLASS : DIVIDED_CLASS)}
             key={column.id}
           >
-            <Cell
-              column={column}
-              editing={editing === column.id}
-              onEdit={onEdit}
-              row={row}
-              write={write}
-            />
+            {at === 0 && !write ? (
+              // A read-only note opens the record from its title.
+              <button
+                className={cn(
+                  CELL_CONTENT_CLASS,
+                  'font-semibold outline-none hover:bg-surface-hover-bg/60 focus-visible:bg-surface-hover-bg'
+                )}
+                onClick={() => onOpen(row.id)}
+                type="button"
+              >
+                <CellText column={column} row={row} />
+              </button>
+            ) : (
+              <EditableCell
+                column={column}
+                editing={editing === column.id}
+                onEdit={onEdit}
+                row={row}
+                write={write}
+              />
+            )}
             {at === 0 && write && (
               <div className="absolute top-1/2 right-1 flex -translate-y-1/2">
-                <RowMenu room={room} row={row} write={write} />
+                <RowMenu onOpen={onOpen} room={room} row={row} write={write} />
               </div>
             )}
           </td>
         ))}
-        {write && <td className={cn(CELL, 'border-l')} />}
+        {write && <td className={cn(CELL_CLASS, DIVIDED_CLASS)} />}
       </tr>
     );
   },
@@ -301,6 +335,7 @@ const Row = memo(
     prev.room === next.room &&
     prev.write === next.write &&
     prev.onEdit === next.onEdit &&
+    prev.onOpen === next.onOpen &&
     (prev.row === next.row || sameJson(prev.row, next.row))
 );
 
@@ -310,24 +345,20 @@ export function EditableTable({
   editing,
   onEdit,
   onNewRecord,
+  onOpen,
   view,
 }: {
   editing: Editing;
   onNewRecord: () => void;
-  /** Stable: rows redraw only when theirs changed. */
+  /** Stable, as `onOpen`: rows redraw only when theirs changed. */
   onEdit: (editing: Editing) => void;
+  onOpen: (rowId: string) => void;
   view: TableViewView;
 }) {
   const { block, write } = useTableView();
   const columns = useStable(drawnColumns(block));
   const rows = sortedRows(block, view);
   const room = canAddRow(block);
-  // Fixed columns, the table at least as wide as the note: past it, the
-  // columns after the title scroll sideways.
-  const edge = write ? 36 : 0;
-  const tableWidth = [0, 1].map((at) =>
-    columns.reduce((sum, { kind }) => sum + COLUMN_WIDTH[kind][at], edge)
-  ) as [number, number];
   const addColumn = () =>
     write?.((next) =>
       insertColumn(
@@ -344,13 +375,13 @@ export function EditableTable({
     <>
       <div className="overflow-x-auto">
         <table
-          className="w-(--w-phone) min-w-full table-fixed border-separate border-spacing-0 text-sm sm:w-(--w-wide)"
-          style={widthVars(tableWidth)}
+          className={TABLE_CLASS}
+          style={widthVars(tableWidth(columns, write ? ADD_COLUMN_WIDTH : 0))}
         >
           <colgroup>
             {columns.map((column) => (
               <col
-                className="w-(--w-phone) sm:w-(--w-wide)"
+                className={WIDTH_CLASS}
                 key={column.id}
                 style={widthVars(COLUMN_WIDTH[column.kind])}
               />
@@ -362,9 +393,9 @@ export function EditableTable({
               {columns.map((column, at) => (
                 <th
                   className={cn(
-                    CELL,
-                    'text-left font-medium text-fg-muted',
-                    at === 0 ? STICKY : 'border-l',
+                    CELL_CLASS,
+                    HEADER_CLASS,
+                    at === 0 ? STICKY_CLASS : DIVIDED_CLASS,
                     // The menu's trigger fills the header cell.
                     '*:data-[slot=dropdown-menu-anchor]:flex *:data-[slot=dropdown-menu-anchor]:h-9 *:data-[slot=dropdown-menu-anchor]:w-full'
                   )}
@@ -374,14 +405,14 @@ export function EditableTable({
                   {write ? (
                     <ColumnMenu column={column} view={view} />
                   ) : (
-                    <div className="flex h-9 items-center px-2.5">
-                      <ColumnMenu column={column} view={view} />
+                    <div className={CELL_CONTENT_CLASS}>
+                      <ColumnLabel column={column} />
                     </div>
                   )}
                 </th>
               ))}
               {write && (
-                <th className={cn(CELL, 'border-l')}>
+                <th className={cn(CELL_CLASS, DIVIDED_CLASS)}>
                   <button
                     aria-label={m.table_view_add_column()}
                     className="flex h-9 w-full items-center justify-center text-fg-muted outline-none hover:bg-surface-hover-bg hover:text-fg focus-visible:bg-surface-hover-bg disabled:opacity-40"
@@ -405,6 +436,7 @@ export function EditableTable({
                 }
                 key={row.id}
                 onEdit={onEdit}
+                onOpen={onOpen}
                 room={room}
                 row={row}
                 write={write}
