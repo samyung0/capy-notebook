@@ -1342,6 +1342,8 @@
   "editor_numbered_list": "Numbered list",
   "editor_task_list": "Task list",
   "editor_table": "Table",
+  "table_view_checked": "Checked",
+  "table_view_unchecked": "Not checked",
   "editor_callout": "Callout",
   "editor_two_columns": "Two columns",
   "editor_image": "Image",

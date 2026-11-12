@@ -49,6 +49,7 @@ describe('shared text', () => {
 });
 
 describe('shared maps', () => {
+  const lists = ['elements', 'series', 'columns', 'rows', 'views'];
   const keys = (
     element: (typeof EMBED_CATALOG.elements)[number],
     name: 'sharedLists' | 'sharedMap'
@@ -61,17 +62,20 @@ describe('shared maps', () => {
     const all = (name: 'sharedLists' | 'sharedMap') =>
       new Set(EMBED_CATALOG.elements.flatMap((element) => keys(element, name)));
     expect(all('sharedMap')).toEqual(new Set(['block']));
-    expect(all('sharedLists')).toEqual(new Set(['elements', 'series']));
+    expect(all('sharedLists')).toEqual(new Set(lists));
   });
 
   it.each(
     EMBED_CATALOG.elements.map((element) => [element.type, element] as const)
   )('are what the slate-yjs patch makes a map on a %s', (type, element) => {
     const block = {
+      columns: [{ id: 'c1', kind: 'title', name: 'Name' }],
       elements: [{ id: 'e1', type: 'point' }],
+      rows: [{ cells: { c1: 'A' }, id: 'r1' }],
       series: [{ name: 'S', values: [1] }],
       title: 'T',
       type,
+      views: [{ id: 'v1', kind: 'table', name: 'Table' }],
     };
     const doc = new Y.Doc();
     const root = doc.get('content', Y.XmlText);
@@ -86,7 +90,7 @@ describe('shared maps', () => {
     const shared = keys(element, 'sharedMap').includes('block');
     expect(held instanceof Y.Map).toBe(shared);
     if (held instanceof Y.Map)
-      for (const list of ['elements', 'series'])
+      for (const list of lists)
         expect(held.get(list) instanceof Y.Array).toBe(
           keys(element, 'sharedLists').includes(list)
         );

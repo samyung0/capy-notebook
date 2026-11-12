@@ -1342,6 +1342,8 @@
   "editor_numbered_list": "有序列表",
   "editor_task_list": "任务列表",
   "editor_table": "表格",
+  "table_view_checked": "已勾选",
+  "table_view_unchecked": "未勾选",
   "editor_callout": "标注",
   "editor_two_columns": "两列",
   "editor_image": "图片",
