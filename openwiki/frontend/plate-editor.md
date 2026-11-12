@@ -1108,7 +1108,9 @@ as a large field, every other column a labelled row with the same editors, and
 Delete record (the app's Dialog, a full-screen page on phones). The editor's
 table and the read-only `TableViewTable` (View, Preview, share pages) share
 their layout through `display.ts` and `cells.tsx`: fixed column widths (the
-title 140px on phones), 36px rows, one-line cells cut with an ellipsis, so a
+title 140px on phones) and an end column (the editor's + sits in it) that takes
+the rest, so every row's line runs the block's width as AFFiNE's does (Epo
+2026-11-12), 36px rows, one-line cells cut with an ellipsis, so a
 note's table keeps its shape between View and the editor. The open view is
 each reader's own state; Sort and Group by are stored on the view. A Kanban
 card drags with its own data type (`application/x-capy-table-view-record`) and
