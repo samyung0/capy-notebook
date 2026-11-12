@@ -188,6 +188,9 @@ func jsSpace(r rune) bool {
 	return r >= 0x2000 && r <= 0x200a
 }
 
+// JSTrim is JavaScript's String.prototype.trim.
+func JSTrim(s string) string { return strings.TrimFunc(s, jsSpace) }
+
 const jsSpaceClass = `[\t\n\v\f\r \x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}\x{feff}]`
 
 // normText is grade.ts's norm: trim, NFKC, lowercase, runs of space to one.

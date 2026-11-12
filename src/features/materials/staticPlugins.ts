@@ -79,6 +79,7 @@ const CUSTOM_BLOCK_TYPES = [
   'mermaid',
   'mermaid_caption',
   'html_embed',
+  'table_view',
 ] as const;
 
 const staticCustomBlockPlugins = [
@@ -92,7 +93,8 @@ const staticCustomBlockPlugins = [
           type === 'chart' ||
           type === 'plot' ||
           type === 'graph' ||
-          type === 'html_embed',
+          type === 'html_embed' ||
+          type === 'table_view',
         type,
       },
     })

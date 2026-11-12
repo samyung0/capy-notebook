@@ -24,7 +24,8 @@ export interface MiniCalendarProps {
    * the main calendar. When omitted, falls back to a ring on `selected`.
    */
   rangeStart?: Date;
-  selected: Date;
+  /** Filled; none for an empty date field. */
+  selected?: Date;
 }
 
 export function MiniCalendar({
@@ -144,7 +145,7 @@ export function MiniCalendar({
           <div className="grid grid-cols-7 gap-x-0 gap-y-0.5">
             {grid.map((day, i) => {
               const inMonth = day.getMonth() === month.getMonth();
-              const isHighlighted = sameDay(day, selected);
+              const isHighlighted = !!selected && sameDay(day, selected);
               const isRange = hasRange && inRange(day);
               const isRangeStart = !!rangeStart && sameDay(day, rangeStart);
               const isRangeEnd = !!rangeEnd && sameDay(day, rangeEnd);

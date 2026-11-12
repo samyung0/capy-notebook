@@ -10,7 +10,19 @@ import type {
   MaterialNode,
   MaterialValue,
 } from '@/features/materials/document';
-import { type ExportLabels, isText, plain, questionBlocks } from './content';
+import {
+  cellText,
+  drawnColumns,
+  firstViewRows,
+  isTableViewBlock,
+} from '../tableView/model';
+import {
+  type ExportLabels,
+  element,
+  isText,
+  plain,
+  questionBlocks,
+} from './content';
 
 export type ExportFormat = 'markdown' | 'docx';
 export interface TocEntry {
@@ -507,6 +519,35 @@ export async function renderExport(
         (await picture({ block, type: 'chart' }, title, html)) +
         '\n\n' +
         (await join(table, html))
+      );
+    }
+    if (type === 'table_view') {
+      // Its first view as a table (spec "How readers draw it"): a real table
+      // in Word, a Markdown table here, cells as the index text writes them.
+      const { block } = node;
+      if (!isTableViewBlock(block)) throw new Error('Invalid table view.');
+      const columns = drawnColumns(block);
+      const cell = (tag: 'th' | 'td', text: string) =>
+        element(tag, [element('p', [{ text }])]);
+      const table = element('table', [
+        element(
+          'tr',
+          columns.map((column) => cell('th', column.name))
+        ),
+        ...firstViewRows(block).map((row) =>
+          element(
+            'tr',
+            columns.map((column) => cell('td', cellText(column, row)))
+          )
+        ),
+      ]);
+      const title = block.title.replace(/\s+/g, ' ').trim();
+      return (
+        (title
+          ? html
+            ? `<p><b>${escapeHtml(title)}</b></p>`
+            : `**${escapeMd(title)}**\n\n`
+          : '') + (await render(table, html))
       );
     }
     if (['img', 'image', 'audio'].includes(type)) {

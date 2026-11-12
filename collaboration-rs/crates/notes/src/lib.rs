@@ -41,6 +41,7 @@ pub mod questions;
 pub mod repair;
 pub mod slate;
 pub mod slate_yjs;
+pub mod table_view;
 pub mod validate;
 
 pub use plate::CONTENT_ROOT;

@@ -9,16 +9,16 @@ index 58cc95c5d4bce70787d260033194e60cdadf9009..c35541b3900e624133f2a9477b948997
 +// Capy patch (live-items, Epo 2026-10-10; embeds round, Epo 2026-10-17): an
 +// element key the embed catalog shares is a nested Yjs type that Slate holds
 +// as its plain value: a `mermaid` element's `source` is a Y.Text (typing
-+// merges per character); a chart's, plot's or graph's `block` is a Y.Map whose
-+// list keys (series, graph elements) are Y.Arrays of Y.Maps, each entry
-+// replaced whole on its own, so edits to different fields, series or elements
-+// merge. Remote edits inside one become one `set_node` of the key's whole
-+// value, a local `set_node` edits it minimally, and inserts and clones create
-+// one. src/features/collaboration/liveCatalog.test.ts holds these tables to
-+// the embed catalog.
++// merges per character); a chart's, plot's, graph's or table view's `block`
++// is a Y.Map whose list keys (series, graph elements, a table view's columns,
++// rows and views) are Y.Arrays of Y.Maps, each entry replaced whole on its
++// own, so edits to different fields or entries merge. Remote edits inside one
++// become one `set_node` of the key's whole value, a local `set_node` edits it
++// minimally, and inserts and clones create one. The tables are held to the
++// embed catalog by src/features/collaboration/liveCatalog.test.ts.
 +var SHARED_TEXT = /* @__PURE__ */ new Map([["mermaid", ["source"]]]);
-+var SHARED_MAP = /* @__PURE__ */ new Map([["chart", ["block"]], ["plot", ["block"]], ["graph", ["block"]]]);
-+var SHARED_LISTS = /* @__PURE__ */ new Map([["chart", ["series"]], ["plot", ["series"]], ["graph", ["elements"]]]);
++var SHARED_MAP = /* @__PURE__ */ new Map([["chart", ["block"]], ["plot", ["block"]], ["graph", ["block"]], ["table_view", ["block"]]]);
++var SHARED_LISTS = /* @__PURE__ */ new Map([["chart", ["series"]], ["plot", ["series"]], ["graph", ["elements"]], ["table_view", ["columns", "rows", "views"]]]);
 +function isSharedTextKey(type, key) {
 +  return (SHARED_TEXT.get(type) || []).includes(key);
 +}
@@ -267,16 +267,16 @@ index c1ab93571a0668b519b00e27dfd35a39e0cabd25..d71141aa1a015eaf4f3963b624931b38
 +// Capy patch (live-items, Epo 2026-10-10; embeds round, Epo 2026-10-17): an
 +// element key the embed catalog shares is a nested Yjs type that Slate holds
 +// as its plain value: a `mermaid` element's `source` is a Y.Text (typing
-+// merges per character); a chart's, plot's or graph's `block` is a Y.Map whose
-+// list keys (series, graph elements) are Y.Arrays of Y.Maps, each entry
-+// replaced whole on its own, so edits to different fields, series or elements
-+// merge. Remote edits inside one become one `set_node` of the key's whole
-+// value, a local `set_node` edits it minimally, and inserts and clones create
-+// one. src/features/collaboration/liveCatalog.test.ts holds these tables to
-+// the embed catalog.
++// merges per character); a chart's, plot's, graph's or table view's `block`
++// is a Y.Map whose list keys (series, graph elements, a table view's columns,
++// rows and views) are Y.Arrays of Y.Maps, each entry replaced whole on its
++// own, so edits to different fields or entries merge. Remote edits inside one
++// become one `set_node` of the key's whole value, a local `set_node` edits it
++// minimally, and inserts and clones create one. The tables are held to the
++// embed catalog by src/features/collaboration/liveCatalog.test.ts.
 +var SHARED_TEXT = /* @__PURE__ */ new Map([["mermaid", ["source"]]]);
-+var SHARED_MAP = /* @__PURE__ */ new Map([["chart", ["block"]], ["plot", ["block"]], ["graph", ["block"]]]);
-+var SHARED_LISTS = /* @__PURE__ */ new Map([["chart", ["series"]], ["plot", ["series"]], ["graph", ["elements"]]]);
++var SHARED_MAP = /* @__PURE__ */ new Map([["chart", ["block"]], ["plot", ["block"]], ["graph", ["block"]], ["table_view", ["block"]]]);
++var SHARED_LISTS = /* @__PURE__ */ new Map([["chart", ["series"]], ["plot", ["series"]], ["graph", ["elements"]], ["table_view", ["columns", "rows", "views"]]]);
 +function isSharedTextKey(type, key) {
 +  return (SHARED_TEXT.get(type) || []).includes(key);
 +}

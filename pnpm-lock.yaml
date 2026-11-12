@@ -17,7 +17,7 @@ overrides:
 patchedDependencies:
   "@atlaskit/pragmatic-drag-and-drop@1.4.0": 15512c3fac63145e91316deda955de129fb16c06aa27d64bf81300d7d3d31c45
   "@hocuspocus/provider@3.4.4": 81efcc291ca63f791c07b9fba81a0318116b624169238a4985733cbe3464a3c5
-  "@slate-yjs/core@1.0.2": c9977e893ccd1e7c45a6c5cd0dc9a36a7b9b0083e83924e22885d446fa0d941f
+  "@slate-yjs/core@1.0.2": 14ba2ad032d52fad5fea426d97614a69b36e578580cf55018905e4fbe1ba51f5
   yjs@13.6.31: 4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497
 
 importers:
@@ -172,7 +172,7 @@ importers:
         version: 10.70.0(react@19.2.8)
       "@slate-yjs/core":
         specifier: ^1.0.2
-        version: 1.0.2(patch_hash=c9977e893ccd1e7c45a6c5cd0dc9a36a7b9b0083e83924e22885d446fa0d941f)(slate@0.126.2)(yjs@13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497))
+        version: 1.0.2(patch_hash=14ba2ad032d52fad5fea426d97614a69b36e578580cf55018905e4fbe1ba51f5)(slate@0.126.2)(yjs@13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497))
       "@tanstack/react-query":
         specifier: ^5.59.0
         version: 5.101.4(react@19.2.8)
@@ -19423,7 +19423,7 @@ snapshots:
   "@platejs/yjs@53.2.0(@hocuspocus/provider@3.4.4(patch_hash=81efcc291ca63f791c07b9fba81a0318116b624169238a4985733cbe3464a3c5)(y-protocols@1.0.7(yjs@13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497)))(yjs@13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497)))(platejs@53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(slate@0.126.2)(y-webrtc@10.3.0(supports-color@10.2.2)(yjs@13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497)))":
     dependencies:
       "@hocuspocus/provider": 3.4.4(patch_hash=81efcc291ca63f791c07b9fba81a0318116b624169238a4985733cbe3464a3c5)(y-protocols@1.0.7(yjs@13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497)))(yjs@13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497))
-      "@slate-yjs/core": 1.0.2(patch_hash=c9977e893ccd1e7c45a6c5cd0dc9a36a7b9b0083e83924e22885d446fa0d941f)(slate@0.126.2)(yjs@13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497))
+      "@slate-yjs/core": 1.0.2(patch_hash=14ba2ad032d52fad5fea426d97614a69b36e578580cf55018905e4fbe1ba51f5)(slate@0.126.2)(yjs@13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497))
       platejs: 53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8))
       react: 19.2.8
       react-compiler-runtime: 1.0.0(react@19.2.8)
@@ -21033,7 +21033,7 @@ snapshots:
 
   "@sindresorhus/merge-streams@4.0.0": {}
 
-  "@slate-yjs/core@1.0.2(patch_hash=c9977e893ccd1e7c45a6c5cd0dc9a36a7b9b0083e83924e22885d446fa0d941f)(slate@0.126.2)(yjs@13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497))":
+  "@slate-yjs/core@1.0.2(patch_hash=14ba2ad032d52fad5fea426d97614a69b36e578580cf55018905e4fbe1ba51f5)(slate@0.126.2)(yjs@13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497))":
     dependencies:
       slate: 0.126.2
       y-protocols: 1.0.7(yjs@13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497))

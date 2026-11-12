@@ -14,6 +14,7 @@ import {
 } from '@/features/questions/questionFixtures';
 import { bioNotes } from '@/mocks/noteContent/bio';
 import { embeddedSeeds } from '@/mocks/noteContent/helpers';
+import { tracker } from '../tableView/testFixtures';
 import { exportLabels } from './client';
 import { element, flattenStudyBlocks, paragraph } from './content';
 import { renderExport } from './render';
@@ -262,6 +263,27 @@ describe('readable note exports', () => {
     expect(word.content).toBe(
       '<p style="font-family:Consolas;background-color:#f5f4f2">flowchart LR<br/>  A[&lt;b&gt; --&gt; B</p><p>Flow</p>'
     );
+  });
+
+  it('exports a table view as a table of its first view', async () => {
+    const value = [element('table_view', [{ text: '' }], { block: tracker() })];
+    const markdown = await render(value);
+    expect(markdown.content).toBe(
+      [
+        '**Revision tracker**',
+        '',
+        '| Topic | Status | Mark | Review on | Done |',
+        '| --- | --- | --- | --- | --- |',
+        '| Krebs cycle | Revising | 6 | 2026-11-10 | ☐ |',
+        '| Glycolysis \\| ATP | Done |  |  | ☑ |',
+        '',
+        '',
+      ].join('\n')
+    );
+    const word = await render(value, 'docx');
+    expect(word.content).toContain('<p><b>Revision tracker</b></p><table');
+    expect(word.content.match(/<th /g)).toHaveLength(5);
+    expect(word.content).toContain('Glycolysis | ATP');
   });
 
   it('fails on unreadable study references and unsupported nodes instead of dropping them', async () => {

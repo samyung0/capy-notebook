@@ -1,7 +1,7 @@
 /* ============================================================
    Shared MarkdownPlugin configuration for the note editor. Enables GFM, math,
    MDX (columns/callouts) and emoji shortcodes, and adds custom rules so the
-   embeddable blocks (quiz / flashcards / mermaid / html-embed) round-trip through the
+   embeddable blocks (quiz / flashcards / mermaid / html-embed / table-view) round-trip through the
    existing fenced-code format used by the Go backend and the read-only renderer.
    ============================================================ */
 import {
@@ -19,7 +19,9 @@ import {
   customBlockNode,
   HTML_EMBED_LANG,
   isCustomBlockLang,
+  tableViewFenceNode,
 } from './blocks/shared';
+import { TABLE_VIEW_LANG } from './tableView/model';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type AnyNode = any;
@@ -48,7 +50,12 @@ export const noteMarkdownPlugin = MarkdownPlugin.configure({
       code_block: {
         deserialize: (node: AnyNode) => {
           const lang = node.lang ?? undefined;
-          if (isCustomBlockLang(lang)) {
+          // A table view that isn't one a writer may store stays code.
+          const tableView =
+            lang === TABLE_VIEW_LANG &&
+            tableViewFenceNode(String(node.value ?? ''));
+          if (tableView) return tableView;
+          if (isCustomBlockLang(lang) && lang !== TABLE_VIEW_LANG) {
             return customBlockNode(
               lang as CustomBlockLang,
               String(node.value ?? '')
@@ -106,6 +113,7 @@ export const noteMarkdownPlugin = MarkdownPlugin.configure({
       mermaid: { serialize: serializeCustomBlock('mermaid') },
       plot: { serialize: serializeCustomBlock('plot') },
       quiz: { serialize: serializeCustomBlock('quiz') },
+      table_view: { serialize: serializeCustomBlock(TABLE_VIEW_LANG) },
     } as AnyNode,
   },
 });

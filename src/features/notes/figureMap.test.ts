@@ -9,6 +9,9 @@ import {
 import { createSlateEditor } from 'platejs';
 import { afterEach, expect, it } from 'vitest';
 import * as Y from 'yjs';
+import { setCell } from './tableView/edit';
+import type { TableViewBlock } from './tableView/model';
+import { tracker } from './tableView/testFixtures';
 
 /* A chart's, plot's or graph's `block` as a live Y.Map (Epo 2026-10-17),
  * through the pnpm patch of @slate-yjs/core 1.0.2: Slate holds the plain
@@ -235,4 +238,28 @@ it('keeps a moved block a map', () => {
   expect(moved).toBeInstanceOf(Y.Map);
   expect(moved.get('series')).toBeInstanceOf(Y.Array);
   expect(moved.toJSON()).toEqual(chart);
+});
+
+it('merges two editors writing different cells of one table view row (revision 2.1)', () => {
+  const block = tracker();
+  const room = roomOf([
+    { block, children: [{ text: '' }], id: 'tv', type: 'table_view' },
+  ]);
+  const a = editorOn(room);
+  const b = editorOn(room);
+  const write = (editor: Editor, change: (block: TableViewBlock) => object) => {
+    editor.tf.setNodes(
+      { block: change(blockOf(editor) as unknown as TableViewBlock) } as never,
+      { at: [0] }
+    );
+    YjsEditor.flushLocalChanges(editor);
+  };
+  write(a.editor, (current) => setCell(current, 'r_1', 'c_mark', 9));
+  write(b.editor, (current) => setCell(current, 'r_1', 'c_done', true));
+  sync(room, a.doc, b.doc);
+  const want = { ...block.rows[0], c_done: true, c_mark: 9 };
+  for (const { editor } of [a, b])
+    expect((blockOf(editor) as unknown as TableViewBlock).rows[0]).toEqual(
+      want
+    );
 });

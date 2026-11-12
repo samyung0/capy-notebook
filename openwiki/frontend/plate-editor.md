@@ -1092,6 +1092,39 @@ The write is no person's edit (`writeNoEdit`): it starts no checkpoint and bring
 no trailing paragraph, so a co-editor's graph edit adds none from everyone with
 the note open.
 
+A note's table view (`table_view`, Epo 2026-11-12, AFFiNE's database look:
+`src/features/notes/tableView/`) is a top-level void like a figure, edited in
+place rather than in a dialog. `TableViewElement` writes every edit the same
+way a figure's Save does: the pure edit in `edit.ts` runs on the block as the
+editor holds it at that moment and the result goes through one `setNodes` of
+`block`, so only the columns, rows and views it touched change in the room's
+map (an edit that would break `isTableViewBlock` throws; a block a merge left
+past a cap still takes edits). Text, title and number cells write on Enter or
+leaving the field, select and date cells from a popover (`SelectEditor`, the
+schedule's `MiniCalendar`), a checkbox on click; a column header opens
+`ColumnMenu`; the title cell's pill opens the record's menu, whose Open (and a
+Kanban card's click, or a read-only title cell) opens `RecordDialog`: the title
+as a large field, every other column a labelled row with the same editors, and
+Delete record (the app's Dialog, a full-screen page on phones). The editor's
+table and the read-only `TableViewTable` (View, Preview, share pages) share
+their layout through `display.ts` and `cells.tsx`: fixed column widths (the
+title 140px on phones), 36px rows, one-line cells cut with an ellipsis, so a
+note's table keeps its shape between View and the editor. The open view is
+each reader's own state; Sort and Group by are stored on the view. A Kanban
+card drags with its own data type (`application/x-capy-table-view-record`) and
+stops the event, so neither Slate's drop nor the block drag reads it. A
+read-only note draws the same component with only its tabs live. The slash
+menu's Table view (searchable by "database") inserts `newTableViewBlock` with
+translated names, refused past `TABLE_VIEW_MAX_COUNT` with a toast; the
+`table_view` plugin's `insertNodes` and `insertFragment` leave out table views
+past the cap the same way for block Duplicate and paste (`count.ts`). An edit
+that would pass a cap against the block as it is does nothing. The block's
+fields keep their own undo: the wrapper stops React `input` and native
+`beforeinput` from reaching slate-react (which would run `editor.undo()`), and
+`fieldHistory.ts` holds back Cmd+Z in a field once its text is back to what it
+held when focused, since the page's single native undo stack would otherwise
+undo the note's own typing next.
+
 Standalone mindmaps and diagrams render without Plate. View
 (`MermaidMaterialView`) draws the block's `MermaidView` straight from the
 material content, looking as the static renderer did. Edit
@@ -2280,6 +2313,12 @@ design, option d), and the nudge's release file on 2026-10-17.
   types) raised `CLIENT_PROTOCOL` to 28 and `MIN_SOURCE` to 28; `MIN_MATERIAL`
   stays 22 and `OFFICE_PROTOCOL_VERSION` stays 14. Its deploy request names
   "client protocol 27 -> 28, source 27 -> 28".
+  The note's table view (`table_view`, Epo 2026-11-12: a new shared-map element
+  whose `columns`, `rows` and `views` are id-matched shared lists) raised
+  `CLIENT_PROTOCOL` to 29 and `MIN_MATERIAL` to 29, so a note tab from before it
+  reloads instead of writing a table view's block as a plain value;
+  `MIN_SOURCE` stays 28. Its deploy request names "client protocol 28 -> 29,
+  material 22 -> 29".
 
 #### When to bump
 
