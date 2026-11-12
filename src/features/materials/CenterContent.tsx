@@ -36,6 +36,7 @@ import type {
   Provenance,
   Region,
   Topic,
+  Trashed,
   UserColor,
 } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
@@ -82,12 +83,12 @@ import {
   legacyOfficeTarget,
 } from '@/features/files/fileUtils';
 import type { OfficeCitation } from '@/features/files/officeProtocol';
+import { TrashBanner } from '@/features/files/TrashBanner';
 import { FlashcardGrid } from '@/features/flashcards/FlashcardGrid';
 import { LiveFlashcards } from '@/features/flashcards/LiveFlashcards';
 import { useLiveSetCards } from '@/features/flashcards/liveReads';
 import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
-import type { LearnerQuestion } from '@/features/questions/types';
 import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
 import { QuizEditor, QuizReadSplit } from '@/features/quizzes/QuizEditor';
 import {
@@ -108,12 +109,7 @@ import {
   Header,
   type OneColumnChrome,
 } from './CenterContentHeader';
-import {
-  type FlashcardsElement,
-  flashcardsElementToCards,
-  type MaterialDocument,
-  type QuizElement,
-} from './document';
+import type { MaterialDocument } from './document';
 import { HeavyMaterialGate } from './HeavyMaterialGate';
 import { type HeavyMaterialChoice, heavyMaterial } from './heavyDocument';
 import { SourcesLine } from './MaterialAttributionFooter';
@@ -133,6 +129,7 @@ import {
   saveDocumentMode,
 } from './openItem';
 import { forgetAssetLinks } from './resolvedAssetLinks';
+import { storedCards, storedQuestions } from './storedItems';
 
 /* A standalone mindmap's or diagram's live editor: CodeMirror, no Plate. */
 const MermaidMaterialEditor = lazy(
@@ -161,6 +158,7 @@ export function CenterContent({
   leading,
   oneColumn,
   standalone = false,
+  trash,
 }: {
   /** The page shown under the header while no file is open: the
    * workspace's Dashboard or a Study page (one column; from lg the
@@ -174,6 +172,8 @@ export function CenterContent({
   topics: Topic[];
   item: OpenItem | null;
   readOnly?: boolean;
+  /** Opened from the Trash: read-only, joining no room, until restored. */
+  trash?: Trashed;
   color?: UserColor;
   onDeleted: () => void;
   requestedMode?: MaterialMode | null;
@@ -250,14 +250,16 @@ export function CenterContent({
       saveDocumentMode(item, requestedMode);
   }, [item?.kind, item?.id, requestedMode]);
 
-  // Each open orders Recent Files (the hook sends at most
-  // one per item per few minutes).
+  // Each open orders Recent Files (the hook sends at most one per item per
+  // few minutes); one in the trash is not recent.
   const recordOpen = useRecordOpen();
   const openKind = item?.kind;
   const openId = item?.id;
+  const trashed = !!trash;
   useEffect(() => {
-    if (openKind && openId) recordOpen({ id: openId, kind: openKind });
-  }, [openKind, openId, recordOpen]);
+    if (openKind && openId && !trashed)
+      recordOpen({ id: openId, kind: openKind });
+  }, [openKind, openId, recordOpen, trashed]);
 
   const changeFileMode = (nextMode: MaterialMode) => {
     setEditorStatus(null);
@@ -340,6 +342,13 @@ export function CenterContent({
                       </div>
                       {/* One strip at a time under the header: the newest shows. */}
                       <BannerStack key={item.id}>
+                        {trash && (
+                          <TrashBanner
+                            item={item}
+                            trash={trash}
+                            workspaceId={workspaceId}
+                          />
+                        )}
                         <div
                           className={cn(
                             'relative min-h-0 flex-1',
@@ -359,6 +368,7 @@ export function CenterContent({
                               onPresenceChange={setPresence}
                               readOnly={readOnly}
                               target={item.target}
+                              trashed={trashed}
                               workspaceId={workspaceId}
                             />
                           )}
@@ -431,6 +441,7 @@ function MaterialBody({
   onPresenceChange,
   readOnly,
   target,
+  trashed,
 }: {
   centerQuiz: boolean;
   citation?: NoteCitationTarget;
@@ -441,6 +452,7 @@ function MaterialBody({
   onPresenceChange: (connections: PresenceConnection[] | null) => void;
   readOnly: boolean;
   target?: string;
+  trashed: boolean;
 }) {
   const { data: materials, isPending } = useMaterials(workspaceId);
   const queryClient = useQueryClient();
@@ -493,6 +505,7 @@ function MaterialBody({
       onPresenceChange={onPresenceChange}
       staticNote={choice === 'readOnly'}
       target={target}
+      trashed={trashed}
     />
   );
 }
@@ -504,37 +517,25 @@ function MaterialLoading() {
   return online ? <NoteSkeleton /> : <FileLoading />;
 }
 
-const storedCards = (material: Material) =>
-  flashcardsElementToCards(
-    material.content.value.find(
-      (node): node is FlashcardsElement => node.type === 'flashcards'
-    ) ?? { children: [], id: '', type: 'flashcards' }
-  );
-
-/** A quiz's questions as its read stored them: no answer key. */
-const storedQuestions = (content: MaterialDocument) => {
-  const quiz = content.value.find(
-    (node): node is QuizElement => node.type === 'quiz'
-  );
-  return (quiz?.children ?? []).flatMap((node) =>
-    'type' in node && node.type === 'quiz_question'
-      ? [node.question as unknown as LearnerQuestion]
-      : []
-  );
-};
-
 /** A set's View: the stored cards, then the room's as they change. */
 function LiveSetGrid({
   material,
   action,
+  live,
   openCardId,
 }: {
   material: Material;
   action: ReactNode;
+  /** Off for a set opened from the Trash: its stored cards only. */
+  live: boolean;
   /** A card to open at once (a link to it). */
   openCardId?: string;
 }) {
-  const cards = useLiveSetCards(material.id, storedCards(material));
+  const cards = useLiveSetCards(
+    material.id,
+    storedCards(material.content),
+    live
+  );
   return (
     <FlashcardGrid
       action={action}
@@ -573,6 +574,7 @@ function MaterialContentBody({
   staticNote = false,
   target,
   citation,
+  trashed = false,
 }: {
   centerQuiz: boolean;
   /** The kind the opening list or route knows, for a read that fails. */
@@ -590,7 +592,11 @@ function MaterialContentBody({
   target?: string;
   /** A chat citation's passage to show once a note paints (Q593). */
   citation?: NoteCitationTarget;
+  /** Opened from the Trash: its stored content, joining no room or study. */
+  trashed?: boolean;
 }) {
+  // Nothing of a trashed item's own beyond its read, as a heavy note's.
+  const isStatic = staticNote || trashed;
   const {
     data: loaded,
     error,
@@ -626,12 +632,11 @@ function MaterialContentBody({
   }, [kind]);
   const { data: me } = useMe({ errorBoundary: false });
   // A heavy note opened read-only reads nothing of its own beyond its read.
-  const seed = useRoomSeed(materialId, staticNote ? null : me?.id);
+  const seed = useRoomSeed(materialId, isStatic ? null : me?.id);
   // A note's room token beside its read, not a round trip behind it. Its editor
   // and a viewer's read channel (liveNoteRead) both start from this request. A
   // refusal stays quiet here: the read says what shows.
-  const opensNote =
-    !staticNote && (kind === 'note' || seed?.row.kind === 'note');
+  const opensNote = !isStatic && (kind === 'note' || seed?.row.kind === 'note');
   const noteOpen = useRef(false);
   useEffect(() => {
     if (!opensNote) return;
@@ -657,7 +662,7 @@ function MaterialContentBody({
     };
   }, [materialId, opensNote, queryClient]);
   // An item's last read, painting until this one answers.
-  const copied = useMaterialCopy(materialId, staticNote ? null : me?.id);
+  const copied = useMaterialCopy(materialId, isStatic ? null : me?.id);
   const refused = isRefusedRead(error);
   // No access, or gone: what this device kept of it goes too.
   const lost =
@@ -673,7 +678,7 @@ function MaterialContentBody({
   const material = refused ? undefined : (loaded ?? copied ?? undefined);
   useKeepMaterialCopy(
     loaded?.kind === 'note' ? undefined : loaded,
-    me?.id,
+    isStatic ? null : me?.id,
     copied
   );
   const noteBody = (loaded: Material | undefined, editing: boolean) => (
@@ -687,8 +692,8 @@ function MaterialContentBody({
       onPresenceChange={onPresenceChange}
       onReadOnly={onReadOnly}
       owner={me?.id}
-      seed={staticNote ? null : seed}
-      staticNote={staticNote}
+      seed={isStatic ? null : seed}
+      staticNote={isStatic}
     />
   );
   // A device copy paints before its read answers, and while the read cannot
@@ -791,14 +796,17 @@ function MaterialContentBody({
                 onStatusChange={onEditorStatusChange}
                 openCardId={target}
                 setId={materialId}
-                stored={storedCards(material)}
+                stored={storedCards(material.content)}
                 title={material.title}
               />
             ) : (
               <LiveSetGrid
                 action={
-                  <StudyButton kind="flashcards" materialId={materialId} />
+                  !trashed && (
+                    <StudyButton kind="flashcards" materialId={materialId} />
+                  )
                 }
+                live={!trashed}
                 material={material}
                 openCardId={target}
               />
@@ -869,6 +877,7 @@ function MaterialContentBody({
             {material.kind === 'quiz' ? (
               <QuizPreview
                 content={material.content}
+                live={!trashed}
                 provenance={material.provenance}
                 quizId={materialId}
                 target={target}
@@ -898,12 +907,16 @@ function MaterialContentBody({
  * editor loads the key. */
 function QuizPreview({
   content,
+  live,
   provenance,
   quizId,
   target,
   title,
 }: {
   content: MaterialDocument;
+  /** Off for a quiz opened from the Trash: its stored questions only, and
+   * no Study. */
+  live: boolean;
   provenance: Provenance | undefined;
   quizId: string;
   /** A question to scroll to, e.g. from a review summary. */
@@ -917,12 +930,17 @@ function QuizPreview({
     void dropDeviceCopies(quizId, 'keys');
   }, [quizId]);
   // The stored questions paint first; the live room follows (live-items).
-  const questions = useLiveQuizQuestions(quizId, storedQuestions(content));
+  const questions = useLiveQuizQuestions(
+    quizId,
+    storedQuestions(content),
+    live
+  );
   return (
     <>
       {/* The header names it for the eye; the page's one h1 stays its title. */}
       <h1 className="sr-only">{title}</h1>
-      {headerActions &&
+      {live &&
+        headerActions &&
         createPortal(
           <StudyButton kind="quiz" materialId={quizId} />,
           headerActions
@@ -1121,8 +1139,10 @@ function FileBody({
   }
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* An old Office file being converted says so in its pane instead. */}
+      {/* An old Office file being converted says so in its pane instead.
+       * One opened from the Trash shows the trash strip alone. */}
       {file &&
+        !file.trash &&
         fileIsIngesting(file.status) &&
         file.hasBytes &&
         !legacyOfficeTarget(file.name) && (
@@ -1134,7 +1154,7 @@ function FileBody({
             }
           />
         )}
-      {file && <FileNotIndexedBanner file={file} />}
+      {file && !file.trash && <FileNotIndexedBanner file={file} />}
       <div className="relative min-h-0 flex-1 overflow-auto">
         <FileViewer
           citation={citation}

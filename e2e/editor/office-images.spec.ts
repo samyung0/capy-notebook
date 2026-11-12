@@ -166,10 +166,14 @@ for (const [format, name] of [
       mimeType: 'image/gif',
       name: 'spinner.gif',
     });
-    await expect(
-      page.getByText(m.image_too_large({ limit: '2 MB' }))
-    ).toBeVisible();
+    const tooLarge = page
+      .locator('[data-toast]')
+      .filter({ hasText: m.image_too_large({ limit: '2 MB' }) });
+    await expect(tooLarge).toBeVisible();
     await expect(page.getByText(m.error_file_body())).toHaveCount(0);
+    // A warning stays until closed or its 12 s pass, and the next one waits
+    // behind it.
+    await tooLarge.getByRole('button', { name: m.action_close() }).click();
     // Nor can one the browser cannot decode (a TIFF in Chrome): its own notice.
     await insert(page, format, {
       buffer: Buffer.from('II*, not really a TIFF'),

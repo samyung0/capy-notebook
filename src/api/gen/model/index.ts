@@ -496,6 +496,7 @@ export * from './topicProgress.ts';
 export * from './topUpReq.ts';
 export * from './transferWorkspaceReq.ts';
 export * from './trashActionReq.ts';
+export * from './trashed.ts';
 export * from './trashItem.ts';
 export * from './trashItemKind.ts';
 export * from './trashItemPreview.ts';

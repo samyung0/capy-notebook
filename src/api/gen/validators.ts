@@ -3386,6 +3386,11 @@ export const ListOwnedFilesResponse = zod.object({
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
   "topicId": zod.string().nullable(),
+  "trash": zod.object({
+  "canRestore": zod.boolean().describe('The caller may restore it: a standalone item, or edit access to its workspace'),
+  "episodeId": zod.string(),
+  "purgeAfter": zod.iso.datetime({"offset":true})
+}).optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string().optional()
 })),
@@ -3481,6 +3486,11 @@ export const CreateStandaloneBlankFileResponse = zod.object({
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
   "topicId": zod.string().nullable(),
+  "trash": zod.object({
+  "canRestore": zod.boolean().describe('The caller may restore it: a standalone item, or edit access to its workspace'),
+  "episodeId": zod.string(),
+  "purgeAfter": zod.iso.datetime({"offset":true})
+}).optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string().optional()
 })
@@ -3578,6 +3588,11 @@ export const MoveFilesResponseItem = zod.object({
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
   "topicId": zod.string().nullable(),
+  "trash": zod.object({
+  "canRestore": zod.boolean().describe('The caller may restore it: a standalone item, or edit access to its workspace'),
+  "episodeId": zod.string(),
+  "purgeAfter": zod.iso.datetime({"offset":true})
+}).optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string().optional()
 })
@@ -3684,6 +3699,11 @@ export const GetFileResponse = zod.object({
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
   "topicId": zod.string().nullable(),
+  "trash": zod.object({
+  "canRestore": zod.boolean().describe('The caller may restore it: a standalone item, or edit access to its workspace'),
+  "episodeId": zod.string(),
+  "purgeAfter": zod.iso.datetime({"offset":true})
+}).optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string().optional()
 })
@@ -3780,6 +3800,11 @@ export const UpdateFileResponse = zod.object({
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
   "topicId": zod.string().nullable(),
+  "trash": zod.object({
+  "canRestore": zod.boolean().describe('The caller may restore it: a standalone item, or edit access to its workspace'),
+  "episodeId": zod.string(),
+  "purgeAfter": zod.iso.datetime({"offset":true})
+}).optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string().optional()
 })
@@ -4075,6 +4100,11 @@ export const CloneFileResponse = zod.object({
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
   "topicId": zod.string().nullable(),
+  "trash": zod.object({
+  "canRestore": zod.boolean().describe('The caller may restore it: a standalone item, or edit access to its workspace'),
+  "episodeId": zod.string(),
+  "purgeAfter": zod.iso.datetime({"offset":true})
+}).optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string().optional()
 })
@@ -4744,6 +4774,11 @@ export const ListItemsResponse = zod.object({
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
   "topicId": zod.string().nullable(),
+  "trash": zod.object({
+  "canRestore": zod.boolean().describe('The caller may restore it: a standalone item, or edit access to its workspace'),
+  "episodeId": zod.string(),
+  "purgeAfter": zod.iso.datetime({"offset":true})
+}).optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string().optional()
 }).optional(),
@@ -5110,6 +5145,11 @@ export const CreateStandaloneMaterialResponse = zod.object({
   "storageFull": zod.enum(['self', 'payer']).optional(),
   "title": zod.string(),
   "topicId": zod.string().nullable(),
+  "trash": zod.object({
+  "canRestore": zod.boolean().describe('The caller may restore it: a standalone item, or edit access to its workspace'),
+  "episodeId": zod.string(),
+  "purgeAfter": zod.iso.datetime({"offset":true})
+}).optional(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
@@ -5289,6 +5329,11 @@ export const GetMaterialResponse = zod.object({
   "storageFull": zod.enum(['self', 'payer']).optional(),
   "title": zod.string(),
   "topicId": zod.string().nullable(),
+  "trash": zod.object({
+  "canRestore": zod.boolean().describe('The caller may restore it: a standalone item, or edit access to its workspace'),
+  "episodeId": zod.string(),
+  "purgeAfter": zod.iso.datetime({"offset":true})
+}).optional(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
@@ -5442,6 +5487,11 @@ export const CloneMaterialResponse = zod.object({
   "storageFull": zod.enum(['self', 'payer']).optional(),
   "title": zod.string(),
   "topicId": zod.string().nullable(),
+  "trash": zod.object({
+  "canRestore": zod.boolean().describe('The caller may restore it: a standalone item, or edit access to its workspace'),
+  "episodeId": zod.string(),
+  "purgeAfter": zod.iso.datetime({"offset":true})
+}).optional(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
@@ -5717,6 +5767,11 @@ export const CreateEmbeddedMaterialResponse = zod.object({
   "storageFull": zod.enum(['self', 'payer']).optional(),
   "title": zod.string(),
   "topicId": zod.string().nullable(),
+  "trash": zod.object({
+  "canRestore": zod.boolean().describe('The caller may restore it: a standalone item, or edit access to its workspace'),
+  "episodeId": zod.string(),
+  "purgeAfter": zod.iso.datetime({"offset":true})
+}).optional(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
@@ -5927,6 +5982,11 @@ export const UpdateMaterialSharingResponse = zod.object({
   "storageFull": zod.enum(['self', 'payer']).optional(),
   "title": zod.string(),
   "topicId": zod.string().nullable(),
+  "trash": zod.object({
+  "canRestore": zod.boolean().describe('The caller may restore it: a standalone item, or edit access to its workspace'),
+  "episodeId": zod.string(),
+  "purgeAfter": zod.iso.datetime({"offset":true})
+}).optional(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
@@ -7340,6 +7400,11 @@ export const ListRecentResponse = zod.object({
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
   "topicId": zod.string().nullable(),
+  "trash": zod.object({
+  "canRestore": zod.boolean().describe('The caller may restore it: a standalone item, or edit access to its workspace'),
+  "episodeId": zod.string(),
+  "purgeAfter": zod.iso.datetime({"offset":true})
+}).optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string().optional()
 }).optional(),
@@ -9500,6 +9565,11 @@ export const ListWorkspaceFilesResponseItem = zod.object({
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
   "topicId": zod.string().nullable(),
+  "trash": zod.object({
+  "canRestore": zod.boolean().describe('The caller may restore it: a standalone item, or edit access to its workspace'),
+  "episodeId": zod.string(),
+  "purgeAfter": zod.iso.datetime({"offset":true})
+}).optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string().optional()
 })
@@ -9598,6 +9668,11 @@ export const CreateBlankFileResponse = zod.object({
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
   "topicId": zod.string().nullable(),
+  "trash": zod.object({
+  "canRestore": zod.boolean().describe('The caller may restore it: a standalone item, or edit access to its workspace'),
+  "episodeId": zod.string(),
+  "purgeAfter": zod.iso.datetime({"offset":true})
+}).optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string().optional()
 })
@@ -9895,6 +9970,11 @@ export const CreateMaterialResponse = zod.object({
   "storageFull": zod.enum(['self', 'payer']).optional(),
   "title": zod.string(),
   "topicId": zod.string().nullable(),
+  "trash": zod.object({
+  "canRestore": zod.boolean().describe('The caller may restore it: a standalone item, or edit access to its workspace'),
+  "episodeId": zod.string(),
+  "purgeAfter": zod.iso.datetime({"offset":true})
+}).optional(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
@@ -10084,6 +10164,11 @@ export const ListWorkspaceRecentResponse = zod.object({
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
   "topicId": zod.string().nullable(),
+  "trash": zod.object({
+  "canRestore": zod.boolean().describe('The caller may restore it: a standalone item, or edit access to its workspace'),
+  "episodeId": zod.string(),
+  "purgeAfter": zod.iso.datetime({"offset":true})
+}).optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string().optional()
 })),

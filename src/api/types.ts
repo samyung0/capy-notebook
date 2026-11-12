@@ -572,6 +572,7 @@ export type {
   ResourceRef,
   ToolError,
   TrashActionReq,
+  Trashed,
   UndoEditReq,
   UndoPayload,
   UndoRef,

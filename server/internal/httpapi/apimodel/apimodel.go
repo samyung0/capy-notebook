@@ -217,6 +217,9 @@ type Material struct {
 	// StorageFull: the material is view-only because its payer (its creator)
 	// is at its storage limit; "self" when that is the viewer. Editors only.
 	StorageFull store.StorageFullBy `json:"storageFull,omitempty"`
+	// Trash: the material is in the trash, opened read-only from it with
+	// every capability off; Restore is the way back to editing.
+	Trash *store.Trashed `json:"trash,omitempty"`
 }
 
 // MaterialUpdateResult is the lightweight acknowledgement returned by
@@ -251,6 +254,7 @@ func FromMaterial(m store.Material) (Material, error) {
 		Revision: m.Revision,
 		IsOwner:  m.IsOwner, Role: m.Role, Capabilities: m.Capabilities,
 		Provenance: m.Provenance, ParentMaterialID: m.ParentMaterialID, Hidden: m.Hidden,
+		Trash: m.Trash,
 	}, nil
 }
 

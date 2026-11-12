@@ -1,4 +1,4 @@
-import { useNavigate, useSearch } from '@tanstack/react-router';
+import { linkOptions, useNavigate, useSearch } from '@tanstack/react-router';
 import { memo, useCallback, useContext, useState } from 'react';
 import {
   usePurgeTrashed,
@@ -31,6 +31,7 @@ import { Tabs } from '@/components/ui/Tabs';
 import { CanvasTab } from '@/features/files/CanvasTab';
 import { formatFileSize } from '@/features/files/fileUtils';
 import { ItemsList } from '@/features/files/ItemsList';
+import { toastLostAccess } from '@/features/files/lostAccess';
 import {
   clearOnBlank,
   SelectionAction,
@@ -115,6 +116,21 @@ export default function Files() {
   );
 }
 
+/** Where a trashed item opens read-only: the file page Files opens it on. A
+ * board opens only live, on its workspace. */
+function trashLink(item: TrashItem) {
+  if (item.kind === 'source_file')
+    return linkOptions({
+      params: { fileId: item.id },
+      to: '/files/$fileId',
+    });
+  if (item.materialKind === 'canvas') return;
+  return linkOptions({
+    params: { materialId: item.id },
+    to: '/materials/$materialId',
+  });
+}
+
 /** One trashed item; memoised like FileItem. */
 const TrashCard = memo(function TrashCard({
   item,
@@ -161,7 +177,10 @@ const TrashCard = memo(function TrashCard({
       }
       details={formatFileSize(item.sizeBytes)}
       icon={trashIconName(item)}
+      // An item whose workspace the payer left stays shut, as in Files.
+      link={item.lostAccess ? undefined : trashLink(item)}
       meta={formatDate(item.purgeAfter)}
+      onOpen={item.lostAccess ? toastLostAccess : undefined}
       pickKey={`${item.kind}:${item.id}:${item.episodeId}`}
       selected={selected}
       thumbnail={{
@@ -185,8 +204,9 @@ function formatDate(iso: string): string {
   );
 }
 
-/** Owner-only bin. Rows are metadata only: a trashed row is never a preview
- * or a download. Restore and permanent deletion are the only actions. */
+/** Owner-only bin. Rows are metadata only; one opens read-only on the file
+ * page, as from Files (trashLink). Restore and permanent deletion are the
+ * actions. */
 function TrashTab({
   view,
   onViewChange,

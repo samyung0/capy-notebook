@@ -3500,6 +3500,8 @@ components:
         topicId:
           nullable: true
           type: string
+        trash:
+          $ref: "#/components/schemas/Trashed"
         workspaceId:
           type: string
         workspaceName:
@@ -4552,6 +4554,8 @@ components:
         topicId:
           nullable: true
           type: string
+        trash:
+          $ref: "#/components/schemas/Trashed"
         updatedAt:
           format: date-time
           type: string
@@ -8685,6 +8689,22 @@ components:
           type: string
       required:
         - items
+      type: object
+    Trashed:
+      additionalProperties: false
+      properties:
+        canRestore:
+          description: "The caller may restore it: a standalone item, or edit access to its workspace"
+          type: boolean
+        episodeId:
+          type: string
+        purgeAfter:
+          format: date-time
+          type: string
+      required:
+        - episodeId
+        - purgeAfter
+        - canRestore
       type: object
     URLResp:
       additionalProperties: false
