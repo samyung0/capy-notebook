@@ -2298,6 +2298,12 @@ design, option d), and the nudge's release file on 2026-10-17.
   types) raised `CLIENT_PROTOCOL` to 28 and `MIN_SOURCE` to 28; `MIN_MATERIAL`
   stays 22 and `OFFICE_PROTOCOL_VERSION` stays 14. Its deploy request names
   "client protocol 27 -> 28, source 27 -> 28".
+  The note's table view (`table_view`, Epo 2026-11-12: a new shared-map element
+  whose `columns`, `rows` and `views` are id-matched shared lists) raised
+  `CLIENT_PROTOCOL` to 29 and `MIN_MATERIAL` to 29, so a note tab from before it
+  reloads instead of writing a table view's block as a plain value;
+  `MIN_SOURCE` stays 28. Its deploy request names "client protocol 28 -> 29,
+  material 22 -> 29".
 
 #### When to bump
 
