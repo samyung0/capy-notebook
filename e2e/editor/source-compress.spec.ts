@@ -237,6 +237,10 @@ test('a legacy DOC upload becomes a DOCX and opens; a failed conversion says so'
   // A failed file still named .doc failed in its conversion: it says so and
   // stays downloadable.
   await page.goto('/workspaces/ws_bio?file=mock-preview-legacy');
+  // A fresh load boots the app first (MSW, the workspace, then the file).
+  await expect(
+    page.getByRole('heading', { exact: true, name: 'Failed conversion.doc' })
+  ).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId('file-not-indexed')).toContainText(
     m.files_convert_failed()
   );
