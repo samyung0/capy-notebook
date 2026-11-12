@@ -29,9 +29,6 @@ import {
   type TableViewColumn,
 } from './model';
 
-const ROW =
-  'flex h-8 w-full items-center gap-2 rounded-button px-1.5 text-left text-sm outline-none';
-
 /** An option's ⋯ menu: its name, its colour, Delete (mock SelectCell). */
 function OptionMenu({
   column,
@@ -190,7 +187,7 @@ export function SelectEditor({
         {shown.map((option, at) => (
           <div
             className={cn(
-              ROW,
+              'flex h-8 w-full items-center gap-2 rounded-button px-1.5 text-left text-sm outline-none',
               'pr-0.5 hover:bg-overlay-hover',
               at === active && 'bg-overlay-hover'
             )}
@@ -213,7 +210,7 @@ export function SelectEditor({
         {creatable && (
           <button
             className={cn(
-              ROW,
+              'flex h-8 w-full items-center gap-2 rounded-button px-1.5 text-left text-sm outline-none',
               'text-fg-muted hover:bg-overlay-hover',
               active === shown.length && 'bg-overlay-hover'
             )}

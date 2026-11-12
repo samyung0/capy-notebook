@@ -9,10 +9,6 @@ import { deleteRow, setCell } from './edit';
 import { CommitInput, textCell } from './fields';
 import { cellValue, drawnColumns, TABLE_VIEW_LIMITS } from './model';
 
-/** The record's title, large (phones: the header row's size). */
-const TITLE_CLASS =
-  'w-full font-semibold text-2xl leading-tight max-sm:text-lg';
-
 /** A record with every field (mock Kanban: "A card opens the record"): its
  * title as a large field, each other column a labelled row with the table's
  * editors, and Delete record. Read-only in a read-only note. Phones get the
@@ -50,7 +46,7 @@ export function RecordDialog({
             <CommitInput
               aria-label={title.name}
               autoFocus={focusTitle}
-              className={TITLE_CLASS}
+              className="w-full font-semibold text-2xl leading-tight max-sm:text-lg"
               maxLength={TABLE_VIEW_LIMITS.cell}
               onCommit={(text) =>
                 write((current) =>
@@ -61,7 +57,7 @@ export function RecordDialog({
               value={name === undefined ? '' : String(name)}
             />
           ) : (
-            <span className={TITLE_CLASS}>
+            <span className="w-full font-semibold text-2xl leading-tight max-sm:text-lg">
               {name || m.table_view_untitled()}
             </span>
           )}

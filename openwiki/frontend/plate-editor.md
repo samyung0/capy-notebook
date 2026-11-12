@@ -1115,7 +1115,15 @@ card drags with its own data type (`application/x-capy-table-view-record`) and
 stops the event, so neither Slate's drop nor the block drag reads it. A
 read-only note draws the same component with only its tabs live. The slash
 menu's Table view (searchable by "database") inserts `newTableViewBlock` with
-translated names, refused past `TABLE_VIEW_MAX_COUNT` with a toast.
+translated names, refused past `TABLE_VIEW_MAX_COUNT` with a toast; the
+`table_view` plugin's `insertNodes` and `insertFragment` leave out table views
+past the cap the same way for block Duplicate and paste (`count.ts`). An edit
+that would pass a cap against the block as it is does nothing. The block's
+fields keep their own undo: the wrapper stops React `input` and native
+`beforeinput` from reaching slate-react (which would run `editor.undo()`), and
+`fieldHistory.ts` holds back Cmd+Z in a field once its text is back to what it
+held when focused, since the page's single native undo stack would otherwise
+undo the note's own typing next.
 
 Standalone mindmaps and diagrams render without Plate. View
 (`MermaidMaterialView`) draws the block's `MermaidView` straight from the

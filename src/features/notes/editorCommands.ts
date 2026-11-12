@@ -1,7 +1,6 @@
 import { ListStyleType, toggleList } from '@platejs/list';
 import { KEYS } from 'platejs';
 import type { IconName } from '@/components/ui/Icon';
-import { userToast } from '@/components/ui/userToast';
 import type { Question } from '@/features/questions/types';
 import { m } from '@/i18n';
 import { uid } from '@/lib/id';
@@ -14,6 +13,7 @@ import { insertMediaPlaceholder } from './insertMediaPlaceholder';
 import { insertInlineEquation } from './mathInsert';
 import type { EditorCommandGroup, EditorWidgetId } from './noteEditorPrefs';
 import { COLUMN_LAYOUTS } from './richBlockConfig';
+import { tableViewCount, toastTableViewCap } from './tableView/count';
 import { newTableViewBlock, TABLE_VIEW_LIMITS } from './tableView/model';
 import { insertYouTubeEmbed } from './youtube';
 
@@ -345,14 +345,8 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     },
     run: (editor) => {
       if (insideContainer(editor)) return;
-      const count = editor.children.filter(
-        (node: { type?: unknown }) => node.type === 'table_view'
-      ).length;
-      if (count >= TABLE_VIEW_LIMITS.count) {
-        userToast({
-          title: m.table_view_at_count({ count: TABLE_VIEW_LIMITS.count }),
-          variant: 'error',
-        });
+      if (tableViewCount(editor.children) >= TABLE_VIEW_LIMITS.count) {
+        toastTableViewCap();
         return;
       }
       insertEditorNode(editor, {

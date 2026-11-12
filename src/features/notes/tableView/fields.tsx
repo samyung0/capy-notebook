@@ -3,7 +3,9 @@ import { cn } from '@/lib/cn';
 import { keepKeys } from './context';
 import type { CellValue } from './model';
 
-/** A text field that writes on Enter or leaving it; Escape drops the draft. */
+/** A text field that writes on Enter or leaving it; Escape drops the draft.
+ * A draft `parse` refuses stays in the field, marked invalid, until it is
+ * fixed or dropped. */
 export function CommitInput({
   className,
   onCommit,
@@ -17,7 +19,7 @@ export function CommitInput({
 > & {
   value: string;
   onCommit: (text: string) => void;
-  /** After a commit or Escape. */
+  /** After a commit or Escape (not after a refused draft). */
   onDone?: () => void;
   /** False when the text cannot be written (the draft stays). */
   parse?: (text: string) => boolean;
@@ -29,22 +31,33 @@ export function CommitInput({
     setHeld(value);
     if (draft === held) setDraft(value);
   }
+  const [invalid, setInvalid] = useState(false);
   const cancelled = useRef(false);
   const commit = () => {
-    if (!cancelled.current && draft !== value && (!parse || parse(draft)))
-      onCommit(draft);
-    else setDraft(value);
+    const drop = cancelled.current;
     cancelled.current = false;
+    if (!drop && draft !== value && parse && !parse(draft)) {
+      setInvalid(true);
+      return;
+    }
+    if (!drop && draft !== value) onCommit(draft);
+    else setDraft(value);
+    setInvalid(false);
     onDone?.();
   };
   return (
     <input
+      aria-invalid={invalid || undefined}
       className={cn(
         'min-w-0 bg-transparent outline-none placeholder:text-placeholder',
-        className
+        className,
+        'aria-invalid:text-tint-error-fg aria-invalid:outline-(--color-solid-error)'
       )}
       onBlur={commit}
-      onChange={(event) => setDraft(event.target.value)}
+      onChange={(event) => {
+        setDraft(event.target.value);
+        setInvalid(false);
+      }}
       onKeyDown={(event) => {
         keepKeys(event);
         if (event.key === 'Enter') {

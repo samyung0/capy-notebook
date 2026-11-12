@@ -5,7 +5,7 @@ import {
   useEditorRef,
   useReadOnly,
 } from 'platejs/react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import {
   DropdownMenu,
@@ -40,6 +40,11 @@ import {
   titleColumn,
   uniqueName,
 } from './edit';
+import {
+  countFieldInput,
+  holdFieldHistory,
+  startFieldHistory,
+} from './fieldHistory';
 import { CommitInput } from './fields';
 import { VIEW_ICON, VIEW_KIND_LABEL } from './look';
 import {
@@ -48,15 +53,13 @@ import {
   groupColumn,
   isTableViewBlock,
   TABLE_VIEW_LIMITS,
+  type TableViewBlock,
   type TableViewElement as TableViewNode,
   type TableViewView,
   VIEW_KINDS,
 } from './model';
 import { RecordDialog } from './RecordDialog';
 import { TableViewKanban } from './TableViewKanban';
-
-const TOOL =
-  'h-7 gap-1.5 px-2 font-normal text-fg-muted data-[state=open]:bg-surface-hover-bg data-[state=open]:text-fg';
 
 /** A view's tab; the open one's menu renames or deletes it (never the last
  * view). Narrow screens show the other views as their icons. */
@@ -213,7 +216,7 @@ function SortControl({ view }: { view: TableViewView }) {
       <DropdownMenuTrigger asChild>
         <Button
           aria-label={m.table_view_sort()}
-          className={cn(TOOL, 'max-sm:size-8 max-sm:px-0')}
+          className="h-7 gap-1.5 px-2 font-normal text-fg-muted data-[state=open]:bg-surface-hover-bg data-[state=open]:text-fg max-sm:size-8 max-sm:px-0"
           size="xs"
           variant="ghost-hover"
         >
@@ -276,7 +279,11 @@ function GroupByControl({ view }: { view: TableViewView }) {
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
-        <Button className={TOOL} size="xs" variant="ghost-hover">
+        <Button
+          className="h-7 gap-1.5 px-2 font-normal text-fg-muted data-[state=open]:bg-surface-hover-bg data-[state=open]:text-fg"
+          size="xs"
+          variant="ghost-hover"
+        >
           <span className="max-w-40 truncate">
             {group
               ? m.table_view_group_by_column({ name: group.name })
@@ -314,7 +321,8 @@ function GroupByControl({ view }: { view: TableViewView }) {
   );
 }
 
-/** Drawn when merges left no view: a plain table. */
+/** Drawn when a block has no view (revision 2.3, two peers deleting the
+ * last two at once): a table in list order, + offering a new one. */
 const NO_VIEW: TableViewView = { id: '', kind: 'table', name: '' };
 
 /** The block (mock Main): its title, the view tabs with + and the view's
@@ -389,7 +397,7 @@ function TableViewBody() {
             {kanban ? (
               <GroupByControl view={view} />
             ) : (
-              <SortControl view={view} />
+              view !== NO_VIEW && <SortControl view={view} />
             )}
             <Button
               className="h-8 gap-1 px-2.5 sm:h-7"
@@ -432,6 +440,19 @@ function TableViewBody() {
   );
 }
 
+/** Whether `next` holds more columns, rows, views or options than
+ * `current`. */
+function grows(current: TableViewBlock, next: TableViewBlock) {
+  const options = (block: TableViewBlock) =>
+    block.columns.reduce((sum, { options }) => sum + (options?.length ?? 0), 0);
+  return (
+    next.columns.length > current.columns.length ||
+    next.rows.length > current.rows.length ||
+    next.views.length > current.views.length ||
+    options(next) > options(current)
+  );
+}
+
 /** The note's table view block (Epo 2026-11-12): a top-level void whose
  * block is a live map in the room. Every edit writes the whole block with
  * `setNodes`, as a figure dialog's save does; the room's map then rewrites
@@ -448,10 +469,16 @@ export function TableViewElement(props: PlateElementProps) {
       if (at < 0) return;
       const current = (editor.children[at] as unknown as TableViewNode).block;
       const next = edit(current);
-      if (next === current) return;
-      // A merge can leave a block past a cap; edits never take one there.
-      if (isTableViewBlock(current) && !isTableViewBlock(next))
-        throw new Error('A table view edit broke the block rules.');
+      // Caps hold against the block as it is now (revision 2.4): an edit that
+      // would pass one does nothing (the controls disable at the caps, so
+      // only a race with a peer gets here). A merge can leave a block past a
+      // cap already; edits that add nothing still write to it.
+      if (
+        next === current ||
+        (!isTableViewBlock(next) &&
+          (isTableViewBlock(current) || grows(current, next)))
+      )
+        return;
       editor.tf.setNodes({ block: next } as Partial<TElement>, { at: [at] });
     },
     [editor, id]
@@ -460,16 +487,34 @@ export function TableViewElement(props: PlateElementProps) {
     () => ({ block, write: readOnly ? undefined : write }),
     [block, readOnly, write]
   );
+  // The block's fields keep their own undo: slate-react runs editor.undo()
+  // on a `historyUndo` beforeinput reaching the editor root, and on a React
+  // `input` event, which bubbles here from the portaled popovers and the
+  // record dialog too; past a field's own edits, fieldHistory holds the
+  // shortcut back.
+  const wrapper = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const node = wrapper.current;
+    if (!node) return;
+    const stop = (event: Event) => event.stopPropagation();
+    node.addEventListener('beforeinput', stop);
+    return () => node.removeEventListener('beforeinput', stop);
+  }, []);
   return (
     <PlateElement {...props} className="relative my-3">
       <div
         contentEditable={false}
+        onFocusCapture={startFieldHistory}
+        onInput={(event) => event.stopPropagation()}
+        onInputCapture={countFieldInput}
+        onKeyDownCapture={holdFieldHistory}
         onMouseDown={(event) => {
-          // A press outside its fields selects the block, as a figure's does.
+          // A press outside its fields selects the block, as a figure's does;
+          // a card or a draggable keeps it, or Firefox never starts the drag.
           if (
             readOnly ||
             (event.target as Element).closest(
-              'input, button, [role="dialog"], [role="menu"]'
+              'input, button, [role="button"], [draggable="true"], [role="dialog"], [role="menu"]'
             )
           )
             return;
@@ -480,6 +525,7 @@ export function TableViewElement(props: PlateElementProps) {
             editor.tf.focus();
           }
         }}
+        ref={wrapper}
       >
         <TableViewContext.Provider value={api}>
           <TableViewBody />
