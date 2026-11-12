@@ -2,6 +2,8 @@
 import { describe, expect, it } from 'vitest';
 import type { AnonymousNote } from '@/api/types';
 import { parseMaterialDocument } from '@/features/materials/document';
+import { COLUMN_WIDTH, TABLE_CLASS } from '@/features/notes/tableView/display';
+import { drawnColumns } from '@/features/notes/tableView/model';
 import { tracker } from '@/features/notes/tableView/testFixtures';
 import { MATERIAL_SCHEMA_VERSION } from '@/lib/const';
 import everyBlock from '../../server/internal/materialdoc/testdata/every-block-note.json';
@@ -275,5 +277,17 @@ describe('a shared table view', () => {
     expect(html).toContain('aria-label="Checked"');
     expect(html).toContain('aria-label="Not checked"');
     expect(html).toMatch(STICKY_CELL);
+  });
+
+  it('lays its columns out as the editor does', () => {
+    // display.ts widths, phone and wide, in the drawn column order.
+    const widths = Array.from(
+      html.matchAll(/<col [^>]*style="--w-phone:(\d+)px;--w-wide:(\d+)px"/g),
+      ([, phone, wide]) => [Number(phone), Number(wide)]
+    );
+    expect(widths).toEqual(
+      drawnColumns(block).map(({ kind }) => [...COLUMN_WIDTH[kind]])
+    );
+    expect(html).toContain(TABLE_CLASS);
   });
 });

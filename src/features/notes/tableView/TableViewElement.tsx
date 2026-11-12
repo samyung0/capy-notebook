@@ -52,6 +52,7 @@ import {
   type TableViewView,
   VIEW_KINDS,
 } from './model';
+import { RecordDialog } from './RecordDialog';
 import { TableViewKanban } from './TableViewKanban';
 
 const TOOL =
@@ -323,8 +324,17 @@ function TableViewBody() {
   const [viewId, setViewId] = useState(block.views[0]?.id);
   const [editing, setEditing] = useState<Editing>(null);
   const onEdit = useCallback((next: Editing) => setEditing(next), []);
+  const [record, setRecord] = useState<{
+    rowId: string;
+    focusTitle: boolean;
+  } | null>(null);
+  const onOpen = useCallback(
+    (rowId: string) => setRecord({ focusTitle: false, rowId }),
+    []
+  );
   const view =
     block.views.find(({ id }) => id === viewId) ?? block.views[0] ?? NO_VIEW;
+  const kanban = view.kind === 'kanban';
   const newRecord = (cells: Record<string, CellValue> = {}) => {
     let rowId = '';
     write?.((current) => {
@@ -332,9 +342,11 @@ function TableViewBody() {
       rowId = added.rowId;
       return added.block;
     });
-    if (rowId) setEditing({ columnId: titleColumn(block).id, rowId });
+    if (!rowId) return;
+    // The Table types the title in its row; a Kanban opens the record.
+    if (kanban) setRecord({ focusTitle: true, rowId });
+    else setEditing({ columnId: titleColumn(block).id, rowId });
   };
-  const kanban = view.kind === 'kanban';
   // A Kanban's New record lands in its first column.
   const group = kanban ? groupColumn(block, view) : undefined;
   const first = group?.options?.[0];
@@ -398,18 +410,22 @@ function TableViewBody() {
         )}
       </div>
       {kanban ? (
-        <TableViewKanban
-          editing={editing}
-          onEdit={onEdit}
-          onNewRecord={newRecord}
-          view={view}
-        />
+        <TableViewKanban onNewRecord={newRecord} onOpen={onOpen} view={view} />
       ) : (
         <EditableTable
           editing={editing}
           onEdit={onEdit}
           onNewRecord={() => newRecord()}
+          onOpen={onOpen}
           view={view}
+        />
+      )}
+      {record && (
+        <RecordDialog
+          focusTitle={record.focusTitle}
+          key={record.rowId}
+          onClose={() => setRecord(null)}
+          rowId={record.rowId}
         />
       )}
     </section>

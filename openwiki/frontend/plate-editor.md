@@ -1102,7 +1102,14 @@ map (an edit that would break `isTableViewBlock` throws; a block a merge left
 past a cap still takes edits). Text, title and number cells write on Enter or
 leaving the field, select and date cells from a popover (`SelectEditor`, the
 schedule's `MiniCalendar`), a checkbox on click; a column header opens
-`ColumnMenu`; the title cell's pill opens the record's menu. The open view is
+`ColumnMenu`; the title cell's pill opens the record's menu, whose Open (and a
+Kanban card's click, or a read-only title cell) opens `RecordDialog`: the title
+as a large field, every other column a labelled row with the same editors, and
+Delete record (the app's Dialog, a full-screen page on phones). The editor's
+table and the read-only `TableViewTable` (View, Preview, share pages) share
+their layout through `display.ts` and `cells.tsx`: fixed column widths (the
+title 140px on phones), 36px rows, one-line cells cut with an ellipsis, so a
+note's table keeps its shape between View and the editor. The open view is
 each reader's own state; Sort and Group by are stored on the view. A Kanban
 card drags with its own data type (`application/x-capy-table-view-record`) and
 stops the event, so neither Slate's drop nor the block drag reads it. A

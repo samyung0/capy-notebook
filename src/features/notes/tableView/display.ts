@@ -1,6 +1,6 @@
 import type { IconName } from '@/components/ui/Icon';
 import { getLocale } from '@/i18n';
-import type { ColumnKind, OptionColor } from './model';
+import type { ColumnKind, OptionColor, TableViewColumn } from './model';
 
 /* How a table view looks wherever the app draws it (the read-only table, the
    editor's cells and Kanban cards): one icon per column kind, one chip colour
@@ -46,3 +46,52 @@ export function tableViewDate(iso: string): string {
     timeZone: 'UTC',
   }).format(new Date(`${iso}T00:00:00Z`));
 }
+
+/** A column's width in px, on phones and from `sm` (mock Phone: the title
+ * column 140px, the rest narrower than on wide screens). Every table drawn
+ * keeps them, so a note's View and its editor draw the same shape. */
+export const COLUMN_WIDTH: Record<ColumnKind, readonly [number, number]> = {
+  checkbox: [72, 80],
+  date: [96, 120],
+  number: [72, 96],
+  select: [112, 140],
+  text: [128, 180],
+  title: [140, 220],
+};
+
+/** The editor's + column, after the rest. */
+export const ADD_COLUMN_WIDTH = 36;
+
+/** Widths as the `--w-phone` and `--w-wide` that `WIDTH_CLASS` reads. */
+export const widthVars = ([phone, wide]: readonly [number, number]) =>
+  ({
+    '--w-phone': `${phone}px`,
+    '--w-wide': `${wide}px`,
+  }) as React.CSSProperties;
+
+export const WIDTH_CLASS = 'w-(--w-phone) sm:w-(--w-wide)';
+
+/** The table's width: its columns', plus `extra` px. */
+export const tableWidth = (columns: TableViewColumn[], extra = 0) =>
+  ([0, 1] as const).map((at) =>
+    columns.reduce((sum, { kind }) => sum + COLUMN_WIDTH[kind][at], extra)
+  ) as unknown as readonly [number, number];
+
+/** Exactly its fixed columns, never stretched to the note (a stretch would
+ * share out differently with and without the editor's + column): past the
+ * note's width, the columns after the title scroll sideways. */
+export const TABLE_CLASS =
+  'w-(--w-phone) table-fixed border-separate border-spacing-0 text-sm sm:w-(--w-wide)';
+
+/** A header or body cell; its content draws the padding. */
+export const CELL_CLASS = 'h-9 border-line border-b p-0 align-middle';
+/** Each cell but a row's first has a line on its left. */
+export const DIVIDED_CLASS = 'border-l';
+/** The title column stays while the rest scroll under it (mock Phone). */
+export const STICKY_CLASS =
+  'sticky left-0 z-[1] bg-surface shadow-[4px_0_6px_-4px_rgb(0_0_0/0.12)] sm:shadow-none';
+/** A header cell's own look. */
+export const HEADER_CLASS = 'text-left font-medium text-fg-muted';
+/** A cell's content: one line, cut with an ellipsis. */
+export const CELL_CONTENT_CLASS =
+  'flex h-9 w-full min-w-0 items-center px-2.5 text-left';

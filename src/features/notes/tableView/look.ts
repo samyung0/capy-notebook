@@ -36,25 +36,6 @@ export const VIEW_KIND_LABEL: Record<ViewKind, () => string> = {
   table: m.editor_table,
 };
 
-/** A column's width in px as drawn, on phones and from `sm` (mock Phone:
- * the title column 140px, the rest narrower than on wide screens). */
-export const COLUMN_WIDTH: Record<ColumnKind, readonly [number, number]> = {
-  checkbox: [72, 80],
-  date: [96, 120],
-  number: [72, 96],
-  select: [112, 140],
-  text: [128, 180],
-  title: [140, 220],
-};
-
-/** The widths as the `--w-phone` and `--w-wide` a `w-(--w-phone)
- * sm:w-(--w-wide)` element reads. */
-export const widthVars = ([phone, wide]: readonly [number, number]) =>
-  ({
-    '--w-phone': `${phone}px`,
-    '--w-wide': `${wide}px`,
-  }) as React.CSSProperties;
-
 /** A local date as a `YYYY-MM-DD` cell. */
 export const isoDate = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;

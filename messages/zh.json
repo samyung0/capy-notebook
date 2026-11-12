@@ -1419,6 +1419,7 @@
   "table_view_no_group_column": "添加单选列以对记录分组。",
   "table_view_no_option": "无{name}",
   "table_view_record": "记录",
+  "table_view_open_record": "打开",
   "table_view_insert_above": "在上方插入",
   "table_view_insert_below": "在下方插入",
   "table_view_delete_record": "删除记录",

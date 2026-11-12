@@ -2,24 +2,16 @@ import { useState } from 'react';
 import { Icon } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { OptionChip } from './cells';
 import { useTableView } from './context';
 import { tableViewDate } from './display';
-import type { Editing } from './EditableTable';
-import {
-  canAddRow,
-  type KanbanGroup,
-  kanbanGroups,
-  moveCard,
-  setCell,
-} from './edit';
-import { CommitInput, OptionChip, textCell } from './fields';
+import { canAddRow, type KanbanGroup, kanbanGroups, moveCard } from './edit';
 import {
   cellOption,
   cellValue,
   drawnColumns,
   groupColumn,
   plainNumber,
-  TABLE_VIEW_LIMITS,
   type TableViewColumn,
   type TableViewRow,
   type TableViewView,
@@ -54,67 +46,52 @@ function cardFields(
   return out;
 }
 
-type CardEditing = {
-  editing: Editing;
-  onEdit: (editing: Editing) => void;
+type CardOpen = {
+  /** Opens a record with every field. */
+  onOpen: (rowId: string) => void;
 };
 
+/** A record's card: its title and other filled fields. A click opens the
+ * record; in an editable note a drag moves it to another column. */
 function Card({
   columns,
-  editing: open,
   group,
-  onEdit,
+  onOpen,
   row,
-}: CardEditing & {
+}: CardOpen & {
   columns: TableViewColumn[];
   group: TableViewColumn;
   row: TableViewRow;
 }) {
   const { write } = useTableView();
-  const title = columns[0];
-  const editing = open?.rowId === row.id && open.columnId === title.id;
-  const name = cellValue(title, row);
+  const name = cellValue(columns[0], row);
   const fields = cardFields(columns, group, row);
   return (
     <div
       className={cn(
-        'flex flex-col gap-1 rounded-lg border border-line bg-surface px-3 py-2.5 text-sm',
-        write && 'cursor-grab active:cursor-grabbing'
+        'flex cursor-pointer flex-col gap-1 rounded-lg border border-line bg-surface px-3 py-2.5 text-left text-sm outline-none hover:bg-surface-hover-bg/40 focus-visible:ring-2 focus-visible:ring-action',
+        write && 'active:cursor-grabbing'
       )}
-      draggable={!!write && !editing}
+      draggable={!!write}
+      onClick={() => onOpen(row.id)}
       onDragStart={(event) => {
         // The note's own drop would read the card as a dragged block.
         event.stopPropagation();
         event.dataTransfer.setData(CARD_TYPE, row.id);
         event.dataTransfer.effectAllowed = 'move';
       }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        event.stopPropagation();
+        onOpen(row.id);
+      }}
+      role="button"
+      tabIndex={0}
     >
-      {editing && write ? (
-        <CommitInput
-          aria-label={title.name}
-          autoFocus
-          className="font-semibold"
-          maxLength={TABLE_VIEW_LIMITS.cell}
-          onCommit={(text) =>
-            write((block) => setCell(block, row.id, title.id, textCell(text)))
-          }
-          onDone={() => onEdit(null)}
-          value={name === undefined ? '' : String(name)}
-        />
-      ) : (
-        <button
-          className={cn(
-            'min-w-0 text-left font-semibold outline-none focus-visible:underline',
-            !name && 'text-fg-muted',
-            !write && 'cursor-default'
-          )}
-          disabled={!write}
-          onClick={() => onEdit({ columnId: title.id, rowId: row.id })}
-          type="button"
-        >
-          {name || m.table_view_untitled()}
-        </button>
-      )}
+      <span className={cn('min-w-0 font-semibold', !name && 'text-fg-muted')}>
+        {name || m.table_view_untitled()}
+      </span>
       {fields.length > 0 && (
         <span className="text-[13px] text-fg-muted">{fields.join(' · ')}</span>
       )}
@@ -124,13 +101,12 @@ function Card({
 
 function Lane({
   columns,
-  editing,
   group,
   lane,
-  onEdit,
   onNewRecord,
-}: CardEditing & {
-  /** A record added with `cells`, its title open. */
+  onOpen,
+}: CardOpen & {
+  /** A record added with `cells`, opened. */
   onNewRecord: (cells: Record<string, string>) => void;
   columns: TableViewColumn[];
   group: TableViewColumn;
@@ -182,10 +158,9 @@ function Lane({
       {lane.rows.map((row) => (
         <Card
           columns={columns}
-          editing={editing}
           group={group}
           key={row.id}
-          onEdit={onEdit}
+          onOpen={onOpen}
           row={row}
         />
       ))}
@@ -210,11 +185,10 @@ function Lane({
  * cards with the title and the other filled fields; a card dropped on
  * another column takes its option. */
 export function TableViewKanban({
-  editing,
-  onEdit,
   onNewRecord,
+  onOpen,
   view,
-}: CardEditing & {
+}: CardOpen & {
   onNewRecord: (cells: Record<string, string>) => void;
   view: TableViewView;
 }) {
@@ -233,12 +207,11 @@ export function TableViewKanban({
       {lanes.map((lane) => (
         <Lane
           columns={columns}
-          editing={editing}
           group={group}
           key={lane.option?.id ?? ''}
           lane={lane}
-          onEdit={onEdit}
           onNewRecord={onNewRecord}
+          onOpen={onOpen}
         />
       ))}
     </div>
