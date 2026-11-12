@@ -37,9 +37,9 @@ type MoveFilesReq struct {
 	TopicName   TopicName `json:"topicName,omitempty" doc:"A topic of this name (any case), created when missing"`
 }
 
-// CreateBlankFileReq is the body for POST /api/workspaces/{id}/files/blank:
-// a blank Word or Excel file from the Office engine's starter, named without
-// its extension.
+// CreateBlankFileReq is the body for POST /api/workspaces/{id}/files/blank
+// and POST /api/files/blank (no workspace, no topic): a blank Word or Excel
+// file from the Office engine's starter, named without its extension.
 type CreateBlankFileReq struct {
 	Format  string   `json:"format" enum:"docx,xlsx"`
 	Name    FileName `json:"name" minLength:"1" doc:"The file's name without its extension"`

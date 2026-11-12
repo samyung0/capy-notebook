@@ -38,6 +38,7 @@ type LearningRow struct {
 	Kind          string  `json:"kind" enum:"session,quiz,start,review"`
 	WorkspaceID   string  `json:"workspaceId"`
 	WorkspaceName string  `json:"workspaceName"`
+	IconID        string  `json:"iconId"`
 	SessionID     *string `json:"sessionId,omitempty"`
 	Group         string  `json:"group,omitempty" enum:"topic,others,workspace,"`
 	TopicName     string  `json:"topicName,omitempty"`
@@ -243,6 +244,9 @@ func (s *Store) LearningOverview(ctx context.Context, userID string, now time.Ti
 	out.Next = append(out.Next, practice...)
 	if err := s.learningSuggestions(ctx, &out, suggestions); err != nil {
 		return out, err
+	}
+	for i := range out.Next {
+		out.Next[i].IconID = byID[out.Next[i].WorkspaceID].iconID
 	}
 	return out, nil
 }

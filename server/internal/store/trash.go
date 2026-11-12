@@ -770,3 +770,56 @@ func (s *Store) CurrentTrashEpisode(ctx context.Context, kind agenttools.Resourc
 	}
 	return episode, err
 }
+
+// trashPreviewAccessSQL is who opens a trashed item read-only (Epo
+// 2026-11-12): whoever sees its preview in a Trash list, so its payer while it
+// can still reach the item's workspace (lostAccessSQL), or the live
+// workspace's owner. wsCol is the item's workspace column; $2 is the caller.
+func trashPreviewAccessSQL(payerCol, wsCol string) string {
+	return `((` + payerCol + `=$2 AND NOT ` + lostAccessSQL("COALESCE("+wsCol+",'')", "$2") + `)
+		OR EXISTS (SELECT 1 FROM workspaces tw WHERE tw.id=` + wsCol + ` AND tw.user_id=$2 AND ` + liveWorkspaceSQL("tw.id") + `))`
+}
+
+// TrashedFile reads a trashed file for its read-only preview, with the path
+// of its bytes. Anyone else, or a file not in the trash, is ErrNotFound.
+func (s *Store) TrashedFile(ctx context.Context, actorID, id string) (File, string, error) {
+	var blobPath string
+	file, err := scanFile(withExtra{s.pool.QueryRow(ctx, `SELECT `+fileCols+`, COALESCE(blob_path, '') FROM files f
+		WHERE f.id=$1 AND f.trashed_at IS NOT NULL AND `+trashPreviewAccessSQL("f.user_id", "f.workspace_id"), id, actorID), []any{&blobPath}})
+	if isNoRows(err) {
+		return File{}, "", ErrNotFound
+	}
+	return file, blobPath, err
+}
+
+// TrashedMaterial reads a trashed material (not one embedded in a note) for
+// its read-only preview: its content as it was saved when trashed.
+func (s *Store) TrashedMaterial(ctx context.Context, actorID, id string) (Material, error) {
+	mt, err := scanMaterial(s.pool.QueryRow(ctx, `SELECT `+materialCols+` FROM materials m
+		WHERE m.id=$1 AND m.trashed_at IS NOT NULL AND m.parent_material_id IS NULL
+			AND `+trashPreviewAccessSQL("m.owner_user_id", "m.workspace_id"), id, actorID))
+	if isNoRows(err) {
+		return Material{}, ErrNotFound
+	}
+	return mt, err
+}
+
+// MaterialAssetPaths is the object path of each of the material's own ready
+// images and audio (not one a save left out), by asset id.
+func (s *Store) MaterialAssetPaths(ctx context.Context, materialID string) (map[string]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id, object_path FROM editor_assets
+		WHERE material_id=$1 AND status='ready' AND trashed_at IS NULL`, materialID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	paths := map[string]string{}
+	for rows.Next() {
+		var id, path string
+		if err := rows.Scan(&id, &path); err != nil {
+			return nil, err
+		}
+		paths[id] = path
+	}
+	return paths, rows.Err()
+}

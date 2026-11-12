@@ -1,12 +1,17 @@
-import { useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
+import { type ReactNode, useState } from 'react';
 import {
   useCreateBlankFile,
+  useCreateFlashcardSet,
   useCreateMaterial,
+  useCreateQuiz,
+  useCreateStandaloneNote,
   useFiles,
+  useItems,
   useMaterials,
   useWorkspace,
 } from '@/api/hooks';
-import type { Material, SourceFile } from '@/api/types';
+import type { Material } from '@/api/types';
 import { PreviewCard } from '@/components/app/PreviewCard';
 import { Button } from '@/components/ui/Button';
 import { DialogFooter, DialogPrimary } from '@/components/ui/Dialog';
@@ -97,7 +102,7 @@ const isBlankOffice = (kind: CreateKind): kind is keyof typeof BLANK_NAMES =>
 
 function nextBlankName(
   format: keyof typeof BLANK_NAMES,
-  files: SourceFile[]
+  files: { name: string }[]
 ): string {
   const taken = new Set(files.map((file) => file.name.toLowerCase()));
   const base = BLANK_NAMES[format]();
@@ -109,9 +114,12 @@ function nextBlankName(
 /** The Add file dialog's Create tab: pick a template card, then create and
  * open it. */
 export function CreateFilePanel({
+  aboveFooter,
   workspaceId,
   onCreated,
 }: {
+  /** Files' Add to field, right above the footer. */
+  aboveFooter?: ReactNode;
   workspaceId: string;
   onCreated: (item: OpenItem) => void;
 }) {
@@ -163,19 +171,136 @@ export function CreateFilePanel({
   }
 
   return (
+    <CreateGallery
+      aboveFooter={aboveFooter}
+      canCreate={canCreate}
+      onCreate={create}
+      onSelect={setSelected}
+      sections={SECTIONS}
+      selected={selected}
+    />
+  );
+}
+
+/** No workspace (Epo 2026-11-12): the Create tab without what needs one (a
+ * diagram), the blocks made as Files' New block made them and opened on
+ * their own pages, the blank Office files as standalone files. */
+const STANDALONE_SECTIONS = SECTIONS.map((section) => ({
+  ...section,
+  tiles: section.tiles.filter((tile) => tile.kind !== 'diagram'),
+}));
+
+export function StandaloneCreatePanel({
+  aboveFooter,
+  onCreated,
+}: {
+  aboveFooter?: ReactNode;
+  onCreated: () => void;
+}) {
+  const navigate = useNavigate();
+  const [selected, setSelected] = useState<CreateKind | null>(null);
+  const { mutate: createNote, isPending: notePending } =
+    useCreateStandaloneNote();
+  const { mutate: createQuiz, isPending: quizPending } = useCreateQuiz();
+  const { mutate: createFlashcardSet, isPending: setPending } =
+    useCreateFlashcardSet();
+  const { mutate: createBlank, isPending: blankPending } =
+    useCreateBlankFile(null);
+  // Blank names count up past the standalone Office files on the first page.
+  const { data: blanks } = useItems({
+    kinds: ['doc', 'sheet'],
+    locations: ['standalone'],
+  });
+  const openMaterial = (material: { id: string }) => {
+    onCreated();
+    void navigate({
+      params: { materialId: material.id },
+      to: '/materials/$materialId',
+    });
+  };
+  function create() {
+    if (selected === 'note') createNote({}, { onSuccess: openMaterial });
+    else if (selected === 'quiz')
+      createQuiz(
+        { name: m.quiz_untitled(), questions: [] },
+        { onSuccess: openMaterial }
+      );
+    else if (selected === 'flashcards')
+      createFlashcardSet(
+        { color: 'purple', name: m.flashcards_new_flashcards() },
+        {
+          onSuccess: (set) => {
+            onCreated();
+            void navigate({
+              params: { flashcardSetId: set.id },
+              to: '/flashcards/$flashcardSetId',
+            });
+          },
+        }
+      );
+    else if (selected && isBlankOffice(selected)) {
+      const taken = (blanks?.pages[0]?.items ?? []).flatMap((item) =>
+        item.type === 'file' ? [item.file] : []
+      );
+      createBlank(
+        { format: selected, name: nextBlankName(selected, taken) },
+        {
+          onSuccess: (file) => {
+            onCreated();
+            void navigate({
+              params: { fileId: file.id },
+              to: '/files/$fileId',
+            });
+          },
+        }
+      );
+    }
+  }
+  return (
+    <CreateGallery
+      aboveFooter={aboveFooter}
+      canCreate={
+        selected !== null &&
+        !(notePending || quizPending || setPending || blankPending)
+      }
+      onCreate={create}
+      onSelect={setSelected}
+      sections={STANDALONE_SECTIONS}
+      selected={selected}
+    />
+  );
+}
+
+/** The template cards by section, then Create. */
+function CreateGallery({
+  aboveFooter,
+  canCreate,
+  onCreate,
+  onSelect,
+  sections,
+  selected,
+}: {
+  aboveFooter: ReactNode;
+  canCreate: boolean;
+  onCreate: () => void;
+  onSelect: (kind: CreateKind) => void;
+  sections: typeof SECTIONS;
+  selected: CreateKind | null;
+}) {
+  return (
     <>
       <SectionGallery
         className="min-h-0 flex-1"
         label={m.source_create_sections()}
         nav={false}
-        sections={SECTIONS.map((section) => ({
+        sections={sections.map((section) => ({
           content: (
             <div className="grid grid-cols-2 gap-1 sm:grid-cols-4">
               {section.tiles.map((tile) => (
                 <PreviewCard
                   icon={tile.icon}
                   key={tile.kind}
-                  onClick={() => setSelected(tile.kind)}
+                  onClick={() => onSelect(tile.kind)}
                   selected={selected === tile.kind}
                   thumbnail={TEMPLATE_THUMBNAILS[tile.kind]()}
                   title={tile.label()}
@@ -187,11 +312,12 @@ export function CreateFilePanel({
           label: section.label(),
         }))}
       />
+      {aboveFooter}
       <DialogFooter className="shrink-0">
         <DialogPrimary>
           <Button
             disabled={!canCreate}
-            onClick={create}
+            onClick={onCreate}
             size="lg"
             variant="accent"
           >

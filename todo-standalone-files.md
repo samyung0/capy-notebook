@@ -94,10 +94,11 @@ Approved 2026-10-27:
   workspace id (`progress.py:35`). The tab's ingest handler patches the owned
   files list for it and refetches on ready, which brings the thumbnail (tree
   events need a workspace).
-- **P2, the dialog's tabs for No workspace.** Upload and Import, with Create
-  hidden (Blocks' New block already makes standalone notes, quizzes and sets;
-  blank Office files go through the workspace-scoped `/files/blank`). A
-  workspace destination keeps all tabs.
+- **P2, the dialog's tabs for No workspace.** Upload, Import and Create
+  (Epo 2026-11-12: New block folded in): notes, quizzes, sets and blank
+  DOCX/XLSX (standalone `POST /api/files/blank`), no diagram. A workspace
+  destination keeps all tabs. The destination is the dialog's Add to field,
+  not a dialog of its own.
 - **P3, the destination list.** No workspace first, then the workspaces the
   caller can edit, most recently opened first, with icon and name as in Last
   opened. A frozen or over-quota account sees the rows disabled with the

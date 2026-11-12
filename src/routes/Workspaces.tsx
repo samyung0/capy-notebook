@@ -98,7 +98,6 @@ export default function Workspaces() {
             disabled={frozen}
             iconLeft="plus"
             onClick={() => setCreateOpen(true)}
-            size="sm"
           >
             {m.action_new_workspace()}
           </Button>

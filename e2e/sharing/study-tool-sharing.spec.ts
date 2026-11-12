@@ -66,11 +66,20 @@ async function sharePath(
 test('New quiz opens an editable draft', async ({ ownerApi, ownerPage }) => {
   await ownerPage.goto('/files');
   const created = waitForApi(ownerPage, apiEndsWith('/api/quizzes', 'POST'));
+  // Add file (starting on No workspace) → Create's Quiz (Epo 2026-11-12: New block folded
+  // into Add file).
   await ownerPage
-    .getByRole('button', { exact: true, name: m.files_new_block() })
+    .getByRole('button', { exact: true, name: m.action_add_file() })
     .click();
-  await ownerPage
-    .getByRole('menuitem', { exact: true, name: m.editor_quiz() })
+  const dialog = ownerPage.getByRole('dialog');
+  await dialog
+    .getByRole('tab', { exact: true, name: m.action_create() })
+    .click();
+  await dialog
+    .getByRole('button', { exact: true, name: m.generate_quiz() })
+    .click();
+  await dialog
+    .getByRole('button', { exact: true, name: m.action_create() })
     .click();
   const response = await created;
   expect(response.status()).toBe(201);

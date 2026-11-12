@@ -57,6 +57,7 @@ vi.mock('@/api/hooks', () => ({
 const pass = ({ children }: { children?: ReactNode }) => children;
 vi.mock('@/components/ui/Dialog', () => ({
   Dialog: pass,
+  DialogCancel: () => null,
   DialogContent: pass,
   DialogFooter: pass,
   DialogTitle: ({
@@ -94,18 +95,23 @@ vi.mock('@/components/ui/Select', () => ({
   SelectValue: () => null,
 }));
 vi.mock('./TaskFiles', () => ({
-  FilePicker: ({
+  TaskFileMenu: ({
     kinds,
     onPick,
+    trigger,
   }: {
     kinds?: string[];
     onPick: (file: { id: string; name: string }) => void;
+    trigger: ReactNode;
   }) => (
-    <button
-      data-picker={kinds?.join()}
-      onClick={() => onPick({ id: 'qz9', name: 'Mock paper' })}
-      type="button"
-    />
+    <>
+      {trigger}
+      <button
+        data-picker={kinds?.join()}
+        onClick={() => onPick({ id: 'qz9', name: 'Mock paper' })}
+        type="button"
+      />
+    </>
   ),
   TaskFilesField: () => <div data-task-files />,
 }));

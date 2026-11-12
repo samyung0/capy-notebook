@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/Button';
 import { Checkbox } from '@/components/ui/Checkbox';
 import {
   Dialog,
+  DialogCancel,
   DialogContent,
   DialogFooter,
   DialogTitle,
@@ -53,6 +54,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
+import { iconUrl } from '@/lib/icon-catalog';
 import { MakePractice } from '../practice/MakePractice';
 import { questionsLabel } from '../practice/practiceText';
 import { studyView } from '../practice/studyView';
@@ -66,7 +68,7 @@ import {
   minutesText,
 } from './assignmentText';
 import { NoAnswersWarning } from './NoAnswersWarning';
-import { FilePicker, type TaskFile, TaskFilesField } from './TaskFiles';
+import { type TaskFile, TaskFileMenu, TaskFilesField } from './TaskFiles';
 
 const TIME_LIMITS = [15, 30, 45, 60, 90, 120, 180];
 const ATTEMPTS = [1, 2, 3, 5];
@@ -132,7 +134,6 @@ export function NewAssignmentDialog({
   const isOwn = existing ? existing.own : workspaces ? !runs(wsId) : !!own;
   // A task's quiz comes from anywhere: the row picked, for its name.
   const [taskQuiz, setTaskQuiz] = useState<TaskFile | null>(null);
-  const [pickingQuiz, setPickingQuiz] = useState(false);
   const [pickedFiles, setPickedFiles] = useState<TaskFile[]>([]);
   const { data: me } = useMe();
   const manage = existing?.manage;
@@ -216,6 +217,7 @@ export function NewAssignmentDialog({
   const dueAt = watch('dueAt');
   const noLate = watch('noLate');
   const attempts = watch('attempts');
+  const draft = watch('draft');
   const [advancedOpen, setAdvancedOpen] = useState(
     () => advancedStartsOpen(existing) || !!manage?.shuffle
   );
@@ -327,10 +329,7 @@ export function NewAssignmentDialog({
           }}
         >
           {workspaces && (
-            <Field
-              hint={m.assignment_optional()}
-              label={m.todo_fact_workspace()}
-            >
+            <Field label={m.todo_fact_workspace()}>
               <Select
                 onValueChange={(next) =>
                   pickWorkspace(next === NO_WORKSPACE ? '' : next)
@@ -341,12 +340,23 @@ export function NewAssignmentDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={NO_WORKSPACE}>
-                    {m.todo_no_workspace()}
-                  </SelectItem>
+                  <SelectItem
+                    iconAndValue={{
+                      icon: 'circleDashed',
+                      label: m.todo_no_workspace(),
+                    }}
+                    value={NO_WORKSPACE}
+                  />
                   {workspaces.map((option) => (
                     <SelectItem key={option.id} value={option.id}>
-                      {option.name}
+                      <span className="flex min-w-0 items-center gap-2">
+                        <img
+                          alt=""
+                          className="size-4.5 shrink-0 -translate-y-px rounded-[4px]"
+                          src={iconUrl(option.iconId)}
+                        />
+                        <span className="truncate">{option.name}</span>
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -364,12 +374,20 @@ export function NewAssignmentDialog({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="marked">
-                        {m.assignment_kind_marked()}
-                      </SelectItem>
-                      <SelectItem value="unmarked">
-                        {m.assignment_kind_unmarked()}
-                      </SelectItem>
+                      <SelectItem
+                        iconAndValue={{
+                          icon: 'quiz',
+                          label: m.assignment_kind_marked(),
+                        }}
+                        value="marked"
+                      />
+                      <SelectItem
+                        iconAndValue={{
+                          icon: 'todo',
+                          label: m.assignment_kind_unmarked(),
+                        }}
+                        value="unmarked"
+                      />
                     </SelectContent>
                   </Select>
                 )}
@@ -398,62 +416,60 @@ export function NewAssignmentDialog({
               <Field
                 error={errors.quizId?.message}
                 label={m.assignment_field_quiz()}
+                required
               >
                 {/* The quiz field's own trigger, over every quiz its maker
-                    can open: Add a file's picker, on quizzes alone. */}
-                <button
-                  aria-label={m.assignment_field_quiz()}
-                  className={FIELD_TRIGGER}
-                  onClick={() => setPickingQuiz(true)}
-                  type="button"
-                >
-                  {taskQuiz && (
-                    <FileIcon
-                      className="size-4 shrink-0"
-                      name={materialIconName('quiz')}
-                    />
-                  )}
-                  <span
-                    className={cn(
-                      'min-w-0 flex-1 truncate',
-                      !taskQuiz && 'text-placeholder'
-                    )}
-                  >
-                    {taskQuiz?.name ?? m.assignment_choose_quiz()}
-                  </span>
-                  {taskQuiz?.workspaceName && (
-                    <span className="t-meta max-w-[40%] shrink-0 truncate text-fg-muted">
-                      {taskQuiz.workspaceName}
-                    </span>
-                  )}
-                  <Icon
-                    className="shrink-0 text-fg-muted"
-                    name="chevronDown"
-                    size={16}
-                  />
-                </button>
-                {pickingQuiz && (
-                  <FilePicker
-                    empty={m.assignment_no_quizzes_match()}
-                    held={quizId ? [quizId] : []}
-                    kinds={['quiz']}
-                    label={m.assignment_search_quizzes()}
-                    onClose={() => setPickingQuiz(false)}
-                    onPick={(picked) => {
-                      setTaskQuiz(picked);
-                      setValue('quizId', picked.id, { shouldValidate: true });
-                      if (!titleEdited) setValue('title', picked.name);
-                      setPickingQuiz(false);
-                    }}
-                    title={m.assignment_choose_quiz()}
-                  />
-                )}
+                    can open: Add a file's menu, on quizzes alone. */}
+                <TaskFileMenu
+                  empty={m.assignment_no_quizzes_match()}
+                  held={quizId ? [quizId] : []}
+                  kinds={['quiz']}
+                  label={m.assignment_search_quizzes()}
+                  onPick={(picked) => {
+                    setTaskQuiz(picked);
+                    setValue('quizId', picked.id, { shouldValidate: true });
+                    if (!titleEdited) setValue('title', picked.name);
+                  }}
+                  trigger={
+                    <button
+                      aria-label={m.assignment_field_quiz()}
+                      className={FIELD_TRIGGER}
+                      type="button"
+                    >
+                      {taskQuiz && (
+                        <FileIcon
+                          className="size-4 shrink-0"
+                          name={materialIconName('quiz')}
+                        />
+                      )}
+                      <span
+                        className={cn(
+                          'min-w-0 flex-1 truncate',
+                          !taskQuiz && 'text-placeholder'
+                        )}
+                      >
+                        {taskQuiz?.name ?? m.assignment_choose_quiz()}
+                      </span>
+                      {taskQuiz?.workspaceName && (
+                        <span className="t-meta max-w-[40%] shrink-0 truncate text-fg-muted">
+                          {taskQuiz.workspaceName}
+                        </span>
+                      )}
+                      <Icon
+                        className="shrink-0 text-fg-muted"
+                        name="chevronDown"
+                        size={16}
+                      />
+                    </button>
+                  }
+                />
                 {quizId && <NoAnswersWarning quizId={quizId} />}
               </Field>
             ) : (
               <Field
                 error={errors.quizId?.message}
                 label={m.assignment_field_quiz()}
+                required
               >
                 <QuizPicker
                   canMake={!isWorkspaceReadOnly(ws?.capabilities)}
@@ -510,6 +526,7 @@ export function NewAssignmentDialog({
           <Field
             error={errors.title?.message}
             label={m.assignment_field_title()}
+            required
           >
             <Controller
               control={control}
@@ -538,12 +555,8 @@ export function NewAssignmentDialog({
           >
             <Field
               error={errors.dueAt?.message}
-              hint={
-                isOwn && kind === 'unmarked'
-                  ? m.assignment_optional()
-                  : undefined
-              }
               label={m.assignment_field_due()}
+              required={kind === 'marked' && !draft}
             >
               <Controller
                 control={control}
@@ -637,10 +650,7 @@ export function NewAssignmentDialog({
               members hand in files with Hand in. */}
           {kind === 'unmarked' && (
             <>
-              <Field
-                hint={m.assignment_optional()}
-                label={m.assignment_field_files()}
-              >
+              <Field label={m.assignment_field_files()}>
                 <Controller
                   control={control}
                   name="files"
@@ -839,14 +849,7 @@ export function NewAssignmentDialog({
             <InputError>{errors.root.message}</InputError>
           )}
           <DialogFooter className="max-sm:hidden sm:pt-2.5">
-            <Button
-              disabled={saving}
-              onClick={onClose}
-              type="button"
-              variant="ghost"
-            >
-              {m.action_cancel()}
-            </Button>
+            <DialogCancel disabled={saving} size="md" />
             {createButton}
           </DialogFooter>
         </form>
@@ -855,22 +858,24 @@ export function NewAssignmentDialog({
   );
 }
 
+/** A field under its name; one that must be filled has the red asterisk, as
+ * the workspace settings' Name does (Epo 2026-11-12). */
 function Field({
   children,
   error,
-  hint,
   label,
+  required,
 }: {
   children: ReactNode;
   error?: string;
-  hint?: string;
   label: string;
+  required?: boolean;
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-1.75">
       <span className="font-medium text-[13.5px] leading-tight">
         {label}
-        {hint && <span className="text-fg-muted"> · {hint}</span>}
+        {required && <span className="text-solid-error"> *</span>}
       </span>
       {children}
       {error && <InputError>{error}</InputError>}

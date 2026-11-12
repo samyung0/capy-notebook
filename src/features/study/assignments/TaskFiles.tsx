@@ -1,6 +1,4 @@
-import { Dialog as DialogPrimitive } from 'radix-ui';
-import { useState } from 'react';
-import { searchQueryQMax } from '@/api/gen/validators';
+import { type ReactNode, type RefObject, useState } from 'react';
 import { useItems } from '@/api/hooks';
 import type {
   Assignment,
@@ -10,20 +8,16 @@ import type {
 } from '@/api/types';
 import { InlineErrorState } from '@/components/app/ErrorState';
 import { ListEnd } from '@/components/app/ListEnd';
-import { PanelScrollRoot } from '@/components/app/layout';
-import {
-  type Thumbnail,
-  ThumbnailPanel,
-} from '@/components/app/ThumbnailPanel';
-import { BASE_BUTTON_STYLE, Button } from '@/components/ui/Button';
-import { Dialog, DialogClose, DialogContent } from '@/components/ui/Dialog';
+import { Button } from '@/components/ui/Button';
 import { FileIcon, type FileIconName } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
-import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
-import { Input } from '@/components/ui/Input';
+import {
+  FileMenuNote,
+  FileMenuRow,
+  FileSearchMenu,
+} from '@/features/files/FileSearchMenu';
 import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { useDebounced } from '@/lib/useDebounced';
@@ -35,7 +29,6 @@ export interface TaskFile {
   id: string;
   name: string;
   ref: AssignmentFileRef;
-  thumbnail?: Thumbnail;
   /** Where it sits; none for one with no workspace. */
   workspaceName?: string;
 }
@@ -60,11 +53,6 @@ function listedFile(item: Item): TaskFile | null {
       id: file.id,
       name: file.name,
       ref: { fileId: file.id },
-      thumbnail: {
-        fileKind: file.kind,
-        preview: file.preview,
-        thumbnailUrl: file.thumbnailUrl,
-      },
       workspaceName: file.workspaceName || undefined,
     };
   }
@@ -75,7 +63,6 @@ function listedFile(item: Item): TaskFile | null {
       id: material.id,
       name: material.title,
       ref: { materialId: material.id },
-      thumbnail: { preview: material.preview },
       workspaceName: material.workspaceName || undefined,
     };
   }
@@ -110,7 +97,6 @@ export function TaskFilesField({
     ...saved.map((file) => [refId(file), savedFile(file)] as const),
     ...picked.map((file) => [file.id, file] as const),
   ]);
-  const [picking, setPicking] = useState(false);
   const rows = value.flatMap((ref) => known.get(refId(ref)) ?? []);
   return (
     <div className="flex flex-col items-start gap-2">
@@ -143,45 +129,38 @@ export function TaskFilesField({
           ))}
         </ul>
       )}
-      <Button
-        iconLeft="plus"
-        onClick={() => setPicking(true)}
-        size="sm"
-        type="button"
-        variant="outline"
-      >
-        {m.assignment_add_file()}
-      </Button>
-      {picking && (
-        <FilePicker
-          empty={m.assignment_no_files_match()}
-          held={value.map(refId)}
-          label={m.assignment_search_files()}
-          onClose={() => setPicking(false)}
-          onPick={(file) => {
-            onPicked(file);
-            onChange([...value, file.ref]);
-            setPicking(false);
-          }}
-          title={m.assignment_add_file()}
-        />
-      )}
+      <TaskFileMenu
+        empty={m.assignment_no_files_match()}
+        held={value.map(refId)}
+        label={m.assignment_search_files()}
+        onPick={(file) => {
+          onPicked(file);
+          onChange([...value, file.ref]);
+        }}
+        trigger={
+          <Button iconLeft="plus" size="sm" type="button" variant="outline">
+            {m.assignment_add_file()}
+          </Button>
+        }
+        wide
+      />
     </div>
   );
 }
 
-/** Add a file's picker, drawn as Search is (Epo 2026-11-11): a field over the
- * Files page's All files, newest first until something is typed. A row adds
- * the file and closes; files already on the task are left out. A task's Quiz
- * field opens the same one over quizzes alone (`kinds`). */
-export function FilePicker({
+/** Add a file's menu (Epo 2026-11-12: Make a quiz's search menu, not a
+ * Search dialog): a field over the Files page's All files, newest first until
+ * something is typed. A row adds the file and closes; files already on the
+ * task are left out. A task's Quiz field opens the same one over quizzes alone
+ * (`kinds`). */
+export function TaskFileMenu({
   empty,
   held,
   kinds,
   label,
-  onClose,
   onPick,
-  title,
+  trigger,
+  wide,
 }: {
   /** What it says when nothing matches. */
   empty: string;
@@ -189,12 +168,54 @@ export function FilePicker({
   kinds?: ItemKind[];
   /** The search field's label and placeholder. */
   label: string;
-  onClose: () => void;
   onPick: (file: TaskFile) => void;
-  title: string;
+  trigger: ReactNode;
+  wide?: boolean;
 }) {
-  const [q, setQ] = useState('');
-  const query = useDebounced(q, 400).trim();
+  const [open, setOpen] = useState(false);
+  return (
+    <FileSearchMenu
+      label={label}
+      onOpenChange={setOpen}
+      open={open}
+      searchLabel={label}
+      trigger={trigger}
+      wide={wide}
+    >
+      {(query, list) => (
+        <TaskFileRows
+          empty={empty}
+          held={held}
+          kinds={kinds}
+          list={list}
+          onPick={(file) => {
+            onPick(file);
+            setOpen(false);
+          }}
+          query={query}
+        />
+      )}
+    </FileSearchMenu>
+  );
+}
+
+/** The menu's rows for what is typed, a page at a time. */
+function TaskFileRows({
+  empty,
+  held,
+  kinds,
+  list,
+  onPick,
+  query,
+}: {
+  empty: string;
+  held: string[];
+  kinds?: ItemKind[];
+  list: RefObject<HTMLDivElement | null>;
+  onPick: (file: TaskFile) => void;
+  query: string;
+}) {
+  const q = useDebounced(query, 400).trim();
   const {
     data,
     error,
@@ -206,120 +227,48 @@ export function FilePicker({
     isPending,
     isPlaceholderData,
     refetch,
-  } = useItems({ kinds, q: query || undefined, scope: 'all' });
+  } = useItems({ kinds, q: q || undefined, scope: 'all' });
+  if (isPending || isPlaceholderData)
+    return <SkeletonList className="px-1" count={4} rowHeight={36} />;
+  if (!data && isError)
+    return (
+      <InlineErrorState
+        className="py-4"
+        errorId={unexpectedErrorId(error)}
+        message={m.search_error()}
+        onRetry={() => void refetch()}
+      />
+    );
   const files = (data?.pages ?? [])
     .flatMap((page) => page.items)
     .flatMap((item) => listedFile(item) ?? [])
     .filter((file) => !held.includes(file.id));
   return (
-    <Dialog onOpenChange={(open) => !open && onClose()} open>
-      <DialogContent
-        cardScrollContainerClassName="p-0 max-sm:pb-0 sm:p-0"
-        className="top-[12vh] translate-y-0"
-        onOpenAutoFocus={(e) => {
-          e.preventDefault();
-          (e.currentTarget as HTMLElement).querySelector('input')?.focus();
-        }}
-        showCloseButton={false}
-      >
-        {/* Search's own header: phones show close and a title above the field,
-            wider screens only the field with close beside. */}
-        <div className="flex shrink-0 items-start gap-1 pt-3 pr-4 pb-1 pl-1.5 sm:contents">
-          <DialogClose asChild>
-            <IconButton
-              className="-translate-y-px sm:hidden"
-              icon="x"
-              label={m.action_close()}
-              size="sm"
-              variant="ghost-hover"
-            />
-          </DialogClose>
-          <DialogPrimitive.Title className="t-large-card-title py-2 text-lg leading-tight sm:sr-only">
-            {title}
-          </DialogPrimitive.Title>
-        </div>
-        <div className="flex min-h-0 flex-1 flex-col sm:max-h-[70vh] sm:flex-none">
-          <div className="flex items-center gap-2.5 border-divider border-b px-4 py-3">
-            <span className="pl-1.5">
-              <Icon className="size-4.25" name="search" />
-            </span>
-            <Input
-              aria-label={label}
-              maxLength={searchQueryQMax}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder={label}
-              value={q}
-              variant="transparent"
-              wrapperClassName="flex-1 translate-y-px"
-            />
-            <DialogClose asChild>
-              <IconButton
-                className="max-sm:hidden"
-                icon="x"
-                label={m.action_close()}
-                size="sm"
-                variant="ghost-hover"
-              />
-            </DialogClose>
-          </div>
-          <div className="relative min-h-40 flex-1 overflow-auto px-2 py-2.5 max-sm:pb-[calc(--spacing(2.5)+max(env(safe-area-inset-bottom),var(--keyboard-inset,0px)))]">
-            {isPending || isPlaceholderData ? (
-              <SkeletonList className="px-1" count={5} rowHeight={48} />
-            ) : !data && isError ? (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <InlineErrorState
-                  className="-translate-y-1/2"
-                  errorId={unexpectedErrorId(error)}
-                  message={m.search_error()}
-                  onRetry={() => void refetch()}
-                />
-              </div>
-            ) : (
-              <>
-                {files.map((file) => (
-                  <button
-                    className={cn(
-                      BASE_BUTTON_STYLE,
-                      'flex w-full items-center gap-3 px-2 py-2.5 text-left hover:bg-surface-hover-bg'
-                    )}
-                    key={file.id}
-                    onClick={() => onPick(file)}
-                    type="button"
-                  >
-                    <ThumbnailPanel
-                      icon={file.icon}
-                      small
-                      {...file.thumbnail}
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium text-fg text-sm">
-                        {file.name}
-                      </span>
-                      <span className="block truncate text-fg-muted text-xs">
-                        {file.workspaceName ?? m.todo_no_workspace()}
-                      </span>
-                    </span>
-                  </button>
-                ))}
-                {files.length === 0 && !hasNextPage && (
-                  <div className="absolute inset-0 flex items-center justify-center text-center">
-                    <span className="-translate-y-1/2">{empty}</span>
-                  </div>
-                )}
-                {/* The dialog scrolls inside the viewport, not the page's panel. */}
-                <PanelScrollRoot.Provider value={undefined}>
-                  <ListEnd
-                    fetchNextPage={fetchNextPage}
-                    hasNextPage={hasNextPage}
-                    isFetchingNextPage={isFetchingNextPage}
-                    isFetchNextPageError={isFetchNextPageError}
-                  />
-                </PanelScrollRoot.Provider>
-              </>
-            )}
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+    <>
+      {files.map((file) => (
+        <FileMenuRow
+          aria-selected={false}
+          key={file.id}
+          onClick={() => onPick(file)}
+          role="option"
+        >
+          <FileIcon className="size-4 shrink-0" name={file.icon} />
+          <span className="min-w-0 flex-1 truncate">{file.name}</span>
+          <span className="t-meta max-w-[40%] shrink-0 truncate font-medium text-fg-muted">
+            {file.workspaceName ?? m.todo_no_workspace()}
+          </span>
+        </FileMenuRow>
+      ))}
+      {files.length === 0 && !hasNextPage && (
+        <FileMenuNote>{empty}</FileMenuNote>
+      )}
+      <ListEnd
+        fetchNextPage={fetchNextPage}
+        hasNextPage={hasNextPage}
+        isFetchingNextPage={isFetchingNextPage}
+        isFetchNextPageError={isFetchNextPageError}
+        root={list}
+      />
+    </>
   );
 }
