@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf16"
 
 	"github.com/samyung0/capy-notebook/server/internal/embeds"
@@ -243,8 +244,10 @@ func validateTableViewView(view map[string]any) error {
 // block passed the writers' check; anything else reads as what it holds.
 func tableViewIndexText(block map[string]any) string {
 	var lines []string
-	if title, _ := block["title"].(string); strings.TrimSpace(title) != "" {
-		lines = append(lines, strings.TrimSpace(title), "")
+	// The title on one line, left out when blank.
+	title, _ := block["title"].(string)
+	if title = strings.TrimSpace(tableViewOneLine.Replace(title)); title != "" {
+		lines = append(lines, title, "")
 	}
 	all := maps(block["columns"])
 	if len(all) == 0 {
@@ -278,7 +281,11 @@ func tableViewIndexText(block map[string]any) string {
 	return strings.Join(lines, "\n")
 }
 
-var tableViewEscape = strings.NewReplacer("\r\n", " ", "\n", " ", "|", `\|`)
+// Each line break (\r\n, \r, \n) a space; a cell's | escaped too.
+var (
+	tableViewOneLine = strings.NewReplacer("\r\n", " ", "\r", " ", "\n", " ")
+	tableViewEscape  = strings.NewReplacer("\r\n", " ", "\r", " ", "\n", " ", "|", `\|`)
+)
 
 // tableViewCell is a cell as its column reads it (model.ts cellValue): a
 // string, a float64 or a bool, or nil when it is empty or doesn't fit. A
@@ -294,7 +301,7 @@ func tableViewCell(column, row map[string]any) any {
 			return s
 		}
 		if n, ok := number(value); ok {
-			return jsNumber(n)
+			return plainNumber(n)
 		}
 	case "number":
 		if n, ok := number(value); ok {
@@ -309,8 +316,12 @@ func tableViewCell(column, row map[string]any) any {
 			return value
 		}
 	case "date":
+		// A real calendar day: a merge or a hand-written fence may leave
+		// 2026-02-30, which reads as empty.
 		if s, ok := value.(string); ok && tableViewDate.MatchString(s) {
-			return s
+			if _, err := time.Parse(time.DateOnly, s); err == nil {
+				return s
+			}
 		}
 	case "checkbox":
 		if b, ok := value.(bool); ok {
@@ -349,7 +360,7 @@ func tableViewCellText(column, row map[string]any) string {
 		}
 		return "☐"
 	case float64:
-		return jsNumber(value)
+		return plainNumber(value)
 	case string:
 		if column["kind"] == "select" {
 			name, _ := tableViewOption(column, value)["name"].(string)
@@ -362,8 +373,8 @@ func tableViewCellText(column, row map[string]any) string {
 
 // tableViewRows are the rows in the view's order (model.ts sortedRows): its
 // sort when it names a column, empty cells last whatever the direction and
-// ties in list order; else list order. Text compares by code point, where
-// the browser's localeCompare follows the reader's locale.
+// ties in list order; else list order. Text compares by code point (UTF-8
+// byte order), as model.ts byCodePoint and Rust do.
 func tableViewRows(columns, rows []map[string]any, view map[string]any) []map[string]any {
 	sort, _ := view["sort"].(map[string]any)
 	var column map[string]any
@@ -446,24 +457,17 @@ func cmpFloat(a, b float64) int {
 	return 0
 }
 
-// jsNumber writes a number as JavaScript's String(n) does, as the browser
-// draws a table view's cell: plain decimal, an exponent below 1e-6 and from
-// 1e21, -0 as 0.
-func jsNumber(n float64) string {
+// plainNumber writes a number in plain decimal, the shortest that reads
+// back exactly, never with an exponent, -0 as 0 (model.ts plainNumber, as
+// the figures' index text writes one). A decimal text too long for a float
+// reads as Infinity, as JavaScript's Number gives it.
+func plainNumber(n float64) string {
 	switch {
-	case n == 0:
-		return "0"
 	case math.IsInf(n, 1):
 		return "Infinity"
 	case math.IsInf(n, -1):
 		return "-Infinity"
-	case math.Abs(n) >= 1e-6 && math.Abs(n) < 1e21:
-		return strconv.FormatFloat(n, 'f', -1, 64)
 	}
-	mantissa, exp, _ := strings.Cut(strconv.FormatFloat(n, 'e', -1, 64), "e")
-	e, _ := strconv.Atoi(exp)
-	if e < 0 {
-		return mantissa + "e-" + strconv.Itoa(-e)
-	}
-	return mantissa + "e+" + strconv.Itoa(e)
+	text, _ := formatIndexNumber(n)
+	return text
 }

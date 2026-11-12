@@ -229,7 +229,7 @@ fn validate_view(view: &Node) -> Check {
 /// number written as text in a number column.
 enum Cell<'a> {
     Text(&'a str),
-    /// A number in a text column, as JavaScript writes it.
+    /// A number in a text column, in plain decimal.
     Shown(String),
     /// A select cell's option.
     Option(&'a Value),
@@ -242,7 +242,7 @@ fn cell<'a>(column: &'a Value, row: &'a Value) -> Option<Cell<'a>> {
     match column["kind"].as_str()? {
         "title" | "text" => match value {
             Value::String(text) => Some(Cell::Text(text)),
-            Value::Number(n) => Some(Cell::Shown(js_number(n.as_f64()?))),
+            Value::Number(n) => Some(Cell::Shown(plain_number(n.as_f64()?))),
             _ => None,
         },
         "number" => match value {
@@ -269,14 +269,29 @@ fn decimal(text: &str) -> bool {
     }
 }
 
-/// `YYYY-MM-DD`, ASCII digits.
+/// A real calendar day as `YYYY-MM-DD` (the browser's `isDate`): a merge or
+/// a hand-written fence may leave `2026-02-30`, which reads as empty.
 fn date(text: &str) -> bool {
     let bytes = text.as_bytes();
-    bytes.len() == 10
+    let shaped = bytes.len() == 10
         && bytes.iter().enumerate().all(|(i, b)| match i {
             4 | 7 => *b == b'-',
             _ => b.is_ascii_digit(),
-        })
+        });
+    let part = |range: std::ops::Range<usize>| text[range].parse::<u32>().unwrap_or(0);
+    if !shaped {
+        return false;
+    }
+    let (year, month, day) = (part(0..4), part(5..7), part(8..10));
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let days = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => 0,
+    };
+    (1..=days).contains(&day)
 }
 
 /// The select option a cell names, if it still exists.
@@ -297,7 +312,7 @@ fn cell_text(column: &Value, row: &Value) -> String {
         None => String::new(),
         Some(Cell::Bool(true)) => "☑".into(),
         Some(Cell::Bool(false)) => "☐".into(),
-        Some(Cell::Number(n)) => js_number(n),
+        Some(Cell::Number(n)) => plain_number(n),
         Some(Cell::Shown(text)) => text,
         Some(Cell::Option(option)) => option["name"].as_str().unwrap_or_default().into(),
         Some(Cell::Text(text)) => text.into(),
@@ -313,8 +328,8 @@ enum Rank {
 
 /// The rows in the view's order (the browser's `sortedRows`): its sort when
 /// it names a column, empty cells last whatever the direction and ties in
-/// list order; else list order. Text compares by code point, where the
-/// browser's `localeCompare` follows the reader's locale; Go does the same.
+/// list order; else list order. Text compares by code point, as Go and the
+/// browser's `byCodePoint` do (an astral character after U+FFFF).
 fn sorted<'a>(columns: &'a [Value], rows: &'a [Value], view: &Value) -> Vec<&'a Value> {
     let sort = &view["sort"];
     let column = sort.as_object().and_then(|_| {
@@ -359,10 +374,13 @@ fn sorted<'a>(columns: &'a [Value], rows: &'a [Value], view: &Value) -> Vec<&'a 
     ranked.into_iter().map(|(_, row)| row).collect()
 }
 
+/// Text on one line: each line break (`\r\n`, `\r`, `\n`) a space.
+fn one_line(text: &str) -> String {
+    text.replace("\r\n", " ").replace(['\r', '\n'], " ")
+}
+
 fn escape(text: &str) -> String {
-    text.replace("\r\n", " ")
-        .replace('\n', " ")
-        .replace('|', "\\|")
+    one_line(text).replace('|', "\\|")
 }
 
 /// A table view's index text (Go's `tableViewIndexText`, the browser's
@@ -372,9 +390,10 @@ fn escape(text: &str) -> String {
 /// reads as what it holds.
 pub fn text(block: &Value) -> String {
     let mut lines: Vec<String> = Vec::new();
-    let title = block["title"].as_str().unwrap_or_default().trim();
-    if !title.is_empty() {
-        lines.extend([title.to_owned(), String::new()]);
+    // The title on one line, left out when blank.
+    let title = one_line(block["title"].as_str().unwrap_or_default());
+    if !title.trim().is_empty() {
+        lines.extend([title.trim().to_owned(), String::new()]);
     }
     let all: Vec<Value> = block["columns"]
         .as_array()
@@ -422,22 +441,15 @@ pub fn text(block: &Value) -> String {
     lines.join("\n")
 }
 
-/// A number as JavaScript's `String(n)` writes it, as the browser draws a
-/// table view's cell: plain decimal, an exponent below 1e-6 and from 1e21,
-/// -0 as 0.
-fn js_number(n: f64) -> String {
-    if n == 0.0 {
-        return "0".into();
-    }
-    if n.is_infinite() {
-        return if n > 0.0 { "Infinity" } else { "-Infinity" }.into();
-    }
-    if (1e-6..1e21).contains(&n.abs()) {
-        return format!("{n}");
-    }
-    let exponent = format!("{n:e}");
-    match exponent.split_once("e") {
-        Some((mantissa, power)) if !power.starts_with('-') => format!("{mantissa}e+{power}"),
-        _ => exponent,
+/// A number in plain decimal, the shortest that reads back exactly, never
+/// with an exponent, -0 as 0 (the browser's `plainNumber`, as the figures'
+/// index text writes one). A decimal text too long for a float reads as
+/// Infinity, as JavaScript's `Number` gives it.
+fn plain_number(n: f64) -> String {
+    match n {
+        f64::INFINITY => "Infinity".into(),
+        f64::NEG_INFINITY => "-Infinity".into(),
+        0.0 => "0".into(),
+        n => format!("{n}"),
     }
 }
