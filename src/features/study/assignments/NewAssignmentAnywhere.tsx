@@ -20,7 +20,7 @@ export function NewAssignmentAnywhere() {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button iconLeft="plus" onClick={() => setOpen(true)} size="sm">
+      <Button iconLeft="plus" onClick={() => setOpen(true)}>
         {m.todo_add_task()}
       </Button>
       {open && (

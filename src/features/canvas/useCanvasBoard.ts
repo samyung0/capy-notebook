@@ -34,6 +34,12 @@ const IMAGE_WAIT_MS = 20_000;
 
 export type CanvasBoard = ReturnType<typeof mountDrawingBoard>;
 
+/** Saves still going, by canvas key. A board opening a canvas whose last board
+ * is still saving (switched back to, or remounted) reads it once that save
+ * lands; read before, it holds the old revision and its own next save is
+ * refused as another tab's. */
+const inFlight = new Map<string, Promise<void>>();
+
 /** Where a canvas is read from and saved to: a workspace's Canvas tab or one of
  * the person's own (Epo 2026-11-10: saved the same way, with no workspace). */
 export type CanvasSource = {
@@ -137,7 +143,7 @@ export function useCanvasBoard(
       // unmount, and an upload finishing then still moves its block.
       const drawing = board;
       let uploaded: string | null = null;
-      saving = (async () => {
+      const run = (async () => {
         // An image still going up is in the save once it has its asset id.
         await Promise.race([
           drawing.imagesSettled(),
@@ -206,8 +212,11 @@ export function useCanvasBoard(
         })
         .finally(() => {
           saving = null;
+          if (inFlight.get(key) === run) inFlight.delete(key);
         });
-      await saving;
+      saving = run;
+      inFlight.set(key, run);
+      await run;
     };
     const schedule = () => {
       dirty = true;
@@ -225,6 +234,7 @@ export function useCanvasBoard(
     window.addEventListener('pagehide', hidden);
 
     (async () => {
+      await inFlight.get(key);
       const canvas = await open();
       materialId = canvas.id;
       revision = canvas.revision;

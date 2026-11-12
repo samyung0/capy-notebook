@@ -47,23 +47,36 @@ vi.mock('@/api/hooks', () => ({
     };
   },
 }));
-vi.mock('@/components/ui/Dialog', () => ({
-  Dialog: ({ children }: { children: ReactNode }) => (
-    <section data-picker>{children}</section>
-  ),
-  DialogClose: () => null,
-  DialogContent: ({ children }: { children: ReactNode }) => children,
-}));
-vi.mock('radix-ui', () => ({ Dialog: { Title: () => null } }));
-vi.mock('@/components/app/ThumbnailPanel', () => ({
-  ThumbnailPanel: () => null,
+// The menu opens from its trigger and shows its list only while open.
+vi.mock('@/components/ui/Popover', async () => {
+  const { createContext, useContext } = await import('react');
+  const Open = createContext({ open: false, set: (_open: boolean) => {} });
+  return {
+    Popover: ({
+      children,
+      onOpenChange,
+      open,
+    }: {
+      children: ReactNode;
+      onOpenChange: (open: boolean) => void;
+      open: boolean;
+    }) => (
+      <Open.Provider value={{ open, set: onOpenChange }}>
+        {children}
+      </Open.Provider>
+    ),
+    PopoverContent: ({ children }: { children: ReactNode }) =>
+      useContext(Open).open ? <section data-picker>{children}</section> : null,
+    PopoverTrigger: ({ children }: { children: ReactNode }) => {
+      const { set } = useContext(Open);
+      return <span onClickCapture={() => set(true)}>{children}</span>;
+    },
+  };
+});
+vi.mock('@/features/workspace/PanelSearch', () => ({
+  PanelSearchField: () => null,
 }));
 vi.mock('@/components/app/ListEnd', () => ({ ListEnd: () => null }));
-vi.mock('@/components/app/layout', () => ({
-  PanelScrollRoot: {
-    Provider: ({ children }: { children: ReactNode }) => children,
-  },
-}));
 vi.mock('./TodoSection', () => ({ assignmentFileIcon: () => 'pdf' }));
 
 const { createRoot } = await import('react-dom/client');

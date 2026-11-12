@@ -21,16 +21,33 @@ type createBlankFileInput struct {
 	Body apimodel.CreateBlankFileReq
 }
 
+type createStandaloneBlankFileInput struct {
+	Body apimodel.CreateBlankFileReq
+}
+
 // createBlankFile is the Create tab's Blank DOCX and Blank XLSX: the
 // collaboration server's Office engine builds the file from its starter (the
 // one the agent's create starts from) and it is stored as a source the actor
 // pays for, not processed (Epo 2026-10-25).
 func (a *api) createBlankFile(ctx context.Context, in *createBlankFileInput) (*fileOutput, error) {
+	return a.blankFile(ctx, in.ID, in.Body)
+}
+
+// createStandaloneBlankFile is the same with no workspace: Files' Add file
+// on No workspace (Epo 2026-11-12), a standalone file with no topic.
+func (a *api) createStandaloneBlankFile(ctx context.Context, in *createStandaloneBlankFileInput) (*fileOutput, error) {
+	if in.Body.TopicID != "" {
+		return nil, huma.Error400BadRequest("a standalone file has no topic")
+	}
+	return a.blankFile(ctx, "", in.Body)
+}
+
+// blankFile builds and stores a blank Office file; wsID "" is standalone.
+func (a *api) blankFile(ctx context.Context, wsID string, b apimodel.CreateBlankFileReq) (*fileOutput, error) {
 	if a.blob == nil {
 		return nil, huma.Error503ServiceUnavailable("blob store not configured")
 	}
 	actor := userID(ctx)
-	b := in.Body
 	title := strings.Join(strings.Fields(officeTitleUnsafe.ReplaceAllString(string(b.Name), " ")), " ")
 	// A name given with its extension keeps one.
 	if ext := "." + b.Format; len(title) > len(ext) && strings.EqualFold(title[len(title)-len(ext):], ext) {
@@ -43,18 +60,18 @@ func (a *api) createBlankFile(ctx context.Context, in *createBlankFileInput) (*f
 	// Refused before the engine builds anything: access, the account, its
 	// storage, the workspace's file cap and then the topic, as an upload's.
 	// The insert gates them again.
-	if err := a.s.AssertSourceUploadRoom(ctx, in.ID, actor, "", 0); err != nil {
+	if err := a.s.AssertSourceUploadRoom(ctx, wsID, actor, "", 0); err != nil {
 		return nil, hErr(err)
 	}
 	var topicID *string
 	if b.TopicID != "" {
 		topicWorkspace, err := a.s.TopicWorkspaceID(ctx, b.TopicID)
-		if err != nil || topicWorkspace != in.ID {
+		if err != nil || topicWorkspace != wsID {
 			return nil, huma.Error400BadRequest("topic does not belong to this workspace")
 		}
 		topicID = &b.TopicID
 	}
-	file, err := a.addBlankOfficeFile(ctx, actor, in.ID, b.Format, name, topicID)
+	file, err := a.addBlankOfficeFile(ctx, actor, wsID, b.Format, name, topicID)
 	if err != nil {
 		return nil, err
 	}
@@ -62,8 +79,9 @@ func (a *api) createBlankFile(ctx context.Context, in *createBlankFileInput) (*f
 }
 
 // addBlankOfficeFile builds a blank Office file from the engine's starter and
-// stores it in the workspace as the actor's unprocessed source: the Create
-// tab's Blank DOCX and XLSX, and the starter workspace's Word file.
+// stores it in the workspace (or none, wsID "") as the actor's unprocessed
+// source: the Create tab's Blank DOCX and XLSX, and the starter workspace's
+// Word file.
 func (a *api) addBlankOfficeFile(ctx context.Context, actor, wsID, format, name string, topicID *string) (store.File, error) {
 	if a.blob == nil {
 		return store.File{}, huma.Error503ServiceUnavailable("blob store not configured")

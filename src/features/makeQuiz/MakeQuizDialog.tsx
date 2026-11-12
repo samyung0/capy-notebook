@@ -10,18 +10,15 @@ import { DialogCancel, SimpleDialog } from '@/components/ui/Dialog';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { FormAlert } from '@/components/ui/FormAlert';
 import { Icon } from '@/components/ui/Icon';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/Popover';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { selectTriggerVariants } from '@/components/ui/Select';
 import { Switch } from '@/components/ui/Switch';
 import {
-  matchesSearch,
-  PanelSearchField,
-} from '@/features/workspace/PanelSearch';
+  FileMenuNote,
+  FileMenuRow,
+  FileSearchMenu,
+} from '@/features/files/FileSearchMenu';
+import { matchesSearch } from '@/features/workspace/PanelSearch';
 import {
   type SourceTransfer,
   useSourceTransfers,
@@ -149,20 +146,6 @@ function FileRow({
   );
 }
 
-/** A row of the file menu. */
-function MenuRow({ className, ...props }: React.ComponentProps<'button'>) {
-  return (
-    <button
-      className={cn(
-        'flex min-h-9 w-full shrink-0 cursor-pointer items-center gap-2.5 rounded-button px-2.5 text-left font-semibold outline-none hover:bg-surface-hover-bg focus-visible:bg-surface-hover-bg disabled:cursor-progress disabled:opacity-50',
-        className
-      )}
-      type="button"
-      {...props}
-    />
-  );
-}
-
 /** A file in the menu (X0a). */
 function MenuFileRow({
   file,
@@ -172,13 +155,13 @@ function MenuFileRow({
   onPick: () => void;
 }) {
   return (
-    <MenuRow aria-selected={false} onClick={onPick} role="option">
+    <FileMenuRow aria-selected={false} onClick={onPick} role="option">
       <FileIcon
         className="size-4 shrink-0"
         name={fileIconName({ kind: file.kind, name: file.name })}
       />
       <span className="min-w-0 truncate">{file.name}</span>
-    </MenuRow>
+    </FileMenuRow>
   );
 }
 
@@ -207,61 +190,45 @@ function FileMenu({
   /** Under a small button: as wide as the dialog's fields, not the button. */
   wide?: boolean;
 }) {
-  const [query, setQuery] = useState('');
-  const shown = files.filter((file) => matchesSearch(file.name, query));
   return (
-    <Popover
-      onOpenChange={(next) => {
-        if (!next) setQuery('');
-        onOpenChange(next);
-      }}
+    <FileSearchMenu
+      label={label}
+      onOpenChange={onOpenChange}
       open={open}
+      searchLabel={m.make_quiz_search_files()}
+      top={
+        <>
+          <FileMenuRow disabled={!policy} onClick={onUpload}>
+            <Icon name="upload" size={16} />
+            {m.make_quiz_upload_file()}
+          </FileMenuRow>
+          <hr className="my-1 border-divider" />
+          <p className="px-2.5 pt-2 pb-1.5 font-bold text-[11px] text-fg-muted uppercase leading-none tracking-[.06rem]">
+            {m.make_quiz_in_workspace({ workspace: workspaceName })}
+          </p>
+        </>
+      }
+      trigger={trigger}
+      wide={wide}
     >
-      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent
-        align="start"
-        alignWidthToTrigger={!wide}
-        className={cn(
-          'max-h-[min(420px,var(--radix-popover-content-available-height))] gap-0 overflow-hidden p-1.5',
-          wide && 'w-[550px] max-w-[calc(100vw-2rem)]'
-        )}
-        collisionPadding={8}
-      >
-        <div className="mb-1 shrink-0">
-          <PanelSearchField
-            label={m.make_quiz_search_files()}
-            onChange={setQuery}
-            value={query}
-          />
-        </div>
-        <MenuRow disabled={!policy} onClick={onUpload}>
-          <Icon name="upload" size={16} />
-          {m.make_quiz_upload_file()}
-        </MenuRow>
-        <hr className="my-1 border-divider" />
-        <p className="px-2.5 pt-2 pb-1.5 font-bold text-[11px] text-fg-muted uppercase leading-none tracking-[.06rem]">
-          {m.make_quiz_in_workspace({ workspace: workspaceName })}
-        </p>
-        <div
-          aria-label={label}
-          className="min-h-0 overflow-y-auto"
-          role="listbox"
-        >
-          {shown.map((file) => (
-            <MenuFileRow
-              file={file}
-              key={file.id}
-              onPick={() => onPick(file)}
-            />
-          ))}
-          {shown.length === 0 && (
-            <p className="t-meta px-2.5 py-2 text-fg-muted">
-              {m.make_quiz_no_files()}
-            </p>
-          )}
-        </div>
-      </PopoverContent>
-    </Popover>
+      {(query) => {
+        const shown = files.filter((file) => matchesSearch(file.name, query));
+        return (
+          <>
+            {shown.map((file) => (
+              <MenuFileRow
+                file={file}
+                key={file.id}
+                onPick={() => onPick(file)}
+              />
+            ))}
+            {shown.length === 0 && (
+              <FileMenuNote>{m.make_quiz_no_files()}</FileMenuNote>
+            )}
+          </>
+        );
+      }}
+    </FileSearchMenu>
   );
 }
 

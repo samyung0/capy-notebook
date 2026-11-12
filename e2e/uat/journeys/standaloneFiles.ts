@@ -23,10 +23,7 @@ export async function uploadStandalone(
   await page
     .getByRole('button', { exact: true, name: m.action_add_file() })
     .click();
-  await page
-    .getByRole('dialog', { name: m.files_add_destination_title() })
-    .getByRole('button', { exact: true, name: m.clone_no_workspace() })
-    .click();
+  // The dialog starts on No workspace (its Add to field).
   // The picker stays disabled until the upload policy is ready.
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser'),

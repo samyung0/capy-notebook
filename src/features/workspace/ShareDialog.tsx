@@ -165,6 +165,7 @@ export function ShareDialog({
       userToast({
         description: absoluteLink,
         title: m.share_copy_failed(),
+        variant: 'warning',
       });
     }
   }

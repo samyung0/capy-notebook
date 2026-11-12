@@ -38,8 +38,6 @@ import type { ColumnSort } from '@/components/app/SortHeader';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/Dialog';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
-import { Menu } from '@/components/ui/Menu';
-import { AddFileDestinationDialog } from '@/features/files/AddFileDestinationDialog';
 import { EmbedItem } from '@/features/files/EmbedItem';
 import { canDeleteFile, FileItem } from '@/features/files/FileItem';
 import { fileKindLabel } from '@/features/files/fileKindLabel';
@@ -140,7 +138,7 @@ function canDelete(item: Item): boolean {
  * The Files page's one list (Epo 2026-11-09): to the user a file is any of
  * them, so uploaded files, handed-in submissions, notes, quizzes, flashcard
  * sets and the images and audio in notes page, sort and filter together. Add
- * file and New block start the two ways to make one.
+ * file uploads, imports or makes one (its Create tab).
  */
 export function ItemsList({
   headerSlot,
@@ -148,7 +146,7 @@ export function ItemsList({
   onViewChange,
   onBusyChange,
 }: {
-  /** Where Add file and New block go on phones (beside the page title). */
+  /** Where Add file goes on phones (beside the page title). */
   headerSlot: HTMLElement | null;
   view: ListView;
   onViewChange: (view: ListView) => void;
@@ -242,43 +240,26 @@ export function ItemsList({
   );
   const blocks = useBlockActions();
 
-  // Add file: the destination chooser, then the Add file dialog aimed at the
-  // pick. A drive connected for No workspace comes back here on Import.
-  const [choosing, setChoosing] = useState(false);
+  // Add file: its dialog, starting on No workspace, with the destination
+  // picked inside (Add to). A drive connected for No workspace comes back here
+  // on Import.
   const [resumeProvider] = useState(() => resumedConnect(null));
   const [adding, setAdding] = useState<{
     resume: boolean;
     workspaceId: string | null;
   } | null>(resumeProvider ? { resume: true, workspaceId: null } : null);
+  // Add file also makes blocks: its Create tab (Epo 2026-11-12).
   const actions = (
-    <div className="flex items-center gap-1">
-      <Button
-        {...addSourceIntent}
-        className="px-1.5 font-bold text-link"
-        disabled={blocks.frozen}
-        iconLeft="plus"
-        onClick={() => setChoosing(true)}
-        size="sm"
-        variant="ghost-hover"
-      >
-        {m.action_add_file()}
-      </Button>
-      <Menu
-        align="end"
-        items={blocks.newMenu}
-        trigger={
-          <Button
-            className="px-1.5 font-bold text-link"
-            disabled={blocks.frozen}
-            iconLeft="plus"
-            size="sm"
-            variant="ghost-hover"
-          >
-            {m.files_new_block()}
-          </Button>
-        }
-      />
-    </div>
+    <Button
+      {...addSourceIntent}
+      className="px-2.5 font-bold text-link"
+      disabled={blocks.frozen}
+      iconLeft="plus"
+      onClick={() => setAdding({ resume: false, workspaceId: null })}
+      variant="ghost-hover"
+    >
+      {m.action_add_file()}
+    </Button>
   );
   const actionsInHeader = phone && !!headerSlot;
 
@@ -485,19 +466,13 @@ export function ItemsList({
         open={!!deleteTargets}
       />
       {blocks.dialogs}
-      {choosing && (
-        <AddFileDestinationDialog
-          onClose={() => setChoosing(false)}
-          onPick={(workspaceId) => {
-            setChoosing(false);
-            setAdding({ resume: false, workspaceId });
-          }}
-        />
-      )}
       {adding && (
         <AddSourceDialog
           initialMode={adding.resume ? 'import' : 'upload'}
           onClose={() => setAdding(null)}
+          onDestinationChange={(workspaceId) =>
+            setAdding((current) => current && { ...current, workspaceId })
+          }
           onOpenItem={(item) => {
             // The Create tab's file or block, in the workspace it went to.
             if (!adding.workspaceId) return;

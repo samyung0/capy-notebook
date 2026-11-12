@@ -3394,6 +3394,99 @@ export const ListOwnedFilesResponse = zod.object({
 
 
 /**
+ * @summary Create a blank Word or Excel file with no workspace
+ */
+export const createStandaloneBlankFileBodyNameMax = 120;
+
+
+
+export const CreateStandaloneBlankFileBody = zod.object({
+  "format": zod.enum(['docx', 'xlsx']),
+  "name": zod.string().min(1).max(createStandaloneBlankFileBodyNameMax).describe('The file\'s name without its extension'),
+  "topicId": zod.string().optional().describe('A topic of the workspace')
+})
+
+export const CreateStandaloneBlankFileResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "addedAt": zod.iso.datetime({"offset":true}),
+  "errorId": zod.string().optional(),
+  "hasBytes": zod.boolean(),
+  "hidden": zod.boolean().optional(),
+  "id": zod.string(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
+  "indexed": zod.boolean(),
+  "isPayer": zod.boolean(),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
+  "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
+  "name": zod.string(),
+  "position": zod.int(),
+  "preview": zod.object({
+  "text": zod.string()
+}).optional(),
+  "previewUrl": zod.string().optional(),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "questions": zod.record(zod.string(), zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+})).optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+}).optional(),
+  "revision": zod.int(),
+  "rights": zod.object({
+  "clone": zod.boolean(),
+  "move": zod.boolean(),
+  "rename": zod.boolean(),
+  "trash": zod.boolean()
+}).optional().describe('What the caller may do with the file, read with the page (Files page rows)'),
+  "sizeBytes": zod.int(),
+  "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
+  "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
+  "topicId": zod.string().nullable(),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string().optional()
+})
+
+
+/**
  * @summary Move files into a workspace
  */
 export const moveFilesBodyFileIdsMax = 20;
@@ -4749,6 +4842,7 @@ export const GetLearningOverviewResponse = zod.object({
   "answered": zod.int(),
   "at": zod.iso.datetime({"offset":true}).optional(),
   "group": zod.enum(['topic', 'others', 'workspace', '']).optional(),
+  "iconId": zod.string(),
   "kind": zod.enum(['session', 'quiz', 'start', 'review']),
   "materialId": zod.string().optional(),
   "materialKind": zod.enum(['quiz', 'flashcards', '']).optional(),

@@ -1943,6 +1943,31 @@ export const handlers = [
     if (topicId) db.topics.find((c) => c.id === topicId)?.fileIds.push(file.id);
     return HttpResponse.json(file, { status: 201 });
   }),
+  // Standalone (Files' Add file on No workspace): no topic, no workspace.
+  http.post('/api/files/blank', async ({ request }) => {
+    const body = (await request.json()) as CreateBlankFileReq;
+    if (body.topicId) return new HttpResponse(null, { status: 400 });
+    const url = blankOffice[body.format].sourceURL;
+    const file: (typeof db.files)[number] = {
+      addedAt: new Date().toISOString(),
+      hasBytes: true,
+      id: uid('f'),
+      indexed: false,
+      isPayer: true,
+      kind: body.format === 'docx' ? 'doc' : 'sheet',
+      name: `${body.name.trim()}.${body.format}`,
+      position: 0,
+      revision: 1,
+      sizeBytes: (await (await fetch(url)).arrayBuffer()).byteLength,
+      status: 'ready',
+      topicId: null,
+      workspaceId: '',
+    };
+    db.fileLinks[file.id] = { url };
+    await prepareBlankOffice(file.id, body.format);
+    db.files.push(file);
+    return HttpResponse.json(file, { status: 201 });
+  }),
   // Move into a workspace: the first move of f_1 out of Biology asks about
   // the progress it drops, so the confirmation can be tried.
   http.post('/api/files/move', async ({ request }) => {

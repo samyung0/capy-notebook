@@ -152,7 +152,8 @@ function WorkspaceIcon({ iconId }: { iconId: string }) {
   );
 }
 
-/** What the row is: a quiz or set by its file icon, a review by its arrow. */
+/** What the row is: a quiz or set by its file icon, a review by its
+ * workspace's icon (Epo 2026-11-12). */
 function RowIcon({ row }: { row: LearningRow }) {
   if (row.kind === 'quiz' || row.kind === 'start')
     return (
@@ -164,7 +165,13 @@ function RowIcon({ row }: { row: LearningRow }) {
       />
     );
   return (
-    <Icon className="mt-px shrink-0 text-fg-muted" name="retry" size={20} />
+    <img
+      alt=""
+      className="mt-px size-5 shrink-0 rounded-[5px]"
+      height={20}
+      src={iconUrl(row.iconId)}
+      width={20}
+    />
   );
 }
 
@@ -204,7 +211,12 @@ function NextRow({ row }: { row: LearningRow }) {
     (s?.group ?? row.group ?? 'workspace') as 'topic' | 'others' | 'workspace',
     s?.topicName ?? row.topicName
   );
-  const title = row.title || group || workspaceName;
+  // A review of the whole workspace is named after it: "Biology 101 review".
+  const title =
+    row.title ||
+    group ||
+    m.learning_workspace_review({ workspace: workspaceName });
+  const ownReview = !(row.title || group);
   const when = row.at ? relativeTime(row.at) : '';
   return (
     <RowButton className="grid-cols-[20px_minmax(0,1fr)]" onClick={open}>
@@ -212,7 +224,7 @@ function NextRow({ row }: { row: LearningRow }) {
       <span className="min-w-0">
         <span className="flex min-w-0 flex-col sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-2">
           <span className="truncate font-semibold">{title}</span>
-          {title !== workspaceName && (
+          {!ownReview && (
             <span className="truncate text-fg-muted text-xs">
               {workspaceName}
             </span>

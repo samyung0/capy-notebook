@@ -4252,6 +4252,8 @@ components:
             - workspace
             - ""
           type: string
+        iconId:
+          type: string
         kind:
           enum:
             - session
@@ -4286,6 +4288,7 @@ components:
         - kind
         - workspaceId
         - workspaceName
+        - iconId
         - answered
         - total
       type: object
@@ -12117,6 +12120,31 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: List the files the caller pays for, or can open (scope=member)
+      tags:
+        - Content
+  /api/files/blank:
+    post:
+      operationId: createStandaloneBlankFile
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBlankFileReq"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/File"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Create a blank Word or Excel file with no workspace
       tags:
         - Content
   /api/files/move:
