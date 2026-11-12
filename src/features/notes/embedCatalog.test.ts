@@ -33,7 +33,7 @@ const bodies: Record<string, string> = {
   quiz: 'questions: []',
   table_view: JSON.stringify({
     columns: [{ id: 'c_title', kind: 'title', name: 'Topic' }],
-    rows: [{ cells: { c_title: 'Krebs cycle' }, id: 'r_1' }],
+    rows: [{ c_title: 'Krebs cycle', id: 'r_1' }],
     title: 'Revision tracker',
     views: [{ id: 'v_1', kind: 'table', name: 'Table' }],
   }),

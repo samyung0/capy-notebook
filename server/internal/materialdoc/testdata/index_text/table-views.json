@@ -68,71 +68,57 @@
           "rows": [
             {
               "id": "r_1",
-              "cells": {
-                "c_title": "Krebs cycle",
-                "c_status": "o_2",
-                "c_mark": 6,
-                "c_review": "2026-11-10",
-                "c_done": false,
-                "c_notes": "ATP | NADH\nyield\r\nper turn"
-              }
+              "c_title": "Krebs cycle",
+              "c_status": "o_2",
+              "c_mark": 6,
+              "c_review": "2026-11-10",
+              "c_done": false,
+              "c_notes": "ATP | NADH\nyield\r\nper turn"
             },
             {
               "id": "r_2",
-              "cells": {
-                "c_title": "Glycolysis",
-                "c_status": "o_gone",
-                "c_mark": " 7.50 ",
-                "c_review": "10 Nov",
-                "c_done": true,
-                "c_notes": 42.5
-              }
+              "c_title": "Glycolysis",
+              "c_status": "o_gone",
+              "c_mark": " 7.50 ",
+              "c_review": "10 Nov",
+              "c_done": true,
+              "c_notes": 42.5
             },
             {
               "id": "r_3",
-              "cells": {
-                "c_title": "Osmosis",
-                "c_mark": 1e-7,
-                "c_review": "2026-02-30",
-                "c_gone": "left by a merge",
-                "c_notes": -1.5e-10
-              }
+              "c_title": "Osmosis",
+              "c_mark": 1e-7,
+              "c_review": "2026-02-30",
+              "c_gone": "left by a merge",
+              "c_notes": -1.5e-10
             },
             {
               "id": "r_4",
-              "cells": {
-                "c_title": "Diffusion",
-                "c_mark": "n/a",
-                "c_review": "2026-13-01",
-                "c_notes": "lone\rbreak"
-              }
+              "c_title": "Diffusion",
+              "c_mark": "n/a",
+              "c_review": "2026-13-01",
+              "c_notes": "lone\rbreak"
             },
             {
               "id": "r_6",
-              "cells": {
-                "c_title": "Enzymes",
-                "c_mark": "-0",
-                "c_review": "2024-02-29",
-                "c_notes": 0
-              }
+              "c_title": "Enzymes",
+              "c_mark": "-0",
+              "c_review": "2024-02-29",
+              "c_notes": 0
             },
             {
               "id": "r_7",
-              "cells": {
-                "c_title": "Photosynthesis",
-                "c_mark": "10000000000000000000000",
-                "c_review": "2100-02-29",
-                "c_notes": 1000000000000000
-              }
+              "c_title": "Photosynthesis",
+              "c_mark": "10000000000000000000000",
+              "c_review": "2100-02-29",
+              "c_notes": 1000000000000000
             },
             {
               "id": "r_5",
-              "cells": {
-                "c_title": "Respiration",
-                "c_mark": -2,
-                "c_status": "o_3",
-                "c_done": "yes"
-              }
+              "c_title": "Respiration",
+              "c_mark": -2,
+              "c_status": "o_3",
+              "c_done": "yes"
             }
           ],
           "views": [
@@ -186,16 +172,12 @@
           "rows": [
             {
               "id": "r_b",
-              "cells": {
-                "c_t": "b",
-                "c_s": "o_a"
-              }
+              "c_t": "b",
+              "c_s": "o_a"
             },
             {
               "id": "r_a",
-              "cells": {
-                "c_t": "a"
-              }
+              "c_t": "a"
             }
           ],
           "views": [
@@ -249,23 +231,17 @@
           "rows": [
             {
               "id": "r1",
-              "cells": {
-                "c_t": "x",
-                "c_p": "o_lo"
-              }
+              "c_t": "x",
+              "c_p": "o_lo"
             },
             {
               "id": "r2",
-              "cells": {
-                "c_t": "y"
-              }
+              "c_t": "y"
             },
             {
               "id": "r3",
-              "cells": {
-                "c_t": "z",
-                "c_p": "o_hi"
-              }
+              "c_t": "z",
+              "c_p": "o_hi"
             }
           ],
           "views": [
@@ -306,47 +282,33 @@
           "rows": [
             {
               "id": "w1",
-              "cells": {
-                "c_w": "beta",
-                "c_d": true
-              }
+              "c_w": "beta",
+              "c_d": true
             },
             {
               "id": "w2",
-              "cells": {
-                "c_w": "alpha"
-              }
+              "c_w": "alpha"
             },
             {
               "id": "w3",
-              "cells": {
-                "c_w": ""
-              }
+              "c_w": ""
             },
             {
               "id": "w4",
-              "cells": {
-                "c_w": "gamma",
-                "c_d": false
-              }
+              "c_w": "gamma",
+              "c_d": false
             },
             {
               "id": "w5",
-              "cells": {
-                "c_w": "😀 smile"
-              }
+              "c_w": "😀 smile"
             },
             {
               "id": "w6",
-              "cells": {
-                "c_w": "～ tilde"
-              }
+              "c_w": "～ tilde"
             },
             {
               "id": "w7",
-              "cells": {
-                "c_w": "Zeta"
-              }
+              "c_w": "Zeta"
             }
           ],
           "views": [
@@ -369,6 +331,49 @@
               }
             }
           ]
+        },
+        "children": [
+          {
+            "text": ""
+          }
+        ]
+      },
+      {
+        "type": "table_view",
+        "id": "tv_no_view",
+        "block": {
+          "title": "No view",
+          "columns": [
+            {
+              "id": "c_t",
+              "name": "Name",
+              "kind": "title"
+            },
+            {
+              "id": "c_s",
+              "name": "Status",
+              "kind": "select",
+              "options": [
+                {
+                  "id": "o_a",
+                  "name": "A",
+                  "color": "gray"
+                }
+              ]
+            }
+          ],
+          "rows": [
+            {
+              "id": "r_b",
+              "c_t": "b",
+              "c_s": "o_a"
+            },
+            {
+              "id": "r_a",
+              "c_t": "a"
+            }
+          ],
+          "views": []
         },
         "children": [
           {
@@ -399,6 +404,10 @@
     {
       "id": "tv_words",
       "text": "Words\n\n| Word | Seen |\n| --- | --- |\n| Zeta | ☐ |\n| alpha | ☐ |\n| beta | ☑ |\n| gamma | ☐ |\n| ～ tilde | ☐ |\n| 😀 smile | ☐ |\n|  | ☐ |"
+    },
+    {
+      "id": "tv_no_view",
+      "text": "No view\n\n| Name | Status |\n| --- | --- |\n| b | A |\n| a |  |"
     }
   ]
 }

@@ -633,8 +633,8 @@ describe('table views', () => {
 
   it('reads what a merge leaves', () => {
     const merged = tracker();
-    merged.rows[0].cells.c_gone = 'left behind';
-    merged.rows[0].cells.c_review = 'soon';
+    merged.rows[0].c_gone = 'left behind';
+    merged.rows[0].c_review = 'soon';
     const stored = { schemaVersion: 1, value: [tableView('a', merged)] };
     expect(
       parseMaterialDocument(JSON.stringify(stored))?.value[0].block

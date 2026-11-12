@@ -374,12 +374,19 @@ figures).
 A note's `table_view` (Epo 2026-11-12, mock 9nQns9KAvwafQT2LyK7fHt) is
 AFFiNE's database look as a void, top-level Plate block: its `block` holds a
 title and the lists `columns`, `rows` and `views`, a live map whose list
-entries merge by `id` as graph elements do. Every layer follows one spec;
-the browser's shared model is `src/features/notes/tableView/model.ts`.
+entries merge by `id` as graph elements do, each entry key by key. A row is
+flat (revision 2, 2026-11-12): `{ id, <columnId>: value, … }`, one key per
+filled cell, so two people editing different cells of one row both keep
+theirs (`figureMap.test.ts`); a select column's `options` is still one key,
+replaced whole. Every layer follows one spec; the browser's shared model is
+`src/features/notes/tableView/model.ts`.
 
 - **Writers** keep only the structural rules (`isTableViewBlock`): the four
-  keys, ids of 1–`TABLE_VIEW_ID_MAX` characters from `[A-Za-z0-9_-]` unique
-  in their list, exactly one `title` column, the `TABLE_VIEW_*` counts and
+  keys, ids of 1–`TABLE_VIEW_ID_MAX` characters matching
+  `^[A-Za-z0-9][A-Za-z0-9_-]*$` (so `__proto__` never passes) unique in
+  their list, no column id `id`, a row's `id` plus at most
+  `TABLE_VIEW_COLUMNS_MAX` cell keys, zero views allowed (two peers can
+  delete the last two at once), exactly one `title` column, the `TABLE_VIEW_*` counts and
   lengths, cell values a string, a finite number within
   `TABLE_VIEW_NUMBER_MAX` or a boolean, the listed kinds, colours and sort
   directions, closed key sets, and at most `TABLE_VIEW_MAX_COUNT` per note
@@ -390,7 +397,7 @@ the browser's shared model is `src/features/notes/tableView/model.ts`.
   and a decimal text in a number column; an impossible date is empty too.
   Columns are drawn title first. A static renderer (the View, Preview, share
   pages in the Worker, exports, index text) draws the **first** view as a
-  table, whatever its kind, its rows in that view's sort (empty cells last,
+  table, whatever its kind (with no view, the rows in list order), its rows in that view's sort (empty cells last,
   ties in list order). The read-only table (`TableViewTable.tsx`) shows
   option names in their colour chips (`display.ts`, shared with the editor),
   dates as `12 Nov` in the reader's locale and checkboxes as boxes, and on a

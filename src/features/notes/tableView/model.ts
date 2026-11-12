@@ -7,7 +7,9 @@ import type {
 /* A note's table view (Epo 2026-11-12, mock 9nQns9KAvwafQT2LyK7fHt): AFFiNE's
    database look as a Plate block. The element holds its block as a live map
    whose columns, rows and views merge entry by entry (the catalog's
-   sharedLists). Writers keep the structural rules (`isTableViewBlock`);
+   sharedLists), each entry key by key: a row is flat, `{ id, <columnId>:
+   value }`, so edits to different cells of one row merge (revision 2).
+   Writers keep the structural rules (`isTableViewBlock`);
    readers draw what merges leave (cells of deleted columns, values that no
    longer fit their column) as empty instead of refusing them. */
 
@@ -62,7 +64,9 @@ export type TableViewColumn = {
 
 export type CellValue = string | number | boolean;
 
-export type TableViewRow = { id: string; cells: Record<string, CellValue> };
+/** A record: its id and one key per filled cell, named by the column's id
+ * (revision 2.1). A missing key is an empty cell. */
+export type TableViewRow = { id: string; [columnId: string]: CellValue };
 
 export type ViewSort = { columnId: string; dir: 'asc' | 'desc' };
 
@@ -93,7 +97,11 @@ export const TABLE_VIEW_TYPE = 'table_view';
 /** The element's Markdown fence language (the embed catalog's). */
 export const TABLE_VIEW_LANG = 'table-view';
 
-const ID = /^[A-Za-z0-9_-]+$/;
+/** Ids start with a letter or digit (revision 2.2), so `__proto__` and its
+ * kind never pass. */
+const ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+/** The row key that is not a cell: no column may take it. */
+const ROW_ID = 'id';
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const DECIMAL = /^-?\d+(\.\d+)?$/;
 /** A number JavaScript writes with an exponent (`1e-7`, `1.5e+21`). */
@@ -145,7 +153,8 @@ function isOption(value: unknown): value is SelectOption {
 function isColumn(value: unknown): value is TableViewColumn {
   if (!(isRecord(value) && hasOnly(value, ['id', 'name', 'kind', 'options'])))
     return false;
-  if (!(isId(value.id) && isName(value.name))) return false;
+  if (!(isId(value.id) && value.id !== ROW_ID && isName(value.name)))
+    return false;
   if (!COLUMN_KINDS.includes(value.kind as ColumnKind)) return false;
   if (value.kind !== 'select') return value.options === undefined;
   return (
@@ -157,14 +166,11 @@ function isColumn(value: unknown): value is TableViewColumn {
 }
 
 function isRow(value: unknown): value is TableViewRow {
-  if (!(isRecord(value) && hasOnly(value, ['id', 'cells']) && isId(value.id)))
-    return false;
-  const { cells } = value;
-  if (!isRecord(cells)) return false;
-  const keys = Object.keys(cells);
+  if (!(isRecord(value) && isId(value.id))) return false;
+  const keys = Object.keys(value).filter((key) => key !== ROW_ID);
   return (
     keys.length <= TABLE_VIEW_LIMITS.columns &&
-    keys.every((key) => isId(key) && isCell(cells[key]))
+    keys.every((key) => isId(key) && isCell(value[key]))
   );
 }
 
@@ -223,7 +229,7 @@ export function isTableViewBlock(value: unknown): value is TableViewBlock {
     return false;
   return (
     Array.isArray(views) &&
-    views.length >= 1 &&
+    // None is fine (revision 2.3): two peers can delete the last two at once.
     views.length <= TABLE_VIEW_LIMITS.views &&
     views.every(isView) &&
     uniqueIds(views)
@@ -243,7 +249,10 @@ export function cellValue(
   column: TableViewColumn,
   row: TableViewRow
 ): CellValue | undefined {
-  const value = row.cells[column.id];
+  const value =
+    column.id !== ROW_ID && Object.hasOwn(row, column.id)
+      ? row[column.id]
+      : undefined;
   switch (column.kind) {
     case 'title':
     case 'text':
@@ -418,7 +427,7 @@ export function newTableViewBlock(names: {
         ],
       },
     ],
-    rows: [{ cells: {}, id: newId('r') }],
+    rows: [{ id: newId('r') }],
     title: '',
     views: [
       { id: newId('v'), kind: 'table', name: names.table },

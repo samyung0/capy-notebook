@@ -22,7 +22,7 @@ const column = (kind: TableViewColumn['kind']): TableViewColumn => ({
   ...(kind === 'select' && { options: status.options }),
 });
 const row = (value: unknown, id = 'r'): TableViewRow =>
-  ({ cells: value === undefined ? {} : { c: value }, id }) as TableViewRow;
+  ({ id, ...(value === undefined ? {} : { c: value }) }) as TableViewRow;
 
 describe('isTableViewBlock', () => {
   it('takes the spec example and the slash menu block', () => {
@@ -69,7 +69,7 @@ describe('isTableViewBlock', () => {
     const block: TableViewBlock = {
       columns,
       rows: Array.from({ length: TABLE_VIEW_LIMITS.rows }, (_, i) => ({
-        cells,
+        ...cells,
         id: id('r', i),
       })),
       title: name,
@@ -82,11 +82,18 @@ describe('isTableViewBlock', () => {
     expect(isTableViewBlock(block)).toBe(true);
   });
 
+  it('takes a block with no view (revision 2.3), drawn in list order', () => {
+    const block = tracker();
+    block.views.splice(0);
+    expect(isTableViewBlock(block)).toBe(true);
+    expect(tableViewText(block)).toContain('| Krebs cycle |');
+  });
+
   it('takes what merges leave: a cell of a gone column, a misfit value, a stale sort', () => {
     const block = tracker();
-    block.rows[0].cells.c_gone = 'left';
-    block.rows[0].cells.c_mark = 'six';
-    block.rows[0].cells.c_status = 'o_gone';
+    block.rows[0].c_gone = 'left';
+    block.rows[0].c_mark = 'six';
+    block.rows[0].c_status = 'o_gone';
     block.views[0].sort = { columnId: 'c_gone', dir: 'desc' };
     block.views[1].groupBy = 'c_title';
     expect(isTableViewBlock(block)).toBe(true);
@@ -106,10 +113,9 @@ describe('isTableViewBlock', () => {
       'too many rows',
       (b) => {
         for (let i = b.rows.length; i <= TABLE_VIEW_LIMITS.rows; i++)
-          b.rows.push({ cells: {}, id: `r${i}` });
+          b.rows.push({ id: `r${i}` });
       },
     ],
-    ['no view', (b) => b.views.splice(0)],
     ['a bad column kind', (b) => Object.assign(b.columns[2], { kind: 'url' })],
     ['a bad view kind', (b) => Object.assign(b.views[0], { kind: 'gallery' })],
     [
@@ -122,13 +128,25 @@ describe('isTableViewBlock', () => {
       (b) =>
         Object.assign(b.rows[0], { id: 'r'.repeat(TABLE_VIEW_LIMITS.id + 1) }),
     ],
-    ['a duplicate row id', (b) => b.rows.push({ cells: {}, id: 'r_1' })],
+    ['a duplicate row id', (b) => b.rows.push({ id: 'r_1' })],
     [
       'a duplicate option id',
       (b) => b.columns[0].options!.push({ color: 'red', id: 'o_1', name: '' }),
     ],
     ['an unknown block key', (b) => Object.assign(b, { icon: 'x' })],
-    ['an unknown row key', (b) => Object.assign(b.rows[0], { color: 'red' })],
+    [
+      'a row cell key that is not an id',
+      (b) => Object.assign(b.rows[0], { _c: 'x' }),
+    ],
+    ['a row without an id', (b) => Object.assign(b.rows[0], { id: undefined })],
+    ['an id starting with -', (b) => Object.assign(b.views[0], { id: '-v' })],
+    ['a column named id', (b) => Object.assign(b.columns[2], { id: 'id' })],
+    [
+      'a __proto__ cell key',
+      (b) => {
+        b.rows[0] = JSON.parse('{"id":"r_1","__proto__":"x"}');
+      },
+    ],
     [
       'options on a text column',
       (b) => Object.assign(b.columns[2], { options: [] }),
@@ -146,18 +164,18 @@ describe('isTableViewBlock', () => {
       (b) =>
         Object.assign(b.views[0], { sort: { columnId: 'c_mark', dir: 'up' } }),
     ],
-    ['a null cell', (b) => Object.assign(b.rows[0].cells, { c_mark: null })],
+    ['a null cell', (b) => Object.assign(b.rows[0], { c_mark: null })],
     [
       'a number over the cap',
       (b) =>
-        Object.assign(b.rows[0].cells, {
+        Object.assign(b.rows[0], {
           c_mark: TABLE_VIEW_LIMITS.number * 10,
         }),
     ],
     [
       'a cell too long',
       (b) =>
-        Object.assign(b.rows[0].cells, {
+        Object.assign(b.rows[0], {
           c_title: 'x'.repeat(TABLE_VIEW_LIMITS.cell + 1),
         }),
     ],
@@ -225,11 +243,11 @@ describe('sortedRows', () => {
       status,
     ],
     rows: [
-      { cells: { c: 'a', c_status: 'o_3', n: 2 }, id: 'a' },
-      { cells: { c: 'b' }, id: 'b' },
-      { cells: { c: 'c', c_status: 'o_1', n: 1 }, id: 'c' },
-      { cells: { c: 'd', n: 2 }, id: 'd' },
-      { cells: { c: 'e', n: 'x' }, id: 'e' },
+      { c: 'a', c_status: 'o_3', id: 'a', n: 2 },
+      { c: 'b', id: 'b' },
+      { c: 'c', c_status: 'o_1', id: 'c', n: 1 },
+      { c: 'd', id: 'd', n: 2 },
+      { c: 'e', id: 'e', n: 'x' },
     ],
     title: '',
     views: [{ id: 'v', kind: 'table', name: 'T', ...(sort && { sort }) }],
@@ -293,7 +311,7 @@ describe('tableViewText', () => {
   it('leaves out a blank title and puts line breaks as spaces', () => {
     const block = tracker();
     block.title = ' \n ';
-    block.rows = [{ cells: { c_title: 'two\nlines\r\nhere' }, id: 'r' }];
+    block.rows = [{ c_title: 'two\nlines\r\nhere', id: 'r' }];
     expect(tableViewText(block)).toBe(
       [
         '| Topic | Status | Mark | Review on | Done |',

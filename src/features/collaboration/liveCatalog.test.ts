@@ -71,7 +71,7 @@ describe('shared maps', () => {
     const block = {
       columns: [{ id: 'c1', kind: 'title', name: 'Name' }],
       elements: [{ id: 'e1', type: 'point' }],
-      rows: [{ cells: { c1: 'A' }, id: 'r1' }],
+      rows: [{ c1: 'A', id: 'r1' }],
       series: [{ name: 'S', values: [1] }],
       title: 'T',
       type,

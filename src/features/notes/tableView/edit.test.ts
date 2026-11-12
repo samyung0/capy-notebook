@@ -42,8 +42,8 @@ function tracker(): TableViewBlock {
       { id: 'c_mark', kind: 'number', name: 'Mark' },
     ],
     rows: [
-      { cells: { c_mark: 6, c_status: 'o_2', c_title: 'Krebs' }, id: 'r_1' },
-      { cells: { c_title: 'Glycolysis' }, id: 'r_2' },
+      { c_mark: 6, c_status: 'o_2', c_title: 'Krebs', id: 'r_1' },
+      { c_title: 'Glycolysis', id: 'r_2' },
     ],
     title: 'Revision tracker',
     views: [
@@ -60,26 +60,29 @@ describe('table view edits', () => {
   it('set and empty a cell, keeping the other rows', () => {
     const block = tracker();
     const set = setCell(block, 'r_2', 'c_mark', 9);
-    expect(set.rows[1].cells.c_mark).toBe(9);
+    expect(set.rows[1].c_mark).toBe(9);
     expect(set.rows[0]).toBe(block.rows[0]);
     const emptied = setCell(set, 'r_2', 'c_mark', undefined);
-    expect(emptied.rows[1].cells).toEqual({ c_title: 'Glycolysis' });
+    expect(emptied.rows[1]).toEqual({ c_title: 'Glycolysis', id: 'r_2' });
     expect(setCell(block, 'r_1', 'c_mark', 6)).toBe(block);
   });
 
-  it('drop a deleted column’s cells when a row is written', () => {
+  it('change only the cell key they write, the row’s other keys as they were', () => {
     const block = tracker();
-    block.rows[0].cells.c_gone = 'left by a merge';
+    block.rows[0].c_gone = 'left by a merge';
     const next = setCell(block, 'r_1', 'c_title', 'Krebs cycle');
-    expect(next.rows[0].cells).not.toHaveProperty('c_gone');
+    expect(next.rows[0]).toEqual({ ...block.rows[0], c_title: 'Krebs cycle' });
+  });
+
+  it('write a hostile column id as data, never through the prototype', () => {
+    const next = setCell(tracker(), 'r_2', '__proto__', 'x');
+    expect(Object.hasOwn(next.rows[1], '__proto__')).toBe(true);
+    expect(Object.getPrototypeOf(next.rows[1])).toBe(Object.prototype);
   });
 
   it('add and insert records', () => {
     const { block, rowId } = addRow(tracker(), { c_status: 'o_1' });
-    expect(block.rows.at(-1)).toEqual({
-      cells: { c_status: 'o_1' },
-      id: rowId,
-    });
+    expect(block.rows.at(-1)).toEqual({ c_status: 'o_1', id: rowId });
     const above = insertRow(block, 'r_2', 'above');
     expect(above.block.rows.map(({ id }) => id)).toEqual([
       'r_1',
@@ -115,7 +118,7 @@ describe('table view edits', () => {
     const copy = duplicateColumn(tracker(), 'c_title');
     const added = drawnColumns(copy)[1];
     expect(added).toMatchObject({ kind: 'text', name: 'Topic' });
-    expect(copy.rows[0].cells[added.id]).toBe('Krebs');
+    expect(copy.rows[0][added.id]).toBe('Krebs');
     expect(isTableViewBlock(copy)).toBe(true);
   });
 
@@ -126,7 +129,7 @@ describe('table view edits', () => {
     });
     const next = deleteColumn(sorted, 'c_mark');
     expect(names(next)).toEqual(['Topic', 'Status']);
-    expect(next.rows[0].cells).not.toHaveProperty('c_mark');
+    expect(next.rows[0]).not.toHaveProperty('c_mark');
     expect(next.views[0]).toEqual({ id: 'v_1', kind: 'table', name: 'Table' });
   });
 
@@ -137,17 +140,15 @@ describe('table view edits', () => {
       kind: 'text',
       name: 'Status',
     });
-    expect(asText.rows[0].cells.c_status).toBe('Revising');
+    expect(asText.rows[0].c_status).toBe('Revising');
     const back = retypeColumn(asText, 'c_status', 'select');
     expect(back.columns[0].options?.map(({ name }) => name)).toEqual([
       'Revising',
     ]);
-    expect(back.rows[0].cells.c_status).toBe(back.columns[0].options?.[0].id);
+    expect(back.rows[0].c_status).toBe(back.columns[0].options?.[0].id);
     const marks = retypeColumn(tracker(), 'c_mark', 'text');
-    expect(marks.rows[0].cells.c_mark).toBe('6');
-    expect(retypeColumn(marks, 'c_mark', 'number').rows[0].cells.c_mark).toBe(
-      6
-    );
+    expect(marks.rows[0].c_mark).toBe('6');
+    expect(retypeColumn(marks, 'c_mark', 'number').rows[0].c_mark).toBe(6);
     expect(isTableViewBlock(back)).toBe(true);
   });
 
@@ -164,7 +165,7 @@ describe('table view edits', () => {
       'o_1',
       optionId,
     ]);
-    expect(gone.rows[0].cells).not.toHaveProperty('c_status');
+    expect(gone.rows[0]).not.toHaveProperty('c_status');
   });
 
   it('add views, a Kanban grouped by the first select, and keep the last', () => {
@@ -194,9 +195,9 @@ describe('table view edits', () => {
 
   it('move a card to another column’s option, or to none', () => {
     const moved = moveCard(tracker(), 'r_2', 'c_status', 'o_1');
-    expect(moved.rows[1].cells.c_status).toBe('o_1');
+    expect(moved.rows[1].c_status).toBe('o_1');
     const cleared = moveCard(moved, 'r_1', 'c_status', undefined);
-    expect(cleared.rows[0].cells).not.toHaveProperty('c_status');
+    expect(cleared.rows[0]).not.toHaveProperty('c_status');
   });
 
   it('name new columns and views apart and read number fields', () => {

@@ -80,14 +80,23 @@ const mapView = (
   return changed ? { ...block, views } : block;
 };
 
-/** A row's cells for its block's columns only: a merge or a deleted column
- * can leave others, which count toward the row's key cap. */
-const liveCells = (block: TableViewBlock, row: TableViewRow) => {
-  const ids = new Set(block.columns.map(({ id }) => id));
-  return Object.fromEntries(
-    Object.entries(row.cells).filter(([key]) => ids.has(key))
-  );
-};
+/** A row with one cell key set, or gone with `undefined`; every other key
+ * stays as it was, so the room rewrites only that key and a peer's edit to
+ * another cell of the row merges (revision 2.1). Keys are written as data
+ * (spread, computed keys), never through a prototype setter. */
+function withCell(
+  row: TableViewRow,
+  columnId: string,
+  value: CellValue | undefined
+): TableViewRow {
+  const { [columnId]: _held, ...rest } = row;
+  return (value === undefined
+    ? rest
+    : { ...rest, [columnId]: value }) as unknown as TableViewRow;
+}
+
+const holds = (row: TableViewRow, columnId: string) =>
+  Object.hasOwn(row, columnId);
 
 /** One cell set, or emptied with `undefined`. */
 export function setCell(
@@ -97,14 +106,13 @@ export function setCell(
   value: CellValue | undefined
 ): TableViewBlock {
   const row = block.rows.find(({ id }) => id === rowId);
-  if (!row || row.cells[columnId] === value) return block;
-  if (value === undefined && !(columnId in row.cells)) return block;
-  const cells = liveCells(block, row);
-  if (value === undefined) delete cells[columnId];
-  else cells[columnId] = value;
+  if (!row || columnId === 'id') return block;
+  if (holds(row, columnId) ? row[columnId] === value : value === undefined)
+    return block;
+  const next = withCell(row, columnId, value);
   return {
     ...block,
-    rows: block.rows.map((item) => (item === row ? { ...row, cells } : item)),
+    rows: block.rows.map((item) => (item === row ? next : item)),
   };
 }
 
@@ -115,7 +123,7 @@ export function addRow(
 ): { block: TableViewBlock; rowId: string } {
   const rowId = newId('r');
   return {
-    block: { ...block, rows: [...block.rows, { cells, id: rowId }] },
+    block: { ...block, rows: [...block.rows, { ...cells, id: rowId }] },
     rowId,
   };
 }
@@ -129,7 +137,7 @@ export function insertRow(
   const at = block.rows.findIndex(({ id }) => id === rowId);
   const id = newId('r');
   const rows = [...block.rows];
-  rows.splice(side === 'above' ? at : at + 1, 0, { cells: {}, id });
+  rows.splice(side === 'above' ? at : at + 1, 0, { id });
   return { block: { ...block, rows }, rowId: id };
 }
 
@@ -255,13 +263,9 @@ export function retypeColumn(
       ? { id: column.id, kind, name: column.name, options }
       : { id: column.id, kind, name: column.name };
   const rows = block.rows.map((row) => {
-    const before = row.cells[columnId];
     const value = convert(read(row), kind, options);
-    if (before === value) return row;
-    const cells = liveCells(block, row);
-    if (value === undefined) delete cells[columnId];
-    else cells[columnId] = value;
-    return { ...row, cells };
+    const before = holds(row, columnId) ? row[columnId] : undefined;
+    return before === value ? row : withCell(row, columnId, value);
   });
   return {
     ...block,
@@ -286,12 +290,9 @@ export function duplicateColumn(
   const withColumn = insertColumn(block, copy, { columnId, side: 'right' });
   return {
     ...withColumn,
-    rows: block.rows.map((row) => {
-      const value = row.cells[columnId];
-      return value === undefined
-        ? row
-        : { ...row, cells: { ...liveCells(block, row), [id]: value } };
-    }),
+    rows: block.rows.map((row) =>
+      holds(row, columnId) ? withCell(row, id, row[columnId]) : row
+    ),
   };
 }
 
@@ -306,11 +307,9 @@ export function deleteColumn(
   return {
     ...block,
     columns: block.columns.filter((item) => item !== column),
-    rows: block.rows.map((row) => {
-      if (!(columnId in row.cells)) return row;
-      const { [columnId]: _gone, ...cells } = row.cells;
-      return { ...row, cells };
-    }),
+    rows: block.rows.map((row) =>
+      holds(row, columnId) ? withCell(row, columnId, undefined) : row
+    ),
     views: block.views.map((view) => {
       if (view.sort?.columnId !== columnId) return view;
       const { sort: _sort, ...rest } = view;
@@ -378,11 +377,11 @@ export function deleteOption(
   if (next === block) return block;
   return {
     ...next,
-    rows: next.rows.map((row) => {
-      if (row.cells[columnId] !== optionId) return row;
-      const { [columnId]: _gone, ...cells } = row.cells;
-      return { ...row, cells };
-    }),
+    rows: next.rows.map((row) =>
+      holds(row, columnId) && row[columnId] === optionId
+        ? withCell(row, columnId, undefined)
+        : row
+    ),
   };
 }
 

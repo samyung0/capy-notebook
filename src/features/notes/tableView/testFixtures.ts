@@ -25,19 +25,14 @@ export const tracker = (): TableViewBlock =>
     ],
     rows: [
       {
-        cells: {
-          c_done: false,
-          c_mark: 6,
-          c_review: '2026-11-10',
-          c_status: 'o_2',
-          c_title: 'Krebs cycle',
-        },
+        c_done: false,
+        c_mark: 6,
+        c_review: '2026-11-10',
+        c_status: 'o_2',
+        c_title: 'Krebs cycle',
         id: 'r_1',
       },
-      {
-        cells: { c_done: true, c_status: 'o_3', c_title: 'Glycolysis | ATP' },
-        id: 'r_2',
-      },
+      { c_done: true, c_status: 'o_3', c_title: 'Glycolysis | ATP', id: 'r_2' },
     ],
     title: 'Revision tracker',
     views: [

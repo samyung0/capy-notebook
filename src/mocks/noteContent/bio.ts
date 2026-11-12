@@ -75,13 +75,11 @@ function revisionTracker(id: string): TableViewElement {
     review: string,
     done: boolean
   ) => ({
-    cells: {
-      c_done: done,
-      c_review: review,
-      c_status: status,
-      c_title: topic,
-      ...(mark === undefined ? {} : { c_mark: mark }),
-    },
+    c_done: done,
+    c_review: review,
+    c_status: status,
+    c_title: topic,
+    ...(mark === undefined ? {} : { c_mark: mark }),
     id: rowId,
   });
   return {

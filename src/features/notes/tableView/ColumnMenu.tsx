@@ -52,6 +52,8 @@ export function ColumnMenu({
   const [open, setOpen] = useState(false);
   if (!write) return <ColumnLabel column={column} />;
   const title = column.kind === 'title';
+  // With no view (revision 2.3) there is no sort to set.
+  const sortable = block.views.some(({ id }) => id === view.id);
   const room = canAddColumn(block);
   const rename = () => {
     if (name !== column.name)
@@ -144,26 +146,30 @@ export function ColumnMenu({
             </DropdownMenuSubContent>
           </DropdownMenuSub>
         )}
-        <DropdownMenuItem
-          onSelect={() =>
-            write((next) =>
-              setSort(next, view.id, { columnId: column.id, dir: 'asc' })
-            )
-          }
-        >
-          <Icon name="arrowUp" />
-          {m.table_view_sort_asc()}
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onSelect={() =>
-            write((next) =>
-              setSort(next, view.id, { columnId: column.id, dir: 'desc' })
-            )
-          }
-        >
-          <Icon name="arrowDown" />
-          {m.table_view_sort_desc()}
-        </DropdownMenuItem>
+        {sortable && (
+          <>
+            <DropdownMenuItem
+              onSelect={() =>
+                write((next) =>
+                  setSort(next, view.id, { columnId: column.id, dir: 'asc' })
+                )
+              }
+            >
+              <Icon name="arrowUp" />
+              {m.table_view_sort_asc()}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() =>
+                write((next) =>
+                  setSort(next, view.id, { columnId: column.id, dir: 'desc' })
+                )
+              }
+            >
+              <Icon name="arrowDown" />
+              {m.table_view_sort_desc()}
+            </DropdownMenuItem>
+          </>
+        )}
         <DropdownMenuSeparator />
         {!title && (
           <DropdownMenuItem disabled={!room} onSelect={() => insert('left')}>
