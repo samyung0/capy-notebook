@@ -1,6 +1,7 @@
 import { YjsEditor } from '@slate-yjs/core';
 import { createPlatePlugin } from 'platejs/react';
 import { useNoteEditorPrefs } from '../noteEditorPrefs';
+import { TableViewElement } from '../tableView/TableViewElement';
 import {
   FlashcardBackElement,
   FlashcardElement,
@@ -114,6 +115,7 @@ export const customBlockPlugins = [
       ['plot', VisualBlockElement],
       ['graph', VisualBlockElement],
       ['html_embed', HtmlEmbedElement],
+      ['table_view', TableViewElement],
     ] as const
   ).map(([key, component]) =>
     createPlatePlugin({

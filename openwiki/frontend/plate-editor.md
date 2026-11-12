@@ -1092,6 +1092,24 @@ The write is no person's edit (`writeNoEdit`): it starts no checkpoint and bring
 no trailing paragraph, so a co-editor's graph edit adds none from everyone with
 the note open.
 
+A note's table view (`table_view`, Epo 2026-11-12, AFFiNE's database look:
+`src/features/notes/tableView/`) is a top-level void like a figure, edited in
+place rather than in a dialog. `TableViewElement` writes every edit the same
+way a figure's Save does: the pure edit in `edit.ts` runs on the block as the
+editor holds it at that moment and the result goes through one `setNodes` of
+`block`, so only the columns, rows and views it touched change in the room's
+map (an edit that would break `isTableViewBlock` throws; a block a merge left
+past a cap still takes edits). Text, title and number cells write on Enter or
+leaving the field, select and date cells from a popover (`SelectEditor`, the
+schedule's `MiniCalendar`), a checkbox on click; a column header opens
+`ColumnMenu`; the title cell's pill opens the record's menu. The open view is
+each reader's own state; Sort and Group by are stored on the view. A Kanban
+card drags with its own data type (`application/x-capy-table-view-record`) and
+stops the event, so neither Slate's drop nor the block drag reads it. A
+read-only note draws the same component with only its tabs live. The slash
+menu's Table view (searchable by "database") inserts `newTableViewBlock` with
+translated names, refused past `TABLE_VIEW_MAX_COUNT` with a toast.
+
 Standalone mindmaps and diagrams render without Plate. View
 (`MermaidMaterialView`) draws the block's `MermaidView` straight from the
 material content, looking as the static renderer did. Edit
