@@ -1,6 +1,7 @@
 import { ListStyleType, toggleList } from '@platejs/list';
 import { KEYS } from 'platejs';
 import type { IconName } from '@/components/ui/Icon';
+import { userToast } from '@/components/ui/userToast';
 import type { Question } from '@/features/questions/types';
 import { m } from '@/i18n';
 import { uid } from '@/lib/id';
@@ -13,6 +14,7 @@ import { insertMediaPlaceholder } from './insertMediaPlaceholder';
 import { insertInlineEquation } from './mathInsert';
 import type { EditorCommandGroup, EditorWidgetId } from './noteEditorPrefs';
 import { COLUMN_LAYOUTS } from './richBlockConfig';
+import { newTableViewBlock, TABLE_VIEW_LIMITS } from './tableView/model';
 import { insertYouTubeEmbed } from './youtube';
 
 export { insertEditorNode, type NoteEditorInstance } from './insertEditorNode';
@@ -328,6 +330,46 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
         })),
         type: KEYS.table,
       }),
+    widget: 'table',
+  },
+  {
+    get description() {
+      return m.editor_cmd_table_view();
+    },
+    group: 'blockElements',
+    icon: 'tableView',
+    id: 'table-view',
+    keywords: ['database', 'kanban'],
+    get label() {
+      return m.editor_table_view();
+    },
+    run: (editor) => {
+      if (insideContainer(editor)) return;
+      const count = editor.children.filter(
+        (node: { type?: unknown }) => node.type === 'table_view'
+      ).length;
+      if (count >= TABLE_VIEW_LIMITS.count) {
+        userToast({
+          title: m.table_view_at_count({ count: TABLE_VIEW_LIMITS.count }),
+          variant: 'error',
+        });
+        return;
+      }
+      insertEditorNode(editor, {
+        block: newTableViewBlock({
+          done: m.table_view_done(),
+          kanban: m.table_view_kanban(),
+          name: m.table_view_name(),
+          notYet: m.table_view_not_yet(),
+          revising: m.table_view_revising(),
+          status: m.table_view_status(),
+          table: m.editor_table(),
+        }),
+        children: [{ text: '' }],
+        id: uid('table_view'),
+        type: 'table_view',
+      });
+    },
     widget: 'table',
   },
   {
