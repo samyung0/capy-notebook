@@ -298,6 +298,18 @@ export function cellText(column: TableViewColumn, row: TableViewRow): string {
   return typeof value === 'number' ? plainNumber(value) : value;
 }
 
+/** Text in code point order, as Go and Rust compare strings, so the index
+ * text sorts the same everywhere (not the reader's locale). */
+function byCodePoint(a: string, b: string) {
+  const x = [...a];
+  const y = [...b];
+  for (let i = 0; i < Math.min(x.length, y.length); i++) {
+    const order = (x[i].codePointAt(0) ?? 0) - (y[i].codePointAt(0) ?? 0);
+    if (order) return order;
+  }
+  return x.length - y.length;
+}
+
 /** The view's sort column, when it still names one. */
 const sortColumn = (block: TableViewBlock, view: TableViewView) =>
   view.sort && block.columns.find(({ id }) => id === view.sort?.columnId);
@@ -334,7 +346,7 @@ export function sortedRows(
       const order =
         typeof a.rank === 'number' && typeof b.rank === 'number'
           ? a.rank - b.rank
-          : String(a.rank).localeCompare(String(b.rank));
+          : byCodePoint(String(a.rank), String(b.rank));
       return order * dir || a.index - b.index;
     })
     .map(({ row }) => row);
