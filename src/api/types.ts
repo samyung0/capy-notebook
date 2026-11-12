@@ -61,7 +61,6 @@ import type {
   SubmittedPaper as GenSubmittedPaper,
   TrashItem as GenTrashItem,
   TrashPage as GenTrashPage,
-  TrashPreview as GenTrashPreview,
   UpdateCommentReq as GenUpdateCommentReq,
   UpdateWorkspaceMemberReq as GenUpdateWorkspaceMemberReq,
   MaterialKind,
@@ -310,11 +309,6 @@ export interface RecentPage {
 /** File rows carry the File thumbnail fields, material rows a MaterialPreview. */
 export type TrashItem = Omit<GenTrashItem, 'preview'> & {
   preview?: FileTextPreview | MaterialPreview;
-};
-/** A trashed item opened read-only: a file with signed reads (and a text
- * file's saved state), or a material with its saved content. */
-export type TrashPreview = Omit<GenTrashPreview, 'material'> & {
-  material?: Material;
 };
 /** A file the viewer has resolved through GET /files/{id}/links: `url` is a
  * short-lived presigned read, the only URL the browser ever holds for file
@@ -578,6 +572,7 @@ export type {
   ResourceRef,
   ToolError,
   TrashActionReq,
+  Trashed,
   UndoEditReq,
   UndoPayload,
   UndoRef,

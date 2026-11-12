@@ -160,7 +160,6 @@ import type {
   TrashActionReq,
   TrashItem,
   TrashPage,
-  TrashPreview,
   UndoEditReq,
   UndoPayload,
   UpdateCommentReq,
@@ -1775,8 +1774,16 @@ export const useTrash = (wsId: string | undefined, enabled: boolean) =>
     meta: { errorBoundary: false },
   });
 
-function invalidateAfterTrashChange(qc: QueryClient, item: TrashItem) {
+/** What restore and purge name: one trash episode of an item. */
+type TrashTarget = Pick<TrashItem, 'episodeId' | 'id' | 'kind' | 'workspaceId'>;
+
+function invalidateAfterTrashChange(qc: QueryClient, item: TrashTarget) {
   qc.invalidateQueries({ queryKey: qk.trash() });
+  // An item open from the Trash reopens live.
+  qc.invalidateQueries({
+    queryKey:
+      item.kind === 'material' ? qk.material(item.id) : qk.file(item.id),
+  });
   qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
   qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
   qc.invalidateQueries({ queryKey: qk.usage });
@@ -1794,7 +1801,7 @@ function invalidateAfterTrashChange(qc: QueryClient, item: TrashItem) {
 export function useRestoreTrashed() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (item: TrashItem) =>
+    mutationFn: (item: TrashTarget) =>
       api.post<OperationReceipt>(`/trash/${item.kind}/${item.id}/restore`, {
         episodeId: item.episodeId,
         requestId: crypto.randomUUID(),
@@ -1802,17 +1809,6 @@ export function useRestoreTrashed() {
     onSuccess: (_receipt, item) => invalidateAfterTrashChange(qc, item),
   });
 }
-
-/** A trashed item opened read-only from the Trash list. Its signed links
- * expire, so a closed preview keeps no copy (as fileLinksQuery). */
-export const useTrashPreview = (item: TrashItem) =>
-  useQuery({
-    gcTime: 0,
-    meta: { errorBoundary: false },
-    queryFn: () =>
-      api.get<TrashPreview>(`/trash/${item.kind}/${item.id}/preview`),
-    queryKey: qk.trashPreview(item.kind, item.id, item.episodeId),
-  });
 
 /** Permanently delete one trash episode. Irreversible. */
 export function usePurgeTrashed() {

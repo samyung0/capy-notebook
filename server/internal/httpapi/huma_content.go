@@ -260,12 +260,19 @@ func (a *api) thumbnailURL(ctx context.Context, key string) (*string, error) {
 }
 
 func (a *api) getFile(ctx context.Context, in *fileIDInput) (*fileOutput, error) {
-	if _, err := a.fileRead(ctx, in.ID); err != nil {
-		return nil, hErr(err)
+	_, err := a.fileRead(ctx, in.ID)
+	var res store.File
+	if err == nil {
+		res, err = a.s.GetFile(ctx, in.ID)
 	}
-	res, err := a.s.GetFile(ctx, in.ID)
 	if err != nil {
-		return nil, hErr(err)
+		// Opened from the Trash: read-only.
+		if res, _, err = a.trashedFile(ctx, in.ID, err); err != nil {
+			return nil, hErr(err)
+		}
+		// Its /preview route answers only live files; links signs its bytes.
+		res.PreviewURL = nil
+		return &fileOutput{Body: res}, nil
 	}
 	res.IsPayer = res.PayerID == userID(ctx)
 	return &fileOutput{Body: res}, nil
@@ -282,15 +289,24 @@ func (a *api) getFileLinks(ctx context.Context, in *fileIDInput) (*fileLinksOutp
 	// The read check (fileRead, or the payer's Download) and the role the
 	// strip needs, in one lookup.
 	role, err := a.fileReadOrPayer(ctx, in.ID)
+	var source, preview string
+	if err == nil {
+		source, preview, err = a.s.FileBlobPaths(ctx, in.ID)
+	}
 	if err != nil {
-		return nil, hErr(err)
+		// Opened from the Trash: a ready PDF is its own citation preview, as
+		// in FileBlobPaths.
+		file, blobPath, err := a.trashedFile(ctx, in.ID, err)
+		if err != nil {
+			return nil, hErr(err)
+		}
+		source, role = blobPath, ""
+		if file.PreviewURL != nil {
+			preview = blobPath
+		}
 	}
 	if a.blob == nil {
 		return nil, huma.Error503ServiceUnavailable("blob store not configured")
-	}
-	source, preview, err := a.s.FileBlobPaths(ctx, in.ID)
-	if err != nil {
-		return nil, hErr(err)
 	}
 	if source == "" {
 		return nil, huma.Error404NotFound("no content")

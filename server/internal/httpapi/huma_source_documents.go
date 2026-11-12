@@ -144,12 +144,19 @@ func (a *api) browserSourceSession(ctx context.Context, session store.BrowserSou
 }
 func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*browserSourceSessionOutput, error) {
 	if in.View {
-		if _, err := a.fileReadOrPayer(ctx, in.ID); err != nil {
-			return nil, hErr(err)
+		_, err := a.fileReadOrPayer(ctx, in.ID)
+		var session store.BrowserSourceSession
+		if err == nil {
+			session, err = a.s.ViewSourceSession(ctx, in.ID)
 		}
-		session, err := a.s.ViewSourceSession(ctx, in.ID)
 		if err != nil {
-			return nil, hErr(err)
+			// Opened from the Trash: its saved edits may be ahead of its bytes.
+			if _, _, err = a.trashedFile(ctx, in.ID, err); err != nil {
+				return nil, hErr(err)
+			}
+			if session, err = a.s.TrashedSourceSession(ctx, in.ID); err != nil {
+				return nil, hErr(err)
+			}
 		}
 		// On the current base only: the view read heads no blob.
 		if session.BaseBytes != nil {

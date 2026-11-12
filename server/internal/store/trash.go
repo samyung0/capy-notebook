@@ -771,55 +771,63 @@ func (s *Store) CurrentTrashEpisode(ctx context.Context, kind agenttools.Resourc
 	return episode, err
 }
 
-// trashPreviewAccessSQL is who opens a trashed item read-only (Epo
-// 2026-11-12): whoever sees its preview in a Trash list, so its payer while it
-// can still reach the item's workspace (lostAccessSQL), or the live
-// workspace's owner. wsCol is the item's workspace column; $2 is the caller.
-func trashPreviewAccessSQL(payerCol, wsCol string) string {
+// trashReaderSQL is who opens a trashed item read-only (Epo
+// 2026-11-12): whoever sees it in a Trash list, so its payer while it can
+// still reach the item's workspace (lostAccessSQL), or the live workspace's
+// owner. wsCol is the item's workspace column; $2 is the caller.
+func trashReaderSQL(payerCol, wsCol string) string {
 	return `((` + payerCol + `=$2 AND NOT ` + lostAccessSQL("COALESCE("+wsCol+",'')", "$2") + `)
 		OR EXISTS (SELECT 1 FROM workspaces tw WHERE tw.id=` + wsCol + ` AND tw.user_id=$2 AND ` + liveWorkspaceSQL("tw.id") + `))`
 }
 
-// TrashedFile reads a trashed file for its read-only preview, with the path
-// of its bytes. Anyone else, or a file not in the trash, is ErrNotFound.
+// Trashed is a trashed item's state for whoever may open it from the Trash
+// (trashReaderSQL): the normal reads serve it read-only, and Restore is
+// the way back to editing.
+type Trashed struct {
+	EpisodeID  string    `json:"episodeId"`
+	PurgeAfter time.Time `json:"purgeAfter"`
+	CanRestore bool      `json:"canRestore" doc:"The caller may restore it: a standalone item, or edit access to its workspace"`
+}
+
+// trashedCols reads Trashed for the row aliased t, as ListTrash does.
+func trashedCols(t, wsCol string) string {
+	return `COALESCE(` + t + `.trash_episode_id, ''), ` + t + `.purge_after, COALESCE(` + wsCol + `, '') = '' OR ` + editableWorkspaceSQL(wsCol, "$2")
+}
+
+// TrashedFile reads a trashed file for its trash readers, with the path of its
+// bytes. Anyone else, or a file not in the trash, is ErrNotFound.
 func (s *Store) TrashedFile(ctx context.Context, actorID, id string) (File, string, error) {
 	var blobPath string
-	file, err := scanFile(withExtra{s.pool.QueryRow(ctx, `SELECT `+fileCols+`, COALESCE(blob_path, '') FROM files f
-		WHERE f.id=$1 AND f.trashed_at IS NOT NULL AND `+trashPreviewAccessSQL("f.user_id", "f.workspace_id"), id, actorID), []any{&blobPath}})
+	var t Trashed
+	file, err := scanFile(withExtra{s.pool.QueryRow(ctx, `SELECT `+fileCols+`, COALESCE(blob_path, ''), `+trashedCols("f", "f.workspace_id")+` FROM files f
+		WHERE f.id=$1 AND f.trashed_at IS NOT NULL AND `+trashReaderSQL("f.user_id", "f.workspace_id"), id, actorID), []any{&blobPath, &t.EpisodeID, &t.PurgeAfter, &t.CanRestore}})
 	if isNoRows(err) {
 		return File{}, "", ErrNotFound
 	}
+	file.Trash = &t
 	return file, blobPath, err
 }
 
 // TrashedMaterial reads a trashed material (not one embedded in a note) for
-// its read-only preview: its content as it was saved when trashed.
+// its trash readers: its content as it was saved when trashed.
 func (s *Store) TrashedMaterial(ctx context.Context, actorID, id string) (Material, error) {
-	mt, err := scanMaterial(s.pool.QueryRow(ctx, `SELECT `+materialCols+` FROM materials m
+	var t Trashed
+	mt, err := scanMaterial(withExtra{s.pool.QueryRow(ctx, `SELECT `+materialCols+`, `+trashedCols("m", "m.workspace_id")+` FROM materials m
 		WHERE m.id=$1 AND m.trashed_at IS NOT NULL AND m.parent_material_id IS NULL
-			AND `+trashPreviewAccessSQL("m.owner_user_id", "m.workspace_id"), id, actorID))
+			AND `+trashReaderSQL("m.owner_user_id", "m.workspace_id"), id, actorID), []any{&t.EpisodeID, &t.PurgeAfter, &t.CanRestore}})
 	if isNoRows(err) {
 		return Material{}, ErrNotFound
 	}
+	mt.Trash = &t
 	return mt, err
 }
 
-// MaterialAssetPaths is the object path of each of the material's own ready
-// images and audio (not one a save left out), by asset id.
-func (s *Store) MaterialAssetPaths(ctx context.Context, materialID string) (map[string]string, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id, object_path FROM editor_assets
-		WHERE material_id=$1 AND status='ready' AND trashed_at IS NULL`, materialID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	paths := map[string]string{}
-	for rows.Next() {
-		var id, path string
-		if err := rows.Scan(&id, &path); err != nil {
-			return nil, err
-		}
-		paths[id] = path
-	}
-	return paths, rows.Err()
+// MaterialInTrashFor says the material is trashed and actorID may open it
+// from the Trash, so its images and audio resolve for them.
+func (s *Store) MaterialInTrashFor(ctx context.Context, actorID, id string) (bool, error) {
+	var ok bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM materials m
+		WHERE m.id=$1 AND m.trashed_at IS NOT NULL AND m.parent_material_id IS NULL
+			AND `+trashReaderSQL("m.owner_user_id", "m.workspace_id")+`)`, id, actorID).Scan(&ok)
+	return ok, err
 }

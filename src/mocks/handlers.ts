@@ -311,7 +311,8 @@ async function mockSourceSession(
 ): Promise<SourceSession | null> {
   const scenario = await scenarioSourceSession(fileId, view);
   if (scenario) return scenario;
-  const file = db.files.find((row) => row.id === fileId);
+  const file =
+    db.files.find((row) => row.id === fileId) ?? trashedEntry(fileId)?.file;
   const link = db.fileLinks[fileId];
   if (!(file && link?.url.startsWith('data:text/plain'))) return null;
   const text = decodeURIComponent(link.url.slice(link.url.indexOf(',') + 1));
@@ -528,6 +529,15 @@ function trashMaterial(id: string, kind?: string) {
     }),
     material: removed,
   });
+}
+
+/** A trashed item as the normal reads serve it to its trash readers: its
+ * row with its trash state (the Go reads' trash fallback). */
+function trashedEntry(id: unknown) {
+  const entry = db.trash.find((row) => row.item.id === id);
+  if (!entry) return;
+  const { canRestore, episodeId, purgeAfter } = entry.item;
+  return { ...entry, trash: { canRestore, episodeId, purgeAfter } };
 }
 
 const pdfAnnotations: Record<string, PDFAnnotation[]> = {};
@@ -884,7 +894,9 @@ export const handlers = [
     () => new HttpResponse(null, { status: 503 })
   ),
   http.get('/api/files/:id/source-session', async ({ params, request }) => {
-    const file = db.files.find((row) => row.id === params.id);
+    const file =
+      db.files.find((row) => row.id === params.id) ??
+      trashedEntry(params.id)?.file;
     const view = new URL(request.url).searchParams.get('view') === 'true';
     // The viewer's read of a text source is lock-free on the server: only the
     // last saved state, while one is ahead of the published bytes.
@@ -2307,7 +2319,11 @@ export const handlers = [
   ),
   http.get('/api/files/:id', async ({ params }) => {
     const f = db.files.find((x) => x.id === params.id);
-    return f ? HttpResponse.json(f) : new HttpResponse(null, { status: 404 });
+    if (f) return HttpResponse.json(f);
+    const trashed = trashedEntry(params.id);
+    return trashed?.file
+      ? HttpResponse.json({ ...trashed.file, trash: trashed.trash })
+      : new HttpResponse(null, { status: 404 });
   }),
   http.get('/api/files/:id/links', async ({ params }) => {
     const links = db.fileLinks[String(params.id)];
@@ -2381,20 +2397,6 @@ export const handlers = [
       items: items.slice(offset, offset + limit),
       nextCursor:
         offset + limit < items.length ? String(offset + limit) : undefined,
-    });
-  }),
-  http.get('/api/trash/:kind/:id/preview', ({ params }) => {
-    const entry = db.trash.find((row) => row.item.id === params.id);
-    if (!entry) return new HttpResponse(null, { status: 404 });
-    if (entry.material) return HttpResponse.json({ material: entry.material });
-    const links = entry.file && db.fileLinks[entry.file.id];
-    if (!links) return new HttpResponse(null, { status: 404 });
-    return HttpResponse.json({
-      file: entry.file,
-      links: {
-        expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
-        ...links,
-      },
     });
   }),
   http.post('/api/trash/:kind/:id/restore', async ({ params, request }) => {
@@ -2601,9 +2603,23 @@ export const handlers = [
     }
 
     await hydrateEditorState(String(params.id));
-    const mt = db.materials.find((x) => x.id === params.id);
+    const trashed = trashedEntry(params.id);
+    const mt =
+      db.materials.find((x) => x.id === params.id) ?? trashed?.material;
     if (!mt) return new HttpResponse(null, { status: 404 });
-    const read = { ...db.learnerMaterial(mt), sharePath: db.mockSharePath(mt) };
+    const read = trashed?.material
+      ? // No role, as the Go read: it opens read-only.
+        {
+          ...db.learnerMaterial(mt),
+          capabilities: {
+            canEdit: false,
+            canEditContent: false,
+            canManageMembers: false,
+            canView: true,
+          },
+          trash: trashed.trash,
+        }
+      : { ...db.learnerMaterial(mt), sharePath: db.mockSharePath(mt) };
     return HttpResponse.json(
       new URL(request.url).searchParams.get('noContent') === 'true'
         ? { ...read, content: { ...read.content, value: [] } }

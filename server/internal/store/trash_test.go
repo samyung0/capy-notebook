@@ -350,7 +350,7 @@ func TestTrashRefusesATranscribingAudioFile(t *testing.T) {
 // A trashed item opens read-only for whoever sees it in a Trash list (Epo
 // 2026-11-12): its payer while it can reach the workspace, and the workspace's
 // owner. An editor who only trashed it, or a payer who left, reads nothing.
-func TestTrashedPreviewReaders(t *testing.T) {
+func TestTrashedItemReaders(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	ownerID, editorID, ws, file, mt := trashFixture(t, s)
@@ -371,21 +371,16 @@ func TestTrashedPreviewReaders(t *testing.T) {
 	}
 
 	got, blobPath, err := s.TrashedFile(ctx, ownerID, file.ID)
-	if err != nil || got.ID != file.ID || blobPath == "" {
-		t.Fatalf("owner file preview = %+v %q %v", got, blobPath, err)
+	if err != nil || got.ID != file.ID || blobPath == "" || got.Trash == nil || got.Trash.EpisodeID == "" || !got.Trash.CanRestore {
+		t.Fatalf("owner file read = %+v %q %v", got, blobPath, err)
 	}
 	note, err := s.TrashedMaterial(ctx, ownerID, mt.ID)
-	if err != nil || note.ID != mt.ID || len(note.Content) == 0 {
-		t.Fatalf("owner material preview = %+v %v", note, err)
+	if err != nil || note.ID != mt.ID || len(note.Content) == 0 || note.Trash == nil || note.Trash.PurgeAfter.IsZero() {
+		t.Fatalf("owner material read = %+v %v", note, err)
 	}
-	// Its own ready images come signed with it; one a save left out does not.
-	image := readyAsset(t, s, mt.ID, ownerID, "image")
-	dropped := readyAsset(t, s, mt.ID, ownerID, "image")
-	if _, err := s.pool.Exec(ctx, `UPDATE editor_assets SET trashed_at=now() WHERE id=$1`, dropped); err != nil {
-		t.Fatal(err)
-	}
-	if paths, err := s.MaterialAssetPaths(ctx, mt.ID); err != nil || len(paths) != 1 || paths[image] == "" {
-		t.Fatalf("trashed note assets = %v %v", paths, err)
+	// Its images resolve for the same readers.
+	if ok, err := s.MaterialInTrashFor(ctx, ownerID, mt.ID); err != nil || !ok {
+		t.Fatalf("owner trashed note assets = %v %v", ok, err)
 	}
 	// The editor pays for its own file, which the owner also reads.
 	if _, _, err := s.TrashedFile(ctx, editorID, editorFile.ID); err != nil {
@@ -406,6 +401,9 @@ func TestTrashedPreviewReaders(t *testing.T) {
 	}
 	if _, err := s.TrashedMaterial(ctx, editorID, mt.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("editor preview of the owner's note = %v", err)
+	}
+	if ok, err := s.MaterialInTrashFor(ctx, editorID, mt.ID); err != nil || ok {
+		t.Fatalf("editor trashed note assets = %v %v", ok, err)
 	}
 	if _, err := s.pool.Exec(ctx, `DELETE FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, ws.ID, editorID); err != nil {
 		t.Fatal(err)

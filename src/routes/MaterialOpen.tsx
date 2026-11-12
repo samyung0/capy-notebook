@@ -23,6 +23,8 @@ export default function MaterialOpen() {
     ? fileQuery
     : materialQuery;
   const workspaceId = data?.workspaceId ?? '';
+  // Opened from the Trash: read-only until restored, which reopens it live.
+  const trash = data?.trash;
   const { data: workspace } = useWorkspace(workspaceId, {
     errorBoundary: false,
   });
@@ -55,7 +57,7 @@ export default function MaterialOpen() {
         ) : (
           <CenterContent
             item={item}
-            key={`${item?.kind}:${item?.id}`}
+            key={`${item?.kind}:${item?.id}:${trash ? 'trash' : 'live'}`}
             leading={
               <IconButton
                 icon="navigationBack"
@@ -77,10 +79,11 @@ export default function MaterialOpen() {
                 to: '.',
               });
             }}
-            readOnly={fileId ? fileReadOnly : false}
+            readOnly={!!trash || (fileId ? fileReadOnly : false)}
             requestedMode={'mode' in search ? (search.mode ?? null) : null}
             standalone
             topics={[]}
+            trash={trash}
             workspaceId={workspaceId}
           />
         )}

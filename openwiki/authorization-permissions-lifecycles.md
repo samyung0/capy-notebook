@@ -2133,18 +2133,24 @@ source epoch or the material `room_schema` so stale clients cannot resume.
 `DELETE /api/trash/{kind}/{id}` are owner-only; a background sweep purges rows
 past `purge_after`, which then reaches the blob outbox like any deletion.
 
-`GET /api/trash/{kind}/{id}/preview` opens a trashed item read-only for whoever
-sees it in a Trash list (the payer, unless they lost access to its workspace,
-or the live workspace's owner; Epo 2026-11-12). A file comes with signed reads
-of its bytes, and a text or CSV file with its saved state too, since its saved
-edits may be ahead of its bytes. A material comes with its saved content (edits
-its room still holds are projected first, as for any material read), a quiz
-without its keys, and signed reads of its own images and audio, since the asset
-resolve refuses a trashed material's. Nothing joins a room or edits. A note's
-embedded quizzes and sets stay unreadable, because they are trashed with it. The
-app shows Office files by their thumbnail and asks for a restore to open a board,
-because those viewers open only live files. An item whose workspace the payer
-left stays shut, as it does in Files.
+A trashed item opens from the Trash on the file page Files uses
+(`/files/{id}`, `/materials/{id}`), read-only, for whoever sees it in a Trash
+list: the payer, unless they lost access to its workspace, or the live
+workspace's owner (Epo 2026-11-12, `trashReaderSQL`). This is the one
+exception to the `trashed_at IS NULL` rule above: when the live read finds
+nothing, these reads fall back to the trash reader rule and answer with a
+`trash` field (episode, purge date, `canRestore`): `GET /api/files/{id}`,
+`GET /api/files/{id}/links`, `GET /api/files/{id}/source-session?view=true`
+(the saved state, which may be ahead of the bytes), `GET /api/materials/{id}`
+(no role, so every capability is off; a quiz without its keys; edits a room
+still holds are projected first) and the editor-asset resolve for the
+material's own images and audio. Every write, room token, record-open and
+annotation read still refuses a trashed row, and the app joins no room for
+it: the page shows a strip with the purge date and Restore, and restoring
+reopens it live. A note's embedded quizzes and sets stay unreadable, because
+they are trashed with it. A board stays shut until restored, since it opens
+only on its workspace. An item whose workspace the payer left stays shut, as
+it does in Files.
 
 A note's or quiz's images follow it (their `editor_assets.material_id` names
 it, in a workspace too; an embedded quiz's images name the quiz, not its

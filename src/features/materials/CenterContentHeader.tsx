@@ -323,11 +323,14 @@ function useHeader(
   });
   if (item.kind === 'file') {
     return {
+      // One opened from the Trash only reads until restored.
       canClone:
         !!fileData &&
+        !fileData.trash &&
         fileCanClone(fileData) &&
         (!fileData.workspaceId || !!workspace?.canClone),
-      canMoveTo: !!fileData && fileCanMoveTo(fileData, workspace),
+      canMoveTo:
+        !!fileData && !fileData.trash && fileCanMoveTo(fileData, workspace),
       file: fileData,
       icon: fileData ? fileIconName(fileData) : '_file',
       showImageZoom: !!fileData && isImageFile(fileData),
@@ -351,6 +354,7 @@ function useHeader(
   return {
     canClone:
       !embedded &&
+      !materialData?.trash &&
       (standalone
         ? !('workspaceId' in mt && mt.workspaceId)
         : materialCanClone(workspace, listed?.assigned)),

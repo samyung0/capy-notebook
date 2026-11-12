@@ -1,5 +1,5 @@
-import { useNavigate, useSearch } from '@tanstack/react-router';
-import { lazy, memo, Suspense, useCallback, useContext, useState } from 'react';
+import { linkOptions, useNavigate, useSearch } from '@tanstack/react-router';
+import { memo, useCallback, useContext, useState } from 'react';
 import {
   usePurgeTrashed,
   useRestoreTrashed,
@@ -53,10 +53,6 @@ import { FILE_KINDS } from '@/lib/listSearch';
 import { PREF_KEYS } from '@/lib/localPrefs';
 import { waitsForConnection } from '@/lib/online';
 import type { FilesTab } from '@/lib/tabSearch';
-
-const TrashPreviewDialog = lazy(
-  () => import('@/features/files/TrashPreviewDialog')
-);
 
 export default function Files() {
   const navigate = useNavigate();
@@ -120,10 +116,24 @@ export default function Files() {
   );
 }
 
+/** Where a trashed item opens read-only: the file page Files opens it on. A
+ * board opens only live, on its workspace. */
+function trashLink(item: TrashItem) {
+  if (item.kind === 'source_file')
+    return linkOptions({
+      params: { fileId: item.id },
+      to: '/files/$fileId',
+    });
+  if (item.materialKind === 'canvas') return;
+  return linkOptions({
+    params: { materialId: item.id },
+    to: '/materials/$materialId',
+  });
+}
+
 /** One trashed item; memoised like FileItem. */
 const TrashCard = memo(function TrashCard({
   item,
-  onOpen,
   onPurge,
   onRestore,
   selected,
@@ -131,8 +141,6 @@ const TrashCard = memo(function TrashCard({
   workspaceIconId,
 }: {
   item: TrashItem;
-  /** Opens it read-only. */
-  onOpen: (item: TrashItem) => void;
   onPurge: (item: TrashItem) => void;
   onRestore: (item: TrashItem) => void;
   selected: boolean;
@@ -169,9 +177,10 @@ const TrashCard = memo(function TrashCard({
       }
       details={formatFileSize(item.sizeBytes)}
       icon={trashIconName(item)}
-      meta={formatDate(item.purgeAfter)}
       // An item whose workspace the payer left stays shut, as in Files.
-      onOpen={item.lostAccess ? toastLostAccess : () => onOpen(item)}
+      link={item.lostAccess ? undefined : trashLink(item)}
+      meta={formatDate(item.purgeAfter)}
+      onOpen={item.lostAccess ? toastLostAccess : undefined}
       pickKey={`${item.kind}:${item.id}:${item.episodeId}`}
       selected={selected}
       thumbnail={{
@@ -195,8 +204,9 @@ function formatDate(iso: string): string {
   );
 }
 
-/** Owner-only bin. Rows are metadata only; opening one reads it read-only
- * (TrashPreviewDialog). Restore and permanent deletion are the actions. */
+/** Owner-only bin. Rows are metadata only; one opens read-only on the file
+ * page, as from Files (trashLink). Restore and permanent deletion are the
+ * actions. */
 function TrashTab({
   view,
   onViewChange,
@@ -225,7 +235,6 @@ function TrashTab({
   );
   const { mutateAsync: restore } = useRestoreTrashed();
   const { mutateAsync: purge } = usePurgeTrashed();
-  const [opened, setOpened] = useState<TrashItem | null>(null);
   const [purgeRequest, setPurgeRequest] = useState<{
     items: TrashItem[];
     empty: boolean;
@@ -357,7 +366,6 @@ function TrashTab({
                   <TrashCard
                     item={item}
                     key={`${item.kind}:${item.id}:${item.episodeId}`}
-                    onOpen={setOpened}
                     onPurge={purgeOne}
                     onRestore={restoreOne}
                     selected={selection.isSelected(item)}
@@ -377,19 +385,6 @@ function TrashTab({
             isFetchingNextPage={isFetchingNextPage}
             isFetchNextPageError={isFetchNextPageError}
           />
-          {opened && (
-            <Suspense>
-              <TrashPreviewDialog
-                icon={trashIconName(opened)}
-                item={opened}
-                onClose={() => setOpened(null)}
-                onRestore={(item) => {
-                  setOpened(null);
-                  restoreOne(item);
-                }}
-              />
-            </Suspense>
-          )}
           <ConfirmDialog
             body={
               purgeRequest?.empty

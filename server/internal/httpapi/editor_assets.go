@@ -300,6 +300,10 @@ func (a *api) resolveEditorAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	readable, err := a.s.EditorAssetReadable(r.Context(), uid(r), asset)
+	// A material opened from the Trash shows its images and audio.
+	if err == nil && !readable && asset.MaterialID != "" {
+		readable, err = a.s.MaterialInTrashFor(r.Context(), uid(r), asset.MaterialID)
+	}
 	if err != nil {
 		a.fail(w, err)
 		return

@@ -286,12 +286,9 @@ type getMaterialInput struct {
 }
 
 func (a *api) getMaterial(ctx context.Context, in *getMaterialInput) (*materialOutput, error) {
-	if _, err := a.materialRead(ctx, in.ID); err != nil {
-		return nil, hErr(err)
-	}
 	role, err := a.s.MaterialEffectiveRole(ctx, userID(ctx), in.ID)
 	if err != nil {
-		return nil, hErr(err)
+		return a.getTrashedMaterial(ctx, in, err)
 	}
 	res, err := a.s.GetMaterial(ctx, in.ID)
 	if err != nil {
@@ -324,6 +321,26 @@ func (a *api) getMaterial(ctx context.Context, in *getMaterialInput) (*materialO
 		out.Body.Content.Value = []map[string]any{}
 	}
 	return out, err
+}
+
+// getTrashedMaterial opens a trashed material from the Trash: no role, so
+// every capability is off and the app shows it read-only.
+func (a *api) getTrashedMaterial(ctx context.Context, in *getMaterialInput, denied error) (*materialOutput, error) {
+	mt, err := a.trashedMaterial(ctx, in.ID, !in.NoContent, denied)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	out, err := a.materialResponse(ctx, mt, "", true, false)
+	if err != nil {
+		return nil, err
+	}
+	if mt.Kind == "quiz" {
+		materialdoc.LearnerQuiz(out.Body.Content)
+	}
+	if in.NoContent {
+		out.Body.Content.Value = []map[string]any{}
+	}
+	return out, nil
 }
 
 func (a *api) updateMaterial(
