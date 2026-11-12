@@ -12,6 +12,7 @@ import {
 import type { WorkspaceOpenSearch } from '@/features/materials/openItem';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { useMediaQuery } from '@/lib/useMediaQuery';
 import { TOUR_SAMPLE_SESSION } from './tourSamples';
 import { stopTour, tourPanels } from './tourStore';
 
@@ -112,6 +113,9 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
   };
   const inWorkspacePage = (path: string) =>
     path === `/workspaces/${workspaceId}`;
+  // Phones have no mic (the top row lost it, Epo 2026-11-11): the last step
+  // centres at once there, its body without the mic.
+  const phone = useMediaQuery('(max-width: 639.98px)');
   const steps: Step[] = [
     {
       at: inWorkspacePage,
@@ -240,7 +244,7 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
     },
     {
       at: (path) => path === '/',
-      body: m.tour_done_body,
+      body: phone ? m.tour_done_body_phone : m.tour_done_body,
       go: () => navigate({ to: '/' }),
       optional: true,
       // A mic in a scrolled page can still sit at the settings step's offset.
@@ -251,9 +255,10 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
         return true;
       },
       // The rail and the full sidebar each have a mic that opens the account
-      // voice overlay; one shows, and phones have none, so it is passed over.
-      spot: () =>
-        [...document.querySelectorAll('[data-voice-mic]')].find(shown),
+      // voice overlay; one shows.
+      spot: phone
+        ? undefined
+        : () => [...document.querySelectorAll('[data-voice-mic]')].find(shown),
       title: m.tour_done_title,
     },
   ];

@@ -375,7 +375,10 @@ Outside this directory, for BlockSuite:
     caret is moved by the host a moment after the inline range is set). A menu
     opened this way and left without a pick takes its slash with it, so the line is
     empty again (`_handleInput` hands the menu the caller's `AbortController`); a
-    search typed after the slash stays.
+    search typed after the slash stays. Only the BlockSuite note on the
+    `blocksuite-notes` branch registers the drag handle and answers
+    `capy-block-menu`; on main (no cut, Epo 2026-11-12) the boards carry this change
+    unused.
 37. Labels through one hook (`shared` `src/utils/label.ts`, new, exported from
     `utils/index.ts`; marked `Capy (local change 37)`; Epo 2026-11-10): `tr(label)`
     returns the app's translation of an English label, set once with
@@ -394,7 +397,8 @@ Outside this directory, for BlockSuite:
     reorder and duplicate and leaves `header` on the first row alone, and a deleted
     header row hands it to the next first row. Only the first row draws as a header
     (`table-cell.ts` checks its row index), so a flag that arrives lower down (two
-    people moving rows at once, a converted table) shows nothing.
+    people moving rows at once, a converted table) shows nothing. The table bar is
+    the BlockSuite note's, on `blocksuite-notes`; main's boards hold no table.
 39. Callout kinds (`blocks/callout` `callout-block.ts`, marked `Capy (local change
     39)`; Epo 2026-11-10): once the app calls `setCalloutVariantIcon`, a callout sets
     `data-variant` from the block's `variant` (none reads as info), draws that kind's
@@ -402,7 +406,9 @@ Outside this directory, for BlockSuite:
     app's styles (`src/features/blocksuite/calloutLook.ts`, `pageEditor.css`).
     Callout's row in the slash menu, in Turn into and in the phone keyboard toolbar
     (`configs/slash-menu.ts`, `rich-text` `conversion.ts`, `widgets/keyboard-toolbar`
-    `config.ts`) shows the information icon, where upstream reuses Text's.
+    `config.ts`) shows the information icon, where upstream reuses Text's. The
+    callout look (`calloutLook.ts`, `pageEditor.css`) is the BlockSuite note's, on
+    `blocksuite-notes`; main's boards never call `setCalloutVariantIcon`.
 
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and

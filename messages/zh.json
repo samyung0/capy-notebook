@@ -2783,6 +2783,7 @@
   "tour_files_body": "文件和主题都在这里。把文件拖到主题上即可归类。",
   "tour_done_title": "准备就绪",
   "tour_done_body": "麦克风可以用语音向 Capy 提问，并开始新的对话。侧边栏的“开始使用”会显示还有哪些可以尝试，你也可以从那里再次开始导览。",
+  "tour_done_body_phone": "侧边栏的“开始使用”会显示还有哪些可以尝试，你也可以从那里再次开始导览。",
   "tour_chats_title": "聊天",
   "tour_chats_body": "你和 Capy 的聊天在侧边栏的“助手”里，旁边是文件和学习。",
   "tour_editor_title": "编辑器",

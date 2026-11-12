@@ -2783,6 +2783,7 @@
   "tour_files_body": "Files and topics live here. Drag a file onto a topic to sort it.",
   "tour_done_title": "You are all set",
   "tour_done_body": "The mic asks Capy by voice and starts a new chat. Get started in the sidebar shows what is left to try, and you can start this tour again from there.",
+  "tour_done_body_phone": "Get started in the sidebar shows what is left to try, and you can start this tour again from there.",
   "tour_chats_title": "Chats",
   "tour_chats_body": "Your chats with Capy live under Agent in the rail. Files and Study sit beside it.",
   "tour_editor_title": "The editor",

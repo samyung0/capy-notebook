@@ -98,24 +98,42 @@ function PlacedCards({
   );
   // The one card being edited, by its block: the same material placed twice
   // edits in one of them.
-  const [editing, setEditing] = useState<string | null>(null);
+  const [editing, setEditing] = useState<{
+    id: string;
+    materialId: string;
+  } | null>(null);
   const qc = useQueryClient();
-  const stopEditing = (materialId: string) => {
-    setEditing(null);
-    // The edits went through the live rooms, not the snapshot every card draws.
-    void qc.invalidateQueries({ queryKey: qk.quiz(materialId) });
-    void qc.invalidateQueries({ queryKey: qk.material(materialId) });
+  // The edits went through the live rooms, not the snapshot every card draws:
+  // read again whenever a card stops editing (Done, another card's Edit, or the
+  // card leaving the board).
+  const edit = (next: typeof editing) => {
+    if (editing) {
+      void qc.invalidateQueries({ queryKey: qk.quiz(editing.materialId) });
+      void qc.invalidateQueries({ queryKey: qk.material(editing.materialId) });
+    }
+    setEditing(next);
   };
+  const gone =
+    editing &&
+    !cards.some(
+      ({ id, materialId }) =>
+        id === editing.id &&
+        materialId === editing.materialId &&
+        listed?.has(materialId) !== false
+    );
+  useEffect(() => {
+    if (gone) edit(null);
+  }, [gone]);
   return (
     <>
       {cards.map(({ host, id, kind, materialId }) =>
         createPortal(
           <CanvasMaterial
-            editing={editing === id}
+            editing={editing?.id === id}
             kind={kind}
             listed={listed?.has(materialId)}
             materialId={materialId}
-            onEdit={(on) => (on ? setEditing(id) : stopEditing(materialId))}
+            onEdit={(on) => edit(on ? { id, materialId } : null)}
             preview={previews.get(materialId)}
           />,
           host,
@@ -144,11 +162,12 @@ function CanvasMaterial({
 }) {
   const box = useRef<HTMLDivElement>(null);
   const { near } = useNearScreen(box);
-  // Who may edit it, read once the card is near (a set's runner reads it anyway).
+  // Who may edit its content, read once the card is near (a set's runner reads
+  // it anyway); an owner at their storage limit can't.
   const { data: material } = useMaterial(near ? materialId : null, {
     errorBoundary: false,
   });
-  const canEdit = !!material?.capabilities.canEdit;
+  const canEdit = !!material?.capabilities.canEditContent;
   // The workspace no longer lists it: the card's own chrome says so.
   if (listed === false) return null;
   return (
@@ -169,8 +188,9 @@ function CanvasMaterial({
           <EmbedLoading />
         ) : editing ? (
           <Suspense fallback={<EmbedLoading />}>
-            {/* Its live rooms while near the screen, as a note's embed in Edit;
-                the last question or card stays, since the card isn't the item. */}
+            {/* Its live rooms while near the screen, as a note's embed in Edit.
+                With no onEmpty it behaves as the item's own page: a quiz may
+                lose its last question, a set keeps its last card. */}
             <AppEmbedEdit materialId={materialId} refKind={kind} />
           </Suspense>
         ) : near ? (

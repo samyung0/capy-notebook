@@ -54,7 +54,7 @@ export default function Explore() {
           value={tab}
         />
       </div>
-      <div className="flex-1 px-4 py-5 sm:px-6">
+      <div className="page-px flex-1 py-5">
         {tab === 'workspaces' ? (
           <Workspaces onClone={setCloneSource} />
         ) : tab === 'quizzes' ? (

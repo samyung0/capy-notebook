@@ -4446,8 +4446,8 @@ Main carries this look for the Plate note and the boards only: there is no cut
 `tableBar`, `calloutLook`) stay on `blocksuite-notes`, and below they describe
 that branch.
 
-- **Tokens:** `src/features/blocksuite/chrome.css`, imported by `pageEditor.ts`
-  and `drawingBoard.ts`, maps AFFiNE's `--affine-*` variables onto the app's tokens
+- **Tokens:** `src/features/blocksuite/chrome.css`, imported by `drawingBoard.ts` (and `pageEditor.ts` on `blocksuite-notes`),
+  maps AFFiNE's `--affine-*` variables onto the app's tokens
   at the root (text, icon, panel, border, hover, shadow, font), since BlockSuite's
   parts read them from inside shadow roots and from popups under `<body>`. It
   outranks the theme sheet and the board's dark palette, and stands down while the
@@ -4891,8 +4891,11 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     invalidates the material's quiz and material queries so every card redraws. One
     card edits at a time (`CanvasMaterialCards`): with no note seat to join inside,
     each edited card takes its own places among the user's 22 joined documents. The
-    editor gets no `onEmpty`, so the last question or card can't be removed from a
-    card, which isn't the item. The block is a BlockSuite block
+    editor gets no `onEmpty`, so it behaves as the item's own page: a quiz may lose
+    its last question, a set keeps its last card. A card stops editing on Done,
+    another card's Edit or leaving the board, and each of those reads its material
+    again. Edit shows on `canEditContent`, so an owner at their storage limit gets
+    none. The block is a BlockSuite block
     like any other but hosts React: it adopts one `div` per card from the host registry
     (`src/features/canvas/materialCardHosts.ts` — kept out of `src/features/blocksuite`,
     which the app's tsconfig excludes), and `CanvasMaterialCards.tsx`, rendered by
