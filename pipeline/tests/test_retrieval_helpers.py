@@ -1478,11 +1478,11 @@ def test_inspect_prints_figures_and_captions_and_sums_up_a_large_figure():
         "series": [{"name": "Rain", "values": [3, 4]}],
     }
     graph = {"type": "graph", "elements": [], "image": {"svg": "<svg>" + "x" * 5000}}
-    labels = [f"Day {n}" for n in range(200)]
+    labels = [f"Day {n}" for n in range(600)]
     large = {
         **chart,
         "labels": labels,
-        "series": [{"name": "Rain", "values": [1] * 200}],
+        "series": [{"name": "Rain", "values": [1] * 600}],
     }
     text = tools._render_inspection(
         {
@@ -1521,7 +1521,7 @@ def test_inspect_prints_figures_and_captions_and_sums_up_a_large_figure():
     assert "    block: " + json.dumps(chart, separators=(",", ":")) in lines
     assert '    block: {"type":"graph","elements":[]}' in lines
     summed = next(line for line in lines if '"Day 0"' in line)
-    assert '"series":["Rain"]' in summed and '"… 188 more"' in summed
+    assert '"series":["Rain"]' in summed and '"… 588 more"' in summed
     assert len(summed) < tools.FIGURE_JSON_CHARS and "summed up from" in summed
     assert "    caption: Drag the slider" in lines
 
