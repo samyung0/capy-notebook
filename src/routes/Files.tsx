@@ -67,7 +67,7 @@ export default function Files() {
           actions={
             <>
               <AccountStatusButton />
-              {/* Add file and New block move here on phones, so the toolbar
+              {/* Add file moves here on phones, so the toolbar
                   keeps one row. */}
               <div className="sm:hidden" ref={setHeaderSlot} />
             </>
@@ -301,13 +301,12 @@ function TrashTab({
           // -mr-1.5: the view toggle's icon on the gutter, as in ListToolbar.
           <div className="-mr-1.5 ml-auto flex min-h-10 items-center gap-1 sm:min-h-11.5">
             <Button
-              className="px-1.5"
+              className="px-2.5"
               disabled={
                 selection.busy || isFetchingNextPage || items.length === 0
               }
               iconLeft="trash"
               onClick={() => void prepareEmptyTrash()}
-              size="sm"
               variant="danger-light"
             >
               {m.trash_empty_action()}
@@ -339,7 +338,7 @@ function TrashTab({
                   m.list_col_name(),
                   m.create_filter_workspace(),
                   m.list_col_details(),
-                  m.trash_expires({ date: '' }).trim(),
+                  m.list_col_expires(),
                 ]}
                 view={view}
               >

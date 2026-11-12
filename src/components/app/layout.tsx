@@ -25,12 +25,15 @@ export function PagePanel({
   fill,
   header,
   className,
+  phoneRow = true,
   sectionClassName,
 }: {
   children: ReactNode;
   /** The page scrolls inside itself: the panel holds it at its height. */
   fill?: boolean;
   header?: ReactNode;
+  /** The phone's nav and profile row on top; the Canvas page has none. */
+  phoneRow?: boolean;
   sectionClassName?: string;
   /** Placement in the parent layout, e.g. flex-1 in a row. */
   className?: string;
@@ -57,7 +60,7 @@ export function PagePanel({
             )}
             ref={scrollRef}
           >
-            <PhoneTopRow className="shrink-0 px-4 pt-3 pb-2" />
+            {phoneRow && <PhoneTopRow className="shrink-0 px-4 pt-3 pb-2" />}
             {header && <div className="shrink-0">{header}</div>}
             <div
               className={cn(

@@ -34,6 +34,7 @@ func TestClassifySplitsEditorFromChat(t *testing.T) {
 		"/api/workspaces/ws_1/sources/import-content":       classImport,
 		"/api/workspaces/ws_1/sources/imports/job_1":        classDefault,
 		"/api/workspaces/ws_1/files/blank":                  classUpload,
+		"/api/files/blank":                                  classUpload,
 		"/api/integrations":                                 classIntegration,
 		"/api/integrations/google/picker-token":             classIntegration,
 		"/api/me":                                           classDefault,

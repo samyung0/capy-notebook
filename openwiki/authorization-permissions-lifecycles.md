@@ -735,6 +735,9 @@ Sources: [membership handlers](../server/internal/httpapi/huma_membership.go#L39
   engine builds the starter and again at the insert. The file is stored ready
   and not processed (parse mode `none`, no credits); the Indexing tab
   processes it like any store-only upload. It is in the upload rate class.
+  `POST /api/files/blank` (Files' Add file on No workspace) makes the same
+  file standalone: the caller's own, no topic (refused with one) and, like a
+  standalone upload, no file-count cap.
 - Direct cloud-source inspection treats DNS and connection failures as
   retryable provider outages. Request cancellation remains cancellation.
 - Short-lived read links (a file's `/links`, an editor asset's resolve, the

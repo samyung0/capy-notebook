@@ -1,6 +1,6 @@
 import { parseHTML } from 'linkedom';
 import type { ReactNode } from 'react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import type { Workspace } from '@/api/types';
 import { getLocale, m } from '@/i18n';
 
@@ -12,10 +12,7 @@ const { document, window } = parseHTML(
 );
 Object.assign(globalThis, { document, IS_REACT_ACT_ENVIRONMENT: true, window });
 
-const state = vi.hoisted(() => ({
-  storage: null as null | { kind: string; short: string },
-  workspaces: [] as Partial<Workspace>[],
-}));
+const state = vi.hoisted(() => ({ workspaces: [] as Partial<Workspace>[] }));
 vi.mock('@/api/hooks', () => ({
   useDeleteEditorAsset: () => ({ mutateAsync: vi.fn() }),
   useDeleteOwnedFile: () => ({ mutateAsync: vi.fn() }),
@@ -96,17 +93,26 @@ vi.mock('@/features/materials/useBlockActions', () => ({
     dialogs: null,
     frozen: false,
     menuFor: () => [],
-    newMenu: [],
   }),
 }));
 vi.mock('@/features/workspace/WorkspaceHealth', () => ({
   AccountStatusButton: () => null,
   useAccountFrozen: () => false,
-  useStorageStatus: () => state.storage,
 }));
+// Its Add to field, as a button that picks Biology.
 vi.mock('@/features/workspace/LazyAddSourceDialog', () => ({
-  AddSourceDialog: ({ workspaceId }: { workspaceId: string | null }) => (
-    <div data-add-source={String(workspaceId)} />
+  AddSourceDialog: ({
+    onDestinationChange,
+    workspaceId,
+  }: {
+    onDestinationChange?: (id: string | null) => void;
+    workspaceId: string | null;
+  }) => (
+    <button
+      data-add-source={String(workspaceId)}
+      onClick={() => onDestinationChange?.('ws_bio')}
+      type="button"
+    />
   ),
   addSourceIntent: {},
 }));
@@ -115,24 +121,15 @@ const { act } = await import('react');
 const { createRoot } = await import('react-dom/client');
 const { default: Files } = await import('./Files');
 
-const workspace = (id: string, name: string, canEdit: boolean) =>
-  ({
-    capabilities: { canEdit },
-    iconId: 'books',
-    id,
-    name,
-  }) as Partial<Workspace>;
-
-afterEach(() => {
-  state.storage = null;
-});
-
 const buttonByText = (text: string) =>
   [...document.querySelectorAll('button')].find(
     (button) => button.textContent?.trim() === text
   );
+const addSource = () => document.querySelector('[data-add-source]');
 
-async function openChooser() {
+// Add file (Epo 2026-11-12): its dialog opens at once on No workspace, and the
+// destination is picked in it.
+it('opens Add file on No workspace and follows the destination picked in it', async () => {
   const root = createRoot(document.getElementById('root') as never);
   await act(async () => root.render(<Files />));
   await act(async () => {
@@ -140,54 +137,10 @@ async function openChooser() {
       new window.Event('click', { bubbles: true })
     );
   });
-  const rows = [
-    ...document.querySelectorAll('[role=dialog] button'),
-  ] as HTMLButtonElement[];
-  return { root, rows };
-}
-
-// Add file (P3, 2026-10-27): No workspace first, then the workspaces the
-// caller edits in the list's order; the pick opens the Add file dialog for
-// that destination.
-it('offers No workspace and editable workspaces, then opens Add file there', async () => {
-  state.workspaces = [
-    workspace('ws_bio', 'Biology', true),
-    workspace('ws_view', 'Shared reading', false),
-    workspace('ws_chem', 'Chemistry', true),
-  ];
-  const { root, rows } = await openChooser();
-  expect(rows.map((row) => row.textContent?.trim())).toEqual([
-    m.clone_no_workspace(),
-    'Biology',
-    'Chemistry',
-  ]);
-
+  expect(addSource()?.getAttribute('data-add-source')).toBe('null');
   await act(async () => {
-    rows[1].dispatchEvent(new window.Event('click', { bubbles: true }));
+    addSource()?.dispatchEvent(new window.Event('click', { bubbles: true }));
   });
-  expect(document.querySelector('[role=dialog]')).toBeNull();
-  expect(
-    document.querySelector('[data-add-source]')?.getAttribute('data-add-source')
-  ).toBe('ws_bio');
-  await act(async () => root.unmount());
-
-  const second = await openChooser();
-  await act(async () => {
-    second.rows[0].dispatchEvent(new window.Event('click', { bubbles: true }));
-  });
-  expect(
-    document.querySelector('[data-add-source]')?.getAttribute('data-add-source')
-  ).toBe('null');
-  await act(async () => second.root.unmount());
-});
-
-it('turns every destination off for a frozen account, with the reason', async () => {
-  state.workspaces = [workspace('ws_bio', 'Biology', true)];
-  state.storage = { kind: 'frozen-self', short: m.account_frozen_short() };
-  const { root, rows } = await openChooser();
-  expect(rows.every((row) => row.disabled)).toBe(true);
-  expect(document.querySelector('[role=dialog]')?.textContent).toContain(
-    m.account_frozen_short()
-  );
+  expect(addSource()?.getAttribute('data-add-source')).toBe('ws_bio');
   await act(async () => root.unmount());
 });

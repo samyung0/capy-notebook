@@ -2,13 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { linkOptions, useNavigate } from '@tanstack/react-router';
 import { useCallback, useState } from 'react';
 import { updateMaterialBodyTitleMax } from '@/api/gen/validators';
-import {
-  useCreateFlashcardSet,
-  useCreateQuiz,
-  useCreateStandaloneNote,
-  useDeleteMaterial,
-  useUpdateMaterial,
-} from '@/api/hooks';
+import { useDeleteMaterial, useUpdateMaterial } from '@/api/hooks';
 import type { MaterialListItem } from '@/api/types';
 import { TrashConfirmDialog } from '@/components/app/TrashConfirmDialog';
 import type { MenuItem } from '@/components/ui/Menu';
@@ -39,65 +33,14 @@ export function blockLink(item: MaterialListItem) {
 }
 
 /**
- * The Files page's block actions: New block's menu (a standalone note, quiz
- * or flashcard set), each block's menu, and the dialogs those open, hoisted so
+ * The Files page's block actions: each block's menu and the dialogs it opens
+ * (new blocks come from Add file's Create tab), hoisted so
  * one instance serves every card. A block another member owns (All files)
  * opens, studies, clones, downloads and shows its properties only.
  */
 export function useBlockActions() {
   const navigate = useNavigate();
   const frozen = useAccountFrozen();
-  const { mutate: createNote } = useCreateStandaloneNote();
-  const { mutate: createQuiz } = useCreateQuiz();
-  const { mutate: createFlashcardSet } = useCreateFlashcardSet();
-  const newMenu: MenuItem[] = [
-    {
-      icon: 'newNote',
-      label: m.create_kind_note(),
-      onClick: () =>
-        createNote(
-          {},
-          {
-            onSuccess: (material) =>
-              navigate({
-                params: { materialId: material.id },
-                to: '/materials/$materialId',
-              }),
-          }
-        ),
-    },
-    {
-      icon: 'quiz',
-      label: m.editor_quiz(),
-      onClick: () =>
-        createQuiz(
-          { name: m.quiz_untitled(), questions: [] },
-          {
-            onSuccess: (quiz) =>
-              navigate({
-                params: { materialId: quiz.id },
-                to: '/materials/$materialId',
-              }),
-          }
-        ),
-    },
-    {
-      icon: 'flashcards',
-      label: m.editor_flashcards(),
-      onClick: () =>
-        createFlashcardSet(
-          { color: 'purple', name: m.flashcards_new_flashcards() },
-          {
-            onSuccess: (set) =>
-              navigate({
-                params: { flashcardSetId: set.id },
-                to: '/flashcards/$flashcardSetId',
-              }),
-          }
-        ),
-    },
-  ];
-
   const [renaming, setRenaming] = useState<MaterialListItem | null>(null);
   const [sharing, setSharing] = useState<MaterialListItem | null>(null);
   const [deleting, setDeleting] = useState<MaterialListItem | null>(null);
@@ -244,5 +187,5 @@ export function useBlockActions() {
     </>
   );
 
-  return { dialogs, frozen, menuFor, newMenu };
+  return { dialogs, frozen, menuFor };
 }

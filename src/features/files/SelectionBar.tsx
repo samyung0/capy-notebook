@@ -1,12 +1,12 @@
 import type { MouseEvent, ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
 import type { IconName } from '@/components/ui/Icon';
-import { IconButton } from '@/components/ui/IconButton';
 import { m } from '@/i18n';
 
-/** Stands in for a list's toolbar while anything is selected: clear, the
- * count, Select all, then the page's actions (`SelectionAction`). Labels give
- * way to icons on phones. */
+/** Stands in for a list's toolbar while anything is selected: clear with the
+ * count on it, Select all, then the page's actions (`SelectionAction`), all
+ * at Add file's size (Epo 2026-11-12). Action labels give way to icons on
+ * phones; the count stays. */
 export function SelectionBar({
   allSelected,
   busy,
@@ -23,20 +23,20 @@ export function SelectionBar({
   onSelectAll: () => void;
 }) {
   return (
-    <div className="-mx-1.5 flex min-h-10 w-full items-center gap-1 sm:min-h-11.5">
-      <IconButton
-        className="-translate-y-px p-1.5"
+    <div className="-mx-2.5 flex min-h-10 w-full items-center gap-1 sm:min-h-11.5">
+      <Button
+        aria-label={m.files_clear_selection()}
+        className="px-2.5"
         disabled={busy}
-        icon="x"
-        label={m.files_clear_selection()}
+        iconLeft="x"
         onClick={onClear}
-        size="sm"
         variant="ghost-hover"
-      />
-      <span
-        aria-live="polite"
-        className="mr-1 whitespace-nowrap font-semibold text-sm"
       >
+        <span aria-hidden className="whitespace-nowrap">
+          {m.files_selected_count({ count })}
+        </span>
+      </Button>
+      <span aria-live="polite" className="sr-only">
         {m.files_selected_count({ count })}
       </span>
       {!allSelected && (
@@ -68,11 +68,10 @@ export function SelectionAction({
   return (
     <Button
       aria-label={label}
-      className="px-1.5"
+      className="px-2.5"
       disabled={disabled}
       iconLeft={icon}
       onClick={onClick}
-      size="sm"
       variant={danger ? 'danger-light' : 'ghost-hover'}
     >
       <span className="hidden sm:inline">{label}</span>
