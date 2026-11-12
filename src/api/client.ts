@@ -436,8 +436,6 @@ export const qk = {
   todoDone: (params?: unknown) => ['todo', 'done', params ?? null] as const,
   topics: (wsId: string) => ['workspace', wsId, 'topics'] as const,
   trash: (wsId?: string) => ['trash', wsId ?? 'all'] as const,
-  trashPreview: (kind: string, id: string, episodeId: string) =>
-    ['trash', 'preview', kind, id, episodeId] as const,
   usage: ['usage'] as const,
   usageEvents: (params?: unknown) =>
     ['usage', 'events', params ?? null] as const,

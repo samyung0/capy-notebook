@@ -225,7 +225,6 @@ import type {
   TransferWorkspaceReq,
   TrashActionReq,
   TrashPage,
-  TrashPreview,
   URLResp,
   UndoEditReq,
   UpdateCommentReq,
@@ -11512,58 +11511,6 @@ export const purgeTrashed = async (kind: 'source_file' | 'material',
 
   const data: purgeTrashedResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as purgeTrashedResponse
-}
-
-
-
-export type previewTrashedResponse200 = {
-  data: TrashPreview
-  status: 200
-}
-
-export type previewTrashedResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type previewTrashedResponseSuccess = (previewTrashedResponse200) & {
-  headers: Headers;
-};
-export type previewTrashedResponseError = (previewTrashedResponseDefault) & {
-  headers: Headers;
-};
-
-export type previewTrashedResponse = (previewTrashedResponseSuccess | previewTrashedResponseError)
-
-export const getPreviewTrashedUrl = (kind: 'source_file' | 'material',
-    id: string,) => {
-
-
-
-
-  return `/api/trash/${kind}/${id}/preview`
-}
-
-/**
- * @summary Open a trashed file or material read-only
- */
-export const previewTrashed = async (kind: 'source_file' | 'material',
-    id: string, options?: RequestInit): Promise<previewTrashedResponse> => {
-
-  const res = await fetch(getPreviewTrashedUrl(kind,id),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: previewTrashedResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as previewTrashedResponse
 }
 
 

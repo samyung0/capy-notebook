@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { prerenderToNodeStream } from 'react-dom/static';
 import { describe, expect, it, vi } from 'vitest';
 import type { Material } from '@/api/types';
+import { TrashBanner } from '@/features/files/TrashBanner';
 import { m } from '@/i18n';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { MaterialContent } from './CenterContent';
@@ -168,6 +169,7 @@ vi.mock('@/api/hooks', async () => {
             isPending: false,
           },
     useMe: () => ({ data: { id: 'u_1' } }),
+    useRestoreTrashed: () => ({ isPending: false, mutate: () => {} }),
   };
 });
 vi.mock('@tanstack/react-router', async (original) => ({
@@ -312,4 +314,34 @@ it('shows the center file error, not what it read, once a refresh is refused', a
   const html = await opened('noteRefused');
   expect(html).toContain('data-error-surface="panel"');
   expect(html).not.toContain('Note body');
+});
+
+// Opened from the Trash, a set reads its stored cards as from Files, without
+// Study; the strip says when it goes and offers Restore (Epo 2026-11-12).
+it('opens a trashed set read-only, under a strip offering Restore', async () => {
+  const set = await render(
+    <MaterialContent
+      allowExternalAssets={false}
+      centerQuiz={false}
+      forceReadOnly
+      materialId="cards"
+      onEditorStatusChange={() => {}}
+      trashed
+    />
+  );
+  expect(set).toContain('Card front');
+  expect(set).not.toContain(m.action_study());
+  const strip = await render(
+    <TrashBanner
+      item={{ id: 'cards', kind: 'material' }}
+      trash={{
+        canRestore: true,
+        episodeId: 'ep_1',
+        purgeAfter: '2026-12-12T00:00:00Z',
+      }}
+      workspaceId="ws"
+    />
+  );
+  expect(strip).toContain('2026');
+  expect(strip).toContain(m.trash_restore());
 });

@@ -259,12 +259,14 @@ function FileViewerContent({
   // once the pages exist, so the document never waits on this.
   const isPdf =
     !!file?.hasBytes && (file.kind === 'pdf' || fileExt(file.name) === 'pdf');
+  // Opened from the Trash: it reads without marks or edits until restored.
+  const trashed = !!file?.trash;
   const {
     errorUpdatedAt: annotationsErrorUpdatedAt,
     isError: annotationsFailed,
   } = useQuery({
     ...pdfAnnotationsQuery(file?.id ?? ''),
-    enabled: isPdf,
+    enabled: isPdf && !trashed,
   });
   useEffect(() => {
     if (!isPdf || !annotationsFailed || !annotationsErrorUpdatedAt) return;
@@ -299,9 +301,11 @@ function FileViewerContent({
   // unless their account is frozen (Epo 2026-10-27): its account state stands
   // in for a workspace's capabilities, so neither allows Edit before it loads.
   const standalone = !file.workspaceId;
-  const canEdit = standalone
-    ? !(mePending || frozen)
-    : !!workspace?.capabilities.canEditContent;
+  const canEdit =
+    !trashed &&
+    (standalone
+      ? !(mePending || frozen)
+      : !!workspace?.capabilities.canEditContent);
   if (office) {
     // The capability picks View or Edit once, when the view mounts.
     if (standalone ? mePending : workspacePending) return <FileLoading />;
@@ -319,7 +323,7 @@ function FileViewerContent({
   const convertTo = legacyOfficeTarget(file.name);
   if (convertTo) {
     if (!standalone && workspacePending) return <FileLoading />;
-    if (canConvertLegacy(file, workspace, frozen)) {
+    if (!trashed && canConvertLegacy(file, workspace, frozen)) {
       return <UnsupportedPreview convertTo={convertTo} file={file} />;
     }
   }
@@ -334,7 +338,7 @@ function FileViewerContent({
   }
   return (
     <ResolvedFileView
-      annotationsReadOnly={frozen || !!links.storageFull}
+      annotationsReadOnly={trashed || frozen || !!links.storageFull}
       canEdit={canEdit}
       file={{ ...file, url: links.url }}
       imageZoom={imageZoom}
@@ -521,7 +525,7 @@ function ResolvedFileView({
   if (file.kind === 'pdf' || ext === 'pdf') {
     const pdf = lazyView(
       <PdfView
-        annotationFile={file}
+        annotationFile={file.trash ? undefined : file}
         annotationsReadOnly={annotationsReadOnly}
         onRetry={onRetryLinks}
         page={page}

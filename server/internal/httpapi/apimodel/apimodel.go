@@ -166,19 +166,6 @@ type SourceUploadPolicy struct {
 	AudioMaxDurationSeconds      int                           `json:"audioMaxDurationSeconds"`
 }
 
-// TrashPreview is a trashed item opened read-only: a file with signed reads
-// of its bytes, or a material with its saved content (a quiz without keys).
-// A text or CSV file also carries its view session, whose saved edits may be
-// ahead of the bytes; a material, signed reads of its own images and audio by
-// asset id.
-type TrashPreview struct {
-	Assets   map[string]string           `json:"assets,omitempty"`
-	File     *File                       `json:"file,omitempty"`
-	Links    *FileLinks                  `json:"links,omitempty"`
-	Material *Material                   `json:"material,omitempty"`
-	Source   *store.BrowserSourceSession `json:"source,omitempty"`
-}
-
 type Material struct {
 	ID             string                   `json:"id"`
 	WorkspaceID    string                   `json:"workspaceId"`
@@ -230,6 +217,9 @@ type Material struct {
 	// StorageFull: the material is view-only because its payer (its creator)
 	// is at its storage limit; "self" when that is the viewer. Editors only.
 	StorageFull store.StorageFullBy `json:"storageFull,omitempty"`
+	// Trash: the material is in the trash, opened read-only from it with
+	// every capability off; Restore is the way back to editing.
+	Trash *store.Trashed `json:"trash,omitempty"`
 }
 
 // MaterialUpdateResult is the lightweight acknowledgement returned by
@@ -264,6 +254,7 @@ func FromMaterial(m store.Material) (Material, error) {
 		Revision: m.Revision,
 		IsOwner:  m.IsOwner, Role: m.Role, Capabilities: m.Capabilities,
 		Provenance: m.Provenance, ParentMaterialID: m.ParentMaterialID, Hidden: m.Hidden,
+		Trash: m.Trash,
 	}, nil
 }
 

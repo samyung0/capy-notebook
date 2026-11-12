@@ -225,6 +225,9 @@ type File struct {
 	WorkspaceName string      `json:"workspaceName,omitempty"`
 	LostAccess    bool        `json:"lostAccess,omitempty" doc:"The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it"`
 	Rights        *FileRights `json:"rights,omitempty" doc:"What the caller may do with the file, read with the page (Files page rows)"`
+	// Trash: the file is in the trash, opened read-only by one of its trash
+	// readers (TrashedFile).
+	Trash *Trashed `json:"trash,omitempty"`
 }
 
 // FileRights is what the caller may do with a listed file, on the rules each
@@ -466,6 +469,8 @@ type Material struct {
 	IsOwner      bool               `json:"isOwner"`
 	Role         *WorkspaceRole     `json:"role,omitempty"`
 	Capabilities AccessCapabilities `json:"capabilities"`
+	// Trash: in the trash, read by one of its trash readers (TrashedMaterial).
+	Trash *Trashed `json:"-"`
 }
 
 // Provenance is what a curated material or generated file was written from:

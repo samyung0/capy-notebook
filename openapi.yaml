@@ -3500,6 +3500,8 @@ components:
         topicId:
           nullable: true
           type: string
+        trash:
+          $ref: "#/components/schemas/Trashed"
         workspaceId:
           type: string
         workspaceName:
@@ -4552,6 +4554,8 @@ components:
         topicId:
           nullable: true
           type: string
+        trash:
+          $ref: "#/components/schemas/Trashed"
         updatedAt:
           format: date-time
           type: string
@@ -8686,27 +8690,21 @@ components:
       required:
         - items
       type: object
-    TrashPreview:
+    Trashed:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/TrashPreview.json
-          format: uri
-          readOnly: true
+        canRestore:
+          description: "The caller may restore it: a standalone item, or edit access to its workspace"
+          type: boolean
+        episodeId:
           type: string
-        assets:
-          additionalProperties:
-            type: string
-          type: object
-        file:
-          $ref: "#/components/schemas/File"
-        links:
-          $ref: "#/components/schemas/FileLinks"
-        material:
-          $ref: "#/components/schemas/Material"
-        source:
-          $ref: "#/components/schemas/BrowserSourceSession"
+        purgeAfter:
+          format: date-time
+          type: string
+      required:
+        - episodeId
+        - purgeAfter
+        - canRestore
       type: object
     URLResp:
       additionalProperties: false
@@ -15214,39 +15212,6 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Permanently delete a trashed file or material
-      tags:
-        - Trash
-  /api/trash/{kind}/{id}/preview:
-    get:
-      operationId: previewTrashed
-      parameters:
-        - in: path
-          name: kind
-          required: true
-          schema:
-            enum:
-              - source_file
-              - material
-            type: string
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TrashPreview"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Open a trashed file or material read-only
       tags:
         - Trash
   /api/trash/{kind}/{id}/restore:

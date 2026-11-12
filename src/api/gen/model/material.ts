@@ -11,6 +11,7 @@ import type { MaterialKind } from './materialKind.ts';
 import type { Privacy } from './privacy.ts';
 import type { Provenance } from './provenance.ts';
 import type { StorageFullBy } from './storageFullBy.ts';
+import type { Trashed } from './trashed.ts';
 import type { UserColor } from './userColor.ts';
 import type { WorkspaceRole } from './workspaceRole.ts';
 
@@ -47,6 +48,7 @@ export interface Material {
   title: string;
   /** @nullable */
   topicId: string | null;
+  trash?: Trashed;
   updatedAt: string;
   workspaceId: string;
   workspaceName: string;
