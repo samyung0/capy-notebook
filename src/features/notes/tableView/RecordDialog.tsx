@@ -1,6 +1,12 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/Dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogTitle,
+  useIsPhone,
+} from '@/components/ui/Dialog';
 import { m } from '@/i18n';
 import { CellText, ColumnLabel } from './cells';
 import { useTableView } from './context';
@@ -25,10 +31,25 @@ export function RecordDialog({
 }) {
   const { block, write } = useTableView();
   const [editing, setEditing] = useState<Editing>(null);
+  const phone = useIsPhone();
   const row = block.rows.find(({ id }) => id === rowId);
   if (!row) return null;
   const [title, ...fields] = drawnColumns(block);
   const name = cellValue(title, row);
+  // Like every dialog's action: the footer's end, or the phone header's right.
+  const remove = write && (
+    <Button
+      iconLeft="trash"
+      onClick={() => {
+        write((current) => deleteRow(current, row.id));
+        onClose();
+      }}
+      size="lg"
+      variant="danger"
+    >
+      {m.table_view_delete_record()}
+    </Button>
+  );
   return (
     <Dialog onOpenChange={(open) => !open && onClose()} open>
       <DialogContent
@@ -41,7 +62,7 @@ export function RecordDialog({
           (event.currentTarget as HTMLElement).focus();
         }}
       >
-        <DialogTitle className="pb-4 sm:pr-10">
+        <DialogTitle action={phone && remove} className="pb-4 sm:pr-10">
           {write ? (
             <CommitInput
               aria-label={title.name}
@@ -90,20 +111,7 @@ export function RecordDialog({
             </div>
           ))}
         </dl>
-        {write && (
-          <Button
-            className="mt-5 self-start"
-            iconLeft="trash"
-            onClick={() => {
-              write((current) => deleteRow(current, row.id));
-              onClose();
-            }}
-            size="sm"
-            variant="danger"
-          >
-            {m.table_view_delete_record()}
-          </Button>
-        )}
+        {!phone && remove && <DialogFooter>{remove}</DialogFooter>}
       </DialogContent>
     </Dialog>
   );
