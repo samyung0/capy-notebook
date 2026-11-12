@@ -17,6 +17,14 @@
   --capy-shape-button-triangle: #fff;
   --capy-shape-button-stroke-triangle: #d9dde3;
   --capy-note-edge: #e6e6e6;
+  /* The board keeps AFFiNE's blue for what is selected or active, as its selection
+     frames and pieces are drawn in it; chrome.css maps it to the app's accent for
+     the note. */
+  --affine-primary-color: #1e96eb;
+  --affine-brand-color: #1e96eb;
+  --affine-v2-icon-activated: #1e96eb;
+  --affine-v2-button-primary: #1e96eb;
+  --affine-v2-table-indicator-activated: #1e96eb;
   /* BlockSuite's selection layer and the ☰ menu are placed against the board, not
      against a page box that starts higher (a tablet's header row above it). */
   position: relative;
@@ -90,8 +98,8 @@ html.dark:not([data-board-light]) .capy-board {
   color: var(--affine-text-primary-color);
   background: var(--affine-background-overlay-panel-color);
   border: 1px solid var(--affine-border-color);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 10%);
+  border-radius: var(--radius-toolbar);
+  box-shadow: var(--shadow-pop);
   transform: translate(-50%, -50%);
 }
 
@@ -126,7 +134,7 @@ html.dark:not([data-board-light]) .capy-board {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  border-radius: 7px;
+  border-radius: var(--radius-toolbar-button);
 }
 
 .capy-formula-actions .ghost {
@@ -153,8 +161,8 @@ html.dark:not([data-board-light]) .capy-board {
   padding: 3px;
   background: var(--affine-background-overlay-panel-color);
   border: 1px solid var(--affine-border-color);
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
+  border-radius: var(--radius-toolbar);
+  box-shadow: var(--shadow-pop);
 }
 
 .capy-symbols[hidden] {
@@ -171,7 +179,7 @@ html.dark:not([data-board-light]) .capy-board {
   font-size: 15px;
   color: var(--affine-text-primary-color);
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--radius-toolbar-button);
 }
 
 .capy-symbols button:hover {
@@ -256,7 +264,7 @@ html.dark:not([data-board-light]) .capy-board {
   height: 36px;
   color: var(--affine-icon-color);
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: var(--radius-toolbar-button);
 }
 
 .capy-plane-editor button:hover {
@@ -276,8 +284,8 @@ html.dark:not([data-board-light]) .capy-board {
   position: absolute;
   background: var(--affine-background-overlay-panel-color);
   border: 1px solid var(--affine-border-color);
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
+  border-radius: var(--radius-toolbar);
+  box-shadow: var(--shadow-pop);
 }
 
 /* Top right of an open card: the ☰ menu and Done, each on its own (Epo 2026-11-08).
@@ -299,7 +307,7 @@ html.dark:not([data-board-light]) .capy-board {
   font-weight: 600;
   color: var(--affine-background-primary-color);
   background: var(--affine-text-primary-color);
-  border-radius: 8px;
+  border-radius: var(--radius-toolbar);
   box-shadow: 0 4px 12px rgb(0 0 0 / 14%);
 }
 
@@ -403,8 +411,8 @@ html.dark:not([data-board-light]) .capy-board {
   color: var(--affine-text-secondary-color);
   background: var(--affine-background-overlay-panel-color);
   border: 1px solid var(--affine-border-color);
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
+  border-radius: var(--radius-toolbar);
+  box-shadow: var(--shadow-pop);
 }
 
 .capy-chart-axis label {
@@ -442,6 +450,11 @@ html.dark:not([data-board-light]) .capy-board {
   }
 }
 
+/* The board's panels (the ☰ button and its list, an open card's tools, the formula
+   card) are the note's floating bar: the overlay fill and border through AFFiNE's
+   variables, which chrome.css maps onto our tokens, with the style's corner and the
+   pop shadow (Epo 2026-11-10, mock S2). */
+
 /* The ☰ menu, on the board and on an open card. Its button keeps its panel under the
    hover tint, and the editor's own button rules are out-ranked here. */
 .capy-menu {
@@ -458,7 +471,7 @@ html.dark:not([data-board-light]) .capy-board {
   height: 36px;
   color: var(--affine-icon-color);
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: var(--radius-toolbar-button);
 }
 
 .capy-board .capy-menu button:hover {
@@ -474,8 +487,8 @@ html.dark:not([data-board-light]) .capy-board {
   height: 40px;
   background: var(--affine-background-overlay-panel-color);
   border: 1px solid var(--affine-border-color);
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
+  border-radius: var(--radius-toolbar);
+  box-shadow: var(--shadow-pop);
 }
 
 .capy-board .capy-menu .capy-menu-button:hover {
@@ -496,8 +509,8 @@ html.dark:not([data-board-light]) .capy-board {
   padding: 4px;
   background: var(--affine-background-overlay-panel-color);
   border: 1px solid var(--affine-border-color);
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
+  border-radius: var(--radius-toolbar);
+  box-shadow: var(--shadow-pop);
 }
 
 .capy-board .capy-menu-list > button {

@@ -153,6 +153,11 @@ its light or dark palette. Settings → Customizations → Theme chooses it.
   thumbnail's outer focus ring is 1px more, its image 1px less),
   `--radius-card`, `--radius-card-lg`, `--radius-card-xl` (shell panels),
   `--radius-flashcard` (study and grid flashcards; Capy keeps Fisheye's 24px).
+  `--radius-toolbar` and `--radius-toolbar-button` are every floating bar and
+  its buttons, BlockSuite's and the app's shared `BlockToolbar` alike, and
+  BlockSuite's menus (8 and 5px in Capy and Notion, 14 and 10px in Fisheye);
+  see "The note's and the board's chrome" in
+  [plate-editor.md](plate-editor.md#the-notes-and-the-boards-chrome).
 - Control heights: `--button-h-sm`, `--button-h-lg` and `--control-h`
   (Button, Input and Select `md`, one value so a button beside a field lines
   up), phone values first and the `sm` breakpoint's in a media block.

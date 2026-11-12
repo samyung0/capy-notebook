@@ -5,7 +5,8 @@ export class TextDuotoneIcon extends LitElement {
   static override styles = css`
     svg {
       display: flex;
-      font-size: 20px;
+      /* Capy (local change 34): the bar's icon size. */
+      font-size: var(--capy-toolbar-icon-size, 20px);
     }
     svg > path:nth-child(1) {
       fill: var(--background, unset);

@@ -173,6 +173,24 @@ async function paste(editor: Locator, data: Record<string, string>) {
   }, data);
 }
 
+/** Brings a line of the editor on screen and waits until it is drawn. The
+ * editor skips the chunks off screen (`content-visibility: auto`) and draws
+ * one a frame or two after it scrolls in: a forced click before that puts the
+ * caret at the end of the chunk above. */
+async function drawn(text: Locator) {
+  await text.scrollIntoViewIfNeeded();
+  await expect
+    .poll(() =>
+      text.evaluate((element) => {
+        const { bottom, left, top } = element.getBoundingClientRect();
+        return element.contains(
+          document.elementFromPoint(left + 1, (top + bottom) / 2)
+        );
+      })
+    )
+    .toBe(true);
+}
+
 const line = (index: number) => ({
   children: [{ text: `Line ${index}` }],
   id: `line-${index}`,
@@ -247,6 +265,7 @@ for (const engine of ['chromium', 'webkit'] as const)
       await expectEditorLive(ownerPage);
       const editor = ownerPage.locator('[contenteditable="true"]').first();
       const hundred = editor.getByText('Line 100', { exact: true });
+      await drawn(hundred);
       const box = (await hundred.boundingBox())!;
       await hundred.click({
         force: true,
@@ -310,6 +329,7 @@ for (const engine of ['chromium', 'webkit'] as const)
 
       // The owner adds 20 blocks at the top of the note.
       const zero = editor.getByText('Line 0', { exact: true });
+      await drawn(zero);
       await zero.click({ force: true, position: { x: 1, y: 5 } });
       await ownerPage.keyboard.press('Home');
       for (let index = 0; index < 20; index += 1) {

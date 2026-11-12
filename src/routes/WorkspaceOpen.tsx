@@ -1215,7 +1215,7 @@ function WorkspaceOpen() {
                 has its own corners. */}
             {!railShown && (
               <ToolbarButton
-                className="absolute top-2 left-2 z-10 size-10 rounded-lg border border-(--affine-border-color) bg-(--affine-background-overlay-panel-color) text-(--affine-icon-color) shadow-[0_4px_12px_rgb(0_0_0/8%)] hover:bg-[linear-gradient(var(--affine-hover-color),var(--affine-hover-color))] hover:text-(--affine-icon-color) [[data-workspace-canvas]:has(.capy-board[data-editor-open])_&]:hidden"
+                className="absolute top-2 left-2 z-10 size-10 rounded-(--radius-toolbar) border border-(--affine-border-color) bg-(--affine-background-overlay-panel-color) text-(--affine-icon-color) shadow-pop hover:bg-[linear-gradient(var(--affine-hover-color),var(--affine-hover-color))] hover:text-(--affine-icon-color) [[data-workspace-canvas]:has(.capy-board[data-editor-open])_&]:hidden"
                 label={m.workspace_section_dashboard()}
                 onClick={openDashboard}
               >

@@ -18,11 +18,11 @@ import {
   substringMatchScore,
 } from '@blocksuite/affine-shared/utils';
 import { WithDisposable } from '@blocksuite/global/lit';
+import { tr } from '@blocksuite/affine-shared/utils';
 import { ArrowDownSmallIcon } from '@blocksuite/icons/lit';
 import { autoPlacement, offset } from '@floating-ui/dom';
 import { html, LitElement, nothing, type PropertyValues } from 'lit';
 import { property, state } from 'lit/decorators.js';
-import { ifDefined } from 'lit/directives/if-defined.js';
 import { styleMap } from 'lit/directives/style-map.js';
 import { when } from 'lit/directives/when.js';
 import groupBy from 'lodash-es/groupBy';
@@ -65,6 +65,21 @@ const isTextInputKey = (e: KeyboardEvent) => {
 type InnerSlashMenuContext = SlashMenuContext & {
   onClickItem: (item: SlashMenuActionItem) => void;
   searching: boolean;
+};
+
+// Capy (local change 35, Epo 2026-11-10, mock M1): compact rows as the app's All
+// blocks popover: 28px, the name with its Markdown shortcut at the right, the
+// descriptions are not shown.
+const SHORTCUTS: Record<string, string> = {
+  'Heading 1': '#',
+  'Heading 2': '##',
+  'Heading 3': '###',
+  'Bulleted List': '-',
+  'Numbered List': '1.',
+  'To-do List': '[]',
+  Quote: '>',
+  'Code Block': '```',
+  Divider: '---',
 };
 
 export class SlashMenu extends WithDisposable(LitElement) {
@@ -424,16 +439,15 @@ export class InnerSlashMenu extends WithDisposable(LitElement) {
   };
 
   private readonly _renderActionItem = (item: SlashMenuActionItem) => {
-    const { name, icon, description, tooltip } = item;
+    const { name, icon, tooltip } = item;
 
     const hover = item === this._activeItem;
 
     return html`<icon-button
       class="slash-menu-item ${slashItemClassName(item)}"
       width="100%"
-      height="44px"
-      text=${name}
-      subText=${ifDefined(description)}
+      height="28px"
+      text=${tr(name)}
       data-testid="${name}"
       hover=${hover}
       @mousemove=${() => {
@@ -443,6 +457,12 @@ export class InnerSlashMenu extends WithDisposable(LitElement) {
       @click=${() => this.context.onClickItem(item)}
     >
       ${icon && html`<div class="slash-menu-item-icon">${icon}</div>`}
+      ${
+        SHORTCUTS[name] &&
+        html`<span slot="suffix" class="slash-menu-item-shortcut"
+          >${SHORTCUTS[name]}</span
+        >`
+      }
       ${
         tooltip &&
         html`<affine-tooltip
@@ -468,7 +488,7 @@ export class InnerSlashMenu extends WithDisposable(LitElement) {
     return html`<div class="slash-menu-group">
       ${when(
         !this.context.searching,
-        () => html`<div class="slash-menu-group-name">${groupName}</div>`
+        () => html`<div class="slash-menu-group-name">${tr(groupName)}</div>`
       )}
       ${items.map(this._renderItem)}
     </div>`;
@@ -481,16 +501,15 @@ export class InnerSlashMenu extends WithDisposable(LitElement) {
   };
 
   private readonly _renderSubMenuItem = (item: SlashMenuSubMenu) => {
-    const { name, icon, description } = item;
+    const { name, icon } = item;
 
     const hover = item === this._activeItem;
 
     return html`<icon-button
       class="slash-menu-item ${slashItemClassName(item)}"
       width="100%"
-      height="44px"
-      text=${name}
-      subText=${ifDefined(description)}
+      height="28px"
+      text=${tr(name)}
       data-testid="${name}"
       hover=${hover}
       @mousemove=${() => {

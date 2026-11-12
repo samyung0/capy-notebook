@@ -2,7 +2,10 @@ import './components/add-block-widget.js';
 
 import { EdgelessCRUDIdentifier } from '@blocksuite/affine-block-surface';
 import type { RootBlockModel } from '@blocksuite/affine-model';
-import { focusTextModel } from '@blocksuite/affine-rich-text';
+import {
+  focusTextModel,
+  getInlineEditorByModel,
+} from '@blocksuite/affine-rich-text';
 import { DocModeProvider } from '@blocksuite/affine-shared/services';
 import {
   isInsideEdgelessEditor,
@@ -13,7 +16,7 @@ import type { IVec, Point, Rect } from '@blocksuite/global/gfx';
 import { type BlockComponent, WidgetComponent } from '@blocksuite/std';
 import type { GfxModel } from '@blocksuite/std/gfx';
 import { computed, type ReadonlySignal, signal } from '@preact/signals-core';
-import { html, nothing } from 'lit';
+import { html } from 'lit';
 import { query, state } from 'lit/decorators.js';
 import { classMap } from 'lit/directives/class-map.js';
 import { styleMap } from 'lit/directives/style-map.js';
@@ -85,6 +88,13 @@ export class AffineDragHandleWidget extends WidgetComponent<RootBlockModel> {
     this.host.updateComplete
       .then(() => {
         focusTextModel(this.std, newBlockId);
+        // Capy (local change 36, Epo 2026-11-10): + asks what to add, so the
+        // slash menu opens on the new line (its widget types the slash).
+        const editor = getInlineEditorByModel(this.std, newBlockId);
+        const slash = this.host.querySelector('affine-slash-menu-widget') as {
+          openOn?: (editor: unknown) => void;
+        } | null;
+        if (editor) slash?.openOn?.(editor);
       })
       .catch(console.error);
 
@@ -252,9 +262,12 @@ export class AffineDragHandleWidget extends WidgetComponent<RootBlockModel> {
           }
     );
     const isGfx = this.activeDragHandle === 'gfx';
+    // Capy (local change 36, Epo 2026-11-10, mock H1): a note block's handle is the
+    // six-dot grip beside the + button, as the canvas's was already.
     const classes = {
       'affine-drag-handle-grabber': true,
-      dots: isGfx ? true : false,
+      dots: true,
+      page: !isGfx,
     };
 
     return html`
@@ -267,18 +280,12 @@ export class AffineDragHandleWidget extends WidgetComponent<RootBlockModel> {
         </div>
         <div class="affine-drag-handle-container">
           <div class=${classMap(classes)}>
-            ${
-              isGfx
-                ? html`
-                    <div class="dot"></div>
-                    <div class="dot"></div>
-                    <div class="dot"></div>
-                    <div class="dot"></div>
-                    <div class="dot"></div>
-                    <div class="dot"></div>
-                  `
-                : nothing
-            }
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
           </div>
         </div>
         <div class="affine-drag-hover-rect" style=${hoverRectStyle}></div>
