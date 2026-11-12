@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/Input';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { keepKeys, useTableView } from './context';
+import { COLUMN_ICON } from './display';
 import {
   canAddColumn,
   deleteColumn,
@@ -25,7 +26,7 @@ import {
   setSort,
   uniqueName,
 } from './edit';
-import { COLUMN_ICON, COLUMN_KIND_LABEL } from './look';
+import { COLUMN_KIND_LABEL } from './look';
 import {
   COLUMN_KINDS,
   TABLE_VIEW_LIMITS,

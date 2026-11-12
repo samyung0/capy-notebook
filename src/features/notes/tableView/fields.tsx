@@ -1,14 +1,14 @@
 import { useRef, useState } from 'react';
-import { checkboxVariants } from '@/components/ui/Checkbox';
 import { Icon } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { keepKeys } from './context';
-import { formatDate, OPTION_CHIP_CLASS } from './look';
+import { OPTION_CHIP_CLASS, OPTION_CHIP_SHAPE, tableViewDate } from './display';
 import {
   type CellValue,
   cellOption,
   cellValue,
+  plainNumber,
   type SelectOption,
   type TableViewColumn,
   type TableViewRow,
@@ -27,7 +27,8 @@ export function OptionChip({
   return (
     <span
       className={cn(
-        'inline-flex min-w-0 max-w-full items-center gap-1 rounded px-2 text-[13px] leading-5.5',
+        OPTION_CHIP_SHAPE,
+        'gap-1',
         onClear && 'pr-1',
         OPTION_CHIP_CLASS[option.color],
         className
@@ -48,19 +49,19 @@ export function OptionChip({
   );
 }
 
-/** A checkbox as drawn where it cannot be changed. */
+/** A checkbox cell's box, as the read-only table draws it. */
 export function CheckboxMark({ checked }: { checked: boolean }) {
-  return (
-    <span
-      className={cn(checkboxVariants({ checked }), 'size-4.5 cursor-default')}
-    >
-      {checked && <Icon name="check" size={13} strokeWidth={2.4} />}
+  return checked ? (
+    <span className="inline-flex size-4 items-center justify-center rounded bg-fg align-middle text-surface">
+      <Icon name="tick" size={12} strokeWidth={3} />
     </span>
+  ) : (
+    <span className="inline-block size-4 rounded border-[1.5px] border-line-strong align-middle" />
   );
 }
 
-/** A cell's value as drawn (spec "How readers draw it"); empty cells show a
- * muted dash, an empty title nothing. */
+/** A cell's value as drawn (spec "How readers draw it"), as the read-only
+ * table draws it on one line; an empty cell is blank. */
 export function CellText({
   column,
   row,
@@ -70,17 +71,18 @@ export function CellText({
 }) {
   const value = cellValue(column, row);
   if (column.kind === 'checkbox') return <CheckboxMark checked={!!value} />;
-  if (value === undefined || value === '')
-    return column.kind === 'title' ? null : (
-      <span className="text-fg-muted">—</span>
-    );
+  if (value === undefined || value === '') return null;
   if (column.kind === 'select') {
     const option = cellOption(column, row);
     return option ? <OptionChip option={option} /> : null;
   }
-  if (column.kind === 'date')
-    return <span className="truncate">{formatDate(value as string)}</span>;
-  return <span className="truncate">{String(value)}</span>;
+  const text =
+    column.kind === 'date'
+      ? tableViewDate(String(value))
+      : typeof value === 'number'
+        ? plainNumber(value)
+        : String(value);
+  return <span className="truncate">{text}</span>;
 }
 
 /** A text field that writes on Enter or leaving it; Escape drops the draft. */

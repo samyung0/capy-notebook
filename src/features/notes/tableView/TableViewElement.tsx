@@ -25,6 +25,7 @@ import {
   type TableViewEdit,
   useTableView,
 } from './context';
+import { COLUMN_ICON } from './display';
 import { EditableTable, type Editing } from './EditableTable';
 import {
   addRow,
@@ -40,7 +41,7 @@ import {
   uniqueName,
 } from './edit';
 import { CommitInput } from './fields';
-import { COLUMN_ICON, VIEW_ICON, VIEW_KIND_LABEL } from './look';
+import { VIEW_ICON, VIEW_KIND_LABEL } from './look';
 import {
   type CellValue,
   drawnColumns,

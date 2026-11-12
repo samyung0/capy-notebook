@@ -3,6 +3,7 @@ import { Icon } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useTableView } from './context';
+import { tableViewDate } from './display';
 import type { Editing } from './EditableTable';
 import {
   canAddRow,
@@ -12,12 +13,12 @@ import {
   setCell,
 } from './edit';
 import { CommitInput, OptionChip, textCell } from './fields';
-import { formatDate } from './look';
 import {
   cellOption,
   cellValue,
   drawnColumns,
   groupColumn,
+  plainNumber,
   TABLE_VIEW_LIMITS,
   type TableViewColumn,
   type TableViewRow,
@@ -44,8 +45,9 @@ function cardFields(
       const option = cellOption(column, row);
       if (option) out.push(option.name);
     } else if (column.kind === 'date')
-      out.push(`${column.name} ${formatDate(value as string)}`);
-    else if (column.kind === 'number') out.push(`${column.name} ${value}`);
+      out.push(`${column.name} ${tableViewDate(value as string)}`);
+    else if (column.kind === 'number')
+      out.push(`${column.name} ${plainNumber(value as number)}`);
     else if (column.kind === 'checkbox') out.push(`✓ ${column.name}`);
     else out.push(String(value));
   }

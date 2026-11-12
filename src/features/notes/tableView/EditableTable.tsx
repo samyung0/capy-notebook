@@ -1,5 +1,4 @@
 import { memo, useRef } from 'react';
-import { Checkbox } from '@/components/ui/Checkbox';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,12 +29,13 @@ import {
   uniqueName,
 } from './edit';
 import { DateEditor, SelectEditor } from './editors';
-import { CellText, CommitInput, textCell } from './fields';
+import { CellText, CheckboxMark, CommitInput, textCell } from './fields';
 import { COLUMN_WIDTH, widthVars } from './look';
 import {
   type CellValue,
   cellValue,
   drawnColumns,
+  plainNumber,
   sortedRows,
   TABLE_VIEW_LIMITS,
   type TableViewColumn,
@@ -151,14 +151,19 @@ function Cell({
   const done = () => onEdit(null);
   if (column.kind === 'checkbox')
     return (
-      <div className={content}>
-        <Checkbox
-          aria-label={column.name}
-          checked={value === true}
-          onChange={set}
-          size={18}
-        />
-      </div>
+      <button
+        aria-checked={value === true}
+        aria-label={column.name}
+        className={cn(
+          content,
+          'outline-none hover:bg-surface-hover-bg/60 focus-visible:bg-surface-hover-bg'
+        )}
+        onClick={() => set(value !== true)}
+        role="checkbox"
+        type="button"
+      >
+        <CheckboxMark checked={value === true} />
+      </button>
     );
   if (editing && (title || column.kind === 'text' || column.kind === 'number'))
     return (
@@ -184,7 +189,13 @@ function Cell({
             ? (text) => parseNumber(text) !== null
             : undefined
         }
-        value={value === undefined ? '' : String(value)}
+        value={
+          value === undefined
+            ? ''
+            : typeof value === 'number'
+              ? plainNumber(value)
+              : String(value)
+        }
       />
     );
   const button = (
