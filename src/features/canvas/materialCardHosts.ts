@@ -1,3 +1,4 @@
+import type { UndoTarget } from '@/features/collaboration/undo';
 /** The hosts the workspace canvas lends the page for its placed quizzes and sets
  * (Epo 2026-11-09): a placed card is the runner itself, rendered by the page into
  * the element its block adopts. Kept apart from the board's own code so the page
@@ -103,4 +104,20 @@ export const setCardEditing = (next: EditingCard | null) => {
   if (editingCard?.id === next?.id) return;
   editingCard = next;
   tellState();
+};
+
+/** The edited card's own Undo and Redo (its quiz's or set's history, Epo
+ * 2026-11-13): while a card is being edited the board's Undo and Redo act on it,
+ * as the plane's editor takes them while open. */
+let editingUndo: UndoTarget | null = null;
+
+export const cardUndo = () => (editingCard ? editingUndo : null);
+
+/** Lent by the edited card's editor (`UndoSink`); taking it back leaves a newer
+ * card's alone. */
+export const lendCardUndo = (target: UndoTarget) => {
+  editingUndo = target;
+  return () => {
+    if (editingUndo === target) editingUndo = null;
+  };
 };

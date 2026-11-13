@@ -9,7 +9,6 @@ import { m } from '@/i18n';
 import {
   type ChartElementModel,
   drawChart,
-  LABEL_REACH,
   setChartEditor,
 } from './boardChart';
 import {
@@ -73,6 +72,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   /** The label being typed: under a bar, or in a pie at an angle. */
   let typing: {
     angle?: number;
+    reach?: number;
     barId?: string;
     id?: string;
     text: string;
@@ -92,8 +92,11 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     (a.kind === 'spoke'
       ? a.angle === (b as typeof a).angle
       : a.id === (b as typeof a).id);
-  /** How far a pie's line or label being dragged has turned; written when it lifts. */
+  /** How far a pie's line being dragged has turned; written when it lifts. */
   let turning: { by: number } | null = null;
+  /** How far a pie's label being dragged has moved, in pixels: it goes anywhere, in
+   * the pie or out of it (Epo 2026-11-13). */
+  let shifting: Vec | null = null;
   /** What a Select drag moves: every chosen item of the held one's kind when it's one
    * of them, so several move together (Epo 2026-11-09), else just it. */
   const groupOf = (held: Picked) =>
@@ -213,19 +216,34 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       .at(-1) ?? Math.max(...model.spokes, 0);
   /** The sector a new line closes: from the line before it, clockwise. */
   const sectorTo = (angle: number) => (angle - lineBefore(angle) + 360) % 360;
-  /** The pie label under a point, if any. */
-  const labelAt = ([x, y]: Vec) => {
+  /** Where a pie label sits on screen. */
+  const labelPoint = ({
+    angle,
+    reach,
+  }: Pick<PieLabel, 'angle' | 'reach'>): Vec => {
     const { cx, cy, r } = pieCircle(screen(), pads());
-    return model.labels.find(({ angle }) => {
-      const turn = (angle * Math.PI) / 180;
-      return (
-        Math.hypot(
-          x - (cx + r * LABEL_REACH * Math.sin(turn)),
-          y - (cy - r * LABEL_REACH * Math.cos(turn))
-        ) < PIXELS_TO_LABEL
-      );
-    });
+    const turn = (angle * Math.PI) / 180;
+    return [cx + r * reach * Math.sin(turn), cy - r * reach * Math.cos(turn)];
   };
+  /** A pie label's place for a point on screen, kept on the card. */
+  const labelPlace = ([px, py]: Vec) => {
+    const { h, w } = screen();
+    const { cx, cy, r } = pieCircle(screen(), pads());
+    const x = Math.min(w - 8, Math.max(8, px));
+    const y = Math.min(h - 8, Math.max(8, py));
+    // Unrounded, unlike a line's whole degree, so a far label doesn't jump.
+    const degrees = (Math.atan2(x - cx, cy - y) * 180) / Math.PI;
+    return {
+      angle: (degrees + 360) % 360,
+      reach: Math.hypot(x - cx, y - cy) / r,
+    };
+  };
+  /** The pie label under a point, if any. */
+  const labelAt = ([x, y]: Vec) =>
+    model.labels.find((label) => {
+      const [lx, ly] = labelPoint(label);
+      return Math.hypot(x - lx, y - ly) < PIXELS_TO_LABEL;
+    });
 
   /** A bar's box on screen, its label under it included. */
   const barBox = (slot: number, value: number) => {
@@ -314,7 +332,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       )
       .map((angle) => ({ angle, kind: 'spoke' }));
     const labels: Picked[] = model.labels
-      .filter(({ angle }) => inside(at(angle, r * LABEL_REACH)))
+      .filter((label) => inside(labelPoint(label)))
       .map(({ id }) => ({ id, kind: 'label' }));
     return [...spokes, ...labels];
   };
@@ -385,7 +403,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       const { id } = one;
       const label = labels.find((each) => each.id === id);
       if (!label) return;
-      const [x, y] = at(label.angle, r * LABEL_REACH);
+      const [x, y] = labelPoint(label);
       ctx.font = '12px Arial, sans-serif';
       const w = ctx.measureText(label.text).width + 12;
       ctx.fillStyle = HALO;
@@ -426,9 +444,6 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       const angles = new Set(
         group.flatMap((one) => (one.kind === 'spoke' ? one.angle : []))
       );
-      const ids = new Set(
-        group.flatMap((one) => (one.kind === 'label' ? one.id : []))
-      );
       spokes = spokes.map((spoke) =>
         angles.has(spoke) ? spin(spoke, by) : spoke
       );
@@ -437,9 +452,17 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
           ? { ...slice, from: spin(slice.from, by) }
           : slice
       );
-      labels = labels.map((label) =>
-        ids.has(label.id) ? { ...label, angle: spin(label.angle, by) } : label
+    }
+    if (shifting && picked) {
+      const [dx, dy] = shifting;
+      const ids = new Set(
+        groupOf(picked).flatMap((one) => (one.kind === 'label' ? one.id : []))
       );
+      labels = labels.map((label) => {
+        if (!ids.has(label.id)) return label;
+        const [x, y] = labelPoint(label);
+        return { ...label, ...labelPlace([x + dx, y + dy]) };
+      });
     }
     return { bars, fills, labels, spokes };
   };
@@ -482,7 +505,11 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       );
     }
     for (const one of chosen) drawPicked(one, area, bars, labels, spokes);
-    if (picked && turning && !chosen.some((one) => picked && same(one, picked)))
+    if (
+      picked &&
+      (turning || shifting) &&
+      !chosen.some((one) => picked && same(one, picked))
+    )
       drawPicked(picked, area, bars, labels, spokes);
     if (
       live &&
@@ -569,17 +596,18 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
         y: base + 14,
       };
     } else {
+      // A new label goes where it's clicked.
       const label = labelAt(at);
       if (!label && model.labels.length >= LABELS_MAX) return;
-      const angle = label?.angle ?? angleAt(at);
-      const { cx, cy, r } = pieCircle(screen(), pads());
-      const turn = (angle * Math.PI) / 180;
+      const place = label ?? labelPlace(at);
+      const [x, y] = labelPoint(place);
       typing = {
-        angle,
+        angle: place.angle,
         id: label?.id,
+        reach: place.reach,
         text: label?.text ?? '',
-        x: cx + r * LABEL_REACH * Math.sin(turn),
-        y: cy - r * LABEL_REACH * Math.cos(turn),
+        x,
+        y,
       };
     }
     drawControls();
@@ -608,6 +636,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
             {
               angle: open.angle ?? 0,
               id: open.id ?? crypto.randomUUID(),
+              reach: open.reach ?? 0,
               text,
             },
           ],
@@ -759,13 +788,11 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       if (dragging && held.kind === 'bar') {
         const slot = model.bars.findIndex(({ id }) => id === held.id);
         if (slot >= 0) live = { slot, value: valueAt(at) };
-      } else if (dragging) {
-        const from =
-          held.kind === 'spoke'
-            ? held.angle
-            : model.labels.find(({ id }) => id === held.id)?.angle;
-        const by = from === undefined ? 0 : angleAt(at) - from;
-        // Lines stay off the others; labels go anywhere round.
+      } else if (dragging && held.kind === 'label')
+        shifting = [at[0] - pressedAt[0], at[1] - pressedAt[1]];
+      else if (dragging && held.kind === 'spoke') {
+        const by = angleAt(at) - held.angle;
+        // Lines stay off the others.
         const group = groupOf(held).flatMap((one) =>
           one.kind === 'spoke' ? one.angle : []
         );
@@ -792,6 +819,8 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     const next = moving();
     const turned = turning;
     turning = null;
+    const shifted = shifting;
+    shifting = null;
     const box = boxing;
     boxing = null;
     const held = picked;
@@ -841,8 +870,8 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
           ? { angle: spin(one.angle, by), kind: 'spoke' }
           : one
       );
-    } else if (turned && held?.kind === 'label') {
-      if (turned.by) update({ labels: next.labels });
+    } else if (shifted && held?.kind === 'label') {
+      update({ labels: next.labels });
     } else if (live) {
       const { slot, value } = live;
       live = null;
@@ -874,6 +903,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     pressed = false;
     live = null;
     turning = null;
+    shifting = null;
     erasing = null;
     boxing = null;
     trail.end();

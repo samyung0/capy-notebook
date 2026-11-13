@@ -98,12 +98,12 @@ import { combinedDarkCssVariables } from '@toeverything/theme';
 import { html, render } from 'lit';
 import * as Y from 'yjs';
 import { userToast } from '@/components/ui/userToast';
-import { onCardState } from '@/features/canvas/materialCardHosts';
+import { cardUndo, onCardState } from '@/features/canvas/materialCardHosts';
 import { m } from '@/i18n';
 import { fitImageOffThread } from '@/lib/fitImageOffThread';
 import { fromBase64, toBase64 } from './base64';
 import { BoardBlobSource } from './boardBlobs';
-import { chartExtensions } from './boardChart';
+import { ChartElementModel, chartExtensions, openChart } from './boardChart';
 import { asImage } from './boardData';
 import {
   formulaExtensions,
@@ -115,7 +115,13 @@ import { forgetFormulas } from './boardFormulaDraw';
 import { closeUp, IMAGE_SIDE_MAX, type Vec } from './boardGeometry';
 import type { BoardImages } from './boardImages';
 import { watchNoteLinks } from './boardNoteLinks';
-import { addPlane, planeExtensions, planeMarks } from './boardPlane';
+import {
+  addPlane,
+  openPlane,
+  PlaneElementModel,
+  planeExtensions,
+  planeMarks,
+} from './boardPlane';
 import './boardChartEditor';
 import {
   CardsStoreExtension,
@@ -125,7 +131,7 @@ import {
   refreshMaterialCards,
   type WorkspaceLinks,
 } from './boardCards';
-import { closeBoardEditor } from './boardEditorShell';
+import { closeBoardEditor, watchBoardEditor } from './boardEditorShell';
 import {
   addedElementFits,
   type BoardKind,
@@ -359,6 +365,9 @@ export type DrawingBoardOptions = {
   workspace?: WorkspaceLinks;
   /** `save()`'s `doc`. A board that doesn't check out throws a BoardLoadError. */
   saved?: string;
+  /** A plane's or chart's full-board editor opened (its card's id) or closed
+   * (null), for the page's URL. */
+  onEditor?: (cardId: string | null) => void;
 };
 
 export { BoardLoadError } from './boardLoad';
@@ -551,19 +560,21 @@ export function mountDrawingBoard(
       ...(readOnly
         ? []
         : [
+            // A card being edited takes them: its quiz's or set's own history
+            // (Epo 2026-11-13).
             {
-              disabled: !store.canUndo,
+              disabled: !(cardUndo()?.canUndo() ?? store.canUndo),
               icon: Undo03Icon,
               keepsOpen: true,
               label: m.drawing_board_undo(),
-              run: () => store.undo(),
+              run: () => (cardUndo() ?? store).undo(),
             },
             {
-              disabled: !store.canRedo,
+              disabled: !(cardUndo()?.canRedo() ?? store.canRedo),
               icon: Redo03Icon,
               keepsOpen: true,
               label: m.drawing_board_redo(),
-              run: () => store.redo(),
+              run: () => (cardUndo() ?? store).redo(),
             },
           ]),
       { label: m.drawing_board_fit_to_screen(), run: () => gfx.fitToScreen() },
@@ -610,6 +621,35 @@ export function mountDrawingBoard(
     event.stopPropagation();
   };
   document.addEventListener('keydown', slotKeys);
+  // While a card is edited, ⌘Z and ⇧⌘Z (Ctrl+Y) on the board reach its quiz's or
+  // set's history, not the canvas's (Epo 2026-11-13). A field keeps its own undo,
+  // and a dialog over the page (a question's) its own.
+  const cardKeys = (event: KeyboardEvent) => {
+    const history = cardUndo();
+    if (!history || !(event.metaKey || event.ctrlKey) || event.altKey) return;
+    const key = event.key.toLowerCase();
+    const redo = key === 'y' || (key === 'z' && event.shiftKey);
+    if (!redo && key !== 'z') return;
+    const path = event.composedPath();
+    const [target] = path;
+    const onBoard =
+      target === document.body || (!!board && path.includes(board));
+    if (
+      !onBoard ||
+      (target instanceof Element &&
+        target.closest('input, textarea, [contenteditable="true"], math-field'))
+    )
+      return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (redo) history.redo();
+    else history.undo();
+    if (menu.open) menu.draw();
+  };
+  window.addEventListener('keydown', cardKeys, true);
+  const unwatchEditor = options.onEditor
+    ? watchBoardEditor(gfx, options.onEditor)
+    : null;
   // A double click on empty canvas: a canvas text label on an answer board, with
   // its maths symbol row and fonts; an inline note on the workspace canvas, which
   // takes links, lists and bold (Epo 2026-11-13; local change 59).
@@ -842,6 +882,8 @@ export function mountDrawingBoard(
   };
 
   return {
+    /** Leaves the open plane or chart, writing it as Done does. */
+    closeEditor: () => closeBoardEditor(gfx),
     /** The first view again, with this room around it: a board mounted ahead, shown
      * at the screen's width then (a tablet turned since). Before the first view, it
      * only sets that view's room. */
@@ -849,6 +891,8 @@ export function mountDrawingBoard(
       room = padding;
       if (fitted) fitView();
     },
+    /** Whether the board holds `id`, a card or anything else drawn. */
+    has: (id: string) => !!gfx.getElementById(id),
     /** The same with every file the board can get, asking for the ones it
      * doesn't hold yet (a stored drawing's, not shown so far): what Done sends.
      * An image whose file is nowhere is left out, and stays an empty frame. */
@@ -870,6 +914,15 @@ export function mountDrawingBoard(
       ].map((id) => ({ file: blobs.held(id), id })),
     /** Once no image is being stored. */
     imagesSettled: () => blobs.settled(),
+    /** Opens the full-board editor of the plane or chart card `id`: false when
+     * the board has no such card (or opens nothing for editing). */
+    openEditor: (id: string) => {
+      const element = gfx.getElementById(id);
+      if (element instanceof PlaneElementModel) openPlane(gfx, element);
+      else if (element instanceof ChartElementModel) openChart(gfx, element);
+      else return false;
+      return !!board?.querySelector('.capy-plane-editor');
+    },
     /** Out of sight but kept mounted: an open card closes, nothing stays selected,
      * and the page's keys and pastes no longer reach it. */
     putAway: () => {
@@ -889,6 +942,14 @@ export function mountDrawingBoard(
         } | null;
         if (view && !view.blobUrl) view.refreshData?.();
       }
+    },
+    /** Brings `id` into view when it is out of it, so a card's runner mounts. */
+    reveal: (id: string) => {
+      const element = gfx.getElementById(id);
+      if (!(element && 'elementBound' in element)) return;
+      const bound = element.elementBound;
+      if (!gfx.viewport.viewportBounds.contains(bound))
+        gfx.viewport.setCenter(bound.center[0], bound.center[1]);
     },
     /** The board to store, with no undo history: a fresh document keeps only what's
      * on the board (200 plane clicks were 606 KB live, 7.5 KB this way), rounded
@@ -950,6 +1011,8 @@ export function mountDrawingBoard(
       unguard?.();
       imageAdds.unsubscribe();
       document.removeEventListener('keydown', slotKeys);
+      window.removeEventListener('keydown', cardKeys, true);
+      unwatchEditor?.();
       menu.dispose();
       if (onChange) store.spaceDoc.off('update', onChange);
       symbols?.unmount();

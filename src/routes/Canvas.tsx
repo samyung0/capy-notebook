@@ -7,6 +7,7 @@ import {
   useWorkspaces,
 } from '@/api/hooks';
 import { PagePanel } from '@/components/app/layout';
+import { userToast } from '@/components/ui/userToast';
 import { CanvasMaterialCards } from '@/features/canvas/CanvasMaterialCards';
 import { CanvasMaterialDialog } from '@/features/canvas/CanvasMaterialDialog';
 import { useCanvasBoard } from '@/features/canvas/useCanvasBoard';
@@ -18,6 +19,7 @@ import {
 import { useCanvasPicker } from '@/features/canvas/useCanvasPicker';
 import { FileError } from '@/features/files/FileStates';
 import { m } from '@/i18n';
+import { useOpenLink } from '@/lib/openLink';
 
 /** One of the person's own canvases as the page's board, saved as a
  * workspace's is, with no workspace. Its cards are every quiz and set the person
@@ -34,6 +36,18 @@ function OwnCanvas({
   onRetry: () => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
+  const { open } = useSearch({ from: '/auth-shell/canvas' });
+  const navigate = useNavigate();
+  const link = useOpenLink(
+    open,
+    (next, replace) =>
+      void navigate({
+        replace,
+        search: (previous) => ({ ...previous, open: next }),
+        to: '/canvas',
+      }),
+    () => userToast({ title: m.canvas_open_gone() })
+  );
   const materials = useCanvasMaterials();
   const { data: workspaces } = useWorkspaces();
   const linked = useMemo(() => {
@@ -77,7 +91,7 @@ function OwnCanvas({
       open: () => canvasById(id),
       save: (body) => saveCanvas(id, body),
     },
-    { gone, onBoard, workspace: links }
+    { gone, link, onBoard, workspace: links }
   );
   return (
     <div
@@ -85,7 +99,7 @@ function OwnCanvas({
       ref={container}
     >
       {failed && <FileError message={failed} onRetry={onRetry} />}
-      <CanvasMaterialCards materials={materials} />
+      <CanvasMaterialCards link={link} materials={materials} />
       <CanvasMaterialDialog
         materialId={editing}
         onClose={() => setEditing(null)}

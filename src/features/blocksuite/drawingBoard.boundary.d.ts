@@ -25,6 +25,7 @@ export type DrawingBoardOptions = {
   fitPadding?: [number, number, number, number];
   images?: import('./boardImages').BoardImages;
   onChange?: () => void;
+  onEditor?: (cardId: string | null) => void;
   plane?: boolean;
   readOnly?: boolean;
   saved?: string;
@@ -38,7 +39,11 @@ export function mountDrawingBoard(
   container: HTMLElement,
   options: DrawingBoardOptions
 ): {
+  closeEditor: () => void;
   fit: (padding: [number, number, number, number]) => void;
+  has: (id: string) => boolean;
+  openEditor: (id: string) => boolean;
+  reveal: (id: string) => void;
   images: () => { file?: Blob; id: string }[];
   imageFiles: () => Promise<{ file: Blob; id: string }[]>;
   imagesSettled: () => Promise<void>;

@@ -121,17 +121,14 @@ export function drawChart(
     }
     ctx.fillStyle = paper.text;
     ctx.textAlign = 'center';
-    for (const { angle, text } of chart.labels)
-      ctx.fillText(text, ...onScreen(cx, cy, r * LABEL_REACH, angle));
+    for (const { angle, reach, text } of chart.labels)
+      ctx.fillText(text, ...onScreen(cx, cy, r * reach, angle));
   }
   ctx.restore();
   ctx.strokeStyle = paper.edge;
   ctx.lineWidth = 1;
   ctx.strokeRect(frame.x, frame.y, frame.w, frame.h);
 }
-
-/** How far out of a pie's centre its labels sit. */
-export const LABEL_REACH = 0.62;
 
 export class ChartElementModel extends GfxPrimitiveElementModel<{
   axisMax: number;

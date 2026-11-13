@@ -106,7 +106,14 @@ export type ChartBar = {
   label: string;
   value: number;
 };
-export type PieLabel = { angle: number; id: string; text: string };
+/** A pie's label: clockwise from 12 o'clock, `reach` out from the middle as a share
+ * of the radius, so it stays where it was put as the card resizes. */
+export type PieLabel = {
+  angle: number;
+  id: string;
+  reach: number;
+  text: string;
+};
 /** A pie slice's fill, by the line it starts at (clockwise). */
 export type SliceFill = { fill: Color; from: number };
 

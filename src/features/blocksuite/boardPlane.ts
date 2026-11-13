@@ -270,7 +270,26 @@ export function traceMark(
         X(to[0]),
         Y(to[1])
       );
-  else for (const [x, y] of mark.points.slice(1)) ctx.lineTo(X(x), Y(y));
+  else {
+    const rest = mark.points.slice(1).map(([x, y]): Vec => [X(x), Y(y)]);
+    const tip = rest.at(-1);
+    if (mark.kind === 'vector' && tip) {
+      // The line stops halfway into the arrowhead, so its round end doesn't show
+      // past the point (Epo 2026-11-13).
+      const [px, py] = rest.at(-2) ?? [X(first[0]), Y(first[1])];
+      const length = Math.hypot(tip[0] - px, tip[1] - py);
+      const back = Math.min(
+        length,
+        (ARROW_LENGTH * Math.cos(ARROW_SPREAD)) / 2
+      );
+      if (length)
+        rest[rest.length - 1] = [
+          tip[0] - ((tip[0] - px) / length) * back,
+          tip[1] - ((tip[1] - py) / length) * back,
+        ];
+    }
+    for (const [x, y] of rest) ctx.lineTo(x, y);
+  }
 }
 
 /** A vector's arrowhead, filled with the context's fill, at its second point. */

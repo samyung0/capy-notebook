@@ -59,6 +59,8 @@ const HALO = 'rgba(30, 150, 235, 0.18)';
 const RING_FILL = { dark: '#252525', light: '#fff' };
 const PPU_MIN = 1e-6;
 const PPU_MAX = 1e6;
+/** Fit's least span, in units, across and up (Epo 2026-11-13). */
+const FIT_SPAN = 10;
 /** How far from the origin the view goes, in the plane's units. */
 const VIEW_MAX = 1e9;
 
@@ -345,13 +347,13 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   const pickable = (px: Vec) => {
     if (tool === 'erase') return null;
     const point = pointAt(px);
-    // With Select a single point, or any point of a selected mark, takes the whole
-    // mark, so several selected dots move together.
+    // With Select a single point takes its whole mark, so several selected dots move
+    // together. A line's or curve's point stays its own, selected or not (Epo
+    // 2026-11-13); its stroke drags the whole mark.
     if (
       point &&
       tool === 'select' &&
-      (selected.has(point.id) ||
-        model.marks.find(({ id }) => id === point.id)?.kind === 'dot')
+      model.marks.find(({ id }) => id === point.id)?.kind === 'dot'
     )
       return { id: point.id, index: null };
     if (point) return point;
@@ -722,12 +724,14 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       Math.min(...ys),
       Math.max(...ys),
     ];
+    // At least FIT_SPAN units each way, so a plane with nothing (or one point near
+    // the origin) shows a stretch of grid rather than one unit across the screen.
     view.ppu = Math.max(
       PPU_MIN,
       Math.min(
         PPU_MAX,
-        (width - 100) / Math.max(x1 - x0, 1),
-        (height - 160) / Math.max(y1 - y0, 1)
+        (width - 100) / Math.max(x1 - x0, FIT_SPAN),
+        (height - 160) / Math.max(y1 - y0, FIT_SPAN)
       )
     );
     view.x0 = (x0 + x1) / 2 - width / 2 / view.ppu;

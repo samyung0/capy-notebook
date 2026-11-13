@@ -597,6 +597,13 @@ Outside this directory, for BlockSuite:
     label's double click stands aside. The workspace canvas turns it on; an answer
     board keeps the label.
 
+60. A note's side plus types in the new note (`affine/widgets/edgeless-selected-rect`
+    `edgeless-auto-complete.ts` and `utils.ts`, marked `Capy (local change 60)`; Epo
+    2026-11-13): the plus on either side of a selected note places the next note there
+    with the caret in its first line. AFFiNE aimed a caret at the middle of a
+    default-height note, below an inline note's one line, so nothing could be typed;
+    the stale fold flag the new note was given is gone too.
+
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
 replaces about ninety names with the app's Hugeicons, so the swap itself edits no

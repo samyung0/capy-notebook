@@ -404,9 +404,7 @@ function drawPlane(box: Box, fields: Fields, pen: Pen) {
       dot(mark.at);
       continue;
     }
-    traces += pathOf(mark, 6)
-      .map(([u, v], i) => `${i ? 'L' : 'M'}${num(X(u))} ${num(Y(v))}`)
-      .join('');
+    const path = pathOf(mark, 6).map(([u, v]): Vec => [X(u), Y(v)]);
     // A line's points show only in the editor, a single point always.
     const [from, to] = mark.points.slice(-2);
     if (mark.kind === 'vector' && from && to) {
@@ -414,10 +412,19 @@ function drawPlane(box: Box, fields: Fields, pen: Pen) {
       const [tx, ty] = [X(to[0]), Y(to[1])];
       const turn = Math.atan2(ty - Y(from[1]), tx - X(from[0]));
       const size = Math.max(12, pen.pixel * 4);
+      // The line stops halfway into the head, as on the card.
+      const back = (size * Math.cos(Math.PI / 7)) / 2;
+      path[path.length - 1] = [
+        tx - back * Math.cos(turn),
+        ty - back * Math.sin(turn),
+      ];
       const side = (sign: number) =>
         `${num(tx - size * Math.cos(turn + (sign * Math.PI) / 7))} ${num(ty - size * Math.sin(turn + (sign * Math.PI) / 7))}`;
       heads += `M${num(tx)} ${num(ty)}L${side(-1)}L${side(1)}Z`;
     }
+    traces += path
+      .map(([u, v], i) => `${i ? 'L' : 'M'}${num(u)} ${num(v)}`)
+      .join('');
   }
   return `<svg x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" viewBox="${num(x)} ${num(y)} ${num(w)} ${num(h)}" overflow="hidden">${rect(box, '#fff', 'none', 0)}${grid ? `<path d="${grid}" stroke="#dededb" stroke-width="${num(Math.max(1, pen.pixel))}"/>` : ''}<path d="${axes}" stroke="#6f6f6c" stroke-width="${num(Math.max(1.5, pen.pixel))}"/>${traces ? `<path d="${traces}" stroke="${INK}" stroke-width="${num(ink)}"/>` : ''}${heads ? `<path d="${heads}" fill="${INK}" stroke="none"/>` : ''}${dots ? `<path d="${dots}" stroke="${INK}" stroke-width="${num(Math.max(9, pen.pixel * 2))}"/>` : ''}</svg>${rect(box, 'none', '#d9d9d6', Math.max(1, pen.pixel))}`;
 }

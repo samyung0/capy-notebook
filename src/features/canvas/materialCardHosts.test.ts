@@ -4,6 +4,8 @@ import {
   adoptMaterialHost,
   cardEditable,
   cardEditing,
+  cardUndo,
+  lendCardUndo,
   onCardState,
   onMaterialHosts,
   releaseMaterialHost,
@@ -89,4 +91,22 @@ it('tells the board which cards may be edited and which one is', () => {
   expect(cardEditing()).toBeNull();
   expect(told).toBe(4);
   stop();
+});
+
+// The board's Undo and Redo reach the edited card's own history, and only while
+// it is edited (Epo 2026-11-13).
+it("lends the edited card's undo to the board while it is edited", () => {
+  const history = {
+    canRedo: () => false,
+    canUndo: () => true,
+    redo: () => undefined,
+    subscribe: () => () => undefined,
+    undo: () => undefined,
+  };
+  setCardEditing({ id: 'block-6', materialId: 'qz_6' });
+  const giveBack = lendCardUndo(history);
+  expect(cardUndo()).toBe(history);
+  setCardEditing(null);
+  expect(cardUndo()).toBeNull();
+  giveBack();
 });

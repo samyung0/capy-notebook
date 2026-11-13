@@ -567,6 +567,62 @@ test('in a plane, selected points move together, and the eraser takes what its r
   expect(spokes).toBeCloseTo(Math.round(spokes), 6);
 });
 
+test("a selected line's point still moves alone, and Fit shows ten units of an empty plane", async ({
+  page,
+}) => {
+  test.slow();
+  await openBoard(page);
+  await page.mouse.dblclick(...(await onCard(page))(0.5, 0.5));
+  const card = () =>
+    page.evaluate(() => {
+      const root = document.querySelector(
+        'affine-edgeless-root'
+      ) as unknown as {
+        gfx: {
+          layer: {
+            canvasElements: {
+              marks: { points?: Vec[] }[];
+              ppu: number;
+              type: string;
+            }[];
+          };
+        };
+      };
+      const plane = root.gfx.layer.canvasElements.find(
+        ({ type }) => type === 'plane'
+      );
+      return { ends: plane?.marks[0]?.points ?? [], ppu: plane?.ppu ?? 0 };
+    });
+
+  // Epo 2026-11-13: Fit on nothing showed one unit across the screen.
+  await page.locator('.capy-plane-editor .capy-menu-button').click();
+  await page.getByRole('menuitem', { name: 'Fit to screen' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  const viewport = page.viewportSize();
+  if (!viewport) throw new Error('no viewport');
+  await expect
+    .poll(async () => (await card()).ppu)
+    .toBeLessThanOrEqual((viewport.height - 160) / 10 + 1);
+
+  // A line, selected, then its first point dragged: the other end stays put.
+  await page.mouse.dblclick(...(await onCard(page))(0.5, 0.5));
+  const at = await onPlane(page);
+  await page.getByRole('button', { name: 'Line through two points' }).click();
+  await page.mouse.click(...at(0.3, 0.6));
+  await page.mouse.click(...at(0.6, 0.4));
+  await expect.poll(async () => (await card()).ends).toHaveLength(2);
+  const [first, last] = (await card()).ends;
+  await page.getByRole('button', { name: 'Select' }).click();
+  await page.mouse.click(...at(0.45, 0.5));
+  const [start] = (await planePoints(page)).points;
+  await page.mouse.move(...start.px);
+  await page.mouse.down();
+  await page.mouse.move(start.px[0] - 60, start.px[1] + 60, { steps: 6 });
+  await page.mouse.up();
+  await expect.poll(async () => (await card()).ends[0]).not.toEqual(first);
+  expect((await card()).ends[1]).toEqual(last);
+});
+
 test('in a chart, Select moves several bars, or several lines, together', async ({
   page,
 }) => {
@@ -944,7 +1000,7 @@ test('bar and pie charts are their own cards, with no coordinates', async ({
             canvasElements: {
               axisMax: number;
               bars: { label: string; value: number }[];
-              labels: { text: string }[];
+              labels: { reach: number; text: string }[];
               spokes: number[];
               type: string;
             }[];
@@ -958,6 +1014,7 @@ test('bar and pie charts are their own cards, with no coordinates', async ({
       return {
         axisMax,
         labels: labels?.map(({ text }) => text),
+        reaches: labels?.map(({ reach }) => reach),
         spokes: spokes?.length,
         values: bars?.map(({ value }) => value),
         words: bars?.map(({ label }) => label),
@@ -1025,6 +1082,16 @@ test('bar and pie charts are their own cards, with no coordinates', async ({
   await page.locator('.capy-chart-label').fill('Science');
   await page.locator('.capy-chart-label').press('Enter');
   await expect.poll(async () => (await chart()).labels).toEqual(['Science']);
+  // Select drags a label anywhere, out from the middle too, not only round (Epo
+  // 2026-11-13).
+  const reach = (await chart()).reaches?.[0] ?? 0;
+  await page.mouse.move(...at(0.55, 0.3));
+  await page.mouse.down();
+  await page.mouse.move(...at(0.6, 0.12), { steps: 6 });
+  await page.mouse.up();
+  await expect
+    .poll(async () => (await chart()).reaches?.[0])
+    .toBeGreaterThan(reach + 0.1);
   await page.getByRole('button', { name: 'Erase a mark' }).click();
   await page.mouse.click(...at(0.7, 0.5));
   await expect.poll(async () => (await chart()).spokes).toBe(1);
@@ -1508,6 +1575,66 @@ test("the note menu's Link places a link card", async ({ page }) => {
   await expect(page.locator('capy-link-add')).toHaveCount(0);
 });
 
+test("a plane's editor is in the canvas's URL: Back closes it, and a missing one says so", async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/workspaces/ws_bio?panel=canvas');
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  await placePiece(page, 'capy-graph-slot', 'cart');
+  await page.mouse.dblclick(...(await onCard(page))(0.5, 0.5));
+  const editor = page.locator('.capy-plane-editor');
+  await expect(editor).toBeVisible();
+  await expect(page).toHaveURL(/[?&]open=/);
+  await page.goBack();
+  await expect(editor).toHaveCount(0);
+  await page.goForward();
+  await expect(editor).toBeVisible();
+  // Done steps back out of it.
+  await page.locator('.capy-editor-done').click();
+  await expect(page).not.toHaveURL(/[?&]open=/);
+  // A link to something no longer on the canvas.
+  await page.goto('/workspaces/ws_bio?panel=canvas&open=gone-card');
+  await expect(
+    page.getByText("That isn't on this canvas anymore")
+  ).toBeVisible();
+  await expect(page).not.toHaveURL(/[?&]open=/);
+});
+
+test("a quiz card's Undo while edited is the quiz's, not the canvas's", async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/workspaces/ws_bio?panel=canvas');
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  await page.locator('capy-misc-button').click();
+  const misc = page.locator('capy-misc-panel');
+  await misc.getByRole('button', { exact: true, name: 'Quiz' }).click();
+  await misc.getByRole('button', { name: /Genetics check-in/ }).click();
+  const card = page.locator('capy-material-card');
+  await page
+    .locator('affine-toolbar-widget')
+    .getByRole('button', { name: 'Edit' })
+    .click();
+  const first = 'A cross between Aa × Aa gives what genotype ratio?';
+  await expect(card).toContainText(first);
+  await card.getByRole('button', { name: 'Remove' }).first().click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Remove' })
+    .click();
+  await expect(card).not.toContainText(first);
+  // The board's menu Undo brings the question back and leaves the card placed.
+  await page.locator('.capy-board-menu .capy-menu-button').click();
+  await page.getByRole('menuitem', { name: 'Undo' }).click();
+  await expect(card).toContainText(first);
+  await expect(card).toHaveCount(1);
+});
+
 test('a double click places an inline note on the workspace canvas', async ({
   page,
 }) => {
@@ -1530,6 +1657,21 @@ test('a double click places an inline note on the workspace canvas', async ({
   await expect(note).toContainText('Photosynthesis');
   await expect(note.locator('[data-inline="true"]')).toHaveCount(1);
   await expect(page.locator('edgeless-text-editor')).toHaveCount(0);
+
+  // The plus on either side of the selected note places the next one, typed in
+  // at once (local change 60; Epo 2026-11-13).
+  for (const [side, text] of [
+    [0, 'Light'],
+    [1, 'Chlorophyll'],
+  ] as const) {
+    await page.keyboard.press('Escape');
+    await page.mouse.click(board.x + 40, board.y + board.height - 160);
+    await note.first().click();
+    await page.locator('.edgeless-auto-complete-arrow').nth(side).click();
+    await page.keyboard.type(text);
+    await expect(note.filter({ hasText: text })).toHaveCount(1);
+  }
+  await expect(note).toHaveCount(3);
 });
 
 test("a note's link shows its address on hover, and the frame's knob turns the note", async ({

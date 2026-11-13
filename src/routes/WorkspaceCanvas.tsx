@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { canvasById, saveCanvas } from '@/api/canvas';
 import { qk } from '@/api/client';
 import { useCreateMaterial } from '@/api/hooks';
+import { userToast } from '@/components/ui/userToast';
 import { CanvasMaterialCards } from '@/features/canvas/CanvasMaterialCards';
 import { useCanvasBoard } from '@/features/canvas/useCanvasBoard';
 import {
@@ -17,6 +18,7 @@ import type { WorkspaceOpenSearch } from '@/features/materials/openItem';
 import { nextGenerateTitle } from '@/features/workspace/generateTitle';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { useOpenLink } from '@/lib/openLink';
 
 type BoardProps = {
   onOpenMaterial: (materialId: string) => void;
@@ -95,6 +97,18 @@ function CanvasBoard({
   workspaceName,
 }: BoardProps & { gone: () => boolean; id: string; onRetry: () => void }) {
   const container = useRef<HTMLDivElement>(null);
+  const { open } = useSearch({ strict: false }) as WorkspaceOpenSearch;
+  const navigate = useNavigate();
+  const link = useOpenLink(
+    open,
+    (next, replace) =>
+      void navigate({
+        replace,
+        search: (previous) => ({ ...previous, open: next }),
+        to: '.',
+      }),
+    () => userToast({ title: m.canvas_open_gone() })
+  );
   const materials = useCanvasMaterials(workspaceId);
   // The item dialog's saves go through its live room, not the cards' snapshot
   // query: when the dialog closes or moves on, the material it showed is read
@@ -138,7 +152,7 @@ function CanvasBoard({
       open: () => canvasById(id),
       save: (body) => saveCanvas(id, body),
     },
-    { gone, onBoard, workspace: links }
+    { gone, link, onBoard, workspace: links }
   );
   // The placed quizzes and sets run in the page's own tree, through portals into the
   // board's card hosts (Epo 2026-11-09).
@@ -149,7 +163,7 @@ function CanvasBoard({
     >
       {/* Reopening the canvas tries again. */}
       {failed && <FileError message={failed} onRetry={onRetry} />}
-      <CanvasMaterialCards materials={materials} />
+      <CanvasMaterialCards link={link} materials={materials} />
     </div>
   );
 }

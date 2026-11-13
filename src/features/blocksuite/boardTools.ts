@@ -81,7 +81,7 @@ import { styleMap } from 'lit/directives/style-map.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import * as Y from 'yjs';
 import { BOARD_CATALOG } from '@/api/board.generated';
-import type { MaterialPreview, QuizPreviewQuestion } from '@/api/types';
+import type { MaterialPreview } from '@/api/types';
 import { userToast } from '@/components/ui/userToast';
 import {
   cardEditable,
@@ -2210,28 +2210,6 @@ const FILTER_FROM = 6;
  * two tabs), Link, and the workspace's quizzes and sets as thumbnail grids with a
  * New tile first. One 360 × 440 frame: Back, the title, a close; the body scrolls.
  * While KLIPY loads, a shimmer grid of the final shape stands in. */
-/** A quiz tile's pill: its first question's answer type. */
-function questionTypeLabel(type: QuizPreviewQuestion['type']) {
-  switch (type) {
-    case 'mcq':
-      return m.question_ui_multiple_choice();
-    case 'boolean':
-      return m.question_ui_true_false();
-    case 'short':
-      return m.question_ui_short_answer();
-    case 'matching':
-      return m.question_ui_matching();
-    case 'ordering':
-      return m.question_ui_ordering();
-    case 'open':
-      return m.question_ui_open_answer();
-    case 'gaps':
-      return m.question_ui_fill_in_the_gaps();
-    case 'drawing':
-      return m.question_ui_drawing();
-  }
-}
-
 class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
   static override styles = [
     POPPER_STYLES,
@@ -2429,7 +2407,10 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         gap: 8px;
         min-width: 0;
       }
-      .column > * {
+      /* Hovered too: the panel's button hover would paint over the preview
+         (Epo 2026-11-13). */
+      .column > *,
+      .column > :hover {
         width: 100%;
         height: auto;
         padding: 0;
@@ -2491,7 +2472,7 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         height: auto;
         min-height: 96px;
         padding: 8px 10px 9px;
-        border: 1px solid var(--affine-border-color);
+        /* No edge and no type pill (Epo 2026-11-13): the hover marks the tile. */
         border-radius: 8px;
         background: var(--affine-background-primary-color);
         color: var(--affine-text-primary-color);
@@ -2499,16 +2480,6 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
       }
       .card:hover {
         background: var(--affine-hover-color);
-      }
-      .card .pill {
-        align-self: flex-start;
-        padding: 3px 6px;
-        border-radius: 4px;
-        background: var(--affine-hover-color);
-        color: var(--affine-primary-color);
-        font-size: 10px;
-        font-weight: 500;
-        line-height: 1;
       }
       .card .t {
         overflow: hidden;
@@ -2554,7 +2525,7 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         align-items: center;
         justify-content: center;
         gap: 6px;
-        border-style: dashed;
+        border: 1px dashed var(--affine-border-color);
         color: var(--affine-text-secondary-color);
         font-size: 12px;
       }
@@ -3318,9 +3289,9 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
     </div>`;
   }
 
-  /** A quiz tile's top, as the mock orders it: the stored preview's first question
-   * type as a pill, the title, then the stem; a set's: the stacked pair with the
-   * first card's front, then the title. */
+  /** A quiz tile's top: the title, then the stored preview's first question's
+   * stem; a set's: the stacked pair with the first card's front, then the
+   * title. */
   private thumbnail(
     kind: CardMaterialKind,
     title: string,
@@ -3329,10 +3300,7 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
     const name = html`<span class="t">${title}</span>`;
     if (kind === 'quiz') {
       const first = preview?.kind === 'quiz' ? preview.first : undefined;
-      return first
-        ? html`<span class="pill">${questionTypeLabel(first.type)}</span>${name}
-            <span class="q">${first.stem}</span>`
-        : name;
+      return first ? html`${name}<span class="q">${first.stem}</span>` : name;
     }
     const front =
       preview?.kind === 'flashcards' && preview.first

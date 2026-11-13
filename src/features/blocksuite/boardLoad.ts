@@ -159,7 +159,8 @@ function elementProblem(
         (label) =>
           typeof label?.text === 'string' &&
           label.text.length <= LABEL_LENGTH_MAX &&
-          finite(label.angle)
+          finite(label.angle) &&
+          finite(label.reach)
       ) &&
       (bars as Fields[]).every(
         (bar) =>

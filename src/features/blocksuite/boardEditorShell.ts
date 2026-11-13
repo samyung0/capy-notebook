@@ -7,6 +7,19 @@ import { m } from '@/i18n';
 import { BoardMenu, type MenuZoom } from './boardMenu';
 
 const closing = new WeakMap<GfxController, () => void>();
+const watchers = new WeakMap<GfxController, (cardId: string | null) => void>();
+
+/** Tells the page which card's editor is open, null once none is: the canvas
+ * keeps it in its URL (Epo 2026-11-13). */
+export function watchBoardEditor(
+  gfx: GfxController,
+  watch: (cardId: string | null) => void
+) {
+  watchers.set(gfx, watch);
+  return () => {
+    watchers.delete(gfx);
+  };
+}
 
 /** Leaves the open plane or chart, as saving or making the image does. */
 export function closeBoardEditor(gfx: GfxController) {
@@ -118,8 +131,10 @@ export function openBoardEditor(
     board.removeAttribute('data-editor-open');
     closing.delete(gfx);
     gfx.selection.set({ editing: false, elements: [cardId] });
+    watchers.get(gfx)?.(null);
   };
   closing.set(gfx, close);
+  watchers.get(gfx)?.(cardId);
 
   // The board listens on the document, so its shortcuts stop here. Typing elsewhere on
   // the page isn't this editor's, and a field in it keeps its own undo.

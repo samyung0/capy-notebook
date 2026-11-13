@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   lazy,
   Suspense,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -13,13 +14,16 @@ import { qk } from '@/api/client';
 import { useMaterial } from '@/api/hooks';
 import type { MaterialListItem, MaterialPreview } from '@/api/types';
 import { ThumbnailPanel } from '@/components/app/ThumbnailPanel';
+import { UndoSink } from '@/features/collaboration/undo';
 import { useNearScreen } from '@/features/collaboration/useNearScreen';
 import { EmbedLoading } from '@/features/materials/embeds/EmbedView';
 import { materialIconName } from '@/lib/fileIcons';
+import { type OpenLink, OpenLinkContext, scopedOpenLink } from '@/lib/openLink';
 import {
   type CardMaterialKind,
   cardEditing,
   type EditingCard,
+  lendCardUndo,
   type MaterialCardHost,
   onCardState,
   onMaterialHosts,
@@ -56,8 +60,12 @@ type Placed = MaterialCardHost & { id: string };
  * this tells the board which those are (`setCardEditable`), and draws the editor
  * for the card it names (`setCardEditing`). */
 export function CanvasMaterialCards({
+  link,
   materials,
 }: {
+  /** The page's URL for what fills the screen: a card's drawing answer is
+   * named there under the card's id. */
+  link?: OpenLink;
   /** The quizzes and sets the board's links list (`useCanvasMaterials`),
    * `undefined` until the list has loaded; the card's own header says when a
    * placed one is gone. */
@@ -77,14 +85,18 @@ export function CanvasMaterialCards({
     []
   );
   if (!cards.length) return null;
-  return <PlacedCards cards={cards} materials={materials} />;
+  return (
+    <PlacedCards cards={cards} link={link ?? null} materials={materials} />
+  );
 }
 
 function PlacedCards({
   cards,
+  link,
   materials,
 }: {
   cards: Placed[];
+  link: OpenLink | null;
   materials: MaterialListItem[] | undefined;
 }) {
   // The list carries each one's stored preview (a card whose preview isn't
@@ -124,14 +136,16 @@ function PlacedCards({
     <>
       {cards.map(({ host, id, kind, materialId }) =>
         createPortal(
-          <CanvasMaterial
-            blockId={id}
-            editing={editing?.id === id}
-            kind={kind}
-            listed={listed?.has(materialId)}
-            materialId={materialId}
-            preview={listed?.get(materialId)?.preview}
-          />,
+          <OpenLinkContext.Provider value={scopedOpenLink(link, id)}>
+            <CanvasMaterial
+              blockId={id}
+              editing={editing?.id === id}
+              kind={kind}
+              listed={listed?.has(materialId)}
+              materialId={materialId}
+              preview={listed?.get(materialId)?.preview}
+            />
+          </OpenLinkContext.Provider>,
           host,
           id
         )
@@ -164,6 +178,13 @@ function CanvasMaterial({
     errorBoundary: false,
   });
   const editable = !!material?.capabilities.canEditContent && !!listed;
+  // The URL names this card's drawing answer, but the workspace no longer lists
+  // its quiz.
+  const link = useContext(OpenLinkContext);
+  const named = link?.opened != null;
+  useEffect(() => {
+    if (named && listed === false) link?.gone();
+  }, [named, listed]);
   useEffect(() => {
     setCardEditable(blockId, editable);
     return () => setCardEditable(blockId, false);
@@ -180,7 +201,10 @@ function CanvasMaterial({
             {/* Its live rooms while near the screen, as a note's embed in Edit.
                 With no onEmpty it behaves as the item's own page: a quiz may
                 lose its last question, a set keeps its last card. */}
-            <AppEmbedEdit materialId={materialId} refKind={kind} />
+            {/* Its Undo and Redo are the board's while it's edited. */}
+            <UndoSink.Provider value={lendCardUndo}>
+              <AppEmbedEdit materialId={materialId} refKind={kind} />
+            </UndoSink.Provider>
           </Suspense>
         ) : near ? (
           <Suspense fallback={<EmbedLoading />}>
