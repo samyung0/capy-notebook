@@ -7,6 +7,7 @@ import {
   CARD_PADS,
   type ChartData,
   filledSlices,
+  functionRuns,
   INK,
   type Mark,
   onScreen,
@@ -402,6 +403,13 @@ function drawPlane(box: Box, fields: Fields, pen: Pen) {
     if (mark.kind === 'label' || mark.kind === 'formula') continue;
     if (mark.kind === 'dot') {
       dot(mark.at);
+      continue;
+    }
+    if (mark.kind === 'function') {
+      for (const run of functionRuns(mark, x0, x0 + w / ppu, 2 / ppu, h / ppu))
+        traces += run
+          .map(([u, v], i) => `${i ? 'L' : 'M'}${num(X(u))} ${num(Y(v))}`)
+          .join('');
       continue;
     }
     const path = pathOf(mark, 6).map(([u, v]): Vec => [X(u), Y(v)]);

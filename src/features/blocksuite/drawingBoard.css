@@ -786,6 +786,185 @@ html.dark:not([data-board-light]) .capy-board {
   transform: translate(-50%, -50%);
 }
 
+/* The objects list (Epo 2026-11-13, L2): its button at the plane's top left, a
+   card floating under it, and on a phone a sheet over the lower half with the tools
+   riding above it. Rows as the graph dialog draws them. */
+.capy-plane-editor .capy-plane-list-toggle {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 40px;
+  height: 40px;
+  background: var(--affine-background-overlay-panel-color);
+  border: 1px solid var(--affine-border-color);
+  border-radius: var(--radius-toolbar);
+}
+
+.capy-plane-editor .capy-plane-list-toggle:hover,
+.capy-plane-editor .capy-plane-list-toggle[aria-pressed="true"] {
+  background: linear-gradient(
+      var(--affine-hover-color),
+      var(--affine-hover-color)
+    )
+    var(--affine-background-overlay-panel-color);
+}
+
+.capy-plane-editor svg {
+  flex-shrink: 0;
+}
+
+.capy-plane-list-toggle svg,
+.capy-plane-list svg {
+  width: 18px;
+  height: 18px;
+}
+
+.capy-plane-list {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  color: var(--affine-text-primary-color);
+  background: var(--affine-background-overlay-panel-color);
+  border: 1px solid var(--affine-border-color);
+  box-shadow: var(--shadow-pop);
+}
+
+.capy-plane-list[data-layout="floating"] {
+  top: 56px;
+  left: 8px;
+  width: 300px;
+  max-height: calc(100% - 128px);
+  border-radius: var(--radius-toolbar);
+}
+
+.capy-plane-list[data-layout="sheet"] {
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 48%;
+  border-width: 1px 0 0;
+  border-radius: 12px 12px 0 0;
+}
+
+.capy-plane-editor[data-list="sheet"] .capy-plane-tools {
+  bottom: calc(48% + 8px);
+}
+
+.capy-plane-editor[data-list="sheet"] .capy-plane-finish {
+  bottom: calc(48% + 60px);
+}
+
+.capy-plane-list ol {
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.capy-plane-list li {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) 1.75rem;
+  gap: 8px;
+  align-items: center;
+  min-height: 48px;
+  padding: 4px 4px 4px 6px;
+  cursor: text;
+  border-bottom: 1px solid var(--divider);
+}
+
+.capy-plane-list li:hover {
+  background: var(--affine-hover-color);
+}
+
+.capy-plane-list li.on,
+.capy-plane-list li:focus-within {
+  background: color-mix(in srgb, var(--affine-primary-color) 9%, transparent);
+  box-shadow: inset 2px 0 0 var(--affine-primary-color);
+}
+
+.capy-plane-list .kind {
+  display: grid;
+  place-items: center;
+  color: var(--affine-icon-color);
+}
+
+.capy-plane-list li.on .kind {
+  color: var(--affine-primary-color);
+}
+
+.capy-plane-list .kind svg {
+  width: 20px;
+  height: 20px;
+}
+
+.capy-plane-list .err {
+  display: grid;
+  place-items: center;
+  color: var(--solid-error);
+}
+
+.capy-plane-list li input {
+  all: unset;
+  width: 100%;
+  min-width: 0;
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.capy-plane-list li input.plain {
+  font-size: 14px;
+}
+
+.capy-plane-math {
+  display: block;
+  width: 100%;
+  padding: 0;
+  font-size: 1.21em;
+  line-height: 1.2;
+  color: inherit;
+  outline: 0;
+  background: transparent;
+  border: 0;
+}
+
+.capy-plane-list .fixed {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.capy-plane-list .fixed small {
+  font-size: 12.5px;
+  color: var(--affine-text-secondary-color);
+}
+
+.capy-plane-editor .capy-plane-list .more {
+  min-width: 28px;
+  height: 28px;
+  opacity: 0;
+}
+
+.capy-plane-list li:hover .more,
+.capy-plane-list li.on .more,
+.capy-plane-list li:focus-within .more,
+.capy-plane-editor .capy-plane-list .more:focus-visible {
+  opacity: 1;
+}
+
+.capy-plane-editor .capy-plane-list .add {
+  flex-shrink: 0;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 0 10px;
+  margin: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--affine-text-primary-color);
+  border: 1px solid var(--affine-border-color);
+}
+
 @container viewport (width < 768px) {
   .capy-chart-axis {
     top: 60px;
@@ -966,4 +1145,10 @@ html.dark:not([data-board-light]) .capy-board {
 }
 .capy-link-chip .open:hover {
   background: var(--affine-hover-color);
+}
+
+/* A list row's ⋮ menu: the ☰ menu's list, under the row's button. */
+.capy-plane-editor .capy-plane-list .capy-menu-list {
+  right: 8px;
+  z-index: 1;
 }

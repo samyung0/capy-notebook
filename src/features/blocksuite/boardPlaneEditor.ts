@@ -1,20 +1,41 @@
 import { ThemeProvider } from '@blocksuite/affine/shared/services';
 import type { GfxController } from '@blocksuite/affine/std/gfx';
-import { html, render } from 'lit';
-import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
-import { axisNumber } from '@/features/questions/graph';
-import { tickStep } from '@/features/questions/graphTicks';
-import { m } from '@/i18n';
 import {
+  AlertCircleIcon,
+  Delete02Icon,
+  LeftToRightListBulletIcon,
+  MoreVerticalIcon,
+  PlusSignIcon,
+} from '@hugeicons/core-free-icons';
+import { html, render } from 'lit';
+import { repeat } from 'lit/directives/repeat.js';
+import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
+import type { MathfieldElement } from 'mathlive';
+import { axisNumber } from '@/features/questions/graph';
+import {
+  type ParsedRow,
+  parseRow,
+  RowError,
+} from '@/features/questions/graphSyntax';
+import { tickStep } from '@/features/questions/graphTicks';
+import mathFieldStyles from '@/features/questions/mathField.css?inline';
+import { getLocale, m } from '@/i18n';
+import {
+  bezier,
+  curveSegments,
   ellipseCentre,
   ellipseIn,
+  functionRuns,
   LABEL_LENGTH_MAX,
   MARKS_MAX,
   type Mark,
+  markFunction,
   PAPER,
+  type PathMark,
   pathOf,
   pointsOf,
   pullEllipse,
+  smoothHandles,
 } from './boardData';
 import { drawChip, openBoardEditor, toolTip } from './boardEditorShell';
 import { alongDrag, ERASER_SIZE, EraserTrail } from './boardEraser';
@@ -30,10 +51,12 @@ import {
   type PlaneElementModel,
   type PlaneView,
   POLAR_SPOKE,
+  type Span,
   setPlaneEditor,
+  traceFunction,
   traceMark,
 } from './boardPlane';
-import { mathsIcon } from './boardTools';
+import { boardKindOf, hugeIcon, mathsIcon } from './boardTools';
 
 type Tool =
   | 'select'
@@ -91,6 +114,36 @@ const TOOLS: { icon: string; id: Tool; key: string; label: () => string }[] = [
   { icon: 'erase', id: 'erase', key: 'E', label: m.drawing_board_erase_mark },
 ];
 
+/** The objects list's open or closed, as last chosen this session; until then open
+ * on a wide screen and closed on a phone (Epo 2026-11-13, L2). */
+let listChoice: boolean | null = null;
+/** Under this width the list is a sheet over the plane's lower half. */
+const SHEET_BELOW = 640;
+/** The empty row at the end of the list, where a function or point is typed. */
+const NEW_ROW = 'new';
+
+const coordinate = (value: number) => String(tidy(value)).replace('-', '−');
+const pairText = ([x, y]: Vec) => `(${coordinate(x)}, ${coordinate(y)})`;
+/** The points typed in a row: `(2, 1)`, with either minus. */
+const typedPairs = (text: string): Vec[] =>
+  [
+    ...text
+      .replace(/[−–]/g, '-')
+      .matchAll(/\(\s*(-?\d*\.?\d+)\s*,\s*(-?\d*\.?\d+)\s*\)/g),
+  ].map((match) => [Number(match[1]), Number(match[2])]);
+
+/** A mark's icon in the list, the tool that makes it. */
+const ROW_ICON: Record<Mark['kind'], string> = {
+  curve: 'curve',
+  dot: 'point',
+  ellipse: 'ellipse',
+  formula: 'formula',
+  function: 'function',
+  label: 'label',
+  line: 'line',
+  vector: 'vector',
+};
+
 /** Whether segment ab crosses segment cd. */
 function crosses(a: Vec, b: Vec, c: Vec, d: Vec) {
   const side = (p: Vec, q: Vec, r: Vec) =>
@@ -98,9 +151,26 @@ function crosses(a: Vec, b: Vec, c: Vec, d: Vec) {
   return side(a, b, c) !== side(a, b, d) && side(c, d, a) !== side(c, d, b);
 }
 
-/** How far a mark is from a point on the plane, in plane units. */
-function distanceTo(mark: Mark, [x, y]: Vec) {
+/** How far a mark is from a point on the plane, in plane units. A function is only
+ * looked for within `reach` across, where any of it in reach must be. */
+function distanceTo(mark: Mark, [x, y]: Vec, reach = 1) {
+  if (mark.kind === 'function')
+    return Math.min(
+      Number.POSITIVE_INFINITY,
+      ...functionRuns(
+        mark,
+        x - reach,
+        x + reach,
+        reach / 16,
+        Number.POSITIVE_INFINITY
+      ).map((run) => alongPath(run, [x, y]))
+    );
   if (!('points' in mark)) return Math.hypot(x - mark.at[0], y - mark.at[1]);
+  return alongPath(pathOf(mark), [x, y]);
+}
+
+/** How far a point is from a path of straight steps. */
+function alongPath(points: Vec[], [x, y]: Vec) {
   const between = (a: Vec, b: Vec) => {
     const [dx, dy] = [b[0] - a[0], b[1] - a[1]];
     const length = dx * dx + dy * dy;
@@ -109,10 +179,82 @@ function distanceTo(mark: Mark, [x, y]: Vec) {
       : 0;
     return Math.hypot(x - a[0] - t * dx, y - a[1] - t * dy);
   };
-  const points = pathOf(mark);
   return points.length > 1
     ? Math.min(...points.slice(1).map((p, i) => between(points[i], p)))
     : Math.hypot(x - points[0][0], y - points[0][1]);
+}
+
+const same = (a: Vec, b: Vec) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-9;
+
+/** Whether a point's two handles lie on one line through it, so pulling one turns
+ * the other (a smooth point); an end, with one handle, counts as smooth. */
+function smoothAt(point: Vec, [into, out]: [Vec, Vec]) {
+  if (same(into, point) || same(out, point)) return true;
+  const a = Math.atan2(point[1] - into[1], point[0] - into[0]);
+  const b = Math.atan2(out[1] - point[1], out[0] - point[0]);
+  const turn = Math.abs(((b - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+  return turn < 0.05;
+}
+
+/** `handles[index]`'s other handle turned to stay on the line through its point, at
+ * its own length. */
+function turnOther(point: Vec, pair: [Vec, Vec], moved: 0 | 1) {
+  const other = moved ? 0 : 1;
+  const length = Math.hypot(
+    pair[other][0] - point[0],
+    pair[other][1] - point[1]
+  );
+  const [dx, dy] = [point[0] - pair[moved][0], point[1] - pair[moved][1]];
+  const away = Math.hypot(dx, dy);
+  if (!length || !away) return;
+  pair[other] = [
+    point[0] + (dx / away) * length,
+    point[1] + (dy / away) * length,
+  ];
+}
+
+/** A curve with one handle of a point pulled to `to`. A smooth point's other handle
+ * turns with it, unless `alone` (Alt), which leaves a corner (Epo 2026-11-13, K1). */
+function pulledHandle(
+  mark: PathMark,
+  index: number,
+  side: 0 | 1,
+  to: Vec,
+  alone: boolean
+): PathMark {
+  const handles = (mark.handles ?? smoothHandles(mark.points)).map(
+    ([a, b]): [Vec, Vec] => [a, b]
+  );
+  const point = mark.points[index];
+  const pair = handles[index];
+  const smooth = !alone && smoothAt(point, pair);
+  pair[side] = to;
+  if (smooth) turnOther(point, pair, side);
+  return { ...mark, handles };
+}
+
+/** A press on a curve's stroke, between its points: piece `piece` at `t`, with the
+ * handles as they were. */
+type Bend = { from: Vec; handles: [Vec, Vec][]; piece: number; t: number };
+
+/** The curve with piece `bend.piece` pulled through the pointer at its `t`, its two
+ * inner handles moving by their share and its points staying smooth (Epo
+ * 2026-11-13, K2). */
+function bent(mark: PathMark, bend: Bend, to: Vec): PathMark {
+  const t = Math.min(0.9, Math.max(0.1, bend.t));
+  const u = 1 - t;
+  const k = 1 / (3 * t * u * (u * u + t * t));
+  const [dx, dy] = [to[0] - bend.from[0], to[1] - bend.from[1]];
+  const handles = bend.handles.map(([a, b]): [Vec, Vec] => [a, b]);
+  const { piece } = bend;
+  const [start, end] = [handles[piece], handles[piece + 1]];
+  start[1] = [start[1][0] + dx * k * u, start[1][1] + dy * k * u];
+  end[0] = [end[0][0] + dx * k * t, end[0][1] + dy * k * t];
+  if (smoothAt(mark.points[piece], bend.handles[piece]))
+    turnOther(mark.points[piece], start, 1);
+  if (smoothAt(mark.points[piece + 1], bend.handles[piece + 1]))
+    turnOther(mark.points[piece + 1], end, 0);
+  return { ...mark, handles };
 }
 
 /** A mark with one of its points at `to`, or (`index` null) all of it moved by `to`. */
@@ -122,16 +264,37 @@ function moved(
   to: Vec,
   uniform: boolean
 ): Mark {
+  // A function stays where its expression puts it: its row changes it.
+  if (mark.kind === 'function') return mark;
   if (index !== null) {
     if (mark.kind === 'ellipse')
       return { ...mark, points: pullEllipse(mark.points, index, to, uniform) };
-    return 'points' in mark
-      ? { ...mark, points: mark.points.map((p, i) => (i === index ? to : p)) }
-      : { ...mark, at: to };
+    if (!('points' in mark)) return { ...mark, at: to };
+    // A point takes its handles along.
+    const from = mark.points[index];
+    const shift = (p: Vec): Vec => [
+      p[0] + to[0] - from[0],
+      p[1] + to[1] - from[1],
+    ];
+    return {
+      ...mark,
+      ...(mark.handles && {
+        handles: mark.handles.map((pair, i): [Vec, Vec] =>
+          i === index ? [shift(pair[0]), shift(pair[1])] : pair
+        ),
+      }),
+      points: mark.points.map((p, i) => (i === index ? to : p)),
+    };
   }
   const by = (p: Vec): Vec => [tidy(p[0] + to[0]), tidy(p[1] + to[1])];
   return 'points' in mark
-    ? { ...mark, points: mark.points.map(by) }
+    ? {
+        ...mark,
+        ...(mark.handles && {
+          handles: mark.handles.map(([a, b]): [Vec, Vec] => [by(a), by(b)]),
+        }),
+        points: mark.points.map(by),
+      }
     : { ...mark, at: by(mark.at) };
 }
 
@@ -155,10 +318,22 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       if (!model.marks.some(({ id }) => selected.has(id))) return false;
       write(model.marks.filter(({ id }) => !selected.has(id)));
       selected = new Set();
+      editing = null;
       redraw();
       return true;
     },
     onEscape: () => {
+      // A row being typed in lets go first.
+      const field = document.activeElement;
+      if (field instanceof HTMLElement && field.closest('.capy-plane-list')) {
+        field.blur();
+        return true;
+      }
+      if (menuFor) {
+        menuFor = null;
+        drawControls();
+        return true;
+      }
       if (typing) {
         typing = null;
         drawControls();
@@ -166,6 +341,8 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       }
       if (selected.size) {
         selected = new Set();
+        editing = null;
+        drawControls();
         redraw();
         return true;
       }
@@ -175,6 +352,8 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     },
     onLeave: () => {
       commitLabel();
+      for (const key of [...drafts.keys(), ...(fresh ? [NEW_ROW] : [])])
+        commitRow(key);
       openId = null;
       const kept = model.marks.filter(whole);
       if (kept.length < model.marks.length)
@@ -256,7 +435,29 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     index: number | null;
     preview: Mark[] | null;
     start: Vec;
+    /** A picked point's handle being pulled: in (0) or out (1). */
+    handle?: 0 | 1;
+    /** The selected curve's stroke being pulled. */
+    bend?: Bend;
   } | null = null;
+  /** The curve point whose handles show, picked with Select (Epo 2026-11-13, K1). */
+  let editing: { id: string; index: number } | null = null;
+  /** Where a press would bend the selected curve, under the mouse, in pixels. */
+  let bendHover: Vec | null = null;
+  const workspace = boardKindOf(gfx.std) === 'workspace';
+  /** Rows typed but not yet written: a function as it's typed, drawn meanwhile. */
+  const drafts = new Map<string, Mark>();
+  const rowErrors = new Map<string, string>();
+  /** What the empty row would add, as typed so far. */
+  let fresh: Mark | null = null;
+  /** The row under the mouse, its mark lit on the plane. */
+  let hot: string | null = null;
+  /** The row whose ⋮ menu is open, and how far down the list it sits. */
+  let menuFor: { id: string; top: number } | null = null;
+  /** The row to focus once the list has drawn it (a label just added). */
+  let focusRow: string | null = null;
+  const fields = new Map<string, MathfieldElement>();
+  let Mathfield: typeof MathfieldElement | null = null;
 
   const toPlane = ([px, py]: Vec): Vec => [
     view.x0 + px / view.ppu,
@@ -272,6 +473,15 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     (x - view.x0) * view.ppu,
     (view.y0 - y) * view.ppu,
   ];
+  const span = (): Span => {
+    const { height, width } = box();
+    return {
+      height,
+      left: view.x0,
+      ppu: view.ppu,
+      right: view.x0 + width / view.ppu,
+    };
+  };
   /** The point whose dot is under a pixel. */
   const pointAt = (px: Vec) => {
     let best: { id: string; index: number } | null = null;
@@ -305,14 +515,13 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   };
   const markAt = (px: Vec) => {
     const here = toPlane(px);
-    return model.marks.find((mark) =>
-      mark.kind === 'formula'
-        ? onFormula(mark, px)
-        : mark.kind !== 'dot' &&
-          distanceTo(mark, here) <=
-            (mark.kind === 'label' ? PIXELS_TO_LABEL : PIXELS_TO_SELECT) /
-              view.ppu
-    );
+    return model.marks.find((mark) => {
+      if (mark.kind === 'formula') return onFormula(mark, px);
+      if (mark.kind === 'dot') return false;
+      const reach =
+        (mark.kind === 'label' ? PIXELS_TO_LABEL : PIXELS_TO_SELECT) / view.ppu;
+      return distanceTo(mark, here, reach) <= reach;
+    });
   };
   /** Whether a mark has any part inside a box of pixels, as the board's selection box
    * picks what it touches. */
@@ -330,6 +539,14 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       const f = formulaBox(drawn, ...toScreen(mark.at));
       return f.x <= x1 && f.x + f.w >= x0 && f.y <= y1 && f.y + f.h >= y0;
     }
+    if (mark.kind === 'function')
+      return functionRuns(
+        mark,
+        toPlane([x0, 0])[0],
+        toPlane([x1, 0])[0],
+        2 / view.ppu,
+        Number.POSITIVE_INFINITY
+      ).some((run) => run.some((point) => inside(toScreen(point))));
     const path = ('points' in mark ? pathOf(mark) : [mark.at]).map(toScreen);
     if (path.some(inside)) return true;
     const corners: Vec[] = [
@@ -360,6 +577,55 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     const mark = tool === 'select' ? markAt(px) : undefined;
     return mark ? { id: mark.id, index: null } : null;
   };
+  const editingCurve = () => {
+    const mark = editing && model.marks.find(({ id }) => id === editing?.id);
+    return mark?.kind === 'curve' &&
+      editing &&
+      editing.index < mark.points.length
+      ? mark
+      : null;
+  };
+  const handlesOf = (mark: PathMark) =>
+    mark.handles ?? smoothHandles(mark.points);
+  /** The picked point's handle under a pixel. */
+  const knobAt = (px: Vec) => {
+    const mark = editingCurve();
+    if (!mark || !editing || tool !== 'select') return null;
+    const point = mark.points[editing.index];
+    const pair = handlesOf(mark)[editing.index];
+    for (const side of [0, 1] as const) {
+      if (same(pair[side], point)) continue;
+      const [x, y] = toScreen(pair[side]);
+      if (Math.hypot(x - px[0], y - px[1]) <= PIXELS_TO_GRAB)
+        return { id: mark.id, index: editing.index, side };
+    }
+    return null;
+  };
+  /** Where a press on the one selected curve's stroke, away from its points, bends it
+   * (Epo 2026-11-13, K2); with the point on the stroke, in pixels. */
+  const bendAt = (px: Vec) => {
+    if (tool !== 'select' || selected.size !== 1) return null;
+    const [id] = selected;
+    const mark = model.marks.find((each) => each.id === id);
+    if (mark?.kind !== 'curve' || pointAt(px)?.id === id) return null;
+    let best: { at: Vec; d: number; piece: number; t: number } | null = null;
+    for (const [piece, segment] of curveSegments(mark).entries())
+      for (let step = 1; step < 48; step++) {
+        const t = step / 48;
+        const at = toScreen(bezier(segment, t));
+        const d = Math.hypot(at[0] - px[0], at[1] - px[1]);
+        if (d <= PIXELS_TO_SELECT && (!best || d < best.d))
+          best = { at, d, piece, t };
+      }
+    if (!best) return null;
+    const bend: Bend = {
+      from: toPlane(px),
+      handles: handlesOf(mark),
+      piece: best.piece,
+      t: best.t,
+    };
+    return { at: best.at, bend, id };
+  };
   /** To grid points; on a polar plane, to where a ring crosses a spoke. */
   const snapPlane = ([x, y]: Vec): Vec => {
     const step = minor();
@@ -383,6 +649,18 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   const drawPicked = (mark: Mark, ringed: number | null) => {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+    if (mark.kind === 'function') {
+      for (const [colour, width] of [
+        [HALO, 10],
+        [BLUE, 2],
+      ] as const) {
+        ctx.strokeStyle = colour;
+        ctx.lineWidth = width;
+        traceFunction(ctx, mark, ...screenAxes(), span());
+        ctx.stroke();
+      }
+      return;
+    }
     if ('points' in mark) {
       for (const [colour, width] of [
         [HALO, 10],
@@ -436,12 +714,48 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     }
   };
 
+  const ring = ([x, y]: Vec, r: number) => {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = RING_FILL[theme.theme];
+    ctx.fill();
+    ctx.strokeStyle = BLUE;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  };
+  /** The picked curve point's handles: a line out to each, a square at its end. */
+  const drawHandles = (mark: PathMark, index: number) => {
+    const point = mark.points[index];
+    const at = toScreen(point);
+    for (const handle of handlesOf(mark)[index]) {
+      if (same(handle, point)) continue;
+      const [x, y] = toScreen(handle);
+      ctx.strokeStyle = BLUE;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(...at);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      ctx.fillStyle = RING_FILL[theme.theme];
+      ctx.fillRect(x - 4.5, y - 4.5, 9, 9);
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(x - 4.5, y - 4.5, 9, 9);
+    }
+    ring(at, 6);
+  };
+
   const draw = () => {
     const { height, width } = shell.sizeCanvas();
     const preview = grab?.preview;
-    const marks = model.marks
-      .map((mark) => preview?.find(({ id }) => id === mark.id) ?? mark)
-      .filter(({ id }) => !erasing?.has(id));
+    const marks = [
+      ...model.marks.map(
+        (mark) =>
+          preview?.find(({ id }) => id === mark.id) ??
+          drafts.get(mark.id) ??
+          mark
+      ),
+      ...(fresh ? [fresh] : []),
+    ].filter(({ id }) => !erasing?.has(id));
     drawPlane(
       ctx,
       { h: height, w: width, x: 0, y: 0 },
@@ -456,10 +770,23 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     );
     const picked = preview ? grab : hover;
     for (const chosen of marks)
-      if (selected.has(chosen.id) && chosen.id !== picked?.id)
+      if (
+        (selected.has(chosen.id) || hot === chosen.id) &&
+        chosen.id !== picked?.id
+      )
         drawPicked(chosen, null);
     const mark = picked && marks.find(({ id }) => id === picked.id);
-    if (picked && mark) drawPicked(mark, picked.index);
+    if (picked && mark)
+      drawPicked(
+        mark,
+        preview && grab?.handle !== undefined ? null : picked.index
+      );
+    const curve = tool === 'select' && editingCurve();
+    if (curve && editing) {
+      const shown = marks.find(({ id }) => id === curve.id);
+      if (shown?.kind === 'curve') drawHandles(shown, editing.index);
+    }
+    if (bendHover && !grab) ring(bendHover, 5);
     if (preview && grab?.index != null) {
       const [x, y] = pointsOf(preview[0])[grab.index];
       const [sx, sy] = toScreen([x, y]);
@@ -664,7 +991,8 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       if (
         mark.kind === 'formula'
           ? onFormula(mark, px)
-          : distanceTo(mark, here) <= ERASER_SIZE / 2 / view.ppu
+          : distanceTo(mark, here, ERASER_SIZE / 2 / view.ppu) <=
+            ERASER_SIZE / 2 / view.ppu
       )
         erasing?.add(mark.id);
   };
@@ -757,7 +1085,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   let pressed = false;
   /** A middle-button drag pans, as on the board. */
   let panning = false;
-  const local = (event: PointerEvent): Vec => {
+  const local = (event: MouseEvent): Vec => {
     const rect = box();
     return [event.clientX - rect.left, event.clientY - rect.top];
   };
@@ -789,6 +1117,34 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       erasing = new Set();
       trail.start(at);
       eraseNear(at);
+      redraw();
+      return;
+    }
+    if (menuFor) {
+      menuFor = null;
+      drawControls();
+    }
+    const knob = knobAt(at);
+    if (knob) {
+      grab = {
+        handle: knob.side,
+        id: knob.id,
+        index: knob.index,
+        preview: null,
+        start: at,
+      };
+      redraw();
+      return;
+    }
+    const bending = bendAt(at);
+    if (bending) {
+      grab = {
+        bend: bending.bend,
+        id: bending.id,
+        index: null,
+        preview: null,
+        start: at,
+      };
       redraw();
       return;
     }
@@ -850,6 +1206,31 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
           PIXELS_TO_DRAG
       )
         return;
+      if (
+        grab.handle !== undefined &&
+        grab.index !== null &&
+        picked.kind === 'curve'
+      ) {
+        grab.preview = [
+          pulledHandle(
+            picked,
+            grab.index,
+            grab.handle,
+            toPlane(at),
+            event.altKey
+          ),
+        ];
+        canvas.style.cursor = 'grabbing';
+        redraw();
+        return;
+      }
+      if (grab.bend && picked.kind === 'curve') {
+        grab.preview = [bent(picked, grab.bend, toPlane(at))];
+        canvas.style.cursor = 'grabbing';
+        redraw();
+        return;
+      }
+      if (picked.kind === 'function') return;
       const [from, to] = [toPlane(grab.start), toPlane(at)];
       // A whole mark lands its first point (an ellipse its middle) on the grid, a polar
       // one's rings and spokes included, so one off it from before comes back.
@@ -885,7 +1266,11 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       !last && event.pointerType === 'mouse'
         ? (pointAt(at)?.id ?? markAt(at)?.id ?? null)
         : null;
-    canvas.style.cursor = hover ? 'grab' : '';
+    bendHover =
+      !last && event.pointerType === 'mouse' && !knobAt(at)
+        ? (bendAt(at)?.at ?? null)
+        : null;
+    canvas.style.cursor = hover || bendHover || knobAt(at) ? 'grab' : '';
     redraw();
   });
   canvas.addEventListener('pointerup', (event) => {
@@ -946,6 +1331,21 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
         mark && held?.index != null ? pointsOf(mark)[held.index] : undefined
       );
     }
+    // Select on a curve's point picks it, its handles showing; a handle or a bend
+    // keeps it; anything else lets go.
+    if (
+      tool === 'select' &&
+      pressed &&
+      held?.handle === undefined &&
+      !held?.bend
+    ) {
+      const mark = held && model.marks.find(({ id }) => id === held.id);
+      editing =
+        held && mark?.kind === 'curve' && held.index !== null
+          ? { id: held.id, index: held.index }
+          : null;
+    }
+    if (tool === 'select' && workspace) drawControls();
     pressed = false;
     if (event.pointerType !== 'mouse') pointer = null;
     redraw();
@@ -966,6 +1366,24 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     pointer = null;
     hover = null;
     near = null;
+    bendHover = null;
+    redraw();
+  });
+  // A double click on a curve's point makes it a corner, or smooth again (K1).
+  canvas.addEventListener('dblclick', (event) => {
+    if (tool !== 'select') return;
+    const point = pointAt(local(event));
+    const mark = point && model.marks.find(({ id }) => id === point.id);
+    if (!point || mark?.kind !== 'curve') return;
+    const handles = handlesOf(mark).map(([a, b]): [Vec, Vec] => [a, b]);
+    const at = mark.points[point.index];
+    const [into, out] = handles[point.index];
+    handles[point.index] =
+      same(into, at) && same(out, at)
+        ? smoothHandles(mark.points)[point.index]
+        : [at, at];
+    replaceOpen({ ...mark, handles });
+    editing = { id: mark.id, index: point.index };
     redraw();
   });
 
@@ -977,11 +1395,336 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     finish();
     hover = null;
     selected = new Set();
+    editing = null;
     tool = id;
     drawControls();
   };
+
+  // The objects list (Epo 2026-11-13, L2): a floating card of the plane's marks over
+  // its top left, a sheet over its lower half on a phone. Workspace canvases only.
+  const listOpen = () =>
+    workspace && (listChoice ?? box().width >= SHEET_BELOW);
+  const toggleList = () => {
+    listChoice = !listOpen();
+    menuFor = null;
+    drawControls();
+  };
+  /** What a row's typing makes of it: a function as it's typed, a point in the
+   * empty row; anything else is an error under the row's icon. */
+  const typedRow = (key: string, latex: string, ascii: string) => {
+    // The empty row's mark keeps one id as it's typed, so its lit row stays put.
+    const id = key === NEW_ROW ? (fresh?.id ?? newId()) : key;
+    rowErrors.delete(key);
+    drafts.delete(key);
+    if (key === NEW_ROW) fresh = null;
+    let row: ParsedRow | null = null;
+    if (ascii.trim())
+      try {
+        row = parseRow(ascii);
+      } catch (error) {
+        if (!(error instanceof RowError)) throw error;
+        rowErrors.set(key, error.message);
+      }
+    if (row?.kind === 'function' && markFunction(row.term)) {
+      const mark: Mark = {
+        id,
+        kind: 'function',
+        latex,
+        term: row.term,
+        ...(row.domain && { domain: row.domain }),
+      };
+      if (key === NEW_ROW) fresh = mark;
+      else drafts.set(key, mark);
+    } else if (row?.kind === 'point' && key === NEW_ROW)
+      fresh = { at: row.coords, id, kind: 'dot' };
+    else if (row && !rowErrors.has(key))
+      rowErrors.set(
+        key,
+        row.kind === 'function'
+          ? m.question_ui_graph_row_unreadable()
+          : m.question_ui_graph_row_not_yet()
+      );
+    drawControls();
+    redraw();
+  };
+  /** Writes what a function row holds: the empty row adds its mark and empties, an
+   * emptied row removes its mark, a row that can't be read goes back as it was. */
+  const commitRow = (key: string) => {
+    const field = fields.get(key);
+    if (key === NEW_ROW) {
+      const mark = fresh;
+      fresh = null;
+      rowErrors.delete(key);
+      if (mark) {
+        field?.setValue('', { silenceNotifications: true });
+        add(mark);
+      }
+    } else {
+      const draft = drafts.get(key);
+      drafts.delete(key);
+      rowErrors.delete(key);
+      if (!model.marks.some(({ id }) => id === key)) return;
+      if (field && !field.value.trim())
+        write(model.marks.filter(({ id }) => id !== key));
+      else if (draft) replaceOpen(draft);
+    }
+    drawControls();
+    redraw();
+  };
+  /** A function row's typeset field, made once per row and kept across draws. */
+  const fieldFor = (key: string) => {
+    const known = fields.get(key);
+    if (known || !Mathfield) return known ?? null;
+    const field = new Mathfield();
+    field.defaultMode = 'math';
+    field.smartFence = true;
+    field.mathVirtualKeyboardPolicy = 'auto';
+    field.className = 'capy-plane-math';
+    field.addEventListener('input', () =>
+      typedRow(key, field.value, field.getValue('ascii-math'))
+    );
+    // Capture: MathLive takes keys inside its shadow root first.
+    field.addEventListener(
+      'keydown',
+      (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        commitRow(key);
+      },
+      true
+    );
+    field.addEventListener('focusout', () => commitRow(key));
+    fields.set(key, field);
+    return field;
+  };
+  /** Loads MathLive the first time the list opens, then draws the rows. */
+  const loadMathfield = async () => {
+    const { MathfieldElement } = await import('mathlive');
+    MathfieldElement.fontsDirectory = '/mathlive/fonts';
+    MathfieldElement.soundsDirectory = null;
+    MathfieldElement.locale = getLocale();
+    Mathfield = MathfieldElement;
+    drawControls();
+  };
+  /** Fields join the page before MathLive's shadow root takes styles and a value;
+   * an unfocused row follows its mark, so undo shows in it. */
+  const syncFields = () => {
+    for (const [key, field] of fields) {
+      const mark = model.marks.find(({ id }) => id === key);
+      if (key !== NEW_ROW && mark?.kind !== 'function') {
+        fields.delete(key);
+        continue;
+      }
+      if (!field.isConnected) continue;
+      if (!field.dataset.ready) {
+        field.dataset.ready = '1';
+        const styles = document.createElement('style');
+        styles.textContent = mathFieldStyles;
+        field.shadowRoot?.append(styles);
+        field.menuItems = [];
+      }
+      if (
+        mark?.kind === 'function' &&
+        !drafts.has(key) &&
+        field.value !== mark.latex &&
+        document.activeElement !== field
+      )
+        field.setValue(mark.latex, { silenceNotifications: true });
+    }
+    if (focusRow) {
+      controls
+        .querySelector<HTMLInputElement>(`[data-row="${focusRow}"] input`)
+        ?.select();
+      focusRow = null;
+    }
+  };
+  /** A point's, line's or label's row, typed in place and written on change. */
+  const commitText = (mark: Mark, input: HTMLInputElement) => {
+    const text = input.value.trim();
+    const pairs = typedPairs(text);
+    const changed: Mark | null =
+      mark.kind === 'label'
+        ? text
+          ? { ...mark, text: text.slice(0, LABEL_LENGTH_MAX) }
+          : null
+        : mark.kind === 'dot' && pairs.length === 1
+          ? { ...mark, at: pairs[0] }
+          : (mark.kind === 'line' || mark.kind === 'vector') &&
+              pairs.length === 2
+            ? { ...mark, points: pairs }
+            : mark;
+    if (!changed) write(model.marks.filter(({ id }) => id !== mark.id));
+    else if (changed === mark) input.value = rowText(mark);
+    else replaceOpen(changed);
+    redraw();
+  };
+  const rowText = (mark: Mark) =>
+    mark.kind === 'dot'
+      ? pairText(mark.at)
+      : mark.kind === 'line' || mark.kind === 'vector'
+        ? m.drawing_board_plane_from_to({
+            from: pairText(mark.points[0]),
+            to: pairText(mark.points[1]),
+          })
+        : mark.kind === 'label'
+          ? mark.text
+          : '';
+  const addLabel = () => {
+    const { height, width } = box();
+    const at = snapped([width / 2, height / 2]);
+    const label: Mark = {
+      at,
+      id: newId(),
+      kind: 'label',
+      text: m.drawing_board_plane_label(),
+    };
+    focusRow = label.id;
+    add(label);
+    drawControls();
+    redraw();
+  };
+  const lightRow = (id: string | null) => {
+    if (hot === id) return;
+    hot = id;
+    redraw();
+  };
+  const rowBody = (mark: Mark, number: number) => {
+    if (mark.kind === 'function') {
+      const field = fieldFor(mark.id);
+      field?.setAttribute(
+        'aria-label',
+        m.question_ui_graph_expression({ number })
+      );
+      return field;
+    }
+    if (
+      mark.kind === 'dot' ||
+      mark.kind === 'line' ||
+      mark.kind === 'vector' ||
+      mark.kind === 'label'
+    )
+      return html`<input
+        aria-label=${mark.kind === 'label' ? m.drawing_board_plane_label() : m.question_ui_graph_expression({ number })}
+        class=${mark.kind === 'label' ? 'plain' : ''}
+        maxlength=${mark.kind === 'label' ? LABEL_LENGTH_MAX : 80}
+        type="text"
+        .value=${rowText(mark)}
+        @change=${(event: Event) => commitText(mark, event.target as HTMLInputElement)}
+        @keydown=${(event: KeyboardEvent) => {
+          if (event.key === 'Enter') (event.target as HTMLInputElement).blur();
+        }}
+      />`;
+    const name =
+      mark.kind === 'curve'
+        ? m.chrome_curve()
+        : mark.kind === 'ellipse'
+          ? m.drawing_board_ellipse()
+          : m.drawing_board_plane_formula();
+    const detail =
+      mark.kind === 'formula'
+        ? mark.latex
+        : pointsOf(mark).map(pairText).join(', ');
+    return html`<span class="fixed">${name} <small>${detail}</small></span>`;
+  };
+  const objectsList = () => {
+    const layout = box().width < SHEET_BELOW ? 'sheet' : 'floating';
+    const rows = [...model.marks.map((mark) => drafts.get(mark.id) ?? mark)];
+    const newField = fieldFor(NEW_ROW);
+    newField?.setAttribute(
+      'aria-label',
+      m.question_ui_graph_expression({ number: rows.length + 1 })
+    );
+    const kindIcon = (key: string, icon: string | null) => {
+      const error = rowErrors.get(key);
+      return error
+        ? html`<span class="err" title=${error}>${hugeIcon(AlertCircleIcon)}</span>`
+        : icon && unsafeSVG(mathsIcon(icon));
+    };
+    return html`<div
+      class="capy-plane-list"
+      data-layout=${layout}
+      @pointerleave=${() => {
+        if (!controls.querySelector('.capy-plane-list :focus')) lightRow(null);
+      }}
+    >
+      <ol>
+        ${repeat(
+          rows,
+          ({ id }) => id,
+          (mark, index) => html`<li
+            class=${selected.has(mark.id) ? 'on' : ''}
+            data-row=${mark.id}
+            @focusin=${() => lightRow(mark.id)}
+            @pointerenter=${() => lightRow(mark.id)}
+          >
+            <span class="kind">${kindIcon(mark.id, ROW_ICON[mark.kind])}</span>
+            ${rowBody(mark, index + 1)}
+            <button
+              aria-label=${m.a11y_more_actions()}
+              class="more"
+              type="button"
+              @click=${(event: MouseEvent) => {
+                const list = controls.querySelector('.capy-plane-list');
+                const button = event.currentTarget as HTMLElement;
+                menuFor =
+                  menuFor?.id === mark.id || !list
+                    ? null
+                    : {
+                        id: mark.id,
+                        top:
+                          button.getBoundingClientRect().bottom -
+                          list.getBoundingClientRect().top +
+                          4,
+                      };
+                drawControls();
+              }}
+            >
+              ${hugeIcon(MoreVerticalIcon)}
+            </button>
+          </li>`
+        )}
+        <li data-row=${NEW_ROW} @focusin=${() => lightRow(fresh?.id ?? null)}>
+          <span class="kind">${kindIcon(NEW_ROW, null)}</span>
+          ${newField}
+          <span></span>
+        </li>
+      </ol>
+      <button class="add" type="button" @click=${addLabel}>
+        ${hugeIcon(PlusSignIcon)} ${m.drawing_board_plane_label()}
+      </button>
+      ${
+        menuFor
+          ? html`<div class="capy-menu-list" role="menu" style="top:${menuFor.top}px">
+              <button
+                role="menuitem"
+                type="button"
+                @click=${() => {
+                  const id = menuFor?.id;
+                  menuFor = null;
+                  hot = null;
+                  selected.delete(id ?? '');
+                  write(model.marks.filter((mark) => mark.id !== id));
+                  drawControls();
+                  redraw();
+                }}
+              >
+                ${hugeIcon(Delete02Icon)} ${m.action_delete()}
+              </button>
+            </div>`
+          : null
+      }
+    </div>`;
+  };
   const drawControls = () => {
     root.dataset.tool = tool;
+    const showList = listOpen();
+    root.dataset.list = showList
+      ? box().width < SHEET_BELOW
+        ? 'sheet'
+        : 'floating'
+      : '';
+    if (showList && !Mathfield) void loadMathfield();
     const open = openMark();
     const finishLabel =
       open?.kind === 'curve'
@@ -1017,6 +1760,20 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
               />`
             : null
         }
+        ${
+          workspace
+            ? html`<button
+                aria-label=${m.drawing_board_objects()}
+                aria-pressed=${showList}
+                class="capy-plane-list-toggle"
+                type="button"
+                @click=${toggleList}
+              >
+                ${hugeIcon(LeftToRightListBulletIcon)}
+              </button>`
+            : null
+        }
+        ${showList ? objectsList() : null}
         <div class="capy-plane-tools">
           <div class="capy-plane-row">
             ${tools().map(
@@ -1034,6 +1791,11 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
         </div>`,
       controls
     );
+    syncFields();
+    if (showList)
+      controls
+        .querySelector('.capy-plane-list li.on')
+        ?.scrollIntoView({ block: 'nearest' });
   };
   drawControls();
   new ResizeObserver(redraw).observe(root);

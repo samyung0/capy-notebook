@@ -23,13 +23,17 @@ import { axisNumber } from '@/features/questions/graph';
 import { tickStep } from '@/features/questions/graphTicks';
 import {
   cardPaper,
+  curveSegments,
+  type FunctionMark,
+  functionRuns,
   LATEX_MAX,
   type Mark,
   type Paper,
+  type PathMark,
   pointsOf,
 } from './boardData';
 import { type Drawn, drawing, laidOut, replay } from './boardFormulaDraw';
-import { curvePieces, minorStep, ticks, type Vec } from './boardGeometry';
+import { minorStep, ticks, type Vec } from './boardGeometry';
 
 /** The plane's top left corner in its own units, and board pixels per unit. A polar
  * plane draws rings and spokes round its origin instead of squares (Epo 2026-11-08). */
@@ -72,6 +76,7 @@ export function drawPlane(
   const right = view.x0 + frame.w / view.ppu;
   const top = view.y0;
   const bottom = view.y0 - frame.h / view.ppu;
+  const span: Span = { height: frame.h, left, ppu: view.ppu, right };
   ctx.save();
   ctx.beginPath();
   ctx.rect(frame.x, frame.y, frame.w, frame.h);
@@ -83,7 +88,7 @@ export function drawPlane(
   const minor = minorStep(step);
   if (view.polar) {
     drawPolarGrid(ctx, frame, view, X, Y, step, minor, paper);
-    drawMarks(ctx, X, Y, marks, paper, shown, refresh);
+    drawMarks(ctx, X, Y, marks, paper, shown, refresh, span);
     ctx.restore();
     ctx.strokeStyle = paper.edge;
     ctx.lineWidth = 1;
@@ -128,7 +133,7 @@ export function drawPlane(
   for (const y of ticks(bottom, top, step))
     label(axisNumber(y, step), axisX - 7, Y(y), 'right');
 
-  drawMarks(ctx, X, Y, marks, paper, shown, refresh);
+  drawMarks(ctx, X, Y, marks, paper, shown, refresh, span);
   ctx.restore();
   ctx.strokeStyle = paper.edge;
   ctx.lineWidth = 1;
@@ -240,7 +245,7 @@ function drawPolarGrid(
  * it. */
 export function traceMark(
   ctx: CanvasRenderingContext2D,
-  mark: Extract<Mark, { points: Vec[] }>,
+  mark: PathMark,
   X: (x: number) => number,
   Y: (y: number) => number
 ) {
@@ -261,7 +266,7 @@ export function traceMark(
   const [first] = mark.points;
   ctx.moveTo(X(first[0]), Y(first[1]));
   if (mark.kind === 'curve')
-    for (const [, c1, c2, to] of curvePieces(mark.points))
+    for (const [, c1, c2, to] of curveSegments(mark))
       ctx.bezierCurveTo(
         X(c1[0]),
         Y(c1[1]),
@@ -289,6 +294,26 @@ export function traceMark(
         ];
     }
     for (const [x, y] of rest) ctx.lineTo(x, y);
+  }
+}
+
+/** What a canvas shows of the plane: x from `left` to `right`, `height` tall, at
+ * `ppu` pixels a unit. A function is drawn across it. */
+export type Span = { height: number; left: number; ppu: number; right: number };
+
+/** A function as a canvas path across what's shown, a step every 2 px; it breaks
+ * where it isn't defined or leaps past the canvas's height. */
+export function traceFunction(
+  ctx: CanvasRenderingContext2D,
+  mark: FunctionMark,
+  X: (x: number) => number,
+  Y: (y: number) => number,
+  { height, left, ppu, right }: Span
+) {
+  ctx.beginPath();
+  for (const run of functionRuns(mark, left, right, 2 / ppu, height / ppu)) {
+    ctx.moveTo(X(run[0][0]), Y(run[0][1]));
+    for (const [x, y] of run.slice(1)) ctx.lineTo(X(x), Y(y));
   }
 }
 
@@ -323,7 +348,8 @@ function drawMarks(
   marks: Mark[],
   paper: Paper,
   shown: ReadonlySet<string>,
-  refresh: () => void
+  refresh: () => void,
+  span: Span
 ) {
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
@@ -351,6 +377,11 @@ function drawMarks(
       ctx.scale(FORMULA_SCALE, FORMULA_SCALE);
       replay(ctx, drawn);
       ctx.restore();
+    } else if (mark.kind === 'function') {
+      ctx.strokeStyle = paper.ink;
+      ctx.lineWidth = 2;
+      traceFunction(ctx, mark, X, Y, span);
+      ctx.stroke();
     } else {
       // Set per mark: a label's halo before it leaves the paper's colour behind.
       ctx.strokeStyle = paper.ink;

@@ -1131,6 +1131,8 @@ const ICONS: Record<string, string> = {
   fill: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 12V3a9 9 0 0 1 7.79 13.5Z" fill="currentColor"/>',
   formula:
     '<path d="M18 5H7l6 7-6 7h11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
+  function:
+    '<path d="M9 20c1.6 0 2.2-1.4 2.5-3.2L13.6 6.4C13.9 4.8 14.6 4 16 4M8.5 10h6.5M14.5 14l5 5M19.5 14l-5 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
   label:
     '<path d="M5 6V4h14v2M12 4v16M9 20h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
   line: '<path d="M6 18 18 6" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="5" cy="19" r="2.2" fill="currentColor"/><circle cx="19" cy="5" r="2.2" fill="currentColor"/>',
@@ -3645,6 +3647,8 @@ export const markBoard = (
   board: BoardKind,
   images: boolean
 ) => boardKinds.set(std, { board, images });
+/** The board a std belongs to, as `markBoard` set it. */
+export const boardKindOf = (std: BlockStdScope) => boardKinds.get(std)?.board;
 
 /** Whether a Misc tile is for this board (board catalog): an answer board holds
  * the charts and images (its formulas have their slot); the mind map, the

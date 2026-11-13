@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildElements,
   displayNumber,
+  functionOf,
   type GraphRow,
   parseRow,
   rowsFromElements,
@@ -219,5 +220,16 @@ describe('scientific numbers', () => {
     });
     expect(displayNumber(-6.02e23)).toBe('-6.02 · 10²³');
     expect(displayNumber(150_000_000)).toBe('150000000');
+  });
+});
+
+describe('functionOf', () => {
+  it('evaluates a row term at x, with natural log as the graph draws it', () => {
+    const row = parseRow('y=2sin(x)+ln(x)');
+    if (row.kind !== 'function') throw new Error(row.kind);
+    expect(functionOf(row.term)(Math.PI / 2)).toBeCloseTo(
+      2 + Math.log(Math.PI / 2)
+    );
+    expect(functionOf('x^2/4 - 3')(2)).toBeCloseTo(-2);
   });
 });

@@ -1,5 +1,6 @@
 import * as Y from 'yjs';
 import { BOARD_CATALOG } from '@/api/board.generated';
+import { QUESTION_GRAPH_TERM_MAX } from '@/api/limits.generated';
 import { YOUTUBE_ID } from '@/features/materials/youtubeUrl';
 import {
   AXIS_MAX,
@@ -8,6 +9,7 @@ import {
   LABELS_MAX,
   LATEX_MAX,
   MARKS_MAX,
+  markFunction,
   SPOKES_MAX,
 } from './boardData';
 import { isKlipyMedia, isListedEmoji, isWebAddress } from './boardPictureData';
@@ -122,6 +124,36 @@ function elementProblem(
           (mark?.kind !== 'formula' ||
             (typeof mark.latex === 'string' &&
               mark.latex.length <= LATEX_MAX)) &&
+          // A function is a term the plane can read, in the graph dialog's limits.
+          (mark?.kind !== 'function' ||
+            (typeof mark.term === 'string' &&
+              mark.term.length <= QUESTION_GRAPH_TERM_MAX &&
+              markFunction(mark.term) !== null &&
+              typeof mark.latex === 'string' &&
+              mark.latex.length <= LATEX_MAX &&
+              (mark.domain === undefined ||
+                (listUpTo(mark.domain, 2) &&
+                  (mark.domain as unknown[]).length === 2 &&
+                  (mark.domain as unknown[]).every(finite) &&
+                  (mark.domain as number[])[0] <
+                    (mark.domain as number[])[1])))) &&
+          // A curve's handles are a pair of points for each of its points.
+          (mark?.handles === undefined ||
+            (mark.kind === 'curve' &&
+              Array.isArray(mark.handles) &&
+              Array.isArray(mark.points) &&
+              (mark.handles as unknown[]).length === mark.points.length &&
+              (mark.handles as unknown[]).every(
+                (pair) =>
+                  Array.isArray(pair) &&
+                  pair.length === 2 &&
+                  pair.every(
+                    (point) =>
+                      Array.isArray(point) &&
+                      point.length === 2 &&
+                      point.every(finite)
+                  )
+              ))) &&
           // A vector runs from one point to one other.
           (mark?.kind !== 'vector' ||
             (listUpTo(mark.points, 2) &&

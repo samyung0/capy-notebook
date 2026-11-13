@@ -147,8 +147,12 @@ export function openBoardEditor(
     )
       return;
     const key = event.key.toLowerCase();
-    // A field gets its keys; root stops them on their way out to the board.
-    if (target instanceof HTMLInputElement && key !== 'escape') return;
+    // A field gets its keys (a MathLive one too: its keys arrive from the math-field);
+    // root stops them on their way out to the board.
+    const field =
+      target instanceof HTMLInputElement ||
+      (target instanceof Element && target.closest('math-field'));
+    if (field && key !== 'escape') return;
     event.stopPropagation();
     const command = event.metaKey || event.ctrlKey;
     if (key === 'escape') {

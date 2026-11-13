@@ -3233,6 +3233,8 @@
   "drawing_board_point": "点",
   "drawing_board_plane_label": "标签",
   "drawing_board_plane_formula": "公式",
+  "drawing_board_objects": "对象",
+  "drawing_board_plane_from_to": "{from} 到 {to}",
   "drawing_board_coordinate_plane": "坐标平面",
   "drawing_board_polar_plane": "极坐标平面",
   "drawing_board_bar_chart": "条形图",

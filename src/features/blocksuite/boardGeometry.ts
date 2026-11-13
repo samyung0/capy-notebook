@@ -50,29 +50,6 @@ function around(points: Vec[], i: number): [Vec, Vec, Vec, Vec] {
   ];
 }
 
-/** A smooth curve through the points (Catmull-Rom), as many short segments, for
- * hit tests and small previews. One that ends on its first point is a loop, smooth
- * there too. */
-export function smoothThrough(points: Vec[], perSegment = 16): Vec[] {
-  const out: Vec[] = [];
-  for (let i = 0; i < points.length - 1; i++) {
-    const [p0, p1, p2, p3] = around(points, i);
-    for (let step = 0; step < perSegment; step++) {
-      const t = step / perSegment;
-      const at = (axis: 0 | 1) =>
-        0.5 *
-        (2 * p1[axis] +
-          (p2[axis] - p0[axis]) * t +
-          (2 * p0[axis] - 5 * p1[axis] + 4 * p2[axis] - p3[axis]) * t * t +
-          (3 * p1[axis] - p0[axis] - 3 * p2[axis] + p3[axis]) * t * t * t);
-      out.push([at(0), at(1)]);
-    }
-  }
-  const last = points.at(-1);
-  if (last) out.push(last);
-  return out;
-}
-
 /** The same curve as cubic Bézier pieces, `[from, control, control, to]`, which a
  * canvas draws smooth at any zoom. */
 export function curvePieces(points: Vec[]): [Vec, Vec, Vec, Vec][] {

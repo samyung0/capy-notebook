@@ -1,5 +1,6 @@
 import { BOARD_CATALOG } from '@/api/board.generated';
-import { type Box, smoothThrough, tidy, type Vec } from './boardGeometry';
+import { functionOf } from '@/features/questions/graphSyntax';
+import { type Box, curvePieces, tidy, type Vec } from './boardGeometry';
 
 /** What a saved board's cards hold, and their limits, apart from the editor: the
  * board's check and its preview read them without loading BlockSuite. */
@@ -15,7 +16,11 @@ export type Color =
  * ellipse (Epo 2026-11-08) is upright, held by its four handles: right, top, left and
  * bottom, so it starts as a circle and its handles stretch it. A formula (Epo
  * 2026-11-08) is LaTeX centred on its point, drawn by KaTeX. A vector is a line
- * from its first point to its second, with an arrowhead there. */
+ * from its first point to its second, with an arrowhead there. A curve's `handles`
+ * (Epo 2026-11-13) are each point's [in, out] Bézier handles, set once one is
+ * pulled; without them it bends smoothly through its points. A function (Epo
+ * 2026-11-13) is typed in the objects list: `term` in the graph dialog's syntax,
+ * `latex` as typed, drawn across the plane or its `domain`. */
 export type Mark =
   | { id: string; kind: 'dot'; at: Vec }
   | { id: string; kind: 'label'; at: Vec; text: string }
@@ -24,11 +29,97 @@ export type Mark =
       id: string;
       kind: 'line' | 'vector' | 'curve' | 'ellipse';
       points: Vec[];
+      handles?: [Vec, Vec][];
+    }
+  | {
+      id: string;
+      kind: 'function';
+      latex: string;
+      term: string;
+      domain?: [number, number];
     };
 
-/** The points a mark is drawn through, or at. */
+export type PathMark = Extract<Mark, { points: Vec[] }>;
+export type FunctionMark = Extract<Mark, { kind: 'function' }>;
+
+/** The points a mark is drawn through, or at; a function has none. */
 export const pointsOf = (mark: Mark): Vec[] =>
-  'points' in mark ? mark.points : [mark.at];
+  'points' in mark ? mark.points : 'at' in mark ? [mark.at] : [];
+
+/** Each point's [in, out] handles as the smooth curve through them has them. */
+export function smoothHandles(points: Vec[]): [Vec, Vec][] {
+  const pieces = curvePieces(points);
+  return points.map((point, i): [Vec, Vec] => [
+    pieces[i - 1]?.[2] ?? point,
+    pieces[i]?.[1] ?? point,
+  ]);
+}
+
+/** A curve's pieces as cubic Béziers: from, its two controls, to. */
+export function curveSegments(mark: PathMark): [Vec, Vec, Vec, Vec][] {
+  const { handles, points } = mark;
+  if (!handles) return curvePieces(points);
+  return points
+    .slice(0, -1)
+    .map((from, i) => [from, handles[i][1], handles[i + 1][0], points[i + 1]]);
+}
+
+/** A point along a cubic Bézier piece, `t` from 0 to 1. */
+export const bezier = ([a, b, c, d]: [Vec, Vec, Vec, Vec], t: number): Vec => {
+  const u = 1 - t;
+  return [0, 1].map(
+    (k) =>
+      u * u * u * a[k] +
+      3 * u * u * t * b[k] +
+      3 * u * t * t * c[k] +
+      t ** 3 * d[k]
+  ) as Vec;
+};
+
+const functions = new Map<string, ((x: number) => number) | null>();
+/** A function mark's function of x, or null for a term it can't read. */
+export function markFunction(term: string) {
+  if (!functions.has(term)) {
+    let fn: ((x: number) => number) | null = null;
+    try {
+      fn = functionOf(term);
+    } catch {
+      fn = null;
+    }
+    functions.set(term, fn);
+  }
+  return functions.get(term) ?? null;
+}
+
+/** Where a function is drawn between two x, as runs of points: a run breaks where
+ * it isn't defined or leaps more than `leap` (an asymptote, say). */
+export function functionRuns(
+  mark: FunctionMark,
+  from: number,
+  to: number,
+  step: number,
+  leap: number
+): Vec[][] {
+  const fn = markFunction(mark.term);
+  if (!fn) return [];
+  const [low, high] = mark.domain
+    ? [Math.max(from, mark.domain[0]), Math.min(to, mark.domain[1])]
+    : [from, to];
+  const runs: Vec[][] = [];
+  let run: Vec[] = [];
+  const count = Math.min(4000, Math.ceil((high - low) / step));
+  for (let i = 0; i <= count; i++) {
+    const x = i === count ? high : low + i * step;
+    const y = fn(x);
+    const last = run.at(-1);
+    if (!Number.isFinite(y) || (last && Math.abs(y - last[1]) > leap)) {
+      if (run.length > 1) runs.push(run);
+      run = Number.isFinite(y) ? [[x, y]] : [];
+    } else run.push([x, y]);
+  }
+  if (run.length > 1) runs.push(run);
+  return runs;
+}
 
 /** An upright ellipse's handles from its box: right, top, left, bottom. */
 export const ellipseIn = (
@@ -76,11 +167,19 @@ export function pullEllipse(
 }
 
 /** What a line, curve or ellipse draws through, as short straight steps. */
-export function pathOf(
-  mark: Extract<Mark, { points: Vec[] }>,
-  perSegment = 16
-): Vec[] {
-  if (mark.kind === 'curve') return smoothThrough(mark.points, perSegment);
+export function pathOf(mark: PathMark, perSegment = 16): Vec[] {
+  if (mark.kind === 'curve') {
+    const pieces = curveSegments(mark);
+    if (!pieces.length) return mark.points;
+    return [
+      ...pieces.flatMap((piece) =>
+        Array.from({ length: perSegment }, (_, step) =>
+          bezier(piece, step / perSegment)
+        )
+      ),
+      mark.points.at(-1) as Vec,
+    ];
+  }
   if (mark.kind === 'line' || mark.kind === 'vector') return mark.points;
   const [[right, cy], [cx, top]] = mark.points;
   const [rx, ry] = [right - cx, top - cy];

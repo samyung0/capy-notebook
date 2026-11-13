@@ -3233,6 +3233,8 @@
   "drawing_board_point": "Point",
   "drawing_board_plane_label": "Label",
   "drawing_board_plane_formula": "Formula",
+  "drawing_board_objects": "Objects",
+  "drawing_board_plane_from_to": "{from} to {to}",
   "drawing_board_coordinate_plane": "Coordinate plane",
   "drawing_board_polar_plane": "Polar plane",
   "drawing_board_bar_chart": "Bar chart",
