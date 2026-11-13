@@ -4779,14 +4779,17 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
 - **Plane cards** (`boardPlane.ts`) are a `plane` canvas element holding a view (top left
   corner in plane units, board pixels per unit) and its marks as plain data, drawn by one
   renderer with a clip, so a card stacks with strokes and reaches the marking image with
-  no special case. A card is a picture on the canvas: Select moves it, its corners resize
+  no special case. A card is a picture on the canvas: Select moves it, the frame's knob
+  turns it about its middle (`rotate`, Epo 2026-11-13; turned, the side across from a
+  dragged handle stays put on the page), its corners resize
   it, between 120 by 80 and 4000 px, showing more or less of the plane at the same scale,
   scrolling over it moves the canvas, and the eraser leaves it alone (`erasable` false,
   which the vendored eraser reads: local change 30), while a connector meets its edge
   at four anchors as on a shape. A fresh board starts
   with one. Double click, double tap or the pen opens it. **Fit to size**, on by default:
   each time the plane is left, a card with marks takes their size at the plane's scale plus
-  40 px, its top left staying put; past 1600 px it zooms out instead. Dragging a corner
+  40 px (a label's or formula's text counted in pixels round its point), its top left
+  staying put; past 1600 px it zooms out instead. Dragging a corner
   makes it Custom size, as resizing a note does. Neither is in the undo history. Pen
   strokes over a card stay where they are, so they can stop lining up. A **polar** card
   (`polar: true`, its origin in the middle) draws rings at the grid's steps, numbered along
@@ -4823,7 +4826,12 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   label edits it, as on the canvas; while one is typed, the canvas label's maths symbol
   row (`symbolButtons` in `boardFormula.ts`) sits under it, kept inside the plane, and
   inserts at the caret within the 24 characters (Epo 2026-11-13). A plane label is
-  still its own kind: a `label` mark drawn on the plane, not BlockSuite's canvas text. Formula (Epo 2026-11-08) opens the board's formula card (`openFormulaCard`) for
+  still its own kind: a `label` mark drawn on the plane, not BlockSuite's canvas text.
+  A label or formula picked alone with Select wears the board's selection frame
+  (`boardTextFrame.ts`: a 1px accent line 6 px out, a 9 px square on each corner) and
+  no toolbar; dragging a corner sizes its text about its middle (Epo 2026-11-13),
+  stored as `size` in pixels (8 to 96, `TEXT_SIZE_MIN`/`MAX` in the board catalog;
+  without it 15 px for a label, 18 px for a formula, 12 px for a pie label). Formula (Epo 2026-11-08) opens the board's formula card (`openFormulaCard`) for
   a `formula` mark centred where it's clicked (a click on one opens it again, emptied it
   goes); KaTeX's layout (`boardFormulaDraw.ts`, loaded only once a formula is on the
   board or a plane) is replayed at 18 px, inverted on dark paper, keeping its size as
@@ -4908,7 +4916,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   functions. The shell lets a `math-field` keep its keys.
 - **Chart cards** (`boardChart.ts`, `boardChartEditor.ts`) are a `chart` canvas element of
   kind `bar` or `pie`, holding plain data, since a coordinate means nothing on either. They
-  move and resize like a plane card, the eraser leaves them alone, and their editor fills
+  move, turn and resize like a plane card, the eraser leaves them alone, and their editor fills
   the board on the same shell. Bar chart: numbers on the value axis only, up to a top and
   step the student types (Fit, in the menu, takes the top to the first line above the
   tallest bar). The wheel or a pinch zooms the value axis: its top moves, the step
@@ -4926,7 +4934,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   Shift-click, a selection box; Delete removes them all, Escape lets go) and drags the
   one pressed: a bar up or down to its value, a line round to a new
   angle (off the other lines, its fill going with it), a label anywhere on the card, in
-  the pie or out of it (Epo 2026-11-13; it only went round before). One of several
+  the pie or out of it (Epo 2026-11-13; it only went round before). A pie label picked
+  alone wears the board's selection frame, and dragging a corner sizes it (`size`, as a
+  plane label's). One of several
   chosen items takes the others of its kind along: bars up or down by as much (none
   below 0, one taken to 0 goes), lines round by as far, labels by as far across. After
   one label the tool goes back to Select, as on the plane.

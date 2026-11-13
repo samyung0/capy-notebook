@@ -787,7 +787,8 @@ html.dark:not([data-board-light]) .capy-board {
 .capy-chart-label {
   all: unset;
   position: absolute;
-  width: 110px;
+  /* In ems: a label typed at its own size keeps room for its characters. */
+  width: 8.5em;
   padding: 2px 4px;
   font:
     500 13px Arial,
@@ -933,6 +934,11 @@ html.dark:not([data-board-light]) .capy-board {
 
 .capy-plane-math::part(content) {
   padding: 0;
+}
+
+/* The empty new row's "Type a formula". */
+.capy-plane-math::part(placeholder) {
+  color: var(--affine-placeholder-color);
 }
 
 .capy-plane-math::part(menu-toggle),

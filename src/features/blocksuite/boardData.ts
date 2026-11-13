@@ -20,11 +20,13 @@ export type Color =
  * (Epo 2026-11-13) are each point's [in, out] Bézier handles, set once one is
  * pulled; without them it bends smoothly through its points. A function (Epo
  * 2026-11-13) is typed in the objects list: `term` in the graph dialog's syntax,
- * `latex` as typed, drawn across the plane or its `domain`. */
+ * `latex` as typed, drawn across the plane or its `domain`. A label's or formula's
+ * `size` (Epo 2026-11-13) is its text size in pixels, set by its frame's corners;
+ * without one it's LABEL_SIZE or FORMULA_SIZE. Text keeps its size as the plane zooms. */
 export type Mark =
   | { id: string; kind: 'dot'; at: Vec }
-  | { id: string; kind: 'label'; at: Vec; text: string }
-  | { id: string; kind: 'formula'; at: Vec; latex: string }
+  | { id: string; kind: 'label'; at: Vec; text: string; size?: number }
+  | { id: string; kind: 'formula'; at: Vec; latex: string; size?: number }
   | {
       id: string;
       kind: 'line' | 'vector' | 'curve' | 'ellipse';
@@ -223,11 +225,13 @@ export type ChartBar = {
   value: number;
 };
 /** A pie's label: clockwise from 12 o'clock, `reach` out from the middle as a share
- * of the radius, so it stays where it was put as the card resizes. */
+ * of the radius, so it stays where it was put as the card resizes. Its `size` is as a
+ * plane label's, CHART_TEXT without one. */
 export type PieLabel = {
   angle: number;
   id: string;
   reach: number;
+  size?: number;
   text: string;
 };
 /** A pie slice's fill, by the line it starts at (clockwise). */
@@ -246,6 +250,19 @@ export type ChartData = {
 
 export const { AXIS_MAX, BARS_MAX, LABEL_LENGTH_MAX, LABELS_MAX, SPOKES_MAX } =
   BOARD_CATALOG.limits;
+
+/** Text sizes in pixels: a plane label's and formula's, and a chart's text, until a
+ * frame's corner sets one (Epo 2026-11-13); and the range a corner sets. */
+export const LABEL_SIZE = 15;
+export const FORMULA_SIZE = 18;
+export const CHART_TEXT = 12;
+export const { TEXT_SIZE_MAX, TEXT_SIZE_MIN } = BOARD_CATALOG.limits;
+export const isTextSize = (size: unknown) =>
+  size === undefined ||
+  (typeof size === 'number' &&
+    Number.isInteger(size) &&
+    size >= TEXT_SIZE_MIN &&
+    size <= TEXT_SIZE_MAX);
 
 /** Room around the chart, as a card and in the editor. */
 export type Pads = { bottom: number; left: number; right: number; top: number };

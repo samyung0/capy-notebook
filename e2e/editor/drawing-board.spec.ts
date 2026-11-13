@@ -669,6 +669,84 @@ test('in a plane, selected points move together, and the eraser takes what its r
   ).toHaveCount(0);
 });
 
+test("a label picked alone wears the board's frame, whose corner sizes it, and the plane card turns", async ({
+  page,
+}) => {
+  test.slow();
+  await openBoard(page);
+  await page.mouse.dblclick(...(await onCard(page))(0.5, 0.5));
+  const at = await onPlane(page);
+  await page.getByRole('button', { name: 'Label' }).click();
+  await page.mouse.click(...at(0.5, 0.4));
+  await page.keyboard.type('Wide');
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(async () => (await planePoints(page)).points)
+    .toHaveLength(1);
+  const [label] = (await planePoints(page)).points;
+  await page.getByRole('button', { name: 'Select' }).click();
+  await page.mouse.click(...label.px);
+  const plane = () =>
+    page.evaluate(() => {
+      const { gfx } = document.querySelector(
+        'affine-edgeless-root'
+      ) as unknown as {
+        gfx: {
+          layer: {
+            canvasElements: {
+              id: string;
+              marks: { size?: number }[];
+              rotate: number;
+              type: string;
+            }[];
+          };
+        };
+      };
+      const card = gfx.layer.canvasElements.find(
+        ({ type }) => type === 'plane'
+      );
+      return {
+        id: card?.id ?? '',
+        rotate: card?.rotate ?? 0,
+        size: card?.marks[0]?.size,
+      };
+    });
+
+  // Epo 2026-11-13: the frame's bottom right corner, 6 px out from the 15 px text,
+  // dragged out makes the text bigger.
+  const width = await page.evaluate(() => {
+    const ctx = document.createElement('canvas').getContext('2d');
+    if (!ctx) return 0;
+    ctx.font = '15px Arial, sans-serif';
+    return ctx.measureText('Wide').width;
+  });
+  const corner = [label.px[0] + width / 2 + 6, label.px[1] + 9 + 6] as const;
+  await page.mouse.move(...corner);
+  await page.mouse.down();
+  await page.mouse.move(corner[0] + 40, corner[1] + 20, { steps: 6 });
+  await page.mouse.up();
+  await expect.poll(async () => (await plane()).size ?? 15).toBeGreaterThan(15);
+
+  // The card turns by the frame's knob, as other cards do.
+  await page.getByRole('button', { name: 'Done' }).click();
+  const { id } = await plane();
+  await page.evaluate((card) => {
+    const { gfx } = document.querySelector(
+      'affine-edgeless-root'
+    ) as unknown as { gfx: { selection: { set(selection: object): void } } };
+    gfx.selection.set({ editing: false, elements: [card] });
+  }, id);
+  const knob = await page
+    .locator('edgeless-selected-rect .handle[aria-label="rotate"]')
+    .boundingBox();
+  if (!knob) throw new Error('the plane card has no rotate knob');
+  await page.mouse.move(knob.x + knob.width / 2, knob.y + knob.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(knob.x + 80, knob.y + 40, { steps: 6 });
+  await page.mouse.up();
+  expect((await plane()).rotate).not.toBe(0);
+});
+
 test("a selected line's point still moves alone, and Fit shows ten units of an empty plane", async ({
   page,
 }) => {

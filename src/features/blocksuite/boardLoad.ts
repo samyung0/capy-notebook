@@ -5,6 +5,7 @@ import { YOUTUBE_ID } from '@/features/materials/youtubeUrl';
 import {
   AXIS_MAX,
   BARS_MAX,
+  isTextSize,
   LABEL_LENGTH_MAX,
   LABELS_MAX,
   LATEX_MAX,
@@ -119,11 +120,13 @@ function elementProblem(
         (mark) =>
           (mark?.kind !== 'label' ||
             (typeof mark.text === 'string' &&
-              mark.text.length <= LABEL_LENGTH_MAX)) &&
+              mark.text.length <= LABEL_LENGTH_MAX &&
+              isTextSize(mark.size))) &&
           // A formula is text KaTeX lays out, within the formula card's limit.
           (mark?.kind !== 'formula' ||
             (typeof mark.latex === 'string' &&
-              mark.latex.length <= LATEX_MAX)) &&
+              mark.latex.length <= LATEX_MAX &&
+              isTextSize(mark.size))) &&
           // A function is a term the plane can read, in the graph dialog's limits.
           (mark?.kind !== 'function' ||
             (typeof mark.term === 'string' &&
@@ -192,7 +195,8 @@ function elementProblem(
           typeof label?.text === 'string' &&
           label.text.length <= LABEL_LENGTH_MAX &&
           finite(label.angle) &&
-          finite(label.reach)
+          finite(label.reach) &&
+          isTextSize(label.size)
       ) &&
       (bars as Fields[]).every(
         (bar) =>

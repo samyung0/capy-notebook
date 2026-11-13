@@ -88,6 +88,10 @@ func Get() Catalog {
 			"AXIS_MAX":   1_000_000_000,
 			"SPOKES_MAX": 60,
 			"LABELS_MAX": 60,
+			// A label's or formula's text size in pixels, as its frame's corners set it
+			// (plane labels and formulas, pie labels).
+			"TEXT_SIZE_MIN": 8,
+			"TEXT_SIZE_MAX": 96,
 			// A picture's label (an emoji, a GIF's title) and its link.
 			"PICTURE_LABEL_MAX": 120,
 			"PICTURE_REF_MAX":   2048,

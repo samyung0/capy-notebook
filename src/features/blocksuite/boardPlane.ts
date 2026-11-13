@@ -24,8 +24,10 @@ import { tickStep } from '@/features/questions/graphTicks';
 import {
   cardPaper,
   curveSegments,
+  FORMULA_SIZE,
   type FunctionMark,
   functionRuns,
+  LABEL_SIZE,
   LATEX_MAX,
   type Mark,
   type Paper,
@@ -362,19 +364,19 @@ function drawMarks(
   for (const mark of marks) {
     if (mark.kind === 'dot') dot(mark.at);
     else if (mark.kind === 'label') {
-      ctx.font = '15px Arial, sans-serif';
+      ctx.font = labelFont(mark.size);
       ctx.fillStyle = paper.text;
       ctx.textBaseline = 'middle';
       haloText(ctx, mark.text, X(mark.at[0]), Y(mark.at[1]), 'center', paper);
     } else if (mark.kind === 'formula') {
       const drawn = formulaAt(mark.latex, refresh);
       if (!drawn) continue;
-      const box = formulaBox(drawn, X(mark.at[0]), Y(mark.at[1]));
+      const box = formulaBox(drawn, X(mark.at[0]), Y(mark.at[1]), mark.size);
       ctx.save();
       // KaTeX's ink is black; dark paper turns it light, its colours about kept.
       if (paper.dark) ctx.filter = 'invert(1) hue-rotate(180deg)';
       ctx.translate(box.x, box.y);
-      ctx.scale(FORMULA_SCALE, FORMULA_SCALE);
+      ctx.scale(box.scale, box.scale);
       replay(ctx, drawn);
       ctx.restore();
     } else if (mark.kind === 'function') {
@@ -403,9 +405,27 @@ const NONE: ReadonlySet<string> = new Set();
 const ARROW_LENGTH = 12;
 const ARROW_SPREAD = Math.PI / 7;
 
-/** A formula on a plane at 18 px, as KaTeX lays it out at 24, so it reads beside a
- * label's 15 px text; it keeps that size as the plane zooms. */
-export const FORMULA_SCALE = 0.75;
+/** KaTeX lays a formula out at 24 px; a plane draws it at its size (18 px unless set),
+ * so it reads beside a label's 15 px text. */
+const FORMULA_LAYOUT = 24;
+
+/** A plane label's font at its size. */
+export const labelFont = (size = LABEL_SIZE) => `${size}px Arial, sans-serif`;
+
+/** Where a label's text sits on screen, centred on (x, y): its width by a line. */
+export function labelBox(
+  ctx: CanvasRenderingContext2D,
+  { size = LABEL_SIZE, text }: { size?: number; text: string },
+  x: number,
+  y: number
+) {
+  ctx.save();
+  ctx.font = labelFont(size);
+  const w = ctx.measureText(text).width;
+  ctx.restore();
+  const h = size * 1.2;
+  return { h, w, x: x - w / 2, y: y - h / 2 };
+}
 
 /** A formula laid out, or nothing yet: it's laid out and `refresh` draws again. One
  * KaTeX can't read stays undrawn. */
@@ -416,11 +436,17 @@ export function formulaAt(latex: string, refresh: () => void) {
   return drawn;
 }
 
-/** Where a formula's laid-out box sits on screen, centred on its point. */
-export function formulaBox(drawn: Drawn, x: number, y: number) {
-  const w = drawn.w * FORMULA_SCALE;
-  const h = drawn.h * FORMULA_SCALE;
-  return { h, w, x: x - w / 2, y: y - h / 2 };
+/** Where a formula's laid-out box sits on screen at its size, centred on its point. */
+export function formulaBox(
+  drawn: Drawn,
+  x: number,
+  y: number,
+  size = FORMULA_SIZE
+) {
+  const scale = size / FORMULA_LAYOUT;
+  const w = drawn.w * scale;
+  const h = drawn.h * scale;
+  return { h, scale, w, x: x - w / 2, y: y - h / 2 };
 }
 
 export class PlaneElementModel extends GfxPrimitiveElementModel<{
@@ -439,9 +465,10 @@ export class PlaneElementModel extends GfxPrimitiveElementModel<{
     return 'plane';
   }
 
+  /** A turned card (Epo 2026-11-13) answers by its turned corners, as a formula's. */
   override containsBound(bounds: Bound) {
-    return Bound.deserialize(this.xywh).points.some((point) =>
-      bounds.containsPoint(point as IVec)
+    return getPointsFromBoundWithRotation(this).some((point) =>
+      bounds.containsPoint(point)
     );
   }
 
@@ -462,13 +489,13 @@ export class PlaneElementModel extends GfxPrimitiveElementModel<{
 
   override getNearestPoint(point: IVec) {
     return polygonNearestPoint(
-      Bound.deserialize(this.xywh).points,
+      getPointsFromBoundWithRotation(this),
       point
     ) as IVec;
   }
 
   override includesPoint(x: number, y: number) {
-    return pointInPolygon([x, y], Bound.deserialize(this.xywh).points);
+    return pointInPolygon([x, y], getPointsFromBoundWithRotation(this));
   }
 
   /** Fit to size: the card follows its marks each time the plane is left. */
@@ -507,7 +534,13 @@ const planeRenderer: ElementRenderer<PlaneElementModel> = (
   renderer
 ) => {
   const [, , w, h] = model.deserializedXYWH;
-  ctx.setTransform(matrix);
+  // Turned round its middle, as a formula card is.
+  ctx.setTransform(
+    matrix
+      .translateSelf(w / 2, h / 2)
+      .rotateSelf(model.rotate)
+      .translateSelf(-w / 2, -h / 2)
+  );
   drawPlane(
     ctx,
     { h, w, x: 0, y: 0 },
@@ -540,6 +573,26 @@ export function markPoints(marks: Mark[]) {
   ];
 }
 
+/** A canvas only for measuring text, made once. */
+let measurer: CanvasRenderingContext2D | null = null;
+
+/** How far each label's and formula's text reaches past its point, in pixels: as
+ * much at any scale, so Fit to size keeps sized text on the card (Epo 2026-11-13). A
+ * formula not laid out yet counts as its point. */
+function textReach(marks: Mark[]) {
+  measurer ??= document.createElement('canvas').getContext('2d');
+  return marks.flatMap((mark) => {
+    if (mark.kind === 'label' && measurer) {
+      const { h, w } = labelBox(measurer, mark, 0, 0);
+      return [{ at: mark.at, x: w / 2, y: h / 2 }];
+    }
+    const drawn = mark.kind === 'formula' && laidOut(mark.latex);
+    if (!drawn || mark.kind !== 'formula') return [];
+    const { h, w } = formulaBox(drawn, 0, 0, mark.size);
+    return [{ at: mark.at, x: w / 2, y: h / 2 }];
+  });
+}
+
 /** Sizes a card to its marks at its scale, its top left staying put. Past the longest
  * side it zooms out instead. An empty card keeps its size. Not in the undo history,
  * like the view. */
@@ -549,33 +602,39 @@ export function fitCard(model: PlaneElementModel) {
   if (seen.length < 2) return;
   const xs = seen.map(([x]) => x);
   const ys = seen.map(([, y]) => y);
-  const [left, right, bottom, top] = [
-    Math.min(...xs),
-    Math.max(...xs),
-    Math.min(...ys),
-    Math.max(...ys),
-  ];
   const room = FIT_SIDE_MAX - FIT_PAD * 2;
   const ppu = Math.min(
     model.ppu,
-    room / Math.max(right - left, 1e-6),
-    room / Math.max(top - bottom, 1e-6)
+    room / Math.max(Math.max(...xs) - Math.min(...xs), 1e-6),
+    room / Math.max(Math.max(...ys) - Math.min(...ys), 1e-6)
   );
-  const w = clamp(
-    (right - left) * ppu + FIT_PAD * 2,
-    CARD_WIDTH_MIN,
-    FIT_SIDE_MAX
-  );
-  const h = clamp(
-    (top - bottom) * ppu + FIT_PAD * 2,
-    CARD_HEIGHT_MIN,
-    FIT_SIDE_MAX
-  );
+  // The plane's pixels at that scale: the points, and the text round its own.
+  const texts = textReach(model.marks);
+  const [left, right, bottom, top] = [
+    Math.min(
+      ...xs.map((x) => x * ppu),
+      ...texts.map((t) => t.at[0] * ppu - t.x)
+    ),
+    Math.max(
+      ...xs.map((x) => x * ppu),
+      ...texts.map((t) => t.at[0] * ppu + t.x)
+    ),
+    Math.min(
+      ...ys.map((y) => y * ppu),
+      ...texts.map((t) => t.at[1] * ppu - t.y)
+    ),
+    Math.max(
+      ...ys.map((y) => y * ppu),
+      ...texts.map((t) => t.at[1] * ppu + t.y)
+    ),
+  ];
+  const w = clamp(right - left + FIT_PAD * 2, CARD_WIDTH_MIN, FIT_SIDE_MAX);
+  const h = clamp(top - bottom + FIT_PAD * 2, CARD_HEIGHT_MIN, FIT_SIDE_MAX);
   const [x, y] = model.deserializedXYWH;
   model.surface.store.withoutTransact(() => {
     model.ppu = ppu;
-    model.x0 = (left + right) / 2 - w / 2 / ppu;
-    model.y0 = (top + bottom) / 2 + h / 2 / ppu;
+    model.x0 = ((left + right) / 2 - w / 2) / ppu;
+    model.y0 = ((top + bottom) / 2 + h / 2) / ppu;
     model.xywh = new Bound(x, y, w, h).serialize();
   });
 }
@@ -590,7 +649,8 @@ class PlaneElementView extends GfxElementModelView<PlaneElementModel> {
 }
 
 /** Resizing shows more or less of the plane at the same scale: dragging the left or
- * top edge keeps what's on the plane where it is on the page. A card doesn't rotate. */
+ * top edge keeps what's on the plane where it is on the page. A card turns (Epo
+ * 2026-11-13); turned, the side across from the dragged handle stays put on the page. */
 const planeInteraction = GfxViewInteractionExtension<PlaneElementView>(
   'plane',
   {
@@ -603,25 +663,39 @@ const planeInteraction = GfxViewInteractionExtension<PlaneElementView>(
           model.pop('y0');
         },
         onResizeMove(context) {
-          const { constraint, newBound, originalBound } = context;
+          const { constraint, handle, newBound, originalBound: was } = context;
           const w = clamp(newBound.w, constraint.minWidth, constraint.maxWidth);
           const h = clamp(
             newBound.h,
             constraint.minHeight,
             constraint.maxHeight
           );
-          // At a limit, the edge that isn't being dragged stays put.
-          const x =
-            newBound.x === originalBound.x
-              ? newBound.x
-              : newBound.x + newBound.w - w;
-          const y =
-            newBound.y === originalBound.y
-              ? newBound.y
-              : newBound.y + newBound.h - h;
-          model.xywh = new Bound(x, y, w, h).serialize();
-          model.x0 = x0 + (x - originalBound.x) / model.ppu;
-          model.y0 = y0 - (y - originalBound.y) / model.ppu;
+          // Which side stays: 1 the right (or bottom), -1 the left (or top), 0 neither.
+          const sx = handle.includes('left')
+            ? 1
+            : handle.includes('right')
+              ? -1
+              : 0;
+          const sy = handle.includes('top')
+            ? 1
+            : handle.includes('bottom')
+              ? -1
+              : 0;
+          const turn = (model.rotate * Math.PI) / 180;
+          const [cos, sin] = [Math.cos(turn), Math.sin(turn)];
+          const from = ([x, y]: Vec, dx: number, dy: number): Vec => [
+            x + dx * cos - dy * sin,
+            y + dx * sin + dy * cos,
+          ];
+          const kept = from(
+            [was.x + was.w / 2, was.y + was.h / 2],
+            (sx * was.w) / 2,
+            (sy * was.h) / 2
+          );
+          const [cx, cy] = from(kept, (-sx * w) / 2, (-sy * h) / 2);
+          model.xywh = new Bound(cx - w / 2, cy - h / 2, w, h).serialize();
+          model.x0 = x0 + (sx > 0 ? was.w - w : 0) / model.ppu;
+          model.y0 = y0 - (sy > 0 ? was.h - h : 0) / model.ppu;
         },
         onResizeStart(context) {
           context.default(context);
@@ -629,13 +703,6 @@ const planeInteraction = GfxViewInteractionExtension<PlaneElementView>(
           model.fit = false;
           model.stash('x0');
           model.stash('y0');
-        },
-      };
-    },
-    handleRotate() {
-      return {
-        beforeRotate(context) {
-          context.set({ rotatable: false });
         },
       };
     },

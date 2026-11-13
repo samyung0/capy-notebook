@@ -3234,6 +3234,7 @@
   "drawing_board_plane_label": "Label",
   "drawing_board_plane_formula": "Formula",
   "drawing_board_objects": "Objects",
+  "drawing_board_plane_type_formula": "Type a formula",
   "drawing_board_plane_from_to": "{from} to {to}",
   "drawing_board_plane_full": "This plane holds all it can.",
   "drawing_board_coordinate_plane": "Coordinate plane",

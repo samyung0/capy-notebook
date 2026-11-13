@@ -25,9 +25,11 @@ import {
   curveSegments,
   ellipseCentre,
   ellipseIn,
+  FORMULA_SIZE,
   functionRuns,
   isLoop,
   LABEL_LENGTH_MAX,
+  LABEL_SIZE,
   MARKS_MAX,
   type Mark,
   markFunction,
@@ -48,6 +50,8 @@ import {
   drawPlane,
   fitCard,
   formulaBox,
+  labelBox,
+  labelFont,
   markPoints,
   type PlaneElementModel,
   type PlaneView,
@@ -57,6 +61,13 @@ import {
   traceFunction,
   traceMark,
 } from './boardPlane';
+import {
+  CORNER_CURSOR,
+  draggedSize,
+  drawTextFrame,
+  frameCornerAt,
+  type TextBox,
+} from './boardTextFrame';
 import { boardKindOf, hugeIcon, mathsIcon } from './boardTools';
 
 type Tool =
@@ -342,7 +353,8 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   let openId: string | null = null;
   const openMark = () => model.marks.find((mark) => mark.id === openId);
   /** The label being typed, at its point on the plane; `id` when it's an old one. */
-  let typing: { at: Vec; id?: string; text: string } | null = null;
+  let typing: { at: Vec; id?: string; size?: number; text: string } | null =
+    null;
   let frame = 0;
   /** The menu's zoom counts from the card's scale on the canvas as 100% (Epo 2026-11-09). */
   const cardPpu = model.ppu;
@@ -496,6 +508,9 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     handle?: 0 | 1;
     /** The selected curve's stroke being pulled. */
     bend?: Bend;
+    /** The picked label's or formula's frame corner being pulled, clockwise from the
+     * top left. */
+    corner?: number;
   } | null = null;
   /** The curve point whose handles show, picked with Select (Epo 2026-11-13, K1). */
   let editing: { id: string; index: number } | null = null;
@@ -562,7 +577,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     const [x, y] = toScreen(mark.at);
     const drawn = laidOut(mark.latex);
     if (!drawn) return Math.hypot(px[0] - x, px[1] - y) <= PIXELS_TO_LABEL;
-    const box = formulaBox(drawn, x, y);
+    const box = formulaBox(drawn, x, y, mark.size);
     return (
       px[0] >= box.x - 4 &&
       px[0] <= box.x + box.w + 4 &&
@@ -570,13 +585,25 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       px[1] <= box.y + box.h + 4
     );
   };
+  /** Whether a pixel is on a label's text, or near its point. */
+  const onLabel = (mark: Extract<Mark, { kind: 'label' }>, px: Vec) => {
+    const [x, y] = toScreen(mark.at);
+    const box = labelBox(ctx, mark, x, y);
+    return (
+      Math.hypot(px[0] - x, px[1] - y) <= PIXELS_TO_LABEL ||
+      (px[0] >= box.x - 4 &&
+        px[0] <= box.x + box.w + 4 &&
+        px[1] >= box.y - 4 &&
+        px[1] <= box.y + box.h + 4)
+    );
+  };
   const markAt = (px: Vec) => {
     const here = toPlane(px);
     return model.marks.find((mark) => {
       if (mark.kind === 'formula') return onFormula(mark, px);
+      if (mark.kind === 'label') return onLabel(mark, px);
       if (mark.kind === 'dot') return false;
-      const reach =
-        (mark.kind === 'label' ? PIXELS_TO_LABEL : PIXELS_TO_SELECT) / view.ppu;
+      const reach = PIXELS_TO_SELECT / view.ppu;
       return distanceTo(mark, here, reach) <= reach;
     });
   };
@@ -593,7 +620,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     if (mark.kind === 'formula') {
       const drawn = laidOut(mark.latex);
       if (!drawn) return inside(toScreen(mark.at));
-      const f = formulaBox(drawn, ...toScreen(mark.at));
+      const f = formulaBox(drawn, ...toScreen(mark.at), mark.size);
       return f.x <= x1 && f.x + f.w >= x0 && f.y <= y1 && f.y + f.h >= y0;
     }
     if (mark.kind === 'function')
@@ -703,6 +730,31 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   const replaceOpen = (mark: Mark) =>
     write(model.marks.map((old) => (old.id === mark.id ? mark : old)));
 
+  /** A label's or formula's text on screen; a formula not laid out yet has none. */
+  const textBoxOf = (mark: Mark): TextBox | null => {
+    if (mark.kind === 'label') return labelBox(ctx, mark, ...toScreen(mark.at));
+    if (mark.kind !== 'formula') return null;
+    const drawn = laidOut(mark.latex);
+    return drawn ? formulaBox(drawn, ...toScreen(mark.at), mark.size) : null;
+  };
+  /** The one label or formula Select has picked, which wears the frame. */
+  const framed = (marks = model.marks) => {
+    if (tool !== 'select' || selected.size !== 1) return null;
+    const [id] = selected;
+    const mark = marks.find((each) => each.id === id);
+    return (mark?.kind === 'label' && typing?.id !== id) ||
+      mark?.kind === 'formula'
+      ? mark
+      : null;
+  };
+  /** The framed text's corner under a pixel. */
+  const cornerAt = (px: Vec) => {
+    const mark = framed();
+    const box = mark && textBoxOf(mark);
+    const corner = box ? frameCornerAt(box, px) : null;
+    return mark && corner !== null ? { corner, id: mark.id } : null;
+  };
+
   /** The mark under the pointer or being dragged, in blue with its point ringed. */
   const drawPicked = (mark: Mark, ringed: number | null) => {
     ctx.lineCap = 'round';
@@ -737,19 +789,19 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     if (mark.kind === 'formula') {
       const drawn = laidOut(mark.latex);
       if (!drawn) return;
-      const box = formulaBox(drawn, ...toScreen(mark.at));
+      const box = formulaBox(drawn, ...toScreen(mark.at), mark.size);
       ctx.fillStyle = HALO;
       ctx.fillRect(box.x - 4, box.y - 4, box.w + 8, box.h + 8);
       return;
     }
     if (mark.kind === 'label') {
       const [x, y] = toScreen(mark.at);
-      ctx.font = '15px Arial, sans-serif';
+      const box = labelBox(ctx, mark, x, y);
+      ctx.font = labelFont(mark.size);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      const w = ctx.measureText(mark.text).width + 12;
       ctx.fillStyle = HALO;
-      ctx.fillRect(x - w / 2, y - 12, w, 24);
+      ctx.fillRect(box.x - 6, box.y - 3, box.w + 12, box.h + 6);
       ctx.fillStyle = BLUE;
       ctx.fillText(mark.text, x, y);
       return;
@@ -827,14 +879,16 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       redraw
     );
     const picked = preview ? grab : hover;
+    const inFrame = framed(marks);
     for (const chosen of marks)
       if (
         (selected.has(chosen.id) || hot === chosen.id) &&
-        chosen.id !== picked?.id
+        chosen.id !== picked?.id &&
+        chosen !== inFrame
       )
         drawPicked(chosen, null);
     const mark = picked && marks.find(({ id }) => id === picked.id);
-    if (picked && mark)
+    if (picked && mark && mark !== inFrame)
       drawPicked(
         mark,
         preview && grab?.handle !== undefined ? null : picked.index
@@ -845,6 +899,14 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       if (shown?.kind === 'curve') drawHandles(shown, editing.index);
     }
     if (bendHover && !grab) ring(bendHover, 5);
+    const frameBox = inFrame && textBoxOf(inFrame);
+    if (frameBox)
+      drawTextFrame(
+        ctx,
+        frameBox,
+        getComputedStyle(canvas).getPropertyValue('--affine-primary-color'),
+        RING_FILL[theme.theme]
+      );
     if (preview && grab?.index != null) {
       const [x, y] = pointsOf(preview[0])[grab.index];
       const [sx, sy] = toScreen([x, y]);
@@ -1047,12 +1109,10 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     commitLabel();
     const here = toPlane(px);
     const near = model.marks.find(
-      (mark) =>
-        mark.kind === 'label' &&
-        distanceTo(mark, here) <= PIXELS_TO_LABEL / view.ppu
+      (mark) => mark.kind === 'label' && onLabel(mark, px)
     );
     if (near?.kind === 'label')
-      typing = { at: near.at, id: near.id, text: near.text };
+      typing = { at: near.at, id: near.id, size: near.size, text: near.text };
     else if (model.marks.length < MARKS_MAX) typing = { at: here, text: '' };
     drawControls();
     controls.querySelector<HTMLInputElement>('.capy-chart-label')?.select();
@@ -1079,6 +1139,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
         at: open.at,
         id: open.id ?? newId(),
         kind: 'label',
+        ...(open.size && { size: open.size }),
         text,
       };
       if (!open.id) write([...model.marks, label]);
@@ -1194,6 +1255,12 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       menuFor = null;
       drawControls();
     }
+    const pulled = cornerAt(at);
+    if (pulled) {
+      grab = { ...pulled, index: null, preview: null, start: at };
+      redraw();
+      return;
+    }
     const knob = knobAt(at);
     if (knob) {
       grab = {
@@ -1277,6 +1344,21 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       )
         return;
       if (
+        grab.corner !== undefined &&
+        (picked.kind === 'label' || picked.kind === 'formula')
+      ) {
+        const size = draggedSize(
+          picked.size ?? (picked.kind === 'label' ? LABEL_SIZE : FORMULA_SIZE),
+          toScreen(picked.at),
+          grab.start,
+          at
+        );
+        grab.preview = [{ ...picked, size }];
+        canvas.style.cursor = CORNER_CURSOR[grab.corner];
+        redraw();
+        return;
+      }
+      if (
         grab.handle !== undefined &&
         grab.index !== null &&
         picked.kind === 'curve'
@@ -1342,7 +1424,12 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       !last && event.pointerType === 'mouse' && !knobAt(at)
         ? (bendAt(at)?.at ?? null)
         : null;
-    canvas.style.cursor = hover || bendHover || knobAt(at) ? 'grab' : '';
+    const corner = !last && cornerAt(at);
+    canvas.style.cursor = corner
+      ? CORNER_CURSOR[corner.corner]
+      : hover || bendHover || knobAt(at)
+        ? 'grab'
+        : '';
     redraw();
   });
   canvas.addEventListener('pointerup', (event) => {
@@ -1596,6 +1683,8 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     field.smartFence = true;
     field.mathVirtualKeyboardPolicy = 'auto';
     field.className = 'capy-plane-math';
+    if (key === NEW_ROW)
+      field.placeholder = `\\text{${m.drawing_board_plane_type_formula()}}`;
     field.addEventListener('input', () =>
       typedRow(key, field.value, field.getValue('ascii-math'))
     );
@@ -1869,7 +1958,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
                 aria-label=${m.drawing_board_chart_label()}
                 class="capy-chart-label"
                 maxlength=${LABEL_LENGTH_MAX}
-                style="left:${(typing.at[0] - view.x0) * view.ppu}px;top:${(view.y0 - typing.at[1]) * view.ppu}px"
+                style="left:${(typing.at[0] - view.x0) * view.ppu}px;top:${(view.y0 - typing.at[1]) * view.ppu}px;font-size:${typing.size ?? LABEL_SIZE}px"
                 type="text"
                 .value=${typing.text}
                 @blur=${commitLabel}
@@ -1879,7 +1968,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
               />
               <div
                 class="capy-symbols capy-plane-symbols"
-                style="top:${(view.y0 - typing.at[1]) * view.ppu + 20}px"
+                style="top:${(view.y0 - typing.at[1]) * view.ppu + (typing.size ?? LABEL_SIZE) / 2 + 12}px"
               >
                 ${symbolButtons(insertSymbol)}
               </div>`

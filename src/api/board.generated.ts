@@ -182,6 +182,8 @@ export const BOARD_CATALOG = {
     "MATERIAL_ID_MAX": 64,
     "PICTURE_LABEL_MAX": 120,
     "PICTURE_REF_MAX": 2048,
-    "SPOKES_MAX": 60
+    "SPOKES_MAX": 60,
+    "TEXT_SIZE_MAX": 96,
+    "TEXT_SIZE_MIN": 8
   }
 } as const;

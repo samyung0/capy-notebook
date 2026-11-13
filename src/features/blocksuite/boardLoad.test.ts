@@ -62,6 +62,9 @@ describe('checkSavedBoard', () => {
         withElement({
           marks: [
             { at: [1, 1], id: 'f', kind: 'formula', latex: 'x^2' },
+            // Sized by their frames' corners.
+            { at: [2, 2], id: 'g', kind: 'formula', latex: 'y', size: 30 },
+            { at: [0, 2], id: 'l', kind: 'label', size: 40, text: 'A' },
             {
               id: 'e',
               kind: 'ellipse',

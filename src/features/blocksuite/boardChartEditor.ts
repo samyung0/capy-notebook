@@ -23,6 +23,7 @@ import {
   BAR_SHARE,
   BARS_MAX,
   barPlot,
+  CHART_TEXT,
   type ChartBar,
   LABEL_LENGTH_MAX,
   LABELS_MAX,
@@ -35,6 +36,12 @@ import {
 import { drawChip, openBoardEditor, toolTip } from './boardEditorShell';
 import { alongDrag, ERASER_SIZE, EraserTrail } from './boardEraser';
 import { clockAngle, snapTo, tidy, type Vec } from './boardGeometry';
+import {
+  CORNER_CURSOR,
+  draggedSize,
+  drawTextFrame,
+  frameCornerAt,
+} from './boardTextFrame';
 import { boardKindOf, fillRow, hugeIcon, mathsIcon } from './boardTools';
 
 type Tool = 'select' | 'draw' | 'fill' | 'label' | 'erase';
@@ -104,6 +111,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     reach?: number;
     barId?: string;
     id?: string;
+    size?: number;
     text: string;
     x: number;
     y: number;
@@ -126,6 +134,8 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   /** How far a pie's label being dragged has moved, in pixels: it goes anywhere, in
    * the pie or out of it (Epo 2026-11-13). */
   let shifting: Vec | null = null;
+  /** The size the framed label's corner has been pulled to; written when it lifts. */
+  let resizing: { corner: number; id: string; size: number } | null = null;
   /** What a Select drag moves: every chosen item of the held one's kind when it's one
    * of them, so several move together (Epo 2026-11-09), else just it. */
   const groupOf = (held: Picked) =>
@@ -323,12 +333,43 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       reach: Math.hypot(x - cx, y - cy) / r,
     };
   };
-  /** The pie label under a point, if any. */
+  /** Where a pie label's text sits on screen: its width by a line, round its point. */
+  const labelBox = (label: PieLabel) => {
+    const [x, y] = labelPoint(label);
+    const size = label.size ?? CHART_TEXT;
+    ctx.save();
+    ctx.font = `${size}px Arial, sans-serif`;
+    const w = ctx.measureText(label.text).width;
+    ctx.restore();
+    const h = size * 1.2;
+    return { h, w, x: x - w / 2, y: y - h / 2 };
+  };
+  /** The pie label under a point, if any: on its text, or near its point. */
   const labelAt = ([x, y]: Vec) =>
     model.labels.find((label) => {
       const [lx, ly] = labelPoint(label);
-      return Math.hypot(x - lx, y - ly) < PIXELS_TO_LABEL;
+      const box = labelBox(label);
+      return (
+        Math.hypot(x - lx, y - ly) < PIXELS_TO_LABEL ||
+        (x >= box.x - 4 &&
+          x <= box.x + box.w + 4 &&
+          y >= box.y - 4 &&
+          y <= box.y + box.h + 4)
+      );
     });
+  /** The one label Select has picked, which wears the board's frame (Epo 2026-11-13). */
+  const framed = (labels = model.labels) => {
+    const [one] = chosen;
+    if (tool !== 'select' || chosen.length !== 1 || one.kind !== 'label')
+      return null;
+    if (typing?.id === one.id) return null;
+    return labels.find(({ id }) => id === one.id) ?? null;
+  };
+  const cornerAt = (px: Vec) => {
+    const label = framed();
+    const corner = label ? frameCornerAt(labelBox(label), px) : null;
+    return label && corner !== null ? { corner, id: label.id } : null;
+  };
 
   /** A bar's box on screen, its label under it included. */
   const barBox = (slot: number, value: number) => {
@@ -488,14 +529,12 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       const { id } = one;
       const label = labels.find((each) => each.id === id);
       if (!label) return;
-      const [x, y] = labelPoint(label);
-      ctx.font = '12px Arial, sans-serif';
-      const w = ctx.measureText(label.text).width + 12;
+      const box = labelBox(label);
       ctx.fillStyle = HALO;
-      ctx.fillRect(x - w / 2, y - 11, w, 22);
+      ctx.fillRect(box.x - 6, box.y - 4, box.w + 12, box.h + 8);
       ctx.strokeStyle = BLUE;
       ctx.lineWidth = 1.5;
-      ctx.strokeRect(x - w / 2, y - 11, w, 22);
+      ctx.strokeRect(box.x - 6, box.y - 4, box.w + 12, box.h + 8);
     }
   };
 
@@ -549,6 +588,12 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
         return { ...label, ...labelPlace([x + dx, y + dy]) };
       });
     }
+    if (resizing) {
+      const { id, size } = resizing;
+      labels = labels.map((label) =>
+        label.id === id ? { ...label, size } : label
+      );
+    }
     return { bars, fills, labels, spokes };
   };
 
@@ -589,7 +634,17 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
         width
       );
     }
-    for (const one of chosen) drawPicked(one, area, bars, labels, spokes);
+    const inFrame = framed(labels);
+    for (const one of chosen)
+      if (one.kind !== 'label' || one.id !== inFrame?.id)
+        drawPicked(one, area, bars, labels, spokes);
+    if (inFrame)
+      drawTextFrame(
+        ctx,
+        labelBox(inFrame),
+        getComputedStyle(canvas).getPropertyValue('--affine-primary-color'),
+        PAPER[resolve.theme].paper
+      );
     // A hovered row lights its bar, slice or label.
     if (hot?.startsWith('s:')) {
       const from = Number(hot.slice(2));
@@ -715,6 +770,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
         angle: place.angle,
         id: label?.id,
         reach: place.reach,
+        size: label?.size,
         text: label?.text ?? '',
         x,
         y,
@@ -747,6 +803,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
               angle: open.angle ?? 0,
               id: open.id ?? crypto.randomUUID(),
               reach: open.reach ?? 0,
+              ...(open.size && { size: open.size }),
               text,
             },
           ],
@@ -857,7 +914,12 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       trail.start(at);
       eraseNear(at);
     }
-    if (tool === 'select') {
+    const pulled = tool === 'select' && cornerAt(at);
+    if (pulled) {
+      const label = model.labels.find(({ id }) => id === pulled.id);
+      picked = { id: pulled.id, kind: 'label' };
+      resizing = { ...pulled, size: label?.size ?? CHART_TEXT };
+    } else if (tool === 'select') {
       picked = hitAt(at, 6);
       if (!picked) boxing = { adding: event.shiftKey, from: at, to: at };
     }
@@ -891,7 +953,17 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       return;
     }
     const held = picked;
-    if (tool === 'select' && pressed && held) {
+    const label =
+      resizing && model.labels.find(({ id }) => id === resizing?.id);
+    if (resizing && label && pressed) {
+      resizing.size = draggedSize(
+        label.size ?? CHART_TEXT,
+        labelPoint(label),
+        pressedAt,
+        at
+      );
+      canvas.style.cursor = CORNER_CURSOR[resizing.corner];
+    } else if (tool === 'select' && pressed && held) {
       dragging ||=
         Math.hypot(at[0] - pressedAt[0], at[1] - pressedAt[1]) >=
         PIXELS_TO_DRAG;
@@ -914,8 +986,14 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       }
       canvas.style.cursor = dragging ? 'grabbing' : '';
     } else if (live && pressed) live = { ...live, value: valueAt(at) };
-    if (tool === 'select' && !pressed && event.pointerType === 'mouse')
-      canvas.style.cursor = hitAt(at, 6) ? 'grab' : '';
+    if (tool === 'select' && !pressed && event.pointerType === 'mouse') {
+      const corner = cornerAt(at);
+      canvas.style.cursor = corner
+        ? CORNER_CURSOR[corner.corner]
+        : hitAt(at, 6)
+          ? 'grab'
+          : '';
+    }
     redraw();
   });
   canvas.addEventListener('pointerup', (event) => {
@@ -931,6 +1009,8 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     turning = null;
     const shifted = shifting;
     shifting = null;
+    const sized = resizing;
+    resizing = null;
     const box = boxing;
     boxing = null;
     const held = picked;
@@ -982,6 +1062,9 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       );
     } else if (shifted && held?.kind === 'label') {
       update({ labels: next.labels });
+    } else if (sized) {
+      const was = model.labels.find(({ id }) => id === sized.id)?.size;
+      if (sized.size !== (was ?? CHART_TEXT)) update({ labels: next.labels });
     } else if (live) {
       const { slot, value } = live;
       live = null;
@@ -1014,6 +1097,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     live = null;
     turning = null;
     shifting = null;
+    resizing = null;
     erasing = null;
     boxing = null;
     trail.end();
@@ -1499,7 +1583,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
                 aria-label=${m.drawing_board_chart_label()}
                 class="capy-chart-label"
                 maxlength=${LABEL_LENGTH_MAX}
-                style="left:${typing.x}px;top:${typing.y}px"
+                style="left:${typing.x}px;top:${typing.y}px;font-size:${typing.size ?? CHART_TEXT}px"
                 type="text"
                 .value=${typing.text}
                 @blur=${commitLabel}
