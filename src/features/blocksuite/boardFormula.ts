@@ -338,6 +338,19 @@ const SYMBOLS = ['²', '³', '√', 'π', 'θ', '±', '≤', '≥', '≠', '∞'
 const symbolLabel = (symbol: string) =>
   '²³'.includes(symbol) ? `x${symbol}` : symbol;
 
+/** The symbol row's buttons; a press keeps the caret in the field typed in. */
+export const symbolButtons = (insert: (symbol: string) => void) =>
+  SYMBOLS.map(
+    (symbol) =>
+      html`<button
+        type="button"
+        @click=${() => insert(symbol)}
+        @mousedown=${(event: Event) => event.preventDefault()}
+      >
+        ${symbolLabel(symbol)}
+      </button>`
+  );
+
 /** A row of maths symbols under a canvas label while it's being typed. */
 export function mountSymbolRow(gfx: GfxController) {
   const row = document.createElement('div');
@@ -362,19 +375,7 @@ export function mountSymbolRow(gfx: GfxController) {
     inline.insertText(range, symbol);
     inline.setInlineRange({ index: range.index + symbol.length, length: 0 });
   };
-  render(
-    html`${SYMBOLS.map(
-      (symbol) =>
-        html`<button
-          type="button"
-          @click=${() => insert(symbol)}
-          @mousedown=${(event: Event) => event.preventDefault()}
-        >
-          ${symbolLabel(symbol)}
-        </button>`
-    )}`,
-    row
-  );
+  render(html`${symbolButtons(insert)}`, row);
   const place = () => {
     const [element] = gfx.selection.selectedElements;
     const typing =

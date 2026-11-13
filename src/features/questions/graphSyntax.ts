@@ -589,6 +589,9 @@ export function functionOf(term: string): (x: number) => number {
         return (x) => a(x) ** b(x);
       }
       case 'call': {
+        // A command such as line(x) reads as a call but isn't a function of x.
+        if (!FUNCTIONS.has(node.fn))
+          throw new RowError(m.question_ui_graph_row_unreadable());
         checkArity(node);
         const args = node.args.map(at);
         if (node.fn === 'ln') return (x) => Math.log(args[0](x));

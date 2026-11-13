@@ -4800,7 +4800,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   A point's dot picks up with any tool but Erase (Epo 2026-11-08, option C): it rings
   blue under the mouse, a drag moves it to the grid with the coordinate chip, and a tap
   still does the tool's job at that point (Line starts from it). Select also drags a
-  whole line, curve or label (snapped by grid steps), and a single point takes the
+  whole line or curve (snapped by grid steps) or a label (wherever it's dragged, as it's
+  placed where it's clicked, Epo 2026-11-13), and a single point takes the
   whole point, so dragging one of several selected dots, or a selected line's stroke,
   moves them all; a line's or curve's own point stays its own to drag, selected or not
   (Epo 2026-11-13). The moved copies are only drawn until the pointer lifts, so a
@@ -4813,7 +4814,11 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   Label (Epo 2026-11-08) types text centred where it's clicked, a `label` mark at that
   coordinate that moves and zooms with the plane (a click near one edits it; up to 24
   characters; previews leave labels out, as numbers); after one, the tool goes back to
-  Select. Formula (Epo 2026-11-08) opens the board's formula card (`openFormulaCard`) for
+  Select. With Select, a double click on empty paper types a label there and one on a
+  label edits it, as on the canvas; while one is typed, the canvas label's maths symbol
+  row (`symbolButtons` in `boardFormula.ts`) sits under it, kept inside the plane, and
+  inserts at the caret within the 24 characters (Epo 2026-11-13). A plane label is
+  still its own kind: a `label` mark drawn on the plane, not BlockSuite's canvas text. Formula (Epo 2026-11-08) opens the board's formula card (`openFormulaCard`) for
   a `formula` mark centred where it's clicked (a click on one opens it again, emptied it
   goes); KaTeX's layout (`boardFormulaDraw.ts`, loaded only once a formula is on the
   board or a plane) is replayed at 18 px, inverted on dark paper, keeping its size as
@@ -4837,9 +4842,10 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   top, left, bottom); pulling one sets the width or height about the middle, so it
   stays upright and on the grid, and Shift scales it evenly. Select drags it whole, its
   middle (any other mark's first point) landing on the grid, where a ring crosses a
-  spoke on a polar plane (`snapPlane`), as points do. Curves draw as cubic Bézier pieces of their
-  Catmull-Rom curve (`curvePieces`) and ellipses as canvas ellipses, smooth at any zoom;
-  the sampled path (`smoothThrough`, `pathOf`) is for hit tests and previews. A line's,
+  spoke on a polar plane (`snapPlane`), as points do. Curves draw as cubic Bézier pieces
+  (`curveSegments`): their Catmull-Rom curve (`curvePieces`) until a handle is moved, then
+  their stored handles; ellipses draw as canvas ellipses, smooth at any zoom; the sampled
+  path (`pathOf`) is for hit tests and previews. A line's,
   curve's or ellipse's points show only in the editor, on the mark under the pointer,
   held or still open (Epo 2026-11-08); a single point always shows, on cards, previews
   and the marking image too. A curve clicked back onto its first point closes, smooth there,
@@ -4859,6 +4865,41 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   connector tools go back to Select; Point stays on. Leaving keeps a curve with two points
   or more and removes a mark that has only its first. Canvas drawings over a card aren't in it: they stay in place
   if the view moves.
+- **Bending a curve** (Epo 2026-11-13, K1 and K2, both boards): a curve may store
+  `handles`, an [in, out] pair of plane points per point; with none it keeps the
+  automatic bend, so saved curves draw as before. Select on a curve's point picks it and
+  shows its two handles (a blue line to a 9 px square each). Dragging one bends the
+  pieces on either side; on a smooth point the other handle turns to stay in line at
+  its own length, and Alt drags one alone, leaving a corner. A double click on a point
+  makes it a corner (both handles on it) or smooth again. With one curve selected,
+  dragging its stroke away from any point pulls that stretch through the pointer
+  (`bent`: the two inner handles move by their share of the drag, `t` held to 0.1–0.9),
+  the points either side staying smooth; a ring shows where a press would bend. A
+  closed curve's seam is one point with the last point's in-handle and the first's
+  out-handle (`pairOf`). Moving a point carries its handles; moving the curve moves
+  them all. `fitCard` counts handles.
+- **Functions and the objects list** (Epo 2026-11-13, L2, workspace canvases only): a
+  `function` mark holds the typed LaTeX and the graph dialog's `term` (and an optional
+  domain from `{a <= x <= b}`), read with `functionOf` in `graphSyntax.ts` (natural
+  log, as the dialog; a command such as `line(x)` is refused) and drawn across whatever
+  is shown by `functionRuns`: a sample every 2 px, at most 4000, breaking where the
+  value isn't finite or jumps (a leap past the canvas height whose middle isn't between,
+  as at tan's asymptote; a steep line keeps drawing). It can't be dragged; its row edits
+  it, and `fitCard` ignores it. The list button (☰-styled, `drawing_board_objects`) sits
+  at the editor's top left: a 300 px card floating below it, open by default from 640 px
+  (`listChoice` remembers a toggle for the session), and under 640 px a sheet over the
+  lower 48% with the tools and Finish riding above it. Rows are laid out as the graph dialog's but compact
+  (36 px, 14 px text, 15 px formulas; kind icon, ⋮ with Delete): a point's `(a, b)`, a line's or vector's `(a, b) to
+  (c, d)` and a label's text are typed in place and written on change (Enter or leaving);
+  curves, ellipses and formulas are shaped on the plane, so their rows show only
+  the kind's name (Epo 2026-11-13); a function is a
+  MathLive field (loaded when the list first opens) that plots as it's typed and writes on
+  Enter or leaving, emptied it goes. The empty last row adds a function, or a point for
+  `(3, −2)`; a row that can't be read shows the dialog's warning icon with its reason,
+  keeps its text, and goes back as it was on leaving or Escape. "+ Label" adds a label in
+  the middle of what's in view and selects its text. Hovering a row lights its mark;
+  selected marks light their rows. The answer board has no list button and no
+  functions. The shell lets a `math-field` keep its keys.
 - **Chart cards** (`boardChart.ts`, `boardChartEditor.ts`) are a `chart` canvas element of
   kind `bar` or `pie`, holding plain data, since a coordinate means nothing on either. They
   move and resize like a plane card, the eraser leaves them alone, and their editor fills

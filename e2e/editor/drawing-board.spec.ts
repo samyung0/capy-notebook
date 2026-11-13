@@ -565,6 +565,43 @@ test('in a plane, selected points move together, and the eraser takes what its r
     (Math.atan2(dropped.at[1], dropped.at[0]) * 180) / Math.PI / 15;
   expect(rings).toBeCloseTo(Math.round(rings), 6);
   expect(spokes).toBeCloseTo(Math.round(spokes), 6);
+
+  // A label goes wherever it's dragged, off the rings and spokes (Epo 2026-11-13).
+  await page.getByRole('button', { name: 'Label' }).click();
+  await page.mouse.click(...polar(0.4, 0.6));
+  await page.keyboard.type('Here');
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(async () => (await planePoints(page, true)).points)
+    .toHaveLength(2);
+  const label = (await planePoints(page, true)).points[1];
+  await page.mouse.move(...label.px);
+  await page.mouse.down();
+  await page.mouse.move(label.px[0] + 37, label.px[1] - 23, { steps: 6 });
+  await page.mouse.up();
+  await expect
+    .poll(async () => (await planePoints(page, true)).points[1].at[0])
+    .toBeCloseTo(label.at[0] + 37 / ppu, 6);
+  expect((await planePoints(page, true)).points[1].at[1]).toBeCloseTo(
+    label.at[1] + 23 / ppu,
+    6
+  );
+
+  // With Select, a double click on empty paper types a label there, with the canvas
+  // label's symbol row (Epo 2026-11-13).
+  await page.mouse.dblclick(...polar(0.3, 0.3));
+  await page.keyboard.type('a');
+  await page
+    .locator('.capy-plane-symbols')
+    .getByRole('button', { name: 'x²' })
+    .click();
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(async () => (await planePoints(page, true)).points)
+    .toHaveLength(3);
+  await expect(
+    page.locator('.capy-plane-editor .capy-chart-label')
+  ).toHaveCount(0);
 });
 
 test("a selected line's point still moves alone, and Fit shows ten units of an empty plane", async ({
@@ -1601,6 +1638,84 @@ test("a plane's editor is in the canvas's URL: Back closes it, and a missing one
     page.getByText("That isn't on this canvas anymore")
   ).toBeVisible();
   await expect(page).not.toHaveURL(/[?&]open=/);
+});
+
+test("a plane's curve bends by its stroke, and the workspace's objects list plots a typed function", async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/workspaces/ws_bio?panel=canvas');
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  await placePiece(page, 'capy-graph-slot', 'cart');
+  await page.mouse.dblclick(...(await onCard(page))(0.5, 0.5));
+  const marks = () =>
+    page.evaluate(() => {
+      const root = document.querySelector(
+        'affine-edgeless-root'
+      ) as unknown as {
+        gfx: {
+          layer: {
+            canvasElements: {
+              marks: {
+                handles?: [Vec, Vec][];
+                kind: string;
+                points?: Vec[];
+                term?: string;
+              }[];
+              type: string;
+            }[];
+          };
+        };
+      };
+      return (
+        root.gfx.layer.canvasElements.find(({ type }) => type === 'plane')
+          ?.marks ?? []
+      );
+    });
+
+  // Epo 2026-11-13 (K2): the selected curve's stroke pulls that stretch, its points
+  // staying where they are. Two points make it straight, so its middle is on it.
+  const at = await onPlane(page);
+  await page.getByRole('button', { name: 'Curve through points' }).click();
+  await page.mouse.click(...at(0.5, 0.6));
+  await page.mouse.click(...at(0.8, 0.4));
+  await page.getByRole('button', { name: 'Finish curve' }).click();
+  await page.getByRole('button', { name: 'Select' }).click();
+  await page.mouse.click(...at(0.65, 0.5));
+  const [curve] = await marks();
+  await page.mouse.move(...at(0.65, 0.5));
+  await page.mouse.down();
+  await page.mouse.move(...at(0.65, 0.3), { steps: 6 });
+  await page.mouse.up();
+  await expect.poll(async () => (await marks())[0].handles).toHaveLength(2);
+  expect((await marks())[0].points).toEqual(curve.points);
+
+  // K1: a double click on a point makes it a corner, its handles on it.
+  const [end] = (await planePoints(page)).points;
+  await page.mouse.dblclick(...end.px);
+  await expect
+    .poll(async () => (await marks())[0].handles?.[0])
+    .toEqual([end.at, end.at]);
+
+  // L2: the list is open on a wide screen; its last row plots what's typed.
+  await expect(page.getByRole('button', { name: 'Objects' })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+  await page.locator('.capy-plane-list li[data-row="new"] math-field').click();
+  await page.keyboard.type('sin(x)');
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(async () => (await marks()).map(({ term }) => term))
+    .toContain('sin(x)');
+
+  // The answer board has no list, so an answer is drawn rather than typed.
+  await openBoard(page);
+  await page.mouse.dblclick(...(await onCard(page))(0.5, 0.5));
+  await expect(page.locator('.capy-plane-editor')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Objects' })).toHaveCount(0);
 });
 
 test("a quiz card's Undo while edited is the quiz's, not the canvas's", async ({

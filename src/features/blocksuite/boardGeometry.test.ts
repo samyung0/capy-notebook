@@ -1,5 +1,11 @@
 import { expect, it } from 'vitest';
-import { type PathMark, pathOf, smoothHandles } from './boardData';
+import {
+  type FunctionMark,
+  functionRuns,
+  type PathMark,
+  pathOf,
+  smoothHandles,
+} from './boardData';
 import {
   clockAngle,
   minorStep,
@@ -81,4 +87,35 @@ it("reads a pie angle clockwise from 12 o'clock", () => {
       clockAngle(centre, [5 + 3 * Math.sin(turn), 5 + 3 * Math.cos(turn)])
     ).toBe(degrees);
   }
+});
+
+const plotted = (term: string) =>
+  functionRuns(
+    { id: 'f', kind: 'function', latex: '', term } as FunctionMark,
+    -5,
+    5,
+    0.04,
+    16
+  );
+
+it('draws a steep line whole, and breaks a function at its asymptote', () => {
+  expect(plotted('1000*x')).toHaveLength(1);
+  expect(plotted('tan(x)').length).toBeGreaterThan(2);
+  // A command's name reads as a call but plots nothing.
+  expect(plotted('1+line(x)')).toEqual([]);
+});
+
+it("gives a loop's seam both handles, smooth across it", () => {
+  const points: Vec[] = [
+    [0, 0],
+    [4, 0],
+    [4, 4],
+    [0, 4],
+    [0, 0],
+  ];
+  const handles = smoothHandles(points);
+  expect(handles[0]).toEqual(handles[4]);
+  const [[ax, ay], [bx, by]] = handles[0];
+  // In and out lie on one line through the seam.
+  expect(ax * by - ay * bx).toBeCloseTo(0);
 });

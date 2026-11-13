@@ -46,12 +46,21 @@ export type FunctionMark = Extract<Mark, { kind: 'function' }>;
 export const pointsOf = (mark: Mark): Vec[] =>
   'points' in mark ? mark.points : 'at' in mark ? [mark.at] : [];
 
-/** Each point's [in, out] handles as the smooth curve through them has them. */
+/** Whether a curve closes on its start, as `curvePieces` takes it: its first and last
+ * points are one point, smooth across the seam. */
+export const isLoop = (points: Vec[]) => {
+  const [first, end] = [points[0], points.at(-1)];
+  return points.length > 3 && end?.[0] === first[0] && end[1] === first[1];
+};
+
+/** Each point's [in, out] handles as the smooth curve through them has them; a loop's
+ * seam has both, on its first and last point alike. */
 export function smoothHandles(points: Vec[]): [Vec, Vec][] {
   const pieces = curvePieces(points);
+  const loop = isLoop(points);
   return points.map((point, i): [Vec, Vec] => [
-    pieces[i - 1]?.[2] ?? point,
-    pieces[i]?.[1] ?? point,
+    pieces[i - 1]?.[2] ?? (loop ? pieces.at(-1)?.[2] : undefined) ?? point,
+    pieces[i]?.[1] ?? (loop ? pieces[0]?.[1] : undefined) ?? point,
   ]);
 }
 
@@ -108,11 +117,19 @@ export function functionRuns(
   const runs: Vec[][] = [];
   let run: Vec[] = [];
   const count = Math.min(4000, Math.ceil((high - low) / step));
+  const gap = (high - low) / Math.max(count, 1);
+  // A leap past `leap` breaks the run only where the value between isn't between,
+  // as at tan's or 1/x's asymptote; a steep line keeps drawing.
+  const jumps = ([x0, y0]: Vec, x: number, y: number) => {
+    if (Math.abs(y - y0) <= leap) return false;
+    const middle = fn((x0 + x) / 2);
+    return !(middle >= Math.min(y0, y) && middle <= Math.max(y0, y));
+  };
   for (let i = 0; i <= count; i++) {
-    const x = i === count ? high : low + i * step;
+    const x = i === count ? high : low + i * gap;
     const y = fn(x);
     const last = run.at(-1);
-    if (!Number.isFinite(y) || (last && Math.abs(y - last[1]) > leap)) {
+    if (!Number.isFinite(y) || (last && jumps(last, x, y))) {
       if (run.length > 1) runs.push(run);
       run = Number.isFinite(y) ? [[x, y]] : [];
     } else run.push([x, y]);

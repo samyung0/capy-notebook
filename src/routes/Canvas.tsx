@@ -133,8 +133,12 @@ export default function CanvasPage() {
   // fills the panel (Epo 2026-11-12).
   return (
     <PagePanel fill phoneRow={false}>
-      {/* The board and the picker over it, level with its ☰ (32px). */}
-      <div className="relative min-h-0 flex-1 [--capy-board-menu-size:32px]">
+      {/* The board and the picker over it, level with its ☰ (32px); an open card
+          hides the picker, as on a workspace's canvas. */}
+      <div
+        className="relative min-h-0 flex-1 [--capy-board-menu-size:32px]"
+        data-canvas-board
+      >
         {current && (
           <OwnCanvas
             gone={() => gone(current.id)}
@@ -148,7 +152,7 @@ export default function CanvasPage() {
         )}
         {picker && (
           // On a phone the row stops short of the board's own menu at the top right.
-          <div className="absolute top-2 right-12 left-2 flex sm:right-auto [&>[data-slot=popover-anchor]]:flex-1 sm:[&>[data-slot=popover-anchor]]:flex-none">
+          <div className="absolute top-2 right-12 left-2 flex sm:right-auto [&>[data-slot=popover-anchor]]:flex-1 sm:[&>[data-slot=popover-anchor]]:flex-none [[data-canvas-board]:has(.capy-board[data-editor-open])_&]:hidden">
             {picker}
           </div>
         )}

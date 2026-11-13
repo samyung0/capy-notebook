@@ -771,6 +771,19 @@ html.dark:not([data-board-light]) .capy-board {
   border-bottom: 1px solid var(--affine-text-primary-color);
 }
 
+/* The canvas label's symbol row, under a plane label being typed (Epo 2026-11-13). */
+.capy-plane-editor .capy-plane-symbols {
+  width: max-content;
+  transform: translateX(-50%);
+}
+
+.capy-plane-editor .capy-plane-symbols button {
+  min-width: 32px;
+  height: 32px;
+  font-size: 15px;
+  color: var(--affine-text-primary-color);
+}
+
 .capy-chart-label {
   all: unset;
   position: absolute;
@@ -788,7 +801,8 @@ html.dark:not([data-board-light]) .capy-board {
 
 /* The objects list (Epo 2026-11-13, L2): its button at the plane's top left, a
    card floating under it, and on a phone a sheet over the lower half with the tools
-   riding above it. Rows as the graph dialog draws them. */
+   riding above it. Rows laid out as the graph dialog's, more compact: 36 px, 14 px
+   text, 15 px formulas (Epo 2026-11-13). */
 .capy-plane-editor .capy-plane-list-toggle {
   position: absolute;
   top: 8px;
@@ -864,11 +878,11 @@ html.dark:not([data-board-light]) .capy-board {
 
 .capy-plane-list li {
   display: grid;
-  grid-template-columns: 2rem minmax(0, 1fr) 1.75rem;
-  gap: 8px;
+  grid-template-columns: 1.5rem minmax(0, 1fr) 1.5rem;
+  gap: 6px;
   align-items: center;
-  min-height: 48px;
-  padding: 4px 4px 4px 6px;
+  min-height: 36px;
+  padding: 2px 4px 2px 6px;
   cursor: text;
   border-bottom: 1px solid var(--divider);
 }
@@ -894,8 +908,8 @@ html.dark:not([data-board-light]) .capy-board {
 }
 
 .capy-plane-list .kind svg {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
 }
 
 .capy-plane-list .err {
@@ -908,19 +922,29 @@ html.dark:not([data-board-light]) .capy-board {
   all: unset;
   width: 100%;
   min-width: 0;
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1.4;
 }
 
-.capy-plane-list li input.plain {
-  font-size: 14px;
+/* As the graph dialog's rows: no MathLive menu or keyboard buttons, no padding. */
+.capy-plane-math::part(container) {
+  min-height: 0;
+}
+
+.capy-plane-math::part(content) {
+  padding: 0;
+}
+
+.capy-plane-math::part(menu-toggle),
+.capy-plane-math::part(virtual-keyboard-toggle) {
+  display: none;
 }
 
 .capy-plane-math {
   display: block;
   width: 100%;
   padding: 0;
-  font-size: 1.21em;
+  font-size: 15px;
   line-height: 1.2;
   color: inherit;
   outline: 0;
@@ -928,21 +952,16 @@ html.dark:not([data-board-light]) .capy-board {
   border: 0;
 }
 
-.capy-plane-list .fixed {
+.capy-plane-list .capy-plane-row-text {
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 14px;
   white-space: nowrap;
 }
 
-.capy-plane-list .fixed small {
-  font-size: 12.5px;
-  color: var(--affine-text-secondary-color);
-}
-
 .capy-plane-editor .capy-plane-list .more {
-  min-width: 28px;
-  height: 28px;
+  min-width: 24px;
+  height: 24px;
   opacity: 0;
 }
 
@@ -1151,4 +1170,8 @@ html.dark:not([data-board-light]) .capy-board {
 .capy-plane-editor .capy-plane-list .capy-menu-list {
   right: 8px;
   z-index: 1;
+}
+
+.capy-plane-editor .capy-plane-list .capy-menu-list > button {
+  gap: 8px;
 }

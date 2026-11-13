@@ -528,17 +528,25 @@ export function setPlaneEditor(open: typeof openEditor) {
 export const openPlane = (gfx: GfxController, model: PlaneElementModel) =>
   openEditor(gfx, model);
 
-/** Every point a plane's marks reach, and its origin, so the axes stay in view. */
+/** Every point a plane's marks reach (a curve's handles too), and its origin, so the
+ * axes stay in view. A function reaches none: it runs across whatever is shown. */
 export function markPoints(marks: Mark[]) {
-  return [[0, 0] as Vec, ...marks.flatMap(pointsOf)];
+  return [
+    [0, 0] as Vec,
+    ...marks.flatMap((mark) => [
+      ...pointsOf(mark),
+      ...('handles' in mark && mark.handles ? mark.handles.flat() : []),
+    ]),
+  ];
 }
 
 /** Sizes a card to its marks at its scale, its top left staying put. Past the longest
  * side it zooms out instead. An empty card keeps its size. Not in the undo history,
  * like the view. */
 export function fitCard(model: PlaneElementModel) {
-  if (!model.marks.length) return;
   const seen = markPoints(model.marks);
+  // Nothing but the origin (no marks, or only functions): the card keeps its size.
+  if (seen.length < 2) return;
   const xs = seen.map(([x]) => x);
   const ys = seen.map(([, y]) => y);
   const [left, right, bottom, top] = [
