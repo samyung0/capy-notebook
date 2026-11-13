@@ -972,16 +972,78 @@ html.dark:not([data-board-light]) .capy-board {
   opacity: 1;
 }
 
+/* A chart's data pane rows (Epo 2026-11-13, B1 and P1): a fill swatch, the label or
+   name, then the value or share (a slice's degrees beside it). */
+.capy-plane-list li.capy-chart-row {
+  grid-template-columns: 1.5rem minmax(0, 1fr) auto 1.5rem;
+}
+
+.capy-plane-editor .capy-plane-list .swatch {
+  justify-self: center;
+  width: 14px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid var(--affine-border-color);
+  border-radius: 3px;
+}
+
+.capy-plane-editor .capy-plane-list .swatch:hover {
+  box-shadow: 0 0 0 2px var(--affine-hover-color);
+}
+
+.capy-plane-list li input.num {
+  width: 4rem;
+  text-align: right;
+}
+
+.capy-plane-list .share {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+  justify-content: flex-end;
+}
+
+.capy-plane-list .share input.num {
+  width: 2.75rem;
+}
+
+.capy-plane-list .share small {
+  font-size: 12.5px;
+  color: var(--affine-text-secondary-color);
+}
+
+.capy-plane-list .share small:last-child {
+  min-width: 2.25rem;
+  text-align: right;
+}
+
+/* The typed axis sits right of the data pane's button, on its row until a phone's
+   width leaves no room beside the ☰ and Done. */
+.capy-chart-editor:has(.capy-plane-list-toggle) .capy-chart-axis {
+  top: 8px;
+  left: 56px;
+}
+
+@container viewport (width < 460px) {
+  .capy-chart-editor:has(.capy-plane-list-toggle) .capy-chart-axis {
+    top: 56px;
+  }
+}
+
+/* A ghost row as tall as the others, its plus in line with their icons: no border,
+   the hover fill marks it (Epo 2026-11-13). */
 .capy-plane-editor .capy-plane-list .add {
   flex-shrink: 0;
-  gap: 6px;
-  align-self: flex-start;
-  padding: 0 10px;
-  margin: 6px;
+  gap: 9px;
+  align-self: stretch;
+  justify-content: flex-start;
+  height: 36px;
+  padding: 0 10px 0 9px;
   font-size: 13px;
   font-weight: 600;
   color: var(--affine-text-primary-color);
-  border: 1px solid var(--affine-border-color);
+  border-radius: 0 0 var(--radius-toolbar) var(--radius-toolbar);
 }
 
 @container viewport (width < 768px) {

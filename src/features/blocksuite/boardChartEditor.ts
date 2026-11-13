@@ -3,7 +3,14 @@ import {
   ThemeProvider,
 } from '@blocksuite/affine/shared/services';
 import type { GfxController } from '@blocksuite/affine/std/gfx';
+import {
+  Delete02Icon,
+  LeftToRightListBulletIcon,
+  MoreVerticalIcon,
+  PlusSignIcon,
+} from '@hugeicons/core-free-icons';
 import { html, nothing, render } from 'lit';
+import { repeat } from 'lit/directives/repeat.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import { m } from '@/i18n';
 import {
@@ -28,7 +35,7 @@ import {
 import { drawChip, openBoardEditor, toolTip } from './boardEditorShell';
 import { alongDrag, ERASER_SIZE, EraserTrail } from './boardEraser';
 import { clockAngle, snapTo, tidy, type Vec } from './boardGeometry';
-import { fillRow, mathsIcon } from './boardTools';
+import { boardKindOf, fillRow, hugeIcon, mathsIcon } from './boardTools';
 
 type Tool = 'select' | 'draw' | 'fill' | 'label' | 'erase';
 /** What Select picked (Epo 2026-11-09): a bar, a pie's line or a pie's label. */
@@ -49,6 +56,28 @@ const AXIS_MIN = 1e-3;
 /** A zoom is written, one undo step, once it has rested this long. */
 const ZOOM_SETTLE_MS = 300;
 const NICE_STEPS = [1, 2, 2.5, 5, 10];
+/** The data pane open or closed, as last chosen this session; until then open on a
+ * wide screen (Epo 2026-11-13, B1 and P1, as the plane's list). */
+let listChoice: boolean | null = null;
+/** Under this width the pane is a sheet over the chart's lower half. */
+const SHEET_BELOW = 640;
+/** Where a pie label inside the pie is put when a slice is named. */
+const NAME_REACH = 0.62;
+
+/** A pie's slices clockwise from its lines: each from a line to the next. */
+type Slice = { from: number; size: number };
+const slicesOf = (spokes: number[]): Slice[] => {
+  const sorted = [...spokes].sort((a, b) => a - b);
+  return sorted.map((from, i) => ({
+    from,
+    size: (i + 1 < sorted.length ? sorted[i + 1] : sorted[0] + 360) - from,
+  }));
+};
+/** Whether a clockwise angle falls in a slice. */
+const inSlice = ({ from, size }: Slice, angle: number) =>
+  (((angle - from) % 360) + 360) % 360 < size;
+/** A slice's size as a share, to a tenth of a percent. */
+const shareOf = ({ size }: Slice) => Math.round((size / 3.6) * 10) / 10;
 
 /** An axis to a top, about five numbered lines in 1, 2, 2.5 or 5 steps. */
 function niceAxis(top: number) {
@@ -117,8 +146,36 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   let zoom: { axisMax: number; axisStep: number; top: number } | null = null;
   let zoomTimer: ReturnType<typeof setTimeout> | undefined;
   let pointer: Vec | null = null;
+  const workspace = boardKindOf(gfx.std) === 'workspace';
+  /** The row under the mouse, its bar, slice (`s` and its line) or label lit. */
+  let hot: string | null = null;
+  /** The row whose ⋮ menu is open, and how far down the pane it sits. */
+  let menuFor: { key: string; top: number } | null = null;
+  /** A row's swatch picked: the next fill picked goes to that bar or slice. */
+  let recolour: { bar: string } | { from: number } | null = null;
+  /** The row whose first field takes the caret once drawn (one just added). */
+  let focusRow: string | null = null;
 
   const shell = openBoardEditor(gfx, model.id, {
+    // A pie keeps its first line at 12 o'clock, as a new one starts.
+    clear: {
+      empty: () =>
+        !(model.bars.length || model.labels.length) &&
+        model.spokes.length <= (model.kind === 'pie' ? 1 : 0),
+      run: () => {
+        typing = null;
+        chosen = [];
+        picked = null;
+        update({
+          bars: [],
+          fills: [],
+          labels: [],
+          spokes: model.kind === 'pie' ? [0] : [],
+        });
+        drawControls();
+        redraw();
+      },
+    },
     fit: model.kind === 'bar' ? () => fitAxis() : undefined,
     onDelete: () => {
       if (!chosen.length) return false;
@@ -129,6 +186,21 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       return true;
     },
     onEscape: () => {
+      if (menuFor) {
+        menuFor = null;
+        drawControls();
+        return true;
+      }
+      // A row being typed in goes back as it was.
+      const field = document.activeElement;
+      if (
+        field instanceof HTMLInputElement &&
+        field.closest('.capy-plane-list')
+      ) {
+        field.value = field.dataset.value ?? field.value;
+        field.blur();
+        return true;
+      }
       if (typing) {
         typing = null;
         drawControls();
@@ -168,7 +240,20 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   const update = (props: Partial<ChartElementModel>) =>
     shell.write(() => gfx.surface?.updateElement(model.id, props));
 
+  const listOpen = () =>
+    workspace && (listChoice ?? box().width >= SHEET_BELOW);
+  const listLayout = () =>
+    listOpen() ? (box().width < SHEET_BELOW ? 'sheet' : 'floating') : '';
+  /** The chart's room: beside the floating pane, or above the phone's sheet. */
   const pads = (): Pads => {
+    const room = ownPads();
+    const layout = listLayout();
+    if (layout === 'floating') return { ...room, left: room.left + 308 };
+    if (layout === 'sheet')
+      return { ...room, bottom: room.bottom + box().height * 0.48 };
+    return room;
+  };
+  const ownPads = (): Pads => {
     const phone = box().width < 768;
     return isBar
       ? {
@@ -505,6 +590,31 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       );
     }
     for (const one of chosen) drawPicked(one, area, bars, labels, spokes);
+    // A hovered row lights its bar, slice or label.
+    if (hot?.startsWith('s:')) {
+      const from = Number(hot.slice(2));
+      const slice = slicesOf(spokes).find((one) => one.from === from);
+      if (slice) {
+        const { cx, cy, r } = pieCircle(area, pads());
+        const turn = (deg: number) => ((deg - 90) * Math.PI) / 180;
+        for (const [colour, width] of [
+          [HALO, 10],
+          [BLUE, 2],
+        ] as const) {
+          ctx.strokeStyle = colour;
+          ctx.lineWidth = width;
+          ctx.lineJoin = 'round';
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.arc(cx, cy, r, turn(slice.from), turn(slice.from + slice.size));
+          ctx.closePath();
+          ctx.stroke();
+        }
+      }
+    } else if (hot && bars.some(({ id }) => id === hot))
+      drawPicked({ id: hot, kind: 'bar' }, area, bars, labels, spokes);
+    else if (hot && labels.some(({ id }) => id === hot))
+      drawPicked({ id: hot, kind: 'label' }, area, bars, labels, spokes);
     if (
       picked &&
       (turning || shifting) &&
@@ -962,6 +1072,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     ];
   const pick = (id: Tool) => {
     commitLabel();
+    recolour = null;
     picked = null;
     chosen = [];
     tool = id;
@@ -970,12 +1081,397 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     redraw();
   };
 
+  // The data pane (Epo 2026-11-13, B1 and P1): a bar's label and value, a slice's
+  // name and share, typed in rows as the plane's list. Workspace canvases only.
+  const toggleList = () => {
+    listChoice = !listOpen();
+    menuFor = null;
+    drawControls();
+    redraw();
+  };
+  const lightRow = (key: string | null) => {
+    if (hot === key) return;
+    hot = key;
+    redraw();
+  };
+  /** A slice's name: the first label inside the pie within it. */
+  const nameOf = (slice: Slice) =>
+    model.labels.find(
+      ({ angle, reach }) => reach <= 1 && inSlice(slice, angle)
+    );
+  const colourOf = (fill: ChartBar['fill'] | undefined) =>
+    fill ? resolve.getColorValue(fill, 'transparent', true) : 'transparent';
+  const setBar = (id: string, change: Partial<ChartBar>) =>
+    update({
+      bars: model.bars.map((bar) =>
+        bar.id === id ? { ...bar, ...change } : bar
+      ),
+    });
+  /** A typed value; past the axis's top it raises the top to the next line. */
+  const setValue = (bar: ChartBar, field: HTMLInputElement) => {
+    const value = Number(field.value.replace(/[−–]/g, '-'));
+    if (!(Number.isFinite(value) && value >= 0 && value <= AXIS_MAX)) {
+      field.value = String(bar.value);
+      return;
+    }
+    let { axisMax, axisStep } = model;
+    if (value > axisMax) {
+      const lifted = Number(
+        (Math.ceil(value / axisStep - 1e-9) * axisStep).toPrecision(12)
+      );
+      if (lifted / axisStep <= AXIS_LINES_MAX) axisMax = lifted;
+      else ({ axisMax, axisStep } = niceAxis(value));
+    }
+    update({
+      axisMax,
+      axisStep,
+      bars: model.bars.map((one) =>
+        one.id === bar.id ? { ...one, value } : one
+      ),
+    });
+  };
+  const addBar = () => {
+    if (model.bars.length >= BARS_MAX) return;
+    const id = crypto.randomUUID();
+    focusRow = id;
+    update({
+      bars: [
+        ...model.bars,
+        { fill: newFill(), id, label: '', value: model.axisStep },
+      ],
+    });
+  };
+  /** A slice's share typed: its closing line moves, the slices after it keep their
+   * sizes and the last takes up the rest (the last one's own share moves its opening
+   * line). Labels inside a slice keep their place in it; fills follow their line. */
+  const setShare = (index: number, field: HTMLInputElement) => {
+    const slices = slicesOf(model.spokes);
+    const size = Math.round(Number(field.value.replace('%', '')) * 3.6);
+    const last = slices.length - 1;
+    const delta = size - slices[index]?.size;
+    const giver = index < last ? last : last - 1;
+    if (
+      !(last > 0 && Number.isFinite(delta) && size >= 1) ||
+      slices[giver].size - delta < 1
+    ) {
+      field.value = String(shareOf(slices[index]));
+      return;
+    }
+    if (!delta) return;
+    const moved = slices.map(({ from, size: was }, i) => {
+      const start =
+        index < last
+          ? i > index
+            ? from + delta
+            : from
+          : i === last
+            ? from - delta
+            : from;
+      const grow = i === index ? delta : i === giver ? -delta : 0;
+      return { from: start, size: was + grow };
+    });
+    const spin = (angle: number) => ((angle % 360) + 360) % 360;
+    update({
+      fills: (model.fills ?? []).map((fill) => {
+        const i = slices.findIndex(({ from }) => from === fill.from);
+        return i < 0 ? fill : { ...fill, from: spin(moved[i].from) };
+      }),
+      labels: model.labels.map((label) => {
+        const i =
+          label.reach <= 1
+            ? slices.findIndex((slice) => inSlice(slice, label.angle))
+            : -1;
+        if (i < 0) return label;
+        const into = spin(label.angle - slices[i].from) / slices[i].size;
+        return { ...label, angle: spin(moved[i].from + into * moved[i].size) };
+      }),
+      spokes: moved.map(({ from }) => spin(from)),
+    });
+  };
+  const nameSlice = (slice: Slice, field: HTMLInputElement) => {
+    const text = field.value.trim().slice(0, LABEL_LENGTH_MAX);
+    const named = nameOf(slice);
+    if (named)
+      update({
+        labels: text
+          ? model.labels.map((label) =>
+              label.id === named.id ? { ...label, text } : label
+            )
+          : model.labels.filter(({ id }) => id !== named.id),
+      });
+    else if (text && model.labels.length < LABELS_MAX)
+      update({
+        labels: [
+          ...model.labels,
+          {
+            angle: (slice.from + slice.size / 2) % 360,
+            id: crypto.randomUUID(),
+            reach: NAME_REACH,
+            text,
+          },
+        ],
+      });
+  };
+  /** "+ Slice": the last slice halved, or a first line at 12 o'clock. */
+  const addSlice = () => {
+    const slices = slicesOf(model.spokes);
+    const last = slices.at(-1);
+    if (!last) {
+      focusRow = 's:0';
+      update({ spokes: [0] });
+      return;
+    }
+    if (last.size < 2 || model.spokes.length >= SPOKES_MAX) return;
+    const from = (last.from + Math.floor(last.size / 2)) % 360;
+    focusRow = `s:${from}`;
+    update({ spokes: [...model.spokes, from] });
+  };
+  const textOf = (field: HTMLInputElement) =>
+    field.value.trim().slice(0, LABEL_LENGTH_MAX);
+  const setLabel = (id: string, field: HTMLInputElement) => {
+    const text = textOf(field);
+    update({
+      labels: text
+        ? model.labels.map((label) =>
+            label.id === id ? { ...label, text } : label
+          )
+        : model.labels.filter((label) => label.id !== id),
+    });
+  };
+  /** ⋮ Delete: a bar, a label, or a slice's opening line (it joins the one before). */
+  const removeRow = (key: string) => {
+    hot = null;
+    if (key.startsWith('s:')) {
+      const from = Number(key.slice(2));
+      update({
+        fills: (model.fills ?? []).filter((fill) => fill.from !== from),
+        spokes: model.spokes.filter((spoke) => spoke !== from),
+      });
+    } else if (model.bars.some(({ id }) => id === key))
+      update({ bars: model.bars.filter(({ id }) => id !== key) });
+    else update({ labels: model.labels.filter(({ id }) => id !== key) });
+    redraw();
+  };
+  /** A swatch picked: the fill row opens for it, and its next pick goes there. */
+  const pickSwatch = (target: { bar: string } | { from: number }) => {
+    commitLabel();
+    recolour = target;
+    tool = isBar ? 'draw' : 'fill';
+    drawControls();
+    redraw();
+  };
+  const recolourPicked = () => {
+    const target = recolour;
+    recolour = null;
+    if (!target) return;
+    const fill = newFill();
+    if ('bar' in target) setBar(target.bar, { fill });
+    else {
+      const others = (model.fills ?? []).filter(
+        (slice) => slice.from !== target.from
+      );
+      update({
+        fills:
+          fill === 'transparent'
+            ? others
+            : [...others, { fill, from: target.from }],
+      });
+    }
+  };
+  const field = (
+    label: string,
+    value: string,
+    commit: (field: HTMLInputElement) => void,
+    numeric = false
+  ) =>
+    html`<input
+      aria-label=${label}
+      class=${numeric ? 'num' : ''}
+      data-value=${value}
+      inputmode=${numeric ? 'decimal' : 'text'}
+      maxlength=${numeric ? 12 : LABEL_LENGTH_MAX}
+      type="text"
+      .value=${value}
+      @change=${(event: Event) => commit(event.target as HTMLInputElement)}
+      @keydown=${(event: KeyboardEvent) => {
+        if (event.key === 'Enter') (event.target as HTMLInputElement).blur();
+      }}
+    />`;
+  const more = (key: string) =>
+    html`<button
+      aria-label=${m.a11y_more_actions()}
+      class="more"
+      type="button"
+      @click=${(event: MouseEvent) => {
+        const list = controls.querySelector('.capy-plane-list');
+        const button = event.currentTarget as HTMLElement;
+        menuFor =
+          menuFor?.key === key || !list
+            ? null
+            : {
+                key,
+                top:
+                  button.getBoundingClientRect().bottom -
+                  list.getBoundingClientRect().top +
+                  4,
+              };
+        drawControls();
+      }}
+    >
+      ${hugeIcon(MoreVerticalIcon)}
+    </button>`;
+  const swatch = (colour: string, target: { bar: string } | { from: number }) =>
+    html`<button
+      aria-label=${m.drawing_board_fill()}
+      class="swatch"
+      style="background:${colour}"
+      type="button"
+      @click=${() => pickSwatch(target)}
+    ></button>`;
+  const row = (key: string, cells: unknown, wide = true) =>
+    html`<li
+      class=${[wide ? 'capy-chart-row' : '', hot === key ? 'on' : ''].join(' ')}
+      data-row=${key}
+      @focusin=${() => lightRow(key)}
+      @pointerenter=${() => lightRow(key)}
+    >
+      ${cells} ${more(key)}
+    </li>`;
+  const barRows = () =>
+    repeat(
+      model.bars,
+      ({ id }) => id,
+      (bar) =>
+        row(
+          bar.id,
+          html`${swatch(colourOf(bar.fill), { bar: bar.id })}
+          ${field(m.drawing_board_chart_label(), bar.label, (input) =>
+            setBar(bar.id, { label: textOf(input) })
+          )}
+          ${field(
+            m.drawing_board_chart_value(),
+            String(bar.value),
+            (input) => setValue(bar, input),
+            true
+          )}`
+        )
+    );
+  const sliceRows = () => {
+    const slices = slicesOf(model.spokes);
+    const names = new Set(slices.map((slice) => nameOf(slice)?.id));
+    const free = model.labels.filter(({ id }) => !names.has(id));
+    return html`${repeat(
+      slices,
+      ({ from }) => from,
+      (slice, index) =>
+        row(
+          `s:${slice.from}`,
+          html`${swatch(
+            colourOf(
+              (model.fills ?? []).find(({ from }) => from === slice.from)?.fill
+            ),
+            { from: slice.from }
+          )}
+          ${field(
+            m.drawing_board_chart_label(),
+            nameOf(slice)?.text ?? '',
+            (input) => nameSlice(slice, input)
+          )}
+          <span class="share">
+            ${field(
+              m.drawing_board_chart_share(),
+              String(shareOf(slice)),
+              (input) => setShare(index, input),
+              true
+            )}<small>%</small><small>${slice.size}°</small>
+          </span>`
+        )
+    )}
+    ${repeat(
+      free,
+      ({ id }) => id,
+      (label) =>
+        row(
+          label.id,
+          html`<span class="kind">${unsafeSVG(mathsIcon('label'))}</span>
+            ${field(m.drawing_board_chart_label(), label.text, (input) =>
+              setLabel(label.id, input)
+            )}`,
+          false
+        )
+    )}`;
+  };
+  const dataPane = (layout: string) =>
+    html`<div
+      class="capy-plane-list"
+      data-layout=${layout}
+      @pointerleave=${() => {
+        if (!controls.querySelector('.capy-plane-list :focus')) lightRow(null);
+      }}
+    >
+      <ol
+        @scroll=${() => {
+          if (!menuFor) return;
+          menuFor = null;
+          drawControls();
+        }}
+      >
+        ${isBar ? barRows() : sliceRows()}
+      </ol>
+      <button
+        class="add"
+        type="button"
+        @click=${isBar ? addBar : addSlice}
+      >
+        ${hugeIcon(PlusSignIcon)}
+        ${isBar ? m.drawing_board_chart_bar() : m.drawing_board_chart_slice()}
+      </button>
+      ${
+        menuFor
+          ? html`<div
+              class="capy-menu-list"
+              role="menu"
+              style="top:${menuFor.top}px"
+            >
+              <button
+                role="menuitem"
+                type="button"
+                @click=${() => {
+                  const key = menuFor?.key;
+                  menuFor = null;
+                  if (key) removeRow(key);
+                  drawControls();
+                }}
+              >
+                ${hugeIcon(Delete02Icon)} ${m.action_delete()}
+              </button>
+            </div>`
+          : nothing
+      }
+    </div>`;
+
   const drawControls = () => {
     root.dataset.tool = tool;
+    const layout = listLayout();
+    root.dataset.list = layout;
     render(
       html`${
-        isBar
-          ? html`<div class="capy-chart-axis">
+        workspace
+          ? html`<button
+              aria-label=${m.drawing_board_chart_data()}
+              aria-pressed=${layout !== ''}
+              class="capy-plane-list-toggle"
+              type="button"
+              @click=${toggleList}
+            >
+              ${hugeIcon(LeftToRightListBulletIcon)}
+            </button>`
+          : nothing
+      }
+        ${layout ? dataPane(layout) : nothing}
+        ${
+          isBar
+            ? html`<div class="capy-chart-axis">
               <label>
                 ${m.drawing_board_axis_to()}
                 <input
@@ -995,8 +1491,8 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
                 />
               </label>
             </div>`
-          : nothing
-      }
+            : nothing
+        }
         ${
           typing
             ? html`<input
@@ -1032,7 +1528,10 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
         <div class="capy-plane-tools">
           ${
             (isBar && tool === 'draw') || tool === 'fill'
-              ? fillRow(gfx, drawControls)
+              ? fillRow(gfx, () => {
+                  recolourPicked();
+                  drawControls();
+                })
               : nothing
           }
           <div class="capy-plane-row">
@@ -1051,9 +1550,19 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
         </div>`,
       controls
     );
+    if (focusRow) {
+      controls
+        .querySelector<HTMLInputElement>(`[data-row="${focusRow}"] input`)
+        ?.focus();
+      focusRow = null;
+    }
   };
   drawControls();
-  new ResizeObserver(redraw).observe(root);
+  // Past 640 px either way the pane turns card or sheet, and the chart moves over.
+  new ResizeObserver(() => {
+    if (root.dataset.list !== listLayout()) drawControls();
+    redraw();
+  }).observe(root);
   draw();
 }
 

@@ -319,6 +319,71 @@ test('the shapes panel draws an outline, a hexagon shape and a preset that reope
   await expect.poll(() => canvas(page)).toEqual(placed);
 });
 
+test("a shape's switcher offers every shape, and Clear all empties a plane and the board until Undo", async ({
+  page,
+}) => {
+  test.slow();
+  await openBoard(page);
+  const at = await onCard(page);
+  await page.locator('capy-shape-button').first().click();
+  await page.getByRole('button', { name: 'Hexagon' }).click();
+  await page.mouse.click(...at(0.7, 0.3));
+  await expect.poll(() => canvas(page)).toEqual(['plane', 'shape']);
+  // Epo 2026-11-13: the switcher lists the shapes panel's ten, polygons included.
+  await page.mouse.click(...at(0.7, 0.3));
+  await page.getByRole('button', { name: 'Switch shape type' }).click();
+  await page.getByRole('button', { name: 'Pentagon' }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const root = document.querySelector(
+          'affine-edgeless-root'
+        ) as unknown as {
+          gfx: {
+            layer: { canvasElements: { shapeType?: string; type: string }[] };
+          };
+        };
+        return root.gfx.layer.canvasElements.find(
+          ({ type }) => type === 'shape'
+        )?.shapeType;
+      })
+    )
+    .toBe('pentagon');
+
+  // A plane's Clear all takes its marks; Undo in the same menu brings them back.
+  await page.mouse.dblclick(...at(0.3, 0.6));
+  const plane = await onPlane(page);
+  await page.getByRole('button', { exact: true, name: 'Point' }).click();
+  await page.mouse.click(...plane(0.6, 0.4));
+  await expect
+    .poll(async () => (await planePoints(page)).points)
+    .toHaveLength(1);
+  const menu = page.locator('.capy-plane-editor .capy-menu-button');
+  await menu.click();
+  await page.getByRole('menuitem', { name: 'Clear all' }).click();
+  await expect
+    .poll(async () => (await planePoints(page)).points)
+    .toHaveLength(0);
+  await menu.click();
+  await page.getByRole('menuitem', { name: 'Undo' }).click();
+  await expect
+    .poll(async () => (await planePoints(page)).points)
+    .toHaveLength(1);
+  await page.getByRole('button', { name: 'Done' }).click();
+
+  // The board's Clear all takes everything, and greys out once it's empty.
+  const boardMenu = page.locator('.capy-board-menu .capy-menu-button');
+  await boardMenu.click();
+  await page.getByRole('menuitem', { name: 'Clear all' }).click();
+  await expect.poll(() => canvas(page)).toEqual([]);
+  await boardMenu.click();
+  await expect(
+    page.getByRole('menuitem', { name: 'Clear all' })
+  ).toBeDisabled();
+  await page.getByRole('menuitem', { name: 'Undo' }).click();
+  await expect.poll(() => canvas(page)).toEqual(['plane', 'shape']);
+});
+
 test('double click opens the plane: it plots, undoes each click, and Escape leaves', async ({
   page,
 }) => {
@@ -1716,6 +1781,77 @@ test("a plane's curve bends by its stroke, and the workspace's objects list plot
   await page.mouse.dblclick(...(await onCard(page))(0.5, 0.5));
   await expect(page.locator('.capy-plane-editor')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Objects' })).toHaveCount(0);
+});
+
+test("a chart's data pane on the workspace canvas types bars and slices", async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/workspaces/ws_bio?panel=canvas');
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  const chart = () =>
+    page.evaluate(() => {
+      const root = document.querySelector(
+        'affine-edgeless-root'
+      ) as unknown as {
+        gfx: {
+          layer: {
+            canvasElements: {
+              axisMax?: number;
+              bars?: { label: string; value: number }[];
+              labels?: { text: string }[];
+              spokes?: number[];
+              type: string;
+            }[];
+          };
+        };
+      };
+      const found = root.gfx.layer.canvasElements
+        .filter(({ type }) => type === 'chart')
+        .at(-1);
+      return {
+        axisMax: found?.axisMax,
+        bars: found?.bars ?? [],
+        labels: (found?.labels ?? []).map(({ text }) => text),
+        spokes: found?.spokes ?? [],
+      };
+    });
+  const toolbar = page.locator('affine-toolbar-widget');
+  const pane = page.locator('.capy-plane-list');
+
+  // Epo 2026-11-13 (B1): "+ Bar", then its label and a value past the axis's top.
+  await placePiece(page, 'capy-misc-panel', 'bar');
+  await toolbar.getByLabel('Edit the chart').click();
+  await expect(page.getByRole('button', { name: 'Data' })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+  await pane.getByRole('button', { name: 'Bar' }).click();
+  await page.keyboard.type('Mon');
+  await pane.getByRole('textbox', { name: 'Value' }).fill('13');
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(async () => (await chart()).bars)
+    .toEqual([expect.objectContaining({ label: 'Mon', value: 13 })]);
+  expect((await chart()).axisMax).toBeGreaterThanOrEqual(13);
+  await page.getByRole('button', { name: 'Done' }).click();
+
+  // P1: two slices from "+ Slice", the first named and set to 25%.
+  await page.keyboard.press('v');
+  await placePiece(page, 'capy-misc-panel', 'pie');
+  await toolbar.getByLabel('Edit the chart').click();
+  await pane.getByRole('button', { name: 'Slice' }).click();
+  await expect.poll(async () => (await chart()).spokes).toHaveLength(2);
+  await pane
+    .getByRole('textbox', { name: 'Type a label' })
+    .first()
+    .fill('Walk');
+  await pane.getByRole('textbox', { name: 'Share' }).first().fill('25');
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await chart()).spokes).toEqual([0, 90]);
+  expect((await chart()).labels).toEqual(['Walk']);
 });
 
 test("a quiz card's Undo while edited is the quiz's, not the canvas's", async ({

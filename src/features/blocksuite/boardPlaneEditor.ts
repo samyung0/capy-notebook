@@ -348,6 +348,23 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   const cardPpu = model.ppu;
 
   const shell = openBoardEditor(gfx, model.id, {
+    clear: {
+      empty: () => !model.marks.length,
+      run: () => {
+        typing = null;
+        openId = null;
+        fresh = null;
+        drafts.clear();
+        rowErrors.clear();
+        selected = new Set();
+        editing = null;
+        hot = null;
+        menuFor = null;
+        write([]);
+        drawControls();
+        redraw();
+      },
+    },
     fit: () => fitMarks(),
     onDelete: () => {
       if (!model.marks.some(({ id }) => selected.has(id))) return false;

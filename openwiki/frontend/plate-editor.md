@@ -4702,7 +4702,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   page around the board places (its width through `--capy-board-done-width`, its top through
   `--capy-board-menu-top`; a drawing answer measures whichever Done shows, the phone's or the
   wider screen's), so the
-  bottom row holds only the toolbar: Undo, Redo, Fit to screen, then a row of −, the
+  bottom row holds only the toolbar: Undo, Redo, Fit to screen, Clear all (Epo 2026-11-13:
+  everything on the board, or in an open plane or chart, goes in one undo step; greyed
+  out when there's nothing; a pie keeps its 12 o'clock line), then a row of −, the
   zoom (which resets to 100%) and +. Fit to screen closes it; Undo, Redo and the zoom
   row keep it open, so a few presses step back or zoom; a press anywhere else and
   Escape close it. Its rows are the editor popovers' (30px, medium 14px text, 18px
@@ -4726,7 +4728,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   shape types added to BlockSuite (local change 46: corners in `POLYGON_SHAPES`, one
   polygon implementation for hit tests, connectors, canvas, DOM and cursor preview), so
   they fill, hold text and connect as a square does; `boardPreview.ts` keeps a copy of
-  the corners, checked by its test. Solids and diagrams are presets of straight
+  the corners, checked by its test. A selected shape's Switch shape type menu, and a
+  connector's next-shape panel, offer the same ten in the panel's outlines (local change
+  61, Epo 2026-11-13). Solids and diagrams are presets of straight
   connectors and ellipses in a group (a pen stroke smears at corners). The toolbar's
   square piece is a plain square (local change 43; AFFiNE's was rounded). Clicking the
   toolbar's Shape piece only opens or closes the panel; a shape is taken up by dragging
@@ -4791,7 +4795,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   a ring crosses a spoke.
 - **Editing a plane** (`boardPlaneEditor.ts`, on the shell in `boardEditorShell.ts`): it
   opens over the whole board. At its top right sit the same ☰ menu (Fit to screen where the card
-  has one, Undo, Redo, and − and + where it zooms; the board's menu hides meanwhile)
+  has one, Undo, Redo, Clear all, and − and + where it zooms; the board's menu hides
+  meanwhile)
   and Done on its own (Epo 2026-11-08). A plane's Fit to screen shows at least 10
   units across and up, so an empty plane shows a stretch of grid round the origin
   (Epo 2026-11-13). Done leaves, as does Escape when no mark is open (Escape closes
@@ -4888,7 +4893,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   it, and `fitCard` ignores it. The list button (☰-styled, `drawing_board_objects`) sits
   at the editor's top left: a 300 px card floating below it, open by default from 640 px
   (`listChoice` remembers a toggle for the session), and under 640 px a sheet over the
-  lower 48% with the tools and Finish riding above it. Rows are laid out as the graph dialog's but compact
+  lower 48% with the tools and Finish riding above it; its "+ Label" is a ghost button
+  (no border, the hover fill marks it). Rows are laid out as the graph dialog's but compact
   (36 px, 14 px text, 15 px formulas; kind icon, ⋮ with Delete): a point's `(a, b)`, a line's or vector's `(a, b) to
   (c, d)` and a label's text are typed in place and written on change (Enter or leaving);
   curves, ellipses and formulas are shaped on the plane, so their rows show only
@@ -4924,6 +4930,24 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   chosen items takes the others of its kind along: bars up or down by as much (none
   below 0, one taken to 0 goes), lines round by as far, labels by as far across. After
   one label the tool goes back to Select, as on the plane.
+- **A chart's data pane** (Epo 2026-11-13, B1 and P1, workspace canvases only): the
+  plane list's button, card and phone sheet (`.capy-plane-list`, its own session
+  choice), the chart drawn beside the card or above the sheet (`pads`), and the typed
+  axis right of the button (dropping to the second row under 460 px). A bar's row is
+  its fill swatch, label and value; a value past the axis's top raises the top to the
+  next numbered line (or a fresh axis past 100 lines), and "+ Bar" adds one a step
+  tall with the caret in its label. A pie's row per slice (`slicesOf`, clockwise
+  from each line) is its swatch, name and share in % with its degrees: the name is the
+  first label inside the pie within the slice (typing one adds it at the slice's middle,
+  reach 0.62; emptied it goes), and a share typed moves the slice's closing line in
+  whole degrees, the slices after it keeping their sizes and the last taking up the
+  rest (the last slice's own share moves its opening line), with fills following their
+  line and labels inside keeping their place in their slice. Labels outside the pie
+  (or a slice's second) are rows of their own. "+ Slice" halves the last slice (or puts
+  the first line at 12 o'clock); ⋮ Delete removes a bar or label, or a slice's opening
+  line, joining it to the one before. A swatch opens the fill row (Bars or Fill) and
+  the next fill picked goes to that bar or slice. Hovering a row lights its bar, slice
+  or label; Escape puts a row being typed back as it was.
 - **See-through cards:** plane and chart paper (`PAPER`) and note fills are half
   see-through so the panel's frost over the page frame shows. An open editor uses the
   same paper with no ground of its own and hides the board's `editor-host` under it

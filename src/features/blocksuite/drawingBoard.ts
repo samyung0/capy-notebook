@@ -15,6 +15,7 @@ import { RootViewExtension } from '@blocksuite/affine/blocks/root/view';
 import {
   CanvasRenderer,
   DefaultTool,
+  EdgelessCRUDIdentifier,
   ExportManager,
   Overlay,
   type SurfaceBlockComponent,
@@ -93,7 +94,11 @@ import { EdgelessToolbarViewExtension } from '@blocksuite/affine/widgets/edgeles
 import { SlashMenuViewExtension } from '@blocksuite/affine/widgets/slash-menu/view';
 import { ToolbarViewExtension } from '@blocksuite/affine/widgets/toolbar/view';
 import { ViewportOverlayViewExtension } from '@blocksuite/affine/widgets/viewport-overlay/view';
-import { Redo03Icon, Undo03Icon } from '@hugeicons/core-free-icons';
+import {
+  Delete02Icon,
+  Redo03Icon,
+  Undo03Icon,
+} from '@hugeicons/core-free-icons';
 import { combinedDarkCssVariables } from '@toeverything/theme';
 import { html, render } from 'lit';
 import * as Y from 'yjs';
@@ -578,6 +583,24 @@ export function mountDrawingBoard(
             },
           ]),
       { label: m.drawing_board_fit_to_screen(), run: () => gfx.fitToScreen() },
+      // Everything on the canvas goes in one undo step (Epo 2026-11-13).
+      ...(readOnly
+        ? []
+        : [
+            {
+              disabled: !gfx.gfxElements.length,
+              icon: Delete02Icon,
+              label: m.drawing_board_clear_all(),
+              run: () => {
+                const crud = gfx.std.get(EdgelessCRUDIdentifier);
+                gfx.selection.clear();
+                store.captureSync();
+                for (const element of [...gfx.gfxElements])
+                  crud.removeElement(element.id);
+                store.captureSync();
+              },
+            },
+          ]),
     ],
     zoom: {
       in: () => zoomTo(gfx.viewport.zoom + ZOOM_STEP),

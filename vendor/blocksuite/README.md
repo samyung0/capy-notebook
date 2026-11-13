@@ -604,6 +604,12 @@ Outside this directory, for BlockSuite:
     default-height note, below an inline note's one line, so nothing could be typed;
     the stale fold flag the new note was given is gone too.
 
+61. The shape switcher offers every shape (`affine/gfx/shape`
+    `toolbar/shape-menu-config.ts`, marked `Capy (local change 61)`; Epo 2026-11-13):
+    `ShapeComponentConfig` lists the board shapes panel's ten shapes (local change 46's
+    polygons after AFFiNE's five), drawn with the panel's outlines, so a selected
+    shape's Switch shape type menu and a connector's next-shape panel reach them all.
+
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
 replaces about ninety names with the app's Hugeicons, so the swap itself edits no

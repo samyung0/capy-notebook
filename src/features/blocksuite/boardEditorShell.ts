@@ -1,7 +1,11 @@
 import { ThemeProvider } from '@blocksuite/affine/shared/services';
 import type { GfxController } from '@blocksuite/affine/std/gfx';
 import { HistoryExtension } from '@blocksuite/affine/store';
-import { Redo03Icon, Undo03Icon } from '@hugeicons/core-free-icons';
+import {
+  Delete02Icon,
+  Redo03Icon,
+  Undo03Icon,
+} from '@hugeicons/core-free-icons';
 import { html, render } from 'lit';
 import { m } from '@/i18n';
 import { BoardMenu, type MenuZoom } from './boardMenu';
@@ -34,6 +38,8 @@ export function openBoardEditor(
   hooks: {
     /** The menu's Fit and zoom row, where the card has them. */
     fit?: () => void;
+    /** The menu's Clear all: everything in the card goes in one undo step. */
+    clear?: { empty: () => boolean; run: () => void };
     zoom?: MenuZoom;
     /** Before it goes: whatever it has to write. */
     onLeave: () => void;
@@ -100,6 +106,17 @@ export function openBoardEditor(
         label: m.drawing_board_redo(),
         run: () => gfx.doc.redo(),
       },
+      // Clear all, the last entry, on every board and card (Epo 2026-11-13).
+      ...(hooks.clear
+        ? [
+            {
+              disabled: hooks.clear.empty(),
+              icon: Delete02Icon,
+              label: m.drawing_board_clear_all(),
+              run: hooks.clear.run,
+            },
+          ]
+        : []),
     ],
     zoom: hooks.zoom,
   }));
