@@ -573,6 +573,14 @@ export function markPoints(marks: Mark[]) {
   ];
 }
 
+/** A point `dx` along and `dy` down a card turned `rotate` degrees, from `from`. */
+const turned = (rotate: number, [x, y]: Vec, dx: number, dy: number): Vec => {
+  const turn = (rotate * Math.PI) / 180;
+  const [cos, sin] = [Math.cos(turn), Math.sin(turn)];
+  return [x + dx * cos - dy * sin, y + dx * sin + dy * cos];
+};
+const minus = ([ax, ay]: Vec, [bx, by]: Vec): Vec => [ax - bx, ay - by];
+
 /** A canvas only for measuring text, made once. */
 let measurer: CanvasRenderingContext2D | null = null;
 
@@ -630,12 +638,20 @@ export function fitCard(model: PlaneElementModel) {
   ];
   const w = clamp(right - left + FIT_PAD * 2, CARD_WIDTH_MIN, FIT_SIDE_MAX);
   const h = clamp(top - bottom + FIT_PAD * 2, CARD_HEIGHT_MIN, FIT_SIDE_MAX);
-  const [x, y] = model.deserializedXYWH;
+  // Its top left corner stays put on the page, the card turned or not.
+  const was = Bound.deserialize(model.xywh);
+  const corner = turned(
+    model.rotate,
+    was.center as Vec,
+    -was.w / 2,
+    -was.h / 2
+  );
+  const [cx, cy] = turned(model.rotate, corner, w / 2, h / 2);
   model.surface.store.withoutTransact(() => {
     model.ppu = ppu;
     model.x0 = ((left + right) / 2 - w / 2) / ppu;
     model.y0 = ((top + bottom) / 2 + h / 2) / ppu;
-    model.xywh = new Bound(x, y, w, h).serialize();
+    model.xywh = new Bound(cx - w / 2, cy - h / 2, w, h).serialize();
   });
 }
 
@@ -656,6 +672,7 @@ const planeInteraction = GfxViewInteractionExtension<PlaneElementView>(
   {
     handleResize({ model }) {
       const { x0, y0 } = model;
+      const start = Bound.deserialize(model.xywh);
       return {
         onResizeEnd(context) {
           context.default(context);
@@ -663,14 +680,15 @@ const planeInteraction = GfxViewInteractionExtension<PlaneElementView>(
           model.pop('y0');
         },
         onResizeMove(context) {
-          const { constraint, handle, newBound, originalBound: was } = context;
+          const { constraint, handle, newBound } = context;
           const w = clamp(newBound.w, constraint.minWidth, constraint.maxWidth);
           const h = clamp(
             newBound.h,
             constraint.minHeight,
             constraint.maxHeight
           );
-          // Which side stays: 1 the right (or bottom), -1 the left (or top), 0 neither.
+          // BlockSuite's bound, for this card alone or as one of several (and with
+          // Shift); at a limit, the side across from the handle stays put.
           const sx = handle.includes('left')
             ? 1
             : handle.includes('right')
@@ -681,21 +699,38 @@ const planeInteraction = GfxViewInteractionExtension<PlaneElementView>(
             : handle.includes('bottom')
               ? -1
               : 0;
-          const turn = (model.rotate * Math.PI) / 180;
-          const [cos, sin] = [Math.cos(turn), Math.sin(turn)];
-          const from = ([x, y]: Vec, dx: number, dy: number): Vec => [
-            x + dx * cos - dy * sin,
-            y + dx * sin + dy * cos,
-          ];
-          const kept = from(
-            [was.x + was.w / 2, was.y + was.h / 2],
-            (sx * was.w) / 2,
-            (sy * was.h) / 2
+          const kept = turned(
+            model.rotate,
+            newBound.center as Vec,
+            (sx * newBound.w) / 2,
+            (sy * newBound.h) / 2
           );
-          const [cx, cy] = from(kept, (-sx * w) / 2, (-sy * h) / 2);
-          model.xywh = new Bound(cx - w / 2, cy - h / 2, w, h).serialize();
-          model.x0 = x0 + (sx > 0 ? was.w - w : 0) / model.ppu;
-          model.y0 = y0 - (sy > 0 ? was.h - h : 0) / model.ppu;
+          const centre = turned(
+            model.rotate,
+            kept,
+            (-sx * w) / 2,
+            (-sy * h) / 2
+          );
+          model.xywh = new Bound(
+            centre[0] - w / 2,
+            centre[1] - h / 2,
+            w,
+            h
+          ).serialize();
+          // What's on the plane stays on the page: the view follows the card's top
+          // left corner, measured along the card's own turned sides.
+          const [dx, dy] = minus(
+            turned(model.rotate, centre, -w / 2, -h / 2),
+            turned(
+              model.rotate,
+              start.center as Vec,
+              -start.w / 2,
+              -start.h / 2
+            )
+          );
+          const [along, down] = turned(-model.rotate, [0, 0], dx, dy);
+          model.x0 = x0 + along / model.ppu;
+          model.y0 = y0 - down / model.ppu;
         },
         onResizeStart(context) {
           context.default(context);

@@ -892,6 +892,8 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   let dragging = false;
   canvas.addEventListener('pointerdown', (event) => {
     touches.set(event.pointerId, local(event));
+    // A second finger while a label's corner is pulled leaves the pull alone.
+    if (resizing) return;
     if (isBar && touches.size === 2) {
       const [a, b] = [...touches.values()];
       pinch = Math.hypot(a[0] - b[0], a[1] - b[1]);

@@ -750,7 +750,8 @@ export function mountDrawingBoard(
    * 8-unit margin. `bound` is in board units. */
   const framing = () => {
     const items = [...gfx.layer.canvasElements, ...gfx.layer.blocks];
-    const bounds = items.map((item) => Bound.deserialize(item.xywh));
+    // Turned items by the box they turn into.
+    const bounds = items.map((item) => item.elementBound);
     const whole = everything();
     const far = Math.max(whole.w, whole.h) > IMAGE_SIDE_MAX;
     const shifts = far ? closeUp(bounds) : bounds.map(() => ({ dx: 0, dy: 0 }));

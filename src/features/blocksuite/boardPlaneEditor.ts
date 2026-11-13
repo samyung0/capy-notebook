@@ -1077,6 +1077,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
             id: near?.id ?? newId(),
             kind: 'formula',
             latex,
+            ...(near?.kind === 'formula' && near.size && { size: near.size }),
           };
           write(
             near
@@ -1255,7 +1256,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       menuFor = null;
       drawControls();
     }
-    const pulled = cornerAt(at);
+    const pulled = !pointAt(at) && cornerAt(at);
     if (pulled) {
       grab = { ...pulled, index: null, preview: null, start: at };
       redraw();
@@ -1347,13 +1348,16 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
         grab.corner !== undefined &&
         (picked.kind === 'label' || picked.kind === 'formula')
       ) {
+        const plain = picked.kind === 'label' ? LABEL_SIZE : FORMULA_SIZE;
         const size = draggedSize(
-          picked.size ?? (picked.kind === 'label' ? LABEL_SIZE : FORMULA_SIZE),
+          picked.size ?? plain,
           toScreen(picked.at),
           grab.start,
           at
         );
-        grab.preview = [{ ...picked, size }];
+        // Back at the plain size it stores none, so a drag there and back is no step.
+        const { size: _, ...unsized } = picked;
+        grab.preview = [size === plain ? unsized : { ...picked, size }];
         canvas.style.cursor = CORNER_CURSOR[grab.corner];
         redraw();
         return;

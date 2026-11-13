@@ -54,8 +54,12 @@ export function drawTextFrame(
   ctx.restore();
 }
 
-/** The frame's corner under a pixel, if any. */
+/** The frame's corner under a pixel, if any: never on the text itself, which a press
+ * moves, however small it is. */
 export const frameCornerAt = (box: TextBox, [px, py]: Vec) => {
+  const onText =
+    px >= box.x && px <= box.x + box.w && py >= box.y && py <= box.y + box.h;
+  if (onText) return null;
   const corner = cornersOf(box).findIndex(
     ([x, y]) => Math.abs(px - x) <= GRAB && Math.abs(py - y) <= GRAB
   );

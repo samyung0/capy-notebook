@@ -115,6 +115,7 @@ function elementProblem(
       finite(fields.x0) &&
       finite(fields.y0) &&
       (fields.polar === undefined || typeof fields.polar === 'boolean') &&
+      (fields.rotate === undefined || finite(fields.rotate)) &&
       listUpTo(fields.marks, MARKS_MAX) &&
       (fields.marks as Fields[]).every(
         (mark) =>
@@ -178,6 +179,7 @@ function elementProblem(
     const { axisMax, axisStep, bars, fills, kind, labels, spokes } = fields;
     const fine =
       (kind === 'bar' || kind === 'pie') &&
+      (fields.rotate === undefined || finite(fields.rotate)) &&
       finite(axisMax) &&
       (axisMax as number) > 0 &&
       (axisMax as number) <= AXIS_MAX &&
