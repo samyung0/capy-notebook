@@ -1,14 +1,29 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { canvasById, saveCanvas } from '@/api/canvas';
+import {
+  useCreateFlashcardSet,
+  useCreateQuiz,
+  useWorkspaces,
+} from '@/api/hooks';
 import { PagePanel } from '@/components/app/layout';
+import { CanvasMaterialCards } from '@/features/canvas/CanvasMaterialCards';
+import { CanvasMaterialDialog } from '@/features/canvas/CanvasMaterialDialog';
 import { useCanvasBoard } from '@/features/canvas/useCanvasBoard';
+import {
+  linkMaterial,
+  useCanvasLinks,
+  useCanvasMaterials,
+} from '@/features/canvas/useCanvasMaterials';
 import { useCanvasPicker } from '@/features/canvas/useCanvasPicker';
 import { FileError } from '@/features/files/FileStates';
 import { m } from '@/i18n';
 
 /** One of the person's own canvases as the page's board, saved as a
- * workspace's is, with no workspace. */
+ * workspace's is, with no workspace. Its cards are every quiz and set the person
+ * can open, each tile in Misc saying its workspace; New makes one in no
+ * workspace, and a card opens in a dialog (Epo 2026-11-13, mock
+ * DnhMYffHEjdxiUansbBDde A + W1). */
 function OwnCanvas({
   gone,
   id,
@@ -19,6 +34,42 @@ function OwnCanvas({
   onRetry: () => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
+  const materials = useCanvasMaterials();
+  const { data: workspaces } = useWorkspaces();
+  const linked = useMemo(() => {
+    const icons = new Map(workspaces?.map(({ id, iconId }) => [id, iconId]));
+    return materials?.flatMap((item) =>
+      linkMaterial(
+        item,
+        item.workspaceId
+          ? { iconId: icons.get(item.workspaceId), name: item.workspaceName }
+          : undefined
+      )
+    );
+  }, [materials, workspaces]);
+  const { mutateAsync: createQuiz } = useCreateQuiz();
+  const { mutateAsync: createSet } = useCreateFlashcardSet();
+  const [editing, setEditing] = useState<string | null>(null);
+  const { links, onBoard } = useCanvasLinks({
+    account: true,
+    // Quiz 1, Quiz 2…: the first number no listed one has.
+    create: async (kind) => {
+      const taken = new Set(materials?.map(({ title }) => title));
+      const title = (n: number) =>
+        kind === 'quiz'
+          ? m.drawing_board_new_quiz_title({ n })
+          : m.drawing_board_new_set_title({ n });
+      let n = 1;
+      while (taken.has(title(n))) n++;
+      const made =
+        kind === 'quiz'
+          ? await createQuiz({ name: title(n) })
+          : await createSet({ name: title(n) });
+      return { id: made.id, title: made.name };
+    },
+    materials: linked,
+    open: setEditing,
+  });
   const failed = useCanvasBoard(
     container,
     {
@@ -26,7 +77,7 @@ function OwnCanvas({
       open: () => canvasById(id),
       save: (body) => saveCanvas(id, body),
     },
-    { gone }
+    { gone, onBoard, workspace: links }
   );
   return (
     <div
@@ -34,6 +85,11 @@ function OwnCanvas({
       ref={container}
     >
       {failed && <FileError message={failed} onRetry={onRetry} />}
+      <CanvasMaterialCards materials={materials} />
+      <CanvasMaterialDialog
+        materialId={editing}
+        onClose={() => setEditing(null)}
+      />
     </div>
   );
 }
@@ -41,8 +97,7 @@ function OwnCanvas({
 /** The account's Canvas page (Epo 2026-11-10, mock KNPB4pYUhSSYUJvuKN1ct7 B):
  * the page is a board, one of the person's own canvases in no workspace, with
  * the canvas picker at the top left (`useCanvasPicker`), which also lists their
- * workspaces' canvases; one of those opens in its workspace, where its quiz and
- * flashcard cards work. */
+ * workspaces' canvases; one of those opens in its workspace. */
 export default function CanvasPage() {
   const { c } = useSearch({ from: '/auth-shell/canvas' });
   const navigate = useNavigate();

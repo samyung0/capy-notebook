@@ -490,9 +490,23 @@ function drawNote(box: Box, note: Fields, blocks: Record<string, Fields>) {
   };
   walk(note['sys:children']);
   const { h, w, x, y } = box;
-  // The board's tight card (N2): 8 by 10 px padding, a hairline, a 6 px corner.
+  const text = texts.join('\n');
+  const style = ((note['prop:edgeless'] as Fields | undefined)?.style ??
+    {}) as Fields;
+  const background = note['prop:background'];
+  const bordered = style.borderStyle !== 'none';
+  // An inline note (P1/I1, Epo 2026-11-13) is its text alone, with no padding.
+  if (background === 'transparent' && !style.shadowType && !bordered)
+    return lines(box, text, FONT_SIZE_NOTE, '#1d1d1f', 'left');
+  // A card as the board draws it: 8 by 10 px padding, its corner, the fill half
+  // see-through, its border, or the hairline every shadow is drawn as here.
   const inner = { h: h - 16, w: w - 20, x: x + 10, y: y + 8 };
-  return `<rect x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" rx="6" fill="${colour(note['prop:background'], '#fff')}" stroke="#e6e6e6" stroke-width="1"/><svg x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" viewBox="${num(x)} ${num(y)} ${num(w)} ${num(h)}" overflow="hidden">${lines(inner, texts.join('\n'), FONT_SIZE_NOTE, '#1d1d1f', 'left')}</svg>`;
+  const edge = bordered
+    ? `stroke="#1d1d1f" stroke-opacity="0.1" stroke-width="${num(Number(style.borderSize) || 4)}"${style.borderStyle === 'dash' ? ' stroke-dasharray="6 4"' : ''}`
+    : style.shadowType
+      ? 'stroke="#e6e6e6" stroke-width="1"'
+      : '';
+  return `<rect x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" rx="${num(Number(style.borderRadius ?? 8))}" fill="${colour(background, '#fff')}" fill-opacity="0.5" ${edge}/><svg x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" viewBox="${num(x)} ${num(y)} ${num(w)} ${num(h)}" overflow="hidden">${lines(inner, text, FONT_SIZE_NOTE, '#1d1d1f', 'left')}</svg>`;
 }
 
 /** A placed quiz or flashcard set: its box with the title and what it is, as the

@@ -324,66 +324,6 @@ function keepToCatalog(gfx: GfxController, board: BoardKind) {
   };
 }
 
-/** The tools a placed piece hands back to. */
-const DRAWING_TOOLS = new Set(['brush', 'highlighter', 'eraser']);
-
-/** Something picked over the pen (or highlighter or eraser) and placed gives the
- * tool back (Epo 2026-11-12): every placement adds what it places and takes Select
- * in one step, which is told apart from Select taken by hand, or a pick cancelled.
- * A placed note keeps the focus for typing first; the tool comes back when its
- * editing ends. */
-function returnToDrawing(gfx: GfxController) {
-  type Tool = Parameters<GfxController['tool']['setTool']>[0];
-  let drawing: Tool | null = null;
-  let placed: 'element' | 'note' | null = null;
-  let note: 'placed' | 'editing' | null = null;
-  const mark = (kind: 'element' | 'note') => {
-    if (placed !== 'note') placed = kind;
-    queueMicrotask(() => {
-      placed = null;
-    });
-  };
-  const restore = () => {
-    if (drawing && gfx.tool.currentToolName$.peek() === 'default')
-      gfx.tool.setTool(drawing);
-  };
-  const elements = gfx.surface?.elementAdded.subscribe(() => mark('element'));
-  const blocks = gfx.doc.slots.blockUpdated.subscribe((change) => {
-    if (change.type === 'add')
-      mark(change.flavour === 'affine:note' ? 'note' : 'element');
-  });
-  const tools = gfx.tool.currentToolName$.subscribe((name) => {
-    note = null;
-    if (DRAWING_TOOLS.has(name)) {
-      drawing = gfx.tool.currentTool$.peek()?.constructor as Tool;
-      return;
-    }
-    // A picked shape or note in hand keeps what to go back to.
-    if (name !== 'default') return;
-    if (!(drawing && placed)) {
-      drawing = null;
-      return;
-    }
-    if (placed === 'note') note = 'placed';
-    // After the placement selects what it placed.
-    else queueMicrotask(restore);
-  });
-  const selections = gfx.selection.slots.updated.subscribe(() => {
-    if (!note) return;
-    if (gfx.selection.editing) note = 'editing';
-    else if (note === 'editing') {
-      note = null;
-      queueMicrotask(restore);
-    }
-  });
-  return () => {
-    elements?.unsubscribe();
-    blocks.unsubscribe();
-    tools();
-    selections.unsubscribe();
-  };
-}
-
 const surfaceOf = (gfx: GfxController) =>
   gfx.surfaceComponent as SurfaceBlockComponent | null;
 
@@ -671,7 +611,6 @@ export function mountDrawingBoard(
   store.get(FeatureFlagService).setFlag('enable_edgeless_text', false);
   store.get(FeatureFlagService).setFlag('enable_note_menu_media', false);
   outlineNewShapes(gfx);
-  const unreturn = readOnly ? null : returnToDrawing(gfx);
   // The canvas draws in the app's light or dark (the dark class ThemeProvider sets).
   const root = document.documentElement;
   const theme$ = std.get(ThemeProvider).app$;
@@ -758,6 +697,9 @@ export function mountDrawingBoard(
           ? [64, 12, 96, 12]
           : [90, 40, 130, 40])
     );
+    // Never opened larger than life: a small drawing (one note) fitted to the
+    // screen came up at 200% and more (Epo 2026-11-13).
+    if (gfx.viewport.zoom > 1) gfx.viewport.setZoom(1);
     place();
     fitted = true;
   };
@@ -984,7 +926,6 @@ export function mountDrawingBoard(
       historyUpdates.unsubscribe();
       zoomUpdates.unsubscribe();
       unwatchTool();
-      unreturn?.();
       unguard?.();
       imageAdds.unsubscribe();
       document.removeEventListener('keydown', slotKeys);

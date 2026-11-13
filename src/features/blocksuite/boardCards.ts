@@ -1,3 +1,4 @@
+import { DefaultTool } from '@blocksuite/affine/blocks/surface';
 import { StoreExtensionProvider } from '@blocksuite/affine/ext-loader';
 import { Bound } from '@blocksuite/affine/global/gfx';
 import {
@@ -95,14 +96,20 @@ const MaterialBlockSchema = defineBlockSchema({
 /** What the workspace page lends the canvas: its quizzes and sets (with their stored
  * previews, for the panel's thumbnails; `undefined` until the whole list has loaded),
  * opening one, and making a new one (Epo 2026-11-09: the New tile creates it unfiled,
- * places it and opens its editor). */
+ * places it and opens its editor). The account's Canvas page lends the same for
+ * every quiz and set the person can open (Epo 2026-11-13). */
 export type WorkspaceLinks = {
+  /** The account's Canvas page: each tile says its workspace, and New makes one
+   * in no workspace. */
+  account?: boolean;
   materials: () =>
     | {
         id: string;
         kind: CardMaterialKind;
         title: string;
         preview?: MaterialPreview;
+        /** On the account's page, the workspace it sits in; none when in none. */
+        workspace?: { iconId?: string; name: string };
       }[]
     | undefined;
   open: (materialId: string) => void;
@@ -413,6 +420,8 @@ export function addCard(
     { ...props, xywh: box.serialize() },
     surface.id
   );
+  // Whatever tool was on (the pen, say), Select takes over (Epo 2026-11-13).
+  gfx.tool.setTool(DefaultTool);
   gfx.selection.set({ editing: false, elements: [id] });
   return id;
 }

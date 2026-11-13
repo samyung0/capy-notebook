@@ -40,6 +40,20 @@ const styles = css`
   }
 `;
 
+/** Capy (local change 51): whether an element sits inside an open popover, through
+ * slots and shadow roots. */
+function inTopLayer(element: Element | null) {
+  let node: Element | null = element;
+  while (node) {
+    if (node.matches(':popover-open')) return true;
+    node =
+      node.assignedSlot ??
+      node.parentElement ??
+      ((node.getRootNode() as ShadowRoot).host || null);
+  }
+  return false;
+}
+
 const TOOLTIP_ARROW_COLOR =
   'var(--affine-v2-tooltips-background, var(--affine-tooltip))';
 
@@ -147,9 +161,13 @@ export class Tooltip extends LitElement {
         if (this.hidden) return null;
         let arrowStyles: StyleInfo = {};
         let tooltipStyles: StyleInfo = {};
+        // Capy (local change 51): a tooltip of something in the top layer (a
+        // toolbar menu shown as a popover) goes there too, or the menu covers it.
+        const topLayer = inTopLayer(this.parentElement);
         return {
           // Capy (local change 20): on touch it shows under the finger and took the tap.
           portalStyles: { pointerEvents: 'none' },
+          positionStrategy: topLayer ? 'fixed' : 'absolute',
           template: ({ positionSlot, updatePortal }) => {
             positionSlot.subscribe(data => {
               // The tooltip placement may change,
@@ -189,23 +207,43 @@ export class Tooltip extends LitElement {
               <div class="arrow" style=${styleMap(arrowStyles)}></div>
             `;
           },
-          computePosition: portalRoot => ({
-            referenceElement: this.parentElement!,
-            placement: this.placement,
-            middleware: [
-              this.autoFlip && flip({ padding: AUTO_FLIP_PADDING }),
-              this.autoShift && shift({ padding: AUTO_SHIFT_PADDING }),
-              offset({
-                mainAxis: (this.arrow ? TRIANGLE_HEIGHT : 0) + this.offsetY,
-                crossAxis: this.offsetX,
-              }),
-              arrow({
-                element: portalRoot.shadowRoot!.querySelector('.arrow')!,
-              }),
-              this.autoHide && hide({ strategy: 'referenceHidden' }),
-            ],
-            autoUpdate: true,
-          }),
+          computePosition: portalRoot => {
+            if (
+              topLayer &&
+              portalRoot instanceof HTMLElement &&
+              !portalRoot.matches(':popover-open')
+            ) {
+              portalRoot.popover = 'manual';
+              // The popover's own box and centring, undone: the portal is placed
+              // by its left and top.
+              Object.assign(portalRoot.style, {
+                background: 'transparent',
+                border: '0',
+                inset: 'auto',
+                margin: '0',
+                overflow: 'visible',
+                padding: '0',
+              });
+              portalRoot.showPopover();
+            }
+            return {
+              referenceElement: this.parentElement!,
+              placement: this.placement,
+              middleware: [
+                this.autoFlip && flip({ padding: AUTO_FLIP_PADDING }),
+                this.autoShift && shift({ padding: AUTO_SHIFT_PADDING }),
+                offset({
+                  mainAxis: (this.arrow ? TRIANGLE_HEIGHT : 0) + this.offsetY,
+                  crossAxis: this.offsetX,
+                }),
+                arrow({
+                  element: portalRoot.shadowRoot!.querySelector('.arrow')!,
+                }),
+                this.autoHide && hide({ strategy: 'referenceHidden' }),
+              ],
+              autoUpdate: true,
+            };
+          },
         };
       },
       {

@@ -3,6 +3,9 @@ export type DrawingBoardOptions = {
   answerArea?: { label: string };
   board: 'question' | 'workspace';
   workspace?: {
+    /** The account's Canvas page: each tile says its workspace, and New makes one
+     * in no workspace. */
+    account?: boolean;
     /** `undefined` until the whole list has loaded. */
     materials: () =>
       | {
@@ -10,6 +13,8 @@ export type DrawingBoardOptions = {
           kind: 'quiz' | 'flashcards';
           title: string;
           preview?: import('@/api/types').MaterialPreview;
+          /** On the account's page, the workspace it sits in; none when in none. */
+          workspace?: { iconId?: string; name: string };
         }[]
       | undefined;
     open: (materialId: string) => void;

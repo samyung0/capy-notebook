@@ -479,7 +479,7 @@ Outside this directory, for BlockSuite:
     board, so a click on a panel's tile was read as a drag from the board's first move
     (no carry, and a scaled preview off the pointer).
 
-48. Note centred on the pointer (`affine/gfx/note` `note-tool.ts`, `overlay/overlay.ts`,
+48. Note centred on the pointer (replaced by 53: the preview is gone) (`affine/gfx/note` `note-tool.ts`, `overlay/overlay.ts`,
     `overlay/consts.ts` and `index.ts`, marked `Capy (local change 48)`; Epo 2026-11-12):
     the note tool's overlay is the empty note a click places, centred on the pointer:
     its width, its height, hairline (`--capy-note-edge`) and corner, and the
@@ -507,6 +507,37 @@ Outside this directory, for BlockSuite:
     pressure device, so the first stroke redrew at another width when it ended and
     every later one stored pressure, and it thinned a stroke without pressure by its
     speed.
+51. Tooltips over popover menus (`affine/components` `tooltip/tooltip.ts`, marked
+    `Capy (local change 51)`; Epo 2026-11-13): a tooltip whose element sits inside an
+    open popover (the selection toolbar's menus, shown in the top layer since
+    `topLayer: true`) is shown as a manual popover itself, placed `fixed`, so it lands
+    above the menu. It was drawn under it: the note style panel's Film shadow tooltip
+    showed as a black box peeking past the panel's edge.
+52. Inline notes (`affine/model` `consts/note.ts`, `affine/blocks/note`
+    `inline-note.ts`, `note-edgeless-block.ts`, `components/edgeless-note-background.ts`
+    and `components/edgeless-note-style-panel.ts`, `affine/gfx/note` `note-tool.ts` and
+    `overlay/`, marked `Capy (local change 52)`; Epo 2026-11-13): a note is inline (its
+    text on the canvas, no fill, padding or edge) when its fill is `transparent`, it has
+    no shadow and no border (`isInlineNote`; no new field). A placed note starts inline,
+    and its preview and centring leave out the card's padding (`NOTE_CARD_PADDING`). The
+    note container carries `data-inline`. The style panel opens with an Inline | Card
+    switch, Inline on the left, and shows Fill, Shadow, Border and Corner only for a
+    card; `setNotesInline` turns notes inline or into cards (the default fill, the Box
+    shadow, corner 8) as one undo step. A note's fill is drawn half see-through
+    (`color-mix`), its border and shadow solid.
+
+53. Inline notes fit their text (`affine/gfx/note` `note-tool.ts`, `index.ts`,
+    `affine/blocks/note` `note-edgeless-block.ts`, `inline-note.ts` and
+    `components/edgeless-note-mask.ts`, marked `Capy (local change 53)`; Epo
+    2026-11-13): the note tool draws nothing under the pointer (its plus cursor
+    alone); a click, or a drag at its start, places an inline note whose first line
+    starts at the pointer and is centred on it (`FIRST_LINE` per kind). The
+    `overlay/` folder (local change 48's preview, AFFiNE's dragged-out box) is gone.
+    An inline note renders `max-content` wide up to `DEFAULT_NOTE_WIDTH`, and a
+    `ResizeObserver` stores that width; it resizes by its corners only, which scale
+    it. Turning one into a card widens it by the card's 10 px padding each side, so
+    its lines stay. The note mask stored its height 40 taller while a note was edited
+    (it reaches 20 px past the note then); it stores the note's own height.
 
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and

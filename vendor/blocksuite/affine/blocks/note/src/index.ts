@@ -3,6 +3,7 @@ export * from './commands';
 export * from './components/edgeless-note-background';
 export * from './config';
 export * from './edgeless-clipboard-config';
+export * from './inline-note';
 export * from './note-block';
 export * from './note-edgeless-block';
 export * from './turbo/note-layout-handler';

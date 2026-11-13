@@ -216,7 +216,9 @@ test('draws over the card and reopens from what it saved', async ({ page }) => {
   await expect.poll(() => canvas(page)).toEqual(['plane', 'brush']);
 });
 
-test('a note card takes typing and leaves $$ as text', async ({ page }) => {
+test('a note takes typing, leaves $$ as text and turns from inline to a card and back', async ({
+  page,
+}) => {
   test.slow();
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -255,6 +257,28 @@ test('a note card takes typing and leaves $$ as text', async ({ page }) => {
   const toolbar = page.locator('affine-toolbar-widget');
   await expect(toolbar.getByLabel('Size', { exact: true })).toBeVisible();
   await expect(toolbar.getByText('Display in Page')).toHaveCount(0);
+
+  // It starts inline (Epo 2026-11-13); the toolbar's Inline makes it a card, and
+  // the style panel's Inline | Card switch makes it inline again.
+  const container = page.locator('.affine-note-container');
+  await expect(container).toHaveAttribute('data-inline', 'true');
+  // As wide and tall as its one line of text, not AFFiNE's 498 wide note.
+  const [width, height] = await page.evaluate(() => {
+    const note = document.querySelector('affine-edgeless-note') as unknown as {
+      model: { props: { xywh: string } };
+    };
+    return JSON.parse(note.model.props.xywh).slice(2) as number[];
+  });
+  expect(width).toBeLessThan(200);
+  expect(height).toBeLessThan(30);
+  await toolbar.getByLabel('Inline', { exact: true }).click();
+  await expect(container).toHaveAttribute('data-inline', 'false');
+  await toolbar.getByLabel('Note Style').click();
+  const panel = page.locator('edgeless-note-style-panel');
+  await expect(panel.getByText('Fill color')).toBeVisible();
+  await panel.getByRole('button', { name: 'Inline' }).click();
+  await expect(container).toHaveAttribute('data-inline', 'true');
+  await expect(panel.getByText('Fill color')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
@@ -822,7 +846,7 @@ test('a note scrolled out of view still reaches the image', async ({
         ?.classList.contains('block-idle')
     )
   ).toBe(true);
-  // Note fills are half see-through (N2), so the black note is mid grey on white.
+  // Note fills are half see-through, so the black note is mid grey on white.
   expect(await inkIn(page, await toImage(page), [100, 160])).toBeGreaterThan(
     10_000
   );
@@ -1386,6 +1410,80 @@ test('the workspace canvas has GIFs, stickers and emoji in a slot, and Formulas 
   await placePiece(page, 'capy-misc-panel', 'deriv');
   await page.locator('.capy-formula math-field').waitFor();
   await expect.poll(() => canvas(page)).toContain('formula');
+});
+
+test("Misc's YouTube tile places a video, and Edit link changes it in place", async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/canvas');
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  await page.locator('capy-misc-button').click();
+  const misc = page.locator('capy-misc-panel');
+  await misc.getByRole('button', { exact: true, name: 'YouTube' }).click();
+  await misc.getByRole('textbox').fill('youtu.be/dQw4w9WgXcQ');
+  await misc.getByRole('button', { name: 'Add' }).click();
+  const card = page.locator('capy-link-card');
+  await expect(card.locator('img')).toBeVisible();
+  const before = await card.boundingBox();
+  // Edit link (Epo 2026-11-13, E1): the address is in the field.
+  await page
+    .locator('affine-toolbar-widget')
+    .getByLabel('Edit link', { exact: true })
+    .click();
+  const field = page.locator('capy-link-edit input');
+  await expect(field).toHaveValue(
+    'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+  );
+  // Not an address: the field stays open and says so.
+  await field.fill('nope');
+  await field.press('Enter');
+  await expect(page.locator('capy-link-edit .error')).toBeVisible();
+  // A web address turns the video into a web card, as wide as it was.
+  await field.fill('example.com/notes');
+  await field.press('Enter');
+  await expect(card).toContainText('example.com');
+  const after = await card.boundingBox();
+  expect(after?.width).toBeCloseTo(before?.width ?? 0, 0);
+  expect(after?.height).toBeLessThan(before?.height ?? 0);
+});
+
+test("the Canvas page's Misc lists every quiz with its workspace, and New opens a quiz in no workspace in a dialog", async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/canvas');
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  await page.locator('capy-misc-button').click();
+  const misc = page.locator('capy-misc-panel');
+  await expect(
+    misc.getByRole('heading', { name: 'Quizzes and flashcards' })
+  ).toBeVisible();
+  await misc.getByRole('button', { exact: true, name: 'Quiz' }).click();
+  // Each tile says its workspace, and one in none says nothing (Epo 2026-11-13, A).
+  await expect(
+    misc.locator('.card', { hasText: 'Genetics check-in' }).locator('.ws')
+  ).toHaveText('Biology 101');
+  await expect(
+    misc
+      .locator('.card', { hasText: 'Shared cell biology quiz' })
+      .locator('.ws')
+  ).toHaveCount(0);
+  // The filter matches the workspace's name too.
+  await misc.getByRole('searchbox').fill('calc');
+  await expect(misc.locator('.card:not(.new)')).toHaveCount(1);
+  await misc.getByRole('searchbox').fill('');
+  // New makes one in no workspace (W1), places it and opens its editor in a dialog.
+  await misc.getByRole('button', { name: 'New quiz' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Quiz 1' });
+  await expect(
+    dialog.getByRole('button', { name: 'Add question' })
+  ).toBeVisible();
+  await expect(page.locator('.capy-card .title')).toHaveText('Quiz 1');
 });
 
 test("the Canvas page is a board of the person's own, and its panel lists and makes canvases", async ({

@@ -1,0 +1,47 @@
+import { EdgelessCRUDIdentifier } from '@blocksuite/affine-block-surface';
+import {
+  DefaultTheme,
+  INLINE_NOTE_FILL,
+  isInlineNote,
+  type NoteBlockModel,
+  type NoteProps,
+  NoteShadow,
+  StrokeStyle,
+} from '@blocksuite/affine-model';
+import { Bound } from '@blocksuite/global/gfx';
+import type { BlockStdScope } from '@blocksuite/std';
+
+const CARD_PADDING_X = 10;
+
+/** Capy (local change 52): turns notes inline (clear fill, no shadow, no border)
+ * or into cards (the default fill, the Box shadow, corner 8), as one undo step. */
+export function setNotesInline(
+  std: BlockStdScope,
+  notes: NoteBlockModel[],
+  inline: boolean
+) {
+  std.store.captureSync();
+  const crud = std.get(EdgelessCRUDIdentifier);
+  for (const note of notes) {
+    const { edgeless, xywh } = note.props;
+    // A card keeps the inline text's lines: its width grows by the card's 10 px
+    // padding each side (the board's card padding, drawingBoard.css).
+    const bound = Bound.deserialize(xywh);
+    if (!inline && isInlineNote(note.props))
+      bound.w += 2 * CARD_PADDING_X * (edgeless.scale ?? 1);
+    crud.updateElement(note.id, {
+      xywh: bound.serialize(),
+      background: inline ? INLINE_NOTE_FILL : DefaultTheme.noteBackgrounColor,
+      edgeless: {
+        ...edgeless,
+        style: {
+          ...edgeless.style,
+          borderStyle: StrokeStyle.None,
+          ...(inline
+            ? { shadowType: NoteShadow.None }
+            : { borderRadius: 8, shadowType: NoteShadow.Box }),
+        },
+      },
+    } satisfies Partial<NoteProps>);
+  }
+}

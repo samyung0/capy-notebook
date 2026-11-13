@@ -1,7 +1,8 @@
 import { POLYGON_SHAPES } from '@blocksuite/affine/model';
 import { expect, it } from 'vitest';
+import * as Y from 'yjs';
 import { m } from '@/i18n';
-import { toBase64 } from './base64';
+import { fromBase64, toBase64 } from './base64';
 import { SAVED, withCanvasBlock, withElements } from './boardFixture';
 import { BoardLoadError } from './boardLoad';
 import { drawBoardPreview, POLYGON_CORNERS } from './boardPreview';
@@ -11,6 +12,9 @@ const SVG_HEAD = /^<svg [^>]*width="180" height="120"/;
 const BLUE_POLYGON =
   /<path d="M[^"]*L[^"]*L[^"]*L[^"]*L[^"]*Z" fill="none" stroke="#1971c2"/;
 const RED_STROKE = /<path d="([^"]*)" stroke="#e03131"/;
+const INLINE_NOTE_TEXT = /<tspan x="0" [^>]*>Osmosis/;
+const CARD_NOTE_BOX =
+  /<rect [^>]*rx="16" fill="#fff" fill-opacity="0.5" stroke="#e6e6e6"/;
 
 it('draws the plane card, its marks and its axes', () => {
   const svg = drawBoardPreview(SAVED, SIZE, 'question');
@@ -122,4 +126,61 @@ it('draws a polygon shape from the corners the board draws it with', () => {
     'question'
   );
   expect(svg).toMatch(BLUE_POLYGON);
+});
+
+/** The saved board with a note on the page: `background` and its style. */
+function withNote(background: string, style: Record<string, unknown>) {
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, fromBase64(SAVED));
+  const blocks = doc.getMap<Y.Map<unknown>>('blocks');
+  const page = [...blocks.values()].find(
+    (block) => block.get('sys:flavour') === 'affine:page'
+  );
+  if (!page) throw new Error('the saved board has no page');
+  const block = (id: string, flavour: string, props: object) => {
+    const map = new Y.Map<unknown>();
+    map.set('sys:id', id);
+    map.set('sys:flavour', flavour);
+    map.set('sys:children', new Y.Array());
+    for (const [key, value] of Object.entries(props))
+      map.set(`prop:${key}`, value);
+    blocks.set(id, map);
+    return map;
+  };
+  const note = block('note', 'affine:note', {
+    background,
+    displayMode: 'both',
+    edgeless: { style },
+    index: 'a1',
+    xywh: '[0,0,200,40]',
+  });
+  block('para', 'affine:paragraph', {
+    text: new Y.Text('Osmosis'),
+    type: 'text',
+  });
+  (note.get('sys:children') as Y.Array<string>).push(['para']);
+  (page.get('sys:children') as Y.Array<string>).push(['note']);
+  return toBase64(Y.encodeStateAsUpdate(doc));
+}
+
+// P1/I1 (Epo 2026-11-13): an inline note is its text alone, a card its padded box
+// with its corner and edge.
+it('draws an inline note as text and a card with its corner and edge', () => {
+  const inline = drawBoardPreview(
+    withNote('transparent', { borderStyle: 'none', shadowType: '' }),
+    SIZE,
+    'workspace'
+  );
+  // At the note's own left: no card padding.
+  expect(inline).toMatch(INLINE_NOTE_TEXT);
+  const card = drawBoardPreview(
+    withNote('#fff', {
+      borderRadius: 16,
+      borderStyle: 'none',
+      shadowType: '--affine-note-shadow-box',
+    }),
+    SIZE,
+    'workspace'
+  );
+  expect(card).toMatch(CARD_NOTE_BOX);
 });

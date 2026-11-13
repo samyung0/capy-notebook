@@ -19,7 +19,10 @@ export class EdgelessNoteMask extends SignalWatcher(
         if (!this.model.props.edgeless.collapse) {
           const bound = Bound.deserialize(this.model.xywh);
           const scale = this.model.props.edgeless.scale ?? 1;
-          const height = entry.contentRect.height * scale;
+          // Capy (local change 53): less the 20 px the mask reaches past the
+          // note on each side while it is edited, which AFFiNE stored as height.
+          const extra = this.editing ? ACTIVE_NOTE_EXTRA_PADDING : 0;
+          const height = (entry.contentRect.height - 2 * extra) * scale;
 
           if (!height || almostEqual(bound.h, height)) {
             return;

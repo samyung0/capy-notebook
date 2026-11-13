@@ -1,4 +1,5 @@
 import { addImages } from '@blocksuite/affine/blocks/image';
+import { setNotesInline } from '@blocksuite/affine/blocks/note';
 import {
   DefaultTool,
   EdgelessCRUDIdentifier,
@@ -21,9 +22,11 @@ import {
   ConnectorMode,
   DEFAULT_CONNECTOR_MODE,
   DefaultTheme,
+  isInlineNote,
   isTransparent,
   MAX_IMAGE_WIDTH,
   MindmapStyle,
+  NoteBlockModel,
   PointStyle,
   type ShapeName,
   ShapeType,
@@ -58,6 +61,7 @@ import {
   Cancel01Icon,
   Pen01Icon,
   PlusSignIcon,
+  TextIcon,
 } from '@hugeicons/core-free-icons';
 import {
   css,
@@ -89,10 +93,12 @@ import {
 import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
 import { IMAGE_ACCEPT } from '@/lib/fitImage';
+import { iconUrl } from '@/lib/icon-catalog';
 import {
   addCard,
   type CardMaterialKind,
   LINK_FLAVOUR,
+  type LinkBlockModel,
   MATERIAL_CARD_SIZE,
   MATERIAL_FLAVOUR,
   workspaceOf,
@@ -1041,7 +1047,10 @@ class CapyNoteButton extends EdgelessNoteSeniorButton {
       unlisten = closeOnPressOutside(this, menu.element);
       Object.assign(menu.element, {
         childFlavour: this.childFlavour,
-        childType: this.childType,
+        // Marked only while a note of that kind is in hand: the last one picked
+        // isn't (Epo 2026-11-13).
+        childType:
+          this.edgelessTool?.toolType === NoteTool ? this.childType : null,
         edgeless: this.edgeless,
         onChange: (props: Partial<NoteToolOption>) => {
           Object.assign(this, props);
@@ -1152,6 +1161,180 @@ const connectAction = {
 
 const onlyOne = (ctx: ToolbarContext) => ctx.getSurfaceModels().length === 1;
 
+/** What a typed link places: a YouTube address as its video, any other web address
+ * as itself; null when it is neither. */
+function readLink(value: string) {
+  const typed = value.trim();
+  let url: URL | null = null;
+  for (const candidate of [typed, `https://${typed}`])
+    try {
+      url = new URL(candidate);
+      break;
+    } catch {
+      // The next spelling.
+    }
+  // Only an address is a video: a bare 11-letter word is a typo, not an id.
+  const videoId = url && youtubeVideoId(url.href);
+  if (videoId) return { url: youtubeWatchUrl(videoId), videoId };
+  if (
+    !(url && isWebAddress(url.href) && url.hostname.includes('.')) ||
+    url.href.length > BOARD_CATALOG.limits.LINK_URL_MAX
+  )
+    return null;
+  return { url: url.href, videoId: '' };
+}
+
+/** A placed link's Edit link (Epo 2026-11-13, E1): a field under the toolbar with
+ * the address in it. Save points the card at the new one where it stands, as wide
+ * as it was; a video is 16:9 and a web link takes its card's height. */
+class CapyLinkEdit extends LitElement {
+  static override styles = css`
+    form {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      width: 280px;
+    }
+    .row {
+      display: flex;
+      gap: 6px;
+    }
+    input {
+      flex: 1;
+      min-width: 0;
+      height: 32px;
+      padding: 0 10px;
+      box-sizing: border-box;
+      border: 1px solid var(--affine-border-color);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--affine-text-primary-color);
+      font: inherit;
+      font-size: 13px;
+      outline: none;
+    }
+    input:focus {
+      border-color: var(--affine-primary-color);
+    }
+    button {
+      height: 32px;
+      padding: 0 12px;
+      border: 0;
+      border-radius: 6px;
+      background: var(--affine-primary-color);
+      color: #fff;
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .error {
+      margin: 0 2px;
+      color: var(--affine-error-color);
+      font-size: 12px;
+    }
+  `;
+
+  model!: LinkBlockModel;
+  store!: ToolbarContext['store'];
+  private invalid = false;
+
+  /** The address as it stands, selected to be typed over. */
+  open() {
+    this.invalid = false;
+    this.requestUpdate();
+    const input = this.renderRoot.querySelector('input');
+    if (!input) return;
+    input.value = this.model.props.url;
+    requestAnimationFrame(() => input.select());
+  }
+
+  private save(value: string) {
+    const link = readLink(value);
+    if (!link) {
+      this.invalid = true;
+      this.requestUpdate();
+      return;
+    }
+    const bound = Bound.deserialize(this.model.xywh);
+    const wasVideo = !!this.model.props.videoId;
+    if (link.videoId) bound.h = (bound.w * 9) / 16;
+    else if (wasVideo) bound.h = (bound.w * 76) / 280;
+    this.store.captureSync();
+    this.store.updateBlock(this.model, { ...link, xywh: bound.serialize() });
+    this.dispatchEvent(new Event('done'));
+  }
+
+  override render() {
+    // Keys, presses and the clipboard stay in the field, not the board's shortcuts.
+    const keep = (event: Event) => event.stopPropagation();
+    // BlockSuite's menu closes on any click outside its button, its own content
+    // too: a click in the field, or Enter's on Save, keeps it open.
+    return html`<form
+      @click=${keep}
+      @submit=${(event: SubmitEvent) => {
+        event.preventDefault();
+        const input = this.renderRoot.querySelector('input');
+        if (input) this.save(input.value);
+      }}
+    >
+      <div class="row">
+        <input
+          aria-label=${m.drawing_board_link_address()}
+          maxlength=${BOARD_CATALOG.limits.LINK_URL_MAX}
+          type="text"
+          @input=${() => {
+            if (!this.invalid) return;
+            this.invalid = false;
+            this.requestUpdate();
+          }}
+          @keydown=${keep}
+          @pointerdown=${keep}
+          @copy=${keep}
+          @cut=${keep}
+          @paste=${keep}
+        />
+        <button type="submit">${m.drawing_board_link_save()}</button>
+      </div>
+      ${this.invalid ? html`<p class="error">${m.drawing_board_link_invalid()}</p>` : nothing}
+    </form>`;
+  }
+}
+
+const editLinkAction = {
+  content: (ctx: ToolbarContext) => {
+    const model = ctx.getSurfaceModels()[0] as unknown as
+      | LinkBlockModel
+      | undefined;
+    if (!model) return null;
+    const label = m.drawing_board_edit_link();
+    return html`<editor-menu-button
+      .contentPadding=${'10px'}
+      .button=${html`<editor-icon-button aria-label=${label} .tooltip=${label}>
+        ${hugeIcon(Pen01Icon)}<span class="label">${label}</span>
+      </editor-icon-button>`}
+      @toggle=${(event: CustomEvent<boolean>) => {
+        if (!event.detail) return;
+        (event.currentTarget as HTMLElement)
+          .querySelector<CapyLinkEdit>('capy-link-edit')
+          ?.open();
+      }}
+    >
+      <capy-link-edit
+        .model=${model}
+        .store=${ctx.store}
+        @done=${(event: Event) =>
+          (
+            (event.currentTarget as HTMLElement).closest(
+              'editor-menu-button'
+            ) as (HTMLElement & { hide(): void }) | null
+          )?.hide()}
+      ></capy-link-edit>
+    </editor-menu-button>`;
+  },
+  id: 'a.edit-link',
+  when: onlyOne,
+};
+
 /** AFFiNE's selection toolbar reads the editor's mode, which the board has to report.
  * It goes without what makes no sense on an answer, or needs other documents or a page
  * mode. The cards
@@ -1252,6 +1435,42 @@ export const boardToolbar = [
       ],
     },
     id: BlockFlavourIdentifier('affine:surface:chart'),
+  }),
+  ToolbarModuleExtension({
+    config: { actions: [editLinkAction] },
+    id: BlockFlavourIdentifier('affine:surface:embed-capy-link'),
+  }),
+  // I2 (Epo 2026-11-13): Inline lights while the notes are inline; a press turns
+  // them into cards, or cards inline.
+  ToolbarModuleExtension({
+    config: {
+      actions: [
+        {
+          generate: (ctx: ToolbarContext) => {
+            const notes = ctx.getSurfaceModelsByType(NoteBlockModel);
+            if (!notes.length || notes.length !== ctx.getSurfaceModels().length)
+              return null;
+            // Through the props' signals, so an undo relights the button.
+            const inline = notes.every(({ props }) =>
+              isInlineNote({
+                background: props.background$.value,
+                edgeless: props.edgeless$.value,
+              })
+            );
+            return {
+              active: inline,
+              icon: html`${hugeIcon(TextIcon)}`,
+              label: m.drawing_board_note_inline(),
+              run: () => setNotesInline(ctx.std, notes, !inline),
+              showLabel: true,
+              tooltip: m.drawing_board_note_inline_tip(),
+            };
+          },
+          id: 'd.t-inline',
+        },
+      ],
+    },
+    id: BlockFlavourIdentifier('custom:affine:surface:note'),
   }),
 ];
 
@@ -1708,7 +1927,12 @@ type MiscTile =
       label: () => string;
       view: Exclude<MiscView, 'klipy'>;
     };
-const MISC_GROUPS: { label: () => string; tiles: MiscTile[] }[] = [
+const MISC_GROUPS: {
+  label: () => string;
+  /** Its name on the account's Canvas page, if another. */
+  accountLabel?: () => string;
+  tiles: MiscTile[];
+}[] = [
   {
     label: m.drawing_board_diagrams,
     tiles: [...CHART_PIECES]
@@ -1731,13 +1955,17 @@ const MISC_GROUPS: { label: () => string; tiles: MiscTile[] }[] = [
         pick: 'image',
       },
       {
-        art: svg`<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#173654" stroke-width="1.6" stroke-linecap="round" aria-hidden="true" style="stroke:var(--capy-navy, #173654)"><path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/></svg>`,
-        label: m.drawing_board_link,
+        // YouTube's play mark; a web address still lands as a link card (Epo
+        // 2026-11-13, Y2).
+        art: svg`<svg width="38" height="27" viewBox="0 0 38 27" aria-hidden="true"><rect width="38" height="27" rx="7" fill="#ff0033"/><path d="M15 7.5v12l10.5-6z" fill="#fff"/></svg>`,
+        label: m.drawing_board_youtube,
         view: 'link',
       },
     ],
   },
   {
+    // Every quiz and set the person can open (Epo 2026-11-13, N1).
+    accountLabel: m.drawing_board_quizzes_flashcards,
     label: m.drawing_board_from_workspace,
     tiles: [
       {
@@ -1850,8 +2078,10 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         min-height: 0;
         overflow-y: auto;
       }
+      /* Short tiles and groups close together: every group shows without
+         scrolling (Epo 2026-11-13, C1). */
       .group + .group {
-        margin-top: 12px;
+        margin-top: 8px;
       }
       .tiles {
         display: grid;
@@ -1865,11 +2095,11 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 6px;
+        gap: 3px;
         box-sizing: border-box;
         width: 100%;
-        height: 80px;
-        padding: 8px 4px;
+        height: 60px;
+        padding: 4px;
         border-radius: 8px;
         color: var(--affine-text-secondary-color);
         font-size: 11.5px;
@@ -1887,17 +2117,17 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         align-items: center;
         justify-content: center;
         width: 40px;
-        height: 36px;
+        height: 30px;
       }
       .tile[data-kind] .art {
         filter: ${unsafeCSS(PIECE_SHADOW)};
       }
-      /* The integral stands 60 px tall in its slot: a formula fits the art box. */
-      .tile.formula .art svg {
+      /* Every tile's art fits the box (the integral stands 60 px tall in its slot). */
+      .art svg {
         width: auto;
         height: auto;
         max-width: 40px;
-        max-height: 36px;
+        max-height: 30px;
       }
       .head {
         display: flex;
@@ -2115,6 +2345,26 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         color: var(--affine-text-secondary-color);
         font-size: 11px;
       }
+      .card .ws {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        min-width: 0;
+        margin-top: -2px;
+        color: var(--affine-text-secondary-color);
+        font-size: 11px;
+      }
+      .card .ws img {
+        flex: none;
+        width: 12px;
+        height: 12px;
+        border-radius: 3px;
+      }
+      .card .ws span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
       .card.new {
         align-items: center;
         justify-content: center;
@@ -2297,6 +2547,8 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
     input.addEventListener('change', () => {
       const files = [...(input.files ?? [])];
       if (!files.length) return;
+      // Select takes over from the pen, say, before the images land selected.
+      this.gfx.tool.setTool(DefaultTool);
       // A file the board can't read is said by BlockSuite's own notice.
       addImages(this.edgeless.std, files, { maxWidth: MAX_IMAGE_WIDTH }).catch(
         () => undefined
@@ -2725,35 +2977,17 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
 
   /** A link card: a YouTube video shows its poster; any other address its host. */
   private addLink(value: string) {
-    const typed = value.trim();
-    let url: URL | null = null;
-    for (const candidate of [typed, `https://${typed}`])
-      try {
-        url = new URL(candidate);
-        break;
-      } catch {
-        // The next spelling.
-      }
-    // Only an address is a video: a bare 11-letter word is a typo, not an id.
-    const videoId = url && youtubeVideoId(url.href);
-    if (videoId) {
-      addCard(
-        this.gfx,
-        LINK_FLAVOUR,
-        { url: youtubeWatchUrl(videoId), videoId },
-        [320, 180]
-      );
-      this.placed();
-      return;
-    }
-    if (
-      !(url && isWebAddress(url.href) && url.hostname.includes('.')) ||
-      url.href.length > BOARD_CATALOG.limits.LINK_URL_MAX
-    ) {
+    const link = readLink(value);
+    if (!link) {
       this.linkError = true;
       return;
     }
-    addCard(this.gfx, LINK_FLAVOUR, { url: url.href, videoId: '' }, [280, 76]);
+    addCard(
+      this.gfx,
+      LINK_FLAVOUR,
+      link,
+      link.videoId ? [320, 180] : [280, 76]
+    );
     this.placed();
   }
 
@@ -2830,12 +3064,18 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
   }
 
   private renderMaterials(kind: CardMaterialKind) {
-    // Unknown while the workspace's list loads: the New tile alone, no "none yet".
-    const loaded = workspaceOf(this.edgeless.std)?.materials();
+    // Unknown while the list loads: the New tile alone, no "none yet".
+    const links = workspaceOf(this.edgeless.std);
+    const loaded = links?.materials();
     const all = loaded?.filter((material) => material.kind === kind) ?? [];
     const needle = this.filter.trim().toLowerCase();
+    // On the account's page the filter also matches the workspace's name.
     const listed = needle
-      ? all.filter(({ title }) => title.toLowerCase().includes(needle))
+      ? all.filter(({ title, workspace }) =>
+          [title, workspace?.name ?? ''].some((text) =>
+            text.toLowerCase().includes(needle)
+          )
+        )
       : all;
     const newTile = html`<button
       class="card new"
@@ -2846,6 +3086,13 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
       <span class="plus">${hugeIcon(PlusSignIcon)}</span>
       ${kind === 'quiz' ? m.drawing_board_new_quiz() : m.drawing_board_new_set()}
     </button>`;
+    const none = links?.account
+      ? kind === 'quiz'
+        ? m.drawing_board_no_own_quizzes()
+        : m.drawing_board_no_own_flashcards()
+      : kind === 'quiz'
+        ? m.drawing_board_no_quizzes()
+        : m.drawing_board_no_flashcards();
     return html`<div class="body">
       ${
         all.length >= FILTER_FROM
@@ -2864,7 +3111,7 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
       <div class="cards">
         ${newTile}
         ${listed.map(
-          ({ id, preview, title }) =>
+          ({ id, preview, title, workspace }) =>
             html`<button
               class="card"
               title=${title}
@@ -2873,16 +3120,23 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
             >
               ${this.thumbnail(kind, title, preview)}
               <span class="n">${this.count(kind, preview)}</span>
+              ${
+                // Its workspace on the account's page; nothing when in none
+                // (Epo 2026-11-13, A).
+                workspace
+                  ? html`<span class="ws"
+                      >${
+                        workspace.iconId
+                          ? html`<img alt="" src=${iconUrl(workspace.iconId)} />`
+                          : nothing
+                      }<span>${workspace.name}</span></span
+                    >`
+                  : nothing
+              }
             </button>`
         )}
       </div>
-      ${
-        loaded && all.length === 0
-          ? html`<p class="note">
-              ${kind === 'quiz' ? m.drawing_board_no_quizzes() : m.drawing_board_no_flashcards()}
-            </p>`
-          : nothing
-      }
+      ${loaded && all.length === 0 ? html`<p class="note">${none}</p>` : nothing}
     </div>`;
   }
 
@@ -2927,7 +3181,7 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
     if (this.view === 'klipy')
       return html`${this.head(m.drawing_board_gif_sticker, true)}${this.renderKlipy()}`;
     if (this.view === 'link')
-      return html`${this.head(m.drawing_board_link)}${this.renderLink()}`;
+      return html`${this.head(m.drawing_board_youtube)}${this.renderLink()}`;
     if (this.view === 'quiz' || this.view === 'flashcards')
       return html`${this.head(
         this.view === 'quiz' ? m.drawing_board_quiz : m.drawing_board_flashcards
@@ -2938,12 +3192,12 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         ${this.closeButton()}
       </div>
       <div class="body">
-        ${MISC_GROUPS.map(({ label, tiles }) => ({
-          label,
+        ${MISC_GROUPS.map(({ accountLabel, label, tiles }) => ({
+          label: (workspace?.account && accountLabel) || label,
           tiles: tiles.filter(
             (tile) =>
               tileFits(tile, boardKinds.get(this.edgeless.std)) &&
-              // The workspace's quizzes and sets need a workspace lent.
+              // The quizzes and sets need a list lent.
               (workspace ||
                 !('view' in tile) ||
                 (tile.view !== 'quiz' && tile.view !== 'flashcards'))
@@ -3270,5 +3524,6 @@ for (const [tag, element] of [
   ['capy-misc-panel', CapyMiscPanel],
   ['capy-misc-button', CapyMiscButton],
   ['capy-gif-sticker-button', CapyGifStickerButton],
+  ['capy-link-edit', CapyLinkEdit],
 ] as const)
   if (!customElements.get(tag)) customElements.define(tag, element);

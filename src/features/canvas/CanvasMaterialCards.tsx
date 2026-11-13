@@ -2,8 +2,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { qk } from '@/api/client';
-import { useMaterial, useOwnedMaterials } from '@/api/hooks';
-import type { MaterialPreview } from '@/api/types';
+import { useMaterial } from '@/api/hooks';
+import type { MaterialListItem, MaterialPreview } from '@/api/types';
 import { ThumbnailPanel } from '@/components/app/ThumbnailPanel';
 import { Button } from '@/components/ui/Button';
 import { useNearScreen } from '@/features/collaboration/useNearScreen';
@@ -42,13 +42,12 @@ type Placed = MaterialCardHost & { id: string };
  * to join inside, so each edited card takes its own place among the user's 22
  * joined documents, and the others stay snapshots. */
 export function CanvasMaterialCards({
-  listed,
-  workspaceId,
+  materials,
 }: {
-  /** The materials the workspace still lists, `undefined` until the list has
-   * loaded; the card's own header says when a placed one is gone. */
-  listed: ReadonlySet<string> | undefined;
-  workspaceId: string;
+  /** The quizzes and sets the board's links list (`useCanvasMaterials`),
+   * `undefined` until the list has loaded; the card's own header says when a
+   * placed one is gone. */
+  materials: MaterialListItem[] | undefined;
 }) {
   const [cards, setCards] = useState<Placed[]>([]);
   useEffect(
@@ -63,38 +62,22 @@ export function CanvasMaterialCards({
       ),
     []
   );
-  // Nothing placed: no list is read for previews either.
   if (!cards.length) return null;
-  return (
-    <PlacedCards cards={cards} listed={listed} workspaceId={workspaceId} />
-  );
+  return <PlacedCards cards={cards} materials={materials} />;
 }
 
 function PlacedCards({
   cards,
-  listed,
-  workspaceId,
+  materials,
 }: {
   cards: Placed[];
-  listed: ReadonlySet<string> | undefined;
-  workspaceId: string;
+  materials: MaterialListItem[] | undefined;
 }) {
-  // The workspace's own materials read carries no preview, so the stored previews
-  // come from the paged list, every page of which WorkspaceCanvas reads (a card
-  // whose preview isn't stored falls back to the kind's icon).
-  const { data } = useOwnedMaterials({
-    kinds: ['quiz', 'flashcards'],
-    scope: 'member',
-    workspaceIds: [workspaceId],
-  });
-  const previews = useMemo(
-    () =>
-      new Map(
-        (data?.pages ?? [])
-          .flatMap((page) => page.items)
-          .map((item) => [item.id, item.preview])
-      ),
-    [data]
+  // The list carries each one's stored preview (a card whose preview isn't
+  // stored falls back to the kind's icon).
+  const listed = useMemo(
+    () => materials && new Map(materials.map((item) => [item.id, item])),
+    [materials]
   );
   // The one card being edited, by its block: the same material placed twice
   // edits in one of them.
@@ -134,7 +117,7 @@ function PlacedCards({
             listed={listed?.has(materialId)}
             materialId={materialId}
             onEdit={(on) => edit(on ? { id, materialId } : null)}
-            preview={previews.get(materialId)}
+            preview={listed?.get(materialId)?.preview}
           />,
           host,
           id

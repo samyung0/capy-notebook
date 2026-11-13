@@ -4731,18 +4731,21 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   button closes it) and `followTool` (the panel closes once what was picked is placed or
   another tool is taken while it is open; it opens over any tool, so the pen stays the
   pen until something is picked). The Note button is `capy-note-button`, overriding the `note`
-  senior tool; a picked note follows the pointer drawn as the empty note it places
-  (its size, hairline and corner, the placeholder in the block's font and place, per
-  kind in `notePreviewOf`), centred, and a click places it centred (local change 48; a
-  dragged note lands where its outline was). A paragraph's placeholder clips both axes
-  (local change 49), so a heading's shows no scrollbar.
-- **Back to the drawing tool** (Epo 2026-11-12, `returnToDrawing` in
-  `drawingBoard.ts`): whatever is picked over the pen, highlighter or eraser (a shape, a
-  preset, a note, a carried piece) gives that tool back once it is placed. Every
-  placement adds what it places and takes Select in the same step, which the watcher
-  tells apart from Select taken by hand or a pick cancelled (both stay on Select). A
-  placed note keeps the focus for typing; the tool comes back when its editing ends,
-  and the click that leaves it draws nothing.
+  senior tool; with a kind picked the button stays lit and the pointer is the plus
+  cursor, with nothing following it, and a click (or a drag, at its start) places an
+  inline note whose first line starts at the pointer, centred on it (local change 53,
+  Epo 2026-11-13, like a text tool; it replaced local change 48's carried preview and
+  AFFiNE's dragged-out box). A paragraph's placeholder clips both axes
+  (local change 49), so a heading's shows no scrollbar. The note menu marks a kind only while a note of it is in
+  hand (Epo 2026-11-13): AFFiNE's menu marks the tool's kind, which stayed the last one
+  picked. A tooltip of something inside a toolbar menu (a popover in the top layer) is
+  shown in the top layer too (local change 51), so it lands above the menu.
+- **Select after placing** (Epo 2026-11-13, replacing 2026-11-12's return to the
+  drawing tool): whatever is placed (a shape, a preset, a carried piece, a Misc card,
+  a GIF, sticker or emoji, a picked image) leaves Select on with it selected, whatever
+  tool was on before. `addCard` and `addPicture` take Select before selecting what
+  they add, and Misc's Image tile before its images land. A placed note keeps the
+  focus for typing.
 - **Strokes** (local change 50, Epo 2026-11-12): a mouse stroke stores no pressure and
   draws at one width, and a mouse click is a dot at pressure 0; a pen or stylus that
   reports pressure keeps it. A stroke at pressure 0.5 is exactly its width wide, as
@@ -4891,7 +4894,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     `span` at most 1,936.
   - `fitPadding` ([top, right, bottom, left] pixels) is the room the first fit leaves
     for what the page lays over the board, such as a pinned question card or a top bar;
-    without it the fit leaves room for the board's own toolbar and undo.
+    without it the fit leaves room for the board's own toolbar and undo. The first view is
+    never above 100% (Epo 2026-11-13): a small drawing, one note, fitted to the
+    screen opened at 212%, its 14.8 px text at 31 px; it now opens at 100%, centred.
   - `readOnly` is a teacher's view: BlockSuite's read-only store (pan tool), no toolbars,
     undo, symbol row or selection, and nothing opens for editing, so MathLive never
     loads.
@@ -4916,15 +4921,17 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     workspace canvas) and **Misc** after the shapes (`sheetTools`). Misc shows each board
     what it may hold (`tileFits`, by the board `markBoard` names at mount): an answer
     board the Bar and Pie chart and Image tiles, the workspace canvas also the mind map,
-    the formulas, links and the workspace's quizzes and sets (emoji are the GIF &
+    the formulas, YouTube and web links and the workspace's quizzes and sets (emoji are the GIF &
     Sticker picker's third tab since 2026-11-13). Misc's button opens a panel above the toolbar
     (`capy-misc-panel`, right-aligned, Shapes' look): one 360 × 440 frame in every view
     (Epo 2026-11-09, round 2, mock DVxJzY5A3XiYHKuqQPezST), with Back, the title or
     KLIPY's search, and a close in its header and the body scrolling inside, so
     switching views moves nothing; the home view is tiles in groups, each picked up and
     dropped like a slot's piece (a finger's tap puts it in the view's middle); the panel
-    closes once something is down. Every tile fills its grid column, its art centred
-    over its name with 8px padding, inside 16px of panel padding (Epo 2026-11-12: the
+    closes once something is down. Every tile fills its grid column, 60 px tall with
+    its art fitted in a 40 × 30 box centred over its name and groups 8 px apart, so
+    every group shows without scrolling (Epo 2026-11-13, C1, mock
+    YahmqxViPqKKRbPjqJmkW5), inside 16px of panel padding (Epo 2026-11-12: the
     picture tiles were buttons left at the popper's 36px). A panel opened from the
     toolbar (`openPopper`) keeps its clicks, keys (Escape aside), clipboard and wheel
     from the board under it, and lifts the toolbar over a selected element's own bar
@@ -4968,25 +4975,47 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       passes the stored limit says it can't be placed;
       the placed GIF stays KLIPY's link, as its terms ask. Without a key the view
       says search is off; an uploaded GIF is an ordinary image.
-    - **Link** takes a web
-      address or YouTube link: a video shows its poster (`i.ytimg.com`) with a play
-      mark, anything else its host and address; a double click opens it in a new tab.
+    - **YouTube** (Epo 2026-11-13, the Link tile renamed, with YouTube's play mark;
+      Y2 taken as recommended) takes a YouTube link or any web address: a video shows
+      its poster (`i.ytimg.com`) with a play mark, anything else its host and
+      address; a double click opens it in a new tab. A placed one's toolbar has
+      **Edit link** (E1, `editLinkAction` and `capy-link-edit`): a field in
+      BlockSuite's toolbar menu with the address selected; Save points the card at
+      the new address where it stands, as wide as it was, 16:9 for a video and a web
+      card's height for a web link, in one undo step. The form stops its clicks,
+      since BlockSuite's menu closes on any click outside its button. Adding and
+      editing share `readLink`.
     - **From the workspace:** **Quiz** and **Flashcards** show the workspace's own as a
       two-column grid of thumbnails from each material's stored preview (the first
       question's stem, the title, the question count; a set's first card front on a
       stacked pair and its card count), from the Files list (`useOwnedMaterials`, which
-      carries previews; `WorkspaceCanvas` lends them through `workspace` in the mount
-      options), with a filter field from six items. A **New** tile comes first: the page
+      carries previews; `useCanvasMaterials` reads it and `useCanvasLinks` lends it
+      through `workspace` in the mount options), with a filter field from six items. A **New** tile comes first: the page
       creates the quiz or set unfiled in the workspace, named as the Create page names
       one (`nextGenerateTitle`), places its card and opens it. A click places a card
       that runs it (360 × 420 for a quiz, 360 × 260 for a set, `MATERIAL_CARD_SIZE`):
       the card is the note embed's own runner, answered and checked on the canvas
       (below). A double click on its header opens the material in the workspace for
       editing, and a card whose material the workspace no longer lists shows "can't be
-      opened" and no runner. `WorkspaceCanvas` reads every page of the list before
+      opened" and no runner. `useCanvasMaterials` reads every page of the list before
       lending it (`fetchNextPage` while `hasNextPage`); until then the list is
       `undefined`, the grid shows the New tile alone and a placed card's body loads
       rather than reading as gone.
+    - **Quizzes and flashcards** on the Canvas page (Epo 2026-11-13, mock
+      DnhMYffHEjdxiUansbBDde A + W1, the group named N1 by default): the same two
+      tiles over every quiz and set the person can open (`GET /api/materials` with
+      `scope=member` and no workspace; items they lost access to are left out),
+      latest edited first in one grid. Each tile has its workspace's icon and name
+      under the count, and nothing for one in no workspace; the filter also matches
+      the workspace's name. New makes a quiz or set in no workspace (`POST
+      /api/quizzes`, `POST /api/flashcards` without `workspaceId`) named Quiz 1,
+      Quiz 2… (Flashcards 1…, the first number no listed title has), places its card
+      and opens it. With no workspace page to open one in, New and a double click on
+      a card's header open `CanvasMaterialDialog`: the shared `SimpleDialog` (a
+      full-screen page on a phone) holding the note embed's editor
+      (`AppEmbedEdit`), whose questions open `QuestionDialog`; closing it reads the
+      material again for the cards (`WorkspaceLinks.account` switches the label,
+      the workspace line and the empty text).
     Emoji and GIFs are `affine:embed-capy-picture` blocks (an `<img>` that plays by
     itself), links `affine:embed-capy-link` and quiz or set cards
     `affine:embed-capy-material` (`boardPicture.ts`, `boardCards.ts`): the surface
@@ -5106,8 +5135,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     own canvases, in no workspace. Such a canvas is a standalone `canvas` material with
     no `canvas_workspace_id` (migration 0167), any number per person, opened and saved
     exactly as a workspace's is (`useCanvasBoard`, which both pages mount with a
-    `CanvasSource`: `GET` and `PUT /api/canvases/{id}` on both), with the same device copy, images and limits, and no workspace
-    cards in Misc. `?c=` names the canvas shown; without one (the sidebar's link) the one
+    `CanvasSource`: `GET` and `PUT /api/canvases/{id}` on both), with the same device copy, images and limits, and Misc's
+    **Quizzes and flashcards** (above). `?c=` names the canvas shown; without one (the sidebar's link) the one
     already shown stays, else the latest saved of the person's own, and a first one ("My
     canvas") is made for a person who has none. The id routes serve only a person's own
     canvases, a workspace's while they are a member of it. A frozen account draws on what it has and is offered neither New canvas
@@ -5214,10 +5243,21 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   where the browser has it. A plane card with 5 strokes takes 0.4 ms
   in Node, a 300 KB board (50 strokes of 300 points, 500 marks) 5 ms. Show it as an
   `<img src="data:image/svg+xml,…">` in a list, so rows don't add SVG nodes to the page.
-- **Note cards:** every note on the board is a tight card (8×10 px padding, a 1 px
-  hairline, a 6 px corner, no shadow, the same size while typing), set in
-  `drawingBoard.css` over the note's stored style, since AFFiNE's corner field only takes
-  0/8/16/24/32; the preview draws it the same. AFFiNE's slash menu is registered, offering
+- **Notes:** a note is inline or a card (Epo 2026-11-13, local change 52). Inline is
+  its text on the canvas with no fill, padding or edge (a `transparent` fill, no shadow,
+  no border); every placed note starts inline. An inline note is as wide as its text,
+  wrapping at a card's 498, with its first and last block's margins dropped
+  (`drawingBoard.css`), so its frame hugs the text; its corners scale it and it has no
+  side handles, and an empty one shows its whole placeholder (local change 53). Card
+  keeps its lines, widening it by the card's padding. A card takes its stored style from the
+  style panel (fill half see-through, shadow, border, corner), with 8×10 px padding and
+  the same size while typing (N2, 2026-11-08); its Box shadow is the board's 1 px
+  hairline (`--affine-note-shadow-box` on `.capy-board`). The style panel opens with an
+  Inline | Card switch (Inline on the left; the other sections only for a card), and
+  the note toolbar's Inline button (lit while inline) turns it either way; Card brings
+  the default fill, the Box shadow and corner 8. The preview draws an inline note as
+  its text and a card with its corner, fill, border, or a hairline for any shadow.
+  AFFiNE's slash menu is registered, offering
   text styles, lists, alignment, inline styles, Image, dates and the move/copy/delete
   actions; Image stores its file through the board's blob source, as a pasted image does.
 - **Theme:** the board follows the app's light or dark. The app's dark themes set

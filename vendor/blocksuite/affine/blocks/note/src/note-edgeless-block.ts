@@ -1,6 +1,11 @@
 import { EdgelessLegacySlotIdentifier } from '@blocksuite/affine-block-surface';
 import type { DocTitle } from '@blocksuite/affine-fragment-doc-title';
-import { NoteBlockSchema, NoteDisplayMode } from '@blocksuite/affine-model';
+import {
+  DEFAULT_NOTE_WIDTH,
+  isInlineNote,
+  NoteBlockSchema,
+  NoteDisplayMode,
+} from '@blocksuite/affine-model';
 import { focusTextModel } from '@blocksuite/affine-rich-text';
 import { EDGELESS_BLOCK_CHILD_PADDING } from '@blocksuite/affine-shared/consts';
 import { TelemetryProvider } from '@blocksuite/affine-shared/services';
@@ -8,7 +13,7 @@ import {
   handleNativeRangeAtPoint,
   stopPropagation,
 } from '@blocksuite/affine-shared/utils';
-import { Bound } from '@blocksuite/global/gfx';
+import { almostEqual, Bound } from '@blocksuite/global/gfx';
 import { toGfxBlockComponent } from '@blocksuite/std';
 import {
   type BoxSelectionContext,
@@ -220,6 +225,22 @@ export class EdgelessNoteBlockComponent extends toGfxBlockComponent(
         cancelAnimationFrame(frame);
       });
     }
+
+    // Capy (local change 53): an inline note is as wide as its text (up to a
+    // card's width, where it wraps), so its frame hugs it as a text box does.
+    const sizer = new ResizeObserver(([entry]) => {
+      if (this.store.readonly || !isInlineNote(this.model.props)) return;
+      const bound = Bound.deserialize(this.model.xywh);
+      const width =
+        entry.contentRect.width * (this.model.props.edgeless.scale ?? 1);
+      if (!width || almostEqual(bound.w, width)) return;
+      bound.w = width;
+      this.model.stash('xywh');
+      this.model.xywh = bound.serialize();
+      this.model.pop('xywh');
+    });
+    sizer.observe(this);
+    _disposables.add(() => sizer.disconnect());
   }
 
   override updated(changedProperties: PropertyValues) {
@@ -245,17 +266,23 @@ export class EdgelessNoteBlockComponent extends toGfxBlockComponent(
     const width = bound.w / scale;
     const height = bound.h / scale;
 
+    // Capy (local change 53): an inline note sizes to its text.
+    const inline = isInlineNote(this.model.props);
     return {
       x: bound.x,
       y: bound.y,
-      w: width,
-      h: collapse ? height : 'unset',
+      w: inline ? 'max-content' : width,
+      h: collapse && !inline ? height : 'unset',
       zIndex: this.toZIndex(),
     };
   }
 
   override renderGfxBlock() {
     const { model } = this;
+    // Capy (local change 53): an inline note's text wraps at a card's width.
+    this.style.maxWidth = isInlineNote(model.props)
+      ? `${DEFAULT_NOTE_WIDTH}px`
+      : '';
     const { displayMode } = model.props;
     if (!!displayMode && displayMode === NoteDisplayMode.DocOnly)
       return nothing;
@@ -293,6 +320,7 @@ export class EdgelessNoteBlockComponent extends toGfxBlockComponent(
         style=${styleMap(style)}
         data-model-height="${bound.h}"
         data-editing=${this._editing}
+        data-inline=${isInlineNote(model.props) /* Capy (local change 52) */}
         data-collapse=${ifDefined(collapse)}
         data-testid="edgeless-note-container"
         @mouseleave=${this._leaved}
@@ -409,7 +437,24 @@ export const EdgelessNoteInteraction =
       },
       handleResize: ({ model }) => {
         const initialScale: number = model.props.edgeless.scale ?? 1;
+        // Capy (local change 53): an inline note is resized by its corners only,
+        // which scale it; its width follows its text.
+        const inline = isInlineNote(model.props);
         return {
+          beforeResize(context): void {
+            if (!inline) return;
+            context.set({
+              allowedHandlers: [
+                'top-left',
+                'top-right',
+                'bottom-left',
+                'bottom-right',
+              ],
+              lockRatio: true,
+              minHeight: 1,
+              minWidth: 1,
+            });
+          },
           onResizeStart(context): void {
             context.default(context);
             model.stash('edgeless');
@@ -417,6 +462,12 @@ export const EdgelessNoteInteraction =
 
           onResizeMove(context): void {
             const { originalBound, newBound, lockRatio, constraint } = context;
+            if (inline) {
+              const scale = (newBound.w / originalBound.w) * initialScale;
+              model.props.edgeless = { ...model.props.edgeless, scale };
+              model.props.xywh = newBound.serialize();
+              return;
+            }
             const { minWidth, minHeight, maxHeight, maxWidth } = constraint;
 
             let scale = initialScale;
