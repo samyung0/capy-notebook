@@ -15,7 +15,7 @@ import { iconUrl } from '@/lib/icon-catalog';
 import { assignmentPage, fileLink } from './assignmentPage';
 import { dateLabel, dateTimeLabel, minutesText } from './assignmentText';
 import { NewAssignmentDialog } from './LazyNewAssignmentDialog';
-import { assignmentFileIcon, useOpenAssignment } from './TodoSection';
+import { assignmentFileIcon, useOpenAssignment } from './todoParts';
 import { isPlainTask, isTicked, type TodoRow } from './todoRows';
 
 /** A handed-in quiz's or hand-in's line: its mark when it shows, else that it
@@ -63,9 +63,11 @@ export function TodoDialog({
   const plain = isPlainTask(a);
   const [asking, setAsking] = useState<'edit' | 'delete' | null>(null);
   const { mutate: remove } = useDeleteAssignment(a.workspaceId);
-  const go = (label: string, run: () => void) => (
+  const go = (label: string, run: () => void, phoneArrow = true) => (
     <Button
       iconRight="navigationForward"
+      // Important: Icon sets display in its inline style.
+      iconRightClassName={cn(!phoneArrow && 'max-sm:hidden!')}
       onClick={run}
       size="lg"
       type="button"
@@ -77,9 +79,14 @@ export function TodoDialog({
   const page = () => void openPage(a, workspace.manages);
   let primary: ReactNode = null;
   if (row.approval)
-    primary = go(m.todo_approve_marks(), () => {
-      void navigate(assignmentPage(a, { tab: 'approve' }));
-    });
+    // No arrow on phones, so it fits beside Mark as done.
+    primary = go(
+      m.todo_approve_marks(),
+      () => {
+        void navigate(assignmentPage(a, { tab: 'approve' }));
+      },
+      false
+    );
   else if (plain)
     primary = canTick && (
       <Button
@@ -111,6 +118,9 @@ export function TodoDialog({
   // one by hand still asks first.
   const second = !plain && canTick && (
     <Button
+      // Phones: a borderless button's padding is trimmed so it fits beside
+      // the primary on one line at 360px.
+      className="max-sm:px-2"
       iconLeft="check"
       onClick={() => onTick(!ticked)}
       size="lg"
@@ -190,7 +200,7 @@ export function TodoDialog({
           })}
           {a.allowUploads && (
             <span className="t-meta block text-fg-muted">
-              {m.todo_on_paper()}
+              {m.todo_uploads_allowed()}
             </span>
           )}
         </>
@@ -251,9 +261,10 @@ export function TodoDialog({
     <SimpleDialog
       // The shared dialog's footer, on phones after the content (Epo
       // 2026-11-10: a long title needs the header's width). No Cancel: the
-      // corner closes.
+      // corner closes. Its own row keeps the actions at the end on phones
+      // too, where the shared footer starts them at the content's edge.
       footer={
-        <>
+        <div className="ml-auto flex flex-wrap justify-end gap-2">
           {a.own && (
             <>
               <Button
@@ -278,7 +289,7 @@ export function TodoDialog({
           )}
           {second}
           {primary}
-        </>
+        </div>
       }
       onClose={onClose}
       open
@@ -292,7 +303,7 @@ export function TodoDialog({
           <span className="wrap-break-word min-w-0">{rowHeading(row)}</span>
         </span>
       }
-      width={600}
+      width={720}
     >
       <div className="flex flex-col gap-5.5 pt-2">
         {note && (

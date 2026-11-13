@@ -352,13 +352,20 @@ step is an address, `?make=files`, `?make=pages&paper=…&answers=…&quizFile=�
   from a menu of the workspace's indexed files other than Excel and audio or a new upload.
   A row names the file, with no page count: reading one would download a Word or PowerPoint
   file just to show it (Epo 2026-11-06).
+  Each list keeps its Choose a file trigger (`ChooseFileButton`, shared with a task's and
+  an assignment's Files) above the files chosen, each 32px row ending in a small muted ×
+  (`RemoveFileButton`) in place of Change or Remove, with no dividers; its menu ticks the
+  list's own files and stays open for more until closed, a ticked row takes its file off,
+  and a file the other list holds is left out. At the list's cap the trigger still opens
+  the menu, whose unticked rows and Upload a file are disabled (Epo 2026-11-12).
   An upload takes the normal path (`useQuizUpload`, `startSourceTransfer`), hidden from
   members and in no topic. The upload panel sits under the dialog, so an upload from the
   dialog closes it (Epo 2026-11-09) once every file picked has started, since the browser's
-  page count happens in the dialog, and the panel follows the files as below; so does
-  picking a file from Files that is still being read (Epo 2026-11-09), rather than holding
-  the dialog on "Reading pages" (which a file still reading when the step opens from a link
-  still shows). Continue waits for no file to have failed; one that failed or was stored without parsing holds it until
+  page count happens in the dialog, and the panel follows the files as below. A file from
+  Files still being read is greyed out in the menus, "Reading pages" beside it, until it is
+  read (Epo 2026-11-12; before, picking one closed the dialog as an upload does), so a pick
+  never closes the dialog; a file still reading when the step opens from a link shows
+  "Reading pages" on its row. Continue waits for no file to have failed; one that failed or was stored without parsing holds it until
   removed. With every file read it goes on to the pages. With any still reading (Epo
   2026-11-05, "upload might take a while") the dialog closes and the upload panel follows
   them (`quizWaits.ts`), one row at a time: the files' upload rows while they read, then the

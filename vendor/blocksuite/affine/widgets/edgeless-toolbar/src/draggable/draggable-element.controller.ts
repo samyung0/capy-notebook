@@ -1,3 +1,4 @@
+import { DefaultTool } from '@blocksuite/affine-block-surface';
 import type { ShapeName } from '@blocksuite/affine-model';
 import {
   EditPropsStore,
@@ -35,6 +36,40 @@ interface ReactiveState<T> {
   draggingElement: ElementInfo<T> | null;
   dragOut: boolean | null;
 }
+/** Capy (local change 47): the piece being carried on any toolbar slot. Taking
+ * another drops it, so only one thing is ever held (Epo 2026-11-12). */
+let carried: EdgelessDraggableElementController<unknown> | null = null;
+
+/** Capy (local change 47): the tools taking a piece leaves as they are. */
+const KEPT_TOOLS = new Set(['default', 'brush', 'highlighter', 'eraser']);
+
+/** Capy (local change 47): a press that puts a carried piece back on the toolbar
+ * lands on the mask, which covers the board while the piece is out. It is passed
+ * on to what lies under the pointer, so the same click works a button there or
+ * picks up another piece. */
+function pressThrough(x: number, y: number) {
+  let target = document.elementFromPoint(x, y);
+  while (target?.shadowRoot) {
+    const inner = target.shadowRoot.elementFromPoint(x, y);
+    if (!inner || inner === target) break;
+    target = inner;
+  }
+  if (!target) return;
+  const init = {
+    bubbles: true,
+    cancelable: true,
+    clientX: x,
+    clientY: y,
+    composed: true,
+    view: window,
+  };
+  target.dispatchEvent(new PointerEvent('pointerdown', init));
+  target.dispatchEvent(new MouseEvent('mousedown', init));
+  target.dispatchEvent(new PointerEvent('pointerup', init));
+  target.dispatchEvent(new MouseEvent('mouseup', init));
+  target.dispatchEvent(new MouseEvent('click', init));
+}
+
 interface EventCache {
   onMouseUp?: (e: MouseEvent) => void;
   onMouseMove?: (e: MouseEvent) => void;
@@ -58,6 +93,36 @@ export class EdgelessDraggableElementController<
     draggingElement: null,
     dragOut: null,
   };
+
+  private _unwatchTool: (() => void) | null = null;
+
+  /** Capy (local change 47): the piece was picked up by a click and follows the
+   * pointer until the next press. */
+  private _carrying = false;
+
+  /** Capy (local change 47): taking a piece puts down what was held, a picked
+   * shape or note following the pointer or another carried piece, and a tool
+   * picked while carrying puts the piece down. */
+  private _hold() {
+    if (carried && carried !== this) carried.cancelWithoutAnimation();
+    carried = this as EdgelessDraggableElementController<unknown>;
+    // A picked shape or note is put down; a drawing tool stays, and the board
+    // takes it back once the piece is placed (Epo 2026-11-12).
+    if (!KEPT_TOOLS.has(this.gfx.tool.currentToolName$.peek()))
+      this.gfx.tool.setTool(DefaultTool);
+  }
+
+  private _watchTool() {
+    this._unwatchTool?.();
+    const held = this.gfx.tool.currentToolName$.peek();
+    const subscription = this.gfx.tool.currentToolName$.subscribe(name => {
+      if (name !== held) this.cancelWithoutAnimation();
+    });
+    this._unwatchTool = () => {
+      subscription();
+      this._unwatchTool = null;
+    };
+  }
 
   constructor(
     public host: EdgelessDraggableElementHost & ReactiveControllerHost,
@@ -111,6 +176,7 @@ export class EdgelessDraggableElementController<
       this.info;
 
     this.reset();
+    this._hold();
     this._updateState('draggingElement', elementInfo);
     this.overlay = createShapeDraggingOverlay(this.info);
 
@@ -146,9 +212,12 @@ export class EdgelessDraggableElementController<
     overlay.element.style.setProperty('stroke', stroke);
     // lifecycle hook
     this.options.onOverlayCreated?.(overlay, elementInfo);
+    // After the hook, which may take its own tool (a shape piece's).
+    this._watchTool();
   }
 
   private _onDragEnd() {
+    this._unwatchTool?.();
     const { overlay, info, options } = this;
     const { startTime, elementInfo, edgelessRect, validMoved } = info;
     const { clickThreshold = 1500 } = options;
@@ -160,6 +229,7 @@ export class EdgelessDraggableElementController<
         options.onElementClick?.(info.elementInfo);
         if (options.clickToDrag) {
           this._createOverlay(info.startPos);
+          this._carrying = true;
           this.info.moved = true;
           setTimeout(() => {
             this._updateOverlayScale(zoom);
@@ -269,29 +339,37 @@ export class EdgelessDraggableElementController<
       const onMouseMove = (e: MouseEvent) => {
         this._onDragMove(mouseResolver(e));
       };
-      const onMouseUp = (_: MouseEvent) => {
+      const onMouseUp = (e: MouseEvent) => {
+        const passOn = this._carrying && !this.states.dragOut;
         const finished = this._onDragEnd();
         if (finished) {
           edgeless.host.removeEventListener('mousemove', onMouseMove);
-          window.removeEventListener('mouseup', onMouseUp);
+          window.removeEventListener('mouseup', onMouseUp, true);
         }
+        if (passOn && finished) pressThrough(e.clientX, e.clientY);
       };
       edgeless.host.addEventListener('mousemove', onMouseMove);
-      window.addEventListener('mouseup', onMouseUp);
+      // Capy (local change 47): captured, since a panel keeps its mouseup from the
+      // board; heard after it, a click in a panel read as a drag from the board.
+      window.addEventListener('mouseup', onMouseUp, true);
       this.events = { onMouseMove, onMouseUp };
     } else {
       const onTouchMove = (e: TouchEvent) => {
         this._onDragMove(touchResolver(e));
       };
-      const onTouchEnd = (_: TouchEvent) => {
+      const onTouchEnd = (e: TouchEvent) => {
+        const passOn = this._carrying && !this.states.dragOut;
         const finished = this._onDragEnd();
         if (finished) {
           edgeless.host.removeEventListener('touchmove', onTouchMove);
-          window.removeEventListener('touchend', onTouchEnd);
+          window.removeEventListener('touchend', onTouchEnd, true);
         }
+        const touch = e.changedTouches[0];
+        if (passOn && finished && touch)
+          pressThrough(touch.clientX, touch.clientY);
       };
       edgeless.host.addEventListener('touchmove', onTouchMove);
-      window.addEventListener('touchend', onTouchEnd);
+      window.addEventListener('touchend', onTouchEnd, true);
       this.events = { onTouchMove, onTouchEnd };
     }
   }
@@ -446,14 +524,17 @@ export class EdgelessDraggableElementController<
     const { events, options } = this;
     const host = options.edgeless.host;
     const { onMouseUp, onMouseMove, onTouchMove, onTouchEnd } = events;
-    onMouseUp && window.removeEventListener('mouseup', onMouseUp);
+    onMouseUp && window.removeEventListener('mouseup', onMouseUp, true);
     onMouseMove && host && host.removeEventListener('mousemove', onMouseMove);
     onTouchMove && host && host.removeEventListener('touchmove', onTouchMove);
-    onTouchEnd && window.removeEventListener('touchend', onTouchEnd);
+    onTouchEnd && window.removeEventListener('touchend', onTouchEnd, true);
     this.events = {};
   }
 
   reset() {
+    this._unwatchTool?.();
+    this._carrying = false;
+    if (carried === this) carried = null;
     if (this.clearTimeout) clearTimeout(this.clearTimeout);
     this.overlay?.mask.remove();
     this.overlay = null;

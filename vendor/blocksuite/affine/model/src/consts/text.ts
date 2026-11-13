@@ -43,7 +43,10 @@ export enum FontStyle {
 
 export enum FontFamily {
   BebasNeue = 'blocksuite:surface:BebasNeue',
+  // Capy (local change 44): the app's own fonts, served with it.
+  ComicNeue = 'blocksuite:surface:ComicNeue',
   Inter = 'blocksuite:surface:Inter',
+  JetBrainsMono = 'blocksuite:surface:JetBrainsMono',
   Kalam = 'blocksuite:surface:Kalam',
   Lora = 'blocksuite:surface:Lora',
   OrelegaOne = 'blocksuite:surface:OrelegaOne',
@@ -56,6 +59,16 @@ export const FontFamilyMap = createEnumMap(FontFamily);
 export const FontFamilyList = Object.entries(FontFamilyMap) as {
   [K in FontFamily]: [K, (typeof FontFamilyMap)[K]];
 }[FontFamily][];
+
+/** Capy (local change 44): the fonts the font menu offers, with their names. The
+ * board has faces only for these (Inter is drawn in the app's Fustat); AFFiNE's
+ * others load from its CDN and never drew here. */
+export const BoardFontFamilyList: [FontFamily, string][] = [
+  [FontFamily.Inter, 'Fustat'],
+  [FontFamily.ComicNeue, 'Comic Neue'],
+  [FontFamily.Lora, 'Lora'],
+  [FontFamily.JetBrainsMono, 'JetBrains Mono'],
+];
 
 export enum TextResizing {
   AUTO_WIDTH_AND_HEIGHT,

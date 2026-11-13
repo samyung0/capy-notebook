@@ -9,7 +9,8 @@ import type { Workspace, WorkspaceActivity } from '@/api/types';
 import { PreviewCard } from '@/components/app/PreviewCard';
 import { AccountStatusBanner } from '@/components/banners/AccountStatusBanner';
 import { Avatar } from '@/components/ui/Avatar';
-import { Button } from '@/components/ui/Button';
+import { PageButton } from '@/components/ui/Button';
+import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import {
   recentIcon,
@@ -98,15 +99,17 @@ export function WorkspaceDashboard({
         </div>
         {canAdd && !empty && (
           <div className="-mt-2.5 -mb-1 flex flex-wrap items-center gap-2">
-            <Button
+            <PageButton
               {...addSourceIntent}
               iconLeft="upload"
               onClick={onUpload}
               variant="outline"
             >
               {m.action_upload()}
-            </Button>
-            <Button onClick={onMakeQuiz}>{m.dashboard_make_quiz()}</Button>
+            </PageButton>
+            <PageButton onClick={onMakeQuiz}>
+              {m.dashboard_make_quiz()}
+            </PageButton>
           </div>
         )}
       </header>
@@ -146,6 +149,24 @@ export function WorkspaceDashboard({
           </section>
         )}
       {empty && <WorkspaceEmpty onUpload={canAdd ? onUpload : undefined} />}
+      {/* Recent files load as their cards' shapes (Epo 2026-11-12). */}
+      {!recent && (
+        <section className="flex flex-col gap-3">
+          <h2 className="t-subtitle">{m.dashboard_recent_files()}</h2>
+          <div
+            aria-label={m.a11y_loading()}
+            className="-mx-1 grid grid-cols-2 gap-x-2 gap-y-3 md:grid-cols-4 md:gap-4"
+            role="status"
+          >
+            {Array.from({ length: 4 }, (_, i) => (
+              <Skeleton
+                className="aspect-4/3 rounded-(--radius-tile)"
+                key={i}
+              />
+            ))}
+          </div>
+        </section>
+      )}
       {items.length > 0 && (
         <section className="flex flex-col gap-3">
           <h2 className="t-subtitle">{m.dashboard_recent_files()}</h2>

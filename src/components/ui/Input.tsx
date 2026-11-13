@@ -271,10 +271,7 @@ export function InputTitle({
 }) {
   return (
     <div
-      className={cn(
-        't-subtitle flex items-center gap-1 font-medium',
-        className
-      )}
+      className={cn('t-body flex items-center gap-1 font-medium', className)}
       {...props}
     >
       <div>{children}</div>

@@ -226,6 +226,44 @@ function drawBrush({ x, y }: Box, fields: Fields, pen: Pen, ink: string) {
   return `<path d="${d}" stroke="${stroke}" stroke-width="${num(width)}"/>`;
 }
 
+/** The polygon shape types' corners as fractions of their box: BlockSuite's
+ * `POLYGON_SHAPES` (vendored local change 46), copied so a preview loads no editor;
+ * boardPreview.test.ts checks they match. */
+export const POLYGON_CORNERS: Record<string, Vec[]> = {
+  hexagon: [
+    [0.25, 0],
+    [0.75, 0],
+    [1, 0.5],
+    [0.75, 1],
+    [0.25, 1],
+    [0, 0.5],
+  ],
+  parallelogram: [
+    [0.25, 0],
+    [1, 0],
+    [0.75, 1],
+    [0, 1],
+  ],
+  pentagon: [
+    [0.5, 0],
+    [1, 0.38],
+    [0.81, 1],
+    [0.19, 1],
+    [0, 0.38],
+  ],
+  rightTriangle: [
+    [0, 0],
+    [1, 1],
+    [0, 1],
+  ],
+  trapezium: [
+    [0.25, 0],
+    [0.75, 0],
+    [1, 1],
+    [0, 1],
+  ],
+};
+
 function drawShape(box: Box, fields: Fields, pen: Pen) {
   const { h, w, x, y } = box;
   const fill = fields.filled ? colour(fields.fillColor, 'none') : 'none';
@@ -250,6 +288,16 @@ function drawShape(box: Box, fields: Fields, pen: Pen) {
       outline = `<path d="M${num(x + w / 2)} ${num(y)}L${num(x + w)} ${num(y + h)}L${num(x)} ${num(y + h)}Z" ${paint}/>`;
       break;
     default: {
+      const corners = POLYGON_CORNERS[String(fields.shapeType)];
+      if (corners) {
+        outline = `<path d="${corners
+          .map(
+            ([fx, fy], i) =>
+              `${i ? 'L' : 'M'}${num(x + fx * w)} ${num(y + fy * h)}`
+          )
+          .join('')}Z" ${paint}/>`;
+        break;
+      }
       const radius = Number(fields.radius) || 0;
       const r = radius < 1 ? Math.min(w, h) * radius : radius;
       outline = `<rect x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" rx="${num(r)}" ${paint}/>`;

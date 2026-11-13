@@ -5,6 +5,11 @@ import {
 } from '@blocksuite/affine/blocks/surface';
 import { ConnectorTool } from '@blocksuite/affine/gfx/connector';
 import {
+  EdgelessNoteSeniorButton,
+  NoteTool,
+  type NoteToolOption,
+} from '@blocksuite/affine/gfx/note';
+import {
   EdgelessShapeToolButton,
   ShapeTool,
 } from '@blocksuite/affine/gfx/shape';
@@ -59,12 +64,14 @@ import {
   html,
   LitElement,
   nothing,
+  type PropertyValues,
   svg,
   type TemplateResult,
   unsafeCSS,
 } from 'lit';
 import { property, state } from 'lit/decorators.js';
 import { classMap } from 'lit/directives/class-map.js';
+import { repeat } from 'lit/directives/repeat.js';
 import { styleMap } from 'lit/directives/style-map.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import * as Y from 'yjs';
@@ -96,6 +103,7 @@ import {
   type KlipyKind,
   klipyEnabled,
   klipyMedia,
+  klipyShared,
 } from './boardKlipy';
 import type { BoardKind } from './boardLoad';
 import { addPicture } from './boardPicture';
@@ -121,6 +129,11 @@ const SHAPE_NAMES: ShapeName[] = [
   ShapeType.Diamond,
   ShapeType.Triangle,
   'roundedRect',
+  ShapeType.RightTriangle,
+  ShapeType.Parallelogram,
+  ShapeType.Trapezium,
+  ShapeType.Pentagon,
+  ShapeType.Hexagon,
 ];
 
 /** New shapes have no fill and a black outline, so the grid and the strokes under
@@ -194,8 +207,10 @@ type Part =
 const closed = (...points: Vec[]): Part[] =>
   points.map((from, i) => ({ from, to: points[(i + 1) % points.length] }));
 
-/** Common shapes BlockSuite has no type for: straight connectors and ellipses
- * grouped together, in a 100 by 100 box. A pen stroke would smear at the corners. */
+/** Solids and diagrams no shape type draws: straight connectors and ellipses
+ * grouped together, in a 100 by 100 box. A pen stroke would smear at the corners.
+ * The flat polygons are shape types (vendored local change 46), so they fill, hold
+ * text and connect as a square does (Epo 2026-11-12). */
 const PRESETS: Record<string, { h: number; parts: Part[]; w: number }> = {
   axes: {
     h: 160,
@@ -251,11 +266,6 @@ const PRESETS: Record<string, { h: number; parts: Part[]; w: number }> = {
     ],
     w: 160,
   },
-  hexagon: {
-    h: 110,
-    parts: closed([25, 0], [75, 0], [100, 50], [75, 100], [25, 100], [0, 50]),
-    w: 126,
-  },
   numberLine: {
     h: 30,
     parts: [
@@ -265,30 +275,6 @@ const PRESETS: Record<string, { h: number; parts: Part[]; w: number }> = {
       ),
     ],
     w: 280,
-  },
-  parallelogram: {
-    h: 90,
-    parts: closed([28, 0], [100, 0], [72, 100], [0, 100]),
-    w: 150,
-  },
-  pentagon: {
-    h: 120,
-    parts: closed([50, 0], [100, 38], [81, 100], [19, 100], [0, 38]),
-    w: 124,
-  },
-  rightTriangle: {
-    h: 120,
-    parts: [
-      ...closed([0, 0], [100, 100], [0, 100]),
-      { from: [0, 86], to: [14, 86] },
-      { from: [14, 86], to: [14, 100] },
-    ],
-    w: 140,
-  },
-  trapezium: {
-    h: 90,
-    parts: closed([25, 0], [75, 0], [100, 100], [0, 100]),
-    w: 150,
   },
   venn: {
     h: 120,
@@ -344,8 +330,65 @@ const LINE_ENDS: Record<string, { front?: boolean; rear?: boolean }> = {
   line: {},
 };
 
-/** A preset or line from the shapes panel: drag to size it, or click for the
- * default size. */
+/** A clicked line's length; it is centred on the click. */
+const LINE_LENGTH = 120;
+
+/** An arrowhead's two strokes at `to`, pointing away from `from`. */
+function arrowHead(from: Vec, to: Vec) {
+  const angle = Math.atan2(to[1] - from[1], to[0] - from[0]);
+  const wing = (turn: number): Vec => [
+    to[0] - 12 * Math.cos(angle + turn),
+    to[1] - 12 * Math.sin(angle + turn),
+  ];
+  const [a, b] = [wing(Math.PI / 6), wing(-Math.PI / 6)];
+  return `M${a[0]} ${a[1]}L${to[0]} ${to[1]}L${b[0]} ${b[1]}`;
+}
+
+/** The SVG of a preset or line as it will be placed, for the pointer to carry. */
+function stampMarkup(preset: string, at: Vec, colour: string) {
+  const stroke = `fill="none" stroke="${colour}" stroke-width="2" stroke-linejoin="round"`;
+  const ends = LINE_ENDS[preset];
+  if (ends) {
+    const from: Vec = [at[0] - LINE_LENGTH / 2, at[1]];
+    const to: Vec = [at[0] + LINE_LENGTH / 2, at[1]];
+    const d = [
+      `M${from[0]} ${from[1]}L${to[0]} ${to[1]}`,
+      ends.rear ? arrowHead(from, to) : '',
+      ends.front ? arrowHead(to, from) : '',
+    ].join('');
+    return `<path d="${d}" ${stroke}/>`;
+  }
+  const { h, w, parts } = PRESETS[preset];
+  const box = new Bound(at[0] - w / 2, at[1] - h / 2, w, h);
+  const scaled = ([x, y]: Vec): Vec => [
+    box.x + (x / 100) * box.w,
+    box.y + (y / 100) * box.h,
+  ];
+  return parts
+    .map((part) => {
+      if ('ellipse' in part) {
+        const [x, y, pw, ph] = part.ellipse;
+        const [left, top] = scaled([x, y]);
+        const [rx, ry] = [(pw / 200) * box.w, (ph / 200) * box.h];
+        return `<ellipse cx="${left + rx}" cy="${top + ry}" rx="${rx}" ry="${ry}" ${stroke}/>`;
+      }
+      if ('text' in part) {
+        const [left, top] = scaled(part.at);
+        return `<text x="${left}" y="${top + 18}" fill="${colour}" font-size="18">${part.text}</text>`;
+      }
+      const from = scaled(part.from);
+      const to = scaled(part.to);
+      return `<path d="M${from[0]} ${from[1]}L${to[0]} ${to[1]}${
+        part.arrow === 'rear' || part.arrow === 'both'
+          ? arrowHead(from, to)
+          : ''
+      }${part.arrow === 'both' ? arrowHead(to, from) : ''}" ${stroke}/>`;
+    })
+    .join('');
+}
+
+/** A preset or line from the shapes panel: it follows the pointer, centred on it,
+ * until a click places it there, or a drag sizes it (Epo 2026-11-12). */
 export class StampTool extends BaseTool<{ preset: string }> {
   static override toolName = 'capy-stamp';
 
@@ -356,13 +399,23 @@ export class StampTool extends BaseTool<{ preset: string }> {
     return this.gfx.viewport.toModelCoord(e.x, e.y) as Vec;
   }
 
+  private show(markup: string) {
+    const layer = previews.get(this.gfx);
+    if (layer) layer.innerHTML = markup;
+  }
+
   private place(from: Vec, to: Vec | null) {
     const { gfx } = this;
     const { preset } = this.activatedOption;
     const ends = LINE_ENDS[preset];
     if (ends) {
-      const target: Vec = to ?? [from[0] + 120, from[1]];
-      finishPlacing(gfx, addSegment(gfx, from, target, ends));
+      const [start, end]: [Vec, Vec] = to
+        ? [from, to]
+        : [
+            [from[0] - LINE_LENGTH / 2, from[1]],
+            [from[0] + LINE_LENGTH / 2, from[1]],
+          ];
+      finishPlacing(gfx, addSegment(gfx, start, end, ends));
       return;
     }
     const { h, w } = PRESETS[preset];
@@ -378,7 +431,24 @@ export class StampTool extends BaseTool<{ preset: string }> {
   }
 
   override click(e: PointerEventState) {
+    this.show('');
     this.place(this.model(e), null);
+  }
+
+  override pointerMove(e: PointerEventState) {
+    if (this.start) return;
+    const colour = this.std
+      .get(ThemeProvider)
+      .getColorValue(DefaultTheme.black, undefined, true);
+    this.show(stampMarkup(this.activatedOption.preset, this.model(e), colour));
+  }
+
+  override pointerOut() {
+    if (!this.start) this.show('');
+  }
+
+  override deactivate() {
+    this.show('');
   }
 
   override dragStart(e: PointerEventState) {
@@ -388,21 +458,20 @@ export class StampTool extends BaseTool<{ preset: string }> {
   override dragMove(e: PointerEventState) {
     if (!this.start) return;
     this.end = this.model(e);
-    const layer = previews.get(this.gfx);
-    if (!layer) return;
     const [x1, y1] = this.start;
     const [x2, y2] = this.end;
-    layer.innerHTML = LINE_ENDS[this.activatedOption.preset]
-      ? `<path d="M${x1} ${y1}L${x2} ${y2}" stroke="${PREVIEW}" stroke-width="2"/>`
-      : `<rect x="${Math.min(x1, x2)}" y="${Math.min(y1, y2)}" width="${Math.abs(x2 - x1)}" height="${Math.abs(y2 - y1)}" fill="none" stroke="${PREVIEW}" stroke-dasharray="4 4"/>`;
+    this.show(
+      LINE_ENDS[this.activatedOption.preset]
+        ? `<path d="M${x1} ${y1}L${x2} ${y2}" stroke="${PREVIEW}" stroke-width="2"/>`
+        : `<rect x="${Math.min(x1, x2)}" y="${Math.min(y1, y2)}" width="${Math.abs(x2 - x1)}" height="${Math.abs(y2 - y1)}" fill="none" stroke="${PREVIEW}" stroke-dasharray="4 4"/>`
+    );
   }
 
   override dragEnd() {
     const { end, start } = this;
     this.start = null;
     this.end = null;
-    const layer = previews.get(this.gfx);
-    if (layer) layer.innerHTML = '';
+    this.show('');
     if (start && end) this.place(start, end);
   }
 }
@@ -445,29 +514,29 @@ const PANEL: { items: PanelItem[]; label: () => string }[] = [
         shapeName: 'roundedRect',
       },
       {
-        icon: '<path d="M5 4v16h15zM5 16h4v4"/>',
+        icon: '<path d="M5 4v16h15z"/>',
         label: m.drawing_board_right_triangle,
-        preset: 'rightTriangle',
+        shapeName: ShapeType.RightTriangle,
       },
       {
         icon: '<path d="M8 6h13l-5 12H3z"/>',
         label: m.drawing_board_parallelogram,
-        preset: 'parallelogram',
+        shapeName: ShapeType.Parallelogram,
       },
       {
         icon: '<path d="M7 6h10l4 12H3z"/>',
         label: m.drawing_board_trapezium,
-        preset: 'trapezium',
+        shapeName: ShapeType.Trapezium,
       },
       {
         icon: '<path d="M12 3l9 7-3.5 11h-11L3 10z"/>',
         label: m.drawing_board_pentagon,
-        preset: 'pentagon',
+        shapeName: ShapeType.Pentagon,
       },
       {
         icon: '<path d="M7 4h10l5 8-5 8H7l-5-8z"/>',
         label: m.drawing_board_hexagon,
-        preset: 'hexagon',
+        shapeName: ShapeType.Hexagon,
       },
     ],
     label: m.drawing_board_shapes,
@@ -696,10 +765,15 @@ class CapyShapePanel extends SignalWatcher(LitElement) {
     return this.edgeless.std.get(GfxControllerIdentifier);
   }
 
+  /** A shape picked here follows the pointer until it is placed: the shape
+   * tool draws it on activating, but not when only its shape changes, so it
+   * is drawn again, as AFFiNE's own menu does (Epo 2026-11-12). */
   private pick(item: PanelItem) {
-    if ('shapeName' in item)
+    if ('shapeName' in item) {
       this.gfx.tool.setTool(ShapeTool, { shapeName: item.shapeName });
-    else this.gfx.tool.setTool(StampTool, { preset: item.preset });
+      const tool = this.gfx.tool.currentTool$.peek();
+      if (tool instanceof ShapeTool) tool.createOverlay();
+    } else this.gfx.tool.setTool(StampTool, { preset: item.preset });
   }
 
   private pressed(item: PanelItem) {
@@ -767,8 +841,17 @@ function openPopper(
   style: Partial<CSSStyleDeclaration>,
   onDispose?: () => void
 ) {
+  // While a panel is open the toolbar sits over a selected element's own
+  // toolbar (z-index 1000), which otherwise covered the panel (Epo 2026-11-12).
+  const toolbar = toolbarWidgetOf(button);
+  if (toolbar) toolbar.style.zIndex = '1001';
+  let unlisten = () => {};
   const popper = button.createPopper(tag as 'div', button, {
-    onDispose,
+    onDispose: () => {
+      if (toolbar) toolbar.style.zIndex = '';
+      unlisten();
+      onDispose?.();
+    },
     setProps: (element: HTMLElement & { edgeless?: unknown }) => {
       element.edgeless = button.edgeless;
     },
@@ -777,7 +860,88 @@ function openPopper(
   const clip = element.parentElement;
   if (clip) clip.style.height = `${height}px`;
   Object.assign(element.style, style);
+  keepEventsIn(element);
+  unlisten = closeOnPressOutside(button, element);
   return element;
+}
+
+/** A press anywhere but the panel and its button closes the panel, as a popover
+ * does (Epo 2026-11-12). A shape picked in it is still placed by that press.
+ * Returns the listener's removal, for the panel's dispose. */
+function closeOnPressOutside(button: PopperButton, panel: HTMLElement) {
+  const onPress = (event: PointerEvent) => {
+    const path = event.composedPath();
+    if (path.includes(panel) || path.includes(button)) return;
+    closePopper(button);
+    button.requestUpdate();
+  };
+  document.addEventListener('pointerdown', onPress, true);
+  return () => document.removeEventListener('pointerdown', onPress, true);
+}
+
+/** Every toolbar button with a panel (Epo 2026-11-12): a click only opens or closes
+ * the panel, so nothing follows the pointer until something is picked in it. */
+function togglePanel(button: PopperButton, open: () => void) {
+  if (button.popper) closePopper(button);
+  else open();
+  button.requestUpdate();
+}
+
+/** Each panel button's tool at its last update, and whether that was its own. */
+const followed = new WeakMap<object, { held: boolean; tool: unknown }>();
+
+/** From a panel button's `updated`: its panel closes once what was picked in it is
+ * placed (its tool given up), or when another tool is taken while it is open. The
+ * tool it opened over stays: the pen stays the pen while the panel is open (Epo
+ * 2026-11-12). */
+function followTool(
+  button: PopperButton & { edgelessTool?: { toolType?: unknown } },
+  holds: boolean
+) {
+  const tool = button.edgelessTool?.toolType;
+  const last = followed.get(button);
+  followed.set(button, { held: holds, tool });
+  if (!last) return;
+  if ((last.held && !holds) || (!holds && tool !== last.tool))
+    closePopper(button);
+}
+
+/** The bottom toolbar's widget, whose shadow tree holds the button. */
+function toolbarWidgetOf(button: HTMLElement): HTMLElement | null {
+  let node: Node = button;
+  while (true) {
+    const root = node.getRootNode();
+    if (!(root instanceof ShadowRoot)) return null;
+    const host = root.host as HTMLElement;
+    if (host.tagName === 'EDGELESS-TOOLBAR-WIDGET') return host;
+    node = host;
+  }
+}
+
+const kept = new WeakSet<HTMLElement>();
+/** The toolbar stops a press's start at its container, but its end and click,
+ * keys, clipboard and wheel still reached the board under the panel: a click
+ * there cleared the board's selection, which took focus out of the panel's
+ * field, and a key could act on the board (Epo 2026-11-12). Escape still goes
+ * on, to close the panel. */
+function keepEventsIn(element: HTMLElement) {
+  if (kept.has(element)) return;
+  kept.add(element);
+  for (const type of [
+    'click',
+    'copy',
+    'cut',
+    'keydown',
+    'keyup',
+    'mouseup',
+    'paste',
+    'pointerup',
+    'wheel',
+  ])
+    element.addEventListener(type, (event) => {
+      if (event instanceof KeyboardEvent && event.key === 'Escape') return;
+      event.stopPropagation();
+    });
 }
 
 /** Leaving the tool closes its menu. Forgetting it at once lets a quick click open
@@ -789,18 +953,34 @@ function closePopper(button: PopperButton) {
   popper.dispose();
 }
 
-/** AFFiNE's draggable pieces, opening the grouped panel for its one-row menu. */
-// @ts-expect-error `_toggleMenu` is private in the base, which calls it through `this`.
+/** AFFiNE's draggable pieces, opening the grouped panel for its one-row menu.
+ * A click on the button or a piece only opens or closes the panel (Epo
+ * 2026-11-12): AFFiNE also took up a rectangle, which then followed the
+ * pointer. A piece is taken up by dragging it, or picked in the panel. */
+// @ts-expect-error `_toggleMenu` and the click handlers are private in the base,
+// which reads them through `this`.
 class CapyShapeButton extends EdgelessShapeToolButton {
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: the base's template reads it.
+  private readonly _handleWrapperClick = () =>
+    togglePanel(this, () => this._toggleMenu());
+
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: the base's template reads it.
+  private readonly _handleShapeClick = () =>
+    togglePanel(this, () => this._toggleMenu());
+
+  private get shapeTool() {
+    const tool = this.edgelessTool?.toolType;
+    return tool === ShapeTool || tool === StampTool;
+  }
+
   // @ts-expect-error the mixin defines it as a getter, typed as a property.
   override get active() {
-    const active = this.edgelessTool?.toolType;
-    return active === ShapeTool || active === StampTool;
+    return this.shapeTool || !!this.popper;
   }
 
   override updated(changed: Map<PropertyKey, unknown>) {
     super.updated(changed);
-    if (!this.active) closePopper(this);
+    followTool(this, this.shapeTool);
   }
 
   override _toggleMenu() {
@@ -829,6 +1009,62 @@ export const shapeButtonTool: ExtensionType = {
             .toolbarContainer=${toolbarContainer}
           ></capy-shape-button>`,
           name: m.drawing_board_shapes(),
+        })
+    );
+  },
+};
+
+/** AFFiNE's note button, as the shape button (Epo 2026-11-12): a click only
+ * opens or closes the menu of note kinds, where AFFiNE also took up a note at
+ * once; a kind picked in it follows the pointer until placed. */
+// @ts-expect-error `_toggleNoteMenu` is private in the base, which reads it
+// through `this`.
+class CapyNoteButton extends EdgelessNoteSeniorButton {
+  // @ts-expect-error the mixin defines it as a getter, typed as a property.
+  override get active() {
+    return this.edgelessTool?.toolType === NoteTool || !!this.popper;
+  }
+
+  override updated(changed: Map<PropertyKey, unknown>) {
+    super.updated(changed);
+    followTool(this, this.edgelessTool?.toolType === NoteTool);
+  }
+
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: the base's template reads it.
+  private _toggleNoteMenu() {
+    togglePanel(this, () => {
+      let unlisten = () => {};
+      const menu = this.createPopper('edgeless-note-menu', this, {
+        onDispose: () => unlisten(),
+      });
+      keepEventsIn(menu.element);
+      unlisten = closeOnPressOutside(this, menu.element);
+      Object.assign(menu.element, {
+        childFlavour: this.childFlavour,
+        childType: this.childType,
+        edgeless: this.edgeless,
+        onChange: (props: Partial<NoteToolOption>) => {
+          Object.assign(this, props);
+          this.setEdgelessTool(NoteTool, {
+            childFlavour: this.childFlavour,
+            childType: this.childType,
+            tip: this.tip,
+          });
+        },
+        tip: this.tip,
+      });
+    });
+  }
+}
+
+export const noteButtonTool: ExtensionType = {
+  setup: (di) => {
+    di.override(
+      SeniorToolIdentifier('note'),
+      () =>
+        ({ block }: { block: BlockComponent }) => ({
+          content: html`<capy-note-button .edgeless=${block}></capy-note-button>`,
+          name: 'Note',
         })
     );
   },
@@ -1265,11 +1501,6 @@ abstract class CapyPieceSlot extends EdgelessToolbarToolMixin(
       width: 100%;
       height: 64px;
     }
-    /* Charts' two pieces (52 px across) need less room than a full slot, as the
-       eraser does (Epo 2026-11-08). */
-    :host([data-own-width]) {
-      width: 60px;
-    }
     edgeless-toolbar-button {
       display: block;
       width: 100%;
@@ -1465,18 +1696,17 @@ class CapyFormulaSlot extends CapyPieceSlot {
 /** The Misc panel (Epo 2026-11-09, A; on the answer board too since 2026-11-10):
  * tiles in groups, each a card picked up and dropped like a slot's piece; a finger's
  * tap puts it in the view's middle. Each board shows what it may hold (`tileFits`). */
-type MiscView = 'emoji' | 'klipy' | 'link' | 'quiz' | 'flashcards';
-/** A tile: a card picked up like a slot's piece, or a picker it opens (KLIPY's on
- * one of its two tabs). */
+type MiscView = 'klipy' | 'link' | 'quiz' | 'flashcards';
+/** A tile: a card picked up like a slot's piece, or a picker it opens. KLIPY's
+ * picker is the GIF & Sticker slot's, not a tile. */
 type MiscTile =
   | { piece: Piece }
   /** Picks image files from the device, for a phone's lack of paste and drop. */
   | { art: TemplateResult; label: () => string; pick: 'image' }
   | {
       art: TemplateResult;
-      klipy?: KlipyKind;
       label: () => string;
-      view: MiscView;
+      view: Exclude<MiscView, 'klipy'>;
     };
 const MISC_GROUPS: { label: () => string; tiles: MiscTile[] }[] = [
   {
@@ -1486,6 +1716,12 @@ const MISC_GROUPS: { label: () => string; tiles: MiscTile[] }[] = [
       .concat(MINDMAP_PIECE)
       .map((piece) => ({ piece })),
   },
+  /** The workspace canvas's Formulas, whose slot there holds GIFs and stickers
+   * (Epo 2026-11-12, M1). */
+  {
+    label: m.drawing_board_formulas,
+    tiles: FORMULA_PIECES.map((piece) => ({ piece })),
+  },
   {
     label: m.drawing_board_media,
     tiles: [
@@ -1493,28 +1729,6 @@ const MISC_GROUPS: { label: () => string; tiles: MiscTile[] }[] = [
         art: svg`<svg width="36" height="32" viewBox="0 0 36 32" aria-hidden="true"><rect x="2" y="3" width="32" height="26" rx="4" fill="#dcebfb"/><circle cx="12" cy="12" r="3.5" fill="#f2c94c"/><path d="M4 26.5 13.5 17l5.5 5.5 5-5L32 25.5V25a4 4 0 0 1-4 4H8a4 4 0 0 1-4-2.5Z" fill="#1e96eb"/></svg>`,
         label: m.drawing_board_image,
         pick: 'image',
-      },
-      {
-        art: html`<img
-          alt=""
-          height="40"
-          src=${emojiStillUrl('1f600')}
-          width="40"
-        />`,
-        label: m.drawing_board_emoji,
-        view: 'emoji',
-      },
-      {
-        art: svg`<svg width="40" height="32" viewBox="0 0 40 32" aria-hidden="true"><rect x="2" y="2" width="36" height="28" rx="4" fill="#7f5fd6"/><text x="9" y="21" font-size="11" font-weight="700" font-family="monospace" fill="#fff">GIF</text></svg>`,
-        klipy: 'gifs',
-        label: m.drawing_board_gif,
-        view: 'klipy',
-      },
-      {
-        art: svg`<svg width="34" height="34" viewBox="0 0 28 28" aria-hidden="true"><path d="M4 6a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v9l-9 9H7a3 3 0 0 1-3-3Z" fill="#f2c94c"/><path d="M24 15l-9 9v-6a3 3 0 0 1 3-3Z" fill="#e0b335"/></svg>`,
-        klipy: 'stickers',
-        label: m.drawing_board_sticker,
-        view: 'klipy',
       },
       {
         art: svg`<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#173654" stroke-width="1.6" stroke-linecap="round" aria-hidden="true" style="stroke:var(--capy-navy, #173654)"><path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/></svg>`,
@@ -1539,6 +1753,37 @@ const MISC_GROUPS: { label: () => string; tiles: MiscTile[] }[] = [
     ],
   },
 ];
+
+/** The GIF & Sticker picker's tabs: KLIPY's two kinds and the shipped emoji. */
+type PickerTab = KlipyKind | 'emoji';
+
+/** A picture being carried from the picker: what it places, its size on screen as
+ * placed, and for KLIPY's the result its share event names. */
+type Carried = {
+  h: number;
+  picture: { kind: PictureKind; label: string; ref: string };
+  shared?: { gif: KlipyGif; kind: KlipyKind };
+  w: number;
+};
+/** A carried picture as the drag controller takes it. */
+type CarryInfo = {
+  data: Carried;
+  preview: TemplateResult;
+  standardWidth: number;
+};
+
+/** The GIF columns' loading shapes: KLIPY's usual 4:3, square and wide. */
+const SKELETON_LEFT = [4 / 3, 1, 16 / 9];
+const SKELETON_RIGHT = [1, 16 / 9, 4 / 3];
+
+/** The tab picked last, which the picker opens on next. */
+let lastTab: PickerTab = 'gifs';
+
+/** Blocks in the GIF columns' height, for one without KLIPY's size. */
+const ratioOf = ({ preview: { height, width } }: KlipyGif) =>
+  width && height && Number.isFinite(width / height)
+    ? width / height
+    : undefined;
 
 /** The panel's one frame (Epo 2026-11-09, Misc round 2): the same size in every
  * view, so switching views moves nothing. */
@@ -1586,7 +1831,7 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         max-width: 100vw;
         box-sizing: border-box;
         /* One edge for the title, the group names and the tiles (Epo 2026-11-12). */
-        padding: 12px 12px 8px;
+        padding: 16px 16px 8px;
         background: var(--affine-background-overlay-panel-color);
         border: 1px solid var(--affine-border-color);
         border-bottom: 0;
@@ -1613,13 +1858,18 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         grid-template-columns: repeat(4, 1fr);
         gap: 4px;
       }
+      /* A picture tile is a button, which the popper styles make 36px square:
+         every tile fills its column, its art centred over its name. */
       .tile {
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         gap: 6px;
-        height: 76px;
+        box-sizing: border-box;
+        width: 100%;
+        height: 80px;
+        padding: 8px 4px;
         border-radius: 8px;
         color: var(--affine-text-secondary-color);
         font-size: 11.5px;
@@ -1641,6 +1891,13 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
       }
       .tile[data-kind] .art {
         filter: ${unsafeCSS(PIECE_SHADOW)};
+      }
+      /* The integral stands 60 px tall in its slot: a formula fits the art box. */
+      .tile.formula .art svg {
+        width: auto;
+        height: auto;
+        max-width: 40px;
+        max-height: 36px;
       }
       .head {
         display: flex;
@@ -1720,6 +1977,7 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
       }
       .emoji button {
         width: 100%;
+        height: auto;
         aspect-ratio: 1;
       }
       .emoji img {
@@ -1729,40 +1987,54 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
       .cells {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
-        gap: 6px;
+        gap: 8px;
         align-content: start;
       }
+      /* Height auto: the popper styles make a button 36px tall, which beat the
+         aspect ratio and squeezed the rows. */
       .cells > * {
         width: 100%;
-        aspect-ratio: 16 / 10;
+        height: auto;
+        aspect-ratio: 1;
         padding: 0;
         border-radius: 6px;
         overflow: hidden;
       }
-      .cells.stickers > * {
-        aspect-ratio: 1;
+      /* GIFs: two columns, each cell at its GIF's shape (Epo 2026-11-13, G1), its
+         blurred preview showing until the GIF has loaded (L2). */
+      .columns {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
       }
+      .column {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        gap: 8px;
+        min-width: 0;
+      }
+      .column > * {
+        width: 100%;
+        height: auto;
+        padding: 0;
+        border-radius: 6px;
+        overflow: hidden;
+        background: var(--blur, none) center / cover no-repeat;
+      }
+      .column > [data-loaded] {
+        background: none;
+      }
+      .column img {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      /* Stickers: squares, each whole (S1). */
       .cells img {
         width: 100%;
         height: 100%;
-        object-fit: cover;
-      }
-      .cells.stickers img {
         object-fit: contain;
-      }
-      .cells.stickers button {
-        background-color: var(--affine-background-primary-color);
-        background-image:
-          linear-gradient(45deg, var(--affine-hover-color) 25%, transparent 25%),
-          linear-gradient(-45deg, var(--affine-hover-color) 25%, transparent 25%),
-          linear-gradient(45deg, transparent 75%, var(--affine-hover-color) 75%),
-          linear-gradient(-45deg, transparent 75%, var(--affine-hover-color) 75%);
-        background-size: 12px 12px;
-        background-position:
-          0 0,
-          0 6px,
-          6px -6px,
-          -6px 0;
       }
       .skeleton {
         background: linear-gradient(
@@ -1929,13 +2201,19 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
 
   @property({ attribute: false })
   accessor edgeless!: BlockComponent;
+  /** Opened by the GIF & Sticker slot: KLIPY's view alone, with no Back. */
+  @property({ attribute: false })
+  accessor only: 'klipy' | undefined;
 
   @state()
   private accessor view: MiscView | null = null;
   @state()
-  private accessor klipyKind: KlipyKind = 'gifs';
+  private accessor tab: PickerTab = 'gifs';
   @state()
   private accessor found: KlipyGif[] | 'loading' | 'failed' = 'loading';
+  /** KLIPY has a page after the last one loaded. */
+  @state()
+  private accessor more = false;
   @state()
   private accessor linkError = false;
   @state()
@@ -1945,9 +2223,13 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
 
   private drag: EdgelessDraggableElementController<Piece> | undefined;
   private touch: EdgelessDraggableElementController<Piece> | undefined;
+  private pictureDrag: EdgelessDraggableElementController<Carried> | undefined;
   private search: AbortController | undefined;
   private searchTimer: ReturnType<typeof setTimeout> | undefined;
   private query = '';
+  /** The last page loaded, and the next one's request while it runs. */
+  private page = 1;
+  private nextPage: AbortController | undefined;
 
   private get gfx() {
     return this.edgeless.std.get(GfxControllerIdentifier);
@@ -1986,33 +2268,23 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
       onElementClick: ({ data }) =>
         place(data.kind, [gfx.viewport.centerX, gfx.viewport.centerY]),
     });
+    // A GIF, sticker or emoji lands at the size it was carried at.
+    this.pictureDrag = new EdgelessDraggableElementController(this, {
+      clickToDrag: true,
+      edgeless: this.edgeless,
+      onDrop: (element: { data: Carried }, bound: Bound) =>
+        this.placeAt(element.data, [
+          bound.x + bound.w / 2,
+          bound.y + bound.h / 2,
+        ]),
+      scopeElement: this,
+    });
   }
 
   override disconnectedCallback() {
     super.disconnectedCallback();
     this.search?.abort();
     clearTimeout(this.searchTimer);
-  }
-
-  /** A picture in the view's middle, `side` screen pixels on its longer side. */
-  private placePicture(
-    picture: { kind: PictureKind; label: string; ref: string },
-    [w, h]: [number, number],
-    side: number
-  ) {
-    const { viewport } = this.gfx;
-    const scale = side / Math.max(w, h) / viewport.zoom;
-    addPicture(
-      this.gfx,
-      new Bound(
-        viewport.centerX - (w * scale) / 2,
-        viewport.centerY - (h * scale) / 2,
-        w * scale,
-        h * scale
-      ),
-      picture
-    );
-    this.placed();
   }
 
   /** Image files picked from the device land as pasted ones do, through the
@@ -2034,91 +2306,137 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
     input.click();
   }
 
-  private placingGif = false;
+  /** What last pressed a cell: a finger's tap ends in mouse events too. */
+  private pointer = '';
 
-  /** A GIF or sticker at KLIPY's size for it, or the file's own when KLIPY gives
-   * none. A link past what a board stores can't be placed; the picker still shows
-   * it (KLIPY's terms: no result removed). */
-  private async placeGif(gif: KlipyGif) {
-    // One at a time: a size-less GIF waits for its file, and a second click then
-    // would place it twice.
-    if (this.placingGif) return;
-    const ref = gif.media.url;
-    if (ref.length > BOARD_CATALOG.limits.PICTURE_REF_MAX) {
+  /** A mouse picks a GIF, sticker or emoji up to carry (Epo 2026-11-12). */
+  private carry(event: MouseEvent, made: CarryInfo | undefined) {
+    if (this.pointer === 'mouse' && made)
+      this.pictureDrag?.onMouseDown(event, made);
+  }
+
+  /** A finger's tap or a key puts it in the view's middle, so a finger still
+   * scrolls the grid. */
+  private tap(event: MouseEvent, made: CarryInfo | undefined) {
+    if (event.detail && this.pointer === 'mouse') return;
+    const { centerX, centerY } = this.gfx.viewport;
+    if (made) this.placeAt(made.data, [centerX, centerY]);
+  }
+
+  /** What a GIF or sticker cell carries: KLIPY's size for it, or its cell's
+   * picture's when KLIPY gives none; a cell not drawn yet has neither and gives
+   * nothing. A link past what a board stores can't be placed; the picker still
+   * shows it (KLIPY's terms: no result removed). */
+  private gifCarry(cell: HTMLElement, gif: KlipyGif, kind: KlipyKind) {
+    if (gif.media.url.length > BOARD_CATALOG.limits.PICTURE_REF_MAX) {
       userToast({
         title: m.drawing_board_gif_unplaceable(),
         variant: 'warning',
       });
       return;
     }
-    let { height = 0, width = 0 } = gif.media;
-    if (
-      !(
-        Number.isFinite(width) &&
-        width > 0 &&
-        Number.isFinite(height) &&
-        height > 0
-      )
-    ) {
-      const image = new Image();
-      image.referrerPolicy = 'no-referrer';
-      image.src = ref;
-      this.placingGif = true;
-      try {
-        await image.decode();
-      } catch {
-        userToast({
-          title: m.drawing_board_gif_unplaceable(),
-          variant: 'warning',
-        });
-        return;
-      } finally {
-        this.placingGif = false;
-      }
-      // The panel (and maybe the board) may have gone while it loaded.
-      if (!this.isConnected) return;
-      ({ naturalHeight: height, naturalWidth: width } = image);
-    }
-    this.placePicture(
-      {
+    const { height = 0, width = 0 } = gif.media;
+    const drawn = cell.querySelector('img');
+    const [w, h] =
+      Number.isFinite(width) &&
+      width > 0 &&
+      Number.isFinite(height) &&
+      height > 0
+        ? [width, height]
+        : [drawn?.naturalWidth ?? 0, drawn?.naturalHeight ?? 0];
+    if (!(w > 0 && h > 0)) return;
+    // Screen pixels on the longer side, as placed.
+    const scale = (kind === 'stickers' ? 160 : 240) / Math.max(w, h);
+    return this.carryInfo(cell, gif.preview.url, {
+      h: h * scale,
+      picture: {
         kind: 'klipy',
         label: gif.title.slice(0, BOARD_CATALOG.limits.PICTURE_LABEL_MAX),
-        ref,
+        ref: gif.media.url,
       },
-      [width, height],
-      this.klipyKind === 'stickers' ? 160 : 240
-    );
+      shared: { gif, kind },
+      w: w * scale,
+    });
   }
 
-  private open(view: MiscView, klipy?: KlipyKind) {
+  /** An emoji carries at 96 screen pixels. */
+  private emojiCarry(cell: HTMLElement, code: string) {
+    return this.carryInfo(cell, emojiStillUrl(code), {
+      h: 96,
+      picture: { kind: 'emoji', label: emojiText(code), ref: code },
+      w: 96,
+    });
+  }
+
+  /** The carried picture keeps its cell's box, letterboxed in it: the box grows
+   * until the picture inside is its placed size. */
+  private carryInfo(cell: HTMLElement, src: string, data: Carried): CarryInfo {
+    const { height, width } = cell.getBoundingClientRect();
+    return {
+      data,
+      preview: html`<img
+        alt=""
+        referrerpolicy="no-referrer"
+        src=${src}
+        style=${styleMap({ 'object-fit': 'contain' })}
+      />`,
+      standardWidth:
+        Math.max(data.w, (data.h * width) / height) / this.gfx.viewport.zoom,
+    };
+  }
+
+  /** A carried picture centred on a board point, at its size on screen. */
+  private placeAt(data: Carried, [x, y]: Vec) {
+    const { zoom } = this.gfx.viewport;
+    const [w, h] = [data.w / zoom, data.h / zoom];
+    addPicture(this.gfx, new Bound(x - w / 2, y - h / 2, w, h), data.picture);
+    // KLIPY's link stays on the board, as its terms ask; its share event is told.
+    if (data.shared) klipyShared(data.shared.kind, data.shared.gif, this.query);
+    this.placed();
+  }
+
+  override willUpdate(changed: PropertyValues<this>) {
+    if (changed.has('only') && this.only) this.open(this.only);
+  }
+
+  private open(view: MiscView) {
     this.view = view;
     this.linkError = false;
     this.filter = '';
     if (view === 'klipy') {
-      this.klipyKind = klipy ?? 'gifs';
+      this.tab = lastTab;
       this.query = '';
       this.find('');
     }
   }
 
-  private pick(kind: KlipyKind) {
-    if (this.klipyKind === kind) return;
-    this.klipyKind = kind;
+  private pick(tab: PickerTab) {
+    if (this.tab === tab) return;
+    this.tab = tab;
+    lastTab = tab;
     this.find(this.query, true);
   }
 
+  /** KLIPY's search on its tabs; the emoji tab has none. */
   private find(query: string, now = false) {
     this.query = query;
     clearTimeout(this.searchTimer);
+    const kind = this.tab;
+    if (kind === 'emoji') return;
     this.searchTimer = setTimeout(
       () => {
         this.search?.abort();
+        this.nextPage?.abort();
         const search = new AbortController();
         this.search = search;
         this.found = 'loading';
-        klipyMedia(this.klipyKind, query, search.signal).then(
-          (found) => {
-            if (!search.signal.aborted) this.found = found;
+        this.more = false;
+        this.page = 1;
+        klipyMedia(kind, query, 1, search.signal).then(
+          ({ items, more }) => {
+            if (search.signal.aborted) return;
+            this.found = items;
+            this.more = more;
           },
           () => {
             if (!search.signal.aborted) this.found = 'failed';
@@ -2129,11 +2447,41 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
     );
   }
 
+  /** Near the end of the results, KLIPY's next page joins them (it pages by 24).
+   * A failed page stops there: scrolling back up and down asks again. */
+  private loadMore(body: HTMLElement) {
+    const found = this.found;
+    const kind = this.tab;
+    if (
+      kind === 'emoji' ||
+      !(this.more && Array.isArray(found)) ||
+      this.nextPage
+    )
+      return;
+    if (body.scrollTop + body.clientHeight < body.scrollHeight - 240) return;
+    const request = new AbortController();
+    this.nextPage = request;
+    const search = this.search;
+    klipyMedia(kind, this.query, this.page + 1, request.signal)
+      .then(
+        ({ items, more }) => {
+          if (request.signal.aborted || search !== this.search) return;
+          this.page += 1;
+          this.found = [...found, ...items];
+          this.more = more;
+        },
+        () => {}
+      )
+      .finally(() => {
+        if (this.nextPage === request) this.nextPage = undefined;
+      });
+  }
+
   private renderTile(tile: MiscTile) {
     if ('piece' in tile) {
       const { piece } = tile;
       return html`<div
-        class="tile"
+        class=${classMap({ formula: piece.kind in FORMULA_STARTS, tile: true })}
         data-kind=${piece.kind}
         role="button"
         @mousedown=${(event: MouseEvent) =>
@@ -2165,9 +2513,9 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
       </button>`;
     return html`<button
       class="tile"
-      data-view=${tile.klipy ?? tile.view}
+      data-view=${tile.view}
       type="button"
-      @click=${() => this.open(tile.view, tile.klipy)}
+      @click=${() => this.open(tile.view)}
     >
       <span class="art">${tile.art}</span>
       ${tile.label()}
@@ -2177,18 +2525,22 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
   /** Every view's header: Back, the title or KLIPY's search, and a close. */
   private head(title: () => string, search?: boolean) {
     return html`<div class="head">
-      <button
-        aria-label=${m.drawing_board_back()}
-        title=${m.drawing_board_back()}
-        type="button"
-        @click=${() => {
-          this.view = null;
-        }}
-      >
-        ${hugeIcon(ArrowLeft04Icon)}
-      </button>
       ${
-        search
+        this.only
+          ? nothing
+          : html`<button
+              aria-label=${m.drawing_board_back()}
+              title=${m.drawing_board_back()}
+              type="button"
+              @click=${() => {
+                this.view = null;
+              }}
+            >
+              ${hugeIcon(ArrowLeft04Icon)}
+            </button>`
+      }
+      ${
+        search && this.tab !== 'emoji'
           ? html`<input
               aria-label=${m.drawing_board_gif_search()}
               placeholder=${m.drawing_board_gif_search()}
@@ -2217,54 +2569,152 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
     </button>`;
   }
 
+  /** A GIF or sticker cell: a mouse carries it, a finger or a key places it. */
+  private gifCell(gif: KlipyGif, kind: KlipyKind, ratio?: number) {
+    const made = (event: Event) =>
+      this.gifCarry(event.currentTarget as HTMLElement, gif, kind);
+    return html`<button
+      aria-label=${gif.title}
+      title=${gif.title}
+      type="button"
+      style=${styleMap({
+        '--blur': kind === 'gifs' && gif.blur ? `url("${gif.blur}")` : null,
+        'aspect-ratio': ratio ? String(ratio) : null,
+      })}
+      @pointerdown=${(event: PointerEvent) => {
+        this.pointer = event.pointerType;
+      }}
+      @mousedown=${(event: MouseEvent) => this.carry(event, made(event))}
+      @click=${(event: MouseEvent) => this.tap(event, made(event))}
+    >
+      <img
+        alt=""
+        loading="lazy"
+        referrerpolicy="no-referrer"
+        src=${gif.preview.url}
+        @load=${(event: Event) =>
+          (event.currentTarget as HTMLElement).parentElement?.setAttribute(
+            'data-loaded',
+            ''
+          )}
+      />
+    </button>`;
+  }
+
+  /** GIFs in two columns, each whole at its own shape and into the shorter
+   * column (Epo 2026-11-13, G1): Discord's picker. KLIPY's order holds within
+   * that, and a page loaded later leaves the earlier cells where they are. */
+  private renderGifs(gifs: KlipyGif[]) {
+    const columns: KlipyGif[][] = [[], []];
+    const tall = [0, 0];
+    for (const gif of gifs) {
+      const column = tall[0] <= tall[1] ? 0 : 1;
+      columns[column].push(gif);
+      tall[column] += 1 / (ratioOf(gif) ?? 1);
+    }
+    return html`<div class="columns">
+      ${columns.map(
+        (column) =>
+          html`<div class="column">
+            ${repeat(
+              column,
+              (gif) => gif.id,
+              (gif) => this.gifCell(gif, 'gifs', ratioOf(gif))
+            )}
+          </div>`
+      )}
+    </div>`;
+  }
+
+  /** The 48 shipped emoji (Noto, credited), stills in the grid. */
+  private renderEmoji() {
+    return html`<div class="body">
+      <div class="emoji">
+        ${EMOJI.map((code) => {
+          const made = (event: Event) =>
+            this.emojiCarry(event.currentTarget as HTMLElement, code);
+          return html`<button
+            aria-label=${emojiText(code)}
+            type="button"
+            @pointerdown=${(event: PointerEvent) => {
+              this.pointer = event.pointerType;
+            }}
+            @mousedown=${(event: MouseEvent) => this.carry(event, made(event))}
+            @click=${(event: MouseEvent) => this.tap(event, made(event))}
+          >
+            <img alt="" loading="lazy" src=${emojiStillUrl(code)} />
+          </button>`;
+        })}
+      </div>
+    </div>`;
+  }
+
+  /** The GIF & Sticker picker: KLIPY's GIFs and stickers, and the shipped emoji
+   * (Epo 2026-11-13), one tab each. */
   private renderKlipy() {
-    const stickers = this.klipyKind === 'stickers';
+    const kind = this.tab;
     const tabs = html`<div class="tabs" role="tablist">
-      ${(['gifs', 'stickers'] as const).map(
-        (kind) =>
+      ${(['gifs', 'stickers', 'emoji'] as const).map(
+        (tab) =>
           html`<button
-            aria-selected=${this.klipyKind === kind}
+            aria-selected=${kind === tab}
             role="tab"
             type="button"
-            @click=${() => this.pick(kind)}
+            @click=${() => this.pick(tab)}
           >
-            ${kind === 'gifs' ? m.drawing_board_gifs_tab() : m.drawing_board_stickers_tab()}
+            ${
+              tab === 'gifs'
+                ? m.drawing_board_gifs_tab()
+                : tab === 'stickers'
+                  ? m.drawing_board_stickers_tab()
+                  : m.drawing_board_emoji()
+            }
           </button>`
       )}
     </div>`;
+    if (kind === 'emoji') return html`${tabs}${this.renderEmoji()}`;
     if (!klipyEnabled())
       return html`${tabs}
         <div class="body"><p class="note">${m.drawing_board_gif_off()}</p></div>`;
     const found = this.found;
-    const cells = classMap({ cells: true, stickers });
+    const stickers = kind === 'stickers';
     return html`${tabs}
-      <div class="body">
+      <div
+        class="body"
+        @scroll=${(event: Event) => this.loadMore(event.currentTarget as HTMLElement)}
+      >
         ${
           found === 'loading'
-            ? html`<div class=${cells} aria-busy="true">
-                ${Array.from({ length: 9 }, () => html`<div class="skeleton"></div>`)}
-              </div>`
+            ? stickers
+              ? html`<div class="cells" aria-busy="true">
+                  ${Array.from({ length: 9 }, () => html`<div class="skeleton"></div>`)}
+                </div>`
+              : html`<div class="columns" aria-busy="true">
+                  ${[SKELETON_LEFT, SKELETON_RIGHT].map(
+                    (ratios) =>
+                      html`<div class="column">
+                        ${ratios.map(
+                          (ratio) =>
+                            html`<div
+                              class="skeleton"
+                              style=${styleMap({ 'aspect-ratio': String(ratio) })}
+                            ></div>`
+                        )}
+                      </div>`
+                  )}
+                </div>`
             : found === 'failed'
               ? html`<p class="note">${m.drawing_board_gif_failed()}</p>`
               : found.length
-                ? html`<div class=${cells}>
-                    ${found.map(
-                      (gif) =>
-                        html`<button
-                          aria-label=${gif.title}
-                          title=${gif.title}
-                          type="button"
-                          @click=${() => this.placeGif(gif)}
-                        >
-                          <img
-                            alt=""
-                            loading="lazy"
-                            referrerpolicy="no-referrer"
-                            src=${gif.preview.url}
-                          />
-                        </button>`
-                    )}
-                  </div>`
+                ? stickers
+                  ? html`<div class="cells">
+                      ${repeat(
+                        found,
+                        (gif) => gif.id,
+                        (gif) => this.gifCell(gif, 'stickers')
+                      )}
+                    </div>`
+                  : this.renderGifs(found)
                 : html`<p class="note">
                     ${stickers ? m.drawing_board_sticker_none() : m.drawing_board_gif_none()}
                   </p>`
@@ -2474,29 +2924,8 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
   }
 
   override render() {
-    if (this.view === 'emoji')
-      return html`${this.head(m.drawing_board_emoji)}
-        <div class="body">
-          <div class="emoji">
-            ${EMOJI.map(
-              (code) =>
-                html`<button
-                  aria-label=${emojiText(code)}
-                  type="button"
-                  @click=${() =>
-                    this.placePicture(
-                      { kind: 'emoji', label: emojiText(code), ref: code },
-                      [1, 1],
-                      96
-                    )}
-                >
-                  <img alt="" loading="lazy" src=${emojiStillUrl(code)} />
-                </button>`
-            )}
-          </div>
-        </div>`;
     if (this.view === 'klipy')
-      return html`${this.head(m.drawing_board_gif, true)}${this.renderKlipy()}`;
+      return html`${this.head(m.drawing_board_gif_sticker, true)}${this.renderKlipy()}`;
     if (this.view === 'link')
       return html`${this.head(m.drawing_board_link)}${this.renderLink()}`;
     if (this.view === 'quiz' || this.view === 'flashcards')
@@ -2567,11 +2996,10 @@ class CapyMiscButton extends EdgelessToolbarToolMixin(
   }
 
   private toggle() {
-    if (this.popper) {
-      closePopper(this);
-      this.requestUpdate();
-      return;
-    }
+    togglePanel(this, () => this.open());
+  }
+
+  private open() {
     // However it goes (the toolbar closes it for another panel), the button redraws.
     const panel = openPopper(
       this,
@@ -2590,7 +3018,6 @@ class CapyMiscButton extends EdgelessToolbarToolMixin(
         closePopper(this);
         this.requestUpdate();
       });
-    this.requestUpdate();
   }
 
   override render() {
@@ -2613,6 +3040,107 @@ class CapyMiscButton extends EdgelessToolbarToolMixin(
             rx="2"
             style="fill:var(--capy-navy, #173654)"
           />
+        </svg>
+      </div>
+    </edgeless-toolbar-button>`;
+  }
+}
+
+/** The workspace canvas's GIF & Sticker slot (Epo 2026-11-12, A): a GIF card
+ * behind a sticker, centred in the bar and lifting together on hover. A click
+ * opens KLIPY's view on the tab used last. */
+class CapyGifStickerButton extends EdgelessToolbarToolMixin(
+  SignalWatcher(LitElement)
+) {
+  static override styles = css`
+    :host {
+      display: block;
+      width: 100%;
+      height: 64px;
+    }
+    edgeless-toolbar-button {
+      display: block;
+      width: 100%;
+      height: 64px;
+    }
+    /* Centred in the bar, not cut by its bottom edge (Epo 2026-11-13). */
+    .box {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 64px;
+    }
+    svg {
+      display: block;
+      filter: ${unsafeCSS(PIECE_SHADOW)};
+      transition: transform 0.3s;
+    }
+    :host(:hover) svg,
+    :host([data-open]) svg {
+      transform: translateY(-4px);
+    }
+  `;
+
+  // Not a tool: it opens a panel.
+  override type = DefaultTool as never;
+
+  // @ts-expect-error the mixin defines it as a getter, typed as a property.
+  override get active() {
+    return !!this.popper;
+  }
+
+  override updated() {
+    this.toggleAttribute('data-open', this.active);
+  }
+
+  private open() {
+    const panel = openPopper(
+      this,
+      'capy-misc-panel',
+      PANEL_HEIGHT,
+      {
+        marginLeft: 'auto',
+        marginRight: '0',
+        maxWidth: '100%',
+        width: `${PANEL_WIDTH}px`,
+      },
+      () => this.requestUpdate()
+    );
+    Object.assign(panel, { only: 'klipy' } satisfies Partial<CapyMiscPanel>);
+    for (const done of ['placed', 'closed'])
+      panel.addEventListener(done, () => {
+        closePopper(this);
+        this.requestUpdate();
+      });
+  }
+
+  override render() {
+    return html`<edgeless-toolbar-button
+      .active=${this.active}
+      .tooltip=${m.drawing_board_gif_sticker()}
+      .tooltipOffset=${5}
+      @click=${() => togglePanel(this, () => this.open())}
+    >
+      <div class="box">
+        <svg width="76" height="54" viewBox="0 0 76 54" aria-hidden="true">
+          <g transform="rotate(-9 26 30)">
+            <rect x="6" y="12" width="40" height="30" rx="5" fill="#7f5fd6" />
+            <text
+              x="14"
+              y="32"
+              fill="#fff"
+              font-family="JetBrains Mono, ui-monospace, monospace"
+              font-size="12"
+              font-weight="700"
+            >
+              GIF
+            </text>
+          </g>
+          <path
+            d="M44 18a4 4 0 0 1 4-4h18a4 4 0 0 1 4 4v12L58 42H48a4 4 0 0 1-4-4Z"
+            fill="#f2c94c"
+          />
+          <path d="M70 30L58 42v-8a4 4 0 0 1 4-4Z" fill="#e0b335" />
         </svg>
       </div>
     </edgeless-toolbar-button>`;
@@ -2678,15 +3206,33 @@ const miscTool = seniorTool(
   'capy-misc',
   m.drawing_board_misc,
   (block, toolbar) =>
+    // Its own 56 px, not a full slot's 96 (local change 29), as the eraser.
     html`<capy-misc-button
+      data-own-width
       .edgeless=${block}
       .toolbarContainer=${toolbar}
     ></capy-misc-button>`
 );
 
-/** The toolbar's slots after the shapes, on both boards (Epo 2026-11-10): Misc
- * holds the charts, and on each board only what it may hold. */
-export const sheetTools = [graphsTool, formulasTool, miscTool];
+const gifStickerTool = seniorTool(
+  'capy-gif-sticker',
+  m.drawing_board_gif_sticker,
+  (block, toolbar) =>
+    html`<capy-gif-sticker-button
+      .edgeless=${block}
+      .toolbarContainer=${toolbar}
+    ></capy-gif-sticker-button>`
+);
+
+/** The toolbar's slots after the shapes (Epo 2026-11-10): Misc holds the charts,
+ * and on each board only what it may hold. The workspace canvas has GIFs and
+ * stickers where an answer board has Formulas, which join its Misc (Epo
+ * 2026-11-12). */
+export const sheetTools = (board: BoardKind) => [
+  graphsTool,
+  board === 'workspace' ? gifStickerTool : formulasTool,
+  miscTool,
+];
 
 const boardKinds = new WeakMap<
   BlockStdScope,
@@ -2701,24 +3247,28 @@ export const markBoard = (
 ) => boardKinds.set(std, { board, images });
 
 /** Whether a Misc tile is for this board (board catalog): an answer board holds
- * the charts and images; the mind map, the other pictures, links and the
- * workspace's quizzes and sets are the workspace canvas's. */
+ * the charts and images (its formulas have their slot); the mind map, the
+ * formulas, the other pictures, links and the workspace's quizzes and sets are the
+ * workspace canvas's. */
 const tileFits = (
   tile: MiscTile,
   { board, images }: { board?: BoardKind; images?: boolean } = {}
 ) => {
   if ('pick' in tile) return !!images;
   return (
-    board === 'workspace' || ('piece' in tile && tile.piece.kind !== 'mindmap')
+    board === 'workspace' ||
+    ('piece' in tile && CHART_PIECES.includes(tile.piece))
   );
 };
 
 for (const [tag, element] of [
   ['capy-shape-panel', CapyShapePanel],
   ['capy-shape-button', CapyShapeButton],
+  ['capy-note-button', CapyNoteButton],
   ['capy-graph-slot', CapyGraphSlot],
   ['capy-formula-slot', CapyFormulaSlot],
   ['capy-misc-panel', CapyMiscPanel],
   ['capy-misc-button', CapyMiscButton],
+  ['capy-gif-sticker-button', CapyGifStickerButton],
 ] as const)
   if (!customElements.get(tag)) customElements.define(tag, element);

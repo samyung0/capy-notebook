@@ -63,6 +63,8 @@ export type WorkspaceOpenSearch = {
   /** Which panel shows, in the URL so the back gesture steps through them (Epo
    * 2026-11-05). Below the panels, `agent` is the chat page over the viewer. */
   panel?: WorkspacePanel;
+  /** The Canvas tab's canvas shown (Epo 2026-11-12: a member has several). */
+  c?: string;
   /** One of the pages that came out of Study (To do or Assignments,
    * Practice, Members, Study's own summary) in the centre while nothing is open. */
   study?: 'practice' | 'summary' | 'assignments' | 'members';
@@ -193,6 +195,7 @@ export function parseWorkspaceOpenSearch(
       search.add === 'upload' || search.add === 'create'
         ? search.add
         : undefined,
+    c: search.panel === 'canvas' ? text(search.c) : undefined,
     chat: search.chat === 'new' ? 'new' : undefined,
     panel: isWorkspacePanel(search.panel) ? search.panel : undefined,
     settings: isSettingsView(search.settings) ? search.settings : undefined,

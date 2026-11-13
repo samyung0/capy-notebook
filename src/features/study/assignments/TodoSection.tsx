@@ -1,79 +1,27 @@
-import { useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate } from '@tanstack/react-router';
-import { type ReactNode, useState } from 'react';
-import { qk } from '@/api/client';
-import { useAssignments, useSetAssignmentDone } from '@/api/hooks';
-import type {
-  Assignment,
-  FileKind,
-  MaterialRefType,
-  Workspace,
-} from '@/api/types';
+import { useState } from 'react';
+import { useAssignments } from '@/api/hooks';
+import type { TodoWorkspace, Workspace } from '@/api/types';
+import { InlineErrorState } from '@/components/app/ErrorState';
 import { Button } from '@/components/ui/Button';
-import { Checkbox } from '@/components/ui/Checkbox';
-import { FileIcon } from '@/components/ui/FileIcon';
-import { Icon } from '@/components/ui/Icon';
+import { SkeletonList } from '@/components/ui/feedback';
 import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
-import { fileIconName, materialIconName } from '@/lib/fileIcons';
-import { assignmentPage } from './assignmentPage';
-import { dayLabel } from './assignmentText';
+import { unexpectedErrorId } from '@/lib/errors';
 import { NewAssignmentDialog } from './LazyNewAssignmentDialog';
-import { OwnTaskDetails } from './TodoDialog';
-import { isPlainTask, isTicked, todoRows } from './todoRows';
+import { TodoTable, useTodoTicks } from './TodoTable';
+import { type TodoTableSection, todoRows, todoSections } from './todoRows';
 
-/** A chip naming a quiz: the assignment's quill, tinted (Epo 2026-11-03);
- * crossed out once done on the Dashboard, grey on the To do page once ticked. */
-export function WorkChip({
-  title,
-  done,
-}: {
-  title: string;
-  done?: 'crossed' | 'grey';
-}) {
-  return (
-    <span
-      className={cn(
-        'inline-flex h-5.5 min-w-0 items-center gap-1 rounded-md px-1.75 font-semibold text-[13px]',
-        done === 'crossed' && 'text-fg-muted line-through',
-        done === 'grey' && 'bg-surface-hover-bg text-fg-secondary',
-        !done && 'bg-tint-accent-1 text-tint-accent-1-fg'
-      )}
-    >
-      <Icon
-        className="shrink-0 text-(--ctp-teal)"
-        name="quillWrite"
-        size={14}
-      />
-      <span className="truncate">{title}</span>
-    </span>
-  );
-}
-
-/** An assignment file's or material's icon. */
-export const assignmentFileIcon = (file: Assignment['files'][number]) =>
-  file.fileId
-    ? fileIconName({ kind: file.kind as FileKind, name: file.name })
-    : materialIconName(file.kind as MaterialRefType);
-
-function FileChip({ file }: { file: Assignment['files'][number] }) {
-  return (
-    <span className="inline-flex h-5.5 min-w-0 items-center gap-1 rounded-md bg-tint-accent-1 px-1.75 font-semibold text-[13px] text-tint-accent-1-fg">
-      <FileIcon className="size-3.5 shrink-0" name={assignmentFileIcon(file)} />
-      <span className="truncate">{file.name}</span>
-    </span>
-  );
-}
-
-/** The Dashboard's To do (boards H1, H2, H2b; Epo 2026-11-03). A member's holds
- * what is assigned to them and the tasks they set themself: quizzes, and the
- * rest with a tick. Staff's holds what is for them: answers to approve and
- * anything they assigned themselves. At its top right a class's staff have New
- * assignment and everyone else New task (Epo 2026-11-10: only staff give out
- * assignments), which is all a personal workspace has. Done rows leave until
- * Show done brings them back, crossed out. With nothing in it the section
- * stays and says the To do page's Nothing to do (Epo 2026-11-10: nothing is
- * hidden that he did not ask to hide); a visitor who is no member has no button. */
+/** The Dashboard's To do (boards H1, H2, H2b; Epo 2026-11-03), as the To do
+ * page's table (Epo 2026-11-12): one class's rows, a box on each, the row
+ * opening its details. A member's holds what is assigned to them and the tasks
+ * they set themself; staff's holds answers to approve and anything they
+ * assigned themselves. At its top right a class's staff have New assignment
+ * and everyone else New task (Epo 2026-11-10: only staff give out
+ * assignments), which is all a personal workspace has; with rows selected it
+ * turns to Mark as done (or Mark as not done for done rows). Done rows leave
+ * until Show done brings them back, muted. With nothing in it the section
+ * stays and says Nothing to do (Epo 2026-11-10: nothing is hidden that he did
+ * not ask to hide); a visitor who is no member has no button. Its rows load as
+ * skeletons, and a failed read says so with Retry. */
 export function TodoSection({
   manages,
   workspace,
@@ -81,14 +29,34 @@ export function TodoSection({
   manages: boolean;
   workspace: Pick<Workspace, 'iconId' | 'id' | 'name' | 'role'>;
 }) {
-  const workspaceId = workspace.id;
-  const { data } = useAssignments(workspaceId, { errorBoundary: false });
+  const { data, error, isPending, refetch } = useAssignments(workspace.id, {
+    errorBoundary: false,
+  });
   const [showDone, setShowDone] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [openTask, setOpenTask] = useState<string | null>(null);
-  const task = data?.items.find((a) => a.id === openTask);
-  const { done, open, toApprove } = todoRows(data?.items ?? []);
-  const shown = showDone ? [...open, ...done] : open;
+  const [sort, setSort] = useState<'due' | 'title'>('due');
+  const [ascending, setAscending] = useState(true);
+  const items = data?.items ?? [];
+  const todoWorkspace: TodoWorkspace = {
+    iconId: workspace.iconId,
+    items,
+    manages,
+    name: workspace.name,
+    workspaceId: workspace.id,
+  };
+  const [open] = todoSections([todoWorkspace], { ascending, sort, types: [] });
+  const done = todoRows(items).done.map((a) => ({
+    a,
+    approval: false,
+    ticked: true,
+  }));
+  const sections: TodoTableSection[] = [
+    {
+      rows: [...(open?.rows ?? []), ...(showDone ? done : [])],
+      workspace: todoWorkspace,
+    },
+  ];
+  const ticks = useTodoTicks(sections, false, { keepTicked: showDone });
   // A link or public visitor is no member: nothing is theirs to add.
   const adds = manages || !!workspace.role;
   return (
@@ -100,41 +68,83 @@ export function TodoSection({
             <Button
               className="px-2.5"
               iconLeft="view"
-              onClick={() => setShowDone(!showDone)}
+              onClick={() => {
+                ticks.clear();
+                setShowDone(!showDone);
+              }}
               size="sm"
               variant="outline"
             >
               {showDone ? m.assignment_hide_done() : m.assignment_show_done()}
             </Button>
           )}
-          {adds && (
-            <Button
-              className="px-2.5"
-              iconLeft="plus"
-              onClick={() => setCreating(true)}
-              size="sm"
-              variant="outline"
-            >
-              {manages ? m.assignment_new() : m.todo_new_task()}
-            </Button>
+          {ticks.count > 0 ? (
+            <>
+              {ticks.toUndo.length > 0 && (
+                <Button
+                  className="px-2.5"
+                  iconLeft="undo"
+                  onClick={() => ticks.markNotDone(ticks.toUndo)}
+                  size="sm"
+                  variant="outline"
+                >
+                  {m.assignment_mark_not_done()}
+                </Button>
+              )}
+              {ticks.toDone.length > 0 && (
+                <Button
+                  className="px-2.5"
+                  iconLeft="check"
+                  onClick={() => ticks.markDone(ticks.toDone)}
+                  size="sm"
+                  variant="outline"
+                >
+                  {m.assignment_mark_as_done()}
+                </Button>
+              )}
+            </>
+          ) : (
+            adds && (
+              <Button
+                className="px-2.5"
+                iconLeft="plus"
+                onClick={() => setCreating(true)}
+                size="sm"
+                variant="outline"
+              >
+                {manages ? m.assignment_new() : m.todo_new_task()}
+              </Button>
+            )
           )}
         </div>
       </div>
-      {toApprove.length > 0 || shown.length > 0 ? (
-        <TodoRows
-          manages={manages}
-          onOpenTask={setOpenTask}
-          shown={shown}
-          toApprove={toApprove}
-          workspaceId={workspaceId}
+      {/* The table once the list has loaded, so Nothing to do never flashes;
+          the To do page's rows load meanwhile (Epo 2026-11-12). */}
+      {isPending && <SkeletonList count={3} rowHeight={40} />}
+      {!data && error && (
+        <InlineErrorState
+          className="py-6"
+          errorId={unexpectedErrorId(error)}
+          message={m.todo_error()}
+          onRetry={() => void refetch()}
         />
-      ) : (
-        // The To do page's empty line, once the list has loaded.
-        data && (
-          <p className="t-subtitle py-20 text-center font-normal text-fg-muted">
-            {m.todo_empty()}
-          </p>
-        )
+      )}
+      {data && (
+        <TodoTable
+          doneTab={false}
+          sections={sections}
+          single
+          sorting={{
+            ascending,
+            ascendingFirst: ['due', 'title'],
+            onSortChange: (next, asc) => {
+              setSort(next === 'title' ? 'title' : 'due');
+              setAscending(asc);
+            },
+            sort,
+          }}
+          ticks={ticks}
+        />
       )}
       {creating && (
         <NewAssignmentDialog
@@ -143,165 +153,9 @@ export function TodoSection({
           // Only a class's staff give out assignments (Epo 2026-11-10).
           own={!manages}
           title={manages ? undefined : m.todo_new_task()}
-          workspaceId={workspaceId}
-        />
-      )}
-      {task && (
-        <OwnTaskDetails
-          onClose={() => setOpenTask(null)}
-          task={task}
-          workspace={workspace}
+          workspaceId={workspace.id}
         />
       )}
     </section>
-  );
-}
-
-/** Opens an assignment's page (Epo 2026-11-05): it starts or continues the work,
- * or shows the counted submission. Staff who assigned themselves open their own. */
-export function useOpenAssignment() {
-  const navigate = useNavigate();
-  const qc = useQueryClient();
-  return (a: Assignment, manages: boolean) => {
-    // Closing at a No late due date sends no event: past it, To do rereads
-    // (Epo 2026-11-08) while its page says it closed.
-    if (a.noLate && a.dueAt && Date.parse(a.dueAt) <= Date.now())
-      void qc.invalidateQueries({ queryKey: qk.todo });
-    // Whoever runs it too (a task's maker does) opens the page of the one
-    // it is given to, not its report.
-    return navigate(
-      assignmentPage(a, {
-        ...(a.mine?.countedAttemptId && a.kind === 'marked'
-          ? { attempt: a.mine.countedAttemptId }
-          : {}),
-        ...(manages || a.own ? { own: true as const } : {}),
-      })
-    );
-  };
-}
-
-/** The Dashboard's To do rows. A row is its own button, with nothing else to
- * press but a tick (Epo 2026-11-05); an assignment's page starts or continues
- * it, and a task its viewer set themself opens its details (`onOpenTask`). Open
- * work past its due date says Overdue. */
-export function TodoRows({
-  manages,
-  onOpenTask,
-  shown,
-  toApprove,
-  workspaceId,
-}: {
-  manages: boolean;
-  onOpenTask: (id: string) => void;
-  shown: Assignment[];
-  toApprove: Assignment[];
-  workspaceId: string;
-}) {
-  const openPage = useOpenAssignment();
-  const { mutate: setDone } = useSetAssignmentDone(workspaceId);
-  return (
-    <ul className="-mx-1.5 border-divider border-t">
-      {toApprove.map((a) => (
-        <Row key={a.id}>
-          <Link
-            className="flex min-h-10 min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 px-1.5 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset"
-            params={{ workspaceId }}
-            search={{
-              assignment: a.id,
-              study: 'assignments' as const,
-              tab: 'approve' as const,
-            }}
-            to="/workspaces/$workspaceId"
-          >
-            {m.dashboard_approve_on()}
-            <span className="flex min-w-0 items-center gap-2">
-              <WorkChip title={a.title} />
-              <span className="t-meta shrink-0 font-semibold text-tint-warning-fg">
-                {m.dashboard_waiting({ count: a.manage?.toApprove ?? 0 })}
-              </span>
-            </span>
-          </Link>
-        </Row>
-      ))}
-      {shown.map((a) => {
-        const isDone = !!a.mine?.done;
-        const crossed = isTicked(a);
-        const overdue =
-          !crossed && !!a.dueAt && Date.parse(a.dueAt) <= Date.now();
-        return (
-          <Row key={a.id}>
-            {/* Closed work takes no tick (Epo 2026-11-08); one that takes
-                files is handed in from its page (S3). */}
-            {isPlainTask(a) && !a.closedAt && (
-              <span className="grid w-7 shrink-0 justify-items-start pl-1.5">
-                <Checkbox
-                  aria-label={a.title}
-                  checked={isDone}
-                  onChange={(next) => setDone({ done: next, id: a.id })}
-                  size={18}
-                />
-              </span>
-            )}
-            <button
-              className={cn(
-                'flex min-h-10 min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 px-1.5 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset',
-                crossed && 'text-fg-muted line-through'
-              )}
-              onClick={() =>
-                a.own ? onOpenTask(a.id) : void openPage(a, manages)
-              }
-              type="button"
-            >
-              {a.kind === 'marked' ? (
-                <>
-                  {isDone ? m.dashboard_finish() : m.dashboard_do()}
-                  <WorkChip
-                    done={crossed ? 'crossed' : undefined}
-                    title={a.title}
-                  />
-                  {a.timeLimitMin && !crossed && (
-                    <span className="text-fg-secondary">
-                      {m.assignment_minutes_short({ count: a.timeLimitMin })}
-                    </span>
-                  )}
-                </>
-              ) : (
-                <>
-                  <span className="min-w-0">{a.title}</span>
-                  {a.files.map((file) => (
-                    <FileChip
-                      file={file}
-                      key={file.fileId ?? file.materialId}
-                    />
-                  ))}
-                </>
-              )}
-              {a.dueAt && (
-                <span
-                  className={cn(
-                    't-meta shrink-0 text-fg-secondary sm:ml-auto sm:pl-3',
-                    crossed && 'text-fg-muted line-through',
-                    overdue && 'font-semibold text-tint-error-fg'
-                  )}
-                >
-                  {(overdue ? m.todo_overdue : m.assignment_due)({
-                    date: dayLabel(a.dueAt),
-                  })}
-                </span>
-              )}
-            </button>
-          </Row>
-        );
-      })}
-    </ul>
-  );
-}
-
-/** Its hover fills the row, square, past the text's left edge like Activity's. */
-function Row({ children }: { children: ReactNode }) {
-  return (
-    <li className="flex min-w-0 items-center border-divider border-b hover:bg-surface-hover-bg">
-      {children}
-    </li>
   );
 }

@@ -18,7 +18,7 @@ import { ListEnd } from '@/components/app/ListEnd';
 import { type ListView, ListViewToggle } from '@/components/app/ListToolbar';
 import { PageBody } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
-import { Button, ErrorAction } from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/Dialog';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
@@ -74,11 +74,11 @@ export function CanvasTab({
   if (isError && !data) {
     return (
       <ErrorState
-        {...describeError(error)}
-        action={
-          <ErrorAction onClick={() => refetch()}>{m.trash_retry()}</ErrorAction>
-        }
         className="py-16"
+        // Its own title and Retry: the description's action is a toast's.
+        description={describeError(error).description}
+        icon={describeError(error).icon}
+        onRetry={() => refetch()}
         title={m.canvas_load_failed()}
         variant="panel"
       />

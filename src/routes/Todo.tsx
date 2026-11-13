@@ -195,6 +195,7 @@ export default function Todo() {
             <SkeletonList count={6} rowHeight={40} />
           ) : !data && error ? (
             <InlineErrorState
+              className="py-10"
               errorId={unexpectedErrorId(error)}
               message={m.todo_error()}
               onRetry={() => void refetch()}

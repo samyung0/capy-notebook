@@ -311,11 +311,16 @@ export class UIEventDispatcher extends LifeCycleWatcher {
     return output;
   }
 
+  /** Capy (local change 40): an open popover, menu or dialog outside the host
+   * keeps its focus too, so a pointer passing over the board leaves it open
+   * (the pointer's cursor selection would otherwise focus the host). */
   private _isActiveElementOutsideHost(): boolean {
     const activeElement = this._getDeepActiveElement();
     return (
       activeElement !== null &&
-      this._isEditableElementActive(activeElement) &&
+      (this._isEditableElementActive(activeElement) ||
+        activeElement.closest('[role=dialog], [role=menu], [role=listbox]') !==
+          null) &&
       !this.host.contains(activeElement)
     );
   }

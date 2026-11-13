@@ -21,6 +21,16 @@ tags: [frontend, errors, react-query, msw, playwright]
 
 Do not report the same failure through multiple surfaces.
 
+Every boundary and inline page or pane error is `ErrorState`
+(`src/components/app/ErrorState.tsx`; `FileError` wraps it for file and
+canvas panes), and a small area's is `InlineErrorState` (one line and Retry).
+Their retry is always the shared Retry (`ErrorAction`: borderless, "Retry"
+with the refresh icon), passed as `ErrorState`'s `onRetry` (Epo 2026-11-12:
+no bordered or "Try again" buttons); `action` is only for another way out,
+such as `ErrorAction back`. An `ErrorState` under a page's header takes
+`h-auto py-20` rather than the pane's full height, so the page never scrolls
+for it. `describeError`'s `action` is a toast's and is never spread into it.
+
 ### Gateway upload codes
 
 The gateway's upload line answers two typed 4xx codes the browser gives their

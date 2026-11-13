@@ -10,7 +10,7 @@ import {
 import { EXTRACTION_QUESTION_CREDITS } from '@/api/limits.generated';
 import type { Extraction, ExtractionFound } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
-import { Button } from '@/components/ui/Button';
+import { Button, ErrorAction } from '@/components/ui/Button';
 import { FormAlert } from '@/components/ui/FormAlert';
 import { Spinner } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
@@ -287,9 +287,9 @@ export function useRunStep({
       body: (
         <ErrorState
           action={
-            <Button onClick={onLeave} type="button" variant="outline">
+            <ErrorAction back onClick={onLeave} type="button">
               {m.make_quiz_back_dashboard()}
-            </Button>
+            </ErrorAction>
           }
           errorId={unexpectedErrorId(error)}
           title={m.make_quiz_run_missing()}
@@ -304,9 +304,9 @@ export function useRunStep({
       body: (
         <ErrorState
           action={
-            <Button onClick={onBack} type="button" variant="outline">
+            <ErrorAction back onClick={onBack} type="button">
               {m.make_quiz_back_to_pages()}
-            </Button>
+            </ErrorAction>
           }
           description={extractionFailure(run.errorCode)}
           kind={run.errorCode}

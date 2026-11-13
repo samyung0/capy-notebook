@@ -24,6 +24,7 @@ import { deltaInsertsToChunks } from '@blocksuite/std/inline';
 
 import { diamond } from './diamond.js';
 import { ellipse } from './ellipse.js';
+import { polygon } from './polygon.js';
 import { rect } from './rect.js';
 import { triangle } from './triangle.js';
 import { type Colors, horizontalOffset, verticalOffset } from './utils.js';
@@ -43,6 +44,12 @@ const shapeRenderers: Record<
   rect,
   triangle,
   ellipse,
+  // Capy (local change 46)
+  rightTriangle: polygon,
+  parallelogram: polygon,
+  trapezium: polygon,
+  pentagon: polygon,
+  hexagon: polygon,
 };
 
 export const shape: ElementRenderer<ShapeElementModel> = (

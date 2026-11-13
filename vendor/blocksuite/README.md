@@ -225,13 +225,19 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
 14. Shape button colours (`affine/gfx/shape` `shape-draggable.ts`, marked `Capy (local
     change 14)`): `--capy-shape-button-<name>` and `--capy-shape-button-stroke-<name>`
     fix the toolbar pieces' colours; without them the pieces show the shape's last colour.
+    A piece being dragged out (`onOverlayCreated`) keeps those colours too, as AFFiNE's
+    demo shows the piece itself, where it took the canvas shape's last colours (Epo
+    2026-11-12).
 
 15. Phone toolbar (`affine/widgets/edgeless-toolbar` `edgeless-toolbar.ts`, marked
     `Capy (local change 15)`): below 768 px the toolbar takes the full width less an
     8 px gutter, in place of AFFiNE's 64 px safe area each side, its illustrated tools
     are 78 px wide and spread with `space-around`, so two show between the arrows. The
-    change is the `FULL_WIDTH_*` constants, the media rule, `_availableWidth` and
-    `scrollSeniorToolSize`.
+    change is the `FULL_WIDTH_*` constants, the narrow rule, `_availableWidth` and
+    `scrollSeniorToolSize`. The narrow rule is a container query on the widget (Epo
+    2026-11-12), so it follows the board's width as the paging does; as a media query
+    on the window, a board under 768 px in a wider window drew 96 px tools that the
+    paging had counted as 78 px, and they ran past the end with no arrows.
 
 16. `elementsCtorMap` exported from `affine/blocks/surface` (marked `Capy (local change
     16)`), so the board can register its formula element before a saved answer loads.
@@ -409,6 +415,98 @@ Outside this directory, for BlockSuite:
     `config.ts`) shows the information icon, where upstream reuses Text's. The
     callout look (`calloutLook.ts`, `pageEditor.css`) is the BlockSuite note's, on
     `blocksuite-notes`; main's boards never call `setCalloutVariantIcon`.
+40. Focus kept by the page's popovers (`framework/std` `event/dispatcher.ts`, marked
+    `Capy (local change 40)`; Epo 2026-11-12): the pointer entering the board leaves
+    the dispatcher off while focus sits in a `[role=dialog]`, `[role=menu]` or
+    `[role=listbox]` outside the host, as upstream already did for a focused input.
+    Otherwise the pointer's cursor selection, on its first move, had `RangeBinding`
+    focus the host, which closed the page's canvas picker. `RangeBinding`
+    (`inline/range/range-binding.ts`) also leaves focus in a text input or textarea
+    when a selection changes: with the board already active, every pointer move
+    focused the host and took focus out of the Misc panel's link field.
+
+41. Shape centred on the pointer (`affine/gfx/shape` `overlay/shape-overlay.ts` and
+    `shape-tool.ts`, marked `Capy (local change 41)`; Epo 2026-11-12): the shape tool's
+    overlay is centred on the pointer, as a dragged piece is, and a click places the
+    shape centred there. AFFiNE hung it by its top-left corner (6 px off for rectangles,
+    the `SHAPE_OVERLAY_OFFSET_*` constants, now removed). Local change 46 sizes the
+    overlay and the click per shape (`getShapeSize`).
+
+42. Duplicate and paste without frames (`blocks/root` `edgeless/clipboard/utils.ts`,
+    marked `Capy (local change 42)`; Epo 2026-11-12): `createNewPresentationIndexes`
+    asks for the frame manager only when the pasted content holds a frame. The boards
+    register no frames, so Duplicate and every paste threw `ServiceNotFoundError`.
+
+43. Shape fill and the square piece (`affine/gfx/shape` `toolbar/config.ts`,
+    `draggable/shape-draggable.ts` and `toolbar/icons.ts`, marked `Capy (local change
+    43)`; Epo 2026-11-12): picking a fill colour sets `filled`, and No fill clears it;
+    upstream read `isTransparent` the wrong way round, so a colour was stored unfilled and
+    never drew. The toolbar's first piece is a plain square (`squareSvg`, `rect`) where
+    AFFiNE's was a rounded rectangle; its colours are `--capy-shape-button-rect`.
+
+44. Board fonts (`model` `consts/text.ts`, `widgets/edgeless-toolbar`
+    `panel/font-family-panel.ts`, marked `Capy (local change 44)`; Epo 2026-11-12):
+    `FontFamily` gains `ComicNeue` and `JetBrainsMono`, and the font menu lists
+    `BoardFontFamilyList` (Fustat for `Inter`, Comic Neue, Lora, JetBrains Mono) in place
+    of AFFiNE's seven, which load from its CDN and never drew here. The faces are in
+    `src/features/blocksuite/drawingBoard.css`.
+
+45. Text sizes (`shared` `utils/zod-schema.ts`, `model` `elements/shape/shape.ts`,
+    `widgets/edgeless-selected-rect` `auto-complete-panel.ts`, `gfx/text`
+    `toolbar/actions.ts`, marked `Capy (local change 45)`; Epo 2026-11-12): shape text
+    and free text start at 16 (AFFiNE: 20 and 24), and the size menu adds 12 and 20.
+
+46. Polygon shapes (`model` `consts/shape.ts` and `elements/shape/api/polygon.ts`,
+    `affine/gfx/shape` `element-renderer/shape/polygon.ts`, `element-renderer/shape/
+    utils.ts`, `element-renderer/shape-dom/index.ts`, `overlay/polygon.ts`,
+    `overlay/factory.ts`, `overlay/utils.ts`, `shape-tool.ts`, and `shared`
+    `utils/zod-schema.ts`, marked `Capy (local change 46)`; Epo 2026-11-12): `ShapeType`
+    gains `rightTriangle`, `parallelogram`, `trapezium`, `pentagon` and `hexagon`, each
+    its corners in `POLYGON_SHAPES`, drawn and hit-tested by one polygon implementation
+    built as the diamond is. `getShapeSize` gives each its click size. They were groups
+    of straight connectors, which neither filled nor held text.
+
+47. One thing held at a time (`widgets/edgeless-toolbar`
+    `draggable/draggable-element.controller.ts`, marked `Capy (local change 47)`; Epo
+    2026-11-12): the controller every toolbar piece uses keeps one carried piece across
+    all of them (`carried`). Taking a piece cancels the other and drops a held tool (a
+    picked shape or note following the pointer) but keeps a drawing tool (pen,
+    highlighter, eraser), which the board takes back once the piece is placed; a tool
+    picked while carrying cancels the piece. A press that returns a carried piece to the toolbar lands on the overlay's mask
+    and is passed on (`pressThrough`) to what lies beneath, so one click works a button
+    or picks up another piece; AFFiNE swallowed it. The mouseup and touchend that end a
+    press are heard in the capture phase: the board's panels keep their mouseup from the
+    board, so a click on a panel's tile was read as a drag from the board's first move
+    (no carry, and a scaled preview off the pointer).
+
+48. Note centred on the pointer (`affine/gfx/note` `note-tool.ts`, `overlay/overlay.ts`,
+    `overlay/consts.ts` and `index.ts`, marked `Capy (local change 48)`; Epo 2026-11-12):
+    the note tool's overlay is the empty note a click places, centred on the pointer:
+    its width, its height, hairline (`--capy-note-edge`) and corner, and the
+    placeholder in the block's font, size, weight and place, from `notePreviewOf`
+    (`overlay/consts.ts`, measured per kind on the board). The click centres the note
+    by that height. A dragged note lands where its outline was drawn. AFFiNE drew a
+    100 by 50 box in 16 px Arial below and right of the pointer and shifted both by
+    `DEFAULT_NOTE_OFFSET_X/Y`. The package exports `EdgelessNoteSeniorButton` for the
+    board's `capy-note-button`.
+
+49. Placeholder without a scrollbar (`blocks/paragraph` `styles.ts`, marked `Capy
+    (local change 49)`; Epo 2026-11-12): `.affine-paragraph-placeholder` clips both
+    axes. Its `overflow-x: hidden` alone made the other axis `auto`, and a heading's
+    text, a pixel taller than its line, drew a scrollbar beside the placeholder.
+
+50. Mouse strokes at one width (`affine/gfx/brush` `brush-tool.ts` and
+    `highlighter-tool.ts`, `framework/global` `gfx/perfect-freehand/
+    get-solid-stroke-points.ts`, marked `Capy (local change 50)`; Epo 2026-11-12): a
+    mouse stroke records no pressure, and a stroke without pressure draws at one width
+    (pressure 0.5, `simulatePressure` off); a click without pressure is a dot at
+    pressure 0. A stroke at pressure 0.5 is its width wide (size `lineWidth / √2`):
+    AFFiNE's easing drew every width 1.41 times over, a pen 4 as 5.7 and the
+    highlighter's 22 as 31. The highlighter starts at its third width, 18 (`model`
+    `consts/line.ts`; AFFiNE's fourth, 22). AFFiNE took the release's pressure 0 for a
+    pressure device, so the first stroke redrew at another width when it ended and
+    every later one stored pressure, and it thinned a stroke without pressure by its
+    speed.
 
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and

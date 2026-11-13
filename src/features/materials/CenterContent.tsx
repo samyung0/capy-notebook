@@ -1109,13 +1109,20 @@ function FileBody({
     error,
     isLoading,
     isError,
+    refetch,
   } = useFile(fileId, {
     errorBoundary: false,
   });
   if (isLoading) return <FileLoading />;
   // A refusal ends what shows, as a material's does (Epo 2026-11-05).
   if (isRefusedRead(error)) return <UnavailableItem />;
-  if (!file && isError) return <FileError />;
+  if (!file && isError)
+    return (
+      <FileError
+        errorId={unexpectedErrorId(error)}
+        onRetry={() => void refetch()}
+      />
+    );
   if (file && fileIsIngesting(file.status) && !file.hasBytes) {
     const waiting = file.status === 'pending';
     return (

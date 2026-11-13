@@ -163,6 +163,9 @@ its light or dark palette. Settings → Customizations → Theme chooses it.
   up), phone values first and the `sm` breakpoint's in a media block.
   Components read them and never set a height per style; one that needs a
   control's height uses `h-(--control-h)`.
+  A page header's action (New workspace, Add task, the workspace
+  Dashboard's Upload and Make a quiz from a file, New assignment, Add
+  practice) is `PageButton`: md, 4px shorter than `--control-h`.
 
 | | Capy | Fisheye |
 | --- | --- | --- |
@@ -316,7 +319,8 @@ How it is drawn:
   slide strip, notes box). The frost shows around pages and slides; pages,
   cells, slides, menus and the DOCX editor's popups and dialogs keep their
   fills. A PDF view stays opaque.
-- The chat dock below lg floats over the centre panel, outside its card: it
+- The chat dock below lg (phones only in a workspace, where the rail's Agent
+  opens the chat from 768px, Epo 2026-11-12) floats over the centre panel, outside its card: it
   marks itself `data-frost` when the centre frosts, and its open field is
   frosted glass (`motion-chat-dock`: translucent fill, 16px backdrop blur).
 - With None, everything returns to the page colour and the opaque cards.

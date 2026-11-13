@@ -2,7 +2,6 @@ import { Link, useParams } from '@tanstack/react-router';
 import { useCallback, useRef, useState } from 'react';
 import { useAssignment, useAssignmentAttempt, useWorkspace } from '@/api/hooks';
 import { ErrorState } from '@/components/app/ErrorState';
-import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { IconButton } from '@/components/ui/IconButton';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
@@ -86,12 +85,8 @@ export function AssignmentAttemptPage({
     return (
       <PracticeFrame>
         <ErrorState
-          action={
-            <Button onClick={() => void refetch()} variant="outline">
-              {m.action_retry()}
-            </Button>
-          }
           errorId={unexpectedErrorId(error)}
+          onRetry={() => void refetch()}
           title={m.assignment_load_failed()}
           variant="panel"
         />

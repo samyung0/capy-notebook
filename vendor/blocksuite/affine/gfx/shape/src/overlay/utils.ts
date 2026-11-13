@@ -1,5 +1,9 @@
 import type { Options } from '@blocksuite/affine-block-surface';
-import { shapeMethods } from '@blocksuite/affine-model';
+import {
+  POLYGON_SHAPES,
+  shapeMethods,
+  type ShapeType,
+} from '@blocksuite/affine-model';
 import { Bound, type XYWH } from '@blocksuite/global/gfx';
 
 export const drawGeneralShape = (
@@ -33,7 +37,9 @@ export const drawGeneralShape = (
       drawRoundedRect(ctx, xywh);
       break;
     default:
-      throw new Error(`Unknown shape type: ${type}`);
+      // Capy (local change 46): the board's polygons.
+      if (!POLYGON_SHAPES[type]) throw new Error(`Unknown shape type: ${type}`);
+      shapeMethods[type as ShapeType].draw(ctx, bound);
   }
 
   ctx.closePath();

@@ -1,12 +1,15 @@
+import { POLYGON_SHAPES } from '@blocksuite/affine/model';
 import { expect, it } from 'vitest';
 import { m } from '@/i18n';
 import { toBase64 } from './base64';
 import { SAVED, withCanvasBlock, withElements } from './boardFixture';
 import { BoardLoadError } from './boardLoad';
-import { drawBoardPreview } from './boardPreview';
+import { drawBoardPreview, POLYGON_CORNERS } from './boardPreview';
 
 const SIZE = { height: 120, width: 180 };
 const SVG_HEAD = /^<svg [^>]*width="180" height="120"/;
+const BLUE_POLYGON =
+  /<path d="M[^"]*L[^"]*L[^"]*L[^"]*L[^"]*Z" fill="none" stroke="#1971c2"/;
 const RED_STROKE = /<path d="([^"]*)" stroke="#e03131"/;
 
 it('draws the plane card, its marks and its axes', () => {
@@ -102,4 +105,21 @@ it('refuses a board that does not check out', () => {
   expect(() => drawBoardPreview('AAAA', SIZE, 'question')).toThrow(
     BoardLoadError
   );
+});
+
+it('draws a polygon shape from the corners the board draws it with', () => {
+  expect(POLYGON_CORNERS).toEqual(POLYGON_SHAPES);
+  const svg = drawBoardPreview(
+    toBase64(
+      withElements({
+        shapeType: 'pentagon',
+        strokeColor: '#1971c2',
+        type: 'shape',
+        xywh: '[0,600,100,100]',
+      })
+    ),
+    SIZE,
+    'question'
+  );
+  expect(svg).toMatch(BLUE_POLYGON);
 });

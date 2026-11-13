@@ -1,4 +1,5 @@
 import { type ReactNode, type RefObject, useState } from 'react';
+import { createAssignmentBodyFilesMax } from '@/api/gen/validators';
 import { useItems } from '@/api/hooks';
 import type {
   Assignment,
@@ -8,20 +9,20 @@ import type {
 } from '@/api/types';
 import { InlineErrorState } from '@/components/app/ErrorState';
 import { ListEnd } from '@/components/app/ListEnd';
-import { Button } from '@/components/ui/Button';
 import { FileIcon, type FileIconName } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
-import { IconButton } from '@/components/ui/IconButton';
 import {
+  ChooseFileButton,
   FileMenuNote,
   FileMenuRow,
   FileSearchMenu,
+  RemoveFileButton,
 } from '@/features/files/FileSearchMenu';
 import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { useDebounced } from '@/lib/useDebounced';
-import { assignmentFileIcon } from './TodoSection';
+import { assignmentFileIcon } from './todoParts';
 
 /** A file or block on a task's form: what its row shows, and what is sent. */
 export interface TaskFile {
@@ -71,9 +72,10 @@ function listedFile(item: Item): TaskFile | null {
 
 /**
  * A task's Files (Epo 2026-11-11): the files of a task one sets oneself come
- * from any workspace or none, whatever workspace the task is in, so Add a file
- * searches everything its maker can open and each row names where the file
- * sits. An assignment's files stay its class's (`FilesField`).
+ * from any workspace or none, whatever workspace the task is in, so Choose a
+ * file searches everything its maker can open and each row names where the
+ * file sits. An assignment's files stay its class's (`FilesField`). Choose a
+ * file stays above the rows (Epo 2026-11-12).
  */
 export function TaskFilesField({
   onChange,
@@ -98,13 +100,29 @@ export function TaskFilesField({
     ...picked.map((file) => [file.id, file] as const),
   ]);
   const rows = value.flatMap((ref) => known.get(refId(ref)) ?? []);
+  const remove = (id: string) =>
+    onChange(value.filter((ref) => refId(ref) !== id));
   return (
-    <div className="flex flex-col items-start gap-2">
+    <div className="flex flex-col gap-2">
+      <ChooseFileRow count={value.length}>
+        <TaskFileMenu
+          empty={m.assignment_no_files_match()}
+          full={value.length >= createAssignmentBodyFilesMax}
+          held={value.map(refId)}
+          label={m.assignment_search_files()}
+          onPick={(file) => {
+            onPicked(file);
+            onChange([...value, file.ref]);
+          }}
+          onUnpick={remove}
+          trigger={<ChooseFileButton />}
+        />
+      </ChooseFileRow>
       {rows.length > 0 && (
         <ul className="w-full">
           {rows.map((file) => (
             <li
-              className="flex min-h-9.5 items-center gap-2.5 border-divider border-b"
+              className="flex min-h-8 items-center gap-2.5 pl-2"
               key={file.id}
             >
               <FileIcon className="size-4 shrink-0" name={file.icon} />
@@ -116,61 +134,67 @@ export function TaskFilesField({
                   {file.workspaceName}
                 </span>
               )}
-              <IconButton
-                className="size-7"
-                icon="x"
+              <RemoveFileButton
                 label={m.action_remove()}
-                onClick={() =>
-                  onChange(value.filter((ref) => refId(ref) !== file.id))
-                }
-                type="button"
+                onClick={() => remove(file.id)}
               />
             </li>
           ))}
         </ul>
       )}
-      <TaskFileMenu
-        empty={m.assignment_no_files_match()}
-        held={value.map(refId)}
-        label={m.assignment_search_files()}
-        onPick={(file) => {
-          onPicked(file);
-          onChange([...value, file.ref]);
-        }}
-        trigger={
-          <Button iconLeft="plus" size="sm" type="button" variant="outline">
-            {m.assignment_add_file()}
-          </Button>
-        }
-        wide
-      />
     </div>
   );
 }
 
-/** Add a file's menu (Epo 2026-11-12: Make a quiz's search menu, not a
+/** Choose a file, with the files cap under it once a task or an assignment
+ * holds as many as the server takes (its menu's unticked rows are disabled
+ * then; the trigger stays, so the menu still opens and closes). */
+export function ChooseFileRow({
+  children,
+  count,
+}: {
+  children: ReactNode;
+  count: number;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      {children}
+      {count >= createAssignmentBodyFilesMax && (
+        <span className="t-meta text-fg-muted">
+          {m.assignment_files_max({ max: createAssignmentBodyFilesMax })}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Choose a file's menu (Epo 2026-11-12: Make a quiz's search menu, not a
  * Search dialog): a field over the Files page's All files, newest first until
- * something is typed. A row adds the file and closes; files already on the
- * task are left out. A task's Quiz field opens the same one over quizzes alone
- * (`kinds`). */
+ * something is typed. The files already on the task are ticked. With
+ * `onUnpick` (Files) it stays open for more and a ticked row takes its file off
+ * (Epo 2026-11-12); a task's Quiz field opens it over quizzes alone (`kinds`),
+ * closing on its one pick. */
 export function TaskFileMenu({
   empty,
+  full = false,
   held,
   kinds,
   label,
   onPick,
+  onUnpick,
   trigger,
-  wide,
 }: {
   /** What it says when nothing matches. */
   empty: string;
+  /** At the files cap: only a ticked row can be pressed. */
+  full?: boolean;
   held: string[];
   kinds?: ItemKind[];
   /** The search field's label and placeholder. */
   label: string;
   onPick: (file: TaskFile) => void;
+  onUnpick?: (id: string) => void;
   trigger: ReactNode;
-  wide?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -180,17 +204,18 @@ export function TaskFileMenu({
       open={open}
       searchLabel={label}
       trigger={trigger}
-      wide={wide}
     >
       {(query, list) => (
         <TaskFileRows
           empty={empty}
+          full={full}
           held={held}
           kinds={kinds}
           list={list}
           onPick={(file) => {
-            onPick(file);
-            setOpen(false);
+            if (held.includes(file.id)) onUnpick?.(file.id);
+            else onPick(file);
+            if (!onUnpick) setOpen(false);
           }}
           query={query}
         />
@@ -202,6 +227,7 @@ export function TaskFileMenu({
 /** The menu's rows for what is typed, a page at a time. */
 function TaskFileRows({
   empty,
+  full,
   held,
   kinds,
   list,
@@ -209,6 +235,7 @@ function TaskFileRows({
   query,
 }: {
   empty: string;
+  full: boolean;
   held: string[];
   kinds?: ItemKind[];
   list: RefObject<HTMLDivElement | null>;
@@ -241,16 +268,17 @@ function TaskFileRows({
     );
   const files = (data?.pages ?? [])
     .flatMap((page) => page.items)
-    .flatMap((item) => listedFile(item) ?? [])
-    .filter((file) => !held.includes(file.id));
+    .flatMap((item) => listedFile(item) ?? []);
   return (
     <>
       {files.map((file) => (
         <FileMenuRow
-          aria-selected={false}
+          className="disabled:cursor-default"
+          disabled={full && !held.includes(file.id)}
           key={file.id}
           onClick={() => onPick(file)}
           role="option"
+          selected={held.includes(file.id)}
         >
           <FileIcon className="size-4 shrink-0" name={file.icon} />
           <span className="min-w-0 flex-1 truncate">{file.name}</span>

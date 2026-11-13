@@ -311,6 +311,9 @@ function AssistantBubble({
 export interface ChatDockOptions {
   /** Workspace actions after New chat in the chat page's ⋮. */
   menuItems: MenuItem[];
+  /** No dock at all, only the chat page: while the workspace rail shows, its
+   * Agent opens the chat (Epo 2026-11-12). Phones keep the dock's button. */
+  off?: boolean;
   /** An Office file is open: the dock stays a button above its bottom chrome. */
   office: boolean;
   /** The chat page's state lives in the URL, so the back gesture leaves it. */
@@ -1021,7 +1024,7 @@ export function ChatPanel({
         </div>
         {thread}
       </div>
-      {!(pageOpen || hidden) && (
+      {!(pageOpen || hidden || dock.off) && (
         <ChatDock
           back={
             backShown

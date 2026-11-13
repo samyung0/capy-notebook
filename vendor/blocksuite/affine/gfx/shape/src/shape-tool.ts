@@ -7,6 +7,7 @@ import {
 import type { ShapeElementModel, ShapeName } from '@blocksuite/affine-model';
 import {
   DefaultTheme,
+  getShapeSize,
   getShapeType,
   ShapeType,
 } from '@blocksuite/affine-model';
@@ -22,11 +23,7 @@ import type { PointerEventState } from '@blocksuite/std';
 import { BaseTool, type GfxController } from '@blocksuite/std/gfx';
 import { effect } from '@preact/signals-core';
 
-import {
-  SHAPE_OVERLAY_HEIGHT,
-  SHAPE_OVERLAY_OPTIONS,
-  SHAPE_OVERLAY_WIDTH,
-} from './consts.js';
+import { SHAPE_OVERLAY_OPTIONS } from './consts.js';
 import { ShapeOverlay } from './overlay/shape-overlay.js';
 
 export type ShapeToolOption = {
@@ -61,19 +58,23 @@ export class ShapeTool extends BaseTool<ShapeToolOption> {
   private _addNewShape(
     e: PointerEventState,
     width: number,
-    height: number
+    height: number,
+    centred = false
   ): string {
     const { viewport } = this.gfx;
     const { shapeName } = this.activatedOption;
     const attributes =
       this.std.get(EditPropsStore).lastProps$.value[`shape:${shapeName}`];
 
-    if (shapeName === 'roundedRect') {
+    if (shapeName === 'roundedRect' && !centred) {
       width += 40;
     }
     // create a shape block when drag start
     const [modelX, modelY] = viewport.toModelCoord(e.point.x, e.point.y);
-    const bound = new Bound(modelX, modelY, width, height);
+    // Capy (local change 41): a click places the shape centred where its overlay was.
+    const bound = centred
+      ? new Bound(modelX - width / 2, modelY - height / 2, width, height)
+      : new Bound(modelX, modelY, width, height);
 
     const id = this.gfx.surface!.addElement({
       type: CanvasElementType.SHAPE,
@@ -191,7 +192,9 @@ export class ShapeTool extends BaseTool<ShapeToolOption> {
 
     this.doc.captureSync();
 
-    const id = this._addNewShape(e, SHAPE_OVERLAY_WIDTH, SHAPE_OVERLAY_HEIGHT);
+    // Capy (local change 46): placed at its own size, as its overlay shows it.
+    const [width, height] = getShapeSize(this.activatedOption.shapeName);
+    const id = this._addNewShape(e, width, height, true);
 
     const element = this.gfx.getElementById(id);
     if (!element) return;

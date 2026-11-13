@@ -506,7 +506,7 @@ export function PhoneTopRow({ className }: { className?: string }) {
       {/* On a frosted panel it shows the frost instead of painting over it. */}
       <MobileNavDrawer
         account
-        className="frosted:bg-(--frost-fill) px-3.5 frosted:hover:bg-surface-hover-bg"
+        className="frosted:bg-(--frost-fill) frosted:hover:bg-surface-hover-bg"
       />
       <ProfileMenu
         dot={(unread?.count ?? 0) > 0}

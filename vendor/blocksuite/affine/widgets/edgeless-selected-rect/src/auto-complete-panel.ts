@@ -293,7 +293,8 @@ export class EdgelessAutoCompletePanel extends WithDisposable(LitElement) {
         xywh: bound.serialize(),
         text: new Y.Text(),
         textAlign: 'left',
-        fontSize: 24,
+        // Capy (local change 45)
+        fontSize: 16,
         fontFamily: FontFamily.Inter,
         color: DefaultTheme.textColor,
         fontWeight: FontWeight.Regular,

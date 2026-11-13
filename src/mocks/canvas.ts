@@ -3,14 +3,16 @@ import type { CanvasBody, CanvasListItem } from '@/api/gen/model';
 import { mockImageAssets } from './editorAssets';
 import { mockPage } from './paging';
 
-/** A person's canvases (Epo 2026-11-09 and 2026-11-10): one per workspace, made
- * on its first open, and any number of their own, made on the Canvas page. A
+/** A person's canvases (Epo 2026-11-09, 2026-11-10 and 2026-11-12): any number
+ * of their own, made on the Canvas page, and any number in each workspace, made
+ * in its Canvas tab. A
  * save at a stale revision is refused (409), as the gateway refuses another
  * tab's, and one naming an image that isn't the canvas's own is a 400. A board
  * asset is a mock editor asset. */
 type MockCanvas = CanvasBody & { workspaceId?: string };
 const canvases = new Map<string, MockCanvas>();
-let made = 0;
+/** Canvases made so far, counted per workspace and for one's own (''). */
+const made = new Map<string, number>();
 
 const make = (id: string, title: string, workspaceId?: string) => {
   const canvas: MockCanvas = {
@@ -63,9 +65,6 @@ const save = async (canvas: MockCanvas, request: Request) => {
 export const canvasHandlers = (
   workspaces: (id: string) => { iconId: string; name: string } | undefined
 ) => {
-  const ofWorkspace = (workspaceId: string) =>
-    canvases.get(`cv_${workspaceId}`) ??
-    make(`cv_${workspaceId}`, workspaces(workspaceId)?.name ?? '', workspaceId);
   return [
     // A canvas read as a material, for its owner's plan image cap; any other
     // material falls through to the materials mock.
@@ -91,17 +90,14 @@ export const canvasHandlers = (
       if (!canvases.delete(String(params.id))) return;
       return new HttpResponse(null, { status: 204 });
     }),
-    http.get('/api/workspaces/:id/canvas', ({ params }) =>
-      HttpResponse.json(body(ofWorkspace(String(params.id))))
-    ),
-    http.put('/api/workspaces/:id/canvas', ({ params, request }) =>
-      save(ofWorkspace(String(params.id)), request)
-    ),
-    // One's own first, latest saved first, then the workspaces', a page at a time.
-    http.get('/api/canvases', ({ request }) =>
-      HttpResponse.json(
+    // One's own first, latest saved first, then the workspaces', a page at a
+    // time; or one workspace's.
+    http.get('/api/canvases', ({ request }) => {
+      const only = new URL(request.url).searchParams.get('workspaceId');
+      return HttpResponse.json(
         mockPage(
           [...canvases.values()]
+            .filter(({ workspaceId }) => !only || workspaceId === only)
             .sort(
               (a, b) =>
                 Number(!!a.workspaceId) - Number(!!b.workspaceId) ||
@@ -123,12 +119,17 @@ export const canvasHandlers = (
             ),
           request
         )
-      )
-    ),
+      );
+    }),
     http.post('/api/canvases', async ({ request }) => {
-      const { title } = (await request.json()) as { title: string };
-      made += 1;
-      return HttpResponse.json(body(make(`cv_own_${made}`, title)), {
+      const { title, workspaceId } = (await request.json()) as {
+        title: string;
+        workspaceId?: string;
+      };
+      const count = (made.get(workspaceId ?? '') ?? 0) + 1;
+      made.set(workspaceId ?? '', count);
+      const id = workspaceId ? `cv_${workspaceId}_${count}` : `cv_own_${count}`;
+      return HttpResponse.json(body(make(id, title, workspaceId)), {
         status: 201,
       });
     }),

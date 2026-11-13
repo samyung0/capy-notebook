@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/Dialog';
 import { FormAlert } from '@/components/ui/FormAlert';
 import { Icon } from '@/components/ui/Icon';
+import { InputTitle } from '@/components/ui/Input';
 import { Menu } from '@/components/ui/Menu';
 import {
   Select,
@@ -83,7 +84,7 @@ function Picks({
   const left = options.filter((o) => !picked.includes(o.id));
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="t-meta font-semibold text-fg-secondary">{label}</span>
+      <InputTitle>{label}</InputTitle>
       <div className="flex flex-wrap items-center gap-1.5">
         {options
           .filter((o) => picked.includes(o.id))
@@ -135,7 +136,7 @@ function Field({
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
-      <span className="t-meta font-semibold text-fg-secondary">{label}</span>
+      <InputTitle>{label}</InputTitle>
       <Select onValueChange={onChange} value={value}>
         <SelectTrigger aria-label={label}>
           <SelectValue />
@@ -305,7 +306,7 @@ export function useMakePractice({
         </div>
         {mixable && (
           <label className="flex items-center justify-between gap-3">
-            <span>{m.practice_mix_answered()}</span>
+            <InputTitle>{m.practice_mix_answered()}</InputTitle>
             <Switch checked={mix} onCheckedChange={setMix} />
           </label>
         )}

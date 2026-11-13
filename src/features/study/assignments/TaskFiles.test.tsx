@@ -77,7 +77,7 @@ vi.mock('@/features/workspace/PanelSearch', () => ({
   PanelSearchField: () => null,
 }));
 vi.mock('@/components/app/ListEnd', () => ({ ListEnd: () => null }));
-vi.mock('./TodoSection', () => ({ assignmentFileIcon: () => 'pdf' }));
+vi.mock('./todoParts', () => ({ assignmentFileIcon: () => 'pdf' }));
 
 const { createRoot } = await import('react-dom/client');
 const { TaskFilesField } = await import('./TaskFiles');
@@ -107,7 +107,7 @@ it('picks files from every workspace and none, naming where each sits', async ()
     act(async () => (button as HTMLElement).click());
   const add = () =>
     [...host.querySelectorAll('button')].find(
-      (button) => button.textContent === m.assignment_add_file()
+      (button) => button.textContent === m.file_choose()
     );
   const offered = () => [
     ...(host.querySelector('[data-picker]')?.querySelectorAll('button') ?? []),
@@ -122,14 +122,62 @@ it('picks files from every workspace and none, naming where each sits', async ()
   ]);
   await press(offered()[0]);
   expect(held).toEqual([{ fileId: 'f1' }]);
-  expect(host.querySelector('[data-picker]')).toBeNull();
   expect(host.querySelector('li')?.textContent).toBe('Chapter 4.pdfBiology');
-  // A file already on the task is not offered again.
-  await press(add());
-  expect(offered().map((row) => row.textContent)).toEqual([
-    `Loose note${m.todo_no_workspace()}`,
+  // The menu stays open for more, the file on the task ticked.
+  expect(offered().map((row) => row.getAttribute('aria-selected'))).toEqual([
+    'true',
+    'false',
   ]);
-  await press(offered()[0]);
+  await press(offered()[1]);
   expect(held).toEqual([{ fileId: 'f1' }, { materialId: 'm1' }]);
+  // A ticked row takes its file off.
+  await press(offered()[0]);
+  expect(held).toEqual([{ materialId: 'm1' }]);
+  await act(async () => root.unmount());
+});
+
+it('stops adding files at the cap and says why', async () => {
+  const { createAssignmentBodyFilesMax: max } = await import(
+    '@/api/gen/validators'
+  );
+  const saved = Array.from({ length: max }, (_, i) => ({
+    fileId: `f${i}`,
+    kind: 'pdf',
+    name: `File ${i}.pdf`,
+  }));
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host);
+  await act(async () =>
+    root.render(
+      <TaskFilesField
+        onChange={() => {}}
+        onPicked={() => {}}
+        picked={[]}
+        saved={saved}
+        value={saved.map(({ fileId }) => ({ fileId }))}
+      />
+    )
+  );
+  expect(host.textContent).toContain(m.assignment_files_max({ max }));
+  // The menu still opens, offering no more files.
+  await act(async () =>
+    [...host.querySelectorAll('button')]
+      .find((button) => button.textContent === m.file_choose())
+      ?.click()
+  );
+  const rows = [
+    ...(host.querySelector('[data-picker]')?.querySelectorAll('button') ?? []),
+  ];
+  // Only a ticked row, taking its file off, can be pressed.
+  expect(
+    rows.map((row) => [
+      row.getAttribute('aria-selected'),
+      row.hasAttribute('disabled'),
+    ])
+  ).toEqual([
+    ['true', false],
+    ['false', true],
+  ]);
   await act(async () => root.unmount());
 });

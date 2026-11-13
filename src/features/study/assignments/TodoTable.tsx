@@ -1,4 +1,10 @@
-import { Fragment, type ReactNode, useState } from 'react';
+import {
+  Fragment,
+  type ReactNode,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useHideTodoDone, useTodoTick } from '@/api/hooks';
 import type { Assignment } from '@/api/types';
 import {
@@ -25,7 +31,7 @@ import {
   TodoRemoveDialog,
   waitingText,
 } from './TodoDialog';
-import { assignmentFileIcon, WorkChip } from './TodoSection';
+import { assignmentFileIcon, WorkChip } from './todoParts';
 import { isPlainTask, type TodoRow, type TodoTableSection } from './todoRows';
 
 const keyOf = (row: TodoRow) =>
@@ -178,9 +184,14 @@ const needsAsking = (row: TodoRow) => row.approval || !isPlainTask(row.a);
  * it; the toolbar's selection bar then marks the picked rows done or not done.
  * A plain task's tick is its done; a quiz's, a hand-in's or the answers
  * waiting asks first and only clears To do. A tick shows at once and holds
- * until To do has reread it.
+ * until To do has reread it. A list that shows its done rows too
+ * (`keepTicked`, the Dashboard's Show done) keeps a marked row in place.
  */
-export function useTodoTicks(sections: TodoTableSection[], doneTab: boolean) {
+export function useTodoTicks(
+  sections: TodoTableSection[],
+  doneTab: boolean,
+  { keepTicked = false }: { keepTicked?: boolean } = {}
+) {
   const { mutateAsync } = useTodoTick();
   const { mutateAsync: hide } = useHideTodoDone();
   const [pending, setPending] = useState<Record<string, boolean>>({});
@@ -193,7 +204,9 @@ export function useTodoTicks(sections: TodoTableSection[], doneTab: boolean) {
   /** Marked one way and on its way to the other tab: it leaves at once. */
   const moving = (row: TodoRow) =>
     removing.has(keyOf(row)) ||
-    (keyOf(row) in pending && pending[keyOf(row)] !== row.ticked);
+    (!keepTicked &&
+      keyOf(row) in pending &&
+      pending[keyOf(row)] !== row.ticked);
   // What the tab shows: rows on their way out are gone already.
   const rows = sections.flatMap((s) => s.rows).filter((row) => !moving(row));
   const leaving = sections.flatMap((s) => s.rows).length - rows.length;
@@ -299,21 +312,39 @@ export type TodoTicks = ReturnType<typeof useTodoTicks>;
  * a group per class that folds, a box on every row that selects it (`ticks`)
  * and the row opening its details, with a select-all box in the header. A row
  * marked done or not done leaves for the other tab at once, and the header
- * stays over Nothing to do once none is left. Phones stack each row's facts under it. The Done tab
- * shows the same table, dated by when each was done, ticked off or closed.
+ * stays over Nothing to do once none is left. Phones, and any place narrower
+ * than the table, stack each row's facts under it. The Done tab shows the same
+ * table, dated by when each was done, ticked off or closed. The Dashboard
+ * shows its one class's rows (`single`), with no group row.
  */
 export function TodoTable({
   doneTab,
   sections,
+  single,
   sorting,
   ticks,
 }: {
   doneTab: boolean;
   sections: TodoTableSection[];
+  single?: boolean;
   sorting: ColumnSort<TodoSort>;
   ticks: TodoTicks;
 }) {
   const phone = useIsPhone();
+  // Narrower than the table's 560px (the Dashboard beside an open panel):
+  // the stacked rows instead of a table that scrolls sideways.
+  const box = useRef<HTMLDivElement>(null);
+  const [narrow, setNarrow] = useState(false);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const measure = () => setNarrow(el.clientWidth < 560);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  const stacked = phone || narrow;
   // Posted by from xl only, so the titles keep their room on a laptop; a
   // rendered column, not a hidden one, so the group rows' span matches.
   const wide = useMediaQuery('(min-width: 1280px)');
@@ -338,7 +369,7 @@ export function TodoTable({
       return next;
     });
 
-  const box = (row: TodoRow) => (
+  const tick = (row: TodoRow) => (
     <Checkbox
       aria-label={rowHeading(row)}
       checked={ticks.isSelected(row)}
@@ -436,9 +467,9 @@ export function TodoTable({
     </>
   );
 
-  if (phone)
+  if (stacked)
     return (
-      <>
+      <div ref={box}>
         <ul>
           {empty && (
             <li className="t-subtitle py-20 text-center font-normal text-fg-muted">
@@ -449,9 +480,11 @@ export function TodoTable({
             .filter((s) => visible(s).length > 0)
             .map((section) => (
               <Fragment key={section.workspace.workspaceId}>
-                <li className="border-divider border-b pt-4 pb-2 pl-0.5 first:pt-1">
-                  {group(section)}
-                </li>
+                {!single && (
+                  <li className="border-divider border-b pt-4 pb-2 pl-0.5 first:pt-1">
+                    {group(section)}
+                  </li>
+                )}
                 {!folded.has(section.workspace.workspaceId) &&
                   visible(section).map((row) => (
                     <li
@@ -463,13 +496,13 @@ export function TodoTable({
                         className="mt-0.5 shrink-0"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        {box(row)}
+                        {tick(row)}
                       </span>
                       <div
                         className={cn(
                           'flex min-w-0 flex-1 flex-col gap-1',
                           // Done: muted.
-                          doneTab && 'opacity-55'
+                          (doneTab || tickedOf(row)) && 'opacity-55'
                         )}
                       >
                         {title(row)}
@@ -484,11 +517,11 @@ export function TodoTable({
             ))}
         </ul>
         {dialogs}
-      </>
+      </div>
     );
 
   return (
-    <>
+    <div ref={box}>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[560px] table-fixed text-left text-sm">
           <thead>
@@ -549,16 +582,18 @@ export function TodoTable({
               .filter((s) => visible(s).length > 0)
               .map((section) => (
                 <Fragment key={section.workspace.workspaceId}>
-                  <tr>
-                    <td
-                      // In by the row boxes' 4px, so the button's focus ring isn't
-                      // clipped and its chevron lines up with the boxes.
-                      className="border-divider border-b pt-5 pb-2 pl-1"
-                      colSpan={columns}
-                    >
-                      {group(section)}
-                    </td>
-                  </tr>
+                  {!single && (
+                    <tr>
+                      <td
+                        // In by the row boxes' 4px, so the button's focus ring isn't
+                        // clipped and its chevron lines up with the boxes.
+                        className="border-divider border-b pt-5 pb-2 pl-1"
+                        colSpan={columns}
+                      >
+                        {group(section)}
+                      </td>
+                    </tr>
+                  )}
                   {!folded.has(section.workspace.workspaceId) &&
                     visible(section).map((row) => (
                       <tr
@@ -566,7 +601,8 @@ export function TodoTable({
                           'cursor-pointer border-divider border-b hover:bg-surface-hover-bg',
                           // Done reads as finished: the row is muted past its
                           // box (Epo 2026-11-10: no strike line).
-                          doneTab && '[&>td:not(:first-child)]:opacity-55'
+                          (doneTab || tickedOf(row)) &&
+                            '[&>td:not(:first-child)]:opacity-55'
                         )}
                         key={keyOf(row)}
                         onClick={() => setOpened(keyOf(row))}
@@ -575,7 +611,7 @@ export function TodoTable({
                           className="py-2 pr-2 pl-1"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <span className="flex">{box(row)}</span>
+                          <span className="flex">{tick(row)}</span>
                         </td>
                         <td className="py-2 pr-4">{title(row)}</td>
                         {wide && (
@@ -597,6 +633,6 @@ export function TodoTable({
         </table>
       </div>
       {dialogs}
-    </>
+    </div>
   );
 }

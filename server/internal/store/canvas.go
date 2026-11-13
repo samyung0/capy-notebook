@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -11,58 +10,15 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
 
-// A member's personal workspace canvas (Epo 2026-11-09,
-// todo-workspace-canvas-storage.md): a standalone material of kind canvas
-// linked to its workspace by canvas_workspace_id, owned and paid for by the
-// member who draws it, seen by them alone. Its saved board is the material's
-// own `board` editor asset; the document names it and the canvas's images.
+// A person's canvases (Epo 2026-11-09, todo-workspace-canvas-storage.md): a
+// standalone material of kind canvas, owned and paid for by the person who
+// draws it, seen by them alone. One drawn in a workspace names it in
+// canvas_workspace_id; a member has any number there (Epo 2026-11-12), as on the
+// account's Canvas page. Its saved board is the material's own `board` editor
+// asset; the document names it and the canvas's images.
 
-// ErrCanvasExists is the unique index's answer when two opens race to create
-// the same member's canvas (WorkspaceCanvas then reads the one that won), and
-// when a trashed canvas is restored beside the live one made since.
-var ErrCanvasExists = errors.New("the member's canvas already exists")
-
-// WorkspaceCanvas is the caller's canvas for the workspace, made on first
-// open with the workspace's name as its title. The caller must be a member
-// (checked by the route).
-func (s *Store) WorkspaceCanvas(ctx context.Context, userID, wsID string) (Material, error) {
-	if mt, err := s.memberCanvas(ctx, userID, wsID); err == nil || !errors.Is(err, ErrNotFound) {
-		return mt, err
-	}
-	var title string
-	err := s.pool.QueryRow(ctx, `SELECT name FROM workspaces WHERE id=$1`, wsID).Scan(&title)
-	if isNoRows(err) {
-		return Material{}, ErrNotFound
-	}
-	if err != nil {
-		return Material{}, err
-	}
-	content, err := materialdoc.CanvasDocument(materialdoc.CanvasBoard{ImageAssetIDs: []string{}})
-	if err != nil {
-		return Material{}, err
-	}
-	mt, err := s.CreateMaterial(ctx, Material{
-		CreatedBy: userID, Kind: MaterialCanvas, Title: title, Content: content,
-		Privacy: "private", CanvasWorkspaceID: wsID,
-	})
-	if errors.Is(err, ErrCanvasExists) {
-		return s.memberCanvas(ctx, userID, wsID)
-	}
-	return mt, err
-}
-
-func (s *Store) memberCanvas(ctx context.Context, userID, wsID string) (Material, error) {
-	mt, err := scanMaterial(s.pool.QueryRow(ctx, `SELECT `+materialCols+` FROM materials
-		WHERE kind='canvas' AND canvas_workspace_id=$1 AND owner_user_id=$2 AND trashed_at IS NULL`,
-		wsID, userID))
-	if isNoRows(err) {
-		return Material{}, ErrNotFound
-	}
-	return mt, err
-}
-
-// CanvasListItem is one of a person's canvases: one of their own, or the one
-// they drew in a workspace (WorkspaceID names it).
+// CanvasListItem is one of a person's canvases: one of their own, or one they
+// drew in a workspace (WorkspaceID names it).
 type CanvasListItem struct {
 	ID              string    `json:"id"`
 	Title           string    `json:"title"`
@@ -87,14 +43,20 @@ var canvasSort = listSort{
 
 // ListCanvases pages through every canvas the caller owns: their own, latest
 // saved first, then the ones of their workspaces (Epo 2026-11-10: the account's
-// Canvas page shows all there are, a page at a time). A workspace whose owner's
-// account is no longer live is left out, like every other read of that
-// workspace.
-func (s *Store) ListCanvases(ctx context.Context, userID string, limit int, cursor string) (CanvasPage, error) {
+// Canvas page shows all there are, a page at a time). A workspace id keeps the
+// ones drawn there (its Canvas tab, Epo 2026-11-12); the caller's membership is
+// the route's to check. A workspace whose owner's account is no longer live is
+// left out, like every other read of that workspace.
+func (s *Store) ListCanvases(ctx context.Context, userID, workspaceID string, limit int, cursor string) (CanvasPage, error) {
 	if limit <= 0 || limit > listPageMax {
 		limit = listPageMax
 	}
 	args := []any{userID}
+	inWorkspace := ""
+	if workspaceID != "" {
+		args = append(args, workspaceID)
+		inWorkspace = fmt.Sprintf(` AND m.canvas_workspace_id=$%d`, len(args))
+	}
 	clause, cursorArgs, err := cursorClause(canvasSort, "m.id", false, cursor, len(args)+1)
 	if err != nil {
 		return CanvasPage{}, err
@@ -106,7 +68,7 @@ func (s *Store) ListCanvases(ctx context.Context, userID string, limit int, curs
 		FROM materials m LEFT JOIN workspaces w ON w.id = m.canvas_workspace_id
 		WHERE m.kind='canvas' AND m.owner_user_id=$1 AND m.trashed_at IS NULL
 			AND (m.canvas_workspace_id IS NULL OR `+liveWorkspaceSQL("m.canvas_workspace_id")+`)`+
-		clause+orderClause(canvasSort, "m.id", false)+fmt.Sprintf(` LIMIT $%d`, len(args)), args...)
+		inWorkspace+clause+orderClause(canvasSort, "m.id", false)+fmt.Sprintf(` LIMIT $%d`, len(args)), args...)
 	if err != nil {
 		return CanvasPage{}, err
 	}
@@ -129,26 +91,28 @@ func (s *Store) ListCanvases(ctx context.Context, userID string, limit int, curs
 	return page, nil
 }
 
-// CreateCanvas makes a canvas of the caller's own, in no workspace.
-func (s *Store) CreateCanvas(ctx context.Context, userID, title string) (Material, error) {
+// CreateCanvas makes a canvas of the caller's, drawn in the workspace if one is
+// named (the caller's membership is the route's to check), else in none.
+func (s *Store) CreateCanvas(ctx context.Context, userID, title, workspaceID string) (Material, error) {
 	content, err := materialdoc.CanvasDocument(materialdoc.CanvasBoard{ImageAssetIDs: []string{}})
 	if err != nil {
 		return Material{}, err
 	}
 	return s.CreateMaterial(ctx, Material{
 		CreatedBy: userID, Kind: MaterialCanvas, Title: title, Content: content, Privacy: "private",
+		CanvasWorkspaceID: workspaceID,
 	})
 }
 
-// OwnCanvas is one of the caller's own canvases, in no workspace, by id. Anyone
-// else's, another kind of material, or a workspace's canvas (opened through its
-// workspace, whose membership it follows) is not found.
+// OwnCanvas is one of the caller's canvases by id. Anyone else's, or another
+// kind of material, is not found. One drawn in a workspace follows the
+// membership (the route checks it, from CanvasWorkspaceID).
 func (s *Store) OwnCanvas(ctx context.Context, userID, materialID string) (Material, error) {
 	mt, err := s.GetMaterial(ctx, materialID)
 	if err != nil {
 		return Material{}, err
 	}
-	if mt.Kind != MaterialCanvas || mt.OwnerUserID != userID || mt.CanvasWorkspaceID != "" {
+	if mt.Kind != MaterialCanvas || mt.OwnerUserID != userID {
 		return Material{}, ErrNotFound
 	}
 	return mt, nil
@@ -243,13 +207,13 @@ func (s *Store) CanvasImageAssets(ctx context.Context, materialID string) ([]str
 	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
-// dropLeaverCanvasTx deletes the member's canvas in the workspace they leave
+// dropLeaverCanvasTx deletes the member's canvases in the workspace they leave
 // (or are removed from), its assets with it (Epo 2026-11-09: it goes with the
 // membership, as their marked drawings do).
 func dropLeaverCanvasTx(ctx context.Context, tx pgx.Tx, wsID, userID string) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM materials
 		WHERE kind='canvas' AND canvas_workspace_id=$1 AND owner_user_id=$2`, wsID, userID); err != nil {
-		return fmt.Errorf("drop the leaver's canvas: %w", err)
+		return fmt.Errorf("drop the leaver's canvases: %w", err)
 	}
 	return nil
 }

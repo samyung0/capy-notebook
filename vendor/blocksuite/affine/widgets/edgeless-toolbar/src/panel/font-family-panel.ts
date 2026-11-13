@@ -1,5 +1,5 @@
 import { TextUtils } from '@blocksuite/affine-block-surface';
-import { FontFamily, FontFamilyList } from '@blocksuite/affine-model';
+import { BoardFontFamilyList, FontFamily } from '@blocksuite/affine-model';
 import { DoneIcon } from '@blocksuite/icons/lit';
 import { css, html, LitElement, nothing } from 'lit';
 import { property } from 'lit/decorators.js';
@@ -27,8 +27,9 @@ export class EdgelessFontFamilyPanel extends LitElement {
   }
 
   override render() {
+    // Capy (local change 44): only the fonts the board serves.
     return repeat(
-      FontFamilyList,
+      BoardFontFamilyList,
       item => item[0],
       ([font, name]) => {
         const active = this.value === font;

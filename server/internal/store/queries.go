@@ -1402,9 +1402,6 @@ func (s *Store) createMaterialTx(ctx context.Context, tx pgx.Tx, mt Material) (s
 		mt.ScopeFileNames, mt.Privacy, mt.Color, metrics.NodeCount, metrics.MaxDepth, creatorID,
 		provenance, nullStr(mt.ParentMaterialID), indexDirtyAt, preview, mt.Hidden, nullStr(mt.PracticeWorkspaceID), mt.PracticeTopicID, nullStr(mt.CanvasWorkspaceID))
 	if err != nil {
-		if uniqueConstraintName(err) == "materials_canvas_per_member" {
-			return "", ErrCanvasExists
-		}
 		if uniqueConstraintName(err) == "materials_pkey" {
 			return "", ErrMaterialIDTaken
 		}

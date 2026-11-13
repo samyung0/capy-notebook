@@ -4,31 +4,17 @@ import type {
   CanvasBody,
   CanvasListItem as GenCanvasListItem,
   CanvasPage as GenCanvasPage,
-  SaveCanvasInputBody,
+  SaveOwnCanvasInputBody,
 } from '@/api/gen/model';
 
-/** A member's personal workspace canvas (Epo 2026-11-09): found or made on open;
- * a save records the board asset it uploaded, at the revision it read. */
+/** A person's canvases (Epo 2026-11-09): their own, and any number in each
+ * workspace (Epo 2026-11-12). A save records the board asset it uploaded, at the
+ * revision it read. */
 
 export type WorkspaceCanvas = CanvasBody;
-export type SaveCanvasBody = SaveCanvasInputBody;
+export type SaveCanvasBody = SaveOwnCanvasInputBody;
 /** One of a person's canvases: their own, or a workspace's (`workspaceId`). */
 export type CanvasListItem = GenCanvasListItem;
-
-export const workspaceCanvas = (workspaceId: string, signal?: AbortSignal) =>
-  api.get<WorkspaceCanvas>(
-    `/workspaces/${encodeURIComponent(workspaceId)}/canvas`,
-    { signal }
-  );
-
-export const saveWorkspaceCanvas = (
-  workspaceId: string,
-  body: SaveCanvasInputBody
-) =>
-  api.put<WorkspaceCanvas>(
-    `/workspaces/${encodeURIComponent(workspaceId)}/canvas`,
-    body
-  );
 
 /** The save lost to another tab's: the canvas stops saving until a reload. */
 export const isCanvasConflict = (error: unknown) =>
@@ -36,17 +22,24 @@ export const isCanvasConflict = (error: unknown) =>
 
 export type CanvasPage = GenCanvasPage;
 
-/** The caller's canvases a page at a time (Epo 2026-11-10, the account's
- * Canvas page): their own, latest saved first, then their workspaces'. */
-export const listCanvases = (cursor: string, signal?: AbortSignal) =>
-  api.get<CanvasPage>(
-    `/canvases${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`,
-    { signal }
-  );
+/** The caller's canvases a page at a time: on the account's Canvas page (Epo
+ * 2026-11-10) their own, latest saved first, then their workspaces'; in a
+ * workspace's Canvas tab the ones drawn there (Epo 2026-11-12). */
+export const listCanvases = (
+  cursor: string,
+  workspaceId: string | undefined,
+  signal?: AbortSignal
+) => {
+  const query = new URLSearchParams();
+  if (cursor) query.set('cursor', cursor);
+  if (workspaceId) query.set('workspaceId', workspaceId);
+  const qs = query.toString();
+  return api.get<CanvasPage>(`/canvases${qs ? `?${qs}` : ''}`, { signal });
+};
 
-/** A new canvas of the caller's own, in no workspace. */
-export const createCanvas = (title: string) =>
-  api.post<WorkspaceCanvas>('/canvases', { title });
+/** A new canvas of the caller's, in the workspace or in none. */
+export const createCanvas = (title: string, workspaceId?: string) =>
+  api.post<WorkspaceCanvas>('/canvases', { title, workspaceId });
 
 export const canvasById = (id: string, signal?: AbortSignal) =>
   api.get<WorkspaceCanvas>(`/canvases/${encodeURIComponent(id)}`, { signal });
@@ -54,10 +47,11 @@ export const canvasById = (id: string, signal?: AbortSignal) =>
 export const saveCanvas = (id: string, body: SaveCanvasBody) =>
   api.put<WorkspaceCanvas>(`/canvases/${encodeURIComponent(id)}`, body);
 
-export const canvasesQuery = () =>
+export const canvasesQuery = (workspaceId?: string) =>
   infiniteQueryOptions({
     getNextPageParam: (last: CanvasPage) => last.nextCursor || undefined,
     initialPageParam: '',
-    queryFn: ({ pageParam, signal }) => listCanvases(pageParam, signal),
-    queryKey: qk.canvases,
+    queryFn: ({ pageParam, signal }) =>
+      listCanvases(pageParam, workspaceId, signal),
+    queryKey: [...qk.canvases, workspaceId ?? ''],
   });

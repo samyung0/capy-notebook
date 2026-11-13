@@ -1,17 +1,312 @@
-/* BlockSuite's default canvas font has no face on this board (its font loader has no
-   config), so a label measures and draws in a fallback: use the app's own font. */
+/* The board's fonts (Epo 2026-11-12): the app's Fustat for BlockSuite's default
+   Inter, Comic Neue, Lora and JetBrains Mono, served with the app. AFFiNE's own load
+   from its CDN, which the board has no config for, so its other names (in mind map
+   styles) take the nearest of these. One face per weight the font menu lists (300,
+   400, 600): the weight menu offers a font's faces, and a variable range matched
+   none of them. Faces load when first drawn; drawingBoard.ts redraws the canvas then.
+   Comic Neue has no 600, so its 700 stands in. */
+
 @font-face {
   font-family: "blocksuite:surface:Inter";
-  font-weight: 200 800;
+  font-style: normal;
+  font-weight: 300;
   src: url("@fontsource-variable/fustat/files/fustat-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:Inter";
+  font-style: normal;
+  font-weight: 400;
+  src: url("@fontsource-variable/fustat/files/fustat-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:Inter";
+  font-style: normal;
+  font-weight: 600;
+  src: url("@fontsource-variable/fustat/files/fustat-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:Poppins";
+  font-style: normal;
+  font-weight: 300;
+  src: url("@fontsource-variable/fustat/files/fustat-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:Poppins";
+  font-style: normal;
+  font-weight: 400;
+  src: url("@fontsource-variable/fustat/files/fustat-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:Poppins";
+  font-style: normal;
+  font-weight: 600;
+  src: url("@fontsource-variable/fustat/files/fustat-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:Satoshi";
+  font-style: normal;
+  font-weight: 300;
+  src: url("@fontsource-variable/fustat/files/fustat-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:Satoshi";
+  font-style: normal;
+  font-weight: 400;
+  src: url("@fontsource-variable/fustat/files/fustat-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:Satoshi";
+  font-style: normal;
+  font-weight: 600;
+  src: url("@fontsource-variable/fustat/files/fustat-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:BebasNeue";
+  font-style: normal;
+  font-weight: 300;
+  src: url("@fontsource-variable/fustat/files/fustat-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:BebasNeue";
+  font-style: normal;
+  font-weight: 400;
+  src: url("@fontsource-variable/fustat/files/fustat-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:BebasNeue";
+  font-style: normal;
+  font-weight: 600;
+  src: url("@fontsource-variable/fustat/files/fustat-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:OrelegaOne";
+  font-style: normal;
+  font-weight: 300;
+  src: url("@fontsource-variable/fustat/files/fustat-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:OrelegaOne";
+  font-style: normal;
+  font-weight: 400;
+  src: url("@fontsource-variable/fustat/files/fustat-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:OrelegaOne";
+  font-style: normal;
+  font-weight: 600;
+  src: url("@fontsource-variable/fustat/files/fustat-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:ComicNeue";
+  font-style: normal;
+  font-weight: 300;
+  src: url("@fontsource/comic-neue/files/comic-neue-latin-300-normal.woff2")
+    format("woff2");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:ComicNeue";
+  font-style: italic;
+  font-weight: 300;
+  src: url("@fontsource/comic-neue/files/comic-neue-latin-300-italic.woff2")
+    format("woff2");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:ComicNeue";
+  font-style: normal;
+  font-weight: 400;
+  src: url("@fontsource/comic-neue/files/comic-neue-latin-400-normal.woff2")
+    format("woff2");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:ComicNeue";
+  font-style: italic;
+  font-weight: 400;
+  src: url("@fontsource/comic-neue/files/comic-neue-latin-400-italic.woff2")
+    format("woff2");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:ComicNeue";
+  font-style: normal;
+  font-weight: 600;
+  src: url("@fontsource/comic-neue/files/comic-neue-latin-700-normal.woff2")
+    format("woff2");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:ComicNeue";
+  font-style: italic;
+  font-weight: 600;
+  src: url("@fontsource/comic-neue/files/comic-neue-latin-700-italic.woff2")
+    format("woff2");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:Kalam";
+  font-style: normal;
+  font-weight: 300;
+  src: url("@fontsource/comic-neue/files/comic-neue-latin-300-normal.woff2")
+    format("woff2");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:Kalam";
+  font-style: italic;
+  font-weight: 300;
+  src: url("@fontsource/comic-neue/files/comic-neue-latin-300-italic.woff2")
+    format("woff2");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:Kalam";
+  font-style: normal;
+  font-weight: 400;
+  src: url("@fontsource/comic-neue/files/comic-neue-latin-400-normal.woff2")
+    format("woff2");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:Kalam";
+  font-style: italic;
+  font-weight: 400;
+  src: url("@fontsource/comic-neue/files/comic-neue-latin-400-italic.woff2")
+    format("woff2");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:Kalam";
+  font-style: normal;
+  font-weight: 600;
+  src: url("@fontsource/comic-neue/files/comic-neue-latin-700-normal.woff2")
+    format("woff2");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:Kalam";
+  font-style: italic;
+  font-weight: 600;
+  src: url("@fontsource/comic-neue/files/comic-neue-latin-700-italic.woff2")
+    format("woff2");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:Lora";
+  font-style: normal;
+  font-weight: 400;
+  src: url("@fontsource-variable/lora/files/lora-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:Lora";
+  font-style: italic;
+  font-weight: 400;
+  src: url("@fontsource-variable/lora/files/lora-latin-wght-italic.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:Lora";
+  font-style: normal;
+  font-weight: 600;
+  src: url("@fontsource-variable/lora/files/lora-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:Lora";
+  font-style: italic;
+  font-weight: 600;
+  src: url("@fontsource-variable/lora/files/lora-latin-wght-italic.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:JetBrainsMono";
+  font-style: normal;
+  font-weight: 300;
+  src: url("@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:JetBrainsMono";
+  font-style: italic;
+  font-weight: 300;
+  src: url("@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-italic.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:JetBrainsMono";
+  font-style: normal;
+  font-weight: 400;
+  src: url("@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:JetBrainsMono";
+  font-style: italic;
+  font-weight: 400;
+  src: url("@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-italic.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:JetBrainsMono";
+  font-style: normal;
+  font-weight: 600;
+  src: url("@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-family: "blocksuite:surface:JetBrainsMono";
+  font-style: italic;
+  font-weight: 600;
+  src: url("@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-italic.woff2")
     format("woff2-variations");
 }
 
 /* The board fills the screen; AFFiNE's zoom rule reads this container. */
 .capy-board {
   --capy-navy: #173654;
-  --capy-shape-button-roundedRect: var(--capy-navy);
-  --capy-shape-button-stroke-roundedRect: var(--capy-navy);
+  --capy-shape-button-rect: var(--capy-navy);
+  --capy-shape-button-stroke-rect: var(--capy-navy);
   --capy-shape-button-ellipse: #1e96eb;
   --capy-shape-button-stroke-ellipse: #1e96eb;
   --capy-shape-button-triangle: #fff;
@@ -482,13 +777,21 @@ html.dark:not([data-board-light]) .capy-board {
   outline: 2px solid var(--affine-primary-color);
 }
 
+/* Flat, as the canvas picker and Back beside it (Epo 2026-11-12). */
 .capy-board .capy-menu .capy-menu-button {
   width: 40px;
   height: 40px;
   background: var(--affine-background-overlay-panel-color);
   border: 1px solid var(--affine-border-color);
   border-radius: var(--radius-toolbar);
-  box-shadow: var(--shadow-pop);
+}
+
+/* The board's own ☰ is as tall as the controls the page sets beside it
+   (--capy-board-menu-size: the canvas pages' picker, Epo 2026-11-12); the ☰ by an
+   open card's Done stays Done's height. */
+.capy-board > .capy-board-menu .capy-menu-button {
+  width: var(--capy-board-menu-size, 40px);
+  height: var(--capy-board-menu-size, 40px);
 }
 
 .capy-board .capy-menu .capy-menu-button:hover {
@@ -506,18 +809,44 @@ html.dark:not([data-board-light]) .capy-board {
   display: flex;
   flex-direction: column;
   min-width: 160px;
-  padding: 4px;
+  padding: 6px 4px;
   background: var(--affine-background-overlay-panel-color);
   border: 1px solid var(--affine-border-color);
   border-radius: var(--radius-toolbar);
   box-shadow: var(--shadow-pop);
 }
 
+.capy-board > .capy-board-menu .capy-menu-list {
+  top: calc(var(--capy-board-menu-size, 40px) + 6px);
+}
+
+/* Rows as the editor's popovers (ToolbarPopoverItem, Epo 2026-11-12): 30px,
+   medium 14px text, 18px icons. */
 .capy-board .capy-menu-list > button {
   justify-content: flex-start;
-  padding: 0 10px;
+  height: 30px;
+  padding: 0 8px;
   font-size: 14px;
+  font-weight: 500;
   color: var(--affine-text-primary-color);
+}
+
+.capy-board .capy-menu-list svg {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+}
+
+/* A row's icon sits 1px up, level with its text's capitals, as the editor
+   popovers' do (Epo 2026-11-12). */
+.capy-board .capy-menu-list > button svg {
+  translate: 0 -1px;
+}
+
+/* An 18px ☰, as the editor's icons (Epo 2026-11-12). */
+.capy-board .capy-menu .capy-menu-button svg {
+  width: 18px;
+  height: 18px;
 }
 
 .capy-board .capy-menu-list button:disabled {
@@ -537,7 +866,8 @@ html.dark:not([data-board-light]) .capy-board {
 }
 
 .capy-board .capy-menu-zoom button {
-  width: 36px;
+  width: 30px;
+  height: 30px;
 }
 
 .capy-board .capy-menu-zoom .capy-menu-percent {

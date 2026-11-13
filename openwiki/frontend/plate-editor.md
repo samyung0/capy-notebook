@@ -4504,8 +4504,13 @@ that branch.
   Every icon in a bar is 18px, AFFiNE's fixed 20px ones included (16px in the
   small inner bars, such as the code block's).
   The board's own panels (the ☰ button and list, an open card's tools, the
-  formula card) take the same corner and shadow; its bottom toolbar keeps
-  AFFiNE's 64px height and corner, which its pieces are fitted to.
+  formula card) take the same corner and shadow, but the ☰ button is flat, as the
+  canvas picker and a phone's Back beside it (Epo 2026-11-12). On the canvas pages the
+  three are 32px tall, 8px in from the board's top left and right at every width
+  (`--capy-board-menu-size`, which the pages set; the ☰ by an open card's Done stays
+  Done's 40px). Its bottom toolbar keeps AFFiNE's 64px height and corner, which its
+  pieces are fitted to; its narrow layout (78px tools, the full width) follows the
+  board's width, as its paging does, not the window's (local change 15).
 - **Icons:** `vite.config.ts` aliases `@blocksuite/icons/lit` to
   `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
   replaces about ninety names with Hugeicons in the app's 1.8 stroke, in the
@@ -4660,7 +4665,12 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   `.capy-board`), then two slots of pieces drawn like AFFiNE's shapes (Epo 2026-11-08,
   canvas NsamYcLR4imjm5Xi2fWFj2 "Picked"): Graphs (a polar disc behind a coordinate plane)
   and Formulas (d/dx, ∫, Σ, √x), then Misc, which holds the charts since 2026-11-10 (the
-  Charts slot is gone; the B and Shift+B keys still place a chart). `CapyPieceSlot` runs on
+  Charts slot is gone; the B and Shift+B keys still place a chart). On the workspace
+  canvas the Formulas slot is a **GIF & Sticker** slot instead (Epo 2026-11-12, mock
+  LXarL8yrtSK1hNB8ydPkan, A + M1; `sheetTools(board)`): a GIF card behind a sticker,
+  centred in the bar (Epo 2026-11-13) and lifting together on hover, whose click opens KLIPY's view (Misc's panel with `only`
+  set: no Back) on the tab used last; Formulas move into its Misc, and the M key still
+  opens a blank formula on both boards. `CapyPieceSlot` runs on
   BlockSuite's `EdgelessDraggableElementController` as the shape slot does: a piece lifts
   under the pointer, a click or a drag picks it up, it lands where it's dropped and a new
   one rises into the slot once it leaves the toolbar; Escape or the toolbar puts it back.
@@ -4685,7 +4695,11 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   bottom row holds only the toolbar: Undo, Redo, Fit to screen, then a row of −, the
   zoom (which resets to 100%) and +. Fit to screen closes it; Undo, Redo and the zoom
   row keep it open, so a few presses step back or zoom; a press anywhere else and
-  Escape close it. A teacher's board has Fit to screen and zoom only.
+  Escape close it. Its rows are the editor popovers' (30px, medium 14px text, 18px
+  icons, Epo 2026-11-12). A teacher's board has Fit to screen and zoom only.
+  A popover, menu or dialog of the page's that holds focus keeps it while the pointer
+  crosses the board (local change 40): upstream the board took focus back on the
+  pointer's first move, which closed the canvas picker.
   AFFiNE's zoom toolbar isn't loaded. Below 768 px the toolbar spans the screen less an
   8 px gutter, which needs `.capy-board` to be the `viewport` container.
 - **Selecting** shows AFFiNE's own toolbar. It reads the editor's mode, so the board
@@ -4698,8 +4712,49 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   the app's `userToast` (`setToastHandler`, vendored local change 33); its fixed
   container was cut off by the page.
 - **Shapes panel:** replaces AFFiNE's one-row menu through a DI override of the `shape`
-  senior tool. BlockSuite has four shape types, so the rest are presets of straight
-  connectors and ellipses in a group (a pen stroke smears at corners).
+  senior tool. The right triangle, parallelogram, trapezium, pentagon and hexagon are
+  shape types added to BlockSuite (local change 46: corners in `POLYGON_SHAPES`, one
+  polygon implementation for hit tests, connectors, canvas, DOM and cursor preview), so
+  they fill, hold text and connect as a square does; `boardPreview.ts` keeps a copy of
+  the corners, checked by its test. Solids and diagrams are presets of straight
+  connectors and ellipses in a group (a pen stroke smears at corners). The toolbar's
+  square piece is a plain square (local change 43; AFFiNE's was rounded). Clicking the
+  toolbar's Shape piece only opens or closes the panel; a shape is taken up by dragging
+  the piece (the drag shows the piece in its toolbar colours, local change 14) or by
+  picking it in the panel. A picked shape follows the pointer, centred on it, until a
+  click places it there or a drag sizes it: BlockSuite's own shapes through its overlay
+  (local change 41), the presets and lines (`StampTool`) drawn as they will be placed on
+  the board's preview layer.
+- **Toolbar buttons with a panel** (Shape, Note, Misc; Epo 2026-11-12) share three helpers
+  in `boardTools.ts`: `togglePanel` (a click only opens or closes the panel, nothing
+  follows the pointer yet), `closeOnPressOutside` (a press anywhere but the panel or its
+  button closes it) and `followTool` (the panel closes once what was picked is placed or
+  another tool is taken while it is open; it opens over any tool, so the pen stays the
+  pen until something is picked). The Note button is `capy-note-button`, overriding the `note`
+  senior tool; a picked note follows the pointer drawn as the empty note it places
+  (its size, hairline and corner, the placeholder in the block's font and place, per
+  kind in `notePreviewOf`), centred, and a click places it centred (local change 48; a
+  dragged note lands where its outline was). A paragraph's placeholder clips both axes
+  (local change 49), so a heading's shows no scrollbar.
+- **Back to the drawing tool** (Epo 2026-11-12, `returnToDrawing` in
+  `drawingBoard.ts`): whatever is picked over the pen, highlighter or eraser (a shape, a
+  preset, a note, a carried piece) gives that tool back once it is placed. Every
+  placement adds what it places and takes Select in the same step, which the watcher
+  tells apart from Select taken by hand or a pick cancelled (both stay on Select). A
+  placed note keeps the focus for typing; the tool comes back when its editing ends,
+  and the click that leaves it draws nothing.
+- **Strokes** (local change 50, Epo 2026-11-12): a mouse stroke stores no pressure and
+  draws at one width, and a mouse click is a dot at pressure 0; a pen or stylus that
+  reports pressure keeps it. A stroke at pressure 0.5 is exactly its width wide, as
+  `boardPreview.ts` draws it (AFFiNE drew each width 1.41 times over). The highlighter starts
+  at its third width, 18.
+- **One thing held at a time** (local change 47, Epo 2026-11-12): every toolbar piece
+  (shape pieces, Graphs, Formulas, Misc tiles) goes through BlockSuite's shared
+  `EdgelessDraggableElementController`. Taking a piece puts down whatever else was held
+  (another carried piece or a picked shape or note), and taking a tool puts a carried
+  piece down. While a piece is carried a mask covers the board, so a press that returns
+  it to the toolbar is passed on to what lies under the pointer: one click both puts the
+  piece back and works the button or picks up the next piece.
 - **Plane cards** (`boardPlane.ts`) are a `plane` canvas element holding a view (top left
   corner in plane units, board pixels per unit) and its marks as plain data, drawn by one
   renderer with a clip, so a card stacks with strokes and reaches the marking image with
@@ -4857,36 +4912,63 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     the children) and never stores. Anything else throws a `BoardLoadError` with a
     `reason`.
   - **One toolbar, Misc per board** (Epo 2026-11-10, superseding the question board's own
-    Charts slot of 2026-11-09): both boards have Graphs, Formulas and **Misc** after the
-    shapes (`sheetTools`). Misc shows each board what it may hold (`tileFits`, by the
-    board `markBoard` names at mount): an answer board the Bar and Pie chart and Image
-    tiles, the workspace canvas also the mind map, emoji, GIFs, stickers, links and the
-    workspace's quizzes and sets. Misc's button opens a panel above the toolbar
+    Charts slot of 2026-11-09): both boards have Graphs, Formulas (GIF & Sticker on the
+    workspace canvas) and **Misc** after the shapes (`sheetTools`). Misc shows each board
+    what it may hold (`tileFits`, by the board `markBoard` names at mount): an answer
+    board the Bar and Pie chart and Image tiles, the workspace canvas also the mind map,
+    the formulas, links and the workspace's quizzes and sets (emoji are the GIF &
+    Sticker picker's third tab since 2026-11-13). Misc's button opens a panel above the toolbar
     (`capy-misc-panel`, right-aligned, Shapes' look): one 360 × 440 frame in every view
     (Epo 2026-11-09, round 2, mock DVxJzY5A3XiYHKuqQPezST), with Back, the title or
     KLIPY's search, and a close in its header and the body scrolling inside, so
     switching views moves nothing; the home view is tiles in groups, each picked up and
     dropped like a slot's piece (a finger's tap puts it in the view's middle); the panel
-    closes once something is down. Its groups:
+    closes once something is down. Every tile fills its grid column, its art centred
+    over its name with 8px padding, inside 16px of panel padding (Epo 2026-11-12: the
+    picture tiles were buttons left at the popper's 36px). A panel opened from the
+    toolbar (`openPopper`) keeps its clicks, keys (Escape aside), clipboard and wheel
+    from the board under it, and lifts the toolbar over a selected element's own bar
+    while open; a focused field in it keeps focus as the pointer moves (local change
+    40), so the link field can be typed in. Its groups:
     - **Diagrams:** Bar chart, Pie chart and **Mind map**, AFFiNE's own (`mindmap`
       element, its topics and ideas shapes it lays out), registered on the workspace
       canvas only and without its own toolbar button (`MindmapWithoutTool`); it
       starts as a topic and three ideas.
-    - **Media:** **Emoji** opens a grid of 48 Noto Animated Emoji (Google, CC BY 4.0,
-      credited on the Credits page), shipped in `public/emoji/noto` as 96 px animated
-      WebP (about 5 MB together) with 64 px stills for the grid; a click puts one in
-      the view's middle. **GIF** and **Sticker** open KLIPY's view on its GIFs or
-      Stickers tab (`boardKlipy.ts` `klipyMedia(kind, …)`, the same API under `/gifs`
+    - **Formulas** (workspace canvas): the Formulas slot's four pieces as tiles, the
+      art fitted to the tile's 40 × 36 box.
+    - **Media:** **Image** picks files from the device. **Link** is below.
+    - **The GIF & Sticker picker** (the slot's, workspace canvas only; Epo 2026-11-13):
+      GIFs, Stickers and Emoji tabs, opening on the one used last. **Emoji** is a grid
+      of 48 Noto Animated Emoji (Google, CC BY 4.0, credited on the Credits page),
+      shipped in `public/emoji/noto` as 96 px animated WebP (about 5 MB together) with
+      64 px stills for the grid, placed at 96 px; its tab has no search, the header
+      shows the slot's name. **GIFs** and **Stickers** are KLIPY's (`boardKlipy.ts` `klipyMedia(kind, …)`, the same API under `/gifs`
       and `/stickers`, `VITE_KLIPY_KEY`): from the student's browser with an anonymous
       per-browser `customer_id`, the `high` content filter, results in KLIPY's order and
       none removed but one off its `*.klipy.com` hosts (its terms), "Search KLIPY" as
       the placeholder in every language (KLIPY's required attribution) and "Powered by
-      KLIPY" under them; while a search loads, a shimmer grid of the final shape stands
-      in (16:10 cells for GIFs, squares on a checker for stickers, which have no
-      background on the canvas either); a GIF without a size places at its file's own,
-      one whose link passes the stored limit says it can't be placed;
+      KLIPY" under them. GIFs sit in two columns, each whole at the shape KLIPY gives
+      and into the shorter column (Epo 2026-11-13, G1, mock LZvdppJpsKTgyeXzEz7VnR, as
+      Discord's picker: a fixed 16:10 cut 19 of the first 24 trending by more than a
+      tenth), keyed by id so a later page leaves earlier cells in place; each shows
+      KLIPY's `blur_preview` (an inline JPEG under 1 KB) until its file has loaded (L2).
+      Stickers stay plain squares, each whole (S1), with no background, as on the
+      canvas. While a search loads, a shimmer stands in, in mixed shapes for GIFs and
+      squares for stickers, 8 px apart (the cells set `height: auto`, since the popper
+      styles make every button 36 px tall). KLIPY pages by 24 (`has_next`): scrolling
+      within 240 px of the end loads the next page onto the grid. Placing one sends
+      KLIPY's share event (`klipyShared`, `POST /{kind}/share/{slug}` with the
+      `customer_id` and the search, empty from trending), which nothing waits on; no
+      `locale` is sent. A mouse picks one up to carry (Epo 2026-11-12; an emoji too): it
+      follows the pointer at the size it lands at (240 px on its longer side, a sticker
+      160, an emoji 96,
+      letterboxed in its cell's box) and lands centred where the board is clicked; a
+      finger's tap or a key puts it in the view's middle, so a finger still scrolls
+      the grid. A GIF without KLIPY's size takes its cell's picture's; one whose link
+      passes the stored limit says it can't be placed;
       the placed GIF stays KLIPY's link, as its terms ask. Without a key the view
-      says search is off; an uploaded GIF is an ordinary image. **Link** takes a web
+      says search is off; an uploaded GIF is an ordinary image.
+    - **Link** takes a web
       address or YouTube link: a video shows its poster (`i.ytimg.com`) with a play
       mark, anything else its host and address; a double click opens it in a new tab.
     - **From the workspace:** **Quiz** and **Flashcards** show the workspace's own as a
@@ -4982,12 +5064,16 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     opens only as http(s), an emoji shows only from the list, a GIF only from https
     `*.klipy.com` (`KLIPY_MEDIA_SOURCE`, which the image policy allows too), rotation as a number.
   - **Stored (Epo 2026-11-09, `todo-workspace-canvas-storage.md`):** the workspace canvas
-    is personal: one per member per workspace, seen by its owner alone, one editor over
+    is personal: any number per member per workspace (Epo 2026-11-12, migration 0171;
+    one per member before), seen by its owner alone, one editor over
     the whole canvas and no collaboration room (collaboration means resuming the held
     canvas plan). It is a standalone material of kind `canvas` linked to its workspace
     by `canvas_workspace_id`, owned and paid for by the member, listed in Files with the
     drawing icon, never shared or cloned, and deleted with their membership when they
-    leave. `GET /api/workspaces/{id}/canvas` finds or makes it; its document is one
+    leave. The Canvas tab (`WorkspaceCanvas.tsx`) has the Canvas page's picker
+    (`useCanvasPicker`, below) over the workspace's canvases (`GET
+    /api/canvases?workspaceId=`), `?c=` beside `panel=canvas` naming the one shown; the
+    first is made with the workspace's name. Its document is one
     `canvas_board` block (embed catalog) naming the board asset, the save's version and
     the canvas's images, so the asset pruner keeps them. `WorkspaceCanvas.tsx` opens
     the board from the material's `board` editor asset (`boardAsset.ts`: gzip in the
@@ -5002,7 +5088,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     in flight then rewrites the copy from the document as left, at the revision it lands
     on), gzipped, uploaded as a new `board` asset under
     `CANVAS_BOARD_MAX` (2 MiB before gzip, the board catalog; over it the board says so
-    and the last good save stands), then `PUT /api/workspaces/{id}/canvas` with the
+    and the last good save stands), then `PUT /api/canvases/{id}` with the
     asset and the revision it read; the server checks the asset is a ready `board`
     asset of the canvas (images likewise) and counts the version. The save writes the
     document in SQL even where collaboration is configured: a canvas is never a room,
@@ -5012,24 +5098,23 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     reload; any other failure waits for the next change or open, the copy holding the
     work (no retry loop), and the board asset uploaded for the failed save is deleted
     again. A closed tab keeps the copy only: the upload can't run as a keepalive request.
-    Both routes answer 404 to a non-member (a link or public visitor), and a save naming
+    The routes answer 404 to a non-member (a link or public visitor), and a save naming
     an asset that isn't a ready board or image asset of the canvas is a 400. A canvas opens no room (the collaboration token route refuses
     it); the Canvas tab shows to members only, since a link or public visitor has none.
-    Restoring a trashed canvas beside the live one made since is refused (409
-    `canvas_exists`).
   - **The Canvas page (Epo 2026-11-10, mock KNPB4pYUhSSYUJvuKN1ct7 B):** `/canvas`
     (`Canvas.tsx`, Canvas under Tools in the sidebar) is a board: one of the person's
     own canvases, in no workspace. Such a canvas is a standalone `canvas` material with
     no `canvas_workspace_id` (migration 0167), any number per person, opened and saved
     exactly as a workspace's is (`useCanvasBoard`, which both pages mount with a
-    `CanvasSource`: `GET` and `PUT /api/canvases/{id}` here, the workspace routes on
-    the Canvas tab), with the same device copy, images and limits, and no workspace
+    `CanvasSource`: `GET` and `PUT /api/canvases/{id}` on both), with the same device copy, images and limits, and no workspace
     cards in Misc. `?c=` names the canvas shown; without one (the sidebar's link) the one
     already shown stays, else the latest saved of the person's own, and a first one ("My
     canvas") is made for a person who has none. The id routes serve only a person's own
-    canvases: a workspace's opens and saves through its workspace, whose membership it
-    follows. A frozen account draws on what it has and is offered neither New canvas
-    nor Rename. The panel at the top left (`CanvasSwitcher`)
+    canvases, a workspace's while they are a member of it. A frozen account draws on what it has and is offered neither New canvas
+    nor Rename. The page and the Canvas tab share `useCanvasPicker` (the canvas shown,
+    the first one made, New, Rename and Delete). The panel at the top left
+    (`CanvasSwitcher`) is the editor's popover (`ToolbarPopoverContent` and its 30px
+    rows, as Plate's All blocks, Epo 2026-11-12) and
     lists every canvas there is (`GET /api/canvases`: their own, latest saved first,
     then each workspace's under its icon and name, leaving out a workspace whose owner's
     account is no longer live), a page of 50 at a time as the menu is scrolled (Epo
@@ -5042,7 +5127,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     or deletes the one shown, as a standalone
     material (`PATCH /api/materials/{id}/metadata`, which leaves the revision alone, and
     the trash; a deleted canvas's board saves and keeps nothing more, `gone`). A
-    workspace's canvas opens in its workspace, where its quiz and flashcard cards work.
+    workspace's canvas opens in its workspace (`?c=` with `panel=canvas`), where its quiz
+    and flashcard cards work; there the picker lists that workspace's canvases alone.
     The account chat's file listing leaves canvases out: a canvas is a board, not a
     document the agent reads. On a phone the navigation drawer's button sits beside the
     panel, and the row stops short of the board's own menu. The Files page lists no
@@ -5065,7 +5151,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     the asset id and its `size` the stored size, outside the undo history, and a refused
     image leaves the board with a toast. An image already stored under its id is never
     stored again: a copy pasted back hands its file to `set` under that id, which the
-    source leaves alone (`stored`). `GET` and `PUT /api/workspaces/{id}/canvas` answer
+    source leaves alone (`stored`). `GET` and `PUT /api/canvases/{id}` answer
     `ownImageAssetIds`, every ready image asset of the canvas, one the pruner trashed
     included; a save waits for uploads in flight (at most 20 s, `IMAGE_WAIT_MS`, on
     leaving the canvas too, since the board's document outlives its unmount) and sends
@@ -5166,6 +5252,13 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   limits on the server.
 - **Labels** come from the Maths menu's Label, which can place one on top of a card (a
   double click there opens the plane), or a double click on empty canvas. They have a
-  maths symbol row while typing. BlockSuite's default canvas font has no
-  face on this board because its font loader has no config, so `drawingBoard.css` aliases
-  it to the app's Fustat, or a label measures in one fallback and draws in another.
+  maths symbol row while typing. Board text starts at 16 px (local change 45; the size
+  menu offers 12, 16, 20, 24, 32, 40, 64 and 128). **Fonts** (local change 44, Epo
+  2026-11-12): the font menu offers Fustat (BlockSuite's default `Inter` name drawn in
+  the app's font), Comic Neue, Lora and JetBrains Mono. BlockSuite's font loader has no
+  config here (AFFiNE fetches its fonts from its CDN), so `drawingBoard.css` declares a
+  face per weight the weight menu knows (300, 400, 600, normal and italic where the font
+  has them) from the `@fontsource` packages; the weight menu lists a font's faces, so a
+  single variable range left it blank. AFFiNE's other names (in mind map styles) alias to
+  Fustat or, for Kalam, Comic Neue. Faces load when first drawn, and the board redraws on
+  `document.fonts` `loadingdone`.

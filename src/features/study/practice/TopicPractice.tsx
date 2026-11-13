@@ -25,6 +25,7 @@ import {
   DialogTitle,
 } from '@/components/ui/Dialog';
 import { SkeletonList } from '@/components/ui/feedback';
+import { InputTitle } from '@/components/ui/Input';
 import {
   Select,
   SelectContent,
@@ -109,7 +110,7 @@ function Choice({
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="t-meta font-semibold text-fg-secondary">{label}</span>
+      <InputTitle>{label}</InputTitle>
       <Select onValueChange={onChange} value={value}>
         <SelectTrigger aria-label={label}>
           <SelectValue />
@@ -281,13 +282,9 @@ export function TopicPractice({
               </div>
               {isError ? (
                 <ErrorState
-                  action={
-                    <Button onClick={() => void refetch()} variant="outline">
-                      {m.action_retry()}
-                    </Button>
-                  }
-                  className="my-8"
+                  className="h-auto py-8"
                   errorId={unexpectedErrorId(error)}
+                  onRetry={() => void refetch()}
                   title={m.practice_session_failed()}
                   variant="panel"
                 />
@@ -512,12 +509,8 @@ export function PracticeResult({
     return (
       <PracticeFrame>
         <ErrorState
-          action={
-            <Button onClick={() => void refetch()} variant="outline">
-              {m.action_retry()}
-            </Button>
-          }
           errorId={unexpectedErrorId(error)}
+          onRetry={() => void refetch()}
           title={m.practice_load_failed()}
           variant="panel"
         />

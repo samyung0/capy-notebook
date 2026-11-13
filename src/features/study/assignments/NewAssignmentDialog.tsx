@@ -2,7 +2,10 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate } from '@tanstack/react-router';
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { type Control, Controller, useForm } from 'react-hook-form';
-import { CreateAssignmentBody } from '@/api/gen/validators';
+import {
+  CreateAssignmentBody,
+  createAssignmentBodyFilesMax,
+} from '@/api/gen/validators';
 import {
   useCreateAssignment,
   useFiles,
@@ -20,6 +23,7 @@ import type {
   Workspace,
   WorkspaceMember,
 } from '@/api/types';
+import { InlineErrorState } from '@/components/app/ErrorState';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Checkbox } from '@/components/ui/Checkbox';
@@ -34,7 +38,7 @@ import { FileIcon } from '@/components/ui/FileIcon';
 import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
-import { Input, InputError } from '@/components/ui/Input';
+import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import {
   Popover,
   PopoverContent,
@@ -48,8 +52,18 @@ import {
   SelectValue,
 } from '@/components/ui/Select';
 import { Switch } from '@/components/ui/Switch';
+import {
+  ChooseFileButton,
+  FileMenuNote,
+  FileMenuRow,
+  FileSearchMenu,
+  RemoveFileButton,
+} from '@/features/files/FileSearchMenu';
 import { isWorkspaceReadOnly } from '@/features/workspace/access';
-import { PanelSearchField } from '@/features/workspace/PanelSearch';
+import {
+  matchesSearch,
+  PanelSearchField,
+} from '@/features/workspace/PanelSearch';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
@@ -68,7 +82,12 @@ import {
   minutesText,
 } from './assignmentText';
 import { NoAnswersWarning } from './NoAnswersWarning';
-import { type TaskFile, TaskFileMenu, TaskFilesField } from './TaskFiles';
+import {
+  ChooseFileRow,
+  type TaskFile,
+  TaskFileMenu,
+  TaskFilesField,
+} from './TaskFiles';
 
 const TIME_LIMITS = [15, 30, 45, 60, 90, 120, 180];
 const ATTEMPTS = [1, 2, 3, 5];
@@ -219,7 +238,13 @@ export function NewAssignmentDialog({
   const attempts = watch('attempts');
   const draft = watch('draft');
   const [advancedOpen, setAdvancedOpen] = useState(
-    () => advancedStartsOpen(existing) || !!manage?.shuffle
+    () =>
+      advancedStartsOpen(existing) ||
+      !!manage?.shuffle ||
+      // Grades and answers sit there too: a choice other than the default
+      // shows.
+      (!!manage &&
+        (manage.showGrades !== 'automatic' || manage.showAnswers !== 'closed'))
   );
   // No late submissions goes with a due date on either kind (Epo 2026-11-09),
   // the penalty with a marked one's marks; a published one is past being a
@@ -288,7 +313,12 @@ export function NewAssignmentDialog({
   // In the phone header and the form's footer: either one, or Enter in a field,
   // submits the form once.
   const createButton = (
-    <Button disabled={saving || (isOwn && !me)} form={formId} type="submit">
+    <Button
+      disabled={saving || (isOwn && !me)}
+      form={formId}
+      type="submit"
+      variant="accent"
+    >
       {existing ? m.action_save() : m.assignment_create()}
     </Button>
   );
@@ -376,14 +406,15 @@ export function NewAssignmentDialog({
                     <SelectContent>
                       <SelectItem
                         iconAndValue={{
-                          icon: 'quiz',
+                          icon: 'checkSquare',
                           label: m.assignment_kind_marked(),
                         }}
                         value="marked"
                       />
                       <SelectItem
                         iconAndValue={{
-                          icon: 'todo',
+                          // Graded's box without its tick (Epo 2026-11-12).
+                          icon: 'rectangle',
                           label: m.assignment_kind_unmarked(),
                         }}
                         value="unmarked"
@@ -686,8 +717,9 @@ export function NewAssignmentDialog({
           )}
           {kind === 'marked' && (
             <div className="flex flex-col gap-2 pt-0.5">
-              {/* Marking (A4, Epo 2026-11-06) on its own row, then when
-                  members see grades and keys (C4, C3, Epo 2026-11-08). */}
+              {/* Marking (A4, Epo 2026-11-06) on its own row; when members
+                  see grades and keys (C4, C3, Epo 2026-11-08) sit in
+                  Advanced (Epo 2026-11-12). */}
               <div className="mb-1 grid gap-4">
                 <Field label={m.assignment_field_marking()}>
                   <Controller
@@ -718,7 +750,22 @@ export function NewAssignmentDialog({
                     )}
                   />
                 </Field>
-                <div className="grid gap-4 sm:grid-cols-2">
+              </div>
+              {/* C1 (Epo 2026-11-08): members may hand in a paper instead. */}
+              <SwitchRow
+                control={control}
+                label={m.assignment_switch_uploads()}
+                name="allowUploads"
+              />
+            </div>
+          )}
+          {(kind === 'marked' || hasDraft || hasPolicy) && (
+            <AdvancedSection
+              onToggle={() => setAdvancedOpen(!advancedOpen)}
+              open={advancedOpen}
+            >
+              {kind === 'marked' && (
+                <div className="grid gap-4 pb-2 sm:grid-cols-2">
                   <Field label={m.assignment_field_grades()}>
                     <Controller
                       control={control}
@@ -775,20 +822,7 @@ export function NewAssignmentDialog({
                     />
                   </Field>
                 </div>
-              </div>
-              {/* C1 (Epo 2026-11-08): members may hand in a paper instead. */}
-              <SwitchRow
-                control={control}
-                label={m.assignment_switch_uploads()}
-                name="allowUploads"
-              />
-            </div>
-          )}
-          {(kind === 'marked' || hasDraft || hasPolicy) && (
-            <AdvancedSection
-              onToggle={() => setAdvancedOpen(!advancedOpen)}
-              open={advancedOpen}
-            >
+              )}
               {kind === 'marked' && (
                 <SwitchRow
                   control={control}
@@ -805,9 +839,7 @@ export function NewAssignmentDialog({
               )}
               {hasPolicy && kind === 'marked' && !noLate && (
                 <div className="flex min-h-8 items-center justify-between gap-4">
-                  <span className="font-medium">
-                    {m.assignment_field_late_penalty()}
-                  </span>
+                  <InputTitle>{m.assignment_field_late_penalty()}</InputTitle>
                   <Controller
                     control={control}
                     name="latePenaltyPct"
@@ -872,11 +904,8 @@ function Field({
   required?: boolean;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1.75">
-      <span className="font-medium text-[13.5px] leading-tight">
-        {label}
-        {required && <span className="text-solid-error"> *</span>}
-      </span>
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <InputTitle required={required}>{label}</InputTitle>
       {children}
       {error && <InputError>{error}</InputError>}
     </div>
@@ -898,7 +927,7 @@ function SwitchRow({
       name={name}
       render={({ field }) => (
         <div className="flex min-h-8 items-center justify-between gap-4">
-          <span className="font-medium">{label}</span>
+          <InputTitle>{label}</InputTitle>
           <Switch
             aria-label={label}
             checked={!!field.value}
@@ -1046,14 +1075,11 @@ function QuizPicker({
         {pending ? (
           <Skeleton className="h-9 w-full" />
         ) : quizzes.length === 0 && failed ? (
-          <div className="flex items-center justify-between gap-2 px-2.5 py-1">
-            <p className="text-fg-secondary text-sm">
-              {m.assignment_quizzes_failed()}
-            </p>
-            <Button onClick={onRetry} size="sm" variant="outline">
-              {m.action_retry()}
-            </Button>
-          </div>
+          <InlineErrorState
+            className="py-2"
+            message={m.assignment_quizzes_failed()}
+            onRetry={onRetry}
+          />
         ) : quizzes.length === 0 ? (
           <p className="px-2.5 py-2 text-fg-secondary text-sm">
             {canMake
@@ -1292,7 +1318,10 @@ function PersonRow({
   );
 }
 
-/** Files · optional (A1d): rows with ×, and Add a file picking from Files. */
+/** Files · optional (A1d): Choose a file picking from the workspace's Files,
+ * kept above the rows chosen, each with × (Epo 2026-11-12: Make a quiz's
+ * menu, the chosen ones ticked there; a ticked row takes its file off, and the
+ * menu stays open for more). */
 function FilesField({
   onChange,
   value,
@@ -1304,7 +1333,6 @@ function FilesField({
 }) {
   const { data: files } = useFiles(workspaceId);
   const { data: materials } = useMaterials(workspaceId);
-  const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const options = [
     ...(files ?? []).map((f) => ({
@@ -1322,78 +1350,66 @@ function FilesField({
   ];
   const held = (id: string) =>
     value.some((f) => f.fileId === id || f.materialId === id);
+  const remove = (id: string) =>
+    onChange(value.filter((f) => f.fileId !== id && f.materialId !== id));
+  const full = value.length >= createAssignmentBodyFilesMax;
   const picked = value.flatMap((f) => {
     const option = options.find((o) => o.id === (f.fileId ?? f.materialId));
     return option ? [option] : [];
   });
-  const shown = options.filter(
-    (o) =>
-      !held(o.id) && o.name.toLowerCase().includes(query.trim().toLowerCase())
-  );
   return (
-    <div className="flex flex-col items-start gap-2">
+    <div className="flex flex-col gap-2">
+      <ChooseFileRow count={value.length}>
+        <FileSearchMenu
+          label={m.assignment_search_files()}
+          onOpenChange={setOpen}
+          open={open}
+          searchLabel={m.assignment_search_files()}
+          trigger={<ChooseFileButton />}
+        >
+          {(query) => {
+            const shown = options.filter((o) => matchesSearch(o.name, query));
+            return (
+              <>
+                {shown.map((o) => (
+                  <FileMenuRow
+                    className="disabled:cursor-default"
+                    disabled={full && !held(o.id)}
+                    key={o.id}
+                    onClick={() =>
+                      held(o.id) ? remove(o.id) : onChange([...value, o.ref])
+                    }
+                    role="option"
+                    selected={held(o.id)}
+                  >
+                    <FileIcon className="size-4 shrink-0" name={o.icon} />
+                    <span className="min-w-0 flex-1 truncate">{o.name}</span>
+                  </FileMenuRow>
+                ))}
+                {shown.length === 0 && (
+                  <FileMenuNote>{m.assignment_no_files_match()}</FileMenuNote>
+                )}
+              </>
+            );
+          }}
+        </FileSearchMenu>
+      </ChooseFileRow>
       {picked.length > 0 && (
         <ul className="w-full">
           {picked.map((o) => (
-            <li
-              className="flex min-h-9.5 items-center gap-2.5 border-divider border-b"
-              key={o.id}
-            >
+            <li className="flex min-h-8 items-center gap-2.5 pl-2" key={o.id}>
               <FileIcon className="size-4 shrink-0" name={o.icon} />
               <span className="min-w-0 flex-1 truncate font-semibold">
                 {o.name}
               </span>
-              <IconButton
-                className="size-7"
-                icon="x"
+              <RemoveFileButton
                 label={m.action_remove()}
-                onClick={() =>
-                  onChange(
-                    value.filter(
-                      (f) => f.fileId !== o.id && f.materialId !== o.id
-                    )
-                  )
-                }
-                type="button"
+                onClick={() => remove(o.id)}
               />
             </li>
           ))}
         </ul>
       )}
-      <Popover onOpenChange={setOpen} open={open}>
-        <PopoverTrigger asChild>
-          <Button iconLeft="plus" size="sm" type="button" variant="outline">
-            {m.assignment_add_file()}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent
-          align="start"
-          className="w-85 max-w-[calc(100vw-2rem)] p-1.5"
-        >
-          <PanelSearchField
-            label={m.assignment_search_files()}
-            onChange={setQuery}
-            value={query}
-          />
-          <ul className="mt-1.5 max-h-60 overflow-auto">
-            {shown.map((o) => (
-              <li key={o.id}>
-                <button
-                  className="flex min-h-9 w-full items-center gap-2.5 rounded-button px-2.5 text-left font-semibold outline-none hover:bg-overlay-hover focus-visible:bg-overlay-hover"
-                  onClick={() => {
-                    onChange([...value, o.ref]);
-                    setOpen(false);
-                  }}
-                  type="button"
-                >
-                  <FileIcon className="size-4 shrink-0" name={o.icon} />
-                  <span className="min-w-0 flex-1 truncate">{o.name}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </PopoverContent>
-      </Popover>
     </div>
   );
 }

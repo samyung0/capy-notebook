@@ -182,8 +182,10 @@ test('Make a quiz hides the dock, and the chat comes back with its draft and thr
 
   await page.getByRole('button', { name: m.dashboard_make_quiz() }).click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByRole('button', { name: m.make_quiz_choose_file() }).click();
+  await dialog.getByRole('button', { name: m.file_choose() }).first().click();
   await page.getByRole('option', { name: /Past paper 2025 P1\.pdf/ }).click();
+  // The menu stays open for more files (Epo 2026-11-12).
+  await page.keyboard.press('Escape');
   await dialog.getByRole('button', { name: m.action_continue() }).click();
   await expect(
     page.getByRole('heading', { name: m.make_quiz_pages_title() })

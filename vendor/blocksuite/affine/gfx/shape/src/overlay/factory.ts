@@ -1,9 +1,10 @@
 import type { Options } from '@blocksuite/affine-block-surface';
-import type { ShapeStyle } from '@blocksuite/affine-model';
+import { POLYGON_SHAPES, type ShapeStyle } from '@blocksuite/affine-model';
 import type { XYWH } from '@blocksuite/global/gfx';
 
 import { DiamondShape } from './diamond';
 import { EllipseShape } from './ellipse';
+import { PolygonShape } from './polygon';
 import { RectShape } from './rect';
 import { RoundedRectShape } from './rounded-rect';
 import type { Shape } from './shape';
@@ -28,6 +29,9 @@ export class ShapeFactory {
       case 'roundedRect':
         return new RoundedRectShape(xywh, type, options, shapeStyle);
       default:
+        // Capy (local change 46): the board's polygons.
+        if (POLYGON_SHAPES[type])
+          return new PolygonShape(xywh, type, options, shapeStyle);
         throw new Error(`Unknown shape type: ${type}`);
     }
   }

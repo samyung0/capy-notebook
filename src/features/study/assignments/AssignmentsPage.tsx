@@ -10,7 +10,7 @@ import {
 } from '@/api/hooks';
 import type { Assignment, Topic } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
-import { Button } from '@/components/ui/Button';
+import { Button, PageButton } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
 import { userToast } from '@/components/ui/userToast';
@@ -106,12 +106,8 @@ export function AssignmentDetail({
     return (
       <PracticeFrame>
         <ErrorState
-          action={
-            <Button onClick={() => void refetch()} variant="outline">
-              {m.action_retry()}
-            </Button>
-          }
           errorId={unexpectedErrorId(error)}
+          onRetry={() => void refetch()}
           title={m.assignment_load_failed()}
           variant="panel"
         />
@@ -238,9 +234,9 @@ function StaffList({
           <h1 className="t-page-title">{m.study_panel_assignments()}</h1>
           <span className="t-meta mt-1.5 text-fg-muted">{meta}</span>
         </div>
-        <Button iconLeft="plus" onClick={() => setCreating(true)}>
+        <PageButton iconLeft="plus" onClick={() => setCreating(true)}>
           {m.assignment_new()}
-        </Button>
+        </PageButton>
       </div>
       <div className="mt-4 mb-1.25 flex flex-wrap items-center gap-2 md:mb-2">
         <Button
@@ -265,13 +261,9 @@ function StaffList({
         <SkeletonList className="mt-6" count={5} rowHeight={40} />
       ) : isError ? (
         <ErrorState
-          action={
-            <Button onClick={() => void refetch()} variant="outline">
-              {m.action_retry()}
-            </Button>
-          }
-          className="mt-10"
+          className="h-auto py-20"
           errorId={unexpectedErrorId(error)}
+          onRetry={() => void refetch()}
           title={m.assignment_load_failed()}
           variant="panel"
         />
@@ -556,9 +548,9 @@ function MemberList({ workspaceId }: { workspaceId: string }) {
         {/* Where staff have New assignment: only they give out assignments
             (Epo 2026-11-10), so a member's is a task for themself. */}
         {ws?.role && (
-          <Button iconLeft="plus" onClick={() => setAdding(true)}>
+          <PageButton iconLeft="plus" onClick={() => setAdding(true)}>
             {m.todo_new_task()}
-          </Button>
+          </PageButton>
         )}
       </div>
       <div className="mt-4 mb-1.25 flex items-center gap-2 md:mb-2">
@@ -576,13 +568,9 @@ function MemberList({ workspaceId }: { workspaceId: string }) {
         <SkeletonList className="mt-6" count={4} rowHeight={40} />
       ) : isError ? (
         <ErrorState
-          action={
-            <Button onClick={() => void refetch()} variant="outline">
-              {m.action_retry()}
-            </Button>
-          }
-          className="mt-10"
+          className="h-auto py-20"
           errorId={unexpectedErrorId(error)}
+          onRetry={() => void refetch()}
           title={m.assignment_load_failed()}
           variant="panel"
         />

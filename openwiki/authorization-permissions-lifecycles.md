@@ -1391,12 +1391,15 @@ the person attempting (see [study-progress.md](study-progress.md) and
 
 ### Workspace canvases
 
-A member's workspace canvas (Epo 2026-11-09) is theirs alone: a standalone
-material of kind `canvas` linked to the workspace by `canvas_workspace_id`, so a
-standalone material's owner-only rules apply (read, trash, restore, purge) with
-no new path. `GET /api/workspaces/{id}/canvas` finds or makes the caller's own
-for any member (a frozen account opens an existing one; making one needs an
-editing account), and `PUT` records a save at the revision read. It is never
+A member's workspace canvases (Epo 2026-11-09; any number since Epo
+2026-11-12) are theirs alone: standalone materials of kind `canvas` linked to
+the workspace by `canvas_workspace_id`, so a standalone material's owner-only
+rules apply (read, trash, restore, purge) with no new path. The canvas routes
+take the workspace: `GET /api/canvases?workspaceId=` lists the caller's there
+and `POST /api/canvases` with a `workspaceId` makes one (an editing account
+needed), each for members only; `GET` and `PUT /api/canvases/{id}` open and
+save one of the caller's while they are still a member of its workspace (404
+otherwise). It is never
 shared (`UpdateStandaloneMaterialPrivacy` refuses it), never cloned
 (`CloneMaterial` refuses it) and never hidden or filed; it leaves with the
 member (`RemoveWorkspaceMemberWithResult`) and with the workspace.

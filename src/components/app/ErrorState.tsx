@@ -5,6 +5,9 @@ import { Icon, type IconName } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
+/** Every failure's screen, page or pane (Epo 2026-11-12: one look everywhere).
+ * `onRetry` gives it the shared Retry (`ErrorAction`, borderless with the
+ * refresh icon); `action` is for another way out, such as a back link. */
 export function ErrorState({
   action,
   className,
@@ -12,11 +15,13 @@ export function ErrorState({
   errorId,
   icon = 'error',
   kind,
+  onRetry,
   testId,
   title,
   variant,
 }: {
   action?: ReactNode;
+  onRetry?: () => void;
   className?: string;
   description?: ReactNode;
   /** An unexpected failure's trace id (`unexpectedErrorId`). */
@@ -69,8 +74,14 @@ export function ErrorState({
           </p>
         )}
       </div>
-      {action && (
-        <div className={variant === 'page' ? 'mt-4' : 'mt-3'}>{action}</div>
+      {(action || onRetry) && (
+        <div className={variant === 'page' ? 'mt-4' : 'mt-3'}>
+          {action ?? (
+            <ErrorAction onClick={onRetry}>
+              {m.error_action_retry()}
+            </ErrorAction>
+          )}
+        </div>
       )}
       {errorId && <ErrorId className="mt-6 text-fg-muted" id={errorId} />}
     </div>

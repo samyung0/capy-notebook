@@ -337,14 +337,14 @@ Canvas page) is the same kind of material with no `canvas_workspace_id`; a
 person may have several, each paid for and capped as below.
 
 A member's personal workspace canvas (Epo 2026-11-09, migration 0164) is a
-standalone material of kind `canvas` (`canvas_workspace_id` names its workspace,
-one live canvas per member and workspace) paid for by the member, as any
+standalone material of kind `canvas` (`canvas_workspace_id` names its workspace;
+any number per member and workspace since migration 0171, Epo 2026-11-12) paid for by the member, as any
 standalone material is. Its drawing is the material's own `board` editor asset,
 gzipped, replaced on every save and trashed by the pruner as the material's
 `canvas_board` block stops naming it; the block also names the canvas's image
 assets, each an `image` editor asset of the canvas uploaded at once as a note's
 is (the plan's image cap after compression, listed on the Files page) and
-trashed the same way once a save no longer names it; the canvas route lists the
+trashed the same way once a save no longer names it; the canvas routes list the
 ones a save may name (`ownImageAssetIds`, `CanvasImageAssets`), a trashed one
 included, so an undone delete is named again and restored. A canvas's board asset is capped at `CANVAS_BOARD_MAX` (2 MiB before
 gzip, `fieldlimits.CanvasBoardBytes`), checked in the browser before the upload

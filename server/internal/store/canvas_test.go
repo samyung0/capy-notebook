@@ -39,7 +39,7 @@ func TestCanvasSavesWithoutTheCollaborationServer(t *testing.T) {
 	f.s.ConfigureCollaboration(sidecar.URL, "command-secret")
 	t.Cleanup(func() { f.s.ConfigureCollaboration("", "") })
 
-	canvas, err := f.s.WorkspaceCanvas(ctx, f.user, f.ws.ID)
+	canvas, err := f.s.CreateCanvas(ctx, f.user, f.ws.Name, f.ws.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,10 +59,10 @@ func TestCanvasSavesWithoutTheCollaborationServer(t *testing.T) {
 	}
 }
 
-// A member's canvas is their own: made on first open as a standalone material
-// linked to the workspace, one per member, saved with a revision check and only
-// its own ready assets, never shared or copied, and gone when they leave
-// (Epo 2026-11-09).
+// A member's canvases are their own: standalone materials linked to the
+// workspace, any number of them (Epo 2026-11-12), saved with a revision check
+// and only their own ready assets, never shared or copied, and gone when they
+// leave (Epo 2026-11-09).
 func TestWorkspaceCanvasIsPersonalAndGoesWithTheMembership(t *testing.T) {
 	f := newStudyFixture(t, "canvas")
 	ctx := context.Background()
@@ -72,7 +72,7 @@ func TestWorkspaceCanvasIsPersonalAndGoesWithTheMembership(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mine, err := f.s.WorkspaceCanvas(ctx, f.user, f.ws.ID)
+	mine, err := f.s.CreateCanvas(ctx, f.user, f.ws.Name, f.ws.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,11 +80,11 @@ func TestWorkspaceCanvasIsPersonalAndGoesWithTheMembership(t *testing.T) {
 		mine.OwnerUserID != f.user || mine.Title != f.ws.Name || mine.Privacy != "private" {
 		t.Fatalf("the canvas = %+v", mine)
 	}
-	again, err := f.s.WorkspaceCanvas(ctx, f.user, f.ws.ID)
-	if err != nil || again.ID != mine.ID {
-		t.Fatalf("a second open made another canvas: %v %v", again.ID, err)
+	again, err := f.s.CreateCanvas(ctx, f.user, "Second", f.ws.ID)
+	if err != nil || again.ID == mine.ID {
+		t.Fatalf("a second canvas: %v %v", again.ID, err)
 	}
-	theirs, err := f.s.WorkspaceCanvas(ctx, member, f.ws.ID)
+	theirs, err := f.s.CreateCanvas(ctx, member, f.ws.Name, f.ws.ID)
 	if err != nil || theirs.ID == mine.ID {
 		t.Fatalf("the member's canvas = %v, err %v", theirs.ID, err)
 	}
@@ -180,15 +180,15 @@ func TestCanvasesOfOnesOwnListWithTheWorkspaces(t *testing.T) {
 	f := newStudyFixture(t, "own-canvases")
 	ctx := context.Background()
 	other := newBlobTestUser(t, f.s, "own-canvases-other")
-	inWorkspace, err := f.s.WorkspaceCanvas(ctx, f.user, f.ws.ID)
+	inWorkspace, err := f.s.CreateCanvas(ctx, f.user, f.ws.Name, f.ws.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := f.s.CreateCanvas(ctx, f.user, "Exam plan")
+	first, err := f.s.CreateCanvas(ctx, f.user, "Exam plan", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := f.s.CreateCanvas(ctx, f.user, "Scratch")
+	second, err := f.s.CreateCanvas(ctx, f.user, "Scratch", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestCanvasesOfOnesOwnListWithTheWorkspaces(t *testing.T) {
 	var list []CanvasListItem
 	cursor := ""
 	for {
-		page, err := f.s.ListCanvases(ctx, f.user, 2, cursor)
+		page, err := f.s.ListCanvases(ctx, f.user, "", 2, cursor)
 		if err != nil || len(page.Items) > 2 {
 			t.Fatalf("a page of canvases = %+v, err %v", page, err)
 		}
@@ -232,8 +232,10 @@ func TestCanvasesOfOnesOwnListWithTheWorkspaces(t *testing.T) {
 	if _, listed := byID[second.ID]; !listed {
 		t.Fatal("the second canvas of one's own is not listed")
 	}
-	// A workspace's canvas opens through its workspace, not by id.
-	if _, err := f.s.OwnCanvas(ctx, f.user, inWorkspace.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("a workspace's canvas opened by id: %v", err)
+	// A workspace's list holds the ones drawn there alone (its Canvas tab,
+	// Epo 2026-11-12).
+	if page, err := f.s.ListCanvases(ctx, f.user, f.ws.ID, 50, ""); err != nil ||
+		len(page.Items) != 1 || page.Items[0].ID != inWorkspace.ID {
+		t.Fatalf("the workspace's canvases = %+v, err %v", page, err)
 	}
 }

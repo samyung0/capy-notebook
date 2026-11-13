@@ -1106,9 +1106,11 @@ date only (the store refuses anything else, `checkLatePolicy`), so with no due d
 Advanced holds Draft only.
 
 Advanced (Epo 2026-11-04, `AdvancedSection.tsx`) is an accordion holding the policy
-and Draft only, with the app's `motion-accordion` recipe. It starts closed unless a
+and Draft only, with the app's `motion-accordion` recipe; a graded assignment's Show
+grades and Show answers sit at its top (Epo 2026-11-12). It starts closed unless a
 saved assignment holds something other than the defaults there, a draft, No late
-submissions or a penalty (`advancedStartsOpen`, Claude's pick). Once opened it
+submissions or a penalty (`advancedStartsOpen`, Claude's pick), Shuffle, or grades or
+answers other than Automatic and After assignment close. Once opened it
 scrolls itself into view, since it opens at the dialog's foot, below the fold on a
 phone. Editing a published assignment has no Draft only, and one with no due date
 has no Advanced at all.
@@ -1445,10 +1447,15 @@ for in a workspace they left is not theirs to open) and reads each back only whi
 they lose leaves the task. `AssignmentFile` carries `workspaceId` and
 `workspaceName`, absent for a file with no workspace. In the form
 (`TaskFilesField` in `TaskFiles.tsx`, which the dialog shows in place of the
-class's `FilesField` for a task of one's own) Add a file opens a picker drawn as Search is:
-a field over `GET /api/items?scope=all&q=`, newest first until something is typed,
-each row with its thumbnail and its workspace's name or No workspace; a row adds
-the file and closes, and files already on the task are left out. A picked row
+class's `FilesField` for a task of one's own) Choose a file opens Make a quiz's
+search menu (`FileSearchMenu`): a field over `GET /api/items?scope=all&q=`, newest
+first until something is typed, each row with its workspace's name or No workspace;
+a row adds the file. Both Files fields keep Choose a file, a full-width
+select-like trigger (`ChooseFileButton`), above the files chosen, each 32px row ending
+in a small muted × (`RemoveFileButton`), with no dividers; the menu ticks the files
+already on the task and stays open for more until closed, a ticked row takes its file
+off, and at the files cap its unticked rows are disabled while the trigger still opens
+it (Epo 2026-11-12). The task's Quiz field opens the same menu and closes on its pick. A picked row
 names its workspace, and the details dialog opens each file where it sits
 (`/workspaces/{id}?file=`, or `/files/{id}` and `/materials/{id}` with none),
 naming the workspace when it is not the task's own. An assignment's files stay
@@ -1547,13 +1554,16 @@ page once the quiz is made. Any of them discards what was typed. A frozen worksp
 says "Make a quiz to begin." and has no search; a list that couldn't be read says so,
 with Try again. Making a quiz either way refreshes `qk.practice`, which the field reads.
 
-**Dashboard.** `TodoSection` (H1, H2, H2b). A member's To do is what went to them:
-quizzes, and the rest with a tick; Show done brings finished ones back crossed
-out. Staff's holds answers to approve and anything they gave themselves, with New
-assignment at its top right. A row is one button with a square hover and no action
-of its own (Epo 2026-11-05): it opens the assignment's page, which starts or
-continues it, or Approve AI marks. Empty, the section doesn't show. Activity gains "assigned" rows, to whoever it
-went to and staff.
+**Dashboard.** `TodoSection` (H1, H2, H2b) is the To do page's `TodoTable` for one
+class (Epo 2026-11-12, `single`: no group row): a box on every row, the row opening
+its details, Due and To do sorting it. A member's To do is what went to them; staff's
+holds answers to approve and anything they gave themselves, with New assignment (New
+task for everyone else) at its top right, which turns to Mark as done (Mark as not
+done for done rows) while rows are selected, using the page's `useTodoTicks`. Show
+done brings finished ones back, muted, and keeps a row in place as it is marked
+(`keepTicked`). Narrower than the table's 560px, beside an open panel, it stacks
+each row's facts under it as phones do. Empty, it says Nothing to do. Activity gains
+"assigned" rows, to whoever it went to and staff.
 
 **Not built.** The grading switch and everything behind it (AI marks, Mark with
 AI, Approve all, quoted highlights, charging). Home's To approve list and the bell. Topic labels and mastery on Results. Regrade one
@@ -1637,3 +1647,6 @@ Sources: [migration](../server/migrations/0051_study_progress.sql),
 [Learning](../src/routes/Learning.tsx),
 [Learning's store](../server/internal/store/learning_overview.go) and
 [topic labels](../server/internal/review/topic_label.go).
+
+The Kind select reads Graded and Ungraded (Epo 2026-11-12; the stored kinds stay
+`marked` and `unmarked`), with a ticked box and the same box empty.

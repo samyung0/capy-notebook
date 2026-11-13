@@ -10,10 +10,10 @@ it('uses the shared page error with manual retry only for loading failures', () 
   expect(unavailable).toContain(
     'The page may have moved or the address may be incorrect.'
   );
-  expect(unavailable).not.toContain('Try again');
+  expect(unavailable).not.toContain('>Retry<');
   expect(failed).toContain('data-error-surface="page"');
   expect(failed).toContain('Unable to load workspace');
-  expect(failed).toContain('Try again');
+  expect(failed).toContain('>Retry<');
   // An unreadable shared note, quiz or set (422) is named by its kind;
   // retrying it never helps.
   for (const [kind, title] of [
@@ -25,6 +25,6 @@ it('uses the shared page error with manual retry only for loading failures', () 
       <SummaryFailure kind={kind} status={422} />
     );
     expect(unreadable).toContain(title);
-    expect(unreadable).not.toContain('Try again');
+    expect(unreadable).not.toContain('>Retry<');
   }
 });

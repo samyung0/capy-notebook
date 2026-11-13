@@ -1,6 +1,4 @@
 import {
-  DEFAULT_NOTE_OFFSET_X,
-  DEFAULT_NOTE_OFFSET_Y,
   DefaultTool,
   EdgelessCRUDIdentifier,
   EXCLUDING_MOUSE_OUT_CLASS_LIST,
@@ -33,6 +31,7 @@ import {
 import { effect } from '@preact/signals-core';
 
 import { DraggingNoteOverlay, NoteOverlay } from './overlay';
+import { notePreviewOf } from './overlay/consts';
 
 export type NoteToolOption = {
   childFlavour: NoteChildrenFlavour;
@@ -113,6 +112,7 @@ export class NoteTool extends BaseTool<NoteToolOption> {
     const background = attributes.background;
     this._noteOverlay = new NoteOverlay(this.gfx, background);
     this._noteOverlay.text = this.activatedOption.tip;
+    this._noteOverlay.childType = this.activatedOption.childType;
     this._surfaceComponent?.renderer.addOverlay(this._noteOverlay);
   }
 
@@ -126,7 +126,15 @@ export class NoteTool extends BaseTool<NoteToolOption> {
       collapse: false,
     };
     const point = new Point(e.point.x, e.point.y);
-    addNote(this.std, point, options);
+    // Centred by the empty note's height, which it takes once drawn.
+    addNote(
+      this.std,
+      point,
+      options,
+      DEFAULT_NOTE_WIDTH,
+      notePreviewOf(childType).height,
+      true
+    );
   }
 
   override deactivate() {
@@ -221,16 +229,22 @@ type NoteOptions = {
   childType: string | null;
   collapse: boolean;
 };
+// Capy (local change 48): a click centres the note on the pointer, as its
+// preview shows it; a dragged note lands where its outline was drawn. AFFiNE
+// shifted both by DEFAULT_NOTE_OFFSET_X/Y.
 function addNote(
   std: BlockStdScope,
   point: Point,
   options: NoteOptions,
   width = DEFAULT_NOTE_WIDTH,
-  height = DEFAULT_NOTE_HEIGHT
+  height = DEFAULT_NOTE_HEIGHT,
+  centred = false
 ) {
   const noteId = addNoteAtPoint(std, point, {
     width,
     height,
+    offsetX: centred ? width / 2 : 0,
+    offsetY: centred ? height / 2 : 0,
   });
 
   const gfx = std.get(GfxControllerIdentifier);
@@ -296,8 +310,8 @@ function addNoteAtPoint(
   const {
     width = DEFAULT_NOTE_WIDTH,
     height = DEFAULT_NOTE_HEIGHT,
-    offsetX = DEFAULT_NOTE_OFFSET_X,
-    offsetY = DEFAULT_NOTE_OFFSET_Y,
+    offsetX = 0,
+    offsetY = 0,
     parentId = gfx.doc.root?.id,
     noteIndex,
     scale = 1,

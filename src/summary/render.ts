@@ -123,5 +123,5 @@ export function renderFailure(
         `<div class="summary-shell">${unavailable ? '' : `<header class="summary-header"><a class="summary-brand" href="/">Capy Notebook</a>${publicNav()}</header>`}<main class="summary-panel">${renderToString(createElement(SummaryFailure, { kind, status }))}</main></div>`
       );
   }
-  return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${escapeHTML(title)} | Capy Notebook</title><body style="font:16px/1.6 system-ui;margin:12vh auto;padding:24px;max-width:580px">${unavailable ? '' : '<a href="/">Capy Notebook</a>'}<h1>${escapeHTML(title)}</h1><p>${escapeHTML(body)}</p>${retry ? `<a href="">${escapeHTML(m.summary_retry())}</a>` : ''}</body></html>`;
+  return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${escapeHTML(title)} | Capy Notebook</title><body style="font:16px/1.6 system-ui;margin:12vh auto;padding:24px;max-width:580px">${unavailable ? '' : '<a href="/">Capy Notebook</a>'}<h1>${escapeHTML(title)}</h1><p>${escapeHTML(body)}</p>${retry ? `<a href="">${escapeHTML(m.error_action_retry())}</a>` : ''}</body></html>`;
 }

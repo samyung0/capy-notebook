@@ -104,7 +104,7 @@ export function MemberProfilePage({
       <PracticeFrame className="lg:pt-6">
         {back}
         <ErrorState
-          className="mt-10"
+          className="h-auto py-20"
           kind="notFound"
           title={m.member_profile_not_found()}
           variant="panel"
@@ -116,13 +116,9 @@ export function MemberProfilePage({
       <PracticeFrame className="lg:pt-6">
         {back}
         <ErrorState
-          action={
-            <Button onClick={() => void refetch()} variant="outline">
-              {m.action_retry()}
-            </Button>
-          }
-          className="mt-10"
+          className="h-auto py-20"
           errorId={unexpectedErrorId(error)}
+          onRetry={() => void refetch()}
           title={m.member_profile_load_failed()}
           variant="panel"
         />

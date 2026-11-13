@@ -26,7 +26,7 @@ import { repeat } from 'lit/directives/repeat.js';
 import { styleMap } from 'lit/directives/style-map.js';
 
 import { ShapeTool } from '../shape-tool.js';
-import { ellipseSvg, roundedSvg, triangleSvg } from '../toolbar/icons.js';
+import { ellipseSvg, squareSvg, triangleSvg } from '../toolbar/icons.js';
 import type { DraggableShape } from './utils.js';
 import { buildVariablesObject } from './utils.js';
 
@@ -34,9 +34,11 @@ const shapes: DraggableShape[] = [];
 // to move shapes together
 const oy = -2;
 const ox = 0;
+// Capy (local change 43): the toolbar's square piece is a plain square; AFFiNE's
+// was a rounded rectangle.
 shapes.push({
-  name: 'roundedRect',
-  svg: roundedSvg,
+  name: ShapeType.Rect,
+  svg: squareSvg,
   style: {
     default: { x: -9, y: 6 },
     hover: { y: -5, z: 1 },
@@ -136,7 +138,7 @@ export class EdgelessToolbarShapeDraggable extends EdgelessToolbarToolMixin(
 
   draggableController!: EdgelessDraggableElementController<DraggableShape>;
 
-  draggingShape: DraggableShape['name'] = 'roundedRect';
+  draggingShape: DraggableShape['name'] = ShapeType.Rect;
 
   override type = ShapeTool;
 
@@ -178,6 +180,17 @@ export class EdgelessToolbarShapeDraggable extends EdgelessToolbarToolMixin(
           controller.clearOverlay();
         }
         overlay.element.style.filter = `drop-shadow(${this.shapeShadow})`;
+        // Capy (local change 14): the dragged piece keeps the toolbar's colours,
+        // not the canvas's last shape colours (Epo 2026-11-12).
+        const { color, stroke } = overlay.element.style;
+        overlay.element.style.setProperty(
+          'color',
+          `var(--capy-shape-button-${shapeName}, ${color})`
+        );
+        overlay.element.style.setProperty(
+          'stroke',
+          `var(--capy-shape-button-stroke-${shapeName}, ${stroke})`
+        );
         this.readyToDrop = true;
         this.draggingShape = element.data.name;
       },

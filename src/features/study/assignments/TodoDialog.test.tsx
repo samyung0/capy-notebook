@@ -49,7 +49,7 @@ vi.mock('@/components/ui/Dialog', () => ({
 vi.mock('./LazyNewAssignmentDialog', () => ({
   NewAssignmentDialog: () => null,
 }));
-vi.mock('./TodoSection', () => ({
+vi.mock('./todoParts', () => ({
   assignmentFileIcon: () => 'pdf',
   useOpenAssignment: () => vi.fn(),
 }));

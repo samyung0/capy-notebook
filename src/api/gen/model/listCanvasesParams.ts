@@ -15,4 +15,9 @@ limit?: number;
  * Opaque cursor from the previous page
  */
 cursor?: string;
+/**
+ * Only the canvases drawn in this workspace, latest saved first
+ * @maxLength 64
+ */
+workspaceId?: string;
 };

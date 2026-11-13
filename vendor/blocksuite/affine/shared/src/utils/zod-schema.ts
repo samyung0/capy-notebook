@@ -113,7 +113,8 @@ const DEFAULT_SHAPE = {
   shapeStyle: ShapeStyle.General,
   filled: true,
   radius: 0,
-  fontSize: 20,
+  // Capy (local change 45): board text starts at 16 (Epo 2026-11-12).
+  fontSize: 16,
   fontFamily: FontFamily.Inter,
   fontWeight: FontWeight.Regular,
   fontStyle: FontStyle.Normal,
@@ -157,7 +158,8 @@ export const TextSchema = z
   })
   .default({
     color: DefaultTheme.textColor,
-    fontSize: 24,
+    // Capy (local change 45)
+    fontSize: 16,
     fontFamily: FontFamily.Inter,
     fontWeight: FontWeight.Regular,
     fontStyle: FontStyle.Normal,
@@ -189,6 +191,12 @@ export const NodePropsSchema = z.object({
   'shape:rect': ShapeSchema,
   'shape:triangle': ShapeSchema,
   'shape:roundedRect': RoundedShapeSchema,
+  // Capy (local change 46)
+  'shape:rightTriangle': ShapeSchema,
+  'shape:parallelogram': ShapeSchema,
+  'shape:trapezium': ShapeSchema,
+  'shape:pentagon': ShapeSchema,
+  'shape:hexagon': ShapeSchema,
 });
 
 export type NodeProps = z.infer<typeof NodePropsSchema>;

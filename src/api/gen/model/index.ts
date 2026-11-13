@@ -408,7 +408,6 @@ export * from './reviewSuggestion.ts';
 export * from './reviewSuggestionGroup.ts';
 export * from './reviewSuggestionMode.ts';
 export * from './row.ts';
-export * from './saveCanvasInputBody.ts';
 export * from './saveOwnCanvasInputBody.ts';
 export * from './searchKind.ts';
 export * from './searchParams.ts';

@@ -32,9 +32,12 @@ export function createNewPresentationIndexes(
     })
     .sort((a, b) => EdgelessFrameManager.framePresentationComparator(a, b));
 
+  // Capy (local change 42): the boards have no frames, so no frame manager; without
+  // a frame to paste there is nothing to number, and Duplicate and paste went on.
+  const result = new Map<string, string>();
+  if (!frames.length) return result;
   const frameMgr = std.get(EdgelessFrameManagerIdentifier);
   let before = frameMgr.generatePresentationIndex();
-  const result = new Map<string, string>();
   frames.forEach(frame => {
     result.set(frame.id, before);
     before = generateKeyBetweenV2(before, null);

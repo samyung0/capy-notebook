@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useWorkspaces } from '@/api/hooks';
-import { Button } from '@/components/ui/Button';
+import { PageButton } from '@/components/ui/Button';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { NewAssignmentDialog } from './LazyNewAssignmentDialog';
@@ -20,9 +20,9 @@ export function NewAssignmentAnywhere() {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button iconLeft="plus" onClick={() => setOpen(true)}>
+      <PageButton iconLeft="plus" onClick={() => setOpen(true)}>
         {m.todo_add_task()}
-      </Button>
+      </PageButton>
       {open && (
         <NewAssignmentDialog
           onClose={() => setOpen(false)}

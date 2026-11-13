@@ -93,8 +93,10 @@ vi.mock('@/components/ui/Select', () => ({
   SelectItem: pass,
   SelectTrigger: pass,
   SelectValue: () => null,
+  selectTriggerVariants: () => '',
 }));
 vi.mock('./TaskFiles', () => ({
+  ChooseFileRow: pass,
   TaskFileMenu: ({
     kinds,
     onPick,

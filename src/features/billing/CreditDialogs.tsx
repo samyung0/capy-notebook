@@ -17,7 +17,7 @@ import type { CreditSettings } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { Icon } from '@/components/ui/Icon';
-import { Input, InputError } from '@/components/ui/Input';
+import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { paymentMethodLabel, shortDate } from './creditLabels';
@@ -58,7 +58,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     // biome-ignore lint/a11y/noLabelWithoutControl: the Input inside is the control
     <label className="flex flex-col gap-1.5">
-      <span className="text-fg-secondary text-sm">{label}</span>
+      <InputTitle>{label}</InputTitle>
       {children}
     </label>
   );

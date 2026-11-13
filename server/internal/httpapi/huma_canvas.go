@@ -14,14 +14,10 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
-// A member's personal workspace canvas (Epo 2026-11-09,
-// todo-workspace-canvas-storage.md): one per member per workspace, seen by
-// its owner alone. The route finds or makes it; the browser uploads its saved
-// board as the material's `board` editor asset and sends the asset's id here.
-
-type canvasInput struct {
-	ID string `path:"id" doc:"Workspace id"`
-}
+// A person's canvases (Epo 2026-11-09, todo-workspace-canvas-storage.md):
+// their own, and the ones they draw in a workspace (any number, Epo
+// 2026-11-12), each seen by its owner alone. The browser uploads a saved board
+// as the material's `board` editor asset and sends the asset's id here.
 
 type canvasBody struct {
 	ID            string   `json:"id" doc:"The canvas material"`
@@ -40,36 +36,24 @@ type canvasOutput struct {
 	Body canvasBody
 }
 
-type saveCanvasInput struct {
-	ID   string `path:"id" doc:"Workspace id"`
-	Body struct {
-		Revision      int64    `json:"revision" minimum:"1" doc:"The revision the browser read; another tab's save since is refused (409)"`
-		BoardAssetID  string   `json:"boardAssetId" minLength:"1" maxLength:"64" doc:"The new board asset, uploaded first: a ready board asset of this canvas"`
-		ImageAssetIDs []string `json:"imageAssetIds" maxItems:"1000" doc:"The canvas's images now: ready image assets of this canvas"`
-	}
-}
-
 func (a *api) registerCanvas(api huma.API) {
 	const tag = "materials"
-	reg(api, http.MethodGet, "/api/workspaces/{id}/canvas", "workspaceCanvas", tag,
-		"The caller's own canvas in the workspace, made on first open", http.StatusOK, a.workspaceCanvas)
-	reg(api, http.MethodPut, "/api/workspaces/{id}/canvas", "saveWorkspaceCanvas", tag,
-		"Record a save of the caller's canvas: its new board asset and images; the server counts the version", http.StatusOK, a.saveWorkspaceCanvas)
-	// The account's Canvas page (Epo 2026-11-10): every canvas the caller has,
-	// and canvases of their own in no workspace, saved as a workspace's is.
+	// The account's Canvas page (Epo 2026-11-10) and a workspace's Canvas tab
+	// (Epo 2026-11-12): the caller's canvases, a workspace's or all of them.
 	reg(api, http.MethodGet, "/api/canvases", "listCanvases", tag,
-		"The caller's canvases a page at a time: their own, latest saved first, then their workspaces'", http.StatusOK, a.listCanvases)
+		"The caller's canvases a page at a time: their own, latest saved first, then their workspaces'; or the ones drawn in a workspace", http.StatusOK, a.listCanvases)
 	reg(api, http.MethodPost, "/api/canvases", "createCanvas", tag,
-		"Make a canvas of the caller's own, in no workspace", http.StatusCreated, a.createCanvas)
+		"Make a canvas of the caller's, in a workspace they are a member of or in none", http.StatusCreated, a.createCanvas)
 	reg(api, http.MethodGet, "/api/canvases/{id}", "getCanvas", tag,
 		"One of the caller's canvases", http.StatusOK, a.getCanvas)
 	reg(api, http.MethodPut, "/api/canvases/{id}", "saveCanvas", tag,
-		"Record a save of one of the caller's canvases, as a workspace canvas's", http.StatusOK, a.saveCanvas)
+		"Record a save of one of the caller's canvases: its new board asset and images; the server counts the version", http.StatusOK, a.saveCanvas)
 }
 
 type canvasListInput struct {
-	Limit  int    `query:"limit" minimum:"1" maximum:"100" default:"50"`
-	Cursor string `query:"cursor" doc:"Opaque cursor from the previous page"`
+	Limit       int    `query:"limit" minimum:"1" maximum:"100" default:"50"`
+	Cursor      string `query:"cursor" doc:"Opaque cursor from the previous page"`
+	WorkspaceID string `query:"workspaceId" maxLength:"64" doc:"Only the canvases drawn in this workspace, latest saved first"`
 }
 
 type canvasListOutput struct {
@@ -77,7 +61,12 @@ type canvasListOutput struct {
 }
 
 func (a *api) listCanvases(ctx context.Context, in *canvasListInput) (*canvasListOutput, error) {
-	page, err := a.s.ListCanvases(ctx, userID(ctx), in.Limit, in.Cursor)
+	if in.WorkspaceID != "" {
+		if err := a.requireWorkspaceMember(ctx, in.WorkspaceID); err != nil {
+			return nil, err
+		}
+	}
+	page, err := a.s.ListCanvases(ctx, userID(ctx), in.WorkspaceID, in.Limit, in.Cursor)
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -89,12 +78,13 @@ func (a *api) listCanvases(ctx context.Context, in *canvasListInput) (*canvasLis
 
 type createCanvasInput struct {
 	Body struct {
-		Title apimodel.MaterialTitle `json:"title" minLength:"1"`
+		Title       apimodel.MaterialTitle `json:"title" minLength:"1"`
+		WorkspaceID string                 `json:"workspaceId,omitempty" maxLength:"64" doc:"The workspace it is drawn in, the caller a member; none for a canvas of their own"`
 	}
 }
 
-// createCanvas makes a canvas of the caller's own: a material they pay for, so
-// a frozen account makes none.
+// createCanvas makes a canvas of the caller's: a material they pay for, so a
+// frozen account makes none.
 func (a *api) createCanvas(ctx context.Context, in *createCanvasInput) (*canvasOutput, error) {
 	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
@@ -103,7 +93,12 @@ func (a *api) createCanvas(ctx context.Context, in *createCanvasInput) (*canvasO
 	if title == "" {
 		return nil, huma.Error422UnprocessableEntity("a canvas needs a name")
 	}
-	mt, err := a.s.CreateCanvas(ctx, userID(ctx), title)
+	if in.Body.WorkspaceID != "" {
+		if err := a.requireWorkspaceMember(ctx, in.Body.WorkspaceID); err != nil {
+			return nil, err
+		}
+	}
+	mt, err := a.s.CreateCanvas(ctx, userID(ctx), title, in.Body.WorkspaceID)
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -118,10 +113,25 @@ type canvasIDInput struct {
 	ID string `path:"id" maxLength:"64" doc:"Canvas material id"`
 }
 
-func (a *api) getCanvas(ctx context.Context, in *canvasIDInput) (*canvasOutput, error) {
-	mt, err := a.s.OwnCanvas(ctx, userID(ctx), in.ID)
+// ownCanvas is one of the caller's canvases; one drawn in a workspace while
+// they are still a member of it.
+func (a *api) ownCanvas(ctx context.Context, id string) (store.Material, error) {
+	mt, err := a.s.OwnCanvas(ctx, userID(ctx), id)
 	if err != nil {
-		return nil, hErr(err)
+		return store.Material{}, hErr(err)
+	}
+	if mt.CanvasWorkspaceID != "" {
+		if err := a.requireWorkspaceMember(ctx, mt.CanvasWorkspaceID); err != nil {
+			return store.Material{}, err
+		}
+	}
+	return mt, nil
+}
+
+func (a *api) getCanvas(ctx context.Context, in *canvasIDInput) (*canvasOutput, error) {
+	mt, err := a.ownCanvas(ctx, in.ID)
+	if err != nil {
+		return nil, err
 	}
 	out, err := a.canvasResponse(ctx, mt)
 	if err != nil {
@@ -143,9 +153,8 @@ func (a *api) saveCanvas(ctx context.Context, in *saveOwnCanvasInput) (*canvasOu
 	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
 	}
-	// One of the caller's own: a workspace's canvas saves through its workspace.
-	if _, err := a.s.OwnCanvas(ctx, userID(ctx), in.ID); err != nil {
-		return nil, hErr(err)
+	if _, err := a.ownCanvas(ctx, in.ID); err != nil {
+		return nil, err
 	}
 	return a.recordCanvasSave(ctx, in.ID, in.Body.BoardAssetID, in.Body.ImageAssetIDs, in.Body.Revision)
 }
@@ -172,7 +181,7 @@ func (a *api) recordCanvasSave(ctx context.Context, materialID, boardAssetID str
 	return out, nil
 }
 
-// requireWorkspaceMember: a canvas is a member's (Epo 2026-11-09); a link or public
+// requireWorkspaceMember: a workspace's canvases are a member's (Epo 2026-11-09); a link or public
 // visitor, who has a workspace id but no membership, finds none.
 func (a *api) requireWorkspaceMember(ctx context.Context, wsID string) error {
 	role, err := a.s.WorkspaceRole(ctx, userID(ctx), wsID)
@@ -201,36 +210,4 @@ func (a *api) canvasResponse(ctx context.Context, mt store.Material) (*canvasOut
 		ID: mt.ID, Title: mt.Title, Revision: mt.Revision, BoardAssetID: board.BoardAssetID, Version: board.Version,
 		ImageAssetIDs: board.ImageAssetIDs, OwnImageAssetIDs: own, UpdatedAt: mt.UpdatedAt,
 	}}, nil
-}
-
-// workspaceCanvas opens the caller's canvas in the workspace, making it on the
-// first open. Any member has one; a frozen account opens an existing one but
-// makes none (a material it would pay for).
-func (a *api) workspaceCanvas(ctx context.Context, in *canvasInput) (*canvasOutput, error) {
-	if err := a.requireWorkspaceMember(ctx, in.ID); err != nil {
-		return nil, err
-	}
-	mt, err := a.s.WorkspaceCanvas(ctx, userID(ctx), in.ID)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	out, err := a.canvasResponse(ctx, mt)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	return out, nil
-}
-
-func (a *api) saveWorkspaceCanvas(ctx context.Context, in *saveCanvasInput) (*canvasOutput, error) {
-	if err := a.requireAccountEdit(ctx); err != nil {
-		return nil, err
-	}
-	if err := a.requireWorkspaceMember(ctx, in.ID); err != nil {
-		return nil, err
-	}
-	mt, err := a.s.WorkspaceCanvas(ctx, userID(ctx), in.ID)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	return a.recordCanvasSave(ctx, mt.ID, in.Body.BoardAssetID, in.Body.ImageAssetIDs, in.Body.Revision)
 }

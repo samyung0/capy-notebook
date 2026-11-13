@@ -1201,6 +1201,7 @@ function WorkspaceOpen() {
           <div className="relative h-full" data-workspace-canvas>
             <Suspense fallback={null}>
               <WorkspaceCanvas
+                besideBack={!railShown}
                 onOpenMaterial={(id) => setOpenItem({ id, kind: 'material' })}
                 openMaterialId={
                   openItem?.kind === 'material' ? openItem.id : null
@@ -1215,7 +1216,7 @@ function WorkspaceOpen() {
                 has its own corners. */}
             {!railShown && (
               <ToolbarButton
-                className="absolute top-2 left-2 z-10 size-10 rounded-(--radius-toolbar) border border-(--affine-border-color) bg-(--affine-background-overlay-panel-color) text-(--affine-icon-color) shadow-pop hover:bg-[linear-gradient(var(--affine-hover-color),var(--affine-hover-color))] hover:text-(--affine-icon-color) [[data-workspace-canvas]:has(.capy-board[data-editor-open])_&]:hidden"
+                className="absolute top-2 left-2 z-10 size-8 rounded-(--radius-toolbar) border border-(--affine-border-color) bg-(--affine-background-overlay-panel-color) text-(--affine-icon-color) hover:bg-[linear-gradient(var(--affine-hover-color),var(--affine-hover-color))] hover:text-(--affine-icon-color) [[data-workspace-canvas]:has(.capy-board[data-editor-open])_&]:hidden"
                 label={m.workspace_section_dashboard()}
                 onClick={openDashboard}
               >
@@ -1436,6 +1437,7 @@ function WorkspaceOpen() {
                     dock={{
                       // The chat page's ⋮: back leads to the rest (Epo 2026-11-05).
                       menuItems: settingsEntry,
+                      off: railShown,
                       office: officeOpen,
                       onPageOpen: setChatPageOpen,
                       pageOpen: search.panel === 'agent',

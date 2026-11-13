@@ -25,7 +25,6 @@ import type {
 } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
 import { PagePanel } from '@/components/app/layout';
-import { ErrorAction } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { userToast } from '@/components/ui/userToast';
@@ -319,12 +318,8 @@ function Session({
           {session === null || loadingMore ? (
             isError ? (
               <ErrorState
-                action={
-                  <ErrorAction onClick={() => void refetch()}>
-                    {m.action_retry()}
-                  </ErrorAction>
-                }
                 errorId={unexpectedErrorId(error)}
+                onRetry={() => void refetch()}
                 title={m.review_load_failed()}
                 variant="panel"
               />

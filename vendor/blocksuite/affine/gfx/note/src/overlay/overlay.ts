@@ -2,7 +2,11 @@ import {
   getSurfaceComponent,
   ToolOverlay,
 } from '@blocksuite/affine-block-surface';
-import { type Color, DefaultTheme } from '@blocksuite/affine-model';
+import {
+  type Color,
+  DEFAULT_NOTE_WIDTH,
+  DefaultTheme,
+} from '@blocksuite/affine-model';
 import { ThemeProvider } from '@blocksuite/affine-shared/services';
 import type { XYWH } from '@blocksuite/global/gfx';
 import type { GfxController } from '@blocksuite/std/gfx';
@@ -12,18 +16,18 @@ import { Subject } from 'rxjs';
 import type { NoteTool } from '../note-tool';
 import {
   NOTE_OVERLAY_CORNER_RADIUS,
-  NOTE_OVERLAY_HEIGHT,
-  NOTE_OVERLAY_OFFSET_X,
-  NOTE_OVERLAY_OFFSET_Y,
   NOTE_OVERLAY_STOKE_COLOR,
   NOTE_OVERLAY_TEXT_COLOR,
-  NOTE_OVERLAY_WIDTH,
+  notePreviewOf,
 } from './consts.js';
 
 export class NoteOverlay extends ToolOverlay {
   backgroundColor = 'transparent';
 
   text = '';
+
+  /** The kind of block the note starts with, which sets the preview's layout. */
+  childType: string | null = null;
 
   constructor(gfx: GfxController, background: Color) {
     super(gfx);
@@ -36,6 +40,7 @@ export class NoteOverlay extends ToolOverlay {
         if (this.gfx.tool.currentToolName$.value !== 'affine:note') return;
         const tool = this.gfx.tool.currentTool$.peek() as NoteTool;
         this.text = this._getOverlayText(tool.activatedOption.tip);
+        this.childType = tool.activatedOption.childType;
         const surface = getSurfaceComponent(this.gfx.std);
         surface?.refresh();
       })
@@ -46,76 +51,39 @@ export class NoteOverlay extends ToolOverlay {
     return text[0].toUpperCase() + text.slice(1);
   }
 
+  // Capy (local change 48): the preview is the empty note a click places,
+  // centred on the pointer (NoteTool.click), drawn as the board draws it: its
+  // hairline and corner, and the placeholder in the block's font and place.
+  // AFFiNE drew a 100x50 box below-right of it.
   override render(ctx: CanvasRenderingContext2D): void {
     ctx.globalAlpha = this.globalAlpha;
-    const overlayX = this.x + NOTE_OVERLAY_OFFSET_X;
-    const overlayY = this.y + NOTE_OVERLAY_OFFSET_Y;
-    ctx.strokeStyle = this.gfx.std
-      .get(ThemeProvider)
-      .getCssVariableColor(NOTE_OVERLAY_STOKE_COLOR);
-    // Draw the overlay rectangle
+    const { height, left, line, size, top, weight } = notePreviewOf(
+      this.childType
+    );
+    const width = DEFAULT_NOTE_WIDTH;
+    const overlayX = this.x - width / 2;
+    const overlayY = this.y - height / 2;
+    const host = getComputedStyle(this.gfx.std.host);
     ctx.fillStyle = this.backgroundColor;
-    ctx.lineWidth = 4;
+    ctx.strokeStyle = host.getPropertyValue(NOTE_OVERLAY_STOKE_COLOR);
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(overlayX + NOTE_OVERLAY_CORNER_RADIUS, overlayY);
-    ctx.lineTo(
-      overlayX + NOTE_OVERLAY_WIDTH - NOTE_OVERLAY_CORNER_RADIUS,
-      overlayY
-    );
-    ctx.quadraticCurveTo(
-      overlayX + NOTE_OVERLAY_WIDTH,
-      overlayY,
-      overlayX + NOTE_OVERLAY_WIDTH,
-      overlayY + NOTE_OVERLAY_CORNER_RADIUS
-    );
-    ctx.lineTo(
-      overlayX + NOTE_OVERLAY_WIDTH,
-      overlayY + NOTE_OVERLAY_HEIGHT - NOTE_OVERLAY_CORNER_RADIUS
-    );
-    ctx.quadraticCurveTo(
-      overlayX + NOTE_OVERLAY_WIDTH,
-      overlayY + NOTE_OVERLAY_HEIGHT,
-      overlayX + NOTE_OVERLAY_WIDTH - NOTE_OVERLAY_CORNER_RADIUS,
-      overlayY + NOTE_OVERLAY_HEIGHT
-    );
-    ctx.lineTo(
-      overlayX + NOTE_OVERLAY_CORNER_RADIUS,
-      overlayY + NOTE_OVERLAY_HEIGHT
-    );
-    ctx.quadraticCurveTo(
-      overlayX,
-      overlayY + NOTE_OVERLAY_HEIGHT,
-      overlayX,
-      overlayY + NOTE_OVERLAY_HEIGHT - NOTE_OVERLAY_CORNER_RADIUS
-    );
-    ctx.lineTo(overlayX, overlayY + NOTE_OVERLAY_CORNER_RADIUS);
-    ctx.quadraticCurveTo(
+    ctx.roundRect(
       overlayX,
       overlayY,
-      overlayX + NOTE_OVERLAY_CORNER_RADIUS,
-      overlayY
+      width,
+      height,
+      NOTE_OVERLAY_CORNER_RADIUS
     );
     ctx.closePath();
-    ctx.stroke();
     ctx.fill();
+    ctx.stroke();
 
-    // Draw the overlay text
-    ctx.fillStyle = this.gfx.std
-      .get(ThemeProvider)
-      .getCssVariableColor(NOTE_OVERLAY_TEXT_COLOR);
-    let fontSize = 16;
-    ctx.font = `${fontSize}px Arial`;
+    ctx.fillStyle = host.getPropertyValue(NOTE_OVERLAY_TEXT_COLOR);
+    ctx.font = `${weight} ${size}px ${host.fontFamily}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-
-    // measure the width of the text
-    // if the text is wider than the rectangle, reduce the maximum width of the text
-    while (ctx.measureText(this.text).width > NOTE_OVERLAY_WIDTH - 20) {
-      fontSize -= 1;
-      ctx.font = `${fontSize}px Arial`;
-    }
-
-    ctx.fillText(this.text, overlayX + 10, overlayY + NOTE_OVERLAY_HEIGHT / 2);
+    ctx.fillText(this.text, overlayX + left, overlayY + top + line / 2);
   }
 }
 

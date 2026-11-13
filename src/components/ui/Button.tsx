@@ -98,6 +98,17 @@ export function ErrorAction({
   );
 }
 
+/** A page header's action (New workspace, Add task, Upload, New assignment,
+ * Add practice): md, 4px shorter than the controls (Epo 2026-11-12). */
+export function PageButton({ className, ...props }: ButtonProps) {
+  return (
+    <Button
+      className={cn('h-[calc(var(--control-h)-4px)]', className)}
+      {...props}
+    />
+  );
+}
+
 /** Icon's default 18px at every button size, the smallest icon a button carries. */
 const InlineIcon = ({
   name,

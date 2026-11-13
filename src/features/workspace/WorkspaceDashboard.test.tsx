@@ -34,14 +34,15 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('@/api/hooks', () => ({
   useAssignments: () => ({ data: { items: page.assignments } }),
+  useHideTodoDone: () => ({ mutateAsync: vi.fn() }),
   useMe: () => ({ data: { account: page.account } }),
   usePractice: (_id: string, { enabled }: { enabled: boolean }) => ({
     data: enabled
       ? { quizzes: page.quizzes, suggestions: page.suggestions }
       : undefined,
   }),
-  useSetAssignmentDone: () => ({ mutate: vi.fn() }),
   useStartAssignment: () => ({ mutate: vi.fn() }),
+  useTodoTick: () => ({ mutateAsync: vi.fn() }),
   useWorkspaceDashboard: () => ({ data: page.data }),
   useWorkspaceRecent: () => ({ data: { files: [], materials: [] } }),
 }));
@@ -220,8 +221,8 @@ it("lists a class's To do: answers to approve for its owner, Nothing to do when 
   const html = render();
   expect(html).toContain(m.dashboard_todo());
   expect(html).toContain('Past paper');
-  expect(html).toContain(m.dashboard_waiting({ count: 5 }));
-  expect(html).toContain('tab=approve');
+  // The To do page's table: the row opens its details, with Approve marks.
+  expect(html).toContain(m.todo_answers_waiting({ count: 5 }));
   expect(html).toContain(m.assignment_new());
   page.assignments = [];
   page.kind = 'personal';

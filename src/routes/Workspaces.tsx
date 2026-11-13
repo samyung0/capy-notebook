@@ -11,7 +11,7 @@ import {
 import { PageBody, PageHeader, PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { AccountStatusBanner } from '@/components/banners/AccountStatusBanner';
-import { Button } from '@/components/ui/Button';
+import { PageButton } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Icon } from '@/components/ui/Icon';
 import {
@@ -94,13 +94,13 @@ export default function Workspaces() {
       </div>
       <ListToolbar
         action={
-          <Button
+          <PageButton
             disabled={frozen}
             iconLeft="plus"
             onClick={() => setCreateOpen(true)}
           >
             {m.action_new_workspace()}
-          </Button>
+          </PageButton>
         }
         filters={[
           {

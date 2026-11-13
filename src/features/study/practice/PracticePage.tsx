@@ -10,7 +10,7 @@ import type {
   Topic,
 } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
-import { Button } from '@/components/ui/Button';
+import { Button, PageButton } from '@/components/ui/Button';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
@@ -145,7 +145,7 @@ function PracticeList({
         {/* Whoever may edit adds a quiz for everyone (Add practice's dialog,
             Make a quiz's address); anyone else makes their own. */}
         <span className={cn(suggested && '-my-2.5')}>
-          <Button
+          <PageButton
             disabled={canEdit && isWorkspaceReadOnly(ws?.capabilities)}
             iconLeft="plus"
             onClick={() =>
@@ -158,20 +158,16 @@ function PracticeList({
             }
           >
             {canEdit ? m.practice_add() : m.practice_make_own()}
-          </Button>
+          </PageButton>
         </span>
       </div>
       {isPending ? (
         <SkeletonList className="mt-6" count={6} rowHeight={40} />
       ) : isError ? (
         <ErrorState
-          action={
-            <Button onClick={() => void refetch()} variant="outline">
-              {m.action_retry()}
-            </Button>
-          }
-          className="mt-10"
+          className="h-auto py-20"
           errorId={unexpectedErrorId(error)}
+          onRetry={() => void refetch()}
           title={m.practice_load_failed()}
           variant="panel"
         />

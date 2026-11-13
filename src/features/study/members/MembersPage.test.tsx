@@ -256,6 +256,6 @@ it('says a removed member is not found, with nothing to retry', async () => {
   state.profileError = new ApiError(404, 'Not Found');
   const root = await show({ member: 'gone' });
   expect(host.textContent).toContain(m.member_profile_not_found());
-  expect(button(m.action_retry())).toBeUndefined();
+  expect(button(m.error_action_retry())).toBeUndefined();
   await act(async () => root.unmount());
 });

@@ -202,7 +202,7 @@ test('draws over the card and reopens from what it saved', async ({ page }) => {
   await expect.poll(() => canvas(page)).toEqual(['plane', 'brush']);
 
   // The note menu holds no image, link or file buttons, or the divider after them.
-  await page.locator('edgeless-note-senior-button').first().click();
+  await page.locator('capy-note-button').first().click();
   await expect(page.locator('edgeless-note-menu')).toBeVisible();
   await expect(page.locator('edgeless-note-menu .divider')).toHaveCount(0);
 
@@ -222,7 +222,12 @@ test('a note card takes typing and leaves $$ as text', async ({ page }) => {
   page.on('pageerror', (error) => errors.push(error.message));
   await openBoard(page);
   const at = await onCard(page);
-  await page.locator('edgeless-note-senior-button').first().click();
+  // The button opens the menu only; a pick there holds the note.
+  await page.locator('capy-note-button').first().click();
+  await page
+    .locator('edgeless-note-menu edgeless-tool-icon-button')
+    .first()
+    .click();
   await page.mouse.click(...at(0.5, 0.5));
   // The new note takes the focus a moment later on a loaded machine; keys
   // typed before then are lost.
@@ -253,7 +258,7 @@ test('a note card takes typing and leaves $$ as text', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-test('the shapes panel draws an outline and places a preset that reopens', async ({
+test('the shapes panel draws an outline, a hexagon shape and a preset that reopens', async ({
   page,
 }) => {
   test.slow();
@@ -267,10 +272,16 @@ test('the shapes panel draws an outline and places a preset that reopens', async
   await page.mouse.up();
   await expect.poll(() => canvas(page)).toEqual(['plane', 'shape']);
 
+  // A hexagon is a shape of its own, placed where the click is.
   await page.locator('capy-shape-button').first().click();
   await page.getByRole('button', { name: 'Hexagon' }).click();
   await page.mouse.click(...at(0.7, 0.3));
   await expect(page.locator('capy-shape-panel')).toHaveCount(0);
+  await expect.poll(() => canvas(page)).toEqual(['plane', 'shape', 'shape']);
+
+  await page.locator('capy-shape-button').first().click();
+  await page.getByRole('button', { name: 'Cube' }).click();
+  await page.mouse.click(...at(0.7, 0.7));
   await expect.poll(() => canvas(page)).toContain('connector');
   await expect.poll(() => canvas(page)).toContain('group');
   // The preset's connector and group store no place, and the board still reopens.
@@ -1193,14 +1204,15 @@ const copyIsCurrent = (page: Page) =>
   page.evaluate(
     () =>
       new Promise<boolean>((resolve, reject) => {
-        // The mocks keep their own database; their canvas is cv_<workspace>.
+        // The mocks keep their own database; a workspace's first canvas is
+        // cv_<workspace>_1.
         const opened = indexedDB.open('capy-local-msw');
         opened.onerror = () => reject(opened.error);
         opened.onsuccess = () => {
           const read = opened.result
             .transaction('drawingDrafts')
             .objectStore('drawingDrafts')
-            .get('canvas:cv_ws_bio');
+            .get('canvas:cv_ws_bio_1');
           read.onsuccess = () => {
             opened.result.close();
             const { __board: board } = window as unknown as {
@@ -1298,7 +1310,11 @@ test('an image pasted or picked on the workspace canvas is stored as its asset a
     .poll(
       () =>
         page.evaluate(() =>
-          fetch('/api/workspaces/ws_bio/canvas')
+          fetch('/api/canvases?workspaceId=ws_bio')
+            .then((response) => response.json())
+            .then(({ items }: { items: { id: string }[] }) =>
+              fetch(`/api/canvases/${items[0].id}`)
+            )
             .then((response) => response.json())
             .then((canvas: { imageAssetIds: string[] }) => canvas.imageAssetIds)
         ),
@@ -1342,11 +1358,43 @@ test('an image pasted or picked on the workspace canvas is stored as its asset a
     .toEqual([assetId, expect.stringMatching(/^asset_mock_/)]);
 });
 
+test('the workspace canvas has GIFs, stickers and emoji in a slot, and Formulas in Misc', async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/workspaces/ws_bio');
+  await page.getByRole('button', { name: 'Canvas' }).click();
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  await expect(page.locator('capy-formula-slot')).toHaveCount(0);
+  // The slot opens KLIPY's view alone, with no Back (Epo 2026-11-12, A + M1).
+  await page.locator('capy-gif-sticker-button').click();
+  await expect(
+    page.locator('capy-misc-panel').getByRole('tab', { name: 'GIFs' })
+  ).toBeVisible();
+  await expect(
+    page.locator('capy-misc-panel').getByRole('button', { name: 'Back' })
+  ).toHaveCount(0);
+  // The shipped emoji are its third tab (Epo 2026-11-13), not a Misc tile.
+  await page
+    .locator('capy-misc-panel')
+    .getByRole('tab', { name: 'Emoji' })
+    .click();
+  await expect(page.locator('capy-misc-panel .emoji button')).toHaveCount(48);
+  await page.locator('capy-gif-sticker-button').click();
+  await placePiece(page, 'capy-misc-panel', 'deriv');
+  await page.locator('.capy-formula math-field').waitFor();
+  await expect.poll(() => canvas(page)).toContain('formula');
+});
+
 test("the Canvas page is a board of the person's own, and its panel lists and makes canvases", async ({
   page,
 }) => {
   test.slow();
-  // A workspace's canvas exists once its tab was opened.
+  // The picker is the editor's popover (Epo 2026-11-12): its rows are buttons.
+  const menu = page.locator('[data-slot=popover-content]');
+  // A workspace's first canvas is made as its tab opens.
   await page.goto('/workspaces/ws_bio');
   await page.getByRole('button', { name: 'Canvas' }).click();
   await page.waitForFunction(
@@ -1360,29 +1408,56 @@ test("the Canvas page is a board of the person's own, and its panel lists and ma
   // With none of their own yet, a first one is made and named in the URL.
   await expect(page).toHaveURL(/\/canvas\?c=cv_own_1$/);
   await expect(page.locator('.capy-board')).toHaveCount(1);
-  const panel = page.getByRole('button', { name: 'My canvas' });
+  const panel = page.getByRole('button', { exact: true, name: 'My canvas' });
   await panel.click();
   // Every canvas there is: their own, then the workspace's under its name.
-  await expect(page.getByRole('menuitem', { name: /My canvas/ })).toBeVisible();
-  await expect(
-    page.getByRole('menuitem', { name: /Biology 101/ })
-  ).toBeVisible();
-  await page.getByRole('menuitem', { name: 'New canvas' }).click();
+  await expect(menu.getByRole('button', { name: /My canvas/ })).toBeVisible();
+  await expect(menu.getByRole('button', { name: /Biology 101/ })).toBeVisible();
+  // The pointer crossing the board leaves it open (local change 40).
+  const board = await page.locator('.capy-board').boundingBox();
+  if (!board) throw new Error('no board');
+  await page.mouse.move(board.x + board.width / 2, board.y + board.height / 2);
+  await page.mouse.move(board.x + board.width / 2 + 40, board.y + 200, {
+    steps: 5,
+  });
+  await page.waitForTimeout(300);
+  await expect(menu.getByRole('button', { name: 'New canvas' })).toBeVisible();
+  await menu.getByRole('button', { name: 'New canvas' }).click();
   await expect(page).toHaveURL(/\/canvas\?c=cv_own_2$/);
   await expect(
-    page.getByRole('button', { name: 'Untitled canvas' })
+    page.getByRole('button', { exact: true, name: 'Untitled canvas' })
   ).toBeVisible();
   // Rename starts from the shown canvas's own name, and the panel takes the new one.
-  await page.getByRole('button', { name: 'Untitled canvas' }).click();
-  await page.getByRole('menuitem', { name: 'Rename' }).click();
+  await page
+    .getByRole('button', { exact: true, name: 'Untitled canvas' })
+    .click();
+  await menu.getByRole('button', { name: 'Rename' }).click();
   const name = page.getByRole('textbox');
   await expect(name).toHaveValue('Untitled canvas');
   await name.fill('Exam plan');
   await name.press('Enter');
   // A workspace's canvas opens in its workspace.
-  await page.getByRole('button', { name: 'Exam plan' }).click();
-  await page.getByRole('menuitem', { name: /Biology 101/ }).click();
-  await expect(page).toHaveURL(/\/workspaces\/ws_bio\?panel=canvas/);
+  await page.getByRole('button', { exact: true, name: 'Exam plan' }).click();
+  await menu.getByRole('button', { name: /Biology 101/ }).click();
+  await expect(page).toHaveURL(
+    /\/workspaces\/ws_bio\?c=cv_ws_bio_1&panel=canvas/
+  );
+  // There the picker lists the workspace's canvases alone and makes more
+  // (Epo 2026-11-12), each named in the URL.
+  const picker = page.locator(
+    '[data-workspace-canvas] [data-slot=popover-anchor] button'
+  );
+  await expect(picker).toHaveText('Biology 101');
+  await picker.click();
+  await expect(menu.getByRole('button', { name: /Exam plan/ })).toHaveCount(0);
+  await menu.getByRole('button', { name: 'New canvas' }).click();
+  await expect(page).toHaveURL(/c=cv_ws_bio_\d+&panel=canvas/);
+  await expect(page).not.toHaveURL(/c=cv_ws_bio_1&/);
+  await expect(picker).toHaveText('Untitled canvas');
+  await picker.click();
+  await menu.getByRole('button', { name: /Biology 101/ }).click();
+  await expect(page).toHaveURL(/c=cv_ws_bio_1&panel=canvas/);
+  await expect(page.locator('.capy-board')).toHaveCount(1);
 });
 
 test('the Canvas page lists its canvases a page at a time', async ({
@@ -1417,10 +1492,11 @@ test('the Canvas page lists its canvases a page at a time', async ({
   // Sixty newer ones put the shown canvas on the list's second page: the panel
   // loads on until it has it, and the page stays on it.
   await make(60, 1);
-  await page.getByRole('button', { name: 'My canvas' }).click();
-  const made = page.getByRole('menuitem', { name: /^Canvas \d+/ });
+  await page.getByRole('button', { exact: true, name: 'My canvas' }).click();
+  const menu = page.locator('[data-slot=popover-content]');
+  const made = menu.getByRole('button', { name: /^Canvas \d+/ });
   await expect(made).toHaveCount(60);
-  await expect(page.getByRole('menuitem', { name: /My canvas/ })).toBeVisible();
+  await expect(menu.getByRole('button', { name: /My canvas/ })).toBeVisible();
   await expect(page).toHaveURL(/\/canvas\?c=cv_own_1$/);
   // One on the first page shown, and fifty more made: the two pages loaded are
   // read again, and the list's end loads the third.
@@ -1430,17 +1506,16 @@ test('the Canvas page lists its canvases a page at a time', async ({
   await page.getByRole('button', { name: /^Canvas \d+/ }).click();
   await expect(made).toHaveCount(100);
   // The list scrolls in a box of its own: the actions under it stay in reach.
-  const create = page.getByRole('menuitem', { name: 'New canvas' });
+  const create = menu.getByRole('button', { name: 'New canvas' });
   await expect(create).toBeInViewport();
-  await page
-    .getByRole('menu')
+  await menu
     .locator('> div')
     .first()
     .evaluate((element) => element.scrollTo(0, element.scrollHeight));
   await expect(made).toHaveCount(110);
   await expect(create).toBeInViewport();
   // Their own come first, then the workspace's.
-  await expect(page.getByRole('menuitem').nth(111)).toHaveText(/Biology 101/);
+  await expect(menu.getByRole('button').nth(111)).toHaveText(/Biology 101/);
 });
 
 test('the workspace canvas stays in the URL at every width', async ({

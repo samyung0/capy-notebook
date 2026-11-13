@@ -1,29 +1,94 @@
 import { useQueryClient } from '@tanstack/react-query';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef } from 'react';
-import { saveWorkspaceCanvas, workspaceCanvas } from '@/api/canvas';
+import { canvasById, saveCanvas } from '@/api/canvas';
 import { qk } from '@/api/client';
 import { useCreateMaterial, useOwnedMaterials } from '@/api/hooks';
 import { CanvasMaterialCards } from '@/features/canvas/CanvasMaterialCards';
 import { useCanvasBoard } from '@/features/canvas/useCanvasBoard';
+import { useCanvasPicker } from '@/features/canvas/useCanvasPicker';
+import { FileError } from '@/features/files/FileStates';
+import type { WorkspaceOpenSearch } from '@/features/materials/openItem';
 import { nextGenerateTitle } from '@/features/workspace/generateTitle';
+import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 
-/** A member's own canvas in the workspace (Epo 2026-11-09,
- * todo-workspace-canvas-storage.md): the drawing board over their canvas
- * material (`useCanvasBoard`), with the workspace's quizzes and sets for its
- * cards. */
-export default function WorkspaceCanvas({
-  onOpenMaterial,
-  openMaterialId,
-  workspaceId,
-  workspaceName,
-}: {
+type BoardProps = {
   onOpenMaterial: (materialId: string) => void;
   /** The material the workspace's item dialog shows, if any. */
   openMaterialId: string | null;
   workspaceId: string;
   /** For a new quiz's or set's default title. */
   workspaceName: string;
+};
+
+/** A member's canvases in the workspace (Epo 2026-11-09,
+ * todo-workspace-canvas-storage.md; several since Epo 2026-11-12): the one the
+ * URL's `c` names, under the canvas picker the account's Canvas page has. The
+ * first is made with the workspace's name. */
+export default function WorkspaceCanvas({
+  besideBack,
+  ...props
+}: BoardProps & {
+  /** A phone's Back floats on the board's top left: the picker sits after it. */
+  besideBack: boolean;
 }) {
+  const { c } = useSearch({ strict: false }) as WorkspaceOpenSearch;
+  const navigate = useNavigate();
+  const { boardKey, current, dialogs, gone, none, picker, retry } =
+    useCanvasPicker({
+      c,
+      firstTitle: props.workspaceName,
+      show: (id, replace = false) =>
+        navigate({
+          replace,
+          search: (previous) => ({ ...previous, c: id, panel: 'canvas' }),
+          to: '.',
+        }),
+      workspaceId: props.workspaceId,
+    });
+  return (
+    // The board's ☰ is the picker's height (32px).
+    <div className="relative h-full [--capy-board-menu-size:32px]">
+      {current && (
+        <CanvasBoard
+          {...props}
+          gone={() => gone(current.id)}
+          id={current.id}
+          key={boardKey}
+          onRetry={retry}
+        />
+      )}
+      {none && (
+        <p className="t-body m-6 pt-14 text-fg-muted">{m.canvas_none()}</p>
+      )}
+      {picker && (
+        // On a phone the row stops short of the board's own menu at the top right.
+        <div
+          className={cn(
+            'absolute top-2 right-12 flex sm:right-auto [&>[data-slot=popover-anchor]]:flex-1 sm:[&>[data-slot=popover-anchor]]:flex-none [[data-workspace-canvas]:has(.capy-board[data-editor-open])_&]:hidden',
+            besideBack ? 'left-12' : 'left-2'
+          )}
+        >
+          {picker}
+        </div>
+      )}
+      {dialogs}
+    </div>
+  );
+}
+
+/** One canvas's drawing board (`useCanvasBoard`), with the workspace's quizzes
+ * and sets for its cards. */
+function CanvasBoard({
+  gone,
+  id,
+  onRetry,
+  onOpenMaterial,
+  openMaterialId,
+  workspaceId,
+  workspaceName,
+}: BoardProps & { gone: () => boolean; id: string; onRetry: () => void }) {
   const container = useRef<HTMLDivElement>(null);
   // The canvas mounts once and reads the latest of these when it needs them. The
   // Files list carries each quiz's and set's stored preview, for the panel's grid.
@@ -83,11 +148,12 @@ export default function WorkspaceCanvas({
   const failed = useCanvasBoard(
     container,
     {
-      key: workspaceId,
-      open: () => workspaceCanvas(workspaceId),
-      save: (body) => saveWorkspaceCanvas(workspaceId, body),
+      key: id,
+      open: () => canvasById(id),
+      save: (body) => saveCanvas(id, body),
     },
     {
+      gone,
       onBoard: (board) => {
         mounted.current = board;
       },
@@ -129,11 +195,8 @@ export default function WorkspaceCanvas({
       className="h-full w-full overflow-hidden rounded-card-xl [&>div]:h-full"
       ref={container}
     >
-      {failed && (
-        <p className="t-body m-6 text-fg-muted" role="alert">
-          {failed}
-        </p>
-      )}
+      {/* Reopening the canvas tries again. */}
+      {failed && <FileError message={failed} onRetry={onRetry} />}
       <CanvasMaterialCards listed={listed} workspaceId={workspaceId} />
     </div>
   );
